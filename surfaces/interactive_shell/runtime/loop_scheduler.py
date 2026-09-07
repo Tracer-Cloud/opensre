@@ -50,6 +50,15 @@ def reload_loop_scheduler() -> int:
         return _start_locked()
 
 
+def run_loop_now(task_id: str) -> bool:
+    """Fire one loop task immediately in this process; False when the run failed."""
+    from bootstrap.adapters import scheduler_runners
+    from infrastructure.scheduling.scheduler.runner import run_task_now
+
+    configure_process(SCHEDULED_COMMAND_PROFILE)
+    return run_task_now(task_id, scheduler_runners())
+
+
 def shutdown_loop_scheduler() -> None:
     """Stop the shell-local prompt-loop scheduler."""
     with _scheduler_lock:
@@ -106,6 +115,7 @@ def _shutdown_locked() -> None:
 
 __all__ = [
     "reload_loop_scheduler",
+    "run_loop_now",
     "shutdown_loop_scheduler",
     "start_loop_scheduler",
 ]

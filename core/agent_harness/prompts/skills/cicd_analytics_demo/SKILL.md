@@ -25,6 +25,7 @@ WHEN TO USE:
 USE THESE TOOLS:
 - `scan_local_git_workspace`
 - `analyze_github_ci_reliability`
+- `schedule_ci_reliability_loop`
 - `ask_user_choice`
 
 DO NOT USE THIS SKILL FOR:
@@ -83,8 +84,11 @@ headers [3/4] and [4/4] only.
    - `Set up an agent that improves CI/CD reliability over time`
    - `Connect OpenSRE to Slack and hand off DevOps chores for your team`
    - `Exit demo`
-   WAIT for the answer. On the first option, load `github-ci-fix-onboarding`
-   and continue there. On the second, check Slack with the CLI tool
+   WAIT for the answer. On the first option, call
+   `schedule_ci_reliability_loop(owner="<owner>", repo="<repo>")` for the
+   analyzed repository, output its `response_text` verbatim, and stop; it
+   schedules a weekday 08:00 local check that delivers to this shell's inbox
+   and never posts anywhere else. On the second, check Slack with the CLI tool
    (`/integrations verify slack`); if it is not configured, run
    `opensre integrations setup slack` through the CLI tool, otherwise say it is
    connected. Then explain in two sentences how to hand off a chore from Slack

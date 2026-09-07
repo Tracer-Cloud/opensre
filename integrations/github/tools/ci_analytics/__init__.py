@@ -2,6 +2,6 @@
 
 from __future__ import annotations
 
-TOOL_MODULES = ("tool",)
+TOOL_MODULES = ("tool", "loop_tool")
 
 __all__ = ["TOOL_MODULES"]

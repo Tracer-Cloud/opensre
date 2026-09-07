@@ -1019,7 +1019,7 @@ def test_tool_shows_progress_lines_around_the_painted_report() -> None:
     from core.tool.contracts import AgentToolContext
 
     buf = io.StringIO()
-    console = Console(file=buf, force_terminal=False, width=120)
+    console = Console(file=buf, force_terminal=True, color_system=None, width=120)
     scope = ActionToolScope(session=None, console=console)
     context = AgentToolContext(
         resolved_integrations={}, resources={ACTION_TOOL_CONTEXT_RESOURCE_KEY: scope}

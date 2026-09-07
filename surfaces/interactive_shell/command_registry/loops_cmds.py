@@ -427,15 +427,9 @@ def _cmd_loops_messages(session: Session, console: Console, args: list[str]) -> 
 
 
 def _run_loop_task_ids_once(console: Console, task_ids: tuple[str, ...]) -> bool:
-    from bootstrap.adapters import scheduler_runners
-    from bootstrap.process import SCHEDULED_COMMAND_PROFILE, configure_process
-    from infrastructure.scheduling.scheduler.runner import run_task_now
+    from surfaces.interactive_shell.runtime.loop_scheduler import run_loop_now
 
-    configure_process(SCHEDULED_COMMAND_PROFILE)
-    failures: list[str] = []
-    for task_id in task_ids:
-        if not run_task_now(task_id, scheduler_runners()):
-            failures.append(task_id)
+    failures = [task_id for task_id in task_ids if not run_loop_now(task_id)]
 
     if failures:
         console.print(

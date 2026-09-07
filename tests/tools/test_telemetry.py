@@ -938,6 +938,9 @@ _TOOLS_WITHOUT_DELIBERATE_CATCH: frozenset[str] = frozenset(
         # scan_local_git_workspace shells out to git per repository and lets
         # anything unexpected reach the global wrapper.
         "scan_local_git_workspace",
+        # schedule_ci_reliability_loop writes the local task store; only a bad
+        # time is caught, anything else reaches the global wrapper.
+        "schedule_ci_reliability_loop",
         # architecture_* catch only WorkspaceError / ReportPersistenceError for
         # known failure states; unexpected errors escape to the #1476 wrapper.
         "architecture_cleanup_repo",

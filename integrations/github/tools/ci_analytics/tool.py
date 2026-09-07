@@ -61,12 +61,18 @@ def _extract_params(sources: dict[str, dict]) -> dict[str, Any]:
 
 
 def _console(context: Any) -> Any:
+    """The terminal to paint on, or None when the caller only reads the result.
+
+    A headless run (scheduled loop, gateway) carries a capture console; painting
+    there would hide the report, so it is returned as text instead.
+    """
     if context is None:
         return None
     try:
-        return action_context_from_agent_context(context).console
+        console = action_context_from_agent_context(context).console
     except RuntimeError:
         return None
+    return console if getattr(console, "is_terminal", False) else None
 
 
 def _failure_message(exc: Exception, *, repository: str) -> str:
