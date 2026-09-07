@@ -216,6 +216,13 @@ def switch_llm_provider(
             f"[{DIM}]known reasoning models:[/] {escape(_format_supported_models(provider.models))}"
         )
         return False
+    if provider.value == "ollama" and selected_model:
+        from surfaces.interactive_shell.command_registry.model.ollama import (
+            validate_model_available,
+        )
+
+        if not validate_model_available(provider, selected_model, console):
+            return False
 
     selected_toolcall: str | None = None
     if toolcall_model is not None:
@@ -246,12 +253,13 @@ def switch_llm_provider(
     # Be explicit about which slot each model lands in.
     console.print(f"[{HIGHLIGHT}]switched LLM provider:[/] {provider.value}")
     console.print(
-        f"[{HIGHLIGHT}]reasoning model:[/] {selected_model or 'provider default'} "
+        f"[{HIGHLIGHT}]reasoning model:[/] "
+        f"{escape(selected_model) if selected_model else 'provider default'} "
         f"[{DIM}]({provider.model_env})[/]"
     )
     if selected_toolcall:
         console.print(
-            f"[{HIGHLIGHT}]toolcall model:[/] {selected_toolcall} "
+            f"[{HIGHLIGHT}]toolcall model:[/] {escape(selected_toolcall)} "
             f"[{DIM}]({provider.toolcall_model_env})[/]"
         )
     console.print(f"[{DIM}]updated {env_path}[/]")
@@ -300,7 +308,7 @@ def switch_toolcall_model(
     _reset_runtime_llm_caches()
 
     console.print(
-        f"[{HIGHLIGHT}]toolcall model set to:[/] {new_model} "
+        f"[{HIGHLIGHT}]toolcall model set to:[/] {escape(new_model)} "
         f"[{DIM}]({provider.value} · {provider.toolcall_model_env})[/]"
     )
     console.print(f"[{DIM}]updated {env_path}[/]")
@@ -343,12 +351,19 @@ def switch_reasoning_model(
             f"[{DIM}]known reasoning models:[/] {escape(_format_supported_models(provider.models))}"
         )
         return False
+    if provider.value == "ollama":
+        from surfaces.interactive_shell.command_registry.model.ollama import (
+            validate_model_available,
+        )
+
+        if not validate_model_available(provider, new_model, console):
+            return False
 
     env_path = sync_reasoning_model_env(provider=provider, model=new_model)
     _reset_runtime_llm_caches()
 
     console.print(
-        f"[{HIGHLIGHT}]reasoning model set to:[/] {new_model} "
+        f"[{HIGHLIGHT}]reasoning model set to:[/] {escape(new_model)} "
         f"[{DIM}]({provider.value} · {provider.model_env})[/]"
     )
     console.print(f"[{DIM}]updated {env_path}[/]")

@@ -290,3 +290,20 @@ class TestReplModelPersistence:
         )
         stored = wizard_store.load_local_config(persistence_paths["store"])
         assert stored["targets"]["local"]["model"] == model
+
+    def test_unavailable_ollama_model_does_not_persist(
+        self,
+        persistence_paths: dict[str, Path],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(
+            "surfaces.interactive_shell.command_registry.model.ollama.list_available_models",
+            lambda _host: ("llama3.2:latest",),
+        )
+        console, output = _capture()
+
+        dispatch_slash("/model set ollama ghost-model", Session(), console)
+
+        assert "Ollama model is not available: ghost-model" in output.getvalue()
+        assert not persistence_paths["env"].exists()
+        assert not persistence_paths["store"].exists()
