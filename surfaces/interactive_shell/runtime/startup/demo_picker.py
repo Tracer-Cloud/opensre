@@ -35,6 +35,7 @@ from surfaces.shared.terminal.components.choice_menu import (
     repl_choose_one,
     repl_tty_interactive,
 )
+from surfaces.shared.terminal.components.loaders import llm_loader
 from tools.system.workspace_git_scan.render import render_snapshot
 from tools.system.workspace_git_scan.scan import RepoActivity, WorkspaceSnapshot, scan_workspace
 
@@ -180,7 +181,12 @@ def _start_ci_analytics_demo(
     session: Session, console: Console | None, suggestion: DemoSuggestion
 ) -> bool:
     """Scan, let the user pick a repository, then queue the analysis prompt."""
-    snapshot = scan_workspace(Path.home(), days=_SCAN_DAYS)
+    home = Path.home()
+    if console is not None:
+        with llm_loader(console, f"Scanning {home} for git repositories"):
+            snapshot = scan_workspace(home, days=_SCAN_DAYS)
+    else:
+        snapshot = scan_workspace(home, days=_SCAN_DAYS)
     if console is not None:
         console.print()
         console.print(_SNAPSHOT_LEAD)
@@ -194,6 +200,13 @@ def _start_ci_analytics_demo(
     repository = choose_repository(snapshot)
     if repository is None:
         return False
+    if console is not None:
+        console.print()
+        console.print(
+            f"[{DIM}]Analyzing the CI/CD reliability of {repository} for the last {_SCAN_DAYS} "
+            "days. Reading the GitHub Actions history takes about half a minute; the report "
+            "appears below when it is ready.[/]"
+        )
     session.terminal.set_auto_command(suggestion.prompt.format(repository=repository))
     return True
 

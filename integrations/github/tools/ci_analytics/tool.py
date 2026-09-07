@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import time
 from datetime import UTC, datetime
 from typing import Any
 
@@ -201,6 +202,13 @@ def analyze_github_ci_reliability(
             response_text="I need a GitHub repository (owner/repo) to analyze.",
         )
     now = datetime.now(UTC)
+    console = _console(context)
+    if console is not None:
+        console.print(
+            f"[dim]Reading GitHub Actions history for {repo_owner}/{repo_name}, "
+            f"last {window} days…[/dim]"
+        )
+    started = time.monotonic()
     try:
         collected = collect_runs(
             GitHubRestClient(github_token),
@@ -237,8 +245,11 @@ def analyze_github_ci_reliability(
         f"{report.count(FailureKind.RELIABILITY)} CI-caused, "
         f"{format_minutes(report.blocked_minutes)} of developer time blocked on merged PRs."
     )
-    console = _console(context)
     rendered = console is not None
+    if console is not None:
+        read = len(collected.branch_runs) + len(collected.pr_runs)
+        console.print(f"[dim]Read {read} runs in {time.monotonic() - started:.0f}s.[/dim]")
+        console.print()
     base = {
         "source": _SOURCE,
         "success": True,

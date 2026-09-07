@@ -573,6 +573,42 @@ def test_tool_renders_report_from_collected_runs() -> None:
     assert "Coverage notice: sample" in result["response_text"]
 
 
+def test_tool_shows_progress_lines_around_the_painted_report() -> None:
+    import io
+
+    from rich.console import Console
+
+    from core.agent_harness.tools.tool_context import (
+        ACTION_TOOL_CONTEXT_RESOURCE_KEY,
+        ActionToolScope,
+    )
+    from core.tool.contracts import AgentToolContext
+
+    buf = io.StringIO()
+    console = Console(file=buf, force_terminal=False, width=120)
+    scope = ActionToolScope(session=None, console=console)
+    context = AgentToolContext(
+        resolved_integrations={}, resources={ACTION_TOOL_CONTEXT_RESOURCE_KEY: scope}
+    )
+    collected = CollectedRuns(
+        default_branch="main",
+        branch_runs=[_run(9, event="push", branch="main")],
+        pr_runs=[_run(1, branch="A", sha="s", conclusion="failure", start_minutes=0)],
+        merged_prs=(),
+        coverage_notices=[],
+    )
+
+    with patch("integrations.github.tools.ci_analytics.tool.collect_runs", return_value=collected):
+        result = analyze_github_ci_reliability(owner="o", repo="r", days=7, context=context)
+
+    output = buf.getvalue()
+    assert "Reading GitHub Actions history for o/r, last 7 days" in output
+    assert "Read 2 runs in" in output
+    assert "CI/CD reliability for o/r, last 7 days" in output
+    assert result["rendered_in_shell"] is True
+    assert "executions" not in result
+
+
 class TestAnalyzeGithubCiReliabilityContract(BaseToolContract):
     def get_tool_under_test(self) -> Any:
         return analyze_github_ci_reliability.__opensre_registered_tool__
