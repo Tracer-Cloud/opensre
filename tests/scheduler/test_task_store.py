@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -547,3 +548,15 @@ class TestLegacyTaskMigration:
         assert summary.enabled is False
         assert "daily_summary" in summary.schedule_error
         assert "opensre cron add --kind manual_loop" in summary.schedule_error
+
+    def test_migration_keeps_loading_valid_tasks_alongside_non_object_entries(
+        self, store_path: Path
+    ) -> None:
+        self._copy_fixture(store_path)
+        entries = json.loads(store_path.read_text(encoding="utf-8"))
+        entries.insert(0, "malformed task row")
+        store_path.write_text(json.dumps(entries), encoding="utf-8")
+
+        tasks = list_tasks(store_path)
+
+        assert any(task.id == "existing-loop" for task in tasks)

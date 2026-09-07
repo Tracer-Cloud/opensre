@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+
 from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_LEGACY_TASK_KIND_PARAM,
     LOOP_MIGRATION_NOTICE_PARAM,
@@ -21,10 +23,12 @@ _RETIRED_TASK_KINDS = frozenset(
 )
 
 
-def migrate_legacy_task_entries(entries: list[dict[str, object]]) -> bool:
+def migrate_legacy_task_entries(entries: Iterable[object]) -> bool:
     """Normalize retired task kinds in place before strict model validation."""
     changed = False
     for entry in entries:
+        if not isinstance(entry, dict):
+            continue
         legacy_kind = entry.get("kind")
         if legacy_kind not in _RETIRED_TASK_KINDS:
             continue
