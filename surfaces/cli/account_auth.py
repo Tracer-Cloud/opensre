@@ -374,6 +374,9 @@ def logout_account() -> AccountLogoutResult:
 
     try:
         delete_account_token()
+        from integrations.github import disconnect_personal_github
+
+        disconnect_personal_github()
         delete_account_record()
     except Exception as exc:
         raise AccountAuthError("OpenSRE could not clear all local account data.") from exc

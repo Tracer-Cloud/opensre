@@ -348,7 +348,7 @@ COMMANDS: list[SlashCommand] = [
         "/setup",
         "First-run setup: OpenSRE account, hosted model, then the interactive shell.",
         _cmd_setup,
-        usage=("/setup",),
+        usage=("/setup", "/setup --dev"),
     ),
     SlashCommand(
         "/onboard",

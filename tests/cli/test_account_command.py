@@ -213,6 +213,33 @@ def test_account_logout_preserves_manual_github_integration(
     assert store.get_integration("github") is not None
 
 
+def test_account_logout_removes_legacy_account_github_integration(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setattr(store, "STORE_PATH", tmp_path / "integrations.json")
+    store.upsert_integration(
+        "github",
+        {
+            "instances": [
+                {
+                    "name": "default",
+                    "tags": {"auth_source": "opensre_account"},
+                    "credentials": {"auth_token": "gho_legacy"},
+                }
+            ]
+        },
+    )
+    monkeypatch.setattr(account_auth, "load_account_record", lambda: None)
+    monkeypatch.setattr(account_auth, "stored_account_token", lambda: "")
+    monkeypatch.setattr(account_auth, "delete_account_token", lambda: None)
+    monkeypatch.setattr(account_auth, "delete_account_record", lambda: None)
+
+    result = account_auth.logout_account()
+
+    assert result.remote_revoked is True
+    assert store.get_integration("github") is None
+
+
 def test_logout_revokes_the_file_token_not_an_environment_override(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

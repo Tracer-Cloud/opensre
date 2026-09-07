@@ -36,6 +36,7 @@ _LAZY_EXPORTS: dict[str, str] = {
     "GitHubDeviceCode": "integrations.github.mcp_oauth",
     "GitHubDeviceFlowError": "integrations.github.mcp_oauth",
     "authorize_github_via_device_flow": "integrations.github.mcp_oauth",
+    "disconnect_personal_github": "integrations.github.personal_account",
 }
 
 
@@ -71,6 +72,7 @@ if TYPE_CHECKING:
         GitHubDeviceFlowError,
         authorize_github_via_device_flow,
     )
+    from integrations.github.personal_account import disconnect_personal_github
     from integrations.github.pull_requests import (
         ERR_GITHUB_TOKEN,
         GitHubPullRequestError,
@@ -96,6 +98,7 @@ __all__ = [
     "authenticate_and_configure_github",
     "authorize_github_via_device_flow",
     "build_github_mcp_config",
+    "disconnect_personal_github",
     "format_github_mcp_validation_cli_report",
     "github_creds",
     "github_integration_is_configured",
