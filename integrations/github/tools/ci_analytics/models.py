@@ -124,6 +124,8 @@ class MergedPullRequest:
     """owner/name of the head repository at merge time."""
 
     merged_at: datetime
+    commits: tuple[tuple[str, datetime], ...] = ()
+    """(sha, committed_at) in PR order, when the collector fetched them."""
 
 
 @dataclass(frozen=True)

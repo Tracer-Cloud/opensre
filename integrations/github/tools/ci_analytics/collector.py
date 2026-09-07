@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+from collections.abc import Sequence
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
@@ -25,6 +26,8 @@ _MAX_RERUN_WORKERS = 8
 # Each passing re-run costs up to attempt-1 extra requests; bound the total so
 # a very flaky repository cannot turn the demo into minutes of API calls.
 _MAX_ATTEMPT_LOOKUPS = 500
+_MAX_PR_COMMIT_PAGES = 3
+_PR_COMMIT_WORKERS = 6
 _DEFAULT_BRANCH_EVENTS = ("push", "schedule", "workflow_dispatch")
 _PR_EVENT = "pull_request"
 
@@ -90,6 +93,7 @@ def collect_runs(
         # Only PR reruns affect failure rate and blocked time; skip extra
         # attempt fetches on default-branch listings.
         pr_runs = _annotate_reruns(client, root, pr_future.result(), merged=merged, notices=notices)
+    merged = _with_pr_commits(client, root, merged, pr_runs)
     return CollectedRuns(
         default_branch=default_branch,
         branch_runs=branch_runs,
@@ -252,6 +256,68 @@ def _merged_pr(row: dict[str, Any], *, since: datetime) -> MergedPullRequest | N
     if not ref:
         return None
     return MergedPullRequest(number=number, branch=ref, head_repo=head_repo, merged_at=merged_at)
+
+
+def _with_pr_commits(
+    client: GitHubRestClient,
+    root: str,
+    merged: tuple[MergedPullRequest, ...],
+    pr_runs: Sequence[WorkflowRun],
+) -> tuple[MergedPullRequest, ...]:
+    """Attach commit timestamps so a skipped later push still ends a commit's wait."""
+    needed = _merged_needing_commits(merged, pr_runs)
+    if not needed:
+        return merged
+    commits_by_number: dict[int, tuple[tuple[str, datetime], ...]] = {}
+    with ThreadPoolExecutor(max_workers=min(_PR_COMMIT_WORKERS, len(needed))) as pool:
+        fetched = list(pool.map(lambda pr: _pr_commits(client, root, pr.number), needed))
+    for pr, commits in zip(needed, fetched, strict=True):
+        commits_by_number[pr.number] = commits
+    return tuple(replace(pr, commits=commits_by_number.get(pr.number, ())) for pr in merged)
+
+
+def _merged_needing_commits(
+    merged: Sequence[MergedPullRequest], pr_runs: Sequence[WorkflowRun]
+) -> list[MergedPullRequest]:
+    interesting = [run for run in pr_runs if run.failed or run.retried_to_green]
+    if not interesting:
+        return []
+    numbers = {number for run in interesting for number in run.pr_numbers}
+    branches = {(run.head_repo, run.branch) for run in interesting}
+    return [pr for pr in merged if pr.number in numbers or (pr.head_repo, pr.branch) in branches]
+
+
+def _pr_commits(
+    client: GitHubRestClient, root: str, number: int
+) -> tuple[tuple[str, datetime], ...]:
+    try:
+        rows = client.paginate(
+            f"{root}/pulls/{number}/commits",
+            params={"per_page": _PER_PAGE},
+            max_pages=_MAX_PR_COMMIT_PAGES,
+        )
+    except GitHubApiError:
+        return ()
+    parsed: list[tuple[str, datetime]] = []
+    for row in rows:
+        sha = str(row.get("sha") or "").strip()
+        commit = row.get("commit")
+        if not sha or not isinstance(commit, dict):
+            continue
+        when = _commit_timestamp(commit)
+        if when is not None:
+            parsed.append((sha, when))
+    return tuple(parsed)
+
+
+def _commit_timestamp(commit: dict[str, Any]) -> datetime | None:
+    for key in ("committer", "author"):
+        party = commit.get(key)
+        if isinstance(party, dict):
+            when = _timestamp(party.get("date"))
+            if when is not None:
+                return when
+    return None
 
 
 def parse_run(row: dict[str, Any]) -> WorkflowRun | None:

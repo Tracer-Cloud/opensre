@@ -378,6 +378,47 @@ def test_run_attached_to_several_prs_belongs_to_the_merged_one() -> None:
     assert report.blocked_minutes == 50.0
 
 
+def test_skipped_next_commit_caps_the_wait_before_merge() -> None:
+    # Arrange: commit "a" failed and was re-run a day later. Commit "b" was
+    # pushed at 30 minutes and skipped by path filters, so it has no workflow.
+    # The PR merged a day later.
+    merged = (
+        MergedPullRequest(
+            number=1,
+            branch="feat/x",
+            head_repo="",
+            merged_at=_T0 + timedelta(days=1),
+            commits=(("a", _T0), ("b", _T0 + timedelta(minutes=30))),
+        ),
+    )
+    pr_runs = [
+        _run(
+            1,
+            sha="a",
+            conclusion="success",
+            start_minutes=24 * 60,
+            queued_minutes=24 * 60,
+            attempt=2,
+            earlier_failure_started_at=_T0,
+        ),
+    ]
+
+    # Act
+    report = compute_report(
+        owner="o",
+        repo="r",
+        default_branch="main",
+        window_days=30,
+        branch_runs=[],
+        pr_runs=pr_runs,
+        merged_prs=merged,
+        now=_T0 + timedelta(days=2),
+    )
+
+    # Assert: expected green at 10, wait ends at the skipped push at 30, not merge.
+    assert report.blocked_minutes == 20.0
+
+
 def test_stale_rerun_after_the_merge_waits_only_until_the_merge() -> None:
     # Arrange: the failed run was re-run two days after the PR merged at day 1,
     # and no later commit of the PR triggered a workflow.
@@ -717,6 +758,36 @@ def test_rerun_budget_is_spent_on_merged_prs_first(monkeypatch: pytest.MonkeyPat
     assert by_id[5].retried_to_green is False
 
 
+def test_collect_runs_attaches_commit_times_for_merged_prs_with_failures() -> None:
+    now = datetime(2026, 9, 7, 18, 0, tzinfo=UTC)
+    row = _payload(6, created_at="2026-09-02T09:00:00Z", conclusion="failure", attempt=1)
+    pulls = [
+        {
+            "number": 42,
+            "merged_at": "2026-09-03T09:00:00Z",
+            "updated_at": "2026-09-03T09:00:00Z",
+            "head": {"ref": "feat/x", "repo": {"full_name": "o/r"}},
+        }
+    ]
+    commits = [
+        {"sha": "aaa", "commit": {"committer": {"date": "2026-09-02T09:00:00Z"}}},
+        {"sha": "bbb", "commit": {"committer": {"date": "2026-09-02T09:30:00Z"}}},
+    ]
+    client = _FakeGitHub(
+        repository={"default_branch": "main"},
+        runs=[row],
+        pulls=pulls,
+        pr_commits={42: commits},
+    )
+
+    collected = collect_runs(client, owner="o", repo="r", window_days=30, now=now)
+
+    assert collected.merged_prs[0].commits == (
+        ("aaa", datetime(2026, 9, 2, 9, 0, tzinfo=UTC)),
+        ("bbb", datetime(2026, 9, 2, 9, 30, tzinfo=UTC)),
+    )
+
+
 def test_rerun_on_a_reused_branch_does_not_take_merged_pr_priority(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -847,11 +918,13 @@ class _FakeGitHub:
         runs: list[dict[str, Any]],
         attempts: dict[tuple[int, int], dict[str, Any]] | None = None,
         pulls: list[dict[str, Any]] | None = None,
+        pr_commits: dict[int, list[dict[str, Any]]] | None = None,
     ) -> None:
         self._repository = repository
         self._runs = runs
         self._attempts = attempts or {}
         self._pulls = pulls or []
+        self._pr_commits = pr_commits or {}
         self.run_queries: list[dict[str, Any]] = []
 
     def request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
@@ -894,6 +967,9 @@ class _FakeGitHub:
             return self._runs_in(params or {})[:1000]
         if path == "/repos/o/r/pulls":
             return self._pulls
+        if path.startswith("/repos/o/r/pulls/") and path.endswith("/commits"):
+            number = int(path.rsplit("/", 2)[1])
+            return self._pr_commits.get(number, [])
         return []
 
 

@@ -86,10 +86,10 @@ def pull_request_delays(
     of its workflows first passed. A commit whose workflows never all passed
     is left out. The wait on a commit ends when the developer pushes the next
     commit of the PR or the PR merges, whichever comes first, so a stale
-    commit re-run later adds nothing. A next commit that triggered no PR
-    workflow is invisible here; the merge time still bounds the wait. The
-    delay intervals of a PR's commits are unioned so overlapping workflows
-    and re-runs are counted once.
+    commit re-run later adds nothing. A later commit that triggered no
+    workflow still cuts off the wait when its timestamp is known; otherwise
+    the merge time is the last bound. The delay intervals of a PR's commits
+    are unioned so overlapping workflows and re-runs are counted once.
     """
     identity = _PullRequestIdentity(merged_prs)
     affected: set[tuple[PullRequestKey, str]] = set()
@@ -105,7 +105,9 @@ def pull_request_delays(
     by_commit: dict[tuple[PullRequestKey, str], list[WorkflowRun]] = defaultdict(list)
     for run in pr_runs:
         by_commit[(identity.key(run), run.head_sha)].append(run)
-    next_push = _next_push_times(by_commit)
+    next_push = _next_push_times(
+        by_commit, extra_commits={pr.number: pr.commits for pr in merged_prs if pr.commits}
+    )
     intervals: dict[PullRequestKey, list[tuple[datetime, datetime]]] = defaultdict(list)
     for key, sha in affected:
         interval = _commit_delay(
@@ -173,11 +175,23 @@ def _earliest(*times: datetime | None) -> datetime | None:
 
 def _next_push_times(
     by_commit: dict[tuple[PullRequestKey, str], list[WorkflowRun]],
+    extra_commits: dict[int, Sequence[tuple[str, datetime]]] | None = None,
 ) -> dict[tuple[PullRequestKey, str], datetime]:
-    """For each commit, when the same PR's next commit was first queued."""
+    """For each commit, when the same PR's next commit landed.
+
+    Workflow-run queue times cover commits that triggered CI. ``extra_commits``
+    adds later SHAs that path filters skipped, so those still cut off the wait.
+    """
     queued: dict[PullRequestKey, list[tuple[datetime, str]]] = defaultdict(list)
     for (key, sha), runs in by_commit.items():
         queued[key].append((min(run.created_at for run in runs), sha))
+    extras = extra_commits or {}
+    for key, commits in queued.items():
+        known = {sha for _, sha in commits}
+        for sha, when in extras.get(key[2], ()):
+            if sha not in known:
+                commits.append((when, sha))
+                known.add(sha)
     next_push: dict[tuple[PullRequestKey, str], datetime] = {}
     for key, commits in queued.items():
         commits.sort()
@@ -269,9 +283,10 @@ def classify_failures(
     newer commit a source-code failure, and no later pass leaves it unresolved.
     Every delay subtracts the workflow's normal duration.
     """
+    merged_ids = {pr.number for pr in merged_prs}
     groups: dict[tuple[int | str, str, str, int], list[WorkflowRun]] = defaultdict(list)
     for run in pr_runs:
-        groups[_history_key(run)].append(run)
+        groups[_history_key(run, merged_ids)].append(run)
     classified: list[ClassifiedFailure] = []
     for (workflow_key, _head_repo, _branch, _pr), runs in groups.items():
         ordered = sorted(runs, key=lambda r: r.completed_at)
@@ -389,9 +404,12 @@ def _workflow_key(run: WorkflowRun) -> int | str:
     return run.workflow_id if run.workflow_id else run.workflow
 
 
-def _history_key(run: WorkflowRun) -> tuple[int | str, str, str, int]:
-    pr_number = run.pr_numbers[0] if run.pr_numbers else 0
-    return (_workflow_key(run), run.head_repo, run.branch, pr_number)
+def _history_key(run: WorkflowRun, merged_ids: set[int]) -> tuple[int | str, str, str, int]:
+    if run.pr_numbers:
+        number = next((n for n in run.pr_numbers if n in merged_ids), run.pr_numbers[0])
+    else:
+        number = 0
+    return (_workflow_key(run), run.head_repo, run.branch, number)
 
 
 def on_critical_path(run: WorkflowRun, merged: Sequence[MergedPullRequest]) -> bool:
