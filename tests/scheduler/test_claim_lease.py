@@ -6,7 +6,7 @@ import threading
 from collections.abc import Callable, Collection, Mapping
 from datetime import UTC, datetime, timedelta
 
-from infrastructure.scheduling.scheduler.claim_lease import ClaimLeaseManager
+from infrastructure.scheduling.scheduler.claim_lease import ClaimLeaseRenewer
 from infrastructure.scheduling.scheduler.storage import ExecutionClaim
 
 _SYNC_TIMEOUT_SECONDS = 5.0
@@ -47,8 +47,8 @@ def test_concurrent_claims_are_renewed_in_one_batch() -> None:
         expiry = datetime.now(UTC) + timedelta(seconds=1)
         return dict.fromkeys(batch, expiry)
 
-    manager = ClaimLeaseManager(renew=renew, renewal_interval_seconds=0.05)
-    with manager.hold(first) as first_ownership, manager.hold(second) as second_ownership:
+    renewer = ClaimLeaseRenewer(renew=renew, renewal_interval_seconds=0.05)
+    with renewer.hold(first) as first_ownership, renewer.hold(second) as second_ownership:
         assert renewed.wait(_SYNC_TIMEOUT_SECONDS)
         assert _wait_until(lambda: len(batches) >= 1)
         assert set(batches[0]) == {first, second}
@@ -68,8 +68,8 @@ def test_fenced_renewal_loses_only_the_rejected_claim() -> None:
         expiry = datetime.now(UTC) + timedelta(seconds=1)
         return {claim: expiry for claim in claims if claim == retained}
 
-    manager = ClaimLeaseManager(renew=renew, renewal_interval_seconds=0.01)
-    with manager.hold(rejected) as rejected_ownership, manager.hold(retained) as retained_ownership:
+    renewer = ClaimLeaseRenewer(renew=renew, renewal_interval_seconds=0.01)
+    with renewer.hold(rejected) as rejected_ownership, renewer.hold(retained) as retained_ownership:
         assert renewed.wait(_SYNC_TIMEOUT_SECONDS)
         assert _wait_until(lambda: not rejected_ownership.valid())
         assert retained_ownership.valid()
@@ -91,8 +91,8 @@ def test_transient_renewal_error_recovers_before_confirmed_deadline() -> None:
         expiry = datetime.now(UTC) + timedelta(seconds=1)
         return dict.fromkeys(claims, expiry)
 
-    manager = ClaimLeaseManager(renew=renew, renewal_interval_seconds=0.01)
-    with manager.hold(claim) as ownership:
+    renewer = ClaimLeaseRenewer(renew=renew, renewal_interval_seconds=0.01)
+    with renewer.hold(claim) as ownership:
         assert recovered.wait(_SYNC_TIMEOUT_SECONDS)
         assert attempts >= 2
         assert ownership.valid()
@@ -108,8 +108,8 @@ def test_persistent_renewal_error_expires_the_local_ownership() -> None:
         attempted.set()
         raise RuntimeError("database unavailable")
 
-    manager = ClaimLeaseManager(renew=renew, renewal_interval_seconds=0.01)
-    with manager.hold(claim) as ownership:
+    renewer = ClaimLeaseRenewer(renew=renew, renewal_interval_seconds=0.01)
+    with renewer.hold(claim) as ownership:
         assert attempted.wait(_SYNC_TIMEOUT_SECONDS)
         assert _wait_until(lambda: not ownership.valid())
 
@@ -125,8 +125,8 @@ def test_renewal_loop_stops_after_the_last_claim_exits() -> None:
         expiry = datetime.now(UTC) + timedelta(seconds=1)
         return dict.fromkeys(claims, expiry)
 
-    manager = ClaimLeaseManager(renew=renew, renewal_interval_seconds=0.01)
-    with manager.hold(claim):
+    renewer = ClaimLeaseRenewer(renew=renew, renewal_interval_seconds=0.01)
+    with renewer.hold(claim):
         assert renewed.wait(_SYNC_TIMEOUT_SECONDS)
 
-    assert _wait_until(lambda: manager._thread is None)  # noqa: SLF001
+    assert _wait_until(lambda: renewer._thread is None)  # noqa: SLF001

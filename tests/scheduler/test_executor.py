@@ -137,7 +137,7 @@ class TestExecutor:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from infrastructure.scheduling.scheduler.claim_lease import ClaimLeaseManager
+        from infrastructure.scheduling.scheduler.claim_lease import ClaimLeaseRenewer
 
         monkeypatch.setattr(run_store, "_CLAIM_LEASE_SECONDS", 0.1)
         renewed = threading.Event()
@@ -149,8 +149,8 @@ class TestExecutor:
                 renewed.set()
             return result
 
-        manager = ClaimLeaseManager(renew=renew, renewal_interval_seconds=0.02)
-        monkeypatch.setattr(scheduler_executor, "default_claim_lease_manager", manager)
+        renewer = ClaimLeaseRenewer(renew=renew, renewal_interval_seconds=0.02)
+        monkeypatch.setattr(scheduler_executor, "default_claim_lease_renewer", renewer)
         adapters = _install_fake_bundle()
         task = ScheduledTask(
             id="test_slow_execution_renewal",
@@ -192,7 +192,7 @@ class TestExecutor:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from infrastructure.scheduling.scheduler.claim_lease import ClaimLeaseManager
+        from infrastructure.scheduling.scheduler.claim_lease import ClaimLeaseRenewer
 
         monkeypatch.setattr(run_store, "_CLAIM_LEASE_SECONDS", 0.08)
         attempted = threading.Event()
@@ -201,8 +201,8 @@ class TestExecutor:
             attempted.set()
             raise sqlite3.OperationalError("database unavailable")
 
-        manager = ClaimLeaseManager(renew=unavailable, renewal_interval_seconds=0.01)
-        monkeypatch.setattr(scheduler_executor, "default_claim_lease_manager", manager)
+        renewer = ClaimLeaseRenewer(renew=unavailable, renewal_interval_seconds=0.01)
+        monkeypatch.setattr(scheduler_executor, "default_claim_lease_renewer", renewer)
         adapters = _install_fake_bundle()
         task = ScheduledTask(
             id="test_persistent_renewal_failure",
@@ -229,15 +229,15 @@ class TestExecutor:
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from infrastructure.scheduling.scheduler.claim_lease import ClaimLeaseManager
+        from infrastructure.scheduling.scheduler.claim_lease import ClaimLeaseRenewer
 
         monkeypatch.setattr(run_store, "_CLAIM_LEASE_SECONDS", 0.2)
 
         def unavailable(_claims: Any) -> Any:
             raise sqlite3.OperationalError("database unavailable")
 
-        manager = ClaimLeaseManager(renew=unavailable, renewal_interval_seconds=0.01)
-        monkeypatch.setattr(scheduler_executor, "default_claim_lease_manager", manager)
+        renewer = ClaimLeaseRenewer(renew=unavailable, renewal_interval_seconds=0.01)
+        monkeypatch.setattr(scheduler_executor, "default_claim_lease_renewer", renewer)
         adapter = _SlowFailingAdapter()
         _install_bundle({Provider.SLACK: adapter, Provider.TELEGRAM: adapter})
         task = ScheduledTask(

@@ -47,7 +47,7 @@ class ClaimOwnership:
             return not self._state.lost and self._monotonic() < self._state.confirmed_until
 
 
-class ClaimLeaseManager:
+class ClaimLeaseRenewer:
     """Renew every active process claim from one shared background loop."""
 
     def __init__(
@@ -189,7 +189,7 @@ class ClaimLeaseManager:
                 state.renew_at = min(state.confirmed_until, retry_at)
 
 
-default_claim_lease_manager = ClaimLeaseManager()
+default_claim_lease_renewer = ClaimLeaseRenewer()
 
 
-__all__ = ["ClaimLeaseManager", "ClaimOwnership", "default_claim_lease_manager"]
+__all__ = ["ClaimLeaseRenewer", "ClaimOwnership", "default_claim_lease_renewer"]

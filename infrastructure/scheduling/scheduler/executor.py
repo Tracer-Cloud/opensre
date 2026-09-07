@@ -7,7 +7,7 @@ from collections.abc import Callable
 
 from infrastructure.scheduling.scheduler.claim_lease import (
     ClaimOwnership,
-    default_claim_lease_manager,
+    default_claim_lease_renewer,
 )
 from infrastructure.scheduling.scheduler.delivery_bundle import resolve_delivery_adapter
 from infrastructure.scheduling.scheduler.delivery_plan import (
@@ -73,7 +73,7 @@ def execute_task(
         )
         return False
 
-    with default_claim_lease_manager.hold(claim) as ownership:
+    with default_claim_lease_renewer.hold(claim) as ownership:
         return _execute_claimed_task(claim, ownership, task, fire_time, runners)
 
 
