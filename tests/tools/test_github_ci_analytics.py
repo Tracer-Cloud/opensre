@@ -483,6 +483,48 @@ def test_rerun_budget_is_spent_on_merged_prs_first(monkeypatch: pytest.MonkeyPat
     assert by_id[5].retried_to_green is False
 
 
+def test_rerun_on_a_reused_branch_does_not_take_merged_pr_priority(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from integrations.github.tools.ci_analytics import collector
+
+    monkeypatch.setattr(collector, "_MAX_ATTEMPT_LOOKUPS", 1)
+    now = datetime(2026, 9, 7, 18, 0, tzinfo=UTC)
+    # feat/x was merged on the 3rd; this re-run on a reused feat/x is from the 5th.
+    reused = _payload(7, created_at="2026-09-05T09:00:00Z", attempt=2, branch="feat/x")
+    genuine = _payload(8, created_at="2026-09-02T09:00:00Z", attempt=2, branch="feat/y")
+    attempts = {
+        (7, 1): _payload(7, created_at=reused["created_at"], conclusion="failure", attempt=1),
+        (8, 1): _payload(8, created_at=genuine["created_at"], conclusion="failure", attempt=1),
+    }
+    pulls = [
+        {
+            "number": 42,
+            "merged_at": "2026-09-03T09:00:00Z",
+            "updated_at": "2026-09-03T09:00:00Z",
+            "head": {"ref": "feat/x", "repo": {"full_name": "o/r"}},
+        },
+        {
+            "number": 43,
+            "merged_at": "2026-09-04T09:00:00Z",
+            "updated_at": "2026-09-04T09:00:00Z",
+            "head": {"ref": "feat/y", "repo": {"full_name": "o/r"}},
+        },
+    ]
+    client = _FakeGitHub(
+        repository={"default_branch": "main"},
+        runs=[reused, genuine],
+        attempts=attempts,
+        pulls=pulls,
+    )
+
+    collected = collect_runs(client, owner="o", repo="r", window_days=30, now=now)
+
+    by_id = {run.run_id: run for run in collected.pr_runs}
+    assert by_id[8].retried_to_green is True
+    assert by_id[7].retried_to_green is False
+
+
 def test_collect_runs_reports_an_hour_that_still_exceeds_the_ceiling() -> None:
     now = datetime(2026, 9, 7, 18, 0, tzinfo=UTC)
     burst = now - timedelta(days=3)

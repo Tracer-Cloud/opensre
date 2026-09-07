@@ -10,6 +10,7 @@ from typing import Any
 from urllib.parse import quote
 
 from integrations.github.client import GitHubApiError, GitHubRestClient
+from integrations.github.tools.ci_analytics.metrics import on_critical_path
 from integrations.github.tools.ci_analytics.models import MergedPullRequest, WorkflowRun
 
 _PER_PAGE = 100
@@ -325,19 +326,12 @@ def _annotate_reruns(
     reruns = [run for run in runs if run.succeeded and run.attempt > 1]
     if not reruns:
         return runs
-    merged_numbers = {pr.number for pr in merged}
-    merged_branches = {(pr.head_repo, pr.branch) for pr in merged}
-
-    def on_merged_pr(run: WorkflowRun) -> bool:
-        if run.pr_numbers:
-            return any(number in merged_numbers for number in run.pr_numbers)
-        return (run.head_repo, run.branch) in merged_branches
-
+    # Same rule as the blocked-time metric, so priority and critical path agree.
     lookups = _AttemptLookups(_MAX_ATTEMPT_LOOKUPS)
     checked: dict[int, WorkflowRun] = {}
     for phase in (
-        [run for run in reruns if on_merged_pr(run)],
-        [run for run in reruns if not on_merged_pr(run)],
+        [run for run in reruns if on_critical_path(run, merged)],
+        [run for run in reruns if not on_critical_path(run, merged)],
     ):
         if not phase:
             continue

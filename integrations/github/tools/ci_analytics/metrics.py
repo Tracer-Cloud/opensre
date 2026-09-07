@@ -110,7 +110,7 @@ def classify_failures(
                         recovery=run,
                         kind=FailureKind.RELIABILITY,
                         delay_minutes=max(0.0, elapsed - normal_minutes.get(workflow_key, 0.0)),
-                        critical_path=_on_critical_path(run, merged_prs),
+                        critical_path=on_critical_path(run, merged_prs),
                     )
                 )
                 continue
@@ -133,7 +133,7 @@ def classify_failures(
                     recovery=recovery,
                     kind=kind,
                     delay_minutes=delay,
-                    critical_path=_on_critical_path(run, merged_prs),
+                    critical_path=on_critical_path(run, merged_prs),
                 )
             )
     return sorted(classified, key=lambda c: c.failure.completed_at)
@@ -219,7 +219,13 @@ def _history_key(run: WorkflowRun) -> tuple[int | str, str, str, int]:
     return (_workflow_key(run), run.head_repo, run.branch, pr_number)
 
 
-def _on_critical_path(run: WorkflowRun, merged: Sequence[MergedPullRequest]) -> bool:
+def on_critical_path(run: WorkflowRun, merged: Sequence[MergedPullRequest]) -> bool:
+    """True when the run belongs to a PR merged inside the window, after the run was created.
+
+    A PR number is decisive when GitHub attached one; otherwise the head
+    repository and branch must match a PR merged later than the run, so a
+    reused branch name does not inherit an earlier merge.
+    """
     if run.pr_numbers:
         merged_ids = {pr.number for pr in merged}
         return any(number in merged_ids for number in run.pr_numbers)
@@ -231,6 +237,7 @@ def _on_critical_path(run: WorkflowRun, merged: Sequence[MergedPullRequest]) -> 
 
 __all__ = [
     "classify_failures",
+    "on_critical_path",
     "compute_report",
     "find_outages",
     "normal_minutes",
