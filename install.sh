@@ -799,6 +799,10 @@ clear_macos_quarantine() {
   xattr -dr com.apple.quarantine "$target_path" >/dev/null 2>&1 || true
 }
 
+macos_binary_is_developer_id_signed() {
+  codesign -dv "$1" 2>&1 | grep -q 'Authority=Developer ID Application'
+}
+
 resign_macos_onedir_adhoc() {
   local binary_path="$1"
   local bundle_dir
@@ -812,6 +816,11 @@ resign_macos_onedir_adhoc() {
   [ -f "$binary_path" ] || return 0
   bundle_dir="$(cd "$(dirname "$binary_path")" && pwd)"
   clear_macos_quarantine "$bundle_dir"
+  # A Developer ID signed (notarized) bundle keeps its signature: re-signing
+  # ad-hoc would throw away the notarization and the trust that comes with it.
+  if macos_binary_is_developer_id_signed "$binary_path"; then
+    return 0
+  fi
   # Nested libs are independent; parallelize with a small cap so large hosts
   # do not stampede the disk. The main binary stays serial and last.
   jobs="$(sysctl -n hw.ncpu 2>/dev/null || printf '4')"

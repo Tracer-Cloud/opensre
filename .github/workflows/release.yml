@@ -367,22 +367,69 @@ jobs:
             exit 1
           fi
 
-      - name: Re-sign macOS onedir after post-build mutations
+      - name: Import Developer ID certificate (macOS)
+        if: runner.os == 'macOS' && matrix.pyinstaller_mode == 'onedir'
+        shell: bash
+        env:
+          APPLE_DEVELOPER_ID_P12: ${{ secrets.APPLE_DEVELOPER_ID_P12 }}
+          APPLE_DEVELOPER_ID_P12_PASSWORD: ${{ secrets.APPLE_DEVELOPER_ID_P12_PASSWORD }}
+        run: |
+          set -euo pipefail
+          # Without the certificate secrets (forks, local dry runs) the build
+          # stays ad-hoc signed; MACOS_SIGN_IDENTITY is then "-".
+          if [ -z "${APPLE_DEVELOPER_ID_P12:-}" ]; then
+            echo "MACOS_SIGN_IDENTITY=-" >> "$GITHUB_ENV"
+            echo "No Developer ID certificate in secrets; the bundle will be ad-hoc signed"
+            exit 0
+          fi
+          KEYCHAIN="$RUNNER_TEMP/signing.keychain-db"
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          P12="$RUNNER_TEMP/developer-id.p12"
+          printf '%s' "$APPLE_DEVELOPER_ID_P12" | base64 --decode > "$P12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$P12" -P "$APPLE_DEVELOPER_ID_P12_PASSWORD" -A \
+            -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s \
+            -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          security list-keychain -d user -s "$KEYCHAIN" login.keychain-db
+          rm -f "$P12"
+          IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" \
+            | sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -n 1)"
+          if [ -z "$IDENTITY" ]; then
+            echo "::error::The imported certificate is not a Developer ID Application identity" >&2
+            exit 1
+          fi
+          echo "MACOS_SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
+          echo "MACOS_SIGN_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
+          echo "Signing with: $IDENTITY"
+
+      - name: Sign macOS onedir
         if: runner.os == 'macOS' && matrix.pyinstaller_mode == 'onedir'
         shell: bash
         run: |
           set -euo pipefail
           # Replacing/rewriting bundled dylibs (libssl align) invalidates the
-          # adhoc signature PyInstaller applied. Consumer Macs then SIGKILL the
-          # binary on first exec (exit 137, CODESIGNING / Invalid Page) even when
-          # CI runners still let --version through. Sign nested libs first, then
-          # the main binary — ``codesign --deep`` on the directory fails with
+          # signature PyInstaller applied. Consumer Macs then SIGKILL the binary
+          # on first exec (exit 137, CODESIGNING / Invalid Page) even when CI
+          # runners still let --version through. Sign nested libs first, then
+          # the main binary; ``codesign --deep`` on the directory fails with
           # "invalid resource directory" for this PyInstaller layout.
+          #
+          # With a Developer ID identity every Mach-O gets a hardened-runtime,
+          # timestamped signature so the bundle can be notarized; the
+          # entitlements are the exceptions a frozen CPython needs. With "-"
+          # (no certificate) the same steps produce an ad-hoc signature.
           APP_DIR="./dist/opensre"
           APP_BIN="${APP_DIR}/opensre"
           if [ ! -f "$APP_BIN" ]; then
-            echo "No onedir binary at ${APP_BIN}; skip re-sign"
+            echo "No onedir binary at ${APP_BIN}; skip signing"
             exit 0
+          fi
+          SIGN=(codesign --force --sign "$MACOS_SIGN_IDENTITY")
+          if [ "$MACOS_SIGN_IDENTITY" != "-" ]; then
+            SIGN+=(--options runtime --timestamp --entitlements packaging/macos/opensre.entitlements)
           fi
           # Nested libs are independent — parallelize with a small cap, then
           # sign the main binary last (same order as install.sh).
@@ -394,10 +441,11 @@ jobs:
             JOBS=1
           fi
           find "$APP_DIR" -type f \( -name '*.dylib' -o -name '*.so' -o -name '*.so.*' \) -print0 \
-            | xargs -0 -P "$JOBS" -n 1 codesign --force --sign -
-          codesign --force --sign - "$APP_BIN"
+            | xargs -0 -P "$JOBS" -n 1 "${SIGN[@]}"
+          "${SIGN[@]}" "$APP_BIN"
           codesign --verify --strict "$APP_BIN"
-          echo "Re-signed onedir libs + ${APP_BIN} (adhoc) after post-build mutations"
+          codesign -dv "$APP_BIN" 2>&1 | grep -E '^(Authority|Signature|CodeDirectory)' || true
+          echo "Signed onedir libs + ${APP_BIN} with identity: ${MACOS_SIGN_IDENTITY}"
 
       - name: Smoke test binary (Unix)
         if: runner.os != 'Windows'
@@ -480,6 +528,35 @@ jobs:
           }
           & ".\dist\${{ matrix.binary_name }}" -h | Out-Null
           & ".\dist\${{ matrix.binary_name }}" _package-smoke
+
+      - name: Notarize macOS onedir
+        if: runner.os == 'macOS' && matrix.pyinstaller_mode == 'onedir'
+        shell: bash
+        env:
+          APPLE_NOTARY_KEY_ID: ${{ secrets.APPLE_NOTARY_KEY_ID }}
+          APPLE_NOTARY_ISSUER_ID: ${{ secrets.APPLE_NOTARY_ISSUER_ID }}
+          APPLE_NOTARY_KEY_P8: ${{ secrets.APPLE_NOTARY_KEY_P8 }}
+        run: |
+          set -euo pipefail
+          if [ "${MACOS_SIGN_IDENTITY:--}" = "-" ]; then
+            echo "Ad-hoc signed bundle; nothing to notarize"
+            exit 0
+          fi
+          if [ -z "${APPLE_NOTARY_KEY_P8:-}" ]; then
+            echo "::error::Developer ID signing is configured but the notary API key secrets are missing" >&2
+            exit 1
+          fi
+          # notarytool takes a zip, dmg or pkg; the release asset stays the
+          # tar.gz packaged below. A folder cannot be stapled, so Gatekeeper
+          # fetches the ticket online the first time the bundle runs on a Mac.
+          KEY="$RUNNER_TEMP/notary-key.p8"
+          printf '%s' "$APPLE_NOTARY_KEY_P8" | base64 --decode > "$KEY"
+          ditto -c -k --keepParent dist/opensre "$RUNNER_TEMP/opensre-notarize.zip"
+          xcrun notarytool submit "$RUNNER_TEMP/opensre-notarize.zip" \
+            --key "$KEY" --key-id "$APPLE_NOTARY_KEY_ID" --issuer "$APPLE_NOTARY_ISSUER_ID" \
+            --wait --timeout 45m
+          rm -f "$KEY" "$RUNNER_TEMP/opensre-notarize.zip"
+          echo "Notarized dist/opensre"
 
       - name: Package binary archive (Unix)
         if: runner.os != 'Windows'
