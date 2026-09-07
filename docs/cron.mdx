@@ -134,6 +134,10 @@ that missed it. A run is `failed` only when every destination failed.
 Start the blocking scheduler daemon. Loads all enabled tasks and fires them
 according to their cron schedules. Blocks until `SIGINT` or `SIGTERM`.
 
+To keep it running without a terminal, `/loops service install` in the shell
+registers a per-user service (launchd on macOS, systemd on Linux) that runs
+`opensre cron start --service` at login; `/loops service remove` deletes it.
+
 ## Cron Syntax
 
 Standard 5-field cron expressions:

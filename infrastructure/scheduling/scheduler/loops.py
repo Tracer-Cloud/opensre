@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import re
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -22,6 +23,8 @@ from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_DESCRIPTION_PARAM,
     LOOP_GROUP_ID_PARAM,
     LOOP_PROMPT_PARAM,
+    LOOP_REPORT_ARGS_PARAM,
+    LOOP_REPORT_PARAM,
     LOOP_SLACK_CHAT_ID_PARAM,
     LOOP_SLUG_PARAM,
     LOOP_SOURCE_PARAM,
@@ -307,8 +310,15 @@ def create_manual_loop(
     slack_chat_id: str = "",
     window_hours: int = 24,
     store_path: Path | None = None,
+    report: str = "",
+    report_args: Mapping[str, str] | None = None,
 ) -> ManualLoop:
-    """Create an active recurring prompt loop."""
+    """Create an active recurring prompt loop.
+
+    ``report`` names a deterministic report builder the runner uses instead
+    of a model turn; ``prompt`` then documents the loop and is the fallback
+    when the builder is not installed.
+    """
     loop_prompt = prompt.strip()
     if not loop_prompt:
         raise ValueError("prompt is required")
@@ -338,6 +348,9 @@ def create_manual_loop(
     time_label = loop_time_label(cron_expr)
     if time_label:
         params[LOOP_TIME_PARAM] = time_label
+    if report.strip():
+        params[LOOP_REPORT_PARAM] = report.strip()
+        params[LOOP_REPORT_ARGS_PARAM] = json.dumps(dict(report_args or {}), sort_keys=True)
     if telegram_chat_id.strip():
         params[LOOP_TELEGRAM_CHAT_ID_PARAM] = telegram_chat_id.strip()
     if slack_chat_id.strip():

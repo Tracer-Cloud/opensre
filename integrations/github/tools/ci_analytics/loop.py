@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import json
+from collections.abc import Mapping
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
+from config.constants.paths import OPENSRE_HOME_DIR
 from config.runtime_metadata.probes import local_tz_name
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_PROMPT_PARAM
 from infrastructure.scheduling.scheduler.loops import (
@@ -19,6 +23,10 @@ from infrastructure.scheduling.scheduler.types import Provider, TaskKind
 
 DEFAULT_LOOP_TIME = "08:00"
 LOOP_WINDOW_DAYS = 7
+REPORT_NAME = "github_ci_reliability"
+"""Builder name the manual-loop runner maps to :func:`build_report`."""
+
+SNAPSHOT_DIRNAME = "ci_reliability_reports"
 _LOCAL_CHANNEL = Provider.INTERACTIVE_SHELL.value
 
 
@@ -93,8 +101,68 @@ def schedule_ci_reliability_loop(
         weekdays=weekdays,
         channels=(_LOCAL_CHANNEL,),
         store_path=store_path,
+        report=REPORT_NAME,
+        report_args={"owner": owner, "repo": repo, "days": str(LOOP_WINDOW_DAYS)},
     )
     return ScheduledLoop(loop=created, reused=False)
+
+
+def build_report(args: Mapping[str, str], *, snapshot_dir: Path | None = None) -> str:
+    """Deterministic loop tick: read GitHub, render the report, keep the raw figures on disk.
+
+    No model is involved, so every delivery carries the analytics header and
+    the numbers can be traced back to the JSON snapshot named at the end.
+    Raises ``RuntimeError`` with a generic message when GitHub cannot be read.
+    """
+    from integrations.github.client import GitHubApiError, GitHubRestClient, resolve_github_token
+    from integrations.github.tools.ci_analytics.collector import collect_runs
+    from integrations.github.tools.ci_analytics.metrics import compute_report
+    from integrations.github.tools.ci_analytics.render import headline, render_markdown
+    from integrations.github.tools.ci_analytics.tool import report_payload
+
+    owner = args.get("owner", "").strip()
+    repo = args.get("repo", "").strip()
+    days = int(args.get("days", LOOP_WINDOW_DAYS) or LOOP_WINDOW_DAYS)
+    if not owner or not repo:
+        raise RuntimeError("The CI reliability loop needs owner and repo.")
+    token = resolve_github_token(None)
+    if not token:
+        raise RuntimeError(
+            f"No GitHub token to read {owner}/{repo}; run `opensre integrations setup github`."
+        )
+    now = datetime.now(UTC)
+    try:
+        collected = collect_runs(
+            GitHubRestClient(token), owner=owner, repo=repo, window_days=days, now=now
+        )
+    except (GitHubApiError, ValueError) as exc:
+        raise RuntimeError(f"Could not read the GitHub Actions history of {owner}/{repo}.") from exc
+    report = compute_report(
+        owner=owner,
+        repo=repo,
+        default_branch=collected.default_branch,
+        window_days=days,
+        branch_runs=collected.branch_runs,
+        pr_runs=collected.pr_runs,
+        merged_prs=collected.merged_prs,
+        now=now,
+        coverage_notices=collected.coverage_notices,
+    )
+    snapshot = _write_snapshot(
+        snapshot_dir or OPENSRE_HOME_DIR / SNAPSHOT_DIRNAME,
+        owner,
+        repo,
+        now,
+        {"generated_at": now.isoformat(), "headline": headline(report), **report_payload(report)},
+    )
+    return "\n".join([render_markdown(report), "", headline(report), "", f"Raw data: {snapshot}"])
+
+
+def _write_snapshot(root: Path, owner: str, repo: str, now: datetime, payload: dict) -> Path:
+    target = root / f"{owner}-{repo}" / f"{now:%Y-%m-%dT%H%M%SZ}.json"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(json.dumps(payload, indent=2, sort_keys=True, default=str), encoding="utf-8")
+    return target
 
 
 def local_timezone() -> str:
@@ -126,7 +194,10 @@ def loop_card(scheduled: ScheduledLoop) -> list[str]:
 __all__ = [
     "DEFAULT_LOOP_TIME",
     "LOOP_WINDOW_DAYS",
+    "REPORT_NAME",
+    "SNAPSHOT_DIRNAME",
     "ScheduledLoop",
+    "build_report",
     "local_timezone",
     "loop_card",
     "loop_name",

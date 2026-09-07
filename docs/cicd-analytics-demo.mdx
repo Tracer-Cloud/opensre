@@ -57,7 +57,7 @@ wait per blocked PR, and the longest wait with its PR.
 
 ## The CI reliability agent
 
-Pick "Set up an agent that improves CI/CD reliability over time" from `/demo`
+Pick "Set up an agent that reports CI/CD reliability every weekday" from `/demo`
 to schedule the same analysis as a recurring check. The demo scans your
 machine, asks which repository to watch and when to run (weekdays at 08:00
 local time is the default), creates the loop, runs it once, and shows the
@@ -66,8 +66,15 @@ first report. Every run analyzes the last 7 days.
 - Reports land in this shell's inbox: `/loops messages`. The loop never posts
   to Slack or any chat channel, even when those integrations are configured.
 - Manage it with `/loops list`, `/loops stop <id>`, and `/loops delete <id>`.
-- The loop fires while the shell is open. To run it when the shell is closed,
-  start the scheduler with `opensre cron start` or run the gateway.
+- Each run is deterministic: no model turn sits between the schedule and the
+  report, and the raw figures are saved as JSON next to the report path named
+  at the end of every delivery, under `~/.opensre/ci_reliability_reports/`.
+- The loop fires while the shell is open. To keep it running when the shell is
+  closed, pick "Keep it running when this shell is closed" at the end of the
+  demo or run `/loops service install`; it installs a per-user service (launchd
+  on macOS, systemd on Linux) that starts at login. `/loops service remove`
+  deletes it. Windows is not supported yet; run `opensre cron start --service`
+  from Task Scheduler instead.
 - Running the demo again for the same repository reuses the existing loop.
 
 ## Limits

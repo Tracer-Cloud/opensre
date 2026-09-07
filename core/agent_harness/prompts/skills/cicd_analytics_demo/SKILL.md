@@ -81,14 +81,15 @@ headers [3/4] and [4/4] only.
 4) Offer what to do next.
    Call `ask_user_choice` with title `What would you like to do next?` and
    these exact options:
-   - `Set up an agent that improves CI/CD reliability over time`
+   - `Set up an agent that reports CI/CD reliability every weekday`
    - `Connect OpenSRE to Slack and hand off DevOps chores for your team`
    - `Exit demo`
    WAIT for the answer. On the first option, call
    `schedule_ci_reliability_loop(owner="<owner>", repo="<repo>")` for the
    analyzed repository, output its `response_text` verbatim, and stop; it
    schedules a weekday 08:00 local check that delivers to this shell's inbox
-   and never posts anywhere else. On the second, check Slack with the CLI tool
+   and never posts anywhere else. Each tick is deterministic (no model turn);
+   `/loops service install` keeps it running when no shell is open. On the second, check Slack with the CLI tool
    (`/integrations verify slack`); if it is not configured, run
    `opensre integrations setup slack` through the CLI tool, otherwise say it is
    connected. Then explain in two sentences how to hand off a chore from Slack

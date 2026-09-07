@@ -221,6 +221,15 @@ def _scheduled_stub(owner: str, repo: str) -> object:
     return ScheduledLoop(loop=loop, reused=False)
 
 
+def _service_state_factory(*, installed: bool, supported: bool = True) -> object:
+    from infrastructure.scheduling.scheduler.background_service import BackgroundServiceState
+
+    def state() -> BackgroundServiceState:
+        return BackgroundServiceState("Darwin", supported, installed, None, None)
+
+    return state
+
+
 def _agent_demo_ready(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> list[dict[str, object]]:
     """Fake the scheduler side of the agent demo; returns the schedule calls made."""
     from infrastructure.scheduling.scheduler.local_delivery import LocalLoopMessage
@@ -246,6 +255,9 @@ def _agent_demo_ready(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> list[d
         ]
 
     monkeypatch.setattr(demo_picker, "schedule_ci_reliability_loop", schedule)
+    monkeypatch.setattr(
+        demo_picker, "background_service_state", _service_state_factory(installed=True)
+    )
     monkeypatch.setattr(demo_picker, "local_timezone", lambda: "UTC")
     monkeypatch.setattr(demo_picker, "reload_loop_scheduler", lambda: 1)
     monkeypatch.setattr(demo_picker, "run_loop_now", lambda _task_id: True)
@@ -314,6 +326,40 @@ def test_agent_demo_warns_when_the_first_pass_skipped_the_analysis(
     output = " ".join(buf.getvalue().split())
     assert "Report unavailable" not in output
     assert "/loops run loop1" in output
+
+
+def test_agent_demo_offers_the_background_service_and_installs_it(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Arrange: no service yet; the user picks it, then exits.
+    from infrastructure.scheduling.scheduler.background_service import BackgroundServiceState
+
+    _agent_demo_ready(monkeypatch, tmp_path)
+    monkeypatch.setattr(
+        demo_picker, "background_service_state", _service_state_factory(installed=False)
+    )
+    installs: list[bool] = []
+
+    def install() -> BackgroundServiceState:
+        installs.append(True)
+        return BackgroundServiceState("Darwin", True, True, tmp_path / "unit", tmp_path / "log")
+
+    monkeypatch.setattr(demo_picker, "install_background_service", install)
+    menus = _answers(
+        monkeypatch, demo_picker.OPTION_CI_AGENT, "me/mine", "weekdays", "service", "exit"
+    )
+    session = Session()
+    console, buf = _capture()
+
+    # Act
+    demo_picker.offer_demo(session, console)
+
+    # Assert: the service row led the menu, the install ran once, then the menu came back.
+    first_next = [value for value, _label in menus[3]["choices"]]
+    assert first_next[0] == "service"
+    assert installs == [True]
+    assert "Background scheduler installed" in " ".join(buf.getvalue().split())
+    assert menus[4]["title"] == "What would you like to do next?"
 
 
 def test_agent_demo_hands_off_to_the_slack_demo_when_chosen(

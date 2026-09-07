@@ -2,12 +2,24 @@
 
 from __future__ import annotations
 
+import importlib
+import json
 import logging
+from collections.abc import Callable, Mapping
 
 from core.agent_harness import AgentSession
 from infrastructure.scheduling.scheduler.agent_runner import AgentPayload
+from infrastructure.scheduling.scheduler.loop_constants import (
+    LOOP_REPORT_ARGS_PARAM,
+    LOOP_REPORT_PARAM,
+)
 
 logger = logging.getLogger(__name__)
+
+#: Report builder name -> "module:function" producing the report text from string args.
+REPORT_BUILDERS: dict[str, str] = {
+    "github_ci_reliability": "integrations.github.tools.ci_analytics.loop:build_report",
+}
 
 _MANUAL_LOOP_INSTRUCTIONS = """Scheduled report loop.
 
@@ -34,8 +46,30 @@ def build_manual_loop_prompt(payload: AgentPayload) -> str:
     return f"{_MANUAL_LOOP_INSTRUCTIONS}\nLoop name: {name}\n\nReport request:\n{prompt}"
 
 
+def report_builder(payload: AgentPayload) -> Callable[[Mapping[str, str]], str] | None:
+    """The deterministic builder a loop names, or None when it runs as a model turn."""
+    name = str(payload.get(LOOP_REPORT_PARAM) or "").strip()
+    target = REPORT_BUILDERS.get(name)
+    if target is None:
+        return None
+    module_path, _, attribute = target.partition(":")
+    builder = getattr(importlib.import_module(module_path), attribute)
+    return builder  # type: ignore[no-any-return]
+
+
+def _report_args(payload: AgentPayload) -> dict[str, str]:
+    raw = payload.get(LOOP_REPORT_ARGS_PARAM) or "{}"
+    parsed = json.loads(raw) if isinstance(raw, str) else raw
+    if not isinstance(parsed, dict):
+        raise RuntimeError("Manual loop report arguments must be a JSON object.")
+    return {str(key): str(value) for key, value in parsed.items()}
+
+
 def run_manual_prompt_loop(payload: AgentPayload) -> str:
-    """Run one headless turn that produces only the requested report body."""
+    """Produce the loop's report: a deterministic builder when it names one, else one model turn."""
+    builder = report_builder(payload)
+    if builder is not None:
+        return builder(_report_args(payload))
     message = build_manual_loop_prompt(payload)
     result = AgentSession.run_headless_turn(
         message,
@@ -48,4 +82,9 @@ def run_manual_prompt_loop(payload: AgentPayload) -> str:
     return report
 
 
-__all__ = ["build_manual_loop_prompt", "run_manual_prompt_loop"]
+__all__ = [
+    "REPORT_BUILDERS",
+    "build_manual_loop_prompt",
+    "report_builder",
+    "run_manual_prompt_loop",
+]

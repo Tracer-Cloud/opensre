@@ -32,6 +32,7 @@ _LOOPS_FIRST_ARGS: tuple[tuple[str, str], ...] = (
     ("delete", "remove a loop permanently"),
     ("next", "debug one loop's next fire time"),
     ("messages", "local interactive-shell loop inbox"),
+    ("service", "background scheduler service: status, install, remove"),
 )
 
 _USAGE = (
@@ -44,6 +45,7 @@ _USAGE = (
     "/loops delete LOOP_ID",
     "/loops next LOOP_ID",
     "/loops messages [--limit N]",
+    "/loops service [install|remove]",
 )
 
 
@@ -176,6 +178,7 @@ def _validate_loops_args(args: list[str]) -> str | None:
         "remove",
         "resume",
         "run",
+        "service",
         "start",
         "stop",
     }:
@@ -202,6 +205,8 @@ def _cmd_loops(session: Session, console: Console, args: list[str]) -> bool:
         return _cmd_loops_next(session, console, rest)
     if sub in {"messages", "inbox"}:
         return _cmd_loops_messages(session, console, rest)
+    if sub == "service":
+        return _cmd_loops_service(session, console, rest)
 
     console.print(_loops_usage_error())
     return True
@@ -423,6 +428,33 @@ def _cmd_loops_messages(session: Session, console: Console, args: list[str]) -> 
             escape(_short(message.message)),
         )
     print_repl_table(console, table)
+    return True
+
+
+def _cmd_loops_service(session: Session, console: Console, args: list[str]) -> bool:  # noqa: ARG001
+    from infrastructure.scheduling.scheduler.background_service import (
+        background_service_state,
+        install_background_service,
+        remove_background_service,
+    )
+
+    action = args[0].lower() if args else "status"
+    try:
+        if action == "install":
+            state = install_background_service()
+        elif action == "remove":
+            state = remove_background_service()
+        elif action == "status":
+            state = background_service_state()
+        else:
+            console.print(f"[{ERROR}]usage:[/] /loops service [install|remove]")
+            return True
+    except RuntimeError as exc:
+        console.print(f"[{ERROR}]service change failed:[/] {escape(str(exc))}")
+        return True
+    console.print(escape(state.summary))
+    if state.installed and state.log_path is not None:
+        console.print(f"  [{DIM}]log:[/] {escape(str(state.log_path))}")
     return True
 
 

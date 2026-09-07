@@ -102,7 +102,8 @@ def _map_evidence(evidence: dict[str, Any], output: dict[str, Any], _input: dict
         )
 
 
-def _payload(report: CiAnalyticsReport) -> dict[str, Any]:
+def report_payload(report: CiAnalyticsReport) -> dict[str, Any]:
+    """The report's figures as plain JSON-ready values."""
     return {
         "executions": report.executions,
         "pr_executions": report.pr_executions,
@@ -313,7 +314,7 @@ def analyze_github_ci_reliability(
             "coverage_notices": list(report.coverage_notices),
             "response_text": summary,
         }
-    return {**base, **_payload(report), "response_text": render_markdown(report)}
+    return {**base, **report_payload(report), "response_text": render_markdown(report)}
 
 
 __all__ = ["TOOL_NAME", "analyze_github_ci_reliability"]

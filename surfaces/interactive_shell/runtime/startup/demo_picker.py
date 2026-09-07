@@ -37,6 +37,10 @@ from infrastructure.analytics.capture import (
     capture_onboarding_demo_skipped,
 )
 from infrastructure.analytics.source import is_test_run
+from infrastructure.scheduling.scheduler.background_service import (
+    background_service_state,
+    install_background_service,
+)
 from infrastructure.scheduling.scheduler.local_delivery import get_loop_messages
 from infrastructure.scheduling.scheduler.loops import parse_loop_time
 from infrastructure.terminal.theme import DIM, WARNING
@@ -100,9 +104,17 @@ _LOOP_FIRST_PASS_FAILED = (
     "Retry with `/loops run {task_id}` or check `/cron logs {task_id}`."
 )
 _NEXT_TITLE = "What would you like to do next?"
+_NEXT_SERVICE = "service"
+_NEXT_SERVICE_LABEL = (
+    "Keep it running when this shell is closed (installs a background scheduler service)"
+)
 _NEXT_SLACK = "slack"
 _NEXT_EXIT = "exit"
 _NEXT_EXIT_LABEL = "Exit demo"
+_SERVICE_INSTALLED = (
+    "Background scheduler installed. It starts at login and runs every loop on this machine; "
+    "remove it with /loops service remove."
+)
 _DEMO_EXITED = "Demo exited. Run /demo any time to pick another one."
 
 OPTION_CI_ANALYTICS = "ci_analytics"
@@ -136,7 +148,7 @@ DEMO_SUGGESTIONS: tuple[DemoSuggestion, ...] = (
     ),
     DemoSuggestion(
         option=OPTION_CI_AGENT,
-        label="Set up an agent that improves CI/CD reliability over time",
+        label="Set up an agent that reports CI/CD reliability every weekday",
     ),
     DemoSuggestion(
         option=OPTION_SLACK,
@@ -343,21 +355,37 @@ def _run_first_pass(console: Console | None, task_id: str, *, owner: str, repo: 
 
 
 def _offer_after_loop(session: Session, console: Console | None) -> bool:
-    """Offer the Slack demo as the next step; ``True`` when its prompt was queued."""
+    """Offer the background service and the Slack demo; ``True`` when a prompt was queued."""
     slack = _suggestion_for(OPTION_SLACK)
     assert slack is not None
+    choices = [(_NEXT_SLACK, slack.label), (_NEXT_EXIT, _NEXT_EXIT_LABEL)]
+    service = background_service_state()
+    if service.supported and not service.installed:
+        choices.insert(0, (_NEXT_SERVICE, _NEXT_SERVICE_LABEL))
     selected = repl_choose_one(
-        title=_NEXT_TITLE,
-        choices=[(_NEXT_SLACK, slack.label), (_NEXT_EXIT, _NEXT_EXIT_LABEL)],
-        letter_keys=True,
-        header=_MENU_HEADER,
+        title=_NEXT_TITLE, choices=choices, letter_keys=True, header=_MENU_HEADER
     )
+    if selected == _NEXT_SERVICE:
+        _install_service(console)
+        return _offer_after_loop(session, console)
     if selected == _NEXT_SLACK:
         session.terminal.set_auto_command(slack.prompt)
         return True
     if console is not None:
         render_note_block(console, _DEMO_EXITED)
     return False
+
+
+def _install_service(console: Console | None) -> None:
+    try:
+        state = install_background_service()
+    except RuntimeError as exc:
+        _warn(console, f"Could not install the background scheduler: {exc}")
+        return
+    if console is not None:
+        render_note_block(console, _SERVICE_INSTALLED)
+        console.print(reply_gutter(Text(f"Log: {state.log_path}"), lead=False))
+        console.print()
 
 
 def choose_repository(snapshot: WorkspaceSnapshot, *, title: str = _REPOSITORY_TITLE) -> str | None:
