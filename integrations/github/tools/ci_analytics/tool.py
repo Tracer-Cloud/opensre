@@ -239,21 +239,27 @@ def analyze_github_ci_reliability(
     )
     console = _console(context)
     rendered = console is not None
-    if rendered:
-        render_report(console, report)
-    return {
+    base = {
         "source": _SOURCE,
         "success": True,
         "owner": repo_owner,
         "repo": repo_name,
         "default_branch": collected.default_branch,
         "window_days": window,
-        **_payload(report),
         "summary": summary,
         "headline": headline(report),
         "rendered_in_shell": rendered,
-        "response_text": summary if rendered else render_markdown(report),
     }
+    if rendered:
+        # The shell already shows every figure; handing the raw numbers back
+        # as well only invites the model to retype them, so they stay out.
+        render_report(console, report)
+        return {
+            **base,
+            "coverage_notices": list(report.coverage_notices),
+            "response_text": summary,
+        }
+    return {**base, **_payload(report), "response_text": render_markdown(report)}
 
 
 __all__ = ["TOOL_NAME", "analyze_github_ci_reliability"]

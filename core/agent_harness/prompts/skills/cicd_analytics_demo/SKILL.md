@@ -73,7 +73,9 @@ headers [3/4] and [4/4] only.
    chosen repository. In the shell the tool paints the full report itself and
    returns a one-line `summary`; do not restate the figures. Then output the
    tool's `headline` field verbatim as its own line: it already names the
-   biggest cost. Do not compute or reword any figure yourself.
+   biggest cost. Do not compute, convert, or reword any figure yourself, and
+   do not add a recap, bullet list, or "verified result" of your own after
+   the headline: the next assistant text is the step 4 header.
 
 4) Offer what to do next.
    Call `ask_user_choice` with title `What would you like to do next?` and
