@@ -29,7 +29,8 @@ from infrastructure.terminal.theme import (
     TEXT,
     WARNING,
 )
-from surfaces.cli.account_auth import AccountLoginResult, AccountLogoutResult, AccountStatus
+from surfaces.cli.account_auth import AccountLoginResult, AccountLogoutResult
+from surfaces.shared.account_session import AccountStatus
 
 _console = Console(
     highlight=False, force_terminal=True, color_system="truecolor", legacy_windows=False

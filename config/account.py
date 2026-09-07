@@ -9,6 +9,7 @@ from collections.abc import Mapping
 from contextlib import suppress
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit
 
 from filelock import FileLock
 
@@ -17,6 +18,8 @@ from config.constants.account import (
     OPENSRE_ACCOUNT_LLM_BASE_PATH,
     OPENSRE_ACCOUNT_METADATA_PATH_ENV,
     OPENSRE_ACCOUNT_TOKEN_ENV,
+    OPENSRE_APP_URL_DEFAULT,
+    OPENSRE_APP_URL_ENV,
 )
 from config.constants.paths import host_home
 from config.secrets.store import (
@@ -52,6 +55,25 @@ class AccountLLMRoute:
 
     base_url: str
     model: str
+
+
+def normalize_account_app_url(value: str | None = None) -> str:
+    """Resolve a safe HTTP(S) origin for account authentication and validation."""
+    raw = (value or os.getenv(OPENSRE_APP_URL_ENV) or OPENSRE_APP_URL_DEFAULT).strip()
+    parsed = urlsplit(raw)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.hostname
+        or parsed.username
+        or parsed.password
+        or parsed.query
+        or parsed.fragment
+    ):
+        raise ValueError(
+            f"Invalid OpenSRE app URL. Set {OPENSRE_APP_URL_ENV} to an http(s) origin."
+        )
+    path = parsed.path.rstrip("/")
+    return urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
 
 
 def account_metadata_path() -> Path:
@@ -199,6 +221,7 @@ __all__ = [
     "delete_account_record",
     "delete_account_token",
     "load_account_record",
+    "normalize_account_app_url",
     "resolve_account_token",
     "save_account_record",
     "save_account_token",

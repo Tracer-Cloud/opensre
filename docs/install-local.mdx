@@ -55,48 +55,29 @@ Homebrew installs pull in `gh` automatically.
 
 Shorter overview: [Install OpenSRE](/install).
 
-## 2. Open the shell
-
-```bash
-opensre
-```
-
-That starts the interactive prompt. You can also run commands as `opensre …` from a normal terminal without entering the shell.
-
-## 3. Run setup
-
-Inside the shell:
-
-```bash
-/setup
-```
-
-Or from a normal terminal:
+## 2. Sign in
 
 ```bash
 opensre setup
 ```
 
-You'll set up:
+The browser flow creates or signs in to your OpenSRE account with GitHub, connects the GitHub integration, and activates the hosted model. Setup opens the shell only after the webapp validates that account session.
 
-- GitHub sign-in (browser device authorization)
-- Your LLM (so OpenSRE can reason about incidents)
-- A model and credential, or a CLI login
+To remain signed out, cancel setup or choose **Exit and stay signed out** when `opensre` shows the account gate. Other CLI commands remain available; the interactive shell does not.
 
-Setup then opens the interactive shell. To change only the LLM later, run `opensre onboard`.
+## 3. Open the shell
+
+```bash
+opensre
+```
+
+The shell revalidates the webapp account on every start. Expired, revoked, incomplete, or unreachable account state returns to the sign-in gate instead of constructing the REPL or a model client.
 
 #### Where credentials are saved
 
-OpenSRE checks environment variables first. When setup saves an LLM credential,
-it writes to an owner-only file at `~/.opensre/credentials.json` (mode `0600`).
-That keeps first-run setup from writing credentials to disk.
+OpenSRE saves non-secret identity and hosted-model metadata in owner-only account metadata. The account token and GitHub credential use the local secret store; neither is written to `account.json`.
 
-You can also provide a credential through your shell or project `.env`;
-environment values take precedence. Never commit real credentials to `.env` or
-source control.
-
-To keep credentials only in the environment (nothing written to disk), set
-`OPENSRE_DISABLE_KEYRING=1`.
+`OPENSRE_ACCOUNT_TOKEN` overrides the saved account token when set. Never commit it to `.env` or source control. Run `opensre account logout` to revoke the saved session; an environment override must be unset separately.
 
 ## 4. Check your tools
 

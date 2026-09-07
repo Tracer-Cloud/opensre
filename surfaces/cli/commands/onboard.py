@@ -9,6 +9,7 @@ from typing import Any
 
 import click
 
+from config.constants import OPENSRE_PARENT_INTERACTIVE_SHELL_ENV
 from infrastructure.analytics.capture import (
     capture_onboard_completed,
     capture_onboard_failed,
@@ -19,7 +20,6 @@ ConfigLoader = Callable[[], dict[str, Any]]
 RunCommand = Callable[[], int]
 
 OPENSRE_AUTO_LAUNCH_ENV = "OPENSRE_AUTO_LAUNCH"
-OPENSRE_PARENT_INTERACTIVE_SHELL_ENV = "OPENSRE_PARENT_INTERACTIVE_SHELL"
 _DISABLED_ENV_VALUES = {"0", "false", "no", "off"}
 
 

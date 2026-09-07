@@ -3,9 +3,9 @@ title: "LLM Providers"
 description: "Supported LLM APIs and CLIs, environment variables, and how to switch between them."
 ---
 
-OpenSRE works with many model providers. You choose which one with
-`LLM_PROVIDER`. Hosted providers use an API key stored in
-`~/.opensre/credentials.json` (or the process environment).
+The interactive shell uses the model supplied by the signed-in OpenSRE account. That account route takes precedence for reasoning, classification, and tool calls; `/model` shows it but does not replace it locally.
+
+Other hosts and account-independent CLI workflows can use the providers below. Choose one with `LLM_PROVIDER`; hosted providers use an API key stored in `~/.opensre/credentials.json` or the process environment.
 
 Default model IDs are defined in
 [`config/llm_models.py`](https://github.com/Tracer-Cloud/opensre/blob/main/config/llm_models.py).
@@ -82,14 +82,12 @@ opensre onboard
 
 Onboarding always collects an API key for hosted providers.
 
-In the interactive shell, `/model` lists common models. Some providers also
-accept custom model IDs (OpenAI, OpenRouter, TrustedRouter, Gemini, NVIDIA,
-Bedrock, local CLIs, Ollama, and DeepSeek):
+Local provider configuration supports custom model IDs for OpenAI, OpenRouter, TrustedRouter, Gemini, NVIDIA, Bedrock, local CLIs, Ollama, and DeepSeek. These settings do not override a signed-in account route:
 
 ```bash
-/model set openai gpt-5.6-sol
-/model set openai gpt-5.6-terra --toolcall-model gpt-5.6-luna
-/model set openai gpt-5.5 --toolcall-model gpt-5.4-mini
+export LLM_PROVIDER=openai
+export OPENAI_REASONING_MODEL=gpt-5.6-sol
+export OPENAI_TOOLCALL_MODEL=gpt-5.6-luna
 ```
 
 GPT-5.6 has three tiers: `gpt-5.6-sol` (flagship), `gpt-5.6-terra` (balanced),
@@ -176,13 +174,13 @@ the credentials file directly, status may look stale until you run
 `opensre auth verify <provider>` or make a request. Verification marks the
 provider `stale` when the secret is gone.
 
-In the interactive shell:
+For account-independent CLI workflows:
 
 ```bash
-/login openai
-/login anthropic
-/login deepseek
-/auth status
+opensre auth login openai
+opensre auth login anthropic
+opensre auth login deepseek
+opensre auth status
 ```
 
 ## API providers

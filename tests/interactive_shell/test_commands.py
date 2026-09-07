@@ -106,6 +106,18 @@ class TestDispatchSlash:
         assert "timed out" in buf.getvalue()
         assert session.history[-1]["ok"] is False
 
+    def test_account_logout_closes_shell_before_another_model_turn(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from surfaces.interactive_shell.command_registry import cli_parity as m
+
+        monkeypatch.setattr(m, "run_cli_command", lambda *_args, **_kwargs: True)
+        monkeypatch.setattr("config.account.account_llm_route", lambda: None)
+        console, output = _capture()
+
+        assert dispatch_slash("/account logout", Session(), console) is False
+        assert "Closing the interactive shell" in output.getvalue()
+
     def test_help_lists_all_commands(self) -> None:
         session = Session()
         console, buf = _capture()

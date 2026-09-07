@@ -55,13 +55,12 @@ def render_header() -> None:
 
 
 def render_factory_setup_header() -> None:
-    """Print the first-run setup splash (GitHub → LLM → shell)."""
+    """Print the first-run setup splash (webapp account → hosted shell)."""
     _render_splash_header(
         heading="A few steps and you are in the terminal",
         steps=(
-            "Sign in with GitHub (required).",
-            "Choose your LLM provider and add its API key or CLI login.",
-            "OpenSRE opens the interactive shell.",
+            "Sign in or create your OpenSRE account with GitHub.",
+            "OpenSRE activates the hosted model and opens the interactive shell.",
         ),
     )
 

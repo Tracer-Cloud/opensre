@@ -31,10 +31,20 @@ def verify_integration(service: str) -> dict[str, str] | None:
 
 
 def load_llm_settings() -> Any | None:
-    """Best-effort LLM settings load; returns None if env is misconfigured."""
+    """Load the effective account-hosted or local LLM settings for display."""
     try:
-        from config.llm_settings import LLMSettings
+        from config.account import account_llm_route
+        from config.llm_settings import LLMSettings, resolve_llm_settings
 
+        if (route := account_llm_route()) is not None:
+            settings = resolve_llm_settings(provider_override="openai")
+            return settings.model_copy(
+                update={
+                    "openai_reasoning_model": route.model,
+                    "openai_classification_model": route.model,
+                    "openai_toolcall_model": route.model,
+                }
+            )
         return LLMSettings.from_env()
     except Exception:
         return None

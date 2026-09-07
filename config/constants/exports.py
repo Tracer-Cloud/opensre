@@ -9,8 +9,10 @@ from config.package_exports import bind_package_exports
 EXPORTS: dict[str, str] = {
     # account
     "OPENSRE_ACCOUNT_FILENAME": "account",
+    "OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS": "account",
     "OPENSRE_ACCOUNT_LLM_BASE_PATH": "account",
     "OPENSRE_ACCOUNT_METADATA_PATH_ENV": "account",
+    "OPENSRE_ACCOUNT_SESSION_PATH": "account",
     "OPENSRE_ACCOUNT_TOKEN_ENV": "account",
     "OPENSRE_APP_URL_DEFAULT": "account",
     "OPENSRE_APP_URL_DEV": "account",
@@ -275,7 +277,7 @@ EXPORTS: dict[str, str] = {
     "POSTHOG_MCP_PROJECT_ID_ENV": "posthog_mcp",
     "POSTHOG_MCP_URL_ENV": "posthog_mcp",
     # product
-    "FORCE_SIGN_IN_ENV": "product",
+    "OPENSRE_PARENT_INTERACTIVE_SHELL_ENV": "product",
     "PRODUCT_DISPLAY_NAME": "product",
     "PRODUCT_NAME": "product",
     "RELEASE_STAGE": "product",

@@ -36,18 +36,18 @@ slug: "quickstart"
   </Step>
 
   <Step title="Setup">
-    Run first-run setup to sign in with GitHub and configure the LLM provider OpenSRE uses to reason:
+    Run first-run setup to create or sign in to your OpenSRE account with GitHub:
 
     ```bash
     opensre setup
     ```
 
-    After GitHub authorization, you pick a provider and a model. The wizard sends one tiny request to that provider with the credential you just entered — so a typo, an expired key, or an Ollama model you have not pulled yet is caught here, not on your first question. When setup finishes, OpenSRE opens the interactive shell. Add integrations later with `opensre integrations setup <service>` when you want OpenSRE to query a specific tool.
+    The webapp login connects GitHub and activates the OpenSRE-hosted model. When setup finishes, OpenSRE validates the new session and opens the interactive shell. Add integrations later with `opensre integrations setup <service>` when you want OpenSRE to query a specific tool.
 
     <Tabs>
       <Tab title="macOS / Linux">
         <Frame>
-          ![Onboarding OpenSRE with the setup wizard to configure your LLM provider](/images/quickstart-onboard.gif)
+          ![Signing in to an OpenSRE account from setup](/images/quickstart-onboard.gif)
         </Frame>
       </Tab>
       <Tab title="Windows">
@@ -62,7 +62,7 @@ slug: "quickstart"
   <Step title="Ask your first question">
     Choose either path — both use the same local `opensre` binary:
 
-    **Interactive prompt shell** — start OpenSRE with no arguments (TTY) to type incidents in plain language and use slash commands (`/help`, `/status`, `/effort`, `/exit`, …):
+    **Interactive prompt shell** — start OpenSRE with no arguments (TTY). The shell opens only after the webapp validates your account; choosing **Exit and stay signed out** leaves account-independent CLI commands available:
 
     ```bash
     opensre
@@ -75,6 +75,8 @@ slug: "quickstart"
     ```
 
     OpenSRE reasons across your connected systems, calling the tools it needs, and prints the answer. See [Headless CLI](/headless-cli) for tool approvals, `--json` output, and exit codes.
+
+    Inside the interactive shell, `/help` lists commands, `/status` shows the current setup, `/effort` changes reasoning effort, and `/exit` closes the shell.
 
     <Tabs>
       <Tab title="macOS / Linux">
@@ -116,6 +118,5 @@ opensre uninstall --yes
 
 - **Docker is not running**: Start Docker Desktop, OrbStack, or Colima before running setup.
 - **`make` is missing**: Install it via your package manager (`brew install make` on macOS, `choco install make` on Windows).
-- **No local LLM provider is configured**: Run `opensre onboard` to select and configure your LLM credentials. Leave the key blank to finish onboarding and add it later with `opensre auth login <provider>`.
-- **Onboarding says your key could not be verified, but you know it is valid**: The check needs to reach the provider, so a firewall, a proxy, or being offline will fail it. Choose **Save anyway without validating** to keep the key and move on — you can rerun `opensre onboard` to re-enter it later.
-- **Onboarding could not save your key**: Follow the setup steps it prints for `~/.opensre/credentials.json`, then choose **Retry saving to the local credentials file**. To get going right now, choose **Continue without saving (this session only)** — the key works for this run and you re-enter it next time.
+- **The shell does not open after login**: Run `opensre account status`. The webapp must be reachable and the stored account token and metadata must both be valid.
+- **You want to stay signed out**: Choose **Exit and stay signed out** at startup. Commands such as `opensre account`, `opensre doctor`, and `opensre integrations` remain available, but the interactive shell stays closed.

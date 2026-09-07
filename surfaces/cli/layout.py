@@ -15,7 +15,7 @@ from infrastructure.terminal.theme import BRAND, DIM, TEXT
 #: a landing page that lists every command reads as "here is everything" rather
 #: than "start here".
 _LANDING_EXAMPLES: tuple[tuple[str, str], ...] = (
-    ("opensre setup", "Sign in with GitHub, add an LLM key, then open the shell"),
+    ("opensre setup", "Sign in to OpenSRE, activate the hosted model, then open the shell"),
     ('opensre ask "why is checkout-api slow?"', "Ask the agent a question directly"),
     ("opensre doctor", "Check this machine is set up correctly"),
     ("opensre --help", "See every command"),

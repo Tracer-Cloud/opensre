@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import json
+import os
 import stat
 from io import StringIO
 from pathlib import Path
@@ -16,9 +17,10 @@ from config.account import AccountRecord, load_account_record, save_account_reco
 from config.constants.github import GITHUB_CLI_REQUIRED_SCOPES
 from integrations.github import PersonalGitHubSnapshot
 from surfaces.cli import account_auth
-from surfaces.cli.account_auth import AccountLoginResult, AccountStatus
+from surfaces.cli.account_auth import AccountLoginResult
 from surfaces.cli.account_ui import AccountLoginPresenter
 from surfaces.cli.commands.account import account_command
+from surfaces.shared.account_session import AccountSessionState, AccountStatus
 
 
 class _RecordingProgress:
@@ -79,6 +81,7 @@ def test_login_uses_state_and_pkce_without_putting_tokens_in_browser_url(
     exchanged: dict[str, str] = {}
     saved_tokens: list[str] = []
     saved_records: list[AccountRecord] = []
+    cache_resets: list[bool] = []
 
     def fake_wait(*_args: object, **_kwargs: object) -> account_auth._CallbackResult:
         return account_auth._CallbackResult(code="osre_code_one_time")
@@ -104,7 +107,10 @@ def test_login_uses_state_and_pkce_without_putting_tokens_in_browser_url(
     monkeypatch.setattr(account_auth, "stored_account_token", lambda: "")
     monkeypatch.setattr(account_auth, "save_account_token", saved_tokens.append)
     monkeypatch.setattr(account_auth, "save_account_record", saved_records.append)
-    monkeypatch.setattr(account_auth, "_configure_hosted_openai", lambda _model: None)
+    monkeypatch.setattr(
+        "core.llm.factory.reset_llm_clients",
+        lambda: cache_resets.append(True),
+    )
     monkeypatch.setattr(
         account_auth,
         "configure_personal_github",
@@ -115,6 +121,8 @@ def test_login_uses_state_and_pkce_without_putting_tokens_in_browser_url(
         opened_urls.append(url)
         return True
 
+    monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+    monkeypatch.setenv("ANTHROPIC_REASONING_MODEL", "claude-local")
     progress = _RecordingProgress()
     result = account_auth.login_account(
         app_url="https://app.opensre.com",
@@ -125,6 +133,9 @@ def test_login_uses_state_and_pkce_without_putting_tokens_in_browser_url(
     assert result.record.github_username == "octocat"
     assert saved_tokens == ["osre_pat_secret"]
     assert saved_records == [result.record]
+    assert cache_resets == [True]
+    assert os.environ["LLM_PROVIDER"] == "anthropic"
+    assert os.environ["ANTHROPIC_REASONING_MODEL"] == "claude-local"
     assert len(opened_urls) == 1
     assert progress.events == ["prompt", "authorized", "complete"]
     assert progress.urls == opened_urls
@@ -214,7 +225,6 @@ def test_login_warns_when_env_token_would_override_and_does_not_revoke_it(
     monkeypatch.setattr(account_auth, "stored_account_token", lambda: "osre_pat_file_old")
     monkeypatch.setattr(account_auth, "save_account_token", lambda _token: None)
     monkeypatch.setattr(account_auth, "save_account_record", lambda _record: None)
-    monkeypatch.setattr(account_auth, "_configure_hosted_openai", lambda _model: None)
     monkeypatch.setattr(
         account_auth,
         "configure_personal_github",
@@ -316,7 +326,7 @@ def test_login_presenter_success_shows_hosted_model_and_store() -> None:
 def test_login_presenter_warns_when_a_session_is_already_active() -> None:
     console, buf = _capture_console()
     presenter = AccountLoginPresenter(console)
-    status = AccountStatus(True, _record(), "Authenticated with GitHub.")
+    status = AccountStatus(AccountSessionState.ACTIVE, _record(), "Authenticated with GitHub.")
 
     presenter.warn_active_session(status)
     presenter.session_kept()
@@ -341,8 +351,8 @@ def test_login_keeps_valid_session_without_starting_oauth(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(
-        "surfaces.cli.account_auth.account_status",
-        lambda **_: AccountStatus(True, _record(), "ok"),
+        "surfaces.cli.commands.account.account_status",
+        lambda **_: AccountStatus(AccountSessionState.ACTIVE, _record(), "ok"),
     )
 
     def _should_not_login(**_kwargs: object) -> AccountLoginResult:
@@ -360,8 +370,8 @@ def test_login_keeps_valid_session_without_starting_oauth(
 
 def test_login_json_reports_already_active_session(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "surfaces.cli.account_auth.account_status",
-        lambda **_: AccountStatus(True, _record(), "ok"),
+        "surfaces.cli.commands.account.account_status",
+        lambda **_: AccountStatus(AccountSessionState.ACTIVE, _record(), "ok"),
     )
 
     def _should_not_login(**_kwargs: object) -> AccountLoginResult:
@@ -381,8 +391,8 @@ def test_login_json_reports_already_active_session(monkeypatch: pytest.MonkeyPat
 def test_login_force_replaces_valid_session(monkeypatch: pytest.MonkeyPatch) -> None:
     login_calls: list[object] = []
     monkeypatch.setattr(
-        "surfaces.cli.account_auth.account_status",
-        lambda **_: AccountStatus(True, _record(), "ok"),
+        "surfaces.cli.commands.account.account_status",
+        lambda **_: AccountStatus(AccountSessionState.ACTIVE, _record(), "ok"),
     )
 
     def fake_login(**_kwargs: object) -> AccountLoginResult:

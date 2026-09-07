@@ -61,7 +61,8 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
     ),
     "/account": _mcp(
         "Sign in to a personal OpenSRE account with GitHub, inspect the local login, "
-        "or sign out. Subcommands: login, status, logout.",
+        "or sign out. Signing out closes the interactive shell. Subcommands: login, "
+        "status, logout.",
         "User asks to sign in to OpenSRE with GitHub or create a personal account",
         "User asks whether they are logged into OpenSRE or which GitHub user is linked",
         anti_examples=(
@@ -314,9 +315,9 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         anti_examples=("User asks for the current session status (use /status)",),
     ),
     "/setup": _mcp(
-        "First-run setup: GitHub sign-in, LLM key, then open the interactive shell.",
+        "First-run setup: OpenSRE account sign-in, hosted model, then the interactive shell.",
         "User asks to run first-run setup or factory-style install setup",
-        "User just installed OpenSRE and needs to sign in and add an LLM key",
+        "User just installed OpenSRE and needs to create or sign in to an account",
     ),
     "/status": _mcp(
         "Explicit /status command operation: show REPL session status, including "
