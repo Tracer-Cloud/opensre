@@ -59,6 +59,10 @@ class StreamingConsole(Console):
     def cancel_requested(self) -> bool:
         return self._cancel_event.is_set()
 
+    @property
+    def cancel_event(self) -> threading.Event:
+        return self._cancel_event
+
     def print(self, *args: Any, **kwargs: Any) -> None:
         """Reset the TTY column before each print when not streaming."""
         if self._output is not None:

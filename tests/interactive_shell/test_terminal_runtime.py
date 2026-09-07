@@ -946,6 +946,7 @@ class TestStreamingConsole:
             force_terminal=True,
             color_system=None,
         )
+        assert console.cancel_event is cancel
         assert console.cancel_requested is False
         cancel.set()
         assert console.cancel_requested is True

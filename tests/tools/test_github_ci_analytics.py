@@ -538,15 +538,29 @@ def test_render_shows_the_kpi_block_and_classification() -> None:
     assert "| CI | 3 | 1 | 1 | 10m |" in text
 
 
-def test_tool_returns_unavailable_envelope_when_github_read_fails() -> None:
-    with patch(
-        "integrations.github.tools.ci_analytics.tool.collect_runs",
-        side_effect=GitHubApiError("GitHub token is required."),
+def test_tool_names_the_setup_command_when_no_token_is_available() -> None:
+    with patch("integrations.github.tools.ci_analytics.tool.resolve_github_token", return_value=""):
+        result = analyze_github_ci_reliability(owner="o", repo="r")
+
+    assert result["available"] is False
+    assert "opensre integrations setup github" in result["response_text"]
+
+
+def test_tool_failure_text_never_carries_exception_detail() -> None:
+    secret_detail = "token ghp_abc rejected by https://api.github.com/x"
+    with (
+        patch("integrations.github.tools.ci_analytics.tool.resolve_github_token", return_value="t"),
+        patch(
+            "integrations.github.tools.ci_analytics.tool.collect_runs",
+            side_effect=GitHubApiError(secret_detail, status_code=403),
+        ),
     ):
         result = analyze_github_ci_reliability(owner="o", repo="r")
 
     assert result["available"] is False
-    assert "GitHub token is required" in result["response_text"]
+    assert "ghp_abc" not in result["response_text"]
+    assert "api.github.com" not in result["response_text"]
+    assert "rejected the token" in result["response_text"]
 
 
 def test_tool_renders_report_from_collected_runs() -> None:
@@ -560,7 +574,10 @@ def test_tool_renders_report_from_collected_runs() -> None:
         merged_prs=_merged("A"),
         coverage_notices=["Coverage notice: sample"],
     )
-    with patch("integrations.github.tools.ci_analytics.tool.collect_runs", return_value=collected):
+    with (
+        patch("integrations.github.tools.ci_analytics.tool.resolve_github_token", return_value="t"),
+        patch("integrations.github.tools.ci_analytics.tool.collect_runs", return_value=collected),
+    ):
         result = analyze_github_ci_reliability(owner="o", repo="r", days=7)
 
     assert result["success"] is True
@@ -598,13 +615,17 @@ def test_tool_shows_progress_lines_around_the_painted_report() -> None:
         coverage_notices=[],
     )
 
-    with patch("integrations.github.tools.ci_analytics.tool.collect_runs", return_value=collected):
-        result = analyze_github_ci_reliability(owner="o", repo="r", days=7, context=context)
+    with (
+        patch("integrations.github.tools.ci_analytics.tool.resolve_github_token", return_value="t"),
+        patch("integrations.github.tools.ci_analytics.tool.collect_runs", return_value=collected),
+    ):
+        result = analyze_github_ci_reliability(owner="o", repo="r[1]", days=7, context=context)
 
     output = buf.getvalue()
-    assert "Reading GitHub Actions history for o/r, last 7 days" in output
+    # A bracket in the repository name must print literally, never parse as markup.
+    assert "Reading GitHub Actions history for o/r[1], last 7 days" in output
     assert "Read 2 runs in" in output
-    assert "CI/CD reliability for o/r, last 7 days" in output
+    assert "CI/CD reliability for o/r[1], last 7 days" in output
     assert result["rendered_in_shell"] is True
     assert "executions" not in result
 

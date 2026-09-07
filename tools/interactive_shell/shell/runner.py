@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import shlex
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -59,6 +60,7 @@ def run_shell_command(
     *,
     argv: list[str] | None = None,
     quiet: bool = False,
+    cancel_event: threading.Event | None = None,
 ) -> dict[str, Any]:
     session = presenter.session
     parsed = parse_shell_command(command, is_windows=_platform.IS_WINDOWS)
@@ -101,6 +103,7 @@ def run_shell_command(
             use_shell=use_shell,
             timeout_seconds=SHELL_COMMAND_TIMEOUT_SECONDS,
             max_output_chars=MAX_COMMAND_OUTPUT_CHARS,
+            cancel_event=cancel_event,
         )
     except Exception as exc:
         presenter.report_exception(exc, context="surfaces.interactive_shell.shell_command.start")
@@ -121,6 +124,22 @@ def run_shell_command(
     if not quiet:
         presenter.print_command_output(result.stdout)
         presenter.print_command_output(result.stderr, style=ERROR)
+    if result.cancelled:
+        response_text = "command cancelled"
+        if not quiet:
+            presenter.print(f"[{ERROR}]command cancelled[/]")
+        session.record("shell", command, ok=False, response_text=response_text)
+        return _shell_payload(
+            command=command,
+            ok=False,
+            response_text=response_text,
+            stdout=result.stdout,
+            stderr=result.stderr,
+            exit_code=result.exit_code,
+            truncated=result.truncated,
+            executed_with_shell=result.executed_with_shell,
+            cancelled=True,
+        )
     if result.timed_out:
         response_text = f"command timed out after {SHELL_COMMAND_TIMEOUT_SECONDS} seconds"
 

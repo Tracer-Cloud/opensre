@@ -22,6 +22,8 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from rich.markup import escape
+
 from config.constants.paths import OPENSRE_HOME_DIR
 from infrastructure.analytics.capture import (
     capture_onboarding_demo_prompted,
@@ -183,7 +185,7 @@ def _start_ci_analytics_demo(
     """Scan, let the user pick a repository, then queue the analysis prompt."""
     home = Path.home()
     if console is not None:
-        with llm_loader(console, f"Scanning {home} for git repositories"):
+        with llm_loader(console, f"Scanning {escape(str(home))} for git repositories"):
             snapshot = scan_workspace(home, days=_SCAN_DAYS)
     else:
         snapshot = scan_workspace(home, days=_SCAN_DAYS)
@@ -203,7 +205,7 @@ def _start_ci_analytics_demo(
     if console is not None:
         console.print()
         console.print(
-            f"[{DIM}]Analyzing the CI/CD reliability of {repository} for the last {_SCAN_DAYS} "
+            f"[{DIM}]Analyzing the CI/CD reliability of {escape(repository)} for the last {_SCAN_DAYS} "
             "days. Reading the GitHub Actions history takes about half a minute; the report "
             "appears below when it is ready.[/]"
         )

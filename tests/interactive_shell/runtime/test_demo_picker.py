@@ -78,7 +78,7 @@ def test_analytics_demo_scans_asks_for_the_repository_then_queues_the_analysis(
 ) -> None:
     # Arrange
     marker = _offerable(monkeypatch, tmp_path)
-    calls = _answers(monkeypatch, demo_picker.OPTION_CI_ANALYTICS, "me/mine")
+    calls = _answers(monkeypatch, demo_picker.OPTION_CI_ANALYTICS, "me/mine[v2]")
     session = Session()
     console, buf = _capture()
 
@@ -90,13 +90,13 @@ def test_analytics_demo_scans_asks_for_the_repository_then_queues_the_analysis(
     output = buf.getvalue()
     assert "live snapshot built from your machine" in output
     assert "Activity (commits, last 30 days)" in output
-    assert "Analyzing the CI/CD reliability of me/mine" in output
+    assert "Analyzing the CI/CD reliability of me/mine[v2]" in output
     demo_labels = [label for _value, label in calls[0]["choices"]]
     assert demo_labels[-1] == "Or type your own answer..."
     repo_choices = [value for value, _label in calls[1]["choices"]]
     assert repo_choices == ["me/mine", "acme/busy", demo_picker.EXAMPLE_REPOSITORY, "custom"]
     assert session.terminal.pending_prompt_autosubmit is True
-    assert "me/mine" in session.terminal.pending_prompt_default
+    assert "me/mine[v2]" in session.terminal.pending_prompt_default
     assert json.loads(marker.read_text())["option"] == demo_picker.OPTION_CI_ANALYTICS
 
 

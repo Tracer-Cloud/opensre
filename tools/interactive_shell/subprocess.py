@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import os
 import re
+import signal
 import subprocess
 import tempfile
 import threading
@@ -35,17 +36,48 @@ _ANSI_ESCAPE = re.compile(r"\x1b\[[0-9;]*[mA-Za-z]")
 # --- lifecycle ---
 
 
+def _is_process_group_leader(pid: int) -> bool:
+    """True when *pid* leads its group (typical after ``start_new_session``)."""
+    if os.name == "nt" or not hasattr(os, "getpgid"):
+        return False
+    try:
+        return os.getpgid(pid) == pid
+    except OSError:
+        return False
+
+
+def _signal_child(proc: subprocess.Popen[Any], *, forceful: bool) -> None:
+    """Signal a child, and its descendants when it leads a process group.
+
+    Nested ``uv run opensre …`` / ``gh`` children survive a single-pid
+    SIGTERM. Group leaders (``start_new_session=True``) are safe to
+    ``killpg``; other children stay in the parent's group, so we must
+    not signal that group.
+    """
+    if proc.poll() is not None:
+        return
+    pid = getattr(proc, "pid", None)
+    if pid is not None and _is_process_group_leader(pid) and hasattr(os, "killpg"):
+        sig = signal.SIGKILL if forceful else signal.SIGTERM
+        with contextlib.suppress(OSError):
+            os.killpg(pid, sig)
+            return
+    with contextlib.suppress(OSError):
+        if forceful:
+            proc.kill()
+        else:
+            proc.terminate()
+
+
 def terminate_child_process(proc: subprocess.Popen[Any]) -> None:
     """Best-effort SIGTERM → wait → SIGKILL → wait without blocking forever."""
     if proc.poll() is not None:
         return
-    with contextlib.suppress(OSError):
-        proc.terminate()
+    _signal_child(proc, forceful=False)
     try:
         proc.wait(timeout=SIGTERM_GRACE_SECONDS)
     except subprocess.TimeoutExpired:
-        with contextlib.suppress(OSError):
-            proc.kill()
+        _signal_child(proc, forceful=True)
         with contextlib.suppress(subprocess.TimeoutExpired):
             proc.wait(timeout=5)
 

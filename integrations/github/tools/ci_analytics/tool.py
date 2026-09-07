@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import time
 from datetime import UTC, datetime
+from http import HTTPStatus
 from typing import Any
+
+from rich.markup import escape
 
 from core.agent_harness.tools import action_context_from_agent_context
 from core.domain.types.evidence import record_evidence_entry
@@ -64,6 +67,23 @@ def _console(context: Any) -> Any:
         return action_context_from_agent_context(context).console
     except RuntimeError:
         return None
+
+
+def _failure_message(exc: Exception, *, repository: str) -> str:
+    """User-facing failure text by status class; exception detail stays in Sentry only."""
+    status = getattr(exc, "status_code", None)
+    if status in {HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN}:
+        return (
+            f"GitHub rejected the token for {repository}; it needs read access to Actions and "
+            "pull requests. Run `opensre integrations setup github` and try again."
+        )
+    if status == HTTPStatus.NOT_FOUND:
+        return f"GitHub repository {repository} was not found or is not accessible with this token."
+    if status == HTTPStatus.TOO_MANY_REQUESTS:
+        return f"GitHub rate limit reached while reading {repository}; try again in a few minutes."
+    if isinstance(exc, ValueError):
+        return f"GitHub returned an unexpected payload for {repository}; the report was not built."
+    return f"Could not read the GitHub Actions history of {repository} ({type(exc).__name__})."
 
 
 def _map_evidence(evidence: dict[str, Any], output: dict[str, Any], _input: dict[str, Any]) -> None:
@@ -201,11 +221,17 @@ def analyze_github_ci_reliability(
             "owner/repo is required unless the workspace origin identifies a GitHub repository.",
             response_text="I need a GitHub repository (owner/repo) to analyze.",
         )
+    if not resolve_github_token(github_token):
+        message = (
+            f"A GitHub token is required to read the Actions history of {repo_owner}/{repo_name}. "
+            "Run `opensre integrations setup github` and try again."
+        )
+        return tool_unavailable(_SOURCE, message, response_text=message)
     now = datetime.now(UTC)
     console = _console(context)
     if console is not None:
         console.print(
-            f"[dim]Reading GitHub Actions history for {repo_owner}/{repo_name}, "
+            f"[dim]Reading GitHub Actions history for {escape(f'{repo_owner}/{repo_name}')}, "
             f"last {window} days…[/dim]"
         )
     started = time.monotonic()
@@ -226,7 +252,7 @@ def analyze_github_ci_reliability(
             method="collect_runs",
             extras={"owner": repo_owner, "repo": repo_name},
         )
-        message = f"Could not read GitHub Actions history for {repo_owner}/{repo_name}: {exc}"
+        message = _failure_message(exc, repository=f"{repo_owner}/{repo_name}")
         return tool_unavailable(_SOURCE, message, response_text=message)
     report = compute_report(
         owner=repo_owner,
