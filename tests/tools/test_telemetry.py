@@ -305,6 +305,27 @@ def _github_star_history_case() -> ToolFailureCase:
     )
 
 
+def _github_ci_analytics_case() -> ToolFailureCase:
+    def patch(mp: pytest.MonkeyPatch) -> None:
+        from integrations.github.client import GitHubApiError
+        from integrations.github.tools.ci_analytics import tool as mod
+
+        mp.setattr(mod, "collect_runs", MagicMock(side_effect=GitHubApiError("boom")))
+
+    def invoke() -> dict[str, Any]:
+        from integrations.github.tools.ci_analytics.tool import analyze_github_ci_reliability
+
+        return analyze_github_ci_reliability(owner="o", repo="r", github_token="tok")
+
+    return ToolFailureCase(
+        "github_ci_analytics",
+        patch,
+        invoke,
+        "analyze_github_ci_reliability",
+        "github",
+    )
+
+
 def _eks_list_clusters_case() -> ToolFailureCase:
     def patch(mp: pytest.MonkeyPatch) -> None:
         from integrations.eks.tools import eks_list_clusters_tool as mod
@@ -685,6 +706,7 @@ _TOOL_FAILURE_CASES: list[ToolFailureCase] = [
     _google_docs_case(),
     _github_repository_case(),
     _github_star_history_case(),
+    _github_ci_analytics_case(),
     _eks_list_clusters_case(),
     _eks_describe_cluster_case(),
     _eks_nodegroup_case(),
@@ -874,6 +896,7 @@ _MIGRATED_TOOL_NAMES: frozenset[str] = frozenset(
         "create_google_docs_incident_report",
         "get_github_repository",
         "get_github_star_history",
+        "analyze_github_ci_reliability",
         # EKS — enumerated in #1463
         "list_eks_clusters",
         "describe_eks_cluster",
@@ -912,6 +935,9 @@ _TOOLS_WITHOUT_DELIBERATE_CATCH: frozenset[str] = frozenset(
         # registry that this test enumerates.
         "alertmanager_alerts",
         "alertmanager_silences",
+        # scan_local_git_workspace shells out to git per repository and lets
+        # anything unexpected reach the global wrapper.
+        "scan_local_git_workspace",
         # architecture_* catch only WorkspaceError / ReportPersistenceError for
         # known failure states; unexpected errors escape to the #1476 wrapper.
         "architecture_cleanup_repo",

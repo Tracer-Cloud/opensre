@@ -30,7 +30,7 @@ from infrastructure.analytics.capture import (
 )
 from infrastructure.analytics.source import is_test_run
 from infrastructure.terminal.theme import DIM, WARNING
-from integrations.github.client import resolve_github_token
+from integrations.github import resolve_github_token
 from surfaces.shared.terminal.components.choice_menu import (
     repl_choose_one,
     repl_tty_interactive,
@@ -146,14 +146,18 @@ def offer_demo(session: Session, console: Console | None = None, *, force: bool 
             console.print(f"[{DIM}]{_MENU_EXPLAINER}[/]")
         selected = repl_choose_one(
             title=_MENU_TITLE,
-            choices=[(suggestion.option, suggestion.label) for suggestion in DEMO_SUGGESTIONS],
+            choices=[
+                *((suggestion.option, suggestion.label) for suggestion in DEMO_SUGGESTIONS),
+                (_CUSTOM_OPTION, _CUSTOM_LABEL),
+            ],
             custom_label=_CUSTOM_LABEL,
             letter_keys=True,
         )
-        if selected is None:
+        if _nothing_chosen(selected):
             capture_onboarding_demo_skipped()
             _record(_SKIPPED_OPTION)
             return False
+        assert selected is not None
         suggestion = _SUGGESTIONS_BY_OPTION.get(selected)
         if suggestion is None:
             capture_onboarding_demo_selected(option=_CUSTOM_OPTION, custom=True)
@@ -199,13 +203,22 @@ def choose_repository(snapshot: WorkspaceSnapshot) -> str | None:
         (repo.github_full_name, _candidate_label(repo)) for repo in suitable_repositories(snapshot)
     ]
     choices.append((EXAMPLE_REPOSITORY, _EXAMPLE_LABEL))
+    choices.append((_CUSTOM_OPTION, _CUSTOM_LABEL))
     selected = repl_choose_one(
         title=_REPOSITORY_TITLE,
         choices=choices,
         custom_label=_CUSTOM_LABEL,
         letter_keys=True,
     )
-    return selected.strip() if selected else None
+    if _nothing_chosen(selected):
+        return None
+    assert selected is not None
+    return selected.strip()
+
+
+def _nothing_chosen(selected: str | None) -> bool:
+    """Escape, or the custom row submitted without any typed text."""
+    return selected is None or selected.strip() in {"", _CUSTOM_OPTION, _CUSTOM_LABEL}
 
 
 def suitable_repositories(snapshot: WorkspaceSnapshot) -> list[RepoActivity]:

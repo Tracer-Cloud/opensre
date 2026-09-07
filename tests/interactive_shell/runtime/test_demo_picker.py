@@ -90,8 +90,10 @@ def test_analytics_demo_scans_asks_for_the_repository_then_queues_the_analysis(
     output = buf.getvalue()
     assert "live snapshot built from your machine" in output
     assert "Activity (commits, last 30 days)" in output
+    demo_labels = [label for _value, label in calls[0]["choices"]]
+    assert demo_labels[-1] == "Or type your own answer..."
     repo_choices = [value for value, _label in calls[1]["choices"]]
-    assert repo_choices == ["me/mine", "acme/busy", demo_picker.EXAMPLE_REPOSITORY]
+    assert repo_choices == ["me/mine", "acme/busy", demo_picker.EXAMPLE_REPOSITORY, "custom"]
     assert session.terminal.pending_prompt_autosubmit is True
     assert "me/mine" in session.terminal.pending_prompt_default
     assert json.loads(marker.read_text())["option"] == demo_picker.OPTION_CI_ANALYTICS
@@ -134,6 +136,17 @@ def test_typed_answer_is_submitted_verbatim(
 
     assert demo_picker.offer_demo(session, None) is True
     assert session.terminal.pending_prompt_default == "show me my flaky tests"
+
+
+def test_custom_row_submitted_empty_counts_as_skip(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _offerable(monkeypatch, tmp_path)
+    _answers(monkeypatch, "custom")
+    session = Session()
+
+    assert demo_picker.offer_demo(session, None) is False
+    assert not session.terminal.pending_prompt_default
 
 
 def test_skip_records_the_marker_so_the_picker_shows_once(
