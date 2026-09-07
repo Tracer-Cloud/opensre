@@ -13,12 +13,17 @@ from integrations.github.client import GitHubApiError, GitHubRestClient
 from integrations.github.tools.ci_analytics.models import MergedPullRequest, WorkflowRun
 
 _PER_PAGE = 100
-_MAX_RUN_PAGES_PER_SCOPE = 20
-_MAX_PR_PAGES = 5
+# GitHub stops paging a workflow-run listing at 1,000 rows however far you page,
+# so a window is fetched in time slices that are split until each fits.
+_LIST_CEILING = 1000
+_MAX_RUN_PAGES_PER_SLICE = _LIST_CEILING // _PER_PAGE
+_MIN_SLICE = timedelta(hours=1)
+_SLICE_WORKERS = 6
+_MAX_PR_PAGES = 30
 _MAX_RERUN_WORKERS = 8
 # Each passing re-run costs up to attempt-1 extra requests; bound the total so
 # a very flaky repository cannot turn the demo into minutes of API calls.
-_MAX_ATTEMPT_LOOKUPS = 200
+_MAX_ATTEMPT_LOOKUPS = 500
 _DEFAULT_BRANCH_EVENTS = ("push", "schedule", "workflow_dispatch")
 _PR_EVENT = "pull_request"
 
@@ -51,7 +56,6 @@ def collect_runs(
     if not default_branch:
         raise ValueError(f"GitHub repository {owner}/{repo} has no readable default branch.")
     since = now - timedelta(days=window_days)
-    created = f">={_iso_utc(since)}"
     notices: list[str] = []
     # Each scope is an independent paginated listing; fetching them together
     # keeps the demo well under a minute on busy repositories.
@@ -61,9 +65,10 @@ def collect_runs(
                 _runs,
                 client,
                 root,
-                params={"branch": default_branch, "event": event, "created": created},
+                params={"branch": default_branch, "event": event},
                 scope=f"{default_branch} {event} runs",
                 since=since,
+                until=now,
                 notices=notices,
             )
             for event in _DEFAULT_BRANCH_EVENTS
@@ -72,17 +77,18 @@ def collect_runs(
             _runs,
             client,
             root,
-            params={"event": _PR_EVENT, "created": created},
+            params={"event": _PR_EVENT},
             scope="pull request runs",
             since=since,
+            until=now,
             notices=notices,
         )
         merged_future = pool.submit(_merged_prs, client, root, since=since, notices=notices)
         branch_runs = [run for future in branch_futures for run in future.result()]
+        merged = merged_future.result()
         # Only PR reruns affect failure rate and blocked time; skip extra
         # attempt fetches on default-branch listings.
-        pr_runs = _annotate_reruns(client, root, pr_future.result(), notices=notices)
-        merged = merged_future.result()
+        pr_runs = _annotate_reruns(client, root, pr_future.result(), merged=merged, notices=notices)
     return CollectedRuns(
         default_branch=default_branch,
         branch_runs=branch_runs,
@@ -99,24 +105,77 @@ def _runs(
     params: dict[str, Any],
     scope: str,
     since: datetime,
+    until: datetime,
     notices: list[str],
 ) -> list[WorkflowRun]:
-    rows = client.paginate(
-        f"{root}/actions/runs",
-        params={
-            **params,
-            "status": "completed",
-            "per_page": _PER_PAGE,
-        },
-        collection_key="workflow_runs",
-        max_pages=_MAX_RUN_PAGES_PER_SCOPE,
-    )
-    if len(rows) >= _PER_PAGE * _MAX_RUN_PAGES_PER_SCOPE:
+    """Completed runs created in ``[since, until]``, complete despite the listing ceiling.
+
+    A slice that returns the ceiling is split in half and refetched; a slice
+    at the minimum width that still hits it is reported as a coverage gap.
+    """
+    rows: list[dict[str, Any]] = []
+    truncated: list[tuple[datetime, datetime]] = []
+    pending = [(since, until)]
+    with ThreadPoolExecutor(max_workers=_SLICE_WORKERS) as pool:
+        while pending:
+            fetched = list(pool.map(lambda s: _slice(client, root, params, s), pending))
+            pending = []
+            for (start, end), slice_rows in fetched:
+                if len(slice_rows) < _LIST_CEILING:
+                    rows.extend(slice_rows)
+                elif end - start <= _MIN_SLICE:
+                    rows.extend(slice_rows)
+                    truncated.append((start, end))
+                else:
+                    middle = start + (end - start) / 2
+                    pending.extend([(start, middle), (middle, end)])
+    if truncated:
         notices.append(
-            f"Coverage notice: {scope} limited to the newest {len(rows)} runs in the window."
+            f"Coverage notice: {scope} exceeded GitHub's listing ceiling in "
+            f"{len(truncated)} one-hour {'slice' if len(truncated) == 1 else 'slices'}; "
+            "those hours are partially counted."
         )
-    parsed = [run for run in (parse_run(row) for row in rows) if run is not None]
-    return [run for run in parsed if run.created_at >= since]
+    seen: set[int] = set()
+    parsed: list[WorkflowRun] = []
+    for row in rows:
+        run = parse_run(row)
+        if run is None or run.run_id in seen or run.created_at < since:
+            continue
+        seen.add(run.run_id)
+        parsed.append(run)
+    return parsed
+
+
+def _slice(
+    client: GitHubRestClient,
+    root: str,
+    params: dict[str, Any],
+    window: tuple[datetime, datetime],
+) -> tuple[tuple[datetime, datetime], list[dict[str, Any]]]:
+    """Rows for one time slice, or a ceiling-sized marker when it must be split.
+
+    The first page carries GitHub's ``total_count``; a slice over the ceiling
+    is reported without paging the rest, so splitting costs one request.
+    """
+    start, end = window
+    query = {
+        **params,
+        "status": "completed",
+        "created": f"{_iso_utc(start)}..{_iso_utc(end)}",
+        "per_page": _PER_PAGE,
+    }
+    path = f"{root}/actions/runs"
+    first = client.request("GET", path, params=query)
+    total = first.get("total_count") if isinstance(first, dict) else None
+    first_rows = first.get("workflow_runs") if isinstance(first, dict) else None
+    if isinstance(total, int) and total > _LIST_CEILING and end - start > _MIN_SLICE:
+        return window, [{}] * _LIST_CEILING
+    if isinstance(total, int) and total <= _PER_PAGE and isinstance(first_rows, list):
+        return window, [row for row in first_rows if isinstance(row, dict)]
+    rows = client.paginate(
+        path, params=query, collection_key="workflow_runs", max_pages=_MAX_RUN_PAGES_PER_SLICE
+    )
+    return window, rows
 
 
 def _merged_prs(
@@ -126,40 +185,55 @@ def _merged_prs(
     since: datetime,
     notices: list[str],
 ) -> tuple[MergedPullRequest, ...]:
-    """Merged PRs inside the window, keyed by number and head repository."""
-    rows = client.paginate(
-        f"{root}/pulls",
-        params={
-            "state": "closed",
-            "sort": "updated",
-            "direction": "desc",
-            "per_page": _PER_PAGE,
-        },
-        max_pages=_MAX_PR_PAGES,
-    )
-    if len(rows) >= _PER_PAGE * _MAX_PR_PAGES:
-        notices.append(
-            f"Coverage notice: merged PR detection limited to the {len(rows)} most recently "
-            "updated closed PRs."
-        )
+    """Merged PRs inside the window, keyed by number and head repository.
+
+    Closed PRs come newest-updated first, so paging stops as soon as a page
+    ends before the window; only a window busier than the page cap is flagged.
+    """
     merged: list[MergedPullRequest] = []
-    for row in rows:
-        merged_at = _timestamp(row.get("merged_at"))
-        number = row.get("number")
-        head = row.get("head")
-        if merged_at is None or merged_at < since or not isinstance(number, int) or number <= 0:
-            continue
-        if not isinstance(head, dict):
-            continue
-        ref = str(head.get("ref") or "").strip()
-        repo = head.get("repo")
-        head_repo = str(repo.get("full_name") or "").strip() if isinstance(repo, dict) else ""
-        if not ref:
-            continue
-        merged.append(
-            MergedPullRequest(number=number, branch=ref, head_repo=head_repo, merged_at=merged_at)
+    for page in range(1, _MAX_PR_PAGES + 1):
+        payload = client.request(
+            "GET",
+            f"{root}/pulls",
+            params={
+                "state": "closed",
+                "sort": "updated",
+                "direction": "desc",
+                "per_page": _PER_PAGE,
+                "page": page,
+            },
+        )
+        rows = (
+            [row for row in payload if isinstance(row, dict)] if isinstance(payload, list) else []
+        )
+        if not rows:
+            break
+        merged.extend(pr for pr in (_merged_pr(row, since=since) for row in rows) if pr is not None)
+        oldest_update = _timestamp(rows[-1].get("updated_at"))
+        if len(rows) < _PER_PAGE or (oldest_update is not None and oldest_update < since):
+            break
+    else:
+        notices.append(
+            f"Coverage notice: merged PR detection limited to the {_MAX_PR_PAGES * _PER_PAGE} "
+            "most recently updated closed PRs."
         )
     return tuple(merged)
+
+
+def _merged_pr(row: dict[str, Any], *, since: datetime) -> MergedPullRequest | None:
+    merged_at = _timestamp(row.get("merged_at"))
+    number = row.get("number")
+    head = row.get("head")
+    if merged_at is None or merged_at < since or not isinstance(number, int) or number <= 0:
+        return None
+    if not isinstance(head, dict):
+        return None
+    ref = str(head.get("ref") or "").strip()
+    repo = head.get("repo")
+    head_repo = str(repo.get("full_name") or "").strip() if isinstance(repo, dict) else ""
+    if not ref:
+        return None
+    return MergedPullRequest(number=number, branch=ref, head_repo=head_repo, merged_at=merged_at)
 
 
 def parse_run(row: dict[str, Any]) -> WorkflowRun | None:
@@ -220,22 +294,35 @@ def _annotate_reruns(
     root: str,
     runs: list[WorkflowRun],
     *,
+    merged: tuple[MergedPullRequest, ...],
     notices: list[str],
 ) -> list[WorkflowRun]:
     """Attach earlier-failure times so a later attempt is not assumed to hide a flake.
 
+    Re-runs on merged PRs are checked first because they drive blocked time.
     A re-run whose history could not be read, or fell outside the lookup
     budget, stays a plain success and is reported in a coverage notice rather
     than silently shrinking the failure counts.
     """
-    rerun_count = sum(1 for run in runs if run.succeeded and run.attempt > 1)
-    if not rerun_count:
+    reruns = [run for run in runs if run.succeeded and run.attempt > 1]
+    if not reruns:
         return runs
+    merged_numbers = {pr.number for pr in merged}
+    merged_branches = {(pr.head_repo, pr.branch) for pr in merged}
+
+    def on_merged_pr(run: WorkflowRun) -> bool:
+        if run.pr_numbers:
+            return any(number in merged_numbers for number in run.pr_numbers)
+        return (run.head_repo, run.branch) in merged_branches
+
+    ordered = sorted(reruns, key=lambda run: (not on_merged_pr(run), run.created_at))
     lookups = _AttemptLookups(_MAX_ATTEMPT_LOOKUPS)
-    with ThreadPoolExecutor(max_workers=min(_MAX_RERUN_WORKERS, rerun_count)) as pool:
-        annotated = list(
-            pool.map(lambda run: _with_earlier_failure(client, root, run, lookups), runs)
+    with ThreadPoolExecutor(max_workers=min(_MAX_RERUN_WORKERS, len(ordered))) as pool:
+        results = list(
+            pool.map(lambda run: _with_earlier_failure(client, root, run, lookups), ordered)
         )
+    checked = {run.run_id: result for run, result in zip(ordered, results, strict=True)}
+    annotated = [checked.get(run.run_id, run) for run in runs]
     if lookups.unavailable:
         notices.append(
             f"Coverage notice: attempt history was unavailable for {lookups.unavailable} "

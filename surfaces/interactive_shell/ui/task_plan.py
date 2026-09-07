@@ -9,7 +9,7 @@ transcript — only the one-shot ``Plan complete`` breakdown is.
 
 from __future__ import annotations
 
-from rich.console import Console
+from rich.console import Console, Group
 from rich.text import Text
 
 from core.agent_harness.spi.task_plan import (
@@ -22,6 +22,7 @@ from core.agent_harness.spi.task_plan import (
 )
 from infrastructure.terminal import theme as ui_theme
 from surfaces.interactive_shell.ui.input_prompt.layout import clip_prompt_text, prompt_line_width
+from surfaces.shared.terminal.components.rendering import print_repl_renderable
 
 _STEP_INDENT = "  "
 # Steps shown before the plan collapses; a longer plan folds to a window
@@ -45,32 +46,31 @@ def render_plan_breakdown(console: Console, breakdown: str) -> None:
 
     Checked steps stay primary (warm ``✓`` + body text); nested work notes
     under ``↳`` go dim so the checklist reads apart from tool chatter —
-    the same parent/child split live tool rows already use.
+    the same parent/child split live tool rows already use. The rows go out
+    as one buffered block so they stay left-aligned when the prompt has the
+    terminal in raw mode.
     """
     text = (breakdown or "").rstrip("\n")
     if not text:
         return
+    rows: list[Text] = []
     for raw in text.splitlines():
-        line = Text()
         stripped = raw.lstrip()
         if not stripped:
-            console.print()
+            rows.append(Text(""))
             continue
         if stripped.startswith(_WORK_NOTE_MARKER):
             # Theme DIM as raw truecolor. Rich Style.parse caches ANSI from
             # the first color_system that rendered ``#6E6E6E``; a prior
             # 16-color console then emits bright-black ``[90m`` instead of
             # DIM_ANSI on a truecolor breakdown.
-            console.print(
-                f"{ui_theme.DIM_ANSI}{raw}{ui_theme.ANSI_RESET}",
-                highlight=False,
-                markup=False,
-            )
+            rows.append(Text.from_ansi(f"{ui_theme.DIM_ANSI}{raw}{ui_theme.ANSI_RESET}"))
             continue
+        line = Text()
         # Header (``Plan complete · n/n``) or a checklist step (``  ✓ …``).
         if stripped.startswith("Plan"):
             line.append(raw, style=str(ui_theme.SECONDARY))
-            console.print(line)
+            rows.append(line)
             continue
         # Step row: accent the status glyph, keep the step title as body text.
         indent_len = len(raw) - len(stripped)
@@ -88,7 +88,8 @@ def render_plan_breakdown(console: Console, breakdown: str) -> None:
             line.append(rest, style=str(ui_theme.TEXT))
         else:
             line.append(stripped, style=str(ui_theme.TEXT))
-        console.print(line)
+        rows.append(line)
+    print_repl_renderable(console, Group(*rows))
 
 
 def _overlay_line(text: str, style: str, width: int) -> str:

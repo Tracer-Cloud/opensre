@@ -202,6 +202,24 @@ def print_repl_text(console: Console, text: str, *, markup: bool = False) -> Non
     _console_print_prepared(console, text, markup=markup)
 
 
+def print_repl_renderable(console: Console, renderable: Any) -> None:
+    """Print one Rich renderable with CRLF under ``patch_stdout(raw=True)``.
+
+    Same buffered path as :func:`print_repl_text`, for styled multi-row
+    output (``Text``/``Group``) that would otherwise staircase in raw mode.
+    """
+    if console.file is sys.stdout and sys.stdout.isatty() and not _console_is_capturing(console):
+        width = _prepare_tty_for_rich(console)
+        _write_repl_tty_buffered(
+            console=console,
+            width=width,
+            leading_blank=False,
+            render_to_buffer=lambda buf_console: buf_console.print(renderable),
+        )
+        return
+    _console_print_prepared(console, renderable)
+
+
 def repl_print(console: Console, *objects: Any, **kwargs: Any) -> None:
     """Print via Rich after resetting the TTY column (inline-menu safe)."""
     from surfaces.shared.terminal.components.choice_menu import prepare_repl_output_line
@@ -260,6 +278,7 @@ __all__ = [
     "_repl_output_already_prepared",
     "_repl_table_width",
     "print_repl_json",
+    "print_repl_renderable",
     "print_repl_table",
     "print_repl_text",
     "repl_clear_screen",
