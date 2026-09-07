@@ -144,13 +144,9 @@ def test_get_recent_invocations_success(mock_logs_client) -> None:
 def test_get_recent_invocations_tolerates_unparseable_request_id(
     mock_logs_client, message, label
 ) -> None:
-    """An unparseable START line leaves request_id unset, it does not abort the call.
-
-    filter_log_events returns everything in the log group, the function's own
-    stdout included, so the START parse reads untrusted text. The guard tested
-    for "RequestId:" while the split used "RequestId: ", so neither of these
-    two shapes was caught and the IndexError escaped get_recent_invocations.
-    """
+    """An unparseable START line leaves request_id unset without aborting the call."""
+    # filter_log_events returns everything in the log group, the function's own
+    # stdout included, so the START parse reads untrusted text.
     mock_logs_client.filter_log_events.return_value = {
         "events": [
             {"timestamp": 1000, "message": message},
