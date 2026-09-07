@@ -200,11 +200,12 @@ retrieve the token from `gh` or echo it for transfer.
 Run this non-secret readiness probe from the OpenSRE checkout:
 
 ```bash
-python -c 'from integrations.coding_agent import verify_coding_agent; ok, detail = verify_coding_agent(); print(("ready: " if ok else "not ready: ") + detail)'
+uv run python -c 'from integrations.coding_agent import verify_coding_agent; ok, detail = verify_coding_agent(); print(("ready: " if ok else "not ready: ") + detail)'
 ```
 
-Run that probe with `shell_run` from the OpenSRE checkout using the current
-interpreter. Do not wrap it in `uv run opensre`.
+Run that probe with `shell_run` from the OpenSRE checkout. `uv run python`
+uses the project environment; do not wrap it in a nested `uv run opensre`
+process.
 
 The default `CODING_AGENT=auto` accepts the first ready backend among Pi,
 Claude Code, and Codex. If none is ready, use the probe's detail to install or
