@@ -3,22 +3,13 @@
 from __future__ import annotations
 
 import os
-from typing import Any
 
 from rich.console import Console
 from rich.markup import escape
 
 import surfaces.interactive_shell.command_registry.repl_data as repl_data
-from config.constants.llm import (
-    LLM_PROVIDER_ENV,
-    MODEL_SWITCH_VALIDATION_TIMEOUT_SECONDS,
-    OLLAMA_VALIDATION_TIMEOUT_SECONDS,
-)
-from config.llm_credentials import resolve_env_credential
+from config.constants.llm import LLM_PROVIDER_ENV
 from surfaces.interactive_shell.ui import DIM, ERROR, HIGHLIGHT, WARNING, render_models_table
-from surfaces.shared.llm_setup.catalog import PROVIDER_BY_VALUE, WizardCredentialKind
-from surfaces.shared.llm_setup.validation import validate_provider_credentials
-from surfaces.shared.terminal.components import llm_loader
 from surfaces.shared.terminal.components.choice_menu import print_valid_choice_list
 
 
@@ -78,42 +69,6 @@ def _is_model_allowed(provider: object, model: str) -> bool:
     return bool(model) and _provider_allows_custom_models(provider)
 
 
-def _validate_selected_model(provider: Any, model: str, console: Console) -> bool:
-    """Run live credential/model validation before switching."""
-    # Only validate API-based or Host-based providers (skip CLI/ambient providers)
-    if provider.credential_kind not in (WizardCredentialKind.API_KEY, WizardCredentialKind.HOST):
-        return True
-
-    api_key = ""
-    if provider.api_key_env:
-        api_key = resolve_env_credential(provider.api_key_env) or provider.credential_default
-
-    # Ollama keeps its full budget: a cold or CPU-bound local model can need
-    # well over the interactive 10s to load. Responsiveness stays in the UI
-    # layer (spinner + Ctrl-C), not in a shortened probe timeout.
-    probe_timeout = (
-        OLLAMA_VALIDATION_TIMEOUT_SECONDS
-        if provider.value == "ollama"
-        else MODEL_SWITCH_VALIDATION_TIMEOUT_SECONDS
-    )
-    try:
-        with llm_loader(console, f"Validating {escape(model)}..."):
-            validation = validate_provider_credentials(
-                provider=provider, api_key=api_key, model=model, timeout=probe_timeout
-            )
-    except KeyboardInterrupt:
-        console.print(
-            f"[{WARNING}]Model validation cancelled.[/]",
-            markup=True,
-        )
-        return False
-
-    if not validation.ok:
-        console.print(f"[{ERROR}]Model validation failed:[/] {escape(validation.detail)}")
-        return False
-    return True
-
-
 def _resolve_omitted_model(provider: object) -> str:
     """Model to persist/display when the caller supplies none (switch/restore-default).
 
@@ -155,6 +110,7 @@ def switch_llm_provider(
         return False
 
     from config.llm_auth.credentials import status as credential_status
+    from surfaces.shared.llm_setup.catalog import PROVIDER_BY_VALUE
     from surfaces.shared.llm_setup.env_sync import sync_provider_env
 
     provider_key = provider_name.strip().lower()
@@ -260,6 +216,13 @@ def switch_llm_provider(
             f"[{DIM}]known reasoning models:[/] {escape(_format_supported_models(provider.models))}"
         )
         return False
+    if provider.value == "ollama" and selected_model:
+        from surfaces.interactive_shell.command_registry.model.ollama import (
+            validate_model_available,
+        )
+
+        if not validate_model_available(provider, selected_model, console):
+            return False
 
     selected_toolcall: str | None = None
     if toolcall_model is not None:
@@ -280,15 +243,6 @@ def switch_llm_provider(
                 )
                 return False
 
-    if selected_model and not _validate_selected_model(provider, selected_model, console):
-        return False
-
-    if selected_toolcall and selected_toolcall != selected_model:
-        # Validate the toolcall model separately if it's different from the reasoning model.
-        valid = _validate_selected_model(provider, selected_toolcall, console)
-        if not valid:
-            return False
-
     env_path = sync_provider_env(
         provider=provider,
         model=selected_model,
@@ -299,7 +253,8 @@ def switch_llm_provider(
     # Be explicit about which slot each model lands in.
     console.print(f"[{HIGHLIGHT}]switched LLM provider:[/] {provider.value}")
     console.print(
-        f"[{HIGHLIGHT}]reasoning model:[/] {escape(selected_model) if selected_model else 'provider default'} "
+        f"[{HIGHLIGHT}]reasoning model:[/] "
+        f"{escape(selected_model) if selected_model else 'provider default'} "
         f"[{DIM}]({provider.model_env})[/]"
     )
     if selected_toolcall:
@@ -323,6 +278,7 @@ def switch_toolcall_model(
         return False
 
     from config.env_file import sync_env_values
+    from surfaces.shared.llm_setup.catalog import PROVIDER_BY_VALUE
 
     raw_name = provider_name if provider_name else os.getenv(LLM_PROVIDER_ENV, "anthropic")
     resolved_name = (raw_name or "anthropic").strip().lower()
@@ -344,14 +300,6 @@ def switch_toolcall_model(
     new_model = _normalize_model_id(toolcall_model)
     if not new_model:
         console.print(f"[{ERROR}]toolcall model cannot be empty[/]")
-        return False
-    if not _is_model_allowed(provider, new_model):
-        console.print(f"[{ERROR}]unknown model for {provider.value}:[/] {escape(new_model)}")
-        console.print(
-            f"[{DIM}]known toolcall models:[/] {escape(_format_supported_models(provider.models))}"
-        )
-        return False
-    if not _validate_selected_model(provider, new_model, console):
         return False
 
     values = {provider.toolcall_model_env: new_model}
@@ -378,6 +326,7 @@ def switch_reasoning_model(
     if _account_model_change_is_locked(console):
         return False
 
+    from surfaces.shared.llm_setup.catalog import PROVIDER_BY_VALUE
     from surfaces.shared.llm_setup.env_sync import sync_reasoning_model_env
 
     raw_name = provider_name if provider_name else os.getenv(LLM_PROVIDER_ENV, "anthropic")
@@ -402,8 +351,13 @@ def switch_reasoning_model(
             f"[{DIM}]known reasoning models:[/] {escape(_format_supported_models(provider.models))}"
         )
         return False
-    if not _validate_selected_model(provider, new_model, console):
-        return False
+    if provider.value == "ollama":
+        from surfaces.interactive_shell.command_registry.model.ollama import (
+            validate_model_available,
+        )
+
+        if not validate_model_available(provider, new_model, console):
+            return False
 
     env_path = sync_reasoning_model_env(provider=provider, model=new_model)
     _reset_runtime_llm_caches()
@@ -419,6 +373,8 @@ def switch_reasoning_model(
 
 def restore_default_model(provider_name: str, console: Console) -> bool:
     """Reset a provider to its configured default reasoning model."""
+    from surfaces.shared.llm_setup.catalog import PROVIDER_BY_VALUE
+
     provider_key = provider_name.strip().lower()
     provider = PROVIDER_BY_VALUE.get(provider_key)
     if provider is None:

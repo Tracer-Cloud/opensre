@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import contextlib
-from contextlib import AbstractContextManager
 from types import SimpleNamespace
 from typing import Any
 
@@ -27,20 +25,10 @@ class _Console:
         _ = (prompt, password)
         return self._key
 
-    def status(self, *_args: Any, **_kwargs: Any) -> AbstractContextManager[None]:
-        return contextlib.nullcontext()
-
 
 @pytest.fixture(autouse=True)
 def _no_account_model_lock(monkeypatch: Any) -> None:
     monkeypatch.setattr("config.account.account_llm_route", lambda: None)
-
-    from surfaces.shared.llm_setup.validation_result import ValidationResult
-
-    monkeypatch.setattr(
-        "surfaces.interactive_shell.command_registry.model.switching.validate_provider_credentials",
-        lambda **kwargs: ValidationResult(ok=True, detail="Mocked success", sample_response="ok"),  # noqa: ARG005
-    )
 
 
 def _credential_status_sequence(monkeypatch: Any, *, configured_after: bool) -> None:
@@ -176,42 +164,3 @@ def test_custom_provider_no_model_uses_legacy_model(monkeypatch: Any) -> None:
     monkeypatch.setenv(provider.legacy_model_env, "gateway-model")
 
     assert switching._resolve_omitted_model(provider) == "gateway-model"
-
-
-def test_validate_keeps_ollama_budget_but_caps_hosted_providers(monkeypatch: Any) -> None:
-    # A cold/CPU-bound Ollama model can need well over the interactive 10s
-    # to load — routing the universal REPL timeout to it reports a valid
-    # model as invalid and blocks the switch.
-    from config.constants.llm import (
-        MODEL_SWITCH_VALIDATION_TIMEOUT_SECONDS,
-        OLLAMA_VALIDATION_TIMEOUT_SECONDS,
-    )
-    from surfaces.shared.llm_setup.validation_result import ValidationResult
-
-    seen: dict[str, float] = {}
-
-    def _capture(**kwargs: Any) -> ValidationResult:
-        seen[str(kwargs["provider"].value)] = float(kwargs["timeout"])
-        return ValidationResult(ok=True, detail="Mocked success", sample_response="ok")
-
-    monkeypatch.setattr(switching, "validate_provider_credentials", _capture)
-
-    console = _Console()
-    assert (
-        switching._validate_selected_model(
-            PROVIDER_BY_VALUE["ollama"],
-            "llama3.1",
-            console,  # type: ignore[arg-type]
-        )
-        is True
-    )
-    assert (
-        switching._validate_selected_model(
-            PROVIDER_BY_VALUE["openai"],
-            "gpt-5-mini",
-            console,  # type: ignore[arg-type]
-        )
-        is True
-    )
-    assert seen["ollama"] == OLLAMA_VALIDATION_TIMEOUT_SECONDS
-    assert seen["openai"] == MODEL_SWITCH_VALIDATION_TIMEOUT_SECONDS

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from config.constants.llm import DEFAULT_LLM_VALIDATION_TIMEOUT_SECONDS
 from core.llm.providers.azure_openai import (
     format_azure_deployment_not_found_message,
     is_azure_deployment_lookup_error,
@@ -43,7 +42,6 @@ def validate_credentials(
     deployment: str,
     base_url: str,
     api_version: str,
-    timeout: float = DEFAULT_LLM_VALIDATION_TIMEOUT_SECONDS,
 ) -> ValidationResult:
     """Validate Azure OpenAI credentials with a tiny chat completion."""
     normalized_base = normalize_azure_openai_base_url(base_url)
@@ -61,7 +59,7 @@ def validate_credentials(
             api_key=api_key,
             base_url=azure_base,
             default_query={"api-version": resolved_api_version},
-            timeout=timeout,
+            timeout=30.0,
         )
         request_kwargs: dict[str, object] = {
             "model": deployment,

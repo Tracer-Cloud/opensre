@@ -14,7 +14,6 @@ from surfaces.interactive_shell.command_registry import dispatch_slash
 from surfaces.interactive_shell.command_registry import repl_data as repl_data_module
 from surfaces.interactive_shell.session import Session
 from surfaces.shared.llm_setup.catalog import PROJECT_ENV_PATH, PROJECT_ROOT, PROVIDER_BY_VALUE
-from surfaces.shared.llm_setup.validation_result import ValidationResult
 
 
 def _capture() -> tuple[Console, io.StringIO]:
@@ -38,13 +37,9 @@ def patch_llm_settings(monkeypatch: pytest.MonkeyPatch) -> None:
     class _Fake:
         provider = "anthropic"
         anthropic_reasoning_model = "claude-opus-4-7"
-        anthropic_toolcall_model = "claude-haiku-4-5"
+        anthropic_toolcall_model = "claude-haiku-4-5-20251001"
 
     monkeypatch.setattr(repl_data_module, "load_llm_settings", lambda: _Fake())
-    monkeypatch.setattr(
-        "surfaces.interactive_shell.command_registry.model.switching.validate_provider_credentials",
-        lambda **kwargs: ValidationResult(ok=True, detail="Mocked success", sample_response="ok"),  # noqa: ARG005
-    )
 
 
 class TestProjectPaths:
@@ -215,11 +210,11 @@ class TestReplModelPersistence:
         )
 
         console, _ = _capture()
-        dispatch_slash("/model toolcall set claude-haiku-4-5", Session(), console)
+        dispatch_slash("/model toolcall set claude-haiku-4-5-20251001", Session(), console)
 
-        assert "ANTHROPIC_TOOLCALL_MODEL=claude-haiku-4-5" in persistence_paths["env"].read_text(
-            encoding="utf-8"
-        )
+        assert "ANTHROPIC_TOOLCALL_MODEL=claude-haiku-4-5-20251001" in persistence_paths[
+            "env"
+        ].read_text(encoding="utf-8")
         stored = wizard_store.load_local_config(persistence_paths["store"])["targets"]["local"]
         assert stored["model"] == "claude-opus-4-7"
 
@@ -296,30 +291,19 @@ class TestReplModelPersistence:
         stored = wizard_store.load_local_config(persistence_paths["store"])
         assert stored["targets"]["local"]["model"] == model
 
-    def test_model_set_ollama_invalid_model_does_not_persist(
+    def test_unavailable_ollama_model_does_not_persist(
         self,
         persistence_paths: dict[str, Path],
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from surfaces.shared.llm_setup.validation_result import ValidationResult
-
-        # Override the class-level mock to simulate a validation failure
         monkeypatch.setattr(
-            "surfaces.interactive_shell.command_registry.model.switching.validate_provider_credentials",
-            lambda **kwargs: ValidationResult(ok=False, detail="Model 'ghost-model' not found."),  # noqa: ARG005
+            "surfaces.interactive_shell.command_registry.model.ollama.list_available_models",
+            lambda _host: ("llama3.2:latest",),
         )
+        console, output = _capture()
 
-        console, buf = _capture()
-
-        # Execute the slash command
         dispatch_slash("/model set ollama ghost-model", Session(), console)
 
-        output = buf.getvalue()
-
-        # Assert the validation error was printed to the REPL buffer
-        assert "Model validation failed" in output
-        assert "ghost-model" in output
-
-        # Assert the configuration files were NEVER created or modified
+        assert "Ollama model is not available: ghost-model" in output.getvalue()
         assert not persistence_paths["env"].exists()
         assert not persistence_paths["store"].exists()

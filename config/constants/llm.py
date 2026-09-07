@@ -22,17 +22,6 @@ LLM_PROVIDER_ENV: Final[str] = "LLM_PROVIDER"
 #: auth path now; env sync strips this from existing ``.env`` files.
 LLM_AUTH_METHOD_ENV: Final[str] = "LLM_AUTH_METHOD"
 
-# --- Live validation timeouts ------------------------------------------------
-# Shared probe budget: hosted SDKs (Azure/Anthropic/OpenAI-compatible) fail
-# fast at 30s; local Ollama inference needs a longer 60s budget. The REPL
-# switch path uses a shorter interactive budget for hosted providers so a
-# hung probe does not occupy the command path, but keeps the full Ollama
-# budget — a cold or CPU-bound local model can need well over 10s to load.
-
-DEFAULT_LLM_VALIDATION_TIMEOUT_SECONDS: Final[float] = 30.0
-OLLAMA_VALIDATION_TIMEOUT_SECONDS: Final[float] = 60.0
-MODEL_SWITCH_VALIDATION_TIMEOUT_SECONDS: Final[float] = 10.0
-
 AZURE_OPENAI_BASE_URL_ENV: Final[str] = "AZURE_OPENAI_BASE_URL"
 AZURE_OPENAI_API_VERSION_ENV: Final[str] = "AZURE_OPENAI_API_VERSION"
 AZURE_OPENAI_API_KEY_ENV: Final[str] = "AZURE_OPENAI_API_KEY"

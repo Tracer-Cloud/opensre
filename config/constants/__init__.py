@@ -450,19 +450,10 @@ if TYPE_CHECKING:
         AZURE_OPENAI_BASE_URL_ENV as AZURE_OPENAI_BASE_URL_ENV,
     )
     from config.constants.llm import (
-        DEFAULT_LLM_VALIDATION_TIMEOUT_SECONDS as DEFAULT_LLM_VALIDATION_TIMEOUT_SECONDS,
-    )
-    from config.constants.llm import (
         LLM_AUTH_METHOD_ENV as LLM_AUTH_METHOD_ENV,
     )
     from config.constants.llm import (
         LLM_PROVIDER_ENV as LLM_PROVIDER_ENV,
-    )
-    from config.constants.llm import (
-        MODEL_SWITCH_VALIDATION_TIMEOUT_SECONDS as MODEL_SWITCH_VALIDATION_TIMEOUT_SECONDS,
-    )
-    from config.constants.llm import (
-        OLLAMA_VALIDATION_TIMEOUT_SECONDS as OLLAMA_VALIDATION_TIMEOUT_SECONDS,
     )
     from config.constants.llm import (
         OPENSRE_LLM_NATIVE_STRUCTURED_OUTPUT_ENV as OPENSRE_LLM_NATIVE_STRUCTURED_OUTPUT_ENV,

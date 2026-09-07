@@ -367,15 +367,6 @@ class TestSpecificListCommands:
 
         monkeypatch.setattr(repl_data_module, "load_llm_settings", lambda: _FakeLLM())
 
-        from surfaces.shared.llm_setup.validation_result import ValidationResult
-
-        monkeypatch.setattr(
-            "surfaces.shared.llm_setup.validation.validate_provider_credentials",
-            lambda **kwargs: ValidationResult(  # noqa: ARG005
-                ok=True, detail="Mocked success", sample_response="ok"
-            ),
-        )
-
     def test_model_show_displays_provider_and_models(self, monkeypatch: object) -> None:
         self._patch_llm(monkeypatch)
         console, buf = _capture()
@@ -731,15 +722,6 @@ class TestModelCommand:
             anthropic_toolcall_model = "claude-haiku-4"
 
         monkeypatch.setattr(repl_data_module, "load_llm_settings", lambda: _Fake())
-
-        from surfaces.shared.llm_setup.validation_result import ValidationResult
-
-        monkeypatch.setattr(
-            "surfaces.interactive_shell.command_registry.model.switching.validate_provider_credentials",
-            lambda **kwargs: ValidationResult(  # noqa: ARG005
-                ok=True, detail="Mocked success", sample_response="ok"
-            ),
-        )
 
     def _redirect_wizard_store(
         self,
