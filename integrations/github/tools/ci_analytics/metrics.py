@@ -87,11 +87,11 @@ def pull_request_delays(
     is left out. The wait on a commit ends when the developer pushes the next
     commit of the PR or the PR merges, whichever comes first, so a stale
     commit re-run later adds nothing. A later commit that triggered no
-    workflow still cuts off the wait when its timestamp is known; otherwise
-    the merge time is the last bound. The delay intervals of a PR's commits
-    are unioned so overlapping workflows and re-runs are counted once.
+    workflow is invisible here; the merge time still bounds the wait. The
+    delay intervals of a PR's commits are unioned so overlapping workflows
+    and re-runs are counted once.
     """
-    identity = _PullRequestIdentity(merged_prs)
+    identity = PullRequestIdentity(merged_prs)
     affected: set[tuple[PullRequestKey, str]] = set()
     first_failure: dict[PullRequestKey, ClassifiedFailure] = {}
     for item in classified:
@@ -105,9 +105,7 @@ def pull_request_delays(
     by_commit: dict[tuple[PullRequestKey, str], list[WorkflowRun]] = defaultdict(list)
     for run in pr_runs:
         by_commit[(identity.key(run), run.head_sha)].append(run)
-    next_push = _next_push_times(
-        by_commit, extra_commits={pr.number: pr.commits for pr in merged_prs if pr.commits}
-    )
+    next_push = _next_push_times(by_commit)
     intervals: dict[PullRequestKey, list[tuple[datetime, datetime]]] = defaultdict(list)
     for key, sha in affected:
         interval = _commit_delay(
@@ -139,12 +137,14 @@ PullRequestKey = tuple[str, str, int]
 """Head repository, branch, and PR number identifying one pull request."""
 
 
-class _PullRequestIdentity:
-    """Resolve which pull request a run belongs to and when that PR merged.
+class PullRequestIdentity:
+    """Which pull request a run belongs to, and whether that PR was merged after the run.
 
-    Of several attached PR numbers the merged one wins; a run with none is
-    assigned to the first PR merged from its head repository and branch
-    after the run was queued.
+    Of several attached PR numbers, the one whose lifetime contains the run
+    wins: merged after the run was queued, earliest merge first. A run with
+    no attached number is assigned to the first PR merged from its head
+    repository and branch after the run, so a reused branch name does not
+    fold two PRs into one.
     """
 
     def __init__(self, merged: Sequence[MergedPullRequest]) -> None:
@@ -157,15 +157,27 @@ class _PullRequestIdentity:
         self._merged_at = {pr.number: pr.merged_at for pr in merged}
 
     def key(self, run: WorkflowRun) -> PullRequestKey:
-        if run.pr_numbers:
-            number = next((n for n in run.pr_numbers if n in self._merged_at), run.pr_numbers[0])
-            return (run.head_repo, run.branch, number)
-        candidates = self._by_branch.get((run.head_repo, run.branch), [])
-        merged = next((pr for pr in candidates if pr.merged_at >= run.created_at), None)
-        return (run.head_repo, run.branch, merged.number if merged else 0)
+        return (run.head_repo, run.branch, self._number(run))
 
     def merged_at(self, key: PullRequestKey) -> datetime | None:
         return self._merged_at.get(key[2])
+
+    def on_critical_path(self, run: WorkflowRun) -> bool:
+        """True when the run's PR was merged inside the window, after the run was queued."""
+        merged_at = self._merged_at.get(self._number(run))
+        return merged_at is not None and merged_at >= run.created_at
+
+    def _number(self, run: WorkflowRun) -> int:
+        if run.pr_numbers:
+            containing = [
+                (self._merged_at[n], n)
+                for n in run.pr_numbers
+                if n in self._merged_at and self._merged_at[n] >= run.created_at
+            ]
+            return min(containing)[1] if containing else run.pr_numbers[0]
+        candidates = self._by_branch.get((run.head_repo, run.branch), [])
+        merged = next((pr for pr in candidates if pr.merged_at >= run.created_at), None)
+        return merged.number if merged else 0
 
 
 def _earliest(*times: datetime | None) -> datetime | None:
@@ -175,23 +187,11 @@ def _earliest(*times: datetime | None) -> datetime | None:
 
 def _next_push_times(
     by_commit: dict[tuple[PullRequestKey, str], list[WorkflowRun]],
-    extra_commits: dict[int, Sequence[tuple[str, datetime]]] | None = None,
 ) -> dict[tuple[PullRequestKey, str], datetime]:
-    """For each commit, when the same PR's next commit landed.
-
-    Workflow-run queue times cover commits that triggered CI. ``extra_commits``
-    adds later SHAs that path filters skipped, so those still cut off the wait.
-    """
+    """For each commit, when the same PR's next commit was first queued."""
     queued: dict[PullRequestKey, list[tuple[datetime, str]]] = defaultdict(list)
     for (key, sha), runs in by_commit.items():
         queued[key].append((min(run.created_at for run in runs), sha))
-    extras = extra_commits or {}
-    for key, commits in queued.items():
-        known = {sha for _, sha in commits}
-        for sha, when in extras.get(key[2], ()):
-            if sha not in known:
-                commits.append((when, sha))
-                known.add(sha)
     next_push: dict[tuple[PullRequestKey, str], datetime] = {}
     for key, commits in queued.items():
         commits.sort()
@@ -283,10 +283,10 @@ def classify_failures(
     newer commit a source-code failure, and no later pass leaves it unresolved.
     Every delay subtracts the workflow's normal duration.
     """
-    merged_ids = {pr.number for pr in merged_prs}
+    identity = PullRequestIdentity(merged_prs)
     groups: dict[tuple[int | str, str, str, int], list[WorkflowRun]] = defaultdict(list)
     for run in pr_runs:
-        groups[_history_key(run, merged_ids)].append(run)
+        groups[_history_key(run, identity)].append(run)
     classified: list[ClassifiedFailure] = []
     for (workflow_key, _head_repo, _branch, _pr), runs in groups.items():
         ordered = sorted(runs, key=lambda r: r.completed_at)
@@ -300,7 +300,7 @@ def classify_failures(
                         recovery=run,
                         kind=FailureKind.RELIABILITY,
                         delay_minutes=max(0.0, elapsed - normal_minutes.get(workflow_key, 0.0)),
-                        critical_path=on_critical_path(run, merged_prs),
+                        critical_path=identity.on_critical_path(run),
                     )
                 )
                 continue
@@ -323,7 +323,7 @@ def classify_failures(
                     recovery=recovery,
                     kind=kind,
                     delay_minutes=delay,
-                    critical_path=on_critical_path(run, merged_prs),
+                    critical_path=identity.on_critical_path(run),
                 )
             )
     return sorted(classified, key=lambda c: c.failure.completed_at)
@@ -404,33 +404,16 @@ def _workflow_key(run: WorkflowRun) -> int | str:
     return run.workflow_id if run.workflow_id else run.workflow
 
 
-def _history_key(run: WorkflowRun, merged_ids: set[int]) -> tuple[int | str, str, str, int]:
-    if run.pr_numbers:
-        number = next((n for n in run.pr_numbers if n in merged_ids), run.pr_numbers[0])
-    else:
-        number = 0
-    return (_workflow_key(run), run.head_repo, run.branch, number)
-
-
-def on_critical_path(run: WorkflowRun, merged: Sequence[MergedPullRequest]) -> bool:
-    """True when the run belongs to a PR merged inside the window, after the run was created.
-
-    A PR number is decisive when GitHub attached one; otherwise the head
-    repository and branch must match a PR merged later than the run, so a
-    reused branch name does not inherit an earlier merge.
-    """
-    if run.pr_numbers:
-        merged_ids = {pr.number for pr in merged}
-        return any(number in merged_ids for number in run.pr_numbers)
-    return any(
-        pr.branch == run.branch and pr.head_repo == run.head_repo and pr.merged_at >= run.created_at
-        for pr in merged
-    )
+def _history_key(
+    run: WorkflowRun, identity: PullRequestIdentity
+) -> tuple[int | str, str, str, int]:
+    head_repo, branch, number = identity.key(run)
+    return (_workflow_key(run), head_repo, branch, number)
 
 
 __all__ = [
     "classify_failures",
-    "on_critical_path",
+    "PullRequestIdentity",
     "pull_request_delays",
     "compute_report",
     "find_outages",
