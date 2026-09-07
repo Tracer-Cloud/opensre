@@ -223,10 +223,11 @@ def _cmd_onboard(session: Session, console: Console, args: list[str]) -> bool:  
 
 def _cmd_setup(session: Session, console: Console, args: list[str]) -> bool:  # noqa: ARG001
     if session_terminal(session) is None:
+        cli_cmd = " ".join(["uv run opensre setup", *args]).strip()
         message = (
             "Setup signs in to an OpenSRE account and activates its hosted model. "
             "It cannot run inside a Telegram chat.\n\n"
-            "Run on the server:\n  uv run opensre setup\n\n"
+            f"Run on the server:\n  {cli_cmd}\n\n"
             "Configure integrations separately with `/integrations setup <service>`."
         )
         console.print()

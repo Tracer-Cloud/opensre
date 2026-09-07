@@ -2228,6 +2228,18 @@ class TestCliDelegatedCommands:
 
         assert captured == [["onboard", "local_llm"]]
 
+    def test_headless_setup_keeps_dev_flag_in_fallback_command(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from surfaces.interactive_shell.command_registry import cli_parity as m
+
+        monkeypatch.setattr(m, "session_terminal", lambda _session: None)
+        console, buf = _capture()
+        session = Session()
+
+        assert m._cmd_setup(session, console, ["--dev"]) is True
+        assert "uv run opensre setup --dev" in buf.getvalue()
+
 
 def test_alerts_inactive_prints_enable_instructions(monkeypatch: pytest.MonkeyPatch) -> None:
     """The inactive warning must say how to turn the listener on."""
