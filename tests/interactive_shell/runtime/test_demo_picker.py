@@ -96,6 +96,7 @@ def test_analytics_demo_scans_asks_for_the_repository_then_queues_the_analysis(
     repo_choices = [value for value, _label in calls[1]["choices"]]
     assert repo_choices == ["me/mine", "acme/busy", demo_picker.EXAMPLE_REPOSITORY, "custom"]
     assert session.terminal.pending_prompt_autosubmit is True
+    assert session.terminal.pending_prompt_plain_turn is True
     assert "me/mine[v2]" in session.terminal.pending_prompt_default
     assert json.loads(marker.read_text())["option"] == demo_picker.OPTION_CI_ANALYTICS
 
@@ -143,6 +144,7 @@ def test_other_demos_queue_their_prompt_directly(
 
     assert demo_picker.offer_demo(session, None) is True
     assert "Slack" in session.terminal.pending_prompt_default
+    assert session.terminal.pending_prompt_plain_turn is False
 
 
 def test_typed_answer_is_submitted_verbatim(

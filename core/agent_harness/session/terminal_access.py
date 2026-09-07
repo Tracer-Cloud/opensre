@@ -103,6 +103,8 @@ def clear_pending_autosubmit(session: Any) -> None:
         terminal.pending_prompt_default = None
     if hasattr(terminal, "pending_prompt_autosubmit"):
         terminal.pending_prompt_autosubmit = False
+    if hasattr(terminal, "pending_prompt_plain_turn"):
+        terminal.pending_prompt_plain_turn = False
 
 
 __all__ = [

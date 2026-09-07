@@ -163,7 +163,7 @@ def offer_demo(session: Session, console: Console | None = None, *, force: bool 
         if suggestion is None:
             capture_onboarding_demo_selected(option=_CUSTOM_OPTION, custom=True)
             _record(_CUSTOM_OPTION)
-            session.terminal.set_auto_command(selected)
+            session.terminal.set_auto_prompt(selected)
             return True
         capture_onboarding_demo_selected(option=suggestion.option, custom=False)
         if suggestion.option == OPTION_CI_ANALYTICS:
@@ -209,7 +209,9 @@ def _start_ci_analytics_demo(
             "days. Reading the GitHub Actions history takes about half a minute; the report "
             "appears below when it is ready.[/]"
         )
-    session.terminal.set_auto_command(suggestion.prompt.format(repository=repository))
+    # A plain turn keeps the prompt bar and its spinner visible while the model
+    # and the analysis run; a work-turn autosubmit would suspend them.
+    session.terminal.set_auto_prompt(suggestion.prompt.format(repository=repository))
     return True
 
 
