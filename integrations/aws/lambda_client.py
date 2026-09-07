@@ -204,9 +204,16 @@ def get_recent_invocations(
             if "START RequestId:" in message:
                 if current_invocation:
                     invocations.append(current_invocation)
-                request_id = (
-                    message.split("RequestId: ")[1].split()[0] if "RequestId:" in message else None
-                )
+                # The guard tested for "RequestId:" while the split used
+                # "RequestId: ", so it could not prevent the failure it looked
+                # like it was there for. filter_log_events returns the
+                # function's own stdout as well as AWS preamble, so this is
+                # parsing untrusted text; leave the field unset and keep the
+                # rest of the summary, as the Duration and Memory Used parses
+                # below already do.
+                request_id = None
+                with suppress(IndexError, ValueError):
+                    request_id = message.split("RequestId: ")[1].split()[0]
                 current_invocation = {
                     "request_id": request_id,
                     "start_time": timestamp,

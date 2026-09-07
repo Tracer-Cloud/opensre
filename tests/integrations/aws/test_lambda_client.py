@@ -134,6 +134,40 @@ def test_get_recent_invocations_success(mock_logs_client) -> None:
     assert len(invocation["logs"]) == 4
 
 
+@pytest.mark.parametrize(
+    ("message", "label"),
+    [
+        ("START RequestId:req9 Version: $LATEST\n", "no space after the colon"),
+        ("START RequestId: \n", "label with no value"),
+    ],
+)
+def test_get_recent_invocations_tolerates_unparseable_request_id(
+    mock_logs_client, message, label
+) -> None:
+    """An unparseable START line leaves request_id unset, it does not abort the call.
+
+    filter_log_events returns everything in the log group, the function's own
+    stdout included, so the START parse reads untrusted text. The guard tested
+    for "RequestId:" while the split used "RequestId: ", so neither of these
+    two shapes was caught and the IndexError escaped get_recent_invocations.
+    """
+    mock_logs_client.filter_log_events.return_value = {
+        "events": [
+            {"timestamp": 1000, "message": message},
+            {"timestamp": 1100, "message": "hello world\n"},
+        ]
+    }
+
+    result = get_recent_invocations("test-func")
+
+    assert result["success"] is True, label
+    invocation = result["data"]["invocations"][0]
+    assert invocation["request_id"] is None
+    assert invocation["start_time"] == 1000
+    # the trailing stdout line still lands in this invocation
+    assert invocation["logs"] == [message, "hello world\n"]
+
+
 def test_get_recent_invocations_resource_not_found(mock_logs_client) -> None:
     error_response = {
         "Error": {"Code": "ResourceNotFoundException", "Message": "Log group not found"}
