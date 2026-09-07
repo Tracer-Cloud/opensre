@@ -208,6 +208,7 @@ TOOLS = frozenset(
         "capability_available_from_sources",
         "coerce_gathered_evidence",
         "execute_with_action_context",
+        "registered_single_turn_tool_names",
     }
 )
 
