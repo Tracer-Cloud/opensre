@@ -23,6 +23,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from rich.markup import escape
+from rich.text import Text
 
 from config.constants.paths import OPENSRE_HOME_DIR
 from infrastructure.analytics.capture import (
@@ -33,12 +34,13 @@ from infrastructure.analytics.capture import (
 from infrastructure.analytics.source import is_test_run
 from infrastructure.terminal.theme import DIM, WARNING
 from integrations.github import resolve_github_token
+from surfaces.interactive_shell.ui.streaming.renderer import render_note_block, reply_gutter
 from surfaces.shared.terminal.components.choice_menu import (
     repl_choose_one,
     repl_tty_interactive,
 )
 from surfaces.shared.terminal.components.loaders import llm_loader
-from tools.system.workspace_git_scan.render import render_snapshot
+from tools.system.workspace_git_scan.render import snapshot_renderable
 from tools.system.workspace_git_scan.scan import RepoActivity, WorkspaceSnapshot, scan_workspace
 
 if TYPE_CHECKING:
@@ -56,6 +58,8 @@ _MENU_EXPLAINER = (
     "Each takes a couple of minutes and I'll use real GitHub repositories on your machine."
 )
 _CUSTOM_LABEL = "Or type your own answer..."
+# Same header the agent's own menus carry, so the demo reads as one conversation.
+_MENU_HEADER = "Ask User"
 _CUSTOM_OPTION = "custom"
 _SKIPPED_OPTION = "skipped"
 _SNAPSHOT_LEAD = "Here's a live snapshot built from your machine:"
@@ -153,6 +157,7 @@ def offer_demo(session: Session, console: Console | None = None, *, force: bool 
             ],
             custom_label=_CUSTOM_LABEL,
             letter_keys=True,
+            header=_MENU_HEADER,
         )
         if _nothing_chosen(selected):
             capture_onboarding_demo_skipped()
@@ -190,24 +195,26 @@ def _start_ci_analytics_demo(
     else:
         snapshot = scan_workspace(home, days=_SCAN_DAYS)
     if console is not None:
+        # Transcript idiom: the lead is an agent note, the chart hangs in the
+        # same gutter, so the demo does not read as a different program.
         console.print()
-        console.print(_SNAPSHOT_LEAD)
-        console.print()
-        render_snapshot(console, snapshot)
+        render_note_block(console, _SNAPSHOT_LEAD)
+        console.print(reply_gutter(snapshot_renderable(snapshot), lead=False))
         console.print()
     if not resolve_github_token(None):
         if console is not None:
-            console.print(f"[{WARNING}]{_TOKEN_MISSING}[/]")
+            console.print(reply_gutter(Text(_TOKEN_MISSING, style=str(WARNING)), lead=False))
         return False
     repository = choose_repository(snapshot)
     if repository is None:
         return False
     if console is not None:
         console.print()
-        console.print(
-            f"[{DIM}]Analyzing the CI/CD reliability of {escape(repository)} for the last {_SCAN_DAYS} "
-            "days. Reading the GitHub Actions history takes about half a minute; the report "
-            "appears below when it is ready.[/]"
+        render_note_block(
+            console,
+            f"Analyzing the CI/CD reliability of {repository} for the last {_SCAN_DAYS} days. "
+            "Reading the GitHub Actions history takes about half a minute; the report "
+            "appears below when it is ready.",
         )
     # A plain turn keeps the prompt bar and its spinner visible while the model
     # and the analysis run; a work-turn autosubmit would suspend them.
@@ -227,6 +234,7 @@ def choose_repository(snapshot: WorkspaceSnapshot) -> str | None:
         choices=choices,
         custom_label=_CUSTOM_LABEL,
         letter_keys=True,
+        header=_MENU_HEADER,
     )
     if _nothing_chosen(selected):
         return None

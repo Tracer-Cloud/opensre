@@ -230,8 +230,10 @@ def analyze_github_ci_reliability(
     now = datetime.now(UTC)
     console = _console(context)
     if console is not None:
+        # Two-column lead matches the shell's reply gutter so the tool's lines
+        # hang with the agent's notes instead of breaking the transcript edge.
         console.print(
-            f"[dim]Reading GitHub Actions history for {escape(f'{repo_owner}/{repo_name}')}, "
+            f"  [dim]Reading GitHub Actions history for {escape(f'{repo_owner}/{repo_name}')}, "
             f"last {window} days…[/dim]"
         )
     started = time.monotonic()
@@ -274,7 +276,7 @@ def analyze_github_ci_reliability(
     rendered = console is not None
     if console is not None:
         read = len(collected.branch_runs) + len(collected.pr_runs)
-        console.print(f"[dim]Read {read} runs in {time.monotonic() - started:.0f}s.[/dim]")
+        console.print(f"  [dim]Read {read} runs in {time.monotonic() - started:.0f}s.[/dim]")
         console.print()
     base = {
         "source": _SOURCE,

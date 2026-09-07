@@ -6,6 +6,7 @@ from datetime import datetime
 from typing import Any
 
 from rich.console import Group
+from rich.padding import Padding
 from rich.table import Table
 from rich.text import Text
 
@@ -150,7 +151,8 @@ def render_report(console: Any, report: CiAnalyticsReport) -> None:
     if not report.executions:
         parts.append(Text("No completed workflow runs were found in this window.", style="dim"))
     parts.extend(Text(notice, style="dim") for notice in report.coverage_notices)
-    console.print(Group(*parts))
+    # Hang the block in the shell's two-column reply gutter like agent output.
+    console.print(Padding(Group(*parts), (0, 0, 0, 2)))
 
 
 def headline(report: CiAnalyticsReport) -> str:

@@ -93,6 +93,8 @@ def test_analytics_demo_scans_asks_for_the_repository_then_queues_the_analysis(
     assert "Analyzing the CI/CD reliability of me/mine[v2]" in output
     demo_labels = [label for _value, label in calls[0]["choices"]]
     assert demo_labels[-1] == "Or type your own answer..."
+    assert calls[0]["header"] == "Ask User"
+    assert calls[1]["header"] == "Ask User"
     repo_choices = [value for value, _label in calls[1]["choices"]]
     assert repo_choices == ["me/mine", "acme/busy", demo_picker.EXAMPLE_REPOSITORY, "custom"]
     assert session.terminal.pending_prompt_autosubmit is True

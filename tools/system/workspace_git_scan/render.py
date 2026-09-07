@@ -17,9 +17,14 @@ _SERIES_STYLES = (HIGHLIGHT, BRAND, SECONDARY, WARNING, ERROR)
 _OTHERS_LABEL = "all others"
 
 
+def snapshot_renderable(snapshot: WorkspaceSnapshot) -> Group:
+    """Headline counts and the activity bar chart as one Rich renderable."""
+    return Group(*_headline(snapshot), Text(""), *_bar_chart(snapshot))
+
+
 def render_snapshot(console: Any, snapshot: WorkspaceSnapshot) -> None:
     """Print the headline counts and the activity bar chart to *console*."""
-    console.print(Group(*_headline(snapshot), Text(""), *_bar_chart(snapshot)))
+    console.print(snapshot_renderable(snapshot))
 
 
 def snapshot_text(snapshot: WorkspaceSnapshot) -> str:
@@ -89,4 +94,4 @@ def _label(repo: RepoActivity) -> str:
     return repo.github_repo or repo.name
 
 
-__all__ = ["render_snapshot", "snapshot_text"]
+__all__ = ["render_snapshot", "snapshot_renderable", "snapshot_text"]
