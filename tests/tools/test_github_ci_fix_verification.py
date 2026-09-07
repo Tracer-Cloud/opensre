@@ -811,3 +811,30 @@ def test_wait_for_pr_checks_ignores_absent_conditional_sibling() -> None:
         )
 
     assert result.state is CheckState.PASSED
+
+
+def test_wait_for_pr_checks_stops_at_once_when_pushed_head_is_conflicted() -> None:
+    # Arrange: GitHub computed the merge state for the pushed head and it is DIRTY.
+    responses = [
+        {"headRefOid": "new-sha", "mergeStateStatus": "UNKNOWN", "statusCheckRollup": []},
+        {"headRefOid": "new-sha", "mergeStateStatus": "DIRTY", "statusCheckRollup": []},
+    ]
+    sleeps: list[float] = []
+
+    # Act
+    with patch(
+        "integrations.github.tools.ci_fix.verification.run_gh_json",
+        side_effect=responses,
+    ):
+        result = wait_for_pr_checks(
+            _CONTEXT,
+            github_token="tok",
+            expected_head_sha="new-sha",
+            timeout_seconds=900,
+            poll_interval_seconds=1,
+            sleep=sleeps.append,
+        )
+
+    # Assert
+    assert result.state is CheckState.CONFLICTED
+    assert sleeps == [1]

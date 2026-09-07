@@ -17,6 +17,7 @@ from integrations.coding_agent import (
 from integrations.git import GitCommandError, changed_paths, ensure_git_repo, file_fingerprints
 from integrations.github.client import resolve_github_token
 from integrations.github.repo_scope import detect_git_remote_repo_scope
+from integrations.github.tools.ci_fix.base_merge import BaseMergeResult, merge_base_into_head
 from integrations.github.tools.ci_fix.context import (
     CI_TARGET_BRANCH,
     CiFixContext,
@@ -31,6 +32,7 @@ from integrations.github.tools.ci_fix.errors import (
     ERR_EXECUTION,
     ERR_GITHUB_TOKEN,
     ERR_INVALID_INPUT,
+    ERR_MERGE_CONFLICT,
     ERR_REPO_MISMATCH,
     ERR_REPO_SCOPE,
     ERR_TIMEOUT,
@@ -99,19 +101,42 @@ def pre_coding_changes(workspace: str) -> dict[str, str]:
 
 
 def run_fix(ctx: CiFixContext, workspace: str, model: str | None) -> CodingResult:
+    return _run_coding(
+        ctx.task,
+        workspace,
+        model,
+        unavailable=(
+            f"Found failing CI checks on {ctx.target_label}, "
+            "but no configured coding agent is ready; no push was made."
+        ),
+    )
+
+
+def resolve_merge_conflicts(
+    ctx: CiFixContext, workspace: str, model: str | None
+) -> Callable[[str], CodingResult]:
+    """Coding-agent runner for the conflicts of merging the base into the PR head."""
+
+    def resolve(task: str) -> CodingResult:
+        return _run_coding(
+            task,
+            workspace,
+            model,
+            unavailable=(
+                f"Merging {ctx.base_branch} into {ctx.head_branch} has conflicts, "
+                "but no configured coding agent is ready to resolve them"
+            ),
+        )
+
+    return resolve
+
+
+def _run_coding(task: str, workspace: str, model: str | None, *, unavailable: str) -> CodingResult:
     available, _detail = verify_coding_agent()
     if not available:
-        return CodingResult(
-            success=False,
-            summary="",
-            error=(
-                f"Found failing CI checks on {ctx.target_label}, "
-                "but no configured coding agent is ready; no push was made."
-            ),
-            returncode=-1,
-        )
+        return CodingResult(success=False, summary="", error=unavailable, returncode=-1)
     return run_coding_task(
-        ctx.task,
+        task,
         workspace=workspace,
         model=model or coding_model(),
         timeout_sec=coding_timeout_seconds(),
@@ -154,15 +179,20 @@ def _base_output(ctx: CiFixContext | None = None) -> dict[str, Any]:
         "branch_name": None,
         "checks_state": None,
         "check_names": [],
+        "merged_base_branch": "",
+        "resolved_conflicts": [],
     }
 
 
-def to_output(ctx: CiFixContext, result: CodingResult) -> dict[str, Any]:
+def to_output(
+    ctx: CiFixContext, result: CodingResult, merge: BaseMergeResult | None = None
+) -> dict[str, Any]:
     error_kind: str | None = None
     if not result.success:
         error_kind = ERR_TIMEOUT if result.timed_out else ERR_EXECUTION
+    base = with_merge_output(_base_output(ctx), merge) if merge else _base_output(ctx)
     return {
-        **_base_output(ctx),
+        **base,
         "success": result.success,
         "error_kind": error_kind,
         "summary": result.summary,
@@ -171,6 +201,14 @@ def to_output(ctx: CiFixContext, result: CodingResult) -> dict[str, Any]:
         "diff": result.diff,
         "diff_truncated": result.diff_truncated,
         "error": result.error,
+    }
+
+
+def with_merge_output(output: dict[str, Any], merge: BaseMergeResult) -> dict[str, Any]:
+    return {
+        **output,
+        "merged_base_branch": merge.base_branch,
+        "resolved_conflicts": list(merge.resolved_files),
     }
 
 
@@ -199,8 +237,23 @@ def with_push_output(
         return {
             **result,
             "response_text": (
-                f"Fixed failing CI for {target}, pushed {push.branch_name}, "
+                f"Fixed failing CI for {target}, {_merge_phrase(output)}pushed {push.branch_name}, "
                 f"and all {checks_noun} passed."
+            ),
+        }
+    if verification.state is CheckState.CONFLICTED:
+        base_branch = str(output.get("base_branch") or "the base branch")
+        return {
+            **result,
+            "success": False,
+            "error_kind": ERR_MERGE_CONFLICT,
+            "error": (
+                f"GitHub will not start {checks_noun} because {push.branch_name} "
+                f"still conflicts with {base_branch}."
+            ),
+            "response_text": (
+                f"Pushed a CI fix to {push.branch_name}, but GitHub will not start {checks_noun} "
+                f"because the branch still conflicts with {base_branch}."
             ),
         }
     if verification.state is CheckState.FAILED:
@@ -274,11 +327,27 @@ def _single_line(value: str) -> str:
     return " ".join(value.split())
 
 
+def _merge_phrase(output: dict[str, Any]) -> str:
+    base_branch = str(output.get("merged_base_branch") or "")
+    if not base_branch:
+        return ""
+    resolved = [str(path) for path in output.get("resolved_conflicts") or []]
+    if not resolved:
+        return f"merged {base_branch}, "
+    return f"merged {base_branch} (resolved conflicts in {', '.join(resolved)}), "
+
+
 def _confirmation_prompt(ctx: CiFixContext) -> str:
     if ctx.is_branch_target:
         return (
             f"Fix failing CI for {ctx.target_label} in a separate git worktree, "
             "editing files, committing, and pushing a fresh repair branch? [y/N] "
+        )
+    if ctx.needs_base_merge:
+        return (
+            f"Fix CI for {ctx.target_label} by checking out {ctx.head_branch}, "
+            f"merging {ctx.base_branch} into it and resolving conflicts, editing files, "
+            "committing, and pushing to that branch? [y/N] "
         )
     return (
         f"Fix failing CI for {ctx.target_label} by checking out "
@@ -341,9 +410,18 @@ def run_ci_fix(
     output = _base_output(ctx)
     try:
         try:
+            merge: BaseMergeResult | None = None
+            if ctx.needs_base_merge:
+                merge = merge_base_into_head(
+                    run_workspace,
+                    ctx,
+                    baseline=pre_coding_changes(run_workspace),
+                    resolve_conflicts=resolve_merge_conflicts(ctx, run_workspace, model),
+                )
+                output = with_merge_output(output, merge)
             baseline = pre_coding_changes(run_workspace)
-            result = run_fix(ctx, run_workspace, model)
-            output = to_output(ctx, result)
+            result = _fix_result(ctx, run_workspace, model, merge)
+            output = to_output(ctx, result, merge)
             if not result.success:
                 return output
 
@@ -353,6 +431,7 @@ def run_ci_fix(
                 workspace=run_workspace,
                 baseline=baseline,
                 github_token=github_token,
+                already_committed=merge is not None,
             )
         except GitHubCiFixError as exc:
             return push_error_output(output, exc)
@@ -378,6 +457,16 @@ def run_ci_fix(
             cleanup_branch_worktree(ws, worktree)
 
 
+def _fix_result(
+    ctx: CiFixContext, workspace: str, model: str | None, merge: BaseMergeResult | None
+) -> CodingResult:
+    """Run the CI fix, or stand in for it when the base merge was the whole repair."""
+    if ctx.failing_checks:
+        return run_fix(ctx, workspace, model)
+    summary = merge.summary if merge else ""
+    return CodingResult(success=True, summary=summary)
+
+
 __all__ = [
     "SOURCE",
     "ensure_push_ready",
@@ -385,8 +474,10 @@ __all__ = [
     "error_output",
     "pre_coding_changes",
     "require_confirmation",
+    "resolve_merge_conflicts",
     "resolve_workspace",
     "run_ci_fix",
     "run_fix",
+    "with_merge_output",
     "with_push_output",
 ]

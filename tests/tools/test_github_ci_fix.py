@@ -50,6 +50,8 @@ _PR_PAYLOAD: dict[str, Any] = {
     "headRepository": {"name": "opensre", "nameWithOwner": "Tracer-Cloud/opensre"},
     "baseRefName": "main",
     "isCrossRepository": False,
+    "mergeStateStatus": "CLEAN",
+    "mergeable": "MERGEABLE",
     "state": "OPEN",
     "statusCheckRollup": [
         {
@@ -333,12 +335,12 @@ def test_push_ci_fix_returns_exact_committed_head_sha() -> None:
             return_value="feat/fix-ci",
         ),
         patch(
-            "integrations.github.tools.ci_fix.ship._changed_since_baseline",
+            "integrations.github.tools.ci_fix.ship.changed_since_baseline",
             return_value=["app.py"],
         ),
         patch("integrations.github.tools.ci_fix.ship.commit_paths"),
         patch(
-            "integrations.github.tools.ci_fix.ship._head_sha",
+            "integrations.github.tools.ci_fix.ship.head_sha",
             return_value="0123456789abcdef",
         ) as head_sha,
         patch("integrations.github.tools.ci_fix.ship.push_branch"),
@@ -880,11 +882,11 @@ def test_push_ci_fix_branch_mode_pushes_repair_branch_without_protected_opt_in()
             return_value="opensre/ci-fix-main-ea14998-12345678",
         ),
         patch(
-            "integrations.github.tools.ci_fix.ship._changed_since_baseline",
+            "integrations.github.tools.ci_fix.ship.changed_since_baseline",
             return_value=["pricing.py"],
         ),
         patch("integrations.github.tools.ci_fix.ship.commit_paths") as commit,
-        patch("integrations.github.tools.ci_fix.ship._head_sha", return_value="new-sha"),
+        patch("integrations.github.tools.ci_fix.ship.head_sha", return_value="new-sha"),
         patch("integrations.github.tools.ci_fix.ship.push_branch") as push,
     ):
         result = push_ci_fix(
@@ -909,3 +911,218 @@ def test_skill_guidance_attaches_to_ci_fix_tool() -> None:
     assert '<skill name="github-ci-fix"' in tool.skill_guidance
     assert "Fork PR branches are refused" in tool.skill_guidance
     assert "post-push check verification" in tool.skill_guidance
+
+
+def test_gather_ci_fix_context_accepts_conflicted_pr_without_failing_checks() -> None:
+    # Arrange: GitHub starts no checks for a DIRTY PR, so the rollup is all green/absent.
+    payload = {
+        **_PR_PAYLOAD,
+        "mergeStateStatus": "DIRTY",
+        "mergeable": "CONFLICTING",
+        "statusCheckRollup": [],
+    }
+
+    # Act
+    with patch("integrations.github.tools.ci_fix.context.run_gh_json", return_value=payload):
+        ctx = gather_ci_fix_context(owner="Tracer-Cloud", repo="opensre", pr_number=4597)
+
+    # Assert
+    assert ctx.needs_base_merge is True
+    assert ctx.failing_checks == ()
+    assert ctx.task == ""
+
+
+def test_gather_ci_fix_context_rereads_merge_state_while_github_computes_it() -> None:
+    # Arrange
+    responses = [
+        {**_PR_PAYLOAD, "mergeStateStatus": "UNKNOWN", "mergeable": "UNKNOWN"},
+        {"mergeStateStatus": "UNKNOWN", "mergeable": "UNKNOWN"},
+        {"mergeStateStatus": "DIRTY", "mergeable": "CONFLICTING"},
+    ]
+    sleeps: list[float] = []
+
+    # Act
+    with (
+        patch("integrations.github.tools.ci_fix.context.run_gh_json", side_effect=responses),
+        patch("integrations.github.tools.ci_fix.context.run_gh_text", return_value="Error: x"),
+    ):
+        ctx = gather_ci_fix_context(
+            owner="Tracer-Cloud", repo="opensre", pr_number=4597, sleep=sleeps.append
+        )
+
+    # Assert
+    assert ctx.needs_base_merge is True
+    assert len(sleeps) == 2
+    assert "main has already been merged into the workspace" in ctx.task
+
+
+@patch(
+    "integrations.github.tools.ci_fix.runner.push_ci_fix",
+    return_value=PushResult(
+        branch_name="feat/fix-ci", head_sha="new-sha", changed_files=["app.py"]
+    ),
+)
+@patch(
+    "integrations.github.tools.ci_fix.runner.wait_for_pr_checks",
+    return_value=CheckVerification(state=CheckState.PASSED, check_names=("quality",)),
+)
+@patch("integrations.github.tools.ci_fix.runner.run_fix")
+@patch("integrations.github.tools.ci_fix.runner.merge_base_into_head")
+@patch("integrations.github.tools.ci_fix.runner.pre_coding_changes", return_value={})
+@patch("integrations.github.tools.ci_fix.runner.checkout_target_branch")
+@patch("integrations.github.tools.ci_fix.runner.ensure_push_ready")
+@patch("integrations.github.tools.ci_fix.runner.ensure_workspace_ready")
+@patch(
+    "integrations.github.tools.ci_fix.runner.gather_ci_fix_context",
+    return_value=replace(_CTX, merge_state="DIRTY"),
+)
+def test_run_ci_fix_merges_base_before_fixing_a_conflicted_pr(
+    _gather: MagicMock,
+    _workspace: MagicMock,
+    _push_ready: MagicMock,
+    _checkout: MagicMock,
+    _pre: MagicMock,
+    mock_merge: MagicMock,
+    mock_run_fix: MagicMock,
+    _wait: MagicMock,
+    mock_push: MagicMock,
+) -> None:
+    # Arrange
+    from integrations.github.tools.ci_fix.base_merge import BaseMergeResult
+
+    order: list[str] = []
+    mock_merge.side_effect = lambda *_a, **_k: (
+        order.append("merge")
+        or BaseMergeResult(
+            base_branch="main", commit_sha="merge-sha", resolved_files=("package.json",)
+        )
+    )
+    mock_run_fix.side_effect = lambda *_a, **_k: (
+        order.append("fix")
+        or CodingResult(success=True, summary="Fixed.", changed_files=["app.py"])
+    )
+    prompts: list[str] = []
+
+    # Act
+    result = run_ci_fix(
+        owner="Tracer-Cloud",
+        repo="opensre",
+        pr_number=4597,
+        github_token="tok",
+        confirm_fn=lambda prompt: prompts.append(prompt) or "y",
+    )
+
+    # Assert
+    assert order == ["merge", "fix"]
+    assert "merging main into it and resolving conflicts" in prompts[0]
+    assert mock_push.call_args.kwargs["already_committed"] is True
+    assert result["merged_base_branch"] == "main"
+    assert result["resolved_conflicts"] == ["package.json"]
+    assert result["response_text"] == (
+        "Fixed failing CI for Tracer-Cloud/opensre#4597, merged main (resolved conflicts in "
+        "package.json), pushed feat/fix-ci, and all PR checks passed."
+    )
+
+
+@patch(
+    "integrations.github.tools.ci_fix.runner.push_ci_fix",
+    return_value=PushResult(branch_name="feat/fix-ci", head_sha="merge-sha", changed_files=[]),
+)
+@patch(
+    "integrations.github.tools.ci_fix.runner.wait_for_pr_checks",
+    return_value=CheckVerification(state=CheckState.PASSED, check_names=("quality",)),
+)
+@patch("integrations.github.tools.ci_fix.runner.run_fix")
+@patch("integrations.github.tools.ci_fix.runner.merge_base_into_head")
+@patch("integrations.github.tools.ci_fix.runner.pre_coding_changes", return_value={})
+@patch("integrations.github.tools.ci_fix.runner.checkout_target_branch")
+@patch("integrations.github.tools.ci_fix.runner.ensure_push_ready")
+@patch("integrations.github.tools.ci_fix.runner.ensure_workspace_ready")
+@patch(
+    "integrations.github.tools.ci_fix.runner.gather_ci_fix_context",
+    return_value=replace(_CTX, merge_state="DIRTY", failing_checks=(), task=""),
+)
+def test_run_ci_fix_pushes_a_merge_only_repair_without_running_the_fix_agent(
+    _gather: MagicMock,
+    _workspace: MagicMock,
+    _push_ready: MagicMock,
+    _checkout: MagicMock,
+    _pre: MagicMock,
+    mock_merge: MagicMock,
+    mock_run_fix: MagicMock,
+    _wait: MagicMock,
+    mock_push: MagicMock,
+) -> None:
+    # Arrange
+    from integrations.github.tools.ci_fix.base_merge import BaseMergeResult
+
+    mock_merge.return_value = BaseMergeResult(base_branch="main", commit_sha="merge-sha")
+
+    # Act
+    result = run_ci_fix(owner="Tracer-Cloud", repo="opensre", pr_number=4597, github_token="tok")
+
+    # Assert
+    mock_run_fix.assert_not_called()
+    mock_push.assert_called_once()
+    assert result["success"] is True
+    assert result["summary"] == "merged main"
+
+
+@patch("integrations.github.tools.ci_fix.runner.merge_base_into_head")
+@patch("integrations.github.tools.ci_fix.runner.pre_coding_changes", return_value={})
+@patch("integrations.github.tools.ci_fix.runner.checkout_target_branch")
+@patch("integrations.github.tools.ci_fix.runner.ensure_push_ready")
+@patch("integrations.github.tools.ci_fix.runner.ensure_workspace_ready")
+@patch(
+    "integrations.github.tools.ci_fix.runner.gather_ci_fix_context",
+    return_value=replace(_CTX, merge_state="DIRTY"),
+)
+def test_run_ci_fix_reports_blocked_merge_files_in_one_line(
+    _gather: MagicMock,
+    _workspace: MagicMock,
+    _push_ready: MagicMock,
+    _checkout: MagicMock,
+    _pre: MagicMock,
+    mock_merge: MagicMock,
+) -> None:
+    # Arrange
+    from integrations.github.tools.ci_fix.errors import ERR_MERGE_CONFLICT
+
+    mock_merge.side_effect = GitHubCiFixError(
+        ERR_MERGE_CONFLICT,
+        "Merging main into feat/fix-ci is blocked on 1 file(s) a person must decide: "
+        "package.json (changed on both feat/fix-ci and main). No push was made.",
+        branch_name="feat/fix-ci",
+    )
+
+    # Act
+    result = run_ci_fix(owner="Tracer-Cloud", repo="opensre", pr_number=4597, github_token="tok")
+
+    # Assert
+    assert result["success"] is False
+    assert result["error_kind"] == ERR_MERGE_CONFLICT
+    assert "package.json (changed on both feat/fix-ci and main)" in result["response_text"]
+    assert "\n" not in result["response_text"]
+
+
+def test_with_push_output_reports_pushed_head_github_will_not_check() -> None:
+    # Arrange
+    from integrations.github.tools.ci_fix.errors import ERR_MERGE_CONFLICT
+    from integrations.github.tools.ci_fix.runner import _base_output
+
+    output = _base_output(_CTX)
+    push = PushResult(branch_name="feat/fix-ci", head_sha="new-sha", changed_files=["app.py"])
+
+    # Act
+    result = with_push_output(
+        output, push, CheckVerification(state=CheckState.CONFLICTED, check_names=())
+    )
+
+    # Assert
+    assert result["success"] is False
+    assert result["error_kind"] == ERR_MERGE_CONFLICT
+    assert result["checks_state"] == "conflicted"
+    assert result["response_text"] == (
+        "Pushed a CI fix to feat/fix-ci, but GitHub will not start PR checks because the "
+        "branch still conflicts with main."
+    )

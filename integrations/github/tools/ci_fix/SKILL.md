@@ -27,6 +27,11 @@ Rules:
   branches in the same repository.
 - Branch targets such as `main` are never pushed directly; OpenSRE pushes a
   fresh `opensre/ci-fix-*` repair branch.
+- When GitHub reports the PR as conflicted with its base branch (checks never
+  start), the tool merges the base branch into the PR branch first, resolves
+  the conflicts, regenerates lockfiles, and pushes. A conflict it cannot resolve
+  safely is reported with the exact files and what a person must decide; the
+  merge is aborted and nothing is pushed. Do not run `git merge` around it.
 - The tool owns CI log inspection, fix execution, branch checkout, commit, and
   push plus post-push check verification. Do not run a raw `gh` workflow around it.
 - If the tool returns `response_text`, output exactly that text and stop.

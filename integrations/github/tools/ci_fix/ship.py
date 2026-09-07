@@ -10,7 +10,6 @@ from dataclasses import dataclass
 from integrations.coding_agent import CodingResult
 from integrations.git import (
     BRANCH_FAILED,
-    COMMIT_FAILED,
     GitCommandError,
     assert_not_protected,
     changed_paths,
@@ -19,6 +18,7 @@ from integrations.git import (
     current_branch,
     ensure_git_repo,
     file_fingerprints,
+    head_sha,
     push_branch,
 )
 from integrations.github.client import resolve_github_token
@@ -69,8 +69,13 @@ def push_ci_fix(
     result: CodingResult,
     baseline: Mapping[str, str] | None = None,
     github_token: str | None = None,
+    already_committed: bool = False,
 ) -> PushResult:
-    """Commit files changed by the fix run and push the repair or PR branch."""
+    """Commit files changed by the fix run and push the repair or PR branch.
+
+    ``already_committed`` lets a run whose only change is a base-branch merge
+    commit push without new file changes.
+    """
     token = resolve_github_token(github_token)
     pushed_head_sha = ""
     try:
@@ -86,15 +91,16 @@ def push_ci_fix(
                     branch_name=ctx.head_branch,
                 )
             checkout_target_branch(workspace, ctx)
-        changed = _changed_since_baseline(workspace, baseline=baseline)
-        if not changed:
+        changed = changed_since_baseline(workspace, baseline=baseline)
+        if not changed and not already_committed:
             raise GitHubCiFixError(
                 ERR_NO_CHANGES,
                 f"CI fix for {ctx.target_label} produced no file changes; no push was made.",
                 branch_name=ctx.head_branch,
             )
-        commit_paths(workspace, changed, _commit_message(ctx, result.summary))
-        pushed_head_sha = _head_sha(workspace)
+        if changed:
+            commit_paths(workspace, changed, _commit_message(ctx, result.summary))
+        pushed_head_sha = head_sha(workspace)
         push_branch(
             workspace,
             ctx.head_branch,
@@ -111,7 +117,8 @@ def push_ci_fix(
     )
 
 
-def _changed_since_baseline(workspace: str, *, baseline: Mapping[str, str] | None) -> list[str]:
+def changed_since_baseline(workspace: str, *, baseline: Mapping[str, str] | None) -> list[str]:
+    """Dirty paths that are new or whose content differs from *baseline*."""
     pre_existing = dict(baseline or {})
     current = changed_paths(workspace)
     current_fingerprints = file_fingerprints(workspace, current)
@@ -162,25 +169,6 @@ def _local_branch_exists(workspace: str, branch: str) -> bool:
     return result.returncode == 0
 
 
-def _head_sha(workspace: str) -> str:
-    """Return the full identity of the commit about to be pushed."""
-    result = subprocess.run(
-        ["git", "rev-parse", "HEAD"],
-        cwd=workspace,
-        capture_output=True,
-        text=True,
-        timeout=_GIT_TIMEOUT_SEC,
-        check=False,
-    )
-    sha = result.stdout.strip()
-    if result.returncode != 0 or not sha:
-        raise GitCommandError(
-            COMMIT_FAILED,
-            "Could not resolve the CI fix commit after committing the changed files.",
-        )
-    return sha
-
-
 def _fetch_branch(workspace: str, branch: str) -> None:
     result = subprocess.run(
         ["git", "fetch", "origin", f"{branch}:{branch}"],
@@ -197,4 +185,4 @@ def _fetch_branch(workspace: str, branch: str) -> None:
         )
 
 
-__all__ = ["PushResult", "checkout_target_branch", "push_ci_fix"]
+__all__ = ["PushResult", "changed_since_baseline", "checkout_target_branch", "push_ci_fix"]

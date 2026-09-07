@@ -14,6 +14,7 @@ PROTECTED_BRANCH = "protected_branch"
 BRANCH_FAILED = "branch_failed"
 COMMIT_FAILED = "commit_failed"
 PUSH_FAILED = "push_failed"
+MERGE_FAILED = "merge_failed"
 
 
 class GitCommandError(Exception):
