@@ -11,9 +11,9 @@ from rich.text import Text
 
 from integrations.github.tools.ci_analytics.models import (
     CiAnalyticsReport,
-    ClassifiedFailure,
     FailureKind,
     Outage,
+    PullRequestDelay,
 )
 
 _TOP_WORKFLOWS = 5
@@ -89,8 +89,9 @@ def render_report(console: Any, report: CiAnalyticsReport) -> None:
                     style="bold",
                 ),
                 Text(
-                    "Only PRs that were later merged count, so CI sat on the path to merge. "
-                    "Baseline: each workflow's median first-attempt passing duration.",
+                    "Per pull request: how much later its commits went green than they would "
+                    "have had CI run normally (median first-attempt duration per workflow). "
+                    "Only PRs that were later merged count; overlapping workflows count once.",
                     style="dim",
                 ),
             ]
@@ -107,7 +108,7 @@ def render_report(console: Any, report: CiAnalyticsReport) -> None:
             )
         longest = report.longest_delay
         if longest is not None and longest.delay_minutes > 0:
-            parts.append(_kpi_line("Longest single delay", _delay(longest)))
+            parts.append(_kpi_line("Longest wait", _delay(longest)))
     if report.branch_runs:
         parts.extend(
             [
@@ -158,10 +159,10 @@ def headline(report: CiAnalyticsReport) -> str:
     if report.blocked_minutes > 0:
         typical = report.median_delay_minutes or 0.0
         longest = report.longest_delay
-        worst = f", the worst {_minutes(longest.delay_minutes)}" if longest else ""
+        worst = f", the longest {_minutes(longest.delay_minutes)}" if longest else ""
         return (
             f"Unreliable CI blocked merged pull requests for {_minutes(report.blocked_minutes)} "
-            f"in the last {report.window_days} days; the typical CI-caused delay was "
+            f"in the last {report.window_days} days; the typical blocked PR waited "
             f"{_minutes(typical)}{worst}."
         )
     if report.red_hours > 0:
@@ -202,19 +203,17 @@ def _blocked_time(report: CiAnalyticsReport) -> list[str]:
         "",
         f"**Developer time blocked by unreliable CI: {_minutes(report.blocked_minutes)}** "
         f"across {report.merged_pr_branches} merged {_plural(report.merged_pr_branches, 'PR')}",
-        "- Counts only PRs that were later merged, so CI was on the path to merge",
-        "- Baseline: each workflow's median first-attempt passing duration; "
-        "the delay is the extra wall-clock time until the same commit passed",
+        "- Per pull request: how much later its commits went green than they would have "
+        "had CI run normally (median first-attempt duration per workflow)",
+        "- Only PRs that were later merged count; overlapping workflows count once",
     ]
     if report.blocked_minutes_all > report.blocked_minutes:
         lines.append(f"- Including PRs not merged yet: {_minutes(report.blocked_minutes_all)}")
     if report.median_delay_minutes is not None:
-        lines.append(
-            f"- Typical delay per CI-caused failure: {_minutes(report.median_delay_minutes)}"
-        )
+        lines.append(f"- Typical wait per blocked PR: {_minutes(report.median_delay_minutes)}")
     longest = report.longest_delay
     if longest is not None and longest.delay_minutes > 0:
-        lines.append(f"- Longest single delay: {_delay(longest)}")
+        lines.append(f"- Longest wait: {_delay(longest)}")
     return lines
 
 
@@ -237,11 +236,9 @@ def _default_branch(report: CiAnalyticsReport) -> list[str]:
     return lines
 
 
-def _delay(item: ClassifiedFailure) -> str:
-    return (
-        f"{_minutes(item.delay_minutes)} on {item.failure.branch} ({item.failure.workflow}) "
-        f"{item.failure.url}".strip()
-    )
+def _delay(item: PullRequestDelay) -> str:
+    commits = f", {item.commits} {_plural(item.commits, 'commit')}" if item.commits > 1 else ""
+    return f"{_minutes(item.delay_minutes)} on {item.label}{commits} {item.url}".strip()
 
 
 def _outage(outage: Outage, *, now: datetime) -> str:

@@ -89,6 +89,32 @@ class ClassifiedFailure:
 
 
 @dataclass(frozen=True)
+class PullRequestDelay:
+    """How much later one PR went green than it should have, because CI misbehaved.
+
+    For every commit of the PR that had a CI-caused failure, the expected
+    green time is the first run's queue time plus the slowest workflow's
+    normal duration; the actual green time is when its last workflow passed.
+    Overlapping workflow delays on one commit are counted once.
+    """
+
+    head_repo: str
+    branch: str
+    pr_number: int
+    critical_path: bool
+    delay_minutes: float
+    commits: int
+    """Commits of the PR whose green time was delayed by CI."""
+
+    url: str
+    """The first CI-caused failure on the PR, for the report link."""
+
+    @property
+    def label(self) -> str:
+        return f"PR #{self.pr_number} ({self.branch})" if self.pr_number else self.branch
+
+
+@dataclass(frozen=True)
 class MergedPullRequest:
     """A pull request merged inside the report window, identified beyond branch name."""
 
@@ -143,11 +169,13 @@ class CiAnalyticsReport:
     pr_failures: int
     classified: tuple[ClassifiedFailure, ...]
     merged_pr_branches: int
+    """PRs on the critical path whose green time CI delayed."""
+
     blocked_minutes: float
-    """Developer minutes blocked by unreliable CI on PRs that were later merged."""
+    """Minutes PRs that were later merged waited beyond their expected green time."""
 
     blocked_minutes_all: float
-    """Same delay summed over every PR branch, merged or not."""
+    """Same wait summed over every PR, merged or not."""
 
     branch_runs: int
     """Push-triggered runs on the default branch, the ones that define red time."""
@@ -158,6 +186,7 @@ class CiAnalyticsReport:
     mean_recovery_hours: float | None
     workflows: tuple[WorkflowSummary, ...] = field(default_factory=tuple)
     coverage_notices: tuple[str, ...] = field(default_factory=tuple)
+    pr_delays: tuple[PullRequestDelay, ...] = field(default_factory=tuple)
 
     @property
     def pr_failure_rate(self) -> float | None:
@@ -175,13 +204,15 @@ class CiAnalyticsReport:
         )
 
     @property
+    def blocked_pr_delays(self) -> tuple[PullRequestDelay, ...]:
+        """Critical-path PRs that actually waited, worst first."""
+        delays = [d for d in self.pr_delays if d.critical_path and d.delay_minutes > 0]
+        return tuple(sorted(delays, key=lambda d: -d.delay_minutes))
+
+    @property
     def median_delay_minutes(self) -> float | None:
-        """Typical CI-caused delay, so one long re-run gap does not read as the norm."""
-        delays = sorted(
-            item.delay_minutes
-            for item in self.classified
-            if item.kind is FailureKind.RELIABILITY and item.delay_minutes > 0
-        )
+        """Typical wait per blocked merged PR, so one long outlier does not read as the norm."""
+        delays = sorted(d.delay_minutes for d in self.blocked_pr_delays)
         if not delays:
             return None
         middle = len(delays) // 2
@@ -190,11 +221,9 @@ class CiAnalyticsReport:
         return (delays[middle - 1] + delays[middle]) / 2
 
     @property
-    def longest_delay(self) -> ClassifiedFailure | None:
-        delays = [item for item in self.classified if item.kind is FailureKind.RELIABILITY]
-        if not delays:
-            return None
-        return max(delays, key=lambda item: item.delay_minutes)
+    def longest_delay(self) -> PullRequestDelay | None:
+        blocked = self.blocked_pr_delays
+        return blocked[0] if blocked else None
 
     @property
     def longest_outage(self) -> Outage | None:
@@ -215,6 +244,7 @@ __all__ = [
     "FailureKind",
     "MergedPullRequest",
     "Outage",
+    "PullRequestDelay",
     "WorkflowRun",
     "WorkflowSummary",
 ]

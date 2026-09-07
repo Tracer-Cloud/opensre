@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Iterable, Sequence
-from datetime import datetime
+from datetime import datetime, timedelta
 from statistics import median
 
 from integrations.github.tools.ci_analytics.models import (
@@ -13,6 +13,7 @@ from integrations.github.tools.ci_analytics.models import (
     FailureKind,
     MergedPullRequest,
     Outage,
+    PullRequestDelay,
     WorkflowRun,
     WorkflowSummary,
 )
@@ -42,7 +43,7 @@ def compute_report(
     push_runs = [run for run in counted_branch if run.event == PUSH_EVENT]
     outages = find_outages(push_runs)
     closed = [o for o in outages if not o.ongoing]
-    reliability = [c for c in classified if c.kind is FailureKind.RELIABILITY]
+    delays = pull_request_delays(counted_pr, classified, normal_minutes=normal, merged_prs=merged)
     return CiAnalyticsReport(
         owner=owner,
         repo=repo,
@@ -53,11 +54,9 @@ def compute_report(
         pr_executions=len(counted_pr),
         pr_failures=sum(1 for run in counted_pr if run.failed or run.retried_to_green),
         classified=tuple(classified),
-        merged_pr_branches=len(
-            {_history_key(c.failure)[1:] for c in reliability if c.critical_path}
-        ),
-        blocked_minutes=sum(c.delay_minutes for c in reliability if c.critical_path),
-        blocked_minutes_all=sum(c.delay_minutes for c in reliability),
+        merged_pr_branches=sum(1 for d in delays if d.critical_path and d.delay_minutes > 0),
+        blocked_minutes=sum(d.delay_minutes for d in delays if d.critical_path),
+        blocked_minutes_all=sum(d.delay_minutes for d in delays),
         branch_runs=len(push_runs),
         branch_failures=sum(1 for run in push_runs if run.failed),
         red_hours=union_hours(outages, now=now),
@@ -67,7 +66,114 @@ def compute_report(
         ),
         workflows=tuple(summarize_workflows(all_runs, classified, normal)),
         coverage_notices=tuple(coverage_notices),
+        pr_delays=tuple(delays),
     )
+
+
+def pull_request_delays(
+    pr_runs: Sequence[WorkflowRun],
+    classified: Sequence[ClassifiedFailure],
+    *,
+    normal_minutes: dict[int | str, float],
+    merged_prs: Sequence[MergedPullRequest] = (),
+) -> list[PullRequestDelay]:
+    """Per PR: how much later its commits went green than they should have.
+
+    Only commits with a CI-caused failure count. For such a commit the
+    expected green time is the earliest queue time of its runs plus the
+    slowest workflow's normal duration ("had CI worked normally, when should
+    this commit have been green?"); the actual green time is when the last of
+    its workflows passed. A commit whose workflows never all passed is left
+    out. The delay intervals of a PR's commits are unioned so overlapping
+    workflows and re-runs are counted once.
+    """
+    affected: set[tuple[tuple[str, str, int], str]] = set()
+    first_failure: dict[tuple[str, str, int], ClassifiedFailure] = {}
+    for item in classified:
+        if item.kind is not FailureKind.RELIABILITY:
+            continue
+        key = _history_key(item.failure)[1:]
+        affected.add((key, item.failure.head_sha))
+        earliest = first_failure.get(key)
+        if earliest is None or item.failure.created_at < earliest.failure.created_at:
+            first_failure[key] = item
+    by_commit: dict[tuple[tuple[str, str, int], str], list[WorkflowRun]] = defaultdict(list)
+    for run in pr_runs:
+        by_commit[(_history_key(run)[1:], run.head_sha)].append(run)
+    intervals: dict[tuple[str, str, int], list[tuple[datetime, datetime]]] = defaultdict(list)
+    for key, sha in affected:
+        interval = _commit_delay(by_commit.get((key, sha), []), normal_minutes)
+        if interval is not None:
+            intervals[key].append(interval)
+    delays: list[PullRequestDelay] = []
+    for key, item in first_failure.items():
+        spans = intervals.get(key, [])
+        head_repo, branch, number = key
+        delays.append(
+            PullRequestDelay(
+                head_repo=head_repo,
+                branch=branch,
+                pr_number=number or _merged_number(item.failure, merged_prs),
+                critical_path=item.critical_path,
+                delay_minutes=_union_minutes(spans),
+                commits=len(spans),
+                url=item.failure.url,
+            )
+        )
+    return sorted(delays, key=lambda d: -d.delay_minutes)
+
+
+def _merged_number(run: WorkflowRun, merged: Sequence[MergedPullRequest]) -> int:
+    """PR number of the merge that closed the run's branch, when GitHub attached none."""
+    return next(
+        (
+            pr.number
+            for pr in merged
+            if pr.branch == run.branch
+            and pr.head_repo == run.head_repo
+            and pr.merged_at >= run.created_at
+        ),
+        0,
+    )
+
+
+def _commit_delay(
+    runs: Sequence[WorkflowRun], normal_minutes: dict[int | str, float]
+) -> tuple[datetime, datetime] | None:
+    """Expected and actual green times of one commit, or None when it never went green."""
+    if not runs:
+        return None
+    by_workflow: dict[int | str, list[WorkflowRun]] = defaultdict(list)
+    for run in runs:
+        by_workflow[_workflow_key(run)].append(run)
+    greens: list[datetime] = []
+    for workflow_runs in by_workflow.values():
+        passed = [run.completed_at for run in workflow_runs if run.succeeded]
+        if not passed:
+            return None
+        greens.append(max(passed))
+    queued = min(run.created_at for run in runs)
+    expected_duration = max(normal_minutes.get(_workflow_key(run), run.minutes) for run in runs)
+    expected_green = queued + timedelta(minutes=expected_duration)
+    actual_green = max(greens)
+    if actual_green <= expected_green:
+        return None
+    return expected_green, actual_green
+
+
+def _union_minutes(spans: Sequence[tuple[datetime, datetime]]) -> float:
+    total = 0.0
+    current: tuple[datetime, datetime] | None = None
+    for start, end in sorted(spans):
+        if current is None or start > current[1]:
+            if current is not None:
+                total += (current[1] - current[0]).total_seconds()
+            current = (start, end)
+        elif end > current[1]:
+            current = (current[0], end)
+    if current is not None:
+        total += (current[1] - current[0]).total_seconds()
+    return total / 60
 
 
 def normal_minutes(runs: Sequence[WorkflowRun]) -> dict[int | str, float]:
@@ -238,6 +344,7 @@ def on_critical_path(run: WorkflowRun, merged: Sequence[MergedPullRequest]) -> b
 __all__ = [
     "classify_failures",
     "on_critical_path",
+    "pull_request_delays",
     "compute_report",
     "find_outages",
     "normal_minutes",

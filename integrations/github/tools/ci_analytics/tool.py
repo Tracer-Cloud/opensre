@@ -108,6 +108,15 @@ def _payload(report: CiAnalyticsReport) -> dict[str, Any]:
         "blocked_minutes": round(report.blocked_minutes, 1),
         "blocked_minutes_all": round(report.blocked_minutes_all, 1),
         "merged_pr_branches": report.merged_pr_branches,
+        "blocked_prs": [
+            {
+                "pr_number": d.pr_number,
+                "branch": d.branch,
+                "delay_minutes": round(d.delay_minutes, 1),
+                "commits": d.commits,
+            }
+            for d in report.blocked_pr_delays[:10]
+        ],
         "branch_runs": report.branch_runs,
         "branch_failures": report.branch_failures,
         "red_hours": round(report.red_hours, 2),
@@ -154,7 +163,7 @@ def _payload(report: CiAnalyticsReport) -> dict[str, Any]:
         "executions": "Completed workflow runs counted in the window",
         "pr_failure_rate": "Failed share of PR-triggered runs",
         "reliability_failures": "Failures that passed later on the identical commit",
-        "blocked_minutes": "Developer minutes blocked by CI-caused failures on merged PRs",
+        "blocked_minutes": "Minutes merged PRs waited past their expected green time because of CI",
         "red_hours": "Hours the default branch had at least one red workflow",
         "headline": "One sentence naming the biggest cost, to repeat verbatim",
         "response_text": "The rendered report, or a one-line summary when the shell painted it",

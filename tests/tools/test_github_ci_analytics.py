@@ -197,6 +197,57 @@ def test_blocked_time_counts_only_merged_pr_branches() -> None:
     assert report.merged_pr_branches == 1
 
 
+def test_parallel_workflows_on_one_commit_count_the_wait_once() -> None:
+    # Arrange: CI and Lint both failed at 0 and both passed after a re-run at 50.
+    pr_runs = [
+        _run(1, workflow="CI", workflow_id=1, sha="m", conclusion="failure", start_minutes=0),
+        _run(2, workflow="CI", workflow_id=1, sha="m", conclusion="success", start_minutes=50),
+        _run(3, workflow="Lint", workflow_id=2, sha="m", conclusion="failure", start_minutes=0),
+        _run(4, workflow="Lint", workflow_id=2, sha="m", conclusion="success", start_minutes=50),
+    ]
+
+    # Act
+    report = compute_report(
+        owner="o",
+        repo="r",
+        default_branch="main",
+        window_days=30,
+        branch_runs=[],
+        pr_runs=pr_runs,
+        merged_prs=_merged("feat/x"),
+        now=_T0 + timedelta(days=1),
+    )
+
+    # Assert: expected green at 10 (slowest normal run), actual at 60; not 50 + 50.
+    assert report.count(FailureKind.RELIABILITY) == 2
+    assert report.blocked_minutes == 50.0
+    assert report.merged_pr_branches == 1
+    assert report.pr_delays[0].commits == 1
+    assert report.pr_delays[0].pr_number == _merged("feat/x")[0].number
+
+
+def test_source_code_failures_do_not_add_blocked_time() -> None:
+    pr_runs = [
+        _run(1, sha="old", conclusion="failure", start_minutes=0),
+        _run(2, sha="new", conclusion="success", start_minutes=120),
+    ]
+
+    report = compute_report(
+        owner="o",
+        repo="r",
+        default_branch="main",
+        window_days=30,
+        branch_runs=[],
+        pr_runs=pr_runs,
+        merged_prs=_merged("feat/x"),
+        now=_T0 + timedelta(days=1),
+    )
+
+    assert report.count(FailureKind.SOURCE) == 1
+    assert report.blocked_minutes == 0.0
+    assert report.pr_delays == ()
+
+
 def test_normal_minutes_uses_median_of_first_attempt_passes_only() -> None:
     runs = [
         _run(1, conclusion="success", duration_minutes=8),
@@ -735,7 +786,7 @@ def test_tool_renders_report_from_collected_runs() -> None:
     assert result["blocked_minutes"] == 40.0
     assert result["headline"] == (
         "Unreliable CI blocked merged pull requests for 40m in the last 7 days; "
-        "the typical CI-caused delay was 40m, the worst 40m."
+        "the typical blocked PR waited 40m, the longest 40m."
     )
     assert "Coverage notice: sample" in result["response_text"]
 
