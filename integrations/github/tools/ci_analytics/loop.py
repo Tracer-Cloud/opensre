@@ -11,14 +11,18 @@ from zoneinfo import ZoneInfo
 
 from config.constants.paths import OPENSRE_HOME_DIR
 from config.runtime_metadata.probes import local_tz_name
-from infrastructure.scheduling.scheduler.loop_constants import LOOP_PROMPT_PARAM
+from infrastructure.scheduling.scheduler.loop_constants import (
+    LOOP_PROMPT_PARAM,
+    LOOP_REPORT_ARGS_PARAM,
+    LOOP_REPORT_PARAM,
+)
 from infrastructure.scheduling.scheduler.loops import (
     ManualLoop,
     create_manual_loop,
     loop_channels,
     loop_time_label,
 )
-from infrastructure.scheduling.scheduler.storage import list_tasks
+from infrastructure.scheduling.scheduler.storage import list_tasks, update_task
 from infrastructure.scheduling.scheduler.types import Provider, TaskKind
 
 DEFAULT_LOOP_TIME = "08:00"
@@ -73,11 +77,14 @@ def schedule_ci_reliability_loop(
 ) -> ScheduledLoop:
     """Create the loop for ``owner/repo``, or return the one that already exists.
 
-    Delivery is pinned to this machine's shell inbox so a scheduled report can
-    never post to a chat channel by accident. Raises ``ValueError`` for a time
-    the scheduler cannot parse.
+    A loop saved before the deterministic builder existed is upgraded in
+    place so it stops running as a model turn. Delivery is pinned to this
+    machine's shell inbox so a scheduled report can never post to a chat
+    channel by accident. Raises ``ValueError`` for a time the scheduler
+    cannot parse.
     """
     prompt = loop_prompt(owner, repo)
+    report_args = {"owner": owner, "repo": repo, "days": str(LOOP_WINDOW_DAYS)}
     existing = next(
         (
             task
@@ -87,6 +94,10 @@ def schedule_ci_reliability_loop(
         None,
     )
     if existing is not None:
+        if existing.params.get(LOOP_REPORT_PARAM) != REPORT_NAME:
+            existing.params[LOOP_REPORT_PARAM] = REPORT_NAME
+            existing.params[LOOP_REPORT_ARGS_PARAM] = json.dumps(report_args, sort_keys=True)
+            update_task(existing, store_path)
         loop = ManualLoop(
             task=existing,
             channels=loop_channels(existing),
@@ -102,7 +113,7 @@ def schedule_ci_reliability_loop(
         channels=(_LOCAL_CHANNEL,),
         store_path=store_path,
         report=REPORT_NAME,
-        report_args={"owner": owner, "repo": repo, "days": str(LOOP_WINDOW_DAYS)},
+        report_args=report_args,
     )
     return ScheduledLoop(loop=created, reused=False)
 

@@ -129,6 +129,38 @@ def test_loop_names_the_deterministic_builder_with_its_arguments(store_path: Pat
     }
 
 
+def test_a_loop_saved_before_the_builder_existed_is_upgraded_in_place(store_path: Path) -> None:
+    # Arrange: a legacy loop with the same prompt but no builder configured.
+    import json
+
+    from infrastructure.scheduling.scheduler.loop_constants import (
+        LOOP_REPORT_ARGS_PARAM,
+        LOOP_REPORT_PARAM,
+    )
+    from infrastructure.scheduling.scheduler.loops import create_manual_loop
+
+    legacy = create_manual_loop(
+        name=ci_loop.loop_name("acme", "app"),
+        prompt=ci_loop.loop_prompt("acme", "app"),
+        cron="0 8 * * 1-5",
+        channels=["interactive_shell"],
+        store_path=store_path,
+    )
+    assert LOOP_REPORT_PARAM not in legacy.task.params
+
+    # Act
+    scheduled = ci_loop.schedule_ci_reliability_loop(
+        "acme", "app", timezone="UTC", store_path=store_path
+    )
+
+    # Assert: same loop, now carrying the builder, persisted in the store.
+    assert scheduled.reused is True
+    assert scheduled.task_id == legacy.task.id
+    stored = next(t for t in list_tasks(store_path) if t.id == legacy.task.id)
+    assert stored.params[LOOP_REPORT_PARAM] == ci_loop.REPORT_NAME
+    assert json.loads(stored.params[LOOP_REPORT_ARGS_PARAM])["repo"] == "app"
+
+
 def test_build_report_renders_the_analytics_and_keeps_a_json_snapshot(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -71,7 +71,11 @@ def install_background_service(
     run: Runner = _run,
     command: Sequence[str] | None = None,
 ) -> BackgroundServiceState:
-    """Install and start the service; raises ``RuntimeError`` when the OS refuses."""
+    """Install and start the service; raises ``RuntimeError`` when the OS refuses.
+
+    A refused activation removes the unit again, so status never reports a
+    service the OS is not running.
+    """
     name = system or platform.system()
     argv = list(command or scheduler_command())
     log_path = _log_path()
@@ -82,14 +86,15 @@ def install_background_service(
         unit.write_bytes(plistlib.dumps(_launchd_definition(argv, log_path)))
         domain = f"gui/{os.getuid()}"
         run(["launchctl", "bootout", f"{domain}/{SERVICE_LABEL}"])
-        _check(run(["launchctl", "bootstrap", domain, str(unit)]), "launchctl bootstrap")
+        _activate(unit, run(["launchctl", "bootstrap", domain, str(unit)]), "launchctl bootstrap")
         return BackgroundServiceState("Darwin", True, True, unit, log_path)
     if name == "Linux":
         unit = _systemd_unit_path(home)
         unit.parent.mkdir(parents=True, exist_ok=True)
         unit.write_text(_systemd_definition(argv, log_path), encoding="utf-8")
-        _check(run(["systemctl", "--user", "daemon-reload"]), "systemctl daemon-reload")
-        _check(
+        _activate(unit, run(["systemctl", "--user", "daemon-reload"]), "systemctl daemon-reload")
+        _activate(
+            unit,
             run(["systemctl", "--user", "enable", "--now", f"{SERVICE_LABEL}.service"]),
             "systemctl enable",
         )
@@ -100,16 +105,27 @@ def install_background_service(
 def remove_background_service(
     *, home: Path | None = None, system: str = "", run: Runner = _run
 ) -> BackgroundServiceState:
-    """Stop and delete the service; a missing service is not an error."""
+    """Stop and delete the service; a missing service is not an error.
+
+    The unit is deleted only once the OS confirms the service is no longer
+    loaded, so a refused stop raises ``RuntimeError`` and leaves the unit for
+    a retry.
+    """
     name = system or platform.system()
     if name == "Darwin":
         unit = _launchd_unit_path(home)
-        run(["launchctl", "bootout", f"gui/{os.getuid()}/{SERVICE_LABEL}"])
+        target = f"gui/{os.getuid()}/{SERVICE_LABEL}"
+        run(["launchctl", "bootout", target])
+        if run(["launchctl", "print", target]).returncode == 0:
+            raise RuntimeError("launchctl bootout failed: the service is still loaded")
         unit.unlink(missing_ok=True)
         return BackgroundServiceState("Darwin", True, False, None, None)
     if name == "Linux":
         unit = _systemd_unit_path(home)
-        run(["systemctl", "--user", "disable", "--now", f"{SERVICE_LABEL}.service"])
+        service = f"{SERVICE_LABEL}.service"
+        run(["systemctl", "--user", "disable", "--now", service])
+        if run(["systemctl", "--user", "is-active", service]).returncode == 0:
+            raise RuntimeError("systemctl disable failed: the service is still active")
         unit.unlink(missing_ok=True)
         run(["systemctl", "--user", "daemon-reload"])
         return BackgroundServiceState("Linux", True, False, None, None)
@@ -144,8 +160,10 @@ def _unsupported(name: str) -> BackgroundServiceState:
     )
 
 
-def _check(result: subprocess.CompletedProcess[str], step: str) -> None:
+def _activate(unit: Path, result: subprocess.CompletedProcess[str], step: str) -> None:
+    """Fail an install step, removing the unit so a half-installed service is not reported."""
     if result.returncode != 0:
+        unit.unlink(missing_ok=True)
         detail = (result.stderr or result.stdout or "").strip()
         raise RuntimeError(f"{step} failed: {detail or f'exit code {result.returncode}'}")
 

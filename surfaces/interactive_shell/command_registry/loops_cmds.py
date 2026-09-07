@@ -86,7 +86,7 @@ def _short(text: str, *, max_chars: int = 120) -> str:
 def _loops_usage_error() -> str:
     return (
         f"[{ERROR}]usage:[/] "
-        "/loops [list|active|all|add|run|stop|start|delete|next|messages]\n"
+        "/loops [list|active|all|add|run|stop|start|delete|next|messages|service]\n"
         f'[{DIM}]example:[/] /loops add --name "Morning ops" --time 08:30 '
         '--prompt "Check open incidents and summarize risk" --run-now'
     )

@@ -233,13 +233,17 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         "List, create, stop, start, delete, run once, and debug recurring prompt loops, "
         "including next fire time. "
         "Subcommands: list, active, all, add, run <id>, stop <id>, start <id>, delete <id>, "
-        "next <id>, messages. "
-        "Use add with --prompt, --time or --cron, optional --channel, and --run-now.",
+        "next <id>, messages, service [install|remove]. "
+        "Use add with --prompt, --time or --cron, optional --channel, and --run-now. "
+        "service installs, removes, or shows the background scheduler service that keeps "
+        "loops running when no shell is open.",
         "User asks to list active loops or recurring scheduled loops",
         "User asks when configured loops will run next",
         "User asks to set up a manual recurring loop from a prompt",
         "User asks to add a loop and execute it once immediately",
         "User asks to stop, disable, resume, start, delete, or remove a recurring loop",
+        "User asks to keep loops running when the shell is closed, or to install, "
+        "check, or remove the background scheduler service",
         anti_examples=("User wants low-level cron task logs by task id (use /cron)",),
     ),
     "/mcp": _mcp(

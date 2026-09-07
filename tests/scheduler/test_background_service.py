@@ -13,15 +13,19 @@ from infrastructure.scheduling.scheduler import background_service as svc
 
 
 class _Runner:
-    """Records OS commands and answers with a scripted exit code per command name."""
+    """Records OS commands; ``failing`` names a command word that exits 1, ``loaded`` makes
+    the post-removal state check report the service as still running."""
 
-    def __init__(self, failing: str = "") -> None:
+    def __init__(self, failing: str = "", loaded: bool = False) -> None:
         self.commands: list[list[str]] = []
         self._failing = failing
+        self._loaded = loaded
 
     def __call__(self, command: Sequence[str]) -> subprocess.CompletedProcess[str]:
         argv = list(command)
         self.commands.append(argv)
+        if argv[:2] == ["launchctl", "print"] or argv[2:3] == ["is-active"]:
+            return subprocess.CompletedProcess(argv, 0 if self._loaded else 3, "", "")
         code = 1 if self._failing and self._failing in argv else 0
         return subprocess.CompletedProcess(argv, code, "", "denied" if code else "")
 
@@ -84,6 +88,23 @@ def test_a_refused_bootstrap_raises_instead_of_reporting_installed(
         svc.install_background_service(
             home=tmp_path, system="Darwin", run=_Runner(failing="bootstrap"), command=["x"]
         )
+    # The half-written unit is gone, so status does not claim a running service.
+    assert svc.background_service_state(home=tmp_path, system="Darwin").installed is False
+
+
+def test_a_service_the_os_will_not_stop_keeps_its_unit_and_raises(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(svc, "OPENSRE_HOME_DIR", tmp_path / ".opensre")
+    installed = svc.install_background_service(
+        home=tmp_path, system="Darwin", run=_Runner(), command=["x"]
+    )
+
+    with pytest.raises(RuntimeError, match="still loaded"):
+        svc.remove_background_service(home=tmp_path, system="Darwin", run=_Runner(loaded=True))
+
+    assert installed.unit_path is not None and installed.unit_path.exists()
+    assert svc.background_service_state(home=tmp_path, system="Darwin").installed is True
 
 
 def test_linux_install_writes_a_systemd_user_unit(
