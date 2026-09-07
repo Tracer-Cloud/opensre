@@ -3,7 +3,12 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 
+from infrastructure.scheduling.scheduler.claim_lease import (
+    ClaimOwnership,
+    default_claim_lease_manager,
+)
 from infrastructure.scheduling.scheduler.delivery_bundle import resolve_delivery_adapter
 from infrastructure.scheduling.scheduler.delivery_plan import (
     DeliveryTarget,
@@ -68,6 +73,18 @@ def execute_task(
         )
         return False
 
+    with default_claim_lease_manager.hold(claim) as ownership:
+        return _execute_claimed_task(claim, ownership, task, fire_time, runners)
+
+
+def _execute_claimed_task(
+    claim: ExecutionClaim,
+    ownership: ClaimOwnership,
+    task: ScheduledTask,
+    fire_time: str,
+    runners: SchedulerRunners,
+) -> bool:
+    """Build and deliver a task while its fenced lease remains valid."""
     logger.info("Executing task %s (kind=%s, fire_time=%s)", task.id, task.kind, fire_time)
     record_scheduler_execution_operation(
         "scheduled_task_execution_started",
@@ -104,6 +121,14 @@ def execute_task(
         )
         return False
 
+    if not ownership.valid():
+        logger.warning(
+            "Skipping delivery after losing scheduler claim for task %s fire_time=%s",
+            task.id,
+            fire_time,
+        )
+        return False
+
     # Quiet ticks (e.g. uptime watch with no transitions) skip delivery.
     if not message.strip():
         if not complete_run(
@@ -126,7 +151,19 @@ def execute_task(
         return True
 
     # Fan out to every destination the task resolves to, concurrently.
-    result = _deliver_all(task, message, target_filter=claim.target_filter)
+    result = _deliver_all(
+        task,
+        message,
+        target_filter=claim.target_filter,
+        can_deliver=ownership.valid,
+    )
+    if not ownership.valid():
+        logger.warning(
+            "Discarding delivery result after losing scheduler claim for task %s fire_time=%s",
+            task.id,
+            fire_time,
+        )
+        return False
     message_id = result.message_id()
     error = result.error()
 
@@ -203,8 +240,14 @@ def _record_work_item_reminder_delivery(task: ScheduledTask) -> None:
         )
 
 
-def _deliver_single(target: DeliveryTarget, message: str) -> tuple[bool, str, str]:
+def _deliver_single(
+    target: DeliveryTarget,
+    message: str,
+    can_deliver: Callable[[], bool] | None = None,
+) -> tuple[bool, str, str]:
     """Deliver one message to one destination via its installed adapter."""
+    if can_deliver is not None and not can_deliver():
+        return False, "scheduler claim ownership lost", ""
     adapter = resolve_delivery_adapter(target.provider)
     if adapter is None:
         return False, f"Unsupported provider: {target.provider}", ""
@@ -212,11 +255,19 @@ def _deliver_single(target: DeliveryTarget, message: str) -> tuple[bool, str, st
 
 
 def _deliver_all(
-    task: ScheduledTask, message: str, *, target_filter: frozenset[TargetKey] | None = None
+    task: ScheduledTask,
+    message: str,
+    *,
+    target_filter: frozenset[TargetKey] | None = None,
+    can_deliver: Callable[[], bool] | None = None,
 ) -> FanOutResult:
     """Resolve ``task``'s destinations once and deliver to all of them at once."""
     plan = resolve_delivery_plan(task, only=target_filter)
-    return deliver_plan(plan, message, _deliver_single)
+    return deliver_plan(
+        plan,
+        message,
+        lambda target, content: _deliver_single(target, content, can_deliver),
+    )
 
 
 def _target_outcome_summary(result: FanOutResult) -> tuple[str, ...]:

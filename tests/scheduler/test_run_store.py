@@ -19,6 +19,7 @@ from infrastructure.scheduling.scheduler.storage.run_store import (
     get_latest_finished_run,
     get_latest_targeted_run,
     get_runs,
+    renew_claims,
     try_claim,
 )
 from infrastructure.scheduling.scheduler.types import DeliveryOutcome, Provider, TaskStatus
@@ -122,6 +123,34 @@ class TestClaimStore:
             status=TaskStatus.SUCCESS,
             db_path=db_path,
         )
+
+    def test_active_claims_are_renewed_in_one_transaction(self, db_path: Path) -> None:
+        first = _claimed(db_path, "task1", "2026-01-01T09:00")
+        second = _claimed(db_path, "task2", "2026-01-01T09:00")
+
+        renewed = renew_claims((first, second), db_path=db_path)
+
+        assert set(renewed) == {first, second}
+        assert renewed[first] > first.lease_expires_at
+        assert renewed[second] > second.lease_expires_at
+
+    def test_renewal_rejects_an_expired_claim_before_recovery(self, db_path: Path) -> None:
+        claim = _claimed(db_path, "task1", "2026-01-01T09:00")
+        _expire_claim(db_path, claim.task_id, claim.fire_time)
+
+        assert renew_claims((claim,), db_path=db_path) == {}
+        assert not complete_run(claim, status=TaskStatus.SUCCESS, db_path=db_path)
+        assert get_runs(claim.task_id, db_path=db_path)[0].status is TaskStatus.RUNNING
+
+    def test_batch_renewal_excludes_a_reclaimed_owner(self, db_path: Path) -> None:
+        stale = _claimed(db_path, "task1", "2026-01-01T09:00")
+        _expire_claim(db_path, stale.task_id, stale.fire_time)
+        current = _claimed(db_path, stale.task_id, stale.fire_time)
+
+        renewed = renew_claims((stale, current), db_path=db_path)
+
+        assert stale not in renewed
+        assert current in renewed
 
     def test_different_fire_times_both_succeed(self, db_path: Path) -> None:
         assert try_claim("task1", "2026-01-01T09:00", db_path=db_path) is not None

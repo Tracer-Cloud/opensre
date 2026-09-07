@@ -38,6 +38,7 @@ class ExecutionClaim:
     fire_time: str
     attempt: int
     owner_token: str
+    lease_expires_at: datetime
     target_filter: frozenset[tuple[Provider, str]] | None = None
 
 
@@ -108,9 +109,54 @@ def try_claim(
                     json.dumps(sorted(target_filter) if target_filter is not None else None),
                 ),
             )
-            return ExecutionClaim(task_id, fire_time, attempt, owner_token, target_filter)
+            return ExecutionClaim(
+                task_id,
+                fire_time,
+                attempt,
+                owner_token,
+                now + timedelta(seconds=_CLAIM_LEASE_SECONDS),
+                target_filter,
+            )
     except sqlite3.IntegrityError:
         return None
+
+
+def claim_renewal_interval_seconds() -> float:
+    """Return a renewal interval that leaves two intervals of lease safety."""
+    return _CLAIM_LEASE_SECONDS / 3
+
+
+def renew_claims(
+    claims: Collection[ExecutionClaim],
+    db_path: Path | None = None,
+) -> dict[ExecutionClaim, datetime]:
+    """Renew live fenced claims together and return their confirmed expiries."""
+    if not claims:
+        return {}
+    renewed: dict[ExecutionClaim, datetime] = {}
+    with database.transaction(db_path, immediate=True) as conn:
+        now = datetime.now(UTC)
+        now_text = now.isoformat()
+        lease_expires_at = now + timedelta(seconds=_CLAIM_LEASE_SECONDS)
+        lease_text = lease_expires_at.isoformat()
+        for claim in claims:
+            cursor = conn.execute(
+                "UPDATE task_runs SET lease_expires_at = ? "
+                "WHERE task_id = ? AND fire_time = ? AND attempt = ? "
+                "AND owner_token = ? AND status = ? AND lease_expires_at >= ?",
+                (
+                    lease_text,
+                    claim.task_id,
+                    claim.fire_time,
+                    claim.attempt,
+                    claim.owner_token,
+                    TaskStatus.RUNNING.value,
+                    now_text,
+                ),
+            )
+            if cursor.rowcount == 1:
+                renewed[claim] = lease_expires_at
+    return renewed
 
 
 def _decode_target_filter(raw: str) -> frozenset[tuple[Provider, str]] | None:
@@ -177,13 +223,13 @@ def complete_run(
     ``targets`` is stored in the order it is given, which is the order the run
     planned its destinations in — not the order they finished.
     """
-    with database.transaction(db_path) as conn:
+    with database.transaction(db_path, immediate=True) as conn:
         now = datetime.now(UTC).isoformat()
         cursor = conn.execute(
             "UPDATE task_runs SET finished_at = ?, status = ?, "
             "posted_message_id = ?, error = ?, provider = ?, targets = ? "
             "WHERE task_id = ? AND fire_time = ? AND attempt = ? "
-            "AND owner_token = ? AND status = ?",
+            "AND owner_token = ? AND status = ? AND lease_expires_at >= ?",
             (
                 now,
                 status.value,
@@ -196,6 +242,7 @@ def complete_run(
                 claim.attempt,
                 claim.owner_token,
                 TaskStatus.RUNNING.value,
+                now,
             ),
         )
         completed = cursor.rowcount == 1
@@ -334,6 +381,7 @@ def delete_runs(task_id: str, db_path: Path | None = None) -> int:
 
 
 __all__ = [
+    "claim_renewal_interval_seconds",
     "complete_run",
     "delete_runs",
     "ExpiredClaim",
@@ -342,5 +390,6 @@ __all__ = [
     "get_latest_finished_run",
     "get_latest_targeted_run",
     "get_runs",
+    "renew_claims",
     "try_claim",
 ]
