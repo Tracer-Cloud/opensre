@@ -219,3 +219,27 @@ def test_fetch_failure_uses_stable_error_without_provider_detail() -> None:
         source.fetch_document(reference)
 
     assert "ghp_secret" not in str(raised.value)
+
+
+def test_verify_checks_access_for_sha_pinned_source_without_manifest() -> None:
+    revision = "a" * 40
+    source = GitHubRunbookSource(
+        RunbookSourceConfig(
+            name="pinned-runbook",
+            provider="github",
+            repository="acme/operations",
+            ref=revision,
+            manifest="",
+        ),
+        _GITHUB,
+    )
+
+    with patch(
+        "integrations.github.runbooks.source.list_github_commits",
+        return_value={"available": False, "error": "repository not found"},
+    ) as commits:
+        verified, message = source.verify()
+
+    assert verified is False
+    assert message == "GitHub could not verify access to the configured repository."
+    assert commits.call_args.kwargs["sha"] == revision

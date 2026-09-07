@@ -87,8 +87,8 @@ class GitHubRunbookSource:
         self._github = github
         self._owner, self._repo = source.repository.split("/", 1)
 
-    def _resolve_revision(self, revision: str) -> str:
-        if _FULL_SHA_RE.fullmatch(revision):
+    def _resolve_revision(self, revision: str, *, verify_access: bool = False) -> str:
+        if _FULL_SHA_RE.fullmatch(revision) and not verify_access:
             return revision.lower()
         result = list_github_commits(
             owner=self._owner,
@@ -109,6 +109,8 @@ class GitHubRunbookSource:
         resolved = first.get("sha") if isinstance(first, dict) else None
         if not isinstance(resolved, str) or not _FULL_SHA_RE.fullmatch(resolved):
             raise RunbookRetrievalError("GitHub did not return an immutable commit revision.")
+        if _FULL_SHA_RE.fullmatch(revision) and resolved.lower() != revision.lower():
+            raise RunbookRetrievalError("GitHub returned an unexpected commit revision.")
         return resolved.lower()
 
     def _fetch_file(self, path: str, revision: str) -> tuple[str, str, str]:
@@ -151,7 +153,7 @@ class GitHubRunbookSource:
             )
 
         try:
-            revision = self._resolve_revision(self._source.ref)
+            revision = self._resolve_revision(self._source.ref, verify_access=True)
         except RunbookRetrievalError:
             return False, "GitHub could not verify access to the configured repository."
         return True, f"Verified access to {self._source.repository}@{revision}."
