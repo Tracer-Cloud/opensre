@@ -50,8 +50,19 @@ def load_llm_settings() -> Any | None:
         return None
 
 
+def load_llm_source() -> str:
+    """Return the user-facing origin of the effective LLM route."""
+    try:
+        from config.account import account_llm_route
+
+        return "OpenSRE webapp" if account_llm_route() is not None else "local configuration"
+    except Exception:
+        return "local configuration"
+
+
 __all__ = [
     "configured_integration_names",
+    "load_llm_source",
     "load_llm_settings",
     "load_verified_integrations",
     "verify_integration",

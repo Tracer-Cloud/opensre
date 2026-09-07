@@ -2,10 +2,16 @@
 
 from __future__ import annotations
 
+import io
+
+from rich.console import Console
+
 from config.account import AccountRecord
 from surfaces.cli.account_auth import AccountAuthError, AccountLoginResult
-from surfaces.cli.wizard import factory_setup
+from surfaces.cli.wizard import factory_setup, summaries
 from surfaces.shared.account_session import AccountSessionState, AccountStatus
+from surfaces.shared.terminal.banner import banner as banner_module
+from surfaces.shared.terminal.banner.banner_state import LaunchStatus
 
 
 def _signed_out() -> AccountStatus:
@@ -23,6 +29,29 @@ def _record() -> AccountRecord:
         token_expires_at="2026-12-01T10:00:00+00:00",
         llm_model="gpt-5.4-mini",
     )
+
+
+def test_factory_setup_uses_the_shell_banner_with_concise_steps(monkeypatch) -> None:
+    output = io.StringIO()
+    monkeypatch.setattr(
+        banner_module,
+        "load_launch_status",
+        lambda: LaunchStatus(skill_count=4, integration_count=1),
+    )
+    monkeypatch.setattr(
+        summaries,
+        "console",
+        Console(file=output, force_terminal=False, highlight=False, width=100),
+    )
+
+    summaries.render_factory_setup_header()
+
+    rendered = output.getvalue()
+    assert "Welcome to OpenSRE CLI" in rendered
+    assert "Skills (4)" in rendered
+    assert "Setup · 2 steps" in rendered
+    assert "Sign in with GitHub in the OpenSRE webapp" in rendered
+    assert "Start the shell with your hosted model" in rendered
 
 
 def test_run_factory_setup_requires_account_then_returns_success(monkeypatch) -> None:

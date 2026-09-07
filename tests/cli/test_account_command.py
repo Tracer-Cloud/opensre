@@ -285,7 +285,7 @@ def test_logout_revokes_the_file_token_not_an_environment_override(
     assert "OPENSRE_ACCOUNT_TOKEN" in result.detail
 
 
-def test_login_presenter_prints_url_and_numbered_steps() -> None:
+def test_login_presenter_prints_url_and_concise_browser_steps() -> None:
     url = (
         "http://localhost:3000/cli/auth/github"
         "?callback_port=43721&state=login-state&code_challenge=pkce"
@@ -298,12 +298,12 @@ def test_login_presenter_prints_url_and_numbered_steps() -> None:
     presenter.setup_complete()
 
     output = buf.getvalue()
-    assert "Sign in to OpenSRE with GitHub:" in output
-    assert "1. Your browser will open this link" in output
+    assert "Sign in to OpenSRE with GitHub" in output
+    assert "1  Browser opened" in output
     assert url in output
-    assert "2. Sign in with GitHub." in output
-    assert "3. Connect repository and security access." in output
-    assert "Waiting for you to approve in the browser" in output
+    assert "2  Sign in and approve repository and security access" in output
+    assert "3." not in output
+    assert "Waiting for browser approval" in output
     assert "Browser authorization received." in output
     assert "GitHub integration connected." in output
     assert "Hosted model activated." in output

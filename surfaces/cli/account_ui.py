@@ -92,25 +92,18 @@ class AccountLoginPresenter:
     def prompt_sign_in(self, url: str, *, opened: bool) -> None:
         console = self._console
         console.print()
-        console.print("Sign in to OpenSRE with GitHub:")
+        console.print(f"[bold {TEXT}]Sign in to OpenSRE with GitHub[/]")
         console.print()
         if opened:
-            console.print("  1. Your browser will open this link")
+            console.print("  1  Browser opened")
         else:
-            console.print("  1. Open this URL in your browser")
+            console.print("  1  Open this link in your browser")
         _print_url(console, url)
         if opened:
-            console.print(
-                f"     [{SECONDARY}](if it doesn't open, copy that URL into your browser).[/]"
-            )
-        else:
-            console.print(
-                f"     [{SECONDARY}](copy the link, then return here once GitHub is connected).[/]"
-            )
-        console.print("  2. Sign in with GitHub.")
-        console.print("  3. Connect repository and security access.")
+            console.print(f"     [{SECONDARY}]If it did not open, use the link above.[/]")
+        console.print("  2  Sign in and approve repository and security access")
         console.print()
-        console.print(f"  [{SECONDARY}]Waiting for you to approve in the browser…[/]")
+        console.print(f"  [{SECONDARY}]Waiting for browser approval…[/]")
 
     def authorization_received(self) -> None:
         console = self._console

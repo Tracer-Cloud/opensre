@@ -69,8 +69,7 @@ def test_pasted_key_is_saved_and_switch_proceeds(monkeypatch: Any) -> None:
     monkeypatch.setattr(service, "configure_api_key_provider", lambda **kw: saves.append(kw))
     monkeypatch.setattr(env_sync, "sync_provider_env", lambda **_: "/tmp/.env")
     monkeypatch.setattr(switching, "_reset_runtime_llm_caches", lambda: None)
-    monkeypatch.setattr(switching, "render_models_table", lambda *_: None)
-    monkeypatch.setattr(switching.repl_data, "load_llm_settings", lambda: {})
+    monkeypatch.setattr(switching, "render_current_models", lambda *_: None)
 
     console = _Console(key="sk-test-123")
     assert switching.switch_llm_provider("openai", console) is True  # type: ignore[arg-type]
@@ -169,8 +168,7 @@ def test_custom_provider_no_model_preserves_configured_model(monkeypatch: Any) -
         env_sync, "sync_provider_env", lambda **kw: synced.append(kw) or "/tmp/.env"
     )
     monkeypatch.setattr(switching, "_reset_runtime_llm_caches", lambda: None)
-    monkeypatch.setattr(switching, "render_models_table", lambda *_: None)
-    monkeypatch.setattr(switching.repl_data, "load_llm_settings", lambda: {})
+    monkeypatch.setattr(switching, "render_current_models", lambda *_: None)
 
     console = _Console()
     assert switching.switch_llm_provider("custom-openai", console) is True  # type: ignore[arg-type]

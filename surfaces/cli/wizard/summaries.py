@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import cast
 
 from rich import box
+from rich.align import Align
 from rich.panel import Panel
 from rich.rule import Rule
 from rich.text import Text
@@ -29,6 +30,7 @@ from infrastructure.terminal.theme import (
 )
 from surfaces.cli.wizard.components import console
 from surfaces.cli.wizard.integration_health import IntegrationHealthResult
+from surfaces.shared.terminal.banner import build_launch_banner
 
 
 def render_header() -> None:
@@ -55,14 +57,32 @@ def render_header() -> None:
 
 
 def render_factory_setup_header() -> None:
-    """Print the first-run setup splash (webapp account → hosted shell)."""
-    _render_splash_header(
-        heading="A few steps and you are in the terminal",
-        steps=(
-            "Sign in or create your OpenSRE account with GitHub.",
-            "OpenSRE activates the hosted model and opens the interactive shell.",
-        ),
+    """Print the shell launch banner followed by the two-step account setup."""
+    console.print()
+    console.print(build_launch_banner(console))
+
+    steps = Text()
+    steps.append("1  ", style=f"bold {BRAND}")
+    steps.append("Sign in with GitHub", style=f"bold {TEXT}")
+    steps.append(" in the OpenSRE webapp.", style=SECONDARY)
+    steps.append("\n")
+    steps.append("2  ", style=f"bold {BRAND}")
+    steps.append("Start the shell", style=f"bold {TEXT}")
+    steps.append(" with your hosted model.", style=SECONDARY)
+    console.print(
+        Align.center(
+            Panel(
+                steps,
+                title="Setup · 2 steps",
+                title_align="left",
+                border_style=DIM,
+                padding=(1, 2),
+                expand=False,
+                box=box.ROUNDED,
+            )
+        )
     )
+    console.print()
 
 
 def _render_splash_header(*, heading: str, steps: tuple[str, ...]) -> None:

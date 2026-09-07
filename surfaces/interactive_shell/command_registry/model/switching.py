@@ -7,9 +7,9 @@ import os
 from rich.console import Console
 from rich.markup import escape
 
-import surfaces.interactive_shell.command_registry.repl_data as repl_data
 from config.constants.llm import LLM_PROVIDER_ENV
-from surfaces.interactive_shell.ui import DIM, ERROR, HIGHLIGHT, WARNING, render_models_table
+from surfaces.interactive_shell.command_registry.model.presentation import render_current_models
+from surfaces.interactive_shell.ui import DIM, ERROR, HIGHLIGHT, WARNING
 from surfaces.shared.terminal.components.choice_menu import print_valid_choice_list
 
 
@@ -255,7 +255,7 @@ def switch_llm_provider(
             f"[{DIM}]({provider.toolcall_model_env})[/]"
         )
     console.print(f"[{DIM}]updated {env_path}[/]")
-    render_models_table(console, repl_data.load_llm_settings())
+    render_current_models(console)
     return True
 
 
@@ -304,7 +304,7 @@ def switch_toolcall_model(
         f"[{DIM}]({provider.value} · {provider.toolcall_model_env})[/]"
     )
     console.print(f"[{DIM}]updated {env_path}[/]")
-    render_models_table(console, repl_data.load_llm_settings())
+    render_current_models(console)
     return True
 
 
@@ -352,7 +352,7 @@ def switch_reasoning_model(
         f"[{DIM}]({provider.value} · {provider.model_env})[/]"
     )
     console.print(f"[{DIM}]updated {env_path}[/]")
-    render_models_table(console, repl_data.load_llm_settings())
+    render_current_models(console)
     return True
 
 

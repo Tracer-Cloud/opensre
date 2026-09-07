@@ -27,8 +27,6 @@ def _run_account_signup_step(*, step: int, total_steps: int) -> bool:
 
     presenter = AccountLoginPresenter(console)
     while True:
-        console.print()
-        console.print("An OpenSRE account is required for the interactive shell.")
         try:
             result = login_account(progress=presenter)
         except (EOFError, KeyboardInterrupt):

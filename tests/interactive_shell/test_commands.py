@@ -384,10 +384,23 @@ class TestSpecificListCommands:
         console, buf = _capture()
         dispatch_slash("/model show", Session(), console)
         output = buf.getvalue()
+        assert "local configuration" in output
         assert "provider" in output
         assert "reasoning model" in output
         assert "toolcall model" in output
         assert "anthropic" in output
+
+    def test_model_show_identifies_the_opensre_webapp_source(self, monkeypatch: object) -> None:
+        self._patch_llm(monkeypatch)
+        monkeypatch.setattr(
+            "config.account.account_llm_route",
+            lambda: object(),
+        )
+        console, buf = _capture()
+
+        dispatch_slash("/model show", Session(), console)
+
+        assert "OpenSRE webapp" in buf.getvalue()
 
     def test_model_show_displays_ollama_model(self, monkeypatch: object) -> None:
         class _FakeLLM:
