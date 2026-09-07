@@ -89,22 +89,13 @@ service has `DATABASE_URI` and `REDIS_URI` set before deploying. Set
 
 ## macOS signing and notarization
 
-The release workflow signs the macOS onedir bundle with a Developer ID
-certificate and notarizes it when these repository secrets exist. Without them
-the bundle is ad-hoc signed, which still builds and runs but makes every Mac
-validate all bundled files on first use (about 15 seconds at install and
-several seconds on the first launch).
+Release builds sign the macOS onedir bundle with the project's Developer ID
+and notarize it. The credentials live only in the release workflow's GitHub
+Actions secrets. A build without them (a fork, a local dry run) is ad-hoc
+signed instead: it still runs, but every Mac validates all bundled files on
+first use (about 15 seconds at install and several seconds on first launch).
 
-| Secret | Value |
-| ------ | ----- |
-| `APPLE_DEVELOPER_ID_P12` | The "Developer ID Application" certificate with its private key, exported from Keychain Access as `.p12`, base64-encoded (`base64 -i cert.p12 \| pbcopy`) |
-| `APPLE_DEVELOPER_ID_P12_PASSWORD` | The password chosen at export |
-| `APPLE_NOTARY_KEY_ID` | Key ID of an App Store Connect API key with the Developer role |
-| `APPLE_NOTARY_ISSUER_ID` | Issuer ID shown on the same API keys page |
-| `APPLE_NOTARY_KEY_P8` | The downloaded `AuthKey_<id>.p8`, base64-encoded |
-
-The identity comes from the certificate, so no team ID secret is needed. The
-hardened-runtime exceptions the frozen interpreter needs live in
+The hardened-runtime exceptions the frozen interpreter needs live in
 `packaging/macos/opensre.entitlements`. The installer leaves a Developer ID
 signature untouched; it only re-signs ad-hoc bundles.
 
@@ -112,7 +103,6 @@ To check a published build:
 
 ```bash
 codesign -dv --verbose=2 ~/.local/bin/.opensre-app/opensre 2>&1 | grep Authority
-xcrun notarytool history --key AuthKey.p8 --key-id <id> --issuer <issuer>
 ```
 
 ## Telemetry and privacy

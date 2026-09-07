@@ -393,7 +393,7 @@ jobs:
             -t cert -f pkcs12 -k "$KEYCHAIN"
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s \
             -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
-          security list-keychain -d user -s "$KEYCHAIN" login.keychain-db
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
           rm -f "$P12"
           IDENTITY="$(security find-identity -v -p codesigning "$KEYCHAIN" \
             | sed -n 's/.*"\(Developer ID Application: [^"]*\)".*/\1/p' | head -n 1)"
@@ -402,8 +402,6 @@ jobs:
             exit 1
           fi
           echo "MACOS_SIGN_IDENTITY=$IDENTITY" >> "$GITHUB_ENV"
-          echo "MACOS_SIGN_KEYCHAIN=$KEYCHAIN" >> "$GITHUB_ENV"
-          echo "Signing with: $IDENTITY"
 
       - name: Sign macOS onedir
         if: runner.os == 'macOS' && matrix.pyinstaller_mode == 'onedir'
@@ -445,7 +443,7 @@ jobs:
           "${SIGN[@]}" "$APP_BIN"
           codesign --verify --strict "$APP_BIN"
           codesign -dv "$APP_BIN" 2>&1 | grep -E '^(Authority|Signature|CodeDirectory)' || true
-          echo "Signed onedir libs + ${APP_BIN} with identity: ${MACOS_SIGN_IDENTITY}"
+          echo "Signed onedir libs + ${APP_BIN}"
 
       - name: Smoke test binary (Unix)
         if: runner.os != 'Windows'
