@@ -159,8 +159,8 @@ def _blocked_table(blocked: tuple[PullRequestDelay, ...]) -> Table:
     for column, justify in (
         ("PR", "left"),
         ("Branch", "left"),
-        ("Expected green", "left"),
-        ("Actually green", "left"),
+        ("Expected green (UTC)", "left"),
+        ("Actually green (UTC)", "left"),
         ("Waited", "right"),
     ):
         table.add_column(column, justify=justify)  # type: ignore[arg-type]
@@ -259,7 +259,7 @@ def _blocked_time(report: CiAnalyticsReport) -> list[str]:
     blocked = report.blocked_pr_delays
     if blocked:
         lines.extend(["", "How it adds up, worst first:"])
-        lines.append("| PR | Branch | Expected green | Actually green | Waited |")
+        lines.append("| PR | Branch | Expected green (UTC) | Actually green (UTC) | Waited |")
         lines.append("| --- | --- | --- | --- | ---: |")
         for item in blocked[:_TOP_BLOCKED_PRS]:
             lines.append(

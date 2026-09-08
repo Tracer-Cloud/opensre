@@ -46,9 +46,9 @@ _FALLBACK_INSTRUCTION = (
 _QUEUED_INSTRUCTION = (
     "The selection menu opens after this turn ends. End the turn now without a "
     "user-facing sentence; do NOT repeat the options as text or ask the user to "
-    "type a number. The user's selection arrives as the next user message (the "
-    "chosen option label, verbatim). After selection, continue the original work "
-    "and do not merely repeat or acknowledge the chosen label."
+    "type a number. The user's selection arrives as the next user message as the "
+    "question followed by the chosen option label, verbatim. After selection, "
+    "continue the original work and do not merely repeat or acknowledge the label."
 )
 _QUEUED_BATCH_INSTRUCTION = (
     "The Ask User menu opens after this turn ends. Before it, say in one or two "
