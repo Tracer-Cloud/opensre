@@ -114,9 +114,6 @@ def run_turn(
     )
     if confirms_pending and action_result.executed_success_count > 0:
         consume_confirmed_pending_offer(session, expanded)
-    from core.agent_harness.accounting.token_accounting import record_action_tokens
-
-    record_action_tokens(session, action_result)
     accounting.record_action_result(action_result)
 
     if action_result.cancelled or host_cancel_requested(output):

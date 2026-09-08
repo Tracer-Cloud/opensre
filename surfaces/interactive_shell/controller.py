@@ -137,20 +137,6 @@ def _resolve_runtime_context(
     )
 
 
-def _should_wait_until_turn_finishes(
-    *,
-    exclusive_stdin: bool,
-    goal_condition_autosubmitted: bool,
-) -> bool:
-    """True when the next prompt must not open until this turn completes.
-
-    Exclusive-stdin slash commands already wait. ``/goal`` autosubmit is prose
-    (no exclusive stdin) but must still wait — otherwise ``[N] ❯`` appears under
-    the live crawl spinner and looks like a second / finished goal.
-    """
-    return exclusive_stdin or goal_condition_autosubmitted
-
-
 class InteractiveShellController:
     """Coordinate prompt input, queued dispatch, background workers, and shutdown."""
 
@@ -303,10 +289,11 @@ class InteractiveShellController:
                         and not self.state.is_dispatch_running()
                     ):
                         self.session.task_plan = None
-                wait_for_turn = _should_wait_until_turn_finishes(
-                    exclusive_stdin=wait,
-                    goal_condition_autosubmitted=autosubmitted and not ask_user_answers,
-                )
+                # Only exclusive-stdin commands hold the next prompt. A ``/goal``
+                # work turn keeps it open: the prompt row is where the spinner,
+                # the live tool name and the Auto line are painted, so
+                # suspending it left the goal running with no progress signal.
+                wait_for_turn = wait
                 if wait_for_turn:
                     await self.prompt.suspend()
                 if warning:

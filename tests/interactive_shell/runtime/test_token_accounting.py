@@ -118,21 +118,31 @@ def test_record_token_usage_skips_zero_counts() -> None:
     assert session.tokens.call_count == 0
 
 
-def test_record_action_tokens_adds_exact_counts_and_skips_unreported_phases() -> None:
-    # Arrange
-    from core.agent_harness.accounting.token_accounting import record_action_tokens
+def test_provider_usage_tap_records_each_model_call_and_skips_unreported_ones() -> None:
+    # Arrange: a session and the runtime-event tap wrapping an inner observer.
+    from core.agent_harness.accounting.token_accounting import tap_provider_usage
     from core.agent_harness.session.session_core import SessionCore
-    from core.agent_harness.turns.turn_results import ToolCallingTurnResult
+    from core.events import ProviderRequestEndEvent
 
     session = SessionCore()
-    reported = ToolCallingTurnResult(1, 1, 1, False, True, input_tokens=320, output_tokens=80)
-    unreported = ToolCallingTurnResult(1, 1, 1, False, True)
+    seen: list[object] = []
+    callback = tap_provider_usage(seen.append, session)
 
-    # Act
-    record_action_tokens(session, reported)
-    record_action_tokens(session, unreported)
+    # Act: two model calls with usage, one without, and an unrelated event.
+    callback(
+        ProviderRequestEndEvent(
+            iteration=1, has_tool_calls=True, data={"input_tokens": 120, "output_tokens": 30}
+        )
+    )
+    callback(ProviderRequestEndEvent(iteration=2, has_tool_calls=False, data={}))
+    callback(
+        ProviderRequestEndEvent(
+            iteration=3, has_tool_calls=False, data={"input_tokens": 200, "output_tokens": 50}
+        )
+    )
 
-    # Assert: exact counts land once; a phase without usage adds no estimate.
+    # Assert: exact counts land per call, nothing estimated, every event still forwarded.
     assert session.tokens.io_totals() == (320, 80)
-    assert session.tokens.call_count == 1
+    assert session.tokens.call_count == 2
     assert session.tokens.has_estimates is False
+    assert len(seen) == 3

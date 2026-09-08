@@ -24,6 +24,7 @@ from core.agent import Agent
 from core.agent.cancel import tool_resources_cancel_requested
 from core.agent.goals import Goal
 from core.agent_harness.accounting.self_recording_tools import SELF_RECORDING_ACTION_TOOL_NAMES
+from core.agent_harness.accounting.token_accounting import tap_provider_usage
 from core.agent_harness.agent_builder import AgentConfig, build_agent
 from core.agent_harness.ports import (
     ConfirmFn,
@@ -531,6 +532,9 @@ def _build_action_agent(
         session=session,
         user_text=message,
     )
+    # Every finished model call lands on ``session.tokens`` as it happens, so
+    # ``/cost`` and ``/goal`` count the spend even when a later call raises.
+    on_runtime_event = tap_provider_usage(on_runtime_event, session)
     if goal is not None:
         on_runtime_event = tap_executed_tool_names(on_runtime_event, executed_tool_names)
 

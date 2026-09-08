@@ -7,6 +7,7 @@ user prose.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import Any
@@ -33,6 +34,8 @@ from core.agent_harness.session_goal.goal import (
     session_goal_is_paused,
 )
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
+
+log = logging.getLogger(__name__)
 
 ChatFn = Callable[[str], TurnResult]
 EvaluateFn = Callable[..., str]
@@ -166,8 +169,14 @@ def _chat_or_pause(
             paused = active.with_status(SessionGoalStatus.PAUSED).with_reason(
                 SessionGoalReason.PAUSED_TURN_FAILED
             )
-            _paint(session, paused, on_progress, rederive=False)
+            # State first, then the host paint: a failing paint must neither
+            # leave the goal active nor mask the turn error being re-raised.
+            attach_session_goal(session, paused)
             _clear_host_autosubmit(session)
+            try:
+                _paint(session, paused, on_progress, rederive=False)
+            except Exception:
+                log.debug("session-goal pause paint failed", exc_info=True)
         raise
 
 
@@ -287,9 +296,9 @@ def run_until_session_goal(
         _announce_working(session, pre, on_progress)
 
     pre_chat_completed = pre.completed if isinstance(pre, SessionGoal) else frozenset()
-    last = (
-        _chat_or_pause(chat, message, session, on_progress) if had_active_before else chat(message)
-    )
+    # Also covers a goal attached by ``session_goal_set`` inside this very turn:
+    # the pause applies to whatever goal is active when the turn raises.
+    last = _chat_or_pause(chat, message, session, on_progress)
     active = getattr(session, "session_goal", None)
     if not isinstance(active, SessionGoal) or not session_goal_is_active(session):
         # Paused after the first chat (e.g. slash during turn) — keep state.

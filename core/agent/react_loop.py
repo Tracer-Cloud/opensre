@@ -381,8 +381,10 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
             span_attrs["has_tool_calls"] = response.has_tool_calls
             span_attrs["tool_call_count"] = len(response.tool_calls)
             span_attrs["content_chars"] = len(response.content or "")
-        self._input_tokens += int(getattr(response, "input_tokens", 0) or 0)
-        self._output_tokens += int(getattr(response, "output_tokens", 0) or 0)
+        input_tokens = int(getattr(response, "input_tokens", 0) or 0)
+        output_tokens = int(getattr(response, "output_tokens", 0) or 0)
+        self._input_tokens += input_tokens
+        self._output_tokens += output_tokens
         response = self._host._after_response(provider_request, response)
         self._host._emit_runtime(
             ProviderRequestEndEvent(
@@ -391,6 +393,9 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
                 data={
                     "tool_call_count": len(response.tool_calls),
                     "content_chars": len(response.content or ""),
+                    # Per call, so a run that raises later still reported this spend.
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
                 },
             )
         )
