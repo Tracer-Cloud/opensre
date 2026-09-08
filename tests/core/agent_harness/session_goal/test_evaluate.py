@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 from core.agent_harness.session.session_core import SessionCore
-from core.agent_harness.session_goal.confirm import build_session_goal_llm_evaluator
 from core.agent_harness.session_goal.evaluate import (
+    build_session_goal_evaluator,
     evaluate_session_goal,
     turn_has_session_goal_evidence,
 )
@@ -291,7 +291,7 @@ def test_llm_evaluator_rejects_soft_achieve() -> None:
             _ = tools
             return []
 
-    evaluate = build_session_goal_llm_evaluator(_LLM())  # type: ignore[arg-type]
+    evaluate = build_session_goal_evaluator(lambda: _LLM())  # type: ignore[arg-type]
     session = SessionCore()
     goal = SessionGoal(condition="finish migration", max_outer_turns=3)
     attach_session_goal(session, goal)
@@ -331,7 +331,7 @@ def test_llm_reject_survives_outer_loop_session_reread() -> None:
         session,
         "go",
         goal=SessionGoal(condition="finish migration", max_outer_turns=2),
-        evaluate=build_session_goal_llm_evaluator(_LLM()),  # type: ignore[arg-type]
+        evaluate=build_session_goal_evaluator(lambda: _LLM()),  # type: ignore[arg-type]
         on_progress=lambda g: progress_updates.append(g.status),
     )
 
@@ -381,7 +381,7 @@ def test_llm_evaluator_confirms_soft_achieve() -> None:
             _ = tools
             return []
 
-    evaluate = build_session_goal_llm_evaluator(_LLM())  # type: ignore[arg-type]
+    evaluate = build_session_goal_evaluator(lambda: _LLM())  # type: ignore[arg-type]
     status = evaluate(
         SessionGoal(condition="finish migration", max_outer_turns=3),
         _result("patched", executed=1, success=1),
@@ -404,7 +404,7 @@ def test_llm_evaluator_fails_closed_on_free_text_verdict() -> None:
     session = SessionCore()
     goal = SessionGoal(condition="finish migration", max_outer_turns=3)
     attach_session_goal(session, goal)
-    status = build_session_goal_llm_evaluator(_LLM())(  # type: ignore[arg-type]
+    status = build_session_goal_evaluator(lambda: _LLM())(  # type: ignore[arg-type]
         goal,
         _result("patched", executed=1, success=1),
         session=session,
@@ -448,3 +448,105 @@ def test_evidence_is_false_when_the_success_counts_are_not_numbers() -> None:
         assistant_response_text = "done"
 
     assert turn_has_session_goal_evidence(_BadResult()) is False
+
+
+def test_a_met_verdict_ticks_every_checklist_item() -> None:
+    # Arrange: a two-item checklist with nothing ticked yet.
+    session = SessionCore()
+    goal = SessionGoal(condition="two checks", checklist=("A", "B"))
+    attach_session_goal(session, goal)
+
+    # Act: the judge says met after successful tool work.
+    verdict = evaluate_session_goal(
+        goal,
+        _result("Both done.", executed=1, success=1),
+        session=session,
+        judge=_reached,
+    )
+
+    # Assert: the stored goal shows [x] on every item, not an achieved goal with open boxes.
+    assert verdict.status == SessionGoalStatus.ACHIEVED
+    assert session.session_goal is not None
+    assert session.session_goal.completed == frozenset({0, 1})
+
+
+def test_without_a_judge_only_a_ticked_checklist_can_close_the_goal() -> None:
+    # Arrange: no judge, no judge client — an in-memory host.
+    session = SessionCore()
+    open_goal = SessionGoal(condition="count users")
+    attach_session_goal(session, open_goal)
+
+    # Act
+    verdict = evaluate_session_goal(
+        open_goal, _result("284 users.", executed=1, success=1), session=session
+    )
+
+    # Assert: a confident tool-backed reply is not enough without a judge.
+    assert verdict.status == SessionGoalStatus.ACTIVE
+    assert verdict.reason == SessionGoalReason.JUDGE_UNAVAILABLE
+
+
+def test_a_rejected_tick_names_its_reason_on_the_status_line() -> None:
+    # Arrange: the model ticked A; the validator refuses it.
+    from core.agent_harness.session_goal.validate import (
+        ChecklistItemVerdict,
+        ChecklistTickVerdict,
+    )
+
+    class _Validator:
+        model_id = "test"
+
+        def invoke(self, messages, *, system=None, tools=None):  # noqa: ANN001
+            _ = (messages, system, tools)
+            return AgentLLMResponse(
+                content=ChecklistTickVerdict(
+                    items=[
+                        ChecklistItemVerdict(
+                            index=0, verdict="INVALID", reason="no run was listed for A"
+                        )
+                    ]
+                ).model_dump_json()
+            )
+
+        def tool_schemas(self, tools):  # noqa: ANN001
+            _ = tools
+            return []
+
+    session = SessionCore()
+    goal = SessionGoal(condition="two checks", checklist=("A", "B"))
+    attach_session_goal(session, goal)
+    attach_session_goal(session, goal.with_completed(frozenset({0})))
+
+    # Act
+    verdict = evaluate_session_goal(
+        goal,
+        _result("Did A.", executed=1, success=1),
+        session=session,
+        judge=_not_yet,
+        validate_llm=_Validator(),  # type: ignore[arg-type]
+    )
+
+    # Assert: the tick is gone and the user can see why.
+    assert verdict.status == SessionGoalStatus.ACTIVE
+    assert "tick rejected: no run was listed for A" in verdict.reason
+    assert session.session_goal is not None
+    assert session.session_goal.completed == frozenset()
+
+
+def test_a_judge_client_that_cannot_be_built_keeps_the_goal_active() -> None:
+    # Arrange: the host's factory raises (no credentials).
+    def _broken_factory() -> object:
+        raise RuntimeError("no llm configured")
+
+    evaluate = build_session_goal_evaluator(_broken_factory)  # type: ignore[arg-type]
+    session = SessionCore()
+    goal = SessionGoal(condition="count users")
+    attach_session_goal(session, goal)
+
+    # Act
+    status = evaluate(goal, _result("284 users.", executed=1, success=1), session=session)
+
+    # Assert
+    assert status == SessionGoalStatus.ACTIVE
+    assert session.session_goal is not None
+    assert session.session_goal.last_reason == SessionGoalReason.JUDGE_UNAVAILABLE

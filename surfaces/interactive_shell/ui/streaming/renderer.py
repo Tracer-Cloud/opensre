@@ -12,7 +12,6 @@ from rich.text import Text
 
 import infrastructure.terminal.theme as ui_theme
 from core.agent_harness.spi.prompt_chrome import normalize_three_tier_spacing
-from core.agent_harness.spi.session_goal import strip_session_goal_progress_tags
 from infrastructure.safety.terminal_output import strip_terminal_controls
 from infrastructure.text import looks_like_data_blob
 
@@ -131,7 +130,7 @@ def render_markdown_block(console: Console, text: str) -> None:
     so every markdown surface shares one escaping/theme policy. Terminal
     controls are stripped inside ``_build_markdown_block``.
     """
-    visible = strip_session_goal_progress_tags(text)
+    visible = text
     if not visible.strip():
         return
     with console.use_theme(ui_theme.MARKDOWN_THEME):
@@ -152,7 +151,7 @@ def render_note_block(console: Console, text: str) -> None:
     that same column as ``Ω`` / Thinking so the left edge stays straight; bold
     spans (action words) stay bold within the recessed body.
     """
-    visible = strip_session_goal_progress_tags(text)
+    visible = text
     if not visible.strip():
         return
     with console.use_theme(ui_theme.MARKDOWN_THEME):
@@ -199,7 +198,7 @@ def reply_gutter(
 
 def render_reply_block(console: Console, text: str, *, lead: bool = True) -> None:
     """Render a whole assistant reply inside the ``Ω`` hanging-indent gutter."""
-    visible = strip_session_goal_progress_tags(text)
+    visible = text
     if not visible.strip():
         return
     with console.use_theme(ui_theme.MARKDOWN_THEME):

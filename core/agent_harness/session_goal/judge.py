@@ -19,7 +19,7 @@ log = logging.getLogger(__name__)
 
 JudgeName = Literal["GOAL_REACHED", "NOT_REACHED", "IMPOSSIBLE"]
 
-# Same cap as the former confirm path: the closing reply is enough.
+# The closing reply is enough for the verdict; a longer tail only costs tokens.
 MAX_REVIEWED_REPLY_CHARS = 4000
 
 _JUDGE_SYSTEM = (
@@ -122,6 +122,5 @@ __all__ = [
     "MAX_REVIEWED_REPLY_CHARS",
     "JudgeName",
     "SessionGoalJudgeVerdict",
-    "default_classification_llm",
     "invoke_session_goal_judge",
 ]

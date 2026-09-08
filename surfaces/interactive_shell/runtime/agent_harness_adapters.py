@@ -14,7 +14,6 @@ from rich.markup import escape
 
 from core.agent_harness import OutputSink
 from core.agent_harness.spi.defaults import DefaultErrorReporter
-from core.agent_harness.spi.session_goal import strip_session_goal_progress_tags
 from core.llm.shared.llm_retry import CREDIT_EXHAUSTED_MARKER
 from surfaces.interactive_shell.ui import DIM
 
@@ -68,15 +67,8 @@ class ShellOutputSink:
         replies, skill bodies. A ``sed 's/\\]\\]>//'`` in a shell command
         reads to Rich as an unbalanced markup tag and raised ``MarkupError``,
         which took the whole turn down. Styled output goes through the
-        ``render_*`` methods instead. Session-goal progress tags are scrubbed
-        so a non-stream render path cannot leak ``session_goal:done=`` /
-        ``achieved`` into the TTY.
+        ``render_*`` methods instead.
         """
-        if message and "session_goal:" in message:
-            visible = strip_session_goal_progress_tags(message)
-            if not visible.strip():
-                return
-            message = visible
         self._console.print(message, markup=False)
 
     def render_response_header(self, label: str) -> None:

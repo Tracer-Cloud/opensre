@@ -1,11 +1,10 @@
 """Session goal — cross-turn continuation (distinct from ReAct Goal).
 
 Attach via an explicit host call (:func:`attach_session_goal`) or the structured
-``session_goal`` action tool. Do not detect goals by scanning user prose.
+``session_goal_set`` action tool. Do not detect goals by scanning user prose.
 
-Checklist ticks come from ``session_goal_complete``. Prose ``done=`` tags
-are stripped for display and are not a completion path.
-A cheap-model judge decides met / not yet / impossible.
+Checklist ticks come from the ``session_goal_complete`` tool; a cheap-model
+judge decides met / not yet / impossible. Reply prose never ticks or closes.
 
 The host loop (:mod:`core.agent_harness.session_goal.run_until`) calls ``chat``
 until the goal is achieved, impossible, cleared, cancelled, or hits ``max_outer_turns``.
@@ -14,8 +13,7 @@ Related leaf modules (import them directly — this module must not import them)
 
 * :mod:`core.agent_harness.session_goal.evaluate` — host completion + evidence gate
 * :mod:`core.agent_harness.session_goal.judge` — cheap-model transcript verdict
-* :mod:`core.agent_harness.session_goal.validate` — newly ticked checklist items
-* :mod:`core.agent_harness.session_goal.confirm` — inject a specific judge LLM
+* :mod:`core.agent_harness.session_goal.validate` — cheap-model check of new ticks
 * :mod:`core.agent_harness.session_goal.progress` — progress / status-line formatting only
 * :mod:`core.agent_harness.session_goal.continuation` — session-goal continuation prompts
 * :mod:`core.agent_harness.session_goal.persist` — flush / restore
@@ -47,7 +45,7 @@ class SessionGoalStatus:
 
 
 class SessionGoalReason:
-    """Stable host reason strings for evaluate and LLM confirm.
+    """Stable host reason strings for evaluate and the judge.
 
     Call sites compare with ``==`` / helpers — do not invent parallel phrases.
     Never embed ``session_goal:…`` tag grammar here: progress reasons can land in
@@ -56,7 +54,6 @@ class SessionGoalReason:
 
     WORKING_PREFIX = "working"
     ACHIEVED_TOOL_EVIDENCE = "achieved with tool evidence"
-    ACHIEVED_HOST_SET = "achieved (host-set goal)"
     ACHIEVED_GENERIC = "goal achieved"
     CHECKLIST_COMPLETE = "checklist complete"
     IMPOSSIBLE = "impossible"
@@ -71,9 +68,7 @@ class SessionGoalReason:
     BUDGET_EXHAUSTED = "session-goal turn budget exhausted"
     CANCELLED = "goal cancelled"
     CLEARED = "goal cleared"
-    LLM_CONFIRM_NOT_REACHED = "LLM confirm: not reached"
-    LLM_CONFIRM_UNAVAILABLE = "LLM confirm unavailable; staying active"
-    NO_TOOL_EVIDENCE = "achieved tag ignored; no tool evidence yet"
+    JUDGE_UNAVAILABLE = "judge unavailable; staying active"
 
     @staticmethod
     def is_working(reason: str) -> bool:
@@ -93,11 +88,6 @@ class SessionGoalReason:
             return f"checklist {done}/{total} done"
         return f"checklist {done}/{total} done — next: {next_item}"
 
-    @staticmethod
-    def achieved_ignored_incomplete(done: int, total: int, next_item: str | None) -> str:
-        next_bit = f" — next: {next_item}" if next_item else ""
-        return f"achieved tag ignored; checklist {done}/{total} incomplete{next_bit}"
-
 
 # Character budgets for goal text. The ellipsis arithmetic lives in
 # ``truncate_message`` so no call site repeats ``limit - len("...")``.
@@ -113,13 +103,6 @@ MAX_GOAL_CONDITION_CHARS = 400
 # Session-goal turns a goal may run before the host stops on budget.
 _DEFAULT_MAX_OUTER_TURNS = 5
 
-_DONE_TAG = re.compile(r"session_goal:done=([0-9,\s]+)")
-# Progress tokens removed before the user sees the reply. Match the bare token
-# (not only whitespace-bounded forms) so ``done=1,session_goal:achieved`` and
-# leading/trailing comma-joined tags never leak through a display path.
-_PROGRESS_TAG = re.compile(
-    r"session_goal:(?:achieved|done=[0-9]+(?:\s*,\s*[0-9]+)*)",
-)
 # Accidental paste of the interactive-shell prompt line into user text /
 # goal conditions (``[1] ❯ question`` → ``question``).
 _SHELL_PROMPT_CHROME = re.compile(r"^(?:\[\d+\]\s*)?❯\s+")
@@ -228,15 +211,16 @@ def derive_session_goal_checklist(
     condition: str,
     items: Sequence[str] = (),
 ) -> tuple[str, ...]:
-    """Checklist for a new goal: caller items, else steps in ``condition``, else the condition."""
+    """Checklist for a new goal: caller items, else two or more steps written into ``condition``.
+
+    A single-item checklist would only echo the condition, so a condition
+    without enumerated steps gets no checklist and the judge alone decides.
+    """
     provided = tuple(str(item).strip() for item in items if str(item).strip())
     if provided:
         return provided
     found = tuple(match.group(1).strip() for match in _CONDITION_STEPS.finditer(condition))
-    if len(found) >= 2:
-        return found
-    text = condition.strip()
-    return (text,) if text else ()
+    return found if len(found) >= 2 else ()
 
 
 def build_session_goal(
@@ -399,48 +383,6 @@ def session_goal_is_attached(session: Any) -> bool:
     return bool(goal.status in (SessionGoalStatus.ACTIVE, SessionGoalStatus.PAUSED))
 
 
-def _done_indices_from_text(text: str) -> frozenset[int]:
-    found: set[int] = set()
-    for match in _DONE_TAG.finditer(text):
-        for piece in match.group(1).split(","):
-            piece = piece.strip()
-            if not piece:
-                continue
-            try:
-                found.add(int(piece))
-            except ValueError:
-                continue
-    return frozenset(found)
-
-
-def apply_session_goal_progress(goal: SessionGoal, text: str) -> SessionGoal:
-    """Parse leftover ``session_goal:done=…`` tags. The host loop ignores them."""
-    if not text:
-        return goal
-    newly = _done_indices_from_text(text)
-    if not newly:
-        return goal
-    if goal.checklist:
-        newly = frozenset(i for i in newly if 0 <= i < len(goal.checklist))
-    if not newly:
-        return goal
-    return goal.with_completed(goal.completed | newly)
-
-
-def strip_session_goal_progress_tags(text: str) -> str:
-    """Remove harness progress tags from user-visible assistant text."""
-    if not text:
-        return text
-    cleaned = _PROGRESS_TAG.sub("", text)
-    cleaned = re.sub(r"[ \t]*,[ \t]*", ", ", cleaned)
-    cleaned = re.sub(r"^[,\s]+", "", cleaned)
-    cleaned = re.sub(r"[,\s]+$", "", cleaned)
-    cleaned = re.sub(r"[ \t]+\n", "\n", cleaned)
-    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
-    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
-    return cleaned.strip()
-
-
 def strip_shell_prompt_chrome(text: str) -> str:
     """Strip leading ``[n] ❯`` prompt chrome pasted into user/goal text."""
     if not text:
@@ -496,7 +438,6 @@ __all__ = [
     "SessionGoal",
     "SessionGoalReason",
     "SessionGoalStatus",
-    "apply_session_goal_progress",
     "attach_session_goal",
     "build_session_goal",
     "clear_session_goal",
@@ -509,6 +450,5 @@ __all__ = [
     "session_goal_is_attached",
     "session_goal_is_paused",
     "session_goal_token_delta",
-    "strip_session_goal_progress_tags",
     "strip_shell_prompt_chrome",
 ]

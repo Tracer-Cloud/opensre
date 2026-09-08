@@ -29,8 +29,9 @@ _FIVE_STEP_ASK = (
 )
 
 
-def test_every_goal_gets_a_checklist_from_the_condition() -> None:
-    assert derive_session_goal_checklist("How many Windows users?") == ("How many Windows users?",)
+def test_a_checklist_comes_from_numbered_steps_or_explicit_items_only() -> None:
+    # A single item would only repeat the condition, so a plain condition gets none.
+    assert derive_session_goal_checklist("How many Windows users?") == ()
     assert derive_session_goal_checklist(
         "Do this:\n1. list the goal\n2. name step one\n3. confirm done"
     ) == ("list the goal", "name step one", "confirm done")

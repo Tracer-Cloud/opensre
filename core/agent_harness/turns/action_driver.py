@@ -40,7 +40,6 @@ from core.agent_harness.prompts import (
 from core.agent_harness.session.integration_resolution import resolve_and_cache_integrations
 from core.agent_harness.session.pending_choice import parse_ask_user_answers
 from core.agent_harness.session.terminal_access import execute_cli_onboard_on_missing_key
-from core.agent_harness.session_goal.goal import strip_session_goal_progress_tags
 from core.agent_harness.turns.action_dedup import (
     coerce_fingerprint_quiet,
     with_duplicate_action_call_guard,
@@ -816,17 +815,15 @@ def _show_response(
 
     ``final_text`` arrives empty unless the closing message reads like a real
     reply; only then is it preferred over joined ``display_chunks``. Either way
-    visible prose streams through the sink (``Ω`` gutter on the shell). Progress
-    tags are scrubbed for display only — ``response_text`` keeps them for evaluate.
+    visible prose streams through the sink (``Ω`` gutter on the shell).
     """
     # Both branches stream through the sink so the shell paints the ``Ω`` gutter
     # (Droid / Claude Code rhythm). Bare ``print`` after a lone header left
     # agent prose unmarked and flush against Thinking chrome.
     body = final_text or ("\n".join(display_chunks) if display_chunks else "")
     if body:
-        visible = strip_session_goal_progress_tags(body)
-        if visible.strip():
-            output.stream(label="OpenSRE", chunks=iter([visible]))
+        if body.strip():
+            output.stream(label="OpenSRE", chunks=iter([body]))
             return
         if handled:
             _end_silent_tool_turn(output)

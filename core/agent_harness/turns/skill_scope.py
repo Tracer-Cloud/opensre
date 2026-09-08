@@ -20,6 +20,7 @@ _ALWAYS_OFFERED = frozenset(
         "skill_view",
         "memory_remember",
         "memory_recall",
+        "session_goal_complete",
         "task_cancel",
     }
 )

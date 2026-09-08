@@ -11,6 +11,8 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 
 from core.agent_harness.prompts.kernel.surfaces import profile_for
+from core.agent_harness.session_goal.goal import SessionGoal
+from core.agent_harness.session_goal.progress import format_session_goal_brief
 from core.state import MAX_CONVERSATION_MESSAGES
 from core.state.transcript_window import compact_messages_to_window
 from infrastructure.setup_state import cached_setup_state
@@ -205,6 +207,9 @@ class TurnSnapshot:
     session_goal_attached: bool = False
     """True when a ``/goal`` (SessionGoal) is attached for this turn."""
 
+    session_goal_brief: str = ""
+    """Condition, checklist and last verdict of the attached ``/goal``, for the prompt."""
+
     interactive_choice_available: bool = False
     """True when ``ask_user_choice`` can open a keyboard menu on this surface."""
 
@@ -266,6 +271,7 @@ class TurnSnapshot:
             plan_only_until_authorized=bool(getattr(session, "plan_only_until_authorized", False)),
             prompt_surface=surface,
             session_goal_attached=getattr(session, "session_goal", None) is not None,
+            session_goal_brief=_session_goal_brief(session),
             interactive_choice_available=_interactive_choice_available(session, surface),
             active_vcs_repositories=dict(getattr(session, "active_vcs_repositories", {}) or {}),
             known_vcs_repositories={
@@ -307,6 +313,13 @@ def _pop_recovery_note(session: TurnSnapshotSource) -> str | None:
         return None
     setattr(session, "pending_recovery_note", None)  # noqa: B010 - protocol lacks the optional field
     return note
+
+
+def _session_goal_brief(session: Any) -> str:
+    goal = getattr(session, "session_goal", None)
+    if not isinstance(goal, SessionGoal):
+        return ""
+    return format_session_goal_brief(goal)
 
 
 def _read_task_plan(session: TurnSnapshotSource) -> TaskPlan | None:

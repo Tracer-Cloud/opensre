@@ -50,8 +50,10 @@ first real attempt is turn 1 of 4.
 <Tip>
   Write the condition the way you would brief a teammate: say what "done" looks
   like, and say what to do when something is missing ("otherwise draft the query
-  and end with one setup CTA"). A condition that can never be satisfied will just
-  burn the whole turn budget.
+  and end with one setup CTA"). After every turn a separate small model reads
+  what OpenSRE reported and decides met, not yet, or impossible, so the finish
+  line has to be something the reply can show: a count, a table, a passing
+  check. Numbered steps in the condition become the checklist.
 </Tip>
 
 ## Watching progress
@@ -134,7 +136,8 @@ resume.
 | --- | --- |
 | `active` | Still working |
 | `paused` | You ran `/goal pause` |
-| `achieved` | OpenSRE reached the condition you described |
+| `achieved` | The judge confirmed the condition from what OpenSRE did and reported, backed by at least one successful tool call |
+| `impossible` | The judge decided this session cannot meet the condition (missing access, contradicted facts). Read the reason, then set a different goal |
 | `budget_exhausted` | It used every turn without getting there — read the last reply, then set a narrower goal or raise `--max-turns` |
 | `cancelled` | You interrupted the run with **Ctrl+C** |
 | `cleared` | You ran `/goal clear` |

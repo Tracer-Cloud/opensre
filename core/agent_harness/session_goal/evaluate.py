@@ -4,7 +4,11 @@ The action model does not get to close the goal by saying it is done. This
 module merges tool ticks, validates newly ticked items, then asks the
 transcript judge (:mod:`core.agent_harness.session_goal.judge`) for met /
 not yet / impossible. ``GOAL_REACHED`` without this-turn tools or stored
-findings stays active. Prose ``done=`` tags are ignored.
+findings stays active. Reply prose never ticks an item.
+
+The judge client is injected: hosts build the loop's evaluate with
+:func:`build_session_goal_evaluator`. Without a judge only a fully ticked
+checklist can close a goal.
 """
 
 from __future__ import annotations
@@ -23,7 +27,6 @@ from core.agent_harness.session_goal.goal import (
 )
 from core.agent_harness.session_goal.judge import (
     SessionGoalJudgeVerdict,
-    default_classification_llm,
     invoke_session_goal_judge,
 )
 from core.agent_harness.session_goal.plan_credit import credit_completed_plan_steps
@@ -31,6 +34,7 @@ from core.agent_harness.session_goal.progress import is_session_goal_progress_te
 from core.agent_harness.session_goal.validate import (
     invoke_checklist_tick_validator,
     kept_tick_indices,
+    rejected_tick_reasons,
 )
 from core.llm.types import AgentLLMClient
 
@@ -38,6 +42,7 @@ log = logging.getLogger(__name__)
 
 JudgeFn = Callable[..., SessionGoalJudgeVerdict | None]
 ValidateFn = Callable[..., frozenset[int] | None]
+JudgeLlmFactory = Callable[[], AgentLLMClient]
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +51,14 @@ class SessionGoalVerdict:
 
     status: str
     reason: str
+
+
+@dataclass(frozen=True, slots=True)
+class _TickReview:
+    """Ticks that survived validation, plus why the others were refused."""
+
+    kept: frozenset[int] | None
+    rejected: tuple[str, ...]
 
 
 def session_goal_reply_text(result: Any) -> str:
@@ -96,7 +109,7 @@ def _ticked_items(goal: SessionGoal, newly: frozenset[int]) -> tuple[tuple[int, 
     )
 
 
-def _run_validator(
+def _review_ticks(
     current: SessionGoal,
     *,
     newly: frozenset[int],
@@ -104,33 +117,39 @@ def _run_validator(
     evidence: bool,
     validate: ValidateFn | None,
     validate_llm: AgentLLMClient | None,
-) -> frozenset[int] | None:
+) -> _TickReview:
+    """Validate this turn's ticks. No validator configured means every tick stands."""
     if not newly:
-        return newly
+        return _TickReview(kept=newly, rejected=())
     ticked = _ticked_items(current, newly)
     try:
         if validate is not None:
-            return validate(
+            kept = validate(
                 newly=newly,
                 condition=current.condition,
                 reply=text,
                 evidence=evidence,
                 ticked=ticked,
             )
-        llm = validate_llm if validate_llm is not None else default_classification_llm()
+            return _TickReview(kept=kept, rejected=())
+        if validate_llm is None:
+            return _TickReview(kept=newly, rejected=())
         parsed = invoke_checklist_tick_validator(
-            llm,
+            validate_llm,
             condition=current.condition,
             reply=text,
             evidence=evidence,
             ticked=ticked,
         )
-        if parsed is None:
-            return None
-        return kept_tick_indices(parsed, newly=newly)
     except Exception:
         log.debug("session-goal tick validator unavailable", exc_info=True)
-        return None
+        return _TickReview(kept=None, rejected=())
+    if parsed is None:
+        return _TickReview(kept=None, rejected=())
+    return _TickReview(
+        kept=kept_tick_indices(parsed, newly=newly),
+        rejected=rejected_tick_reasons(parsed, newly=newly),
+    )
 
 
 def _run_judge(
@@ -150,9 +169,10 @@ def _run_judge(
                 evidence=evidence,
                 unfinished=unfinished,
             )
-        llm = judge_llm if judge_llm is not None else default_classification_llm()
+        if judge_llm is None:
+            return None
         return invoke_session_goal_judge(
-            llm,
+            judge_llm,
             condition=current.condition,
             reply=text,
             evidence=evidence,
@@ -172,7 +192,7 @@ def _verdict_from_judge(
     if parsed is None:
         return SessionGoalVerdict(
             status=SessionGoalStatus.ACTIVE,
-            reason=SessionGoalReason.LLM_CONFIRM_UNAVAILABLE,
+            reason=SessionGoalReason.JUDGE_UNAVAILABLE,
         )
     reason = parsed.reason.strip()
     if parsed.verdict == "IMPOSSIBLE":
@@ -194,6 +214,22 @@ def _verdict_from_judge(
         status=SessionGoalStatus.ACTIVE,
         reason=reason or fallback_reason,
     )
+
+
+def _with_rejected_ticks(
+    verdict: SessionGoalVerdict, rejected: tuple[str, ...]
+) -> SessionGoalVerdict:
+    """Tell the user why a tick was refused, on the same status line."""
+    if not rejected or verdict.status != SessionGoalStatus.ACTIVE:
+        return verdict
+    return replace(verdict, reason=f"{verdict.reason} (tick rejected: {rejected[0]})")
+
+
+def _complete_checklist(goal: SessionGoal) -> SessionGoal:
+    """A met goal shows every item ticked, whatever the model remembered to tick."""
+    if not goal.checklist or goal.checklist_complete:
+        return goal
+    return replace(goal, completed=frozenset(range(len(goal.checklist))), new_ticks=frozenset())
 
 
 def evaluate_session_goal(
@@ -227,7 +263,7 @@ def evaluate_session_goal(
         current = current.with_tool_progress()
 
     newly = current.new_ticks | (current.completed - completed_before)
-    kept = _run_validator(
+    review = _review_ticks(
         current,
         newly=newly,
         text=text,
@@ -235,9 +271,9 @@ def evaluate_session_goal(
         validate=validate,
         validate_llm=validate_llm,
     )
-    ticks_unvalidated = kept is None and bool(newly)
-    if kept is not None and kept != newly:
-        current = current.with_completed((current.completed - newly) | kept)
+    ticks_unvalidated = review.kept is None and bool(newly)
+    if review.kept is not None and review.kept != newly:
+        current = current.with_completed((current.completed - newly) | review.kept)
     if current.new_ticks:
         current = replace(current, new_ticks=frozenset())
 
@@ -264,6 +300,9 @@ def evaluate_session_goal(
             evidence=evidence,
             fallback_reason=derive_session_goal_reason(current),
         )
+    verdict = _with_rejected_ticks(verdict, review.rejected)
+    if verdict.status == SessionGoalStatus.ACHIEVED:
+        current = _complete_checklist(current)
 
     if session is not None:
         updated = current.with_status(verdict.status).with_reason(verdict.reason)
@@ -293,10 +332,42 @@ def default_evaluate_session_goal(
     ).status
 
 
+def build_session_goal_evaluator(llm_factory: JudgeLlmFactory) -> Callable[..., str]:
+    """The loop's evaluate for a host: one cheap-model client judges and validates.
+
+    The client is resolved on the first evaluation, not at build time, so an
+    agent that never runs a goal never pays for the client. A factory that
+    raises leaves the goal active with :attr:`SessionGoalReason.JUDGE_UNAVAILABLE`.
+    """
+    client: AgentLLMClient | None = None
+    resolved = False
+
+    def _client() -> AgentLLMClient | None:
+        nonlocal client, resolved
+        if not resolved:
+            resolved = True
+            try:
+                client = llm_factory()
+            except Exception:
+                log.debug("session-goal judge client unavailable", exc_info=True)
+                client = None
+        return client
+
+    def _evaluate(goal: SessionGoal, result: Any, *, session: Any | None = None) -> str:
+        llm = _client()
+        return default_evaluate_session_goal(
+            goal, result, session=session, judge_llm=llm, validate_llm=llm
+        )
+
+    return _evaluate
+
+
 __all__ = [
     "JudgeFn",
+    "JudgeLlmFactory",
     "SessionGoalVerdict",
     "ValidateFn",
+    "build_session_goal_evaluator",
     "default_evaluate_session_goal",
     "evaluate_session_goal",
     "goal_has_session_goal_evidence",

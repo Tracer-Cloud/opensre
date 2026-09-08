@@ -19,6 +19,8 @@ from core.agent_harness.spi.session_goal import (
     SessionGoalReason,
     format_session_goal_progress,
     format_session_goal_status_line,
+    goal_paint_signature,
+    same_goal_identity,
 )
 from core.tool import ToolExecutionHooks
 from infrastructure.turn_host.turn_output import TurnOutput
@@ -32,27 +34,23 @@ from surfaces.shared.terminal.components.rendering import print_repl_text
 
 
 def goal_paint_text(goal: SessionGoal, session: Session) -> str:
-    """The full goal block when something changed, else one status line.
+    """One status line per turn; the full block only when the goal itself changed.
 
-    Every outer turn used to reprint condition, reason, and the whole
-    checklist; with nothing ticked off, that read as the same screen four times.
-    A working turn is always the compact status line (real tokens / elapsed).
+    The block (condition, reason, checklist) prints when a goal is first seen
+    and whenever its status, ticks, or checklist change. A repaint of a goal
+    already shown drops the condition, so it prints once per goal.
     """
-    if SessionGoalReason.is_working(goal.last_reason) and goal.status == "active":
-        return format_session_goal_status_line(goal, session=session)
-    signature = (
-        goal.status,
-        goal.completed,
-        len(goal.checklist),
-        goal.condition,
-        goal.started_at,
-        goal.last_reason,
-    )
     terminal = session.terminal
-    if terminal.goal_paint_signature == signature and goal.status == "active":
+    signature = goal_paint_signature(goal)
+    previous = terminal.goal_paint_signature
+    if goal.status == "active" and (
+        previous == signature or SessionGoalReason.is_working(goal.last_reason)
+    ):
         return format_session_goal_status_line(goal, session=session)
     terminal.goal_paint_signature = signature
-    return format_session_goal_progress(goal, session=session)
+    return format_session_goal_progress(
+        goal, session=session, include_condition=not same_goal_identity(previous, signature)
+    )
 
 
 def execute_shell_turn(

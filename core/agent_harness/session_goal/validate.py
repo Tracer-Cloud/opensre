@@ -123,9 +123,25 @@ def kept_tick_indices(
     return frozenset(kept)
 
 
+def rejected_tick_reasons(
+    parsed: ChecklistTickVerdict | None,
+    *,
+    newly: frozenset[int],
+) -> tuple[str, ...]:
+    """Why each rejected tick was refused, in index order, for the status line."""
+    if parsed is None:
+        return ()
+    return tuple(
+        item.reason.strip() or f"item {item.index} not supported by the reply"
+        for item in sorted(parsed.items, key=lambda entry: entry.index)
+        if item.index in newly and item.verdict == "INVALID"
+    )
+
+
 __all__ = [
     "ChecklistItemVerdict",
     "ChecklistTickVerdict",
     "invoke_checklist_tick_validator",
     "kept_tick_indices",
+    "rejected_tick_reasons",
 ]

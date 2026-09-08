@@ -158,34 +158,27 @@ def test_turn_runner_continues_outer_loop_for_active_session_goal(
     agent_cls = _patch_headless_agent(monkeypatch, _empty_turn_result())
     calls: list[str] = []
 
+    session = SessionCore(store=InMemorySessionStore())
+
     def _dispatch(message: str) -> TurnResult:
+        # Each turn ticks the next checklist item the way ``session_goal_complete`` does.
         calls.append(message)
-        if len(calls) == 1:
-            return TurnResult(
-                final_intent="cli_agent_handled",
-                action_result=ToolCallingTurnResult(
-                    planned_count=0,
-                    executed_count=0,
-                    executed_success_count=0,
-                    has_unhandled_clause=False,
-                    handled=True,
-                ),
-                assistant_response_text="step one session_goal:done=0",
-            )
+        stored = session.session_goal
+        assert isinstance(stored, SessionGoal)
+        attach_session_goal(session, stored.with_completed(stored.completed | {len(calls) - 1}))
         return TurnResult(
             final_intent="cli_agent_handled",
             action_result=ToolCallingTurnResult(
-                planned_count=0,
-                executed_count=0,
-                executed_success_count=0,
+                planned_count=1,
+                executed_count=1,
+                executed_success_count=1,
                 has_unhandled_clause=False,
                 handled=True,
             ),
-            assistant_response_text="all done session_goal:done=1",
+            assistant_response_text="step one" if len(calls) == 1 else "all done",
         )
 
     agent_cls.return_value.dispatch.side_effect = _dispatch
-    session = SessionCore(store=InMemorySessionStore())
     attach_session_goal(
         session,
         SessionGoal(
@@ -201,7 +194,6 @@ def test_turn_runner_continues_outer_loop_for_active_session_goal(
     assert len(calls) == 2
     sink.finalize.assert_called_once()
     finalized = sink.finalize.call_args.args[0]
-    assert "session_goal:" not in finalized
     assert "all done" in finalized
     # Same mid-loop progress contract as the interactive shell.
     assert sink.set_tool_status.called

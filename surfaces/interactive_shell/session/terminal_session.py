@@ -16,6 +16,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from config.constants.repl_autonomy import DEFAULT_AUTO_LEVEL, AutoLevel
+from core.agent_harness.spi.session_goal import GoalPaintSignature
 from surfaces.interactive_shell.session.terminal_metrics import TerminalMetrics
 
 if TYPE_CHECKING:
@@ -132,7 +133,7 @@ class TerminalSession:
     submitted prompt is painted so the answer uses the brand colour."""
 
     pending_choice_response: str | None = None
-    goal_paint_signature: tuple[object, ...] | None = None
+    goal_paint_signature: GoalPaintSignature | None = None
     """What the last session-goal block showed; unchanged goals repaint as one line."""
     """Selected label while its synthetic answer turn awaits a response.
 

@@ -16,6 +16,7 @@ from core.agent_harness.session_goal.validate import (
     ChecklistTickVerdict,
     invoke_checklist_tick_validator,
     kept_tick_indices,
+    rejected_tick_reasons,
 )
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
 from core.llm.types import AgentLLMResponse
@@ -142,3 +143,21 @@ def test_invoke_validator_fails_closed_on_free_text() -> None:
         ticked=((0, "A"),),
     )
     assert parsed is None
+
+
+def test_rejected_tick_reasons_name_only_the_refused_items_in_index_order() -> None:
+    # Arrange
+    parsed = ChecklistTickVerdict(
+        items=[
+            ChecklistItemVerdict(index=2, verdict="INVALID", reason="no output for C"),
+            ChecklistItemVerdict(index=0, verdict="VALID", reason="ok"),
+            ChecklistItemVerdict(index=1, verdict="INVALID", reason=""),
+        ]
+    )
+
+    # Act
+    reasons = rejected_tick_reasons(parsed, newly=frozenset({0, 1, 2}))
+
+    # Assert: a blank reason still says which item, and the order follows the checklist.
+    assert reasons == ("item 1 not supported by the reply", "no output for C")
+    assert rejected_tick_reasons(None, newly=frozenset({0})) == ()

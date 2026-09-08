@@ -65,3 +65,15 @@ def test_a_skill_without_declared_tools_leaves_the_answer_turn_unscoped() -> Non
     session = _session(())
 
     assert scope_tools_to_active_skill(_ALL, session, _ANSWER) == _ALL
+
+
+def test_the_goal_tick_tool_is_offered_inside_any_skill() -> None:
+    # Arrange: a skill that declares only its discovery tools.
+    session = _session(("scan_local_git_workspace",))
+    tools = [*_ALL, _tool("session_goal_complete")]
+
+    # Act
+    scoped = scope_tools_to_active_skill(tools, session, _ANSWER)
+
+    # Assert: a /goal running through the skill can still tick its checklist.
+    assert "session_goal_complete" in {tool.name for tool in scoped}

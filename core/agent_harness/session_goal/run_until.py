@@ -31,7 +31,6 @@ from core.agent_harness.session_goal.goal import (
     refresh_session_goal_reason,
     session_goal_is_active,
     session_goal_is_paused,
-    strip_session_goal_progress_tags,
 )
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
 
@@ -71,29 +70,6 @@ def _record_goal_turn(session: Any, active: SessionGoal) -> SessionGoal:
         updated = updated.with_completed(completed)
     attach_session_goal(session, updated)
     return updated
-
-
-def _scrub_progress_tags(result: TurnResult) -> TurnResult:
-    """Hide ``session_goal:done=`` / ``achieved`` tokens from the user-visible reply.
-
-    Scrubs both ``assistant_response_text`` and any action ``response_text`` so
-    shell and gateway ``primary_response_text`` stay tag-free.
-    """
-    assistant = result.assistant_response_text or ""
-    cleaned_assistant = strip_session_goal_progress_tags(assistant)
-    action = result.action_result
-    action_text = getattr(action, "response_text", "") or ""
-    cleaned_action = strip_session_goal_progress_tags(action_text)
-    if cleaned_assistant == assistant and cleaned_action == action_text:
-        return result
-    new_action = action
-    if cleaned_action != action_text and hasattr(action, "response_text"):
-        new_action = replace(action, response_text=cleaned_action)
-    return replace(
-        result,
-        assistant_response_text=cleaned_assistant,
-        action_result=new_action,
-    )
 
 
 def _paint(
@@ -186,17 +162,17 @@ def _finish_outer_turn(
     evaluate_fn: EvaluateFn,
     on_progress: ProgressFn | None,
 ) -> tuple[SessionGoal, TurnResult, bool]:
-    """Evaluate → single paint. Returns ``(goal, scrubbed, stop)``."""
+    """Evaluate → single paint. Returns ``(goal, result, stop)``."""
     if last.cancelled:
         active = active.with_status(SessionGoalStatus.CANCELLED)
         active = _paint(session, active, on_progress)
         _clear_host_autosubmit(session)
-        return active, _scrub_progress_tags(last), True
+        return active, last, True
 
     if getattr(session, "pending_user_choice", None) is not None:
         active = active.with_reason(SessionGoalReason.PAUSED_USER_CHOICE)
         active = _paint(session, active, on_progress, rederive=False)
-        return active, _scrub_progress_tags(last), True
+        return active, last, True
 
     next_status = evaluate_fn(active, last, session=session)
     stored = getattr(session, "session_goal", None)
@@ -221,7 +197,7 @@ def _finish_outer_turn(
     if active.status != next_status:
         active = active.with_status(next_status)
         attach_session_goal(session, active)
-    last = _scrub_progress_tags(last)
+    last = last
 
     if next_status != SessionGoalStatus.ACTIVE:
         active = _paint(session, active, on_progress, rederive=False)

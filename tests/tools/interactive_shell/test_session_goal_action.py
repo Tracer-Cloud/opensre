@@ -39,15 +39,25 @@ def test_session_goal_tool_does_not_replace_attached_goal() -> None:
     assert session.session_goal is original
 
 
-def test_session_goal_tool_derives_a_checklist_when_items_omitted() -> None:
-    session = InMemorySessionState()
-    result = execute_session_goal_tool(
+def test_session_goal_tool_derives_a_checklist_only_from_numbered_steps() -> None:
+    # Arrange
+    plain = InMemorySessionState()
+    numbered = InMemorySessionState()
+
+    # Act
+    execute_session_goal_tool(
         {"condition": "How many Windows users?"},
-        ActionToolScope(session=session, console=object()),
+        ActionToolScope(session=plain, console=object()),
     )
-    assert result["attached"] is True
-    assert session.session_goal is not None
-    assert session.session_goal.checklist == ("How many Windows users?",)
+    execute_session_goal_tool(
+        {"condition": "Do this:\n1. count users\n2. report the number"},
+        ActionToolScope(session=numbered, console=object()),
+    )
+
+    # Assert: a plain condition gets no checklist; numbered steps become items.
+    assert plain.session_goal is not None and plain.session_goal.checklist == ()
+    assert numbered.session_goal is not None
+    assert numbered.session_goal.checklist == ("count users", "report the number")
 
 
 def test_session_goal_complete_ticks_indices() -> None:

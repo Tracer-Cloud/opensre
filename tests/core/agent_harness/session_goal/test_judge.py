@@ -138,7 +138,7 @@ def test_transport_failure_stays_active() -> None:
         judge_llm=_Boom(),  # type: ignore[arg-type]
     )
     assert verdict.status == SessionGoalStatus.ACTIVE
-    assert verdict.reason == SessionGoalReason.LLM_CONFIRM_UNAVAILABLE
+    assert verdict.reason == SessionGoalReason.JUDGE_UNAVAILABLE
     assert session.session_goal is not None
     assert session.session_goal.status == SessionGoalStatus.ACTIVE
 

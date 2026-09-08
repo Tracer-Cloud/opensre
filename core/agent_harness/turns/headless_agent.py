@@ -37,6 +37,7 @@ from core.agent_harness.ports import (
     TurnAccounting,
     TurnBinding,
 )
+from core.agent_harness.session_goal.evaluate import build_session_goal_evaluator
 from core.agent_harness.session_goal.goal import SessionGoal
 from core.agent_harness.session_goal.run_until import SessionGoalRunResult, run_until_session_goal
 from core.agent_harness.turns.action_driver import ActionTurnRunner
@@ -84,9 +85,17 @@ class HeadlessAgent:
         prompts: PromptContextProvider,
         error_reporter: ErrorReporter,
         llm_factory: LlmFactory,
+        judge_llm_factory: LlmFactory | None = None,
     ) -> None:
         self._tools = tools
         self._llm_factory = llm_factory
+        # Session-goal completion is judged by a cheap model the host injects.
+        # No judge: only a fully ticked checklist can close a goal.
+        self._goal_evaluate = (
+            build_session_goal_evaluator(judge_llm_factory)
+            if judge_llm_factory is not None
+            else None
+        )
         self._session: SessionState = session
         self._output: OutputSink = output
         self._prompts: PromptContextProvider = prompts
@@ -147,7 +156,7 @@ class HeadlessAgent:
         configured the agent once and reuses it (``AgentSession``) omits the
         binding: the agent keeps its bound turn context and ``accounting_factory``
         is not used. ``goal`` attaches an explicit host-owned goal; ``evaluate``
-        overrides goal completion; both default to the handoff-tag path.
+        overrides goal completion, else the injected judge decides.
         ``cancel_requested`` is checked between outer turns; ``on_progress``
         receives the goal after each.
         """
@@ -169,7 +178,7 @@ class HeadlessAgent:
                 session,
                 text,
                 goal=goal,
-                evaluate=evaluate,
+                evaluate=evaluate if evaluate is not None else self._goal_evaluate,
                 cancel_requested=cancel_requested,
                 on_progress=on_progress,
             )

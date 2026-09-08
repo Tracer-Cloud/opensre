@@ -2,21 +2,19 @@
 
 from __future__ import annotations
 
-import pytest
-
 from core.agent_harness.session.session_core import SessionCore
 from core.agent_harness.session_goal.evaluate import (
-    default_evaluate_session_goal,
     evaluate_session_goal,
 )
 from core.agent_harness.session_goal.goal import (
     SessionGoal,
     SessionGoalStatus,
-    apply_session_goal_progress,
     attach_session_goal,
     build_session_goal,
+    mark_session_goal_started,
 )
 from core.agent_harness.session_goal.judge import SessionGoalJudgeVerdict
+from core.agent_harness.session_goal.progress import format_session_goal_progress
 from core.agent_harness.session_goal.run_until import run_until_session_goal
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
 
@@ -55,41 +53,6 @@ def test_build_session_goal_preserves_structured_checklist() -> None:
     assert goal.checklist == ("List the goal", "Name step one", "Confirm done")
     assert goal.max_outer_turns == 5
     assert goal.step_count == 3
-
-
-def test_done_tags_still_parse_but_evaluate_ignores_them() -> None:
-    goal = SessionGoal(
-        condition="checklist",
-        max_outer_turns=5,
-        checklist=("A", "B", "C"),
-    )
-    after_one = apply_session_goal_progress(goal, "Did A. session_goal:done=0")
-    assert after_one.completed == frozenset({0})
-    assert (
-        default_evaluate_session_goal(
-            goal,
-            type("R", (), {"assistant_response_text": "session_goal:done=0"})(),
-            judge=lambda **_kw: SessionGoalJudgeVerdict(
-                verdict="NOT_REACHED", reason="checklist 1/3 done — next: B"
-            ),
-        )
-        == SessionGoalStatus.ACTIVE
-    )
-    after_all = apply_session_goal_progress(
-        after_one,
-        "Finished. session_goal:done=1,2",
-    )
-    assert after_all.completed == frozenset({0, 1, 2})
-    assert (
-        default_evaluate_session_goal(
-            goal,
-            type("R", (), {"assistant_response_text": "session_goal:done=1,2"})(),
-            judge=lambda **_kw: SessionGoalJudgeVerdict(
-                verdict="NOT_REACHED", reason="tags are not completion"
-            ),
-        )
-        == SessionGoalStatus.ACTIVE
-    )
 
 
 def test_format_session_goal_progress_shows_checklist() -> None:
@@ -289,34 +252,23 @@ def test_outer_loop_prompt_carries_reason_after_partial_progress() -> None:
     assert "next: B" in turns[1]
 
 
-def test_strip_session_goal_progress_tags_hides_harness_tokens() -> None:
-    from core.agent_harness.session_goal.goal import strip_session_goal_progress_tags
+def test_finished_goal_headline_keeps_elapsed_time_and_tokens() -> None:
+    # Arrange: an achieved goal stamped at t=1000 with a 10+2 token baseline.
+    goal = mark_session_goal_started(
+        SessionGoal(condition="count users", status=SessionGoalStatus.ACHIEVED, turns_used=1),
+        now=1_000.0,
+        input_tokens=10,
+        output_tokens=2,
+    )
 
-    raw = "Finished step two.\nsession_goal:done=1\nMore prose. session_goal:achieved"
-    cleaned = strip_session_goal_progress_tags(raw)
+    # Act
+    text = format_session_goal_progress(
+        goal, now=1_045.0, input_tokens=1_010, output_tokens=202, include_condition=False
+    )
 
-    assert "session_goal:" not in cleaned
-    assert "Finished step two." in cleaned
-    assert "More prose." in cleaned
-
-
-@pytest.mark.parametrize(
-    "raw",
-    [
-        "session_goal:done=1, session_goal:achieved\n\nStraight answer",
-        "session_goal:done=1,session_goal:achieved\n\nStraight answer",
-        "session_goal:done=1, session_goal:achieved",
-    ],
-)
-def test_strip_session_goal_progress_tags_handles_comma_joined_tokens(raw: str) -> None:
-    from core.agent_harness.session_goal.goal import strip_session_goal_progress_tags
-
-    cleaned = strip_session_goal_progress_tags(raw)
-    assert "session_goal:" not in cleaned
-    if "Straight" in raw:
-        assert "Straight answer" in cleaned
-    else:
-        assert cleaned == ""
+    # Assert: the headline reads like the active one; the condition is not repeated.
+    assert text.startswith("◎ /goal achieved · 45s · turn 1/5 · +1.2k tokens")
+    assert "condition:" not in text
 
 
 def test_strip_shell_prompt_chrome_removes_repeated_prompt_prefix() -> None:
