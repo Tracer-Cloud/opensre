@@ -4,47 +4,24 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from concurrent.futures import Future
-from dataclasses import dataclass
 from datetime import datetime
-from typing import Any, cast
+from functools import partial
+from types import SimpleNamespace
+from typing import Any
 
 from apscheduler.executors.base import run_job
 from apscheduler.executors.pool import ThreadPoolExecutor
 
 
-@dataclass(frozen=True)
-class _ScheduledJobInvocation:
-    """Expose one APScheduler run time through the job callable."""
-
-    job: Any
-    scheduled_run_time: datetime
-
-    @property
-    def id(self) -> str:
-        return cast(str, self.job.id)
-
-    @property
-    def func(self) -> Any:
-        def invoke(*args: Any, **kwargs: Any) -> Any:
-            return self.job.func(
-                *args,
-                scheduled_run_time=self.scheduled_run_time,
-                **kwargs,
-            )
-
-        return invoke
-
-    @property
-    def args(self) -> tuple[Any, ...]:
-        return cast(tuple[Any, ...], self.job.args)
-
-    @property
-    def kwargs(self) -> dict[str, Any]:
-        return cast(dict[str, Any], self.job.kwargs)
-
-    @property
-    def misfire_grace_time(self) -> int | None:
-        return cast(int | None, self.job.misfire_grace_time)
+def _scheduled_invocation(job: Any, scheduled_run_time: datetime) -> SimpleNamespace:
+    """Bind one fire time to the fields APScheduler's ``run_job`` consumes."""
+    return SimpleNamespace(
+        id=job.id,
+        func=partial(job.func, scheduled_run_time=scheduled_run_time),
+        args=job.args,
+        kwargs=job.kwargs,
+        misfire_grace_time=job.misfire_grace_time,
+    )
 
 
 def _run_job_with_scheduled_time(
@@ -56,7 +33,7 @@ def _run_job_with_scheduled_time(
     """Run each submitted time with its own callback argument."""
     events: list[Any] = []
     for scheduled_run_time in run_times:
-        invocation = _ScheduledJobInvocation(job, scheduled_run_time)
+        invocation = _scheduled_invocation(job, scheduled_run_time)
         events.extend(run_job(invocation, jobstore_alias, [scheduled_run_time], logger_name))
     return events
 

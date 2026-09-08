@@ -53,14 +53,8 @@ def try_queue_run(task_id: str, fire_time: str, db_path: Path | None = None) -> 
     """Record a pending scheduler submission unless this tick already exists."""
     now_text = datetime.now(UTC).isoformat()
     with database.transaction(db_path, immediate=True) as conn:
-        existing = conn.execute(
-            "SELECT 1 FROM task_runs WHERE task_id = ? AND fire_time = ? LIMIT 1",
-            (task_id, fire_time),
-        ).fetchone()
-        if existing is not None:
-            return False
-        conn.execute(
-            "INSERT INTO task_runs "
+        cursor = conn.execute(
+            "INSERT OR IGNORE INTO task_runs "
             "(task_id, fire_time, attempt, started_at, status, owner_token, "
             "lease_expires_at, target_filter) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             (
@@ -74,7 +68,7 @@ def try_queue_run(task_id: str, fire_time: str, db_path: Path | None = None) -> 
                 json.dumps(None),
             ),
         )
-        return True
+        return cursor.rowcount == 1
 
 
 def try_start_run(
