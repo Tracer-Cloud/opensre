@@ -55,11 +55,17 @@ def test_kept_tick_indices_drop_invalid_items() -> None:
     assert kept_tick_indices(parsed, newly=frozenset({0, 1})) == frozenset({0})
 
 
-def test_kept_tick_indices_keep_a_tick_the_model_omitted() -> None:
+def test_kept_tick_indices_drop_a_tick_the_validator_did_not_mention() -> None:
+    # Arrange: the validator answered for item 0 only.
     parsed = ChecklistTickVerdict(
         items=[ChecklistItemVerdict(index=0, verdict="VALID", reason="ok")]
     )
-    assert kept_tick_indices(parsed, newly=frozenset({0, 1})) == frozenset({0, 1})
+
+    # Act / Assert: an unmentioned tick is unconfirmed, and the status line says so.
+    assert kept_tick_indices(parsed, newly=frozenset({0, 1})) == frozenset({0})
+    assert rejected_tick_reasons(parsed, newly=frozenset({0, 1})) == (
+        "validator did not confirm item 1",
+    )
 
 
 def test_validator_rejects_a_tick_so_the_goal_stays_open() -> None:

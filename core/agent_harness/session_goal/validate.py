@@ -111,16 +111,15 @@ def kept_tick_indices(
     *,
     newly: frozenset[int],
 ) -> frozenset[int]:
-    """Indices to keep after validation. Transport failure keeps the ticks."""
+    """Indices the validator confirmed. Transport failure keeps the ticks.
+
+    A tick the validator did not mention is not confirmed: an incomplete
+    answer must not let an unsupported tick through.
+    """
     if parsed is None:
         return newly
-    by_index = {item.index: item for item in parsed.items}
-    kept: set[int] = set()
-    for index in newly:
-        item = by_index.get(index)
-        if item is None or item.verdict == "VALID":
-            kept.add(index)
-    return frozenset(kept)
+    confirmed = {item.index for item in parsed.items if item.verdict == "VALID"}
+    return frozenset(index for index in newly if index in confirmed)
 
 
 def rejected_tick_reasons(
@@ -128,14 +127,18 @@ def rejected_tick_reasons(
     *,
     newly: frozenset[int],
 ) -> tuple[str, ...]:
-    """Why each rejected tick was refused, in index order, for the status line."""
+    """Why each unconfirmed tick was refused, in index order, for the status line."""
     if parsed is None:
         return ()
-    return tuple(
-        item.reason.strip() or f"item {item.index} not supported by the reply"
-        for item in sorted(parsed.items, key=lambda entry: entry.index)
-        if item.index in newly and item.verdict == "INVALID"
-    )
+    by_index = {item.index: item for item in parsed.items}
+    reasons: list[str] = []
+    for index in sorted(newly):
+        item = by_index.get(index)
+        if item is None:
+            reasons.append(f"validator did not confirm item {index}")
+        elif item.verdict == "INVALID":
+            reasons.append(item.reason.strip() or f"item {index} not supported by the reply")
+    return tuple(reasons)
 
 
 __all__ = [

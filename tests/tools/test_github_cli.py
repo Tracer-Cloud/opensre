@@ -95,6 +95,26 @@ def test_run_gh_allows_run_and_workflow_reads() -> None:
     assert denied_gh_command(["workflow", "view", "ci.yml"]) is None
 
 
+def test_a_flag_between_the_command_and_a_denied_subcommand_does_not_bypass_the_policy() -> None:
+    # Arrange: gh accepts global flags after the command word.
+    cases = (
+        ["run", "-R", "org/repo", "rerun", "123"],
+        ["run", "--repo=org/repo", "cancel", "123"],
+        ["workflow", "--hostname", "github.com", "run", "deploy.yml"],
+        ["-R", "org/repo", "run", "--jq", ".id", "delete", "123"],
+    )
+
+    # Act / Assert: every spelling is refused before any process is spawned.
+    for args in cases:
+        with patch("integrations.github.tools.github_cli.runner.subprocess.run") as run_mock:
+            result = run_gh(args=args)
+        assert result["ok"] is False, args
+        assert result["error_type"] == "policy_error", args
+        run_mock.assert_not_called()
+    # A flag value that looks like a subcommand is not one.
+    assert denied_gh_command(["run", "list", "--workflow", "rerun"]) is None
+
+
 def test_run_gh_blocks_ci_and_secret_mutation_commands() -> None:
     cases = (
         (["workflow", "run", "deploy.yml"], "workflow"),

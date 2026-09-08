@@ -32,6 +32,18 @@ _FIVE_STEP_ASK = (
 def test_a_checklist_comes_from_numbered_steps_or_explicit_items_only() -> None:
     # A single item would only repeat the condition, so a plain condition gets none.
     assert derive_session_goal_checklist("How many Windows users?") == ()
+    # Inline numbering in any of the common spellings, in order, is a checklist.
+    assert derive_session_goal_checklist("1. list PRs, 2. check runs, 3. make a table") == (
+        "list PRs",
+        "check runs",
+        "make a table",
+    )
+    assert derive_session_goal_checklist("(1) list PRs (2) check runs") == (
+        "list PRs",
+        "check runs",
+    )
+    # Numbers that are not a 1, 2, 3 sequence are prose, not steps.
+    assert derive_session_goal_checklist("compare v2. 0 with 3. 1 quickly") == ()
     assert derive_session_goal_checklist(
         "Do this:\n1. list the goal\n2. name step one\n3. confirm done"
     ) == ("list the goal", "name step one", "confirm done")

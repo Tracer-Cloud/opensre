@@ -39,7 +39,9 @@ def execute_session_goal_tool(args: dict[str, Any], ctx: ActionToolScope) -> dic
     )
     goal = attach_session_goal(
         ctx.session,
-        build_session_goal(condition, checklist=items, max_outer_turns=max_turns),
+        build_session_goal(
+            condition, checklist=items, max_outer_turns=max_turns
+        ).with_bookkeeping_call(),
     )
     return {
         "ok": True,
@@ -86,7 +88,9 @@ def execute_session_goal_complete_tool(
         if goal.checklist and (index < 0 or index >= len(goal.checklist)):
             return {"ok": False, "error": f"index {index} is not on the checklist"}
         indices.add(index)
-    updated = attach_session_goal(ctx.session, goal.with_completed(goal.completed | indices))
+    updated = attach_session_goal(
+        ctx.session, goal.with_completed(goal.completed | indices).with_bookkeeping_call()
+    )
     return {
         "ok": True,
         "completed": sorted(updated.completed),

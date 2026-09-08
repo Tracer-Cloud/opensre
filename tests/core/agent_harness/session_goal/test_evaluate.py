@@ -550,3 +550,30 @@ def test_a_judge_client_that_cannot_be_built_keeps_the_goal_active() -> None:
     assert status == SessionGoalStatus.ACTIVE
     assert session.session_goal is not None
     assert session.session_goal.last_reason == SessionGoalReason.JUDGE_UNAVAILABLE
+
+
+def test_the_tick_tool_itself_is_not_evidence_for_a_met_verdict() -> None:
+    # Arrange: the only successful tool this turn was session_goal_complete.
+    from core.agent_harness.tools import ActionToolScope
+    from tools.interactive_shell.actions.session_goal import execute_session_goal_complete_tool
+
+    session = SessionCore()
+    goal = SessionGoal(condition="two checks", checklist=("A", "B"))
+    attach_session_goal(session, goal)
+    execute_session_goal_complete_tool(
+        {"items": [0, 1]}, ActionToolScope(session=session, console=object())
+    )
+
+    # Act: the judge says met; the turn counts one success (the tick call).
+    verdict = evaluate_session_goal(
+        goal,
+        _result("Both done.", executed=1, success=1),
+        session=session,
+        judge=_reached,
+    )
+
+    # Assert: a tick cannot vouch for itself, so the goal stays open.
+    assert verdict.status == SessionGoalStatus.ACTIVE
+    assert SessionGoalReason.NEED_TOOL_EVIDENCE in verdict.reason
+    assert session.session_goal is not None
+    assert session.session_goal.bookkeeping_calls == 0

@@ -58,21 +58,26 @@ _VALUE_FLAGS = frozenset(
 
 
 def positional_gh_tokens(args: list[str] | tuple[str, ...]) -> list[str]:
-    """Return command positionals, skipping leading global flags."""
+    """Return command positionals with every flag removed, wherever it sits.
+
+    ``gh`` accepts global flags before and after the command word, so
+    ``run -R owner/repo rerun 123`` must read as ``run rerun``: a flag between
+    the command and its subcommand cannot hide a denied subcommand.
+    """
     positionals: list[str] = []
     i = 0
     cleaned = [str(a) for a in args]
     while i < len(cleaned):
         token = cleaned[i]
-        if not token or token == "--":
+        if not token:
             i += 1
             continue
+        if token == "--":
+            positionals.extend(cleaned[i + 1 :])
+            break
         if token.startswith("-"):
             name, _, inline = token.partition("=")
-            if inline:
-                i += 1
-                continue
-            if name in _VALUE_FLAGS and i + 1 < len(cleaned):
+            if not inline and name in _VALUE_FLAGS and i + 1 < len(cleaned):
                 nxt = cleaned[i + 1]
                 if nxt and not nxt.startswith("-"):
                     i += 2
@@ -81,10 +86,6 @@ def positional_gh_tokens(args: list[str] | tuple[str, ...]) -> list[str]:
             continue
         positionals.append(token)
         i += 1
-        while i < len(cleaned):
-            positionals.append(cleaned[i])
-            i += 1
-        break
     return positionals
 
 

@@ -72,12 +72,15 @@ def session_goal_reply_text(result: Any) -> str:
     return ""
 
 
-def turn_has_session_goal_evidence(result: Any) -> bool:
+def turn_has_session_goal_evidence(result: Any, *, bookkeeping_calls: int = 0) -> bool:
     """True when the turn ran a tool **successfully** — not prose, not a claim.
 
     A tool that ran and errored is not evidence the goal was met, so a failed
     call must not let a ``GOAL_REACHED`` verdict through. ``executed_count``
-    alone would say yes to a turn whose only action failed.
+    alone would say yes to a turn whose only action failed. The goal's own
+    tools (``session_goal_set``, ``session_goal_complete``) are bookkeeping:
+    ``bookkeeping_calls`` of the successes are discounted so a tick cannot be
+    the evidence for itself.
     """
     action = getattr(result, "action_result", None)
     action_succeeded = 0
@@ -86,7 +89,7 @@ def turn_has_session_goal_evidence(result: Any) -> bool:
             action_succeeded = int(getattr(action, "executed_success_count", 0) or 0)
         except (TypeError, ValueError):
             action_succeeded = 0
-    return action_succeeded > 0
+    return action_succeeded - max(0, bookkeeping_calls) > 0
 
 
 def goal_has_session_goal_evidence(goal: SessionGoal, result: Any) -> bool:
@@ -252,12 +255,16 @@ def evaluate_session_goal(
     text = session_goal_reply_text(result)
     completed_before = goal.completed - goal.new_ticks
     current = goal
+    bookkeeping = goal.bookkeeping_calls
     if session is not None:
         stored = getattr(session, "session_goal", None)
-        if isinstance(stored, SessionGoal) and stored.completed - current.completed:
-            current = current.with_completed(current.completed | stored.completed)
+        if isinstance(stored, SessionGoal):
+            # The goal's tools attach onto the session copy; the loop copy may be stale.
+            bookkeeping = max(bookkeeping, stored.bookkeeping_calls)
+            if stored.completed - current.completed:
+                current = current.with_completed(current.completed | stored.completed)
     current = credit_completed_plan_steps(current, session)
-    turn_evidence = turn_has_session_goal_evidence(result)
+    turn_evidence = turn_has_session_goal_evidence(result, bookkeeping_calls=bookkeeping)
     evidence = turn_evidence or bool(current.findings)
     if turn_evidence:
         current = current.with_tool_progress()
@@ -274,8 +281,8 @@ def evaluate_session_goal(
     ticks_unvalidated = review.kept is None and bool(newly)
     if review.kept is not None and review.kept != newly:
         current = current.with_completed((current.completed - newly) | review.kept)
-    if current.new_ticks:
-        current = replace(current, new_ticks=frozenset())
+    if current.new_ticks or current.bookkeeping_calls:
+        current = replace(current, new_ticks=frozenset(), bookkeeping_calls=0)
 
     if current.checklist_complete and evidence and not ticks_unvalidated:
         verdict = SessionGoalVerdict(

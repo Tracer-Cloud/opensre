@@ -106,8 +106,10 @@ _DEFAULT_MAX_OUTER_TURNS = 5
 # Accidental paste of the interactive-shell prompt line into user text /
 # goal conditions (``[1] ❯ question`` → ``question``).
 _SHELL_PROMPT_CHROME = re.compile(r"^(?:\[\d+\]\s*)?❯\s+")
-# Numbered or bulleted steps already written into the condition.
-_CONDITION_STEPS = re.compile(r"(?:^|\n)\s*(?:\d+[\.)]|[-*])\s+(\S.+)")
+# Bulleted steps on their own lines: ``- item`` / ``* item``.
+_BULLET_STEPS = re.compile(r"(?:^|\n)\s*[-*]\s+(\S.+)")
+# A step number anywhere: ``1. ``, ``2) ``, ``(3) `` — at a line start or after a space.
+_STEP_NUMBER = re.compile(r"(?:^|(?<=\s))\(?(\d+)[.)]\s+")
 
 
 @dataclass(slots=True)
@@ -147,6 +149,10 @@ class SessionGoal:
     last_progress_turns_used: int = 0
     # Checklist indices added since the last evaluate. Ephemeral — not persisted.
     new_ticks: frozenset[int] = frozenset()
+    # Successful calls this turn to the goal's own tools (``session_goal_set``,
+    # ``session_goal_complete``). Bookkeeping, not evidence — subtracted before
+    # the evidence gate so a tick cannot vouch for itself. Ephemeral.
+    bookkeeping_calls: int = 0
 
     def with_status(self, status: str) -> SessionGoal:
         return replace(self, status=status)
@@ -166,6 +172,10 @@ class SessionGoal:
                 new_ticks=added,
             )
         return replace(self, completed=completed, new_ticks=frozenset())
+
+    def with_bookkeeping_call(self) -> SessionGoal:
+        """Count one goal-tool call so it does not pass as tool evidence."""
+        return replace(self, bookkeeping_calls=self.bookkeeping_calls + 1)
 
     def with_tool_progress(self) -> SessionGoal:
         """Mark this turn as progress so a later no-tool plateau can still stall."""
@@ -207,20 +217,38 @@ class SessionGoal:
         return unfinished[0] if unfinished else None
 
 
+def _numbered_steps(condition: str) -> tuple[str, ...]:
+    """Steps numbered 1, 2, 3… in order, on one line or several; else nothing."""
+    marks = list(_STEP_NUMBER.finditer(condition))
+    if len(marks) < 2:
+        return ()
+    if [int(mark.group(1)) for mark in marks] != list(range(1, len(marks) + 1)):
+        return ()
+    items: list[str] = []
+    for position, mark in enumerate(marks):
+        end = marks[position + 1].start() if position + 1 < len(marks) else len(condition)
+        items.append(condition[mark.end() : end].strip().rstrip(",;").strip())
+    return tuple(item for item in items if item)
+
+
 def derive_session_goal_checklist(
     condition: str,
     items: Sequence[str] = (),
 ) -> tuple[str, ...]:
     """Checklist for a new goal: caller items, else two or more steps written into ``condition``.
 
-    A single-item checklist would only echo the condition, so a condition
-    without enumerated steps gets no checklist and the judge alone decides.
+    Steps are ``1. … 2. …`` (also ``1)`` / ``(1)``, inline or one per line) or
+    bulleted lines. A single-item checklist would only echo the condition, so a
+    condition without enumerated steps gets no checklist and the judge alone decides.
     """
     provided = tuple(str(item).strip() for item in items if str(item).strip())
     if provided:
         return provided
-    found = tuple(match.group(1).strip() for match in _CONDITION_STEPS.finditer(condition))
-    return found if len(found) >= 2 else ()
+    numbered = _numbered_steps(condition)
+    if len(numbered) >= 2:
+        return numbered
+    bullets = tuple(match.group(1).strip() for match in _BULLET_STEPS.finditer(condition))
+    return bullets if len(bullets) >= 2 else ()
 
 
 def build_session_goal(

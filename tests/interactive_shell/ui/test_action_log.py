@@ -127,3 +127,27 @@ def test_same_kind_calls_across_iterations_flush_once_as_one_group() -> None:
     out = buffer.getvalue()
     assert "GitHub CLI · 2 actions" in out
     assert out.count("╭") == 1  # one box, not two
+
+
+def test_a_tty_flush_is_one_buffered_write_of_every_row(monkeypatch) -> None:  # noqa: ANN001
+    """Two lone calls flushed row by row staircased under the raw stdout patch."""
+    # Arrange: two different lone tool calls and a spy on the CRLF-safe writer.
+    from surfaces.interactive_shell.ui import action_log
+
+    session = Session()
+    _push(session, "1", "summarize github pr status", "", "d1")
+    _push(session, "2", "propose scheduled delivery", "", "d2")
+    writes: list[object] = []
+    monkeypatch.setattr(
+        action_log, "print_repl_renderable", lambda _console, renderable: writes.append(renderable)
+    )
+
+    # Act
+    flush_action_log(_tty(io.StringIO()), session)
+
+    # Assert: one write carrying both rows, so every row starts at column zero.
+    assert len(writes) == 1
+    rendered = [str(row) for row in writes[0].renderables]  # type: ignore[attr-defined]
+    assert rendered[0] == ""
+    assert rendered[1] == "⏺ summarize github pr status"
+    assert rendered[2] == "⏺ propose scheduled delivery"
