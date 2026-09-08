@@ -6,9 +6,10 @@ slug: "quickstart"
 ## Supported platforms
 
 OpenSRE publishes native release bundles for the platforms below. The public
-installer selects the matching bundle automatically. Windows ARM64 is not
-supported in the default release because the required `cryptography` wheel is
-not available for that target.
+installer selects the matching bundle automatically. Windows ARM64 has no native
+default-release bundle because the required `cryptography` wheel is unavailable
+for that target; the Windows installer falls back to the x64 bundle under
+emulation.
 
 | Platform | Public install command | Release bundle | Verification |
 | --- | --- | --- | --- |
@@ -17,9 +18,9 @@ not available for that target.
 | macOS Apple Silicon | `curl -fsSL https://install.opensre.com \| bash` | `darwin-arm64` `.tar.gz` | Post-publish installer canary |
 | macOS Intel | `curl -fsSL https://install.opensre.com \| bash` | `darwin-x64` `.tar.gz` | Release build smoke test |
 | Windows x64 | `irm https://install.opensre.com \| iex` | `windows-x64` `.zip` | Post-publish installer canary |
-| Windows ARM64 | — | — | Not supported |
+| Windows ARM64 | `irm https://install.opensre.com \| iex` | `windows-x64` `.zip` via emulation | Native bundle not supported |
 
-For a local editable development install on any of these platforms, follow
+For local editable development installation instructions, follow
 [SETUP.md](https://github.com/Tracer-Cloud/opensre/blob/main/SETUP.md).
 
 <Steps>
