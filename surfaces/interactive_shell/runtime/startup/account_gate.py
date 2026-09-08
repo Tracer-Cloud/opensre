@@ -20,6 +20,13 @@ def account_is_signed_in() -> bool:
     return account_status().authenticated
 
 
+def own_llm_provider_configured() -> bool:
+    """Return whether a user-selected LLM provider can serve the shell signed out."""
+    from config.llm_settings import has_user_configured_llm_provider
+
+    return has_user_configured_llm_provider()
+
+
 def account_login(*, console: Console | None = None) -> bool:
     """Run the canonical webapp login command and verify its resulting session."""
     from infrastructure.terminal.theme import ERROR
@@ -60,11 +67,13 @@ def pass_sign_in_gate(console: Console) -> bool:
         console,
         is_signed_in=account_is_signed_in,
         login=_login,
+        has_own_provider=own_llm_provider_configured,
     )
 
 
 __all__ = [
     "account_is_signed_in",
     "account_login",
+    "own_llm_provider_configured",
     "pass_sign_in_gate",
 ]

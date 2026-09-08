@@ -113,10 +113,26 @@ class TestDispatchSlash:
 
         monkeypatch.setattr(m, "run_cli_command", lambda *_args, **_kwargs: True)
         monkeypatch.setattr("config.account.account_llm_route", lambda: None)
+        monkeypatch.setattr("config.llm_settings.has_user_configured_llm_provider", lambda: False)
         console, output = _capture()
 
         assert dispatch_slash("/account logout", Session(), console) is False
         assert "Closing the interactive shell" in output.getvalue()
+
+    def test_account_logout_keeps_the_shell_on_a_configured_provider(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        # /model sends users here to reach a local model; closing the shell would
+        # leave that instruction with nowhere to land.
+        from surfaces.interactive_shell.command_registry import cli_parity as m
+
+        monkeypatch.setattr(m, "run_cli_command", lambda *_args, **_kwargs: True)
+        monkeypatch.setattr("config.account.account_llm_route", lambda: None)
+        monkeypatch.setattr("config.llm_settings.has_user_configured_llm_provider", lambda: True)
+        console, output = _capture()
+
+        assert dispatch_slash("/account logout", Session(), console) is True
+        assert "Closing the interactive shell" not in output.getvalue()
 
     def test_help_lists_all_commands(self) -> None:
         session = Session()

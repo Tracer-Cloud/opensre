@@ -10,7 +10,7 @@ This page gets the `opensre` command onto your laptop or server, then walks you 
 After install, you have:
 
 - The `opensre` CLI on your PATH
-- An account-gated interactive shell when you run `opensre` with no arguments
+- An account-gated interactive shell when you run `opensre` with no arguments, or a signed-out shell on your own model once you configure a provider
 - A short webapp sign-in that also activates the OpenSRE-hosted model
 
 No sudo required on macOS/Linux in the usual case — the installer puts the binary somewhere writable (often `~/.local/bin`) and tells you if you need a PATH tweak.
@@ -106,6 +106,7 @@ Full walkthrough with GIFs: [Quickstart](/quickstart).
 
 - **Command not found** — open a new terminal, or add the bin directory the installer printed to your PATH
 - **The shell keeps asking you to sign in** — run `opensre account status`; expired, revoked, incomplete, or unreachable sessions do not open the shell
+- **You want a local model instead of the hosted one** — run `opensre onboard local_llm`, then `opensre account logout`; the sign-in screen then offers "Continue with my own model"
 - **Docker / `make` missing** — see [Quickstart troubleshooting](/quickstart#troubleshooting)
 
 Need deploy options beyond a laptop binary? See [Deployment](/deployment).

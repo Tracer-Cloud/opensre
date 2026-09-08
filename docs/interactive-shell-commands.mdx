@@ -566,7 +566,7 @@ MCP-capable integrations only (subset of the full integration catalog).
 
 <Accordion title="/model">
 
-Show the active hosted model. An authenticated interactive shell is account-managed, so local provider/model changes are locked until sign-out; signing out closes the shell.
+Show the active hosted model. An authenticated interactive shell is account-managed, so local provider/model changes are locked until sign-out. To run your own model, configure a provider first (`opensre onboard local_llm` for Ollama), then sign out. `/account logout` keeps the shell open on that provider, and the startup sign-in screen offers "Continue with my own model".
 
 ```text
 /model show
@@ -826,7 +826,7 @@ These spawn `opensre …` subprocesses. Output is captured into the REPL buffer 
 /account logout
 ```
 
-Sign in to a personal OpenSRE account, inspect the local login, open the credits and top-up page (`/account usage`, opens your browser; from a chat it replies with the link), or sign out. Same as `opensre account`. The browser opens the OpenSRE sign-up page, where you can use email or any enabled sign-in provider. The shell starts only for an `active` account state. `/account logout` revokes the saved session, invalidates the hosted-model route, and closes the shell before another turn. If `OPENSRE_ACCOUNT_TOKEN` is set in the environment, it overrides the token saved by login until you unset it.
+Sign in to a personal OpenSRE account, inspect the local login, open the credits and top-up page (`/account usage`, opens your browser; from a chat it replies with the link), or sign out. Same as `opensre account`. The browser opens the OpenSRE sign-up page, where you can use email or any enabled sign-in provider. The shell starts only for an `active` account state. `/account logout` revokes the saved session and invalidates the hosted-model route. The shell then closes, unless you configured your own LLM provider, in which case it stays open on that provider. If `OPENSRE_ACCOUNT_TOKEN` is set in the environment, it overrides the token saved by login until you unset it.
 
 </Accordion>
 

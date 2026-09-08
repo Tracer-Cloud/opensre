@@ -10,6 +10,7 @@ from config.llm_settings import (
     LLMSettings,
     describe_llm_resolution,
     has_credentials_for_active_llm_provider,
+    has_user_configured_llm_provider,
     llm_provider_error_context,
     resolve_llm_settings,
     resolve_llm_settings_verbose,
@@ -418,3 +419,15 @@ def test_llm_provider_error_context_never_raises(monkeypatch) -> None:
     monkeypatch.setenv("LLM_PROVIDER", "not-a-real-provider")
 
     assert llm_provider_error_context() == ""
+
+
+def test_user_configured_provider_ignores_the_built_in_default(monkeypatch) -> None:
+    # An unset LLM_PROVIDER still resolves to a default provider; that is not a
+    # choice the user made, and the shell's sign-in gate must not read it as one.
+    monkeypatch.setenv("LLM_PROVIDER", "")
+
+    assert has_user_configured_llm_provider() is False
+
+    monkeypatch.setenv("LLM_PROVIDER", "ollama")
+
+    assert has_user_configured_llm_provider() is True

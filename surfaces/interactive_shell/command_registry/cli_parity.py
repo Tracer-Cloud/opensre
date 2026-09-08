@@ -258,8 +258,14 @@ def _cmd_account(session: Session, console: Console, args: list[str]) -> bool:  
     )
     if subcommand == "logout" and session_terminal(session) is not None:
         from config.account import account_llm_route
+        from config.llm_settings import has_user_configured_llm_provider
 
         if account_llm_route() is None:
+            # Logging out to reach a local model is the documented route off the
+            # hosted lock, so keep the shell open when the user has a provider.
+            if has_user_configured_llm_provider():
+                console.print(f"[{DIM}]Signed out. Using your configured LLM provider.[/]")
+                return handled
             console.print(f"[{DIM}]Signed out. Closing the interactive shell.[/]")
             return False
     return handled

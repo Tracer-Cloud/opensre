@@ -24,9 +24,14 @@ from surfaces.shared.terminal.components.choice_menu import repl_choose_one, rep
 
 
 class SignInChoice(enum.StrEnum):
-    """The two actions offered on the forced sign-in screen."""
+    """The actions offered on the forced sign-in screen.
+
+    ``OWN_MODEL`` is offered only when the user already configured their own
+    provider, so a fresh install still sees the two-way sign-in choice.
+    """
 
     LOGIN = "Sign in or create account"
+    OWN_MODEL = "Continue with my own model"
     EXIT = "Exit and stay signed out"
 
 
@@ -52,22 +57,22 @@ def render_sign_in_screen(console: Console) -> None:
     console.print(screen)
 
 
-def prompt_login_or_exit() -> SignInChoice | None:
-    """Show the Login/Exit menu; return the choice, or ``None`` on Esc.
+def prompt_login_or_exit(*, offer_own_model: bool = False) -> SignInChoice | None:
+    """Show the sign-in menu; return the choice, or ``None`` on Esc.
 
     The sign-in prompt is already printed by ``render_sign_in_screen`` above the
     menu, so the menu itself carries no title (avoids repeating the prompt).
     """
+    offered = [SignInChoice.LOGIN]
+    if offer_own_model:
+        offered.append(SignInChoice.OWN_MODEL)
+    offered.append(SignInChoice.EXIT)
     picked = repl_choose_one(
         title="",
-        choices=[(SignInChoice.LOGIN, SignInChoice.LOGIN), (SignInChoice.EXIT, SignInChoice.EXIT)],
+        choices=[(choice, choice) for choice in offered],
         numbered=False,
     )
-    if picked == SignInChoice.LOGIN:
-        return SignInChoice.LOGIN
-    if picked == SignInChoice.EXIT:
-        return SignInChoice.EXIT
-    return None
+    return next((choice for choice in offered if picked == choice), None)
 
 
 def run_sign_in_gate(
@@ -75,12 +80,16 @@ def run_sign_in_gate(
     *,
     is_signed_in: Callable[[], bool],
     login: Callable[[], bool],
+    has_own_provider: Callable[[], bool] = lambda: False,
 ) -> bool:
     """Gate the REPL behind sign-in; return ``True`` to proceed, ``False`` to exit.
 
     Returns immediately when already signed in. Otherwise renders the sign-in
-    screen and loops the sign-in/stay-signed-out menu. On non-interactive stdin
-    the gate fails closed and prints the command that can establish an account.
+    screen and loops the menu. A user who configured their own LLM provider is
+    offered a third choice that enters the shell signed out, which is the only
+    way to run a local model: an account session pins the shell to the hosted
+    route. On non-interactive stdin the gate fails closed and prints the command
+    that can establish an account.
     """
     if is_signed_in():
         return True
@@ -91,12 +100,16 @@ def run_sign_in_gate(
         console.print("Run [bold]opensre account login[/bold] from an interactive terminal.")
         return False
     render_sign_in_screen(console)
+    offer_own_model = has_own_provider()
     while True:
-        choice = prompt_login_or_exit()
+        choice = prompt_login_or_exit(offer_own_model=offer_own_model)
         if choice is SignInChoice.LOGIN:
             if login():
                 return True
             continue  # login failed — offer the choice again
+        if choice is SignInChoice.OWN_MODEL:
+            console.print(f"[{DIM}]Signed out. Using your configured LLM provider.[/]")
+            return True
         return False  # Exit or Esc
 
 

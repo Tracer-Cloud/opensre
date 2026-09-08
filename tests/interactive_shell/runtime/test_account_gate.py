@@ -88,12 +88,36 @@ def test_pass_sign_in_gate_allows_only_valid_account(monkeypatch: Any) -> None:
     monkeypatch.setattr(
         "surfaces.interactive_shell.ui.sign_in.render_sign_in_screen", lambda _console: None
     )
+    monkeypatch.setattr(account_gate, "own_llm_provider_configured", lambda: False)
     monkeypatch.setattr(
         "surfaces.interactive_shell.ui.sign_in.prompt_login_or_exit",
-        lambda: SignInChoice.EXIT,
+        lambda **_kwargs: SignInChoice.EXIT,
     )
 
     assert account_gate.pass_sign_in_gate(_console()) is False
+
+
+def test_pass_sign_in_gate_offers_the_configured_provider_instead_of_an_account(
+    monkeypatch: Any,
+) -> None:
+    # Pins the seam: without it the shell never offers the signed-out local-model path.
+    monkeypatch.setattr(account_gate, "is_test_run", lambda: False)
+    monkeypatch.setattr(account_gate, "account_is_signed_in", lambda: False)
+    monkeypatch.setattr(account_gate, "own_llm_provider_configured", lambda: True)
+    monkeypatch.setattr("surfaces.interactive_shell.ui.sign_in.repl_tty_interactive", lambda: True)
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.ui.sign_in.render_sign_in_screen", lambda _console: None
+    )
+    offered: list[bool] = []
+
+    def _prompt(*, offer_own_model: bool) -> SignInChoice:
+        offered.append(offer_own_model)
+        return SignInChoice.OWN_MODEL
+
+    monkeypatch.setattr("surfaces.interactive_shell.ui.sign_in.prompt_login_or_exit", _prompt)
+
+    assert account_gate.pass_sign_in_gate(_console()) is True
+    assert offered == [True]
 
 
 def test_run_repl_stops_before_runtime_when_sign_in_is_declined(monkeypatch: Any) -> None:

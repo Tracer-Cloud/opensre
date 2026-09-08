@@ -60,8 +60,9 @@ description: "Common questions about OpenSRE."
 
   <Accordion title="What happens when I run opensre with no arguments?">
     Running `opensre` validates your OpenSRE account, then starts the interactive
-    shell. You can exit and stay signed out, but an inactive account cannot enter
-    the shell. Once signed in, you can describe issues in plain language. Slash
+    shell. Without an account you can still enter the shell on your own model, as
+    long as you configured a provider first (`opensre onboard local_llm` for a
+    local Ollama model). Once signed in, you can describe issues in plain language. Slash
     commands such as `/help`, `/status`, and `/verify datadog` are documented in
     [Shell commands](/interactive-shell-commands).
   </Accordion>

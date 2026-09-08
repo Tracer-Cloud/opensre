@@ -85,7 +85,7 @@ slug: "quickstart"
   <Step title="Ask your first question">
     Choose either path — both use the same local `opensre` binary:
 
-    **Interactive prompt shell** — start OpenSRE with no arguments (TTY). The shell opens only after the webapp validates your account; choosing **Exit and stay signed out** leaves account-independent CLI commands available:
+    **Interactive prompt shell** — start OpenSRE with no arguments (TTY). The shell opens after the webapp validates your account, or on your own configured provider via **Continue with my own model**; choosing **Exit and stay signed out** leaves account-independent CLI commands available:
 
     ```bash
     opensre
@@ -147,4 +147,4 @@ opensre uninstall --yes
 - **Docker is not running**: Start Docker Desktop, OrbStack, or Colima before running setup.
 - **`make` is missing**: Install it via your package manager (`brew install make` on macOS, `choco install make` on Windows).
 - **The shell does not open after login**: Run `opensre account status`. The webapp must be reachable and the stored account token and metadata must both be valid.
-- **You want to stay signed out**: Choose **Exit and stay signed out** at startup. Commands such as `opensre account`, `opensre doctor`, and `opensre integrations` remain available, but the interactive shell stays closed.
+- **You want to stay signed out**: Choose **Exit and stay signed out** at startup. Commands such as `opensre account`, `opensre doctor`, and `opensre integrations` remain available, and the shell stays closed unless you configured your own provider and pick **Continue with my own model**.

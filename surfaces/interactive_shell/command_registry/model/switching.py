@@ -16,6 +16,7 @@ from surfaces.shared.terminal.components.choice_menu import print_valid_choice_l
 def _account_model_change_is_locked(console: Console) -> bool:
     """Explain and enforce the hosted model lock for signed-in accounts."""
     from config.account import account_llm_route
+    from config.llm_settings import has_user_configured_llm_provider
 
     route = account_llm_route()
     if route is None:
@@ -28,6 +29,13 @@ def _account_model_change_is_locked(console: Console) -> bool:
         f"[{DIM}]Run[/] [bold]opensre account logout[/bold] "
         f"[{DIM}]before configuring a different provider or model.[/]"
     )
+    if not has_user_configured_llm_provider():
+        # Logging out with no provider of your own leaves no way back into the
+        # shell, so name the command that configures one first.
+        console.print(
+            f"[{DIM}]Set one up first with[/] [bold]opensre onboard local_llm[/bold] "
+            f"[{DIM}]for a local Ollama model.[/]"
+        )
     return True
 
 

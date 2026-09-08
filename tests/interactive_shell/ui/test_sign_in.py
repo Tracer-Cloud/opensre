@@ -77,7 +77,7 @@ def test_gate_logs_in_then_proceeds(monkeypatch) -> None:
     login_calls: list[bool] = []
     monkeypatch.setattr(sign_in, "repl_tty_interactive", lambda: True)
     monkeypatch.setattr(sign_in, "render_sign_in_screen", lambda _c: None)
-    monkeypatch.setattr(sign_in, "prompt_login_or_exit", lambda: SignInChoice.LOGIN)
+    monkeypatch.setattr(sign_in, "prompt_login_or_exit", lambda **_kwargs: SignInChoice.LOGIN)
     console, _ = _console()
 
     def _login() -> bool:
@@ -93,7 +93,7 @@ def test_gate_logs_in_then_proceeds(monkeypatch) -> None:
 def test_gate_exit_declines(monkeypatch) -> None:
     monkeypatch.setattr(sign_in, "repl_tty_interactive", lambda: True)
     monkeypatch.setattr(sign_in, "render_sign_in_screen", lambda _c: None)
-    monkeypatch.setattr(sign_in, "prompt_login_or_exit", lambda: SignInChoice.EXIT)
+    monkeypatch.setattr(sign_in, "prompt_login_or_exit", lambda **_kwargs: SignInChoice.EXIT)
     console, _ = _console()
 
     result = run_sign_in_gate(console, is_signed_in=lambda: False, login=lambda: False)
@@ -110,9 +110,43 @@ def test_gate_retries_after_a_failed_login_then_exits(monkeypatch) -> None:
     choices = iter([SignInChoice.LOGIN, SignInChoice.EXIT])
     monkeypatch.setattr(sign_in, "repl_tty_interactive", lambda: True)
     monkeypatch.setattr(sign_in, "render_sign_in_screen", lambda _c: None)
-    monkeypatch.setattr(sign_in, "prompt_login_or_exit", lambda: next(choices))
+    monkeypatch.setattr(sign_in, "prompt_login_or_exit", lambda **_kwargs: next(choices))
     console, _ = _console()
 
     result = run_sign_in_gate(console, is_signed_in=lambda: False, login=lambda: False)
 
     assert result is False
+
+
+def test_gate_enters_the_shell_on_a_configured_provider_without_signing_in(monkeypatch) -> None:
+    # The only path to a local model: an account session pins the shell to the hosted route.
+    monkeypatch.setattr(sign_in, "repl_tty_interactive", lambda: True)
+    monkeypatch.setattr(sign_in, "render_sign_in_screen", lambda _c: None)
+    monkeypatch.setattr(sign_in, "prompt_login_or_exit", lambda **_kwargs: SignInChoice.OWN_MODEL)
+    console, _ = _console()
+
+    result = run_sign_in_gate(
+        console,
+        is_signed_in=lambda: False,
+        login=lambda: False,
+        has_own_provider=lambda: True,
+    )
+
+    assert result is True
+
+
+def test_menu_hides_the_own_model_row_without_a_configured_provider(monkeypatch) -> None:
+    # A fresh install keeps the two-way gate: no provider means no way past sign-in.
+    offered: list[list[str]] = []
+
+    def _choose(*, choices: list[tuple[str, str]], **_kwargs: object) -> None:
+        offered.append([value for value, _label in choices])
+        return None
+
+    monkeypatch.setattr(sign_in, "repl_choose_one", _choose)
+
+    sign_in.prompt_login_or_exit(offer_own_model=False)
+    sign_in.prompt_login_or_exit(offer_own_model=True)
+
+    assert offered[0] == [SignInChoice.LOGIN, SignInChoice.EXIT]
+    assert SignInChoice.OWN_MODEL in offered[1]

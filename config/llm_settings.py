@@ -98,6 +98,7 @@ __all__ = (
     "get_configured_llm_provider",
     "get_llm_provider_api_key_env",
     "has_credentials_for_active_llm_provider",
+    "has_user_configured_llm_provider",
     "llm_provider_error_context",
     "resolve_llm_settings",
     "resolve_llm_settings_verbose",
@@ -486,4 +487,20 @@ def has_credentials_for_active_llm_provider() -> bool:
     """Return prompt-safe auth availability for the configured LLM provider."""
     settings = resolve_llm_settings()
     auth_status = credential_status(settings.provider)
+    return auth_status.configured and not auth_status.stale
+
+
+def has_user_configured_llm_provider() -> bool:
+    """Return whether the user picked their own LLM provider and it has credentials.
+
+    "Own" means ``LLM_PROVIDER`` is set explicitly, in the environment or the
+    persisted ``.env`` the wizard writes. The built-in default provider does not
+    count, so a fresh install reports False and callers cannot mistake it for a
+    deliberate choice.
+    """
+    bootstrap_opensre_env(override=False)
+    provider = os.getenv(LLM_PROVIDER_ENV, "").strip().lower()
+    if not provider:
+        return False
+    auth_status = credential_status(provider)
     return auth_status.configured and not auth_status.stale
