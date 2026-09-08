@@ -45,6 +45,7 @@ from core.agent_harness.turns.action_dedup import (
     coerce_fingerprint_quiet,
     with_duplicate_action_call_guard,
 )
+from core.agent_harness.turns.action_menu_end import with_menu_turn_end
 from core.agent_harness.turns.conversation_recording import record_conversation_turn
 from core.agent_harness.turns.display_text import (
     cap_for_display,
@@ -902,7 +903,9 @@ def _run_action_turn(
             turn_snapshot=turn_snapshot,
             resolved_integrations=resolved_integrations,
             llm_factory=args.llm_factory,
-            tool_hooks=with_duplicate_action_call_guard(args.tool_hooks),
+            tool_hooks=with_menu_turn_end(
+                with_duplicate_action_call_guard(args.tool_hooks), session
+            ),
             tool_resources=tool_resources,
             observer=observer,
         )

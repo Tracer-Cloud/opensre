@@ -140,6 +140,27 @@ def test_auto_submitted_single_choice_is_not_echoed_as_a_user_turn() -> None:
     assert session.terminal.pending_choice_response == "Blue-green"
 
 
+def test_single_answer_with_its_question_marks_only_the_label_as_the_choice() -> None:
+    # Arrange: a single-menu answer arrives as "1. question\nlabel", auto-submitted.
+    from core.agent_harness.session.pending_choice import AskUserQuestion, format_ask_user_answers
+    from surfaces.interactive_shell.session import Session
+    from surfaces.interactive_shell.ui.input_prompt.rendering import render_submitted_prompt
+
+    session = Session()
+    session.terminal.awaiting_handoff_answer = True
+    session.terminal.last_input_autosubmitted = True
+    question = AskUserQuestion(label="", title="Which repository should I analyze?", options=("a",))
+    buffer = io.StringIO()
+    console = Console(file=buffer, force_terminal=False, highlight=False, width=80)
+
+    # Act
+    render_submitted_prompt(console, session, format_ask_user_answers((question,), ("acme/app",)))
+
+    # Assert: no second user row, and the acknowledgement filter sees the label alone.
+    assert buffer.getvalue() == ""
+    assert session.terminal.pending_choice_response == "acme/app"
+
+
 def test_choice_selection_strips_terminal_controls() -> None:
     buffer = io.StringIO()
     console = Console(file=buffer, force_terminal=False, highlight=False, width=80)

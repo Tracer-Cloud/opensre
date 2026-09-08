@@ -11,9 +11,14 @@ terminal under the launch banner). That tall Screen scrolls the banner away,
 and ``last_height`` sticks so later paints stay hollow.
 
 Partial ``erase`` on SIGWINCH cannot keep scrollback chrome and the live
-region aligned — soft-wrap and reflow leave Auto/composer ghosts. On resize the
-host therefore clears the viewport, reprints the static banner, and redraws the
-prompt from a clean cursor position.
+region aligned — soft-wrap and reflow leave Auto/composer ghosts. While the
+screen holds only the banner, the host therefore clears the viewport, reprints
+the static banner, and redraws the prompt from a clean cursor position.
+
+Once a turn is on screen the transcript above must survive, so the host
+erases the live region from its top row before redrawing. Forgetting the
+previous frame without erasing it left a copy behind per resize signal, and a
+window drag sends several, stacking status, plan, and composer down the screen.
 """
 
 from __future__ import annotations
@@ -64,14 +69,15 @@ def _size_changed(previous: Size | None, current: Size) -> bool:
 def install_shrink_resize_guard(
     app: Application[Any],
     *,
-    rerender_banner: Callable[[], None] | None = None,
+    rerender_banner: Callable[[], bool] | None = None,
 ) -> None:
     """Install height + resize chrome guards for banner-safe layout.
 
     ``rerender_banner`` clears the viewport and reprints the static launch
-    banner at the new size. When provided, resize skips prompt-toolkit's
-    partial erase (which stacks Auto/composer ghosts) and redraws the live
-    region from the cursor below the fresh banner.
+    banner at the new size, returning True when it did so. Then resize skips
+    prompt-toolkit's partial erase (which stacks Auto/composer ghosts) and
+    redraws the live region from the cursor below the fresh banner. When it
+    returns False, a turn is on screen and the live region is erased in place.
     """
     output = app.output
     renderer = app.renderer
@@ -100,17 +106,20 @@ def install_shrink_resize_guard(
     def _on_resize() -> None:
         output.disable_autowrap()
         renderer._min_available_height = 0
-        renderer._last_screen = None
-        if rerender_banner is not None:
+        if rerender_banner is not None and rerender_banner():
             # Full chrome reset: clear + static banner, then redraw the live
             # region only. Do not call original erase — it leaves ghosts.
-            rerender_banner()
+            renderer._last_screen = None
             renderer.reset(leave_alternate_screen=False)
             app._request_absolute_cursor_position()
             app._redraw()
             output.disable_autowrap()
             return
+        # A turn is on screen: prompt-toolkit's own path erases the live region
+        # from its top row (autowrap is off, so the row count is exact), then
+        # re-queries the cursor and redraws in place.
         original_on_resize()
+        output.disable_autowrap()
 
     renderer.report_absolute_cursor_row = report_absolute_cursor_row  # type: ignore[method-assign]
     renderer.render = _render  # type: ignore[method-assign, assignment]

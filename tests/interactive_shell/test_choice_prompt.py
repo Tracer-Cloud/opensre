@@ -51,7 +51,10 @@ def test_selection_is_auto_submitted_as_next_user_message(
 
     assert _handler(session, console) is True
     assert session.pending_user_choice is None
-    assert session.terminal.pending_prompt_default == "Commit the changes"
+    # The question travels with the answer so the next turn cannot be re-routed.
+    assert session.terminal.pending_prompt_default == format_ask_user_answers(
+        _CHOICE.items(), ("Commit the changes",)
+    )
     assert session.terminal.pending_prompt_autosubmit is True
     output = buf.getvalue()
     # Single-pick recap is one answered line — not an Ask User card and not a
@@ -204,7 +207,9 @@ def test_single_choice_types_custom_in_place(
     choices = seen["choices"]
     assert isinstance(choices, list)
     assert (CUSTOM_OPTION, CUSTOM_OPTION) in choices
-    assert session.terminal.pending_prompt_default == "typed by hand"
+    assert session.terminal.pending_prompt_default == format_ask_user_answers(
+        _CHOICE.items(), ("typed by hand",)
+    )
     assert session.terminal.pending_prompt_autosubmit is True
 
 
