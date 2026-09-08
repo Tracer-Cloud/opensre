@@ -97,7 +97,7 @@ def turn_has_session_goal_evidence(result: Any, *, bookkeeping_calls: int = 0) -
 
 def goal_has_session_goal_evidence(goal: SessionGoal, result: Any) -> bool:
     """True when this turn succeeded at a tool, or an earlier turn stored findings."""
-    return turn_has_session_goal_evidence(result) or bool(goal.findings)
+    return turn_has_session_goal_evidence(result) or goal.tool_success_seen or bool(goal.findings)
 
 
 def _need_tool_evidence_reason(judge_reason: str) -> str:
@@ -149,6 +149,7 @@ def _review_ticks(
             ticked=ticked,
             tool_evidence=tool_evidence,
             findings=current.findings,
+            prior_tool_evidence=current.tool_evidence,
         )
     except Exception:
         log.debug("session-goal tick validator unavailable", exc_info=True)
@@ -189,6 +190,7 @@ def _run_judge(
             unfinished=unfinished,
             tool_evidence=tool_evidence,
             findings=current.findings,
+            prior_tool_evidence=current.tool_evidence,
         )
     except Exception:
         log.debug("session-goal judge unavailable", exc_info=True)
@@ -274,7 +276,7 @@ def evaluate_session_goal(
                 current = current.with_completed(current.completed | stored.completed)
     current = credit_completed_plan_steps(current, session)
     turn_evidence = turn_has_session_goal_evidence(result, bookkeeping_calls=bookkeeping)
-    evidence = turn_evidence or bool(current.findings)
+    evidence = turn_evidence or current.tool_success_seen or bool(current.findings)
     tool_evidence = getattr(getattr(result, "action_result", None), "tool_evidence", "")
     if turn_evidence:
         current = current.with_tool_progress()

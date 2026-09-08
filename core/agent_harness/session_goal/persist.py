@@ -30,6 +30,8 @@ def session_goal_to_payload(goal: SessionGoal) -> dict[str, Any]:
         "token_baseline_output": int(goal.token_baseline_output),
         "host_owned": bool(goal.host_owned),
         "last_progress_turns_used": int(goal.last_progress_turns_used),
+        "tool_evidence": list(goal.tool_evidence) if goal.tool_evidence is not None else None,
+        "tool_success_seen": goal.tool_success_seen,
     }
     if goal.started_at is not None:
         payload["started_at"] = float(goal.started_at)
@@ -102,7 +104,17 @@ def session_goal_from_payload(payload: Any) -> SessionGoal | None:
         token_baseline_output=token_out,
         host_owned=host_owned,
         last_progress_turns_used=last_progress_turns_used,
+        tool_evidence=_restore_tool_evidence(payload),
+        tool_success_seen=payload.get("tool_success_seen") is True,
     )
+
+
+def _restore_tool_evidence(payload: dict[str, Any]) -> tuple[str, ...] | None:
+    """Keep legacy goals empty and incomplete evidence explicitly unavailable."""
+    raw = payload.get("tool_evidence", [])
+    if isinstance(raw, list) and all(isinstance(item, str) for item in raw):
+        return tuple(raw)
+    return None
 
 
 def _restore_last_progress_turns_used(payload: dict[str, Any], turns_used: int) -> int:

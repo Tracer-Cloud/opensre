@@ -16,6 +16,11 @@ from core.agent_harness.session_goal.evaluate import (
 )
 from core.agent_harness.session_goal.goal import SessionGoal, SessionGoalStatus, attach_session_goal
 from core.agent_harness.session_goal.judge import SessionGoalJudgeVerdict
+from core.agent_harness.session_goal.persist import (
+    session_goal_from_payload,
+    session_goal_to_payload,
+)
+from core.agent_harness.session_goal.review_input import retain_tool_evidence
 from core.agent_harness.session_goal.run_until import run_until_session_goal
 from core.agent_harness.turns.headless_adapters import BufferOutputSink, NullToolProvider
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
@@ -179,4 +184,78 @@ def test_oversized_evidence_is_not_silently_truncated() -> None:
     assert verdict.status == SessionGoalStatus.ACTIVE
     assert session.session_goal is not None
     assert session.session_goal.completed == frozenset()
+    assert reviewer.invocations == 0
+
+
+def test_prior_observations_support_completion_after_restore() -> None:
+    session = SessionCore()
+    turns = 0
+
+    def chat(_message: str) -> TurnResult:
+        nonlocal turns
+        turns += 1
+        if turns <= 2:
+            action = ToolCallingTurnResult(
+                1,
+                1,
+                1,
+                False,
+                True,
+                tool_evidence=f"Tool: create_{turns}\nOutcome: success\nResult: CREATED_{turns}",
+                evidence_success_count=1,
+            )
+            return TurnResult("cli_agent_handled", action, "")
+        assert session.session_goal is not None
+        restored = session_goal_from_payload(session_goal_to_payload(session.session_goal))
+        assert restored is not None
+        attach_session_goal(session, restored.with_completed(frozenset({0, 1})))
+        return TurnResult(
+            "cli_agent_handled",
+            ToolCallingTurnResult(1, 1, 1, False, True, evidence_success_count=0),
+            "Both resources created.",
+        )
+
+    class Reviewer(_ScriptedLLM):
+        def invoke(self, messages: list[dict[str, Any]], **_kwargs: Any) -> AgentLLMResponse:
+            if self.invocations >= 2:
+                prompt = str(messages)
+                assert "CREATED_1" in prompt and "CREATED_2" in prompt
+            return super().invoke(messages)
+
+    reviewer = Reviewer(
+        [
+            AgentLLMResponse(content='{"verdict":"NOT_REACHED"}'),
+            AgentLLMResponse(content='{"verdict":"NOT_REACHED"}'),
+            AgentLLMResponse(
+                content='{"items":[{"index":0,"verdict":"VALID"},{"index":1,"verdict":"VALID"}]}'
+            ),
+            AgentLLMResponse(content='{"verdict":"GOAL_REACHED"}'),
+        ]
+    )
+    outcome = run_until_session_goal(
+        chat,
+        session,
+        "Create both resources",
+        goal=SessionGoal(
+            condition="Create both resources",
+            checklist=("Create first", "Create second"),
+            max_outer_turns=3,
+        ),
+        evaluate=build_session_goal_evaluator(lambda: reviewer),
+    )
+    assert outcome.goal.status == SessionGoalStatus.ACHIEVED
+    assert outcome.turn_count == 3
+    assert reviewer.invocations == 4
+
+
+def test_evidence_overflow_remains_unverified_after_restore() -> None:
+    goal = SessionGoal(condition="Deploy").with_finding("Deployed")
+    goal = retain_tool_evidence(goal, "x" * 40000, succeeded=True)
+    goal = retain_tool_evidence(goal, "y" * 40000 + "FAILED", succeeded=False)
+    restored = session_goal_from_payload(session_goal_to_payload(goal))
+    assert restored is not None
+    assert restored.tool_evidence is None
+    reviewer = _ScriptedLLM([AgentLLMResponse(content='{"verdict":"GOAL_REACHED"}')])
+    verdict = evaluate_session_goal(restored, _result(), judge_llm=reviewer)
+    assert verdict.status == SessionGoalStatus.ACTIVE
     assert reviewer.invocations == 0

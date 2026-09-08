@@ -34,6 +34,7 @@ from core.agent_harness.session_goal.goal import (
     session_goal_is_active,
     session_goal_is_paused,
 )
+from core.agent_harness.session_goal.review_input import retain_tool_evidence
 from core.agent_harness.turns.turn_results import TurnResult
 
 log = logging.getLogger(__name__)
@@ -240,6 +241,12 @@ def _finish_outer_turn(
     stored = getattr(session, "session_goal", None)
     if isinstance(stored, SessionGoal):
         active = stored
+    active = retain_tool_evidence(
+        active,
+        getattr(last.action_result, "tool_evidence", ""),
+        succeeded=turn_evidence,
+    )
+    attach_session_goal(session, active)
     # After the reload, never before it: ``evaluate_fn`` re-attaches the goal
     # and taking the session copy would discard the finding. A continuation is
     # a fresh chat call and history carries prose only, so this is the only way

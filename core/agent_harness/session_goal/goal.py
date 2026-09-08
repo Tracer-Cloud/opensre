@@ -160,6 +160,10 @@ class SessionGoal:
     # ``session_goal_complete``). Bookkeeping, not evidence — subtracted before
     # the evidence gate so a tick cannot vouch for itself. Ephemeral.
     bookkeeping_calls: int = 0
+    # Earlier raw observations for reviewers; None means the evidence exceeded
+    # the review budget and must not be treated as complete after restore.
+    tool_evidence: tuple[str, ...] | None = ()
+    tool_success_seen: bool = False
 
     def with_status(self, status: str) -> SessionGoal:
         return replace(self, status=status)

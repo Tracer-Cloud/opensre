@@ -77,6 +77,7 @@ def invoke_checklist_tick_validator(
     ticked: tuple[tuple[int, str], ...],
     tool_evidence: str = "",
     findings: tuple[str, ...] = (),
+    prior_tool_evidence: tuple[str, ...] | None = (),
 ) -> ChecklistTickVerdict | None:
     """Return per-item verdicts, or ``None`` on transport / parse failure."""
     if not ticked:
@@ -88,6 +89,7 @@ def invoke_checklist_tick_validator(
         checklist=_ticked_block(ticked),
         tool_evidence=tool_evidence,
         findings=findings,
+        prior_tool_evidence=prior_tool_evidence,
     )
     if prompt is None:
         return None

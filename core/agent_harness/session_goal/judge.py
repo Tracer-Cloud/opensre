@@ -95,6 +95,7 @@ def invoke_session_goal_judge(
     unfinished: tuple[tuple[int, str], ...] = (),
     tool_evidence: str = "",
     findings: tuple[str, ...] = (),
+    prior_tool_evidence: tuple[str, ...] | None = (),
 ) -> SessionGoalJudgeVerdict | None:
     """Return the structured verdict, or ``None`` on transport / parse failure."""
     prompt = review_input(
@@ -104,6 +105,7 @@ def invoke_session_goal_judge(
         checklist=_unfinished_block(unfinished),
         tool_evidence=tool_evidence,
         findings=findings,
+        prior_tool_evidence=prior_tool_evidence,
     )
     if prompt is None:
         return None
