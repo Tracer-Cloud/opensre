@@ -2,10 +2,11 @@
 
 When the interactive shell starts and no scheduled tasks ("loops") are
 configured on this machine, offer three suggested recurring loops in an inline
-dropdown. Picking one auto-submits a canned prompt as the first turn; the
-action agent then drives the matching bundled skill or tool guidance
-(``github-ci-fix``, GitHub tools, ``morning-report``) through a first demo pass
-and the existing ``propose_scheduled_delivery`` → ``/cron add`` confirmation flow. Escape skips
+dropdown. The CI/CD loop runs the deterministic CI reliability agent demo
+(scan, repository, schedule, first pass) without a model turn. The other two
+auto-submit a canned prompt as the first turn; the action agent then drives
+the matching bundled skill through a first demo pass and the existing
+``propose_scheduled_delivery`` → ``/cron add`` confirmation flow. Escape skips
 into the normal prompt for this launch — nothing is persisted, so the picker
 returns on the next launch while zero loops exist.
 
@@ -27,6 +28,7 @@ from infrastructure.analytics.capture import (
 )
 from infrastructure.analytics.source import is_test_run
 from infrastructure.terminal.theme import DIM
+from surfaces.interactive_shell.runtime.startup.demo_picker import start_ci_agent_demo
 from surfaces.shared.terminal.components.choice_menu import (
     repl_choose_one,
     repl_tty_interactive,
@@ -61,19 +63,15 @@ class LoopSuggestion:
     label: str
     """Menu row shown to the user (name + cadence + one-line pitch)."""
 
-    prompt: str
-    """Canned prompt auto-submitted as the first turn when selected."""
+    prompt: str = ""
+    """Canned prompt auto-submitted as the first turn when selected; empty when the
+    suggestion runs deterministically."""
 
 
 LOOP_SUGGESTIONS: tuple[LoopSuggestion, ...] = (
     LoopSuggestion(
         option=OPTION_CI_CD,
-        label="CI/CD loop — weekdays 8:00 AM · watch pipelines, surface failing checks",
-        prompt=(
-            "Report failing CI checks on the current repository's pull requests, "
-            "with links and an interactive repair handoff, then set this up as a "
-            "read-only recurring weekday check at 8:00 AM."
-        ),
+        label="CI/CD loop — weekdays 8:00 AM · CI reliability report for a repository you pick",
     ),
     LoopSuggestion(
         option=OPTION_TASK_MANAGEMENT,
@@ -130,6 +128,9 @@ def offer_loop_suggestions(session: Session, console: Console | None = None) -> 
             return
         suggestion = _SUGGESTIONS_BY_OPTION[selected]
         capture_loop_suggestion_selected(option=suggestion.option)
+        if suggestion.option == OPTION_CI_CD:
+            start_ci_agent_demo(session, console)
+            return
         # Prefill + auto-submit: the prompt echoes the command itself, so no
         # extra announcement print here (it would show the text twice).
         session.terminal.set_auto_command(suggestion.prompt)

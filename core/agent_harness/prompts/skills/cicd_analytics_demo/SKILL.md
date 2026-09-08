@@ -50,6 +50,10 @@ HARD RULES:
   not fall back to a different data source.
 - Decision points use `ask_user_choice` with the exact option texts below.
   End the turn after calling it; the answer arrives as the next user message.
+- Ask each question once. When the answer arrives, continue with the next
+  step immediately: do not reload this skill, do not restate the options, and
+  never ask what the answer or the request "means". A repository name in the
+  request or in the answer is the repository; go straight to step 3.
 
 Steps, in order (headers are mandatory, see the labeling rules below).
 When the request already names the repository (the startup demo does the scan

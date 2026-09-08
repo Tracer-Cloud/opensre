@@ -18,6 +18,8 @@ from integrations.github.tools.ci_analytics.models import (
 )
 
 _TOP_WORKFLOWS = 5
+_TOP_BLOCKED_PRS = 5
+_BRANCH_WIDTH = 36
 
 
 def render_markdown(report: CiAnalyticsReport) -> str:
@@ -101,13 +103,11 @@ def render_report(console: Any, report: CiAnalyticsReport) -> None:
             parts.append(
                 _kpi_line("Including PRs not merged yet", _minutes(report.blocked_minutes_all))
             )
-        if report.median_delay_minutes is not None:
-            parts.append(
-                _kpi_line("Typical wait per blocked PR", _minutes(report.median_delay_minutes))
-            )
-        longest = report.longest_delay
-        if longest is not None and longest.delay_minutes > 0:
-            parts.append(_kpi_line("Longest wait", _delay(longest)))
+        blocked = report.blocked_pr_delays
+        if blocked:
+            parts.extend([Text(""), Text("How it adds up, worst first", style="bold")])
+            parts.append(_blocked_table(blocked))
+            parts.extend(Text(line, style="dim") for line in _blocked_sum_lines(report))
     if report.branch_runs:
         parts.extend(
             [
@@ -152,6 +152,53 @@ def render_report(console: Any, report: CiAnalyticsReport) -> None:
     parts.extend(Text(notice, style="dim") for notice in report.coverage_notices)
     # Hang the block in the shell's two-column reply gutter like agent output.
     console.print(Padding(Group(*parts), (0, 0, 0, 2)))
+
+
+def _blocked_table(blocked: tuple[PullRequestDelay, ...]) -> Table:
+    table = Table(show_edge=False, pad_edge=False, box=None, header_style="dim")
+    for column, justify in (
+        ("PR", "left"),
+        ("Branch", "left"),
+        ("Expected green", "left"),
+        ("Actually green", "left"),
+        ("Waited", "right"),
+    ):
+        table.add_column(column, justify=justify)  # type: ignore[arg-type]
+    for item in blocked[:_TOP_BLOCKED_PRS]:
+        table.add_row(
+            f"#{item.pr_number}" if item.pr_number else "-",
+            _shorten(item.branch, _BRANCH_WIDTH),
+            _stamp(item.expected_green),
+            _stamp(item.actual_green),
+            _minutes(item.delay_minutes),
+        )
+    return table
+
+
+def _blocked_sum_lines(report: CiAnalyticsReport) -> list[str]:
+    """The bottom-up total: every blocked PR's wait, summed."""
+    blocked = report.blocked_pr_delays
+    lines = []
+    rest = blocked[_TOP_BLOCKED_PRS:]
+    if rest:
+        lines.append(
+            f"and {len(rest)} more {_plural(len(rest), 'PR')} waiting "
+            f"{_minutes(sum(item.delay_minutes for item in rest))} between them"
+        )
+    typical = _minutes(report.median_delay_minutes or 0.0)
+    lines.append(
+        f"Sum of waits: {_minutes(report.blocked_minutes)} across {len(blocked)} merged "
+        f"{_plural(len(blocked), 'PR')}; the typical blocked PR waited {typical}"
+    )
+    return lines
+
+
+def _stamp(when: datetime | None) -> str:
+    return when.strftime("%b %d %H:%M") if when else "-"
+
+
+def _shorten(text: str, width: int) -> str:
+    return text if len(text) <= width else text[: width - 1] + "…"
 
 
 def headline(report: CiAnalyticsReport) -> str:
@@ -209,11 +256,18 @@ def _blocked_time(report: CiAnalyticsReport) -> list[str]:
     ]
     if report.blocked_minutes_all > report.blocked_minutes:
         lines.append(f"- Including PRs not merged yet: {_minutes(report.blocked_minutes_all)}")
-    if report.median_delay_minutes is not None:
-        lines.append(f"- Typical wait per blocked PR: {_minutes(report.median_delay_minutes)}")
-    longest = report.longest_delay
-    if longest is not None and longest.delay_minutes > 0:
-        lines.append(f"- Longest wait: {_delay(longest)}")
+    blocked = report.blocked_pr_delays
+    if blocked:
+        lines.extend(["", "How it adds up, worst first:"])
+        lines.append("| PR | Branch | Expected green | Actually green | Waited |")
+        lines.append("| --- | --- | --- | --- | ---: |")
+        for item in blocked[:_TOP_BLOCKED_PRS]:
+            lines.append(
+                f"| {f'#{item.pr_number}' if item.pr_number else '-'} | "
+                f"{_shorten(item.branch, _BRANCH_WIDTH)} | {_stamp(item.expected_green)} | "
+                f"{_stamp(item.actual_green)} | {_minutes(item.delay_minutes)} |"
+            )
+        lines.extend(f"- {line}" for line in _blocked_sum_lines(report))
     return lines
 
 
@@ -234,11 +288,6 @@ def _default_branch(report: CiAnalyticsReport) -> list[str]:
     for outage in report.ongoing_outages:
         lines.append(f"- **Still red now:** {_outage(outage, now=report.generated_at)}")
     return lines
-
-
-def _delay(item: PullRequestDelay) -> str:
-    commits = f", {item.commits} {_plural(item.commits, 'commit')}" if item.commits > 1 else ""
-    return f"{_minutes(item.delay_minutes)} on {item.label}{commits} {item.url}".strip()
 
 
 def _outage(outage: Outage, *, now: datetime) -> str:

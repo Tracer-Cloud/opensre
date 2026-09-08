@@ -59,19 +59,27 @@ def test_selection_queues_the_canned_prompt(monkeypatch: pytest.MonkeyPatch) -> 
     assert "morning report" in session.terminal.pending_prompt_default
 
 
-def test_ci_suggestion_is_read_only(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_ci_suggestion_runs_the_deterministic_agent_demo_without_a_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange: the CI/CD row must not hand a model a prompt it cannot fulfil.
     _offerable(monkeypatch)
     monkeypatch.setattr(
         loop_suggestions, "repl_choose_one", lambda **_kw: loop_suggestions.OPTION_CI_CD
     )
+    started: list[object] = []
+    monkeypatch.setattr(
+        loop_suggestions, "start_ci_agent_demo", lambda session, _console: started.append(session)
+    )
     session = Session()
 
+    # Act
     loop_suggestions.offer_loop_suggestions(session, None)
 
-    prompt = session.terminal.pending_prompt_default
-    assert "read-only" in prompt
-    assert "repair handoff" in prompt
-    assert "fix any failing checks" not in prompt
+    # Assert
+    assert started == [session]
+    assert session.terminal.pending_prompt_autosubmit is False
+    assert not session.terminal.pending_prompt_default
 
 
 def test_skip_queues_nothing(monkeypatch: pytest.MonkeyPatch) -> None:

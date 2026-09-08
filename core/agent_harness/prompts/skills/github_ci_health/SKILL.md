@@ -39,3 +39,12 @@ When offering this report as a recurring task interactively, use kind
 `recurring_skill` and skill name `github-ci-health`. Pass the exact `owner` and
 `repo`, plus at most one of `branch` or `pr_number`, to
 `propose_scheduled_delivery` so confirmation preserves the repository scope.
+
+Interactively, the repository comes from the request; when it names none,
+call `scan_local_git_workspace` and ask with `ask_user_choice`. Never run
+`cli_exec` (`opensre health`, `opensre integrations …`), `shell_run`, or
+`github_cli` to discover the repository, the token, or the environment: they
+print unrelated integration state and are not part of this skill. To show
+the checks failing right now during an interactive turn, use
+`summarize_github_pr_status`; this skill's own report is produced by the
+scheduled runner only.

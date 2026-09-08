@@ -109,6 +109,12 @@ class PullRequestDelay:
     url: str
     """The first CI-caused failure on the PR, for the report link."""
 
+    expected_green: datetime | None = None
+    """When the first delayed commit should have been green had CI run normally."""
+
+    actual_green: datetime | None = None
+    """When the last delayed commit actually went green, or the wait was cut off."""
+
     @property
     def label(self) -> str:
         return f"PR #{self.pr_number} ({self.branch})" if self.pr_number else self.branch

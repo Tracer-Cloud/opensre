@@ -312,6 +312,13 @@ def _start_ci_agent_demo(
     return _offer_after_loop(session, console)
 
 
+def start_ci_agent_demo(session: Session, console: Console | None) -> bool:
+    """Run the CI reliability agent demo on its own, e.g. from another picker."""
+    suggestion = _suggestion_for(OPTION_CI_AGENT)
+    assert suggestion is not None
+    return _start_ci_agent_demo(session, console, suggestion)
+
+
 def choose_loop_time() -> tuple[str, bool] | None:
     """Ask when the loop runs: ``(time_text, weekdays)`` or ``None`` when the user escapes."""
     timezone = local_timezone()
@@ -465,6 +472,7 @@ __all__ = [
     "demo_already_offered",
     "marker_path",
     "offer_demo",
+    "start_ci_agent_demo",
     "should_offer_demo",
     "suitable_repositories",
 ]

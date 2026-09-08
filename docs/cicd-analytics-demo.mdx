@@ -52,8 +52,10 @@ invisible; the merge time still bounds the wait. When GitHub omits a PR number,
 the run belongs to the first later merge of that head repository and branch.
 When it attaches several, the run belongs to the merged PR whose lifetime
 contains the run.
-The report also shows the total across all PRs when it differs, the typical
-wait per blocked PR, and the longest wait with its PR.
+The report shows how the total adds up: a table of the most blocked PRs with
+when each should have been green, when it actually was, and how long it
+waited, then the sum across all blocked PRs and the typical wait. The total
+across PRs not merged yet is shown when it differs.
 
 ## The CI reliability agent
 

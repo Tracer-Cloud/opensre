@@ -31,16 +31,18 @@ def run_cli_command(*, payload: str, context: Any) -> dict[str, Any]:
 cli_exec_tool = RegisteredTool(
     name="cli_exec",
     description=(
-        "Run an `opensre` CLI subcommand payload (without the leading `opensre ` prefix). "
-        "Prefer allowed operational families such as health/status/list/show/integrations/"
-        "synthetic checks; avoid unrelated or dangerous payloads."
+        "Run an `opensre` CLI subcommand the user asked for (payload without the leading "
+        "`opensre ` prefix), such as integrations/status/list/show/synthetic checks. "
+        "Not a discovery tool: never run it to find a repository, a token, or configured "
+        "integrations for a skill, and never run `health` unless the user asked for a "
+        "health check; it prints every integration on the machine."
     ),
     input_schema=object_schema(
         properties={
             "payload": string_property(
                 description=(
                     "CLI payload passed to `opensre` without the leading command prefix "
-                    "(for example: `integrations list`, `health`, `synthetic run ...`). "
+                    "(for example: `integrations list`, `synthetic run ...`). "
                     "Must not start with `opensre `."
                 ),
                 min_length=1,

@@ -128,6 +128,8 @@ def pull_request_delays(
                 delay_minutes=_union_minutes(spans),
                 commits=len(spans),
                 url=item.failure.url,
+                expected_green=min(start for start, _ in spans) if spans else None,
+                actual_green=max(end for _, end in spans) if spans else None,
             )
         )
     return sorted(delays, key=lambda d: -d.delay_minutes)
