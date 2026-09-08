@@ -21,7 +21,6 @@ from rich.markup import escape
 from rich.text import Text
 
 from config.constants import SOUND_MIN_TURN_SECONDS
-from core.agent_harness.spi.session_state import PendingUserChoice, set_auto_command
 from core.llm.shared.llm_retry import OpenSRECreditsExhaustedError
 from infrastructure.terminal.notify import NotifyEvent, play_notification
 from surfaces.interactive_shell.runtime.core.state import SpinnerState
@@ -80,27 +79,6 @@ def _reduce_agent_presentation(
 # The exception text carries the destination for surfaces that print plain
 # text; the shell shows it once, as a link, on its own line.
 _UPGRADE_SENTENCE_LEAD = " Upgrade or top up at"
-# The menu that follows the credit wall: pick a way out with the arrow keys,
-# the way Claude Code offers its billing options inline. Esc leaves it.
-CREDITS_MENU_TITLE = "Hosted credits are exhausted. What next?"
-CREDITS_OPTION_TOP_UP = "Open the usage and top-up page in the browser"
-CREDITS_OPTION_SWITCH = "Switch to another LLM provider"
-CREDITS_MENU_COMMANDS = {
-    CREDITS_OPTION_TOP_UP: "/account usage",
-    CREDITS_OPTION_SWITCH: "/model",
-}
-
-
-def queue_credits_exhausted_menu(session: Session) -> None:
-    """Open the ways-out menu after the turn ends; a headless session gets none."""
-    if getattr(session, "terminal", None) is None:
-        return
-    session.pending_user_choice = PendingUserChoice(
-        title=CREDITS_MENU_TITLE,
-        options=(CREDITS_OPTION_TOP_UP, CREDITS_OPTION_SWITCH),
-        commands=dict(CREDITS_MENU_COMMANDS),
-    )
-    set_auto_command(session, "/choose")
 
 
 def _render_credits_exhausted(console: StreamingConsole, exc: Exception) -> None:
@@ -195,8 +173,6 @@ class ConsoleAgentEventSink:
             console=self.console,
             spinner=self.spinner,
         )
-        if event.type == "turn_error" and isinstance(event.error, OpenSRECreditsExhaustedError):
-            queue_credits_exhausted_menu(self.session)
         if event.type in {"turn_end", "turn_interrupted", "turn_error"}:
             self._chime_if_long_turn()
 

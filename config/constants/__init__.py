@@ -33,6 +33,9 @@ if TYPE_CHECKING:
         OPENSRE_ACCOUNT_TOKEN_ENV as OPENSRE_ACCOUNT_TOKEN_ENV,
     )
     from config.constants.account import (
+        OPENSRE_ACCOUNT_USAGE_PATH as OPENSRE_ACCOUNT_USAGE_PATH,
+    )
+    from config.constants.account import (
         OPENSRE_APP_URL_DEFAULT as OPENSRE_APP_URL_DEFAULT,
     )
     from config.constants.account import (

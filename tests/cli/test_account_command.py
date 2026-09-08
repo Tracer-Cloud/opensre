@@ -424,3 +424,28 @@ def test_account_usage_without_browser_only_prints_the_url(
     assert result.exit_code == 0, result.output
     assert "Usage and top-up: http://localhost:3000/usage" in result.output
     assert "Open it in your browser." in result.output
+
+
+def test_account_usage_follows_the_deployment_the_account_signed_in_to(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange: the saved login points at a custom deployment.
+    monkeypatch.setattr(
+        account_auth,
+        "load_account_record",
+        lambda: AccountRecord(
+            user_id="u1",
+            organization_id="o1",
+            email=None,
+            app_url="https://opensre.example.com",
+            signed_in_at="2026-09-08T00:00:00Z",
+            token_expires_at="2027-09-08T00:00:00Z",
+        ),
+    )
+
+    # Act
+    result = CliRunner().invoke(account_command, ["usage", "--no-browser"])
+
+    # Assert: the usage page belongs to that deployment, not the production default.
+    assert result.exit_code == 0, result.output
+    assert "https://opensre.example.com/usage" in result.output
