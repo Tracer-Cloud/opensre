@@ -28,6 +28,9 @@ _ALWAYS_OFFERED = frozenset(
 
 def scope_tools_to_active_skill(tools: list[Any], session: Any, message: str) -> list[Any]:
     """Filter ``tools`` for an answer turn inside a skill; reset the scope otherwise."""
+    if message.strip() == "/choose" and getattr(session, "pending_user_choice", None) is not None:
+        # The literal transport command needs slash_invoke, but is not a new request.
+        return tools
     declared = tuple(getattr(session, "active_skill_tools", ()) or ())
     if not parse_ask_user_answers(message):
         session.active_skill = None

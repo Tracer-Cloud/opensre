@@ -6,6 +6,7 @@ import logging
 import re
 from typing import TYPE_CHECKING
 
+from core.agent_harness.prompts.action.active_skill import active_skill_block
 from core.agent_harness.prompts.action.text import _SYSTEM_PROMPT_BASE
 from core.agent_harness.prompts.action.turn_interaction import turn_interaction_facts_block
 from core.agent_harness.prompts.getting_started import load_getting_started_block
@@ -180,6 +181,15 @@ def build_action_system_prompt_envelope(turn_snapshot: TurnSnapshot) -> PromptEn
             ),
             provenance="core.agent_harness.task_plan.prompt",
             suffix="\n\n",
+        )
+    )
+    blocks.extend(
+        _optional_block(
+            id=PromptBlockId.ACTIVE_SKILL,
+            kind=PromptBlockKind.RULE,
+            tier=PromptTier.EPHEMERAL,
+            content=active_skill_block(turn_snapshot.active_skill, turn_snapshot.text),
+            provenance="core.agent_harness.prompts.action.active_skill",
         )
     )
     blocks.append(

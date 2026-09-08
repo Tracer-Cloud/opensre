@@ -224,6 +224,7 @@ def execute_ask_user_choice_tool(args: dict[str, Any], ctx: ActionToolScope) -> 
             title=title,
             options=tuple(options),
             multi_select=multi_select,
+            note=strip_terminal_controls(str(args.get("note", ""))).strip(),
         )
         queued = _QUEUED_INSTRUCTION
         summary = f"selection menu queued: {title}"
@@ -252,12 +253,14 @@ def run_ask_user_choice(
     options: list[str] | None = None,
     questions: list[dict[str, Any]] | None = None,
     multi_select: bool = False,
+    note: str = "",
     context: Any,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
         "title": title,
         "options": options or [],
         "multi_select": multi_select,
+        "note": note,
     }
     if questions is not None:
         payload["questions"] = questions
@@ -321,6 +324,9 @@ ask_user_choice_tool = RegisteredTool(
                     "Two to eight short option labels for a single decision, "
                     "recommended option first. Omit when questions is set."
                 ),
+            ),
+            "note": string_property(
+                description="Optional short explainer shown inside a single-question menu.",
             ),
             "questions": {
                 "type": "array",

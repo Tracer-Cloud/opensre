@@ -13,7 +13,7 @@ _TYPES = {"onboarding", "analytics", "report", "repair", "audit"}
 
 
 def _skill_cards() -> list[Path]:
-    return sorted(Path(skills_dir()).glob("*/SKILL.md"))
+    return sorted(Path(skills_dir()).rglob("SKILL.md"))
 
 
 @pytest.mark.parametrize("card", _skill_cards(), ids=lambda path: path.parent.name)

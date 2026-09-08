@@ -171,6 +171,9 @@ class TurnSnapshot:
     active_tools: tuple[RuntimeTool, ...] = ()
     """Subset of tools offered to the model for this turn."""
 
+    active_skill: str | None = None
+    """Skill whose question this turn answers, independent of transcript retention."""
+
     resolved_integrations: dict[str, Any] = field(default_factory=dict)
     """Resolved integration configuration passed to tool execution."""
 
@@ -261,6 +264,7 @@ class TurnSnapshot:
             system_prompt=getattr(runtime_input, "system_prompt", ""),
             available_tools=tuple(getattr(runtime_input, "available_tools", ())),
             active_tools=tuple(getattr(runtime_input, "active_tools", ())),
+            active_skill=getattr(session, "active_skill", None),
             resolved_integrations=dict(getattr(runtime_input, "resolved_integrations", {}) or {}),
             tool_resources=dict(getattr(runtime_input, "tool_resources", {}) or {}),
             max_iterations=int(getattr(runtime_input, "max_iterations", 1)),

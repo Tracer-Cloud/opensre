@@ -252,6 +252,31 @@ def test_single_choice_types_custom_in_place(
     assert session.terminal.pending_prompt_autosubmit is True
 
 
+def test_single_choice_paints_the_pending_note_inside_the_menu(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The explainer rides the menu paint (cleared on close), not the transcript."""
+    session = Session()
+    session.pending_user_choice = PendingUserChoice(
+        title=_CHOICE.title,
+        options=_CHOICE.options,
+        note="Why I am asking, in one line.",
+    )
+    console, buf = _console()
+    seen: dict[str, object] = {}
+
+    def _pick(**kwargs: object) -> str:
+        seen["note"] = kwargs.get("note")
+        return _CHOICE.options[0]
+
+    monkeypatch.setattr(choice_prompt, "repl_tty_interactive", lambda: True)
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", _pick)
+
+    assert _handler(session, console) is True
+    assert seen["note"] == "Why I am asking, in one line."
+    assert "Why I am asking" not in buf.getvalue()
+
+
 def test_non_tty_batch_prints_every_question(monkeypatch: pytest.MonkeyPatch) -> None:
     session = Session()
     session.pending_user_choice = _BATCH_CHOICE

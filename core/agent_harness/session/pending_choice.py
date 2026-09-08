@@ -52,6 +52,9 @@ class PendingUserChoice:
     multi_select: bool = False
     """Multi-select for the single-question path (ignored when ``questions`` is set)."""
 
+    note: str = ""
+    """Short explainer painted with the single-question menu; cleared when it closes."""
+
     commands: dict[str, str] = field(default_factory=dict)
     """Option label -> slash command the shell runs instead of answering the model."""
 

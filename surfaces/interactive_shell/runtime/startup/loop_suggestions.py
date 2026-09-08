@@ -27,7 +27,7 @@ from infrastructure.analytics.capture import (
     capture_loop_suggestion_skipped,
 )
 from infrastructure.analytics.source import is_test_run
-from surfaces.interactive_shell.runtime.startup.demo_picker import start_ci_agent_demo
+from surfaces.interactive_shell.runtime.startup.ci_agent_demo import start_ci_agent_demo
 from surfaces.shared.terminal.components.choice_menu import (
     repl_choose_one,
     repl_tty_interactive,

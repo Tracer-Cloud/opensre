@@ -896,6 +896,7 @@ if TYPE_CHECKING:
     from config.constants.signoz import (
         SIGNOZ_URL_ENV as SIGNOZ_URL_ENV,
     )
+    from config.constants.skills import ONBOARDING_SKILL_NAME as ONBOARDING_SKILL_NAME
     from config.constants.slack import (
         SLACK_ACCESS_TOKEN_ENV as SLACK_ACCESS_TOKEN_ENV,
     )

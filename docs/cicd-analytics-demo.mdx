@@ -10,6 +10,10 @@ option analyzes a real repository from your machine and reports CI/CD
 reliability KPIs, including the developer time lost to unreliable CI. That
 analysis is read-only and takes a couple of minutes.
 
+The other choices set up a recurring CI/CD agent, show the upcoming managed
+service, or connect Slack. Press Escape to skip, or use the custom-answer row
+to type a different request.
+
 Run it again at any time with `/demo`, or by asking:
 
 ```text
@@ -25,8 +29,7 @@ how much developer time does flaky CI cost us
 
 ## What happens
 
-Every step runs in the shell itself; no model turn is involved until you hand
-off to Slack.
+The agent guides you through the selected demo in the shell.
 
 1. **Scan.** It scans your home directory for git checkouts and paints a bar
    chart of the last 30 days of commits, your own contributions first.
@@ -39,8 +42,7 @@ off to Slack.
    the Slack hand-off, or exit.
 
 Typing a request such as `analyze owner/repo CI/CD performance for the last
-30 days` runs the same analysis through the agent's `cicd-analytics-demo`
-skill.
+30 days` skips the scan and repository picker.
 
 ## The KPIs
 
@@ -82,12 +84,12 @@ yet is shown when it differs.
 
 ## The CI reliability agent
 
-Pick "Set up an agent that improves CI/CD reliability over time" after the
-analytics demo, or from the analytics demo's next-step menu, to schedule the
-same analysis as a recurring check. The demo scans your
+Pick "Set up an agent that improves CI/CD reliability over time" from the
+startup menu to schedule the analysis as a recurring check. The demo scans your
 machine, asks which repository to watch and when to run (weekdays at 08:00
-local time is the default), creates the loop, runs it once, and shows the
-first report. Every run analyzes the last 7 days.
+local time is the default), and creates the loop. Choosing this option after
+an analytics report schedules that repository without asking you to pick it
+again. Every run analyzes the last 7 days; use `/loops run <id>` to run it now.
 
 - Reports land in this shell's inbox: `/loops messages`. The loop never posts
   to Slack or any chat channel, even when those integrations are configured.
@@ -96,8 +98,7 @@ first report. Every run analyzes the last 7 days.
   report, and the raw figures are saved as JSON next to the report path named
   at the end of every delivery, under `~/.opensre/ci_reliability_reports/`.
 - The loop fires while the shell is open. To keep it running when the shell is
-  closed, pick "Keep it running when this shell is closed" at the end of the
-  demo or run `/loops service install`; it installs a per-user service (launchd
+  closed, run `/loops service install`; it installs a per-user service (launchd
   on macOS, systemd on Linux) that starts at login. `/loops service remove`
   deletes it. Windows is not supported yet; run `opensre cron start --service`
   from Task Scheduler instead.

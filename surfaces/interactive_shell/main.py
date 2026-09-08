@@ -103,8 +103,7 @@ async def run_repl_async(
             ):
                 return 1
         else:
-            # Every interactive start opens the demo picker before the prompt.
-            # Esc and "type your own answer" continue into the normal REPL.
+            # The first agent turn loads the master skill, which owns its Ask User menu.
             offer_demo(session, out)
 
         await InteractiveShellController(

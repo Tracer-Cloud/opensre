@@ -67,7 +67,7 @@ class ActionSkill:
     """Verbatim first-visit demo label this skill owns; ``None`` when it is not a demo row."""
 
     demo_order: int | None = None
-    """1-based demo menu order when ``getting_started`` is set (A=1, B=2, C=3)."""
+    """1-based demo menu order when ``getting_started`` is set (A=1)."""
 
 
 def skills_dir() -> Path:
@@ -96,7 +96,12 @@ def _package_skill_path(package_dir: Path) -> Path | None:
 
 
 def _iter_skill_paths(directory: Path) -> list[Path]:
-    """Return skill recipe paths in stable order (packages then flat files)."""
+    """Return skill recipe paths in stable order (packages, nested packages, flat files).
+
+    A package directory may nest one level of child skill packages (e.g.
+    ``onboarding_cicd_fix/a_local_analysis/SKILL.md``); each child follows its
+    parent so related skills stay adjacent in the index.
+    """
     paths: list[Path] = []
     for child in sorted(directory.iterdir()):
         if not child.is_dir() or child.name.startswith("."):
@@ -104,6 +109,12 @@ def _iter_skill_paths(directory: Path) -> list[Path]:
         skill_file = _package_skill_path(child)
         if skill_file is not None:
             paths.append(skill_file)
+        for nested in sorted(child.iterdir()):
+            if not nested.is_dir() or nested.name.startswith("."):
+                continue
+            nested_file = _package_skill_path(nested)
+            if nested_file is not None:
+                paths.append(nested_file)
     paths.extend(sorted(directory.glob("*.md")))
     return paths
 
@@ -254,7 +265,7 @@ def _demo_sort_key(skill: ActionSkill) -> tuple[int, str]:
 
 
 def getting_started_skills() -> tuple[ActionSkill, ...]:
-    """Skills that own a first-visit demo option, in menu order (A, B, C)."""
+    """Skills that own a demo option, in menu order."""
     owned = [skill for skill in list_action_skills() if skill.getting_started]
     owned.sort(key=_demo_sort_key)
     return tuple(owned)
@@ -278,8 +289,8 @@ def load_skills_index() -> str:
         "Skill matches outrank a generic docs/how-to answer.",
         "Before answering, check this catalog for an action-shaped match",
         '(including "set up", "install", "onboard me", "demo", "audit", or "fix").',
-        'Capability questions ("what can you do", "how can you help",',
-        '"what tools do you have") are NOT a skill_view match. Answer them directly.',
+        'For capability questions ("what can you do", "how can you help"),',
+        "follow the getting-started instruction to load the master skill.",
         "When the user request matches a skill below, call skill_view(name) in",
         "THIS turn BEFORE emitting that skill's tool sequence. Do not invent",
         "steps from the one-line description alone.",

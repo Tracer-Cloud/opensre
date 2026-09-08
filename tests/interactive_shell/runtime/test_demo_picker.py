@@ -1,597 +1,177 @@
-"""Tests for the first-experience demo picker."""
+"""Startup executes the master skill before asking and continuing a child skill."""
 
 from __future__ import annotations
 
 import io
-import json
-from collections.abc import Iterator
-from pathlib import Path
+from typing import Any
 
 import pytest
 from rich.console import Console
 
+import surfaces.interactive_shell.command_registry.choice_prompt as choice_prompt
+import surfaces.interactive_shell.runtime.slash_adapter as slash_adapter
 import surfaces.interactive_shell.runtime.startup.demo_picker as demo_picker
-from core.agent_harness.prompts.getting_started import GETTING_STARTED_MENU
-from core.agent_harness.prompts.skills import getting_started_skills
+import tools.system.workspace_git_scan.tool as scan_tool
+from config.constants.skills import ONBOARDING_SKILL_NAME
+from core.agent_harness.prompts.action.assemble import build_action_system_prompt_envelope
+from core.agent_harness.prompts.getting_started import GETTING_STARTED_OPTIONS
+from core.agent_harness.prompts.skills import list_action_skills
+from core.agent_harness.session.pending_choice import PendingUserChoice, format_ask_user_answers
+from core.agent_harness.turns.turn_snapshot import TurnSnapshot
+from surfaces.interactive_shell.runtime.action_turn import run_action_tool_turn
 from surfaces.interactive_shell.session import Session
-from tools.system.workspace_git_scan.scan import RepoActivity, WorkspaceSnapshot
-
-
-def _capture() -> tuple[Console, io.StringIO]:
-    buf = io.StringIO()
-    return Console(file=buf, force_terminal=False, highlight=False, width=120), buf
-
-
-def _repo(name: str, github: str, *, commits: int, own: int, workflows: bool) -> RepoActivity:
-    owner, _, repo = github.partition("/")
-    return RepoActivity(
-        name=name,
-        path=f"/home/u/{name}",
-        origin=f"https://github.com/{github}",
-        github_owner=owner,
-        github_repo=repo,
-        commits=commits,
-        own_commits=own,
-        uncommitted=0,
-        has_workflows=workflows,
-    )
-
-
-_SNAPSHOT = WorkspaceSnapshot(
-    root="/home/u",
-    days=30,
-    repos=(
-        _repo("busy-team-repo", "acme/busy", commits=900, own=0, workflows=True),
-        _repo("mine", "me/mine", commits=120, own=110, workflows=True),
-        _repo("no-ci", "me/no-ci", commits=300, own=300, workflows=False),
-        _repo("local-only", "", commits=50, own=50, workflows=True),
-    ),
+from surfaces.interactive_shell.ui.ask_user import CUSTOM_OPTION
+from tests.core.agent.orchestration.action_execution_test_harness import (
+    FakeActionLLM,
+    tool_response,
 )
+from tools.system.workspace_git_scan.scan import WorkspaceSnapshot
+
+_TITLE = "Which demo would you like me to run? (Esc to skip)"
+_NOTE = "Choose a demo using your own repositories or connect your team through Slack."
 
 
-def _offerable(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Path:
-    marker = tmp_path / "onboarding_demo.json"
-    monkeypatch.setattr(demo_picker, "marker_path", lambda: marker)
+def _offerable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(demo_picker, "is_test_run", lambda: False)
     monkeypatch.setattr(demo_picker, "repl_tty_interactive", lambda: True)
     monkeypatch.setattr(demo_picker, "capture_onboarding_demo_prompted", lambda: None)
-    monkeypatch.setattr(demo_picker, "capture_onboarding_demo_skipped", lambda: None)
-    monkeypatch.setattr(demo_picker, "capture_onboarding_demo_selected", lambda **_kw: None)
-    monkeypatch.setattr(demo_picker, "scan_workspace", lambda *_a, **_kw: _SNAPSHOT)
-    monkeypatch.setattr(demo_picker, "resolve_github_token", lambda _token: "tok")
-    return marker
+    monkeypatch.setattr(choice_prompt, "repl_tty_interactive", lambda: True)
+    monkeypatch.setattr(slash_adapter, "repl_tty_interactive", lambda: True)
 
 
-def _answers(monkeypatch: pytest.MonkeyPatch, *values: str | None) -> list[dict]:
-    """Script successive menu answers and record each menu's choices."""
-    calls: list[dict] = []
-    answers: Iterator[str | None] = iter(values)
-
-    def choose(**kwargs: object) -> str | None:
-        calls.append(kwargs)
-        return next(answers)
-
-    monkeypatch.setattr(demo_picker, "repl_choose_one", choose)
-    return calls
+def _take_prompt(session: Session) -> str:
+    assert session.terminal.pop_pending_autosubmit()
+    return session.terminal.pop_pending_prompt_default()
 
 
-def _analysis_ready(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> list[tuple[str, str]]:
-    """Fake the GitHub read; returns the (owner, repo) pairs analyzed."""
-    from datetime import UTC, datetime
-
-    from integrations.github.tools.ci_analytics.analysis import Analysis
-    from integrations.github.tools.ci_analytics.metrics import compute_report
-
-    _offerable(monkeypatch, tmp_path)
-    analyzed: list[tuple[str, str]] = []
-
-    def analyze(owner: str, repo: str, **_kw: object) -> Analysis:
-        analyzed.append((owner, repo))
-        report = compute_report(
-            owner=owner,
-            repo=repo,
-            default_branch="main",
-            window_days=30,
-            branch_runs=[],
-            pr_runs=[],
-            merged_prs=(),
-            now=datetime(2026, 9, 8, 12, 0, tzinfo=UTC),
-        )
-        return Analysis(report=report, runs_read=0)
-
-    monkeypatch.setattr(demo_picker, "analyze_repository", analyze)
-    return analyzed
-
-
-def test_first_menu_always_shows_the_getting_started_options(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+def test_startup_skill_asks_once_and_selected_child_runs_through_real_turns(
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    _offerable(monkeypatch, tmp_path)
-    calls = _answers(monkeypatch, None)
+    _offerable(monkeypatch)
     session = Session()
-
-    demo_picker.offer_demo(session, None)
-
-    labels = [label for _value, label in calls[0]["choices"]]
-    assert labels == list(GETTING_STARTED_MENU)
-    assert calls[0].get("note") == demo_picker._MENU_EXPLAINER
-    assert tuple(suggestion.label for suggestion in demo_picker.DEMO_SUGGESTIONS) == (
-        GETTING_STARTED_MENU[0],
-        GETTING_STARTED_MENU[1],
-        GETTING_STARTED_MENU[2],
-    )
-    assert tuple(suggestion.skill for suggestion in demo_picker.DEMO_SUGGESTIONS) == tuple(
-        skill.name for skill in getting_started_skills()
-    )
-    assert demo_picker.DEMO_SUGGESTIONS[0].option == demo_picker.OPTION_CI_ANALYTICS
-    assert demo_picker.DEMO_SUGGESTIONS[0].skill == "cicd-analytics-demo"
-    assert demo_picker.DEMO_SUGGESTIONS[0].prompt == ""
-    assert demo_picker.DEMO_SUGGESTIONS[1].skill == "cicd-reliability-agent"
-    assert demo_picker.DEMO_SUGGESTIONS[2].skill == "slack-handoff"
-
-
-def test_unmapped_getting_started_skill_does_not_crash_the_picker() -> None:
-    from core.agent_harness.prompts.skills.loader import ActionSkill
-
-    skill = ActionSkill(
-        name="future-demo",
-        description="x",
-        path=Path("."),
-        getting_started="A future demo",
-        demo_order=9,
-    )
-
-    suggestion = demo_picker._suggestion_from_skill(skill)
-
-    assert suggestion.option == "future_demo"
-    assert suggestion.prompt == "A future demo"
-    assert suggestion.skill == "future-demo"
-
-
-def test_dismissing_the_demo_does_not_leave_the_explainer_in_the_transcript(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    _offerable(monkeypatch, tmp_path)
-    _answers(monkeypatch, None)
-    session = Session()
-    console, buf = _capture()
-
-    demo_picker.offer_demo(session, console)
-
-    assert "toy example" not in buf.getvalue()
-    assert "real GitHub repositories" not in buf.getvalue()
-
-
-def test_analytics_demo_scans_asks_analyzes_and_offers_the_next_step_without_a_model(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    # Arrange: pick the analytics demo, a repository, then exit at the final menu.
-    marker = _offerable(monkeypatch, tmp_path)
-    analyzed = _analysis_ready(monkeypatch, tmp_path)
-    calls = _answers(monkeypatch, demo_picker.OPTION_CI_ANALYTICS, "me/mine", "exit")
-    session = Session()
-    console, buf = _capture()
-
-    # Act
-    queued = demo_picker.offer_demo(session, console)
-
-    # Assert: chart, menus, report, headline, and the demo's own next-step menu; no prompt.
-    assert queued is False
-    assert analyzed == [("me", "mine")]
-    output = buf.getvalue()
-    assert "live snapshot built from your machine" in output
-    assert "Activity (commits, last 30 days)" in output
-    assert "CI/CD reliability for me/mine, last 30 days" in output
-    assert "No CI failures were found in the last 30 days." in output
-    assert [c["title"] for c in calls] == [
-        "Which demo would you like me to run? (Esc to skip)",
-        "Which repository should I analyze?",
-        "What would you like to do next?",
-    ]
-    assert all(c["header"] == "Ask User" for c in calls)
-    repo_choices = [value for value, _label in calls[1]["choices"]]
-    assert repo_choices == ["me/mine", "acme/busy", demo_picker.EXAMPLE_REPOSITORY, "custom"]
-    next_values = [value for value, _label in calls[2]["choices"]]
-    assert next_values == ["agent", "slack", "exit"]
-    assert session.terminal.pending_prompt_autosubmit is False
-    assert json.loads(marker.read_text())["option"] == demo_picker.OPTION_CI_ANALYTICS
-
-
-def test_analytics_demo_chains_into_the_agent_demo_without_asking_the_repository_again(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    schedule_calls = _agent_demo_ready(monkeypatch, tmp_path)
-    _analysis_ready(monkeypatch, tmp_path)
-    calls = _answers(
-        monkeypatch, demo_picker.OPTION_CI_ANALYTICS, "me/mine", "agent", "weekdays", "exit"
-    )
-    session = Session()
-    console, _buf = _capture()
-
-    demo_picker.offer_demo(session, console)
-
-    titles = [c["title"] for c in calls]
-    assert titles == [
-        "Which demo would you like me to run? (Esc to skip)",
-        "Which repository should I analyze?",
-        "What would you like to do next?",
-        "When should it run?",
-        "What would you like to do next?",
-    ]
-    assert schedule_calls[0]["owner"] == "me" and schedule_calls[0]["repo"] == "mine"
-
-
-def test_analytics_demo_hands_off_to_slack_when_chosen(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    _analysis_ready(monkeypatch, tmp_path)
-    _answers(monkeypatch, demo_picker.OPTION_CI_ANALYTICS, "me/mine", "slack")
-    session = Session()
-    console, _buf = _capture()
-
-    queued = demo_picker.offer_demo(session, console)
-
-    assert queued is True
-    assert "Slack" in session.terminal.pending_prompt_default
-
-
-def test_analytics_demo_reports_a_failed_read_without_a_traceback(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    from integrations.github import GitHubApiError
-
-    _offerable(monkeypatch, tmp_path)
-
-    def failing(*_a: object, **_k: object) -> object:
-        raise GitHubApiError("boom", status_code=401)
-
-    monkeypatch.setattr(demo_picker, "analyze_repository", failing)
-    _answers(monkeypatch, demo_picker.OPTION_CI_ANALYTICS, "me/mine")
-    session = Session()
-    console, buf = _capture()
-
-    queued = demo_picker.offer_demo(session, console)
-
-    assert queued is False
-    text = " ".join(buf.getvalue().split())
-    assert "Could not read the GitHub Actions history of me/mine" in text
-    assert "boom" not in text
-
-
-def test_analytics_demo_stops_with_setup_hint_when_no_github_token(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    marker = _offerable(monkeypatch, tmp_path)
-    monkeypatch.setattr(demo_picker, "resolve_github_token", lambda _token: "")
-    calls = _answers(monkeypatch, demo_picker.OPTION_CI_ANALYTICS)
-    session = Session()
-    console, buf = _capture()
-
-    queued = demo_picker.offer_demo(session, console)
-
-    assert queued is False
-    assert len(calls) == 1
-    assert "opensre integrations setup github" in buf.getvalue()
-    assert not session.terminal.pending_prompt_default
-    assert not marker.is_file()
-    assert demo_picker.should_offer_demo() is True
-
-
-def test_cancelled_repository_pick_does_not_record_the_demo(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    marker = _offerable(monkeypatch, tmp_path)
-    _answers(monkeypatch, demo_picker.OPTION_CI_ANALYTICS, None)
-    session = Session()
-
-    queued = demo_picker.offer_demo(session, None)
-
-    assert queued is False
-    assert not session.terminal.pending_prompt_default
-    assert not marker.is_file()
-    assert demo_picker.should_offer_demo() is True
-
-
-def test_slack_option_queues_the_slack_handoff_skill(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    marker = _offerable(monkeypatch, tmp_path)
-    _answers(monkeypatch, demo_picker.OPTION_SLACK)
-    session = Session()
-
-    queued = demo_picker.offer_demo(session, None)
-
-    assert queued is True
-    assert session.terminal.pending_prompt_default == GETTING_STARTED_MENU[2]
-    assert session.terminal.pending_prompt_plain_turn is False
-    assert json.loads(marker.read_text())["option"] == demo_picker.OPTION_SLACK
-    assert demo_picker.DEMO_SUGGESTIONS[2].skill == "slack-handoff"
-
-
-def test_other_demos_queue_their_prompt_directly(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    _offerable(monkeypatch, tmp_path)
-    _answers(monkeypatch, demo_picker.OPTION_SLACK)
-    session = Session()
-
-    assert demo_picker.offer_demo(session, None) is True
-    assert "Slack" in session.terminal.pending_prompt_default
-    assert session.terminal.pending_prompt_plain_turn is False
-
-
-def test_typed_answer_is_submitted_verbatim(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    _offerable(monkeypatch, tmp_path)
-    _answers(monkeypatch, "show me my flaky tests")
-    session = Session()
-
-    assert demo_picker.offer_demo(session, None) is True
-    assert session.terminal.pending_prompt_default == "show me my flaky tests"
-
-
-def test_custom_option_closes_the_demo_and_opens_the_prompt(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    marker = _offerable(monkeypatch, tmp_path)
-    calls = _answers(monkeypatch, "custom")
-    session = Session()
-
-    queued = demo_picker.offer_demo(session, None)
-
-    assert queued is False
-    assert not session.terminal.pending_prompt_default
-    assert json.loads(marker.read_text())["option"] == "custom"
-    assert calls[0].get("custom_label") is None
-    assert demo_picker.should_offer_demo() is True
-
-
-def test_skip_records_the_marker_but_the_next_launch_still_offers_the_picker(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    marker = _offerable(monkeypatch, tmp_path)
-    _answers(monkeypatch, None)
-    session = Session()
-
-    first = demo_picker.offer_demo(session, None)
-
-    assert first is False
-    assert not session.terminal.pending_prompt_default
-    assert marker.is_file()
-    assert demo_picker.should_offer_demo() is True
-
-
-def test_recorded_choice_does_not_hide_the_picker(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    marker = _offerable(monkeypatch, tmp_path)
-    marker.write_text('{"option": "skipped"}')
-    _answers(monkeypatch, demo_picker.OPTION_SLACK)
-    session = Session()
-
-    assert demo_picker.offer_demo(session, None) is True
-
-
-def _scheduled_stub(owner: str, repo: str) -> object:
-    from infrastructure.scheduling.scheduler.loop_constants import LOOP_PROMPT_PARAM
-    from infrastructure.scheduling.scheduler.loops import ManualLoop
-    from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
-    from integrations.github.tools.ci_analytics.loop import ScheduledLoop, loop_name, loop_prompt
-
-    task = ScheduledTask(
-        id="loop1",
-        name=loop_name(owner, repo),
-        kind=TaskKind.MANUAL_LOOP,
-        cron="0 8 * * 1-5",
-        timezone="UTC",
-        provider=Provider.INTERACTIVE_SHELL,
-        window_hours=24,
-        enabled=True,
-        params={LOOP_PROMPT_PARAM: loop_prompt(owner, repo)},
-    )
-    loop = ManualLoop(
-        task=task, channels=(Provider.INTERACTIVE_SHELL,), next_run="2026-09-08 08:00"
-    )
-    return ScheduledLoop(loop=loop, reused=False)
-
-
-def _service_state_factory(*, installed: bool, supported: bool = True) -> object:
-    from infrastructure.scheduling.scheduler.background_service import BackgroundServiceState
-
-    def state() -> BackgroundServiceState:
-        return BackgroundServiceState("Darwin", supported, installed, None, None)
-
-    return state
-
-
-def _agent_demo_ready(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> list[dict[str, object]]:
-    """Fake the scheduler side of the agent demo; returns the schedule calls made."""
-    from infrastructure.scheduling.scheduler.local_delivery import LocalLoopMessage
-
-    _offerable(monkeypatch, tmp_path)
-    calls: list[dict[str, object]] = []
-
-    def schedule(owner: str, repo: str, **kwargs: object) -> object:
-        calls.append({"owner": owner, "repo": repo, **kwargs})
-        return _scheduled_stub(owner, repo)
-
-    def messages(limit: int = 20) -> list[LocalLoopMessage]:
-        return [
-            LocalLoopMessage(
-                message_id="local:1",
-                task_id="loop1",
-                loop_id="loop1",
-                name="CI reliability check",
-                created_at="2026-09-07T18:00:00+00:00",
-                message="**CI/CD reliability for me/mine, last 7 days**",
-                prompt="",
-            )
+    session.resolved_integrations_cache = {}
+    console = Console(file=io.StringIO(), highlight=False)
+    llm = FakeActionLLM(
+        [
+            tool_response("skill_view", {"name": ONBOARDING_SKILL_NAME}),
+            tool_response(
+                "ask_user_choice",
+                {"title": _TITLE, "options": list(GETTING_STARTED_OPTIONS), "note": _NOTE},
+            ),
+            tool_response("skill_view", {"name": "cicd-analytics-demo"}),
+            tool_response("scan_local_git_workspace"),
+            tool_response(
+                "ask_user_choice",
+                {
+                    "title": "Which repository should I analyze?",
+                    "options": ["acme/one", "acme/two"],
+                },
+            ),
         ]
-
-    monkeypatch.setattr(demo_picker, "schedule_ci_reliability_loop", schedule)
-    monkeypatch.setattr(
-        demo_picker, "background_service_state", _service_state_factory(installed=True)
     )
-    monkeypatch.setattr(demo_picker, "local_timezone", lambda: "UTC")
-    monkeypatch.setattr(demo_picker, "reload_loop_scheduler", lambda: 1)
-    monkeypatch.setattr(demo_picker, "run_loop_now", lambda _task_id: True)
-    monkeypatch.setattr(demo_picker, "get_loop_messages", messages)
-    return calls
+    scans: list[str] = []
 
+    def scan(root: Any, **_kwargs: Any) -> WorkspaceSnapshot:
+        scans.append(str(root))
+        return WorkspaceSnapshot(root=str(root), days=30, repos=())
 
-def test_agent_demo_schedules_the_loop_runs_it_once_and_shows_the_report(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    # Arrange: pick the agent demo, the user's repository, weekdays, then exit.
-    calls = _agent_demo_ready(monkeypatch, tmp_path)
-    menus = _answers(monkeypatch, demo_picker.OPTION_CI_AGENT, "me/mine", "weekdays", "exit")
-    session = Session()
-    console, buf = _capture()
+    def pick(**kwargs: Any) -> str:
+        assert kwargs["header"] == "Ask User"
+        assert kwargs["note"] == _NOTE
+        assert kwargs["choices"] == [
+            *((option, option) for option in GETTING_STARTED_OPTIONS),
+            (CUSTOM_OPTION, CUSTOM_OPTION),
+        ]
+        return GETTING_STARTED_OPTIONS[0]
 
-    # Act
-    queued = demo_picker.offer_demo(session, console)
+    monkeypatch.setattr(scan_tool, "scan_workspace", scan)
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", pick)
+    assert demo_picker.offer_demo(session, console)
+    assert session.pending_user_choice is None  # The host has not asked the question.
 
-    # Assert: loop created for the pick, weekdays at 08:00, card and first report shown.
-    assert queued is False
-    assert calls == [
-        {"owner": "me", "repo": "mine", "time_text": "08:00", "weekdays": True, "timezone": "UTC"}
-    ]
-    titles = [menu["title"] for menu in menus]
-    assert titles == [
-        "Which demo would you like me to run? (Esc to skip)",
-        "Which repository should the agent watch?",
-        "When should it run?",
-        "What would you like to do next?",
-    ]
-    assert all(menu["header"] == "Ask User" for menu in menus)
-    output = buf.getvalue()
-    assert "Scheduled: CI reliability check · me/mine" in output
-    assert "/loops messages" in output
-    assert "CI/CD reliability for me/mine, last 7 days" in output
-    assert "Demo exited" in output
-    assert session.terminal.pending_prompt_autosubmit is False
-
-
-def test_agent_demo_warns_when_the_first_pass_skipped_the_analysis(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    # Arrange: the loop ran, but the model answered without the analytics header.
-    from infrastructure.scheduling.scheduler.local_delivery import LocalLoopMessage
-
-    _agent_demo_ready(monkeypatch, tmp_path)
-    refusal = LocalLoopMessage(
-        message_id="local:2",
-        task_id="loop1",
-        loop_id="loop1",
-        name="CI reliability check",
-        created_at="2026-09-07T18:00:00+00:00",
-        message="Report unavailable: no report scope was provided.",
-        prompt="",
+    run_action_tool_turn(
+        _take_prompt(session), session, console, is_tty=True, llm_factory=lambda: llm
     )
-    monkeypatch.setattr(demo_picker, "get_loop_messages", lambda **_kw: [refusal])
-    _answers(monkeypatch, demo_picker.OPTION_CI_AGENT, "me/mine", "weekdays", "exit")
-    session = Session()
-    console, buf = _capture()
+    assert llm.invocations == 2  # ask_user_choice terminates the model turn immediately.
+    assert session.active_skill == ONBOARDING_SKILL_NAME
+    pending = session.pending_user_choice
+    assert pending is not None and pending.options == GETTING_STARTED_OPTIONS
 
-    # Act
-    demo_picker.offer_demo(session, console)
-
-    # Assert: the refusal is not shown as the report; the retry command names the loop.
-    output = " ".join(buf.getvalue().split())
-    assert "Report unavailable" not in output
-    assert "/loops run loop1" in output
-
-
-def test_agent_demo_offers_the_background_service_and_installs_it(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    # Arrange: no service yet; the user picks it, then exits.
-    from infrastructure.scheduling.scheduler.background_service import BackgroundServiceState
-
-    _agent_demo_ready(monkeypatch, tmp_path)
-    monkeypatch.setattr(
-        demo_picker, "background_service_state", _service_state_factory(installed=False)
+    assert session.terminal.pending_prompt_default == "/choose"
+    # The controller reserves stdin for literal /choose before dispatching the turn.
+    session.terminal.exclusive_stdin_active = True
+    run_action_tool_turn(
+        _take_prompt(session), session, console, is_tty=True, llm_factory=lambda: llm
     )
-    installs: list[bool] = []
-
-    def install() -> BackgroundServiceState:
-        installs.append(True)
-        return BackgroundServiceState("Darwin", True, True, tmp_path / "unit", tmp_path / "log")
-
-    monkeypatch.setattr(demo_picker, "install_background_service", install)
-    menus = _answers(
-        monkeypatch, demo_picker.OPTION_CI_AGENT, "me/mine", "weekdays", "service", "exit"
+    session.terminal.exclusive_stdin_active = False
+    assert llm.invocations == 2  # Literal /choose uses no model.
+    assert session.active_skill == ONBOARDING_SKILL_NAME
+    answer = _take_prompt(session)
+    assert answer == format_ask_user_answers(pending.items(), (GETTING_STARTED_OPTIONS[0],))
+    envelope = build_action_system_prompt_envelope(
+        TurnSnapshot.from_session(answer, session, surface="interactive_shell")
     )
-    session = Session()
-    console, buf = _capture()
+    assert "## Follow the selected child" in envelope.render_ephemeral()
+    assert "## Follow the selected child" not in envelope.render_cached()
 
-    # Act
-    demo_picker.offer_demo(session, console)
-
-    # Assert: the service row led the menu, the install ran once, then the menu came back.
-    first_next = [value for value, _label in menus[3]["choices"]]
-    assert first_next[0] == "service"
-    assert installs == [True]
-    assert "Background scheduler installed" in " ".join(buf.getvalue().split())
-    assert menus[4]["title"] == "What would you like to do next?"
+    run_action_tool_turn(answer, session, console, is_tty=True, llm_factory=lambda: llm)
+    assert llm.invocations == 5
+    assert len(scans) == 1
+    assert session.active_skill == "cicd-analytics-demo"
+    assert session.pending_user_choice is not None
+    assert session.pending_user_choice.title == "Which repository should I analyze?"
+    assert "analyze_github_ci_reliability" in session.active_skill_tools
 
 
-def test_agent_demo_hands_off_to_the_slack_demo_when_chosen(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+@pytest.mark.parametrize("answer", [None, "Inspect the deployment logs", "/help"])
+def test_onboarding_cancel_custom_and_slash_do_not_reopen_the_menu(
+    monkeypatch: pytest.MonkeyPatch,
+    answer: str | None,
 ) -> None:
-    _agent_demo_ready(monkeypatch, tmp_path)
-    _answers(monkeypatch, demo_picker.OPTION_CI_AGENT, "me/mine", "daily", "slack")
+    _offerable(monkeypatch)
     session = Session()
-    console, _buf = _capture()
+    session.active_skill = ONBOARDING_SKILL_NAME
+    session.pending_user_choice = PendingUserChoice(title=_TITLE, options=GETTING_STARTED_OPTIONS)
+    pending = session.pending_user_choice
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", lambda **_kw: answer)
+    console = Console(file=io.StringIO())
 
-    queued = demo_picker.offer_demo(session, console)
+    choice_prompt._cmd_choose(session, console, [])
 
-    assert queued is True
-    assert session.terminal.pending_prompt_autosubmit is True
-    assert "Slack" in session.terminal.pending_prompt_default
+    assert session.pending_user_choice is None
+    if answer is None:
+        assert session.terminal.pending_prompt_default is None
+        assert session.active_skill is None
+        assert not session.terminal.awaiting_handoff_answer
+    elif answer.startswith("/"):
+        assert _take_prompt(session) == answer
+    else:
+        assert _take_prompt(session) == format_ask_user_answers(pending.items(), (answer,))
+        assert session.active_skill_tools == ()  # Custom requests have the full tool catalog.
 
 
-def test_agent_demo_rejects_an_unparseable_custom_time_without_scheduling(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    calls = _agent_demo_ready(monkeypatch, tmp_path)
-    _answers(monkeypatch, demo_picker.OPTION_CI_AGENT, "me/mine", "half past eight")
+def test_startup_and_demo_respect_tty_and_pending_input(monkeypatch: pytest.MonkeyPatch) -> None:
+    _offerable(monkeypatch)
     session = Session()
-    console, buf = _capture()
-
-    queued = demo_picker.offer_demo(session, console)
-
-    assert queued is False
-    assert calls == []
-    assert "Could not schedule the check" in buf.getvalue()
-
-
-def test_agent_demo_stops_with_setup_hint_when_no_github_token(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    calls = _agent_demo_ready(monkeypatch, tmp_path)
-    monkeypatch.setattr(demo_picker, "resolve_github_token", lambda _token: "")
-    _answers(monkeypatch, demo_picker.OPTION_CI_AGENT)
-    session = Session()
-    console, buf = _capture()
-
-    queued = demo_picker.offer_demo(session, console)
-
-    assert queued is False
-    assert calls == []
-    assert "opensre integrations setup github" in " ".join(buf.getvalue().split())
+    session.terminal.set_auto_command("/resume existing")
+    assert not demo_picker.offer_demo(session, force=True)
+    assert session.terminal.pending_prompt_default == "/resume existing"
+    _take_prompt(session)
+    session.pending_user_choice = PendingUserChoice(title="Existing", options=("One", "Two"))
+    assert not demo_picker.offer_demo(session, force=True)
+    session.pending_user_choice = None
+    monkeypatch.setattr(demo_picker, "repl_tty_interactive", lambda: False)
+    assert not demo_picker.offer_demo(session, force=True)
+    monkeypatch.setattr(demo_picker, "repl_tty_interactive", lambda: True)
+    monkeypatch.setattr(demo_picker, "is_test_run", lambda: True)
+    assert not demo_picker.offer_demo(session)
+    assert demo_picker.offer_demo(session, force=True)
+    assert ONBOARDING_SKILL_NAME in _take_prompt(session)
 
 
-def test_demo_skills_declare_their_tools() -> None:
-    from core.agent_harness.prompts.skills.loader import list_action_skills
-
+def test_demo_skills_keep_their_tool_contracts_after_moving() -> None:
     by_name = {skill.name: skill for skill in list_action_skills()}
-    analytics = by_name["cicd-analytics-demo"]
-    agent = by_name["cicd-reliability-agent"]
-    slack = by_name["slack-handoff"]
-
-    assert analytics.tools == (
+    assert by_name["cicd-analytics-demo"].tools == (
         "scan_local_git_workspace",
         "analyze_github_ci_reliability",
         "schedule_ci_reliability_loop",
@@ -599,9 +179,9 @@ def test_demo_skills_declare_their_tools() -> None:
         "slash_invoke",
         "ask_user_choice",
     )
-    assert agent.tools == (
+    assert by_name["cicd-reliability-agent"].tools == (
         "scan_local_git_workspace",
         "schedule_ci_reliability_loop",
         "ask_user_choice",
     )
-    assert slack.tools == ("cli_exec", "slash_invoke")
+    assert by_name["slack-handoff"].tools == ("cli_exec", "slash_invoke")

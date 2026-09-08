@@ -1,111 +1,123 @@
-"""Capability answers offer the stable getting-started choices."""
+"""The master skill owns the menu and refers to four independently loadable children."""
 
 from __future__ import annotations
 
+from dataclasses import replace
+from pathlib import Path
+
+import pytest
+
+import core.agent_harness.prompts.skills.loader as loader
+from config.constants.skills import ONBOARDING_SKILL_NAME
 from core.agent_harness.prompts.action import build_action_system_prompt
+from core.agent_harness.prompts.action.assemble import build_action_system_prompt_envelope
 from core.agent_harness.prompts.getting_started import (
     GETTING_STARTED_CUSTOM,
-    GETTING_STARTED_MENU,
     GETTING_STARTED_OPTIONS,
     getting_started_skills,
     load_getting_started_block,
 )
-from core.agent_harness.prompts.skills.loader import (
-    clear_skills_caches,
-    load_skill_body,
-    load_skills_index,
-)
+from core.agent_harness.session.pending_choice import AskUserQuestion, format_ask_user_answers
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
 
 
-def test_getting_started_block_lists_exact_options() -> None:
-    assert GETTING_STARTED_MENU == (
-        "Explore a repo and analyze its CI/CD performance (recommended)",
-        "Set up an agent that improves CI/CD reliability over time",
-        "Connect OpenSRE to Slack and hand off DevOps chores for your team",
-        GETTING_STARTED_CUSTOM,
-    )
-    assert GETTING_STARTED_CUSTOM == "Or type your own answer..."
-    block = load_getting_started_block()
-    assert "Use each option verbatim" in block
-    assert GETTING_STARTED_CUSTOM in block
-    for option in GETTING_STARTED_OPTIONS:
-        assert f"- {option}" in block
-
-
-def test_agent_prompt_includes_getting_started_options() -> None:
-    clear_skills_caches()
-    prompt = build_action_system_prompt(
-        TurnSnapshot(
-            text="what can you do?",
-            conversation_messages=(),
-            configured_integrations=(),
-            configured_integrations_known=True,
-            reasoning_effort=None,
-        )
-    )
-
-    for option in GETTING_STARTED_OPTIONS:
-        assert option in prompt
-    assert "Remediate the open Dependabot and CodeQL alerts" not in prompt
-    assert "Set up a weekday morning briefing with weather and news" not in prompt
-
-
-def test_agent_prompt_combines_starter_options_with_selectable_choice_contract() -> None:
-    clear_skills_caches()
-    prompt = build_action_system_prompt(
-        TurnSnapshot(
-            text="Give me a demo",
-            conversation_messages=(),
-            configured_integrations=(),
-            configured_integrations_known=True,
-            reasoning_effort=None,
-            prompt_surface="interactive_shell",
-            interactive_choice_available=True,
-        )
-    )
-    collapsed = " ".join(prompt.split())
-
-    assert "ask_user_choice menu: available" in prompt
-    assert "For a demo or getting-started request" in collapsed
-    assert "assembled getting-started prompts as selectable options" in collapsed
-    assert "call `ask_user_choice` with ONLY the getting-started options" in collapsed
-    assert "that block supplies the menu options only" in collapsed
-    for option in GETTING_STARTED_OPTIONS:
-        assert option in prompt
-
-
-def test_skills_index_routes_capability_questions_to_direct_answer() -> None:
-    clear_skills_caches()
-    index = load_skills_index()
-
-    assert "what can you do" in index
-    assert "Answer them directly" in index
-
-
-def test_each_getting_started_option_is_owned_by_one_skill() -> None:
-    clear_skills_caches()
-    skills = getting_started_skills()
-
-    assert [skill.name for skill in skills] == [
+def test_master_menu_matches_four_unique_children_and_preserves_specialists() -> None:
+    loader.clear_skills_caches()
+    children = getting_started_skills()
+    assert [s.name for s in children] == [
         "cicd-analytics-demo",
         "cicd-reliability-agent",
+        "remote-managed-service",
         "slack-handoff",
     ]
-    assert tuple(skill.getting_started for skill in skills) == GETTING_STARTED_OPTIONS
-    assert [skill.demo_order for skill in skills] == [1, 2, 3]
-    block = load_getting_started_block()
-    for skill in skills:
-        assert f"{skill.getting_started} → `{skill.name}`" in block
-        body = load_skill_body(skill.name)
-        assert skill.getting_started in body
+    assert [s.demo_order for s in children] == [1, 2, 3, 4]
+    assert GETTING_STARTED_OPTIONS == (
+        "Explore a repo and analyze its CI/CD performance (recommended)",
+        "Set up an agent that improves CI/CD reliability over time",
+        "Run CI/CD improvements with a managed service (coming soon)",
+        "Connect OpenSRE to Slack and hand off DevOps chores for your team",
+    )
+    master = loader.load_skill_body(ONBOARDING_SKILL_NAME)
+    for order, skill in enumerate(children, start=1):
+        assert f"{order}. `{skill.getting_started}`" in master
+        assert f"`{skill.name}`" in master
+        assert skill.path.parent.parent.name == "onboarding_cicd_fix"
+        assert loader.load_skill_body(skill.name)
+    assert GETTING_STARTED_CUSTOM in master
+    assert "not implemented yet" in loader.load_skill_body("remote-managed-service")
+    discovered = [
+        loader._load_action_skill(path) for path in loader._iter_skill_paths(loader.skills_dir())
+    ]
+    names = [skill.name for skill in discovered if skill is not None]
+    assert len(names) == len(set(names))
+    assert ONBOARDING_SKILL_NAME in loader.load_skills_index()
+    assert loader.load_skill_body("github-ci-fix")
+    assert loader.load_skill_body("github-ci-fix-onboarding")
 
 
-def test_onboarding_skill_matches_typed_ci_fix_setup_requests() -> None:
-    body = load_skill_body("github-ci-fix-onboarding")
-    analytics = load_skill_body("cicd-analytics-demo")
+def test_capability_and_demo_prompts_load_master_instead_of_defining_another_menu() -> None:
+    snapshot = TurnSnapshot(
+        text="What can you do?",
+        conversation_messages=(),
+        configured_integrations=(),
+        configured_integrations_known=True,
+        reasoning_effort=None,
+        prompt_surface="interactive_shell",
+        interactive_choice_available=True,
+    )
+    prompt = " ".join(build_action_system_prompt(snapshot).split())
+    assert f'call skill_view(name="{ONBOARDING_SKILL_NAME}")' in prompt
+    assert "Do not ask a separate onboarding question before loading it" in prompt
+    assert "are NOT a skill_view match" not in prompt
+    assert "Which demo would you like me to run?" not in load_getting_started_block()
+    assert "ask_user_choice menu: available" in prompt
 
-    assert "Onboard me on the CI/CD flow" in body
-    assert "Can you onboard me on the CI/CD flow?" in body
-    assert "Set up an agent that improves CI/CD reliability over time" in analytics
-    assert GETTING_STARTED_OPTIONS[0] in analytics
+
+def test_answer_keeps_skill_in_ephemeral_context_after_history_is_lost() -> None:
+    question = AskUserQuestion(
+        label="", title="Which repository?", options=("acme/one", "acme/two")
+    )
+    snapshot = TurnSnapshot(
+        text=format_ask_user_answers((question,), ("acme/one",)),
+        conversation_messages=(),
+        configured_integrations=(),
+        configured_integrations_known=True,
+        reasoning_effort=None,
+        active_skill="cicd-analytics-demo",
+    )
+    answer = build_action_system_prompt_envelope(snapshot)
+    fresh = build_action_system_prompt_envelope(replace(snapshot, text="Explain this deployment"))
+    body = loader.load_skill_body("cicd-analytics-demo")
+    assert body in answer.render_ephemeral()
+    assert body not in fresh.render()
+    assert answer.render_cached() == fresh.render_cached()
+
+
+def test_loader_discovers_nested_and_legacy_packages_without_hidden_directories(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    for relative, name in [
+        ("master/SKILL.md", "master"),
+        ("master/child/SKILL.md", "child"),
+        ("master/legacy/legacy.md", "legacy"),
+        ("master/.hidden/SKILL.md", "hidden"),
+        (".private/child/SKILL.md", "private"),
+        ("flat.md", "flat"),
+    ]:
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(f"---\nname: {name}\ndescription: {name} recipe\n---\nBody of {name}.")
+    monkeypatch.setattr(loader, "skills_dir", lambda: tmp_path)
+    loader.clear_skills_caches()
+    try:
+        assert [s.name for s in loader.list_action_skills()] == [
+            "master",
+            "child",
+            "legacy",
+            "flat",
+        ]
+        assert loader.load_skill_body("child") == "Body of child."
+        assert "master" in loader.load_skills_index()
+    finally:
+        loader.clear_skills_caches()

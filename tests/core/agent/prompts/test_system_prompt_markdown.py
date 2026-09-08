@@ -36,15 +36,12 @@ def test_finite_material_ambiguity_requires_selectable_clarification() -> None:
     assert "TURN INTERACTION reports the menu is unavailable" in collapsed
 
 
-def test_demo_requests_require_selection_before_skill_resolution() -> None:
+def test_demo_requests_load_the_master_before_asking_for_a_child() -> None:
     collapsed = " ".join(_SYSTEM_PROMPT_BASE.split())
     assert "For a demo or getting-started request" in collapsed
-    assert "assembled getting-started prompts as selectable options" in collapsed
-    assert "takes precedence over any assembled getting-started instruction" in collapsed
-    assert "that block supplies the menu options only" in collapsed
-    assert "selection arrives verbatim as the next message" in collapsed
-    assert "then resolve the selected skill or goal" in collapsed
-    assert "Do not choose a goal or resolve a skill before the selection arrives" in collapsed
+    assert "load the master onboarding skill" in collapsed
+    assert "chooses the child skill after the answer" in collapsed
+    assert "Do not ask a separate onboarding question before loading it" in collapsed
 
 
 def test_finite_clarifications_are_batched_without_over_questioning() -> None:

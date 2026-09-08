@@ -81,8 +81,7 @@ HARD RULES:
   request or in the answer is the repository; go straight to step 3.
 
 Steps, in order (headers are mandatory, see the labeling rules below).
-When the request already names the repository (the startup demo does the scan
-and the repository choice itself before submitting), start at step 3 and use
+When the request already names the repository, start at step 3 and use
 headers [3/4] and [4/4] only.
 
 1) Scan this machine.

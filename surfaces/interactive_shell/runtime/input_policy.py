@@ -26,7 +26,7 @@ _EXCLUSIVE_STDIN_MENU_COMMANDS: frozenset[str] = frozenset(
         # ``/choose`` renders the pending ask_user_choice arrow-key picker (raw
         # os.read on stdin), so the turn must own stdin exclusively.
         "/choose",
-        # ``/demo`` drives the same raw-stdin arrow-key pickers as ``/choose``.
+        # ``/demo`` queues onboarding; finish it before reading the queued prompt.
         "/demo",
         "/help",
         "/integrations",
