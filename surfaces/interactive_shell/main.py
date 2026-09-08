@@ -20,13 +20,8 @@ from surfaces.interactive_shell.runtime.context import create_repl_runtime
 from surfaces.interactive_shell.runtime.startup.account_gate import (
     pass_sign_in_gate,
 )
-from surfaces.interactive_shell.runtime.startup.demo_picker import (
-    demo_already_offered,
-    offer_demo,
-    should_offer_demo,
-)
+from surfaces.interactive_shell.runtime.startup.demo_picker import offer_demo
 from surfaces.interactive_shell.runtime.startup.initial_input import run_initial_input
-from surfaces.interactive_shell.runtime.startup.loop_suggestions import offer_loop_suggestions
 from surfaces.interactive_shell.ui.terminal_ui import render_terminal_ui
 from surfaces.shared.terminal.banner import animate_launch_wordmark
 from surfaces.shared.terminal.components.rendering import repl_clear_screen
@@ -108,15 +103,9 @@ async def run_repl_async(
             ):
                 return 1
         else:
-            # First interactive start: offer the demo picker. Only fall through
-            # to loop suggestions when the picker was skipped or already done —
-            # a selected demo that failed to start must not open the other menu.
-            if should_offer_demo():
-                queued = offer_demo(session, out)
-                if not queued and demo_already_offered():
-                    offer_loop_suggestions(session, out)
-            else:
-                offer_loop_suggestions(session, out)
+            # Every interactive start opens the demo picker before the prompt.
+            # Esc and "type your own answer" continue into the normal REPL.
+            offer_demo(session, out)
 
         await InteractiveShellController(
             runtime_context,

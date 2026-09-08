@@ -15,9 +15,9 @@ For human task reminders and proactive work check-ins, use `opensre work add
 the right scheduler entries, support repeated `--target provider:chat_id` fan-out
 delivery, and keep task metadata in the work-item store.
 
-## Suggested loops on first launch
+## Demo picker on launch
 
-When you open the interactive shell (`opensre`) and no scheduled tasks exist yet, a picker offers three starter loops: a CI/CD reliability report (weekdays 8:00 AM), a task-management sweep of your open issues and PRs (weekdays 9:00 AM), and a daily brief (weekdays 9:00 AM). The CI/CD loop asks which repository to watch and when, schedules it, and shows the first report; see [CI/CD analytics demo](/cicd-analytics-demo). The other two run once so you can see the output, then offer to schedule — confirm with a plain "yes". Press Escape to skip; the picker returns on the next launch until you configure a task.
+Every interactive launch (`opensre`) asks which demo to run. The recommended option analyzes CI/CD performance on a real repository. Option B schedules a CI/CD reliability agent; see [CI/CD analytics demo](/cicd-analytics-demo). Escape or "Or type your own answer..." continue to the prompt. Type `/demo` to open the picker again.
 
 ## Quick Start
 

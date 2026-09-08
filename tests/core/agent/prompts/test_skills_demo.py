@@ -4,22 +4,31 @@ from __future__ import annotations
 
 from core.agent_harness.prompts.action import build_action_system_prompt
 from core.agent_harness.prompts.getting_started import (
+    GETTING_STARTED_CUSTOM,
+    GETTING_STARTED_MENU,
     GETTING_STARTED_OPTIONS,
+    getting_started_skills,
     load_getting_started_block,
 )
-from core.agent_harness.prompts.skills.loader import clear_skills_caches, load_skills_index
+from core.agent_harness.prompts.skills.loader import (
+    clear_skills_caches,
+    load_skill_body,
+    load_skills_index,
+)
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
 
 
 def test_getting_started_block_lists_exact_options() -> None:
-    assert GETTING_STARTED_OPTIONS == (
+    assert GETTING_STARTED_MENU == (
         "Explore a repo and analyze its CI/CD performance (recommended)",
         "Set up an agent that improves CI/CD reliability over time",
         "Connect OpenSRE to Slack and hand off DevOps chores for your team",
+        GETTING_STARTED_CUSTOM,
     )
+    assert GETTING_STARTED_CUSTOM == "Or type your own answer..."
     block = load_getting_started_block()
     assert "Use each option verbatim" in block
-    assert "Or type your own answer..." in block
+    assert GETTING_STARTED_CUSTOM in block
     for option in GETTING_STARTED_OPTIONS:
         assert f"- {option}" in block
 
@@ -72,3 +81,31 @@ def test_skills_index_routes_capability_questions_to_direct_answer() -> None:
 
     assert "what can you do" in index
     assert "Answer them directly" in index
+
+
+def test_each_getting_started_option_is_owned_by_one_skill() -> None:
+    clear_skills_caches()
+    skills = getting_started_skills()
+
+    assert [skill.name for skill in skills] == [
+        "cicd-analytics-demo",
+        "cicd-reliability-agent",
+        "slack-handoff",
+    ]
+    assert tuple(skill.getting_started for skill in skills) == GETTING_STARTED_OPTIONS
+    assert [skill.demo_order for skill in skills] == [1, 2, 3]
+    block = load_getting_started_block()
+    for skill in skills:
+        assert f"{skill.getting_started} → `{skill.name}`" in block
+        body = load_skill_body(skill.name)
+        assert skill.getting_started in body
+
+
+def test_onboarding_skill_matches_typed_ci_fix_setup_requests() -> None:
+    body = load_skill_body("github-ci-fix-onboarding")
+    analytics = load_skill_body("cicd-analytics-demo")
+
+    assert "Onboard me on the CI/CD flow" in body
+    assert "Can you onboard me on the CI/CD flow?" in body
+    assert "Set up an agent that improves CI/CD reliability over time" in analytics
+    assert GETTING_STARTED_OPTIONS[0] in analytics

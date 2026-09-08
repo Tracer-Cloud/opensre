@@ -36,8 +36,9 @@ end-to-end CI fix cycle and its required checks are green.
 
 - The user asks to set up, install, onboard, troubleshoot, or demo GitHub CI
   fixing in OpenSRE.
-- Action-shaped wording such as "Can you onboard me on the CI/CD flow?" means
-  run this setup; it is not a request to explain the CI/CD documentation.
+- The user used action-shaped wording such as "Can you onboard me on the CI/CD flow?"
+  or "Onboard me on the CI/CD flow". That means run this setup; it is not a
+  request to explain the CI/CD documentation.
 - `fix_github_pr_ci` is unavailable or reports a missing CLI, token, checkout,
   permission, or coding-agent prerequisite.
 - The user asks to "fix CI on this PR" but first-time readiness is unknown.

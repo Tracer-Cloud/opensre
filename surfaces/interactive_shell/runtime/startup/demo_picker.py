@@ -1,16 +1,19 @@
-"""First-experience demo picker.
+"""Startup demo picker.
 
-On the first interactive launch the shell asks which demo to run before the
-prompt takes stdin. A marker file records the choice so the picker shows once;
-``/demo`` reopens it on demand.
+Every interactive launch asks which demo to run before the prompt takes
+stdin. ``/demo`` reopens the same picker on demand. A marker file records
+the last choice for analytics; it does not hide the picker.
 
-Both demos run deterministically, with no model turn: the workspace scan
-paints the activity chart, a picker asks which repository, the analysis (or
-the loop's first pass) runs under a spinner, the report is painted, and a
-final picker offers the next step. Only the Slack hand-off submits a prompt
-to the action agent; its routing stays with the agent (no intent heuristics,
-see ``surfaces/interactive_shell/AGENTS.md``). The ``cicd-analytics-demo``
-skill remains the path for typed requests.
+The recommended option submits the CI/CD analytics demo. The analytics and
+reliability-agent demos run deterministically, with no model turn: the
+workspace scan paints the activity chart, a picker asks which repository, the
+analysis (or the loop's first pass) runs under a spinner, the report is
+painted, and a final picker offers the next step. Only the Slack hand-off
+submits a prompt to the action agent; routing stays with the agent (no intent
+heuristics, see ``surfaces/interactive_shell/AGENTS.md``). Each first-menu
+option is owned by a skill via ``getting_started`` frontmatter: A is
+``cicd-analytics-demo``, B is ``cicd-reliability-agent``, C is
+``slack-handoff``. Typed analytics requests still load ``cicd-analytics-demo``.
 """
 
 from __future__ import annotations
@@ -27,6 +30,8 @@ from rich.markup import escape
 from rich.text import Text
 
 from config.constants.paths import OPENSRE_HOME_DIR
+from core.agent_harness.prompts.getting_started import GETTING_STARTED_CUSTOM
+from core.agent_harness.prompts.skills import ActionSkill, getting_started_skills
 from infrastructure.analytics.capture import (
     capture_onboarding_demo_prompted,
     capture_onboarding_demo_selected,
@@ -39,7 +44,7 @@ from infrastructure.scheduling.scheduler.background_service import (
 )
 from infrastructure.scheduling.scheduler.local_delivery import get_loop_messages
 from infrastructure.scheduling.scheduler.loops import parse_loop_time
-from infrastructure.terminal.theme import DIM, WARNING
+from infrastructure.terminal.theme import WARNING
 from integrations.github import (
     DEFAULT_LOOP_TIME,
     Analysis,
@@ -77,7 +82,7 @@ _MENU_EXPLAINER = (
     "For a demo, I'd rather use something real from your machine than a toy example. "
     "Each takes a couple of minutes and I'll use real GitHub repositories on your machine."
 )
-_CUSTOM_LABEL = "Or type your own answer..."
+_CUSTOM_LABEL = GETTING_STARTED_CUSTOM
 # Same header the agent's own menus carry, so the demo reads as one conversation.
 _MENU_HEADER = "Ask User"
 _CUSTOM_OPTION = "custom"
@@ -127,6 +132,13 @@ OPTION_CI_ANALYTICS = "ci_analytics"
 OPTION_CI_AGENT = "ci_agent"
 OPTION_SLACK = "slack"
 
+_OPTION_BY_SKILL = {
+    "cicd-analytics-demo": OPTION_CI_ANALYTICS,
+    "cicd-reliability-agent": OPTION_CI_AGENT,
+    "slack-handoff": OPTION_SLACK,
+}
+_DETERMINISTIC_SKILLS = frozenset({"cicd-analytics-demo", "cicd-reliability-agent"})
+
 
 @dataclass(frozen=True, slots=True)
 class DemoSuggestion:
@@ -141,24 +153,21 @@ class DemoSuggestion:
     prompt: str = ""
     """Canned prompt auto-submitted as the first turn when selected; empty for deterministic demos."""
 
+    skill: str = ""
+    """Action-skill name that owns this demo option."""
 
-DEMO_SUGGESTIONS: tuple[DemoSuggestion, ...] = (
-    DemoSuggestion(
-        option=OPTION_CI_ANALYTICS,
-        label="Explore a repo and analyze its CI/CD performance (recommended)",
-    ),
-    DemoSuggestion(
-        option=OPTION_CI_AGENT,
-        label="Set up an agent that reports CI/CD reliability every weekday",
-    ),
-    DemoSuggestion(
-        option=OPTION_SLACK,
-        label="Connect OpenSRE to Slack and hand off DevOps chores for your team",
-        prompt=(
-            "Set up the Slack integration and show me how to hand off DevOps chores to "
-            "OpenSRE from Slack."
-        ),
-    ),
+
+def _suggestion_from_skill(skill: ActionSkill) -> DemoSuggestion:
+    option = _OPTION_BY_SKILL.get(skill.name)
+    if option is None:
+        raise RuntimeError(f"Demo picker has no option id for skill {skill.name!r}.")
+    label = skill.getting_started or ""
+    prompt = "" if skill.name in _DETERMINISTIC_SKILLS else label
+    return DemoSuggestion(option=option, label=label, prompt=prompt, skill=skill.name)
+
+
+DEMO_SUGGESTIONS: tuple[DemoSuggestion, ...] = tuple(
+    _suggestion_from_skill(skill) for skill in getting_started_skills()
 )
 
 
@@ -171,12 +180,10 @@ def demo_already_offered() -> bool:
 
 
 def should_offer_demo() -> bool:
-    """True on the first interactive launch that has not seen the picker yet."""
+    """True on every interactive launch (tests and non-TTY sessions excluded)."""
     if is_test_run():
         return False
-    if not repl_tty_interactive():
-        return False
-    return not demo_already_offered()
+    return repl_tty_interactive()
 
 
 def offer_demo(session: Session, console: Console | None = None, *, force: bool = False) -> bool:
@@ -189,18 +196,21 @@ def offer_demo(session: Session, console: Console | None = None, *, force: bool 
         if not force and not should_offer_demo():
             return False
         capture_onboarding_demo_prompted()
-        if console is not None:
-            console.print(f"[{DIM}]{_MENU_EXPLAINER}[/]")
         selected = repl_choose_one(
             title=_MENU_TITLE,
             choices=[
                 *((suggestion.option, suggestion.label) for suggestion in DEMO_SUGGESTIONS),
                 (_CUSTOM_OPTION, _CUSTOM_LABEL),
             ],
-            custom_label=_CUSTOM_LABEL,
             letter_keys=True,
             header=_MENU_HEADER,
+            note=_MENU_EXPLAINER,
         )
+        if selected in {_CUSTOM_OPTION, _CUSTOM_LABEL}:
+            # D: leave the demo and let the user type in the REPL prompt.
+            capture_onboarding_demo_selected(option=_CUSTOM_OPTION, custom=True)
+            _record(_CUSTOM_OPTION)
+            return False
         if _nothing_chosen(selected):
             capture_onboarding_demo_skipped()
             _record(_SKIPPED_OPTION)
@@ -517,7 +527,7 @@ def _candidate_label(repo: RepoActivity) -> str:
 
 
 def _record(option: str) -> None:
-    """Persist the choice so the picker shows once per machine."""
+    """Persist the last choice for analytics; the next launch still shows the picker."""
     try:
         path = marker_path()
         path.parent.mkdir(parents=True, exist_ok=True)

@@ -9,6 +9,8 @@ description: >-
   performance", "how reliable is our CI", "what does flaky CI cost us". Not for
   listing currently failing checks (github-ci-health). Multi-step; load before
   acting.
+getting_started: Explore a repo and analyze its CI/CD performance (recommended)
+demo_order: 1
 tools:
   - scan_local_git_workspace
   - analyze_github_ci_reliability
@@ -21,10 +23,10 @@ CI/CD ANALYTICS DEMO SKILL — interactive-shell action agent:
 ══════════════════════════════════════════════════════════
 
 WHEN TO USE:
-- The user picked "Explore a repo and analyze its CI/CD performance" from the
-  startup demo menu, or asks to "run the CI/CD analytics demo", "analyze my
-  repo's CI/CD performance", "show me how reliable our CI is", or "how much
-  time does CI cost us".
+- The user picked "Explore a repo and analyze its CI/CD performance (recommended)"
+  from the startup demo menu (option A), or asks to "run the CI/CD analytics
+  demo", "analyze my repo's CI/CD performance", "show me how reliable our CI
+  is", or "how much time does CI cost us".
 - The user names a repository and asks for its CI/CD performance, reliability,
   failure rate, or downtime.
 
@@ -93,7 +95,7 @@ headers [3/4] and [4/4] only.
 4) Offer what to do next.
    Call `ask_user_choice` with title `What would you like to do next?` and
    these exact options:
-   - `Set up an agent that reports CI/CD reliability every weekday`
+   - `Set up an agent that improves CI/CD reliability over time`
    - `Connect OpenSRE to Slack and hand off DevOps chores for your team`
    - `Exit demo`
    WAIT for the answer. On the first option, call

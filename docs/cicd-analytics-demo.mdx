@@ -5,10 +5,10 @@ description: "See how reliable your CI is and how much developer time it costs, 
 
 ## Overview
 
-On its first interactive launch OpenSRE asks which demo to run. The recommended
-one analyzes a real repository from your machine and reports CI/CD reliability
-KPIs, including the developer time lost to unreliable CI. It is read-only and
-takes a couple of minutes.
+On every interactive launch OpenSRE asks which demo to run. The recommended
+option analyzes a real repository from your machine and reports CI/CD
+reliability KPIs, including the developer time lost to unreliable CI. That
+analysis is read-only and takes a couple of minutes.
 
 Run it again at any time with `/demo`, or by asking:
 
@@ -82,8 +82,9 @@ yet is shown when it differs.
 
 ## The CI reliability agent
 
-Pick "Set up an agent that reports CI/CD reliability every weekday" from `/demo`
-to schedule the same analysis as a recurring check. The demo scans your
+Pick "Set up an agent that improves CI/CD reliability over time" after the
+analytics demo, or from the analytics demo's next-step menu, to schedule the
+same analysis as a recurring check. The demo scans your
 machine, asks which repository to watch and when to run (weekdays at 08:00
 local time is the default), creates the loop, runs it once, and shows the
 first report. Every run analyzes the last 7 days.
@@ -114,4 +115,4 @@ first report. Every run analyzes the last 7 days.
 | --- | --- |
 | **"GitHub token is required"** | Run `opensre integrations setup github` and rerun the demo |
 | **No repositories offered** | None of the checkouts under your home directory has a GitHub origin and a `.github/workflows` folder; pick the example repository |
-| **The picker did not appear** | It shows once per machine. Use `/demo` to open it again |
+| **The picker did not appear** | It needs an interactive TTY. Run `uv run opensre` in a terminal, or type `/demo` |

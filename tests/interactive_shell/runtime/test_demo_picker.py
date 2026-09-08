@@ -11,6 +11,8 @@ import pytest
 from rich.console import Console
 
 import surfaces.interactive_shell.runtime.startup.demo_picker as demo_picker
+from core.agent_harness.prompts.getting_started import GETTING_STARTED_MENU
+from core.agent_harness.prompts.skills import getting_started_skills
 from surfaces.interactive_shell.session import Session
 from tools.system.workspace_git_scan.scan import RepoActivity, WorkspaceSnapshot
 
@@ -99,6 +101,47 @@ def _analysis_ready(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> list[tup
 
     monkeypatch.setattr(demo_picker, "analyze_repository", analyze)
     return analyzed
+
+
+def test_first_menu_always_shows_the_getting_started_options(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _offerable(monkeypatch, tmp_path)
+    calls = _answers(monkeypatch, None)
+    session = Session()
+
+    demo_picker.offer_demo(session, None)
+
+    labels = [label for _value, label in calls[0]["choices"]]
+    assert labels == list(GETTING_STARTED_MENU)
+    assert calls[0].get("note") == demo_picker._MENU_EXPLAINER
+    assert tuple(suggestion.label for suggestion in demo_picker.DEMO_SUGGESTIONS) == (
+        GETTING_STARTED_MENU[0],
+        GETTING_STARTED_MENU[1],
+        GETTING_STARTED_MENU[2],
+    )
+    assert tuple(suggestion.skill for suggestion in demo_picker.DEMO_SUGGESTIONS) == tuple(
+        skill.name for skill in getting_started_skills()
+    )
+    assert demo_picker.DEMO_SUGGESTIONS[0].option == demo_picker.OPTION_CI_ANALYTICS
+    assert demo_picker.DEMO_SUGGESTIONS[0].skill == "cicd-analytics-demo"
+    assert demo_picker.DEMO_SUGGESTIONS[0].prompt == ""
+    assert demo_picker.DEMO_SUGGESTIONS[1].skill == "cicd-reliability-agent"
+    assert demo_picker.DEMO_SUGGESTIONS[2].skill == "slack-handoff"
+
+
+def test_dismissing_the_demo_does_not_leave_the_explainer_in_the_transcript(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _offerable(monkeypatch, tmp_path)
+    _answers(monkeypatch, None)
+    session = Session()
+    console, buf = _capture()
+
+    demo_picker.offer_demo(session, console)
+
+    assert "toy example" not in buf.getvalue()
+    assert "real GitHub repositories" not in buf.getvalue()
 
 
 def test_analytics_demo_scans_asks_analyzes_and_offers_the_next_step_without_a_model(
@@ -231,6 +274,22 @@ def test_cancelled_repository_pick_does_not_record_the_demo(
     assert demo_picker.should_offer_demo() is True
 
 
+def test_slack_option_queues_the_slack_handoff_skill(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    marker = _offerable(monkeypatch, tmp_path)
+    _answers(monkeypatch, demo_picker.OPTION_SLACK)
+    session = Session()
+
+    queued = demo_picker.offer_demo(session, None)
+
+    assert queued is True
+    assert session.terminal.pending_prompt_default == GETTING_STARTED_MENU[2]
+    assert session.terminal.pending_prompt_plain_turn is False
+    assert json.loads(marker.read_text())["option"] == demo_picker.OPTION_SLACK
+    assert demo_picker.DEMO_SUGGESTIONS[2].skill == "slack-handoff"
+
+
 def test_other_demos_queue_their_prompt_directly(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -254,18 +313,23 @@ def test_typed_answer_is_submitted_verbatim(
     assert session.terminal.pending_prompt_default == "show me my flaky tests"
 
 
-def test_custom_row_submitted_empty_counts_as_skip(
+def test_custom_option_closes_the_demo_and_opens_the_prompt(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    _offerable(monkeypatch, tmp_path)
-    _answers(monkeypatch, "custom")
+    marker = _offerable(monkeypatch, tmp_path)
+    calls = _answers(monkeypatch, "custom")
     session = Session()
 
-    assert demo_picker.offer_demo(session, None) is False
+    queued = demo_picker.offer_demo(session, None)
+
+    assert queued is False
     assert not session.terminal.pending_prompt_default
+    assert json.loads(marker.read_text())["option"] == "custom"
+    assert calls[0].get("custom_label") is None
+    assert demo_picker.should_offer_demo() is True
 
 
-def test_skip_records_the_marker_so_the_picker_shows_once(
+def test_skip_records_the_marker_but_the_next_launch_still_offers_the_picker(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     marker = _offerable(monkeypatch, tmp_path)
@@ -277,10 +341,10 @@ def test_skip_records_the_marker_so_the_picker_shows_once(
     assert first is False
     assert not session.terminal.pending_prompt_default
     assert marker.is_file()
-    assert demo_picker.should_offer_demo() is False
+    assert demo_picker.should_offer_demo() is True
 
 
-def test_force_reopens_the_picker_after_it_was_recorded(
+def test_recorded_choice_does_not_hide_the_picker(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     marker = _offerable(monkeypatch, tmp_path)
@@ -288,8 +352,7 @@ def test_force_reopens_the_picker_after_it_was_recorded(
     _answers(monkeypatch, demo_picker.OPTION_SLACK)
     session = Session()
 
-    assert demo_picker.offer_demo(session, None) is False
-    assert demo_picker.offer_demo(session, None, force=True) is True
+    assert demo_picker.offer_demo(session, None) is True
 
 
 def _scheduled_stub(owner: str, repo: str) -> object:
@@ -502,15 +565,24 @@ def test_agent_demo_stops_with_setup_hint_when_no_github_token(
     assert "opensre integrations setup github" in " ".join(buf.getvalue().split())
 
 
-def test_analytics_demo_skill_declares_its_tools() -> None:
+def test_demo_skills_declare_their_tools() -> None:
     from core.agent_harness.prompts.skills.loader import list_action_skills
 
-    skill = next(s for s in list_action_skills() if s.name == "cicd-analytics-demo")
+    by_name = {skill.name: skill for skill in list_action_skills()}
+    analytics = by_name["cicd-analytics-demo"]
+    agent = by_name["cicd-reliability-agent"]
+    slack = by_name["slack-handoff"]
 
-    assert skill.tools == (
+    assert analytics.tools == (
         "scan_local_git_workspace",
         "analyze_github_ci_reliability",
         "schedule_ci_reliability_loop",
         "cli_exec",
         "ask_user_choice",
     )
+    assert agent.tools == (
+        "scan_local_git_workspace",
+        "schedule_ci_reliability_loop",
+        "ask_user_choice",
+    )
+    assert slack.tools == ("cli_exec",)

@@ -23,23 +23,26 @@ def _offerable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(loop_suggestions, "capture_loop_suggestion_selected", lambda **_kw: None)
 
 
-def test_picker_explains_what_a_loop_is_before_the_menu(
+def test_picker_explains_what_a_loop_is_inside_the_menu(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """The menu asks for a commitment; the explainer must say what it entails."""
-    # Arrange: user immediately skips the menu.
+    """The explainer lives in the menu so skip/select does not leave it in the transcript."""
     _offerable(monkeypatch)
-    monkeypatch.setattr(loop_suggestions, "repl_choose_one", lambda **_kw: None)
+    seen: dict[str, object] = {}
+
+    def choose(**kwargs: object) -> None:
+        seen.update(kwargs)
+        return None
+
+    monkeypatch.setattr(loop_suggestions, "repl_choose_one", choose)
     console, buf = _capture()
 
-    # Act
     loop_suggestions.offer_loop_suggestions(Session(), console)
 
-    # Assert: what it does, that nothing persists unconfirmed, and how to manage.
-    output = buf.getvalue()
-    assert "scheduled check-ins" in output
-    assert "nothing is saved until you confirm" in output
-    assert "/loops" in output
+    assert "scheduled check-ins" in str(seen.get("note", ""))
+    assert "nothing is saved until you confirm" in str(seen.get("note", ""))
+    assert "/loops" in str(seen.get("note", ""))
+    assert "scheduled check-ins" not in buf.getvalue()
 
 
 def test_selection_queues_the_canned_prompt(monkeypatch: pytest.MonkeyPatch) -> None:

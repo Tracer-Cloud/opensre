@@ -27,7 +27,6 @@ from infrastructure.analytics.capture import (
     capture_loop_suggestion_skipped,
 )
 from infrastructure.analytics.source import is_test_run
-from infrastructure.terminal.theme import DIM
 from surfaces.interactive_shell.runtime.startup.demo_picker import start_ci_agent_demo
 from surfaces.shared.terminal.components.choice_menu import (
     repl_choose_one,
@@ -117,11 +116,10 @@ def offer_loop_suggestions(session: Session, console: Console | None = None) -> 
         if not should_offer_loop_suggestions():
             return
         capture_loop_suggestion_prompted()
-        if console is not None:
-            console.print(f"[{DIM}]{_MENU_EXPLAINER}[/]")
         selected = repl_choose_one(
             title=_MENU_TITLE,
             choices=[(suggestion.option, suggestion.label) for suggestion in LOOP_SUGGESTIONS],
+            note=_MENU_EXPLAINER,
         )
         if selected is None:
             capture_loop_suggestion_skipped()

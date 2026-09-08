@@ -9,9 +9,12 @@ Layout (either form is supported):
   with an optional sibling ``<name>_report.md`` report template.
 - Flat: ``skills/<name>.md`` with optional ``skills/<name>_report.md``.
 
-Optional YAML frontmatter (``name``, ``description``, optional ``recurring``)
-feeds the compact index. Without frontmatter, the name is derived from the path
-and the description from the first ``WHEN TO USE`` / subtitle lines.
+Optional YAML frontmatter (``name``, ``description``, optional ``recurring``,
+optional ``getting_started`` + ``demo_order``) feeds the compact index.
+``getting_started`` is the verbatim first-visit demo menu label this skill
+owns; ``demo_order`` is its 1-based row (A=1). Without frontmatter, the name
+is derived from the path and the description from the first ``WHEN TO USE`` /
+subtitle lines.
 
 The harness prompt carries only :func:`load_skills_index` (~hundreds of
 chars). Full bodies load through the ``skill_view`` tool via
@@ -31,6 +34,7 @@ import yaml
 __all__ = (
     "ActionSkill",
     "SKILLS_HEADER",
+    "getting_started_skills",
     "list_action_skills",
     "load_skill_body",
     "load_skills_block",
@@ -58,6 +62,12 @@ class ActionSkill:
     recurring: str | None = None
     tools: tuple[str, ...] = ()
     """Tool names the skill's flow uses; an answer turn inside the skill offers only these."""
+
+    getting_started: str | None = None
+    """Verbatim first-visit demo label this skill owns; ``None`` when it is not a demo row."""
+
+    demo_order: int | None = None
+    """1-based demo menu order when ``getting_started`` is set (A=1, B=2, C=3)."""
 
 
 def skills_dir() -> Path:
@@ -142,6 +152,12 @@ def _string_list_field(value: Any) -> tuple[str, ...]:
     return tuple(item.strip() for item in value if isinstance(item, str) and item.strip())
 
 
+def _optional_int_field(value: Any) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
 def _derive_description(body: str) -> str:
     """Best-effort one-liner when frontmatter has no description."""
     lines = [ln.strip() for ln in body.splitlines()]
@@ -203,12 +219,15 @@ def _load_action_skill(skill_path: Path) -> ActionSkill | None:
         name = _name_from_path(skill_path)
     description = _string_field(frontmatter.get("description")) or _derive_description(body)
     recurring = _string_field(frontmatter.get("recurring")) or None
+    getting_started = _string_field(frontmatter.get("getting_started")) or None
     return ActionSkill(
         name=name,
         description=description,
         path=skill_path,
         recurring=recurring,
         tools=_string_list_field(frontmatter.get("tools")),
+        getting_started=getting_started,
+        demo_order=_optional_int_field(frontmatter.get("demo_order")),
     )
 
 
@@ -227,6 +246,18 @@ def list_action_skills() -> tuple[ActionSkill, ...]:
         seen_names.add(skill.name)
         skills.append(skill)
     return tuple(skills)
+
+
+def _demo_sort_key(skill: ActionSkill) -> tuple[int, str]:
+    order = skill.demo_order if skill.demo_order is not None else 10**9
+    return (order, skill.name)
+
+
+def getting_started_skills() -> tuple[ActionSkill, ...]:
+    """Skills that own a first-visit demo option, in menu order (A, B, C)."""
+    owned = [skill for skill in list_action_skills() if skill.getting_started]
+    owned.sort(key=_demo_sort_key)
+    return tuple(owned)
 
 
 def _index_line(skill: ActionSkill) -> str:
