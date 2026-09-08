@@ -54,7 +54,13 @@ def account_login(*, console: Console | None = None) -> bool:
         if console is not None:
             console.print(f"[{ERROR}]OpenSRE account sign-in did not complete.[/]")
         return False
-    return account_is_signed_in()
+    if not account_is_signed_in():
+        return False
+    # This login supersedes any earlier own-model choice in this process.
+    from config.account import restore_account_llm_route
+
+    restore_account_llm_route()
+    return True
 
 
 def pass_sign_in_gate(console: Console) -> bool:

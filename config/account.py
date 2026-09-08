@@ -200,6 +200,11 @@ def ignore_account_llm_route() -> None:
     os.environ[OPENSRE_IGNORE_ACCOUNT_ROUTE_ENV] = "1"
 
 
+def restore_account_llm_route() -> None:
+    """Re-enable the hosted route after a login replaces the rejected session."""
+    os.environ.pop(OPENSRE_IGNORE_ACCOUNT_ROUTE_ENV, None)
+
+
 def account_llm_route() -> AccountLLMRoute | None:
     """Return the hosted OpenAI route only when account metadata and token exist.
 
@@ -224,6 +229,7 @@ __all__ = [
     "AccountLLMRoute",
     "account_llm_route",
     "ignore_account_llm_route",
+    "restore_account_llm_route",
     "account_metadata_path",
     "delete_account_record",
     "delete_account_token",

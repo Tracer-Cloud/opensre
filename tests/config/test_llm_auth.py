@@ -166,7 +166,12 @@ def test_ignoring_the_account_route_survives_a_stored_session(
 ) -> None:
     # A rejected or unreachable login keeps its record and token on disk, so the
     # hosted route outlives the sign-in. Choosing a local model must win.
-    from config.account import AccountRecord, account_llm_route, ignore_account_llm_route
+    from config.account import (
+        AccountRecord,
+        account_llm_route,
+        ignore_account_llm_route,
+        restore_account_llm_route,
+    )
 
     record = AccountRecord(
         user_id="u1",
@@ -188,3 +193,9 @@ def test_ignoring_the_account_route_survives_a_stored_session(
     ignore_account_llm_route()
 
     assert account_llm_route() is None
+
+    # A later successful login replaces the rejected session, so the hosted
+    # route has to come back; otherwise the shell stays local until restart.
+    restore_account_llm_route()
+
+    assert account_llm_route() is not None

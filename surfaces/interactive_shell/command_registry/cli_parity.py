@@ -256,6 +256,14 @@ def _cmd_account(session: Session, console: Console, args: list[str]) -> bool:  
     handled = run_cli_command(
         console, ["account", *cli_args], capture_output=capture_output, session=session
     )
+    if subcommand == "login" and handled:
+        from config.account import restore_account_llm_route
+        from surfaces.shared.account_session import account_status
+
+        if account_status().authenticated:
+            # A signed-in shell is hosted-routed again, even if the user entered
+            # it earlier by choosing their own model.
+            restore_account_llm_route()
     if subcommand == "logout" and session_terminal(session) is not None:
         from config.account import account_llm_route
         from config.llm_settings import has_user_configured_llm_provider
