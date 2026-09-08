@@ -31,6 +31,7 @@ from integrations.github.tools.ci_analytics.render import (
     render_markdown,
     render_report,
 )
+from integrations.github.tools.ci_analytics.working_hours import local_working_hours
 
 TOOL_NAME = "analyze_github_ci_reliability"
 _SOURCE = "github"
@@ -115,11 +116,25 @@ def report_payload(report: CiAnalyticsReport) -> dict[str, Any]:
         "blocked_minutes": round(report.blocked_minutes, 1),
         "blocked_minutes_all": round(report.blocked_minutes_all, 1),
         "merged_pr_branches": report.merged_pr_branches,
+        "blocked_working_minutes": round(report.blocked_working_minutes, 1),
+        "working_hours": report.working_hours_label,
+        "developers_affected": report.developers_affected,
+        "developers": [
+            {
+                "login": w.login,
+                "pull_requests": w.pull_requests,
+                "working_minutes": round(w.working_minutes, 1),
+                "working_minutes_per_week": round(w.working_minutes_per_week, 1),
+            }
+            for w in report.developer_waits[:10]
+        ],
         "blocked_prs": [
             {
                 "pr_number": d.pr_number,
+                "author": d.author,
                 "branch": d.branch,
                 "delay_minutes": round(d.delay_minutes, 1),
+                "working_minutes": round(d.working_minutes, 1),
                 "commits": d.commits,
             }
             for d in report.blocked_pr_delays[:10]
@@ -170,7 +185,8 @@ def report_payload(report: CiAnalyticsReport) -> dict[str, Any]:
         "executions": "Completed workflow runs counted in the window",
         "pr_failure_rate": "Failed share of PR-triggered runs",
         "reliability_failures": "Failures that passed later on the identical commit",
-        "blocked_minutes": "Minutes merged PRs waited past their expected green time because of CI",
+        "blocked_minutes": "Wall-clock minutes merged PRs waited past their expected green time",
+        "blocked_working_minutes": "The part of that wait inside working hours: developer downtime",
         "red_hours": "Hours the default branch had at least one red workflow",
         "headline": "One sentence naming the biggest cost, to repeat verbatim",
         "response_text": "The rendered report, or a one-line summary when the shell painted it",
@@ -282,12 +298,14 @@ def analyze_github_ci_reliability(
         merged_prs=collected.merged_prs,
         now=now,
         coverage_notices=collected.coverage_notices,
+        working_hours=local_working_hours(),
     )
     summary = (
         f"{repo_owner}/{repo_name}: {report.executions} runs in {window} days, "
         f"{report.pr_failures} of {report.pr_executions} PR runs failed, "
         f"{report.count(FailureKind.RELIABILITY)} CI-caused, "
-        f"{format_minutes(report.blocked_minutes)} of developer time blocked on merged PRs."
+        f"{format_minutes(report.blocked_working_minutes)} of developer downtime "
+        f"({format_minutes(report.blocked_minutes)} wall clock) on merged PRs."
     )
     rendered = console is not None
     if console is not None:

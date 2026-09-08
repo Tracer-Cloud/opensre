@@ -19,7 +19,12 @@ from integrations.github.tools.ci_analytics.models import (
 
 _TOP_WORKFLOWS = 5
 _TOP_BLOCKED_PRS = 5
-_BRANCH_WIDTH = 36
+_TOP_DEVELOPERS = 3
+_BRANCH_WIDTH = 30
+_ASSUMPTIONS = (
+    "normal duration is each workflow's median first-attempt pass; a wait ends at the "
+    "next push or the merge; parallel workflows count once"
+)
 
 
 def render_markdown(report: CiAnalyticsReport) -> str:
@@ -85,24 +90,20 @@ def render_report(console: Any, report: CiAnalyticsReport) -> None:
                 ),
                 _kpi_line("Not recovered in the window", str(report.count(FailureKind.UNRESOLVED))),
                 Text(""),
-                Text(
-                    f"Developer time blocked by unreliable CI: {_minutes(report.blocked_minutes)} "
-                    f"across {report.merged_pr_branches} merged "
-                    f"{_plural(report.merged_pr_branches, 'PR')}",
-                    style="bold",
-                ),
-                Text(
-                    "Per pull request: how much later its commits went green than they would "
-                    "have had CI run normally (median first-attempt duration per workflow). "
-                    "Only PRs that were later merged count; overlapping workflows count once.",
-                    style="dim",
-                ),
+                Text(_downtime_headline(report), style="bold"),
+                Text(_downtime_basis(report), style="dim"),
             ]
         )
         if report.blocked_minutes_all > report.blocked_minutes:
             parts.append(
-                _kpi_line("Including PRs not merged yet", _minutes(report.blocked_minutes_all))
+                _kpi_line(
+                    "Including PRs not merged yet",
+                    f"{_minutes(report.blocked_minutes_all)} wall clock",
+                )
             )
+        heaviest = _heaviest_developers(report)
+        if heaviest:
+            parts.append(_kpi_line("Heaviest hit", heaviest))
         blocked = report.blocked_pr_delays
         if blocked:
             parts.extend([Text(""), Text("How it adds up, worst first", style="bold")])
@@ -154,41 +155,82 @@ def render_report(console: Any, report: CiAnalyticsReport) -> None:
     console.print(Padding(Group(*parts), (0, 0, 0, 2)))
 
 
+def _working(minutes: float) -> str:
+    """Working time in hours, never calendar days: 215h, not 8.9d."""
+    return f"{minutes:.0f}m" if minutes < 60 else f"{minutes / 60:.1f}h"
+
+
+def _downtime_headline(report: CiAnalyticsReport) -> str:
+    developers = report.developers_affected
+    return (
+        f"Developer downtime from unreliable CI: {_working(report.blocked_working_minutes)} "
+        f"of working time across {developers} {_plural(developers, 'developer')}"
+    )
+
+
+def _downtime_basis(report: CiAnalyticsReport) -> str:
+    return (
+        f"{_minutes(report.blocked_minutes)} of wall-clock wait across "
+        f"{report.merged_pr_branches} merged {_plural(report.merged_pr_branches, 'PR')}: how much "
+        "later each PR's commits went green than they would have had CI run normally. "
+        f"Assumptions: working hours {report.working_hours_label}; {_ASSUMPTIONS}."
+    )
+
+
+def _heaviest_developers(report: CiAnalyticsReport) -> str:
+    waits = [w for w in report.developer_waits if w.working_minutes > 0][:_TOP_DEVELOPERS]
+    return " · ".join(
+        f"{w.login} {_working(w.working_minutes_per_week)}/week over {w.pull_requests} "
+        f"{_plural(w.pull_requests, 'PR')}"
+        for w in waits
+    )
+
+
 def _blocked_table(blocked: tuple[PullRequestDelay, ...]) -> Table:
     table = Table(show_edge=False, pad_edge=False, box=None, header_style="dim")
     for column, justify in (
         ("PR", "left"),
+        ("Author", "left"),
         ("Branch", "left"),
         ("Expected green (UTC)", "left"),
         ("Actually green (UTC)", "left"),
-        ("Waited", "right"),
+        ("Working wait", "right"),
+        ("Wall clock", "right"),
     ):
         table.add_column(column, justify=justify)  # type: ignore[arg-type]
     for item in blocked[:_TOP_BLOCKED_PRS]:
-        table.add_row(
-            f"#{item.pr_number}" if item.pr_number else "-",
-            _shorten(item.branch, _BRANCH_WIDTH),
-            _stamp(item.expected_green),
-            _stamp(item.actual_green),
-            _minutes(item.delay_minutes),
-        )
+        table.add_row(*_blocked_row(item))
     return table
 
 
+def _blocked_row(item: PullRequestDelay) -> tuple[str, ...]:
+    return (
+        f"#{item.pr_number}" if item.pr_number else "-",
+        item.author or "-",
+        _shorten(item.branch, _BRANCH_WIDTH),
+        _stamp(item.expected_green),
+        _stamp(item.actual_green),
+        _working(item.working_minutes),
+        _minutes(item.delay_minutes),
+    )
+
+
 def _blocked_sum_lines(report: CiAnalyticsReport) -> list[str]:
-    """The bottom-up total: every blocked PR's wait, summed."""
+    """The bottom-up total: every blocked PR's working-hours wait, summed."""
     blocked = report.blocked_pr_delays
     lines = []
     rest = blocked[_TOP_BLOCKED_PRS:]
     if rest:
         lines.append(
             f"and {len(rest)} more {_plural(len(rest), 'PR')} waiting "
-            f"{_minutes(sum(item.delay_minutes for item in rest))} between them"
+            f"{_working(sum(item.working_minutes for item in rest))} of working time between them"
         )
-    typical = _minutes(report.median_delay_minutes or 0.0)
+    typical = _working(report.median_working_minutes or 0.0)
+    developers = report.developers_affected
     lines.append(
-        f"Sum of waits: {_minutes(report.blocked_minutes)} across {len(blocked)} merged "
-        f"{_plural(len(blocked), 'PR')}; the typical blocked PR waited {typical}"
+        f"Sum of working-hour waits: {_working(report.blocked_working_minutes)} across "
+        f"{developers} {_plural(developers, 'developer')} and {len(blocked)} merged "
+        f"{_plural(len(blocked), 'PR')}; the typical blocked PR cost {typical} of working time"
     )
     return lines
 
@@ -203,14 +245,21 @@ def _shorten(text: str, width: int) -> str:
 
 def headline(report: CiAnalyticsReport) -> str:
     """One deterministic sentence naming the biggest cost, for the agent to repeat verbatim."""
+    if report.blocked_working_minutes > 0:
+        heaviest = report.developer_waits[0]
+        developers = report.developers_affected
+        return (
+            f"Unreliable CI cost {developers} {_plural(developers, 'developer')} "
+            f"{_working(report.blocked_working_minutes)} of working time in the last "
+            f"{report.window_days} days, up to {_working(heaviest.working_minutes_per_week)} a "
+            f"week for the worst hit; {_minutes(report.blocked_minutes)} of wall-clock wait "
+            f"across {report.merged_pr_branches} merged {_plural(report.merged_pr_branches, 'PR')}."
+        )
     if report.blocked_minutes > 0:
-        typical = report.median_delay_minutes or 0.0
-        longest = report.longest_delay
-        worst = f", the longest {_minutes(longest.delay_minutes)}" if longest else ""
         return (
             f"Unreliable CI blocked merged pull requests for {_minutes(report.blocked_minutes)} "
-            f"in the last {report.window_days} days; the typical blocked PR waited "
-            f"{_minutes(typical)}{worst}."
+            f"of wall-clock time in the last {report.window_days} days, all of it outside "
+            f"working hours ({report.working_hours_label})."
         )
     if report.red_hours > 0:
         return (
@@ -248,25 +297,26 @@ def _classification(report: CiAnalyticsReport) -> list[str]:
 def _blocked_time(report: CiAnalyticsReport) -> list[str]:
     lines = [
         "",
-        f"**Developer time blocked by unreliable CI: {_minutes(report.blocked_minutes)}** "
-        f"across {report.merged_pr_branches} merged {_plural(report.merged_pr_branches, 'PR')}",
-        "- Per pull request: how much later its commits went green than they would have "
-        "had CI run normally (median first-attempt duration per workflow)",
-        "- Only PRs that were later merged count; overlapping workflows count once",
+        f"**{_downtime_headline(report)}**",
+        f"- {_downtime_basis(report)}",
     ]
     if report.blocked_minutes_all > report.blocked_minutes:
-        lines.append(f"- Including PRs not merged yet: {_minutes(report.blocked_minutes_all)}")
+        lines.append(
+            f"- Including PRs not merged yet: {_minutes(report.blocked_minutes_all)} wall clock"
+        )
+    heaviest = _heaviest_developers(report)
+    if heaviest:
+        lines.append(f"- Heaviest hit: {heaviest}")
     blocked = report.blocked_pr_delays
     if blocked:
         lines.extend(["", "How it adds up, worst first:"])
-        lines.append("| PR | Branch | Expected green (UTC) | Actually green (UTC) | Waited |")
-        lines.append("| --- | --- | --- | --- | ---: |")
+        lines.append(
+            "| PR | Author | Branch | Expected green (UTC) | Actually green (UTC) | "
+            "Working wait | Wall clock |"
+        )
+        lines.append("| --- | --- | --- | --- | --- | ---: | ---: |")
         for item in blocked[:_TOP_BLOCKED_PRS]:
-            lines.append(
-                f"| {f'#{item.pr_number}' if item.pr_number else '-'} | "
-                f"{_shorten(item.branch, _BRANCH_WIDTH)} | {_stamp(item.expected_green)} | "
-                f"{_stamp(item.actual_green)} | {_minutes(item.delay_minutes)} |"
-            )
+            lines.append("| " + " | ".join(_blocked_row(item)) + " |")
         lines.extend(f"- {line}" for line in _blocked_sum_lines(report))
     return lines
 

@@ -39,7 +39,8 @@ how much developer time does flaky CI cost us
 | PR-triggered failed workflows and failure rate | Pull request runs that failed, including runs that only passed after a re-run |
 | CI reliability failures | Failures where the identical commit passed later, by re-run or a fresh run. CI, not the code, was at fault |
 | Source-code failures | Failures that passed only after the branch moved to a new commit |
-| Developer time blocked by unreliable CI | Per merged PR: how much later its commits went green than they would have had CI run normally. For each commit with a CI reliability failure, the expected green time is the first queued run plus the slowest workflow's normal duration; the actual green time is when its last workflow passed |
+| Developer downtime from unreliable CI | The working-hours part of the wait below, attributed to each PR's author, with the heaviest-hit developers in hours per week |
+| Wall-clock wait on merged PRs | Per merged PR: how much later its commits went green than they would have had CI run normally. For each commit with a CI reliability failure, the expected green time is the first queued run plus the slowest workflow's normal duration; the actual green time is when its last workflow passed |
 | Normal duration | Per workflow, the median duration of first-attempt passing runs |
 | Default-branch red time | Hours during which at least one push-triggered workflow on the default branch stayed red, overlaps counted once, with mean time to recovery |
 
@@ -52,10 +53,18 @@ invisible; the merge time still bounds the wait. When GitHub omits a PR number,
 the run belongs to the first later merge of that head repository and branch.
 When it attaches several, the run belongs to the merged PR whose lifetime
 contains the run.
+
+Developer downtime is the part of each wait that falls inside working hours:
+Monday to Friday, 09:00 to 18:00 in this machine's timezone, printed with the
+figure. A re-run that happened over a weekend adds wall-clock wait but no
+downtime. Each blocked PR is attributed to its author, so the report can say
+how many hours a week the heaviest-hit developers lost.
+
 The report shows how the total adds up: a table of the most blocked PRs with
-when each should have been green, when it actually was, and how long it
-waited, then the sum across all blocked PRs and the typical wait. The total
-across PRs not merged yet is shown when it differs.
+their author, when each should have been green, when it actually was, and the
+working-hours and wall-clock wait, then the sum across all blocked PRs and
+developers and the typical wait. The wall-clock total across PRs not merged
+yet is shown when it differs.
 
 ## The CI reliability agent
 
