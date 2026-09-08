@@ -42,6 +42,7 @@ from infrastructure.scheduling.scheduler.loops import parse_loop_time
 from infrastructure.terminal.theme import DIM, WARNING
 from integrations.github import (
     DEFAULT_LOOP_TIME,
+    Analysis,
     GitHubApiError,
     analyze_repository,
     ci_report_headline,
@@ -279,14 +280,15 @@ def _start_ci_analytics_demo(
 def _analyze_and_show(console: Console | None, owner: str, repo: str, token: str) -> bool:
     """Read GitHub under a spinner, paint the report and the headline; False on failure."""
     label = f"Reading the GitHub Actions history of {owner}/{repo}, last {_SCAN_DAYS} days"
-    try:
-        if console is not None:
-            with llm_loader(console, label):
-                analysis = analyze_repository(owner, repo, token=token, days=_SCAN_DAYS)
-        else:
-            analysis = analyze_repository(owner, repo, token=token, days=_SCAN_DAYS)
-    except (GitHubApiError, ValueError):
-        logger.warning("Demo analysis failed for %s/%s.", owner, repo, exc_info=True)
+    analysis = None
+    # The failure is handled inside the spinner: a GitHub error must not be
+    # re-raised through the loader's context manager.
+    if console is not None:
+        with llm_loader(console, label):
+            analysis = _analyze_or_none(owner, repo, token)
+    else:
+        analysis = _analyze_or_none(owner, repo, token)
+    if analysis is None:
         _warn(console, _ANALYSIS_FAILED.format(repository=f"{owner}/{repo}"))
         return False
     if console is not None:
@@ -297,6 +299,14 @@ def _analyze_and_show(console: Console | None, owner: str, repo: str, token: str
         render_note_block(console, ci_report_headline(analysis.report))
         console.print()
     return True
+
+
+def _analyze_or_none(owner: str, repo: str, token: str) -> Analysis | None:
+    try:
+        return analyze_repository(owner, repo, token=token, days=_SCAN_DAYS)
+    except (GitHubApiError, ValueError):
+        logger.warning("Demo analysis failed for %s/%s.", owner, repo, exc_info=True)
+        return None
 
 
 def _offer_after_analysis(session: Session, console: Console | None, repository: str) -> bool:

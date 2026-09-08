@@ -73,34 +73,128 @@ def _answers(monkeypatch: pytest.MonkeyPatch, *values: str | None) -> list[dict]
     return calls
 
 
-def test_analytics_demo_scans_asks_for_the_repository_then_queues_the_analysis(
+def _analysis_ready(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> list[tuple[str, str]]:
+    """Fake the GitHub read; returns the (owner, repo) pairs analyzed."""
+    from datetime import UTC, datetime
+
+    from integrations.github.tools.ci_analytics.analysis import Analysis
+    from integrations.github.tools.ci_analytics.metrics import compute_report
+
+    _offerable(monkeypatch, tmp_path)
+    analyzed: list[tuple[str, str]] = []
+
+    def analyze(owner: str, repo: str, **_kw: object) -> Analysis:
+        analyzed.append((owner, repo))
+        report = compute_report(
+            owner=owner,
+            repo=repo,
+            default_branch="main",
+            window_days=30,
+            branch_runs=[],
+            pr_runs=[],
+            merged_prs=(),
+            now=datetime(2026, 9, 8, 12, 0, tzinfo=UTC),
+        )
+        return Analysis(report=report, runs_read=0)
+
+    monkeypatch.setattr(demo_picker, "analyze_repository", analyze)
+    return analyzed
+
+
+def test_analytics_demo_scans_asks_analyzes_and_offers_the_next_step_without_a_model(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    # Arrange
+    # Arrange: pick the analytics demo, a repository, then exit at the final menu.
     marker = _offerable(monkeypatch, tmp_path)
-    calls = _answers(monkeypatch, demo_picker.OPTION_CI_ANALYTICS, "me/mine[v2]")
+    analyzed = _analysis_ready(monkeypatch, tmp_path)
+    calls = _answers(monkeypatch, demo_picker.OPTION_CI_ANALYTICS, "me/mine", "exit")
     session = Session()
     console, buf = _capture()
 
     # Act
     queued = demo_picker.offer_demo(session, console)
 
-    # Assert: chart painted, own repositories with CI first, example last, prompt names the pick.
-    assert queued is True
+    # Assert: chart, menus, report, headline, and the demo's own next-step menu; no prompt.
+    assert queued is False
+    assert analyzed == [("me", "mine")]
     output = buf.getvalue()
     assert "live snapshot built from your machine" in output
     assert "Activity (commits, last 30 days)" in output
-    assert "Analyzing the CI/CD reliability of me/mine[v2]" in output
-    demo_labels = [label for _value, label in calls[0]["choices"]]
-    assert demo_labels[-1] == "Or type your own answer..."
-    assert calls[0]["header"] == "Ask User"
-    assert calls[1]["header"] == "Ask User"
+    assert "CI/CD reliability for me/mine, last 30 days" in output
+    assert "No CI failures were found in the last 30 days." in output
+    assert [c["title"] for c in calls] == [
+        "Which demo would you like me to run? (Esc to skip)",
+        "Which repository should I analyze?",
+        "What would you like to do next?",
+    ]
+    assert all(c["header"] == "Ask User" for c in calls)
     repo_choices = [value for value, _label in calls[1]["choices"]]
     assert repo_choices == ["me/mine", "acme/busy", demo_picker.EXAMPLE_REPOSITORY, "custom"]
-    assert session.terminal.pending_prompt_autosubmit is True
-    assert session.terminal.pending_prompt_plain_turn is True
-    assert "me/mine[v2]" in session.terminal.pending_prompt_default
+    next_values = [value for value, _label in calls[2]["choices"]]
+    assert next_values == ["agent", "slack", "exit"]
+    assert session.terminal.pending_prompt_autosubmit is False
     assert json.loads(marker.read_text())["option"] == demo_picker.OPTION_CI_ANALYTICS
+
+
+def test_analytics_demo_chains_into_the_agent_demo_without_asking_the_repository_again(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    schedule_calls = _agent_demo_ready(monkeypatch, tmp_path)
+    _analysis_ready(monkeypatch, tmp_path)
+    calls = _answers(
+        monkeypatch, demo_picker.OPTION_CI_ANALYTICS, "me/mine", "agent", "weekdays", "exit"
+    )
+    session = Session()
+    console, _buf = _capture()
+
+    demo_picker.offer_demo(session, console)
+
+    titles = [c["title"] for c in calls]
+    assert titles == [
+        "Which demo would you like me to run? (Esc to skip)",
+        "Which repository should I analyze?",
+        "What would you like to do next?",
+        "When should it run?",
+        "What would you like to do next?",
+    ]
+    assert schedule_calls[0]["owner"] == "me" and schedule_calls[0]["repo"] == "mine"
+
+
+def test_analytics_demo_hands_off_to_slack_when_chosen(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _analysis_ready(monkeypatch, tmp_path)
+    _answers(monkeypatch, demo_picker.OPTION_CI_ANALYTICS, "me/mine", "slack")
+    session = Session()
+    console, _buf = _capture()
+
+    queued = demo_picker.offer_demo(session, console)
+
+    assert queued is True
+    assert "Slack" in session.terminal.pending_prompt_default
+
+
+def test_analytics_demo_reports_a_failed_read_without_a_traceback(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    from integrations.github import GitHubApiError
+
+    _offerable(monkeypatch, tmp_path)
+
+    def failing(*_a: object, **_k: object) -> object:
+        raise GitHubApiError("boom", status_code=401)
+
+    monkeypatch.setattr(demo_picker, "analyze_repository", failing)
+    _answers(monkeypatch, demo_picker.OPTION_CI_ANALYTICS, "me/mine")
+    session = Session()
+    console, buf = _capture()
+
+    queued = demo_picker.offer_demo(session, console)
+
+    assert queued is False
+    text = " ".join(buf.getvalue().split())
+    assert "Could not read the GitHub Actions history of me/mine" in text
+    assert "boom" not in text
 
 
 def test_analytics_demo_stops_with_setup_hint_when_no_github_token(

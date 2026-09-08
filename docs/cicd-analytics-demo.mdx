@@ -25,11 +25,22 @@ how much developer time does flaky CI cost us
 
 ## What happens
 
-1. **Scan.** OpenSRE finds git repositories under your home directory, counts commits in the last 30 days (total and yours) and uncommitted files, notes which have GitHub Actions workflows, and draws the activity chart. Clones of the same repository are folded into one row.
-2. **Pick.** It offers up to three of your repositories that have CI configured, the ones you contributed to first, plus an open-source example, and asks which one to analyze. Without a GitHub token it stops here and shows the setup command.
-3. **Analyze.** It reads the last 30 days of workflow runs and reports the KPIs below.
-4. **Next step.** It offers to set up the CI reliability agent, connect Slack, or exit.
-   The agent option schedules the check described below without leaving the shell.
+Every step runs in the shell itself; no model turn is involved until you hand
+off to Slack.
+
+1. **Scan.** It scans your home directory for git checkouts and paints a bar
+   chart of the last 30 days of commits, your own contributions first.
+2. **Pick a repository.** A menu lists your checkouts that have GitHub Actions
+   workflows, then the open-source example, then a row to type your own.
+3. **Analyze.** It reads the repository's Actions history for the last 30 days
+   under a spinner and paints the report, ending with the one-sentence headline.
+4. **Next step.** A menu offers the CI reliability agent (it schedules the
+   check for the repository you just analyzed, no second repository question),
+   the Slack hand-off, or exit.
+
+Typing a request such as `analyze owner/repo CI/CD performance for the last
+30 days` runs the same analysis through the agent's `cicd-analytics-demo`
+skill.
 
 ## The KPIs
 
