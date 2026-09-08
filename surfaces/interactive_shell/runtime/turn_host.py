@@ -23,6 +23,7 @@ from rich.console import Console
 if TYPE_CHECKING:
     from infrastructure.turn_host.turn_runner import TurnRunner
 
+from core.llm.shared.llm_retry import OpenSRECreditsExhaustedError
 from infrastructure.analytics.repl_context import bound_repl_turn_context
 from infrastructure.analytics.usage_context import UsageSurface, bound_usage_context
 from infrastructure.observability.trace.spans import (
@@ -47,6 +48,7 @@ from surfaces.interactive_shell.runtime.core.state import (
     ReplState,
     SpinnerState,
 )
+from surfaces.interactive_shell.runtime.credit_wall import queue_credits_exhausted_menu
 from surfaces.interactive_shell.runtime.input import PromptInputReader
 from surfaces.interactive_shell.runtime.input.actions import (
     InputAction,
@@ -294,6 +296,8 @@ async def _run_agent_turn_loop(
         await emit(AgentEvent(type="turn_interrupted"))
     except Exception as exc:
         report_exception(exc, context="surfaces.interactive_shell.turn")
+        if isinstance(exc, OpenSRECreditsExhaustedError):
+            queue_credits_exhausted_menu(runtime.session)
         await emit(AgentEvent(type="turn_error", error=exc))
     finally:
         runtime.state.finish_dispatch(dispatch_cancel)

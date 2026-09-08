@@ -334,3 +334,64 @@ def test_a_resumed_goal_counts_its_next_turn() -> None:
 
     # Assert: the turn counter moved past 2, so a stall check and the budget see it.
     assert outcome.turn_count >= 3
+
+
+def test_a_goal_turn_that_raises_pauses_the_goal_before_the_error_propagates() -> None:
+    # Arrange: an active goal whose next turn hits a credit wall.
+    import pytest
+
+    from core.agent_harness.session_goal.goal import SessionGoalReason
+    from core.llm.shared.llm_retry import LLMCreditExhaustedError
+
+    session = SessionCore()
+    attach_session_goal(
+        session, SessionGoal(condition="count the open PRs", max_outer_turns=4, turns_used=1)
+    )
+    painted: list[str] = []
+
+    def _chat(_message: str) -> TurnResult:
+        raise LLMCreditExhaustedError("credits exhausted")
+
+    # Act: the host still sees the error.
+    with pytest.raises(LLMCreditExhaustedError):
+        run_until_session_goal(
+            _chat, session, "count the open PRs", on_progress=lambda g: painted.append(g.status)
+        )
+
+    # Assert: the goal is paused with the reason, so the next message does not resume into it.
+    stored = session.session_goal
+    assert stored is not None
+    assert stored.status == SessionGoalStatus.PAUSED
+    assert stored.last_reason == SessionGoalReason.PAUSED_TURN_FAILED
+    assert painted[-1] == SessionGoalStatus.PAUSED
+
+
+def test_a_goal_turn_the_driver_could_not_run_pauses_the_goal_instead_of_retrying() -> None:
+    # Arrange: the action driver swallowed a rejected key and returned a not_run result.
+    from core.agent_harness.session_goal.goal import SessionGoalReason
+
+    session = SessionCore()
+    turns: list[str] = []
+
+    def _chat(message: str) -> TurnResult:
+        turns.append(message)
+        return TurnResult(
+            final_intent="cli_agent_handled",
+            action_result=ToolCallingTurnResult(
+                0, 0, 0, True, True, response_text="key rejected", accounting_status="not_run"
+            ),
+            assistant_response_text="",
+        )
+
+    # Act
+    outcome = run_until_session_goal(
+        _chat,
+        session,
+        "count the open PRs",
+        goal=SessionGoal(condition="count the open PRs", max_outer_turns=4),
+    )
+
+    # Assert: one turn, paused with the failure reason, no continuation into the same error.
+    assert turns == ["count the open PRs"]
+    assert outcome.goal.status == SessionGoalStatus.PAUSED
+    assert outcome.goal.last_reason == SessionGoalReason.PAUSED_TURN_FAILED

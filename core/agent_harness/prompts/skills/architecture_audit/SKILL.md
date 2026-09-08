@@ -3,6 +3,17 @@ name: architecture-audit
 description: >-
   Architecture audit / layering scan of a repo with AGENT SCAN, heuristic
   passes, and a filled REPORT TEMPLATE
+metadata:
+  owner: Tracer Team
+  usecases:
+    - Architecture audit or layering review of a repository with a filled report
+    - Structural summary of a codebase: hotspots, debt themes, refactor sequencing
+    - Finding oversized files, shims, and layering violations
+  requires:
+    - Shell access to clone or read the repository
+    - Write access to ~/.opensre for the saved observations
+  type: audit
+  version: "1.0"
 ---
 ══════════════════════════════════════════════════════════
 ARCHITECTURE AUDIT SKILL — interactive-shell action agent:

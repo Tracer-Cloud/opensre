@@ -173,6 +173,8 @@ def agent_response_from_completion(
         tool_calls=parse_tool_calls(message),
         stop_reason=stop_reason,
         raw_content=message_to_dict(message),
+        input_tokens=input_tokens,
+        output_tokens=output_tokens,
     )
 
 

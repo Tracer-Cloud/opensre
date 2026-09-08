@@ -123,11 +123,16 @@ def emit_provider_usage(
     *,
     input_key: str,
     output_key: str,
-) -> None:
-    """Emit provider-reported usage from an arbitrary usage payload (agent clients)."""
+) -> tuple[int | None, int | None]:
+    """Emit provider-reported usage from an arbitrary usage payload (agent clients).
+
+    Returns the ``(input, output)`` counts so the caller can put them on the
+    response it builds.
+    """
     inp, out = coerce_usage_tokens(usage, input_key=input_key, output_key=output_key)
     _log_usage(model, inp, out, *extract_cache_tokens(usage))
     emit_usage(model, inp, out)
+    return inp, out
 
 
 def llm_response_with_usage(

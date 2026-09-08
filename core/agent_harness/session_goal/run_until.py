@@ -7,6 +7,7 @@ user prose.
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import Any
@@ -33,6 +34,8 @@ from core.agent_harness.session_goal.goal import (
     session_goal_is_paused,
 )
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
+
+log = logging.getLogger(__name__)
 
 ChatFn = Callable[[str], TurnResult]
 EvaluateFn = Callable[..., str]
@@ -149,6 +152,54 @@ def pause_for_no_progress(
     return paused
 
 
+def _chat_or_pause(
+    chat: ChatFn, message: str, session: Any, on_progress: ProgressFn | None
+) -> TurnResult:
+    """Run one goal turn; when it raises, pause the goal before the error propagates.
+
+    The host still prints the turn error. Without the pause the next message
+    would resume the goal into the same failure (a credit wall, a rejected key)
+    and burn its budget.
+    """
+    try:
+        return chat(message)
+    except Exception:
+        active = getattr(session, "session_goal", None)
+        if isinstance(active, SessionGoal) and active.status == SessionGoalStatus.ACTIVE:
+            _pause_failed_turn(session, active, on_progress)
+        raise
+
+
+def _pause_failed_turn(
+    session: Any, active: SessionGoal, on_progress: ProgressFn | None
+) -> SessionGoal:
+    """Pause the goal because its turn failed; state first, then the host paint.
+
+    A failing paint must neither leave the goal active nor mask the turn
+    error the caller is about to re-raise.
+    """
+    paused = active.with_status(SessionGoalStatus.PAUSED).with_reason(
+        SessionGoalReason.PAUSED_TURN_FAILED
+    )
+    attach_session_goal(session, paused)
+    _clear_host_autosubmit(session)
+    try:
+        _paint(session, paused, on_progress, rederive=False)
+    except Exception:
+        log.debug("session-goal pause paint failed", exc_info=True)
+    return paused
+
+
+def _turn_did_not_run(result: TurnResult) -> bool:
+    """True when the action phase never ran: the driver caught the model call's failure.
+
+    A rejected key or a provider outage comes back as a normal result marked
+    ``not_run`` instead of an exception, so the loop must read the mark or it
+    retries the same failure until the budget is gone.
+    """
+    return getattr(result.action_result, "accounting_status", "") == "not_run"
+
+
 def _clear_host_autosubmit(session: Any) -> None:
     """Drop any queued shell autosubmit when the session goal stops continuing."""
     clear_pending_autosubmit(session)
@@ -168,6 +219,9 @@ def _finish_outer_turn(
         active = _paint(session, active, on_progress)
         _clear_host_autosubmit(session)
         return active, last, True
+
+    if _turn_did_not_run(last):
+        return _pause_failed_turn(session, active, on_progress), last, True
 
     if getattr(session, "pending_user_choice", None) is not None:
         active = active.with_reason(SessionGoalReason.PAUSED_USER_CHOICE)
@@ -265,7 +319,9 @@ def run_until_session_goal(
         _announce_working(session, pre, on_progress)
 
     pre_chat_completed = pre.completed if isinstance(pre, SessionGoal) else frozenset()
-    last = chat(message)
+    # Also covers a goal attached by ``session_goal_set`` inside this very turn:
+    # the pause applies to whatever goal is active when the turn raises.
+    last = _chat_or_pause(chat, message, session, on_progress)
     active = getattr(session, "session_goal", None)
     if not isinstance(active, SessionGoal) or not session_goal_is_active(session):
         # Paused after the first chat (e.g. slash during turn) — keep state.
@@ -286,7 +342,7 @@ def run_until_session_goal(
     if not had_active_before and active.host_owned and active.turns_used == 0:
         if session_terminal(session) is not None:
             return SessionGoalRunResult(goal=active, last_result=last, turn_count=0)
-        last = chat(active.condition)
+        last = _chat_or_pause(chat, active.condition, session, on_progress)
         stored = getattr(session, "session_goal", None)
         if isinstance(stored, SessionGoal):
             active = stored
@@ -322,7 +378,7 @@ def run_until_session_goal(
             break
 
         _announce_working(session, active, on_progress)
-        last = chat(continuation_prompt(active))
+        last = _chat_or_pause(chat, continuation_prompt(active), session, on_progress)
         active = _record_goal_turn(session, active)
         active, last, stop = _finish_outer_turn(
             session,

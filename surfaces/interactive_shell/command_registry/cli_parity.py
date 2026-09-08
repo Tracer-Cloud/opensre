@@ -248,9 +248,13 @@ def _cmd_account(session: Session, console: Console, args: list[str]) -> bool:  
         console.print(message)
         publish_headless_slash_response(session, message=message)
         return True
-    capture_output = subcommand in {"status", "logout"}
+    cli_args = list(args)
+    if subcommand == "usage" and session_terminal(session) is None and "--no-browser" not in args:
+        # A chat user cannot use a browser opened on the server; give them the URL.
+        cli_args.append("--no-browser")
+    capture_output = subcommand in {"status", "usage", "logout"}
     handled = run_cli_command(
-        console, ["account", *args], capture_output=capture_output, session=session
+        console, ["account", *cli_args], capture_output=capture_output, session=session
     )
     if subcommand == "logout" and session_terminal(session) is not None:
         from config.account import account_llm_route
@@ -331,7 +335,13 @@ COMMANDS: list[SlashCommand] = [
         "/account",
         "Sign in to OpenSRE and inspect the local account.",
         _cmd_account,
-        usage=("/account", "/account login", "/account status", "/account logout"),
+        usage=(
+            "/account",
+            "/account login",
+            "/account status",
+            "/account usage",
+            "/account logout",
+        ),
     ),
     SlashCommand(
         "/auth",

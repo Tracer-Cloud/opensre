@@ -14,6 +14,7 @@ EXPORTS: dict[str, str] = {
     "OPENSRE_ACCOUNT_METADATA_PATH_ENV": "account",
     "OPENSRE_ACCOUNT_SESSION_PATH": "account",
     "OPENSRE_ACCOUNT_TOKEN_ENV": "account",
+    "OPENSRE_ACCOUNT_USAGE_PATH": "account",
     "OPENSRE_APP_URL_DEFAULT": "account",
     "OPENSRE_APP_URL_DEV": "account",
     "OPENSRE_APP_URL_ENV": "account",
@@ -408,6 +409,8 @@ EXPORTS: dict[str, str] = {
     "OPENSRE_SIZE_PROFILE_ENV": "turn_concurrency",
     # twilio
     "TWILIO_ACCOUNT_SID_ENV": "twilio",
+    "TERM_PROGRAM_ENV": "terminal_host",
+    "APPLE_TERMINAL_PROGRAM": "terminal_host",
     "TWILIO_AUTH_TOKEN_ENV": "twilio",
     "TWILIO_SMS_DEFAULT_TO_ENV": "twilio",
     "TWILIO_SMS_FROM_ENV": "twilio",

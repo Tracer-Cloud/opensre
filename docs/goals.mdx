@@ -135,7 +135,7 @@ resume.
 | State | What happened |
 | --- | --- |
 | `active` | Still working |
-| `paused` | You ran `/goal pause` |
+| `paused` | You ran `/goal pause`, the goal made no progress for two turns and is waiting for your pick, or a turn failed (for example the model call was rejected). Fix the cause, then `/goal resume` |
 | `achieved` | The judge confirmed the condition from what OpenSRE did and reported, backed by at least one successful tool call |
 | `impossible` | The judge decided this session cannot meet the condition (missing access, contradicted facts). Read the reason, then set a different goal |
 | `budget_exhausted` | It used every turn without getting there — read the last reply, then set a narrower goal or raise `--max-turns` |

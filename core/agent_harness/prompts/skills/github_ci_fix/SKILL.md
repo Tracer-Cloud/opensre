@@ -3,10 +3,19 @@ name: github-ci-fix
 description: >-
   Fix failing GitHub CI / Actions checks via fix_github_pr_ci and push to the
   existing PR head, or fix a branch's failing CI via a linked repair worktree
-
-
-
-
+metadata:
+  owner: Tracer Team
+  usecases:
+    - Fix failing CI checks on a pull request and push to its head branch
+    - Fix failing CI on a branch such as main through a linked repair worktree
+    - Repair the checks of a pull request given by URL or owner/repo#number
+  requires:
+    - GitHub account with write access to the target repository
+    - Local checkout whose origin matches the target repository
+    - GitHub token usable by OpenSRE
+    - Installed and authenticated coding agent
+  type: repair
+  version: "1.0"
 ---
 ══════════════════════════════════════════════════════════
 GITHUB CI FIX SKILL — interactive-shell action agent:

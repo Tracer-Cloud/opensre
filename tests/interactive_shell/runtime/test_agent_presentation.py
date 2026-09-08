@@ -82,6 +82,7 @@ def test_opensre_credit_exhaustion_shows_checkout_instead_of_provider_hints() ->
     assert output.count(upgrade_url) == 1
     assert "/auth login" not in output
     assert "Top up or upgrade: " in output
+    assert "/account usage" in output
 
 
 def test_opensre_credit_exhaustion_link_is_clickable_and_not_repeated() -> None:

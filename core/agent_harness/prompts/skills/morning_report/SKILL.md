@@ -3,6 +3,16 @@ name: morning-report
 description: >-
   Weather + news morning briefing: fetch live weather and headlines, compose
   a plain-text briefing, deliver it. Multi-step; load before acting.
+metadata:
+  owner: Tracer Team
+  usecases:
+    - Weather and headlines morning briefing on demand
+    - Recurring weekday briefing delivered to the shell inbox or a chat channel
+  requires:
+    - Outbound network access for the weather and news fetches
+    - A delivery channel for the recurring offer (shell inbox, Slack, or Telegram)
+  type: report
+  version: "1.0"
 recurring: weekdays 08:00
 ---
 ══════════════════════════════════════════════════════════

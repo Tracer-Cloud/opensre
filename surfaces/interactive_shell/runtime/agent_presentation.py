@@ -21,6 +21,7 @@ from rich.markup import escape
 from rich.text import Text
 
 from config.constants import SOUND_MIN_TURN_SECONDS
+from core.llm.shared.llm_retry import OpenSRECreditsExhaustedError
 from infrastructure.terminal.notify import NotifyEvent, play_notification
 from surfaces.interactive_shell.runtime.core.state import SpinnerState
 from surfaces.interactive_shell.runtime.input_policy import turn_should_show_spinner
@@ -87,10 +88,10 @@ def _render_credits_exhausted(console: StreamingConsole, exc: Exception) -> None
     hint = Text("Top up or upgrade: ", style=str(DIM))
     url = getattr(exc, "upgrade_url", None)
     if isinstance(url, str) and url:
-        hint.append_text(hyperlink(url, style=str(HIGHLIGHT)))
+        hint.append_text(hyperlink(url, style=f"underline {HIGHLIGHT}"))
     else:
         hint.append("the OpenSRE usage page", style=str(DIM))
-    hint.append(" · or /model to switch provider", style=str(DIM))
+    hint.append(" · /account usage opens it · /model switches provider", style=str(DIM))
     console.print(hint)
 
 
@@ -114,10 +115,7 @@ async def _render_agent_presentation_transition(
             if exc is None:
                 raise ValueError("turn_error event requires an error")
             # On a credit/billing wall, add the in-tool recovery hint.
-            from core.llm.shared.llm_retry import (
-                LLMCreditExhaustedError,
-                OpenSRECreditsExhaustedError,
-            )
+            from core.llm.shared.llm_retry import LLMCreditExhaustedError
 
             if isinstance(exc, OpenSRECreditsExhaustedError):
                 _render_credits_exhausted(console, exc)

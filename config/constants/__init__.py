@@ -33,6 +33,9 @@ if TYPE_CHECKING:
         OPENSRE_ACCOUNT_TOKEN_ENV as OPENSRE_ACCOUNT_TOKEN_ENV,
     )
     from config.constants.account import (
+        OPENSRE_ACCOUNT_USAGE_PATH as OPENSRE_ACCOUNT_USAGE_PATH,
+    )
+    from config.constants.account import (
         OPENSRE_APP_URL_DEFAULT as OPENSRE_APP_URL_DEFAULT,
     )
     from config.constants.account import (
@@ -985,6 +988,12 @@ if TYPE_CHECKING:
     )
     from config.constants.tenancy import (
         INTEGRATIONS_STORE_PATH_ENV as INTEGRATIONS_STORE_PATH_ENV,
+    )
+    from config.constants.terminal_host import (
+        APPLE_TERMINAL_PROGRAM as APPLE_TERMINAL_PROGRAM,
+    )
+    from config.constants.terminal_host import (
+        TERM_PROGRAM_ENV as TERM_PROGRAM_ENV,
     )
     from config.constants.tooling import (
         DEFAULT_APPROVAL_EXPIRY_SECONDS as DEFAULT_APPROVAL_EXPIRY_SECONDS,
