@@ -33,10 +33,10 @@ _JUDGE_SYSTEM = (
     "(missing access, contradicted facts, or the ask cannot be fulfilled).\n"
     "Unfinished checklist items mean NOT_REACHED unless the reply already "
     "satisfies the whole condition.\n"
-    "A reply that contradicts itself is NOT_REACHED: a summary count that "
-    "differs from its own table or list, a yes in a table row against a no "
-    "in the text, or a total that does not match the rows. Name the "
-    "contradiction in reason.\n"
+    "First check the reply against itself: every count or total in its prose "
+    "must match its own table or list, and a yes or no in a row must match "
+    "the text. If they differ, set verdict to NOT_REACHED and start reason "
+    "with 'Contradiction:' followed by the two values that disagree.\n"
     "When in doubt, set verdict to NOT_REACHED."
 )
 
