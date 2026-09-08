@@ -54,8 +54,10 @@ def test_selection_is_auto_submitted_as_next_user_message(
     assert session.terminal.pending_prompt_default == "Commit the changes"
     assert session.terminal.pending_prompt_autosubmit is True
     output = buf.getvalue()
-    # Ask User card — not a plan-step ``✓`` (that glued picks into Plan complete).
-    assert "Ask User" in output
+    # Single-pick recap is one answered line — not an Ask User card and not a
+    # plan-step ``✓`` (that glued picks into Plan complete).
+    assert "Ask User" not in output
+    assert "↳" in output
     assert "✓" not in output
     assert _CHOICE.title in output
     assert "Commit the changes" in output
