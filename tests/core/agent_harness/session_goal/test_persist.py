@@ -263,3 +263,18 @@ def test_clearing_a_goal_is_persisted_so_resume_does_not_revive_it() -> None:
     ]
     assert len(snapshots) == 2, "the clear was not tombstoned"
     assert snapshots[-1].get("session_goal") is None
+
+
+def test_the_last_verdict_survives_a_round_trip() -> None:
+    from core.agent_harness.session_goal.goal import SessionGoal
+    from core.agent_harness.session_goal.persist import (
+        session_goal_from_payload,
+        session_goal_to_payload,
+    )
+
+    goal = SessionGoal(condition="c", last_verdict="Contradiction: 5 vs 3")
+
+    restored = session_goal_from_payload(session_goal_to_payload(goal))
+
+    assert restored is not None
+    assert restored.last_verdict == "Contradiction: 5 vs 3"

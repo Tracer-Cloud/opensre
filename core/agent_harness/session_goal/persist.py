@@ -32,6 +32,7 @@ def session_goal_to_payload(goal: SessionGoal) -> dict[str, Any]:
         "last_progress_turns_used": int(goal.last_progress_turns_used),
         "tool_evidence": list(goal.tool_evidence) if goal.tool_evidence is not None else None,
         "tool_success_seen": goal.tool_success_seen,
+        "last_verdict": goal.last_verdict,
     }
     if goal.started_at is not None:
         payload["started_at"] = float(goal.started_at)
@@ -90,6 +91,8 @@ def session_goal_from_payload(payload: Any) -> SessionGoal | None:
         token_in, token_out = 0, 0
     host_owned = bool(payload.get("host_owned", False))
     last_progress_turns_used = _restore_last_progress_turns_used(payload, turns_used)
+    verdict_raw = payload.get("last_verdict")
+    last_verdict = verdict_raw.strip() if isinstance(verdict_raw, str) else ""
     return SessionGoal(
         condition=condition.strip(),
         max_outer_turns=max_outer,
@@ -106,6 +109,7 @@ def session_goal_from_payload(payload: Any) -> SessionGoal | None:
         last_progress_turns_used=last_progress_turns_used,
         tool_evidence=_restore_tool_evidence(payload),
         tool_success_seen=payload.get("tool_success_seen") is True,
+        last_verdict=last_verdict,
     )
 
 

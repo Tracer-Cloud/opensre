@@ -63,6 +63,7 @@ class SessionGoalReason:
     WAITING_USER_CHOICE = "waiting for user choice"
     PAUSED_USER_CHOICE = "paused — waiting for your choice"
     PAUSED_NO_PROGRESS = "paused — no progress after 2 turns"
+    PAUSED_SAME_VERDICT = "paused — the judge returned the same verdict twice"
     # A goal turn raised (model call rejected, provider down): the loop must not
     # spend the next turn on the same failure.
     PAUSED_TURN_FAILED = "paused — the last turn failed; fix the cause, then /goal resume"
@@ -154,6 +155,11 @@ class SessionGoal:
     # ``turns_used`` when ``completed`` last grew. Stall detection compares
     # against this so a later plateau still pauses after two idle turns.
     last_progress_turns_used: int = 0
+    # The judge's previous verdict reason, shown to the judge next time so it
+    # can say whether its new verdict repeats the same blocking problem.
+    last_verdict: str = ""
+    # The judge said this turn's verdict repeats the previous one. Ephemeral.
+    verdict_repeated: bool = False
     # Checklist indices added since the last evaluate. Ephemeral — not persisted.
     new_ticks: frozenset[int] = frozenset()
     # Successful calls this turn to the goal's own tools (``session_goal_set``,
@@ -187,6 +193,14 @@ class SessionGoal:
     def with_bookkeeping_call(self) -> SessionGoal:
         """Count one goal-tool call so it does not pass as tool evidence."""
         return replace(self, bookkeeping_calls=self.bookkeeping_calls + 1)
+
+    def with_verdict(self, reason: str, *, repeated: bool) -> SessionGoal:
+        """Remember the judge's reason for next time, and whether it repeated the last one."""
+        return replace(
+            self,
+            last_verdict=truncate_message(reason.strip(), MAX_GOAL_REASON_CHARS),
+            verdict_repeated=repeated,
+        )
 
     def with_tool_progress(self) -> SessionGoal:
         """Mark this turn as progress so a later no-tool plateau can still stall."""

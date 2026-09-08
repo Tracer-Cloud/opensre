@@ -179,6 +179,7 @@ def test_the_judge_is_told_to_reject_a_self_contradicting_reply() -> None:
         def invoke(self, messages, *, system=None, tools=None):  # noqa: ANN001
             _ = (messages, tools)
             seen["system"] = system or ""
+            seen["prompt"] = str(messages[-1].get("content", "")) if messages else ""
             return AgentLLMResponse(content='{"verdict": "NOT_REACHED", "reason": "table says 1"}')
 
         def tool_schemas(self, tools):  # noqa: ANN001
@@ -191,7 +192,11 @@ def test_the_judge_is_told_to_reject_a_self_contradicting_reply() -> None:
         condition="table of five PRs",
         reply="Found 3 with re-runs. | #1 | Yes | #2 | No |",
         evidence=True,
+        previous_reason="Contradiction: summary says 3, table shows 1",
     )
 
-    # Assert
-    assert "contradicts itself" in seen["system"]
+    # Assert: the rules and the previous verdict both reach the model.
+    assert "Contradiction:" in seen["system"]
+    assert "repeats_previous" in seen["system"]
+    assert "Previous verdict reason:" in seen["prompt"]
+    assert "cannot be met truthfully" in seen["system"]

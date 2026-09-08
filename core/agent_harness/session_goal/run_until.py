@@ -133,6 +133,7 @@ def _announce_working(
 
 _NO_PROGRESS_TURNS = 2
 STALL_MENU_TITLE = "The goal made no progress in 2 turns. How should I continue?"
+SAME_VERDICT_MENU_TITLE = "The judge gave the same verdict twice. How should I continue?"
 STALL_OPTION_MORE = "Keep going for one more turn"
 STALL_OPTION_STOP = "Stop here; the work above is enough"
 STALL_COMMANDS: Mapping[str, str] = MappingProxyType(
@@ -148,26 +149,26 @@ def goal_has_stalled(goal: SessionGoal) -> bool:
 
 
 def pause_for_no_progress(
-    session: Any, active: SessionGoal, on_progress: ProgressFn | None
+    session: Any,
+    active: SessionGoal,
+    on_progress: ProgressFn | None,
+    *,
+    reason: str = SessionGoalReason.PAUSED_NO_PROGRESS,
+    menu_title: str = STALL_MENU_TITLE,
 ) -> SessionGoal:
     """Pause a stalled goal; the shell also opens a menu with the ways forward.
 
-    Two full turns without a tick or a successful tool means repeating the
-    same steps to the budget. The interactive shell asks: one more turn, stop,
-    or typed guidance (the custom row). Headless hosts have no ``/choose``
-    handler, so they only pause and return.
+    Two full turns without a tick or a successful tool, or the same judge
+    verdict twice, means repeating the same steps to the budget. The
+    interactive shell asks: one more turn, stop, or typed guidance (the custom
+    row). Headless hosts have no ``/choose`` handler, so they only pause and
+    return.
     """
-    paused = _end(
-        session,
-        active,
-        SessionGoalStatus.PAUSED,
-        on_progress,
-        reason=SessionGoalReason.PAUSED_NO_PROGRESS,
-    )
+    paused = _end(session, active, SessionGoalStatus.PAUSED, on_progress, reason=reason)
     if session_terminal(session) is None:
         return paused
     session.pending_user_choice = PendingUserChoice(
-        title=STALL_MENU_TITLE,
+        title=menu_title,
         options=(STALL_OPTION_MORE, STALL_OPTION_STOP),
         commands=dict(STALL_COMMANDS),
     )
@@ -223,6 +224,7 @@ def _finish_outer_turn(
     *,
     evaluate_fn: EvaluateFn,
     on_progress: ProgressFn | None,
+    completed_before: frozenset[int] = frozenset(),
 ) -> tuple[SessionGoal, TurnResult, bool]:
     """Evaluate → single paint. Returns ``(goal, result, stop)``."""
     if last.cancelled:
@@ -277,6 +279,20 @@ def _finish_outer_turn(
 
     if goal_has_stalled(active):
         active = pause_for_no_progress(session, active, on_progress)
+        return active, last, True
+
+    ticked = bool(active.completed - completed_before)
+    if active.verdict_repeated and not ticked:
+        # Tools ran, but no item was ticked and the judge says its verdict
+        # repeats the last one: the loop is going round and the budget would
+        # go the same way.
+        active = pause_for_no_progress(
+            session,
+            active,
+            on_progress,
+            reason=SessionGoalReason.PAUSED_SAME_VERDICT,
+            menu_title=SAME_VERDICT_MENU_TITLE,
+        )
         return active, last, True
 
     # Still active under budget: paint the verdict (the judge's reason) before
@@ -371,6 +387,7 @@ def run_until_session_goal(
         last,
         evaluate_fn=evaluate_fn,
         on_progress=on_progress,
+        completed_before=pre_chat_completed,
     )
     if stop:
         return SessionGoalRunResult(goal=active, last_result=last, turn_count=active.turns_used)
@@ -385,6 +402,7 @@ def run_until_session_goal(
             break
 
         _announce_working(session, active, on_progress)
+        completed_before = active.completed
         last = _chat_or_pause(chat, continuation_prompt(active), session, on_progress)
         active = _record_goal_turn(session, active)
         active, last, stop = _finish_outer_turn(
@@ -393,6 +411,7 @@ def run_until_session_goal(
             last,
             evaluate_fn=evaluate_fn,
             on_progress=on_progress,
+            completed_before=completed_before,
         )
         if stop:
             break

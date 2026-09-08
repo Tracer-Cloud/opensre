@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 
 from rich.console import Console
+from rich.text import Text
 
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.session.terminal_session import ActionLogEntry
@@ -151,3 +152,63 @@ def test_a_tty_flush_is_one_buffered_write_of_every_row(monkeypatch) -> None:  #
     assert rendered[0] == ""
     assert rendered[1] == "⏺ summarize github pr status"
     assert rendered[2] == "⏺ propose scheduled delivery"
+
+
+def test_box_rows_fit_the_render_width_so_none_wraps() -> None:
+    """Rows one cell wider than the render width wrapped: blank lines and stray corners."""
+    # Arrange: a console whose render width is known.
+    from surfaces.shared.terminal.components.rendering import repl_output_width
+
+    session = Session()
+    _push(session, "1", "GitHub CLI", "gh pr view 6122", "d1")
+    _push(session, "2", "GitHub CLI", "gh pr view 6121", "d2")
+    buffer = io.StringIO()
+    console = _tty(buffer)
+    width = repl_output_width(console)
+
+    # Act
+    flush_action_log(console, session)
+
+    # Assert: every box row is exactly the render width, so Rich never wraps one.
+    plain = [Text.from_ansi(line).plain for line in buffer.getvalue().splitlines()]
+    box = [row for row in plain if row and row[0] in "╭│╰"]
+    assert len(box) == 5, plain
+    assert {len(row) for row in box} == {width}
+
+
+def test_a_terminal_too_narrow_for_a_box_prints_rows_clipped_to_the_window(monkeypatch) -> None:  # noqa: ANN001
+    # Arrange: a 30-column window; the writer's floor width (40) would overflow it.
+    from surfaces.interactive_shell.ui import action_log
+
+    monkeypatch.setattr(action_log, "terminal_columns", lambda: 30)
+    session = Session()
+    _push(session, "1", "GitHub CLI", "gh pr view 6122 --json number,title", "d1")
+    _push(session, "2", "GitHub CLI", "gh pr view 6121 --json number,title", "d2")
+    buffer = io.StringIO()
+
+    # Act
+    flush_action_log(_tty(buffer), session)
+
+    # Assert: the box shrinks to the window's last column instead of overflowing it.
+    plain = [Text.from_ansi(line).plain for line in buffer.getvalue().splitlines()]
+    box = [row for row in plain if row and row[0] in "╭│╰"]
+    assert box and {len(row) for row in box} == {29}, plain
+
+
+def test_a_window_too_narrow_for_any_box_prints_plain_rows(monkeypatch) -> None:  # noqa: ANN001
+    # Arrange: 14 columns leave no room for borders plus a command.
+    from surfaces.interactive_shell.ui import action_log
+
+    monkeypatch.setattr(action_log, "terminal_columns", lambda: 14)
+    session = Session()
+    _push(session, "1", "GitHub CLI", "gh pr view 6122", "d1")
+    _push(session, "2", "GitHub CLI", "gh pr view 6121", "d2")
+    buffer = io.StringIO()
+
+    # Act
+    flush_action_log(_tty(buffer), session)
+
+    # Assert: two plain rows, each clipped inside the window.
+    plain = [Text.from_ansi(line).plain for line in buffer.getvalue().splitlines() if line.strip()]
+    assert not any(row[0] in "╭│╰" for row in plain)
+    assert len(plain) == 2 and all(len(row) <= 13 for row in plain), plain

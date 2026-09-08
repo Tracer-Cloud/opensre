@@ -46,6 +46,11 @@ def _repl_table_width(console: Console) -> int:
     return max(40, min(console.width, term_cols) - 1)
 
 
+def repl_output_width(console: Console) -> int:
+    """The width :func:`print_repl_renderable` renders at; size full-width rows to it."""
+    return _repl_table_width(console)
+
+
 def _prepare_tty_for_rich(console: Console) -> int:
     """Return the width Rich should render at.
 
@@ -299,6 +304,7 @@ __all__ = [
     "print_repl_table",
     "print_repl_text",
     "repl_clear_screen",
+    "repl_output_width",
     "repl_print",
     "repl_print_continue",
     "repl_table",
