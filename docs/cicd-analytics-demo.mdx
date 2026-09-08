@@ -60,10 +60,13 @@ figure. A re-run that happened over a weekend adds wall-clock wait but no
 downtime. Each blocked PR is attributed to its author, so the report can say
 how many hours a week the heaviest-hit developers lost.
 
-The report shows how the total adds up: a table of the most blocked PRs with
-their author, when each should have been green, when it actually was, and the
-working-hours and wall-clock wait, then the sum across all blocked PRs and
-developers and the typical wait. The wall-clock total across PRs not merged
+The report shows the calculation, not only its result. It states the formula
+(expected green = first run queued + normal duration; blocked = actually green
+minus expected green, in working hours), then a table of the most blocked PRs
+with their author, queue time, normal duration, expected and actual green
+times, and the working-hours and wall-clock wait, then the sum across all
+blocked PRs, the division by the developers affected, the per-week figure,
+and the heaviest-hit developers. The wall-clock total across PRs not merged
 yet is shown when it differs.
 
 ## The CI reliability agent

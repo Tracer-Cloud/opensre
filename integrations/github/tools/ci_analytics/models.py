@@ -89,6 +89,23 @@ class ClassifiedFailure:
 
 
 @dataclass(frozen=True)
+class CommitWait:
+    """One commit's wait: the inputs and the two timestamps the subtraction uses."""
+
+    queued: datetime
+    """When the commit's first run was queued."""
+
+    normal_minutes: float
+    """Normal duration of the slowest workflow on the commit."""
+
+    expected_green: datetime
+    """``queued`` plus ``normal_minutes``: when the commit should have been green."""
+
+    actual_green: datetime
+    """When its last workflow first passed, or the next push or merge if earlier."""
+
+
+@dataclass(frozen=True)
 class PullRequestDelay:
     """How much later one PR went green than it should have, because CI misbehaved.
 
@@ -120,6 +137,12 @@ class PullRequestDelay:
 
     working_minutes: float = 0.0
     """The part of ``delay_minutes`` inside the report's working hours."""
+
+    first_queued: datetime | None = None
+    """When the first delayed commit's first run was queued."""
+
+    normal_minutes: float = 0.0
+    """Normal duration added to ``first_queued`` to get ``expected_green``."""
 
     @property
     def label(self) -> str:
@@ -310,6 +333,7 @@ __all__ = [
     "SUCCESS_CONCLUSION",
     "CiAnalyticsReport",
     "ClassifiedFailure",
+    "CommitWait",
     "DeveloperWait",
     "FailureKind",
     "MergedPullRequest",

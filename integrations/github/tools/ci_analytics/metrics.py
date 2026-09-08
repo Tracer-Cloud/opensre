@@ -10,6 +10,7 @@ from statistics import median
 from integrations.github.tools.ci_analytics.models import (
     CiAnalyticsReport,
     ClassifiedFailure,
+    CommitWait,
     FailureKind,
     MergedPullRequest,
     Outage,
@@ -119,18 +120,20 @@ def pull_request_delays(
     for run in pr_runs:
         by_commit[(identity.key(run), run.head_sha)].append(run)
     next_push = _next_push_times(by_commit)
-    intervals: dict[PullRequestKey, list[tuple[datetime, datetime]]] = defaultdict(list)
+    waits: dict[PullRequestKey, list[CommitWait]] = defaultdict(list)
     for key, sha in affected:
-        interval = _commit_delay(
+        wait = _commit_delay(
             by_commit.get((key, sha), []),
             normal_minutes,
             until=_earliest(next_push.get((key, sha)), identity.merged_at(key)),
         )
-        if interval is not None:
-            intervals[key].append(interval)
+        if wait is not None:
+            waits[key].append(wait)
     delays: list[PullRequestDelay] = []
     for key, item in first_failure.items():
-        spans = _union_spans(intervals.get(key, []))
+        commit_waits = sorted(waits.get(key, []), key=lambda w: w.queued)
+        spans = _union_spans([(w.expected_green, w.actual_green) for w in commit_waits])
+        first = commit_waits[0] if commit_waits else None
         head_repo, branch, number = key
         delays.append(
             PullRequestDelay(
@@ -139,12 +142,14 @@ def pull_request_delays(
                 pr_number=number,
                 critical_path=item.critical_path,
                 delay_minutes=sum((end - start).total_seconds() / 60 for start, end in spans),
-                commits=len(intervals.get(key, [])),
+                commits=len(commit_waits),
                 url=item.failure.url,
                 expected_green=min(start for start, _ in spans) if spans else None,
                 actual_green=max(end for _, end in spans) if spans else None,
                 author=identity.author(key),
                 working_minutes=sum(hours.minutes(start, end) for start, end in spans),
+                first_queued=first.queued if first else None,
+                normal_minutes=first.normal_minutes if first else 0.0,
             )
         )
     return sorted(delays, key=lambda d: -d.delay_minutes)
@@ -226,7 +231,7 @@ def _commit_delay(
     normal_minutes: dict[int | str, float],
     *,
     until: datetime | None = None,
-) -> tuple[datetime, datetime] | None:
+) -> CommitWait | None:
     """Expected and actual green times of one commit, or None when nobody waited.
 
     Each workflow's green time is its first passing completion; a later
@@ -262,7 +267,12 @@ def _commit_delay(
         actual_green = min(actual_green, until)
     if actual_green <= expected_green:
         return None
-    return expected_green, actual_green
+    return CommitWait(
+        queued=queued,
+        normal_minutes=expected_duration,
+        expected_green=expected_green,
+        actual_green=actual_green,
+    )
 
 
 def _union_spans(

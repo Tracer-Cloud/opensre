@@ -1055,7 +1055,15 @@ def test_render_shows_the_kpi_block_and_classification() -> None:
     assert "GitHub Actions executions: **3**" in text
     assert "Raw PR workflow failure rate: **50.0%**" in text
     assert "CI reliability failures, passed later on the same commit: **1**" in text
-    assert "Developer downtime from unreliable CI: 40m of working time across 1 developer" in text
+    assert (
+        "Developer Blocked Time, estimated bottom-up: 40m of working time across 1 developer"
+        in text
+    )
+    # The calculation is shown, not just its result: inputs, formula, sum, division.
+    assert "expected green = first run queued + normal duration" in text
+    assert "| + normal | = expected green |" in text
+    assert "Σ blocked = 40m of working time across 1 merged PR" in text
+    assert "÷ 1 developer = 40m each in 30 days" in text
     assert "| CI | 3 | 1 | 1 | 10m |" in text
 
 
