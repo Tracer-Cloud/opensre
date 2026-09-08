@@ -417,5 +417,6 @@ def test_analytics_demo_skill_declares_its_tools() -> None:
         "scan_local_git_workspace",
         "analyze_github_ci_reliability",
         "schedule_ci_reliability_loop",
+        "cli_exec",
         "ask_user_choice",
     )

@@ -20,7 +20,6 @@ from integrations.github.tools.ci_analytics.models import (
 _TOP_WORKFLOWS = 5
 _TOP_BLOCKED_PRS = 5
 _TOP_DEVELOPERS = 3
-_BRANCH_WIDTH = 30
 _METHOD_LINES = (
     "For each merged PR whose CI failed and later passed on the same commit:",
     "  expected green = first run queued + normal duration "
