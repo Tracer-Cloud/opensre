@@ -38,8 +38,16 @@ def test_master_menu_matches_four_unique_children_and_preserves_specialists() ->
         "Connect OpenSRE to Slack and hand off DevOps chores for your team",
     )
     master = loader.load_skill_body(ONBOARDING_SKILL_NAME)
-    for order, skill in enumerate(children, start=1):
-        assert f"{order}. `{skill.getting_started}`" in master
+    master_skill = next(s for s in loader.list_action_skills() if s.name == ONBOARDING_SKILL_NAME)
+    # The menu is data the host runs on entry, not prose the model replays; its
+    # options are the children's own labels so the two cannot drift apart.
+    assert [call.tool for call in master_skill.pre_execute] == ["ask_user_choice"]
+    menu = master_skill.pre_execute[0].args
+    assert menu["title"] == "Which demo would you like me to run? (Esc to skip)"
+    assert menu["note"]
+    assert tuple(menu["options"]) == GETTING_STARTED_OPTIONS
+    assert "Call `ask_user_choice`" not in master
+    for skill in children:
         assert f"`{skill.name}`" in master
         assert skill.path.parent.parent.name == "onboarding_cicd_fix"
         assert loader.load_skill_body(skill.name)
@@ -52,7 +60,6 @@ def test_master_menu_matches_four_unique_children_and_preserves_specialists() ->
     assert len(names) == len(set(names))
     assert ONBOARDING_SKILL_NAME in loader.load_skills_index()
     assert loader.load_skill_body("github-ci-fix")
-    assert loader.load_skill_body("github-ci-fix-onboarding")
 
 
 def test_capability_and_demo_prompts_load_master_instead_of_defining_another_menu() -> None:
@@ -119,5 +126,37 @@ def test_loader_discovers_nested_and_legacy_packages_without_hidden_directories(
         ]
         assert loader.load_skill_body("child") == "Body of child."
         assert "master" in loader.load_skills_index()
+    finally:
+        loader.clear_skills_caches()
+
+
+def test_pre_execute_keeps_well_formed_calls_and_drops_the_rest(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "hooked.md").write_text(
+        "---\n"
+        "name: hooked\n"
+        "description: hooked recipe\n"
+        "pre_execute:\n"
+        "  - tool: ask_user_choice\n"
+        "    args: {title: Pick, options: [a, b]}\n"
+        "  - tool: shell_run\n"
+        "  - not a mapping\n"
+        "  - args: {title: no tool}\n"
+        "---\n"
+        "Body."
+    )
+    (tmp_path / "scalar.md").write_text(
+        "---\nname: scalar\ndescription: scalar recipe\npre_execute: ask_user_choice\n---\nBody."
+    )
+    monkeypatch.setattr(loader, "skills_dir", lambda: tmp_path)
+    loader.clear_skills_caches()
+    try:
+        by_name = {skill.name: skill for skill in loader.list_action_skills()}
+        assert [(c.tool, dict(c.args)) for c in by_name["hooked"].pre_execute] == [
+            ("ask_user_choice", {"title": "Pick", "options": ["a", "b"]})
+        ]
+        assert by_name["scalar"].pre_execute == ()
     finally:
         loader.clear_skills_caches()

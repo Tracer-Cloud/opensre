@@ -23,31 +23,35 @@ metadata:
     - core/agent_harness/prompts/skills/onboarding_cicd_fix/d_remote_slack/SKILL.md
 # A router leaves tool scope open so its children and custom requests can run.
 tools: []
+# The host runs this on entry (startup, /demo, skill_view) before any model step.
+pre_execute:
+  - tool: ask_user_choice
+    args:
+      title: Which demo would you like me to run? (Esc to skip)
+      note: >-
+        Choose a demo using your own repositories or connect your team through
+        Slack. The managed-service option is coming soon.
+      options:
+        - Explore a repo and analyze its CI/CD performance (recommended)
+        - Set up an agent that improves CI/CD reliability over time
+        - Run CI/CD improvements with a managed service (coming soon)
+        - Connect OpenSRE to Slack and hand off DevOps chores for your team
 ---
 
 # CI/CD onboarding
 
-This master skill owns the onboarding question. Open the menu when entering
-this skill; if the current message already answers it, continue directly to
-the selected child. Never ask the onboarding question twice for one request.
+This master skill owns the onboarding question. Its menu is declared in
+`pre_execute` and opens when the skill is entered; if the current message
+already answers it, continue directly to the selected child. Never ask the
+onboarding question twice for one request.
 
 ## Ask User
 
-Use this `note` inside the menu: "Choose a demo using your own repositories
-or connect your team through Slack. The managed-service option is coming soon."
-
-Call `ask_user_choice` with title
-`Which demo would you like me to run? (Esc to skip)` and exactly these four
-options, verbatim and in order:
-
-1. `Explore a repo and analyze its CI/CD performance (recommended)`
-2. `Set up an agent that improves CI/CD reliability over time`
-3. `Run CI/CD improvements with a managed service (coming soon)`
-4. `Connect OpenSRE to Slack and hand off DevOps chores for your team`
-
-The UI adds `Or type your own answer...`; do not include it in the options.
-End the turn after the tool call and wait for the answer. If the tool reports
-that the menu is unavailable, show these options as text and wait for a reply.
+The menu opens on entry, without you. Do not call `ask_user_choice` yourself
+and do not narrate before it; end the turn and wait for the answer. The UI adds
+`Or type your own answer...`. If the entry result reports that the menu is
+unavailable, show the four `pre_execute` options as a numbered list and wait
+for a reply.
 
 ## Follow the selected child
 

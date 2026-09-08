@@ -1,4 +1,4 @@
-"""Startup executes the master skill before asking and continuing a child skill."""
+"""Startup enters the master skill host-side: its menu opens before any model step."""
 
 from __future__ import annotations
 
@@ -30,7 +30,10 @@ from tests.core.agent.orchestration.action_execution_test_harness import (
 from tools.system.workspace_git_scan.scan import WorkspaceSnapshot
 
 _TITLE = "Which demo would you like me to run? (Esc to skip)"
-_NOTE = "Choose a demo using your own repositories or connect your team through Slack."
+_NOTE = (
+    "Choose a demo using your own repositories or connect your team through Slack. "
+    "The managed-service option is coming soon."
+)
 
 
 def _offerable(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -61,21 +64,18 @@ def onboarding_outcomes(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, bool
     return outcomes
 
 
-def test_startup_skill_asks_once_and_selected_child_runs_through_real_turns(
+def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_turns(
     monkeypatch: pytest.MonkeyPatch,
     onboarding_outcomes: list[tuple[str, bool | None]],
 ) -> None:
+    """Boot output contract: the pre_execute menu is the first paint and needs no model."""
     _offerable(monkeypatch)
     session = Session()
     session.resolved_integrations_cache = {}
-    console = Console(file=io.StringIO(), highlight=False)
+    buffer = io.StringIO()
+    console = Console(file=buffer, highlight=False)
     llm = FakeActionLLM(
         [
-            tool_response("skill_view", {"name": ONBOARDING_SKILL_NAME}),
-            tool_response(
-                "ask_user_choice",
-                {"title": _TITLE, "options": list(GETTING_STARTED_OPTIONS), "note": _NOTE},
-            ),
             tool_response("skill_view", {"name": "cicd-analytics-demo"}),
             tool_response("scan_local_git_workspace"),
             tool_response(
@@ -88,41 +88,59 @@ def test_startup_skill_asks_once_and_selected_child_runs_through_real_turns(
         ]
     )
     scans: list[str] = []
+    picker_calls: list[dict[str, Any]] = []
 
     def scan(root: Any, **_kwargs: Any) -> WorkspaceSnapshot:
         scans.append(str(root))
         return WorkspaceSnapshot(root=str(root), days=30, repos=())
 
     def pick(**kwargs: Any) -> str:
-        assert kwargs["header"] == "Ask User"
-        assert kwargs["note"] == _NOTE
-        assert kwargs["choices"] == [
-            *((option, option) for option in GETTING_STARTED_OPTIONS),
-            (CUSTOM_OPTION, CUSTOM_OPTION),
-        ]
+        picker_calls.append(kwargs)
         return GETTING_STARTED_OPTIONS[0]
 
     monkeypatch.setattr(scan_tool, "scan_workspace", scan)
     monkeypatch.setattr(choice_prompt, "repl_choose_one", pick)
     assert demo_picker.offer_demo(session, console)
-    assert session.pending_user_choice is None  # The host has not asked the question.
-
-    run_action_tool_turn(
-        _take_prompt(session), session, console, is_tty=True, llm_factory=lambda: llm
-    )
-    assert llm.invocations == 2  # ask_user_choice terminates the model turn immediately.
+    # The host asked the skill's question itself: no prose prompt, no model, no output.
+    assert buffer.getvalue() == ""
     assert session.active_skill == ONBOARDING_SKILL_NAME
     pending = session.pending_user_choice
-    assert pending is not None and pending.options == GETTING_STARTED_OPTIONS
-
+    assert pending is not None
+    assert (pending.title, pending.note, pending.options) == (
+        _TITLE,
+        _NOTE,
+        GETTING_STARTED_OPTIONS,
+    )
     assert session.terminal.pending_prompt_default == "/choose"
+    assert session.terminal.awaiting_handoff_answer
+
     # The controller reserves stdin for literal /choose before dispatching the turn.
     session.terminal.exclusive_stdin_active = True
     run_action_tool_turn(
         _take_prompt(session), session, console, is_tty=True, llm_factory=lambda: llm
     )
     session.terminal.exclusive_stdin_active = False
-    assert llm.invocations == 2  # Literal /choose uses no model.
+    assert llm.invocations == 0  # Nothing before the pick used the model.
+    # The whole boot-to-pick sequence painted exactly one thing besides the
+    # picker itself: the selection recap. No work-turn marker, no skill tree.
+    painted = buffer.getvalue()
+    assert painted.strip().startswith(f"↳ {_TITLE}"), painted
+    for chrome in ("/goal", "Skill ", "activated", "skill_view", "[1]"):
+        assert chrome not in painted, painted
+    assert len(picker_calls) == 1
+    assert callable(picker_calls[0].pop("on_custom_answer"))
+    assert picker_calls[0] == {
+        "title": _TITLE,
+        "choices": [
+            *((option, option) for option in GETTING_STARTED_OPTIONS),
+            (CUSTOM_OPTION, CUSTOM_OPTION),
+        ],
+        "custom_label": CUSTOM_OPTION,
+        "multi_select": False,
+        "header": "Ask User",
+        "letter_keys": True,
+        "note": _NOTE,
+    }
     assert session.active_skill == ONBOARDING_SKILL_NAME
     answer = _take_prompt(session)
     assert answer == format_ask_user_answers(pending.items(), (GETTING_STARTED_OPTIONS[0],))
@@ -133,7 +151,7 @@ def test_startup_skill_asks_once_and_selected_child_runs_through_real_turns(
     assert "## Follow the selected child" not in envelope.render_cached()
 
     run_action_tool_turn(answer, session, console, is_tty=True, llm_factory=lambda: llm)
-    assert llm.invocations == 5
+    assert llm.invocations == 3
     assert len(scans) == 1
     assert session.active_skill == "cicd-analytics-demo"
     assert session.pending_user_choice is not None
@@ -264,11 +282,30 @@ def test_startup_and_demo_respect_tty_and_pending_input(monkeypatch: pytest.Monk
     session.pending_user_choice = None
     monkeypatch.setattr(demo_picker, "repl_tty_interactive", lambda: False)
     assert not demo_picker.offer_demo(session, force=True)
+    assert session.active_skill is None
     monkeypatch.setattr(demo_picker, "repl_tty_interactive", lambda: True)
     monkeypatch.setattr(demo_picker, "is_test_run", lambda: True)
     assert not demo_picker.offer_demo(session)
     assert demo_picker.offer_demo(session, force=True)
-    assert ONBOARDING_SKILL_NAME in _take_prompt(session)
+    assert session.active_skill == ONBOARDING_SKILL_NAME
+    assert session.pending_user_choice is not None
+    assert _take_prompt(session) == "/choose"
+
+
+def test_startup_without_a_menu_hook_does_not_fall_back_to_a_model_turn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A master skill that queues no menu is a skill bug, not a reason to autosubmit prose."""
+    _offerable(monkeypatch)
+    session = Session()
+
+    def enter_without_menu(_name: str, _ctx: Any) -> dict[str, Any]:
+        return {"ok": True, "name": ONBOARDING_SKILL_NAME, "content": "body", "pre_execute": []}
+
+    monkeypatch.setattr(demo_picker, "enter_skill", enter_without_menu)
+    assert not demo_picker.offer_demo(session, force=True)
+    assert session.terminal.pending_prompt_default is None
+    assert session.active_skill is None
 
 
 def test_demo_skills_keep_their_tool_contracts_after_moving() -> None:

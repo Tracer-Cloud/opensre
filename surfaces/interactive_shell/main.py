@@ -103,7 +103,7 @@ async def run_repl_async(
             ):
                 return 1
         else:
-            # The first agent turn loads the master skill, which owns its Ask User menu.
+            # Entering the master skill queues its menu; the first model turn is the answer.
             offer_demo(session, out)
 
         await InteractiveShellController(

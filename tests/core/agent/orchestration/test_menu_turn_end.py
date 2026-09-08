@@ -28,6 +28,19 @@ def test_queued_menu_terminates_the_loop() -> None:
     assert patch is not None and patch.terminate is True
 
 
+def test_skill_load_terminates_only_when_its_hook_queued_a_menu() -> None:
+    """A skill's pre_execute menu ends the turn; a plain skill load does not."""
+    queued = with_menu_turn_end(None, _session(pending=object()))
+    plain = with_menu_turn_end(None, _session(pending=None))
+
+    patch = queued.after_tool_call(_request("skill_view"), ToolExecutionResult(content="body"))
+
+    assert patch is not None and patch.terminate is True
+    assert (
+        plain.after_tool_call(_request("skill_view"), ToolExecutionResult(content="body")) is None
+    )
+
+
 def test_unavailable_menu_or_other_tools_do_not_terminate() -> None:
     no_menu = with_menu_turn_end(None, _session(pending=None))
     other = with_menu_turn_end(None, _session(pending=object()))

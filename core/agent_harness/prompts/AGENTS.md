@@ -43,3 +43,6 @@ Use ordinary Markdown, following
 - Keep commands and exact output examples in inline code or fenced blocks.
 - Preserve frontmatter, tool contracts, exact choice labels, authorization
   boundaries, and required output formats when changing presentation.
+- A static menu a skill always opens on entry belongs in `pre_execute`
+  frontmatter (`tool: ask_user_choice` + `args`), not in prose the model must
+  replay; the host runs it before any model step (see `onboarding_cicd_fix`).

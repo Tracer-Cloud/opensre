@@ -5,6 +5,7 @@ from __future__ import annotations
 from core.agent_harness.prompts.skills.loader import (
     SKILLS_HEADER,
     ActionSkill,
+    SkillToolCall,
     getting_started_skills,
     list_action_skills,
     load_skill_body,
@@ -16,6 +17,7 @@ from core.agent_harness.prompts.skills.loader import (
 __all__ = [
     "ActionSkill",
     "SKILLS_HEADER",
+    "SkillToolCall",
     "getting_started_skills",
     "list_action_skills",
     "load_skill_body",

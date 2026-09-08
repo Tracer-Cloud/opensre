@@ -141,6 +141,7 @@ SPI_ROLE_NAMES: dict[str, frozenset[str]] = {
             "CacheStats",
             "GETTING_STARTED_CUSTOM",
             "GroundingSource",
+            "SkillToolCall",
             "getting_started_skills",
             "list_action_skills",
             "load_skill_body",
@@ -209,6 +210,7 @@ RUNTIME = frozenset(
 TOOLS = frozenset(
     {
         "ActionToolScope",
+        "ToolExecutor",
         "action_context_from_agent_context",
         "action_scope_from_agent_context",
         "capability_available_from_sources",

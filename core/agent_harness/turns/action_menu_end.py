@@ -4,6 +4,8 @@
 take another model step in between, or the model sees no answer, decides
 the choice is "still missing", and asks again. A hook, not an instruction:
 the tool result is marked ``terminate`` whenever a choice is pending.
+``skill_view`` is covered too: a skill's ``pre_execute`` hook may queue the
+same menu on load, and a plain load (no pending choice) is left alone.
 """
 
 from __future__ import annotations
@@ -18,7 +20,7 @@ from core.tool.execution import (
     ToolExecutionResult,
 )
 
-_CHOICE_TOOL_NAMES = frozenset({"ask_user_choice"})
+_CHOICE_TOOL_NAMES = frozenset({"ask_user_choice", "skill_view"})
 
 
 def with_menu_turn_end(

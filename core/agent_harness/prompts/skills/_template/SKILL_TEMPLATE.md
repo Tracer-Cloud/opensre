@@ -21,6 +21,9 @@ To create a new skill:
    appended automatically to the body that skill_view returns.
 7. Optional `getting_started:` (verbatim first-visit demo label) plus
    `demo_order:` (1-based menu row, A=1) attach this skill to `/demo`.
+   Optional `pre_execute:` lists static tool calls (`- tool: ask_user_choice`
+   + `args:` shaped like the tool's input) the host runs when the skill is
+   entered, before any model step; only `ask_user_choice` is allowed.
 8. Section order below is the house style (see github_ci_fix for a
    single-tool skill, architecture_audit for a multi-pass one). Keep the
    whole body tight — it is loaded into the planner's context on demand.

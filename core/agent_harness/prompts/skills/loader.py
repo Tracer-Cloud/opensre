@@ -10,9 +10,12 @@ Layout (either form is supported):
 - Flat: ``skills/<name>.md`` with optional ``skills/<name>_report.md``.
 
 Optional YAML frontmatter (``name``, ``description``, optional ``recurring``,
-optional ``getting_started`` + ``demo_order``) feeds the compact index.
-``getting_started`` is the verbatim first-visit demo menu label this skill
-owns; ``demo_order`` is its 1-based row (A=1). Without frontmatter, the name
+optional ``getting_started`` + ``demo_order``, optional ``pre_execute``) feeds
+the compact index. ``getting_started`` is the verbatim first-visit demo menu
+label this skill owns; ``demo_order`` is its 1-based row (A=1).
+``pre_execute`` lists static tool calls (``{tool, args}``) the host runs when
+the skill is entered, before any model step; the loader keeps them as data and
+the entry point decides which tools are allowed. Without frontmatter, the name
 is derived from the path and the description from the first ``WHEN TO USE`` /
 subtitle lines.
 
@@ -24,9 +27,11 @@ chars). Full bodies load through the ``skill_view`` tool via
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 import yaml
@@ -34,6 +39,7 @@ import yaml
 __all__ = (
     "ActionSkill",
     "SKILLS_HEADER",
+    "SkillToolCall",
     "getting_started_skills",
     "list_action_skills",
     "load_skill_body",
@@ -53,6 +59,15 @@ _BANNER_RE = re.compile(r"^[=\-─]{8,}\s*$")
 
 
 @dataclass(frozen=True)
+class SkillToolCall:
+    """One static tool call a skill declares in ``pre_execute``."""
+
+    tool: str
+    args: Mapping[str, Any]
+    """Read-only tool input, shaped exactly like the tool's ``input_schema``."""
+
+
+@dataclass(frozen=True)
 class ActionSkill:
     """One discoverable action-agent skill (index metadata + path)."""
 
@@ -68,6 +83,9 @@ class ActionSkill:
 
     demo_order: int | None = None
     """1-based demo menu order when ``getting_started`` is set (A=1)."""
+
+    pre_execute: tuple[SkillToolCall, ...] = ()
+    """Static tool calls run on skill entry (boot, ``/demo``, ``skill_view``) before the model."""
 
 
 def skills_dir() -> Path:
@@ -169,6 +187,22 @@ def _optional_int_field(value: Any) -> int | None:
     return value
 
 
+def _pre_execute_field(value: Any) -> tuple[SkillToolCall, ...]:
+    """Parse ``pre_execute`` entries; malformed items are dropped like other bad frontmatter."""
+    if not isinstance(value, list):
+        return ()
+    calls: list[SkillToolCall] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        tool = _string_field(item.get("tool"))
+        args = item.get("args")
+        if not tool or not isinstance(args, dict):
+            continue
+        calls.append(SkillToolCall(tool=tool, args=MappingProxyType(dict(args))))
+    return tuple(calls)
+
+
 def _derive_description(body: str) -> str:
     """Best-effort one-liner when frontmatter has no description."""
     lines = [ln.strip() for ln in body.splitlines()]
@@ -239,6 +273,7 @@ def _load_action_skill(skill_path: Path) -> ActionSkill | None:
         tools=_string_list_field(frontmatter.get("tools")),
         getting_started=getting_started,
         demo_order=_optional_int_field(frontmatter.get("demo_order")),
+        pre_execute=_pre_execute_field(frontmatter.get("pre_execute")),
     )
 
 
