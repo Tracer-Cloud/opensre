@@ -11,6 +11,7 @@ from rich.console import Console
 import surfaces.interactive_shell.command_registry.choice_prompt as choice_prompt
 import surfaces.interactive_shell.runtime.slash_adapter as slash_adapter
 import surfaces.interactive_shell.runtime.startup.demo_picker as demo_picker
+import surfaces.interactive_shell.runtime.startup.onboarding_telemetry as onboarding_telemetry
 import tools.system.workspace_git_scan.tool as scan_tool
 from config.constants.skills import ONBOARDING_SKILL_NAME
 from core.agent_harness.prompts.action.assemble import build_action_system_prompt_envelope
@@ -44,8 +45,24 @@ def _take_prompt(session: Session) -> str:
     return session.terminal.pop_pending_prompt_default()
 
 
+@pytest.fixture
+def onboarding_outcomes(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, bool | None]]:
+    outcomes: list[tuple[str, bool | None]] = []
+
+    def selected(*, option: str, custom: bool) -> None:
+        outcomes.append((option, custom))
+
+    def skipped() -> None:
+        outcomes.append(("skipped", None))
+
+    monkeypatch.setattr(onboarding_telemetry, "capture_onboarding_demo_selected", selected)
+    monkeypatch.setattr(onboarding_telemetry, "capture_onboarding_demo_skipped", skipped)
+    return outcomes
+
+
 def test_startup_skill_asks_once_and_selected_child_runs_through_real_turns(
     monkeypatch: pytest.MonkeyPatch,
+    onboarding_outcomes: list[tuple[str, bool | None]],
 ) -> None:
     _offerable(monkeypatch)
     session = Session()
@@ -121,12 +138,14 @@ def test_startup_skill_asks_once_and_selected_child_runs_through_real_turns(
     assert session.pending_user_choice is not None
     assert session.pending_user_choice.title == "Which repository should I analyze?"
     assert "analyze_github_ci_reliability" in session.active_skill_tools
+    assert onboarding_outcomes == [("ci_analytics", False)]
 
 
 @pytest.mark.parametrize("answer", [None, "Inspect the deployment logs", "/help"])
 def test_onboarding_cancel_custom_and_slash_do_not_reopen_the_menu(
     monkeypatch: pytest.MonkeyPatch,
     answer: str | None,
+    onboarding_outcomes: list[tuple[str, bool | None]],
 ) -> None:
     _offerable(monkeypatch)
     session = Session()
@@ -139,6 +158,7 @@ def test_onboarding_cancel_custom_and_slash_do_not_reopen_the_menu(
     choice_prompt._cmd_choose(session, console, [])
 
     assert session.pending_user_choice is None
+    assert onboarding_outcomes == [("skipped", None) if answer is None else ("custom", True)]
     if answer is None:
         assert session.terminal.pending_prompt_default is None
         assert session.active_skill is None
@@ -148,6 +168,59 @@ def test_onboarding_cancel_custom_and_slash_do_not_reopen_the_menu(
     else:
         assert _take_prompt(session) == format_ask_user_answers(pending.items(), (answer,))
         assert session.active_skill_tools == ()  # Custom requests have the full tool catalog.
+
+
+def test_onboarding_outcomes_keep_stable_ids_and_exclude_child_menus(
+    monkeypatch: pytest.MonkeyPatch,
+    onboarding_outcomes: list[tuple[str, bool | None]],
+) -> None:
+    _offerable(monkeypatch)
+    console = Console(file=io.StringIO())
+    answer = ""
+
+    def pick(**_kwargs: Any) -> str:
+        return answer
+
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", pick)
+    session = Session()
+    for option in GETTING_STARTED_OPTIONS:
+        answer = option
+        session.active_skill = ONBOARDING_SKILL_NAME
+        session.pending_user_choice = PendingUserChoice(
+            title=_TITLE, options=GETTING_STARTED_OPTIONS
+        )
+        choice_prompt._cmd_choose(session, console, [])
+
+    session.active_skill = "cicd-analytics-demo"
+    session.pending_user_choice = PendingUserChoice(title="Repository?", options=("acme/one",))
+    answer = "acme/one"
+    choice_prompt._cmd_choose(session, console, [])
+    assert onboarding_outcomes == [
+        ("ci_analytics", False),
+        ("ci_agent", False),
+        ("remote_managed_service", False),
+        ("slack", False),
+    ]
+
+
+def test_onboarding_telemetry_failure_does_not_lose_the_answer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _offerable(monkeypatch)
+    session = Session()
+    session.active_skill = ONBOARDING_SKILL_NAME
+    pending = PendingUserChoice(title=_TITLE, options=GETTING_STARTED_OPTIONS)
+    session.pending_user_choice = pending
+
+    def fail_capture(**_kwargs: Any) -> None:
+        raise RuntimeError("Telemetry unavailable")
+
+    answer = GETTING_STARTED_OPTIONS[0]
+    monkeypatch.setattr(onboarding_telemetry, "capture_onboarding_demo_selected", fail_capture)
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", lambda **_kw: answer)
+    choice_prompt._cmd_choose(session, Console(file=io.StringIO()), [])
+    assert _take_prompt(session) == format_ask_user_answers(pending.items(), (answer,))
+    assert session.active_skill == ONBOARDING_SKILL_NAME
 
 
 def test_startup_and_demo_respect_tty_and_pending_input(monkeypatch: pytest.MonkeyPatch) -> None:
