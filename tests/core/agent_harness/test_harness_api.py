@@ -137,8 +137,11 @@ SPI_ROLE_NAMES: dict[str, frozenset[str]] = {
     ),
     "grounding": frozenset(
         {
+            "ActionSkill",
             "CacheStats",
+            "GETTING_STARTED_CUSTOM",
             "GroundingSource",
+            "getting_started_skills",
             "list_action_skills",
             "load_skill_body",
             "log_grounding_cache_diagnostics",

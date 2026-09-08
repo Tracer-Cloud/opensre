@@ -30,8 +30,11 @@ from rich.markup import escape
 from rich.text import Text
 
 from config.constants.paths import OPENSRE_HOME_DIR
-from core.agent_harness.prompts.getting_started import GETTING_STARTED_CUSTOM
-from core.agent_harness.prompts.skills import ActionSkill, getting_started_skills
+from core.agent_harness.spi.grounding import (
+    GETTING_STARTED_CUSTOM,
+    ActionSkill,
+    getting_started_skills,
+)
 from infrastructure.analytics.capture import (
     capture_onboarding_demo_prompted,
     capture_onboarding_demo_selected,
