@@ -159,3 +159,32 @@ def test_resolve_for_request_stales_when_credential_is_genuinely_absent(
     record = resolve_provider_auth_record("deepseek")
     assert record["stale"] == "true"
     assert record["verified"] == "false"
+
+
+def test_ignoring_the_account_route_survives_a_stored_session(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # A rejected or unreachable login keeps its record and token on disk, so the
+    # hosted route outlives the sign-in. Choosing a local model must win.
+    from config.account import AccountRecord, account_llm_route, ignore_account_llm_route
+
+    record = AccountRecord(
+        user_id="u1",
+        email="dev@example.com",
+        app_url="https://app.opensre.com",
+        llm_provider="openai",
+        llm_model="gpt-5.4-mini",
+        organization_id="org1",
+        signed_in_at="2026-09-08T00:00:00Z",
+        token_expires_at="2026-12-08T00:00:00Z",
+    )
+    monkeypatch.setattr("config.account.load_account_record", lambda: record)
+    monkeypatch.setattr("config.account.resolve_account_token", lambda: "token")
+    # setenv (not delenv) so monkeypatch removes the flag this test sets below.
+    monkeypatch.setenv("OPENSRE_IGNORE_ACCOUNT_ROUTE", "")
+
+    assert account_llm_route() is not None
+
+    ignore_account_llm_route()
+
+    assert account_llm_route() is None

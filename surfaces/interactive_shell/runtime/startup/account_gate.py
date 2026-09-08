@@ -27,6 +27,13 @@ def own_llm_provider_configured() -> bool:
     return has_user_configured_llm_provider()
 
 
+def use_own_llm_provider() -> None:
+    """Drop a stored hosted route so the user's own provider serves this shell."""
+    from config.account import ignore_account_llm_route
+
+    ignore_account_llm_route()
+
+
 def account_login(*, console: Console | None = None) -> bool:
     """Run the canonical webapp login command and verify its resulting session."""
     from infrastructure.terminal.theme import ERROR
@@ -68,6 +75,7 @@ def pass_sign_in_gate(console: Console) -> bool:
         is_signed_in=account_is_signed_in,
         login=_login,
         has_own_provider=own_llm_provider_configured,
+        on_own_provider=use_own_llm_provider,
     )
 
 
@@ -76,4 +84,5 @@ __all__ = [
     "account_login",
     "own_llm_provider_configured",
     "pass_sign_in_gate",
+    "use_own_llm_provider",
 ]

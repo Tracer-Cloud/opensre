@@ -20,6 +20,7 @@ from config.constants.account import (
     OPENSRE_ACCOUNT_TOKEN_ENV,
     OPENSRE_APP_URL_DEFAULT,
     OPENSRE_APP_URL_ENV,
+    OPENSRE_IGNORE_ACCOUNT_ROUTE_ENV,
 )
 from config.constants.paths import host_home
 from config.secrets.store import (
@@ -194,8 +195,21 @@ def delete_account_token() -> None:
     delete_secret(OPENSRE_ACCOUNT_TOKEN_ENV)
 
 
+def ignore_account_llm_route() -> None:
+    """Drop the hosted route for this process; the user chose their own model."""
+    os.environ[OPENSRE_IGNORE_ACCOUNT_ROUTE_ENV] = "1"
+
+
 def account_llm_route() -> AccountLLMRoute | None:
-    """Return the hosted OpenAI route only when account metadata and token exist."""
+    """Return the hosted OpenAI route only when account metadata and token exist.
+
+    A session the webapp rejected or could not validate still leaves its record
+    and token on disk, so the route outlives the sign-in it came from. Callers
+    that let the user pick a local provider instead first call
+    :func:`ignore_account_llm_route`.
+    """
+    if os.getenv(OPENSRE_IGNORE_ACCOUNT_ROUTE_ENV, "").strip():
+        return None
     record = load_account_record()
     if record is None or record.llm_provider != "openai" or not resolve_account_token():
         return None
@@ -209,6 +223,7 @@ __all__ = [
     "AccountRecord",
     "AccountLLMRoute",
     "account_llm_route",
+    "ignore_account_llm_route",
     "account_metadata_path",
     "delete_account_record",
     "delete_account_token",

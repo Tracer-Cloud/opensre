@@ -81,6 +81,7 @@ def run_sign_in_gate(
     is_signed_in: Callable[[], bool],
     login: Callable[[], bool],
     has_own_provider: Callable[[], bool] = lambda: False,
+    on_own_provider: Callable[[], None] = lambda: None,
 ) -> bool:
     """Gate the REPL behind sign-in; return ``True`` to proceed, ``False`` to exit.
 
@@ -88,8 +89,10 @@ def run_sign_in_gate(
     screen and loops the menu. A user who configured their own LLM provider is
     offered a third choice that enters the shell signed out, which is the only
     way to run a local model: an account session pins the shell to the hosted
-    route. On non-interactive stdin the gate fails closed and prints the command
-    that can establish an account.
+    route. Picking it calls ``on_own_provider``, which drops any stored hosted
+    route so a rejected or unvalidated session cannot override the choice. On
+    non-interactive stdin the gate fails closed and prints the command that can
+    establish an account.
     """
     if is_signed_in():
         return True
@@ -108,6 +111,7 @@ def run_sign_in_gate(
                 return True
             continue  # login failed — offer the choice again
         if choice is SignInChoice.OWN_MODEL:
+            on_own_provider()
             console.print(f"[{DIM}]Signed out. Using your configured LLM provider.[/]")
             return True
         return False  # Exit or Esc

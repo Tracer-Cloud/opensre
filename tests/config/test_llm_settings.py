@@ -431,3 +431,13 @@ def test_user_configured_provider_ignores_the_built_in_default(monkeypatch) -> N
     monkeypatch.setenv("LLM_PROVIDER", "ollama")
 
     assert has_user_configured_llm_provider() is True
+
+
+def test_user_configured_provider_rejects_settings_that_cannot_resolve(monkeypatch) -> None:
+    # An API key is not enough for azure-openai: without an endpoint every turn
+    # fails, so this must not read as a provider the shell can run on.
+    monkeypatch.setenv("LLM_PROVIDER", "azure-openai")
+    monkeypatch.setenv("AZURE_OPENAI_API_KEY", "sk-not-a-real-key")
+    monkeypatch.delenv("AZURE_OPENAI_ENDPOINT", raising=False)
+
+    assert has_user_configured_llm_provider() is False

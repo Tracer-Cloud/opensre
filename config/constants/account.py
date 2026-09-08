@@ -5,6 +5,9 @@ from __future__ import annotations
 OPENSRE_ACCOUNT_FILENAME = "account.json"
 OPENSRE_ACCOUNT_METADATA_PATH_ENV = "OPENSRE_ACCOUNT_METADATA_PATH"
 OPENSRE_ACCOUNT_TOKEN_ENV = "OPENSRE_ACCOUNT_TOKEN"
+#: Set for this process when the user chooses their own model over a stored
+#: hosted route, so an expired or unreachable session cannot silently win.
+OPENSRE_IGNORE_ACCOUNT_ROUTE_ENV = "OPENSRE_IGNORE_ACCOUNT_ROUTE"
 OPENSRE_ACCOUNT_LLM_BASE_PATH = "/api/llm/v1"
 OPENSRE_ACCOUNT_LOGIN_PATH = "/cli/auth/start"
 OPENSRE_ACCOUNT_LOGIN_SUCCESS_PATH = "/cli/auth/success"
@@ -25,6 +28,7 @@ __all__ = [
     "OPENSRE_ACCOUNT_EXCHANGE_PATH",
     "OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS",
     "OPENSRE_ACCOUNT_TOKEN_ENV",
+    "OPENSRE_IGNORE_ACCOUNT_ROUTE_ENV",
     "OPENSRE_ACCOUNT_SESSION_PATH",
     "OPENSRE_ACCOUNT_USAGE_PATH",
     "OPENSRE_APP_URL_DEFAULT",

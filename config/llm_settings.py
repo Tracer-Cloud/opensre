@@ -499,8 +499,14 @@ def has_user_configured_llm_provider() -> bool:
     deliberate choice.
     """
     bootstrap_opensre_env(override=False)
-    provider = os.getenv(LLM_PROVIDER_ENV, "").strip().lower()
-    if not provider:
+    if not os.getenv(LLM_PROVIDER_ENV, "").strip():
         return False
-    auth_status = credential_status(provider)
+    try:
+        settings = resolve_llm_settings()
+    except Exception:
+        # Credentials alone do not make a provider usable: azure-openai needs an
+        # endpoint, vertex-ai a project. Resolving here keeps callers from
+        # offering a route that fails on the first turn.
+        return False
+    auth_status = credential_status(settings.provider)
     return auth_status.configured and not auth_status.stale

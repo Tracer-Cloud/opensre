@@ -120,19 +120,27 @@ def test_gate_retries_after_a_failed_login_then_exits(monkeypatch) -> None:
 
 def test_gate_enters_the_shell_on_a_configured_provider_without_signing_in(monkeypatch) -> None:
     # The only path to a local model: an account session pins the shell to the hosted route.
+    # A rejected or unreachable session leaves that route on disk, so picking the
+    # local model must drop it or the shell keeps calling the hosted proxy.
+    dropped: list[bool] = []
     monkeypatch.setattr(sign_in, "repl_tty_interactive", lambda: True)
     monkeypatch.setattr(sign_in, "render_sign_in_screen", lambda _c: None)
     monkeypatch.setattr(sign_in, "prompt_login_or_exit", lambda **_kwargs: SignInChoice.OWN_MODEL)
     console, _ = _console()
+
+    def _on_own_provider() -> None:
+        dropped.append(True)
 
     result = run_sign_in_gate(
         console,
         is_signed_in=lambda: False,
         login=lambda: False,
         has_own_provider=lambda: True,
+        on_own_provider=_on_own_provider,
     )
 
     assert result is True
+    assert dropped == [True]
 
 
 def test_menu_hides_the_own_model_row_without_a_configured_provider(monkeypatch) -> None:
