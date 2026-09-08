@@ -406,3 +406,16 @@ def test_agent_demo_stops_with_setup_hint_when_no_github_token(
     assert queued is False
     assert calls == []
     assert "opensre integrations setup github" in " ".join(buf.getvalue().split())
+
+
+def test_analytics_demo_skill_declares_its_tools() -> None:
+    from core.agent_harness.prompts.skills.loader import list_action_skills
+
+    skill = next(s for s in list_action_skills() if s.name == "cicd-analytics-demo")
+
+    assert skill.tools == (
+        "scan_local_git_workspace",
+        "analyze_github_ci_reliability",
+        "schedule_ci_reliability_loop",
+        "ask_user_choice",
+    )

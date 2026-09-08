@@ -9,6 +9,11 @@ description: >-
   performance", "how reliable is our CI", "what does flaky CI cost us". Not for
   listing currently failing checks (github-ci-health). Multi-step; load before
   acting.
+tools:
+  - scan_local_git_workspace
+  - analyze_github_ci_reliability
+  - schedule_ci_reliability_loop
+  - ask_user_choice
 ---
 ══════════════════════════════════════════════════════════
 CI/CD ANALYTICS DEMO SKILL — interactive-shell action agent:

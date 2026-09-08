@@ -22,7 +22,7 @@ from surfaces.interactive_shell.session.session import Session
 # plus the session-goal trio (session_goal, pending_integration_setup_offer,
 # offered_upgrade_ctas), and the host-owned task-plan work log
 # (task_plan_work, task_plan_work_step_texts, task_plan_breakdown_emitted).
-_CORE_FIELD_COUNT = 29
+_CORE_FIELD_COUNT = 31
 _FACET_FIELDS = ("alerts", "terminal")
 
 

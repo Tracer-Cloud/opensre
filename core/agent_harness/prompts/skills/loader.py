@@ -56,6 +56,8 @@ class ActionSkill:
     description: str
     path: Path
     recurring: str | None = None
+    tools: tuple[str, ...] = ()
+    """Tool names the skill's flow uses; an answer turn inside the skill offers only these."""
 
 
 def skills_dir() -> Path:
@@ -134,6 +136,12 @@ def _string_field(value: Any) -> str:
     return value.strip() if isinstance(value, str) else ""
 
 
+def _string_list_field(value: Any) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        return ()
+    return tuple(item.strip() for item in value if isinstance(item, str) and item.strip())
+
+
 def _derive_description(body: str) -> str:
     """Best-effort one-liner when frontmatter has no description."""
     lines = [ln.strip() for ln in body.splitlines()]
@@ -200,6 +208,7 @@ def _load_action_skill(skill_path: Path) -> ActionSkill | None:
         description=description,
         path=skill_path,
         recurring=recurring,
+        tools=_string_list_field(frontmatter.get("tools")),
     )
 
 

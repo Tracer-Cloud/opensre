@@ -13,7 +13,6 @@ from tools.interactive_shell.action_names import ActionToolName
 
 
 def execute_skill_view_tool(args: dict[str, Any], ctx: ActionToolScope) -> dict[str, Any]:
-    _ = ctx
     name = str(args.get("name", "")).strip()
     if not name:
         available = [skill.name for skill in list_action_skills()]
@@ -32,6 +31,12 @@ def execute_skill_view_tool(args: dict[str, Any], ctx: ActionToolScope) -> dict[
             "available": available,
         }
     slug = name.replace("_", "-").lower()
+    skill = next((item for item in list_action_skills() if item.name == slug), None)
+    # The flow is now inside this skill: the next answer turn offers only its tools.
+    session = getattr(ctx, "session", None)
+    if session is not None:
+        session.active_skill = slug
+        session.active_skill_tools = tuple(getattr(skill, "tools", ()) or ())
     # ``summary`` is what the user sees; ``content`` is for the model only.
     # Without it the generic formatter prints the whole skill body on screen.
     return {

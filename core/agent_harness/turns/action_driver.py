@@ -60,6 +60,7 @@ from core.agent_harness.turns.goal_review import (
     tap_executed_tool_names,
     task_plan_blocks_conclusion,
 )
+from core.agent_harness.turns.skill_scope import scope_tools_to_active_skill
 from core.agent_harness.turns.turn_plan import TurnPlan
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
@@ -876,10 +877,14 @@ def _run_action_turn(
     resolved_integrations = _turn_resolved_integrations(session, turn_plan)
     history_start = len(session.history)
 
-    agent_tools = args.tools.action_tools(
-        confirm_fn=args.confirm_fn,
-        is_tty=args.is_tty,
-        resolved_integrations=resolved_integrations,
+    agent_tools = scope_tools_to_active_skill(
+        args.tools.action_tools(
+            confirm_fn=args.confirm_fn,
+            is_tty=args.is_tty,
+            resolved_integrations=resolved_integrations,
+        ),
+        session,
+        message,
     )
     tool_resources_provider = getattr(args.tools, "tool_resources", None)
     tool_resources = tool_resources_provider() if callable(tool_resources_provider) else {}
