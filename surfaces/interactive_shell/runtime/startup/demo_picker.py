@@ -23,6 +23,7 @@ import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from types import MappingProxyType
 from typing import TYPE_CHECKING
 
 from rich.markdown import Markdown
@@ -135,11 +136,13 @@ OPTION_CI_ANALYTICS = "ci_analytics"
 OPTION_CI_AGENT = "ci_agent"
 OPTION_SLACK = "slack"
 
-_OPTION_BY_SKILL = {
-    "cicd-analytics-demo": OPTION_CI_ANALYTICS,
-    "cicd-reliability-agent": OPTION_CI_AGENT,
-    "slack-handoff": OPTION_SLACK,
-}
+_OPTION_BY_SKILL = MappingProxyType(
+    {
+        "cicd-analytics-demo": OPTION_CI_ANALYTICS,
+        "cicd-reliability-agent": OPTION_CI_AGENT,
+        "slack-handoff": OPTION_SLACK,
+    }
+)
 _DETERMINISTIC_SKILLS = frozenset({"cicd-analytics-demo", "cicd-reliability-agent"})
 
 
