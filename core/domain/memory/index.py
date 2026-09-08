@@ -16,8 +16,9 @@ _INDEX_HEADER = (
     "\n"
 )
 
-DEFAULT_PROMPT_INDEX_CHARS = 8_000
-_MAX_PROMPT_ENTRIES = 50
+DEFAULT_PROMPT_INDEX_CHARS = 3_000
+"""Per-turn budget for injected memory: durable facts, not a second transcript."""
+_MAX_PROMPT_ENTRIES = 15
 _MAX_BODY_CHARS_PER_ENTRY = 600
 
 
