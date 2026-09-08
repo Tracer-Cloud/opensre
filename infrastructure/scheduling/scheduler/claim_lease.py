@@ -100,8 +100,10 @@ class ClaimLeaseRenewer:
                 self._condition.notify_all()
 
     def _deadline_for(self, lease_expires_at: datetime) -> float:
+        # Sample monotonic first so a pause between clocks cannot extend ownership.
+        monotonic_now = self._monotonic()
         remaining = max(0.0, (lease_expires_at - self._utc_now()).total_seconds())
-        return self._monotonic() + remaining
+        return monotonic_now + remaining
 
     def _ensure_thread_locked(self) -> None:
         if self._thread is not None and self._thread.is_alive():

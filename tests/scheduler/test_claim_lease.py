@@ -32,6 +32,26 @@ def _wait_until(predicate: Callable[[], bool], timeout: float = _SYNC_TIMEOUT_SE
     return False
 
 
+def test_clock_sampling_pause_does_not_extend_ownership() -> None:
+    claim = _claim("clock-pause", expires_in=10)
+    elapsed = 0.0
+
+    def utc_now() -> datetime:
+        nonlocal elapsed
+        sampled = claim.lease_expires_at - timedelta(seconds=10)
+        # Model descheduling after sampling UTC but before returning to the caller.
+        elapsed = 20.0
+        return sampled
+
+    renewer = ClaimLeaseRenewer(
+        monotonic=lambda: elapsed,
+        utc_now=utc_now,
+        renewal_interval_seconds=60,
+    )
+    with renewer.hold(claim) as ownership:
+        assert not ownership.valid()
+
+
 def test_concurrent_claims_are_renewed_in_one_batch() -> None:
     first = _claim("first")
     second = _claim("second")
