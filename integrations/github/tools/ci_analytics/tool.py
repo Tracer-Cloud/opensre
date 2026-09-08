@@ -251,7 +251,8 @@ def analyze_github_ci_reliability(
             "owner/repo is required unless the workspace origin identifies a GitHub repository.",
             response_text="I need a GitHub repository (owner/repo) to analyze.",
         )
-    if not resolve_github_token(github_token):
+    token = resolve_github_token(github_token)
+    if not token:
         message = (
             f"A GitHub token is required to read the Actions history of {repo_owner}/{repo_name}. "
             "Run `opensre integrations setup github` and try again."
@@ -268,9 +269,7 @@ def analyze_github_ci_reliability(
         )
     started = time.monotonic()
     try:
-        analysis = analyze_repository(
-            repo_owner, repo_name, token=github_token, days=window, now=now
-        )
+        analysis = analyze_repository(repo_owner, repo_name, token=token, days=window, now=now)
     except (GitHubApiError, ValueError) as exc:
         report_run_error(
             exc,

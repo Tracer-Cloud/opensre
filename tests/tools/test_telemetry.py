@@ -308,7 +308,7 @@ def _github_star_history_case() -> ToolFailureCase:
 def _github_ci_analytics_case() -> ToolFailureCase:
     def patch(mp: pytest.MonkeyPatch) -> None:
         from integrations.github.client import GitHubApiError
-        from integrations.github.tools.ci_analytics import tool as mod
+        from integrations.github.tools.ci_analytics import analysis as mod
 
         mp.setattr(mod, "collect_runs", MagicMock(side_effect=GitHubApiError("boom")))
 
