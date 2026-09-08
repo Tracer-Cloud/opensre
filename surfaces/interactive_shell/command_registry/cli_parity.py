@@ -248,7 +248,7 @@ def _cmd_account(session: Session, console: Console, args: list[str]) -> bool:  
         console.print(message)
         publish_headless_slash_response(session, message=message)
         return True
-    capture_output = subcommand in {"status", "logout"}
+    capture_output = subcommand in {"status", "usage", "logout"}
     handled = run_cli_command(
         console, ["account", *args], capture_output=capture_output, session=session
     )
@@ -331,7 +331,13 @@ COMMANDS: list[SlashCommand] = [
         "/account",
         "Sign in to OpenSRE and inspect the local account.",
         _cmd_account,
-        usage=("/account", "/account login", "/account status", "/account logout"),
+        usage=(
+            "/account",
+            "/account login",
+            "/account status",
+            "/account usage",
+            "/account logout",
+        ),
     ),
     SlashCommand(
         "/auth",

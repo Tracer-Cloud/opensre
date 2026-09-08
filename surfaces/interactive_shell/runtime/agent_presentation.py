@@ -21,6 +21,8 @@ from rich.markup import escape
 from rich.text import Text
 
 from config.constants import SOUND_MIN_TURN_SECONDS
+from core.agent_harness.spi.session_state import PendingUserChoice, set_auto_command
+from core.llm.shared.llm_retry import OpenSRECreditsExhaustedError
 from infrastructure.terminal.notify import NotifyEvent, play_notification
 from surfaces.interactive_shell.runtime.core.state import SpinnerState
 from surfaces.interactive_shell.runtime.input_policy import turn_should_show_spinner
@@ -78,6 +80,27 @@ def _reduce_agent_presentation(
 # The exception text carries the destination for surfaces that print plain
 # text; the shell shows it once, as a link, on its own line.
 _UPGRADE_SENTENCE_LEAD = " Upgrade or top up at"
+# The menu that follows the credit wall: pick a way out with the arrow keys,
+# the way Claude Code offers its billing options inline. Esc leaves it.
+CREDITS_MENU_TITLE = "Hosted credits are exhausted. What next?"
+CREDITS_OPTION_TOP_UP = "Open the usage and top-up page in the browser"
+CREDITS_OPTION_SWITCH = "Switch to another LLM provider"
+CREDITS_MENU_COMMANDS = {
+    CREDITS_OPTION_TOP_UP: "/account usage",
+    CREDITS_OPTION_SWITCH: "/model",
+}
+
+
+def queue_credits_exhausted_menu(session: Session) -> None:
+    """Open the ways-out menu after the turn ends; a headless session gets none."""
+    if getattr(session, "terminal", None) is None:
+        return
+    session.pending_user_choice = PendingUserChoice(
+        title=CREDITS_MENU_TITLE,
+        options=(CREDITS_OPTION_TOP_UP, CREDITS_OPTION_SWITCH),
+        commands=dict(CREDITS_MENU_COMMANDS),
+    )
+    set_auto_command(session, "/choose")
 
 
 def _render_credits_exhausted(console: StreamingConsole, exc: Exception) -> None:
@@ -87,10 +110,10 @@ def _render_credits_exhausted(console: StreamingConsole, exc: Exception) -> None
     hint = Text("Top up or upgrade: ", style=str(DIM))
     url = getattr(exc, "upgrade_url", None)
     if isinstance(url, str) and url:
-        hint.append_text(hyperlink(url, style=str(HIGHLIGHT)))
+        hint.append_text(hyperlink(url, style=f"underline {HIGHLIGHT}"))
     else:
         hint.append("the OpenSRE usage page", style=str(DIM))
-    hint.append(" · or /model to switch provider", style=str(DIM))
+    hint.append(" · /account usage opens it · /model switches provider", style=str(DIM))
     console.print(hint)
 
 
@@ -114,10 +137,7 @@ async def _render_agent_presentation_transition(
             if exc is None:
                 raise ValueError("turn_error event requires an error")
             # On a credit/billing wall, add the in-tool recovery hint.
-            from core.llm.shared.llm_retry import (
-                LLMCreditExhaustedError,
-                OpenSRECreditsExhaustedError,
-            )
+            from core.llm.shared.llm_retry import LLMCreditExhaustedError
 
             if isinstance(exc, OpenSRECreditsExhaustedError):
                 _render_credits_exhausted(console, exc)
@@ -175,6 +195,8 @@ class ConsoleAgentEventSink:
             console=self.console,
             spinner=self.spinner,
         )
+        if event.type == "turn_error" and isinstance(event.error, OpenSRECreditsExhaustedError):
+            queue_credits_exhausted_menu(self.session)
         if event.type in {"turn_end", "turn_interrupted", "turn_error"}:
             self._chime_if_long_turn()
 

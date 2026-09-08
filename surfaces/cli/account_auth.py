@@ -40,6 +40,7 @@ from config.constants.account import (
     OPENSRE_ACCOUNT_LOGIN_SUCCESS_PATH,
     OPENSRE_ACCOUNT_SESSION_PATH,
     OPENSRE_ACCOUNT_TOKEN_ENV,
+    OPENSRE_ACCOUNT_USAGE_PATH,
 )
 
 
@@ -279,6 +280,26 @@ def _cleanup_failed_login(
     _revoke_remote(app_url, access_token)
     with suppress(Exception):
         _restore_previous_account(previous_record, previous_token)
+
+
+def usage_page_url(app_url: str | None = None) -> str:
+    """The webapp page for credits, usage and top-ups."""
+    return _app_endpoint(normalize_app_url(app_url), OPENSRE_ACCOUNT_USAGE_PATH)
+
+
+def open_usage_page(
+    *,
+    app_url: str | None = None,
+    browser_open: Callable[[str], bool] | None = None,
+) -> tuple[str, bool]:
+    """Open the usage page in the browser; return ``(url, opened)``."""
+    url = usage_page_url(app_url)
+    opener = browser_open if browser_open is not None else webbrowser.open
+    try:
+        opened = bool(opener(url))
+    except Exception:
+        opened = False
+    return url, opened
 
 
 def login_account(

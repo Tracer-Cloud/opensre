@@ -384,3 +384,43 @@ def test_login_force_replaces_valid_session(monkeypatch: pytest.MonkeyPatch) -> 
     assert login_calls == [True]
     assert "Replacing the active session for octocat@example.com" in result.output
     assert "Signed in as octocat@example.com" in result.output
+
+
+def test_account_usage_opens_the_usage_page_and_prints_the_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange: the browser opener is a spy; no network, no real browser.
+    opened: list[str] = []
+
+    def _open(url: str) -> bool:
+        opened.append(url)
+        return True
+
+    monkeypatch.setattr(account_auth.webbrowser, "open", _open)
+
+    # Act
+    result = CliRunner().invoke(account_command, ["usage"])
+
+    # Assert: one browser call to the usage page and the URL on screen for terminals without links.
+    assert result.exit_code == 0, result.output
+    assert opened == ["https://app.opensre.com/usage"]
+    assert "Usage and top-up: https://app.opensre.com/usage" in result.output
+    assert "Opened in your browser." in result.output
+
+
+def test_account_usage_without_browser_only_prints_the_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange
+    def _open(_url: str) -> bool:
+        raise AssertionError("browser must not open")
+
+    monkeypatch.setattr(account_auth.webbrowser, "open", _open)
+
+    # Act
+    result = CliRunner().invoke(account_command, ["usage", "--no-browser", "--dev"])
+
+    # Assert: --dev points at the local webapp; the user is told to open it.
+    assert result.exit_code == 0, result.output
+    assert "Usage and top-up: http://localhost:3000/usage" in result.output
+    assert "Open it in your browser." in result.output
