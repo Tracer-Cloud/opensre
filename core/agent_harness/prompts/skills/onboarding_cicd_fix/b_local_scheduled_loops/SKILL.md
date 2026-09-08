@@ -43,7 +43,6 @@ the shell inbox.
 - A one-shot CI/CD performance report. Use `cicd-analytics-demo`.
 - Listing checks that are failing right now. Use `github-ci-health`.
 - Fixing a failing check. Use `github-ci-fix`.
-- First-time CI-fix setup. Use `github-ci-fix-onboarding`.
 
 ## Workflow rules
 

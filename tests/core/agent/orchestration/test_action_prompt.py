@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+from config.constants.skills import ONBOARDING_SKILL_NAME
 from core.agent_harness.prompts import (
     build_action_system_prompt,
     connected_integrations_block,
@@ -264,15 +265,15 @@ def test_skill_matches_take_priority_over_generic_docs_answer() -> None:
     cached_load_skills_block.cache_clear()
 
     index = load_skills_index()
-    body = load_skill_body("github-ci-fix-onboarding")
+    body = load_skill_body(ONBOARDING_SKILL_NAME)
     prompt = build_action_system_prompt(_ctx())
 
     assert "Skill matches outrank a generic docs/how-to answer" in index
     assert '"onboard me"' in index
-    assert "Can you onboard me on the CI/CD flow?" in body
+    assert "owns the onboarding question" in body
     # Skills index still rides the assembled prompt after the markdown base.
     assert SKILLS_HEADER in prompt
-    assert "github-ci-fix-onboarding" in prompt
+    assert ONBOARDING_SKILL_NAME in prompt
     cached_load_skills_block.cache_clear()
 
 

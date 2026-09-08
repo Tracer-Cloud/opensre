@@ -456,9 +456,8 @@ def test_the_skill_forbids_offering_before_the_work() -> None:
     # Arrange
     from core.agent_harness.prompts.skills.loader import skills_dir
 
-    body = " ".join(
-        (skills_dir() / "morning_report" / "SKILL.md").read_text(encoding="utf-8").lower().split()
-    )
+    raw = (skills_dir() / "morning_report" / "SKILL.md").read_text(encoding="utf-8")
+    body = " ".join(raw.replace("`", "").lower().split())
 
     # Assert
     assert "never call propose_scheduled_delivery as the first or only tool" in body

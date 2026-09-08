@@ -30,7 +30,6 @@ _REQUIRED_ACTION_SKILL_NAMES = frozenset(
         # builds bundle and discover skills/<package>/<child>/SKILL.md.
         "cicd-analytics-demo",
         "github-ci-fix",
-        "github-ci-fix-onboarding",
         "github-security-fix",
         "morning-report",
         "onboarding-cicd-fix",

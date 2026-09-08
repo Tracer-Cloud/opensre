@@ -52,7 +52,6 @@ def test_master_menu_matches_four_unique_children_and_preserves_specialists() ->
     assert len(names) == len(set(names))
     assert ONBOARDING_SKILL_NAME in loader.load_skills_index()
     assert loader.load_skill_body("github-ci-fix")
-    assert loader.load_skill_body("github-ci-fix-onboarding")
 
 
 def test_capability_and_demo_prompts_load_master_instead_of_defining_another_menu() -> None:
