@@ -132,6 +132,8 @@ class TerminalSession:
     submitted prompt is painted so the answer uses the brand colour."""
 
     pending_choice_response: str | None = None
+    goal_paint_signature: tuple[object, ...] | None = None
+    """What the last session-goal block showed; unchanged goals repaint as one line."""
     """Selected label while its synthetic answer turn awaits a response.
 
     The response composer consumes the label to hide a pure acknowledgement

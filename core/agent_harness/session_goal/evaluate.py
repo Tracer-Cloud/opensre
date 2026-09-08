@@ -45,6 +45,7 @@ from core.agent_harness.session_goal.goal import (
     apply_session_goal_progress,
     attach_session_goal,
 )
+from core.agent_harness.session_goal.plan_credit import credit_completed_plan_steps
 from core.agent_harness.session_goal.progress import is_session_goal_progress_text
 from core.agent_harness.turns.cohort_identity import (
     goal_needs_cohort_identity,
@@ -221,6 +222,7 @@ def evaluate_session_goal(
             current = stored
     completed_before = current.completed
     current = apply_session_goal_progress(current, text)
+    current = credit_completed_plan_steps(current, session)
 
     claimed = reply_claims_session_goal_achieved(text)
     evidence = turn_has_session_goal_evidence(result)

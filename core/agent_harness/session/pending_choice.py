@@ -14,7 +14,7 @@ and no "Reply with 1, 2, or 3" free-text parsing.
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 _ANSWER_HEADER = re.compile(r"^(\d+)\.\s+(.+)$")
 
@@ -51,6 +51,9 @@ class PendingUserChoice:
 
     multi_select: bool = False
     """Multi-select for the single-question path (ignored when ``questions`` is set)."""
+
+    commands: dict[str, str] = field(default_factory=dict)
+    """Option label -> slash command the shell runs instead of answering the model."""
 
     def items(self) -> tuple[AskUserQuestion, ...]:
         """Questions to render: ``questions`` when set, otherwise one from title/options."""

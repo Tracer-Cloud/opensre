@@ -12,6 +12,7 @@ as the next user message so the agent receives the decision verbatim.
 from __future__ import annotations
 
 from rich.console import Console
+from rich.markup import escape
 
 from core.agent_harness.spi.handoff import format_ask_user_answers
 from infrastructure.terminal import theme as ui_theme
@@ -75,6 +76,14 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
         session.terminal.awaiting_handoff_answer = False
         return True
 
+    command = pending.commands.get(picked_one) or (picked_one if picked_one.startswith("/") else "")
+    if command:
+        # A mapped option, or a slash command typed into the custom row, is a
+        # command the shell runs, not an answer for the model.
+        console.print(f"[{ui_theme.DIM}]Running {escape(command)}.[/]")
+        session.terminal.awaiting_handoff_answer = False
+        session.terminal.set_auto_command(command)
+        return True
     render_choice_selection(console, items[0].title, picked_one)
     # The answer travels with its question, as the batched wizard's does: a bare
     # label such as "owner/repo (757 commits, CI configured)" reads to the

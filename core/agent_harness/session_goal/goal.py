@@ -59,6 +59,7 @@ class SessionGoalReason:
     WAITING_TOOL_EVIDENCE = "waiting for an achieved signal with tool evidence"
     WAITING_USER_CHOICE = "waiting for user choice"
     PAUSED_USER_CHOICE = "paused — waiting for your choice"
+    PAUSED_NO_PROGRESS = "paused — no checklist progress after 2 turns"
     # Distinct from PAUSED_USER_CHOICE: user ran ``/goal pause`` (status=paused).
     PAUSED_BY_USER = "paused by you"
     BUDGET_EXHAUSTED = "session-goal turn budget exhausted"
