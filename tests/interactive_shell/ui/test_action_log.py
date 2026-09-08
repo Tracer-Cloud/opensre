@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 
 from rich.console import Console
+from rich.text import Text
 
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.session.terminal_session import ActionLogEntry
@@ -151,3 +152,25 @@ def test_a_tty_flush_is_one_buffered_write_of_every_row(monkeypatch) -> None:  #
     assert rendered[0] == ""
     assert rendered[1] == "⏺ summarize github pr status"
     assert rendered[2] == "⏺ propose scheduled delivery"
+
+
+def test_box_rows_fit_the_render_width_so_none_wraps() -> None:
+    """Rows one cell wider than the render width wrapped: blank lines and stray corners."""
+    # Arrange: a console whose render width is known.
+    from surfaces.shared.terminal.components.rendering import repl_output_width
+
+    session = Session()
+    _push(session, "1", "GitHub CLI", "gh pr view 6122", "d1")
+    _push(session, "2", "GitHub CLI", "gh pr view 6121", "d2")
+    buffer = io.StringIO()
+    console = _tty(buffer)
+    width = repl_output_width(console)
+
+    # Act
+    flush_action_log(console, session)
+
+    # Assert: every box row is exactly the render width, so Rich never wraps one.
+    plain = [Text.from_ansi(line).plain for line in buffer.getvalue().splitlines()]
+    box = [row for row in plain if row and row[0] in "╭│╰"]
+    assert len(box) == 5, plain
+    assert {len(row) for row in box} == {width}

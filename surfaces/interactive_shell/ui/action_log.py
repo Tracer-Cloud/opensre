@@ -17,8 +17,7 @@ from rich.text import Text
 from infrastructure.terminal.theme import DIM, SECONDARY
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.session.terminal_session import ActionLogEntry
-from surfaces.shared.terminal.components.rendering import print_repl_renderable
-from surfaces.shared.terminal.prompt_layout import terminal_columns
+from surfaces.shared.terminal.components.rendering import print_repl_renderable, repl_output_width
 
 _H = "─"
 _V = "│"
@@ -55,12 +54,16 @@ def flush_action_log(console: Console, session: Session) -> None:
             console.print(Text(entry.detail or entry.kind, style=str(DIM)))
         return
 
+    # Rows are sized to the width the buffered writer renders at. Sizing them
+    # to the terminal instead made every row one cell too wide there, so each
+    # wrapped: blank lines between rows and the corners on their own lines.
+    width = repl_output_width(console)
     rows: list[Text] = [Text("")]
     for group in _group_by_kind(entries):
         if len(group) >= _MIN_GROUP_FOR_BOX:
-            rows.extend(_section_rows(session, group))
+            rows.extend(_section_rows(session, group, width=width))
         else:
-            rows.append(_single_row(session, group[0]))
+            rows.append(_single_row(session, group[0], width=width))
     print_repl_renderable(console, Group(*rows))
 
 
@@ -76,19 +79,19 @@ def _group_by_kind(entries: list[ActionLogEntry]) -> Iterator[list[ActionLogEntr
         yield group
 
 
-def _single_row(session: Session, entry: ActionLogEntry) -> Text:
+def _single_row(session: Session, entry: ActionLogEntry, *, width: int) -> Text:
     """A lone tool call as one dim line; its detail is stashed for Ctrl+O."""
     if entry.detail:
         session.terminal.stash_collapsed_tool_output(entry.detail)
     label = f"{entry.kind} · {entry.concise}" if entry.concise else entry.kind
     line = f"{_MARKER} {label}"
-    max_width = max(_MIN_INNER, terminal_columns() - _BOX_MARGIN)
+    max_width = max(_MIN_INNER, width - _BOX_MARGIN)
     if len(line) > max_width:
         line = line[: max_width - 1] + "…"
     return Text(line, style=str(DIM))
 
 
-def _section_rows(session: Session, group: list[ActionLogEntry]) -> list[Text]:
+def _section_rows(session: Session, group: list[ActionLogEntry], *, width: int) -> list[Text]:
     """One full-box section (title in the top border); its detail is stashed."""
     kind = group[0].kind
     count = len(group)
@@ -99,9 +102,9 @@ def _section_rows(session: Session, group: list[ActionLogEntry]) -> list[Text]:
         session.terminal.stash_collapsed_tool_output(detail)
         body.append("Ctrl+O to expand details")
 
-    # Span the full window, matching the input composer plate (total box width
-    # == terminal columns; the border/padding claim 4 cells).
-    inner = max(_MIN_INNER, terminal_columns() - 4)
+    # Span the render width, matching the input composer plate (the border
+    # and padding claim 4 cells).
+    inner = max(_MIN_INNER, width - 4)
 
     def _clip(text: str) -> str:
         return text if len(text) <= inner else text[: inner - 1] + "…"
