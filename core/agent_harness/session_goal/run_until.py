@@ -33,7 +33,6 @@ from core.agent_harness.session_goal.goal import (
     refresh_session_goal_reason,
     session_goal_is_active,
     session_goal_is_paused,
-    verdict_key,
 )
 from core.agent_harness.turns.turn_results import TurnResult
 
@@ -272,11 +271,11 @@ def _finish_outer_turn(
         active = pause_for_no_progress(session, active, on_progress)
         return active, last, True
 
-    verdict = active.last_reason.strip()
     ticked = bool(active.completed - completed_before)
-    if verdict and verdict_key(verdict) == active.last_verdict and not ticked:
-        # Tools ran, but no item was ticked and the judge said the same thing
-        # again: the loop is repeating itself and the budget would go the same way.
+    if active.verdict_repeated and not ticked:
+        # Tools ran, but no item was ticked and the judge says its verdict
+        # repeats the last one: the loop is going round and the budget would
+        # go the same way.
         active = pause_for_no_progress(
             session,
             active,
@@ -285,8 +284,6 @@ def _finish_outer_turn(
             menu_title=SAME_VERDICT_MENU_TITLE,
         )
         return active, last, True
-    active = active.with_verdict(verdict)
-    attach_session_goal(session, active)
 
     # Still active under budget: paint the verdict (the judge's reason) before
     # ``_announce_working`` paints the next turn's line. Hosts render both as

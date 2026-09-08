@@ -421,16 +421,17 @@ def test_the_same_judge_verdict_twice_pauses_the_goal_even_when_tools_ran() -> N
             assistant_response_text="All 5 checked. | 3 rows |",
         )
 
-    reworded = iter(
-        [
-            "Contradiction: the sentence says 'All 5 PRs checked' but the table lists 3 rows.",
-            'Contradiction: the sentence says "All 5 PRs checked" but the table lists three rows!',
-        ]
-    )
+    seen_previous: list[str] = []
 
-    def _same(**_kw: object) -> SessionGoalJudgeVerdict:
-        # The judge rewords the same finding; the guard must still see a repeat.
-        return SessionGoalJudgeVerdict(verdict="NOT_REACHED", reason=next(reworded))
+    def _same(**kw: object) -> SessionGoalJudgeVerdict:
+        # The judge is shown its previous reason and says whether it repeats it.
+        previous = str(kw.get("previous_reason", ""))
+        seen_previous.append(previous)
+        return SessionGoalJudgeVerdict(
+            verdict="NOT_REACHED",
+            reason="Contradiction: the sentence says 5 but the table lists 3 rows",
+            repeats_previous=bool(previous),
+        )
 
     # Act
     outcome = run_until_session_goal(
@@ -443,7 +444,8 @@ def test_the_same_judge_verdict_twice_pauses_the_goal_even_when_tools_ran() -> N
         ),
     )
 
-    # Assert: two turns, then a pause with the menu instead of four more identical turns.
+    # Assert: the second call saw the first reason; two turns, then the pause and menu.
+    assert seen_previous == ["", "Contradiction: the sentence says 5 but the table lists 3 rows"]
     assert len(turns) == 2
     assert outcome.goal.status == SessionGoalStatus.PAUSED
     assert outcome.goal.last_reason == SessionGoalReason.PAUSED_SAME_VERDICT

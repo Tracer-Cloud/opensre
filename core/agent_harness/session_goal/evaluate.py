@@ -51,6 +51,8 @@ class SessionGoalVerdict:
 
     status: str
     reason: str
+    #: The judge said this verdict repeats the previous turn's blocking problem.
+    repeats_previous: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,6 +173,7 @@ def _run_judge(
                 reply=text,
                 evidence=evidence,
                 unfinished=unfinished,
+                previous_reason=current.last_verdict,
             )
         if judge_llm is None:
             return None
@@ -180,6 +183,7 @@ def _run_judge(
             reply=text,
             evidence=evidence,
             unfinished=unfinished,
+            previous_reason=current.last_verdict,
         )
     except Exception:
         log.debug("session-goal judge unavailable", exc_info=True)
@@ -198,6 +202,7 @@ def _verdict_from_judge(
             reason=SessionGoalReason.JUDGE_UNAVAILABLE,
         )
     reason = parsed.reason.strip()
+    repeated = bool(getattr(parsed, "repeats_previous", False))
     if parsed.verdict == "IMPOSSIBLE":
         return SessionGoalVerdict(
             status=SessionGoalStatus.IMPOSSIBLE,
@@ -212,10 +217,12 @@ def _verdict_from_judge(
         return SessionGoalVerdict(
             status=SessionGoalStatus.ACTIVE,
             reason=_need_tool_evidence_reason(reason),
+            repeats_previous=repeated,
         )
     return SessionGoalVerdict(
         status=SessionGoalStatus.ACTIVE,
         reason=reason or fallback_reason,
+        repeats_previous=repeated,
     )
 
 
@@ -310,6 +317,7 @@ def evaluate_session_goal(
     verdict = _with_rejected_ticks(verdict, review.rejected)
     if verdict.status == SessionGoalStatus.ACHIEVED:
         current = _complete_checklist(current)
+    current = current.with_verdict(verdict.reason, repeated=verdict.repeats_previous)
 
     if session is not None:
         updated = current.with_status(verdict.status).with_reason(verdict.reason)
