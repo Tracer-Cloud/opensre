@@ -15,11 +15,14 @@ metadata:
   type: repair
   version: "1.0"
 ---
-══════════════════════════════════════════════════════════
-GITHUB SECURITY AND QUALITY FIX SKILL — interactive-shell action agent:
-══════════════════════════════════════════════════════════
 
-WHEN TO USE:
+# GitHub security and quality fix
+
+Use `fix_github_security_alert` to remediate a supported security or quality
+finding, producing a local diff or a pull request as requested.
+
+## When to use
+
 - The user asks to fix/remediate GitHub security and quality issues, security
   alerts, Security and quality findings, Code Quality findings, Dependabot
   alerts, CodeQL/code-scanning alerts, vulnerable dependencies, or repo
@@ -30,16 +33,17 @@ WHEN TO USE:
 - A GitHub security alert URL, `/security/code-scanning` page URL, or
   `/security/quality` URL is provided.
 
-USE THIS TOOL:
-- `fix_github_security_alert`
+## Scope
 
-DO NOT USE THIS SKILL FOR:
+Use other workflows for these requests:
+
 - Ordinary GitHub issue/PR create, close, comment, assign, label, merge, or repo
   reads. Use `github_cli`.
 - Secret-scanning remediation. The tool will refuse it because the secret must
   be revoked/rotated outside the repo before code cleanup.
 
-HARD RULES:
+## Workflow rules
+
 - For broad repo requests, call:
   `fix_github_security_alert(owner?, repo?, alert_type="auto", open_pr=<user asked PR>)`
   and let the tool select one open supported security or quality finding.
@@ -71,16 +75,40 @@ HARD RULES:
   changed files, and PR URL if present. If `error_kind` is set, explain the
   required next step from `error`.
 
-Compact examples:
-1) "fix the security issues in Tracer-Cloud/opensre and raise a PR"
-   → fix_github_security_alert(owner="Tracer-Cloud", repo="opensre", alert_type="auto", open_pr=true)
-2) "hey fix the security issues"
-   → fix_github_security_alert(alert_type="auto")
-3) "fix the code quality findings on https://github.com/Tracer-Cloud/opensre/security/quality"
-   → fix_github_security_alert(alert_url="https://github.com/Tracer-Cloud/opensre/security/quality", alert_type="code_quality")
-4) "fix Dependabot alert 12 in this repo"
-   → fix_github_security_alert(alert_type="dependabot", alert_number=12)
-5) "fix https://github.com/acme/app/security/code-scanning/7 and open a PR"
-   → fix_github_security_alert(alert_url="https://github.com/acme/app/security/code-scanning/7", open_pr=true)
-6) "fix the code scanning errors on https://github.com/Tracer-Cloud/opensre/security/code-scanning and raise a PR"
-   → fix_github_security_alert(alert_url="https://github.com/Tracer-Cloud/opensre/security/code-scanning", alert_type="code_scanning", open_pr=true)
+## Examples
+
+- "fix the security issues in Tracer-Cloud/opensre and raise a PR"
+
+  ```text
+  fix_github_security_alert(owner="Tracer-Cloud", repo="opensre", alert_type="auto", open_pr=true)
+  ```
+
+- "hey fix the security issues"
+
+  ```text
+  fix_github_security_alert(alert_type="auto")
+  ```
+
+- "fix the code quality findings on https://github.com/Tracer-Cloud/opensre/security/quality"
+
+  ```text
+  fix_github_security_alert(alert_url="https://github.com/Tracer-Cloud/opensre/security/quality", alert_type="code_quality")
+  ```
+
+- "fix Dependabot alert 12 in this repo"
+
+  ```text
+  fix_github_security_alert(alert_type="dependabot", alert_number=12)
+  ```
+
+- "fix https://github.com/acme/app/security/code-scanning/7 and open a PR"
+
+  ```text
+  fix_github_security_alert(alert_url="https://github.com/acme/app/security/code-scanning/7", open_pr=true)
+  ```
+
+- "fix the code scanning errors on https://github.com/Tracer-Cloud/opensre/security/code-scanning and raise a PR"
+
+  ```text
+  fix_github_security_alert(alert_url="https://github.com/Tracer-Cloud/opensre/security/code-scanning", alert_type="code_scanning", open_pr=true)
+  ```

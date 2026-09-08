@@ -28,6 +28,10 @@ from core.agent_harness.prompts.skills.loader import (
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
 
 
+def _skill_instruction_text(name: str) -> str:
+    return " ".join(load_skill_body(name).replace("`", "").lower().split())
+
+
 def _ctx(
     *,
     messages: list[tuple[str, str]] | None = None,
@@ -139,9 +143,7 @@ def test_system_prompt_slack_fragment_documents_invented_command_example() -> No
 def test_morning_report_skill_closes_with_schedule_offer() -> None:
     """A run-once morning report without an offer cannot drive repeat usage."""
     load_skills_block.cache_clear()
-    body = " ".join(
-        (skills_dir() / "morning_report" / "SKILL.md").read_text(encoding="utf-8").lower().split()
-    )
+    body = _skill_instruction_text("morning-report")
     assert "propose_scheduled_delivery" in body
     assert "recurring_skill" in body
     assert "morning-report" in body
@@ -203,8 +205,6 @@ def test_skills_loader_bundles_architecture_audit_skill() -> None:
     assert "architecture_clone_repo" not in index
 
     body = load_skill_body("architecture-audit")
-    assert "ARCHITECTURE AUDIT SKILL" in body
-    assert "WHEN TO USE" in body
     assert "summarize this repo's architecture" in body
     assert "architecture_clone_repo" in body
     assert "scan_architecture_imports" not in body
@@ -229,7 +229,6 @@ def test_skills_loader_bundles_github_security_fix_skill() -> None:
     # detailed assertions from #4727 belong against the body, not the block.
     assert "github-security-fix" in load_skills_index()
     body = load_skill_body("github-security-fix")
-    assert "GITHUB SECURITY AND QUALITY FIX SKILL" in body
     assert "fix_github_security_alert" in body
     assert "security and quality issues" in body
     assert "/security/code-scanning" in body
@@ -252,7 +251,6 @@ def test_skills_loader_bundles_github_ci_fix_skill() -> None:
 
     assert "github-ci-fix" in load_skills_index()
     body = load_skill_body("github-ci-fix")
-    assert "GITHUB CI FIX SKILL" in body
     assert "fix_github_pr_ci" in body
     assert "output exactly that text and stop" in body
     assert '"next steps"' in body
@@ -290,7 +288,7 @@ def test_action_system_prompt_includes_context_blocks() -> None:
     assert "RECENT CONVERSATION" in prompt
     assert "architecture-audit" in prompt
     assert "skill_view" in prompt
-    assert "ARCHITECTURE AUDIT SKILL" not in prompt
+    assert load_skill_body("architecture-audit") not in prompt
 
 
 def test_skills_index_is_thin_relative_to_full_bodies() -> None:
@@ -316,7 +314,7 @@ def test_action_system_prompt_includes_skills_block() -> None:
     prompt = build_action_system_prompt(_ctx())
     assert SKILLS_HEADER in prompt
     assert "morning-report" in prompt
-    assert "MORNING REPORT SKILL" not in prompt
+    assert load_skill_body("morning-report") not in prompt
     # Skills sit after the markdown base so the action-planner identity is set first.
     assert prompt.index("You plan actions for the OpenSRE interactive shell.") < prompt.index(
         SKILLS_HEADER
@@ -409,9 +407,7 @@ def test_scheduling_is_never_offered_without_asking_first() -> None:
     """
     # Arrange
     load_skills_block.cache_clear()
-    skill = " ".join(
-        (skills_dir() / "morning_report" / "SKILL.md").read_text(encoding="utf-8").lower().split()
-    )
+    skill = _skill_instruction_text("morning-report")
 
     # Assert — structured propose tool; creation waits on confirm / yes
     assert "do not call /cron yet" in skill
@@ -445,11 +441,7 @@ def test_the_active_instruction_survives_context_truncation() -> None:
 def test_the_cron_guidance_teaches_structured_schedule_offers() -> None:
     """Morning report must propose via tool, not scrape Want-me-to into /cron."""
     # Arrange
-    from core.agent_harness.prompts.skills.loader import skills_dir
-
-    skill = " ".join(
-        (skills_dir() / "morning_report" / "SKILL.md").read_text(encoding="utf-8").lower().split()
-    )
+    skill = _skill_instruction_text("morning-report")
 
     assert "propose_scheduled_delivery" in skill
     assert "omit chat_id" in skill

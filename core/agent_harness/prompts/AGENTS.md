@@ -30,3 +30,16 @@ kernel  ←  memory, runtime_facts, skills, rules, grounding, system_prompt
 
 `PromptBlock.provenance` should name the owning module under this tree
 (e.g. `core.agent_harness.prompts.opensre_system_prompt.md`).
+
+## Skill body formatting
+
+Use ordinary Markdown, following
+[`skills/onboarding_cicd_fix/SKILL.md`](skills/onboarding_cicd_fix/SKILL.md):
+
+- Start with a `#` title and a short statement of purpose.
+- Use descriptive `##` sections and `###` workflow steps where order matters.
+- Write direct instructions in short paragraphs or lists; avoid decorative
+  banners, all-caps section labels, and repeated tool inventories.
+- Keep commands and exact output examples in inline code or fenced blocks.
+- Preserve frontmatter, tool contracts, exact choice labels, authorization
+  boundaries, and required output formats when changing presentation.

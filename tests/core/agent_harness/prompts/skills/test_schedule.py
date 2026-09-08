@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from core.agent_harness.prompts.skills.loader import clear_skills_caches, list_action_skills
+from core.agent_harness.prompts.skills.loader import (
+    clear_skills_caches,
+    list_action_skills,
+    load_skill_body,
+)
 from core.agent_harness.prompts.skills.schedule import (
     find_action_skill,
     is_recurring_skill,
@@ -35,7 +39,7 @@ def test_resolve_scheduled_skill_pins_revision() -> None:
     pinned = skill_revision(skill)
     resolved = resolve_scheduled_skill("morning-report", pinned)
     assert resolved.name == "morning-report"
-    assert "MORNING REPORT SKILL" in resolved.body
+    assert resolved.body == load_skill_body("morning-report")
     assert resolved.revision == pinned
 
 

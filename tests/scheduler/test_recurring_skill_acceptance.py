@@ -9,6 +9,7 @@ from click.testing import CliRunner
 
 import infrastructure.scheduling.scheduler.delivery_bundle as delivery_bundle
 from core.agent_harness import AgentSession, ToolCallingTurnResult, TurnResult
+from core.agent_harness.prompts.skills.loader import load_skill_body
 from infrastructure.scheduling.scheduler.executor import execute_task
 from infrastructure.scheduling.scheduler.storage.run_store import get_runs
 from infrastructure.scheduling.scheduler.storage.task_store import list_tasks
@@ -105,7 +106,7 @@ def test_scheduled_morning_report_runs_the_skill_and_delivers_once(
 
     assert success is True
     assert len(prompts) == 1
-    assert "MORNING REPORT SKILL" in prompts[0]
+    assert load_skill_body("morning-report") in prompts[0]
     assert "Daily Reliability Summary" not in prompts[0]
     assert delivery.messages == [
         "Good morning! Here is your briefing.\n"

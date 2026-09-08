@@ -31,11 +31,14 @@ tools:
   - slash_invoke
   - ask_user_choice
 ---
-══════════════════════════════════════════════════════════
-CI/CD ANALYTICS DEMO SKILL — interactive-shell action agent:
-══════════════════════════════════════════════════════════
 
-WHEN TO USE:
+# CI/CD analytics demo
+
+Analyze one repository's CI/CD reliability, then offer a recurring check or
+Slack setup.
+
+## When to use
+
 - The user picked "Explore a repo and analyze its CI/CD performance (recommended)"
   from the startup demo menu (option A), or asks to "run the CI/CD analytics
   demo", "analyze my repo's CI/CD performance", "show me how reliable our CI
@@ -43,21 +46,15 @@ WHEN TO USE:
 - The user names a repository and asks for its CI/CD performance, reliability,
   failure rate, or downtime.
 
-USE THESE TOOLS:
-- `scan_local_git_workspace`
-- `analyze_github_ci_reliability`
-- `schedule_ci_reliability_loop`
-- `cli_exec`
-- `slash_invoke`
-- `ask_user_choice`
+## Related workflows
 
-DO NOT USE THIS SKILL FOR:
 - Fixing a failing check. Use `github-ci-fix`.
 - Setting up the local CI fix loop or prerequisites. Use
   `github-ci-fix-onboarding`.
 - Listing the checks that are failing right now. Use `github-ci-health`.
 
-HARD RULES:
+## Workflow rules
+
 - Every number in the reply comes from a tool result. Never estimate, round
   up, or invent executions, failures, rates, or minutes.
 - Never run `gh`, `git`, or `shell_run` for this flow; the scan and
@@ -80,55 +77,73 @@ HARD RULES:
   never ask what the answer or the request "means". A repository name in the
   request or in the answer is the repository; go straight to step 3.
 
-Steps, in order (headers are mandatory, see the labeling rules below).
+## Workflow
+
 When the request already names the repository, start at step 3 and use
 headers [3/4] and [4/4] only.
 
-1) Scan this machine.
-   Call `scan_local_git_workspace()` with no arguments. Say in one sentence
-   what was found, using `summary` from the result.
+### 1. Scan this machine
 
-2) Pick the repository.
-   From the scan result, candidates are repositories with a `github` name and
-   `has_workflows` true, ordered by `commits`. Then call `ask_user_choice`
-   with title `Which repository should I analyze?` and options, in this order:
-   - up to three candidates as `<owner/repo> (<commits> commits, CI configured)`
-   - `Use the open-source example repository (Tracer-Cloud/opensre)`
-   If there are no candidates, offer only the example repository and say why.
-   WAIT for the answer.
+Call `scan_local_git_workspace()` with no arguments. Say in one sentence
+what was found, using `summary` from the result.
 
-3) Analyze CI/CD reliability.
-   Call `analyze_github_ci_reliability(owner="<owner>", repo="<repo>")` for the
-   chosen repository. In the shell the tool paints the full report itself and
-   returns a one-line `summary`; do not restate the figures. Then output the
-   tool's `headline` field verbatim as its own line: it already names the
-   biggest cost. Do not compute, convert, or reword any figure yourself, and
-   do not add a recap, bullet list, or "verified result" of your own after
-   the headline: the next assistant text is the step 4 header.
+### 2. Pick the repository
 
-4) Offer what to do next.
-   Call `ask_user_choice` with title `What would you like to do next?` and
-   these exact options:
-   - `Set up an agent that improves CI/CD reliability over time`
-   - `Connect OpenSRE to Slack and hand off DevOps chores for your team`
-   - `Exit demo`
-   WAIT for the answer. On the first option, call
-   `schedule_ci_reliability_loop(owner="<owner>", repo="<repo>")` for the
-   analyzed repository, output its `response_text` verbatim, and stop; it
-   schedules a weekday 08:00 local check that delivers to this shell's inbox
-   and never posts anywhere else. Each tick is deterministic (no model turn);
-   `/loops service install` keeps it running when no shell is open. On the second, call
-   `cli_exec` with payload `integrations verify slack`; if Slack is not
-   configured, call `slash_invoke` with `/integrations setup slack` and stop
-   (do not use `cli_exec` for setup — that wizard needs a full terminal).
-   If Slack is already connected, say so. Then explain in two sentences how to hand off a chore from Slack
-   (mention OpenSRE in a channel or DM it). Never post, reply, or send anything
-   to Slack in this demo. On `Exit demo`, reply with one line and stop.
+From the scan result, candidates are repositories with a `github` name and
+`has_workflows` true, ordered by `commits`. Then call `ask_user_choice`
+with title `Which repository should I analyze?` and options, in this order:
 
-Step labeling rules (UX):
-- Before every numbered step's tool calls, emit this exact header format as
-  assistant text in the SAME response as the tool calls, then one short
-  status sentence:
-    ### [n/4] <step name>
-    <One-sentence status.>
-- Never start tool calls for a new step without its header.
+- up to three candidates as `<owner/repo> (<commits> commits, CI configured)`
+- `Use the open-source example repository (Tracer-Cloud/opensre)`
+
+If there are no candidates, offer only the example repository and say why.
+Wait for the answer.
+
+### 3. Analyze CI/CD reliability
+
+Call `analyze_github_ci_reliability(owner="<owner>", repo="<repo>")` for the
+chosen repository. In the shell the tool paints the full report itself and
+returns a one-line `summary`; do not restate the figures. Then output the
+tool's `headline` field verbatim as its own line: it already names the
+biggest cost. Do not compute, convert, or reword any figure yourself, and
+do not add a recap, bullet list, or "verified result" of your own after
+the headline: the next assistant text is the step 4 header.
+
+### 4. Offer what to do next
+
+Call `ask_user_choice` with title `What would you like to do next?` and
+these exact options:
+
+- `Set up an agent that improves CI/CD reliability over time`
+- `Connect OpenSRE to Slack and hand off DevOps chores for your team`
+- `Exit demo`
+
+Wait for the answer, then follow the selected option.
+
+**Recurring check:** Call
+`schedule_ci_reliability_loop(owner="<owner>", repo="<repo>")` for the
+analyzed repository, output its `response_text` verbatim, and stop; it
+schedules a weekday 08:00 local check that delivers to this shell's inbox
+and never posts anywhere else. Each tick is deterministic (no model turn);
+`/loops service install` keeps it running when no shell is open.
+
+**Slack setup:** Call `cli_exec` with payload `integrations verify slack`.
+If Slack is not configured, call `slash_invoke` with
+`/integrations setup slack` and stop; that wizard needs a full terminal.
+If Slack is already connected, say so. Then explain in two sentences how to
+hand off a chore from Slack: mention OpenSRE in a channel or DM it.
+Never post, reply, or send anything to Slack in this demo.
+
+**Exit demo:** Reply with one line and stop.
+
+## Progress updates
+
+Before every numbered step's tool calls, emit this exact header format as
+assistant text in the same response, followed by one short status sentence:
+
+```text
+### [n/4] <step name>
+<One-sentence status.>
+```
+
+Never start tool calls for a new step without its header.

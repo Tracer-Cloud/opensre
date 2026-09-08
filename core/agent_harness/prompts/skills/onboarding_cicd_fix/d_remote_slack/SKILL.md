@@ -24,25 +24,28 @@ tools:
   - cli_exec
   - slash_invoke
 ---
-══════════════════════════════════════════════════════════
-SLACK HANDOFF SKILL — interactive-shell action agent:
-══════════════════════════════════════════════════════════
 
-WHEN TO USE:
+# Slack handoff
+
+Verify or set up Slack, then explain how the team can hand off DevOps chores
+through a channel mention or a DM.
+
+## When to use
+
 - The user picked "Connect OpenSRE to Slack and hand off DevOps chores for your team"
   from the startup demo menu (option D), or asks to set up Slack and show how to
   hand off DevOps chores from Slack.
 
-USE THESE TOOLS:
-- `cli_exec`
-- `slash_invoke`
+## Scope
 
-DO NOT USE THIS SKILL FOR:
+Use other workflows for these requests:
+
 - Posting, replying, or reacting in Slack. This demo never sends to Slack.
 - CI/CD analytics or the reliability agent. Use `cicd-analytics-demo` or
   `cicd-reliability-agent`.
 
-HARD RULES:
+## Workflow rules
+
 - Never call Slack send/reply/react tools.
 - Never invent that Slack is connected; trust only `cli_exec` verify results.
 - Never call `cli_exec` with `integrations setup slack`. That wizard is
@@ -50,25 +53,33 @@ HARD RULES:
 - After setup (or a successful verify), explain in two sentences how to hand
   off a chore: mention OpenSRE in a channel it can see, or DM it.
 
-Steps, in order:
+## Workflow
 
-1) Check Slack.
-   Call `cli_exec` with payload `integrations verify slack`.
 
-2) Set up if needed.
-   If Slack is not configured, call `slash_invoke` with
-   `/integrations setup slack` and stop. The shell queues that wizard on the
-   next prompt so it gets exclusive stdin. If Slack is already connected, say
-   so and skip setup.
+### 1. Check Slack
 
-3) Explain the hand-off.
-   Two sentences: mention OpenSRE in a channel or DM it; do not post anything
-   from this demo. Then stop.
+Call `cli_exec` with payload `integrations verify slack`.
 
-Step labeling rules (UX):
-- Before every numbered step's tool calls, emit this exact header format as
-  assistant text in the SAME response as the tool calls, then one short
-  status sentence:
-    ### [n/3] <step name>
-    <One-sentence status.>
-- Never start tool calls for a new step without its header.
+### 2. Set up if needed
+
+If Slack is not configured, call `slash_invoke` with
+`/integrations setup slack` and stop. The shell queues that wizard on the
+next prompt so it gets exclusive stdin. If Slack is already connected, say
+so and skip setup.
+
+### 3. Explain the hand-off
+
+Two sentences: mention OpenSRE in a channel or DM it; do not post anything
+from this demo. Then stop.
+
+## Progress updates
+
+Before every numbered step's tool calls, emit this exact header format as
+assistant text in the same response, followed by one short status sentence:
+
+```text
+### [n/3] <step name>
+<One-sentence status.>
+```
+
+Never start tool calls for a new step without its header.

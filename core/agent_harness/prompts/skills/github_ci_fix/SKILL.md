@@ -17,11 +17,14 @@ metadata:
   type: repair
   version: "1.0"
 ---
-══════════════════════════════════════════════════════════
-GITHUB CI FIX SKILL — interactive-shell action agent:
-══════════════════════════════════════════════════════════
 
-WHEN TO USE:
+# GitHub CI fix
+
+Use `fix_github_pr_ci` to repair failing checks on a pull request or a named
+branch.
+
+## When to use
+
 - The user asks to fix failing CI, broken GitHub Actions checks, failing PR
   checks, a red pull request branch, or CI on a named branch such as `main`.
 - The user says "fix CI on this PR", "fix the CI of PR 123 and push", "repair
@@ -31,15 +34,14 @@ WHEN TO USE:
   "main is red, fix it", or "fix CI on the default branch and push" — with no
   PR involved.
 
-USE THIS TOOL:
-- `fix_github_pr_ci`
+## Related workflows
 
-DO NOT USE THIS SKILL FOR:
 - Ordinary PR reads, comments, closes, merges, labels, or issue work. Use
   `github_cli`.
 - Security alert remediation. Use `fix_github_security_alert`.
 
-HARD RULES:
+## Workflow rules
+
 - For a GitHub PR URL, call:
   `fix_github_pr_ci(pr_url="<url>")`
 - For `owner/repo#123` or "PR 123 in owner/repo", call:
@@ -68,14 +70,34 @@ HARD RULES:
   "next steps", do not add numbered options, do not list example commands, and
   do not ask a broad follow-up question.
 
-Compact examples:
-1) "fix CI on https://github.com/Tracer-Cloud/opensre/pull/4597 and push"
-   → fix_github_pr_ci(pr_url="https://github.com/Tracer-Cloud/opensre/pull/4597")
-2) "fix failing checks on Tracer-Cloud/opensre#4597"
-   → fix_github_pr_ci(owner="Tracer-Cloud", repo="opensre", pr_number=4597)
-3) "fix CI on main in Tracer-Cloud/opensre and push"
-   → fix_github_pr_ci(owner="Tracer-Cloud", repo="opensre", branch="main")
-4) "the current PR CI is failing, fix and push"
-   → fix_github_pr_ci()
-5) "fix the CI on main"
-   → fix_github_pr_ci(branch="main")
+## Examples
+
+- "fix CI on https://github.com/Tracer-Cloud/opensre/pull/4597 and push"
+
+  ```text
+  fix_github_pr_ci(pr_url="https://github.com/Tracer-Cloud/opensre/pull/4597")
+  ```
+
+- "fix failing checks on Tracer-Cloud/opensre#4597"
+
+  ```text
+  fix_github_pr_ci(owner="Tracer-Cloud", repo="opensre", pr_number=4597)
+  ```
+
+- "fix CI on main in Tracer-Cloud/opensre and push"
+
+  ```text
+  fix_github_pr_ci(owner="Tracer-Cloud", repo="opensre", branch="main")
+  ```
+
+- "the current PR CI is failing, fix and push"
+
+  ```text
+  fix_github_pr_ci()
+  ```
+
+- "fix the CI on main"
+
+  ```text
+  fix_github_pr_ci(branch="main")
+  ```

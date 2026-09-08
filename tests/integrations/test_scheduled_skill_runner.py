@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from core.agent_harness import AgentSession, ToolCallingTurnResult, TurnResult, pin_recurring_skill
+from core.agent_harness.prompts.skills.loader import load_skill_body
 from core.agent_harness.tools.tool_provider import tool_allowed_for_unattended_run
 from core.tool import SideEffectLevel
 from integrations import scheduled_skill_runner
@@ -129,7 +130,7 @@ def test_morning_report_runs_the_pinned_recipe_with_prefetched_data(
         }
     )
 
-    assert "MORNING REPORT SKILL" in prompts[0]
+    assert load_skill_body("morning-report") in prompts[0]
     assert "Weather: New Delhi: sunny" in prompts[0]
     assert "Daily Reliability Summary" not in prompts[0]
     assert report.startswith("Good morning!")
