@@ -17,6 +17,7 @@ from core.agent_harness.session_goal.persist import (
     session_goal_state_snapshot,
     session_goal_to_payload,
 )
+from core.agent_harness.session_goal.run_until import goal_has_stalled
 
 
 def test_session_goal_round_trips_through_payload() -> None:
@@ -48,6 +49,23 @@ def test_paused_session_goal_round_trips_through_payload() -> None:
     assert restored == goal
     assert restored is not None
     assert restored.status == SessionGoalStatus.PAUSED
+
+
+def test_legacy_payload_starts_the_stall_clock_at_restored_turns() -> None:
+    restored = session_goal_from_payload(
+        {
+            "condition": "finish checklist",
+            "max_outer_turns": 5,
+            "status": SessionGoalStatus.ACTIVE,
+            "turns_used": 3,
+            "checklist": ["a", "b", "c"],
+            "completed": [0],
+        }
+    )
+
+    assert restored is not None
+    assert restored.last_progress_turns_used == 3
+    assert goal_has_stalled(restored) is False
 
 
 def test_session_goal_state_snapshot_includes_cta_and_pending() -> None:
