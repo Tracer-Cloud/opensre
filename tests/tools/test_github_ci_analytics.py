@@ -1105,7 +1105,9 @@ def test_tool_renders_report_from_collected_runs() -> None:
     )
     with (
         patch("integrations.github.tools.ci_analytics.tool.resolve_github_token", return_value="t"),
-        patch("integrations.github.tools.ci_analytics.analysis.collect_runs", return_value=collected),
+        patch(
+            "integrations.github.tools.ci_analytics.analysis.collect_runs", return_value=collected
+        ),
     ):
         result = analyze_github_ci_reliability(owner="o", repo="r", days=7)
 
@@ -1146,7 +1148,9 @@ def test_tool_shows_progress_lines_around_the_painted_report() -> None:
 
     with (
         patch("integrations.github.tools.ci_analytics.tool.resolve_github_token", return_value="t"),
-        patch("integrations.github.tools.ci_analytics.analysis.collect_runs", return_value=collected),
+        patch(
+            "integrations.github.tools.ci_analytics.analysis.collect_runs", return_value=collected
+        ),
     ):
         result = analyze_github_ci_reliability(owner="o", repo="r[1]", days=7, context=context)
 

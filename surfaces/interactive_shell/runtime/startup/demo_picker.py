@@ -4,17 +4,13 @@ On the first interactive launch the shell asks which demo to run before the
 prompt takes stdin. A marker file records the choice so the picker shows once;
 ``/demo`` reopens it on demand.
 
-The CI/CD analytics demo runs its discovery steps here, deterministically:
-the workspace scan paints the activity chart, a second picker asks which
-repository to analyze, and only then is a canned prompt auto-submitted for the
-analysis and the next-step offer. Mid-turn menus cannot open inside an
-auto-submitted turn, so every choice that needs a menu happens before the turn
-starts. Routing of the prompt itself stays with the action agent (no intent
-heuristics — see ``surfaces/interactive_shell/AGENTS.md``).
-
-The CI reliability agent demo is deterministic end to end: the same scan and
-repository picker, a schedule picker, the loop is created and run once, and
-its first report is shown from the shell inbox.
+Both demos run deterministically, with no model turn: the workspace scan
+paints the activity chart, a picker asks which repository, the analysis (or
+the loop's first pass) runs under a spinner, the report is painted, and a
+final picker offers the next step. Only the Slack hand-off submits a prompt
+to the action agent; its routing stays with the agent (no intent heuristics,
+see ``surfaces/interactive_shell/AGENTS.md``). The ``cicd-analytics-demo``
+skill remains the path for typed requests.
 """
 
 from __future__ import annotations
@@ -46,8 +42,12 @@ from infrastructure.scheduling.scheduler.loops import parse_loop_time
 from infrastructure.terminal.theme import DIM, WARNING
 from integrations.github import (
     DEFAULT_LOOP_TIME,
+    GitHubApiError,
+    analyze_repository,
+    ci_report_headline,
     local_timezone,
     loop_card,
+    render_ci_report,
     report_looks_complete,
     resolve_github_token,
     schedule_ci_reliability_loop,
@@ -104,6 +104,11 @@ _LOOP_FIRST_PASS_FAILED = (
     "Retry with `/loops run {task_id}` or check `/cron logs {task_id}`."
 )
 _NEXT_TITLE = "What would you like to do next?"
+_NEXT_AGENT = "agent"
+_ANALYSIS_FAILED = (
+    "Could not read the GitHub Actions history of {repository}. Check the token with "
+    "`opensre integrations setup github`, then `/demo` to try again."
+)
 _NEXT_SERVICE = "service"
 _NEXT_SERVICE_LABEL = (
     "Keep it running when this shell is closed (installs a background scheduler service)"
@@ -140,11 +145,6 @@ DEMO_SUGGESTIONS: tuple[DemoSuggestion, ...] = (
     DemoSuggestion(
         option=OPTION_CI_ANALYTICS,
         label="Explore a repo and analyze its CI/CD performance (recommended)",
-        prompt=(
-            "Analyze the CI/CD reliability of {repository} for the last 30 days as the "
-            "CI/CD analytics demo: show the KPIs and the developer time blocked by "
-            "unreliable CI, then offer what to do next."
-        ),
     ),
     DemoSuggestion(
         option=OPTION_CI_AGENT,
@@ -250,39 +250,98 @@ def _warn(console: Console | None, text: str) -> None:
 
 
 def _start_ci_analytics_demo(
-    session: Session, console: Console | None, suggestion: DemoSuggestion
+    session: Session, console: Console | None, _suggestion: DemoSuggestion
 ) -> bool:
-    """Scan, let the user pick a repository, then queue the analysis prompt."""
+    """Scan, pick a repository, analyze it, show the report, then offer the next step.
+
+    Every step is deterministic. The report and the headline come from the
+    analytics pipeline directly, and the next-step menu is this picker's, so
+    no model turn can improvise a different plan on the way.
+    """
     snapshot = _scan_and_show(console)
-    if not resolve_github_token(None):
+    token = resolve_github_token(None)
+    if not token:
         _warn(console, _TOKEN_MISSING)
         return False
     repository = choose_repository(snapshot)
     if repository is None:
         return False
+    owner, _, repo = repository.partition("/")
+    if not owner or not repo:
+        _warn(console, f"{repository!r} is not a GitHub repository; use the owner/name form.")
+        return False
+    _record(OPTION_CI_ANALYTICS)
+    if not _analyze_and_show(console, owner, repo, token):
+        return False
+    return _offer_after_analysis(session, console, repository)
+
+
+def _analyze_and_show(console: Console | None, owner: str, repo: str, token: str) -> bool:
+    """Read GitHub under a spinner, paint the report and the headline; False on failure."""
+    label = f"Reading the GitHub Actions history of {owner}/{repo}, last {_SCAN_DAYS} days"
+    try:
+        if console is not None:
+            with llm_loader(console, label):
+                analysis = analyze_repository(owner, repo, token=token, days=_SCAN_DAYS)
+        else:
+            analysis = analyze_repository(owner, repo, token=token, days=_SCAN_DAYS)
+    except (GitHubApiError, ValueError):
+        logger.warning("Demo analysis failed for %s/%s.", owner, repo, exc_info=True)
+        _warn(console, _ANALYSIS_FAILED.format(repository=f"{owner}/{repo}"))
+        return False
     if console is not None:
         console.print()
-        render_note_block(
-            console,
-            f"Analyzing the CI/CD reliability of {repository} for the last {_SCAN_DAYS} days. "
-            "Reading the GitHub Actions history takes about half a minute; the report "
-            "appears below when it is ready.",
-        )
-    # A plain turn keeps the prompt bar and its spinner visible while the model
-    # and the analysis run; a work-turn autosubmit would suspend them.
-    session.terminal.set_auto_prompt(suggestion.prompt.format(repository=repository))
+        render_note_block(console, f"Read {analysis.runs_read} runs. Here is the report:")
+        render_ci_report(console, analysis.report)
+        console.print()
+        render_note_block(console, ci_report_headline(analysis.report))
+        console.print()
     return True
 
 
+def _offer_after_analysis(session: Session, console: Console | None, repository: str) -> bool:
+    """The demo's step 4: schedule the agent, hand off to Slack, or exit."""
+    agent = _suggestion_for(OPTION_CI_AGENT)
+    slack = _suggestion_for(OPTION_SLACK)
+    assert agent is not None and slack is not None
+    selected = repl_choose_one(
+        title=_NEXT_TITLE,
+        choices=[
+            (_NEXT_AGENT, agent.label),
+            (_NEXT_SLACK, slack.label),
+            (_NEXT_EXIT, _NEXT_EXIT_LABEL),
+        ],
+        letter_keys=True,
+        header=_MENU_HEADER,
+    )
+    if selected == _NEXT_AGENT:
+        return _start_ci_agent_demo(session, console, agent, repository=repository)
+    if selected == _NEXT_SLACK:
+        session.terminal.set_auto_command(slack.prompt)
+        return True
+    if console is not None:
+        render_note_block(console, _DEMO_EXITED)
+    return False
+
+
 def _start_ci_agent_demo(
-    session: Session, console: Console | None, _suggestion: DemoSuggestion
+    session: Session,
+    console: Console | None,
+    _suggestion: DemoSuggestion,
+    *,
+    repository: str | None = None,
 ) -> bool:
-    """Scan, pick a repository and a time, schedule the loop, run it once, offer Slack."""
-    snapshot = _scan_and_show(console)
-    if not resolve_github_token(None):
-        _warn(console, _LOOP_TOKEN_MISSING)
-        return False
-    repository = choose_repository(snapshot, title=_LOOP_REPOSITORY_TITLE)
+    """Scan, pick a repository and a time, schedule the loop, run it once, offer Slack.
+
+    ``repository`` skips the scan and the repository menu when the analytics
+    demo already settled it.
+    """
+    if repository is None:
+        snapshot = _scan_and_show(console)
+        if not resolve_github_token(None):
+            _warn(console, _LOOP_TOKEN_MISSING)
+            return False
+        repository = choose_repository(snapshot, title=_LOOP_REPOSITORY_TITLE)
     if repository is None:
         return False
     owner, _, repo = repository.partition("/")
