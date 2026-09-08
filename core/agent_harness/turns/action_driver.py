@@ -1023,6 +1023,8 @@ def _run_action_turn(
         response_streamed=bool(use_final_text and not cancelled),
         hit_iteration_cap=bool(result.hit_iteration_cap and not cancelled),
         cancelled=cancelled,
+        input_tokens=int(getattr(result, "input_tokens", 0) or 0),
+        output_tokens=int(getattr(result, "output_tokens", 0) or 0),
     )
 
 

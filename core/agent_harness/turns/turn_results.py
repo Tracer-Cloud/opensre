@@ -35,6 +35,9 @@ class ToolCallingTurnResult:
     hit_iteration_cap: bool = False
     #: Host soft-timeout / stop asked the action phase to halt (shell/gateway).
     cancelled: bool = False
+    #: Provider-reported usage summed over the phase's model calls (0 when unreported).
+    input_tokens: int = 0
+    output_tokens: int = 0
 
 
 @dataclass(frozen=True)

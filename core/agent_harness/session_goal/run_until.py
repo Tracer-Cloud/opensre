@@ -149,6 +149,28 @@ def pause_for_no_progress(
     return paused
 
 
+def _chat_or_pause(
+    chat: ChatFn, message: str, session: Any, on_progress: ProgressFn | None
+) -> TurnResult:
+    """Run one goal turn; when it raises, pause the goal before the error propagates.
+
+    The host still prints the turn error. Without the pause the next message
+    would resume the goal into the same failure (a credit wall, a rejected key)
+    and burn its budget.
+    """
+    try:
+        return chat(message)
+    except Exception:
+        active = getattr(session, "session_goal", None)
+        if isinstance(active, SessionGoal) and active.status == SessionGoalStatus.ACTIVE:
+            paused = active.with_status(SessionGoalStatus.PAUSED).with_reason(
+                SessionGoalReason.PAUSED_TURN_FAILED
+            )
+            _paint(session, paused, on_progress, rederive=False)
+            _clear_host_autosubmit(session)
+        raise
+
+
 def _clear_host_autosubmit(session: Any) -> None:
     """Drop any queued shell autosubmit when the session goal stops continuing."""
     clear_pending_autosubmit(session)
@@ -265,7 +287,9 @@ def run_until_session_goal(
         _announce_working(session, pre, on_progress)
 
     pre_chat_completed = pre.completed if isinstance(pre, SessionGoal) else frozenset()
-    last = chat(message)
+    last = (
+        _chat_or_pause(chat, message, session, on_progress) if had_active_before else chat(message)
+    )
     active = getattr(session, "session_goal", None)
     if not isinstance(active, SessionGoal) or not session_goal_is_active(session):
         # Paused after the first chat (e.g. slash during turn) — keep state.
@@ -286,7 +310,7 @@ def run_until_session_goal(
     if not had_active_before and active.host_owned and active.turns_used == 0:
         if session_terminal(session) is not None:
             return SessionGoalRunResult(goal=active, last_result=last, turn_count=0)
-        last = chat(active.condition)
+        last = _chat_or_pause(chat, active.condition, session, on_progress)
         stored = getattr(session, "session_goal", None)
         if isinstance(stored, SessionGoal):
             active = stored
@@ -322,7 +346,7 @@ def run_until_session_goal(
             break
 
         _announce_working(session, active, on_progress)
-        last = chat(continuation_prompt(active))
+        last = _chat_or_pause(chat, continuation_prompt(active), session, on_progress)
         active = _record_goal_turn(session, active)
         active, last, stop = _finish_outer_turn(
             session,

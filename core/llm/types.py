@@ -93,6 +93,9 @@ class AgentLLMResponse:
     #: ``None`` means the provider sent no cache fields — distinct from 0.
     cache_read_tokens: int | None = None
     cache_creation_tokens: int | None = None
+    #: Provider-reported usage for this call; ``None`` when the provider sent none.
+    input_tokens: int | None = None
+    output_tokens: int | None = None
 
     @property
     def has_tool_calls(self) -> bool:

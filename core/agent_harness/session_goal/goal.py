@@ -63,6 +63,9 @@ class SessionGoalReason:
     WAITING_USER_CHOICE = "waiting for user choice"
     PAUSED_USER_CHOICE = "paused — waiting for your choice"
     PAUSED_NO_PROGRESS = "paused — no progress after 2 turns"
+    # A goal turn raised (model call rejected, provider down): the loop must not
+    # spend the next turn on the same failure.
+    PAUSED_TURN_FAILED = "paused — the last turn failed; fix the cause, then /goal resume"
     # Distinct from PAUSED_USER_CHOICE: user ran ``/goal pause`` (status=paused).
     PAUSED_BY_USER = "paused by you"
     BUDGET_EXHAUSTED = "session-goal turn budget exhausted"

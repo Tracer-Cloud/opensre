@@ -127,6 +127,24 @@ def record_llm_turn(
     return inp, out, estimated
 
 
+def record_action_tokens(session: Any | None, action_result: Any) -> None:
+    """Accumulate an action phase's provider-reported usage onto ``session.tokens``.
+
+    Only exact counts are recorded: a phase whose provider reported nothing
+    adds nothing rather than an estimate. This is what ``/cost`` and the
+    ``/goal`` token delta read.
+    """
+    if session is None:
+        return
+    inp = int(getattr(action_result, "input_tokens", 0) or 0)
+    out = int(getattr(action_result, "output_tokens", 0) or 0)
+    if inp <= 0 and out <= 0:
+        return
+    tokens = getattr(session, "tokens", None)
+    if tokens is not None and callable(getattr(tokens, "record", None)):
+        tokens.record(input_tokens=inp, output_tokens=out, estimated=False)
+
+
 def record_invoke_response(
     session: Any | None,
     *,
@@ -232,6 +250,7 @@ __all__ = [
     "build_llm_run_info",
     "estimate_tokens",
     "format_token_total",
+    "record_action_tokens",
     "record_invoke_response",
     "record_llm_turn",
     "resolve_model_name",

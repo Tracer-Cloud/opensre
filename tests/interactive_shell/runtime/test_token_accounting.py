@@ -116,3 +116,23 @@ def test_record_token_usage_skips_zero_counts() -> None:
     session.tokens.record()
     assert session.tokens.totals == {}
     assert session.tokens.call_count == 0
+
+
+def test_record_action_tokens_adds_exact_counts_and_skips_unreported_phases() -> None:
+    # Arrange
+    from core.agent_harness.accounting.token_accounting import record_action_tokens
+    from core.agent_harness.session.session_core import SessionCore
+    from core.agent_harness.turns.turn_results import ToolCallingTurnResult
+
+    session = SessionCore()
+    reported = ToolCallingTurnResult(1, 1, 1, False, True, input_tokens=320, output_tokens=80)
+    unreported = ToolCallingTurnResult(1, 1, 1, False, True)
+
+    # Act
+    record_action_tokens(session, reported)
+    record_action_tokens(session, unreported)
+
+    # Assert: exact counts land once; a phase without usage adds no estimate.
+    assert session.tokens.io_totals() == (320, 80)
+    assert session.tokens.call_count == 1
+    assert session.tokens.has_estimates is False
