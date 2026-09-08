@@ -10,6 +10,7 @@ Host-scoped completion across many `chat` turns. **Not** the ReAct
 | `goal.py` | `SessionGoal`, statuses/reasons, attach/clear, reason derive |
 | `judge.py` | Cheap-model transcript verdict (met / not yet / impossible) |
 | `validate.py` | Cheap-model check of newly ticked checklist items |
+| `review_input.py` | Qualifying tool observations and complete, size-limited review input |
 | `evaluate.py` | Host completion: tool ticks + validator + judge + evidence gate |
 | `progress.py` | `SESSION_GOAL_PROGRESS_MARK` + progress / status-line formatting |
 | `continuation.py` | Session-goal continuation prompts |

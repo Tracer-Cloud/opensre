@@ -40,9 +40,9 @@ def _not_yet(**_kw: object) -> SessionGoalJudgeVerdict:
     return SessionGoalJudgeVerdict(verdict="NOT_REACHED", reason="not yet")
 
 
-def test_kept_tick_indices_keep_all_when_the_validator_is_unavailable() -> None:
+def test_kept_tick_indices_reject_all_when_the_validator_is_unavailable() -> None:
     newly = frozenset({0, 1})
-    assert kept_tick_indices(None, newly=newly) == newly
+    assert kept_tick_indices(None, newly=newly) == frozenset()
 
 
 def test_kept_tick_indices_drop_invalid_items() -> None:
@@ -87,7 +87,7 @@ def test_validator_rejects_a_tick_so_the_goal_stays_open() -> None:
     assert session.session_goal.completed == frozenset()
 
 
-def test_validator_unavailable_keeps_ticks_but_does_not_auto_complete() -> None:
+def test_validator_outage_cannot_complete_on_the_next_turn() -> None:
     session = SessionCore()
     goal = SessionGoal(condition="one check", checklist=("A",))
     attach_session_goal(session, goal)
@@ -104,7 +104,14 @@ def test_validator_unavailable_keeps_ticks_but_does_not_auto_complete() -> None:
     assert verdict.status == SessionGoalStatus.ACTIVE
     assert verdict.reason != SessionGoalReason.CHECKLIST_COMPLETE
     assert session.session_goal is not None
-    assert session.session_goal.completed == frozenset({0})
+    assert session.session_goal.completed == frozenset()
+    later = evaluate_session_goal(
+        session.session_goal,
+        _result("still incomplete", success=1),
+        session=session,
+        judge=_not_yet,
+    )
+    assert later.status == SessionGoalStatus.ACTIVE
 
 
 def test_invoke_validator_returns_none_on_transport_failure() -> None:

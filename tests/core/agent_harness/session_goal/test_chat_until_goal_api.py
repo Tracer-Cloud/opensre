@@ -14,7 +14,6 @@ from core.agent_harness.session_goal.goal import (
     SessionGoalStatus,
     attach_session_goal,
 )
-from core.agent_harness.session_goal.judge import SessionGoalJudgeVerdict
 from core.agent_harness.session_goal.run_until import (
     SessionGoalRunResult,
     run_until_session_goal,
@@ -46,9 +45,6 @@ def _evaluate_until_checklist(goal: SessionGoal, result: object, *, session: obj
         goal,
         result,
         session=session,
-        judge=lambda **_kw: SessionGoalJudgeVerdict(
-            verdict="NOT_REACHED", reason="checklist still open"
-        ),
         validate=_keep_ticks,
     ).status
 

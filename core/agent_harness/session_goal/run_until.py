@@ -53,9 +53,11 @@ def _record_goal_turn(session: Any, active: SessionGoal) -> SessionGoal:
     """
     stored = getattr(session, "session_goal", None)
     completed = active.completed
+    bookkeeping = active.bookkeeping_calls
     if isinstance(stored, SessionGoal):
         completed = completed | stored.completed
-    updated = active.record_turn()
+        bookkeeping = max(bookkeeping, stored.bookkeeping_calls)
+    updated = replace(active.record_turn(), bookkeeping_calls=bookkeeping)
     if completed != updated.completed:
         updated = updated.with_completed(completed)
     attach_session_goal(session, updated)
@@ -233,6 +235,7 @@ def _finish_outer_turn(
         active = _paint(session, active, on_progress, rederive=False)
         return active, last, True
 
+    turn_evidence = turn_has_session_goal_evidence(last, bookkeeping_calls=active.bookkeeping_calls)
     next_status = evaluate_fn(active, last, session=session)
     stored = getattr(session, "session_goal", None)
     if isinstance(stored, SessionGoal):
@@ -242,7 +245,7 @@ def _finish_outer_turn(
     # a fresh chat call and history carries prose only, so this is the only way
     # a later turn learns what earlier ones established.
     reply_text = session_goal_reply_text(last)
-    if turn_has_session_goal_evidence(last):
+    if turn_evidence:
         active = active.with_finding(reply_text)
         attach_session_goal(session, active)
     # Recorded even without tool evidence. Evidence gates *closing* the goal and

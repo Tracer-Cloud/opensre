@@ -41,6 +41,7 @@ from core.agent_harness.prompts import (
 from core.agent_harness.session.integration_resolution import resolve_and_cache_integrations
 from core.agent_harness.session.pending_choice import parse_ask_user_answers
 from core.agent_harness.session.terminal_access import execute_cli_onboard_on_missing_key
+from core.agent_harness.session_goal.review_input import collect_tool_evidence
 from core.agent_harness.turns.action_dedup import (
     coerce_fingerprint_quiet,
     with_duplicate_action_call_guard,
@@ -1017,6 +1018,11 @@ def _run_action_turn(
         counts.handled,
         cancelled,
     )
+    tool_evidence, evidence_success_count = (
+        collect_tool_evidence(getattr(result, "tool_results", ()))
+        if getattr(session, "session_goal", None) is not None
+        else ("", None)
+    )
     return ToolCallingTurnResult(
         counts.planned_count,
         counts.executed_count,
@@ -1029,6 +1035,8 @@ def _run_action_turn(
         cancelled=cancelled,
         input_tokens=int(getattr(result, "input_tokens", 0) or 0),
         output_tokens=int(getattr(result, "output_tokens", 0) or 0),
+        tool_evidence=tool_evidence,
+        evidence_success_count=evidence_success_count,
     )
 
 

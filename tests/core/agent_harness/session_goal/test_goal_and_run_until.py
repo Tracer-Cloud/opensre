@@ -130,9 +130,6 @@ def test_five_step_outer_loop_continues_until_achieved() -> None:
                 goal,
                 result,
                 session=session,
-                judge=lambda **_kw: SessionGoalJudgeVerdict(
-                    verdict="NOT_REACHED", reason="checklist still open"
-                ),
                 validate=_keep_ticks,
             ).status
         ),

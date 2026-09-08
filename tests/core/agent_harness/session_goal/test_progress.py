@@ -186,9 +186,6 @@ def test_outer_loop_achieves_via_checklist_without_achieved_tag() -> None:
                 goal,
                 result,
                 session=session,
-                judge=lambda **_kw: SessionGoalJudgeVerdict(
-                    verdict="NOT_REACHED", reason="checklist still open"
-                ),
                 validate=_keep_ticks,
             ).status
         ),
@@ -239,8 +236,9 @@ def test_outer_loop_prompt_carries_reason_after_partial_progress() -> None:
                 goal,
                 result,
                 session=session,
-                judge=lambda **_kw: SessionGoalJudgeVerdict(
-                    verdict="NOT_REACHED", reason="checklist 1/2 done — next: B"
+                judge=lambda **kw: SessionGoalJudgeVerdict(
+                    verdict="NOT_REACHED" if kw["unfinished"] else "GOAL_REACHED",
+                    reason="checklist 1/2 done — next: B",
                 ),
                 validate=_keep_ticks,
             ).status

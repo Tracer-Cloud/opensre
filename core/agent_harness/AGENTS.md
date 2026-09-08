@@ -37,8 +37,11 @@ continuation but keeps state; `host_owned` blocks handoff replace while
 are ticked only through the `session_goal_complete` tool (a cheap-model
 validator in `session_goal/validate.py` can refuse a tick), and a cheap-model
 transcript judge (`session_goal/judge.py`) returns met / not yet / impossible
-with a reason. `met` still needs successful tool work this turn or stored
-findings. The judge client is injected: `HeadlessAgent(judge_llm_factory=…)`
+with a reason. Reviewers receive the complete reply and actual tool observations;
+oversized input stays unverified. Unvalidated ticks are rolled back, and a
+configured judge must approve even a completed checklist. `met` still needs
+successful non-bookkeeping tool work this turn or stored findings.
+The judge client is injected: `HeadlessAgent(judge_llm_factory=…)`
 builds the loop's evaluate with `evaluate.build_session_goal_evaluator`;
 `DefaultHeadlessBuild` passes the classification-tier factory, in-memory
 builds pass none (only a fully ticked checklist closes a goal). Host reason

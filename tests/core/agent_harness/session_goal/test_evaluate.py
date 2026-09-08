@@ -219,7 +219,6 @@ def test_checklist_complete_with_tool_ticks_achieves_without_a_judge() -> None:
         goal,
         _result("Finished B.", executed=1, success=1),
         session=session,
-        judge=_not_yet,
         validate=_keep_ticks,
     )
     assert verdict.status == SessionGoalStatus.ACHIEVED
