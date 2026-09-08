@@ -130,6 +130,24 @@ def test_first_menu_always_shows_the_getting_started_options(
     assert demo_picker.DEMO_SUGGESTIONS[2].skill == "slack-handoff"
 
 
+def test_unmapped_getting_started_skill_does_not_crash_the_picker() -> None:
+    from core.agent_harness.prompts.skills.loader import ActionSkill
+
+    skill = ActionSkill(
+        name="future-demo",
+        description="x",
+        path=Path("."),
+        getting_started="A future demo",
+        demo_order=9,
+    )
+
+    suggestion = demo_picker._suggestion_from_skill(skill)
+
+    assert suggestion.option == "future_demo"
+    assert suggestion.prompt == "A future demo"
+    assert suggestion.skill == "future-demo"
+
+
 def test_dismissing_the_demo_does_not_leave_the_explainer_in_the_transcript(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -578,6 +596,7 @@ def test_demo_skills_declare_their_tools() -> None:
         "analyze_github_ci_reliability",
         "schedule_ci_reliability_loop",
         "cli_exec",
+        "slash_invoke",
         "ask_user_choice",
     )
     assert agent.tools == (
@@ -585,4 +604,4 @@ def test_demo_skills_declare_their_tools() -> None:
         "schedule_ci_reliability_loop",
         "ask_user_choice",
     )
-    assert slack.tools == ("cli_exec",)
+    assert slack.tools == ("cli_exec", "slash_invoke")

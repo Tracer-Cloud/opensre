@@ -161,9 +161,7 @@ class DemoSuggestion:
 
 
 def _suggestion_from_skill(skill: ActionSkill) -> DemoSuggestion:
-    option = _OPTION_BY_SKILL.get(skill.name)
-    if option is None:
-        raise RuntimeError(f"Demo picker has no option id for skill {skill.name!r}.")
+    option = _OPTION_BY_SKILL.get(skill.name, skill.name.replace("-", "_"))
     label = skill.getting_started or ""
     prompt = "" if skill.name in _DETERMINISTIC_SKILLS else label
     return DemoSuggestion(option=option, label=label, prompt=prompt, skill=skill.name)

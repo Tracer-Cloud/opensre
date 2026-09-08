@@ -16,6 +16,7 @@ tools:
   - analyze_github_ci_reliability
   - schedule_ci_reliability_loop
   - cli_exec
+  - slash_invoke
   - ask_user_choice
 ---
 ══════════════════════════════════════════════════════════
@@ -35,6 +36,7 @@ USE THESE TOOLS:
 - `analyze_github_ci_reliability`
 - `schedule_ci_reliability_loop`
 - `cli_exec`
+- `slash_invoke`
 - `ask_user_choice`
 
 DO NOT USE THIS SKILL FOR:
@@ -49,7 +51,8 @@ HARD RULES:
 - Never run `gh`, `git`, or `shell_run` for this flow; the scan and
   analysis tools own discovery and analysis end to end and are read-only.
   The analysis itself is read-only: no Slack messages, no pushes, no
-  issue writes. Use `cli_exec` only for the Slack continuation in step 4.
+  issue writes. Use `cli_exec` only to verify Slack in step 4; queue setup
+  with `slash_invoke` (`/integrations setup slack`), never `cli_exec`.
 - The scan tool draws the workspace chart in the shell itself. Do not repeat
   the chart or the repository list as text; add one sentence at most.
 - `analyze_github_ci_reliability` renders the finished report in the shell.
@@ -105,8 +108,9 @@ headers [3/4] and [4/4] only.
    and never posts anywhere else. Each tick is deterministic (no model turn);
    `/loops service install` keeps it running when no shell is open. On the second, call
    `cli_exec` with payload `integrations verify slack`; if Slack is not
-   configured, call `cli_exec` with payload `integrations setup slack`,
-   otherwise say it is connected. Then explain in two sentences how to hand off a chore from Slack
+   configured, call `slash_invoke` with `/integrations setup slack` and stop
+   (do not use `cli_exec` for setup — that wizard needs a full terminal).
+   If Slack is already connected, say so. Then explain in two sentences how to hand off a chore from Slack
    (mention OpenSRE in a channel or DM it). Never post, reply, or send anything
    to Slack in this demo. On `Exit demo`, reply with one line and stop.
 

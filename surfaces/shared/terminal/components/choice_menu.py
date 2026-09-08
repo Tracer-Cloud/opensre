@@ -409,10 +409,20 @@ def _erase_menu(
     multi_select: bool = False,
     header: str = "",
     note: str = "",
+    drawn_height: int | None = None,
 ) -> None:
-    """Move cursor up to the start of this menu block and wipe it."""
+    """Move cursor up to the start of this menu block and wipe it.
+
+    ``drawn_height`` is the row count from the last paint. Recalculating from
+    the current terminal width can disagree after a resize and delete the
+    wrong number of rows.
+    """
     _, crumb, labels = _sanitize_menu("", crumb, labels)
-    height = _menu_height(crumb, labels, multi_select=multi_select, header=header, note=note)
+    height = (
+        drawn_height
+        if drawn_height is not None
+        else _menu_height(crumb, labels, multi_select=multi_select, header=header, note=note)
+    )
     _erase_menu_block(height, delete=True)
     sys.stdout.flush()
 
@@ -532,10 +542,14 @@ def _pick(
                         parts.append(selected_values[index])
                 if not parts:
                     continue
-                _erase_menu(crumb, display, multi_select=True, header=header, note=note)
+                _erase_menu(
+                    crumb, display, multi_select=True, header=header, note=note, drawn_height=height
+                )
                 return "\n".join(parts)
             if action in ("cancel", "eof"):
-                _erase_menu(crumb, display, multi_select=True, header=header, note=note)
+                _erase_menu(
+                    crumb, display, multi_select=True, header=header, note=note, drawn_height=height
+                )
                 return None
             continue
         select_index = (
@@ -548,7 +562,7 @@ def _pick(
                 if select_index == custom_index:
                     idx = select_index
                     continue
-                _erase_menu(crumb, labels, header=header, note=note)
+                _erase_menu(crumb, labels, header=header, note=note, drawn_height=height)
                 return select_index
             continue
         if action == "enter":
@@ -556,12 +570,18 @@ def _pick(
                 text = draft.strip()
                 if not text:
                     continue
-                _erase_menu(crumb, display, header=header, note=note)
+                _erase_menu(crumb, display, header=header, note=note, drawn_height=height)
                 return text
-            _erase_menu(crumb, labels, header=header, note=note)
+            _erase_menu(crumb, labels, header=header, note=note, drawn_height=height)
             return idx
         if action in ("cancel", "eof"):
-            _erase_menu(crumb, display if on_custom else labels, header=header, note=note)
+            _erase_menu(
+                crumb,
+                display if on_custom else labels,
+                header=header,
+                note=note,
+                drawn_height=height,
+            )
             return None
         if action == "ignore":
             continue
