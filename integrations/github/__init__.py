@@ -36,10 +36,13 @@ _LAZY_EXPORTS: dict[str, str] = {
     "GitHubDeviceCode": "integrations.github.mcp_oauth",
     "GitHubDeviceFlowError": "integrations.github.mcp_oauth",
     "authorize_github_via_device_flow": "integrations.github.mcp_oauth",
-    "configure_personal_github": "integrations.github.personal_account",
     "disconnect_personal_github": "integrations.github.personal_account",
-    "PersonalGitHubSnapshot": "integrations.github.personal_account",
-    "restore_personal_github": "integrations.github.personal_account",
+    "DEFAULT_LOOP_TIME": "integrations.github.tools.ci_analytics.loop",
+    "ScheduledLoop": "integrations.github.tools.ci_analytics.loop",
+    "local_timezone": "integrations.github.tools.ci_analytics.loop",
+    "loop_card": "integrations.github.tools.ci_analytics.loop",
+    "report_looks_complete": "integrations.github.tools.ci_analytics.loop",
+    "schedule_ci_reliability_loop": "integrations.github.tools.ci_analytics.loop",
 }
 
 
@@ -75,12 +78,7 @@ if TYPE_CHECKING:
         GitHubDeviceFlowError,
         authorize_github_via_device_flow,
     )
-    from integrations.github.personal_account import (
-        PersonalGitHubSnapshot,
-        configure_personal_github,
-        disconnect_personal_github,
-        restore_personal_github,
-    )
+    from integrations.github.personal_account import disconnect_personal_github
     from integrations.github.pull_requests import (
         ERR_GITHUB_TOKEN,
         GitHubPullRequestError,
@@ -88,11 +86,20 @@ if TYPE_CHECKING:
         open_pull_request,
         resolve_repo_scope,
     )
+    from integrations.github.tools.ci_analytics.loop import (
+        DEFAULT_LOOP_TIME,
+        ScheduledLoop,
+        local_timezone,
+        loop_card,
+        report_looks_complete,
+        schedule_ci_reliability_loop,
+    )
 
 
 __all__ = [
     "DEFAULT_GITHUB_MCP_MODE",
     "DEFAULT_GITHUB_MCP_URL",
+    "DEFAULT_LOOP_TIME",
     "ERR_GITHUB_TOKEN",
     "GitHubApiError",
     "GitHubDeviceCode",
@@ -101,22 +108,24 @@ __all__ = [
     "GitHubMCPValidationResult",
     "GitHubMcpDisplayDetailLevel",
     "GitHubPullRequestError",
-    "PersonalGitHubSnapshot",
     "GitHubRestClient",
     "PullRequest",
+    "ScheduledLoop",
     "authenticate_and_configure_github",
     "authorize_github_via_device_flow",
     "build_github_mcp_config",
-    "configure_personal_github",
     "disconnect_personal_github",
     "format_github_mcp_validation_cli_report",
     "github_creds",
     "github_integration_is_configured",
+    "local_timezone",
+    "loop_card",
     "open_pull_request",
     "print_github_mcp_validation_report",
+    "report_looks_complete",
     "resolve_github_token",
-    "restore_personal_github",
     "resolve_repo_scope",
     "saved_github_username",
+    "schedule_ci_reliability_loop",
     "validate_github_mcp_config",
 ]

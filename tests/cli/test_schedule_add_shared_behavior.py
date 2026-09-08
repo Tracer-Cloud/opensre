@@ -29,7 +29,7 @@ _DELIVERY_ARGS = ("--provider", "telegram", "--chat-id", "-100200300")
 def isolated_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """Point the scheduler store at a temp file so tests never touch real tasks."""
     monkeypatch.setattr(
-        "infrastructure.scheduling.scheduler.store._default_store_path",
+        "infrastructure.scheduling.scheduler.storage.task_store.default_task_store_path",
         lambda: tmp_path / "tasks.json",
     )
 

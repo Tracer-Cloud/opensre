@@ -134,7 +134,7 @@ def test_invalid_delivery_targets() -> None:
 
 def test_reminder_scheduling(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "infrastructure.scheduling.scheduler.store._default_store_path",
+        "infrastructure.scheduling.scheduler.storage.task_store.default_task_store_path",
         lambda: tmp_path / "scheduler_tasks.json",
     )
     monkeypatch.setattr(
@@ -150,7 +150,7 @@ def test_reminder_scheduling(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     scheduled = schedule_item_reminder(item, targets=targets, timezone="UTC")
     assert scheduled is not None
 
-    from infrastructure.scheduling.scheduler.store import list_tasks
+    from infrastructure.scheduling.scheduler.storage.task_store import list_tasks
 
     tasks = list_tasks()
     assert len(tasks) == 1
@@ -178,7 +178,7 @@ def test_work_task_tools_lifecycle(tmp_path: Path, monkeypatch: pytest.MonkeyPat
     )
     monkeypatch.setattr("core.domain.work_items.store.work_items_path", lambda: work_items_file)
     monkeypatch.setattr(
-        "infrastructure.scheduling.scheduler.store._default_store_path",
+        "infrastructure.scheduling.scheduler.storage.task_store.default_task_store_path",
         lambda: scheduler_file,
     )
     monkeypatch.setattr(

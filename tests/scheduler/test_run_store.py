@@ -3,20 +3,25 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import pytest
 
-from infrastructure.scheduling.scheduler import claim_store
-from infrastructure.scheduling.scheduler.claim_store import (
+from infrastructure.scheduling.scheduler.storage import database, migrations
+from infrastructure.scheduling.scheduler.storage.run_store import (
+    ExecutionClaim,
+    ExpiredClaim,
     complete_run,
     delete_runs,
+    get_expired_claims,
     get_latest_finished_run,
     get_latest_targeted_run,
     get_runs,
-    start_queued_run,
     try_claim,
     try_queue_run,
+    try_start_run,
 )
 from infrastructure.scheduling.scheduler.types import DeliveryOutcome, Provider, TaskStatus
 
@@ -24,6 +29,22 @@ from infrastructure.scheduling.scheduler.types import DeliveryOutcome, Provider,
 @pytest.fixture()
 def db_path(tmp_path: Path) -> Path:
     return tmp_path / "scheduler.db"
+
+
+def _claimed(db_path: Path, task_id: str, fire_time: str) -> ExecutionClaim:
+    claim = try_claim(task_id, fire_time, db_path=db_path)
+    assert claim is not None
+    return claim
+
+
+def _expire_claim(db_path: Path, task_id: str, fire_time: str) -> None:
+    conn = sqlite3.connect(str(db_path))
+    conn.execute(
+        "UPDATE task_runs SET lease_expires_at = ? WHERE task_id = ? AND fire_time = ?",
+        ("2020-01-01T00:00:00+00:00", task_id, fire_time),
+    )
+    conn.commit()
+    conn.close()
 
 
 class _AlterFailsConnection:
@@ -46,33 +67,84 @@ class _AlterFailsConnection:
 
 class TestClaimStore:
     def test_first_claim_succeeds(self, db_path: Path) -> None:
-        assert try_claim("task1", "2026-01-01T09:00", db_path=db_path) is True
+        assert try_claim("task1", "2026-01-01T09:00", db_path=db_path) is not None
 
     def test_duplicate_claim_fails(self, db_path: Path) -> None:
-        assert try_claim("task1", "2026-01-01T09:00", db_path=db_path) is True
-        assert try_claim("task1", "2026-01-01T09:00", db_path=db_path) is False
+        assert try_claim("task1", "2026-01-01T09:00", db_path=db_path) is not None
+        assert try_claim("task1", "2026-01-01T09:00", db_path=db_path) is None
+
+    def test_active_lease_cannot_be_reclaimed(self, db_path: Path) -> None:
+        first = try_claim("task1", "2026-01-01T09:00", db_path=db_path)
+
+        assert first is not None
+        assert try_claim("task1", "2026-01-01T09:00", db_path=db_path) is None
+
+    def test_expired_lease_is_abandoned_and_reclaimed(self, db_path: Path) -> None:
+        first = try_claim("task1", "2026-01-01T09:00", db_path=db_path)
+        assert first is not None
+
+        _expire_claim(db_path, "task1", "2026-01-01T09:00")
+
+        second = try_claim("task1", "2026-01-01T09:00", db_path=db_path)
+
+        assert second is not None
+        assert second.attempt == 2
+        assert second.owner_token != first.owner_token
+        assert get_runs("task1", db_path=db_path)[0].status is TaskStatus.RUNNING
+        assert get_runs("task1", db_path=db_path)[1].status is TaskStatus.ABANDONED
+
+    def test_expired_claims_are_visible_to_the_scheduler_recovery_sweep(
+        self, db_path: Path
+    ) -> None:
+        _claimed(db_path, "task1", "2026-01-01T09:00")
+        _expire_claim(db_path, "task1", "2026-01-01T09:00")
+
+        assert get_expired_claims(db_path=db_path) == [
+            ExpiredClaim(task_id="task1", fire_time="2026-01-01T09:00")
+        ]
+
+    def test_stale_owner_cannot_complete_after_reclaim(self, db_path: Path) -> None:
+        first = try_claim("task1", "2026-01-01T09:00", db_path=db_path)
+        assert first is not None
+        _expire_claim(db_path, "task1", "2026-01-01T09:00")
+        second = try_claim("task1", "2026-01-01T09:00", db_path=db_path)
+        assert second is not None
+
+        assert (
+            complete_run(
+                first,
+                status=TaskStatus.SUCCESS,
+                db_path=db_path,
+            )
+            is False
+        )
+        assert get_runs("task1", db_path=db_path)[0].status is TaskStatus.RUNNING
+        assert complete_run(
+            second,
+            status=TaskStatus.SUCCESS,
+            db_path=db_path,
+        )
 
     def test_different_fire_times_both_succeed(self, db_path: Path) -> None:
-        assert try_claim("task1", "2026-01-01T09:00", db_path=db_path) is True
-        assert try_claim("task1", "2026-01-01T10:00", db_path=db_path) is True
+        assert try_claim("task1", "2026-01-01T09:00", db_path=db_path) is not None
+        assert try_claim("task1", "2026-01-01T10:00", db_path=db_path) is not None
 
     def test_different_tasks_same_fire_time(self, db_path: Path) -> None:
-        assert try_claim("task1", "2026-01-01T09:00", db_path=db_path) is True
-        assert try_claim("task2", "2026-01-01T09:00", db_path=db_path) is True
+        assert try_claim("task1", "2026-01-01T09:00", db_path=db_path) is not None
+        assert try_claim("task2", "2026-01-01T09:00", db_path=db_path) is not None
 
     def test_queued_claim_is_visible_before_it_starts(self, db_path: Path) -> None:
         assert try_queue_run("task1", "2026-01-01T09:00", db_path=db_path) is True
         assert get_runs("task1", db_path=db_path)[0].status == TaskStatus.PENDING
 
-        assert start_queued_run("task1", "2026-01-01T09:00", db_path=db_path) is True
+        assert try_start_run("task1", "2026-01-01T09:00", db_path=db_path) is not None
 
         assert get_runs("task1", db_path=db_path)[0].status == TaskStatus.RUNNING
 
     def test_complete_run_success(self, db_path: Path) -> None:
-        try_claim("task1", "2026-01-01T09:00", db_path=db_path)
+        claim = _claimed(db_path, "task1", "2026-01-01T09:00")
         complete_run(
-            "task1",
-            "2026-01-01T09:00",
+            claim,
             status=TaskStatus.SUCCESS,
             posted_message_id="msg123",
             provider="telegram",
@@ -85,10 +157,9 @@ class TestClaimStore:
         assert runs[0].finished_at is not None
 
     def test_complete_run_failed(self, db_path: Path) -> None:
-        try_claim("task1", "2026-01-01T09:00", db_path=db_path)
+        claim = _claimed(db_path, "task1", "2026-01-01T09:00")
         complete_run(
-            "task1",
-            "2026-01-01T09:00",
+            claim,
             status=TaskStatus.FAILED,
             error="Connection timeout",
             provider="slack",
@@ -100,17 +171,15 @@ class TestClaimStore:
         assert runs[0].error == "Connection timeout"
 
     def test_complete_run_does_not_overwrite_a_terminal_run(self, db_path: Path) -> None:
-        assert try_claim("task1", "2026-01-01T09:00", db_path=db_path) is True
+        claim = _claimed(db_path, "task1", "2026-01-01T09:00")
         complete_run(
-            "task1",
-            "2026-01-01T09:00",
+            claim,
             status=TaskStatus.SUCCESS,
             db_path=db_path,
         )
 
         complete_run(
-            "task1",
-            "2026-01-01T09:00",
+            claim,
             status=TaskStatus.SKIPPED,
             error="duplicate callback",
             db_path=db_path,
@@ -123,10 +192,9 @@ class TestClaimStore:
     def test_get_runs_ordered_newest_first(self, db_path: Path) -> None:
         for i in range(5):
             fire_time = f"2026-01-01T0{i}:00"
-            try_claim("task1", fire_time, db_path=db_path)
+            claim = _claimed(db_path, "task1", fire_time)
             complete_run(
-                "task1",
-                fire_time,
+                claim,
                 status=TaskStatus.SUCCESS,
                 db_path=db_path,
             )
@@ -140,8 +208,8 @@ class TestClaimStore:
     def test_get_runs_respects_limit(self, db_path: Path) -> None:
         for i in range(10):
             fire_time = f"2026-01-01T{i:02d}:00"
-            try_claim("task1", fire_time, db_path=db_path)
-            complete_run("task1", fire_time, status=TaskStatus.SUCCESS, db_path=db_path)
+            claim = _claimed(db_path, "task1", fire_time)
+            complete_run(claim, status=TaskStatus.SUCCESS, db_path=db_path)
 
         runs = get_runs("task1", limit=3, db_path=db_path)
         assert len(runs) == 3
@@ -153,9 +221,7 @@ class TestClaimStore:
     def test_get_latest_finished_run_ignores_newer_in_flight_starts(self, db_path: Path) -> None:
         # Arrange: one finished delivery, then six newer RUNNING claims. A
         # start-ordered lookback of five would drop the finished row.
-        conn = claim_store._connect(db_path)
-        try:
-            claim_store._ensure_schema(conn)
+        with database.connection(db_path) as conn:
             conn.execute(
                 "INSERT INTO task_runs "
                 "(task_id, fire_time, started_at, finished_at, status) "
@@ -181,8 +247,6 @@ class TestClaimStore:
                     ),
                 )
             conn.commit()
-        finally:
-            conn.close()
 
         # Act
         run = get_latest_finished_run("task1", db_path=db_path)
@@ -197,7 +261,7 @@ class TestClaimStore:
         )
 
     def test_delete_runs_removes_only_matching_task(self, db_path: Path) -> None:
-        try_claim("task1", "2026-01-01T09:00", db_path=db_path)
+        _claimed(db_path, "task1", "2026-01-01T09:00")
         try_claim("task2", "2026-01-01T09:00", db_path=db_path)
         assert len(get_runs("task1", db_path=db_path)) == 1
         assert len(get_runs("task2", db_path=db_path)) == 1
@@ -228,28 +292,99 @@ class TestClaimStore:
 
 
 class TestConcurrency:
-    """Verify the UNIQUE constraint prevents double-posting."""
+    """Verify transaction fencing prevents duplicate claims."""
 
-    def test_concurrent_claims_only_one_wins(self, db_path: Path) -> None:
-        """Simulate two instances racing for the same (task_id, fire_time)."""
-        # First claim wins
-        result1 = try_claim("task1", "2026-01-01T09:00", db_path=db_path)
-        # Second claim loses (same key)
-        result2 = try_claim("task1", "2026-01-01T09:00", db_path=db_path)
+    def test_concurrent_legacy_migration_rebuilds_once(
+        self,
+        db_path: Path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        conn = sqlite3.connect(str(db_path))
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute("""
+            CREATE TABLE task_runs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                task_id TEXT NOT NULL,
+                fire_time TEXT NOT NULL,
+                started_at TEXT NOT NULL,
+                finished_at TEXT,
+                status TEXT NOT NULL DEFAULT 'pending',
+                posted_message_id TEXT DEFAULT '',
+                error TEXT DEFAULT '',
+                provider TEXT DEFAULT '',
+                UNIQUE(task_id, fire_time)
+            )
+        """)
+        conn.commit()
+        conn.close()
 
-        assert result1 is True
-        assert result2 is False
+        real_table_columns = migrations._table_columns
+        unlocked_reads = threading.Barrier(2)
 
-        # Only one run record exists
-        runs = get_runs("task1", db_path=db_path)
-        assert len(runs) == 1
+        def _synchronize_unlocked_reads(
+            read_conn: sqlite3.Connection,
+            table: str = "task_runs",
+        ) -> set[str]:
+            columns = real_table_columns(read_conn, table)
+            if "attempt" not in columns and not read_conn.in_transaction:
+                unlocked_reads.wait(timeout=5)
+            return columns
+
+        real_migrate = migrations._migrate_legacy_claim_table
+        migration_count = 0
+        count_lock = threading.Lock()
+
+        def _count_migration(
+            migration_conn: sqlite3.Connection,
+            columns: set[str],
+        ) -> None:
+            nonlocal migration_count
+            with count_lock:
+                migration_count += 1
+            real_migrate(migration_conn, columns)
+
+        monkeypatch.setattr(migrations, "_table_columns", _synchronize_unlocked_reads)
+        monkeypatch.setattr(migrations, "_migrate_legacy_claim_table", _count_migration)
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            claims = list(
+                pool.map(
+                    lambda _: try_claim("task1", "2026-01-01T09:00", db_path=db_path),
+                    range(2),
+                )
+            )
+
+        assert migration_count == 1
+        assert sum(claim is not None for claim in claims) == 1
+        claim = next(claim for claim in claims if claim is not None)
+        assert complete_run(claim, status=TaskStatus.SUCCESS, db_path=db_path)
+
+    def test_concurrent_reclaimers_only_one_wins(self, db_path: Path) -> None:
+        _claimed(db_path, "task1", "2026-01-01T09:00")
+        _expire_claim(db_path, "task1", "2026-01-01T09:00")
+        barrier = threading.Barrier(3)
+
+        def _reclaim() -> ExecutionClaim | None:
+            barrier.wait()
+            return try_claim("task1", "2026-01-01T09:00", db_path=db_path)
+
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            futures = [pool.submit(_reclaim) for _ in range(2)]
+            barrier.wait()
+            claims = [future.result() for future in futures]
+
+        assert sum(claim is not None for claim in claims) == 1
+        assert [run.status for run in get_runs("task1", db_path=db_path)] == [
+            TaskStatus.RUNNING,
+            TaskStatus.ABANDONED,
+        ]
 
 
 class TestPerTargetOutcomes:
     """Fan-out run history keeps one row per destination, in plan order."""
 
     def test_target_outcomes_round_trip_in_the_order_written(self, db_path: Path) -> None:
-        try_claim("task1", "2026-01-01T09:00", db_path=db_path)
+        claim = _claimed(db_path, "task1", "2026-01-01T09:00")
         outcomes = (
             DeliveryOutcome(
                 provider=Provider.INTERACTIVE_SHELL, ok=True, message_id="local:1", attempts=1
@@ -263,8 +398,7 @@ class TestPerTargetOutcomes:
             ),
         )
         complete_run(
-            "task1",
-            "2026-01-01T09:00",
+            claim,
             status=TaskStatus.SUCCESS,
             targets=outcomes,
             db_path=db_path,
@@ -273,8 +407,8 @@ class TestPerTargetOutcomes:
         assert get_runs("task1", db_path=db_path)[0].targets == outcomes
 
     def test_runs_without_target_outcomes_read_back_empty(self, db_path: Path) -> None:
-        try_claim("task1", "2026-01-01T09:00", db_path=db_path)
-        complete_run("task1", "2026-01-01T09:00", status=TaskStatus.SUCCESS, db_path=db_path)
+        claim = _claimed(db_path, "task1", "2026-01-01T09:00")
+        complete_run(claim, status=TaskStatus.SUCCESS, db_path=db_path)
 
         assert get_runs("task1", db_path=db_path)[0].targets == ()
 
@@ -299,13 +433,16 @@ class TestPerTargetOutcomes:
             "INSERT INTO task_runs (task_id, fire_time, started_at, status) VALUES (?, ?, ?, ?)",
             ("legacy", "2026-01-01T08:00", "2026-01-01T08:00:00+00:00", TaskStatus.SUCCESS.value),
         )
+        conn.execute(
+            "INSERT INTO task_runs (task_id, fire_time, started_at, status) VALUES (?, ?, ?, ?)",
+            ("stale", "2020-01-01T08:00", "2020-01-01T08:00:00+00:00", TaskStatus.RUNNING.value),
+        )
         conn.commit()
         conn.close()
 
-        assert try_claim("task1", "2026-01-01T09:00", db_path=db_path) is True
+        claim = _claimed(db_path, "task1", "2026-01-01T09:00")
         complete_run(
-            "task1",
-            "2026-01-01T09:00",
+            claim,
             status=TaskStatus.SUCCESS,
             targets=(DeliveryOutcome(provider=Provider.SLACK, ok=True, message_id="ts_1"),),
             db_path=db_path,
@@ -313,6 +450,9 @@ class TestPerTargetOutcomes:
 
         assert get_runs("legacy", db_path=db_path)[0].targets == ()
         assert get_runs("task1", db_path=db_path)[0].targets[0].message_id == "ts_1"
+        reclaimed = try_claim("stale", "2020-01-01T08:00", db_path=db_path)
+        assert reclaimed is not None
+        assert reclaimed.attempt == 2
 
     def test_a_concurrent_migration_landing_first_does_not_raise(
         self, db_path: Path, monkeypatch: pytest.MonkeyPatch
@@ -347,7 +487,7 @@ class TestPerTargetOutcomes:
         conn.execute("ALTER TABLE task_runs ADD COLUMN targets TEXT DEFAULT ''")
         conn.commit()
 
-        real_has_column = claim_store._has_targets_column
+        real_has_column = migrations._has_targets_column
         calls = {"count": 0}
 
         def _lie_on_first_call(check_conn: sqlite3.Connection) -> bool:
@@ -357,9 +497,9 @@ class TestPerTargetOutcomes:
             # nothing about the recovery path.
             return False if calls["count"] == 1 else real_has_column(check_conn)
 
-        monkeypatch.setattr(claim_store, "_has_targets_column", _lie_on_first_call)
+        monkeypatch.setattr(migrations, "_has_targets_column", _lie_on_first_call)
 
-        claim_store._add_missing_columns(conn)  # must not raise
+        migrations._add_missing_columns(conn)  # must not raise
         assert calls["count"] == 2
 
     def test_a_winner_committing_after_our_timeout_is_picked_up_on_retry(
@@ -398,9 +538,9 @@ class TestPerTargetOutcomes:
             checks["count"] += 1
             return checks["count"] > 2
 
-        monkeypatch.setattr(claim_store, "_has_targets_column", _column_appears_on_the_retry)
+        monkeypatch.setattr(migrations, "_has_targets_column", _column_appears_on_the_retry)
 
-        claim_store._add_missing_columns(_AlterFailsConnection(conn))  # must not raise
+        migrations._add_missing_columns(_AlterFailsConnection(conn))  # must not raise
 
         # Pre-check, post-timeout recheck, then the retry's own pre-check.
         assert checks["count"] == 3
@@ -410,7 +550,7 @@ class TestPerTargetOutcomes:
     ) -> None:
         """A writer stuck past the budget surfaces the real error rather than
         retrying forever."""
-        monkeypatch.setattr(claim_store, "_MIGRATION_TIMEOUT_SECONDS", 0.2)
+        monkeypatch.setattr(migrations, "_MIGRATION_TIMEOUT_SECONDS", 0.2)
         conn = sqlite3.connect(str(db_path))
         conn.execute("""
             CREATE TABLE task_runs (
@@ -429,7 +569,7 @@ class TestPerTargetOutcomes:
         conn.commit()
 
         with pytest.raises(sqlite3.OperationalError, match="database is locked"):
-            claim_store._add_missing_columns(_AlterFailsConnection(conn))
+            migrations._add_missing_columns(_AlterFailsConnection(conn))
 
 
 class TestLatestTargetedRun:
@@ -443,8 +583,8 @@ class TestLatestTargetedRun:
         targets: tuple[DeliveryOutcome, ...],
         status: TaskStatus = TaskStatus.SUCCESS,
     ) -> None:
-        try_claim("task1", fire_time, db_path=db_path)
-        complete_run("task1", fire_time, status=status, targets=targets, db_path=db_path)
+        claim = _claimed(db_path, "task1", fire_time)
+        complete_run(claim, status=status, targets=targets, db_path=db_path)
 
     def test_a_later_run_without_targets_does_not_shadow_the_partial_failure(
         self, db_path: Path
@@ -516,3 +656,76 @@ class TestLatestTargetedRun:
         conn.close()
 
         assert get_latest_targeted_run("task1", db_path=db_path) is None
+
+
+@pytest.mark.parametrize("scope", [None, frozenset(), frozenset({(Provider.SLACK, "C123")})])
+def test_reclaim_preserves_original_delivery_scope(
+    db_path: Path, scope: frozenset[tuple[Provider, str]] | None
+) -> None:
+    first = try_claim("task", "tick", db_path=db_path, target_filter=scope)
+    assert first is not None
+    _expire_claim(db_path, "task", "tick")
+    reclaimed = try_claim(
+        "task", "tick", db_path=db_path, target_filter=frozenset({(Provider.TELEGRAM, "other")})
+    )
+    assert reclaimed is not None
+    assert reclaimed.target_filter == scope
+
+
+def test_scope_migration_preserves_claims_and_refuses_unknown_delivery(db_path: Path) -> None:
+    claim = _claimed(db_path, "task", "tick")
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("ALTER TABLE task_runs DROP COLUMN target_filter")
+    _expire_claim(db_path, "task", "tick")
+    with ThreadPoolExecutor(max_workers=4) as pool:
+        results = list(pool.map(lambda _: get_runs("task", db_path=db_path), range(4)))
+    assert all(len(runs) == 1 for runs in results)
+    reclaimed = try_claim("task", "tick", db_path=db_path)
+    assert reclaimed is not None
+    assert reclaimed.target_filter == frozenset()
+    assert not complete_run(claim, status=TaskStatus.SUCCESS, db_path=db_path)
+
+
+@pytest.mark.parametrize("raw", ['{"provider":"slack"}', '[["unknown", "chat"]]', "broken"])
+def test_malformed_scope_cannot_widen_recovery(db_path: Path, raw: str) -> None:
+    _claimed(db_path, "task", "tick")
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("UPDATE task_runs SET target_filter = ?", (raw,))
+    _expire_claim(db_path, "task", "tick")
+    reclaimed = try_claim("task", "tick", db_path=db_path)
+    assert reclaimed is not None
+    assert reclaimed.target_filter == frozenset()
+
+
+def test_delivery_scope_migration_rolls_back_on_failure(db_path: Path) -> None:
+    class FailScopeMigration(sqlite3.Connection):
+        def execute(self, sql: str, parameters: object = (), /) -> sqlite3.Cursor:
+            if sql.startswith("ALTER TABLE task_runs ADD COLUMN target_filter"):
+                raise sqlite3.OperationalError("injected migration failure")
+            return super().execute(sql, parameters)
+
+    _claimed(db_path, "task", "tick")
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("ALTER TABLE task_runs DROP COLUMN target_filter")
+        conn.execute("ALTER TABLE task_runs DROP COLUMN targets")
+    conn = sqlite3.connect(db_path, factory=FailScopeMigration)
+    try:
+        with pytest.raises(sqlite3.OperationalError, match="injected migration failure"):
+            migrations.apply_migrations(conn)
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(task_runs)")}
+        assert "targets" not in columns
+        assert "target_filter" not in columns
+        assert conn.execute("SELECT COUNT(*) FROM task_runs").fetchone()[0] == 1
+    finally:
+        conn.close()
+    assert len(get_runs("task", db_path=db_path)) == 1
+
+
+def test_expired_claim_eligibility_handles_empty_and_large_sets(db_path: Path) -> None:
+    _claimed(db_path, "eligible", "tick")
+    _expire_claim(db_path, "eligible", "tick")
+    assert get_expired_claims(db_path=db_path, eligible_task_ids=set()) == []
+    eligible = {f"task-{index}" for index in range(2000)} | {"eligible"}
+    assert get_expired_claims(db_path=db_path, eligible_task_ids=eligible) == [
+        ExpiredClaim(task_id="eligible", fire_time="tick")
+    ]

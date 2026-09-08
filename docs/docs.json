@@ -200,6 +200,7 @@
                 "pages": [
                   "architecture-audit-tool",
                   "bitbucket",
+                  "cicd-analytics-demo",
                   "github",
                   "github-ci-fix",
                   "github-security-fix",

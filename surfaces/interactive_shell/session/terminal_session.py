@@ -103,6 +103,11 @@ class TerminalSession:
     pending_prompt_default: str | None = None
     """When set, the next interactive prompt is pre-filled with this string (then cleared)."""
 
+    pending_prompt_plain_turn: bool = False
+    """When True alongside ``pending_prompt_autosubmit``, the submitted prefill runs
+    as an ordinary typed turn: the prompt bar (and its spinner) stays up and no
+    ``/goal`` work-turn label is painted. Set by :meth:`set_auto_prompt`."""
+
     pending_prompt_autosubmit: bool = False
     """When True alongside ``pending_prompt_default``, the prefilled prompt is
     submitted automatically instead of waiting for the user to press Enter.
@@ -289,6 +294,23 @@ class TerminalSession:
         self.pending_prompt_autosubmit = False
         return value
 
+    def pop_pending_plain_turn(self) -> bool:
+        """Return whether the pending autosubmit is a plain turn, and clear the flag."""
+        value = self.pending_prompt_plain_turn
+        self.pending_prompt_plain_turn = False
+        return value
+
+    def set_auto_prompt(self, text: str) -> None:
+        """Queue *text* to be submitted as an ordinary turn, as if the user typed it.
+
+        Unlike :meth:`set_auto_command`, the controller does not suspend the
+        prompt for the turn, so the pinned-layout spinner keeps showing progress.
+        """
+        self.pending_prompt_default = text
+        self.pending_prompt_autosubmit = True
+        self.pending_prompt_plain_turn = True
+        self.notify_prompt_changed()
+
     def set_auto_command(self, command: str) -> None:
         """Queue a command to run automatically on the next prompt iteration.
 
@@ -300,6 +322,7 @@ class TerminalSession:
         """
         self.pending_prompt_default = command
         self.pending_prompt_autosubmit = True
+        self.pending_prompt_plain_turn = False
         self.notify_prompt_changed()
 
     def notify_prompt_changed(self) -> None:

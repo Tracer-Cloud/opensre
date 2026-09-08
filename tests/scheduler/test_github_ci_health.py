@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 
 from core.agent_harness import pin_recurring_skill
-from infrastructure.scheduling.scheduler.store import add_task, list_tasks
+from infrastructure.scheduling.scheduler.storage.task_store import add_task, list_tasks
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
 from integrations.github.ci_health_runner import (
     MAX_CHECK_RUNS_PER_SHA,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from core.agent_harness import AgentSession, pin_recurring_skill
+from core.agent_harness import AgentSession, ToolCallingTurnResult, TurnResult, pin_recurring_skill
 from core.agent_harness.tools.tool_provider import tool_allowed_for_unattended_run
 from core.tool import SideEffectLevel
 from integrations import scheduled_skill_runner
@@ -86,3 +86,63 @@ def test_github_ci_health_skill_returns_complete_prefetched_report_without_agent
     assert len(report) > 512
     assert report == complete_report
     assert prefetched == [("github-ci-health", {"owner": "acme", "repo": "api", "branch": "main"})]
+
+
+def test_morning_report_runs_the_pinned_recipe_with_prefetched_data(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    skill_name, revision = pin_recurring_skill("morning-report")
+    prompts: list[str] = []
+
+    def fake_prefetch(name: str, inputs: dict[str, str]) -> str:
+        assert name == "morning-report"
+        assert inputs == {"city": "New Delhi"}
+        return "Weather: New Delhi: sunny\nHeadlines:\n- One headline"
+
+    def fake_headless(message: str, **kwargs: object) -> TurnResult:
+        prompts.append(message)
+        assert kwargs["unattended"] is True
+        return TurnResult(
+            final_intent="handled",
+            action_result=ToolCallingTurnResult(
+                planned_count=0,
+                executed_count=0,
+                executed_success_count=0,
+                has_unhandled_clause=False,
+                handled=True,
+            ),
+            assistant_response_text=(
+                "Good morning! Here is your briefing.\n"
+                "Weather — New Delhi: sunny\n"
+                "Top headlines:\n- One headline"
+            ),
+        )
+
+    monkeypatch.setattr(scheduled_skill_runner, "_prefetched_context", fake_prefetch)
+    monkeypatch.setattr(AgentSession, "run_headless_turn", fake_headless)
+
+    report = scheduled_skill_runner.run_scheduled_recurring_skill(
+        {
+            "skill_name": skill_name,
+            "skill_revision": revision,
+            "skill_inputs": {"city": "New Delhi"},
+        }
+    )
+
+    assert "MORNING REPORT SKILL" in prompts[0]
+    assert "Weather: New Delhi: sunny" in prompts[0]
+    assert "Daily Reliability Summary" not in prompts[0]
+    assert report.startswith("Good morning!")
+
+
+def test_scheduled_skill_rejects_unvalidated_inputs() -> None:
+    skill_name, revision = pin_recurring_skill("morning-report")
+
+    with pytest.raises(RuntimeError, match="invalid inputs"):
+        scheduled_skill_runner.run_scheduled_recurring_skill(
+            {
+                "skill_name": skill_name,
+                "skill_revision": revision,
+                "skill_inputs": {"city": 123},
+            }
+        )

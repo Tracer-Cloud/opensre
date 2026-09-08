@@ -142,6 +142,7 @@ def test_quality_jobs_start_in_parallel_and_gate_aggregates_them() -> None:
     assert "needs" not in jobs["quality-typecheck"]
     assert "needs" not in jobs["test"]
     assert "needs" not in jobs["session-store-locked"]
+    assert "needs" not in jobs["package-preflight"]
     assert "Restore mypy cache" in {step.get("name") for step in jobs["quality-typecheck"]["steps"]}
     assert "Verify typed tool contracts" in {
         step.get("name") for step in jobs["quality-typecheck"]["steps"]
@@ -168,7 +169,55 @@ def test_quality_jobs_start_in_parallel_and_gate_aggregates_them() -> None:
         "test",
         "coverage-report",
         "session-store-locked",
+        "package-preflight",
     }
+
+
+def test_package_preflight_builds_and_smokes_changed_distribution_artifacts() -> None:
+    workflow = _workflow("ci.yml")
+    job = workflow["jobs"]["package-preflight"]
+
+    changes = next(step for step in job["steps"] if step.get("id") == "changes")
+    filters = yaml.safe_load(changes["with"]["filters"])
+    assert {
+        "README.md",
+        "LICENSE",
+        "MANIFEST.in",
+        "pyproject.toml",
+        "setup.cfg",
+        "setup.py",
+        "uv.lock",
+        "surfaces/**",
+        "tests/**",
+        "tools/**",
+    } <= set(filters["packaging"])
+
+    install_uv = next(step for step in job["steps"] if step.get("name") == "Install uv")
+    assert install_uv["if"] == "steps.changes.outputs.packaging == 'true'"
+    setup_python = next(step for step in job["steps"] if step.get("name") == "Set up Python")
+    assert setup_python["if"] == "steps.changes.outputs.packaging == 'true'"
+
+    build = next(
+        step for step in job["steps"] if step.get("name") == "Build and validate distributions"
+    )
+    assert build["if"] == "steps.changes.outputs.packaging == 'true'"
+    assert "python -m build --outdir dist" in build["run"]
+    assert "twine check dist/*" in build["run"]
+    assert "validate_wheel.py dist/*.whl" in build["run"]
+
+    smoke = next(step for step in job["steps"] if step.get("name") == "Smoke the installed wheel")
+    assert smoke["if"] == "steps.changes.outputs.packaging == 'true'"
+    assert "uv pip install --python" in smoke["run"]
+    assert '"$smoke_env/bin/opensre" --version' in smoke["run"]
+    assert '"$smoke_env/bin/opensre" _package-smoke' in smoke["run"]
+
+    gate_run = next(
+        step["run"]
+        for step in workflow["jobs"]["ci-gate"]["steps"]
+        if step.get("name") == "Require green upstream jobs"
+    )
+    assert "package_preflight='${{ needs.package-preflight.result }}'" in gate_run
+    assert '[ "$package_preflight" = success ]' in gate_run
 
 
 def test_source_filter_defaults_to_running_ci_for_new_file_types() -> None:

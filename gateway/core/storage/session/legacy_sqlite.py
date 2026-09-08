@@ -31,27 +31,32 @@ def read_legacy_bindings(path: Path) -> list[dict[str, Any]]:
     """
     import sqlite3
 
+    from infrastructure.database import sqlite_connection
+
     if not path.is_file():
         return []
-    conn = sqlite3.connect(path)
-    try:
-        columns = _columns(conn, "gateway_session_bindings")
-        if not columns >= _REQUIRED:
+    with sqlite_connection(
+        path,
+        timeout_seconds=5.0,
+        busy_timeout_ms=5_000,
+        wal=False,
+    ) as conn:
+        try:
+            columns = _columns(conn, "gateway_session_bindings")
+            if not columns >= _REQUIRED:
+                return []
+            # Substitute a SQL empty-string literal for a column the old table does
+            # not have, so the adopted row lands on the unscoped key its surface
+            # still looks it up by.
+            principal = "principal_id" if "principal_id" in columns else "''"
+            actor = "actor_id" if "actor_id" in columns else "''"
+            rows = conn.execute(
+                f"SELECT platform, chat_id, {principal}, {actor}, session_id, updated_at "
+                "FROM gateway_session_bindings"
+            ).fetchall()
+        except sqlite3.Error:
+            logger.warning("[gateway] could not read legacy bindings at %s", path, exc_info=True)
             return []
-        # Substitute a SQL empty-string literal for a column the old table does
-        # not have, so the adopted row lands on the unscoped key its surface
-        # still looks it up by.
-        principal = "principal_id" if "principal_id" in columns else "''"
-        actor = "actor_id" if "actor_id" in columns else "''"
-        rows = conn.execute(
-            f"SELECT platform, chat_id, {principal}, {actor}, session_id, updated_at "
-            "FROM gateway_session_bindings"
-        ).fetchall()
-    except sqlite3.Error:
-        logger.warning("[gateway] could not read legacy bindings at %s", path, exc_info=True)
-        return []
-    finally:
-        conn.close()
     return [
         {
             "platform": str(r[0]),

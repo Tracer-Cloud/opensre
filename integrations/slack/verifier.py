@@ -17,6 +17,7 @@ from typing import Any
 
 import httpx
 
+from infrastructure.delivery.notifications.redaction import redact_slack_token, redact_token
 from integrations.config_models import SlackWebhookConfig
 from integrations.verification import register_verifier, result
 
@@ -48,7 +49,8 @@ def _verify_socket_mode_tokens(config: dict[str, Any], source: str) -> dict[str,
         response.raise_for_status()
         payload = response.json()
     except Exception as exc:
-        return result("slack", source, "failed", f"auth.test failed: {exc}")
+        safe_error = redact_slack_token(str(exc), bot_token)
+        return result("slack", source, "failed", f"auth.test failed: {safe_error}")
     if not payload.get("ok"):
         return result(
             "slack",
@@ -103,5 +105,6 @@ def verify_slack(source: str, config: dict[str, Any]) -> dict[str, str]:
         response = httpx.post(webhook_url, json=payload, timeout=10.0)
         response.raise_for_status()
     except Exception as exc:
-        return result("slack", source, "failed", f"Webhook delivery failed: {exc}")
+        safe_error = redact_token(str(exc), webhook_url)
+        return result("slack", source, "failed", f"Webhook delivery failed: {safe_error}")
     return result("slack", source, "passed", "Webhook delivered test message successfully.")

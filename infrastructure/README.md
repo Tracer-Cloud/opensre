@@ -74,6 +74,8 @@ junk drawer. Prefer leaf imports over re-export shims.
 
 ## Persistence
 
+- `database/` — shared database connection and transaction mechanics; domain
+  packages retain ownership of their schemas, migrations, and operational queries.
 - `filestorage/` — syncable file storage providers and operations.
 
 ## Deploy and packaging — `deployment/`

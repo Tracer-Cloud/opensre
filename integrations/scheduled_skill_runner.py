@@ -7,6 +7,7 @@ import logging
 from core.agent_harness import (
     AgentSession,
     resolve_scheduled_skill,
+    validate_skill_inputs,
 )
 from infrastructure.scheduling.scheduler.agent_runner import AgentPayload
 
@@ -46,13 +47,17 @@ def run_scheduled_recurring_skill(payload: AgentPayload) -> str:
         str(payload.get("skill_revision") or ""),
     )
     raw_inputs = payload.get("skill_inputs") or {}
-    inputs = raw_inputs if isinstance(raw_inputs, dict) else {}
+    if not isinstance(raw_inputs, dict):
+        raise RuntimeError(f"Scheduled skill {resolved.name!r} has invalid inputs.")
+    try:
+        inputs = validate_skill_inputs(raw_inputs)
+    except ValueError as exc:
+        raise RuntimeError(f"Scheduled skill {resolved.name!r} has invalid inputs.") from exc
     input_block = ""
     if inputs:
         rendered = "\n".join(f"- {key}: {value}" for key, value in sorted(inputs.items()))
         input_block = f"\nValidated inputs:\n{rendered}\n"
-    typed_inputs = {str(key): str(value) for key, value in inputs.items()}
-    fetch_block = _prefetched_context(resolved.name, typed_inputs)
+    fetch_block = _prefetched_context(resolved.name, inputs)
     if resolved.name == "github-ci-health":
         # The prefetcher renders the complete final report. Returning it
         # directly preserves every scoped failure instead of sending it

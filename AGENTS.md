@@ -195,6 +195,11 @@ shared file that already imports something similar.
 If a change would add a new provider-specific `if provider.value == ...` block to a file
 that already serves multiple providers, stop and extract a dedicated module instead.
 
+### Persistence
+
+Persistence ownership, storage package layout, migration boundaries, and concurrency
+requirements follow [PERSISTENCE.md](PERSISTENCE.md).
+
 Before any push or PR creation follow [**CI.md**](CI.md) — lint, format, typecheck, and test commands all live there.
 
 When opening a PR, fill out the [**PR template**](.github/PULL_REQUEST_TEMPLATE.md) — it is not optional boilerplate; it has a required AI-usage disclosure section.
@@ -228,6 +233,8 @@ When opening a PR, fill out the [**PR template**](.github/PULL_REQUEST_TEMPLATE.
 Main packages one level deeper:
 
 - `infrastructure/analytics/` — Analytics event plumbing and install helpers used by the onboarding flow.
+- `infrastructure/database/` — Shared database connection and transaction mechanics;
+  domain packages retain schema, migration, and query ownership.
 - `infrastructure/safety/auth/` — JWT and authentication helpers for local and hosted runtime access.
 - `config/constants/` — Shared prompt and other static constants.
 - `infrastructure/deployment/ec2/` — EC2 AWS SDK primitives (`client`, `config`, EC2/IAM, SSM) and Telegram gateway AMI/systemd lifecycle (`telegram_gateway/`). Makefile: `make build-gateway-image`, `make deploy-gateway`.

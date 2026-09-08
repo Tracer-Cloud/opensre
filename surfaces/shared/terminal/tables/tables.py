@@ -174,7 +174,11 @@ def render_mcp_table(console: Console, results: list[dict[str, str]]) -> None:
     render_table(console, "MCP servers", _INTEGRATION_COLS, [_integration_row(r) for r in rows])
 
 
-def render_models_table(console: Console, settings: Any) -> None:
+def render_models_table(
+    console: Console,
+    settings: Any,
+    source: str = "local configuration",
+) -> None:
     if settings is None:
         repl_print(console, f"[{ERROR}]LLM settings unavailable[/] — check provider env vars.")
         return
@@ -182,7 +186,7 @@ def render_models_table(console: Console, settings: Any) -> None:
     reasoning_model, toolcall_model = resolve_provider_models(settings, provider)
     render_table(
         console,
-        "LLM connection",
+        f"LLM connection · {source}",
         _MODEL_COLS,
         [(provider, reasoning_model, toolcall_model)],
     )

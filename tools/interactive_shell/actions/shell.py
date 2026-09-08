@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from typing import Any
 
 from core.agent_harness.tools import (
@@ -24,12 +25,22 @@ def _coerce_quiet(value: Any) -> bool:
     return bool(value)
 
 
+def _turn_cancel_event(console: Any) -> threading.Event | None:
+    event = getattr(console, "cancel_event", None)
+    return event if isinstance(event, threading.Event) else None
+
+
 def execute_shell_tool(args: dict[str, Any], ctx: ActionToolScope) -> dict[str, Any]:
     command = str(args.get("command", "")).strip()
     if not command:
         return {"ok": False, "command": "", "response_text": "missing shell command"}
     quiet = _coerce_quiet(args.get("quiet", False))
-    return run_shell_command(command, require_subprocess_presenter(ctx), quiet=quiet)
+    return run_shell_command(
+        command,
+        require_subprocess_presenter(ctx),
+        quiet=quiet,
+        cancel_event=_turn_cancel_event(ctx.console),
+    )
 
 
 def run_shell(*, command: str, context: Any, quiet: bool = False) -> dict[str, Any]:

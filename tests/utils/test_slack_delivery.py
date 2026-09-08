@@ -10,11 +10,13 @@ network is never touched.
 
 from __future__ import annotations
 
+from http import HTTPStatus
 from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
 
+from infrastructure.delivery.notifications.delivery_transport import DeliveryResponse
 from integrations.slack import delivery as slack_delivery
 
 
@@ -70,6 +72,48 @@ class TestIncomingWebhook:
         assert (
             slack_delivery._post_via_incoming_webhook("hi", "https://hooks.slack.test/abc") is False
         )
+
+    def test_transport_error_redacts_webhook_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        webhook_url = "https://hooks.slack.test/services/SECRET"
+        messages: list[str] = []
+
+        def _fake_post_json(*_args: Any, **_kwargs: Any) -> DeliveryResponse:
+            return DeliveryResponse(ok=False, error=f"request failed for {webhook_url}")
+
+        def _capture_debug(message: str) -> None:
+            messages.append(message)
+
+        monkeypatch.setattr(slack_delivery, "post_json", _fake_post_json)
+        monkeypatch.setattr(slack_delivery, "debug_print", _capture_debug)
+
+        assert slack_delivery._post_via_incoming_webhook("hi", webhook_url) is False
+        assert webhook_url not in " ".join(messages)
+        assert "<redacted>" in " ".join(messages)
+
+    def test_response_body_redacts_webhook_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        url_prefix = "https://hooks.slack.test/services/"
+        secret = "UNIQUE_SLACK_WEBHOOK_SECRET"
+        webhook_url = f"{url_prefix}{secret}"
+        body_prefix = "x" * (slack_delivery._LOG_BODY_MAX_LEN - len(url_prefix) - 5)
+        messages: list[str] = []
+
+        def _fake_post_json(*_args: Any, **_kwargs: Any) -> DeliveryResponse:
+            return DeliveryResponse(
+                ok=True,
+                status_code=HTTPStatus.INTERNAL_SERVER_ERROR,
+                text=f"{body_prefix}{webhook_url}",
+            )
+
+        def _capture_debug(message: str) -> None:
+            messages.append(message)
+
+        monkeypatch.setattr(slack_delivery, "post_json", _fake_post_json)
+        monkeypatch.setattr(slack_delivery, "debug_print", _capture_debug)
+
+        assert slack_delivery._post_via_incoming_webhook("hi", webhook_url) is False
+        assert webhook_url not in " ".join(messages)
+        assert secret[:5] not in " ".join(messages)
+        assert "<redacted>" in " ".join(messages)
 
     def test_blocks_and_extra_merged_into_payload(self, monkeypatch: pytest.MonkeyPatch) -> None:
         captured: dict[str, Any] = {}

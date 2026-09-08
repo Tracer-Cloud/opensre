@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from infrastructure.scheduling.scheduler.claim_store import get_runs, try_claim
-from infrastructure.scheduling.scheduler.store import (
+from infrastructure.scheduling.scheduler.storage.run_store import get_runs, try_claim
+from infrastructure.scheduling.scheduler.storage.task_store import (
     _quarantine_unreadable,
     add_task,
     get_task,
@@ -185,7 +185,7 @@ class TestStore:
 
 
 class TestRecurringSkillStoreIdentity:
-    def test_same_skill_slot_deduplicates_without_revision(self, store_path: Path) -> None:
+    def test_changed_skill_revision_updates_existing_schedule(self, store_path: Path) -> None:
         from core.agent_harness.prompts.skills.schedule import find_action_skill, skill_revision
 
         skill = find_action_skill("morning-report")
@@ -203,8 +203,11 @@ class TestRecurringSkillStoreIdentity:
         }
         first = add_task(ScheduledTask(**base, skill_revision=revision_a), store_path)
         second = add_task(ScheduledTask(**base, skill_revision=revision_b), store_path)
+        stored = list_tasks(store_path)
         assert first.id == second.id
-        assert len(list_tasks(store_path)) == 1
+        assert second.skill_revision == revision_b
+        assert len(stored) == 1
+        assert stored[0].skill_revision == revision_b
 
 
 class TestAddTaskDeduplicates:
@@ -345,7 +348,9 @@ class TestStoreSurvivesTornWrites:
             raise OSError("crash during rename")
 
         with pytest.MonkeyPatch.context() as patch:
-            patch.setattr("infrastructure.scheduling.scheduler.store.os.replace", _explode)
+            patch.setattr(
+                "infrastructure.scheduling.scheduler.storage.task_store.os.replace", _explode
+            )
             with pytest.raises(OSError):
                 add_task(self._digest(8), store_path)
 
@@ -403,7 +408,8 @@ class TestStoreSurvivesTornWrites:
         # second os.replace would erase the first casualty.
         with pytest.MonkeyPatch.context() as patch:
             patch.setattr(
-                "infrastructure.scheduling.scheduler.store.time.time", lambda: 1_700_000_000.0
+                "infrastructure.scheduling.scheduler.storage.task_store.time.time",
+                lambda: 1_700_000_000.0,
             )
 
             store_path.write_text("first torn write", encoding="utf-8")
@@ -431,7 +437,9 @@ class TestStoreSurvivesTornWrites:
             real_fsync(fd)
             fsync_calls.append(fd)
 
-        monkeypatch.setattr("infrastructure.scheduling.scheduler.store.os.fsync", _counting_fsync)
+        monkeypatch.setattr(
+            "infrastructure.scheduling.scheduler.storage.task_store.os.fsync", _counting_fsync
+        )
 
         add_task(self._digest(7), store_path)
 
@@ -450,7 +458,9 @@ class TestStoreSurvivesTornWrites:
         def _explode(_src: object, _dst: object) -> None:
             raise OSError("simulated replace failure")
 
-        monkeypatch.setattr("infrastructure.scheduling.scheduler.store.os.replace", _explode)
+        monkeypatch.setattr(
+            "infrastructure.scheduling.scheduler.storage.task_store.os.replace", _explode
+        )
 
         with pytest.raises(OSError):
             _quarantine_unreadable(store_path)

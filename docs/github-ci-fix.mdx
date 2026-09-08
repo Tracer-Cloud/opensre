@@ -69,12 +69,15 @@ fix the CI on main
 3. It verifies the local checkout's `origin` matches the target repository.
 4. It refuses fork PRs because it only pushes to branches in the same repository.
 5. After approval, it checks out the PR head branch or creates a temporary linked git worktree for a branch target such as `main`.
-6. If files changed, it commits only the fix-run changes and pushes the PR branch or fresh repair branch.
-7. It verifies the exact pushed commit, allows one minute for its checks to register,
+6. If GitHub reports the PR as conflicted with its base branch, it merges the base branch into the PR branch first. Conflicts go to the coding agent, lockfiles are regenerated rather than hand-merged, and the merge is committed only when no conflict remains.
+7. If files changed, it commits only the fix-run changes and pushes the PR branch or fresh repair branch.
+8. It verifies the exact pushed commit, allows one minute for its checks to register,
    waits for applicable workflows, and reports whether they passed, failed, were
-   superseded by another push, or did not finish within 15 minutes.
+   superseded by another push, or did not finish within 15 minutes. If GitHub
+   still reports the pushed commit as conflicted, it says so immediately instead
+   of waiting, because no checks will start.
 
-If no checks are failing, OpenSRE says so and does not push. It does **not** open a new PR. Merged or closed PRs are refused — if the failure already landed on the base branch, ask for the branch itself ("fix the CI on main").
+If no checks are failing, OpenSRE says so and does not push. The one exception is a PR that conflicts with its base branch: GitHub never starts checks for it, so OpenSRE treats bringing the base branch in as the fix. It does **not** open a new PR. Merged or closed PRs are refused — if the failure already landed on the base branch, ask for the branch itself ("fix the CI on main").
 
 In branch mode OpenSRE reads the failing workflow runs on the branch's head commit, creates a linked worktree on a fresh `opensre/ci-fix-*` repair branch, pushes that branch, and waits for the pushed commit's own workflow runs. It does **not** push directly to protected branches such as `main`.
 
@@ -93,6 +96,7 @@ There is no dedicated `integrations verify` target. Confirm readiness by:
 | --- | --- |
 | **Fork PR refused** | Only same-repository PR head branches are supported |
 | **No push when checks are green** | Expected — OpenSRE does not push when nothing is failing |
+| **"blocked on N file(s) a person must decide"** | The coding agent could not resolve those merge conflicts. The merge was aborted and nothing was pushed; resolve the listed files by hand, push, and run the fix again |
 | **Approval prompts** | Mutating path requires confirmation before checkout/edit/commit/push |
 | **gh / checks unavailable** | Install GitHub CLI and ensure the token can read Actions checks |
 

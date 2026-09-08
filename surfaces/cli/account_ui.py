@@ -1,9 +1,8 @@
-"""Rich login/status screens for the GitHub-backed OpenSRE account command."""
+"""Rich login and status screens for the OpenSRE account command."""
 
 from __future__ import annotations
 
 import sys
-from collections.abc import Sequence
 from pathlib import Path
 
 import questionary
@@ -29,7 +28,8 @@ from infrastructure.terminal.theme import (
     TEXT,
     WARNING,
 )
-from surfaces.cli.account_auth import AccountLoginResult, AccountLogoutResult, AccountStatus
+from surfaces.cli.account_auth import AccountLoginResult, AccountLogoutResult
+from surfaces.shared.account_session import AccountStatus
 
 _console = Console(
     highlight=False, force_terminal=True, color_system="truecolor", legacy_windows=False
@@ -91,25 +91,18 @@ class AccountLoginPresenter:
     def prompt_sign_in(self, url: str, *, opened: bool) -> None:
         console = self._console
         console.print()
-        console.print("Sign in to OpenSRE with GitHub:")
+        console.print(f"[bold {TEXT}]Sign in to OpenSRE[/]")
         console.print()
         if opened:
-            console.print("  1. Your browser will open this link")
+            console.print("  1  Browser opened")
         else:
-            console.print("  1. Open this URL in your browser")
+            console.print("  1  Open this link in your browser")
         _print_url(console, url)
         if opened:
-            console.print(
-                f"     [{SECONDARY}](if it doesn't open, copy that URL into your browser).[/]"
-            )
-        else:
-            console.print(
-                f"     [{SECONDARY}](copy the link, then return here once GitHub is connected).[/]"
-            )
-        console.print("  2. Sign in with GitHub.")
-        console.print("  3. Connect repository and security access.")
+            console.print(f"     [{SECONDARY}]If it did not open, use the link above.[/]")
+        console.print("  2  Sign in or create your OpenSRE account")
         console.print()
-        console.print(f"  [{SECONDARY}]Waiting for you to approve in the browser…[/]")
+        console.print(f"  [{SECONDARY}]Waiting for browser approval…[/]")
 
     def authorization_received(self) -> None:
         console = self._console
@@ -122,17 +115,17 @@ class AccountLoginPresenter:
 
     def setup_complete(self) -> None:
         console = self._console
-        github = Text()
-        github.append(f"  {GLYPH_SUCCESS} ", style=f"bold {HIGHLIGHT}")
-        github.append("GitHub integration connected.", style=TEXT)
-        console.print(github)
+        account = Text()
+        account.append(f"  {GLYPH_SUCCESS} ", style=f"bold {HIGHLIGHT}")
+        account.append("OpenSRE account connected.", style=TEXT)
+        console.print(account)
         hosted = Text()
         hosted.append(f"  {GLYPH_SUCCESS} ", style=f"bold {HIGHLIGHT}")
         hosted.append("Hosted model activated.", style=TEXT)
         console.print(hosted)
 
     def warn_active_session(self, status: AccountStatus) -> None:
-        who = f"@{status.record.github_username}" if status.record else "this account"
+        who = _account_identity(status.record) if status.record else "this account"
         _print_warning_banner(self._console, "A session is already active")
         if status.record is not None:
             _print_account_fields(self._console, status.record)
@@ -170,7 +163,7 @@ class AccountLoginPresenter:
         console.print()
 
     def replacing_session(self, status: AccountStatus) -> None:
-        who = f"@{status.record.github_username}" if status.record else "this account"
+        who = _account_identity(status.record) if status.record else "this account"
         console = self._console
         console.print()
         line = Text()
@@ -181,11 +174,9 @@ class AccountLoginPresenter:
     def success(
         self,
         result: AccountLoginResult,
-        *,
-        missing_scopes: Sequence[str] = (),
     ) -> None:
         record = result.record
-        _print_success_banner(self._console, f"Signed in as @{record.github_username}")
+        _print_success_banner(self._console, f"Signed in as {_account_identity(record)}")
         _print_account_fields(self._console, record)
         if result.warning:
             self._console.print()
@@ -193,24 +184,18 @@ class AccountLoginPresenter:
             warn.append(f"  {GLYPH_WARNING}  ", style=f"bold {WARNING}")
             warn.append(result.warning, style=WARNING)
             self._console.print(warn)
-        if missing_scopes:
-            self._console.print()
-            warn = Text()
-            warn.append(f"  {GLYPH_WARNING}  ", style=f"bold {WARNING}")
-            warn.append(
-                "GitHub integration is missing "
-                + ", ".join(missing_scopes)
-                + ". Run account login again and approve repository and security access.",
-                style=WARNING,
-            )
-            self._console.print(warn)
         self._console.print()
 
 
+def _account_identity(record: AccountRecord) -> str:
+    return record.email or record.user_id
+
+
 def _print_account_fields(console: Console, record: AccountRecord) -> None:
-    _print_kv(console, "github", f"@{record.github_username}")
     if record.email:
         _print_kv(console, "email", record.email)
+    else:
+        _print_kv(console, "user", record.user_id)
     _print_kv(console, "org", record.organization_id)
     _print_kv(
         console,
@@ -225,7 +210,7 @@ def render_account_status(status: AccountStatus) -> None:
     """Print local account status in the same theme as login success."""
     console = _console
     if status.authenticated and status.record is not None:
-        _print_success_banner(console, f"Signed in as @{status.record.github_username}")
+        _print_success_banner(console, f"Signed in as {_account_identity(status.record)}")
         _print_account_fields(console, status.record)
         _print_kv(console, "detail", status.detail, SECONDARY)
         console.print()

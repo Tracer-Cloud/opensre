@@ -44,6 +44,7 @@ def _raw_help_sections() -> list[HelpSection]:
     from surfaces.interactive_shell.command_registry.cli_parity import (
         COMMANDS as PARITY_COMMANDS,
     )
+    from surfaces.interactive_shell.command_registry.demo_cmds import COMMANDS as DEMO_CMDS
     from surfaces.interactive_shell.command_registry.diagnostics_cmds import (
         COMMANDS as DIAGNOSTICS_CMDS,
     )
@@ -79,7 +80,11 @@ def _raw_help_sections() -> list[HelpSection]:
         ("Help", list(COMMANDS)),
         (
             "Session",
-            list(SESSION_CMDS) + list(CHOICE_CMDS) + list(SETTINGS_CMDS) + list(DIAGNOSTICS_CMDS),
+            list(SESSION_CMDS)
+            + list(CHOICE_CMDS)
+            + list(DEMO_CMDS)
+            + list(SETTINGS_CMDS)
+            + list(DIAGNOSTICS_CMDS),
         ),
         ("Integrations, Models & Tools", list(INT_CMDS) + list(MODEL_CMDS) + list(TOOLS_CMDS)),
         ("Privacy", list(PRIVACY_CMDS) + list(MEMORY_CMDS)),

@@ -60,28 +60,17 @@ def _check_ollama(host: str, model: str) -> ValidationResult:
     """Check Ollama server connectivity and verify model responds to inference."""
     import httpx
 
-    tags_url = f"{host.rstrip('/')}/api/tags"
-    try:
-        r = httpx.get(tags_url, timeout=5.0)
-        r.raise_for_status()
-    except Exception as err:
-        return ValidationResult(
-            ok=False,
-            detail=f"Cannot reach Ollama at {host}. Is it running? Try: ollama serve\n({err})",
-        )
-    available = [m["name"] for m in r.json().get("models", [])]
-    from surfaces.shared.llm_setup.ollama import normalize_model_tag
-
-    normalized_model = normalize_model_tag(model)
-    base_name = model.split(":")[0]
-    # An explicit tag must match exactly: asking for llama3.1:8b and silently
-    # accepting llama3.1:latest would validate a different model than the one
-    # that then gets used. Only an untagged request falls back to the base name.
-    asked_for_a_tag = ":" in model
-    matched = normalized_model in available or (
-        not asked_for_a_tag and any(m.split(":")[0] == base_name for m in available)
+    from surfaces.shared.llm_setup.ollama import (
+        OllamaModelDiscoveryError,
+        list_available_models,
+        model_is_available,
     )
-    if not matched:
+
+    try:
+        available = list_available_models(host)
+    except OllamaModelDiscoveryError as exc:
+        return ValidationResult(ok=False, detail=str(exc))
+    if not model_is_available(model, available):
         listed = ", ".join(available) or "none pulled yet"
         return ValidationResult(
             ok=False,

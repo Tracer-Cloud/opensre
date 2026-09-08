@@ -62,6 +62,19 @@ def test_api_level_rejection_surfaces_the_description(monkeypatch: pytest.Monkey
     assert "unauthorized" in result["detail"].lower()
 
 
+def test_api_level_rejection_never_echoes_the_bot_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    description = f"Unauthorized: https://api.telegram.org/bot{_TOKEN}/getMe"
+    _respond(monkeypatch, {"ok": False, "description": description})
+
+    result = verifier_module.verify_telegram("setup", {"bot_token": _TOKEN})
+
+    assert result["status"] == "failed"
+    assert _TOKEN not in result["detail"]
+    assert "<redacted>" in result["detail"]
+
+
 def test_network_error_is_reported_as_a_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     _raise(monkeypatch, ConnectionError("connection refused"))
 

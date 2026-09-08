@@ -40,6 +40,7 @@ def test_cancel_requested_tracks_the_shared_event() -> None:
     console = CancelConsole(_console(), cancel)
 
     # Act / Assert.
+    assert console.cancel_event is cancel
     assert console.cancel_requested is False
     cancel.set()
     assert console.cancel_requested is True

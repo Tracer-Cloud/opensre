@@ -60,10 +60,11 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         anti_examples=("User asks a docs/how-to question about OpenSRE features",),
     ),
     "/account": _mcp(
-        "Sign in to a personal OpenSRE account with GitHub, inspect the local login, "
-        "or sign out. Subcommands: login, status, logout.",
-        "User asks to sign in to OpenSRE with GitHub or create a personal account",
-        "User asks whether they are logged into OpenSRE or which GitHub user is linked",
+        "Sign in to a personal OpenSRE account, inspect the local login, "
+        "or sign out. Signing out closes the interactive shell. Subcommands: login, "
+        "status, logout.",
+        "User asks to sign in to OpenSRE or create a personal account",
+        "User asks whether they are logged into OpenSRE",
         anti_examples=(
             "User asks to log in to an LLM provider (use /auth)",
             "User asks to configure the GitHub integration only (use /integrations)",
@@ -161,6 +162,14 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         "User asks to change reasoning effort or depth for the active model",
         anti_examples=("User asks to switch provider or model name (use /model)",),
     ),
+    "/demo": _mcp(
+        "Open the guided demo picker that runs on real repositories from this machine "
+        "(CI/CD analytics, CI reliability agent, Slack handoff).",
+        "User asks to run a demo, see what OpenSRE can do, or replay the first-run demo menu",
+        anti_examples=(
+            "User names a specific repository to analyze (call the analytics tool directly)",
+        ),
+    ),
     "/exit": _mcp(
         "Exit the interactive shell and return to the parent terminal.",
         "User asks to exit, quit, or leave the REPL",
@@ -224,13 +233,17 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         "List, create, stop, start, delete, run once, and debug recurring prompt loops, "
         "including next fire time. "
         "Subcommands: list, active, all, add, run <id>, stop <id>, start <id>, delete <id>, "
-        "next <id>, messages. "
-        "Use add with --prompt, --time or --cron, optional --channel, and --run-now.",
+        "next <id>, messages, service [install|remove]. "
+        "Use add with --prompt, --time or --cron, optional --channel, and --run-now. "
+        "service installs, removes, or shows the background scheduler service that keeps "
+        "loops running when no shell is open.",
         "User asks to list active loops or recurring scheduled loops",
         "User asks when configured loops will run next",
         "User asks to set up a manual recurring loop from a prompt",
         "User asks to add a loop and execute it once immediately",
         "User asks to stop, disable, resume, start, delete, or remove a recurring loop",
+        "User asks to keep loops running when the shell is closed, or to install, "
+        "check, or remove the background scheduler service",
         anti_examples=("User wants low-level cron task logs by task id (use /cron)",),
     ),
     "/mcp": _mcp(
@@ -314,9 +327,11 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         anti_examples=("User asks for the current session status (use /status)",),
     ),
     "/setup": _mcp(
-        "First-run setup: GitHub sign-in, LLM key, then open the interactive shell.",
+        "First-run setup: OpenSRE account sign-in, hosted model, then the interactive shell. "
+        "Use --dev to authenticate against a local webapp at http://localhost:3000.",
         "User asks to run first-run setup or factory-style install setup",
-        "User just installed OpenSRE and needs to sign in and add an LLM key",
+        "User just installed OpenSRE and needs to create or sign in to an account",
+        "User is developing the webapp locally and needs opensre setup --dev",
     ),
     "/status": _mcp(
         "Explicit /status command operation: show REPL session status, including "

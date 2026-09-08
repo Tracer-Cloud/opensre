@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from core.agent_harness.prompts.skills.loader import (
@@ -97,13 +98,15 @@ def resolve_scheduled_skill(name: str, pinned_revision: str) -> ScheduledSkillRe
     return ScheduledSkillResolution(skill=skill, body=body, revision=current)
 
 
-def validate_skill_inputs(raw: dict[str, object] | None) -> dict[str, str]:
+def validate_skill_inputs(raw: Mapping[str, object] | None) -> dict[str, str]:
     """Return string-only skill inputs or raise ``ValueError``."""
     if not raw:
         return {}
     validated: dict[str, str] = {}
     for key, value in raw.items():
-        name = str(key).strip()
+        if not isinstance(key, str):
+            raise ValueError("skill input keys must be strings.")
+        name = key.strip()
         if not name:
             raise ValueError("skill input keys must be non-empty strings.")
         if not isinstance(value, str):

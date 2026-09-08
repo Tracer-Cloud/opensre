@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import os
 import subprocess
+import sys
 import tempfile
 import threading
+import time
 
 import pytest
 
@@ -42,6 +45,39 @@ def test_terminate_child_process_noop_when_exited() -> None:
     proc = subprocess.Popen(["true"])
     proc.wait()
     terminate_child_process(proc)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="process-group cancel is POSIX")
+def test_terminate_reaps_grandchild_that_ignores_sigterm() -> None:
+    script = (
+        "import subprocess, sys, time\n"
+        "child = subprocess.Popen(["
+        "sys.executable, '-c',"
+        "'import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)'"
+        "])\n"
+        "print(f'GRAND:{child.pid}', flush=True)\n"
+        "time.sleep(60)\n"
+    )
+    proc = subprocess.Popen(
+        [sys.executable, "-c", script],
+        stdout=subprocess.PIPE,
+        text=True,
+        start_new_session=True,
+    )
+    assert proc.stdout is not None
+    line = proc.stdout.readline()
+    grand_pid = int(line.strip().split("GRAND:", 1)[1])
+    terminate_child_process(proc)
+    deadline = time.monotonic() + 2.0
+    while time.monotonic() < deadline:
+        try:
+            os.kill(grand_pid, 0)
+        except OSError:
+            break
+        time.sleep(0.05)
+    else:
+        pytest.fail(f"grandchild {grand_pid} still alive after terminate")
+    assert proc.poll() is not None
 
 
 def test_watch_subprocess_until_exit_on_cancel() -> None:

@@ -12,8 +12,7 @@ from infrastructure.scheduling.scheduler.runner import (
     _build_scheduler,
     _compute_fire_time,
     _make_trigger,
-    _on_job_submitted,
-    _pending_fire_times,
+    _queue_scheduled_run,
     _register_jobs,
     _scheduled_job,
     compute_next_run,
@@ -85,23 +84,21 @@ class TestMakeTrigger:
         assert trigger is not None
 
 
-class TestOnJobSubmitted:
-    def test_stores_fire_time_and_queues_history(self, monkeypatch: pytest.MonkeyPatch) -> None:
+class TestScheduledAdmission:
+    def test_queues_exact_fire_time_before_worker_submission(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
         from datetime import UTC, datetime
-        from types import SimpleNamespace
 
-        _pending_fire_times.clear()
-        event = SimpleNamespace(
-            job_id="task-1",
-            scheduled_run_times=[datetime(2026, 1, 15, 9, 0, tzinfo=UTC)],
-        )
         claims: list[tuple[str, str]] = []
         monkeypatch.setattr(
             "infrastructure.scheduling.scheduler.runner.try_queue_run",
             lambda task_id, fire_time: claims.append((task_id, fire_time)),
         )
-        _on_job_submitted(event)
-        assert _pending_fire_times["task-1"] == "2026-01-15T09:00Z"
+        _queue_scheduled_run(
+            "task-1",
+            datetime(2026, 1, 15, 9, 0, tzinfo=UTC),
+        )
         assert claims == [("task-1", "2026-01-15T09:00Z")]
 
 
@@ -121,6 +118,10 @@ class TestScheduledConcurrency:
         from apscheduler.schedulers.background import BackgroundScheduler
 
         monkeypatch.setenv(OPENSRE_SCHEDULER_MAX_CONCURRENT_RUNS_ENV, str(limit))
+        monkeypatch.setattr(
+            "infrastructure.scheduling.scheduler.runner.try_queue_run",
+            lambda _task_id, _fire_time: True,
+        )
         scheduler = _build_scheduler(BackgroundScheduler)
         entered = threading.Barrier(limit + 1)
         release = threading.Event()
@@ -129,7 +130,8 @@ class TestScheduledConcurrency:
         def on_submitted(_event: object) -> None:
             submitted.set()
 
-        def blocking_job() -> None:
+        def blocking_job(scheduled_run_time: datetime | None = None) -> None:
+            _ = scheduled_run_time
             entered.wait(timeout=5)
             release.wait(timeout=5)
 
@@ -176,15 +178,16 @@ class TestScheduledConcurrency:
             if submitted_count == 3:
                 all_submitted.set()
 
-        def blocking_job() -> None:
+        def blocking_job(scheduled_run_time: datetime | None = None) -> None:
+            _ = scheduled_run_time
             first_wave.wait(timeout=5)
             release.wait(timeout=5)
 
-        def overflow_job() -> None:
+        def overflow_job(scheduled_run_time: datetime | None = None) -> None:
+            _ = scheduled_run_time
             overflow_started.set()
 
         run_at = datetime.now(UTC) + timedelta(milliseconds=200)
-        scheduler.add_listener(_on_job_submitted, EVENT_JOB_SUBMITTED)
         scheduler.add_listener(on_submitted, EVENT_JOB_SUBMITTED)
         scheduler.add_job(blocking_job, "date", run_date=run_at, id="first")
         scheduler.add_job(blocking_job, "date", run_date=run_at, id="second")
@@ -204,7 +207,6 @@ class TestScheduledConcurrency:
         finally:
             release.set()
             scheduler.shutdown(wait=True)
-            _pending_fire_times.clear()
 
     def test_same_job_never_overlaps_itself(self, monkeypatch: pytest.MonkeyPatch) -> None:
         import threading
@@ -214,6 +216,10 @@ class TestScheduledConcurrency:
         from apscheduler.schedulers.background import BackgroundScheduler
 
         monkeypatch.setenv(OPENSRE_SCHEDULER_MAX_CONCURRENT_RUNS_ENV, "2")
+        monkeypatch.setattr(
+            "infrastructure.scheduling.scheduler.runner.try_queue_run",
+            lambda _task_id, _fire_time: True,
+        )
         scheduler = _build_scheduler(BackgroundScheduler)
         entered = threading.Barrier(2)
         release = threading.Event()
@@ -222,7 +228,8 @@ class TestScheduledConcurrency:
         peak_active = 0
         active_lock = threading.Lock()
 
-        def blocking_job() -> None:
+        def blocking_job(scheduled_run_time: datetime | None = None) -> None:
+            _ = scheduled_run_time
             nonlocal active, peak_active
             with active_lock:
                 active += 1
@@ -273,21 +280,26 @@ class TestScheduledJobOwnership:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         completed: list[tuple[str, str]] = []
-        _pending_fire_times["task-1"] = "2026-01-15T09:00Z"
         monkeypatch.setattr(
             "infrastructure.scheduling.scheduler.runner.get_task",
             lambda _task_id: task,
         )
         monkeypatch.setattr(
             "infrastructure.scheduling.scheduler.runner.try_start_run",
-            lambda _task_id, _fire_time: False,
+            lambda _task_id, _fire_time: None,
         )
         monkeypatch.setattr(
             "infrastructure.scheduling.scheduler.runner.complete_run",
-            lambda task_id, fire_time, **_kwargs: completed.append((task_id, fire_time)),
+            lambda _claim, **_kwargs: completed.append(("claimed", "claimed")),
         )
 
-        _scheduled_job("task-1", real_runners())
+        from datetime import UTC, datetime
+
+        _scheduled_job(
+            "task-1",
+            real_runners(),
+            scheduled_run_time=datetime(2026, 1, 15, 9, 0, tzinfo=UTC),
+        )
 
         assert completed == []
 
@@ -309,11 +321,6 @@ class TestComputeFireTime:
         result = _compute_fire_time(dt)
         # 14:30 IST = 09:00 UTC
         assert result == "2026-01-15T09:00Z"
-
-    def test_with_none_falls_back_to_utc_now(self) -> None:
-        result = _compute_fire_time(None)
-        assert result.endswith("Z")
-        assert "T" in result
 
 
 class TestComputeNextRun:
@@ -338,8 +345,8 @@ class TestRegisterJobs:
         tmp_path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from infrastructure.scheduling.scheduler import store as scheduler_store
-        from infrastructure.scheduling.scheduler.store import add_task
+        from infrastructure.scheduling.scheduler.storage import task_store as scheduler_store
+        from infrastructure.scheduling.scheduler.storage.task_store import add_task
 
         class _FakeScheduler:
             def __init__(self) -> None:
@@ -355,7 +362,7 @@ class TestRegisterJobs:
                 self.job_options.append(kwargs)
 
         store_path = tmp_path / "tasks.json"
-        monkeypatch.setattr(scheduler_store, "_default_store_path", lambda: store_path)
+        monkeypatch.setattr(scheduler_store, "default_task_store_path", lambda: store_path)
         add_task(
             ScheduledTask(
                 id="prompt-loop",
@@ -392,8 +399,8 @@ class TestRegisterJobs:
         tmp_path,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        from infrastructure.scheduling.scheduler import store as scheduler_store
-        from infrastructure.scheduling.scheduler.store import add_task
+        from infrastructure.scheduling.scheduler.storage import task_store as scheduler_store
+        from infrastructure.scheduling.scheduler.storage.task_store import add_task
 
         class _FakeJob:
             def __init__(self, job_id: str) -> None:
@@ -418,7 +425,7 @@ class TestRegisterJobs:
                 self.jobs.pop(job_id, None)
 
         store_path = tmp_path / "tasks.json"
-        monkeypatch.setattr(scheduler_store, "_default_store_path", lambda: store_path)
+        monkeypatch.setattr(scheduler_store, "default_task_store_path", lambda: store_path)
         add_task(
             ScheduledTask(
                 id="keep",
@@ -433,7 +440,7 @@ class TestRegisterJobs:
         count = resync_scheduler_jobs(scheduler, real_runners())
 
         assert count == 1
-        assert set(scheduler.jobs) == {"keep"}
+        assert set(scheduler.jobs) == {"keep", "scheduler-claim-recovery"}
 
     def test_refresh_starts_when_scheduler_was_idle(
         self,
@@ -503,7 +510,7 @@ class TestRunTaskNow:
             "infrastructure.scheduling.scheduler.runner.get_task", lambda _task_id: task
         )
         monkeypatch.setattr(
-            "infrastructure.scheduling.scheduler.claim_store.get_latest_targeted_run",
+            "infrastructure.scheduling.scheduler.storage.get_latest_targeted_run",
             lambda _task_id: None,
         )
 
@@ -538,7 +545,7 @@ class TestRunTaskNow:
             "infrastructure.scheduling.scheduler.runner.get_task", lambda _task_id: task
         )
         monkeypatch.setattr(
-            "infrastructure.scheduling.scheduler.claim_store.get_latest_targeted_run",
+            "infrastructure.scheduling.scheduler.storage.get_latest_targeted_run",
             lambda _task_id: last_run,
         )
 
@@ -568,7 +575,7 @@ class TestRunTaskNow:
             "infrastructure.scheduling.scheduler.runner.get_task", lambda _task_id: task
         )
         monkeypatch.setattr(
-            "infrastructure.scheduling.scheduler.claim_store.get_latest_targeted_run",
+            "infrastructure.scheduling.scheduler.storage.get_latest_targeted_run",
             lambda _task_id: last_run,
         )
 

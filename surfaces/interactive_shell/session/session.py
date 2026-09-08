@@ -56,6 +56,7 @@ class Session(SessionCore):
         self.terminal.submitted_turn_count = 0
         self.terminal.pending_prompt_default = None
         self.terminal.pending_prompt_autosubmit = False
+        self.terminal.pending_prompt_plain_turn = False
         self.terminal.last_input_autosubmitted = False
         self.terminal.pending_choice_response = None
         self.terminal.dispatch_active = False

@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
 
-from integrations.github.tools.ci_fix.context import CiFixContext
+from integrations.github.tools.ci_fix.context import MERGE_STATE_DIRTY, CiFixContext
 from integrations.github.tools.ci_fix.gh import run_gh_json
 
 DEFAULT_CHECK_WAIT_SECONDS = 900
@@ -17,7 +17,7 @@ DEFAULT_POLL_INTERVAL_SECONDS = 10
 DEFAULT_SETTLE_SECONDS = 30
 DEFAULT_HEAD_PROPAGATION_SECONDS = 30
 
-_PR_CHECK_FIELDS = "headRefOid,statusCheckRollup"
+_PR_CHECK_FIELDS = "headRefOid,mergeStateStatus,statusCheckRollup"
 _WORKFLOW_RUN_FIELDS = "databaseId,status"
 _WORKFLOW_RUNS_KEY = "runs"
 _WORKFLOW_RUN_COMPLETED = "completed"
@@ -44,6 +44,7 @@ class CheckState(StrEnum):
     FAILED = "failed"
     TIMED_OUT = "timed_out"
     SUPERSEDED = "superseded"
+    CONFLICTED = "conflicted"
 
 
 @dataclass(frozen=True)
@@ -69,7 +70,11 @@ def wait_for_pr_checks(
     sleep: Callable[[float], None] = time.sleep,
     monotonic: Callable[[], float] = time.monotonic,
 ) -> CheckVerification:
-    """Poll until the fix commit's PR checks pass, fail, or time out."""
+    """Poll until the fix commit's PR checks pass, fail, or time out.
+
+    A pushed head GitHub reports as conflicted with its base gets no checks at
+    all, so that returns CONFLICTED at once instead of waiting for the timeout.
+    """
     repo = f"{ctx.owner}/{ctx.repo}"
     started_at = monotonic()
     deadline = started_at + max(0, timeout_seconds)
@@ -97,6 +102,8 @@ def wait_for_pr_checks(
         if head_sha == expected_head_sha:
             if expected_head_seen_at is None:
                 expected_head_seen_at = now
+            if str(payload.get("mergeStateStatus") or "").strip().upper() == MERGE_STATE_DIRTY:
+                return CheckVerification(state=CheckState.CONFLICTED, check_names=last_names)
         elif head_sha and (
             head_sha != ctx.head_sha
             or expected_head_seen_at is not None

@@ -95,7 +95,7 @@ _SUGGESTIONS_BY_OPTION = {suggestion.option: suggestion for suggestion in LOOP_S
 
 
 def _no_loops_configured() -> bool:
-    from infrastructure.scheduling.scheduler.store import list_tasks
+    from infrastructure.scheduling.scheduler.storage import list_tasks
 
     return not list_tasks()
 

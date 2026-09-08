@@ -32,6 +32,7 @@ _LOOPS_FIRST_ARGS: tuple[tuple[str, str], ...] = (
     ("delete", "remove a loop permanently"),
     ("next", "debug one loop's next fire time"),
     ("messages", "local interactive-shell loop inbox"),
+    ("service", "background scheduler service: status, install, remove"),
 )
 
 _USAGE = (
@@ -44,6 +45,7 @@ _USAGE = (
     "/loops delete LOOP_ID",
     "/loops next LOOP_ID",
     "/loops messages [--limit N]",
+    "/loops service [install|remove]",
 )
 
 
@@ -84,7 +86,7 @@ def _short(text: str, *, max_chars: int = 120) -> str:
 def _loops_usage_error() -> str:
     return (
         f"[{ERROR}]usage:[/] "
-        "/loops [list|active|all|add|run|stop|start|delete|next|messages]\n"
+        "/loops [list|active|all|add|run|stop|start|delete|next|messages|service]\n"
         f'[{DIM}]example:[/] /loops add --name "Morning ops" --time 08:30 '
         '--prompt "Check open incidents and summarize risk" --run-now'
     )
@@ -176,6 +178,7 @@ def _validate_loops_args(args: list[str]) -> str | None:
         "remove",
         "resume",
         "run",
+        "service",
         "start",
         "stop",
     }:
@@ -202,6 +205,8 @@ def _cmd_loops(session: Session, console: Console, args: list[str]) -> bool:
         return _cmd_loops_next(session, console, rest)
     if sub in {"messages", "inbox"}:
         return _cmd_loops_messages(session, console, rest)
+    if sub == "service":
+        return _cmd_loops_service(session, console, rest)
 
     console.print(_loops_usage_error())
     return True
@@ -426,16 +431,37 @@ def _cmd_loops_messages(session: Session, console: Console, args: list[str]) -> 
     return True
 
 
-def _run_loop_task_ids_once(console: Console, task_ids: tuple[str, ...]) -> bool:
-    from bootstrap.adapters import scheduler_runners
-    from bootstrap.process import SCHEDULED_COMMAND_PROFILE, configure_process
-    from infrastructure.scheduling.scheduler.runner import run_task_now
+def _cmd_loops_service(session: Session, console: Console, args: list[str]) -> bool:  # noqa: ARG001
+    from infrastructure.scheduling.scheduler.background_service import (
+        background_service_state,
+        install_background_service,
+        remove_background_service,
+    )
 
-    configure_process(SCHEDULED_COMMAND_PROFILE)
-    failures: list[str] = []
-    for task_id in task_ids:
-        if not run_task_now(task_id, scheduler_runners()):
-            failures.append(task_id)
+    action = args[0].lower() if args else "status"
+    try:
+        if action == "install":
+            state = install_background_service()
+        elif action == "remove":
+            state = remove_background_service()
+        elif action == "status":
+            state = background_service_state()
+        else:
+            console.print(f"[{ERROR}]usage:[/] /loops service [install|remove]")
+            return True
+    except RuntimeError as exc:
+        console.print(f"[{ERROR}]service change failed:[/] {escape(str(exc))}")
+        return True
+    console.print(escape(state.summary))
+    if state.installed and state.log_path is not None:
+        console.print(f"  [{DIM}]log:[/] {escape(str(state.log_path))}")
+    return True
+
+
+def _run_loop_task_ids_once(console: Console, task_ids: tuple[str, ...]) -> bool:
+    from surfaces.interactive_shell.runtime.loop_scheduler import run_loop_now
+
+    failures = [task_id for task_id in task_ids if not run_loop_now(task_id)]
 
     if failures:
         console.print(

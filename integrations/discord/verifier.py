@@ -17,6 +17,7 @@ from typing import Any
 import httpx
 
 from config.constants.discord import DISCORD_API_BASE
+from infrastructure.delivery.notifications.redaction import redact_token
 from integrations.verification import register_verifier, result
 
 logger = logging.getLogger(__name__)
@@ -33,7 +34,8 @@ def verify_discord(source: str, config: dict[str, Any]) -> dict[str, str]:
     try:
         response = httpx.get(_ME_URL, headers={"Authorization": f"Bot {bot_token}"}, timeout=10)
     except httpx.HTTPError as exc:
-        return result("discord", source, "failed", f"Discord API check failed: {exc}")
+        safe_error = redact_token(str(exc), bot_token)
+        return result("discord", source, "failed", f"Discord API check failed: {safe_error}")
 
     if response.status_code == HTTPStatus.UNAUTHORIZED:
         return result("discord", source, "failed", "Discord bot token is invalid or revoked.")

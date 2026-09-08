@@ -248,7 +248,9 @@ class PromptBuilder:
         if prefilled and self.session.terminal.pop_pending_autosubmit():
             # Same paint path as Enter: mark so ``render_submitted_prompt`` can
             # label ``/goal`` work turns distinctly from the ``/goal set`` slash.
-            self.session.terminal.last_input_autosubmitted = True
+            # A plain auto prompt is submitted exactly as typed input instead.
+            plain = self.session.terminal.pop_pending_plain_turn()
+            self.session.terminal.last_input_autosubmitted = not plain
             return prefilled
 
         if prefilled:

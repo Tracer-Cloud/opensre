@@ -101,8 +101,10 @@ def test_build_twilio_config_raises_for_missing_auth_token() -> None:
 
 
 def test_validate_twilio_config_api_error_kind(monkeypatch: pytest.MonkeyPatch) -> None:
+    token = "twilio-auth-token"
+
     def _raise(*_a: Any, **_kw: Any) -> Any:
-        raise Exception("Connection timeout")
+        raise Exception(f"Connection timeout for {token}")
 
     monkeypatch.setattr("integrations.twilio.verifier.requests.get", _raise)
 
@@ -112,6 +114,8 @@ def test_validate_twilio_config_api_error_kind(monkeypatch: pytest.MonkeyPatch) 
 
     assert outcome.ok is False
     assert outcome.failure_kind is TwilioFailureKind.API_ERROR
+    assert token not in outcome.detail
+    assert "<redacted>" in outcome.detail
 
 
 def test_validate_twilio_config_sms_not_ready_kind(monkeypatch: pytest.MonkeyPatch) -> None:

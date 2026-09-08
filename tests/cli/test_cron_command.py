@@ -7,8 +7,13 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
-from infrastructure.scheduling.scheduler.types import Provider, TaskKind
-from surfaces.cli.commands.cron import _KIND_CHOICES, _PROVIDER_CHOICES, cron_command
+from infrastructure.scheduling.scheduler.types import Provider, TaskKind, TaskRun, TaskStatus
+from surfaces.cli.commands.cron import (
+    _KIND_CHOICES,
+    _PROVIDER_CHOICES,
+    _run_status_label,
+    cron_command,
+)
 
 
 def test_cron_add_provider_choices_match_full_provider_enum() -> None:
@@ -22,6 +27,73 @@ def test_cron_add_kind_choices_exclude_sentry_kinds() -> None:
         TaskKind.SENTRY_MORNING_DIGEST.value,
         TaskKind.SENTRY_UPTIME_WATCH.value,
     }
+
+
+def test_cron_add_manual_loop_requires_prompt() -> None:
+    result = CliRunner().invoke(
+        cron_command,
+        [
+            "add",
+            "--kind",
+            "manual_loop",
+            "--cron",
+            "0 9 * * *",
+            "--provider",
+            "interactive_shell",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "--prompt is required" in result.output
+
+
+def test_cron_add_rejects_prompt_for_non_manual_loop() -> None:
+    result = CliRunner().invoke(
+        cron_command,
+        [
+            "add",
+            "--kind",
+            "github_pr_sweep",
+            "--cron",
+            "0 9 * * *",
+            "--provider",
+            "interactive_shell",
+            "--prompt",
+            "Check open incidents.",
+        ],
+    )
+
+    assert result.exit_code == 1
+    assert "--prompt is only valid" in result.output
+
+
+def test_cron_add_persists_manual_loop_prompt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from infrastructure.scheduling.scheduler.loop_constants import LOOP_PROMPT_PARAM
+    from infrastructure.scheduling.scheduler.storage import task_store as scheduler_store
+    from infrastructure.scheduling.scheduler.storage.task_store import list_tasks
+
+    store = tmp_path / "scheduler_tasks.json"
+    monkeypatch.setattr(scheduler_store, "default_task_store_path", lambda: store)
+
+    result = CliRunner().invoke(
+        cron_command,
+        [
+            "add",
+            "--kind",
+            "manual_loop",
+            "--cron",
+            "0 9 * * *",
+            "--provider",
+            "interactive_shell",
+            "--prompt",
+            "  Check open incidents.  ",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    assert list_tasks(store)[0].params == {LOOP_PROMPT_PARAM: "Check open incidents."}
 
 
 def test_cron_add_rejects_non_positive_window() -> None:
@@ -53,6 +125,25 @@ def test_cron_logs_rejects_non_positive_limit() -> None:
     assert "not in the range" in result.output
 
 
+def test_cron_log_status_identifies_reclaimed_attempts() -> None:
+    assert _run_status_label(TaskRun(task_id="t", fire_time="f")) == "pending"
+    assert (
+        _run_status_label(
+            TaskRun(
+                task_id="t",
+                fire_time="f",
+                status=TaskStatus.SUCCESS,
+                attempt=2,
+            )
+        )
+        == "reclaimed/success"
+    )
+    assert (
+        _run_status_label(TaskRun(task_id="t", fire_time="f", status=TaskStatus.ABANDONED))
+        == "abandoned"
+    )
+
+
 def test_cron_add_allows_slack_without_chat_id(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -61,10 +152,10 @@ def test_cron_add_allows_slack_without_chat_id(
     The webhook is the destination, so it must actually be configured — without
     one a bot-token install would store a task that delivers nowhere.
     """
-    from infrastructure.scheduling.scheduler import store as scheduler_store
+    from infrastructure.scheduling.scheduler.storage import task_store as scheduler_store
 
     store = tmp_path / "scheduler_tasks.json"
-    monkeypatch.setattr(scheduler_store, "_default_store_path", lambda: store)
+    monkeypatch.setattr(scheduler_store, "default_task_store_path", lambda: store)
     monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.slack.test/services/T/B/x")
 
     runner = CliRunner()
@@ -76,6 +167,8 @@ def test_cron_add_allows_slack_without_chat_id(
             "manual_loop",
             "--cron",
             "0 8 * * 1-5",
+            "--prompt",
+            "Check open incidents.",
             "--tz",
             "Europe/Amsterdam",
             "--provider",
@@ -87,11 +180,11 @@ def test_cron_add_allows_slack_without_chat_id(
 
 
 def test_cron_add_persists_loop_name(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from infrastructure.scheduling.scheduler import store as scheduler_store
-    from infrastructure.scheduling.scheduler.store import list_tasks
+    from infrastructure.scheduling.scheduler.storage import task_store as scheduler_store
+    from infrastructure.scheduling.scheduler.storage.task_store import list_tasks
 
     store = tmp_path / "scheduler_tasks.json"
-    monkeypatch.setattr(scheduler_store, "_default_store_path", lambda: store)
+    monkeypatch.setattr(scheduler_store, "default_task_store_path", lambda: store)
     monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.slack.test/services/T/B/x")
 
     runner = CliRunner()
@@ -105,6 +198,8 @@ def test_cron_add_persists_loop_name(tmp_path: Path, monkeypatch: pytest.MonkeyP
             "manual_loop",
             "--cron",
             "0 8 * * 1-5",
+            "--prompt",
+            "Check open incidents.",
             "--provider",
             "slack",
         ],
@@ -118,11 +213,11 @@ def test_cron_add_persists_loop_name(tmp_path: Path, monkeypatch: pytest.MonkeyP
 def test_cron_add_persists_github_ci_health_scope(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from infrastructure.scheduling.scheduler import store as scheduler_store
-    from infrastructure.scheduling.scheduler.store import list_tasks
+    from infrastructure.scheduling.scheduler.storage import task_store as scheduler_store
+    from infrastructure.scheduling.scheduler.storage.task_store import list_tasks
 
     store = tmp_path / "scheduler_tasks.json"
-    monkeypatch.setattr(scheduler_store, "_default_store_path", lambda: store)
+    monkeypatch.setattr(scheduler_store, "default_task_store_path", lambda: store)
     monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.slack.test/services/T/B/x")
 
     result = CliRunner().invoke(
@@ -155,6 +250,65 @@ def test_cron_add_persists_github_ci_health_scope(
         "repo": "api",
         "pr_number": "42",
     }
+
+
+def test_cron_add_persists_morning_report_city(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from infrastructure.scheduling.scheduler.storage import task_store as scheduler_store
+    from infrastructure.scheduling.scheduler.storage.task_store import list_tasks
+
+    store = tmp_path / "scheduler_tasks.json"
+    monkeypatch.setattr(scheduler_store, "default_task_store_path", lambda: store)
+
+    result = CliRunner().invoke(
+        cron_command,
+        [
+            "add",
+            "--kind",
+            "recurring_skill",
+            "--skill",
+            "morning-report",
+            "--cron",
+            "0 8 * * 1-5",
+            "--provider",
+            "interactive_shell",
+            "--city",
+            "New Delhi",
+        ],
+    )
+
+    assert result.exit_code == 0, result.output
+    task = list_tasks(store)[0]
+    assert task.skill_name == "morning-report"
+    assert task.skill_revision
+    assert task.skill_inputs == {"city": "New Delhi"}
+
+
+def test_cron_add_rejects_city_for_unrelated_skill() -> None:
+    result = CliRunner().invoke(
+        cron_command,
+        [
+            "add",
+            "--kind",
+            "recurring_skill",
+            "--skill",
+            "github-ci-health",
+            "--cron",
+            "0 8 * * 1-5",
+            "--provider",
+            "interactive_shell",
+            "--owner",
+            "acme",
+            "--repo",
+            "api",
+            "--city",
+            "Paris",
+        ],
+    )
+
+    assert result.exit_code == 2
+    assert "--city is only valid" in result.output
 
 
 def test_cron_add_requires_repository_scope_for_github_ci_health() -> None:
@@ -214,6 +368,8 @@ def test_cron_add_rejects_github_scope_for_an_unrelated_kind() -> None:
             "manual_loop",
             "--cron",
             "0 8 * * *",
+            "--prompt",
+            "Check open incidents.",
             "--provider",
             "interactive_shell",
             "--owner",
@@ -230,11 +386,11 @@ def test_cron_add_rejects_github_scope_for_an_unrelated_kind() -> None:
 def test_cron_add_allows_interactive_shell_without_chat_id(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    from infrastructure.scheduling.scheduler import store as scheduler_store
-    from infrastructure.scheduling.scheduler.store import list_tasks
+    from infrastructure.scheduling.scheduler.storage import task_store as scheduler_store
+    from infrastructure.scheduling.scheduler.storage.task_store import list_tasks
 
     store = tmp_path / "scheduler_tasks.json"
-    monkeypatch.setattr(scheduler_store, "_default_store_path", lambda: store)
+    monkeypatch.setattr(scheduler_store, "default_task_store_path", lambda: store)
 
     runner = CliRunner()
     result = runner.invoke(
@@ -247,6 +403,8 @@ def test_cron_add_allows_interactive_shell_without_chat_id(
             "manual_loop",
             "--cron",
             "0 8 * * 1-5",
+            "--prompt",
+            "Check open incidents.",
             "--provider",
             "interactive_shell",
         ],
@@ -266,6 +424,8 @@ def test_cron_add_still_requires_chat_id_for_telegram() -> None:
             "manual_loop",
             "--cron",
             "0 8 * * 1-5",
+            "--prompt",
+            "Check open incidents.",
             "--provider",
             "telegram",
         ],
@@ -323,8 +483,8 @@ def _patch_cron_run_deps(
         return True
 
     monkeypatch.setattr("bootstrap.process.configure_process", lambda _profile: None)
-    monkeypatch.setattr("bootstrap.adapters.scheduler_runners", lambda: object())
-    monkeypatch.setattr("infrastructure.scheduling.scheduler.store.get_task", lambda _tid: task)
+    monkeypatch.setattr("bootstrap.adapters.scheduler_runners", object)
+    monkeypatch.setattr("infrastructure.scheduling.scheduler.storage.get_task", lambda _tid: task)
     monkeypatch.setattr(
         "infrastructure.scheduling.scheduler.runner.run_task_now", _fake_run_task_now
     )
@@ -333,7 +493,7 @@ def _patch_cron_run_deps(
         lambda *_args, **_kwargs: None,
     )
     monkeypatch.setattr(
-        "infrastructure.scheduling.scheduler.claim_store.get_latest_targeted_run",
+        "infrastructure.scheduling.scheduler.storage.get_latest_targeted_run",
         lambda _tid: latest_run,
     )
     return calls

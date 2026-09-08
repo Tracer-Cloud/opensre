@@ -13,11 +13,11 @@ description: "Common questions about OpenSRE."
   </Accordion>
 
   <Accordion title="How do I get started?">
-    Install OpenSRE, complete onboarding, then ask it something:
+    Install OpenSRE, sign in, then ask it something:
 
     ```bash
     curl -fsSL https://install.opensre.com | bash
-    opensre onboard
+    opensre setup
     opensre ask "why did checkout latency increase today?"
     ```
 
@@ -26,7 +26,7 @@ description: "Common questions about OpenSRE."
 
   <Accordion title="Which deployment path should I use?">
     Most users start with the local CLI (`curl` or Homebrew install, then
-    `opensre onboard` for LLM setup, plus `opensre integrations setup` for the
+    `opensre setup` for account sign-in, plus `opensre integrations setup` for the
     tools you want OpenSRE to query). For organization-wide hosted connectors, use
     [Enterprise setup](/install-enterprise) at
     [app.tracer.cloud](https://app.tracer.cloud).
@@ -43,9 +43,10 @@ description: "Common questions about OpenSRE."
   </Accordion>
 
   <Accordion title="Which model providers are supported?">
-    OpenSRE supports Anthropic, OpenAI, OpenRouter, TrustedRouter, DeepSeek,
-    Gemini, Bedrock, Azure OpenAI, and CLI-backed providers. Set `LLM_PROVIDER`
-    and the matching API key. Provider matrix, defaults, and troubleshooting:
+    The signed-in interactive shell uses the account-hosted model. Other hosts
+    and account-independent CLI workflows support Anthropic, OpenAI, OpenRouter,
+    TrustedRouter, DeepSeek, Gemini, Bedrock, Azure OpenAI, and CLI-backed
+    providers through `LLM_PROVIDER`. Provider matrix and troubleshooting:
     [LLM providers](/llm-providers).
   </Accordion>
 
@@ -58,8 +59,9 @@ description: "Common questions about OpenSRE."
   </Accordion>
 
   <Accordion title="What happens when I run opensre with no arguments?">
-    Running `opensre` starts the interactive shell. You can describe issues in
-    plain language and ask follow-up questions in the same session. Slash
+    Running `opensre` validates your OpenSRE account, then starts the interactive
+    shell. You can exit and stay signed out, but an inactive account cannot enter
+    the shell. Once signed in, you can describe issues in plain language. Slash
     commands such as `/help`, `/status`, and `/verify datadog` are documented in
     [Shell commands](/interactive-shell-commands).
   </Accordion>

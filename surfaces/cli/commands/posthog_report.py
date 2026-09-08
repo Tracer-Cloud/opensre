@@ -166,7 +166,7 @@ def posthog_report_schedule_add(
 @posthog_report_schedule_command.command(name="list")
 def posthog_report_schedule_list() -> None:
     """List scheduled PostHog metric report tasks."""
-    from infrastructure.scheduling.scheduler.store import list_tasks
+    from infrastructure.scheduling.scheduler.storage import list_tasks
     from infrastructure.scheduling.scheduler.types import TaskKind
 
     tasks = [task for task in list_tasks() if task.kind == TaskKind.POSTHOG_METRIC_REPORT]
@@ -204,7 +204,7 @@ def posthog_report_schedule_list() -> None:
 @click.argument("task_id")
 def posthog_report_schedule_remove(task_id: str) -> None:
     """Remove a scheduled PostHog metric report task."""
-    from infrastructure.scheduling.scheduler.store import get_task, remove_task
+    from infrastructure.scheduling.scheduler.storage import get_task, remove_task
     from infrastructure.scheduling.scheduler.types import TaskKind
 
     task = get_task(task_id)
@@ -225,7 +225,7 @@ def posthog_report_schedule_run(task_id: str) -> None:
     """Run a scheduled PostHog metric report task immediately."""
     from bootstrap.adapters import scheduler_runners
     from infrastructure.scheduling.scheduler.runner import run_task_now
-    from infrastructure.scheduling.scheduler.store import get_task
+    from infrastructure.scheduling.scheduler.storage import get_task
     from infrastructure.scheduling.scheduler.types import TaskKind
     from integrations.posthog.report_prerequisites import (
         require_posthog_integration,

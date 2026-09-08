@@ -19,7 +19,7 @@ metadata:
     - GitHub token usable by OpenSRE
     - Installed and authenticated coding agent
   type: onboarding
-  version: "1.3"
+  version: "1.4"
   prerequisite_for: core/agent_harness/prompts/skills/github_ci_fix/SKILL.md
 ---
 
@@ -183,20 +183,17 @@ the check because remediation was suggested.
 
 ### 2. Configure the token OpenSRE actually uses
 
-From the OpenSRE checkout, run:
+Never `shell_run` a nested OpenSRE process (`uv run opensre …`,
+`python -m opensre …`). That second process does not see ESC and keeps
+running after the user cancels.
 
-```bash
-uv run opensre integrations verify github
-```
+Call `slash_invoke` with `/integrations verify github`. If GitHub is missing
+or verification fails, end the turn and tell the user to run
+`/integrations setup github` in this shell (it needs a full terminal). After
+they finish, rerun verify.
 
-If GitHub is missing or verification fails, have the user run this interactively:
-
-```bash
-uv run opensre integrations setup github
-```
-
-Then rerun verification. The setup prompt is the only place the user should
-enter a PAT. Never retrieve the token from `gh` or echo it for transfer.
+The setup prompt is the only place the user should enter a PAT. Never
+retrieve the token from `gh` or echo it for transfer.
 
 ### 3. Verify a coding agent
 
@@ -205,6 +202,10 @@ Run this non-secret readiness probe from the OpenSRE checkout:
 ```bash
 uv run python -c 'from integrations.coding_agent import verify_coding_agent; ok, detail = verify_coding_agent(); print(("ready: " if ok else "not ready: ") + detail)'
 ```
+
+Run that probe with `shell_run` from the OpenSRE checkout. `uv run python`
+uses the project environment; do not wrap it in a nested `uv run opensre`
+process.
 
 The default `CODING_AGENT=auto` accepts the first ready backend among Pi,
 Claude Code, and Codex. If none is ready, use the probe's detail to install or

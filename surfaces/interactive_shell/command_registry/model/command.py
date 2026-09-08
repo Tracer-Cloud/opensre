@@ -7,8 +7,8 @@ import os
 from rich.console import Console
 from rich.markup import escape
 
-import surfaces.interactive_shell.command_registry.repl_data as repl_data
 from config.constants.llm import LLM_PROVIDER_ENV
+from surfaces.interactive_shell.command_registry.model.presentation import render_current_models
 from surfaces.interactive_shell.command_registry.model.switching import (
     _provider_allows_custom_models,
     restore_default_model,
@@ -18,7 +18,7 @@ from surfaces.interactive_shell.command_registry.model.switching import (
 )
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
-from surfaces.interactive_shell.ui import DIM, ERROR, HIGHLIGHT, WARNING, render_models_table
+from surfaces.interactive_shell.ui import DIM, ERROR, HIGHLIGHT, WARNING
 from surfaces.shared.llm_setup.provider_choices import (
     OTHER_PROVIDER_SELECTION,
     focused_setup_provider_options,
@@ -129,10 +129,21 @@ def _interactive_set_provider(console: Console) -> bool | None:
 
         crumb_model = f"{crumb_set}{CRUMB_SEP}{provider_value}"
         while True:
+            from surfaces.interactive_shell.command_registry.model.provider_models import (
+                model_menu_choices,
+            )
+
+            reasoning_choices = model_menu_choices(
+                provider,
+                console,
+                fallback=_reasoning_model_menu_choices(provider),
+            )
+            if reasoning_choices is None:
+                break
             reasoning_choice = repl_choose_one(
                 title="reasoning model",
                 breadcrumb=crumb_model,
-                choices=_reasoning_model_menu_choices(provider),
+                choices=reasoning_choices,
             )
             if reasoning_choice is None:
                 break
@@ -248,7 +259,7 @@ def _interactive_model_menu(session: Session, console: Console) -> bool:
             return True
         if action == "show":
             repl_section_break(console)
-            render_models_table(console, repl_data.load_llm_settings())
+            render_current_models(console)
             repl_section_break(console)
             continue
         if action == "set":
@@ -325,18 +336,18 @@ def _cmd_model(session: Session, console: Console, args: list[str]) -> bool:
 
         if exclusive_stdin_active(session):
             return _interactive_model_menu(session, console)
-        render_models_table(console, repl_data.load_llm_settings())
+        render_current_models(console)
         return True
 
     sub = (args[0].lower() if args else "show").strip()
 
     if sub == "show":
-        render_models_table(console, repl_data.load_llm_settings())
+        render_current_models(console)
         return True
 
     if sub == "toolcall":
         if len(args) >= 2 and args[1].lower() == "show":
-            render_models_table(console, repl_data.load_llm_settings())
+            render_current_models(console)
             return True
         if len(args) >= 2 and args[1].lower() in ("set", "use", "switch"):
             if len(args) < 3:

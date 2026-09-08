@@ -16,11 +16,11 @@ from surfaces.cli.commands.cron import cron_add
 
 
 def _patch_scheduler_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    from infrastructure.scheduling.scheduler import store as scheduler_store
+    from infrastructure.scheduling.scheduler.storage import task_store as scheduler_store
 
     monkeypatch.setattr(
         scheduler_store,
-        "_default_store_path",
+        "default_task_store_path",
         lambda: tmp_path / "scheduler_tasks.json",
     )
 
@@ -29,7 +29,16 @@ def _add(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> object:
     _patch_scheduler_store(tmp_path, monkeypatch)
     return CliRunner().invoke(
         cron_add,
-        ["--kind", "manual_loop", "--cron", "0 8 * * 1-5", "--provider", "slack"],
+        [
+            "--kind",
+            "manual_loop",
+            "--cron",
+            "0 8 * * 1-5",
+            "--prompt",
+            "Check open incidents.",
+            "--provider",
+            "slack",
+        ],
     )
 
 

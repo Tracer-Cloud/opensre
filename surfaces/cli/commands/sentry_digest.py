@@ -182,7 +182,7 @@ def sentry_uptime_watch_add(
 @sentry_uptime_watch_command.command(name="list")
 def sentry_uptime_watch_list() -> None:
     """List scheduled Sentry uptime watch tasks."""
-    from infrastructure.scheduling.scheduler.store import list_tasks
+    from infrastructure.scheduling.scheduler.storage import list_tasks
     from infrastructure.scheduling.scheduler.types import TaskKind
 
     tasks = [task for task in list_tasks() if task.kind == TaskKind.SENTRY_UPTIME_WATCH]
@@ -219,7 +219,7 @@ def sentry_uptime_watch_list() -> None:
 @click.argument("task_id")
 def sentry_uptime_watch_remove(task_id: str) -> None:
     """Remove a scheduled Sentry uptime watch task."""
-    from infrastructure.scheduling.scheduler.store import get_task, remove_task
+    from infrastructure.scheduling.scheduler.storage import get_task, remove_task
     from infrastructure.scheduling.scheduler.types import TaskKind
 
     task = get_task(task_id)
@@ -240,7 +240,7 @@ def sentry_uptime_watch_run(task_id: str) -> None:
     """Run a scheduled Sentry uptime watch task immediately."""
     from bootstrap.adapters import scheduler_runners
     from infrastructure.scheduling.scheduler.runner import run_task_now
-    from infrastructure.scheduling.scheduler.store import get_task
+    from infrastructure.scheduling.scheduler.storage import get_task
     from infrastructure.scheduling.scheduler.types import TaskKind
     from integrations.sentry.digest_prerequisites import require_digest_delivery_provider
 
@@ -370,7 +370,7 @@ def sentry_digest_schedule_add(
 @sentry_digest_schedule_command.command(name="list")
 def sentry_digest_schedule_list() -> None:
     """List scheduled Sentry morning digest tasks."""
-    from infrastructure.scheduling.scheduler.store import list_tasks
+    from infrastructure.scheduling.scheduler.storage import list_tasks
     from infrastructure.scheduling.scheduler.types import TaskKind
 
     tasks = [task for task in list_tasks() if task.kind == TaskKind.SENTRY_MORNING_DIGEST]
@@ -408,7 +408,7 @@ def sentry_digest_schedule_list() -> None:
 @click.argument("task_id")
 def sentry_digest_schedule_remove(task_id: str) -> None:
     """Remove a scheduled Sentry morning digest task."""
-    from infrastructure.scheduling.scheduler.store import get_task, remove_task
+    from infrastructure.scheduling.scheduler.storage import get_task, remove_task
     from infrastructure.scheduling.scheduler.types import TaskKind
 
     task = get_task(task_id)
@@ -429,7 +429,7 @@ def sentry_digest_schedule_run(task_id: str) -> None:
     """Run a scheduled Sentry digest task immediately."""
     from bootstrap.adapters import scheduler_runners
     from infrastructure.scheduling.scheduler.runner import run_task_now
-    from infrastructure.scheduling.scheduler.store import get_task
+    from infrastructure.scheduling.scheduler.storage import get_task
     from infrastructure.scheduling.scheduler.types import TaskKind
     from integrations.sentry.digest_prerequisites import require_digest_delivery_provider
 

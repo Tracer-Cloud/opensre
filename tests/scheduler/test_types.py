@@ -80,3 +80,4 @@ class TestTaskRun:
         assert TaskStatus.SUCCESS == "success"
         assert TaskStatus.FAILED == "failed"
         assert TaskStatus.SKIPPED == "skipped"
+        assert TaskStatus.ABANDONED == "abandoned"

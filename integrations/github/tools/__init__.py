@@ -4,6 +4,7 @@ from __future__ import annotations
 
 TOOL_MODULES = (
     "actions",
+    "ci_analytics",
     "ci_fix",
     "commits",
     "file_contents",

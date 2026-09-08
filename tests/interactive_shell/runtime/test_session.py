@@ -49,6 +49,16 @@ class TestSession:
         assert session.terminal.pending_prompt_autosubmit is True
         assert calls == [True]
 
+    def test_queue_auto_prompt_marks_a_plain_turn_and_auto_command_clears_it(self) -> None:
+        session = Session()
+        session.terminal.set_auto_prompt("analyze acme/app CI reliability")
+        assert session.terminal.pending_prompt_autosubmit is True
+        assert session.terminal.pop_pending_plain_turn() is True
+        assert session.terminal.pending_prompt_plain_turn is False
+        session.terminal.set_auto_prompt("again")
+        session.terminal.set_auto_command("/goal set done")
+        assert session.terminal.pending_prompt_plain_turn is False
+
     def test_take_pending_autosubmit_returns_and_clears(self) -> None:
         session = Session()
         session.terminal.pending_prompt_autosubmit = True

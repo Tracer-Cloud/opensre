@@ -11,8 +11,8 @@ from core.domain.work_items import (
     parse_work_item_datetime,
     work_items_path,
 )
-from infrastructure.scheduling.scheduler.store import add_task as add_scheduled_task
-from infrastructure.scheduling.scheduler.store import list_tasks, update_task
+from infrastructure.scheduling.scheduler.storage import add_task as add_scheduled_task
+from infrastructure.scheduling.scheduler.storage import list_tasks, update_task
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
 from tools.system.work_items.validation import validate_provider
 

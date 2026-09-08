@@ -33,7 +33,7 @@ SetupState = SetupSnapshot
 
 
 def _scheduled_tasks() -> list[Any]:
-    from infrastructure.scheduling.scheduler.store import list_tasks
+    from infrastructure.scheduling.scheduler.storage import list_tasks
 
     return list(list_tasks())
 
@@ -45,11 +45,13 @@ def _store_paths() -> tuple[Path, ...]:
     ``-wal`` sidecar and the main file keeps its size and mtime until a
     checkpoint. Both are watched, or a completed run stays invisible.
     """
-    from infrastructure.scheduling.scheduler.claim_store import _default_db_path
-    from infrastructure.scheduling.scheduler.store import _default_store_path
+    from infrastructure.scheduling.scheduler.storage import (
+        default_run_database_path,
+        default_task_store_path,
+    )
 
-    db = _default_db_path()
-    return _default_store_path(), db, db.with_name(f"{db.name}-wal")
+    db = default_run_database_path()
+    return default_task_store_path(), db, db.with_name(f"{db.name}-wal")
 
 
 def setup_state_fingerprint() -> tuple[tuple[int, int], ...]:
@@ -92,7 +94,7 @@ def _task_can_deliver(task: Any) -> bool:
 
 
 def _latest_finished_run(task_id: str) -> Any | None:
-    from infrastructure.scheduling.scheduler.claim_store import get_latest_finished_run
+    from infrastructure.scheduling.scheduler.storage import get_latest_finished_run
 
     return get_latest_finished_run(task_id)
 

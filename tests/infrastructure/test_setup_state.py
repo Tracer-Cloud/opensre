@@ -154,15 +154,13 @@ class TestLatestDeliveryOrdering:
     ) -> None:
         # Arrange: Greptile P1 — more than five newer RUNNING rows (by start)
         # must not hide an earlier-started finished delivery.
-        from infrastructure.scheduling.scheduler import claim_store
+        from infrastructure.scheduling.scheduler.storage import database
         from infrastructure.scheduling.scheduler.types import TaskStatus
 
         db = tmp_path / "scheduler.db"
-        monkeypatch.setattr(claim_store, "_default_db_path", lambda: db)
+        monkeypatch.setattr(database, "default_run_database_path", lambda: db)
 
-        conn = claim_store._connect(db)
-        try:
-            claim_store._ensure_schema(conn)
+        with database.connection(db) as conn:
             conn.execute(
                 "INSERT INTO task_runs "
                 "(task_id, fire_time, started_at, finished_at, status) "
@@ -188,8 +186,6 @@ class TestLatestDeliveryOrdering:
                     ),
                 )
             conn.commit()
-        finally:
-            conn.close()
 
         class _Task:
             id = "t1"

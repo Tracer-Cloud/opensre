@@ -87,6 +87,8 @@ COMMANDS: list[SlashCommand] = [
         "Open the pending interactive selection menu queued by the agent.",
         _cmd_choose,
         usage=("/choose",),
+        # Renders the queued read-only picker; never mutates anything.
+        mutating=False,
     )
 ]
 

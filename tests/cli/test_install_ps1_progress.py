@@ -87,6 +87,28 @@ def test_install_ps1_contains_auto_onboarding_launch_hook() -> None:
     assert "[System.Console]::IsInputRedirected" in source
 
 
+def test_install_ps1_preserves_full_binary_name_in_next_steps() -> None:
+    shell = _powershell()
+    if shell is None:
+        pytest.skip("PowerShell is not installed in this environment.")
+
+    script = textwrap.dedent(
+        f"""
+        . '{INSTALL_PS1}' -SkipMain
+        Get-OpenSreCommandName -BinaryName 'opensre.exe'
+        """
+    )
+
+    result = subprocess.run(
+        [shell, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert result.stdout.strip() == "opensre"
+
+
 def test_install_ps1_soft_installs_github_cli_via_winget() -> None:
     source = INSTALL_PS1.read_text()
 

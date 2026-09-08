@@ -60,7 +60,7 @@ def test_uptime_watch_add_sends_activation_notice(monkeypatch, tmp_path) -> None
         lambda _provider: True,
     )
     monkeypatch.setattr(
-        "infrastructure.scheduling.scheduler.store._default_store_path",
+        "infrastructure.scheduling.scheduler.storage.task_store.default_task_store_path",
         lambda: tmp_path / "tasks.json",
     )
     # Exercise the real delivery path (bundle -> Telegram adapter), stubbing only

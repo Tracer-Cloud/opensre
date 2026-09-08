@@ -6,6 +6,7 @@ import errno
 import io
 import subprocess
 import tempfile
+import threading
 from pathlib import Path, PurePosixPath
 from unittest.mock import MagicMock
 
@@ -546,6 +547,46 @@ def test_run_shell_command_failure_prints_exit_line(monkeypatch: pytest.MonkeyPa
         "ok": False,
         "response_text": f"{GLYPH_ERROR} exit 7",
     }
+
+
+def test_run_shell_command_reports_cancelled(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, object] = {}
+    cancel = threading.Event()
+
+    def _fake_execute(**kwargs: object) -> ShellExecutionResult:
+        seen.update(kwargs)
+        return ShellExecutionResult(
+            command="sleep 30",
+            argv=["sleep", "30"],
+            stdout="",
+            stderr="",
+            exit_code=-15,
+            timed_out=False,
+            truncated=False,
+            executed_with_shell=False,
+            cancelled=True,
+        )
+
+    monkeypatch.setattr(
+        "tools.interactive_shell.shell.execution.execute_shell_command",
+        _fake_execute,
+    )
+
+    session = Session()
+    buf = io.StringIO()
+    console = Console(file=buf, force_terminal=False)
+
+    result = run_shell_command(
+        "sleep 30",
+        _presenter(session, console),
+        cancel_event=cancel,
+    )
+    assert seen["cancel_event"] is cancel
+    assert result["ok"] is False
+    assert result["cancelled"] is True
+    assert result["response_text"] == "command cancelled"
+    assert "command cancelled" in buf.getvalue()
+    assert session.history[-1]["ok"] is False
 
 
 def test_run_shell_command_reports_start_failure(monkeypatch: pytest.MonkeyPatch) -> None:

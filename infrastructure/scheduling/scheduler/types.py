@@ -30,6 +30,7 @@ class TaskStatus(StrEnum):
     SUCCESS = "success"
     FAILED = "failed"
     SKIPPED = "skipped"
+    ABANDONED = "abandoned"
 
 
 class DeliveryStatus(StrEnum):
@@ -120,6 +121,7 @@ class TaskRun(BaseModel):
     error: str = ""
     provider: str = ""
     targets: tuple[DeliveryOutcome, ...] = ()
+    attempt: int = 1
 
 
 __all__ = [

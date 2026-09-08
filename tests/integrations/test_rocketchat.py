@@ -257,6 +257,22 @@ def test_verify_webhook_fails_on_connection_error(monkeypatch: pytest.MonkeyPatc
     assert "unreachable" in result["detail"]
 
 
+def test_verify_webhook_connection_error_redacts_webhook_url(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    webhook_url = _WEBHOOK_CONFIG["webhook_url"]
+
+    def _raise(*_a: Any, **_kw: Any) -> None:
+        raise ConnectionError(f"failed to connect to {webhook_url}")
+
+    monkeypatch.setattr("integrations.rocketchat.verifier.httpx.get", _raise)
+    result = verify_rocketchat("local env", _WEBHOOK_CONFIG)
+
+    assert result["status"] == "failed"
+    assert webhook_url not in result["detail"]
+    assert "<redacted>" in result["detail"]
+
+
 def test_verify_prefers_pat_probe_when_both_configured(monkeypatch: pytest.MonkeyPatch) -> None:
     captured: dict[str, Any] = {}
 

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.agent_harness import is_recurring_skill, normalize_skill_name
+from core.agent_harness import is_recurring_skill, normalize_skill_name, validate_skill_inputs
 from core.agent_harness.spi.session_state import (
     PendingScheduleOffer,
     clear_competing_pending_offers,
@@ -107,6 +107,7 @@ def execute_propose_scheduled_delivery_tool(
     timezone = str(args.get("timezone", "UTC")).strip() or "UTC"
     provider = str(args.get("provider", "")).strip().lower()
     chat_id = str(args.get("chat_id", "")).strip()
+    prompt = str(args.get("prompt", "") or "").strip()
     briefing_text = str(args.get("briefing_text", "") or "").strip()
     skill_name = normalize_skill_name(str(args.get("skill_name", "") or ""))
     owner = str(args.get("owner", "") or "").strip()
@@ -132,6 +133,11 @@ def execute_propose_scheduled_delivery_tool(
             "ok": False,
             "error": "cron must have exactly 5 fields (minute hour day month day_of_week)",
         }
+    if kind == TaskKind.MANUAL_LOOP.value:
+        if not prompt:
+            return {"ok": False, "error": "prompt is required for manual_loop."}
+    elif prompt:
+        return {"ok": False, "error": "prompt is only valid for manual_loop."}
     # Slack is not unconditionally exempt: it can skip an explicit channel only
     # while a webhook supplies one. Asking the scheduler (same check as
     # `/cron add`) instead of hard-coding the provider keeps the offer from
@@ -207,12 +213,18 @@ def execute_propose_scheduled_delivery_tool(
             "error": "city is only valid for morning-report.",
         }
 
+    try:
+        skill_inputs = validate_skill_inputs(skill_inputs)
+    except ValueError as exc:
+        return {"ok": False, "error": str(exc)}
+
     offer = PendingScheduleOffer(
         kind=kind,
         cron=cron,
         timezone=timezone,
         provider=provider,
         chat_id=chat_id,
+        prompt=prompt if kind == TaskKind.MANUAL_LOOP.value else "",
         skill_name=skill_name if kind == TaskKind.RECURRING_SKILL.value else "",
         skill_inputs=skill_inputs,
     )
@@ -245,6 +257,7 @@ def run_propose_scheduled_delivery(
     provider: str,
     timezone: str = "UTC",
     chat_id: str = "",
+    prompt: str = "",
     briefing_text: str = "",
     skill_name: str = "",
     owner: str = "",
@@ -261,6 +274,7 @@ def run_propose_scheduled_delivery(
             "timezone": timezone,
             "provider": provider,
             "chat_id": chat_id,
+            "prompt": prompt,
             "briefing_text": briefing_text,
             "skill_name": skill_name,
             "owner": owner,
@@ -281,7 +295,8 @@ propose_scheduled_delivery_tool = RegisteredTool(
         "canonical Want me to: closer plus response_text (briefing + closer). "
         "PRECONDITION for recurring_skill morning-report and for manual_loop: "
         "weather/news shell_run fetches must already have succeeded in this "
-        "session, and briefing_text must be the composed briefing. This tool "
+        "session, prompt must describe the recurring instruction, and "
+        "briefing_text must be the composed briefing. This tool "
         "schedules nothing and produces no weather — calling it alone leaves "
         "the user with an empty offer. Do NOT call /cron add until the user "
         "confirms; their yes becomes the slash command."
@@ -325,6 +340,12 @@ propose_scheduled_delivery_tool = RegisteredTool(
                 description=(
                     "Target chat/channel. Optional for slack (webhook-bound). "
                     "Required for telegram/discord/rocketchat."
+                ),
+            ),
+            "prompt": string_property(
+                description=(
+                    "Required for manual_loop: the instruction to execute on "
+                    "every scheduled run. Do not provide it for other task kinds."
                 ),
             ),
             "briefing_text": string_property(

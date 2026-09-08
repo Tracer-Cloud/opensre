@@ -8,6 +8,7 @@ from typing import Any
 
 from config.constants.slack import SLACK_WEBHOOK_URL_ENV
 from infrastructure.delivery.notifications.delivery_transport import post_json
+from infrastructure.delivery.notifications.redaction import redact_token
 from infrastructure.observability import debug_print
 
 logger = logging.getLogger(__name__)
@@ -80,12 +81,13 @@ def _post_via_incoming_webhook(
 
     response = post_json(url=webhook_url, payload=payload, timeout=10.0, follow_redirects=True)
     if not response.ok:
-        debug_print(f"Slack incoming webhook failed: {response.error}")
+        safe_error = redact_token(response.error, webhook_url)
+        debug_print(f"Slack incoming webhook failed: {safe_error}")
         return False
     if not 200 <= response.status_code < 300:
-        debug_print(
-            f"Slack incoming webhook failed: HTTP {response.status_code}: {response.text[:_LOG_BODY_MAX_LEN]}"
-        )
+        redacted_body = redact_token(response.text, webhook_url)
+        safe_body = redacted_body[:_LOG_BODY_MAX_LEN]
+        debug_print(f"Slack incoming webhook failed: HTTP {response.status_code}: {safe_body}")
         return False
     debug_print("Slack message posted via incoming webhook.")
     return True

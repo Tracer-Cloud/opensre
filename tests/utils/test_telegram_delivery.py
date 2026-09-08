@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from http import HTTPStatus
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -88,6 +89,48 @@ def test_post_telegram_message_api_error(monkeypatch: pytest.MonkeyPatch) -> Non
     assert ok is False
     assert "Bad Request" in error
     assert message_id == ""
+
+
+def test_post_telegram_message_api_error_redacts_token_from_description(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    token = "123456:SECRET-TOKEN"
+    description = f"Unauthorized: https://api.telegram.org/bot{token}/sendMessage"
+
+    def _fake_post(*_args: Any, **_kwargs: Any) -> MagicMock:
+        return _mock_response(HTTPStatus.UNAUTHORIZED, {"ok": False, "description": description})
+
+    monkeypatch.setattr(
+        "infrastructure.delivery.notifications.delivery_transport.httpx.post", _fake_post
+    )
+
+    ok, error, _ = post_telegram_message("chat-1", "text", token)
+
+    assert ok is False
+    assert token not in error
+    assert "<redacted>" in error
+
+
+def test_post_telegram_message_api_error_redacts_token_from_raw_body(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    token = "123456:SECRET-TOKEN"
+    body = f"upstream failure: https://api.telegram.org/bot{token}/sendMessage"
+
+    def _fake_post(*_args: Any, **_kwargs: Any) -> MagicMock:
+        response = _mock_response(HTTPStatus.INTERNAL_SERVER_ERROR, {})
+        response.text = body
+        return response
+
+    monkeypatch.setattr(
+        "infrastructure.delivery.notifications.delivery_transport.httpx.post", _fake_post
+    )
+
+    ok, error, _ = post_telegram_message("chat-1", "text", token)
+
+    assert ok is False
+    assert token not in error
+    assert "<redacted>" in error
 
 
 def test_post_telegram_message_exception_returns_false(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -13,7 +13,7 @@ import shutil
 import sys
 from collections.abc import Callable
 from contextvars import ContextVar
-from typing import Any
+from typing import Any, Literal, cast
 
 from rich import box
 from rich.console import Console
@@ -95,11 +95,17 @@ def _write_repl_tty_buffered(
 ) -> None:
     """Render Rich output to a buffer and write it in one TTY-safe stdout call."""
     buf = io.StringIO()
+    # Inherit the caller's color depth so theme colours are not down-converted
+    # on a truecolor terminal (Rich would otherwise re-detect from the env).
     buf_console = Console(
         file=buf,
         force_terminal=True,
         highlight=False,
         width=width,
+        color_system=cast(
+            Literal["auto", "standard", "256", "truecolor", "windows"],
+            console.color_system or "auto",
+        ),
     )
     render_to_buffer(buf_console)
     styled = buf.getvalue()
@@ -202,6 +208,24 @@ def print_repl_text(console: Console, text: str, *, markup: bool = False) -> Non
     _console_print_prepared(console, text, markup=markup)
 
 
+def print_repl_renderable(console: Console, renderable: Any) -> None:
+    """Print one Rich renderable with CRLF under ``patch_stdout(raw=True)``.
+
+    Same buffered path as :func:`print_repl_text`, for styled multi-row
+    output (``Text``/``Group``) that would otherwise staircase in raw mode.
+    """
+    if console.file is sys.stdout and sys.stdout.isatty() and not _console_is_capturing(console):
+        width = _prepare_tty_for_rich(console)
+        _write_repl_tty_buffered(
+            console=console,
+            width=width,
+            leading_blank=False,
+            render_to_buffer=lambda buf_console: buf_console.print(renderable),
+        )
+        return
+    _console_print_prepared(console, renderable)
+
+
 def repl_print(console: Console, *objects: Any, **kwargs: Any) -> None:
     """Print via Rich after resetting the TTY column (inline-menu safe)."""
     from surfaces.shared.terminal.components.choice_menu import prepare_repl_output_line
@@ -260,6 +284,7 @@ __all__ = [
     "_repl_output_already_prepared",
     "_repl_table_width",
     "print_repl_json",
+    "print_repl_renderable",
     "print_repl_table",
     "print_repl_text",
     "repl_clear_screen",

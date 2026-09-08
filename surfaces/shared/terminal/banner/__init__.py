@@ -7,7 +7,16 @@ prompt_toolkit, or the wordmark animation stack.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from surfaces.shared.terminal.banner.banner import (
+        WordmarkSpinFrame,
+        animate_launch_wordmark,
+        build_launch_banner,
+        build_wordmark_spin_frames,
+        render_launch_banner,
+    )
 
 __all__ = [
     "WordmarkSpinFrame",

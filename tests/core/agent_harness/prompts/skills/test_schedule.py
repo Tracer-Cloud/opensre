@@ -55,6 +55,9 @@ def test_validate_skill_inputs_rejects_non_strings() -> None:
     with pytest.raises(ValueError, match="must be a string"):
         validate_skill_inputs({"city": 123})
 
+    with pytest.raises(ValueError, match="keys must be strings"):
+        validate_skill_inputs({1: "Paris"})
+
 
 def test_skill_revision_changes_when_body_changes() -> None:
     skill = find_action_skill("morning-report")

@@ -69,8 +69,7 @@ def test_pasted_key_is_saved_and_switch_proceeds(monkeypatch: Any) -> None:
     monkeypatch.setattr(service, "configure_api_key_provider", lambda **kw: saves.append(kw))
     monkeypatch.setattr(env_sync, "sync_provider_env", lambda **_: "/tmp/.env")
     monkeypatch.setattr(switching, "_reset_runtime_llm_caches", lambda: None)
-    monkeypatch.setattr(switching, "render_models_table", lambda *_: None)
-    monkeypatch.setattr(switching.repl_data, "load_llm_settings", lambda: {})
+    monkeypatch.setattr(switching, "render_current_models", lambda *_: None)
 
     console = _Console(key="sk-test-123")
     assert switching.switch_llm_provider("openai", console) is True  # type: ignore[arg-type]
@@ -96,6 +95,26 @@ def test_account_login_blocks_every_model_change(monkeypatch: Any, change: Any) 
     assert change(console) is False
     assert any("managed by your OpenSRE account" in line for line in console.printed)
     assert any("opensre account logout" in line for line in console.printed)
+
+
+def test_account_model_is_the_effective_model_shown_by_the_shell(monkeypatch: Any) -> None:
+    from surfaces.interactive_shell.command_registry import repl_data
+
+    monkeypatch.setenv("LLM_PROVIDER", "anthropic")
+    monkeypatch.setattr(
+        "config.account.account_llm_route",
+        lambda: SimpleNamespace(
+            base_url="https://app.opensre.com/api/llm/v1",
+            model="gpt-account",
+        ),
+    )
+
+    settings = repl_data.load_llm_settings()
+
+    assert settings.provider == "openai"
+    assert settings.openai_reasoning_model == "gpt-account"
+    assert settings.openai_classification_model == "gpt-account"
+    assert settings.openai_toolcall_model == "gpt-account"
 
 
 def _configured(monkeypatch: Any) -> None:
@@ -149,8 +168,7 @@ def test_custom_provider_no_model_preserves_configured_model(monkeypatch: Any) -
         env_sync, "sync_provider_env", lambda **kw: synced.append(kw) or "/tmp/.env"
     )
     monkeypatch.setattr(switching, "_reset_runtime_llm_caches", lambda: None)
-    monkeypatch.setattr(switching, "render_models_table", lambda *_: None)
-    monkeypatch.setattr(switching.repl_data, "load_llm_settings", lambda: {})
+    monkeypatch.setattr(switching, "render_current_models", lambda *_: None)
 
     console = _Console()
     assert switching.switch_llm_provider("custom-openai", console) is True  # type: ignore[arg-type]

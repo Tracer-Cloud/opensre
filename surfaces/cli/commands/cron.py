@@ -11,9 +11,10 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-from core.agent_harness import pin_recurring_skill
+from core.agent_harness import pin_recurring_skill, validate_skill_inputs
 from infrastructure.scheduling.scheduler.credentials import requires_explicit_chat_id
-from infrastructure.scheduling.scheduler.types import Provider, TaskKind, TaskRun
+from infrastructure.scheduling.scheduler.loop_constants import LOOP_PROMPT_PARAM
+from infrastructure.scheduling.scheduler.types import Provider, TaskKind, TaskRun, TaskStatus
 from infrastructure.terminal.theme import GLYPH_ERROR, GLYPH_SUCCESS
 from surfaces.cli.commands.scheduling import validate_cron_and_timezone
 
@@ -93,6 +94,13 @@ def cron_command() -> None:
     help="Lookback window in hours for the report (must be >= 1).",
 )
 @click.option(
+    "--prompt",
+    type=str,
+    default="",
+    show_default=False,
+    help="Instruction to execute on each manual_loop run.",
+)
+@click.option(
     "--skill",
     "skill_name",
     type=str,
@@ -106,6 +114,7 @@ def cron_command() -> None:
 @click.option(
     "--pr", "pr_number", type=click.IntRange(min=1), default=None, help="Optional GitHub PR filter."
 )
+@click.option("--city", type=str, default="", help="Optional city for the morning-report skill.")
 def cron_add(
     name: str,
     kind: str,
@@ -114,11 +123,13 @@ def cron_add(
     provider: str,
     chat_id: str,
     window_hours: int,
+    prompt: str,
     skill_name: str,
     owner: str,
     repo: str,
     branch: str,
     pr_number: int | None,
+    city: str,
 ) -> None:
     """Add a new scheduled delivery task."""
     from infrastructure.scheduling.scheduler.types import ScheduledTask
@@ -128,6 +139,12 @@ def cron_add(
     _validate_chat_id_for_provider(provider, chat_id)
 
     task_kind = TaskKind(kind)
+    normalized_prompt = prompt.strip()
+    if task_kind == TaskKind.MANUAL_LOOP:
+        if not normalized_prompt:
+            raise click.ClickException("--prompt is required when --kind is manual_loop.")
+    elif normalized_prompt:
+        raise click.ClickException("--prompt is only valid with --kind manual_loop.")
     pinned_name = ""
     pinned_revision = ""
     if task_kind == TaskKind.RECURRING_SKILL:
@@ -139,9 +156,15 @@ def cron_add(
             raise click.ClickException(str(exc)) from exc
     elif skill_name.strip():
         raise click.ClickException("--skill is only valid with --kind recurring_skill.")
-    skill_inputs = _github_ci_health_inputs(
-        pinned_name, owner=owner, repo=repo, branch=branch, pr_number=pr_number
+    skill_inputs = _recurring_skill_inputs(
+        pinned_name,
+        city=city,
+        owner=owner,
+        repo=repo,
+        branch=branch,
+        pr_number=pr_number,
     )
+    task_params = {LOOP_PROMPT_PARAM: normalized_prompt} if normalized_prompt else {}
 
     task = ScheduledTask(
         name=name.strip(),
@@ -154,10 +177,11 @@ def cron_add(
         skill_name=pinned_name,
         skill_revision=pinned_revision,
         skill_inputs=skill_inputs,
+        params=task_params,
     )
 
     from infrastructure.scheduling.scheduler.operation_log import record_scheduler_task_operation
-    from infrastructure.scheduling.scheduler.store import add_task
+    from infrastructure.scheduling.scheduler.storage import add_task
 
     added = add_task(task)
     record_scheduler_task_operation(
@@ -178,23 +202,36 @@ def cron_add(
     _console.print(f"  Provider: {added.provider.value}  Chat: {added.chat_id}")
 
 
-def _github_ci_health_inputs(
+def _recurring_skill_inputs(
     skill_name: str,
     *,
+    city: str,
     owner: str,
     repo: str,
     branch: str,
     pr_number: int | None,
 ) -> dict[str, str]:
-    """Validate and serialize inputs for the recurring GitHub CI health skill."""
+    """Validate and serialize inputs for the selected recurring skill."""
+    normalized_city = city.strip()
     values_supplied = bool(owner.strip() or repo.strip() or branch.strip() or pr_number)
+    if skill_name == "morning-report":
+        if values_supplied:
+            raise click.UsageError(
+                "--owner, --repo, --branch, and --pr are only valid with "
+                "--kind recurring_skill --skill github-ci-health."
+            )
+        return validate_skill_inputs({"city": normalized_city} if normalized_city else {})
+    if normalized_city:
+        raise click.UsageError(
+            "--city is only valid with --kind recurring_skill --skill morning-report."
+        )
     if skill_name != "github-ci-health":
         if values_supplied:
             raise click.UsageError(
                 "--owner, --repo, --branch, and --pr are only valid with "
                 "--kind recurring_skill --skill github-ci-health."
             )
-        return {}
+        return validate_skill_inputs({})
     if not owner.strip() or not repo.strip():
         raise click.UsageError("--owner and --repo are required for skill github-ci-health.")
     if branch.strip() and pr_number is not None:
@@ -204,7 +241,7 @@ def _github_ci_health_inputs(
         params["branch"] = branch.strip()
     if pr_number is not None:
         params["pr_number"] = str(pr_number)
-    return params
+    return validate_skill_inputs(params)
 
 
 @cron_command.command(name="list")
@@ -251,7 +288,7 @@ def cron_list() -> None:
 def cron_remove(task_id: str) -> None:
     """Remove a scheduled delivery task by ID."""
     from infrastructure.scheduling.scheduler.operation_log import record_scheduler_task_operation
-    from infrastructure.scheduling.scheduler.store import get_task, remove_task
+    from infrastructure.scheduling.scheduler.storage import get_task, remove_task
 
     task = get_task(task_id)
     if remove_task(task_id):
@@ -276,7 +313,7 @@ def _warn_if_rerun_duplicates(task_id: str) -> None:
     ``cron run`` is also the way to trigger a task on demand, and that has to
     keep reaching every destination.
     """
-    from infrastructure.scheduling.scheduler.claim_store import get_latest_targeted_run
+    from infrastructure.scheduling.scheduler.storage import get_latest_targeted_run
 
     run = get_latest_targeted_run(task_id)
     if run is None:
@@ -307,7 +344,7 @@ def cron_run(task_id: str, failed_only: bool) -> None:
     from bootstrap.process import SCHEDULED_COMMAND_PROFILE, configure_process
     from infrastructure.scheduling.scheduler.operation_log import record_scheduler_task_operation
     from infrastructure.scheduling.scheduler.runner import failed_retry_scope, run_task_now
-    from infrastructure.scheduling.scheduler.store import get_task
+    from infrastructure.scheduling.scheduler.storage import get_task
 
     configure_process(SCHEDULED_COMMAND_PROFILE)
 
@@ -352,6 +389,15 @@ def _delivered_targets(run: TaskRun) -> str:
     return f"{sum(1 for outcome in run.targets if outcome.ok)}/{len(run.targets)}"
 
 
+def _run_status_label(run: TaskRun) -> str:
+    """Describe whether a run was abandoned or recovered by a later attempt."""
+    if run.status is TaskStatus.ABANDONED:
+        return "abandoned"
+    if run.attempt > 1:
+        return f"reclaimed/{run.status.value}"
+    return run.status.value
+
+
 @cron_command.command(name="logs")
 @click.argument("task_id")
 @click.option(
@@ -363,8 +409,7 @@ def _delivered_targets(run: TaskRun) -> str:
 )
 def cron_logs(task_id: str, limit: int) -> None:
     """Show execution history for a scheduled task."""
-    from infrastructure.scheduling.scheduler.claim_store import get_runs
-    from infrastructure.scheduling.scheduler.store import get_task
+    from infrastructure.scheduling.scheduler.storage import get_runs, get_task
 
     task = get_task(task_id)
     if task is None:
@@ -378,6 +423,7 @@ def cron_logs(task_id: str, limit: int) -> None:
 
     table = Table(show_header=True, header_style="bold")
     table.add_column("Started")
+    table.add_column("Attempt")
     table.add_column("Status")
     table.add_column("Targets")
     table.add_column("Message ID")
@@ -388,14 +434,14 @@ def cron_logs(task_id: str, limit: int) -> None:
             "green"
             if run.status.value == "success"
             else "red"
-            if run.status.value == "failed"
+            if run.status.value in {"failed", "abandoned"}
             else ""
         )
+        status_label = _run_status_label(run)
         table.add_row(
             run.started_at,
-            f"[{status_style}]{run.status.value}[/{status_style}]"
-            if status_style
-            else run.status.value,
+            str(run.attempt),
+            f"[{status_style}]{status_label}[/{status_style}]" if status_style else status_label,
             _delivered_targets(run),
             run.posted_message_id or "—",
             run.error[:50] if run.error else "—",

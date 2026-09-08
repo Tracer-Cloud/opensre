@@ -31,17 +31,38 @@ def verify_integration(service: str) -> dict[str, str] | None:
 
 
 def load_llm_settings() -> Any | None:
-    """Best-effort LLM settings load; returns None if env is misconfigured."""
+    """Load the effective account-hosted or local LLM settings for display."""
     try:
-        from config.llm_settings import LLMSettings
+        from config.account import account_llm_route
+        from config.llm_settings import LLMSettings, resolve_llm_settings
 
+        if (route := account_llm_route()) is not None:
+            settings = resolve_llm_settings(provider_override="openai")
+            return settings.model_copy(
+                update={
+                    "openai_reasoning_model": route.model,
+                    "openai_classification_model": route.model,
+                    "openai_toolcall_model": route.model,
+                }
+            )
         return LLMSettings.from_env()
     except Exception:
         return None
 
 
+def load_llm_source() -> str:
+    """Return the user-facing origin of the effective LLM route."""
+    try:
+        from config.account import account_llm_route
+
+        return "OpenSRE webapp" if account_llm_route() is not None else "local configuration"
+    except Exception:
+        return "local configuration"
+
+
 __all__ = [
     "configured_integration_names",
+    "load_llm_source",
     "load_llm_settings",
     "load_verified_integrations",
     "verify_integration",

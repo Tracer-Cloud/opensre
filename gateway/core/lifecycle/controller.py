@@ -223,12 +223,12 @@ class GatewayController:
 
         def _watch() -> None:
             from infrastructure.scheduling.scheduler.reload_signal import watch_and_reconcile
-            from infrastructure.scheduling.scheduler.store import _default_store_path
+            from infrastructure.scheduling.scheduler.storage import default_task_store_path
 
             watch_and_reconcile(
                 self._stopped,
                 lambda: self._reload_scheduler(logger),
-                _default_store_path(),
+                default_task_store_path(),
                 on_error=lambda exc: logger.warning(
                     "Scheduler reload failed (%s)", type(exc).__name__
                 ),

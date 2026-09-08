@@ -4,11 +4,6 @@ from __future__ import annotations
 
 import logging
 
-from infrastructure.scheduling.scheduler.claim_store import (
-    complete_run,
-    try_claim,
-    try_start_run,
-)
 from infrastructure.scheduling.scheduler.delivery_bundle import resolve_delivery_adapter
 from infrastructure.scheduling.scheduler.delivery_plan import (
     DeliveryTarget,
@@ -19,6 +14,12 @@ from infrastructure.scheduling.scheduler.fanout import FanOutResult, deliver_pla
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_CHANNELS_PARAM
 from infrastructure.scheduling.scheduler.operation_log import record_scheduler_execution_operation
 from infrastructure.scheduling.scheduler.runners import SchedulerRunners
+from infrastructure.scheduling.scheduler.storage import (
+    ExecutionClaim,
+    complete_run,
+    try_claim,
+    try_start_run,
+)
 from infrastructure.scheduling.scheduler.tasks import build_message
 from infrastructure.scheduling.scheduler.types import (
     DeliveryStatus,
@@ -52,8 +53,12 @@ def execute_task(
         True if the task was executed and delivered successfully.
         False if the claim was lost (another instance handled it) or delivery failed.
     """
-    claimed = try_start_run(task.id, fire_time) if queued_claim else try_claim(task.id, fire_time)
-    if not claimed:
+    claim = (
+        try_start_run(task.id, fire_time)
+        if queued_claim
+        else try_claim(task.id, fire_time, target_filter=target_filter)
+    )
+    if claim is None:
         logger.info(
             "Task %s fire_time=%s already claimed by another instance",
             task.id,
@@ -77,15 +82,26 @@ def execute_task(
     )
     _emit_analytics_started(task)
 
+    if claim.target_filter == frozenset():
+        _record_failure(
+            claim,
+            task,
+            fire_time,
+            "No delivery destinations authorized for this attempt; run the task explicitly.",
+            stage="delivery_scope",
+        )
+        return False
+
     # Build the message
     try:
         message = build_message(task, runners)
     except RuntimeError as exc:
         # Pipeline failures — record without leaking details to chat
-        _record_failure(task, fire_time, str(exc), stage="message_build")
+        _record_failure(claim, task, fire_time, str(exc), stage="message_build")
         return False
     except Exception as exc:
         _record_failure(
+            claim,
             task,
             fire_time,
             f"Message build error: {type(exc).__name__}",
@@ -95,13 +111,13 @@ def execute_task(
 
     # Quiet ticks (e.g. uptime watch with no transitions) skip delivery.
     if not message.strip():
-        complete_run(
-            task.id,
-            fire_time,
+        if not complete_run(
+            claim,
             status=TaskStatus.SUCCESS,
             posted_message_id="",
             provider=_run_provider_label(task),
-        )
+        ):
+            return False
         _emit_analytics(task, TaskStatus.SUCCESS)
         logger.info("Task %s produced no message; delivery skipped", task.id)
         record_scheduler_execution_operation(
@@ -115,12 +131,13 @@ def execute_task(
         return True
 
     # Fan out to every destination the task resolves to, concurrently.
-    result = _deliver_all(task, message, target_filter=target_filter)
+    result = _deliver_all(task, message, target_filter=claim.target_filter)
     message_id = result.message_id()
     error = result.error()
 
     if result.status is DeliveryStatus.FAILED:
         _record_failure(
+            claim,
             task,
             fire_time,
             error,
@@ -130,15 +147,15 @@ def execute_task(
         )
         return False
 
-    complete_run(
-        task.id,
-        fire_time,
+    if not complete_run(
+        claim,
         status=TaskStatus.SUCCESS,
         posted_message_id=message_id,
         error=error,
         provider=_run_provider_label(task),
         targets=result.outcomes,
-    )
+    ):
+        return False
     _emit_analytics(task, TaskStatus.SUCCESS, error=error)
     _record_work_item_reminder_delivery(task)
     record_scheduler_execution_operation(
@@ -222,6 +239,7 @@ def _run_provider_label(task: ScheduledTask) -> str:
 
 
 def _record_failure(
+    claim: ExecutionClaim,
     task: ScheduledTask,
     fire_time: str,
     error: str,
@@ -232,14 +250,14 @@ def _record_failure(
 ) -> None:
     """Record a failed execution in the claim store and emit analytics."""
     outcomes = result.outcomes if result is not None else ()
-    complete_run(
-        task.id,
-        fire_time,
+    if not complete_run(
+        claim,
         status=TaskStatus.FAILED,
         error=error,
         provider=_run_provider_label(task),
         targets=outcomes,
-    )
+    ):
+        return
     _emit_analytics(task, TaskStatus.FAILED, error=error)
     extra: dict[str, object] = {"stage": stage}
     if result is not None:

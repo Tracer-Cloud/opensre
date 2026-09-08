@@ -9,6 +9,7 @@ import os
 import tempfile
 import time
 from collections.abc import Mapping
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -16,7 +17,8 @@ from filelock import FileLock
 
 from config.constants import OPENSRE_HOME_DIR
 from infrastructure.scheduling.scheduler import reload_signal
-from infrastructure.scheduling.scheduler.claim_store import _DB_FILENAME, delete_runs
+from infrastructure.scheduling.scheduler.storage.database import run_database_path
+from infrastructure.scheduling.scheduler.storage.run_store import delete_runs
 from infrastructure.scheduling.scheduler.types import ScheduledTask
 
 logger = logging.getLogger(__name__)
@@ -24,7 +26,8 @@ logger = logging.getLogger(__name__)
 _STORE_FILENAME = "scheduler_tasks.json"
 
 
-def _default_store_path() -> Path:
+def default_task_store_path() -> Path:
+    """Return the scheduler task-store path under the OpenSRE home."""
     return OPENSRE_HOME_DIR / _STORE_FILENAME
 
 
@@ -152,7 +155,7 @@ def _save_raw(store_path: Path, data: list[dict[str, object]]) -> None:
 
 def list_tasks(store_path: Path | None = None) -> list[ScheduledTask]:
     """Return all persisted scheduled tasks."""
-    path = store_path or _default_store_path()
+    path = store_path or default_task_store_path()
     lock = FileLock(_lock_path(path))
     with lock:
         raw = _load_raw(path)
@@ -178,9 +181,9 @@ def _schedule_identity(entry: Mapping[str, Any]) -> tuple[Any, ...]:
 
     Full configuration, not just the slot: two rows differing in destination or
     params are separate reports, and merging them would drop one the user asked
-    for. Identity deliberately excludes ``id``, ``name`` and the run bookkeeping
-    (``created_at``, ``last_run``, ``next_run``), which differ between two
-    confirmations of the same schedule.
+    for. Identity deliberately excludes ``id``, ``name``, skill revision, and the
+    run bookkeeping (``created_at``, ``last_run``, ``next_run``), which differ
+    between two confirmations of the same schedule.
     """
     return (
         entry.get("kind"),
@@ -196,28 +199,34 @@ def _schedule_identity(entry: Mapping[str, Any]) -> tuple[Any, ...]:
 
 
 def add_task(task: ScheduledTask, store_path: Path | None = None) -> ScheduledTask:
-    """Persist a scheduled task, or return the identical one already stored.
+    """Persist a scheduled task, or update the matching schedule's skill revision.
 
     Confirming the same schedule twice is one schedule. Without this, every
     confirmation appended a row — a real install reached 37 byte-identical
     ``daily_summary`` entries, none of which could deliver.
     """
-    path = store_path or _default_store_path()
+    path = store_path or default_task_store_path()
     lock = FileLock(_lock_path(path))
     with lock:
         raw = _load_for_write(path)
         wanted = _schedule_identity(task.model_dump(mode="json"))
-        existing = next(
-            (entry for entry in raw if _schedule_identity(entry) == wanted),
+        existing_index = next(
+            (index for index, entry in enumerate(raw) if _schedule_identity(entry) == wanted),
             None,
         )
-        if existing is not None:
-            return ScheduledTask.model_validate(existing)
-        raw.append(task.model_dump(mode="json"))
+        if existing_index is not None:
+            existing = raw[existing_index]
+            if existing.get("skill_revision", "") == task.skill_revision:
+                return ScheduledTask.model_validate(existing)
+            existing["skill_revision"] = task.skill_revision
+            stored_task = ScheduledTask.model_validate(existing)
+        else:
+            raw.append(task.model_dump(mode="json"))
+            stored_task = task
         _save_raw(path, raw)
-    # A new task changed the schedule: wake any running scheduler to resync.
+    # A new task or pinned revision changed the schedule: wake the scheduler to resync.
     reload_signal.request_scheduler_reload()
-    return task
+    return stored_task
 
 
 def remove_task(task_id: str, store_path: Path | None = None) -> bool:
@@ -228,7 +237,7 @@ def remove_task(task_id: str, store_path: Path | None = None) -> bool:
     best-effort — a warning is logged on failure but the return value
     reflects only the JSON-store result.
     """
-    path = store_path or _default_store_path()
+    path = store_path or default_task_store_path()
     lock = FileLock(_lock_path(path))
     with lock:
         raw = _load_raw(path)
@@ -243,7 +252,7 @@ def remove_task(task_id: str, store_path: Path | None = None) -> bool:
 
     # Cascade: remove orphaned TaskRun records from the SQLite claim store.
     # Derive the DB path from the same directory as the JSON store.
-    db_path = path.with_name(_DB_FILENAME)
+    db_path = run_database_path(path.parent)
     try:
         deleted = delete_runs(task_id, db_path)
         if deleted:
@@ -261,7 +270,7 @@ def remove_task(task_id: str, store_path: Path | None = None) -> bool:
 
 def update_task(task: ScheduledTask, store_path: Path | None = None) -> bool:
     """Update an existing task in the store. Returns True if found and updated."""
-    path = store_path or _default_store_path()
+    path = store_path or default_task_store_path()
     lock = FileLock(_lock_path(path))
     with lock:
         raw = _load_raw(path)
@@ -273,10 +282,28 @@ def update_task(task: ScheduledTask, store_path: Path | None = None) -> bool:
     return False
 
 
+def record_task_success(task_id: str, store_path: Path | None = None) -> bool:
+    """Update completion fields on the latest task while preserving user edits."""
+    path = store_path or default_task_store_path()
+    with FileLock(_lock_path(path)):
+        raw = _load_raw(path)
+        for entry in raw:
+            if entry.get("id") == task_id:
+                task = ScheduledTask.model_validate(entry)
+                entry["last_run"] = datetime.now(UTC).isoformat()
+                if task.params.get("disable_after_success", "").strip().lower() == "true":
+                    entry["enabled"] = False
+                _save_raw(path, raw)
+                return True
+    return False
+
+
 __all__ = [
     "add_task",
+    "default_task_store_path",
     "get_task",
     "list_tasks",
+    "record_task_success",
     "remove_task",
     "update_task",
 ]

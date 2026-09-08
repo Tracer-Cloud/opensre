@@ -5,6 +5,7 @@ from __future__ import annotations
 from http import HTTPStatus
 
 from infrastructure.delivery.notifications.delivery_transport import post_json
+from infrastructure.delivery.notifications.redaction import redact_slack_token
 from infrastructure.scheduling.scheduler.credentials import resolve_slack_credentials
 from infrastructure.scheduling.scheduler.delivery import (
     resolve_slack_delivery_chat_id,
@@ -56,15 +57,20 @@ class SlackScheduledDelivery:
                 headers=headers,
             )
             if not response.ok:
-                return False, f"Slack API error: {response.error}", ""
+                safe_error = redact_slack_token(response.error, access_token)
+                return False, f"Slack API error: {safe_error}", ""
             if not HTTPStatus.OK <= response.status_code < HTTPStatus.MULTIPLE_CHOICES:
                 error_text = (
-                    response.text[:200] if response.text else f"HTTP {response.status_code}"
+                    redact_slack_token(response.text, access_token)[:200]
+                    if response.text
+                    else f"HTTP {response.status_code}"
                 )
-                return False, f"Slack HTTP error: {error_text}", ""
+                safe_error = redact_slack_token(error_text, access_token)
+                return False, f"Slack HTTP error: {safe_error}", ""
             if response.data.get("ok") is not True:
                 error = response.data.get("error", "unknown")
-                return False, f"Slack error: {error}", ""
+                safe_error = redact_slack_token(str(error), access_token)
+                return False, f"Slack error: {safe_error}", ""
             return True, "", str(response.data.get("ts", ""))
 
         ok, error = send_slack_webhook_message(plain_message, webhook_url=webhook_url)

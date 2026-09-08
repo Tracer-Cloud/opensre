@@ -13,7 +13,14 @@ import httpx
 
 from config.llm_models import DEFAULT_OLLAMA_HOST
 from infrastructure.terminal.theme import DIM, WARNING
-from surfaces.shared.llm_setup.ollama import normalize_model_tag
+from surfaces.shared.llm_setup.ollama import (
+    OllamaModelDiscoveryError,
+    list_available_models,
+    model_is_available,
+)
+from surfaces.shared.llm_setup.ollama import (
+    normalize_model_tag as normalize_model_tag,
+)
 
 if TYPE_CHECKING:
     from rich.console import Console
@@ -80,13 +87,10 @@ def wait_for_server(host: str, timeout_s: int = 30) -> bool:
 def is_model_present(model: str, host: str = DEFAULT_OLLAMA_HOST) -> bool:
     """Return True if the model tag is already pulled."""
     try:
-        r = httpx.get(f"{host.rstrip('/')}/api/tags", timeout=5.0)
-        r.raise_for_status()
-        available = [m["name"] for m in r.json().get("models", [])]
-        normalized_model = normalize_model_tag(model)
-        return normalized_model in available
-    except Exception:
+        available_models = list_available_models(host)
+    except OllamaModelDiscoveryError:
         return False
+    return model_is_available(model, available_models)
 
 
 def pull_model(model: str, console: Console, host: str = DEFAULT_OLLAMA_HOST) -> bool:

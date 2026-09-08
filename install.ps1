@@ -1005,6 +1005,15 @@ function Test-OpenSreAutoLaunchEnabled {
     return -not ($value -eq "0" -or $value -eq "false" -or $value -eq "FALSE" -or $value -eq "no" -or $value -eq "NO" -or $value -eq "off" -or $value -eq "OFF")
 }
 
+function Get-OpenSreCommandName {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$BinaryName
+    )
+
+    return [System.IO.Path]::GetFileNameWithoutExtension($BinaryName)
+}
+
 function Start-OpenSreOnboardingAfterInstall {
     param(
         [string]$BinaryPath,
@@ -1187,7 +1196,7 @@ function Install-OpenSre {
 
     Ensure-OpenSreGithubCli
 
-    $exe = $binaryName.TrimEnd(".exe")
+    $exe = Get-OpenSreCommandName -BinaryName $binaryName
     $sep = "────────────────────────────────────────────"
 
     Write-Host ""
@@ -1207,11 +1216,10 @@ function Install-OpenSre {
     Write-Host ""
     Write-Host "Next steps:"
     Write-Host "  1. Run  $exe setup"
-    Write-Host "     Sign in with GitHub, add your LLM key, then open the interactive shell."
+    Write-Host "     Sign in or create an OpenSRE account, then open the interactive shell."
     Write-Host ""
     Write-Host "  2. Run  $exe  (no subcommand)"
-    Write-Host "     From a normal interactive terminal this starts the interactive shell; type a"
-    Write-Host "     prompt or incident description to investigate."
+    Write-Host "     This starts the account gate first, then opens the interactive shell."
     Write-Host ""
     Write-Host "  3. Optional — one-shot RCA from a file:"
     Write-Host "     $exe investigate -i path/to/alert.json"

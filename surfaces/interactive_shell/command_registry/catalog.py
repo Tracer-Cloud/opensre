@@ -12,6 +12,7 @@ from surfaces.interactive_shell.command_registry.choice_prompt import (
 from surfaces.interactive_shell.command_registry.cli_parity import (
     COMMANDS as PARITY_COMMANDS,
 )
+from surfaces.interactive_shell.command_registry.demo_cmds import COMMANDS as DEMO_COMMANDS
 from surfaces.interactive_shell.command_registry.diagnostics_cmds import (
     COMMANDS as DIAGNOSTICS_COMMANDS,
 )
@@ -58,6 +59,7 @@ _MERGED_SEQUENCE = tuple(
         MODEL_COMMANDS,
         TOOLS_COMMANDS,
         LOOPS_COMMANDS,
+        DEMO_COMMANDS,
         TASK_COMMANDS,
         GATEWAY_COMMANDS,
         PRIVACY_COMMANDS,

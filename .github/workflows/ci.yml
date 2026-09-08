@@ -739,9 +739,80 @@ jobs:
           -v
           --timeout=120
 
+  package-preflight:
+    name: package-preflight
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Detect packaging changes
+        id: changes
+        uses: dorny/paths-filter@7b450fff21473bca461d4b92ce414b9d0420d706 # v4.0.2
+        with:
+          filters: |
+            packaging:
+              - "README.md"
+              - "LICENSE"
+              - "MANIFEST.in"
+              - "pyproject.toml"
+              - "setup.cfg"
+              - "setup.py"
+              - "uv.lock"
+              - "bootstrap/**"
+              - "config/**"
+              - "core/**"
+              - "gateway/**"
+              - "infrastructure/**"
+              - "integrations/**"
+              - "surfaces/**"
+              - "tests/**"
+              - "tools/**"
+              - ".github/workflows/ci.yml"
+              - ".github/workflows/release.yml"
+              - "infrastructure/deployment/packaging/**"
+
+      - name: Install uv
+        if: steps.changes.outputs.packaging == 'true'
+        uses: astral-sh/setup-uv@v10.0.1
+        with:
+          version: "latest-known"
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+
+      - name: Set up Python
+        if: steps.changes.outputs.packaging == 'true'
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Build and validate distributions
+        if: steps.changes.outputs.packaging == 'true'
+        run: |
+          uv sync --frozen --extra release-dist
+          uv run python -m build --outdir dist
+          uv run twine check dist/*
+          uv run python infrastructure/deployment/packaging/validate_wheel.py dist/*.whl
+
+      - name: Smoke the installed wheel
+        if: steps.changes.outputs.packaging == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          smoke_env="$(mktemp -d)"
+          uv venv --python 3.13 "$smoke_env"
+          uv pip install --python "$smoke_env/bin/python" dist/*.whl
+          cd "$RUNNER_TEMP"
+          "$smoke_env/bin/opensre" --version
+          "$smoke_env/bin/opensre" _package-smoke
+
   ci-gate:
     name: CI Gate
-    needs: [quality-static, quality-typecheck, test, coverage-report, session-store-locked]
+    needs:
+      [quality-static, quality-typecheck, test, coverage-report, session-store-locked, package-preflight]
     if: always()
     runs-on: ubuntu-latest
     steps:
@@ -757,8 +828,9 @@ jobs:
           test_result='${{ needs.test.result }}'
           coverage='${{ needs.coverage-report.result }}'
           session_locked='${{ needs.session-store-locked.result }}'
+          package_preflight='${{ needs.package-preflight.result }}'
           session_persistence_changed='${{ needs.session-store-locked.outputs.session_persistence }}'
-          echo "static=$static typecheck=$typecheck test=$test_result coverage-report=$coverage session-store-locked=$session_locked session_persistence=$session_persistence_changed"
+          echo "static=$static typecheck=$typecheck test=$test_result coverage-report=$coverage session-store-locked=$session_locked package-preflight=$package_preflight session_persistence=$session_persistence_changed"
 
           # Source jobs always start. On docs-only PRs their setup and test
           # steps skip after the per-job classifier, leaving a successful job.
@@ -775,6 +847,11 @@ jobs:
             success|skipped) ;;
             *) echo "::error::coverage-report is $coverage"; exit 1 ;;
           esac
+
+          [ "$package_preflight" = success ] || {
+            echo "::error::package-preflight is $package_preflight"
+            exit 1
+          }
 
           # session-store-locked is required for session/persistence/ changes,
           # and non-blocking elsewhere.

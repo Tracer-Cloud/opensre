@@ -14,6 +14,7 @@ from typing import Any, TypedDict
 
 import requests
 
+from infrastructure.delivery.notifications.redaction import redact_token
 from integrations.verification import register_validation_verifier
 
 
@@ -78,9 +79,10 @@ def validate_twilio_config(config: TwilioVerifyConfig) -> TwilioValidationResult
         response.raise_for_status()
         payload = response.json()
     except Exception as exc:
+        safe_error = redact_token(str(exc), auth_token)
         return TwilioValidationResult(
             ok=False,
-            detail=f"Twilio API check failed: {exc}",
+            detail=f"Twilio API check failed: {safe_error}",
             failure_kind=TwilioFailureKind.API_ERROR,
         )
 
