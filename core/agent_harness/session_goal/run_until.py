@@ -12,7 +12,11 @@ from dataclasses import dataclass, replace
 from typing import Any
 
 from core.agent_harness.session.pending_choice import PendingUserChoice
-from core.agent_harness.session.terminal_access import clear_pending_autosubmit, set_auto_command
+from core.agent_harness.session.terminal_access import (
+    clear_pending_autosubmit,
+    session_terminal,
+    set_auto_command,
+)
 from core.agent_harness.session_goal.continuation import continuation_prompt
 from core.agent_harness.session_goal.evaluate import (
     default_evaluate_session_goal,
@@ -127,24 +131,29 @@ STALL_COMMANDS = {STALL_OPTION_MORE: "/goal resume", STALL_OPTION_STOP: "/goal c
 
 
 def goal_has_stalled(goal: SessionGoal) -> bool:
-    """True when a checklist goal has used two turns without completing any item."""
-    return bool(goal.checklist) and not goal.completed and goal.turns_used >= _NO_PROGRESS_TURNS
+    """True when a checklist goal has gone two turns without a new tick."""
+    if not goal.checklist or goal.checklist_complete:
+        return False
+    return goal.turns_used - goal.last_progress_turns_used >= _NO_PROGRESS_TURNS
 
 
 def pause_for_no_progress(
     session: Any, active: SessionGoal, on_progress: ProgressFn | None
 ) -> SessionGoal:
-    """Pause a stalled goal and open a menu with the ways forward.
+    """Pause a stalled goal; the shell also opens a menu with the ways forward.
 
-    Two full turns with nothing ticked off means repeating the same steps to
-    the budget; instead the shell asks: one more turn, stop, or typed guidance
-    (the custom row), which reaches the model as an ordinary answer.
+    Two full turns without a new tick means repeating the same steps to the
+    budget. The interactive shell asks: one more turn, stop, or typed guidance
+    (the custom row). Headless hosts have no ``/choose`` handler, so they only
+    pause and return.
     """
     paused = active.with_status(SessionGoalStatus.PAUSED).with_reason(
         SessionGoalReason.PAUSED_NO_PROGRESS
     )
     paused = _paint(session, paused, on_progress, rederive=False)
     _clear_host_autosubmit(session)
+    if session_terminal(session) is None:
+        return paused
     session.pending_user_choice = PendingUserChoice(
         title=STALL_MENU_TITLE,
         options=(STALL_OPTION_MORE, STALL_OPTION_STOP),

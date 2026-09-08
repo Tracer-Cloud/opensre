@@ -153,6 +153,9 @@ class SessionGoal:
     # ``session_goal:achieved`` tag without tool evidence (product rule for the
     # slash path — agent-attached goals still require tools).
     host_owned: bool = False
+    # ``turns_used`` when ``completed`` last grew. Stall detection compares
+    # against this so a later plateau still pauses after two idle turns.
+    last_progress_turns_used: int = 0
 
     def with_status(self, status: str) -> SessionGoal:
         return replace(self, status=status)
@@ -161,6 +164,10 @@ class SessionGoal:
         return replace(self, turns_used=self.turns_used + 1)
 
     def with_completed(self, completed: frozenset[int]) -> SessionGoal:
+        if completed == self.completed:
+            return self
+        if completed - self.completed:
+            return replace(self, completed=completed, last_progress_turns_used=self.turns_used)
         return replace(self, completed=completed)
 
     def with_finding(self, finding: str) -> SessionGoal:
@@ -273,19 +280,33 @@ def attach_session_goal(session: Any, goal: SessionGoal) -> SessionGoal:
     Fresh active goals get a start stamp (duration / token delta) unless the
     caller already set ``started_at`` (e.g. restore from payload). Leading
     shell prompt chrome in ``condition`` is stripped so a pasted ``[n] ❯``
-    line never becomes the durable goal text.
+    line never becomes the durable goal text. A new goal identity drops the
+    session task plan so completed steps from earlier work cannot credit it.
     """
+    previous = getattr(session, "session_goal", None)
+    new_identity = goal.started_at is None or (
+        isinstance(previous, SessionGoal) and previous.started_at != goal.started_at
+    )
     cleaned = strip_shell_prompt_chrome(goal.condition)
     if cleaned != goal.condition:
         goal = replace(goal, condition=cleaned)
     if goal.started_at is None and goal.status == SessionGoalStatus.ACTIVE:
         goal = mark_session_goal_started(goal, session=session)
     session.session_goal = goal
+    if new_identity:
+        _discard_session_task_plan(session)
     return goal
 
 
 def clear_session_goal(session: Any) -> None:
     session.session_goal = None
+    _discard_session_task_plan(session)
+
+
+def _discard_session_task_plan(session: Any) -> None:
+    """Drop the live plan so a later goal cannot inherit completed steps."""
+    if hasattr(session, "task_plan"):
+        session.task_plan = None
 
 
 def session_goal_elapsed_seconds(

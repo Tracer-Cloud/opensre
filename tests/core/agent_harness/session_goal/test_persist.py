@@ -28,6 +28,7 @@ def test_session_goal_round_trips_through_payload() -> None:
         step_count=3,
         checklist=("a", "b", "c"),
         completed=frozenset({0}),
+        last_progress_turns_used=2,
         last_reason="checklist 1/3 done — next: b",
     )
     restored = session_goal_from_payload(session_goal_to_payload(goal))

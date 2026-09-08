@@ -40,3 +40,12 @@ def test_progress_or_status_change_paints_the_full_block_again() -> None:
 
     assert "[x] 1." in ticked
     assert "Checklist:" in paused
+
+
+def test_a_new_goal_with_the_same_shape_paints_the_full_block() -> None:
+    session = Session()
+    goal_paint_text(_goal(started_at=1.0), session)
+
+    painted = goal_paint_text(_goal(started_at=2.0), session)
+
+    assert "Checklist:" in painted

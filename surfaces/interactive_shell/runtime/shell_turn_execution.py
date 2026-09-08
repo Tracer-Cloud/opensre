@@ -36,7 +36,13 @@ def goal_paint_text(goal: SessionGoal, session: Session) -> str:
     Every outer turn used to reprint condition, reason, and the whole
     checklist; with nothing ticked off, that read as the same screen four times.
     """
-    signature = (goal.status, goal.completed, len(goal.checklist), goal.condition)
+    signature = (
+        goal.status,
+        goal.completed,
+        len(goal.checklist),
+        goal.condition,
+        goal.started_at,
+    )
     terminal = session.terminal
     if terminal.goal_paint_signature == signature and goal.status == "active":
         return format_session_goal_status_line(goal, session=session)

@@ -15,12 +15,18 @@ from core.agent_harness.session_goal.run_until import (
 from core.agent_harness.task_plan.plan import PlanStep, PlanStepStatus, TaskPlan
 
 
-def _goal(*items: str, turns_used: int = 0, completed: frozenset[int] = frozenset()) -> SessionGoal:
+def _goal(
+    *items: str,
+    turns_used: int = 0,
+    completed: frozenset[int] = frozenset(),
+    last_progress_turns_used: int = 0,
+) -> SessionGoal:
     return SessionGoal(
         condition="Report failing CI checks, then set up a recurring check",
         checklist=tuple(items),
         completed=completed,
         turns_used=turns_used,
+        last_progress_turns_used=last_progress_turns_used,
         max_outer_turns=6,
     )
 
@@ -56,11 +62,40 @@ def test_goal_without_a_plan_or_checklist_is_untouched() -> None:
     assert credit_completed_plan_steps(_goal(), _session_with_plan()) == _goal()
 
 
-def test_goal_stalls_after_two_turns_without_a_tick_and_not_otherwise() -> None:
+def test_goal_stalls_after_two_turns_without_a_new_tick() -> None:
     assert goal_has_stalled(_goal("a", "b", turns_used=2)) is True
     assert goal_has_stalled(_goal("a", "b", turns_used=1)) is False
-    assert goal_has_stalled(_goal("a", "b", turns_used=3, completed=frozenset({0}))) is False
+    assert (
+        goal_has_stalled(
+            _goal(
+                "a",
+                "b",
+                turns_used=3,
+                completed=frozenset({0}),
+                last_progress_turns_used=1,
+            )
+        )
+        is True
+    )
+    assert (
+        goal_has_stalled(
+            _goal(
+                "a",
+                "b",
+                turns_used=3,
+                completed=frozenset({0}),
+                last_progress_turns_used=3,
+            )
+        )
+        is False
+    )
     assert goal_has_stalled(_goal(turns_used=4)) is False
+
+
+def test_a_new_tick_records_the_turn_so_later_plateaus_can_stall() -> None:
+    progressed = _goal("a", "b", turns_used=1).with_completed(frozenset({0}))
+    assert progressed.last_progress_turns_used == 1
+    assert goal_has_stalled(progressed) is False
 
 
 def test_a_stalled_goal_pauses_and_offers_the_ways_forward_as_a_menu() -> None:
@@ -82,3 +117,43 @@ def test_a_stalled_goal_pauses_and_offers_the_ways_forward_as_a_menu() -> None:
     assert choice.options == (STALL_OPTION_MORE, STALL_OPTION_STOP)
     assert choice.commands == {STALL_OPTION_MORE: "/goal resume", STALL_OPTION_STOP: "/goal clear"}
     assert session.terminal.pending_prompt_default == "/choose"
+
+
+def test_headless_stall_pauses_without_a_choose_menu() -> None:
+    from core.agent_harness.session import InMemorySessionStore, SessionCore
+
+    session = SessionCore(store=InMemorySessionStore())
+    painted: list[SessionGoal] = []
+
+    paused = pause_for_no_progress(session, _goal("a", "b", turns_used=2), painted.append)
+
+    assert paused.status == "paused"
+    assert painted and painted[-1].status == "paused"
+    assert session.pending_user_choice is None
+
+
+def test_replacing_or_clearing_a_goal_drops_the_prior_plan() -> None:
+    from core.agent_harness.session import InMemorySessionStore, SessionCore
+    from core.agent_harness.session_goal.goal import attach_session_goal, clear_session_goal
+
+    session = SessionCore(store=InMemorySessionStore())
+    first = attach_session_goal(session, _goal("Summarize failing PR checks with links"))
+    leftover = TaskPlan(
+        steps=(
+            PlanStep(
+                step="Summarize failing PR checks with links",
+                status=PlanStepStatus.COMPLETED,
+            ),
+        )
+    )
+    session.task_plan = leftover
+    attach_session_goal(session, first)
+    assert session.task_plan is leftover
+
+    clear_session_goal(session)
+    assert session.task_plan is None
+
+    session.task_plan = leftover
+    attach_session_goal(session, _goal("Summarize failing PR checks with links"))
+    assert session.task_plan is None
+    assert credit_completed_plan_steps(session.session_goal, session).completed == frozenset()
