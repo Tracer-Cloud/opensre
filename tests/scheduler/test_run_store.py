@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -19,6 +20,7 @@ from infrastructure.scheduling.scheduler.storage.run_store import (
     get_latest_finished_run,
     get_latest_targeted_run,
     get_runs,
+    renew_claim,
     try_claim,
     try_queue_run,
     try_start_run,
@@ -78,6 +80,38 @@ class TestClaimStore:
 
         assert first is not None
         assert try_claim("task1", "2026-01-01T09:00", db_path=db_path) is None
+
+    def test_lease_renewal_keeps_a_live_owner_from_being_reclaimed(self, db_path: Path) -> None:
+        claim = _claimed(db_path, "task1", "2026-01-01T09:00")
+        _expire_claim(db_path, claim.task_id, claim.fire_time)
+
+        assert renew_claim(claim, db_path=db_path)
+        assert try_claim(claim.task_id, claim.fire_time, db_path=db_path) is None
+
+    def test_lease_renewal_is_fenced_by_owner_token(self, db_path: Path) -> None:
+        claim = _claimed(db_path, "task1", "2026-01-01T09:00")
+        foreign_claim = ExecutionClaim(
+            claim.task_id,
+            claim.fire_time,
+            claim.attempt,
+            "not-the-owner",
+            claim.target_filter,
+        )
+
+        assert not renew_claim(foreign_claim, db_path=db_path)
+
+    def test_live_worker_heartbeat_prevents_reclaim(
+        self, db_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from infrastructure.scheduling.scheduler.storage import run_store
+
+        claim = _claimed(db_path, "task1", "2026-01-01T09:00")
+        monkeypatch.setattr(run_store, "_CLAIM_HEARTBEAT_SECONDS", 0.01)
+
+        with run_store.claim_lease_heartbeat(claim, db_path=db_path):
+            _expire_claim(db_path, claim.task_id, claim.fire_time)
+            time.sleep(0.05)
+            assert try_claim(claim.task_id, claim.fire_time, db_path=db_path) is None
 
     def test_expired_lease_is_abandoned_and_reclaimed(self, db_path: Path) -> None:
         first = try_claim("task1", "2026-01-01T09:00", db_path=db_path)

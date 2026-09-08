@@ -5,7 +5,9 @@ from __future__ import annotations
 import json
 import logging
 import sqlite3
-from collections.abc import Collection, Sequence
+import threading
+from collections.abc import Collection, Iterator, Sequence
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -24,6 +26,7 @@ logger = logging.getLogger(__name__)
 _TARGETED_RUN_SCAN_LIMIT = 50
 _EXPIRED_CLAIM_SCAN_LIMIT = 100
 _CLAIM_LEASE_SECONDS = 30 * 60
+_CLAIM_HEARTBEAT_SECONDS = _CLAIM_LEASE_SECONDS // 3
 _RUN_COLUMNS = (
     "task_id, fire_time, started_at, finished_at, status, posted_message_id, "
     "error, provider, targets, attempt"
@@ -180,6 +183,69 @@ def try_claim(
             return ExecutionClaim(task_id, fire_time, attempt, owner_token, target_filter)
     except sqlite3.IntegrityError:
         return None
+
+
+def renew_claim(
+    claim: ExecutionClaim,
+    *,
+    db_path: Path | None = None,
+) -> bool:
+    """Extend a live claim's lease only while its fenced owner still owns it."""
+    lease_text = (datetime.now(UTC) + timedelta(seconds=_CLAIM_LEASE_SECONDS)).isoformat()
+    with database.transaction(db_path, immediate=True) as conn:
+        cursor = conn.execute(
+            "UPDATE task_runs SET lease_expires_at = ? "
+            "WHERE task_id = ? AND fire_time = ? AND attempt = ? "
+            "AND owner_token = ? AND status = ?",
+            (
+                lease_text,
+                claim.task_id,
+                claim.fire_time,
+                claim.attempt,
+                claim.owner_token,
+                TaskStatus.RUNNING.value,
+            ),
+        )
+        return cursor.rowcount == 1
+
+
+@contextmanager
+def claim_lease_heartbeat(
+    claim: ExecutionClaim,
+    *,
+    db_path: Path | None = None,
+) -> Iterator[None]:
+    """Keep a claim live for the lifetime of its executing worker.
+
+    The heartbeat is fenced by ``owner_token``.  It stops when the worker
+    exits, so a crashed process still leaves a reclaimable expired lease.
+    """
+    stopped = threading.Event()
+
+    def heartbeat() -> None:
+        while not stopped.wait(_CLAIM_HEARTBEAT_SECONDS):
+            try:
+                if not renew_claim(claim, db_path=db_path):
+                    return
+            except sqlite3.Error:
+                logger.warning(
+                    "Failed to renew scheduler claim task=%s fire_time=%s",
+                    claim.task_id,
+                    claim.fire_time,
+                    exc_info=True,
+                )
+
+    thread = threading.Thread(
+        target=heartbeat,
+        name=f"scheduler-lease-{claim.task_id}",
+        daemon=True,
+    )
+    thread.start()
+    try:
+        yield
+    finally:
+        stopped.set()
+        thread.join(timeout=1)
 
 
 def _decode_target_filter(raw: str) -> frozenset[tuple[Provider, str]] | None:
@@ -403,6 +469,7 @@ def delete_runs(task_id: str, db_path: Path | None = None) -> int:
 
 
 __all__ = [
+    "claim_lease_heartbeat",
     "complete_run",
     "delete_runs",
     "ExpiredClaim",
@@ -411,6 +478,7 @@ __all__ = [
     "get_latest_finished_run",
     "get_latest_targeted_run",
     "get_runs",
+    "renew_claim",
     "try_queue_run",
     "try_claim",
     "try_start_run",

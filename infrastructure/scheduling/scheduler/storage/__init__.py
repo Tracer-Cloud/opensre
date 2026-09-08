@@ -7,6 +7,7 @@ from infrastructure.scheduling.scheduler.storage.database import (
 from infrastructure.scheduling.scheduler.storage.run_store import (
     ExecutionClaim,
     ExpiredClaim,
+    claim_lease_heartbeat,
     complete_run,
     delete_runs,
     get_expired_claims,
@@ -30,6 +31,7 @@ from infrastructure.scheduling.scheduler.storage.task_store import (
 __all__ = [
     "add_task",
     "complete_run",
+    "claim_lease_heartbeat",
     "default_run_database_path",
     "default_task_store_path",
     "delete_runs",

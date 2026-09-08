@@ -16,6 +16,7 @@ from infrastructure.scheduling.scheduler.operation_log import record_scheduler_e
 from infrastructure.scheduling.scheduler.runners import SchedulerRunners
 from infrastructure.scheduling.scheduler.storage import (
     ExecutionClaim,
+    claim_lease_heartbeat,
     complete_run,
     try_claim,
     try_start_run,
@@ -73,6 +74,17 @@ def execute_task(
         )
         return False
 
+    with claim_lease_heartbeat(claim):
+        return _execute_claimed_task(claim, task, fire_time, runners)
+
+
+def _execute_claimed_task(
+    claim: ExecutionClaim,
+    task: ScheduledTask,
+    fire_time: str,
+    runners: SchedulerRunners,
+) -> bool:
+    """Execute an already-owned claim while its lease is renewed by the caller."""
     logger.info("Executing task %s (kind=%s, fire_time=%s)", task.id, task.kind, fire_time)
     record_scheduler_execution_operation(
         "scheduled_task_execution_started",
