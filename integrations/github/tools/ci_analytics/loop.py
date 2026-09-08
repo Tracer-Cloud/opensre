@@ -127,9 +127,8 @@ def build_report(args: Mapping[str, str], *, snapshot_dir: Path | None = None) -
     the numbers can be traced back to the JSON snapshot named at the end.
     Raises ``RuntimeError`` with a generic message when GitHub cannot be read.
     """
-    from integrations.github.client import GitHubApiError, GitHubRestClient, resolve_github_token
-    from integrations.github.tools.ci_analytics.collector import collect_runs
-    from integrations.github.tools.ci_analytics.metrics import compute_report
+    from integrations.github.client import GitHubApiError, resolve_github_token
+    from integrations.github.tools.ci_analytics.analysis import analyze_repository
     from integrations.github.tools.ci_analytics.render import headline, render_markdown
     from integrations.github.tools.ci_analytics.tool import report_payload
 
@@ -145,23 +144,12 @@ def build_report(args: Mapping[str, str], *, snapshot_dir: Path | None = None) -
         )
     now = datetime.now(UTC)
     try:
-        collected = collect_runs(
-            GitHubRestClient(token), owner=owner, repo=repo, window_days=days, now=now
+        analysis = analyze_repository(
+            owner, repo, token=token, days=days, working_hours=local_working_hours(), now=now
         )
     except (GitHubApiError, ValueError) as exc:
         raise RuntimeError(f"Could not read the GitHub Actions history of {owner}/{repo}.") from exc
-    report = compute_report(
-        owner=owner,
-        repo=repo,
-        default_branch=collected.default_branch,
-        window_days=days,
-        branch_runs=collected.branch_runs,
-        pr_runs=collected.pr_runs,
-        merged_prs=collected.merged_prs,
-        now=now,
-        coverage_notices=collected.coverage_notices,
-        working_hours=local_working_hours(),
-    )
+    report = analysis.report
     snapshot = _write_snapshot(
         snapshot_dir or OPENSRE_HOME_DIR / SNAPSHOT_DIRNAME,
         owner,

@@ -37,6 +37,10 @@ _LAZY_EXPORTS: dict[str, str] = {
     "GitHubDeviceFlowError": "integrations.github.mcp_oauth",
     "authorize_github_via_device_flow": "integrations.github.mcp_oauth",
     "disconnect_personal_github": "integrations.github.personal_account",
+    "Analysis": "integrations.github.tools.ci_analytics.analysis",
+    "analyze_repository": "integrations.github.tools.ci_analytics.analysis",
+    "ci_report_headline": "integrations.github.tools.ci_analytics.render",
+    "render_ci_report": "integrations.github.tools.ci_analytics.render",
     "DEFAULT_LOOP_TIME": "integrations.github.tools.ci_analytics.loop",
     "ScheduledLoop": "integrations.github.tools.ci_analytics.loop",
     "local_timezone": "integrations.github.tools.ci_analytics.loop",
@@ -86,6 +90,7 @@ if TYPE_CHECKING:
         open_pull_request,
         resolve_repo_scope,
     )
+    from integrations.github.tools.ci_analytics.analysis import Analysis, analyze_repository
     from integrations.github.tools.ci_analytics.loop import (
         DEFAULT_LOOP_TIME,
         ScheduledLoop,
@@ -94,11 +99,13 @@ if TYPE_CHECKING:
         report_looks_complete,
         schedule_ci_reliability_loop,
     )
+    from integrations.github.tools.ci_analytics.render import ci_report_headline, render_ci_report
 
 
 __all__ = [
     "DEFAULT_GITHUB_MCP_MODE",
     "DEFAULT_GITHUB_MCP_URL",
+    "Analysis",
     "DEFAULT_LOOP_TIME",
     "ERR_GITHUB_TOKEN",
     "GitHubApiError",
@@ -111,9 +118,11 @@ __all__ = [
     "GitHubRestClient",
     "PullRequest",
     "ScheduledLoop",
+    "analyze_repository",
     "authenticate_and_configure_github",
     "authorize_github_via_device_flow",
     "build_github_mcp_config",
+    "ci_report_headline",
     "disconnect_personal_github",
     "format_github_mcp_validation_cli_report",
     "github_creds",
@@ -122,6 +131,7 @@ __all__ = [
     "loop_card",
     "open_pull_request",
     "print_github_mcp_validation_report",
+    "render_ci_report",
     "report_looks_complete",
     "resolve_github_token",
     "resolve_repo_scope",

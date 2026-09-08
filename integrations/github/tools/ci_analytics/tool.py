@@ -15,15 +15,14 @@ from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel, report_run_error
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
-from integrations.github.client import GitHubApiError, GitHubRestClient, resolve_github_token
+from integrations.github.client import GitHubApiError, resolve_github_token
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
     github_creds,
     github_source_available,
 )
 from integrations.github.repo_scope import detect_git_remote_repo_scope
-from integrations.github.tools.ci_analytics.collector import collect_runs
-from integrations.github.tools.ci_analytics.metrics import compute_report
+from integrations.github.tools.ci_analytics.analysis import analyze_repository
 from integrations.github.tools.ci_analytics.models import CiAnalyticsReport, FailureKind
 from integrations.github.tools.ci_analytics.render import (
     format_minutes,
@@ -31,7 +30,6 @@ from integrations.github.tools.ci_analytics.render import (
     render_markdown,
     render_report,
 )
-from integrations.github.tools.ci_analytics.working_hours import local_working_hours
 
 TOOL_NAME = "analyze_github_ci_reliability"
 _SOURCE = "github"
@@ -270,12 +268,8 @@ def analyze_github_ci_reliability(
         )
     started = time.monotonic()
     try:
-        collected = collect_runs(
-            GitHubRestClient(github_token),
-            owner=repo_owner,
-            repo=repo_name,
-            window_days=window,
-            now=now,
+        analysis = analyze_repository(
+            repo_owner, repo_name, token=github_token, days=window, now=now
         )
     except (GitHubApiError, ValueError) as exc:
         report_run_error(
@@ -288,18 +282,7 @@ def analyze_github_ci_reliability(
         )
         message = _failure_message(exc, repository=f"{repo_owner}/{repo_name}")
         return tool_unavailable(_SOURCE, message, response_text=message)
-    report = compute_report(
-        owner=repo_owner,
-        repo=repo_name,
-        default_branch=collected.default_branch,
-        window_days=window,
-        branch_runs=collected.branch_runs,
-        pr_runs=collected.pr_runs,
-        merged_prs=collected.merged_prs,
-        now=now,
-        coverage_notices=collected.coverage_notices,
-        working_hours=local_working_hours(),
-    )
+    report = analysis.report
     summary = (
         f"{repo_owner}/{repo_name}: {report.executions} runs in {window} days, "
         f"{report.pr_failures} of {report.pr_executions} PR runs failed, "
@@ -309,15 +292,16 @@ def analyze_github_ci_reliability(
     )
     rendered = console is not None
     if console is not None:
-        read = len(collected.branch_runs) + len(collected.pr_runs)
-        console.print(f"  [dim]Read {read} runs in {time.monotonic() - started:.0f}s.[/dim]")
+        console.print(
+            f"  [dim]Read {analysis.runs_read} runs in {time.monotonic() - started:.0f}s.[/dim]"
+        )
         console.print()
     base = {
         "source": _SOURCE,
         "success": True,
         "owner": repo_owner,
         "repo": repo_name,
-        "default_branch": collected.default_branch,
+        "default_branch": report.default_branch,
         "window_days": window,
         "summary": summary,
         "headline": headline(report),

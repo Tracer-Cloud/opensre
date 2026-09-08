@@ -247,10 +247,6 @@ def _stamp(when: datetime | None) -> str:
     return when.strftime("%b %d %H:%M") if when else "-"
 
 
-def _shorten(text: str, width: int) -> str:
-    return text if len(text) <= width else text[: width - 1] + "…"
-
-
 def headline(report: CiAnalyticsReport) -> str:
     """One deterministic sentence naming the biggest cost, for the agent to repeat verbatim."""
     if report.blocked_working_minutes > 0:
@@ -371,6 +367,16 @@ def _plural(count: int, noun: str) -> str:
     return noun if count == 1 else f"{noun}s"
 
 
-__all__ = ["format_minutes", "headline", "render_markdown", "render_report"]
+render_ci_report = render_report
+ci_report_headline = headline
+
+__all__ = [
+    "ci_report_headline",
+    "render_ci_report",
+    "format_minutes",
+    "headline",
+    "render_markdown",
+    "render_report",
+]
 
 format_minutes = _minutes
