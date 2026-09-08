@@ -18,6 +18,7 @@ from dataclasses import dataclass
 from typing import Literal
 
 from rich.markup import escape
+from rich.text import Text
 
 from config.constants import SOUND_MIN_TURN_SECONDS
 from infrastructure.terminal.notify import NotifyEvent, play_notification
@@ -27,10 +28,12 @@ from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui import (
     DIM,
     ERROR,
+    HIGHLIGHT,
     WARNING,
 )
 from surfaces.interactive_shell.ui.streaming.console import StreamingConsole
 from surfaces.shared.terminal.components.cpr_stdin import drain_stale_cpr_bytes
+from surfaces.shared.terminal.components.rendering import hyperlink
 
 
 @dataclass(frozen=True)
@@ -72,6 +75,25 @@ def _reduce_agent_presentation(
     raise ValueError(f"Unknown agent event type: {event.type!r}")
 
 
+# The exception text carries the destination for surfaces that print plain
+# text; the shell shows it once, as a link, on its own line.
+_UPGRADE_SENTENCE_LEAD = " Upgrade or top up at"
+
+
+def _render_credits_exhausted(console: StreamingConsole, exc: Exception) -> None:
+    """One error line, then the way out: a clickable top-up link or ``/model``."""
+    message = str(exc).split(_UPGRADE_SENTENCE_LEAD, 1)[0].strip()
+    console.print(f"[{ERROR}]turn error:[/] {escape(message)}")
+    hint = Text("Top up or upgrade: ", style=str(DIM))
+    url = getattr(exc, "upgrade_url", None)
+    if isinstance(url, str) and url:
+        hint.append_text(hyperlink(url, style=str(HIGHLIGHT)))
+    else:
+        hint.append("the OpenSRE usage page", style=str(DIM))
+    hint.append(" · or /model to switch provider", style=str(DIM))
+    console.print(hint)
+
+
 async def _render_agent_presentation_transition(
     *,
     previous: AgentPresentationState,
@@ -91,7 +113,6 @@ async def _render_agent_presentation_transition(
             exc = event.error
             if exc is None:
                 raise ValueError("turn_error event requires an error")
-            console.print(f"[{ERROR}]turn error:[/] {escape(str(exc))}")
             # On a credit/billing wall, add the in-tool recovery hint.
             from core.llm.shared.llm_retry import (
                 LLMCreditExhaustedError,
@@ -99,9 +120,10 @@ async def _render_agent_presentation_transition(
             )
 
             if isinstance(exc, OpenSRECreditsExhaustedError):
-                destination = exc.upgrade_url or "the OpenSRE Usage page"
-                console.print(f"[{DIM}]Upgrade or buy a credit top-up: {escape(destination)}[/]")
-            elif isinstance(exc, LLMCreditExhaustedError):
+                _render_credits_exhausted(console, exc)
+                return
+            console.print(f"[{ERROR}]turn error:[/] {escape(str(exc))}")
+            if isinstance(exc, LLMCreditExhaustedError):
                 console.print(f"[{DIM}]Run /model to switch to another provider.[/]")
                 console.print(
                     f"[{DIM}]Or run /auth login <provider> to re-authenticate "

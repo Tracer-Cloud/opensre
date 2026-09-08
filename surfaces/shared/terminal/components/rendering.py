@@ -226,6 +226,16 @@ def print_repl_renderable(console: Console, renderable: Any) -> None:
     _console_print_prepared(console, renderable)
 
 
+def hyperlink(url: str, *, style: str = "") -> Text:
+    """The URL as clickable terminal text (OSC 8), still readable where links are unsupported.
+
+    The visible text stays the URL itself, so terminals that only auto-detect
+    URLs (or none at all) still show something the user can copy.
+    """
+    link_style = f"{style} link {url}".strip()
+    return Text(url, style=link_style)
+
+
 def repl_print(console: Console, *objects: Any, **kwargs: Any) -> None:
     """Print via Rich after resetting the TTY column (inline-menu safe)."""
     from surfaces.shared.terminal.components.choice_menu import prepare_repl_output_line
@@ -283,6 +293,7 @@ def repl_table(**kwargs: Any) -> Table:
 __all__ = [
     "_repl_output_already_prepared",
     "_repl_table_width",
+    "hyperlink",
     "print_repl_json",
     "print_repl_renderable",
     "print_repl_table",

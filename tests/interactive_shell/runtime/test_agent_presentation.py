@@ -22,8 +22,8 @@ class _RecordingConsole:
     def __init__(self) -> None:
         self.lines: list[str] = []
 
-    def print(self, text: str = "") -> None:
-        self.lines.append(text)
+    def print(self, text: object = "") -> None:
+        self.lines.append(text if isinstance(text, str) else getattr(text, "plain", str(text)))
 
 
 def test_turn_complete_chimes_only_for_a_long_turn(monkeypatch) -> None:
@@ -78,9 +78,46 @@ def test_opensre_credit_exhaustion_shows_checkout_instead_of_provider_hints() ->
             upgrade_url=upgrade_url,
         )
     )
-    assert upgrade_url in output
-    assert "/model" not in output
+    # Arrange/Act above. Assert: the URL appears once, as the way out; no provider hints.
+    assert output.count(upgrade_url) == 1
     assert "/auth login" not in output
+    assert "Top up or upgrade: " in output
+
+
+def test_opensre_credit_exhaustion_link_is_clickable_and_not_repeated() -> None:
+    # Arrange: a real terminal-capable console so Rich emits OSC 8 hyperlinks.
+    import io
+
+    from rich.console import Console
+
+    upgrade_url = "https://app.opensre.com/usage"
+    buffer = io.StringIO()
+    console = Console(file=buffer, force_terminal=True, color_system="truecolor", width=200)
+
+    # Act
+    asyncio.run(
+        _render_agent_presentation_transition(
+            previous=AgentPresentationState(),
+            current=AgentPresentationState(),
+            event=AgentEvent(
+                type="turn_error",
+                error=OpenSRECreditsExhaustedError(
+                    "OpenSRE credit exhausted (provider billing/quota). Your hosted credits "
+                    f"are exhausted. Upgrade or top up at {upgrade_url}.",
+                    upgrade_url=upgrade_url,
+                ),
+            ),
+            console=console,  # type: ignore[arg-type]
+            spinner=MagicMock(),
+        )
+    )
+
+    # Assert: the URL is wrapped in a terminal hyperlink and printed once.
+    out = buffer.getvalue()
+    link_start = out.index("\x1b]8;")
+    link_target = out[link_start : out.index("\x1b\\", link_start)]
+    assert link_target.endswith(upgrade_url)
+    assert out.count(upgrade_url) == 2  # once inside the OSC 8 target, once as visible text
 
 
 def test_other_turn_error_has_no_model_hint() -> None:
