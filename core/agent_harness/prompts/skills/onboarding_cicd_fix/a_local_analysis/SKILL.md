@@ -49,7 +49,8 @@ Slack setup.
 ## Related workflows
 
 - Fixing a failing check. Use `github-ci-fix`.
-- Setting up a recurring CI fix loop. Use `cicd-reliability-agent`.
+- Scheduling a recurring CI/CD reliability check with inbox reports. Use
+  `cicd-reliability-agent`.
 - Listing the checks that are failing right now. Use `github-ci-health`.
 
 ## Workflow rules
