@@ -1,11 +1,14 @@
-"""Checklist success criteria on SessionGoal (structured tags only)."""
+"""Checklist success criteria on SessionGoal (tool ticks, not prose tags)."""
 
 from __future__ import annotations
 
 import pytest
 
 from core.agent_harness.session.session_core import SessionCore
-from core.agent_harness.session_goal.evaluate import default_evaluate_session_goal
+from core.agent_harness.session_goal.evaluate import (
+    default_evaluate_session_goal,
+    evaluate_session_goal,
+)
 from core.agent_harness.session_goal.goal import (
     SessionGoal,
     SessionGoalStatus,
@@ -13,8 +16,33 @@ from core.agent_harness.session_goal.goal import (
     attach_session_goal,
     build_session_goal,
 )
+from core.agent_harness.session_goal.judge import SessionGoalJudgeVerdict
 from core.agent_harness.session_goal.run_until import run_until_session_goal
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
+
+
+def _keep_ticks(**kw: object) -> frozenset[int]:
+    newly = kw.get("newly")
+    return newly if isinstance(newly, frozenset) else frozenset()
+
+
+def _tick_next(session: SessionCore, text: str) -> TurnResult:
+    stored = session.session_goal
+    if isinstance(stored, SessionGoal):
+        nxt = len(stored.completed)
+        if nxt < len(stored.checklist):
+            attach_session_goal(session, stored.with_completed(stored.completed | {nxt}))
+    return TurnResult(
+        final_intent="cli_agent_handled",
+        action_result=ToolCallingTurnResult(
+            planned_count=1,
+            executed_count=1,
+            executed_success_count=1,
+            has_unhandled_clause=False,
+            handled=True,
+        ),
+        assistant_response_text=text,
+    )
 
 
 def test_build_session_goal_preserves_structured_checklist() -> None:
@@ -29,7 +57,7 @@ def test_build_session_goal_preserves_structured_checklist() -> None:
     assert goal.step_count == 3
 
 
-def test_done_tags_mark_checklist_items_and_achieve_when_complete() -> None:
+def test_done_tags_still_parse_but_evaluate_ignores_them() -> None:
     goal = SessionGoal(
         condition="checklist",
         max_outer_turns=5,
@@ -39,12 +67,14 @@ def test_done_tags_mark_checklist_items_and_achieve_when_complete() -> None:
     assert after_one.completed == frozenset({0})
     assert (
         default_evaluate_session_goal(
-            after_one,
+            goal,
             type("R", (), {"assistant_response_text": "session_goal:done=0"})(),
+            judge=lambda **_kw: SessionGoalJudgeVerdict(
+                verdict="NOT_REACHED", reason="checklist 1/3 done — next: B"
+            ),
         )
         == SessionGoalStatus.ACTIVE
     )
-
     after_all = apply_session_goal_progress(
         after_one,
         "Finished. session_goal:done=1,2",
@@ -52,10 +82,13 @@ def test_done_tags_mark_checklist_items_and_achieve_when_complete() -> None:
     assert after_all.completed == frozenset({0, 1, 2})
     assert (
         default_evaluate_session_goal(
-            after_all,
+            goal,
             type("R", (), {"assistant_response_text": "session_goal:done=1,2"})(),
+            judge=lambda **_kw: SessionGoalJudgeVerdict(
+                verdict="NOT_REACHED", reason="tags are not completion"
+            ),
         )
-        == SessionGoalStatus.ACHIEVED
+        == SessionGoalStatus.ACTIVE
     )
 
 
@@ -178,22 +211,25 @@ def test_outer_loop_achieves_via_checklist_without_achieved_tag() -> None:
 
     def _chat(message: str) -> TurnResult:
         turns.append(message)
-        n = len(turns)
-        # Mark one new item per turn via structured done tags.
-        body = f"Working. session_goal:done={n - 1}"
-        return TurnResult(
-            final_intent="cli_agent_fallback",
-            action_result=ToolCallingTurnResult(
-                planned_count=0,
-                executed_count=0,
-                executed_success_count=0,
-                has_unhandled_clause=False,
-                handled=True,
-            ),
-            assistant_response_text=body,
-        )
+        return _tick_next(session, "Working.")
 
-    outcome = run_until_session_goal(_chat, session, "go", goal=goal)
+    outcome = run_until_session_goal(
+        _chat,
+        session,
+        "go",
+        goal=goal,
+        evaluate=lambda goal, result, *, session=None: (
+            evaluate_session_goal(
+                goal,
+                result,
+                session=session,
+                judge=lambda **_kw: SessionGoalJudgeVerdict(
+                    verdict="NOT_REACHED", reason="checklist still open"
+                ),
+                validate=_keep_ticks,
+            ).status
+        ),
+    )
 
     assert len(turns) == 3
     assert outcome.goal.status == SessionGoalStatus.ACHIEVED
@@ -212,7 +248,7 @@ def test_prompt_lists_unfinished_checklist_items() -> None:
     prompt = continuation_prompt(goal)
 
     assert "B" in prompt and "C" in prompt
-    assert "session_goal:done=" in prompt
+    assert "session_goal_complete" in prompt
     assert "Last progress: checklist 1/3 done — next: B" in prompt
 
 
@@ -228,21 +264,25 @@ def test_outer_loop_prompt_carries_reason_after_partial_progress() -> None:
 
     def _chat(message: str) -> TurnResult:
         turns.append(message)
-        n = len(turns)
-        body = f"Working. session_goal:done={n - 1}"
-        return TurnResult(
-            final_intent="cli_agent_fallback",
-            action_result=ToolCallingTurnResult(
-                planned_count=0,
-                executed_count=0,
-                executed_success_count=0,
-                has_unhandled_clause=False,
-                handled=True,
-            ),
-            assistant_response_text=body,
-        )
+        return _tick_next(session, "Working.")
 
-    run_until_session_goal(_chat, session, "go", goal=goal)
+    run_until_session_goal(
+        _chat,
+        session,
+        "go",
+        goal=goal,
+        evaluate=lambda goal, result, *, session=None: (
+            evaluate_session_goal(
+                goal,
+                result,
+                session=session,
+                judge=lambda **_kw: SessionGoalJudgeVerdict(
+                    verdict="NOT_REACHED", reason="checklist 1/2 done — next: B"
+                ),
+                validate=_keep_ticks,
+            ).status
+        ),
+    )
 
     assert len(turns) == 2
     assert "Last progress:" in turns[1]

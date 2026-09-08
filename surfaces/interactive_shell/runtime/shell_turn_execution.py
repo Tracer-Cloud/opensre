@@ -16,6 +16,7 @@ from core.agent_harness import (
 )
 from core.agent_harness.spi.session_goal import (
     SessionGoal,
+    SessionGoalReason,
     format_session_goal_progress,
     format_session_goal_status_line,
 )
@@ -35,13 +36,17 @@ def goal_paint_text(goal: SessionGoal, session: Session) -> str:
 
     Every outer turn used to reprint condition, reason, and the whole
     checklist; with nothing ticked off, that read as the same screen four times.
+    A working turn is always the compact status line (real tokens / elapsed).
     """
+    if SessionGoalReason.is_working(goal.last_reason) and goal.status == "active":
+        return format_session_goal_status_line(goal, session=session)
     signature = (
         goal.status,
         goal.completed,
         len(goal.checklist),
         goal.condition,
         goal.started_at,
+        goal.last_reason,
     )
     terminal = session.terminal
     if terminal.goal_paint_signature == signature and goal.status == "active":

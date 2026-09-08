@@ -54,6 +54,7 @@ def test_action_tool_name_members_are_stable() -> None:
         "fix_sentry_issue_start",
         "llm_set_provider",
         "propose_scheduled_delivery",
+        "session_goal_complete",
         "session_goal_set",
         "shell_run",
         "skill_view",

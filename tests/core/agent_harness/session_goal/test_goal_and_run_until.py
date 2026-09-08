@@ -3,21 +3,38 @@
 from __future__ import annotations
 
 from core.agent_harness.session.session_core import SessionCore
+from core.agent_harness.session_goal.evaluate import evaluate_session_goal
 from core.agent_harness.session_goal.goal import (
     SessionGoal,
     SessionGoalStatus,
     attach_session_goal,
     build_session_goal,
+    derive_session_goal_checklist,
     session_goal_is_active,
 )
+from core.agent_harness.session_goal.judge import SessionGoalJudgeVerdict
 from core.agent_harness.session_goal.run_until import run_until_session_goal
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
+
+
+def _keep_ticks(**kw: object) -> frozenset[int]:
+    newly = kw.get("newly")
+    return newly if isinstance(newly, frozenset) else frozenset()
+
 
 _FIVE_STEP_ASK = (
     "Do this 5-step sequential process without asking whether to continue: "
     "(1) list the goal, (2) name step one, (3) name step two, "
     "(4) name step three, (5) confirm all five are done."
 )
+
+
+def test_every_goal_gets_a_checklist_from_the_condition() -> None:
+    assert derive_session_goal_checklist("How many Windows users?") == ("How many Windows users?",)
+    assert derive_session_goal_checklist(
+        "Do this:\n1. list the goal\n2. name step one\n3. confirm done"
+    ) == ("list the goal", "name step one", "confirm done")
+    assert derive_session_goal_checklist("ignored", ("A", "B")) == ("A", "B")
 
 
 def test_build_session_goal_from_structured_input() -> None:
@@ -56,18 +73,21 @@ def test_five_step_outer_loop_continues_until_achieved() -> None:
 
     def _chat(message: str) -> TurnResult:
         turns.append(message)
-        n = len(turns)
-        body = f"Completed item. session_goal:done={n - 1}"
+        stored = session.session_goal
+        if isinstance(stored, SessionGoal):
+            nxt = len(stored.completed)
+            if nxt < len(stored.checklist):
+                attach_session_goal(session, stored.with_completed(stored.completed | {nxt}))
         return TurnResult(
-            final_intent="cli_agent_fallback",
+            final_intent="cli_agent_handled",
             action_result=ToolCallingTurnResult(
-                planned_count=0,
-                executed_count=0,
-                executed_success_count=0,
+                planned_count=1,
+                executed_count=1,
+                executed_success_count=1,
                 has_unhandled_clause=False,
                 handled=True,
             ),
-            assistant_response_text=body,
+            assistant_response_text="Completed item.",
         )
 
     outcome = run_until_session_goal(
@@ -79,6 +99,17 @@ def test_five_step_outer_loop_continues_until_achieved() -> None:
             max_outer_turns=5,
             step_count=5,
             checklist=checklist,
+        ),
+        evaluate=lambda goal, result, *, session=None: (
+            evaluate_session_goal(
+                goal,
+                result,
+                session=session,
+                judge=lambda **_kw: SessionGoalJudgeVerdict(
+                    verdict="NOT_REACHED", reason="checklist still open"
+                ),
+                validate=_keep_ticks,
+            ).status
         ),
     )
 

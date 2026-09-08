@@ -46,6 +46,7 @@ def test_goal_set_queues_condition_as_immediate_turn() -> None:
     assert session.terminal.pending_prompt_autosubmit is True
     assert session.session_goal is not None
     assert session.session_goal.host_owned is True
+    assert session.session_goal.checklist == ("all auth tests pass",)
     assert session.session_goal.max_outer_turns == 3
     assert session.session_goal.started_at is not None
     out = buf.getvalue()

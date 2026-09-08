@@ -88,10 +88,22 @@ def test_help_flag_does_not_mask_blocked_command() -> None:
     run_mock.assert_not_called()
 
 
+def test_run_gh_allows_run_and_workflow_reads() -> None:
+    assert denied_gh_command(["run", "list"]) is None
+    assert denied_gh_command(["run", "view", "123"]) is None
+    assert denied_gh_command(["workflow", "list"]) is None
+    assert denied_gh_command(["workflow", "view", "ci.yml"]) is None
+
+
 def test_run_gh_blocks_ci_and_secret_mutation_commands() -> None:
     cases = (
         (["workflow", "run", "deploy.yml"], "workflow"),
+        (["workflow", "enable", "ci.yml"], "workflow"),
         (["run", "rerun", "123"], "run"),
+        (["run", "cancel", "123"], "run"),
+        (["run", "delete", "123"], "run"),
+        (["run", "watch", "123"], "run"),
+        (["run", "download", "123"], "run"),
         (["secret", "set", "TOKEN"], "secret"),
     )
     for args, blocked in cases:

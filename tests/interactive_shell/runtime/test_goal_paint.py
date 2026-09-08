@@ -19,6 +19,22 @@ def _goal(**overrides: object) -> SessionGoal:
     return SessionGoal(**base)  # type: ignore[arg-type]
 
 
+def test_working_status_is_one_line_with_real_elapsed() -> None:
+    from core.agent_harness.session_goal.goal import SessionGoalReason, mark_session_goal_started
+
+    session = Session()
+    goal = mark_session_goal_started(
+        _goal(last_reason=SessionGoalReason.working_session_turn(2, 6)),
+        now=1_000.0,
+        input_tokens=10,
+        output_tokens=2,
+    )
+    painted = goal_paint_text(goal, session)
+    assert painted.count("\n") == 0
+    assert "working — starting session-goal turn 2/6" in painted
+    assert "Checklist:" not in painted
+
+
 def test_same_goal_paints_the_block_once_then_one_status_line() -> None:
     session = Session()
     first = goal_paint_text(_goal(), session)
@@ -49,3 +65,15 @@ def test_a_new_goal_with_the_same_shape_paints_the_full_block() -> None:
     painted = goal_paint_text(_goal(started_at=2.0), session)
 
     assert "Checklist:" in painted
+
+
+def test_a_new_judge_reason_paints_the_full_block_again() -> None:
+    session = Session()
+    goal_paint_text(_goal(last_reason="not yet — list the failing SHA"), session)
+
+    painted = goal_paint_text(
+        _goal(last_reason="not yet — filter workflow runs by head_sha"), session
+    )
+
+    assert "Checklist:" in painted
+    assert "head_sha" in painted

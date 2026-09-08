@@ -27,7 +27,6 @@ from core.agent_harness.session_goal.goal import (
     SessionGoal,
     SessionGoalReason,
     SessionGoalStatus,
-    apply_session_goal_progress,
     attach_session_goal,
     refresh_session_goal_reason,
     session_goal_is_active,
@@ -56,9 +55,20 @@ def _empty_turn_result() -> TurnResult:
     )
 
 
-def _refresh_active(session: Any, active: SessionGoal, result: TurnResult) -> SessionGoal:
-    """Merge checklist progress from the reply and keep session in sync."""
-    updated = apply_session_goal_progress(active, session_goal_reply_text(result))
+def _record_goal_turn(session: Any, active: SessionGoal) -> SessionGoal:
+    """Count this chat as a session-goal turn and keep tool ticks on the session.
+
+    ``session_goal_complete`` attaches ticks onto ``session.session_goal``.
+    Recording the loop copy first would wipe them; merge them back so evaluate
+    sees ``new_ticks`` and custom evaluate callbacks still advance ``turns_used``.
+    """
+    stored = getattr(session, "session_goal", None)
+    completed = active.completed
+    if isinstance(stored, SessionGoal):
+        completed = completed | stored.completed
+    updated = active.record_turn()
+    if completed != updated.completed:
+        updated = updated.with_completed(completed)
     attach_session_goal(session, updated)
     return updated
 
@@ -124,15 +134,15 @@ def _announce_working(
 
 
 _NO_PROGRESS_TURNS = 2
-STALL_MENU_TITLE = "The goal made no checklist progress in 2 turns. How should I continue?"
+STALL_MENU_TITLE = "The goal made no progress in 2 turns. How should I continue?"
 STALL_OPTION_MORE = "Keep going for one more turn"
 STALL_OPTION_STOP = "Stop here; the work above is enough"
 STALL_COMMANDS = {STALL_OPTION_MORE: "/goal resume", STALL_OPTION_STOP: "/goal clear"}
 
 
 def goal_has_stalled(goal: SessionGoal) -> bool:
-    """True when a checklist goal has gone two turns without a new tick."""
-    if not goal.checklist or goal.checklist_complete:
+    """True when two turns passed with no checklist tick and no successful tool."""
+    if goal.checklist_complete:
         return False
     return goal.turns_used - goal.last_progress_turns_used >= _NO_PROGRESS_TURNS
 
@@ -142,10 +152,10 @@ def pause_for_no_progress(
 ) -> SessionGoal:
     """Pause a stalled goal; the shell also opens a menu with the ways forward.
 
-    Two full turns without a new tick means repeating the same steps to the
-    budget. The interactive shell asks: one more turn, stop, or typed guidance
-    (the custom row). Headless hosts have no ``/choose`` handler, so they only
-    pause and return.
+    Two full turns without a tick or a successful tool means repeating the
+    same steps to the budget. The interactive shell asks: one more turn, stop,
+    or typed guidance (the custom row). Headless hosts have no ``/choose``
+    handler, so they only pause and return.
     """
     paused = active.with_status(SessionGoalStatus.PAUSED).with_reason(
         SessionGoalReason.PAUSED_NO_PROGRESS
@@ -176,9 +186,7 @@ def _finish_outer_turn(
     evaluate_fn: EvaluateFn,
     on_progress: ProgressFn | None,
 ) -> tuple[SessionGoal, TurnResult, bool]:
-    """Refresh → evaluate → single paint. Returns ``(goal, scrubbed, stop)``."""
-    active = _refresh_active(session, active, last)
-
+    """Evaluate → single paint. Returns ``(goal, scrubbed, stop)``."""
     if last.cancelled:
         active = active.with_status(SessionGoalStatus.CANCELLED)
         active = _paint(session, active, on_progress)
@@ -279,6 +287,7 @@ def run_until_session_goal(
         had_active_before = True
         _announce_working(session, pre, on_progress)
 
+    pre_chat_completed = pre.completed if isinstance(pre, SessionGoal) else frozenset()
     last = chat(message)
     active = getattr(session, "session_goal", None)
     if not isinstance(active, SessionGoal) or not session_goal_is_active(session):
@@ -293,15 +302,23 @@ def run_until_session_goal(
         )
         return SessionGoalRunResult(goal=synthetic, last_result=last, turn_count=1)
 
-    # ``/goal set`` attaches a host-owned goal mid-turn and queues autosubmit.
-    # That attach turn must not count against the budget or run evaluate —
-    # the next submitted condition is the first real session-goal turn.
+    # ``/goal set`` attaches a host-owned goal mid-turn. The attach turn must
+    # not count against the budget or run evaluate. The shell queues the
+    # condition as the next REPL submit. Headless hosts have no REPL, so the
+    # condition starts here as the first real session-goal turn.
     if not had_active_before and active.host_owned and active.turns_used == 0:
-        return SessionGoalRunResult(goal=active, last_result=last, turn_count=0)
+        if session_terminal(session) is not None:
+            return SessionGoalRunResult(goal=active, last_result=last, turn_count=0)
+        last = chat(active.condition)
+        stored = getattr(session, "session_goal", None)
+        if isinstance(stored, SessionGoal):
+            active = stored
 
     if active.turns_used == 0:
-        active = active.record_turn()
-        attach_session_goal(session, active)
+        # Evaluate must see this-turn tool ticks as new. Re-reading the session
+        # after chat would otherwise treat them as already completed.
+        active = replace(active, completed=pre_chat_completed, new_ticks=frozenset())
+        active = _record_goal_turn(session, active)
 
     active, last, stop = _finish_outer_turn(
         session,
@@ -328,8 +345,7 @@ def run_until_session_goal(
 
         _announce_working(session, active, on_progress)
         last = chat(continuation_prompt(active))
-        active = active.record_turn()
-        attach_session_goal(session, active)
+        active = _record_goal_turn(session, active)
         active, last, stop = _finish_outer_turn(
             session,
             active,

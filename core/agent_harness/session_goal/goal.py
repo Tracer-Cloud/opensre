@@ -3,15 +3,19 @@
 Attach via an explicit host call (:func:`attach_session_goal`) or the structured
 ``session_goal`` action tool. Do not detect goals by scanning user prose.
 
-Progress uses ``session_goal:done=<indices>`` in the assistant reply.
+Checklist ticks come from ``session_goal_complete``. Prose ``done=`` tags
+are stripped for display and are not a completion path.
+A cheap-model judge decides met / not yet / impossible.
 
 The host loop (:mod:`core.agent_harness.session_goal.run_until`) calls ``chat``
-until the goal is achieved, cleared, cancelled, or hits ``max_outer_turns``.
+until the goal is achieved, impossible, cleared, cancelled, or hits ``max_outer_turns``.
 
 Related leaf modules (import them directly — this module must not import them):
 
-* :mod:`core.agent_harness.session_goal.evaluate` — structured completion
-* :mod:`core.agent_harness.session_goal.confirm` — optional LLM confirm
+* :mod:`core.agent_harness.session_goal.evaluate` — host completion + evidence gate
+* :mod:`core.agent_harness.session_goal.judge` — cheap-model transcript verdict
+* :mod:`core.agent_harness.session_goal.validate` — newly ticked checklist items
+* :mod:`core.agent_harness.session_goal.confirm` — inject a specific judge LLM
 * :mod:`core.agent_harness.session_goal.progress` — progress / status-line formatting only
 * :mod:`core.agent_harness.session_goal.continuation` — session-goal continuation prompts
 * :mod:`core.agent_harness.session_goal.persist` — flush / restore
@@ -23,6 +27,7 @@ from __future__ import annotations
 
 import re
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -35,6 +40,7 @@ class SessionGoalStatus:
     ACTIVE = "active"
     PAUSED = "paused"
     ACHIEVED = "achieved"
+    IMPOSSIBLE = "impossible"
     CLEARED = "cleared"
     BUDGET_EXHAUSTED = "budget_exhausted"
     CANCELLED = "cancelled"
@@ -53,13 +59,13 @@ class SessionGoalReason:
     ACHIEVED_HOST_SET = "achieved (host-set goal)"
     ACHIEVED_GENERIC = "goal achieved"
     CHECKLIST_COMPLETE = "checklist complete"
-    # Short checklist + tools + reply in one turn, but the model forgot done= tags.
-    CHECKLIST_COMPLETE_SAME_TURN = "checklist complete (same-turn answer)"
+    IMPOSSIBLE = "impossible"
+    NEED_TOOL_EVIDENCE = "not yet: need successful tool work"
     WAITING_HOST_SIGNAL = "waiting for an achieved signal"
     WAITING_TOOL_EVIDENCE = "waiting for an achieved signal with tool evidence"
     WAITING_USER_CHOICE = "waiting for user choice"
     PAUSED_USER_CHOICE = "paused — waiting for your choice"
-    PAUSED_NO_PROGRESS = "paused — no checklist progress after 2 turns"
+    PAUSED_NO_PROGRESS = "paused — no progress after 2 turns"
     # Distinct from PAUSED_USER_CHOICE: user ran ``/goal pause`` (status=paused).
     PAUSED_BY_USER = "paused by you"
     BUDGET_EXHAUSTED = "session-goal turn budget exhausted"
@@ -117,6 +123,8 @@ _PROGRESS_TAG = re.compile(
 # Accidental paste of the interactive-shell prompt line into user text /
 # goal conditions (``[1] ❯ question`` → ``question``).
 _SHELL_PROMPT_CHROME = re.compile(r"^(?:\[\d+\]\s*)?❯\s+")
+# Numbered or bulleted steps already written into the condition.
+_CONDITION_STEPS = re.compile(r"(?:^|\n)\s*(?:\d+[\.)]|[-*])\s+(\S.+)")
 
 
 @dataclass(slots=True)
@@ -149,13 +157,13 @@ class SessionGoal:
     token_baseline_input: int = 0
     token_baseline_output: int = 0
     # True when attached via ``/goal set``. While ACTIVE or PAUSED, a new goal
-    # must not replace it. Host-owned condition-only goals may achieve on the
-    # ``session_goal:achieved`` tag without tool evidence (product rule for the
-    # slash path — agent-attached goals still require tools).
+    # must not replace it. ``GOAL_REACHED`` still requires successful tool work.
     host_owned: bool = False
     # ``turns_used`` when ``completed`` last grew. Stall detection compares
     # against this so a later plateau still pauses after two idle turns.
     last_progress_turns_used: int = 0
+    # Checklist indices added since the last evaluate. Ephemeral — not persisted.
+    new_ticks: frozenset[int] = frozenset()
 
     def with_status(self, status: str) -> SessionGoal:
         return replace(self, status=status)
@@ -166,9 +174,19 @@ class SessionGoal:
     def with_completed(self, completed: frozenset[int]) -> SessionGoal:
         if completed == self.completed:
             return self
-        if completed - self.completed:
-            return replace(self, completed=completed, last_progress_turns_used=self.turns_used)
-        return replace(self, completed=completed)
+        added = completed - self.completed
+        if added:
+            return replace(
+                self,
+                completed=completed,
+                last_progress_turns_used=self.turns_used,
+                new_ticks=added,
+            )
+        return replace(self, completed=completed, new_ticks=frozenset())
+
+    def with_tool_progress(self) -> SessionGoal:
+        """Mark this turn as progress so a later no-tool plateau can still stall."""
+        return replace(self, last_progress_turns_used=self.turns_used)
 
     def with_finding(self, finding: str) -> SessionGoal:
         """Append one turn's answer to what later turns are told."""
@@ -206,6 +224,21 @@ class SessionGoal:
         return unfinished[0] if unfinished else None
 
 
+def derive_session_goal_checklist(
+    condition: str,
+    items: Sequence[str] = (),
+) -> tuple[str, ...]:
+    """Checklist for a new goal: caller items, else steps in ``condition``, else the condition."""
+    provided = tuple(str(item).strip() for item in items if str(item).strip())
+    if provided:
+        return provided
+    found = tuple(match.group(1).strip() for match in _CONDITION_STEPS.finditer(condition))
+    if len(found) >= 2:
+        return found
+    text = condition.strip()
+    return (text,) if text else ()
+
+
 def build_session_goal(
     condition: str,
     *,
@@ -213,14 +246,14 @@ def build_session_goal(
     max_outer_turns: int | None = None,
 ) -> SessionGoal:
     """Build an active agent-attached goal from structured tool input."""
-    clean_items = tuple(item.strip() for item in checklist if item.strip())
-    max_turns = max(1, max_outer_turns) if max_outer_turns is not None else _DEFAULT_MAX_OUTER_TURNS
-    if clean_items and max_outer_turns is None:
-        max_turns = max(max_turns, len(clean_items))
     goal_condition = truncate_message(
         strip_shell_prompt_chrome(condition),
         MAX_GOAL_CONDITION_CHARS,
     )
+    clean_items = derive_session_goal_checklist(goal_condition, checklist)
+    max_turns = max(1, max_outer_turns) if max_outer_turns is not None else _DEFAULT_MAX_OUTER_TURNS
+    if clean_items and max_outer_turns is None:
+        max_turns = max(max_turns, len(clean_items))
     return SessionGoal(
         condition=goal_condition,
         max_outer_turns=max_turns,
@@ -381,7 +414,7 @@ def _done_indices_from_text(text: str) -> frozenset[int]:
 
 
 def apply_session_goal_progress(goal: SessionGoal, text: str) -> SessionGoal:
-    """Merge ``session_goal:done=…`` indices from ``text`` into ``goal.completed``."""
+    """Parse leftover ``session_goal:done=…`` tags. The host loop ignores them."""
     if not text:
         return goal
     newly = _done_indices_from_text(text)
@@ -429,6 +462,8 @@ def derive_session_goal_reason(goal: SessionGoal) -> str:
     """
     if goal.status == SessionGoalStatus.ACHIEVED:
         return SessionGoalReason.ACHIEVED_GENERIC
+    if goal.status == SessionGoalStatus.IMPOSSIBLE:
+        return goal.last_reason.strip() or SessionGoalReason.IMPOSSIBLE
     if goal.status == SessionGoalStatus.PAUSED:
         return SessionGoalReason.PAUSED_BY_USER
     if goal.status == SessionGoalStatus.BUDGET_EXHAUSTED:
@@ -465,6 +500,7 @@ __all__ = [
     "attach_session_goal",
     "build_session_goal",
     "clear_session_goal",
+    "derive_session_goal_checklist",
     "derive_session_goal_reason",
     "mark_session_goal_started",
     "refresh_session_goal_reason",

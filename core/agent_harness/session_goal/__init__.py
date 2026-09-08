@@ -6,8 +6,10 @@ Surfaces and hosts import leaves they need, or curated names from this package.
 Layout (import the leaf — this ``__init__`` must not create import cycles):
 
 * :mod:`goal` — domain state, attach/clear, reason derive
-* :mod:`evaluate` — structured host completion (claim ≠ proof)
-* :mod:`confirm` — optional LLM confirm
+* :mod:`judge` — cheap-model transcript verdict
+* :mod:`validate` — cheap-model check of newly ticked items
+* :mod:`evaluate` — host completion + evidence gate
+* :mod:`confirm` — inject a specific judge LLM
 * :mod:`progress` — progress / status-line formatting only
 * :mod:`continuation` — session-goal continuation prompts
 * :mod:`persist` — flush / restore

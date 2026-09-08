@@ -21,6 +21,7 @@ from core.agent_harness.spi.session_goal import (
     SessionGoalStatus,
     attach_session_goal,
     clear_session_goal,
+    derive_session_goal_checklist,
     format_session_goal_progress,
     session_goal_is_active,
     session_goal_is_attached,
@@ -108,11 +109,14 @@ def _set(session: Session, console: Console, args: list[str]) -> bool:
     if not condition:
         _print_set_usage(console)
         return True
+    checklist = derive_session_goal_checklist(condition)
     goal = SessionGoal(
         condition=condition,
         max_outer_turns=max_turns,
         status=SessionGoalStatus.ACTIVE,
         host_owned=True,
+        checklist=checklist,
+        step_count=len(checklist) or None,
     )
     goal = attach_session_goal(session, goal)
     # Setting starts work immediately: queue the condition on the REPL loop

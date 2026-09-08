@@ -89,7 +89,8 @@ def test_goal_stalls_after_two_turns_without_a_new_tick() -> None:
         )
         is False
     )
-    assert goal_has_stalled(_goal(turns_used=4)) is False
+    assert goal_has_stalled(_goal(turns_used=4)) is True
+    assert goal_has_stalled(_goal(turns_used=4, last_progress_turns_used=4)) is False
 
 
 def test_a_new_tick_records_the_turn_so_later_plateaus_can_stall() -> None:
@@ -110,7 +111,7 @@ def test_a_stalled_goal_pauses_and_offers_the_ways_forward_as_a_menu() -> None:
 
     # Assert: paused with a plain reason, menu queued, its options run goal commands.
     assert paused.status == "paused"
-    assert "no checklist progress" in paused.last_reason
+    assert "no progress" in paused.last_reason
     assert painted and painted[-1].status == "paused"
     choice = session.pending_user_choice
     assert choice is not None

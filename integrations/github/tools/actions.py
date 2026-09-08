@@ -393,6 +393,11 @@ def _map_list_github_actions_workflow_runs(
             "branch": {"type": "string", "default": ""},
             "status": {"type": "string", "default": ""},
             "event": {"type": "string", "default": ""},
+            "head_sha": {
+                "type": "string",
+                "default": "",
+                "description": "Only return runs for this commit SHA.",
+            },
             "per_page": {"type": "integer", "default": 30},
             "window_hours": {
                 "type": "integer",
@@ -424,6 +429,7 @@ def list_github_actions_workflow_runs(
     branch: str = "",
     status: str = "",
     event: str = "",
+    head_sha: str = "",
     per_page: int = 30,
     window_hours: int = NO_RUN_WINDOW,
     github_url: str | None = None,
@@ -452,6 +458,8 @@ def list_github_actions_workflow_runs(
         workflow_runs_filter["status"] = status
     if event:
         workflow_runs_filter["event"] = event
+    if head_sha:
+        workflow_runs_filter["head_sha"] = head_sha
 
     arguments: dict[str, Any] = {
         "method": "list_workflow_runs",
@@ -490,6 +498,7 @@ def list_github_actions_workflow_runs(
     payload["branch"] = branch
     payload["status"] = status
     payload["event"] = event
+    payload["head_sha"] = head_sha
 
     return payload
 

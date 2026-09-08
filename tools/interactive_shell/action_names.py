@@ -35,6 +35,7 @@ class ActionToolName(StrEnum):
     FIX_SENTRY_ISSUE_START = "fix_sentry_issue_start"
     LLM_SET_PROVIDER = "llm_set_provider"
     PROPOSE_SCHEDULED_DELIVERY = "propose_scheduled_delivery"
+    SESSION_GOAL_COMPLETE = "session_goal_complete"
     SESSION_GOAL_SET = "session_goal_set"
     SHELL_RUN = "shell_run"
     SKILL_VIEW = "skill_view"

@@ -15,7 +15,9 @@ from __future__ import annotations
 
 from core.agent_harness.session.session_core import SessionCore
 from core.agent_harness.session_goal.continuation import continuation_prompt
+from core.agent_harness.session_goal.evaluate import evaluate_session_goal
 from core.agent_harness.session_goal.goal import SessionGoal
+from core.agent_harness.session_goal.judge import SessionGoalJudgeVerdict
 from core.agent_harness.session_goal.run_until import run_until_session_goal
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
 
@@ -104,6 +106,16 @@ def test_a_tool_less_turn_still_hands_its_answer_to_the_next_turn() -> None:
         goal=SessionGoal(
             condition="how many github actions runs failed in the last 24 hours?",
             max_outer_turns=3,
+        ),
+        evaluate=lambda goal, result, *, session=None: (
+            evaluate_session_goal(
+                goal,
+                result,
+                session=session,
+                judge=lambda **_kw: SessionGoalJudgeVerdict(
+                    verdict="NOT_REACHED", reason="need a live Actions query"
+                ),
+            ).status
         ),
     )
 

@@ -157,15 +157,13 @@ A goal belongs to the session it was set in and is restored with it, so a goal
 you set in the shell is still there after `/resume`.
 
 Goals are remembered in chat transports such as Slack and Telegram as well, and
-the same status line appears in the timeline while OpenSRE works. One difference
-matters there: `/goal set` does **not** start the work on its own. OpenSRE stores
-the goal and replies with a hint to run the condition in the interactive shell,
-and the goal sits at turn 0 until you send your next message — that message
-becomes the first turn, and continuation proceeds normally from there.
+the same status line appears in the timeline while OpenSRE works. `/goal set`
+starts the condition on that turn — the same as the interactive shell — and
+continuation proceeds from there.
 
 <Note>
-  Set goals from the interactive shell when you want the work to begin
-  immediately without sending a follow-up message.
+  After `/goal set`, OpenSRE begins the work immediately. You do not need a
+  follow-up message to start the first turn.
 </Note>
 
 ## Related docs
