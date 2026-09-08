@@ -166,18 +166,38 @@ def _chat_or_pause(
     except Exception:
         active = getattr(session, "session_goal", None)
         if isinstance(active, SessionGoal) and active.status == SessionGoalStatus.ACTIVE:
-            paused = active.with_status(SessionGoalStatus.PAUSED).with_reason(
-                SessionGoalReason.PAUSED_TURN_FAILED
-            )
-            # State first, then the host paint: a failing paint must neither
-            # leave the goal active nor mask the turn error being re-raised.
-            attach_session_goal(session, paused)
-            _clear_host_autosubmit(session)
-            try:
-                _paint(session, paused, on_progress, rederive=False)
-            except Exception:
-                log.debug("session-goal pause paint failed", exc_info=True)
+            _pause_failed_turn(session, active, on_progress)
         raise
+
+
+def _pause_failed_turn(
+    session: Any, active: SessionGoal, on_progress: ProgressFn | None
+) -> SessionGoal:
+    """Pause the goal because its turn failed; state first, then the host paint.
+
+    A failing paint must neither leave the goal active nor mask the turn
+    error the caller is about to re-raise.
+    """
+    paused = active.with_status(SessionGoalStatus.PAUSED).with_reason(
+        SessionGoalReason.PAUSED_TURN_FAILED
+    )
+    attach_session_goal(session, paused)
+    _clear_host_autosubmit(session)
+    try:
+        _paint(session, paused, on_progress, rederive=False)
+    except Exception:
+        log.debug("session-goal pause paint failed", exc_info=True)
+    return paused
+
+
+def _turn_did_not_run(result: TurnResult) -> bool:
+    """True when the action phase never ran: the driver caught the model call's failure.
+
+    A rejected key or a provider outage comes back as a normal result marked
+    ``not_run`` instead of an exception, so the loop must read the mark or it
+    retries the same failure until the budget is gone.
+    """
+    return getattr(result.action_result, "accounting_status", "") == "not_run"
 
 
 def _clear_host_autosubmit(session: Any) -> None:
@@ -199,6 +219,9 @@ def _finish_outer_turn(
         active = _paint(session, active, on_progress)
         _clear_host_autosubmit(session)
         return active, last, True
+
+    if _turn_did_not_run(last):
+        return _pause_failed_turn(session, active, on_progress), last, True
 
     if getattr(session, "pending_user_choice", None) is not None:
         active = active.with_reason(SessionGoalReason.PAUSED_USER_CHOICE)

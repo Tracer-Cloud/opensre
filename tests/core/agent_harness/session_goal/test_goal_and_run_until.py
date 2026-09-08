@@ -364,3 +364,34 @@ def test_a_goal_turn_that_raises_pauses_the_goal_before_the_error_propagates() -
     assert stored.status == SessionGoalStatus.PAUSED
     assert stored.last_reason == SessionGoalReason.PAUSED_TURN_FAILED
     assert painted[-1] == SessionGoalStatus.PAUSED
+
+
+def test_a_goal_turn_the_driver_could_not_run_pauses_the_goal_instead_of_retrying() -> None:
+    # Arrange: the action driver swallowed a rejected key and returned a not_run result.
+    from core.agent_harness.session_goal.goal import SessionGoalReason
+
+    session = SessionCore()
+    turns: list[str] = []
+
+    def _chat(message: str) -> TurnResult:
+        turns.append(message)
+        return TurnResult(
+            final_intent="cli_agent_handled",
+            action_result=ToolCallingTurnResult(
+                0, 0, 0, True, True, response_text="key rejected", accounting_status="not_run"
+            ),
+            assistant_response_text="",
+        )
+
+    # Act
+    outcome = run_until_session_goal(
+        _chat,
+        session,
+        "count the open PRs",
+        goal=SessionGoal(condition="count the open PRs", max_outer_turns=4),
+    )
+
+    # Assert: one turn, paused with the failure reason, no continuation into the same error.
+    assert turns == ["count the open PRs"]
+    assert outcome.goal.status == SessionGoalStatus.PAUSED
+    assert outcome.goal.last_reason == SessionGoalReason.PAUSED_TURN_FAILED
