@@ -44,6 +44,18 @@ def test_a_checklist_comes_from_numbered_steps_or_explicit_items_only() -> None:
     )
     # Numbers that are not a 1, 2, 3 sequence are prose, not steps.
     assert derive_session_goal_checklist("compare v2. 0 with 3. 1 quickly") == ()
+    # An inline ``1.`` mid-sentence is prose; after a colon it opens a list.
+    assert derive_session_goal_checklist("fix the build then 1. rerun 2. report") == ()
+    assert derive_session_goal_checklist("Do this: 1. rerun the job 2. report the result") == (
+        "rerun the job",
+        "report the result",
+    )
+    assert derive_session_goal_checklist("Steps;1) rerun 2) report") == ("rerun", "report")
+    # Parenthesised markers are unambiguous anywhere.
+    assert derive_session_goal_checklist("please (1) rerun the job and (2) report") == (
+        "rerun the job and",
+        "report",
+    )
     assert derive_session_goal_checklist(
         "Do this:\n1. list the goal\n2. name step one\n3. confirm done"
     ) == ("list the goal", "name step one", "confirm done")

@@ -108,8 +108,12 @@ _DEFAULT_MAX_OUTER_TURNS = 5
 _SHELL_PROMPT_CHROME = re.compile(r"^(?:\[\d+\]\s*)?❯\s+")
 # Bulleted steps on their own lines: ``- item`` / ``* item``.
 _BULLET_STEPS = re.compile(r"(?:^|\n)\s*[-*]\s+(\S.+)")
-# A step number anywhere: ``1. ``, ``2) ``, ``(3) `` — at a line start or after a space.
-_STEP_NUMBER = re.compile(r"(?:^|(?<=\s))\(?(\d+)[.)]\s+")
+# A step number: ``1. ``, ``2) ``, ``(3) `` — at a line start, after a space,
+# or straight after a colon or semicolon. ``group(1)`` is the opening
+# parenthesis when the marker is ``(n)``.
+_STEP_NUMBER = re.compile(r"(?:^|(?<=[\s:;]))(\()?(\d+)[.)]\s+")
+# Where an inline enumeration may begin: after these, ``1. …`` is a list, not prose.
+_LIST_LEAD_PUNCTUATION = (":", ";")
 
 
 @dataclass(slots=True)
@@ -217,12 +221,25 @@ class SessionGoal:
         return unfinished[0] if unfinished else None
 
 
+def _starts_a_list(condition: str, first: re.Match[str]) -> bool:
+    """True when the first marker sits where an enumeration can begin.
+
+    ``(1)`` is unambiguous anywhere. ``1.`` / ``1)`` count only at the start of
+    the condition, at a line start, or after a colon or semicolon — a ``1.``
+    in the middle of a sentence is prose.
+    """
+    if first.group(1):
+        return True
+    lead = condition[: first.start()].rstrip(" \t")
+    return not lead or lead.endswith("\n") or lead.endswith(_LIST_LEAD_PUNCTUATION)
+
+
 def _numbered_steps(condition: str) -> tuple[str, ...]:
     """Steps numbered 1, 2, 3… in order, on one line or several; else nothing."""
     marks = list(_STEP_NUMBER.finditer(condition))
-    if len(marks) < 2:
+    if len(marks) < 2 or not _starts_a_list(condition, marks[0]):
         return ()
-    if [int(mark.group(1)) for mark in marks] != list(range(1, len(marks) + 1)):
+    if [int(mark.group(2)) for mark in marks] != list(range(1, len(marks) + 1)):
         return ()
     items: list[str] = []
     for position, mark in enumerate(marks):
@@ -238,8 +255,11 @@ def derive_session_goal_checklist(
     """Checklist for a new goal: caller items, else two or more steps written into ``condition``.
 
     Steps are ``1. … 2. …`` (also ``1)`` / ``(1)``, inline or one per line) or
-    bulleted lines. A single-item checklist would only echo the condition, so a
-    condition without enumerated steps gets no checklist and the judge alone decides.
+    bulleted lines. An inline ``1.`` counts only where a list can begin: the
+    start of the condition, a line start, or after a colon or semicolon;
+    ``(1)`` counts anywhere. A single-item checklist would only echo the
+    condition, so a condition without enumerated steps gets no checklist and
+    the judge alone decides.
     """
     provided = tuple(str(item).strip() for item in items if str(item).strip())
     if provided:
