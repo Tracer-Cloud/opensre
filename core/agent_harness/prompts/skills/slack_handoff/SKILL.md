@@ -9,6 +9,17 @@ description: >-
   in this flow. Multi-step; load before acting.
 getting_started: Connect OpenSRE to Slack and hand off DevOps chores for your team
 demo_order: 3
+metadata:
+  owner: Tracer Team
+  usecases:
+    - First-experience demo: connect OpenSRE to Slack and show the handoff path
+    - Verify Slack is configured, then run the Slack setup wizard if it is missing
+    - Explain how a team hands off DevOps chores from a Slack mention or DM
+  requires:
+    - Slack workspace the user can add the OpenSRE bot to
+    - Interactive terminal for `/integrations setup slack` when Slack is not configured
+  type: onboarding
+  version: "1.0"
 tools:
   - cli_exec
   - slash_invoke
