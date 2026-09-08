@@ -164,3 +164,34 @@ def test_structured_llm_not_reached_does_not_false_complete() -> None:
     )
     assert status.status == SessionGoalStatus.ACTIVE
     assert "SHA" in status.reason
+
+
+def test_the_judge_is_told_to_reject_a_self_contradicting_reply() -> None:
+    """A summary that disagrees with its own table must not pass as met."""
+    # Arrange: a client that records the system prompt it is given.
+    from core.agent_harness.session_goal.judge import invoke_session_goal_judge
+
+    seen: dict[str, str] = {}
+
+    class _LLM:
+        model_id = "test"
+
+        def invoke(self, messages, *, system=None, tools=None):  # noqa: ANN001
+            _ = (messages, tools)
+            seen["system"] = system or ""
+            return AgentLLMResponse(content='{"verdict": "NOT_REACHED", "reason": "table says 1"}')
+
+        def tool_schemas(self, tools):  # noqa: ANN001
+            _ = tools
+            return []
+
+    # Act
+    invoke_session_goal_judge(
+        _LLM(),  # type: ignore[arg-type]
+        condition="table of five PRs",
+        reply="Found 3 with re-runs. | #1 | Yes | #2 | No |",
+        evidence=True,
+    )
+
+    # Assert
+    assert "contradicts itself" in seen["system"]

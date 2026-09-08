@@ -8,8 +8,9 @@ user prose.
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
+from types import MappingProxyType
 from typing import Any
 
 from core.agent_harness.session.pending_choice import PendingUserChoice
@@ -33,7 +34,7 @@ from core.agent_harness.session_goal.goal import (
     session_goal_is_active,
     session_goal_is_paused,
 )
-from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
+from core.agent_harness.turns.turn_results import TurnResult
 
 log = logging.getLogger(__name__)
 
@@ -41,20 +42,6 @@ ChatFn = Callable[[str], TurnResult]
 EvaluateFn = Callable[..., str]
 CancelFn = Callable[[], bool]
 ProgressFn = Callable[[SessionGoal], None]
-
-
-def _empty_turn_result() -> TurnResult:
-    return TurnResult(
-        final_intent="cli_agent_handled",
-        action_result=ToolCallingTurnResult(
-            planned_count=0,
-            executed_count=0,
-            executed_success_count=0,
-            has_unhandled_clause=False,
-            handled=True,
-        ),
-        assistant_response_text="",
-    )
 
 
 def _record_goal_turn(session: Any, active: SessionGoal) -> SessionGoal:
@@ -96,6 +83,35 @@ def _paint(
     return painted
 
 
+def _end(
+    session: Any,
+    goal: SessionGoal,
+    status: str,
+    on_progress: ProgressFn | None,
+    *,
+    reason: str | None = None,
+) -> SessionGoal:
+    """Leave the continuation loop: store the state, drop queued work, then tell the host.
+
+    ``reason`` keeps a verdict the host should show (achieved, impossible, a
+    failed turn); without one the reason is derived from ``status``. State is
+    stored before the paint so a failing host paint can neither leave the goal
+    running nor mask an error the caller is about to re-raise.
+    """
+    ended = goal.with_status(status)
+    if reason is not None:
+        ended = ended.with_reason(reason)
+    else:
+        ended = refresh_session_goal_reason(ended)
+    attach_session_goal(session, ended)
+    clear_pending_autosubmit(session)
+    try:
+        _paint(session, ended, on_progress, rederive=False)
+    except Exception:
+        log.debug("session-goal end paint failed", exc_info=True)
+    return ended
+
+
 def _announce_working(
     session: Any,
     active: SessionGoal,
@@ -116,7 +132,9 @@ _NO_PROGRESS_TURNS = 2
 STALL_MENU_TITLE = "The goal made no progress in 2 turns. How should I continue?"
 STALL_OPTION_MORE = "Keep going for one more turn"
 STALL_OPTION_STOP = "Stop here; the work above is enough"
-STALL_COMMANDS = {STALL_OPTION_MORE: "/goal resume", STALL_OPTION_STOP: "/goal clear"}
+STALL_COMMANDS: Mapping[str, str] = MappingProxyType(
+    {STALL_OPTION_MORE: "/goal resume", STALL_OPTION_STOP: "/goal clear"}
+)
 
 
 def goal_has_stalled(goal: SessionGoal) -> bool:
@@ -136,11 +154,13 @@ def pause_for_no_progress(
     or typed guidance (the custom row). Headless hosts have no ``/choose``
     handler, so they only pause and return.
     """
-    paused = active.with_status(SessionGoalStatus.PAUSED).with_reason(
-        SessionGoalReason.PAUSED_NO_PROGRESS
+    paused = _end(
+        session,
+        active,
+        SessionGoalStatus.PAUSED,
+        on_progress,
+        reason=SessionGoalReason.PAUSED_NO_PROGRESS,
     )
-    paused = _paint(session, paused, on_progress, rederive=False)
-    _clear_host_autosubmit(session)
     if session_terminal(session) is None:
         return paused
     session.pending_user_choice = PendingUserChoice(
@@ -173,21 +193,14 @@ def _chat_or_pause(
 def _pause_failed_turn(
     session: Any, active: SessionGoal, on_progress: ProgressFn | None
 ) -> SessionGoal:
-    """Pause the goal because its turn failed; state first, then the host paint.
-
-    A failing paint must neither leave the goal active nor mask the turn
-    error the caller is about to re-raise.
-    """
-    paused = active.with_status(SessionGoalStatus.PAUSED).with_reason(
-        SessionGoalReason.PAUSED_TURN_FAILED
+    """Pause the goal because its turn failed, so the next message does not resume into it."""
+    return _end(
+        session,
+        active,
+        SessionGoalStatus.PAUSED,
+        on_progress,
+        reason=SessionGoalReason.PAUSED_TURN_FAILED,
     )
-    attach_session_goal(session, paused)
-    _clear_host_autosubmit(session)
-    try:
-        _paint(session, paused, on_progress, rederive=False)
-    except Exception:
-        log.debug("session-goal pause paint failed", exc_info=True)
-    return paused
 
 
 def _turn_did_not_run(result: TurnResult) -> bool:
@@ -200,11 +213,6 @@ def _turn_did_not_run(result: TurnResult) -> bool:
     return getattr(result.action_result, "accounting_status", "") == "not_run"
 
 
-def _clear_host_autosubmit(session: Any) -> None:
-    """Drop any queued shell autosubmit when the session goal stops continuing."""
-    clear_pending_autosubmit(session)
-
-
 def _finish_outer_turn(
     session: Any,
     active: SessionGoal,
@@ -215,10 +223,7 @@ def _finish_outer_turn(
 ) -> tuple[SessionGoal, TurnResult, bool]:
     """Evaluate → single paint. Returns ``(goal, result, stop)``."""
     if last.cancelled:
-        active = active.with_status(SessionGoalStatus.CANCELLED)
-        active = _paint(session, active, on_progress)
-        _clear_host_autosubmit(session)
-        return active, last, True
+        return _end(session, active, SessionGoalStatus.CANCELLED, on_progress), last, True
 
     if _turn_did_not_run(last):
         return _pause_failed_turn(session, active, on_progress), last, True
@@ -251,18 +256,14 @@ def _finish_outer_turn(
     if active.status != next_status:
         active = active.with_status(next_status)
         attach_session_goal(session, active)
-    last = last
 
     if next_status != SessionGoalStatus.ACTIVE:
-        active = _paint(session, active, on_progress, rederive=False)
-        _clear_host_autosubmit(session)
-        return active, last, True
+        ended = _end(session, active, next_status, on_progress, reason=active.last_reason)
+        return ended, last, True
 
     if active.turns_used >= active.max_outer_turns:
-        active = active.with_status(SessionGoalStatus.BUDGET_EXHAUSTED)
-        active = _paint(session, active, on_progress)
-        _clear_host_autosubmit(session)
-        return active, last, True
+        ended = _end(session, active, SessionGoalStatus.BUDGET_EXHAUSTED, on_progress)
+        return ended, last, True
 
     if goal_has_stalled(active):
         active = pause_for_no_progress(session, active, on_progress)
@@ -366,15 +367,11 @@ def run_until_session_goal(
 
     while active.status == SessionGoalStatus.ACTIVE:
         if cancel_requested is not None and cancel_requested():
-            active = active.with_status(SessionGoalStatus.CANCELLED)
-            active = _paint(session, active, on_progress)
-            _clear_host_autosubmit(session)
+            active = _end(session, active, SessionGoalStatus.CANCELLED, on_progress)
             break
 
         if active.turns_used >= active.max_outer_turns:
-            active = active.with_status(SessionGoalStatus.BUDGET_EXHAUSTED)
-            active = _paint(session, active, on_progress)
-            _clear_host_autosubmit(session)
+            active = _end(session, active, SessionGoalStatus.BUDGET_EXHAUSTED, on_progress)
             break
 
         _announce_working(session, active, on_progress)
@@ -390,9 +387,6 @@ def run_until_session_goal(
         if stop:
             break
 
-    if last is None:
-        last = _empty_turn_result()
-
     stored = getattr(session, "session_goal", None)
     if isinstance(stored, SessionGoal):
         active = stored
@@ -407,5 +401,4 @@ def run_until_session_goal(
 __all__ = [
     "SessionGoalRunResult",
     "run_until_session_goal",
-    "session_goal_is_active",
 ]
