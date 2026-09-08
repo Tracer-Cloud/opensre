@@ -17,7 +17,8 @@ import shutil
 import subprocess
 import sys
 
-from config.constants import SOUND_NOTIFICATIONS_ENV
+from config.constants import SOUND_NOTIFICATIONS_ENV, TERM_PROGRAM_ENV
+from config.constants.terminal_host import APPLE_TERMINAL_PROGRAM
 
 _TRUTHY = {"1", "true", "yes", "on"}
 
@@ -25,7 +26,7 @@ _TRUTHY = {"1", "true", "yes", "on"}
 # frontmost app means this window is not focused. The same app does not prove
 # this window is frontmost (another window of iTerm/Code/… may be).
 _TERM_PROGRAM_APP = {
-    "Apple_Terminal": "Terminal",
+    APPLE_TERMINAL_PROGRAM: "Terminal",
     "iTerm.app": "iTerm2",
     "vscode": "Code",
     "WarpTerminal": "Warp",
@@ -91,7 +92,7 @@ def terminal_is_focused() -> bool | None:
     front = _macos_frontmost_app()
     if front is None:
         return None
-    ours = _TERM_PROGRAM_APP.get(os.environ.get("TERM_PROGRAM", ""))
+    ours = _TERM_PROGRAM_APP.get(os.environ.get(TERM_PROGRAM_ENV, ""))
     if ours is None or front == ours:
         return None
     return False

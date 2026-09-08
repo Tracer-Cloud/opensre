@@ -409,6 +409,8 @@ EXPORTS: dict[str, str] = {
     "OPENSRE_SIZE_PROFILE_ENV": "turn_concurrency",
     # twilio
     "TWILIO_ACCOUNT_SID_ENV": "twilio",
+    "TERM_PROGRAM_ENV": "terminal_host",
+    "APPLE_TERMINAL_PROGRAM": "terminal_host",
     "TWILIO_AUTH_TOKEN_ENV": "twilio",
     "TWILIO_SMS_DEFAULT_TO_ENV": "twilio",
     "TWILIO_SMS_FROM_ENV": "twilio",

@@ -989,6 +989,12 @@ if TYPE_CHECKING:
     from config.constants.tenancy import (
         INTEGRATIONS_STORE_PATH_ENV as INTEGRATIONS_STORE_PATH_ENV,
     )
+    from config.constants.terminal_host import (
+        APPLE_TERMINAL_PROGRAM as APPLE_TERMINAL_PROGRAM,
+    )
+    from config.constants.terminal_host import (
+        TERM_PROGRAM_ENV as TERM_PROGRAM_ENV,
+    )
     from config.constants.tooling import (
         DEFAULT_APPROVAL_EXPIRY_SECONDS as DEFAULT_APPROVAL_EXPIRY_SECONDS,
     )

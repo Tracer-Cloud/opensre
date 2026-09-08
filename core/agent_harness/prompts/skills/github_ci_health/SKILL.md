@@ -5,6 +5,17 @@ description: >-
   repository, optionally narrowed to a branch or pull request. Not for CI/CD
   performance, reliability KPIs, failure rates, or downtime over a period
   (use cicd-analytics-demo).
+metadata:
+  owner: Tracer Team
+  usecases:
+    - Report the checks failing right now for one repository, branch, or pull request
+    - Unattended recurring CI health report delivered to the shell inbox or a chat channel
+    - Hand off a failing check to the interactive repair flow
+  requires:
+    - GitHub token usable by OpenSRE with read access to the repository
+    - Configured repository owner and name (a schedule must supply both)
+  type: report
+  version: "1.1"
 recurring: unattended
 ---
 

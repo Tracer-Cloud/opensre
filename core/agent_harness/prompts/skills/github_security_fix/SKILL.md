@@ -3,6 +3,17 @@ name: github-security-fix
 description: >-
   Remediate GitHub security / Dependabot / CodeQL / code-quality alerts via
   fix_github_security_alert
+metadata:
+  owner: Tracer Team
+  usecases:
+    - Remediate Dependabot, CodeQL, and code-quality alerts and raise a pull request
+    - Fix the findings behind a security alert URL or a security and quality page URL
+  requires:
+    - GitHub account with write access to the target repository
+    - GitHub token usable by OpenSRE with security-events read access
+    - Installed and authenticated coding agent
+  type: repair
+  version: "1.0"
 ---
 ══════════════════════════════════════════════════════════
 GITHUB SECURITY AND QUALITY FIX SKILL — interactive-shell action agent:

@@ -7,7 +7,7 @@ description: >-
   failed prerequisites, demos, or action-shaped requests to onboard the user
   onto the local CI/CD fixing flow. Multi-step; load before acting.
 metadata:
-  owner: Vincent
+  owner: Tracer Team
   usecases:
     - Onboarding new users to the github-ci-fix skill
     - First-time setup of local CLI and GitHub authentication

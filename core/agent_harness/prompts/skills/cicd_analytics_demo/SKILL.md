@@ -9,6 +9,18 @@ description: >-
   performance", "how reliable is our CI", "what does flaky CI cost us". Not for
   listing currently failing checks (github-ci-health). Multi-step; load before
   acting.
+metadata:
+  owner: Tracer Team
+  usecases:
+    - First-experience demo: scan the machine, pick a repository, analyze its CI/CD
+    - CI/CD reliability KPIs for one repository over the last 30 days
+    - Developer time blocked by unreliable CI, estimated bottom-up per merged PR
+    - Scheduling the weekday CI reliability report to this shell
+  requires:
+    - GitHub token usable by OpenSRE with read access to the repository's Actions history
+    - A local git checkout for the workspace scan (optional; a named repository also works)
+  type: analytics
+  version: "1.1"
 tools:
   - scan_local_git_workspace
   - analyze_github_ci_reliability

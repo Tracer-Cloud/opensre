@@ -13,6 +13,10 @@ To create a new skill:
    "Multi-step; load before acting." for data-dependent chains.
 5. Add `recurring: <human schedule>` (e.g. "weekdays 09:00") only when the
    skill ends with a propose_scheduled_delivery offer using kind recurring_skill.
+   Fill the `metadata` block: `owner`, `usecases` (what a user asks for),
+   `requires` (accounts, tokens, local state), `type` (onboarding, analytics,
+   report, repair, audit), `version`, and `prerequisite_for` when another
+   skill must run first. The loader ignores it; people and the docs read it.
 6. Optional report template: a sibling file named <folder>_report.md is
    appended automatically to the body that skill_view returns.
 7. Section order below is the house style (see github_ci_fix for a
@@ -24,6 +28,14 @@ name: <kebab-case-name>
 description: >-
   <One or two lines for the compact index: what the skill does and the main
   tool(s) it uses. Add "Multi-step; load before acting." if data-dependent.>
+metadata:
+  owner: <person or team>
+  usecases:
+    - <What a user asks for that this skill answers>
+  requires:
+    - <Account, token, or local state the skill needs>
+  type: <onboarding | analytics | report | repair | audit>
+  version: "1.0"
 ---
 ══════════════════════════════════════════════════════════
 <UPPERCASE SKILL TITLE> SKILL — interactive-shell action agent:

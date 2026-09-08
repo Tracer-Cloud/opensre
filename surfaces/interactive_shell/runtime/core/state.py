@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from prompt_toolkit.application.current import get_app_or_none
 
 from infrastructure.terminal import theme as ui_theme
+from infrastructure.terminal.spinner_frames import BRAILLE_SPINNER_FRAMES, spinner_frames
 from surfaces.shared.terminal.components.token_format import (
     _CHARS_PER_TOKEN,
     format_token_count_short,
@@ -225,7 +226,9 @@ class ReplState:
 class SpinnerState:
     """Mutable state read by prompt callbacks for toolbar + inline spinner."""
 
-    _SPINNER_FRAMES = ("⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏")
+    # Braille by default; the host picks the set at construction (see
+    # ``infrastructure.terminal.spinner_frames``) for terminals that draw braille badly.
+    _SPINNER_FRAMES: tuple[str, ...] = BRAILLE_SPINNER_FRAMES
     # One glyph advance per interval of *elapsed time*. The frame must be a
     # pure function of the clock, never of how often the prompt message
     # callback runs: prompt_toolkit evaluates the message several times per
@@ -244,7 +247,9 @@ class SpinnerState:
     # Traveling light wave across the status sentence (Cursor / Droid style).
     _SHIMMER_PERIOD_SECONDS = 1.5
 
-    def __init__(self) -> None:
+    def __init__(self, frames: tuple[str, ...] | None = None) -> None:
+        if frames:
+            self._SPINNER_FRAMES = tuple(frames)
         self.streaming: bool = False
         self.started_at: float = 0.0
         self.bytes_in: int = 0
@@ -412,7 +417,7 @@ def create_repl_mutable_state(
     """Return the canonical initial mutable state objects for a REPL runtime."""
     return ReplMutableState(
         state=state if state is not None else ReplState(),
-        spinner=spinner if spinner is not None else SpinnerState(),
+        spinner=spinner if spinner is not None else SpinnerState(frames=spinner_frames()),
     )
 
 
