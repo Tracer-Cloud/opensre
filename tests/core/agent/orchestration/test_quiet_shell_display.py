@@ -531,3 +531,20 @@ def test_plan_snapshots_are_stripped_from_the_reply() -> None:
     assert "Repository: /Users/x/opensre" in shown
     assert "Plan ·" not in shown
     assert "✓ Inspect path" not in shown
+
+
+def test_tool_reply_text_is_shown_when_the_model_closing_is_dropped_for_it() -> None:
+    # Arrange: the observer already nested results inline and the tool carries
+    # its own reply (a schedule card); the model's closing is dropped for it.
+    card = "Scheduled: CI reliability check · o/r\nRuns weekdays at 08:00 UTC."
+    call = ToolCall(id="1", name="schedule_ci_reliability_loop", input={"owner": "o", "repo": "r"})
+    result = _Result(tool_results=[(call, _ToolResult(_payload(card)))], final_text="Done.")
+    session = _Session()
+    session.terminal.inline_tool_results = True  # type: ignore[attr-defined]
+
+    # Act
+    _response_text, display_chunks, _use_final_text = _compose_response(result, session, _counts(1))
+
+    # Assert: the card is the visible closing, not an empty turn.
+    shown = "\n".join(display_chunks)
+    assert "Scheduled: CI reliability check" in shown

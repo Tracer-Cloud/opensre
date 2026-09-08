@@ -211,6 +211,14 @@ def _stash_collapsed_tool_output(session: SessionState, text: str | None) -> Non
         terminal.collapsed_tool_output = text
 
 
+def _preferred_tool_response_texts(result: Any) -> str:
+    texts = [
+        preferred_tool_response_text(tool_result)
+        for _tool_call, tool_result in _generic_tool_results(result)
+    ]
+    return "\n\n".join(text for text in texts if text)
+
+
 def _has_preferred_tool_response_text(result: Any) -> bool:
     return any(
         bool(preferred_tool_response_text(tool_result))
@@ -714,6 +722,11 @@ def _compose_response(
     if already_inline and terminal is not None:
         terminal.inline_tool_results = False
         display_generic = ""
+    if prefer_tool_response_text and not display_final and not display_generic:
+        # A tool that ships its own reply text (a schedule card, a report
+        # summary) is the closing when the model's is dropped for it; otherwise
+        # the turn ends with nothing visible after the call list.
+        display_final = _preferred_tool_response_texts(result)
     is_json = looks_like_json(generic_text)
     body, markers = split_output_truncation_markers(display_generic)
     truncated = bool(markers)
