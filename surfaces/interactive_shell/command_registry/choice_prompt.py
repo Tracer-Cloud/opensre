@@ -67,6 +67,12 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
 
     option_choices = [(option, option) for option in items[0].options]
     option_choices.append((CUSTOM_OPTION, CUSTOM_OPTION))
+    custom_answer = False
+
+    def mark_custom_answer() -> None:
+        nonlocal custom_answer
+        custom_answer = True
+
     # Custom row: type in place on the OpenSRE option array (Droid-style).
     picked_one = repl_choose_one(
         title=items[0].title,
@@ -76,8 +82,9 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
         header="Ask User",
         letter_keys=True,
         note=pending.note,
+        on_custom_answer=mark_custom_answer,
     )
-    capture_onboarding_choice(session.active_skill, picked_one)
+    capture_onboarding_choice(session.active_skill, picked_one, custom=custom_answer)
     if picked_one is None:
         console.print(f"[{ui_theme.DIM}]Selection cancelled — type a reply instead.[/]")
         session.terminal.awaiting_handoff_answer = False

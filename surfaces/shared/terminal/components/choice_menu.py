@@ -14,6 +14,7 @@ import os
 import shutil
 import sys
 import textwrap
+from collections.abc import Callable
 from typing import Literal
 
 from rich.console import Console
@@ -599,6 +600,7 @@ def repl_choose_one(
     letter_keys: bool = False,
     numbered: bool = True,
     note: str = "",
+    on_custom_answer: Callable[[], None] | None = None,
 ) -> str | None:
     """Show an inline erasing arrow-key menu; return selected value or None on Esc.
 
@@ -613,6 +615,8 @@ def repl_choose_one(
 
     When ``custom_label`` is set and that row is focused, the user types on that
     row in place (same option array) instead of opening a separate prompt.
+    ``on_custom_answer`` marks a typed single-select answer, even when its text
+    matches a predefined value.
 
     When ``multi_select`` is True, checkboxes appear and the return value is a
     newline-joined string of selected **values** (``choices[i][0]``).
@@ -650,6 +654,8 @@ def repl_choose_one(
         if picked is None:
             return None
         if isinstance(picked, str):
+            if not multi_select and on_custom_answer is not None:
+                on_custom_answer()
             return picked
         value = choices[picked][0]
         return value if isinstance(value, str) else None

@@ -22,6 +22,7 @@ from core.agent_harness.turns.turn_snapshot import TurnSnapshot
 from surfaces.interactive_shell.runtime.action_turn import run_action_tool_turn
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui.ask_user import CUSTOM_OPTION
+from surfaces.shared.terminal.components import choice_menu, cpr_stdin
 from tests.core.agent.orchestration.action_execution_test_harness import (
     FakeActionLLM,
     tool_response,
@@ -221,6 +222,34 @@ def test_onboarding_telemetry_failure_does_not_lose_the_answer(
     choice_prompt._cmd_choose(session, Console(file=io.StringIO()), [])
     assert _take_prompt(session) == format_ask_user_answers(pending.items(), (answer,))
     assert session.active_skill == ONBOARDING_SKILL_NAME
+
+
+@pytest.mark.parametrize("typed", [False, True])
+def test_typed_option_label_keeps_its_custom_source_through_the_picker(
+    monkeypatch: pytest.MonkeyPatch,
+    onboarding_outcomes: list[tuple[str, bool | None]],
+    typed: bool,
+) -> None:
+    _offerable(monkeypatch)
+    session = Session()
+    session.active_skill = ONBOARDING_SKILL_NAME
+    pending = PendingUserChoice(title=_TITLE, options=GETTING_STARTED_OPTIONS)
+    session.pending_user_choice = pending
+    answer = GETTING_STARTED_OPTIONS[0]
+
+    def pick(**_kwargs: Any) -> int | str:
+        # The raw picker distinguishes a row index from text typed in the custom row.
+        return answer if typed else 0
+
+    monkeypatch.setattr(choice_menu, "_pick", pick)
+    monkeypatch.setattr(choice_menu, "repl_tty_interactive", lambda: True)
+    monkeypatch.setattr(choice_menu, "_clear_prompt_toolkit_paint", lambda: None)
+    monkeypatch.setattr(choice_menu, "hide_terminal_cursor", lambda: None)
+    monkeypatch.setattr(choice_menu, "leave_inline_menu", lambda: None)
+    monkeypatch.setattr(cpr_stdin, "drain_stale_cpr_bytes", lambda: None)
+    choice_prompt._cmd_choose(session, Console(file=io.StringIO()), [])
+    assert _take_prompt(session) == format_ask_user_answers(pending.items(), (answer,))
+    assert onboarding_outcomes == [("custom", True) if typed else ("ci_analytics", False)]
 
 
 def test_startup_and_demo_respect_tty_and_pending_input(monkeypatch: pytest.MonkeyPatch) -> None:

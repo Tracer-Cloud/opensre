@@ -24,13 +24,18 @@ _OPTION_BY_SKILL = MappingProxyType(
 )
 
 
-def capture_onboarding_choice(skill_name: str | None, selected: str | None) -> None:
+def capture_onboarding_choice(
+    skill_name: str | None, selected: str | None, *, custom: bool
+) -> None:
     """Capture only the master menu's outcome; telemetry never blocks continuation."""
     if skill_name != ONBOARDING_SKILL_NAME:
         return
     try:
         if selected is None:
             capture_onboarding_demo_skipped()
+            return
+        if custom:
+            capture_onboarding_demo_selected(option="custom", custom=True)
             return
         option = next(
             (
