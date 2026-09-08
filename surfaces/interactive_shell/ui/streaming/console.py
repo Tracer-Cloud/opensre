@@ -10,6 +10,7 @@ from rich.console import Console, RenderableType, ThemeContext
 from rich.file_proxy import FileProxy
 from rich.status import Status
 from rich.style import StyleType
+from rich.text import Text
 from rich.theme import Theme
 
 
@@ -19,6 +20,21 @@ class _PromptSpinner(Protocol):
 
     def stop(self) -> None:
         """Stop the prompt spinner."""
+
+
+_ROW_SAFE_KWARGS = frozenset({"width"})
+
+
+def _renders_as_rows(args: tuple[Any, ...], kwargs: dict[str, Any]) -> bool:
+    """One renderable printed with default options: safe to route through the buffered path."""
+    return len(args) == 1 and set(kwargs) <= _ROW_SAFE_KWARGS
+
+
+def _as_renderable(args: tuple[Any, ...]) -> Any:
+    renderable = args[0]
+    if isinstance(renderable, str):
+        return Text.from_markup(renderable)
+    return renderable
 
 
 class StreamingConsole(Console):
@@ -64,7 +80,13 @@ class StreamingConsole(Console):
         return self._cancel_event
 
     def print(self, *args: Any, **kwargs: Any) -> None:
-        """Reset the TTY column before each print when not streaming."""
+        """Print with the TTY column reset and CRLF row endings when not streaming.
+
+        Tool output (a chart, a report) is rendered to a buffer and written in
+        one call with ``\\r\\n`` rows: under the pinned prompt's raw stdout
+        patching, row-by-row ``\\n`` output makes the status bar repaint one
+        line lower per row, stacking stale copies of itself down the screen.
+        """
         if self._output is not None:
             self._output.print(*args, **kwargs)
             return
@@ -76,6 +98,7 @@ class StreamingConsole(Console):
             from surfaces.shared.terminal.components.rendering import (
                 _repl_output_already_prepared,
                 _repl_table_width,
+                print_repl_renderable,
             )
 
             if not args and not kwargs:
@@ -84,6 +107,9 @@ class StreamingConsole(Console):
                 prepare_repl_output_line()
             if sys.stdout.isatty() and "width" not in kwargs:
                 kwargs["width"] = _repl_table_width(self)
+            if _renders_as_rows(args, kwargs) and self.file is sys.stdout and sys.stdout.isatty():
+                print_repl_renderable(self, _as_renderable(args))
+                return
         super().print(*args, **kwargs)
 
     def use_theme(self, theme: Theme, *, inherit: bool = True) -> ThemeContext:
