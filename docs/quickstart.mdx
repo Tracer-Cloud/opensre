@@ -3,6 +3,25 @@ title: "Quickstart"
 slug: "quickstart"
 ---
 
+## Supported platforms
+
+OpenSRE publishes native release bundles for the platforms below. The public
+installer selects the matching bundle automatically. Windows ARM64 is not
+supported in the default release because the required `cryptography` wheel is
+not available for that target.
+
+| Platform | Public install command | Release bundle | Verification |
+| --- | --- | --- | --- |
+| Linux x86_64 | `curl -fsSL https://install.opensre.com \| bash` | `linux-x64` `.tar.gz` | Post-publish installer canary |
+| Linux ARM64 | `curl -fsSL https://install.opensre.com \| bash` | `linux-arm64` `.tar.gz` | Release build smoke test |
+| macOS Apple Silicon | `curl -fsSL https://install.opensre.com \| bash` | `darwin-arm64` `.tar.gz` | Post-publish installer canary |
+| macOS Intel | `curl -fsSL https://install.opensre.com \| bash` | `darwin-x64` `.tar.gz` | Release build smoke test |
+| Windows x64 | `irm https://install.opensre.com \| iex` | `windows-x64` `.zip` | Post-publish installer canary |
+| Windows ARM64 | — | — | Not supported |
+
+For a local editable development install on any of these platforms, follow
+[SETUP.md](https://github.com/Tracer-Cloud/opensre/blob/main/SETUP.md).
+
 <Steps>
   <Step title="Install OpenSRE">
     <Tabs>
