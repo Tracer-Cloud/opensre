@@ -195,3 +195,4 @@ def test_the_judge_is_told_to_reject_a_self_contradicting_reply() -> None:
 
     # Assert
     assert "Contradiction:" in seen["system"]
+    assert "cannot be met truthfully" in seen["system"]

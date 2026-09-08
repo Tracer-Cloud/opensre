@@ -63,6 +63,7 @@ class SessionGoalReason:
     WAITING_USER_CHOICE = "waiting for user choice"
     PAUSED_USER_CHOICE = "paused — waiting for your choice"
     PAUSED_NO_PROGRESS = "paused — no progress after 2 turns"
+    PAUSED_SAME_VERDICT = "paused — the judge returned the same verdict twice"
     # A goal turn raised (model call rejected, provider down): the loop must not
     # spend the next turn on the same failure.
     PAUSED_TURN_FAILED = "paused — the last turn failed; fix the cause, then /goal resume"
@@ -154,6 +155,9 @@ class SessionGoal:
     # ``turns_used`` when ``completed`` last grew. Stall detection compares
     # against this so a later plateau still pauses after two idle turns.
     last_progress_turns_used: int = 0
+    # The judge's previous verdict reason. The same reason twice in a row means
+    # the loop is repeating itself, whatever tools it ran.
+    last_verdict: str = ""
     # Checklist indices added since the last evaluate. Ephemeral — not persisted.
     new_ticks: frozenset[int] = frozenset()
     # Successful calls this turn to the goal's own tools (``session_goal_set``,
@@ -183,6 +187,10 @@ class SessionGoal:
     def with_bookkeeping_call(self) -> SessionGoal:
         """Count one goal-tool call so it does not pass as tool evidence."""
         return replace(self, bookkeeping_calls=self.bookkeeping_calls + 1)
+
+    def with_verdict(self, reason: str) -> SessionGoal:
+        """Remember the judge's reason so the next turn can tell a repeat from progress."""
+        return replace(self, last_verdict=verdict_key(reason))
 
     def with_tool_progress(self) -> SessionGoal:
         """Mark this turn as progress so a later no-tool plateau can still stall."""
@@ -249,6 +257,21 @@ def _numbered_steps(condition: str) -> tuple[str, ...]:
         end = marks[position + 1].start() if position + 1 < len(marks) else len(condition)
         items.append(condition[mark.end() : end].strip().rstrip(",;").strip())
     return tuple(item for item in items if item)
+
+
+# Words compared when asking whether the judge said the same thing again.
+_VERDICT_KEY_WORDS = 12
+_WORD = re.compile(r"[a-z0-9]+")
+
+
+def verdict_key(reason: str) -> str:
+    """The first words of a verdict, lower-cased and stripped of punctuation.
+
+    A model rewords the same finding from turn to turn (quote marks, "three"
+    against "3"), so a raw string comparison never sees a repeat. The opening
+    words carry the finding; the tail carries the rewording.
+    """
+    return " ".join(_WORD.findall(reason.lower())[:_VERDICT_KEY_WORDS])
 
 
 def derive_session_goal_checklist(
@@ -493,6 +516,7 @@ __all__ = [
     "build_session_goal",
     "clear_session_goal",
     "derive_session_goal_checklist",
+    "verdict_key",
     "derive_session_goal_reason",
     "mark_session_goal_started",
     "refresh_session_goal_reason",
