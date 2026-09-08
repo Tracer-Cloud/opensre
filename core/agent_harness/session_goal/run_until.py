@@ -214,9 +214,10 @@ def _finish_outer_turn(
         active = pause_for_no_progress(session, active, on_progress)
         return active, last, True
 
-    # Still active under budget: skip paint here — ``_announce_working`` owns
-    # the next status line so the TTY does not show two near-identical
-    # ``◎ /goal active`` blocks back-to-back before the continuation turn.
+    # Still active under budget: paint the verdict (the judge's reason) before
+    # ``_announce_working`` paints the next turn's line. Hosts render both as
+    # one-line status rows, so the reason is visible between turns.
+    active = _paint(session, active, on_progress, rederive=False)
     return active, last, False
 
 
@@ -290,9 +291,10 @@ def run_until_session_goal(
         if isinstance(stored, SessionGoal):
             active = stored
 
-    if active.turns_used == 0:
-        # Evaluate must see this-turn tool ticks as new. Re-reading the session
-        # after chat would otherwise treat them as already completed.
+    if had_active_before or active.turns_used == 0:
+        # This chat was a goal turn: the first one, or a resumed goal's next
+        # one. Evaluate must see this-turn tool ticks as new, so re-read them
+        # from the session instead of the pre-chat copy.
         active = replace(active, completed=pre_chat_completed, new_ticks=frozenset())
         active = _record_goal_turn(session, active)
 

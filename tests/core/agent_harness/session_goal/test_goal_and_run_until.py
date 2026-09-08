@@ -232,3 +232,93 @@ def test_paused_goal_outer_loop_is_single_chat_without_turn_bump() -> None:
     assert outcome.turn_count == 2
     assert session.session_goal is not None
     assert session.session_goal.status == SessionGoalStatus.PAUSED
+
+
+def test_the_judge_reason_is_painted_between_turns() -> None:
+    # Arrange: a two-turn goal whose judge says "not yet" with a concrete next step.
+    from core.agent_harness.session_goal.evaluate import evaluate_session_goal
+    from core.agent_harness.session_goal.judge import SessionGoalJudgeVerdict
+
+    session = SessionCore()
+    painted: list[str] = []
+
+    def _chat(message: str) -> TurnResult:
+        _ = message
+        return TurnResult(
+            final_intent="cli_agent_handled",
+            action_result=ToolCallingTurnResult(
+                planned_count=1,
+                executed_count=1,
+                executed_success_count=1,
+                has_unhandled_clause=False,
+                handled=True,
+            ),
+            assistant_response_text="listed runs on main",
+        )
+
+    def _not_yet(**_kw: object) -> SessionGoalJudgeVerdict:
+        return SessionGoalJudgeVerdict(verdict="NOT_REACHED", reason="filter runs by head_sha")
+
+    # Act
+    run_until_session_goal(
+        _chat,
+        session,
+        "go",
+        goal=SessionGoal(condition="find the failing run", max_outer_turns=2),
+        evaluate=lambda goal, result, *, session=None: (
+            evaluate_session_goal(goal, result, session=session, judge=_not_yet).status
+        ),
+        on_progress=lambda goal: painted.append(goal.last_reason),
+    )
+
+    # Assert: the reason shows after turn 1, before the turn-2 working line.
+    assert "filter runs by head_sha" in painted
+    assert painted.index("filter runs by head_sha") < painted.index(
+        "working — starting session-goal turn 2/2"
+    )
+
+
+def test_a_resumed_goal_counts_its_next_turn() -> None:
+    # Arrange: a goal already two turns in (the stall menu's "keep going" path).
+    from core.agent_harness.session_goal.evaluate import evaluate_session_goal
+    from core.agent_harness.session_goal.judge import SessionGoalJudgeVerdict
+
+    session = SessionCore()
+    attach_session_goal(
+        session,
+        SessionGoal(condition="find the failing run", max_outer_turns=5, turns_used=2),
+    )
+
+    def _chat(message: str) -> TurnResult:
+        _ = message
+        return TurnResult(
+            final_intent="cli_agent_handled",
+            action_result=ToolCallingTurnResult(
+                planned_count=1,
+                executed_count=1,
+                executed_success_count=1,
+                has_unhandled_clause=False,
+                handled=True,
+            ),
+            assistant_response_text="listed runs",
+        )
+
+    # Act: the resumed condition runs as one more turn; the judge is not satisfied.
+    outcome = run_until_session_goal(
+        _chat,
+        session,
+        "find the failing run",
+        evaluate=lambda goal, result, *, session=None: (
+            evaluate_session_goal(
+                goal,
+                result,
+                session=session,
+                judge=lambda **_kw: SessionGoalJudgeVerdict(
+                    verdict="NOT_REACHED", reason="still looking"
+                ),
+            ).status
+        ),
+    )
+
+    # Assert: the turn counter moved past 2, so a stall check and the budget see it.
+    assert outcome.turn_count >= 3
