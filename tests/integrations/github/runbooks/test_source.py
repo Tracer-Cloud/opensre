@@ -65,12 +65,11 @@ def test_resolve_reference_accepts_only_configured_repository_and_ref() -> None:
         source.resolve_reference("https://github.com/acme/operations/blob/dev/runbooks/checkout.md")
         is None
     )
-    assert (
-        source.resolve_reference(
-            f"https://github.com/acme/operations/blob/{'a' * 40}/runbooks/checkout.md"
-        )
-        is None
+    sha_reference = source.resolve_reference(
+        f"https://github.com/acme/operations/blob/{'a' * 40}/runbooks/checkout.md"
     )
+    assert sha_reference is not None
+    assert sha_reference.requested_revision == "a" * 40
     assert (
         source.resolve_reference(
             "https://github.com/acme/operations/blob/main/runbooks/%00checkout.md"
@@ -97,6 +96,67 @@ def test_resolve_reference_accepts_a_url_at_an_explicitly_pinned_sha() -> None:
 
     assert reference is not None
     assert reference.requested_revision == revision
+
+
+def test_fetch_document_rejects_sha_outside_configured_ref_history() -> None:
+    candidate_revision = "a" * 40
+    trusted_revision = "b" * 40
+    source = GitHubRunbookSource(_SOURCE, _GITHUB)
+    reference = source.resolve_reference(
+        f"https://github.com/acme/operations/blob/{candidate_revision}/runbooks/checkout.md"
+    )
+
+    assert reference is not None
+    with (
+        patch(
+            "integrations.github.runbooks.source.list_github_commits",
+            return_value=_commits_payload(trusted_revision),
+        ),
+        patch(
+            "integrations.github.runbooks.source.is_github_revision_reachable",
+            return_value=False,
+        ) as reachable,
+        pytest.raises(RunbookRetrievalError, match="not reachable from the configured ref"),
+    ):
+        source.fetch_document(reference)
+
+    reachable.assert_called_once_with(
+        owner="acme",
+        repo="operations",
+        trusted_revision=trusted_revision,
+        candidate_revision=candidate_revision,
+        auth_token="secret",
+    )
+
+
+def test_fetch_document_accepts_sha_in_configured_ref_history() -> None:
+    candidate_revision = "a" * 40
+    trusted_revision = "b" * 40
+    source = GitHubRunbookSource(_SOURCE, _GITHUB)
+    reference = source.resolve_reference(
+        f"https://github.com/acme/operations/blob/{candidate_revision}/runbooks/checkout.md"
+    )
+
+    assert reference is not None
+    with (
+        patch(
+            "integrations.github.runbooks.source.list_github_commits",
+            return_value=_commits_payload(trusted_revision),
+        ),
+        patch(
+            "integrations.github.runbooks.source.is_github_revision_reachable",
+            return_value=True,
+        ),
+        patch(
+            "integrations.github.runbooks.source.get_github_file_contents",
+            return_value=_file_payload(
+                "runbooks/checkout.md", "# Checkout", sha=candidate_revision
+            ),
+        ),
+    ):
+        document = source.fetch_document(reference)
+
+    assert document.resolved_revision == candidate_revision
 
 
 def test_catalog_revision_pins_document_fetch() -> None:
