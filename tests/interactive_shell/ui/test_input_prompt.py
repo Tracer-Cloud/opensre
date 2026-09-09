@@ -10,6 +10,7 @@ import pytest
 from prompt_toolkit.completion import Completion
 from rich.console import Console
 
+from core.agent_harness.spi.session_goal import SessionGoal, attach_session_goal
 from infrastructure.scheduling.task_types import TaskKind
 from surfaces.interactive_shell.runtime.core import state as loop_state
 from surfaces.interactive_shell.session import Session
@@ -160,6 +161,7 @@ class TestPromptTurnCounter:
         """``/goal set`` autosubmit must not look like part of the slash turn."""
         session = Session()
         console = _render_console()
+        attach_session_goal(session, SessionGoal(condition="How many Windows users?"))
         session.terminal.last_input_autosubmitted = True
         render_submitted_prompt(console, session, "How many Windows users in the last 7 days?")
         out = console.file.getvalue()  # type: ignore[union-attr]
@@ -167,6 +169,21 @@ class TestPromptTurnCounter:
         assert "[1]" in out
         assert "How many Windows users" in out
         assert session.terminal.last_input_autosubmitted is False
+
+    def test_autosubmit_without_a_goal_gets_no_work_turn_marker(self) -> None:
+        """A queued picker or demo prompt is autosubmitted too; it is not /goal work."""
+        # Arrange
+        session = Session()
+        console = _render_console()
+        session.terminal.last_input_autosubmitted = True
+
+        # Act
+        render_submitted_prompt(console, session, "/demo")
+
+        # Assert
+        out = console.file.getvalue()  # type: ignore[union-attr]
+        assert "/goal — work turn" not in out
+        assert "/demo" in out
 
     def test_history_rows_do_not_advance_counter(self) -> None:
         """One request that runs many tools adds many history rows but one number.

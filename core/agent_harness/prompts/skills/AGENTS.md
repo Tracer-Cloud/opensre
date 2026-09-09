@@ -58,10 +58,12 @@ Two kinds of card, two homes, and a `name` exists in exactly one of them:
 - **Workflow** — a multi-step flow the agent follows (when to activate, sibling
   carve-outs, ordered steps, a report template, a schedule offer). Lives here:
   `skills/<name>/SKILL.md`, with the `metadata` block above. It gets one line
-  in the always-on skills index and its full body via `skill_view`. It never
-  declares `tools:` — on a harness card that key narrows the tool catalog for
-  the skill's answer turns (`tests/interactive_shell/runtime/test_demo_picker.py::
-  test_bundled_skills_declare_no_tool_scope`).
+  in the always-on skills index and its full body via `skill_view`. On a
+  harness card `tools:` narrows the tool catalog for the skill's answer turns;
+  declare it only when the flow's tool set is closed (the onboarding demos do —
+  `tests/interactive_shell/runtime/test_demo_picker.py::
+  test_demo_skills_keep_their_tool_contracts_after_moving`), and omit it when
+  the skill should keep the full catalog.
 - **Tool usage** — how to call one tool or one tool family correctly:
   parameter selection, refusals, what the tool owns so the agent does not run
   raw `gh`/`git` around it. Lives next to the tool package

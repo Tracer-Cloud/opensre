@@ -225,6 +225,7 @@ def execute_ask_user_choice_tool(args: dict[str, Any], ctx: ActionToolScope) -> 
             options=tuple(options),
             multi_select=multi_select,
             note=strip_terminal_controls(str(args.get("note", ""))).strip(),
+            custom_answer=_parse_bool(args.get("allow_custom"), default=True),
         )
         queued = _QUEUED_INSTRUCTION
         summary = f"selection menu queued: {title}"
@@ -343,6 +344,14 @@ ask_user_choice_tool = RegisteredTool(
                     "For a single title/options decision: when true, the shell "
                     "shows checkboxes and the user may toggle several options. "
                     "Ignored when questions is set (use per-question multi_select)."
+                ),
+            },
+            "allow_custom": {
+                "type": "boolean",
+                "description": (
+                    "For a single title/options decision: when false, the menu has "
+                    "no free-text row and the user must pick one of the options. "
+                    "Default true."
                 ),
             },
         },

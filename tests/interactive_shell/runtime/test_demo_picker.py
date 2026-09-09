@@ -13,7 +13,7 @@ import surfaces.interactive_shell.runtime.slash_adapter as slash_adapter
 import surfaces.interactive_shell.runtime.startup.demo_picker as demo_picker
 import surfaces.interactive_shell.runtime.startup.onboarding_telemetry as onboarding_telemetry
 import tools.system.workspace_git_scan.tool as scan_tool
-from config.constants.skills import ONBOARDING_SKILL_NAME
+from config.constants.skills import ONBOARDING_SKILL_NAME, SKIP_DEMO_OPTION
 from core.agent_harness.prompts.action.assemble import build_action_system_prompt_envelope
 from core.agent_harness.prompts.getting_started import GETTING_STARTED_OPTIONS
 from core.agent_harness.prompts.skills import list_action_skills
@@ -21,7 +21,6 @@ from core.agent_harness.session.pending_choice import PendingUserChoice, format_
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
 from surfaces.interactive_shell.runtime.action_turn import run_action_tool_turn
 from surfaces.interactive_shell.session import Session
-from surfaces.interactive_shell.ui.ask_user import CUSTOM_OPTION
 from surfaces.shared.terminal.components import choice_menu, cpr_stdin
 from tests.core.agent.orchestration.action_execution_test_harness import (
     FakeActionLLM,
@@ -78,13 +77,6 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
         [
             tool_response("skill_view", {"name": "cicd-analytics-demo"}),
             tool_response("scan_local_git_workspace"),
-            tool_response(
-                "ask_user_choice",
-                {
-                    "title": "Which repository should I analyze?",
-                    "options": ["acme/one", "acme/two"],
-                },
-            ),
         ]
     )
     scans: list[str] = []
@@ -109,7 +101,7 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
     assert (pending.title, pending.note, pending.options) == (
         _TITLE,
         _NOTE,
-        GETTING_STARTED_OPTIONS,
+        (*GETTING_STARTED_OPTIONS, SKIP_DEMO_OPTION),
     )
     assert session.terminal.pending_prompt_default == "/choose"
     assert session.terminal.awaiting_handoff_answer
@@ -133,9 +125,9 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
         "title": _TITLE,
         "choices": [
             *((option, option) for option in GETTING_STARTED_OPTIONS),
-            (CUSTOM_OPTION, CUSTOM_OPTION),
+            (SKIP_DEMO_OPTION, SKIP_DEMO_OPTION),
         ],
-        "custom_label": CUSTOM_OPTION,
+        "custom_label": None,
         "multi_select": False,
         "header": "Ask User",
         "letter_keys": True,
@@ -151,12 +143,15 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
     assert "## Follow the selected child" not in envelope.render_cached()
 
     run_action_tool_turn(answer, session, console, is_tty=True, llm_factory=lambda: llm)
-    assert llm.invocations == 3
+    assert llm.invocations == 2
     assert len(scans) == 1
     assert session.active_skill == "cicd-analytics-demo"
     assert session.pending_user_choice is not None
     assert session.pending_user_choice.title == "Which repository should I analyze?"
-    assert session.active_skill_tools == ()  # The demo declares no tool scope.
+    assert "Use the open-source example repository (Tracer-Cloud/opensre)" in (
+        session.pending_user_choice.options
+    )
+    assert "analyze_github_ci_reliability" in session.active_skill_tools
     assert onboarding_outcomes == [("ci_analytics", False)]
 
 
@@ -327,7 +322,19 @@ def test_startup_without_a_menu_hook_does_not_fall_back_to_a_model_turn(
     assert session.active_skill is None
 
 
-def test_bundled_skills_declare_no_tool_scope() -> None:
-    """Skills stay flexible: no bundled skill narrows the catalog on its answer turns."""
-    scoped = [skill.name for skill in list_action_skills() if skill.tools]
-    assert scoped == []
+def test_demo_skills_keep_their_tool_contracts_after_moving() -> None:
+    by_name = {skill.name: skill for skill in list_action_skills()}
+    assert by_name["cicd-analytics-demo"].tools == (
+        "scan_local_git_workspace",
+        "analyze_github_ci_reliability",
+        "schedule_ci_reliability_loop",
+        "cli_exec",
+        "slash_invoke",
+        "ask_user_choice",
+    )
+    assert by_name["cicd-reliability-agent"].tools == (
+        "scan_local_git_workspace",
+        "schedule_ci_reliability_loop",
+        "ask_user_choice",
+    )
+    assert by_name["slack-handoff"].tools == ("cli_exec", "slash_invoke")

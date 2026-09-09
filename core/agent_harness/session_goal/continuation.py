@@ -18,17 +18,22 @@ _USE_A_TOOL = (
     "Use a tool that can satisfy the condition now. "
     "Do not answer from memory or claim the work is already done."
 )
+_NEW_GOAL = "Earlier goals in this conversation are finished; do not continue their steps."
 
 
 def start_goal_prompt(goal: SessionGoal, message: str) -> str:
     """First or resumed goal turn: keep the user text, require a tool.
 
     When the user text is the condition itself, it appears once, in the header.
+    A goal on its first turn also says earlier goals are over, so their
+    continuation prompts still in the conversation are not followed.
     """
     text = message.strip()
     if text.startswith(_SESSION_GOAL_MARK):
         return message
     header = f"{_SESSION_GOAL_MARK} Goal: {goal.condition}\n{_USE_A_TOOL}"
+    if goal.turns_used == 0:
+        header = f"{header}\nThis is a new goal. {_NEW_GOAL}"
     if text == goal.condition.strip():
         return header
     return f"{header}\n\n{text}"
@@ -63,7 +68,7 @@ def continuation_prompt(goal: SessionGoal) -> str:
     unfinished = goal.unfinished_items
     follow_reason = (
         f"{_USE_A_TOOL} Follow the last progress reason. Do not claim the goal "
-        "is met in prose — the host judge decides."
+        f"is met in prose — the host judge decides. {_NEW_GOAL}"
     )
     if unfinished:
         pending = "\n".join(f"  - [{index}] {item}" for index, item in unfinished)

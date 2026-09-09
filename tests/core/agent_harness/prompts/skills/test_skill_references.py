@@ -1,19 +1,15 @@
-"""Bundled reference files: discovered on the skill, loadable only by slug."""
+"""On-demand reference files: discovered by directory, loadable only by slug."""
 
 from __future__ import annotations
 
 from core.agent_harness.prompts.skills.loader import (
-    list_action_skills,
     load_skill_reference,
+    skill_reference_names,
 )
 
 
-def _skill(name: str):  # noqa: ANN202 - test helper
-    return next(skill for skill in list_action_skills() if skill.name == name)
-
-
 def test_cicd_analytics_demo_lists_metrics_reference() -> None:
-    assert "metrics" in _skill("cicd-analytics-demo").references
+    assert "metrics" in skill_reference_names("cicd-analytics-demo")
 
 
 def test_load_skill_reference_returns_metrics_content() -> None:
@@ -32,5 +28,5 @@ def test_load_skill_reference_rejects_path_traversal() -> None:
     assert load_skill_reference("cicd-analytics-demo", "references/metrics") == ""
 
 
-def test_skill_without_references_has_none() -> None:
-    assert _skill("fixing-github-ci").references == ()
+def test_skill_without_reference_directory_has_none() -> None:
+    assert skill_reference_names("fixing-github-ci") == ()

@@ -3,7 +3,8 @@
 The action model does not get to close the goal by saying it is done. This
 module merges tool ticks, validates newly ticked items, then asks the
 transcript judge (:mod:`core.agent_harness.session_goal.judge`).
-``GOAL_REACHED`` needs tool or stored-finding evidence. ``NOT_REACHED``
+``GOAL_REACHED`` needs tool or stored-finding evidence and a quote from
+those observations when tools ran. ``NOT_REACHED``
 keeps the goal active so the next turn continues — successful tools are
 not enough. The judge may also veto a ``Contradiction:`` or declare
 ``IMPOSSIBLE``. An unrecovered tool error this turn blocks a reached
@@ -223,6 +224,45 @@ def _run_judge(
         return None
 
 
+def _normalize_quote(text: str) -> str:
+    return " ".join(text.split()).casefold()
+
+
+def judge_quote_is_supported(quote: str, observations: str) -> bool:
+    """True when the judge's quote appears in what it was shown (whitespace-insensitive)."""
+    needle = _normalize_quote(quote)
+    return bool(needle) and needle in _normalize_quote(observations)
+
+
+def _blocking_verdict_unsupported(
+    parsed: SessionGoalJudgeVerdict, *, tool_evidence: str, reply: str
+) -> bool:
+    """A blocking verdict over tool observations must quote them or the reply.
+
+    Without tool observations the judge reasons from the reply and the
+    condition alone, so an impossible verdict needs no quote there.
+    """
+    reason = parsed.reason.strip()
+    contradiction = judge_reason_is_contradiction(reason)
+    impossible = parsed.verdict == "IMPOSSIBLE" and bool(tool_evidence.strip())
+    if not (contradiction or impossible):
+        return False
+    quote = getattr(parsed, "evidence_quote", "")
+    return not judge_quote_is_supported(quote, f"{tool_evidence}\n{reply}")
+
+
+def _reached_verdict_unsupported(parsed: SessionGoalJudgeVerdict, *, tool_evidence: str) -> bool:
+    """``GOAL_REACHED`` after tools must quote the observations, not the reply.
+
+    The assistant table can say Yes while ``gh`` only shows attempt 1. A
+    quote taken from that table is not checkable against the world.
+    """
+    if parsed.verdict != "GOAL_REACHED" or not tool_evidence.strip():
+        return False
+    quote = getattr(parsed, "evidence_quote", "")
+    return not judge_quote_is_supported(quote, tool_evidence)
+
+
 def _verdict_from_judge(
     parsed: SessionGoalJudgeVerdict | None,
     *,
@@ -232,6 +272,8 @@ def _verdict_from_judge(
     tool_failed: bool,
     unverified: bool,
     fallback_reason: str,
+    tool_evidence: str = "",
+    reply: str = "",
 ) -> SessionGoalVerdict:
     if parsed is None:
         if host_can_accept:
@@ -245,6 +287,13 @@ def _verdict_from_judge(
         )
     reason = parsed.reason.strip()
     repeated = bool(getattr(parsed, "repeats_previous", False))
+    if _blocking_verdict_unsupported(parsed, tool_evidence=tool_evidence, reply=reply):
+        # The judge blocked without pointing at the data: keep working, do not
+        # end the goal or pause on a claim nobody can check.
+        return SessionGoalVerdict(
+            status=SessionGoalStatus.ACTIVE,
+            reason=SessionGoalReason.judge_unsupported(reason or fallback_reason),
+        )
     if parsed.verdict == "IMPOSSIBLE":
         return SessionGoalVerdict(
             status=SessionGoalStatus.IMPOSSIBLE,
@@ -257,6 +306,12 @@ def _verdict_from_judge(
             repeats_previous=repeated,
         )
     if parsed.verdict == "GOAL_REACHED":
+        if _reached_verdict_unsupported(parsed, tool_evidence=tool_evidence):
+            return SessionGoalVerdict(
+                status=SessionGoalStatus.ACTIVE,
+                reason=SessionGoalReason.judge_unsupported(reason or fallback_reason),
+                repeats_previous=repeated,
+            )
         # Same overflow / unfinished / failed-tool gate as the host. A cheap
         # GOAL_REACHED must not close on unreviewable or incomplete work.
         if judge_can_accept:
@@ -417,6 +472,8 @@ def evaluate_session_goal(
             tool_failed=unrecovered,
             unverified=unverified,
             fallback_reason=derive_session_goal_reason(current),
+            tool_evidence=tool_evidence,
+            reply=text,
         )
     verdict = _with_rejected_ticks(verdict, review.rejected)
     if verdict.status == SessionGoalStatus.ACHIEVED:
@@ -497,6 +554,7 @@ __all__ = [
     "default_evaluate_session_goal",
     "evaluate_session_goal",
     "goal_has_session_goal_evidence",
+    "judge_quote_is_supported",
     "session_goal_reply_text",
     "turn_has_session_goal_evidence",
 ]

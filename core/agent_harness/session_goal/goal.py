@@ -84,6 +84,7 @@ class SessionGoalReason:
     CANCELLED = "goal cancelled"
     CLEARED = "goal cleared"
     JUDGE_UNAVAILABLE = "judge unavailable; staying active"
+    JUDGE_UNSUPPORTED_PREFIX = "not yet — the judge could not point at the data: "
     TOOL_FAILED = "a tool failed this turn; staying active"
     UNVERIFIED_OVERFLOW = "tool evidence overflowed; staying unverified"
 
@@ -96,6 +97,10 @@ class SessionGoalReason:
         if not session_goal_has_turn_budget(max_turns):
             return f"working — starting session-goal turn {turn}"
         return f"working — starting session-goal turn {turn}/{max_turns}"
+
+    @staticmethod
+    def judge_unsupported(reason: str) -> str:
+        return f"{SessionGoalReason.JUDGE_UNSUPPORTED_PREFIX}{reason}"
 
     @staticmethod
     def checkpoint(turns_used: int) -> str:

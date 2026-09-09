@@ -176,3 +176,30 @@ def test_a_tool_less_turn_still_hands_its_answer_to_the_next_turn() -> None:
     # Assert: the second prompt carries what the first turn said.
     assert len(prompts) >= 2, "the goal should have run a continuation turn"
     assert _ANSWER in prompts[1]
+
+
+def test_a_new_goal_says_earlier_goals_are_finished() -> None:
+    # Arrange: a goal on its first turn, and one that already ran.
+    fresh = SessionGoal(condition="count users")
+    resumed = SessionGoal(condition="count users", turns_used=2)
+
+    # Act
+    first = start_goal_prompt(fresh, "count users")
+    later = start_goal_prompt(resumed, "count users")
+
+    # Assert: the first turn declares a new goal; a resumed start does not.
+    assert "This is a new goal." in first
+    assert "This is a new goal." not in later
+    assert "Earlier goals in this conversation are finished" in first
+
+
+def test_a_continuation_turn_also_breaks_from_earlier_goals() -> None:
+    """Turn 2 of a goal drifted back into the previous goal's listing (E9)."""
+    # Arrange
+    goal = _goal().with_reason("not yet: inspect the run history")
+
+    # Act
+    prompt = continuation_prompt(goal)
+
+    # Assert
+    assert "Earlier goals in this conversation are finished" in prompt

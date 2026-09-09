@@ -7,7 +7,11 @@ from pathlib import Path
 
 import pytest
 
-from core.agent_harness.prompts.skills.loader import _parse_frontmatter, skills_dir
+from core.agent_harness.prompts.skills.loader import (
+    _parse_frontmatter,
+    _resolve_skill_reference,
+    skills_dir,
+)
 
 _REQUIRED = (
     "owner",
@@ -57,3 +61,21 @@ def test_every_skill_card_has_the_metadata_block(card: Path) -> None:
     assert changed_at <= date.today(), (
         f"{card.parent.name}: metadata.last_changed_at {changed_at} is in the future"
     )
+
+
+def test_declared_references_resolve_inside_the_skills_tree() -> None:
+    missing: list[str] = []
+    for card in _skill_cards():
+        frontmatter, _body = _parse_frontmatter(card.read_text(encoding="utf-8"))
+        references = frontmatter.get("references")
+        if not references:
+            continue
+        assert isinstance(references, list), f"{card.parent.name}: references must be a list"
+        for ref in references:
+            if not isinstance(ref, str) or not ref.strip():
+                missing.append(f"{card.parent.name}: empty reference")
+                continue
+            resolved = _resolve_skill_reference(card, ref)
+            if resolved is None or not resolved.is_file():
+                missing.append(f"{card.parent.name}: {ref!r}")
+    assert missing == []

@@ -87,6 +87,7 @@ def enter_skill(name: str, ctx: Any) -> dict[str, Any]:
     if session is not None:
         session.active_skill = skill.name
         session.active_skill_tools = tuple(skill.tools)
+        session.skill_hooks_fired = set()
     hooks = (
         _run_pre_execute(skill, ctx)
         if skill.pre_execute and isinstance(ctx, ActionToolScope)

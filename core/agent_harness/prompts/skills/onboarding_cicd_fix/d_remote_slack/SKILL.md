@@ -22,6 +22,9 @@ metadata:
     - Interactive terminal for `/integrations setup slack` when Slack is not configured
   type: onboarding
   version: "1.1"
+tools:
+  - cli_exec
+  - slash_invoke
 ---
 
 # Slack handoff

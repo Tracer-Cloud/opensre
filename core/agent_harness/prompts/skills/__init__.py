@@ -12,6 +12,7 @@ from core.agent_harness.prompts.skills.loader import (
     load_skill_reference,
     load_skills_block,
     load_skills_index,
+    skill_reference_names,
     skills_dir,
 )
 
@@ -25,5 +26,6 @@ __all__ = [
     "load_skill_reference",
     "load_skills_block",
     "load_skills_index",
+    "skill_reference_names",
     "skills_dir",
 ]

@@ -22,6 +22,12 @@ metadata:
     - A local git checkout for the workspace scan (optional; a named repository also works)
   type: report
   version: "1.1"
+tools:
+  - scan_local_git_workspace
+  - schedule_ci_reliability_loop
+  - ask_user_choice
+references:
+  - common/ask_once.md
 ---
 
 # CI/CD reliability agent
@@ -35,6 +41,7 @@ the shell inbox.
 - If a tool reports a missing GitHub token, say `opensre integrations setup github`
   and stop. Do not fall back to another data source.
 - Decision points use `ask_user_choice` with the exact option texts below.
+  End the turn after calling it; the answer arrives as the next user message.
 - Output `schedule_ci_reliability_loop`'s `response_text` exactly and stop.
 
 ## Plan

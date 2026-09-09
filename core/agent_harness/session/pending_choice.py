@@ -58,6 +58,9 @@ class PendingUserChoice:
     commands: dict[str, str] = field(default_factory=dict)
     """Option label -> slash command the shell runs instead of answering the model."""
 
+    custom_answer: bool = True
+    """Offer the free-text row under the options (single-question path)."""
+
     def items(self) -> tuple[AskUserQuestion, ...]:
         """Questions to render: ``questions`` when set, otherwise one from title/options."""
         if self.questions:

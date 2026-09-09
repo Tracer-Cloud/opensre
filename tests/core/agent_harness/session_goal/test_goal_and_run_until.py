@@ -570,6 +570,7 @@ def test_a_repeated_verdict_does_not_stop_a_turn_that_used_a_tool() -> None:
             verdict="NOT_REACHED",
             reason="Contradiction: the sentence says 5 but the table lists 3 rows",
             repeats_previous=bool(previous),
+            evidence_quote="3 rows",
         )
 
     outcome = run_until_session_goal(
@@ -619,6 +620,7 @@ def test_a_contradicted_reply_is_not_stored_as_an_established_finding() -> None:
                 judge=lambda **_kw: SessionGoalJudgeVerdict(
                     verdict="NOT_REACHED",
                     reason="Contradiction: the sentence says 5 but only one SHA shows attempt 2",
+                    evidence_quote="re-ran to green",
                 ),
             ).status
         ),

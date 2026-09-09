@@ -149,6 +149,7 @@ SPI_ROLE_NAMES: dict[str, frozenset[str]] = {
             "load_skill_body",
             "load_skill_reference",
             "log_grounding_cache_diagnostics",
+            "skill_reference_names",
         }
     ),
     "defaults": frozenset(

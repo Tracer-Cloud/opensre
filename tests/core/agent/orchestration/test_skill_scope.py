@@ -59,6 +59,7 @@ def test_a_genuine_user_turn_clears_the_scope_and_keeps_every_tool() -> None:
     assert scoped == _ALL
     assert session.active_skill is None
     assert session.active_skill_tools == ()
+    assert session.skill_hooks_fired == set()
 
 
 def test_a_skill_without_declared_tools_leaves_the_answer_turn_unscoped() -> None:

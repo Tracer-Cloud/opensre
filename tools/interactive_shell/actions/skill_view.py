@@ -7,6 +7,7 @@ from typing import Any
 from core.agent_harness.spi.grounding import (
     list_action_skills,
     load_skill_reference,
+    skill_reference_names,
 )
 from core.agent_harness.tools import ActionToolScope, execute_with_action_context
 from core.domain.types.tools import ToolSurface
@@ -24,14 +25,12 @@ def _view_skill_reference(name: str, reference: str) -> dict[str, Any]:
     """
     content = load_skill_reference(name, reference)
     if not content:
-        slug = name.strip().lower().replace("_", "-")
-        skill = next((item for item in list_action_skills() if item.name == slug), None)
         return {
             "ok": False,
             "name": name,
             "reference": reference,
             "error": f"unknown reference {reference!r} for skill {name!r}",
-            "available_references": list(skill.references) if skill is not None else [],
+            "available_references": list(skill_reference_names(name)),
         }
     return {
         "ok": True,

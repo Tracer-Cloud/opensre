@@ -23,11 +23,18 @@ To create a new skill:
    it; people and the docs read it.
 6. Optional report template: a sibling file named <folder>_report.md is
    appended automatically to the body that skill_view returns.
+   Optional `references:` lists sibling markdown files (for example
+   `common/progress.md`) resolved from the skill folder, its parent
+   package, or the skills tree. Each existing file is appended after
+   the body; paths that leave the tree are ignored.
 7. Optional `getting_started:` (verbatim first-visit demo label) plus
    `demo_order:` (1-based menu row, A=1) attach this skill to `/demo`.
    Optional `pre_execute:` lists static tool calls (`- tool: ask_user_choice`
    + `args:` shaped like the tool's input) the host runs when the skill is
    entered, before any model step; only `ask_user_choice` is allowed.
+   Optional `after_tool:` is the same call after a named tool succeeds
+   (`after:`, plus `options_from:` / `options_extra:` when the labels come
+   from that tool's result). The host opens it; do not also call the menu.
 8. Section order below is the house style (see fixing-github-ci for a
    single-tool skill, onboarding-cicd-fix for a multi-step one). Keep the
    whole body tight — it is loaded into the planner's context on demand.

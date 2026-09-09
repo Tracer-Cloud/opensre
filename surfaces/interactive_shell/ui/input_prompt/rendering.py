@@ -7,6 +7,7 @@ from rich.console import Console
 from rich.text import Text
 
 from core.agent_harness.spi.handoff import parse_ask_user_answers
+from core.agent_harness.spi.session_goal import session_goal_is_active
 from infrastructure.terminal import theme as ui_theme
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.ui.handoff_questions import (
@@ -101,9 +102,10 @@ def render_submitted_prompt(console: Console, session: Session, text: str) -> No
             ask_user_pairs[0][1] if len(ask_user_pairs) == 1 else stripped
         )
         return
-    if autosubmitted:
+    if autosubmitted and session_goal_is_active(session):
         # Keep this shorter than the condition — the ``[N] ❯`` line carries the
         # full text; this only answers "is this still /goal set or real work?".
+        # Other autosubmits (a queued picker, a demo prompt) get the plain row.
         console.print()
         console.print(
             Text(

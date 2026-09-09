@@ -35,6 +35,7 @@ def scope_tools_to_active_skill(tools: list[Any], session: Any, message: str) ->
     if not parse_ask_user_answers(message):
         session.active_skill = None
         session.active_skill_tools = ()
+        session.skill_hooks_fired = set()
         return tools
     if not declared:
         return tools

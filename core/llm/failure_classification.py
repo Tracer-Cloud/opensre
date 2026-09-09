@@ -22,7 +22,8 @@ _AUTH_RE = re.compile(
 _CONTEXT_OVERFLOW_RE = re.compile(
     r"context.?length|context.?window|max(?:imum)?\s+context\s+length|"
     r"max.?token|token.?limit|prompt.*too\s+long|prompt.*too.?large|"
-    r"input.*exceed|reduce.*context|string too long",
+    r"input.*exceed|reduce.*context|string too long|"
+    r"request.*too\s+large|request_too_large",
     re.IGNORECASE,
 )
 _NETWORK_RE = re.compile(

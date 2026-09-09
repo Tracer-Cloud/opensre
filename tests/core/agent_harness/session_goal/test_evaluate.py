@@ -495,7 +495,11 @@ def test_a_recovered_failure_does_not_block_a_reached_verdict() -> None:
     verdict = evaluate_session_goal(
         SessionGoal(condition="remove scheduled jobs"),
         TurnResult("cli_agent_handled", action, "Removed the jobs."),
-        judge=_reached,
+        judge=lambda **_kw: SessionGoalJudgeVerdict(
+            verdict="GOAL_REACHED",
+            reason="the jobs are gone",
+            evidence_quote="Result: removed",
+        ),
     )
     assert verdict.status == SessionGoalStatus.ACHIEVED
 
@@ -553,6 +557,7 @@ def test_a_contradiction_vetoes_host_accept() -> None:
         judge=lambda **_kw: SessionGoalJudgeVerdict(
             verdict="NOT_REACHED",
             reason="Contradiction: the sentence says 5 but the table lists 3 rows",
+            evidence_quote="3 rows",
         ),
     )
     assert verdict.status == SessionGoalStatus.ACTIVE
@@ -827,3 +832,119 @@ def test_the_tick_tool_itself_is_not_evidence_for_a_met_verdict() -> None:
     assert SessionGoalReason.NEED_TOOL_EVIDENCE in verdict.reason
     assert session.session_goal is not None
     assert session.session_goal.bookkeeping_calls == 0
+
+
+def _evidence_result(text: str, tool_evidence: str) -> TurnResult:
+    return TurnResult(
+        "cli_agent_handled",
+        ToolCallingTurnResult(
+            1,
+            1,
+            1,
+            False,
+            True,
+            tool_evidence=tool_evidence,
+            evidence_success_count=1,
+        ),
+        text,
+    )
+
+
+def test_a_blocking_verdict_without_a_real_quote_keeps_the_goal_active() -> None:
+    """The judge once blocked for a run failure the data never showed; now it must quote."""
+    # Arrange: tool evidence exists, the judge says impossible but quotes nothing real.
+    session = SessionCore()
+    goal = SessionGoal(condition="did CI on the merged SHA fail then pass?", max_outer_turns=3)
+    attach_session_goal(session, goal)
+    result = _evidence_result(
+        "No re-run found.",
+        "Tool: gh\nArguments: {}\nOutcome: success\nResult: conclusion=success attempt=1",
+    )
+
+    # Act
+    verdict = evaluate_session_goal(
+        goal,
+        result,
+        session=session,
+        judge=lambda **_kw: SessionGoalJudgeVerdict(
+            verdict="IMPOSSIBLE",
+            reason="the CI run failed and was then re-run",
+            evidence_quote="conclusion=failure attempt=2",
+        ),
+    )
+
+    # Assert: not impossible; the reason says the judge could not point at the data.
+    assert verdict.status == SessionGoalStatus.ACTIVE
+    assert verdict.reason.startswith(SessionGoalReason.JUDGE_UNSUPPORTED_PREFIX)
+
+
+def test_reached_without_a_tool_quote_stays_active() -> None:
+    """Run 7: the table said Yes; gh only showed attempt 1; judge still said met."""
+    session = SessionCore()
+    goal = SessionGoal(condition="which merged PRs were re-run to green", max_outer_turns=3)
+    attach_session_goal(session, goal)
+    result = _evidence_result(
+        "| #6134 | Yes | CI and CodeQL |",
+        "Tool: gh\nArguments: {}\nOutcome: success\nResult: conclusion=success attempt=1",
+    )
+
+    verdict = evaluate_session_goal(
+        goal,
+        result,
+        session=session,
+        judge=lambda **_kw: SessionGoalJudgeVerdict(
+            verdict="GOAL_REACHED",
+            reason="one PR was re-run to green",
+            evidence_quote="Yes | CI and CodeQL",
+        ),
+    )
+
+    assert verdict.status == SessionGoalStatus.ACTIVE
+    assert verdict.reason.startswith(SessionGoalReason.JUDGE_UNSUPPORTED_PREFIX)
+
+
+def test_reached_with_a_quote_from_the_tools_can_close() -> None:
+    session = SessionCore()
+    goal = SessionGoal(condition="which merged PRs were re-run to green", max_outer_turns=3)
+    attach_session_goal(session, goal)
+
+    verdict = evaluate_session_goal(
+        goal,
+        _evidence_result(
+            "Only #6123 Release attempt 2.",
+            "Tool: gh\nArguments: {}\nOutcome: success\nResult: run_attempt=2 conclusion=success",
+        ),
+        session=session,
+        judge=lambda **_kw: SessionGoalJudgeVerdict(
+            verdict="GOAL_REACHED",
+            reason="Release was re-run to green",
+            evidence_quote="run_attempt=2 conclusion=success",
+        ),
+    )
+
+    assert verdict.status == SessionGoalStatus.ACHIEVED
+
+
+def test_a_blocking_verdict_with_a_real_quote_is_kept() -> None:
+    # Arrange: the quote appears in the tool evidence, whitespace aside.
+    session = SessionCore()
+    goal = SessionGoal(condition="close the ticket", max_outer_turns=3)
+    attach_session_goal(session, goal)
+
+    # Act
+    verdict = evaluate_session_goal(
+        goal,
+        _evidence_result(
+            "Cannot close it.",
+            "Tool: gh\nArguments: {}\nOutcome: error\nResult: ticket   999 not found",
+        ),
+        session=session,
+        judge=lambda **_kw: SessionGoalJudgeVerdict(
+            verdict="IMPOSSIBLE",
+            reason="the ticket does not exist",
+            evidence_quote="ticket 999 not found",
+        ),
+    )
+
+    # Assert
+    assert verdict.status == SessionGoalStatus.IMPOSSIBLE

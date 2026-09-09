@@ -234,4 +234,8 @@ def test_the_judge_is_told_to_reject_a_self_contradicting_reply() -> None:
     assert "repeats_previous" in seen["system"]
     assert "Previous verdict reason:" in seen["prompt"]
     assert "cannot be met truthfully" in seen["system"]
+    assert "A negative finding can meet the condition" in seen["system"]
+    assert "evidence_quote" in seen["system"]
     assert "When in doubt, set verdict to NOT_REACHED." in seen["system"]
+    assert "not the assistant reply" in seen["system"]
+    assert "evidence_quote" in seen["system"]
