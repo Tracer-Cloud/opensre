@@ -7,14 +7,27 @@ from typing import Any
 
 from rich.padding import Padding
 
+import infrastructure.terminal.theme as ui_theme
 from infrastructure.terminal.markdown import ReplyMarkdown
-from infrastructure.terminal.theme import MARKDOWN_THEME, TEXT
 from integrations.github.tools.ci_analytics.models import (
     CiAnalyticsReport,
     FailureKind,
     Outage,
     PullRequestDelay,
 )
+
+#: Characters that would be read as markup when a GitHub-supplied name
+#: (workflow, branch, login, repository) is placed in the report text. A
+#: literal ``|`` in a workflow name would otherwise split a table row.
+_MARKUP_CHARACTERS = "\\|*_`[]"
+
+
+def _plain(value: str) -> str:
+    """Escape a GitHub-supplied name so markdown renders it literally."""
+    for character in _MARKUP_CHARACTERS:
+        value = value.replace(character, f"\\{character}")
+    return value
+
 
 _TOP_WORKFLOWS = 5
 _TOP_BLOCKED_PRS = 5
@@ -24,7 +37,8 @@ _TOP_DEVELOPERS = 3
 def render_markdown(report: CiAnalyticsReport, *, compact: bool = False) -> str:
     """Markdown report: key results lead. ``compact`` omits the counts appendix."""
     lines = [
-        f"**CI/CD reliability for {report.owner}/{report.repo}, last {report.window_days} days**",
+        f"**CI/CD reliability for {_plain(report.owner)}/{_plain(report.repo)}, "
+        f"last {report.window_days} days**",
         "",
     ]
     lines.extend(_key_results_markdown(report))
@@ -43,9 +57,13 @@ def render_report(console: Any, report: CiAnalyticsReport, *, compact: bool = Fa
 
 
 def _paint(console: Any, markdown: str) -> None:
-    """Paint markdown the way the shell paints a reply: same theme, two-cell indent."""
-    with console.use_theme(MARKDOWN_THEME):
-        console.print(Padding(ReplyMarkdown(markdown), (0, 0, 0, 2)), style=str(TEXT))
+    """Paint markdown the way the shell paints a reply: same theme, two-cell indent.
+
+    The theme is read here, not at import, so a report painted after ``/theme``
+    uses the palette the rest of the turn uses.
+    """
+    with console.use_theme(ui_theme.MARKDOWN_THEME):
+        console.print(Padding(ReplyMarkdown(markdown), (0, 0, 0, 2)), style=str(ui_theme.TEXT))
 
 
 def key_results(report: CiAnalyticsReport) -> list[tuple[str, str]]:
@@ -54,7 +72,7 @@ def key_results(report: CiAnalyticsReport) -> list[tuple[str, str]]:
     red_share = report.red_hours / window_hours
     results: list[tuple[str, str]] = [
         (
-            f"{report.default_branch} branch red",
+            f"{_plain(report.default_branch)} branch red",
             f"{_hours(report.red_hours)} of {report.window_days} days ({red_share:.1%}), "
             f"{len(report.outages)} {_plural(len(report.outages), 'breakage')}",
         )
@@ -84,7 +102,9 @@ def key_results(report: CiAnalyticsReport) -> list[tuple[str, str]]:
         default=None,
     )
     if slowest is not None:
-        results.append(("Slowest normal run", f"{slowest.workflow}, {slowest.normal_minutes:.0f}m"))
+        results.append(
+            ("Slowest normal run", f"{_plain(slowest.workflow)}, {slowest.normal_minutes:.0f}m")
+        )
     if report.blocked_working_minutes > 0:
         developers = report.developers_affected
         per_week = (
@@ -131,7 +151,7 @@ def comparison_figures(report: CiAnalyticsReport) -> dict[str, str]:
 
 def skip_lines(skipped: list[str]) -> list[str]:
     """Guest-visible reason a benchmark column is missing."""
-    return [f"Skipped {item}." for item in skipped]
+    return [f"Skipped {_plain(item)}." for item in skipped]
 
 
 def render_comparison(
@@ -163,7 +183,7 @@ def comparison_markdown(
         ]
         return "\n".join(lines)
     reports = [user, *peers]
-    labels = [f"{item.owner}/{item.repo}" for item in reports]
+    labels = [f"{_plain(item.owner)}/{_plain(item.repo)}" for item in reports]
     figures = [comparison_figures(item) for item in reports]
     header = "| Metric | " + " | ".join(labels) + " |"
     align = "| --- | " + " | ".join("---:" for _ in labels) + " |"
@@ -190,7 +210,7 @@ def _comparison_notes(peers: list[CiAnalyticsReport]) -> list[str]:
     notes: list[str] = []
     seen: set[str] = set()
     for peer in peers:
-        name = f"{peer.owner}/{peer.repo}"
+        name = f"{_plain(peer.owner)}/{_plain(peer.repo)}"
         if peer.red_hours == 0 and name not in seen:
             seen.add(name)
             if peer.branch_runs:
@@ -224,7 +244,7 @@ def _details_markdown(report: CiAnalyticsReport) -> list[str]:
         for summary in report.workflows[:_TOP_WORKFLOWS]:
             normal = "n/a" if summary.normal_minutes is None else f"{summary.normal_minutes:.0f}m"
             lines.append(
-                f"| {summary.workflow} | {summary.runs} | {summary.failures} |"
+                f"| {_plain(summary.workflow)} | {summary.runs} | {summary.failures} |"
                 f" {summary.reliability_failures} | {normal} |"
             )
     return lines
@@ -256,7 +276,7 @@ _BLOCKED_COLUMNS = (
 def _blocked_row(item: PullRequestDelay) -> tuple[str, ...]:
     return (
         f"#{item.pr_number}" if item.pr_number else "-",
-        item.author or "-",
+        _plain(item.author) if item.author else "-",
         _day(item.first_queued),
         _working(item.working_minutes),
         _minutes(item.delay_minutes),
@@ -303,7 +323,7 @@ def _roll_up_lines(report: CiAnalyticsReport) -> list[tuple[str, str]]:
 def _heaviest_developers(report: CiAnalyticsReport) -> str:
     waits = [w for w in report.developer_waits if w.working_minutes > 0][:_TOP_DEVELOPERS]
     return " · ".join(
-        f"{w.login} {_working(w.working_minutes_per_week)}/week over {w.pull_requests} "
+        f"{_plain(w.login)} {_working(w.working_minutes_per_week)}/week over {w.pull_requests} "
         f"{_plural(w.pull_requests, 'PR')}"
         for w in waits
     )
@@ -337,7 +357,7 @@ def headline(report: CiAnalyticsReport) -> str:
         )
     if report.red_hours > 0:
         return (
-            f"{report.default_branch} was red for {_hours(report.red_hours)} across "
+            f"{_plain(report.default_branch)} was red for {_hours(report.red_hours)} across "
             f"{len(report.outages)} {_plural(len(report.outages), 'breakage')} in the last "
             f"{report.window_days} days, with a mean recovery of "
             f"{_hours(report.mean_recovery_hours or 0.0)}."
@@ -389,7 +409,8 @@ def _default_branch(report: CiAnalyticsReport) -> list[str]:
         return []
     lines = [
         "",
-        f"**{report.default_branch} branch**: {report.branch_failures} of {report.branch_runs} "
+        f"**{_plain(report.default_branch)} branch**: {report.branch_failures} of "
+        f"{report.branch_runs} "
         f"push-triggered runs failed, red for {_hours(report.red_hours)} across "
         f"{len(report.outages)} {_plural(len(report.outages), 'breakage')}",
     ]
@@ -407,7 +428,9 @@ def _outage(outage: Outage, *, now: datetime) -> str:
     span = _hours(outage.duration_hours(now=now))
     when = outage.started_at.strftime("%Y-%m-%d %H:%M UTC")
     state = "ongoing" if outage.ongoing else "recovered"
-    return f"{outage.workflow}, {span} from {when} ({state}) {outage.first_failure_url}".strip()
+    return (
+        f"{_plain(outage.workflow)}, {span} from {when} ({state}) {outage.first_failure_url}"
+    ).strip()
 
 
 def _minutes(value: float) -> str:
