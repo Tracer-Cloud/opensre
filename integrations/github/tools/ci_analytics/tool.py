@@ -209,8 +209,6 @@ def _from_snapshot(
         )
         result["summary"] += f" Figures as of {generated} UTC, from the saved snapshot."
         result["from_snapshot"] = snapshot.get("generated_at")
-        if console is not None:
-            result["response_text"] = result["summary"]
         return result
     # An older snapshot without the report object: the figures only.
     figures = {
@@ -365,12 +363,10 @@ def _result(
         "rendered_in_shell": console is not None,
     }
     if console is not None:
+        # The painted report is the turn's output; a reply restating its figures
+        # would print them twice.
         render_report(console, report, compact=include_benchmarks)
-        result = {
-            **base,
-            "coverage_notices": list(report.coverage_notices),
-            "response_text": summary,
-        }
+        result = {**base, "coverage_notices": list(report.coverage_notices)}
     else:
         result = {
             **base,

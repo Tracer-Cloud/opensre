@@ -231,3 +231,25 @@ def test_a_window_too_narrow_for_any_box_prints_plain_rows(monkeypatch) -> None:
     plain = [Text.from_ansi(line).plain for line in buffer.getvalue().splitlines() if line.strip()]
     assert not any(row[0] in "╭│╰" for row in plain)
     assert len(plain) == 2 and all(len(row) <= 13 for row in plain), plain
+
+
+def test_a_tool_that_painted_its_own_output_leaves_no_row() -> None:
+    """The buffer flushes at the end of the turn.
+
+    A tool that painted during execution would get its label printed under the
+    output it labels, so the row is dropped when the result says so.
+    """
+    # Arrange: two calls buffered; the second painted its own report.
+    session = Session()
+    session.terminal.push_action_log(
+        ActionLogEntry(call_id="a", kind="GitHub CLI", concise="gh run list", detail="")
+    )
+    session.terminal.push_action_log(
+        ActionLogEntry(call_id="b", kind="Analyze CI reliability", concise="", detail="")
+    )
+
+    # Act
+    session.terminal.drop_action_log("b")
+
+    # Assert
+    assert [entry.call_id for entry in session.terminal.take_action_log()] == ["a"]

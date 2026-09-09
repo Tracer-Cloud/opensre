@@ -555,9 +555,16 @@ class ActionRenderObserver:
     def _render_tool_result(self, data: dict[str, Any]) -> None:
         """Fold the user-facing result under its buffered call (Ctrl+O detail).
 
-        JSON blobs stay hidden — the closing reply summarizes those.
+        JSON blobs stay hidden — the closing reply summarizes those. A tool that
+        painted its own output during execution loses its buffered row: the
+        buffer flushes at the end of the turn, so the row would print under the
+        output it labels.
         """
-        preview = _tool_result_preview(data.get("output"))
+        output = data.get("output")
+        if isinstance(output, dict) and output.get("rendered_in_shell") is True:
+            self.session.terminal.drop_action_log(_tool_event_id(data))
+            return
+        preview = _tool_result_preview(output)
         if not preview:
             return
         rows = preview.splitlines() or [preview]

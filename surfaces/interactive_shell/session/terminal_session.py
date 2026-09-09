@@ -275,6 +275,16 @@ class TerminalSession:
                 entry.detail = f"{entry.detail}\n{result}" if entry.detail else result
                 return
 
+    def drop_action_log(self, call_id: str) -> None:
+        """Forget the buffered call ``call_id`` (if present).
+
+        A tool that painted its own output needs no row: the buffer flushes at
+        the end of the turn, so its label would land under that output.
+        """
+        self.action_log_entries = [
+            entry for entry in self.action_log_entries if entry.call_id != call_id
+        ]
+
     def has_action_log(self) -> bool:
         """True when at least one action is buffered for the current turn."""
         return bool(self.action_log_entries)

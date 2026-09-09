@@ -144,3 +144,27 @@ def test_a_menu_answered_this_turn_is_not_asked_again_through_the_real_turn() ->
     # question this turn's message already answered.
     assert (result.executed_count, result.executed_success_count) == (1, 0)
     assert session.pending_user_choice is None
+
+
+def test_a_painted_tool_result_is_not_restated_in_the_closing() -> None:
+    """A report painted during execution must not be printed a second time."""
+    # Arrange: a tool result that says the console already shows it.
+    from core.agent_harness.turns.display_text import format_generic_tool_payload
+    from core.llm.types import ToolCall
+
+    class _Result:
+        details = {
+            "rendered_in_shell": True,
+            "summary": "acme/app: 8151 runs in 30 days, 1174 of 5727 PR runs failed.",
+            "response_text": "acme/app: 8151 runs in 30 days.",
+        }
+        content = ""
+        is_error = False
+
+    call = ToolCall(id="1", name="analyze_github_ci_reliability", input={})
+
+    # Act
+    shown = format_generic_tool_payload(call, _Result())
+
+    # Assert
+    assert shown == ""
