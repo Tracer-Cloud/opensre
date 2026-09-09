@@ -49,7 +49,6 @@ dependencies = [
     "questionary>=2.1.1",
     "prompt_toolkit>=3.0.0",
     "PyYAML>=6.0",
-    "numpy>=1.26.0",
     "tzdata>=2026.1",
     # OpenTelemetry
     "opentelemetry-api>=1.41.0",
