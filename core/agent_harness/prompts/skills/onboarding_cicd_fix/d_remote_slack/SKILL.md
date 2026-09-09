@@ -10,7 +10,9 @@ description: >-
 getting_started: Connect OpenSRE to Slack and hand off DevOps chores for your team
 demo_order: 4
 metadata:
-  owner: Tracer Team
+  owner: Vincent
+  last_changed_by: Vincent
+  last_changed_at: 2026-09-09
   usecases:
     - First-experience demo: connect OpenSRE to Slack and show the handoff path
     - Verify Slack is configured, then run the Slack setup wizard if it is missing
@@ -19,32 +21,16 @@ metadata:
     - Slack workspace the user can add the OpenSRE bot to
     - Interactive terminal for `/integrations setup slack` when Slack is not configured
   type: onboarding
-  version: "1.0"
+  version: "1.1"
 tools:
   - cli_exec
   - slash_invoke
-references:
-  - common/progress.md
 ---
 
 # Slack handoff
 
 Verify or set up Slack, then explain how the team can hand off DevOps chores
 through a channel mention or a DM.
-
-## When to use
-
-- The user picked "Connect OpenSRE to Slack and hand off DevOps chores for your team"
-  from the startup demo menu (option D), or asks to set up Slack and show how to
-  hand off DevOps chores from Slack.
-
-## Scope
-
-Use other workflows for these requests:
-
-- Posting, replying, or reacting in Slack. This demo never sends to Slack.
-- CI/CD analytics or the reliability agent. Use `cicd-analytics-demo` or
-  `cicd-reliability-agent`.
 
 ## Workflow rules
 
@@ -55,8 +41,22 @@ Use other workflows for these requests:
 - After setup (or a successful verify), explain in two sentences how to hand
   off a chore: mention OpenSRE in a channel it can see, or DM it.
 
-## Workflow
+## Plan
 
+Track progress with the `update_plan` tool, not with headers or prose:
+
+- On entry, before the first workflow tool call, call `update_plan` with the
+  steps below verbatim, the first step `in_progress`, and a one-line
+  `explanation` (this is not a diagnosis; no hypothesis table):
+  `Check Slack` / `Set up if needed` / `Explain the hand-off`.
+- After a step's tool results, call `update_plan` marking it `completed` and
+  the next step `in_progress`, in the same response as the next step's tool
+  calls. When Slack is already connected, mark `Set up if needed` completed
+  without new tool calls instead of dropping it mid-run.
+- Do not narrate the plan or repeat step names in prose; the shell renders
+  the checklist.
+
+## Workflow
 
 ### 1. Check Slack
 

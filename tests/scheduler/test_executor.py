@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -145,6 +146,10 @@ class TestExecutor:
     ) -> None:
         from infrastructure.scheduling.scheduler.claim_lease import ClaimLeaseRenewer
 
+        # Long enough that a loaded CI runner cannot let the lease lapse before
+        # the renewer's first wake; the renewal interval stays far below it.
+        lease_seconds = 0.5
+        monkeypatch.setattr(run_store, "_CLAIM_LEASE_SECONDS", lease_seconds)
         monkeypatch.setattr(run_store, "_CLAIM_LEASE_SECONDS", _TEST_CLAIM_LEASE_SECONDS)
         renewed = threading.Event()
         real_renew = run_store.renew_claims
@@ -169,8 +174,12 @@ class TestExecutor:
         building = threading.Event()
         release = threading.Event()
         first_result: list[bool] = []
+        building_since: list[float] = []
 
         def build_slowly(*_args: object) -> str:
+            # The claim is written before build_message runs, so the original
+            # lease expires no later than this timestamp plus the lease length.
+            building_since.append(time.monotonic())
             building.set()
             assert release.wait(_SYNC_TIMEOUT_SECONDS)
             return "Scheduled report"
@@ -921,7 +930,7 @@ class TestExecutor:
         ("skill_name", "skill_revision", "error_text"),
         [
             ("missing-skill-xyz", "abc123", "not installed"),
-            ("morning-report", "0" * 64, "changed since it was scheduled"),
+            ("delivering-morning-briefings", "0" * 64, "changed since it was scheduled"),
         ],
     )
     def test_invalid_recurring_skill_is_visible_in_run_history(

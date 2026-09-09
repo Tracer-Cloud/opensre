@@ -81,7 +81,7 @@ def _briefing_precondition_error(
             "ok": False,
             "error": (
                 f"No weather/news fetch ran yet this session. For {label}, "
-                "run the morning-report shell_run fetches (wttr.in + headlines) "
+                "run the delivering-morning-briefings shell_run fetches (wttr.in + headlines) "
                 "first, compose the briefing, optionally deliver it, THEN call "
                 "propose_scheduled_delivery with briefing_text set to that "
                 "composed briefing. Do not offer to schedule work that never ran."
@@ -164,11 +164,11 @@ def execute_propose_scheduled_delivery_tool(
                 "ok": False,
                 "error": (
                     "skill_name is required for recurring_skill and must name a "
-                    "skill marked recurring (e.g. 'morning-report')."
+                    "skill marked recurring (e.g. 'delivering-morning-briefings')."
                 ),
             }
-        if skill_name == "morning-report":
-            briefing_label = "morning-report"
+        if skill_name == "delivering-morning-briefings":
+            briefing_label = "delivering-morning-briefings"
     elif kind == TaskKind.MANUAL_LOOP.value:
         briefing_label = "manual_loop"
     if briefing_label:
@@ -183,12 +183,15 @@ def execute_propose_scheduled_delivery_tool(
 
     scope_supplied = bool(owner or repo or branch or pr_number)
     skill_inputs: dict[str, str] = {}
-    if skill_name == "morning-report":
+    if skill_name == "delivering-morning-briefings":
         if city:
             skill_inputs["city"] = city
-    elif skill_name == "github-ci-health":
+    elif skill_name == "reporting-github-ci-failures":
         if not owner or not repo:
-            return {"ok": False, "error": "owner and repo are required for github-ci-health."}
+            return {
+                "ok": False,
+                "error": "owner and repo are required for reporting-github-ci-failures.",
+            }
         if branch and pr_number:
             return {"ok": False, "error": "Use either branch or pr_number, not both."}
         if pr_number:
@@ -205,12 +208,12 @@ def execute_propose_scheduled_delivery_tool(
     elif scope_supplied:
         return {
             "ok": False,
-            "error": "owner, repo, branch, and pr_number are only valid for github-ci-health.",
+            "error": "owner, repo, branch, and pr_number are only valid for reporting-github-ci-failures.",
         }
     elif city:
         return {
             "ok": False,
-            "error": "city is only valid for morning-report.",
+            "error": "city is only valid for delivering-morning-briefings.",
         }
 
     try:
@@ -293,7 +296,7 @@ propose_scheduled_delivery_tool = RegisteredTool(
     description=(
         "Record a schedule offer the user has NOT yet accepted, and return the "
         "canonical Want me to: closer plus response_text (briefing + closer). "
-        "PRECONDITION for recurring_skill morning-report and for manual_loop: "
+        "PRECONDITION for recurring_skill delivering-morning-briefings and for manual_loop: "
         "weather/news shell_run fetches must already have succeeded in this "
         "session, prompt must describe the recurring instruction, and "
         "briefing_text must be the composed briefing. This tool "
@@ -350,7 +353,7 @@ propose_scheduled_delivery_tool = RegisteredTool(
             ),
             "briefing_text": string_property(
                 description=(
-                    "Required for recurring_skill morning-report and for "
+                    "Required for recurring_skill delivering-morning-briefings and for "
                     "manual_loop: the composed weather + headlines briefing "
                     "already produced for the user. Returned in response_text "
                     "ahead of the Want me to: closer so the user never sees an "
@@ -360,24 +363,24 @@ propose_scheduled_delivery_tool = RegisteredTool(
             "skill_name": string_property(
                 description=(
                     "Required for recurring_skill: the kebab-case action skill "
-                    "to repeat (e.g. 'morning-report')."
+                    "to repeat (e.g. 'delivering-morning-briefings')."
                 ),
             ),
             "owner": string_property(
-                description="Repository owner required by the github-ci-health skill."
+                description="Repository owner required by the reporting-github-ci-failures skill."
             ),
             "repo": string_property(
-                description="Repository name required by the github-ci-health skill."
+                description="Repository name required by the reporting-github-ci-failures skill."
             ),
             "branch": string_property(
-                description="Optional github-ci-health branch filter; mutually exclusive with pr_number."
+                description="Optional reporting-github-ci-failures branch filter; mutually exclusive with pr_number."
             ),
             "pr_number": string_property(
-                description="Optional positive github-ci-health PR number; mutually exclusive with branch."
+                description="Optional positive reporting-github-ci-failures PR number; mutually exclusive with branch."
             ),
             "city": string_property(
                 description=(
-                    "Optional city for the morning-report skill. Persisted so each "
+                    "Optional city for the delivering-morning-briefings skill. Persisted so each "
                     "scheduled tick fetches weather for the requested location."
                 ),
             ),

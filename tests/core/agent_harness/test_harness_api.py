@@ -32,6 +32,7 @@ ROOT_API = frozenset(
         "SessionManager",
         "ToolCallingTurnResult",
         "TurnResult",
+        "is_legacy_skill_name",
         "is_recurring_skill",
         "normalize_skill_name",
         "pin_recurring_skill",
@@ -146,7 +147,9 @@ SPI_ROLE_NAMES: dict[str, frozenset[str]] = {
             "getting_started_skills",
             "list_action_skills",
             "load_skill_body",
+            "load_skill_reference",
             "log_grounding_cache_diagnostics",
+            "skill_reference_names",
         }
     ),
     "defaults": frozenset(

@@ -314,6 +314,29 @@ def test_github_workflow_skill_guidance_is_attached_to_chat_tools() -> None:
         assert marker in tool_def.skill_guidance
 
 
+def test_every_registered_skill_guidance_file_exists() -> None:
+    """A renamed SKILL.md directory must fail here, not silently drop tool guidance."""
+    from tools.registry_skill_guidance import _skill_guidance_files
+
+    paths = _skill_guidance_files()
+    assert paths
+    missing = [str(path) for path in paths if not path.is_file()]
+    assert missing == []
+
+
+def test_sentry_and_posthog_summary_guidance_attach_through_the_registry() -> None:
+    tools_by_name = {tool_def.name: tool_def for tool_def in registry_module.get_registered_tools()}
+
+    assert (
+        '<skill name="summarizing-sentry-issues"'
+        in tools_by_name["search_sentry_issues"].skill_guidance
+    )
+    assert (
+        '<skill name="summarizing-posthog-analytics"'
+        in tools_by_name["call_posthog_tool"].skill_guidance
+    )
+
+
 def test_github_workflow_skill_guidance_does_not_attach_to_unrelated_github_tools() -> None:
     tools_by_name = {tool_def.name: tool_def for tool_def in registry_module.get_registered_tools()}
 
@@ -354,7 +377,7 @@ def test_architecture_audit_skill_guidance_does_not_attach_to_unrelated_tools() 
 
     assert "Required reply template" not in tool_def.skill_guidance
     assert "Propose, do not execute" not in tool_def.skill_guidance
-    assert tool_def.skill_guidance == "" or "architecture-audit" not in tool_def.skill_guidance
+    assert tool_def.skill_guidance == "" or "architecture" not in tool_def.skill_guidance
 
 
 def test_python_execution_skill_guidance_does_not_attach_to_unrelated_tools() -> None:
@@ -362,7 +385,7 @@ def test_python_execution_skill_guidance_does_not_attach_to_unrelated_tools() ->
 
     tool_def = tools_by_name["get_github_file_contents"]
 
-    assert "github-star-velocity" not in tool_def.skill_guidance
+    assert "measuring-github-star-velocity" not in tool_def.skill_guidance
 
 
 def test_github_issue_mutation_execution_remains_chat_only() -> None:

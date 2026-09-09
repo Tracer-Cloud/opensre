@@ -12,7 +12,9 @@ description: >-
 getting_started: Explore a repo and analyze its CI/CD performance (recommended)
 demo_order: 1
 metadata:
-  owner: Tracer Team
+  owner: Vincent
+  last_changed_by: Vincent
+  last_changed_at: 2026-09-09
   usecases:
     - First-experience demo: scan the machine, pick a repository, analyze its CI/CD
     - CI/CD reliability KPIs for one repository over the last 30 days
@@ -22,7 +24,7 @@ metadata:
     - GitHub token usable by OpenSRE with read access to the repository's Actions history
     - A local git checkout for the workspace scan (optional; a named repository also works)
   type: analytics
-  version: "1.1"
+  version: "1.2"
 tools:
   - scan_local_git_workspace
   - analyze_github_ci_reliability
@@ -33,7 +35,6 @@ tools:
 references:
   - common/numbers_from_tools.md
   - common/ask_once.md
-  - common/progress.md
 after_tool:
   - after: scan_local_git_workspace
     tool: ask_user_choice
@@ -57,34 +58,15 @@ after_tool:
 Analyze one repository's CI/CD reliability, then offer a recurring check or
 Slack setup.
 
-## When to use
-
-- The user picked "Explore a repo and analyze its CI/CD performance (recommended)"
-  from the startup demo menu (option A), or asks to "run the CI/CD analytics
-  demo", "analyze my repo's CI/CD performance", "show me how reliable our CI
-  is", or "how much time does CI cost us".
-- The user names a repository and asks for its CI/CD performance, reliability,
-  failure rate, or downtime.
-
-## Related workflows
-
-- Fixing a failing check. Use `github-ci-fix`.
-- Scheduling a recurring CI/CD reliability check with inbox reports. Use
-  `cicd-reliability-agent`.
-- Listing the checks that are failing right now. Use `github-ci-health`.
-
 ## Workflow rules
 
 - Never run `gh`, `git`, or `shell_run` for this flow; the scan and
-  analysis tools own discovery and analysis end to end and are read-only.
-  The analysis itself is read-only: no Slack messages, no pushes, no
-  issue writes. Use `cli_exec` only to verify Slack in step 4; queue setup
-  with `slash_invoke` (`/integrations setup slack`), never `cli_exec`.
-- The scan tool draws the workspace chart in the shell itself. Do not repeat
-  the chart or the repository list as text; add one sentence at most.
-- `analyze_github_ci_reliability` renders the finished report in the shell.
-  Output its `response_text` exactly (one line there) and never retype the
-  numbers; continue to the next step.
+  analysis tools own discovery and analysis end to end. Use `cli_exec` only
+  to verify Slack in step 4; queue setup with `slash_invoke`
+  (`/integrations setup slack`), never `cli_exec`.
+- The tools paint the workspace chart and the finished report in the shell
+  themselves; never restate their figures, repeat the repository list, or add
+  a recap of your own.
 - If a tool reports a missing GitHub token, say the one command the user runs
   (`opensre integrations setup github`) and offer to continue afterwards. Do
   not fall back to a different data source.
@@ -98,10 +80,33 @@ Slack setup.
   next?` picks a branch under step 4: the analysis is already done, do not run
   it again, go straight to that branch and call only its tool.
 
-## Workflow
+## References
 
-When the request already names the repository, start at step 3 and use
-headers [3/4] and [4/4] only.
+- **Metric definitions**: [references/metrics.md](references/metrics.md).
+  Load it only when the user asks what a figure means or which metric to
+  fix first, with `skill_view(name="cicd-analytics-demo", reference="metrics")`;
+  answer from it and the tool's numbers. Do not load it during steps 1-4.
+
+## Plan
+
+Track progress with the `update_plan` tool, not with headers or prose:
+
+- On entry, before the first workflow tool call, call `update_plan` with the
+  steps below verbatim, the first step `in_progress`, and a one-line
+  `explanation` (this is not a diagnosis; no hypothesis table):
+  `Scan this machine` / `Pick the repository` / `Analyze CI/CD reliability` /
+  `Offer what to do next`.
+- When the request already names the repository, the plan is only
+  `Analyze CI/CD reliability` / `Offer what to do next` — omit the skipped
+  steps instead of renumbering.
+- After a step's tool results, call `update_plan` marking it `completed` and
+  the next step `in_progress`, in the same response as the next step's tool
+  calls. When the host queues a menu after a step's tool result, mark the
+  step in that same response and end the turn.
+- Do not narrate the plan or repeat step names in prose; the shell renders
+  the checklist.
+
+## Workflow
 
 ### 1. Scan this machine
 
@@ -119,12 +124,9 @@ the answer.
 ### 3. Analyze CI/CD reliability
 
 Call `analyze_github_ci_reliability(owner="<owner>", repo="<repo>")` for the
-chosen repository. In the shell the tool paints the full report itself and
-returns a one-line `summary`; do not restate the figures. Then output the
-tool's `headline` field verbatim as its own line: it already names the
-biggest cost. Do not compute, convert, or reword any figure yourself, and
-do not add a recap, bullet list, or "verified result" of your own after
-the headline: the next assistant text is the step 4 header.
+chosen repository. Output its `headline` field verbatim as its own line.
+Nothing else: no computed, converted, or reworded figures, no recap, no
+bullet list.
 
 ### 4. Offer what to do next
 
@@ -139,10 +141,9 @@ Wait for the answer, then follow the selected option.
 
 **Recurring check:** Call
 `schedule_ci_reliability_loop(owner="<owner>", repo="<repo>")` for the
-analyzed repository, output its `response_text` verbatim, and stop; it
-schedules a weekday 08:00 local check that delivers to this shell's inbox
-and never posts anywhere else. Each tick is deterministic (no model turn);
-`/loops service install` keeps it running when no shell is open.
+analyzed repository, output its `response_text` verbatim, and stop. Each
+tick is deterministic (no model turn); `/loops service install` keeps it
+running when no shell is open.
 
 **Slack setup:** Call `cli_exec` with payload `integrations verify slack`.
 If Slack is not configured, call `slash_invoke` with

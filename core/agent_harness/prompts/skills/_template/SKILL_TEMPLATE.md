@@ -13,10 +13,14 @@ To create a new skill:
    "Multi-step; load before acting." for data-dependent chains.
 5. Add `recurring: <human schedule>` (e.g. "weekdays 09:00") only when the
    skill ends with a propose_scheduled_delivery offer using kind recurring_skill.
-   Fill the `metadata` block: `owner`, `usecases` (what a user asks for),
-   `requires` (accounts, tokens, local state), `type` (onboarding, analytics,
-   report, repair, audit), `version`, and `prerequisite_for` when another
-   skill must run first. The loader ignores it; people and the docs read it.
+   Fill the `metadata` block: `owner` (the person creating the skill — a
+   name, never a team label; never changed later), `last_changed_by` and
+   `last_changed_at` (the person making the current edit and the ISO date
+   `YYYY-MM-DD` — update both on every change), `usecases`
+   (what a user asks for), `requires` (accounts, tokens, local state), `type`
+   (onboarding, analytics, report, repair, audit), `version`, and
+   `prerequisite_for` when another skill must run first. The loader ignores
+   it; people and the docs read it.
 6. Optional report template: a sibling file named <folder>_report.md is
    appended automatically to the body that skill_view returns.
    Optional `references:` lists sibling markdown files (for example
@@ -31,17 +35,19 @@ To create a new skill:
    Optional `after_tool:` is the same call after a named tool succeeds
    (`after:`, plus `options_from:` / `options_extra:` when the labels come
    from that tool's result). The host opens it; do not also call the menu.
-8. Section order below is the house style (see github_ci_fix for a
-   single-tool skill, architecture_audit for a multi-pass one). Keep the
+8. Section order below is the house style (see fixing-github-ci for a
+   single-tool skill, onboarding-cicd-fix for a multi-step one). Keep the
    whole body tight — it is loaded into the planner's context on demand.
 -->
 ---
-name: <kebab-case-name>
+name: <verb-ing>-<object>  # gerund first, kebab-case; see AGENTS.md "Naming conventions"
 description: >-
   <One or two lines for the compact index: what the skill does and the main
   tool(s) it uses. Add "Multi-step; load before acting." if data-dependent.>
 metadata:
-  owner: <person or team>
+  owner: <person who created the skill>
+  last_changed_by: <person making this edit>
+  last_changed_at: <YYYY-MM-DD of this edit>
   usecases:
     - <What a user asks for that this skill answers>
   requires:
@@ -90,24 +96,26 @@ Steps, in order:
    first or only tool — steps 1–3 must have run first.>
 -->
 
-<!-- Multi-step skills must also include the step-labeling block below (house
-     UX style), with N replaced by the skill's total step count. The terminal
-     renders this narration live, turning the tool stream into a readable
-     story instead of a wall of raw commands:
+<!-- Multi-step skills must also include the Plan block below (house UX
+     style). Progress lives in the update_plan tool — the shell renders the
+     checklist as a pinned overlay and re-injects it every turn as the
+     CURRENT PLAN block, so it survives ask_user_choice turn boundaries where
+     prose headers vanish. Never ask for hand-emitted "### [n/N]" step
+     headers. See onboarding_cicd_fix/a_local_analysis (cicd-analytics-demo)
+     for a filled-in example:
 
-Step labeling rules (UX):
-- Before every numbered step's tool calls, emit this exact header format as
-  assistant text in the SAME response as the tool calls, then one short
-  status sentence:
-    ### [n/N] <step name>
-    <One-sentence status or question.>
-- Never start tool calls for a new step without its header.
-- After a step's tool results are in, state its outcome in one line (start
-  it with ✓ on success, ✗ plus what failed otherwise) before the next
-  step's header.
-- Reuse the step's own name from this skill as the phase name and its own
-  number as n, even when a step is trivial or already satisfied (a ✓ line
-  with no tool calls is fine); never renumber mid-run.
+Plan (multi-step skills):
+- On entry, before the first workflow tool call, call update_plan with the
+  skill's fixed steps verbatim, the first step in_progress, and a one-line
+  explanation (not a diagnosis; no hypothesis table).
+- When the request already fixes an input (repo named, already verified, …),
+  omit the skipped steps from the plan instead of renumbering.
+- After a step's tool results, call update_plan marking it completed and the
+  next step in_progress, in the same response as the next step's tool calls.
+  When the next step is an ask_user_choice, mark the step and call the menu
+  in the same response, then end the turn.
+- Do not narrate the plan or repeat step names in prose; the shell renders
+  the checklist.
 -->
 
 Compact examples:

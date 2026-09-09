@@ -55,7 +55,7 @@ Common failure modes to consider: grouped + ungrouped log content; nested/folder
 
 A tool can carry workflow guidance the model reads on every call by shipping a `SKILL.md`. The guidance is **appended to the tool's `description`** under a `Workflow guidance:` heading — it is permanent schema text, not a side channel. All guidance targeting one tool is combined and truncated at **2400 characters** (`tools/registry_skill_guidance.py`), so budget it like description text: the longer the guidance, the more of every request it consumes.
 
-Skill guidance and a harness playbook are **independent and composable** — a tool may have both. Skill guidance rewrites one tool's description; it does not replace agent- or harness-level guidance for a multi-step flow. The GitHub tools (`github_cli`, `ci_fix`, `security_fix`) each ship a `SKILL.md`; adding one never means removing broader guidance.
+Skill guidance and a harness playbook are **independent and composable** — a tool may have both. Skill guidance rewrites one tool's description with call rules (parameters, refusals, what the tool owns); a harness playbook under `core/agent_harness/prompts/skills/` describes the multi-step workflow around it. The GitHub tools (`github_cli`, `ci_fix`, `security_fix`) each ship a `SKILL.md`; `ci_fix` and `security_fix` also have a workflow card. Give the two different `name`s (`operating-github-ci-fixer` vs `fixing-github-ci`) and keep tool-level facts in the tool card only. Placement rules: `core/agent_harness/prompts/skills/AGENTS.md`.
 
 **When to add (two independent axes — evaluate both):**
 
@@ -72,7 +72,7 @@ Harness authoring template: `core/agent_harness/prompts/skills/_template/SKILL_T
 
 ```yaml
 ---
-name: github-cli          # required — lowercase kebab-case, ≤ 64 chars
+name: operating-github-cli          # required — gerund-first kebab-case, ≤ 64 chars
 description: >            # required — ≤ 1024 chars; the model reads this to decide relevance
   One or two sentences: when to reach for these tools.
 tools:                    # required — the registered tool name(s) this guidance applies to

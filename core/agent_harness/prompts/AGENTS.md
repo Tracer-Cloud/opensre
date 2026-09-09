@@ -51,3 +51,31 @@ Use ordinary Markdown, following
   succeeds; later tools in the batch are blocked once a menu is queued.
 - Rules shared by sibling skills belong in a markdown file listed under
   `references:` (resolved inside the skills tree), not copied into each body.
+
+## Skill metadata ownership
+
+Every `SKILL.md` frontmatter `metadata` block records two people:
+
+- `owner` — the person who created the skill. Use their name, never a team
+  label such as `Tracer Team`. Set it once at creation and do not change it
+  when someone else edits the skill later.
+- `last_changed_by` — the name of the person who most recently changed the
+  skill.
+- `last_changed_at` — the ISO date (`YYYY-MM-DD`) of that change.
+
+`last_changed_by` and `last_changed_at` move together: whoever edits a skill
+(body or frontmatter) must update both lines in the same change; a skill edit
+that leaves either behind is incomplete.
+
+```yaml
+metadata:
+  owner: Vincent
+  last_changed_by: Jan
+  last_changed_at: 2026-09-09
+```
+
+Full rules: [`skills/AGENTS.md`](skills/AGENTS.md).
+
+When you touch a skill that still carries a team label in `owner`, replace it
+with the original author's name if you know it; otherwise leave it and note it
+in the PR description rather than guessing.

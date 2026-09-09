@@ -1,5 +1,5 @@
 ---
-name: github-cli
+name: operating-github-cli
 description: >
   Default GitHub skill for the action agent. Use github_cli for any GitHub
   request — create/list/view/close issues and PRs, assign, labels, repos, releases,
@@ -9,7 +9,7 @@ tools:
   - github_cli
 ---
 
-# github-cli
+# operating-github-cli
 
 Authenticated `gh` for OpenSRE. Reads and writes — no approval gate. Prefer over
 `shell_run` / `!gh`. Pass `args` after `gh`; optional `repo` as `owner/name` → `-R`.

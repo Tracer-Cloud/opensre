@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 import infrastructure.scheduling.scheduler.tasks as tasks_mod
@@ -201,14 +203,14 @@ class TestRecurringSkillBuilders:
     def test_recurring_skill_uses_agent_runner(self) -> None:
         from core.agent_harness.prompts.skills.schedule import find_action_skill, skill_revision
 
-        skill = find_action_skill("morning-report")
+        skill = find_action_skill("delivering-morning-briefings")
         assert skill is not None
         task = ScheduledTask(
             kind=TaskKind.RECURRING_SKILL,
             cron="0 8 * * 1-5",
             provider=Provider.SLACK,
             chat_id="C123",
-            skill_name="morning-report",
+            skill_name="delivering-morning-briefings",
             skill_revision=skill_revision(skill),
         )
         captured: dict[str, object] = {}
@@ -220,7 +222,46 @@ class TestRecurringSkillBuilders:
         msg = tasks_mod.build_message(task, runners_with_agent(_agent))
         assert "Good morning!" in msg
         assert captured["source"] == "scheduled_recurring_skill"
-        assert captured["skill_name"] == "morning-report"
+        assert captured["skill_name"] == "delivering-morning-briefings"
+
+    def test_persisted_legacy_skill_name_is_migrated_and_repinned(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A schedule stored before the gerund rename keeps running under the new name."""
+        from core.agent_harness.prompts.skills.schedule import find_action_skill, skill_revision
+        from infrastructure.scheduling.scheduler.storage.task_store import add_task, list_tasks
+
+        store_path = tmp_path / "tasks.json"
+        monkeypatch.setattr(
+            "infrastructure.scheduling.scheduler.storage.task_store.default_task_store_path",
+            lambda: store_path,
+        )
+        legacy = add_task(
+            ScheduledTask(
+                kind=TaskKind.RECURRING_SKILL,
+                cron="0 8 * * 1-5",
+                provider=Provider.SLACK,
+                chat_id="C123",
+                skill_name="morning-report",
+                skill_revision="0" * 64,
+            ),
+            store_path,
+        )
+        captured: dict[str, object] = {}
+
+        def _agent(payload: dict[str, object]) -> str:
+            captured.update(payload)
+            return "Good morning!"
+
+        assert tasks_mod.build_message(legacy, runners_with_agent(_agent)) == "Good morning!"
+
+        current = find_action_skill("delivering-morning-briefings")
+        assert current is not None
+        assert captured["skill_name"] == "delivering-morning-briefings"
+        (stored,) = list_tasks(store_path)
+        assert stored.id == legacy.id
+        assert stored.skill_name == "delivering-morning-briefings"
+        assert stored.skill_revision == skill_revision(current)
 
     def test_recurring_skill_revision_mismatch_raises(self) -> None:
         task = ScheduledTask(
@@ -228,7 +269,7 @@ class TestRecurringSkillBuilders:
             cron="0 8 * * 1-5",
             provider=Provider.SLACK,
             chat_id="C123",
-            skill_name="morning-report",
+            skill_name="delivering-morning-briefings",
             skill_revision="0" * 64,
         )
         with pytest.raises(RuntimeError, match="changed since it was scheduled"):

@@ -41,6 +41,8 @@ from typing import Any
 
 import yaml
 
+from core.agent_harness.prompts.skills.naming import normalize_skill_name
+
 __all__ = (
     "ActionSkill",
     "SKILLS_HEADER",
@@ -49,8 +51,10 @@ __all__ = (
     "getting_started_skills",
     "list_action_skills",
     "load_skill_body",
+    "load_skill_reference",
     "load_skills_block",
     "load_skills_index",
+    "skill_reference_names",
     "skills_dir",
 )
 
@@ -58,10 +62,12 @@ SKILLS_HEADER = f"{'=' * 40} SKILLS INDEX {'=' * 40}"
 
 _PACKAGE_SKILL_FILENAME = "SKILL.md"
 _REPORT_TEMPLATE_SUFFIX = "_report.md"
+_REFERENCES_DIRNAME = "references"
 _REPO_SKILLS_PREFIX = "core/agent_harness/prompts/skills"
 _REPORT_TEMPLATE_HEADER = "REPORT TEMPLATE from `{repo_path}` (fill exactly; keep all headings):"
 _REFERENCE_HEADER = "SHARED RULES from `{repo_path}`:"
 _SKILL_NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+_REFERENCE_NAME_RE = re.compile(r"^[a-z0-9]+(?:[-_][a-z0-9]+)*$")
 _BANNER_RE = re.compile(r"^[=\-─]{8,}\s*$")
 
 
@@ -161,6 +167,16 @@ def _iter_skill_paths(directory: Path) -> list[Path]:
                 paths.append(nested_file)
     paths.extend(sorted(directory.glob("*.md")))
     return paths
+
+
+def _skill_references(skill_path: Path) -> tuple[str, ...]:
+    """Return sorted stems of the skill's bundled ``references/*.md`` files."""
+    if skill_path.name != _PACKAGE_SKILL_FILENAME:
+        return ()
+    references_dir = skill_path.parent / _REFERENCES_DIRNAME
+    if not references_dir.is_dir():
+        return ()
+    return tuple(sorted(path.stem for path in references_dir.glob("*.md") if path.is_file()))
 
 
 def _report_template_path(skill_path: Path) -> Path:
@@ -468,7 +484,7 @@ def load_skills_block() -> str:
 
 def load_skill_body(name: str) -> str:
     """Return one skill's full body (+ references + report template), or ``\"\"`` if unknown."""
-    needle = name.strip().lower().replace("_", "-")
+    needle = normalize_skill_name(name)
     if not needle:
         return ""
     for skill in list_action_skills():
@@ -478,6 +494,44 @@ def load_skill_body(name: str) -> str:
             refs = _string_list_field(frontmatter.get("references"))
             body = _skill_body_with_references(skill.path, body, refs)
             return _skill_body_with_optional_template(skill.path, body)
+    return ""
+
+
+def skill_reference_names(name: str) -> tuple[str, ...]:
+    """Return the stems of a skill's on-demand ``references/*.md`` files.
+
+    Distinct from ``ActionSkill.references`` (frontmatter paths inlined into the
+    body): these files stay out of the body and load via :func:`load_skill_reference`.
+    """
+    needle = normalize_skill_name(name)
+    for skill in list_action_skills():
+        if skill.name == needle:
+            return _skill_references(skill.path)
+    return ()
+
+
+def load_skill_reference(name: str, reference: str) -> str:
+    """Return one on-demand ``references/<reference>.md`` file of a skill, or ``""`` if unknown.
+
+    ``reference`` must be a plain slug (no path separators), so a skill body can
+    link only files inside its own ``references/`` directory.
+    """
+    needle = normalize_skill_name(name)
+    slug = reference.strip().lower()
+    if not needle or not _REFERENCE_NAME_RE.match(slug):
+        return ""
+    for skill in list_action_skills():
+        if skill.name != needle:
+            continue
+        if skill.path.name != _PACKAGE_SKILL_FILENAME:
+            return ""
+        reference_path = skill.path.parent / _REFERENCES_DIRNAME / f"{slug}.md"
+        if not reference_path.is_file():
+            return ""
+        try:
+            return reference_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            return ""
     return ""
 
 

@@ -1,6 +1,6 @@
 """``opensre sentry digest`` — scheduled Sentry morning digest delivery.
 
-Uses the headless sentry-summary skill path (not the
+Uses the headless summarizing-sentry-issues skill path (not the
 generic ``opensre cron`` kinds). Tasks are stored in the shared scheduler store
 but are created and listed only through this command group.
 """

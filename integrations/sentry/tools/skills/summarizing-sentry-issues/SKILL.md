@@ -1,5 +1,5 @@
 ---
-name: sentry-summary
+name: summarizing-sentry-issues
 description: Summarise Sentry issues by theme and impact with optional uptime rollup. For overviews, morning digests, reliability questions.
 tools:
   - search_sentry_issues

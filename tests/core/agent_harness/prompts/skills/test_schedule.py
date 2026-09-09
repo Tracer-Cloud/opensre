@@ -20,7 +20,7 @@ from core.agent_harness.prompts.skills.schedule import (
 
 
 def test_morning_report_is_recurring() -> None:
-    assert is_recurring_skill("morning-report") is True
+    assert is_recurring_skill("delivering-morning-briefings") is True
 
 
 def test_non_recurring_skill_is_not_schedulable() -> None:
@@ -34,12 +34,12 @@ def test_non_recurring_skill_is_not_schedulable() -> None:
 
 
 def test_resolve_scheduled_skill_pins_revision() -> None:
-    skill = find_action_skill("morning-report")
+    skill = find_action_skill("delivering-morning-briefings")
     assert skill is not None
     pinned = skill_revision(skill)
-    resolved = resolve_scheduled_skill("morning-report", pinned)
-    assert resolved.name == "morning-report"
-    assert resolved.body == load_skill_body("morning-report")
+    resolved = resolve_scheduled_skill("delivering-morning-briefings", pinned)
+    assert resolved.name == "delivering-morning-briefings"
+    assert resolved.body == load_skill_body("delivering-morning-briefings")
     assert resolved.revision == pinned
 
 
@@ -49,10 +49,10 @@ def test_resolve_scheduled_skill_rejects_missing_skill() -> None:
 
 
 def test_resolve_scheduled_skill_rejects_revision_drift() -> None:
-    skill = find_action_skill("morning-report")
+    skill = find_action_skill("delivering-morning-briefings")
     assert skill is not None
     with pytest.raises(RuntimeError, match="changed since it was scheduled"):
-        resolve_scheduled_skill("morning-report", "0" * 64)
+        resolve_scheduled_skill("delivering-morning-briefings", "0" * 64)
 
 
 def test_validate_skill_inputs_rejects_non_strings() -> None:
@@ -64,16 +64,28 @@ def test_validate_skill_inputs_rejects_non_strings() -> None:
 
 
 def test_skill_revision_changes_when_body_changes() -> None:
-    skill = find_action_skill("morning-report")
+    skill = find_action_skill("delivering-morning-briefings")
     assert skill is not None
     before = skill_revision(skill)
     original = skill.path.read_text(encoding="utf-8")
     skill.path.write_text(original + "\n<!-- test pin -->\n", encoding="utf-8")
     clear_skills_caches()
     try:
-        refreshed = find_action_skill("morning-report")
+        refreshed = find_action_skill("delivering-morning-briefings")
         assert refreshed is not None
         assert skill_revision(refreshed) != before
     finally:
         skill.path.write_text(original, encoding="utf-8")
         clear_skills_caches()
+
+
+def test_legacy_skill_names_resolve_to_their_renamed_successor() -> None:
+    """Persisted schedules still carry the pre-gerund slugs."""
+    for legacy, current in (
+        ("morning-report", "delivering-morning-briefings"),
+        ("github-ci-health", "reporting-github-ci-failures"),
+        ("github_ci_fix", "fixing-github-ci"),
+    ):
+        skill = find_action_skill(legacy)
+        assert skill is not None and skill.name == current
+        assert load_skill_body(legacy) == load_skill_body(current)

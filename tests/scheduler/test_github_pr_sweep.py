@@ -33,7 +33,7 @@ def test_github_ci_health_recurring_skill_preserves_repository_scope() -> None:
 
     from core.agent_harness import pin_recurring_skill
 
-    skill_name, skill_revision = pin_recurring_skill("github-ci-health")
+    skill_name, skill_revision = pin_recurring_skill("reporting-github-ci-failures")
     task = ScheduledTask(
         kind=TaskKind.RECURRING_SKILL,
         cron="0 9 * * 1-5",
@@ -48,7 +48,7 @@ def test_github_ci_health_recurring_skill_preserves_repository_scope() -> None:
         {
             "source": "scheduled_recurring_skill",
             "task_id": task.id,
-            "skill_name": "github-ci-health",
+            "skill_name": "reporting-github-ci-failures",
             "skill_revision": skill_revision,
             "skill_inputs": {"owner": "acme", "repo": "api", "branch": "main"},
         }

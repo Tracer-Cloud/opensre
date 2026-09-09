@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 _PR_SWEEP_PROMPT = (
     "GitHub PR sweep for engineering standup: use summarize_github_pr_status and "
-    "list_github_work_items (or the github-workflow skill) to report mergeable PRs, "
+    "list_github_work_items (or the tracking-github-work-status skill) to report mergeable PRs, "
     "stale/superseded PRs, and conflicted PRs. Format a short Slack-ready plain-text "
     "digest with owners to ping. If GitHub is not configured, say so clearly."
 )

@@ -62,7 +62,7 @@ def test_unattended_run_allows_read_only_tools_only() -> None:
 def test_github_ci_health_skill_returns_complete_prefetched_report_without_agent_truncation(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    skill_name, revision = pin_recurring_skill("github-ci-health")
+    skill_name, revision = pin_recurring_skill("reporting-github-ci-failures")
     prefetched: list[tuple[str, dict[str, str]]] = []
     complete_report = "GitHub CI health — acme/api\n" + ("failure detail\n" * 100)
 
@@ -86,17 +86,19 @@ def test_github_ci_health_skill_returns_complete_prefetched_report_without_agent
 
     assert len(report) > 512
     assert report == complete_report
-    assert prefetched == [("github-ci-health", {"owner": "acme", "repo": "api", "branch": "main"})]
+    assert prefetched == [
+        ("reporting-github-ci-failures", {"owner": "acme", "repo": "api", "branch": "main"})
+    ]
 
 
 def test_morning_report_runs_the_pinned_recipe_with_prefetched_data(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    skill_name, revision = pin_recurring_skill("morning-report")
+    skill_name, revision = pin_recurring_skill("delivering-morning-briefings")
     prompts: list[str] = []
 
     def fake_prefetch(name: str, inputs: dict[str, str]) -> str:
-        assert name == "morning-report"
+        assert name == "delivering-morning-briefings"
         assert inputs == {"city": "New Delhi"}
         return "Weather: New Delhi: sunny\nHeadlines:\n- One headline"
 
@@ -130,14 +132,14 @@ def test_morning_report_runs_the_pinned_recipe_with_prefetched_data(
         }
     )
 
-    assert load_skill_body("morning-report") in prompts[0]
+    assert load_skill_body("delivering-morning-briefings") in prompts[0]
     assert "Weather: New Delhi: sunny" in prompts[0]
     assert "Daily Reliability Summary" not in prompts[0]
     assert report.startswith("Good morning!")
 
 
 def test_scheduled_skill_rejects_unvalidated_inputs() -> None:
-    skill_name, revision = pin_recurring_skill("morning-report")
+    skill_name, revision = pin_recurring_skill("delivering-morning-briefings")
 
     with pytest.raises(RuntimeError, match="invalid inputs"):
         scheduled_skill_runner.run_scheduled_recurring_skill(

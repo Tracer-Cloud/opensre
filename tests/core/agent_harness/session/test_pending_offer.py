@@ -20,21 +20,21 @@ from tools.interactive_shell.actions.propose_scheduled_delivery import (
 def test_pending_recurring_skill_offer_includes_skill_flag() -> None:
     offer = PendingScheduleOffer(
         kind="recurring_skill",
-        skill_name="morning-report",
+        skill_name="delivering-morning-briefings",
         cron="0 8 * * 1-5",
         timezone="Europe/Amsterdam",
         provider="slack",
     )
     assert offer.to_slash_command() == (
         "/cron add --kind recurring_skill --cron '0 8 * * 1-5' "
-        "--tz Europe/Amsterdam --provider slack --skill morning-report"
+        "--tz Europe/Amsterdam --provider slack --skill delivering-morning-briefings"
     )
 
 
 def test_pending_morning_report_offer_preserves_city() -> None:
     offer = PendingScheduleOffer(
         kind="recurring_skill",
-        skill_name="morning-report",
+        skill_name="delivering-morning-briefings",
         skill_inputs={"city": "New Delhi"},
         cron="0 8 * * 1-5",
         timezone="Asia/Kolkata",
@@ -43,14 +43,14 @@ def test_pending_morning_report_offer_preserves_city() -> None:
 
     assert offer.to_slash_command() == (
         "/cron add --kind recurring_skill --cron '0 8 * * 1-5' "
-        "--tz Asia/Kolkata --provider slack --skill morning-report --city 'New Delhi'"
+        "--tz Asia/Kolkata --provider slack --skill delivering-morning-briefings --city 'New Delhi'"
     )
 
 
 def test_pending_github_ci_health_offer_preserves_repository_scope() -> None:
     offer = PendingScheduleOffer(
         kind="recurring_skill",
-        skill_name="github-ci-health",
+        skill_name="reporting-github-ci-failures",
         skill_inputs={
             "owner": "Tracer-Cloud",
             "repo": "opensre",
@@ -63,7 +63,7 @@ def test_pending_github_ci_health_offer_preserves_repository_scope() -> None:
 
     assert offer.to_slash_command() == (
         "/cron add --kind recurring_skill --cron '0 8 * * 1-5' "
-        "--tz Europe/Istanbul --provider slack --skill github-ci-health "
+        "--tz Europe/Istanbul --provider slack --skill reporting-github-ci-failures "
         "--owner Tracer-Cloud --repo opensre --branch 'feature/ci health'"
     )
 
@@ -75,18 +75,21 @@ def test_propose_github_ci_health_offer_requires_and_preserves_scope() -> None:
     missing = execute_propose_scheduled_delivery_tool(
         {
             "kind": "recurring_skill",
-            "skill_name": "github-ci-health",
+            "skill_name": "reporting-github-ci-failures",
             "cron": "0 8 * * 1-5",
             "provider": "interactive_shell",
         },
         ctx,
     )
-    assert missing == {"ok": False, "error": "owner and repo are required for github-ci-health."}
+    assert missing == {
+        "ok": False,
+        "error": "owner and repo are required for reporting-github-ci-failures.",
+    }
 
     result = execute_propose_scheduled_delivery_tool(
         {
             "kind": "recurring_skill",
-            "skill_name": "github-ci-health",
+            "skill_name": "reporting-github-ci-failures",
             "cron": "0 8 * * 1-5",
             "timezone": "Europe/Istanbul",
             "provider": "interactive_shell",
@@ -171,7 +174,7 @@ def test_propose_tool_sets_session_pending_offer() -> None:
     result = execute_propose_scheduled_delivery_tool(
         {
             "kind": "recurring_skill",
-            "skill_name": "morning-report",
+            "skill_name": "delivering-morning-briefings",
             "cron": "0 8 * * 1-5",
             "timezone": "UTC",
             "provider": "slack",
@@ -184,7 +187,7 @@ def test_propose_tool_sets_session_pending_offer() -> None:
     assert result["ok"] is True
     assert session.pending_schedule_offer is not None
     assert session.pending_schedule_offer.kind == "recurring_skill"
-    assert session.pending_schedule_offer.skill_name == "morning-report"
+    assert session.pending_schedule_offer.skill_name == "delivering-morning-briefings"
     assert session.pending_schedule_offer.skill_inputs == {"city": "Amsterdam"}
     assert "--city Amsterdam" in result["slash_preview"]
     assert result["closer"].startswith("**Want me to:**")
@@ -240,7 +243,7 @@ def test_propose_alone_without_briefing_work_is_rejected() -> None:
     result = execute_propose_scheduled_delivery_tool(
         {
             "kind": "recurring_skill",
-            "skill_name": "morning-report",
+            "skill_name": "delivering-morning-briefings",
             "cron": "0 8 * * 1-5",
             "timezone": "UTC",
             "provider": "slack",
@@ -456,7 +459,7 @@ def test_the_skill_forbids_offering_before_the_work() -> None:
     # Arrange
     from core.agent_harness.prompts.skills.loader import skills_dir
 
-    raw = (skills_dir() / "morning_report" / "SKILL.md").read_text(encoding="utf-8")
+    raw = (skills_dir() / "delivering-morning-briefings" / "SKILL.md").read_text(encoding="utf-8")
     body = " ".join(raw.replace("`", "").lower().split())
 
     # Assert

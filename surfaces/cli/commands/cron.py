@@ -114,7 +114,9 @@ def cron_command() -> None:
 @click.option(
     "--pr", "pr_number", type=click.IntRange(min=1), default=None, help="Optional GitHub PR filter."
 )
-@click.option("--city", type=str, default="", help="Optional city for the morning-report skill.")
+@click.option(
+    "--city", type=str, default="", help="Optional city for the delivering-morning-briefings skill."
+)
 def cron_add(
     name: str,
     kind: str,
@@ -214,26 +216,28 @@ def _recurring_skill_inputs(
     """Validate and serialize inputs for the selected recurring skill."""
     normalized_city = city.strip()
     values_supplied = bool(owner.strip() or repo.strip() or branch.strip() or pr_number)
-    if skill_name == "morning-report":
+    if skill_name == "delivering-morning-briefings":
         if values_supplied:
             raise click.UsageError(
                 "--owner, --repo, --branch, and --pr are only valid with "
-                "--kind recurring_skill --skill github-ci-health."
+                "--kind recurring_skill --skill reporting-github-ci-failures."
             )
         return validate_skill_inputs({"city": normalized_city} if normalized_city else {})
     if normalized_city:
         raise click.UsageError(
-            "--city is only valid with --kind recurring_skill --skill morning-report."
+            "--city is only valid with --kind recurring_skill --skill delivering-morning-briefings."
         )
-    if skill_name != "github-ci-health":
+    if skill_name != "reporting-github-ci-failures":
         if values_supplied:
             raise click.UsageError(
                 "--owner, --repo, --branch, and --pr are only valid with "
-                "--kind recurring_skill --skill github-ci-health."
+                "--kind recurring_skill --skill reporting-github-ci-failures."
             )
         return validate_skill_inputs({})
     if not owner.strip() or not repo.strip():
-        raise click.UsageError("--owner and --repo are required for skill github-ci-health.")
+        raise click.UsageError(
+            "--owner and --repo are required for skill reporting-github-ci-failures."
+        )
     if branch.strip() and pr_number is not None:
         raise click.UsageError("Use either --branch or --pr, not both.")
     params = {"owner": owner.strip(), "repo": repo.strip()}

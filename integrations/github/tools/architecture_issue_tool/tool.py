@@ -72,7 +72,7 @@ def _session_id_from_runtime(context: Any, explicit: str = "") -> str:
     ),
     use_cases=[
         "Preparing a local clone before architecture shell heuristic passes",
-        "Architecture audit skill: clone then shell passes then cleanup",
+        "Architecture audit workflow: clone then shell passes then cleanup",
     ],
     anti_examples=[
         "Leaving the clone on disk after the audit",

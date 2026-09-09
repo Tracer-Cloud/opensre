@@ -42,13 +42,13 @@ opensre cron add --kind github_pr_sweep --cron "0 9 * * 1-5" \
   --tz Europe/London --provider slack --chat-id C0123ABCD
 
 # Read-only CI health for one repository and branch → Slack
-opensre cron add --kind recurring_skill --skill github-ci-health \
+opensre cron add --kind recurring_skill --skill reporting-github-ci-failures \
   --cron "0 8 * * 1-5" \
   --tz Europe/London --provider slack --owner Tracer-Cloud --repo opensre \
   --branch main
 
 # Morning-report skill with its previewed city → local inbox
-opensre cron add --kind recurring_skill --skill morning-report \
+opensre cron add --kind recurring_skill --skill delivering-morning-briefings \
   --cron "0 8 * * 1-5" --tz Asia/Kolkata \
   --provider interactive_shell --city "New Delhi"
 
@@ -84,11 +84,11 @@ Create a new scheduled delivery task.
 | `--window` | No | Lookback window in hours (default: `24`) |
 | `--prompt` | Cond. | Instruction to execute on every run; required for `manual_loop` and rejected for other kinds |
 | `--skill` | Cond. | Required with `--kind recurring_skill`; names the revision-pinned skill to execute |
-| `--owner` | Cond. | GitHub repository owner; required for the `github-ci-health` recurring skill |
-| `--repo` | Cond. | GitHub repository name; required for the `github-ci-health` recurring skill |
-| `--branch` | No | Branch filter for `github-ci-health`; cannot be combined with `--pr` |
-| `--pr` | No | Pull-request filter for `github-ci-health`; cannot be combined with `--branch` |
-| `--city` | No | City for `morning-report`; omitted to use its default-location behavior |
+| `--owner` | Cond. | GitHub repository owner; required for the `reporting-github-ci-failures` recurring skill |
+| `--repo` | Cond. | GitHub repository name; required for the `reporting-github-ci-failures` recurring skill |
+| `--branch` | No | Branch filter for `reporting-github-ci-failures`; cannot be combined with `--pr` |
+| `--pr` | No | Pull-request filter for `reporting-github-ci-failures`; cannot be combined with `--branch` |
+| `--city` | No | City for `delivering-morning-briefings`; omitted to use its default-location behavior |
 
 ### `opensre cron list`
 
@@ -223,7 +223,7 @@ from your existing integration configuration.
 | Kind | Behavior |
 |------|----------|
 | `manual_loop` | Runs a stored prompt as one headless agent turn and delivers the answer. This is what `/loops` creates. |
-| `recurring_skill` | Runs a named, revision-pinned recurring skill. `morning-report` preserves its optional city; `github-ci-health` requires repository scope and can be narrowed to a branch or PR. |
+| `recurring_skill` | Runs a named, revision-pinned recurring skill. `delivering-morning-briefings` preserves its optional city; `reporting-github-ci-failures` requires repository scope and can be narrowed to a branch or PR. |
 | `github_pr_sweep` | Headless GitHub PR standup (mergeable / stale / conflicted). Requires GitHub configured; posts via the chosen provider. |
 | `posthog_metric_report` | Headless PostHog metric report over the configured window. Requires PostHog configured. |
 | `work_item_reminder` | Reminder for a single work item at its `--remind-at` time. Created by `opensre work add --remind-at …`. |

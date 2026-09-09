@@ -129,7 +129,7 @@ A successful check connects to the MCP server and reports how many tools it disc
 
 ## Metric report (scheduled)
 
-Deliver a per-metric PostHog analytics pulse to Telegram, Slack, or Rocket.Chat, on demand or on a schedule — coworker-style digests (what moved and why it matters), not a raw dashboard dump. Slack delivery needs a bot token (a webhook alone cannot honor `--chat-id`). This uses the headless **posthog-summary** skill path (schema discovery, then one bounded HogQL query per metric), not generic `opensre cron` kinds. It requires the PostHog **MCP** integration above — the REST `posthog` integration alone cannot serve it.
+Deliver a per-metric PostHog analytics pulse to Telegram, Slack, or Rocket.Chat, on demand or on a schedule — coworker-style digests (what moved and why it matters), not a raw dashboard dump. Slack delivery needs a bot token (a webhook alone cannot honor `--chat-id`). This uses the headless **summarizing-posthog-analytics** skill path (schema discovery, then one bounded HogQL query per metric), not generic `opensre cron` kinds. It requires the PostHog **MCP** integration above — the REST `posthog` integration alone cannot serve it.
 
 | Command | What it does |
 | --- | --- |

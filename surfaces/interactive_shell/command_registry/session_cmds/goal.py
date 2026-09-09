@@ -46,7 +46,7 @@ _USAGE = "/goal [show|set|pause|resume|edit|clear|help]  or  /goal <condition>"
 _SET_EXAMPLES: tuple[str, ...] = (
     "/goal set gateway p95 latency back under 500ms",
     "/goal set find out why checkout returns 502s and post the root cause",
-    "/goal set --max-turns 10 fix the failing morning-report delivery to Slack",
+    "/goal set --max-turns 10 fix the failing delivering-morning-briefings delivery to Slack",
 )
 _EDIT_EXAMPLE = "/goal edit also confirm the fix reached prod-eu-42"
 

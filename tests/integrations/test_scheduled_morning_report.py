@@ -1,4 +1,4 @@
-"""Tests for integration-owned scheduled morning-report data fetches."""
+"""Tests for integration-owned scheduled delivering-morning-briefings data fetches."""
 
 from __future__ import annotations
 
@@ -63,7 +63,7 @@ def test_format_fetched_briefing_inputs_uses_city(monkeypatch: pytest.MonkeyPatc
 
 
 def test_prefetched_context_empty_for_other_skills() -> None:
-    assert scheduled_skill_runner._prefetched_context("github-ci-fix", {}) == ""
+    assert scheduled_skill_runner._prefetched_context("fixing-github-ci", {}) == ""
 
 
 def test_prefetched_context_morning_report(
@@ -71,6 +71,8 @@ def test_prefetched_context_morning_report(
 ) -> None:
     monkeypatch.setattr(morning_fetch, "fetch_weather", lambda _city="": "Paris: cloudy")
     monkeypatch.setattr(morning_fetch, "fetch_headlines", lambda: ["News"])
-    block = scheduled_skill_runner._prefetched_context("morning-report", {"city": "Paris"})
+    block = scheduled_skill_runner._prefetched_context(
+        "delivering-morning-briefings", {"city": "Paris"}
+    )
     assert "Paris: cloudy" in block
     assert "- News" in block

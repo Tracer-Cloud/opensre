@@ -161,9 +161,15 @@ def test_skill_view_renders_activation_event() -> None:
 def test_two_skills_in_one_batch_name_the_skill_on_each_activation_line() -> None:
     """Headers print first, results after; the first skill's line must say which skill."""
     observer, buffer = _skill_observer()
-    for call_id, name in (("t1", "github_ci_health"), ("t2", "github_ci_fix_onboarding")):
+    for call_id, name in (
+        ("t1", "reporting-github-ci-failures"),
+        ("t2", "github-ci-fix-onboarding"),
+    ):
         observer("tool_start", {"id": call_id, "name": "skill_view", "input": {"name": name}})
-    for call_id, name in (("t1", "github-ci-health"), ("t2", "github-ci-fix-onboarding")):
+    for call_id, name in (
+        ("t1", "reporting-github-ci-failures"),
+        ("t2", "github-ci-fix-onboarding"),
+    ):
         observer(
             "tool_end",
             {
@@ -175,8 +181,8 @@ def test_two_skills_in_one_batch_name_the_skill_on_each_activation_line() -> Non
         )
 
     assert buffer.getvalue() == (
-        "\nSkill github-ci-health\n\nSkill github-ci-fix-onboarding\n"
-        "  ↳ github-ci-health activated\n  ↳ Skill activated\n"
+        "\nSkill reporting-github-ci-failures\n\nSkill github-ci-fix-onboarding\n"
+        "  ↳ reporting-github-ci-failures activated\n  ↳ Skill activated\n"
     )
 
 
@@ -386,7 +392,7 @@ def test_skill_view_tool_end_without_start_prints_nothing() -> None:
         {
             "id": "t9",
             "name": "skill_view",
-            "input": {"name": "morning-report"},
+            "input": {"name": "delivering-morning-briefings"},
             "output": {"ok": True},
         },
     )

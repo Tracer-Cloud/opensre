@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 import pytest
@@ -12,8 +13,18 @@ from core.agent_harness.prompts.skills.loader import (
     skills_dir,
 )
 
-_REQUIRED = ("owner", "usecases", "requires", "type", "version")
+_REQUIRED = (
+    "owner",
+    "last_changed_by",
+    "last_changed_at",
+    "usecases",
+    "requires",
+    "type",
+    "version",
+)
 _TYPES = {"onboarding", "analytics", "report", "repair", "audit"}
+# ``owner`` names the person who created the skill; team labels hide that.
+_TEAM_LABEL = "team"
 
 
 def _skill_cards() -> list[Path]:
@@ -35,7 +46,21 @@ def test_every_skill_card_has_the_metadata_block(card: Path) -> None:
     assert isinstance(metadata["usecases"], list) and len(metadata["usecases"]) >= 1
     assert isinstance(metadata["requires"], list) and len(metadata["requires"]) >= 1
     assert metadata["type"] in _TYPES, f"{card.parent.name}: unknown type {metadata['type']!r}"
-    assert metadata["owner"] == "Tracer Team"
+    for key in ("owner", "last_changed_by"):
+        value = metadata[key]
+        assert isinstance(value, str), f"{card.parent.name}: metadata.{key} must be a name"
+        assert _TEAM_LABEL not in value.lower(), (
+            f"{card.parent.name}: metadata.{key} must name a person, not a team ({value!r})"
+        )
+    # Unquoted ``YYYY-MM-DD`` parses as a date; a quoted or malformed value is a string.
+    changed_at = metadata["last_changed_at"]
+    assert isinstance(changed_at, date), (
+        f"{card.parent.name}: metadata.last_changed_at must be an unquoted ISO date "
+        f"(YYYY-MM-DD), got {changed_at!r}"
+    )
+    assert changed_at <= date.today(), (
+        f"{card.parent.name}: metadata.last_changed_at {changed_at} is in the future"
+    )
 
 
 def test_declared_references_resolve_inside_the_skills_tree() -> None:

@@ -10,7 +10,9 @@ description: >-
 getting_started: Set up an agent that improves CI/CD reliability over time
 demo_order: 2
 metadata:
-  owner: Tracer Team
+  owner: Vincent
+  last_changed_by: Vincent
+  last_changed_at: 2026-09-09
   usecases:
     - First-experience demo: schedule a weekday CI/CD reliability agent for one repo
     - Watch CI reliability over time without a one-shot analytics report
@@ -19,33 +21,19 @@ metadata:
     - GitHub token usable by OpenSRE with read access to the repository's Actions history
     - A local git checkout for the workspace scan (optional; a named repository also works)
   type: report
-  version: "1.0"
+  version: "1.1"
 tools:
   - scan_local_git_workspace
   - schedule_ci_reliability_loop
   - ask_user_choice
 references:
   - common/ask_once.md
-  - common/progress.md
 ---
 
 # CI/CD reliability agent
 
 Schedule a recurring CI/CD reliability check for one repository, delivered to
 the shell inbox.
-
-## When to use
-
-- The user picked "Set up an agent that improves CI/CD reliability over time"
-  from the startup demo menu (option B), or asks to watch CI reliability over
-  time, schedule a weekday reliability check, or keep an agent on one repo's CI.
-- The analytics demo's next-step menu offered that same option after a report.
-
-## Related workflows
-
-- A one-shot CI/CD performance report. Use `cicd-analytics-demo`.
-- Listing checks that are failing right now. Use `github-ci-health`.
-- Fixing a failing check. Use `github-ci-fix`.
 
 ## Workflow rules
 
@@ -55,11 +43,26 @@ the shell inbox.
 - Decision points use `ask_user_choice` with the exact option texts below.
   End the turn after calling it; the answer arrives as the next user message.
 - Output `schedule_ci_reliability_loop`'s `response_text` exactly and stop.
-  The loop delivers to this shell's inbox and never posts to Slack.
+
+## Plan
+
+Track progress with the `update_plan` tool, not with headers or prose:
+
+- On entry, before the first workflow tool call, call `update_plan` with the
+  steps below verbatim, the first step `in_progress`, and a one-line
+  `explanation` (this is not a diagnosis; no hypothesis table):
+  `Scan this machine` / `Pick the repository` / `Pick when it runs` /
+  `Schedule the loop`.
+- When the request already names the repository, omit the first two steps
+  from the plan instead of renumbering.
+- After a step's tool results, call `update_plan` marking it `completed` and
+  the next step `in_progress`, in the same response as the next step's tool
+  calls. When the next step is an `ask_user_choice`, mark the step and call
+  the menu in the same response, then end the turn.
+- Do not narrate the plan or repeat step names in prose; the shell renders
+  the checklist.
 
 ## Workflow
-
-When the request already names the repository, start at step 3.
 
 ### 1. Scan this machine
 

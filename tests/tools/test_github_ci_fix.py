@@ -908,7 +908,7 @@ def test_skill_guidance_attaches_to_ci_fix_tool() -> None:
     tool = tools_by_name["fix_github_pr_ci"]
 
     assert "Workflow guidance:" in tool.description
-    assert '<skill name="github-ci-fix"' in tool.skill_guidance
+    assert '<skill name="operating-github-ci-fixer"' in tool.skill_guidance
     assert "Fork PR branches are refused" in tool.skill_guidance
     assert "post-push check verification" in tool.skill_guidance
 

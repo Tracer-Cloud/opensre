@@ -65,7 +65,29 @@ def test_master_menu_matches_four_unique_children_and_preserves_specialists() ->
     names = [skill.name for skill in discovered if skill is not None]
     assert len(names) == len(set(names))
     assert ONBOARDING_SKILL_NAME in loader.load_skills_index()
-    assert loader.load_skill_body("github-ci-fix")
+    assert loader.load_skill_body("fixing-github-ci")
+
+
+def test_multi_step_skills_track_progress_with_update_plan_not_step_headers() -> None:
+    """Progress lives in update_plan (survives ask_user_choice turn boundaries).
+
+    The old hand-emitted "### [n/N]" header protocol must not creep back: it
+    contradicted the base prompt's header rules and vanished from context at
+    every menu answer.
+    """
+    loader.clear_skills_caches()
+    multi_step = (
+        "cicd-analytics-demo",
+        "cicd-reliability-agent",
+        "slack-handoff",
+        "delivering-morning-briefings",
+    )
+    for name in multi_step:
+        body = loader.load_skill_body(name)
+        assert "update_plan" in body, name
+        assert "### [" not in body, name
+    for name in (ONBOARDING_SKILL_NAME, "remote-managed-service"):
+        assert "### [" not in loader.load_skill_body(name), name
 
 
 def test_capability_and_demo_prompts_load_master_instead_of_defining_another_menu() -> None:
@@ -175,15 +197,12 @@ def test_onboarding_children_load_shared_rules_once() -> None:
     loader.clear_skills_caches()
     analytics = loader.load_skill_body("cicd-analytics-demo")
     reliability = loader.load_skill_body("cicd-reliability-agent")
-    slack = loader.load_skill_body("slack-handoff")
     analytics_card = next(
         s for s in loader.list_action_skills() if s.name == "cicd-analytics-demo"
     ).path.read_text(encoding="utf-8")
     assert "Every number in the reply comes from a tool result" in analytics
     assert "Ask each question once." in analytics
     assert "Ask each question once." in reliability
-    assert "### [n/N] <step name>" in analytics
-    assert "### [n/N] <step name>" in slack
     assert analytics.count("Every number in the reply comes from a tool result") == 1
     assert "Every number in the reply comes from a tool result" not in analytics_card
     assert "## Progress updates" not in analytics_card

@@ -63,7 +63,7 @@ shell_run_tool = RegisteredTool(
         "explicitly asked for. Do not volunteer destructive, credential-exfiltrating, or "
         "unrelated commands the user did not ask for. Set quiet=true to hide the $ line "
         "and stdout/stderr from the terminal while still returning output to the agent "
-        "(required for architecture-audit probes)."
+        "(required for intermediate skill probes)."
     ),
     input_schema=object_schema(
         properties={
@@ -84,8 +84,8 @@ shell_run_tool = RegisteredTool(
                 "description": (
                     "When true, do not print the command line or stdout/stderr to the "
                     "interactive shell. Tool result payload is unchanged. Use for "
-                    "intermediate skill fetches (morning-report weather/news curls, "
-                    "architecture-audit scans) when the user should only see the "
+                    "intermediate skill fetches (delivering-morning-briefings weather/news "
+                    "curls, repository scans) when the user should only see the "
                     "composed answer, not the raw $ output twice."
                 ),
             },

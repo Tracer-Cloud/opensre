@@ -139,7 +139,7 @@ STARTER_LOOPS: tuple[StarterLoop, ...] = (
         cron="0 8 * * 1-5",
         timezone="UTC",
         window_hours=24,
-        skill_name="morning-report",
+        skill_name="delivering-morning-briefings",
     ),
     StarterLoop(
         slug="weekly-alert-audit",

@@ -1,10 +1,12 @@
 ---
-name: github-ci-fix
+name: fixing-github-ci
 description: >-
   Fix failing GitHub CI / Actions checks via fix_github_pr_ci and push to the
   existing PR head, or fix a branch's failing CI via a linked repair worktree
 metadata:
-  owner: Tracer Team
+  owner: Vaibhav
+  last_changed_by: Vincent
+  last_changed_at: 2026-09-09
   usecases:
     - Fix failing CI checks on a pull request and push to its head branch
     - Fix failing CI on a branch such as main through a linked repair worktree

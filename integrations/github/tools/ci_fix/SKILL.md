@@ -1,11 +1,11 @@
 ---
-name: github-ci-fix
+name: operating-github-ci-fixer
 description: Use when the user asks OpenSRE to fix failing GitHub CI, GitHub Actions checks, failing pull request checks, a broken PR branch, or CI on a named branch such as main.
 tools:
   - fix_github_pr_ci
 ---
 
-# GitHub CI Fix
+# operating-github-ci-fixer
 
 Use `fix_github_pr_ci` for GitHub CI remediation requests, not
 `github_cli` or `shell_run`.

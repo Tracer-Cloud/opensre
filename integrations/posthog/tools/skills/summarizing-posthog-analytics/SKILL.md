@@ -1,5 +1,5 @@
 ---
-name: posthog-summary
+name: summarizing-posthog-analytics
 description: Summarise PostHog product analytics into a per-metric team pulse. Use for PostHog usage overviews, per-metric summaries, product-analytics digests, or "what happened this week" reporting.
 tools:
   - list_posthog_tools

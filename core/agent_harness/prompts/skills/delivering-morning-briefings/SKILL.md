@@ -1,10 +1,12 @@
 ---
-name: morning-report
+name: delivering-morning-briefings
 description: >-
   Weather + news morning briefing: fetch live weather and headlines, compose
   a plain-text briefing, deliver it. Multi-step; load before acting.
 metadata:
-  owner: Tracer Team
+  owner: Gust
+  last_changed_by: Vincent
+  last_changed_at: 2026-09-09
   usecases:
     - Weather and headlines morning briefing on demand
     - Recurring weekday briefing delivered to the shell inbox or a chat channel
@@ -12,7 +14,7 @@ metadata:
     - Outbound network access for the weather and news fetches
     - A delivery channel for the recurring offer (shell inbox, Slack, or Telegram)
   type: report
-  version: "1.0"
+  version: "1.1"
 recurring: weekdays 08:00
 ---
 
@@ -38,28 +40,24 @@ Never fabricate weather values or headlines. Treat RSS/XML/HTML as intermediate
 data. Show only the composed briefing, without raw feed markup, XML tags, CDATA
 blocks, or a `curl` dump. The news fetch below extracts plain-text headlines.
 
-## Progress updates
+## Plan
 
-The fetches run quietly, so narrate the five steps.
+The fetches run quietly, so track progress with the `update_plan` tool, not
+with headers or prose:
 
-- Before every step's tool calls, emit this exact header format as assistant
-  text in the same response as the tool calls, then one short status
-  sentence:
-
-  ```text
-  ### [n/5] <step name>
-  <One-sentence status.>
-  ```
-
-- Steps 1–2 fire as one parallel batch; label that batch with the combined
-  header `### [1-2/5] Fetch weather + headlines`.
-- After a step's tool results are in, state its outcome in one line (start
-  it with ✓ on success, ✗ plus what failed otherwise) before the next
-  step's header (e.g. `### [4/5] Deliver to Slack`).
-- Use each step's own number as n; never renumber mid-run. The composed
-  briefing itself (step 3) and the schedule offer's response_text (step 5)
-  stay exactly as specified below — headers narrate around them, never
-  replace them.
+- On entry, before the fetches, call `update_plan` with these steps verbatim,
+  the first step `in_progress`, and a one-line `explanation` (this is not a
+  diagnosis; no hypothesis table): `Fetch weather and headlines` /
+  `Compose the briefing` / `Deliver the briefing` /
+  `Offer a recurring schedule`. Steps 1–2 below fire as one parallel batch
+  and share the first plan step.
+- After a step's tool results, call `update_plan` marking it `completed` and
+  the next step `in_progress`, in the same response as the next step's tool
+  calls.
+- Do not narrate the plan or repeat step names in prose; the shell renders
+  the checklist. The composed briefing itself (step 3) and the schedule
+  offer's response_text (step 5) stay exactly as specified below — the plan
+  tracks around them, never replaces them.
 
 ## Workflow
 
@@ -130,12 +128,12 @@ The tool returns `response_text` = briefing + closer; show that to the user
 Defaults when they accept without overrides: weekdays 08:00 in their
 timezone if known else UTC, provider matching where you just delivered
 (Slack webhook by default — omit `chat_id`). Kind is `recurring_skill` with
-`skill_name` set to `morning-report`.
+`skill_name` set to `delivering-morning-briefings`.
 
 Example after Slack webhook delivery:
 
 ```text
-propose_scheduled_delivery(kind="recurring_skill", skill_name="morning-report",
+propose_scheduled_delivery(kind="recurring_skill", skill_name="delivering-morning-briefings",
     city="<city used for the weather fetch>",
     cron="0 8 * * 1-5", timezone="UTC", provider="slack",
     briefing_text="<FULL composed weather + headlines briefing>")

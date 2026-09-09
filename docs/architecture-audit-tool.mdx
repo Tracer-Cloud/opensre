@@ -52,8 +52,6 @@ Uses the same GitHub credentials as [GitHub](/github) (`GITHUB_MCP_AUTH_TOKEN`, 
 | `architecture_cleanup_repo` | Delete the architecture workspace (refuses paths outside the allowed directory) | Deletes clone |
 | `architecture_save_observations` | Write the full observation list to `~/.opensre/{session_id}/{repo}-architecture-audit-{uuid}.md` | Writes a file |
 
-Related skill: `architecture-audit`.
-
 ### `architecture_clone_repo`
 
 ```json
@@ -90,7 +88,7 @@ Call **after** cleanup and **before** the final summarized report. Pass the **co
 opensre integrations verify github
 ```
 
-Expected output includes MCP tool discovery; architecture tools additionally accept `GITHUB_TOKEN` when GitHub MCP is not configured. There is no separate `architecture-audit` verify target.
+Expected output includes MCP tool discovery; architecture tools additionally accept `GITHUB_TOKEN` when GitHub MCP is not configured. There is no separate architecture-audit verify target.
 
 ## Troubleshooting
 

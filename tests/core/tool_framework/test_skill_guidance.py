@@ -19,7 +19,7 @@ def test_load_tool_skill_guidance_loads_valid_skill(tmp_path: Path) -> None:
     _write_skill(
         path,
         """
-name: github-workflow
+name: tracking-github-work-status
 description: Guide GitHub workflow tools.
 tools:
   - list_github_work_items
@@ -35,12 +35,12 @@ tools:
 
     assert result.diagnostics == []
     assert result.skill is not None
-    assert result.skill.name == "github-workflow"
+    assert result.skill.name == "tracking-github-work-status"
     assert result.skill.tool_names == ("list_github_work_items", "generate_work_status_report")
     assert "Read first" in result.skill.content
 
     formatted = format_tool_skill_guidance(result.skill)
-    assert '<skill name="github-workflow"' in formatted
+    assert '<skill name="tracking-github-work-status"' in formatted
     assert 'description="Guide GitHub workflow tools."' in formatted
     assert f"References are relative to {tmp_path}" in formatted
 
@@ -101,7 +101,7 @@ tools:
 
 def test_load_tool_skill_guidance_requires_description_and_tools(tmp_path: Path) -> None:
     path = tmp_path / "SKILL.md"
-    _write_skill(path, "name: github-workflow")
+    _write_skill(path, "name: tracking-github-work-status")
 
     result = load_tool_skill_guidance(path)
 
@@ -195,14 +195,14 @@ tools:
 
 
 def test_sentry_summary_skill_loads_and_references_correct_tools() -> None:
-    """The sentry-summary SKILL.md must load cleanly and declare the four Sentry tools."""
+    """The summarizing-sentry-issues SKILL.md must load cleanly and declare the four Sentry tools."""
     skill_path = (
         Path(__file__).resolve().parents[3]
         / "integrations"
         / "sentry"
         / "tools"
         / "skills"
-        / "sentry-summary"
+        / "summarizing-sentry-issues"
         / "SKILL.md"
     )
 
@@ -218,11 +218,11 @@ def test_sentry_summary_skill_loads_and_references_correct_tools() -> None:
 
     assert result.diagnostics == [], f"Unexpected diagnostics: {result.diagnostics}"
     assert result.skill is not None
-    assert result.skill.name == "sentry-summary"
+    assert result.skill.name == "summarizing-sentry-issues"
     assert set(result.skill.tool_names) == known_tools
 
     formatted = format_tool_skill_guidance(result.skill)
-    assert '<skill name="sentry-summary"' in formatted
+    assert '<skill name="summarizing-sentry-issues"' in formatted
     assert "search_sentry_issues" in result.skill.content
     assert "get_sentry_uptime_digest" in result.skill.content
     assert "is:unresolved" in result.skill.content

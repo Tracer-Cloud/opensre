@@ -1,4 +1,4 @@
-"""Headless Sentry morning digest via the sentry-summary skill."""
+"""Headless Sentry morning digest via the summarizing-sentry-issues skill."""
 
 from __future__ import annotations
 
@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 _MORNING_DIGEST_BASE_PROMPT = (
     "Sentry morning digest: summarize unresolved Sentry issues from the last 24 hours "
     "and include uptime status from the watch transition log. "
-    "Follow the sentry-summary skill workflow."
+    "Follow the summarizing-sentry-issues skill workflow."
 )
 
 
@@ -67,7 +67,7 @@ def _dispatch_headless_turn(message: str, payload: AgentPayload) -> TurnResult:
 
 
 def run_sentry_morning_digest(payload: AgentPayload) -> str:
-    """Run one headless sentry-summary turn and return the assistant report."""
+    """Run one headless summarizing-sentry-issues turn and return the assistant report."""
     message = build_morning_digest_prompt(payload)
     result = _dispatch_headless_turn(message, payload)
     report = result.primary_response_text

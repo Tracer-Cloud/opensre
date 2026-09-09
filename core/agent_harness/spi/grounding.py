@@ -14,6 +14,8 @@ from core.agent_harness.prompts.skills.loader import (
     getting_started_skills,
     list_action_skills,
     load_skill_body,
+    load_skill_reference,
+    skill_reference_names,
 )
 
 __all__ = [
@@ -25,5 +27,7 @@ __all__ = [
     "getting_started_skills",
     "list_action_skills",
     "load_skill_body",
+    "load_skill_reference",
     "log_grounding_cache_diagnostics",
+    "skill_reference_names",
 ]

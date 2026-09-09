@@ -64,21 +64,20 @@ def test_required_skill_data_covers_action_and_tool_guidance() -> None:
         path.relative_to(_REPO_ROOT).as_posix() for path in required_skill_files(_REPO_ROOT)
     }
 
-    assert "core/agent_harness/prompts/skills/architecture_audit/SKILL.md" in relative_paths
-    assert "core/agent_harness/prompts/skills/github_ci_health/SKILL.md" in relative_paths
+    assert "core/agent_harness/prompts/skills/fixing-github-ci/SKILL.md" in relative_paths
+    assert (
+        "core/agent_harness/prompts/skills/reporting-github-ci-failures/SKILL.md" in relative_paths
+    )
     assert "core/agent_harness/prompts/skills/onboarding_cicd_fix/SKILL.md" in relative_paths
     assert (
         "core/agent_harness/prompts/skills/onboarding_cicd_fix/a_local_analysis/SKILL.md"
         in relative_paths
     )
-    assert (
-        "core/agent_harness/prompts/skills/architecture_audit/architecture_audit_report.md"
-        in relative_paths
-    )
     assert "integrations/github/tools/workflow/SKILL.md" in relative_paths
-    assert "integrations/sentry/tools/skills/sentry-summary/SKILL.md" in relative_paths
+    assert "integrations/sentry/tools/skills/summarizing-sentry-issues/SKILL.md" in relative_paths
     assert (
-        "tools/system/python_execution_tool/skills/github-star-velocity/SKILL.md" in relative_paths
+        "tools/system/python_execution_tool/skills/measuring-github-star-velocity/SKILL.md"
+        in relative_paths
     )
 
 

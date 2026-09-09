@@ -1,7 +1,7 @@
 """Tool output must never be parsed as terminal markup.
 
 A skill body, shell stdout, or model reply can contain square brackets — the
-morning-report recipe embeds ``sed -E 's/<title><!\\[CDATA\\[//; s/\\]\\]>//'``.
+delivering-morning-briefings recipe embeds ``sed -E 's/<title><!\\[CDATA\\[//; s/\\]\\]>//'``.
 Rendered as markup that reads as an unbalanced tag and raises ``MarkupError``,
 which killed the whole turn with "turn error: closing tag ... doesn't match any
 open tag" and no briefing.
@@ -29,7 +29,7 @@ def test_a_skill_body_is_not_valid_markup() -> None:
 
     # Act / Assert
     with pytest.raises(Exception, match="closing tag"):
-        console.print(load_skill_body("morning-report"))
+        console.print(load_skill_body("delivering-morning-briefings"))
 
 
 def test_the_shell_sink_renders_bracket_heavy_output_literally() -> None:
@@ -37,7 +37,7 @@ def test_the_shell_sink_renders_bracket_heavy_output_literally() -> None:
     # Arrange
     buffer = io.StringIO()
     sink = ShellOutputSink(Console(file=buffer, force_terminal=False, highlight=False))
-    body = load_skill_body("morning-report")
+    body = load_skill_body("delivering-morning-briefings")
 
     # Act
     sink.print(body)

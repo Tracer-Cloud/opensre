@@ -34,7 +34,7 @@ def test_morning_report_starter_is_a_pinned_recurring_skill(
 
     morning = next(task for task in list_tasks(store_path) if task.name == "Morning report")
     assert morning.kind is TaskKind.RECURRING_SKILL
-    assert morning.skill_name == "morning-report"
+    assert morning.skill_name == "delivering-morning-briefings"
     assert morning.skill_revision
     assert LOOP_PROMPT_PARAM not in morning.params
     assert morning.enabled is False
@@ -66,7 +66,7 @@ def test_legacy_disabled_morning_report_starter_is_upgraded(
 
     upgraded = next(task for task in list_tasks(store_path) if task.id == legacy.id)
     assert upgraded.kind is TaskKind.RECURRING_SKILL
-    assert upgraded.skill_name == "morning-report"
+    assert upgraded.skill_name == "delivering-morning-briefings"
     assert upgraded.skill_revision
     assert LOOP_PROMPT_PARAM not in upgraded.params
 

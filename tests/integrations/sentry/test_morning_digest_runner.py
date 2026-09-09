@@ -15,7 +15,7 @@ class TestBuildMorningDigestPrompt:
     def test_default_prompt(self) -> None:
         prompt = build_morning_digest_prompt({})
         assert "24 hours" in prompt
-        assert "sentry-summary" in prompt
+        assert "summarizing-sentry-issues" in prompt
 
     def test_includes_uptime_instruction(self) -> None:
         prompt = build_morning_digest_prompt({})

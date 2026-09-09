@@ -101,7 +101,7 @@ def _repository(
 
 
 def _scheduled_task(repo: str) -> ScheduledTask:
-    skill_name, skill_revision = pin_recurring_skill("github-ci-health")
+    skill_name, skill_revision = pin_recurring_skill("reporting-github-ci-failures")
     return ScheduledTask(
         kind=TaskKind.RECURRING_SKILL,
         cron="0 8 * * 1-5",
@@ -120,7 +120,7 @@ def test_two_repository_schedule_scopes_are_persisted_separately(tmp_path: Path)
     tasks = list_tasks(store)
 
     assert len(tasks) == 2
-    assert [task.skill_name for task in tasks] == ["github-ci-health"] * 2
+    assert [task.skill_name for task in tasks] == ["reporting-github-ci-failures"] * 2
     assert [task.skill_inputs for task in tasks] == [
         {"owner": "acme", "repo": "api"},
         {"owner": "acme", "repo": "web"},
