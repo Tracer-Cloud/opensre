@@ -72,10 +72,13 @@ _JUDGE_SYSTEM = (
     "passage exactly as it appears in the observations or the reply that "
     "shows the problem; a verdict without a real quote is not accepted.\n"
     "When an independent reading of the observations is given, compare the "
-    "reply's key facts (counts, yes/no per item, names) with it. If they "
-    "differ, set verdict to NOT_REACHED and start reason with "
-    f"'{CONTRADICTION_REASON_PREFIX}' followed by what the reply says and what "
-    "the observations read.\n"
+    "reply's key facts (counts, yes/no per item, names) with it and set "
+    "reply_matches_reading accordingly. If they differ, set verdict to "
+    f"NOT_REACHED and start reason with '{CONTRADICTION_REASON_PREFIX}' "
+    "followed by what the reply says and what the observations read.\n"
+    "A 'no' or 'none' per item is supported by the absence of the event in "
+    "that item's observations (for example every run at attempt 1); do not "
+    "ask for evidence of an event that did not happen.\n"
     "When a previous verdict is given, set repeats_previous to true only when "
     "this verdict reports the same blocking problem as that one, however it is "
     "worded; a new or narrower problem is false.\n"
@@ -100,6 +103,14 @@ class SessionGoalJudgeVerdict(BaseModel):
         default=False,
         description="True when this verdict reports the same blocking problem as the previous one.",
     )
+    reply_matches_reading: bool = Field(
+        default=False,
+        description=(
+            "True when the reply's key facts (counts, names, yes or no per item) "
+            "agree with the independent reading of the observations; false when "
+            "they differ or no reading was given."
+        ),
+    )
     evidence_quote: str = Field(
         default="",
         description=(
@@ -118,9 +129,11 @@ _READING_SYSTEM = (
     "facts it asks for (counts, a yes or no per item with the item named, "
     "names). Copy values as they appear; do not infer what an observation "
     "does not state. When the observations do not cover the condition, say "
-    "what is missing instead of guessing. When a result is marked truncated "
-    "or earlier observations were dropped, say what is missing rather than "
-    "treating the kept text as the full record."
+    "what is missing instead of guessing and set covered to false. When a "
+    "result is marked truncated or earlier observations were dropped, say "
+    "what is missing rather than treating the kept text as the full record. "
+    "A 'no' per item is supported by the absence of the event in that item's "
+    "observations; that item counts as covered."
 )
 
 
@@ -130,6 +143,13 @@ class SessionGoalReading(BaseModel):
     answer: str = Field(
         default="",
         description="Terse answer to the condition from the observations, or what is missing.",
+    )
+    covered: bool = Field(
+        default=False,
+        description=(
+            "True when the observations cover every item the condition asks about, "
+            "so the answer above is complete; false when something is missing."
+        ),
     )
 
 
@@ -167,7 +187,7 @@ def read_observations(
     condition: str,
     tool_evidence: str,
     prior_tool_evidence: tuple[str, ...] | None = (),
-) -> str | None:
+) -> SessionGoalReading | None:
     """Answer the condition from the observations alone, or ``None`` when unavailable.
 
     The reply is withheld so the reading cannot be steered by it. The judge
@@ -203,8 +223,9 @@ def read_observations(
     except Exception:
         log.debug("session-goal observation reading failed", exc_info=True)
         return None
-    answer = parsed.answer.strip()
-    return answer or None
+    if not parsed.answer.strip():
+        return None
+    return parsed
 
 
 def invoke_session_goal_judge(
@@ -260,6 +281,7 @@ __all__ = [
     "CONTRADICTION_REASON_PREFIX",
     "JudgeName",
     "SessionGoalJudgeVerdict",
+    "SessionGoalReading",
     "invoke_session_goal_judge",
     "read_observations",
     "judge_reason_is_contradiction",

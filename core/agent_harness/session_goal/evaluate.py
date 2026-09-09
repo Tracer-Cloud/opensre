@@ -34,6 +34,7 @@ from core.agent_harness.session_goal.goal import (
 )
 from core.agent_harness.session_goal.judge import (
     SessionGoalJudgeVerdict,
+    SessionGoalReading,
     invoke_session_goal_judge,
     judge_reason_is_contradiction,
     read_observations,
@@ -215,7 +216,7 @@ def _run_judge(
             tool_evidence=tool_evidence,
             prior_tool_evidence=current.tool_evidence,
         )
-        return invoke_session_goal_judge(
+        parsed = invoke_session_goal_judge(
             judge_llm,
             condition=current.condition,
             reply=text,
@@ -225,8 +226,9 @@ def _run_judge(
             findings=current.findings,
             prior_tool_evidence=current.tool_evidence,
             previous_reason=current.last_verdict,
-            independent_reading=reading or "",
+            independent_reading=reading.answer if reading is not None else "",
         )
+        return _accept_agreeing_reading(parsed, reading)
     except Exception:
         log.debug("session-goal judge unavailable", exc_info=True)
         return None
@@ -259,13 +261,38 @@ def _blocking_verdict_unsupported(
     return not judge_quote_is_supported(quote, f"{tool_evidence}\n{reply}")
 
 
+def _accept_agreeing_reading(
+    parsed: SessionGoalJudgeVerdict | None, reading: SessionGoalReading | None
+) -> SessionGoalJudgeVerdict | None:
+    """Turn a not-yet into reached when two independent views agree the work is done.
+
+    The reading (made without the reply) says the observations cover every
+    item; the judge says the reply matches that reading and names no
+    contradiction. A judge that still asks for more at that point is asking
+    for evidence of an event that did not happen.
+    """
+    if parsed is None or reading is None:
+        return parsed
+    if parsed.verdict != "NOT_REACHED" or not reading.covered:
+        return parsed
+    if not parsed.reply_matches_reading or judge_reason_is_contradiction(parsed.reason):
+        return parsed
+    return parsed.model_copy(
+        update={"verdict": "GOAL_REACHED", "reason": SessionGoalReason.AGREES_WITH_READING}
+    )
+
+
 def _reached_verdict_unsupported(parsed: SessionGoalJudgeVerdict, *, tool_evidence: str) -> bool:
     """``GOAL_REACHED`` after tools must quote the observations, not the reply.
 
     The assistant table can say Yes while ``gh`` only shows attempt 1. A
-    quote taken from that table is not checkable against the world.
+    quote taken from that table is not checkable against the world. A verdict
+    promoted because the reply agrees with the independent reading carries
+    that reading as its support instead of a quote.
     """
     if parsed.verdict != "GOAL_REACHED" or not tool_evidence.strip():
+        return False
+    if parsed.reason == SessionGoalReason.AGREES_WITH_READING:
         return False
     quote = getattr(parsed, "evidence_quote", "")
     return not judge_quote_is_supported(quote, tool_evidence)

@@ -270,7 +270,8 @@ def test_the_observations_are_read_without_the_reply() -> None:
     )
 
     # Assert: the reply is not part of the input; the answer comes back.
-    assert reading == "#6140: no re-run (attempt 1 success)"
+    assert reading is not None
+    assert reading.answer == "#6140: no re-run (attempt 1 success)"
     assert "never see the assistant" in seen["system"]
     assert "Latest assistant reply" not in seen["prompt"]
     assert "attempt 1 success" in seen["prompt"]
@@ -333,3 +334,52 @@ def test_the_judge_compares_the_reply_with_the_independent_reading() -> None:
     )
     assert verdict.status == SessionGoalStatus.ACTIVE
     assert verdict.reason.startswith("Contradiction:")
+
+
+def test_a_not_yet_becomes_reached_when_the_reading_covers_all_and_the_reply_matches() -> None:
+    """Two independent views agreeing beat a judge that asks for proof of a non-event."""
+
+    # Arrange: reading says covered; judge says NOT_REACHED but reply matches reading.
+    class _LLM:
+        model_id = "test"
+
+        def invoke(self, messages, *, system=None, tools=None):  # noqa: ANN001
+            _ = (messages, tools)
+            if "never see the assistant" in (system or ""):
+                return AgentLLMResponse(
+                    content='{"answer": "#6140: no re-run; #6139: no re-run", "covered": true}'
+                )
+            return AgentLLMResponse(
+                content=(
+                    '{"verdict": "NOT_REACHED", "reason": "no failed-then-green run shown", '
+                    '"reply_matches_reading": true}'
+                )
+            )
+
+        def tool_schemas(self, tools):  # noqa: ANN001
+            _ = tools
+            return []
+
+    session = SessionCore()
+    goal = SessionGoal(condition="did CI on #6140 or #6139 fail then pass?", max_outer_turns=3)
+    attach_session_goal(session, goal)
+    result = TurnResult(
+        "cli_agent_handled",
+        ToolCallingTurnResult(
+            1,
+            1,
+            1,
+            False,
+            True,
+            tool_evidence="Tool: gh\nArguments: {}\nOutcome: success\nResult: attempt 1 success",
+            evidence_success_count=1,
+        ),
+        "| #6140 | No | #6139 | No |",
+    )
+
+    # Act
+    verdict = evaluate_session_goal(goal, result, session=session, judge_llm=_LLM())  # type: ignore[arg-type]
+
+    # Assert
+    assert verdict.status == SessionGoalStatus.ACHIEVED
+    assert "agrees with an independent reading" in verdict.reason

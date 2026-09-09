@@ -85,6 +85,9 @@ class SessionGoalReason:
     CLEARED = "goal cleared"
     JUDGE_UNAVAILABLE = "judge unavailable; staying active"
     JUDGE_UNSUPPORTED_PREFIX = "not yet — the judge could not point at the data: "
+    AGREES_WITH_READING = (
+        "the reply agrees with an independent reading of the observations, which cover every item"
+    )
     TOOL_FAILED = "a tool failed this turn; staying active"
     UNVERIFIED_OVERFLOW = "tool evidence overflowed; staying unverified"
 
