@@ -6,13 +6,15 @@ transcript judge (:mod:`core.agent_harness.session_goal.judge`).
 ``GOAL_REACHED`` needs tool or stored-finding evidence. ``NOT_REACHED``
 keeps the goal active so the next turn continues — successful tools are
 not enough. The judge may also veto a ``Contradiction:`` or declare
-``IMPOSSIBLE``. An unrecovered tool error this turn blocks accept.
-Reply prose never ticks an item.
+``IMPOSSIBLE``. An unrecovered tool error this turn blocks a reached
+verdict. Any this-turn tool error blocks host accept when the judge is
+missing. Overflowed tool evidence (``tool_evidence is None``) stays
+unverified, including after ``GOAL_REACHED``. Reply prose never ticks
+an item.
 
 The judge client is injected: hosts build the loop's evaluate with
 :func:`build_session_goal_evaluator`. A missing or broken judge does not
-block host accept after real tools. Overflowed tool evidence
-(``tool_evidence is None``) stays unverified.
+block host accept after real tools.
 """
 
 from __future__ import annotations
@@ -36,7 +38,10 @@ from core.agent_harness.session_goal.judge import (
 )
 from core.agent_harness.session_goal.plan_credit import credit_completed_plan_steps
 from core.agent_harness.session_goal.progress import is_session_goal_progress_text
-from core.agent_harness.session_goal.review_input import tool_evidence_has_unrecovered_failure
+from core.agent_harness.session_goal.review_input import (
+    tool_evidence_has_failure,
+    tool_evidence_has_unrecovered_failure,
+)
 from core.agent_harness.session_goal.validate import (
     invoke_checklist_tick_validator,
     kept_tick_indices,
@@ -224,6 +229,7 @@ def _verdict_from_judge(
     evidence: bool,
     host_can_accept: bool,
     tool_failed: bool,
+    unverified: bool,
     fallback_reason: str,
 ) -> SessionGoalVerdict:
     if parsed is None:
@@ -250,7 +256,7 @@ def _verdict_from_judge(
             repeats_previous=repeated,
         )
     if parsed.verdict == "GOAL_REACHED":
-        if evidence and not tool_failed:
+        if evidence and not tool_failed and not unverified:
             return SessionGoalVerdict(
                 status=SessionGoalStatus.ACHIEVED,
                 reason=reason or SessionGoalReason.ACHIEVED_TOOL_EVIDENCE,
@@ -259,6 +265,12 @@ def _verdict_from_judge(
             return SessionGoalVerdict(
                 status=SessionGoalStatus.ACTIVE,
                 reason=reason or fallback_reason,
+                repeats_previous=repeated,
+            )
+        if evidence and unverified:
+            return SessionGoalVerdict(
+                status=SessionGoalStatus.ACTIVE,
+                reason=SessionGoalReason.UNVERIFIED_OVERFLOW,
                 repeats_previous=repeated,
             )
         return SessionGoalVerdict(
@@ -340,12 +352,13 @@ def evaluate_session_goal(
     if current.new_ticks or current.bookkeeping_calls:
         current = replace(current, new_ticks=frozenset(), bookkeeping_calls=0)
 
-    tool_failed = tool_evidence_has_unrecovered_failure(tool_evidence)
+    any_failure = tool_evidence_has_failure(tool_evidence)
+    unrecovered = tool_evidence_has_unrecovered_failure(tool_evidence)
     unverified = current.tool_evidence is None
     host_can_accept = _host_can_accept(
         evidence=evidence,
         unfinished=bool(current.unfinished_items),
-        tool_failed=tool_failed,
+        tool_failed=any_failure,
         unverified=unverified,
     )
     if current.checklist_complete and evidence and judge is None and judge_llm is None:
@@ -354,7 +367,7 @@ def evaluate_session_goal(
                 status=SessionGoalStatus.ACHIEVED,
                 reason=SessionGoalReason.CHECKLIST_COMPLETE,
             )
-        elif tool_failed:
+        elif any_failure:
             verdict = SessionGoalVerdict(
                 status=SessionGoalStatus.ACTIVE,
                 reason=SessionGoalReason.TOOL_FAILED,
@@ -382,7 +395,8 @@ def evaluate_session_goal(
             parsed,
             evidence=evidence,
             host_can_accept=host_can_accept,
-            tool_failed=tool_failed,
+            tool_failed=unrecovered,
+            unverified=unverified,
             fallback_reason=derive_session_goal_reason(current),
         )
     verdict = _with_rejected_ticks(verdict, review.rejected)
