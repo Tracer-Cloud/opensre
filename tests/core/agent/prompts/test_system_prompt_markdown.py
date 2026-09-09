@@ -83,3 +83,13 @@ def test_proactive_messages_are_new_actionable_and_time_sensitive() -> None:
     assert "Broadcast only decisions, anomalies, or milestones" in collapsed
     assert "when the underlying state has not changed" in collapsed
     assert "Do not ask whether to adopt this policy" in collapsed
+
+
+def test_failed_commands_are_rerun_not_estimated() -> None:
+    # Arrange / Act: the shell guidelines carry the rule as one bullet.
+    shell_section = _SYSTEM_PROMPT_BASE.split("## Shell commands", 1)[1]
+
+    # Assert
+    assert "fix it and run it again before answering" in shell_section
+    assert "Never replace a failed measurement" in shell_section
+    assert "the command line still shows dimmed" in shell_section

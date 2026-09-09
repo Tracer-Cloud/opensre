@@ -535,7 +535,7 @@ class ActionRenderObserver:
         args = data.get("input")
         label, content = tool_call_display(name, args if isinstance(args, dict) else {})
         if label in _COMMAND_TOOL_LABELS:
-            concise = _bounded_preview(content, limit=72) if content else ""
+            concise = _bounded_preview(content) if content else ""
             detail = f"{_TOOL_CALL_MARKER} {label} · {content}" if content else f"{label}"
         else:
             concise = ""
