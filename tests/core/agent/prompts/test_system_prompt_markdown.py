@@ -104,3 +104,14 @@ def test_counts_come_from_the_whole_file() -> None:
     # Assert: a range read undercounts silently, which is a wrong answer.
     assert "Counting or measuring from a file means reading all of it" in shell_section
     assert "wrong rather than approximate" in shell_section
+
+
+def test_counts_come_from_a_parser_not_a_pattern() -> None:
+    # Arrange / Act
+    shell_section = _SYSTEM_PROMPT_BASE.split("## Shell commands", 1)[1]
+
+    # Assert: a pattern over indentation answers a different question, and a
+    # column must not be filled in when a neighbouring one is admitted unknown.
+    assert "Count by parsing, not by pattern" in shell_section
+    assert "answers a different question" in shell_section
+    assert "say which field you could not read" in shell_section

@@ -965,6 +965,10 @@ _TOOLS_WITHOUT_DELIBERATE_CATCH: frozenset[str] = frozenset(
         # registry that this test enumerates.
         "alertmanager_alerts",
         "alertmanager_silences",
+        # read_structured_file catches only StructureError (unreadable file,
+        # unknown key); a parser failure it did not anticipate reaches the
+        # global wrapper.
+        "read_structured_file",
         # scan_local_git_workspace shells out to git per repository and lets
         # anything unexpected reach the global wrapper.
         "scan_local_git_workspace",
