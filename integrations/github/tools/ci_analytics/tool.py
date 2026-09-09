@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import time
 from datetime import UTC, datetime
 from http import HTTPStatus
@@ -39,6 +40,8 @@ from integrations.github.tools.ci_analytics.snapshots import (
 )
 
 TOOL_NAME = "analyze_github_ci_reliability"
+logger = logging.getLogger(__name__)
+
 _SOURCE = "github"
 _DEFAULT_WINDOW_DAYS = 30
 _MIN_WINDOW_DAYS = 1
@@ -379,19 +382,24 @@ def analyze_github_ci_reliability(
         message = _failure_message(exc, repository=f"{repo_owner}/{repo_name}")
         return tool_unavailable(_SOURCE, message, response_text=message)
     report = analysis.report
-    write_snapshot(
-        snapshot_root(),
-        repo_owner,
-        repo_name,
-        now,
-        {
-            "generated_at": now.isoformat(),
-            "window_days": window,
-            "headline": headline(report),
-            "report": report_to_dict(report),
-            **report_payload(report),
-        },
-    )
+    try:
+        write_snapshot(
+            snapshot_root(),
+            repo_owner,
+            repo_name,
+            now,
+            {
+                "generated_at": now.isoformat(),
+                "window_days": window,
+                "headline": headline(report),
+                "report": report_to_dict(report),
+                **report_payload(report),
+            },
+        )
+    except OSError:
+        # The analysis is the result; a snapshot that cannot be written only
+        # means the next call reads GitHub again.
+        logger.warning("Could not save the CI reliability snapshot", exc_info=True)
     if console is not None:
         console.print(
             f"  [dim]Read {analysis.runs_read} runs in {time.monotonic() - started:.0f}s.[/dim]"

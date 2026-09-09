@@ -29,13 +29,23 @@ def snapshot_root(root: Path | None = None) -> Path:
     return root or OPENSRE_HOME_DIR / SNAPSHOT_DIRNAME
 
 
+def _folder(root: Path, owner: str, repo: str) -> Path:
+    """One directory per repository, nested so ``foo/bar-baz`` and ``foo-bar/baz`` never meet."""
+    return root / owner / repo
+
+
 def write_snapshot(
     root: Path, owner: str, repo: str, now: datetime, payload: dict[str, Any]
 ) -> Path:
-    """Write ``payload`` under ``<root>/<owner>-<repo>/<timestamp>.json`` and return the path."""
-    target = root / f"{owner}-{repo}" / f"{now:%Y-%m-%dT%H%M%SZ}.json"
+    """Write ``payload`` under ``<root>/<owner>/<repo>/<timestamp>.json`` and return the path.
+
+    The owner and repository are stored in the file too, so a read can check
+    that a snapshot belongs to the repository it is answering for.
+    """
+    target = _folder(root, owner, repo) / f"{now:%Y-%m-%dT%H%M%SZ}.json"
     target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps(payload, indent=2, sort_keys=True, default=str), encoding="utf-8")
+    stamped = {**payload, "owner": owner, "repo": repo}
+    target.write_text(json.dumps(stamped, indent=2, sort_keys=True, default=str), encoding="utf-8")
     return target
 
 
@@ -49,7 +59,7 @@ def read_fresh_snapshot(
     max_age_hours: int = SNAPSHOT_MAX_AGE_HOURS,
 ) -> dict[str, Any] | None:
     """The newest snapshot for ``owner/repo`` with the same window, if young enough."""
-    folder = root / f"{owner}-{repo}"
+    folder = _folder(root, owner, repo)
     if not folder.is_dir():
         return None
     for path in sorted(folder.glob("*.json"), reverse=True):
@@ -63,6 +73,8 @@ def read_fresh_snapshot(
         payload: dict[str, Any] = dict(loaded)
         if generated.tzinfo is None:
             generated = generated.replace(tzinfo=UTC)
+        if payload.get("owner") != owner or payload.get("repo") != repo:
+            continue
         if int(payload.get("window_days", -1)) != window_days:
             continue
         if (now - generated).total_seconds() > max_age_hours * 3600:

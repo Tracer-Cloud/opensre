@@ -189,7 +189,7 @@ def test_build_report_renders_the_analytics_and_keeps_a_json_snapshot(
     assert "CI/CD reliability for acme/app, last 7 days" in report
     assert "Raw data: " in report
     snapshot = Path(report.rsplit("Raw data: ", 1)[1].strip())
-    assert snapshot.parent == tmp_path / "acme-app"
+    assert snapshot.parent == tmp_path / "acme" / "app"
     assert json.loads(snapshot.read_text())["executions"] == 0
 
 

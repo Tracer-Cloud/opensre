@@ -23,37 +23,17 @@ _TOP_DEVELOPERS = 3
 
 
 def render_markdown(report: CiAnalyticsReport) -> str:
-    """Compact report the shell prints as-is."""
+    """Compact report the shell prints as-is. Key results lead; counts follow."""
     lines = [
         f"**CI/CD reliability for {report.owner}/{report.repo}, last {report.window_days} days**",
         "",
-        f"- GitHub Actions executions: **{report.executions}**",
-        f"- PR-triggered workflow executions: **{report.pr_executions}**",
-        f"- PR-triggered failed workflows: **{report.pr_failures}**",
-        f"- Raw PR workflow failure rate: **{_rate(report.pr_failure_rate)}**",
     ]
-    if report.pr_failures:
-        lines.extend(_classification(report))
-        lines.extend(_blocked_time(report))
-    lines.extend(_default_branch(report))
-    if report.workflows:
-        lines.extend(
-            [
-                "",
-                "| Workflow | Runs | Failed | CI-caused | Normal duration |",
-                "| --- | ---: | ---: | ---: | ---: |",
-            ]
-        )
-        for summary in report.workflows[:_TOP_WORKFLOWS]:
-            normal = "n/a" if summary.normal_minutes is None else f"{summary.normal_minutes:.0f}m"
-            lines.append(
-                f"| {summary.workflow} | {summary.runs} | {summary.failures} |"
-                f" {summary.reliability_failures} | {normal} |"
-            )
-    if not report.executions:
+    lines.extend(_key_results_markdown(report))
+    if report.executions:
+        lines.extend(_details_markdown(report))
+    else:
         lines.extend(["", "No completed workflow runs were found in this window."])
     lines.extend(f"- {notice}" for notice in report.coverage_notices)
-    lines.extend(_key_results_markdown(report))
     return "\n".join(lines)
 
 
@@ -186,14 +166,16 @@ def key_results(report: CiAnalyticsReport) -> list[tuple[str, str, float | None]
     )
     if report.mean_recovery_hours is not None:
         results.append(("Mean time back to green", _hours(report.mean_recovery_hours), None))
-    if report.pr_executions:
+    if report.pr_failures:
         flaky = report.count(FailureKind.RELIABILITY)
-        flake_share = flaky / report.pr_executions
+        of_failures = flaky / report.pr_failures
+        of_runs = flaky / report.pr_executions if report.pr_executions else 0.0
         results.append(
             (
                 "CI-caused failures",
-                f"{flaky} of {report.pr_executions} PR runs ({flake_share:.1%})",
-                flake_share,
+                f"{flaky} of {report.pr_failures} failed PR runs ({of_failures:.1%}); "
+                f"{of_runs:.1%} of all {report.pr_executions} PR runs",
+                of_failures,
             )
         )
     slowest = max(

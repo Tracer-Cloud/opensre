@@ -172,3 +172,42 @@ def test_a_saved_report_round_trips_and_paints_like_a_live_one(tmp_path: Path, m
     assert result["from_snapshot"]
     assert "coverage_notices" in result and "red_hours" not in result
     assert any(not isinstance(item, str) for item in painted)
+
+
+def test_repositories_whose_names_join_the_same_way_do_not_share_a_snapshot(
+    tmp_path: Path,
+) -> None:
+    now = datetime(2026, 9, 9, 16, 0, tzinfo=UTC)
+    write_snapshot(tmp_path, "foo", "bar-baz", now, _payload(generated_at=now.isoformat()))
+
+    assert read_fresh_snapshot(tmp_path, "foo-bar", "baz", window_days=30, now=now) is None
+    found = read_fresh_snapshot(tmp_path, "foo", "bar-baz", window_days=30, now=now)
+    assert found is not None and found["owner"] == "foo" and found["repo"] == "bar-baz"
+
+
+def test_a_snapshot_write_failure_does_not_discard_the_analysis(
+    monkeypatch, tmp_path: Path
+) -> None:
+    from typing import Any, cast
+
+    from integrations.github.tools.ci_analytics import tool as tool_module
+
+    monkeypatch.setattr(tool_module, "snapshot_root", lambda _root=None: tmp_path)
+    monkeypatch.setattr(tool_module, "resolve_github_token", lambda _t=None: "tok")
+
+    def _analysis(*_a: Any, **_k: Any) -> Any:
+        return type("A", (), {"report": _report(), "runs_read": 1})()
+
+    monkeypatch.setattr(tool_module, "analyze_repository", _analysis)
+
+    def _fail(*_a: Any, **_k: Any) -> Any:
+        raise OSError("read-only file system")
+
+    monkeypatch.setattr(tool_module, "write_snapshot", _fail)
+
+    result = cast(Any, tool_module.analyze_github_ci_reliability)(
+        owner="apache", repo="airflow", days=30, github_token="tok"
+    )
+
+    assert result["success"] is True
+    assert result["red_hours"] == 24.5
