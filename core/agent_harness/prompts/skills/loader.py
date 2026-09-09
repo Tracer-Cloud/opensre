@@ -16,10 +16,13 @@ verbatim first-visit demo menu label this skill owns; ``demo_order`` is its
 1-based row (A=1). ``pre_execute`` lists static tool calls (``{tool, args}``)
 the host runs when the skill is entered, before any model step; the loader
 keeps them as data and the entry point decides which tools are allowed.
-``references`` lists sibling markdown files appended after the body (resolved
-from the skill folder, its parent package, or the skills tree; paths that
-leave the tree are ignored). Without frontmatter, the name is derived from
-the path and the description from the first ``WHEN TO USE`` / subtitle lines.
+``after_tool`` lists the same kind of call, run by the host after a named
+tool succeeds while the skill is active (so a mid-flow menu cannot be
+skipped). ``references`` lists sibling markdown files appended after the
+body (resolved from the skill folder, its parent package, or the skills
+tree; paths that leave the tree are ignored). Without frontmatter, the name
+is derived from the path and the description from the first ``WHEN TO USE``
+/ subtitle lines.
 
 The harness prompt carries only :func:`load_skills_index` (~hundreds of
 chars). Full bodies load through the ``skill_view`` tool via
@@ -41,6 +44,7 @@ import yaml
 __all__ = (
     "ActionSkill",
     "SKILLS_HEADER",
+    "SkillAfterToolHook",
     "SkillToolCall",
     "getting_started_skills",
     "list_action_skills",
@@ -63,11 +67,24 @@ _BANNER_RE = re.compile(r"^[=\-─]{8,}\s*$")
 
 @dataclass(frozen=True)
 class SkillToolCall:
-    """One static tool call a skill declares in ``pre_execute``."""
+    """One static tool call a skill declares in ``pre_execute`` or ``after_tool``."""
 
     tool: str
     args: Mapping[str, Any]
     """Read-only tool input, shaped exactly like the tool's ``input_schema``."""
+
+
+@dataclass(frozen=True)
+class SkillAfterToolHook:
+    """Host-run tool call after a named tool succeeds inside this skill."""
+
+    after: str
+    call: SkillToolCall
+    options_from: str | None = None
+    """Named builder that fills ``ask_user_choice`` options from the trigger result."""
+
+    options_extra: tuple[str, ...] = ()
+    """Labels appended after any built options (for example a fallback repository)."""
 
 
 @dataclass(frozen=True)
@@ -92,6 +109,9 @@ class ActionSkill:
 
     references: tuple[str, ...] = ()
     """Sibling markdown paths appended after the body; unresolved or out-of-tree entries are skipped."""
+
+    after_tool: tuple[SkillAfterToolHook, ...] = ()
+    """Host-run calls after a named tool succeeds; each hook fires once per skill activation."""
 
 
 def skills_dir() -> Path:
@@ -193,6 +213,14 @@ def _optional_int_field(value: Any) -> int | None:
     return value
 
 
+def _skill_tool_call(item: Mapping[str, Any]) -> SkillToolCall | None:
+    tool = _string_field(item.get("tool"))
+    args = item.get("args")
+    if not tool or not isinstance(args, dict):
+        return None
+    return SkillToolCall(tool=tool, args=MappingProxyType(dict(args)))
+
+
 def _pre_execute_field(value: Any) -> tuple[SkillToolCall, ...]:
     """Parse ``pre_execute`` entries; malformed items are dropped like other bad frontmatter."""
     if not isinstance(value, list):
@@ -201,12 +229,33 @@ def _pre_execute_field(value: Any) -> tuple[SkillToolCall, ...]:
     for item in value:
         if not isinstance(item, dict):
             continue
-        tool = _string_field(item.get("tool"))
-        args = item.get("args")
-        if not tool or not isinstance(args, dict):
-            continue
-        calls.append(SkillToolCall(tool=tool, args=MappingProxyType(dict(args))))
+        call = _skill_tool_call(item)
+        if call is not None:
+            calls.append(call)
     return tuple(calls)
+
+
+def _after_tool_field(value: Any) -> tuple[SkillAfterToolHook, ...]:
+    """Parse ``after_tool`` entries; malformed items are dropped like other bad frontmatter."""
+    if not isinstance(value, list):
+        return ()
+    hooks: list[SkillAfterToolHook] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        after = _string_field(item.get("after"))
+        call = _skill_tool_call(item)
+        if not after or call is None:
+            continue
+        hooks.append(
+            SkillAfterToolHook(
+                after=after,
+                call=call,
+                options_from=_string_field(item.get("options_from")) or None,
+                options_extra=_string_list_field(item.get("options_extra")),
+            )
+        )
+    return tuple(hooks)
 
 
 def _derive_description(body: str) -> str:
@@ -346,6 +395,7 @@ def _load_action_skill(skill_path: Path) -> ActionSkill | None:
         demo_order=_optional_int_field(frontmatter.get("demo_order")),
         pre_execute=_pre_execute_field(frontmatter.get("pre_execute")),
         references=_string_list_field(frontmatter.get("references")),
+        after_tool=_after_tool_field(frontmatter.get("after_tool")),
     )
 
 

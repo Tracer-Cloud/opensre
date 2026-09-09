@@ -51,6 +51,11 @@ def test_master_menu_matches_four_unique_children_and_preserves_specialists() ->
         assert f"`{skill.name}`" in master
         assert skill.path.parent.parent.name == "onboarding_cicd_fix"
         assert loader.load_skill_body(skill.name)
+    analytics = next(s for s in children if s.name == "cicd-analytics-demo")
+    assert [hook.after for hook in analytics.after_tool] == [
+        "scan_local_git_workspace",
+        "analyze_github_ci_reliability",
+    ]
     assert GETTING_STARTED_CUSTOM in master
     assert "not implemented yet" in loader.load_skill_body("remote-managed-service")
     discovered = [
@@ -211,5 +216,40 @@ def test_pre_execute_keeps_well_formed_calls_and_drops_the_rest(
             ("ask_user_choice", {"title": "Pick", "options": ["a", "b"]})
         ]
         assert by_name["scalar"].pre_execute == ()
+    finally:
+        loader.clear_skills_caches()
+
+
+def test_after_tool_keeps_well_formed_hooks_and_drops_the_rest(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "hooked.md").write_text(
+        "---\n"
+        "name: hooked\n"
+        "description: hooked recipe\n"
+        "after_tool:\n"
+        "  - after: scan_local_git_workspace\n"
+        "    tool: ask_user_choice\n"
+        "    args: {title: Pick, options: [a, b]}\n"
+        "    options_from: local_git_scan_repos\n"
+        "    options_extra: [example]\n"
+        "  - after: analyze_github_ci_reliability\n"
+        "  - tool: ask_user_choice\n"
+        "    args: {title: no trigger}\n"
+        "---\n"
+        "Body."
+    )
+    monkeypatch.setattr(loader, "skills_dir", lambda: tmp_path)
+    loader.clear_skills_caches()
+    try:
+        skill = next(item for item in loader.list_action_skills() if item.name == "hooked")
+        assert len(skill.after_tool) == 1
+        hook = skill.after_tool[0]
+        assert hook.after == "scan_local_git_workspace"
+        assert hook.call.tool == "ask_user_choice"
+        assert dict(hook.call.args) == {"title": "Pick", "options": ["a", "b"]}
+        assert hook.options_from == "local_git_scan_repos"
+        assert hook.options_extra == ("example",)
     finally:
         loader.clear_skills_caches()

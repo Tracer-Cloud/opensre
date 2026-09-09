@@ -60,6 +60,7 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
             session.terminal.awaiting_handoff_answer = False
             session.active_skill = None
             session.active_skill_tools = ()
+            session.skill_hooks_fired = set()
             return True
         session.terminal.set_auto_command(format_ask_user_answers(items, picked))
         session.terminal.awaiting_handoff_answer = True
@@ -90,6 +91,7 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
         session.terminal.awaiting_handoff_answer = False
         session.active_skill = None
         session.active_skill_tools = ()
+        session.skill_hooks_fired = set()
         return True
 
     command = pending.commands.get(picked_one) or (picked_one if picked_one.startswith("/") else "")

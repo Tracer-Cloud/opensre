@@ -28,6 +28,9 @@ To create a new skill:
    Optional `pre_execute:` lists static tool calls (`- tool: ask_user_choice`
    + `args:` shaped like the tool's input) the host runs when the skill is
    entered, before any model step; only `ask_user_choice` is allowed.
+   Optional `after_tool:` is the same call after a named tool succeeds
+   (`after:`, plus `options_from:` / `options_extra:` when the labels come
+   from that tool's result). The host opens it; do not also call the menu.
 8. Section order below is the house style (see github_ci_fix for a
    single-tool skill, architecture_audit for a multi-pass one). Keep the
    whole body tight — it is loaded into the planner's context on demand.

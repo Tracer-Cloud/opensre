@@ -1,11 +1,10 @@
 """End the action turn as soon as a user-choice menu is queued.
 
-``ask_user_choice`` queues the picker for after the turn; the loop must not
-take another model step in between, or the model sees no answer, decides
-the choice is "still missing", and asks again. A hook, not an instruction:
-the tool result is marked ``terminate`` whenever a choice is pending.
-``skill_view`` is covered too: a skill's ``pre_execute`` hook may queue the
-same menu on load, and a plain load (no pending choice) is left alone.
+``ask_user_choice``, a skill's ``pre_execute``, and a skill's ``after_tool``
+hook all queue the picker on the session. The loop must not take another
+model step — or run later tools in the same batch — or the model sees no
+answer and asks again. A hook, not an instruction: any tool result is
+marked ``terminate`` when a choice is pending, and later calls are blocked.
 """
 
 from __future__ import annotations
@@ -14,13 +13,15 @@ from dataclasses import replace
 from typing import Any
 
 from core.tool.execution import (
+    BeforeToolCallResult,
     ToolExecutionHooks,
     ToolExecutionPatch,
     ToolExecutionRequest,
     ToolExecutionResult,
 )
 
-_CHOICE_TOOL_NAMES = frozenset({"ask_user_choice", "skill_view"})
+_MENU_WAITING = "A selection menu is already queued. End the turn and wait for the answer."
+_MENU_TRANSPORT = frozenset({"slash_invoke"})
 
 
 def with_menu_turn_end(
@@ -33,11 +34,21 @@ def with_menu_turn_end(
     base_update = base.on_tool_update if base is not None else None
     base_batch = base.before_tool_batch if base is not None else None
 
+    def before(request: ToolExecutionRequest) -> BeforeToolCallResult | None:
+        decision = base_before(request) if base_before is not None else None
+        if decision is not None and decision.blocked:
+            return decision
+        if request.tool_call.name in _MENU_TRANSPORT:
+            return decision
+        if getattr(session, "pending_user_choice", None) is None:
+            return decision
+        return BeforeToolCallResult(blocked=True, terminate=True, reason=_MENU_WAITING)
+
     def after(
         request: ToolExecutionRequest, result: ToolExecutionResult
     ) -> ToolExecutionPatch | None:
         patch = base_after(request, result) if base_after is not None else None
-        if request.tool_call.name not in _CHOICE_TOOL_NAMES or result.is_error:
+        if result.is_error:
             return patch
         if getattr(session, "pending_user_choice", None) is None:
             return patch
@@ -46,7 +57,7 @@ def with_menu_turn_end(
         return replace(patch, terminate=True)
 
     return ToolExecutionHooks(
-        before_tool_call=base_before,
+        before_tool_call=before,
         after_tool_call=after,
         on_tool_update=base_update,
         before_tool_batch=base_batch,

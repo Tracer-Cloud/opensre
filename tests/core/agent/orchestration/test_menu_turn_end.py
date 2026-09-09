@@ -41,15 +41,33 @@ def test_skill_load_terminates_only_when_its_hook_queued_a_menu() -> None:
     )
 
 
-def test_unavailable_menu_or_other_tools_do_not_terminate() -> None:
+def test_unavailable_menu_does_not_terminate() -> None:
     no_menu = with_menu_turn_end(None, _session(pending=None))
-    other = with_menu_turn_end(None, _session(pending=object()))
 
     assert (
         no_menu.after_tool_call(_request("ask_user_choice"), ToolExecutionResult(content=""))
         is None
     )
-    assert other.after_tool_call(_request("shell_run"), ToolExecutionResult(content="")) is None
+
+
+def test_any_tool_terminates_once_a_menu_is_pending() -> None:
+    hooks = with_menu_turn_end(None, _session(pending=object()))
+
+    patch = hooks.after_tool_call(
+        _request("scan_local_git_workspace"), ToolExecutionResult(content="scanned")
+    )
+
+    assert patch is not None and patch.terminate is True
+
+
+def test_a_queued_menu_blocks_later_tools_in_the_same_batch() -> None:
+    hooks = with_menu_turn_end(None, _session(pending=object()))
+
+    blocked = hooks.before_tool_call(_request("analyze_github_ci_reliability"))
+    transport = hooks.before_tool_call(_request("slash_invoke"))
+
+    assert blocked is not None and blocked.blocked is True and blocked.terminate is True
+    assert transport is None
 
 
 def test_base_hook_patch_is_kept_and_marked_terminate() -> None:

@@ -78,13 +78,6 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
         [
             tool_response("skill_view", {"name": "cicd-analytics-demo"}),
             tool_response("scan_local_git_workspace"),
-            tool_response(
-                "ask_user_choice",
-                {
-                    "title": "Which repository should I analyze?",
-                    "options": ["acme/one", "acme/two"],
-                },
-            ),
         ]
     )
     scans: list[str] = []
@@ -151,11 +144,14 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
     assert "## Follow the selected child" not in envelope.render_cached()
 
     run_action_tool_turn(answer, session, console, is_tty=True, llm_factory=lambda: llm)
-    assert llm.invocations == 3
+    assert llm.invocations == 2
     assert len(scans) == 1
     assert session.active_skill == "cicd-analytics-demo"
     assert session.pending_user_choice is not None
     assert session.pending_user_choice.title == "Which repository should I analyze?"
+    assert "Use the open-source example repository (Tracer-Cloud/opensre)" in (
+        session.pending_user_choice.options
+    )
     assert "analyze_github_ci_reliability" in session.active_skill_tools
     assert onboarding_outcomes == [("ci_analytics", False)]
 
