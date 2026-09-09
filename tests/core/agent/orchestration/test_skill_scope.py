@@ -78,3 +78,30 @@ def test_the_goal_tick_tool_is_offered_inside_any_skill() -> None:
 
     # Assert: a /goal running through the skill can still tick its checklist.
     assert "session_goal_complete" in {tool.name for tool in scoped}
+
+
+def test_a_slash_command_between_a_menu_and_its_answer_keeps_the_skill() -> None:
+    """/auto high typed while the repository menu waits must not end the demo skill."""
+    from types import SimpleNamespace
+
+    from core.agent_harness.turns.skill_scope import scope_tools_to_active_skill
+
+    # Arrange
+    session = SimpleNamespace(
+        active_skill="cicd-analytics-demo",
+        active_skill_tools=("analyze_github_ci_reliability",),
+        pending_user_choice=None,
+        skill_hooks_fired=set(),
+    )
+    tools = [
+        SimpleNamespace(name="analyze_github_ci_reliability"),
+        SimpleNamespace(name="shell_run"),
+    ]
+
+    # Act
+    offered = scope_tools_to_active_skill(tools, session, "/auto high")
+
+    # Assert: full tool list for the slash turn, skill untouched.
+    assert [tool.name for tool in offered] == ["analyze_github_ci_reliability", "shell_run"]
+    assert session.active_skill == "cicd-analytics-demo"
+    assert session.active_skill_tools == ("analyze_github_ci_reliability",)

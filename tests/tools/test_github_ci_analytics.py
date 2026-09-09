@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any
 from unittest.mock import patch
 
@@ -27,6 +28,14 @@ from integrations.github.tools.ci_analytics.tool import TOOL_NAME, analyze_githu
 from tests.tools.conftest import BaseToolContract
 
 _T0 = datetime(2026, 9, 1, 9, 0, tzinfo=UTC)
+
+
+@pytest.fixture(autouse=True)
+def _isolated_snapshots(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Snapshots go to a temp dir, never to the user's home, and never leak between tests."""
+    from integrations.github.tools.ci_analytics import tool as tool_module
+
+    monkeypatch.setattr(tool_module, "snapshot_root", lambda _root=None: tmp_path)
 
 
 def _run(
@@ -527,7 +536,7 @@ def test_developer_waits_group_blocked_prs_by_author() -> None:
     ]
     assert waits[0].working_minutes_per_week == 100.0
     assert report.developers_affected == 2
-    assert "Heaviest hit: alice 1.7h/week over 2 PRs" in render_markdown(report)
+    assert "Most affected: alice 1.7h/week over 2 PRs" in render_markdown(report)
 
 
 def test_merged_pr_row_keeps_the_author_login() -> None:
@@ -1060,10 +1069,11 @@ def test_render_shows_the_kpi_block_and_classification() -> None:
         in text
     )
     # The calculation is shown, not just its result: inputs, formula, sum, division.
-    assert "expected green = first run queued + normal duration" in text
-    assert "| + normal | = expected green |" in text
-    assert "Σ blocked = 40m of working time across 1 merged PR" in text
-    assert "÷ 1 developer = 40m each in 30 days" in text
+    assert "expected green" not in text
+    assert "| PR | Author | CI failed | Blocked (working hours) | Wall clock |" in text
+    assert "- Total across 1 merged PR: 40m of working time" in text
+    assert "- Per developer (1): 40m in 30 days" in text
+    assert "Σ" not in text and "÷" not in text
     assert "| CI | 3 | 1 | 1 | 10m |" in text
 
 

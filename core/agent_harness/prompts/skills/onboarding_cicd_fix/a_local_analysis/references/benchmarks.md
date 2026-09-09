@@ -1,15 +1,19 @@
 # Comparing a repository's CI/CD metrics to public benchmarks
 
-Phase 2 of the analytics demo (see `insights.md`): after the user's own
-numbers are on screen, put them next to one or two well-known open-source
-repositories so the user can tell "is 6 % flake rate bad?" without prior
-experience. Load this reference only when the user asks how they compare, or
-when the analysis is done and a comparison is the natural next question.
+Phase 2 of the analytics demo (metric definitions in `metrics.md`): after
+the user's own numbers are on screen, put them next to one or two well-known
+open-source repositories so the user can tell "is 6 % flake rate bad?"
+without prior experience. The demo's next-step menu offers this as
+`Compare these numbers with well-known open-source repositories`; also load
+it when the user asks how they compare.
 
 ## Rules
 
 - Benchmark numbers come from `analyze_github_ci_reliability`, called on the
-  benchmark repository with the **same `days`** as the user's analysis. Never
+  benchmark repository with the **same `days`** as the user's analysis. A
+  benchmark analysed earlier today is answered from its saved snapshot
+  (`from_snapshot` carries the time) instead of reading GitHub again, which
+  takes minutes for a large repository; say "as of <time>" for that row. Never
   quote a benchmark figure from memory, a blog post, or a previous session;
   public repositories change week to week and the tool is the only source the
   reply may cite.

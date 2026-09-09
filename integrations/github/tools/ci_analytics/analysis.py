@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from integrations.github.client import GitHubRestClient
-from integrations.github.tools.ci_analytics.collector import collect_runs
+from integrations.github.tools.ci_analytics.collector import ProgressFn, collect_runs
 from integrations.github.tools.ci_analytics.metrics import compute_report
 from integrations.github.tools.ci_analytics.models import CiAnalyticsReport
 from integrations.github.tools.ci_analytics.working_hours import WorkingHours, local_working_hours
@@ -30,6 +30,7 @@ def analyze_repository(
     days: int = DEFAULT_WINDOW_DAYS,
     working_hours: WorkingHours | None = None,
     now: datetime | None = None,
+    progress: ProgressFn | None = None,
 ) -> Analysis:
     """Read the window's Actions history and compute the report.
 
@@ -38,7 +39,12 @@ def analyze_repository(
     """
     at = now or datetime.now(UTC)
     collected = collect_runs(
-        GitHubRestClient(token), owner=owner, repo=repo, window_days=days, now=at
+        GitHubRestClient(token),
+        owner=owner,
+        repo=repo,
+        window_days=days,
+        now=at,
+        progress=progress,
     )
     report = compute_report(
         owner=owner,

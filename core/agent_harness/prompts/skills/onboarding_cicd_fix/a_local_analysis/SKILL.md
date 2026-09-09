@@ -48,6 +48,7 @@ after_tool:
     args:
       title: What would you like to do next?
       options:
+        - Compare these numbers with well-known open-source repositories
         - Set up an agent that improves CI/CD reliability over time
         - Connect OpenSRE to Slack and hand off DevOps chores for your team
         - Exit demo
@@ -133,11 +134,21 @@ bullet list.
 The host opens `What would you like to do next?` after the analysis with
 these options:
 
+- `Compare these numbers with well-known open-source repositories`
 - `Set up an agent that improves CI/CD reliability over time`
 - `Connect OpenSRE to Slack and hand off DevOps chores for your team`
 - `Exit demo`
 
 Wait for the answer, then follow the selected option.
+
+**Compare with benchmarks:** Call
+`skill_view(name="cicd-analytics-demo", reference="benchmarks")` and follow
+it: one `analyze_github_ci_reliability` call per benchmark repository with
+the same `days`, then the comparison table, user's repository first. A
+benchmark analysed earlier today comes back from its snapshot in a second
+(`from_snapshot` gives the time); say "as of <time>" for those rows. Then
+offer the remaining options again with `ask_user_choice`, title `What would
+you like to do next?`, without the comparison row.
 
 **Recurring check:** Call
 `schedule_ci_reliability_loop(owner="<owner>", repo="<repo>")` for the

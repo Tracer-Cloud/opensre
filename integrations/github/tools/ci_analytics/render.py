@@ -20,14 +20,6 @@ from integrations.github.tools.ci_analytics.models import (
 _TOP_WORKFLOWS = 5
 _TOP_BLOCKED_PRS = 5
 _TOP_DEVELOPERS = 3
-_METHOD_LINES = (
-    "For each merged PR whose CI failed and later passed on the same commit:",
-    "  expected green = first run queued + normal duration "
-    "(median first-attempt pass of the slowest workflow)",
-    "  actually green = last workflow's first pass, or the next push / merge if earlier",
-    "  blocked        = actually green - expected green, counted in working hours ({hours}); "
-    "parallel workflows count once",
-)
 
 
 def render_markdown(report: CiAnalyticsReport) -> str:
@@ -61,6 +53,7 @@ def render_markdown(report: CiAnalyticsReport) -> str:
     if not report.executions:
         lines.extend(["", "No completed workflow runs were found in this window."])
     lines.extend(f"- {notice}" for notice in report.coverage_notices)
+    lines.extend(_key_results_markdown(report))
     return "\n".join(lines)
 
 
@@ -96,12 +89,13 @@ def render_report(console: Any, report: CiAnalyticsReport) -> None:
                 Text(_downtime_headline(report), style="bold"),
             ]
         )
-        parts.extend(Text(line, style="dim") for line in _method_lines(report))
+        parts.append(Text(f"Working hours: {report.working_hours_label}", style="dim"))
         blocked = report.blocked_pr_delays
         if blocked:
             parts.append(Text(""))
             parts.append(_blocked_table(blocked))
-            parts.extend(Text(line) for line in _roll_up_lines(report))
+            parts.append(Text(""))
+            parts.extend(_kpi_line(label, value) for label, value in _roll_up_lines(report))
         if report.blocked_minutes_all > report.blocked_minutes:
             parts.append(
                 _kpi_line(
@@ -151,8 +145,82 @@ def render_report(console: Any, report: CiAnalyticsReport) -> None:
     if not report.executions:
         parts.append(Text("No completed workflow runs were found in this window.", style="dim"))
     parts.extend(Text(notice, style="dim") for notice in report.coverage_notices)
+    if report.executions:
+        parts.append(Text(""))
+        parts.append(Text("Key results", style="bold"))
+        for label, value, share in key_results(report):
+            line = _kpi_line(label, value)
+            if share is not None:
+                line.append(f"  {_bar(share)}", style="dim")
+            parts.append(line)
     # Hang the block in the shell's two-column reply gutter like agent output.
     console.print(Padding(Group(*parts), (0, 0, 0, 2)))
+
+
+_BAR_WIDTH = 20
+
+
+def _bar(share: float) -> str:
+    """A plain text bar for a share between 0 and 1, twenty cells wide."""
+    filled = max(0, min(_BAR_WIDTH, round(share * _BAR_WIDTH)))
+    return "█" * filled + "░" * (_BAR_WIDTH - filled)
+
+
+def key_results(report: CiAnalyticsReport) -> list[tuple[str, str, float | None]]:
+    """The five figures a reader takes away, each with an optional share for a bar.
+
+    Order follows the metric priority in the demo's metrics reference: red time
+    on the default branch, recovery, CI-caused failures, normal duration,
+    developer time blocked.
+    """
+    window_hours = max(1, report.window_days * 24)
+    results: list[tuple[str, str, float | None]] = []
+    red_share = report.red_hours / window_hours
+    results.append(
+        (
+            f"{report.default_branch} branch red",
+            f"{_hours(report.red_hours)} of {report.window_days} days ({red_share:.1%}), "
+            f"{len(report.outages)} {_plural(len(report.outages), 'breakage')}",
+            red_share,
+        )
+    )
+    if report.mean_recovery_hours is not None:
+        results.append(("Mean time back to green", _hours(report.mean_recovery_hours), None))
+    if report.pr_executions:
+        flaky = report.count(FailureKind.RELIABILITY)
+        flake_share = flaky / report.pr_executions
+        results.append(
+            (
+                "CI-caused failures",
+                f"{flaky} of {report.pr_executions} PR runs ({flake_share:.1%})",
+                flake_share,
+            )
+        )
+    slowest = max(
+        (w for w in report.workflows if w.normal_minutes is not None),
+        key=lambda w: w.normal_minutes or 0.0,
+        default=None,
+    )
+    if slowest is not None:
+        results.append(
+            ("Slowest normal run", f"{slowest.workflow}, {slowest.normal_minutes:.0f}m", None)
+        )
+    if report.blocked_working_minutes > 0:
+        developers = report.developers_affected
+        per_week = (
+            report.blocked_working_minutes / developers / (report.window_days / 7)
+            if developers
+            else 0.0
+        )
+        results.append(
+            (
+                "Developer time blocked",
+                f"{_working(report.blocked_working_minutes)} of working time"
+                + (f", about {_working(per_week)} per developer a week" if developers else ""),
+                None,
+            )
+        )
+    return results
 
 
 def _working(minutes: float) -> str:
@@ -169,22 +237,18 @@ def _downtime_headline(report: CiAnalyticsReport) -> str:
     )
 
 
-def _method_lines(report: CiAnalyticsReport) -> list[str]:
-    return [line.format(hours=report.working_hours_label) for line in _METHOD_LINES]
+_BLOCKED_COLUMNS = (
+    ("PR", "left"),
+    ("Author", "left"),
+    ("CI failed", "left"),
+    ("Blocked (working hours)", "right"),
+    ("Wall clock", "right"),
+)
 
 
 def _blocked_table(blocked: tuple[PullRequestDelay, ...]) -> Table:
     table = Table(show_edge=False, pad_edge=False, box=None, header_style="dim")
-    for column, justify in (
-        ("PR", "left"),
-        ("Author", "left"),
-        ("Queued (UTC)", "left"),
-        ("+ normal", "right"),
-        ("= expected green", "left"),
-        ("Actually green", "left"),
-        ("Blocked, working", "right"),
-        ("Wall clock", "right"),
-    ):
+    for column, justify in _BLOCKED_COLUMNS:
         table.add_column(column, justify=justify)  # type: ignore[arg-type]
     for item in blocked[:_TOP_BLOCKED_PRS]:
         table.add_row(*_blocked_row(item))
@@ -195,42 +259,46 @@ def _blocked_row(item: PullRequestDelay) -> tuple[str, ...]:
     return (
         f"#{item.pr_number}" if item.pr_number else "-",
         item.author or "-",
-        _stamp(item.first_queued),
-        _minutes(item.normal_minutes),
-        _stamp(item.expected_green),
-        _stamp(item.actual_green),
+        _day(item.first_queued),
         _working(item.working_minutes),
         _minutes(item.delay_minutes),
     )
 
 
-def _roll_up_lines(report: CiAnalyticsReport) -> list[str]:
-    """The sum and the per-developer division, written as arithmetic."""
+def _roll_up_lines(report: CiAnalyticsReport) -> list[tuple[str, str]]:
+    """Labelled totals under the table: what the blocked time adds up to and who carries it."""
     blocked = report.blocked_pr_delays
     developers = report.developers_affected
     weeks = report.window_days / 7
-    lines: list[str] = []
+    lines: list[tuple[str, str]] = []
     rest = blocked[_TOP_BLOCKED_PRS:]
     if rest:
         lines.append(
-            f"+ {len(rest)} more {_plural(len(rest), 'PR')}: "
-            f"{_working(sum(item.working_minutes for item in rest))} of working time"
+            (
+                f"Not shown, {len(rest)} more {_plural(len(rest), 'PR')}",
+                f"{_working(sum(item.working_minutes for item in rest))} of working time",
+            )
         )
     lines.append(
-        f"Σ blocked = {_working(report.blocked_working_minutes)} of working time across "
-        f"{len(blocked)} merged {_plural(len(blocked), 'PR')} "
-        f"({_minutes(report.blocked_minutes)} wall clock)"
+        (
+            f"Total across {len(blocked)} merged {_plural(len(blocked), 'PR')}",
+            f"{_working(report.blocked_working_minutes)} of working time "
+            f"({_minutes(report.blocked_minutes)} wall clock)",
+        )
     )
     if developers:
         each = report.blocked_working_minutes / developers
         lines.append(
-            f"÷ {developers} {_plural(developers, 'developer')} = {_working(each)} each in "
-            f"{report.window_days} days, about {_working(each / weeks)} per developer per week; "
-            f"typical blocked PR {_working(report.median_working_minutes or 0.0)}"
+            (
+                f"Per developer ({developers})",
+                f"{_working(each)} in {report.window_days} days, "
+                f"about {_working(each / weeks)} a week",
+            )
         )
+        lines.append(("Typical blocked PR", _working(report.median_working_minutes or 0.0)))
     heaviest = _heaviest_developers(report)
     if heaviest:
-        lines.append(f"Heaviest hit: {heaviest}")
+        lines.append(("Most affected", heaviest))
     return lines
 
 
@@ -245,6 +313,10 @@ def _heaviest_developers(report: CiAnalyticsReport) -> str:
 
 def _stamp(when: datetime | None) -> str:
     return when.strftime("%b %d %H:%M") if when else "-"
+
+
+def _day(when: datetime | None) -> str:
+    return when.strftime("%b %d") if when else "-"
 
 
 def headline(report: CiAnalyticsReport) -> str:
@@ -299,19 +371,20 @@ def _classification(report: CiAnalyticsReport) -> list[str]:
 
 
 def _blocked_time(report: CiAnalyticsReport) -> list[str]:
-    lines = ["", f"**{_downtime_headline(report)}**"]
-    lines.extend(f"- {line.strip()}" for line in _method_lines(report))
+    lines = [
+        "",
+        f"**{_downtime_headline(report)}**",
+        f"Working hours: {report.working_hours_label}",
+    ]
     blocked = report.blocked_pr_delays
     if blocked:
         lines.append("")
-        lines.append(
-            "| PR | Author | Queued (UTC) | + normal | = expected green | Actually green | "
-            "Blocked, working | Wall clock |"
-        )
-        lines.append("| --- | --- | --- | ---: | --- | --- | ---: | ---: |")
+        lines.append("| " + " | ".join(name for name, _ in _BLOCKED_COLUMNS) + " |")
+        lines.append("| --- | --- | --- | ---: | ---: |")
         for item in blocked[:_TOP_BLOCKED_PRS]:
             lines.append("| " + " | ".join(_blocked_row(item)) + " |")
-        lines.extend(f"- {line}" for line in _roll_up_lines(report))
+        lines.append("")
+        lines.extend(f"- {label}: {value}" for label, value in _roll_up_lines(report))
     if report.blocked_minutes_all > report.blocked_minutes:
         lines.append(
             f"- Including PRs not merged yet: {_minutes(report.blocked_minutes_all)} wall clock"
@@ -365,6 +438,15 @@ def _rate(value: float | None) -> str:
 
 def _plural(count: int, noun: str) -> str:
     return noun if count == 1 else f"{noun}s"
+
+
+def _key_results_markdown(report: CiAnalyticsReport) -> list[str]:
+    if not report.executions:
+        return []
+    lines = ["", "**Key results**"]
+    for label, value, _share in key_results(report):
+        lines.append(f"- {label}: **{value}**")
+    return lines
 
 
 render_ci_report = render_report

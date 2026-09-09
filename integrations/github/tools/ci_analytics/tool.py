@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 from http import HTTPStatus
 from typing import Any
 
+from rich.markdown import Markdown
 from rich.markup import escape
 
 from core.agent_harness.tools import action_context_from_agent_context
@@ -29,6 +30,11 @@ from integrations.github.tools.ci_analytics.render import (
     headline,
     render_markdown,
     render_report,
+)
+from integrations.github.tools.ci_analytics.snapshots import (
+    read_fresh_snapshot,
+    snapshot_root,
+    write_snapshot,
 )
 
 TOOL_NAME = "analyze_github_ci_reliability"
@@ -156,6 +162,46 @@ def report_payload(report: CiAnalyticsReport) -> dict[str, Any]:
     }
 
 
+def _from_snapshot(
+    snapshot: dict[str, Any], owner: str, repo: str, window: int, console: Any
+) -> dict[str, Any]:
+    """Answer from a same-day snapshot: the figures, and when they were computed."""
+    generated = str(snapshot.get("generated_at", ""))[:16].replace("T", " ")
+    summary = (
+        f"{owner}/{repo}: {snapshot.get('executions')} runs in {window} days, "
+        f"{snapshot.get('pr_failures')} of {snapshot.get('pr_executions')} PR runs failed, "
+        f"{snapshot.get('reliability_failures')} CI-caused "
+        f"(figures as of {generated} UTC, from the saved snapshot)."
+    )
+    markdown = str(snapshot.get("markdown") or "")
+    if console is not None:
+        console.print(
+            f"  [dim]Using the CI reliability snapshot of {escape(f'{owner}/{repo}')} "
+            f"from {generated} UTC (same {window}-day window).[/dim]"
+        )
+        if markdown:
+            console.print(Markdown(markdown))
+        console.print()
+    figures = {
+        key: value
+        for key, value in snapshot.items()
+        if key not in {"generated_at", "headline", "snapshot_path", "window_days", "markdown"}
+    }
+    return {
+        "source": _SOURCE,
+        "success": True,
+        "owner": owner,
+        "repo": repo,
+        "window_days": window,
+        "summary": summary,
+        "headline": str(snapshot.get("headline", "")),
+        "from_snapshot": snapshot.get("generated_at"),
+        "rendered_in_shell": console is not None and bool(markdown),
+        **figures,
+        "response_text": summary if console is not None else (markdown or summary),
+    }
+
+
 @tool(
     name=TOOL_NAME,
     source=_SOURCE,
@@ -260,6 +306,11 @@ def analyze_github_ci_reliability(
         return tool_unavailable(_SOURCE, message, response_text=message)
     now = datetime.now(UTC)
     console = _console(context)
+    snapshot = read_fresh_snapshot(
+        snapshot_root(), repo_owner, repo_name, window_days=window, now=now
+    )
+    if snapshot is not None:
+        return _from_snapshot(snapshot, repo_owner, repo_name, window, console)
     if console is not None:
         # Two-column lead matches the shell's reply gutter so the tool's lines
         # hang with the agent's notes instead of breaking the transcript edge.
@@ -268,8 +319,16 @@ def analyze_github_ci_reliability(
             f"last {window} days…[/dim]"
         )
     started = time.monotonic()
+    progress = None
+    if console is not None:
+
+        def progress(line: str) -> None:
+            console.print(f"  [dim]{escape(line)}[/dim]")
+
     try:
-        analysis = analyze_repository(repo_owner, repo_name, token=token, days=window, now=now)
+        analysis = analyze_repository(
+            repo_owner, repo_name, token=token, days=window, now=now, progress=progress
+        )
     except (GitHubApiError, ValueError) as exc:
         report_run_error(
             exc,
@@ -282,6 +341,19 @@ def analyze_github_ci_reliability(
         message = _failure_message(exc, repository=f"{repo_owner}/{repo_name}")
         return tool_unavailable(_SOURCE, message, response_text=message)
     report = analysis.report
+    write_snapshot(
+        snapshot_root(),
+        repo_owner,
+        repo_name,
+        now,
+        {
+            "generated_at": now.isoformat(),
+            "window_days": window,
+            "headline": headline(report),
+            "markdown": render_markdown(report),
+            **report_payload(report),
+        },
+    )
     summary = (
         f"{repo_owner}/{repo_name}: {report.executions} runs in {window} days, "
         f"{report.pr_failures} of {report.pr_executions} PR runs failed, "

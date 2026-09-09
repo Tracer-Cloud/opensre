@@ -8,7 +8,6 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from config.constants.paths import OPENSRE_HOME_DIR
 from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_PROMPT_PARAM,
     LOOP_REPORT_ARGS_PARAM,
@@ -22,6 +21,11 @@ from infrastructure.scheduling.scheduler.loops import (
 )
 from infrastructure.scheduling.scheduler.storage import list_tasks, update_task
 from infrastructure.scheduling.scheduler.types import Provider, TaskKind
+from integrations.github.tools.ci_analytics.snapshots import (
+    SNAPSHOT_DIRNAME,
+    snapshot_root,
+    write_snapshot,
+)
 from integrations.github.tools.ci_analytics.working_hours import (
     local_timezone,
     local_working_hours,
@@ -32,7 +36,6 @@ LOOP_WINDOW_DAYS = 7
 REPORT_NAME = "github_ci_reliability"
 """Builder name the manual-loop runner maps to :func:`build_report`."""
 
-SNAPSHOT_DIRNAME = "ci_reliability_reports"
 _LOCAL_CHANNEL = Provider.INTERACTIVE_SHELL.value
 
 
@@ -150,21 +153,20 @@ def build_report(args: Mapping[str, str], *, snapshot_dir: Path | None = None) -
     except (GitHubApiError, ValueError) as exc:
         raise RuntimeError(f"Could not read the GitHub Actions history of {owner}/{repo}.") from exc
     report = analysis.report
-    snapshot = _write_snapshot(
-        snapshot_dir or OPENSRE_HOME_DIR / SNAPSHOT_DIRNAME,
+    snapshot = write_snapshot(
+        snapshot_root(snapshot_dir),
         owner,
         repo,
         now,
-        {"generated_at": now.isoformat(), "headline": headline(report), **report_payload(report)},
+        {
+            "generated_at": now.isoformat(),
+            "window_days": days,
+            "headline": headline(report),
+            "markdown": render_markdown(report),
+            **report_payload(report),
+        },
     )
     return "\n".join([render_markdown(report), "", headline(report), "", f"Raw data: {snapshot}"])
-
-
-def _write_snapshot(root: Path, owner: str, repo: str, now: datetime, payload: dict) -> Path:
-    target = root / f"{owner}-{repo}" / f"{now:%Y-%m-%dT%H%M%SZ}.json"
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(json.dumps(payload, indent=2, sort_keys=True, default=str), encoding="utf-8")
-    return target
 
 
 def loop_card(scheduled: ScheduledLoop) -> list[str]:

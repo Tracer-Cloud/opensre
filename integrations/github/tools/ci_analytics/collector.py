@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import threading
-from concurrent.futures import ThreadPoolExecutor
+import time
+from collections.abc import Callable
+from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from typing import Any
@@ -40,6 +42,9 @@ class CollectedRuns:
     coverage_notices: list[str]
 
 
+ProgressFn = Callable[[str], None]
+
+
 def collect_runs(
     client: GitHubRestClient,
     *,
@@ -47,8 +52,19 @@ def collect_runs(
     repo: str,
     window_days: int,
     now: datetime,
+    progress: ProgressFn | None = None,
 ) -> CollectedRuns:
-    """Fetch completed default-branch and PR runs plus merged PRs in the window."""
+    """Fetch completed default-branch and PR runs plus merged PRs in the window.
+
+    ``progress`` receives one short line as each stage finishes, so a surface
+    can show that a long read is moving instead of a silent wait.
+    """
+    say = progress or (lambda _line: None)
+    started = time.monotonic()
+
+    def elapsed() -> str:
+        return f"{time.monotonic() - started:.0f}s"
+
     root = f"/repos/{_segment(owner)}/{_segment(repo)}"
     repository = client.request("GET", root)
     default_branch = (
@@ -58,6 +74,10 @@ def collect_runs(
         raise ValueError(f"GitHub repository {owner}/{repo} has no readable default branch.")
     since = now - timedelta(days=window_days)
     notices: list[str] = []
+    say(
+        f"Reading {default_branch} runs, pull request runs and merged pull requests "
+        f"of the last {window_days} days in parallel…"
+    )
     # Each scope is an independent paginated listing; fetching them together
     # keeps the demo well under a minute on busy repositories.
     with ThreadPoolExecutor(max_workers=len(_DEFAULT_BRANCH_EVENTS) + 2) as pool:
@@ -85,11 +105,25 @@ def collect_runs(
             notices=notices,
         )
         merged_future = pool.submit(_merged_prs, client, root, since=since, notices=notices)
+        labels: dict[Future[Any], str] = {
+            future: f"{default_branch} {event} runs"
+            for future, event in zip(branch_futures, _DEFAULT_BRANCH_EVENTS, strict=True)
+        }
+        labels[pr_future] = "pull request runs"
+        labels[merged_future] = "merged pull requests"
+        for future in as_completed(list(labels)):
+            say(f"{labels[future]}: {len(future.result())} read ({elapsed()})")
         branch_runs = [run for future in branch_futures for run in future.result()]
         merged = merged_future.result()
+        listed = pr_future.result()
+        reruns = sum(1 for run in listed if run.succeeded and run.attempt > 1)
+        if reruns:
+            say(f"Checking the attempt history of {reruns} re-run pull request runs…")
         # Only PR reruns affect failure rate and blocked time; skip extra
         # attempt fetches on default-branch listings.
-        pr_runs = _annotate_reruns(client, root, pr_future.result(), merged=merged, notices=notices)
+        pr_runs = _annotate_reruns(client, root, listed, merged=merged, notices=notices)
+        if reruns:
+            say(f"Attempt history checked ({elapsed()}); computing the report.")
     return CollectedRuns(
         default_branch=default_branch,
         branch_runs=branch_runs,
