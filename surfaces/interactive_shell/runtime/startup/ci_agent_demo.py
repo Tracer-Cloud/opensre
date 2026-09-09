@@ -8,7 +8,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from rich.markdown import Markdown
 from rich.markup import escape
 from rich.text import Text
 
@@ -38,6 +37,7 @@ from surfaces.shared.terminal.components.choice_menu import (
     repl_choose_one,
 )
 from surfaces.shared.terminal.components.loaders import llm_loader
+from surfaces.shared.terminal.components.markdown import ReplyMarkdown
 from tools.system.workspace_git_scan.render import snapshot_renderable
 from tools.system.workspace_git_scan.scan import RepoActivity, WorkspaceSnapshot, scan_workspace
 
@@ -194,7 +194,7 @@ def _run_first_pass(console: Console | None, task_id: str, *, owner: str, repo: 
     if console is not None:
         console.print()
         render_note_block(console, "The first report, as it will land in /loops messages:")
-        console.print(reply_gutter(Markdown(report), lead=False))
+        console.print(reply_gutter(ReplyMarkdown(report), lead=False))
         console.print()
 
 

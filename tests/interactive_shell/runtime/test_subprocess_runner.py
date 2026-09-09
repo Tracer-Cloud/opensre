@@ -184,8 +184,8 @@ def test_run_shell_command_quiet_cd_hides_cwd(
 
     result = run_shell_command("cd /tmp/example", _presenter(session, console), quiet=True)
 
-    assert "$" not in buf.getvalue()
-    assert "/tmp/example" not in buf.getvalue()
+    # The dim command line shows what ran; the new cwd stays hidden.
+    assert buf.getvalue().strip() == "$ cd /tmp/example"
     assert result["ok"] is True
     assert result["response_text"] == "/tmp/example"
 
@@ -396,7 +396,7 @@ def test_run_shell_command_outputless_success_omits_marker(
     assert session.history[-1] == {"type": "shell", "text": "true", "ok": True}
 
 
-def test_run_shell_command_quiet_hides_command_and_stdout(
+def test_run_shell_command_quiet_prints_a_dim_command_line_and_no_stdout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     def _fake_execute(**_kwargs: object) -> ShellExecutionResult:
@@ -422,8 +422,7 @@ def test_run_shell_command_quiet_hides_command_and_stdout(
 
     result = run_shell_command("echo hi", _presenter(session, console), quiet=True)
     out = buf.getvalue()
-    assert "$" not in out
-    assert "hi" not in out
+    assert out.strip() == "$ echo hi"
     assert GLYPH_SUCCESS not in out
     assert result["ok"] is True
     assert result["stdout"] == "hi"
@@ -431,14 +430,12 @@ def test_run_shell_command_quiet_hides_command_and_stdout(
     assert session.history[-1]["ok"] is True
 
 
-def test_run_shell_command_quiet_outputless_success_prints_nothing(
+def test_run_shell_command_quiet_outputless_success_prints_only_the_command_line(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Quiet ``touch`` must not print a live success glyph.
+    """Quiet ``touch`` prints the dim command line and no live success glyph.
 
-    Quiet hides ``$`` and stdout. Outputless success has neither; a live
-    marker would still leak intermediate probes before a composed closing.
-    Loud mode prints the glyph. Quiet leaves the terminal blank here — the
+    Quiet hides stdout and the glyph, not the fact that a command ran. The
     action closer (kept for quiet ``shell_run``) is the turn's display.
     """
 
@@ -466,7 +463,7 @@ def test_run_shell_command_quiet_outputless_success_prints_nothing(
     result = run_shell_command("touch file", _presenter(session, console), quiet=True)
 
     out = buf.getvalue()
-    assert out == ""
+    assert out.strip() == "$ touch file"
     assert GLYPH_SUCCESS not in out
     assert result["ok"] is True
     assert "response_text" not in result

@@ -70,7 +70,7 @@ def test_table_reply_renders_as_a_table_not_flattened_pipes() -> None:
     out = buf.getvalue()
     assert "| Rank | Folder |" not in out  # not the raw flattened markdown row
     assert "Rank" in out and "Folder" in out and "Size" in out
-    assert "─" in out  # rendered as a table with a header rule
+    assert "━" in out and "│" in out  # rendered as a table with header rule and column rules
 
 
 def test_prose_reply_keeps_the_inline_marker() -> None:

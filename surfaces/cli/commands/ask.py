@@ -38,15 +38,15 @@ def _echo_answer(text: str) -> None:
         click.echo(text)
         return
     from rich.console import Console
-    from rich.markdown import Markdown
 
     from infrastructure.safety.terminal_output import strip_terminal_controls
     from infrastructure.terminal.theme import MARKDOWN_CODE_THEME, MARKDOWN_THEME
+    from surfaces.shared.terminal.components.markdown import ReplyMarkdown
 
     console = Console()
     safe = strip_terminal_controls(text, keep_whitespace=True)
     with console.use_theme(MARKDOWN_THEME):
-        console.print(Markdown(safe, code_theme=MARKDOWN_CODE_THEME))
+        console.print(ReplyMarkdown(safe, code_theme=MARKDOWN_CODE_THEME))
 
 
 def _render_outcome(outcome: AskOutcome) -> None:

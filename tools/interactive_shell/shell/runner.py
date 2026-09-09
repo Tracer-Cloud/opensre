@@ -9,9 +9,12 @@ from pathlib import Path
 from typing import Any
 
 import config.constants.platform as _platform
-from infrastructure.terminal.theme import ERROR, GLYPH_ERROR
+from infrastructure.terminal.theme import DIM, ERROR, GLYPH_ERROR
 from tools.interactive_shell.shell import execution as shell_execution
-from tools.interactive_shell.shell.display import format_shell_command_for_display
+from tools.interactive_shell.shell.display import (
+    format_shell_command_for_display,
+    summarize_shell_command,
+)
 from tools.interactive_shell.shell.parsing import (
     argv_for_repl_builtin_detection,
     parse_shell_command,
@@ -78,7 +81,10 @@ def run_shell_command(
             cancelled=plan.policy.verdict != "deny",
         )
 
-    if not quiet:
+    if quiet:
+        # Quiet hides the output, not the fact that a command ran.
+        presenter.print(f"[{DIM}]$ {summarize_shell_command(display_command)}[/]")
+    else:
         presenter.print_bold_command(display_command)
 
     argv_builtin = argv_for_repl_builtin_detection(parsed=parsed, is_windows=_platform.IS_WINDOWS)

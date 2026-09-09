@@ -7,9 +7,10 @@ this reference only when the user asks what a compared figure means.
 
 ## Rules
 
-- The host table is the source. Do not call `analyze_github_ci_reliability`
-  again for a benchmark, and never quote a figure from memory, a blog post,
-  or a previous session.
+- The host table is the source. Peers come from today's snapshot only; a
+  miss is skipped, not fetched live. Do not call
+  `analyze_github_ci_reliability` again for a benchmark, and never quote a
+  figure from memory, a blog post, or a previous session.
 - Compare **rates and durations**, never raw counts. A repository with 40 000
   runs a month and one with 400 are not comparable on `executions`,
   `pr_failures`, or `blocked_minutes`; they are comparable on

@@ -14,8 +14,12 @@ from typing import Any
 
 from rich.console import Console
 
-from core.agent_harness.tools.tool_context import ActionToolScope
+from core.agent_harness.tools.tool_context import (
+    ACTION_TOOL_CONTEXT_RESOURCE_KEY,
+    ActionToolScope,
+)
 from core.agent_harness.turns.headless_adapters import InMemorySessionState
+from core.tool import AgentToolContext
 from surfaces.interactive_shell.session import Session
 from tools.interactive_shell.actions.ask_choice import (
     ask_user_choice_tool,
@@ -250,3 +254,23 @@ def test_per_question_multi_select_string_false() -> None:
     assert result["ok"] is True
     assert session.pending_user_choice is not None
     assert session.pending_user_choice.questions[0].multi_select is False
+
+
+def test_allow_custom_from_the_model_reaches_the_pending_choice() -> None:
+    # Arrange: the registry calls ``run`` with the model's public arguments as
+    # keywords, so every schema property must be accepted by the signature.
+    session = Session()
+    context = AgentToolContext(
+        resolved_integrations={},
+        resources={ACTION_TOOL_CONTEXT_RESOURCE_KEY: _ctx(session=session)},
+    )
+
+    # Act
+    result = ask_user_choice_tool.run(
+        title=_TITLE, options=_OPTIONS, allow_custom=False, context=context
+    )
+
+    # Assert
+    assert result["ok"] is True
+    assert session.pending_user_choice is not None
+    assert session.pending_user_choice.custom_answer is False

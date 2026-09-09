@@ -158,12 +158,12 @@ class _ReplEventLogDisplay:
     def print_above(self, text: str) -> None:
         if not text.strip():
             return
-        from rich.markdown import Markdown
+        from surfaces.shared.terminal.components.markdown import ReplyMarkdown
 
         from infrastructure.terminal.theme import MARKDOWN_THEME
 
         with self._console.use_theme(MARKDOWN_THEME):
-            self._emit(Markdown(text, code_theme="ansi_dark"))
+            self._emit(ReplyMarkdown(text, code_theme="ansi_dark"))
 
     def print_above_renderable(self, renderable: Any) -> None:
         self._emit(renderable)

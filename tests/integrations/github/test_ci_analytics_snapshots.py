@@ -274,28 +274,54 @@ def test_include_benchmarks_skips_a_peer_that_cannot_be_fetched(
 ) -> None:
     from typing import Any, cast
 
-    from integrations.github.client import GitHubApiError
     from integrations.github.tools.ci_analytics import tool as tool_module
 
     now = datetime.now(UTC)
     _write_report_snapshot(tmp_path, _report(owner="acme", repo="app"), now)
     _write_report_snapshot(tmp_path, _report(), now)
     monkeypatch.setattr(tool_module, "snapshot_root", lambda _root=None: tmp_path)
-    monkeypatch.setattr(tool_module, "resolve_github_token", lambda _t=None: "tok")
+    monkeypatch.setattr(tool_module, "resolve_github_token", lambda _t=None: "")
 
-    def _fail(owner: str, repo: str, **_k: Any) -> Any:
-        raise GitHubApiError(f"{owner}/{repo} unavailable", status_code=404)
+    def _boom(*_a: Any, **_k: Any) -> Any:
+        raise AssertionError("A missing peer must not start a live GitHub read")
 
-    monkeypatch.setattr(tool_module, "analyze_repository", _fail)
+    monkeypatch.setattr(tool_module, "analyze_repository", _boom)
 
     result = cast(Any, tool_module.analyze_github_ci_reliability)(
         owner="acme",
         repo="app",
         days=30,
         include_benchmarks=True,
-        github_token="tok",
     )
 
-    assert result["benchmarks_skipped"] == ["fastapi/fastapi"]
+    assert result["benchmarks_skipped"] == ["fastapi/fastapi (no same-day snapshot)"]
     assert [row["repo"] for row in result["benchmarks"]] == ["airflow"]
     assert "Compared with apache/airflow" in result["response_text"]
+
+
+def test_a_fresh_snapshot_answers_without_a_github_token(tmp_path: Path, monkeypatch) -> None:
+    from typing import Any, cast
+
+    from integrations.github.tools.ci_analytics import tool as tool_module
+
+    now = datetime.now(UTC)
+    _write_report_snapshot(tmp_path, _report(owner="acme", repo="app", red_hours=48.0), now)
+    _write_report_snapshot(tmp_path, _report(red_hours=24.5), now)
+    _write_report_snapshot(tmp_path, _report(owner="fastapi", repo="fastapi", red_hours=0.0), now)
+    monkeypatch.setattr(tool_module, "snapshot_root", lambda _root=None: tmp_path)
+    monkeypatch.setattr(tool_module, "resolve_github_token", lambda _t=None: "")
+
+    def _boom(*_a: Any, **_k: Any) -> Any:
+        raise AssertionError("GitHub must not be read when snapshots exist")
+
+    monkeypatch.setattr(tool_module, "analyze_repository", _boom)
+
+    result = cast(Any, tool_module.analyze_github_ci_reliability)(
+        owner="acme", repo="app", days=30, include_benchmarks=True
+    )
+
+    assert result["success"] is True
+    assert result["from_snapshot"]
+    assert "Compared with apache/airflow and fastapi/fastapi" in result["response_text"]
+    assert "fastapi/fastapi: default branch stayed green in this window." in result["response_text"]
+    assert "opensre integrations setup github" not in result.get("response_text", "")

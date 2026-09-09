@@ -184,7 +184,6 @@ def _from_snapshot(
     console: Any,
     *,
     include_benchmarks: bool = False,
-    token: str = "",
 ) -> dict[str, Any]:
     """Answer from a same-day snapshot with the same renderer as a live analysis."""
     generated = str(snapshot.get("generated_at", ""))[:16].replace("T", " ")
@@ -204,7 +203,6 @@ def _from_snapshot(
             window,
             console,
             include_benchmarks=include_benchmarks,
-            token=token,
         )
         result["summary"] += f" Figures as of {generated} UTC, from the saved snapshot."
         result["from_snapshot"] = snapshot.get("generated_at")
@@ -257,44 +255,16 @@ def _load_peer_report(
     repo: str,
     *,
     window: int,
-    token: str,
     now: datetime,
-    console: Any,
 ) -> tuple[CiAnalyticsReport, str | None] | None:
-    """A benchmark report from today's snapshot, or a live read. ``None`` on failure."""
+    """Today's snapshot for a benchmark repo, or ``None`` (no live fetch)."""
     snapshot = read_fresh_snapshot(snapshot_root(), owner, repo, window_days=window, now=now)
-    if snapshot is not None:
-        saved = snapshot.get("report")
-        if isinstance(saved, dict):
-            report = report_from_dict(saved)
-            return report, str(snapshot.get("generated_at") or "")
-    if console is not None:
-        console.print(
-            f"  [dim]Reading GitHub Actions history for {escape(f'{owner}/{repo}')} "
-            f"(benchmark), last {window} days…[/dim]"
-        )
-    try:
-        analysis = analyze_repository(owner, repo, token=token, days=window, now=now)
-    except (GitHubApiError, ValueError):
-        logger.warning("Benchmark analysis failed for %s/%s", owner, repo, exc_info=True)
+    if snapshot is None:
         return None
-    try:
-        write_snapshot(
-            snapshot_root(),
-            owner,
-            repo,
-            now,
-            {
-                "generated_at": now.isoformat(),
-                "window_days": window,
-                "headline": headline(analysis.report),
-                "report": report_to_dict(analysis.report),
-                **report_payload(analysis.report),
-            },
-        )
-    except OSError:
-        logger.warning("Could not save the CI reliability snapshot", exc_info=True)
-    return analysis.report, None
+    saved = snapshot.get("report")
+    if not isinstance(saved, dict):
+        return None
+    return report_from_dict(saved), str(snapshot.get("generated_at") or "")
 
 
 def _attach_benchmarks(
@@ -302,10 +272,9 @@ def _attach_benchmarks(
     report: CiAnalyticsReport,
     *,
     window: int,
-    token: str,
     console: Any,
 ) -> dict[str, Any]:
-    """Add the host comparison table and structured benchmark rows."""
+    """Add the host comparison table from same-day peer snapshots."""
     now = datetime.now(UTC)
     peers: list[CiAnalyticsReport] = []
     rows: list[dict[str, Any]] = []
@@ -313,11 +282,9 @@ def _attach_benchmarks(
     for owner, repo in _DEFAULT_BENCHMARKS:
         if owner == report.owner and repo == report.repo:
             continue
-        loaded = _load_peer_report(
-            owner, repo, window=window, token=token, now=now, console=console
-        )
+        loaded = _load_peer_report(owner, repo, window=window, now=now)
         if loaded is None:
-            skipped.append(f"{owner}/{repo}")
+            skipped.append(f"{owner}/{repo} (no same-day snapshot)")
             continue
         peer, stamp = loaded
         peers.append(peer)
@@ -344,7 +311,6 @@ def _result(
     console: Any,
     *,
     include_benchmarks: bool = False,
-    token: str = "",
 ) -> dict[str, Any]:
     """The tool's return for ``report``: painted in the shell, markdown elsewhere."""
     summary = (
@@ -376,8 +342,8 @@ def _result(
         }
     else:
         result = {**base, **report_payload(report), "response_text": render_markdown(report)}
-    if include_benchmarks and token:
-        result = _attach_benchmarks(result, report, window=window, token=token, console=console)
+    if include_benchmarks:
+        result = _attach_benchmarks(result, report, window=window, console=console)
     return result
 
 
@@ -390,7 +356,8 @@ def _result(
         "reliability KPIs: executions, PR failure rate, failures classified as "
         "CI-caused (same commit passed later) versus source-code, developer time "
         "blocked by unreliable CI on merged PRs, and default-branch red time. "
-        "Read-only; needs a GitHub token."
+        "Read-only. A same-day snapshot answers without a token; a live GitHub "
+        "read needs a token."
     ),
     use_cases=[
         "Analyze a repository's CI/CD performance and reliability",
@@ -489,18 +456,12 @@ def analyze_github_ci_reliability(
             "owner/repo is required unless the workspace origin identifies a GitHub repository.",
             response_text="I need a GitHub repository (owner/repo) to analyze.",
         )
-    token = resolve_github_token(github_token)
-    if not token:
-        message = (
-            f"A GitHub token is required to read the Actions history of {repo_owner}/{repo_name}. "
-            "Run `opensre integrations setup github` and try again."
-        )
-        return tool_unavailable(_SOURCE, message, response_text=message)
     now = datetime.now(UTC)
     console = _console(context)
     snapshot = read_fresh_snapshot(
         snapshot_root(), repo_owner, repo_name, window_days=window, now=now
     )
+    token = resolve_github_token(github_token)
     if snapshot is not None:
         return _from_snapshot(
             snapshot,
@@ -509,8 +470,13 @@ def analyze_github_ci_reliability(
             window,
             console,
             include_benchmarks=compare,
-            token=token,
         )
+    if not token:
+        message = (
+            f"A GitHub token is required to read the Actions history of {repo_owner}/{repo_name}. "
+            "Run `opensre integrations setup github` and try again."
+        )
+        return tool_unavailable(_SOURCE, message, response_text=message)
     if console is not None:
         # Two-column lead matches the shell's reply gutter so the tool's lines
         # hang with the agent's notes instead of breaking the transcript edge.
@@ -571,7 +537,6 @@ def analyze_github_ci_reliability(
         window,
         console,
         include_benchmarks=compare,
-        token=token,
     )
 
 

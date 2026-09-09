@@ -162,7 +162,7 @@ def render_comparison(
             style="dim",
         ),
     ]
-    for notice in (item for peer in peers for item in peer.coverage_notices):
+    for notice in _comparison_notes(peers):
         parts.append(Text(notice, style="dim"))
     console.print(Padding(Group(*parts), (0, 0, 0, 2)))
 
@@ -188,8 +188,25 @@ def comparison_markdown(user: CiAnalyticsReport, peers: list[CiAnalyticsReport])
             *rows,
             "",
             "Red time = red_hours / (days × 24); CI-caused = reliability_failures / PR runs.",
+            *_comparison_notes(peers),
         ]
     )
+
+
+def _comparison_notes(peers: list[CiAnalyticsReport]) -> list[str]:
+    """Say when 0% red is a green window, not a missing fetch."""
+    notes: list[str] = []
+    seen: set[str] = set()
+    for peer in peers:
+        name = f"{peer.owner}/{peer.repo}"
+        if peer.red_hours == 0 and name not in seen:
+            seen.add(name)
+            if peer.branch_runs:
+                notes.append(f"{name}: default branch stayed green in this window.")
+            else:
+                notes.append(f"{name}: no default-branch runs in this window.")
+        notes.extend(peer.coverage_notices)
+    return notes
 
 
 def _details_markdown(report: CiAnalyticsReport) -> list[str]:

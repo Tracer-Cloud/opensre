@@ -7,6 +7,7 @@ from surfaces.shared.terminal.components.choice_menu import (
     repl_tty_interactive,
 )
 from surfaces.shared.terminal.components.loaders import DEFAULT_LOADER_LABEL, llm_loader
+from surfaces.shared.terminal.components.markdown import ReplyMarkdown
 from surfaces.shared.terminal.components.rendering import (
     print_repl_json,
     print_repl_table,
@@ -25,6 +26,7 @@ from surfaces.shared.terminal.components.token_format import (
 
 __all__ = [
     "DEFAULT_LOADER_LABEL",
+    "ReplyMarkdown",
     "_CHARS_PER_TOKEN",
     "format_repl_duration",
     "format_repl_timestamp",

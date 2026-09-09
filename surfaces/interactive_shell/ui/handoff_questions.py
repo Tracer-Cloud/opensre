@@ -20,7 +20,13 @@ def _display_safe(text: str) -> str:
     return "\n".join(strip_terminal_controls(line) for line in text.splitlines())
 
 
-def render_choice_selection(console: Console, title: str, answer: str) -> None:
+def render_choice_selection(
+    console: Console,
+    title: str,
+    answer: str,
+    *,
+    options: tuple[str, ...] = (),
+) -> None:
     """Persist the pick after the menu closes, as an answer line rather than a repeated question.
 
     The menu itself is erased, so this is the transcript's only record of the
@@ -28,6 +34,8 @@ def render_choice_selection(console: Console, title: str, answer: str) -> None:
     header, the question dim on one line with a single answer after it, and a
     multi-select listed underneath. Must not use the plan-step ``✓`` glyph.
     Leading blank separates it from Plan complete / reply text above.
+    ``options`` are the rows that were offered; they follow on one dim line so
+    a reader of the transcript sees what the choice was made against.
     """
     console.print()
     question = _display_safe(title.strip())
@@ -39,13 +47,16 @@ def render_choice_selection(console: Console, title: str, answer: str) -> None:
         line.append("  ", style=str(ui_theme.DIM))
         line.append(answers[0], style=str(ui_theme.BRAND))
         console.print(line)
-        return
-    console.print(line)
-    for item in answers:
-        aline = Text()
-        aline.append("      ", style=str(ui_theme.DIM))
-        aline.append(item, style=str(ui_theme.BRAND))
-        console.print(aline)
+    else:
+        console.print(line)
+        for item in answers:
+            aline = Text()
+            aline.append("      ", style=str(ui_theme.DIM))
+            aline.append(item, style=str(ui_theme.BRAND))
+            console.print(aline)
+    offered = [_display_safe(item.strip()) for item in options if item.strip()]
+    if len(offered) > 1:
+        console.print(Text("    offered: " + " · ".join(offered), style=str(ui_theme.DIM)))
 
 
 def render_ask_user_qa(console: Console, pairs: list[tuple[str, str]]) -> None:

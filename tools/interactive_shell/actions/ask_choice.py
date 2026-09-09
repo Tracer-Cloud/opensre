@@ -255,6 +255,7 @@ def run_ask_user_choice(
     questions: list[dict[str, Any]] | None = None,
     multi_select: bool = False,
     note: str = "",
+    allow_custom: bool = True,
     context: Any,
 ) -> dict[str, Any]:
     payload: dict[str, Any] = {
@@ -262,6 +263,7 @@ def run_ask_user_choice(
         "options": options or [],
         "multi_select": multi_select,
         "note": note,
+        "allow_custom": allow_custom,
     }
     if questions is not None:
         payload["questions"] = questions

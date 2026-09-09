@@ -130,7 +130,9 @@ Call
 `analyze_github_ci_reliability(owner="<owner>", repo="<repo>", include_benchmarks=true)`
 for the chosen repository. The tool paints the report (key results first)
 and the comparison table itself. Do not restate figures, do not output
-`headline`, and do not call the tool again for benchmarks.
+`headline`, and do not call the tool again for benchmarks. A peer without
+a same-day snapshot is skipped (named in `benchmarks_skipped`); do not
+fetch it yourself.
 
 ### 4. Offer what to do next
 
@@ -146,8 +148,9 @@ Wait for the answer, then follow the selected option.
 **Recurring check:** Call
 `schedule_ci_reliability_loop(owner="<owner>", repo="<repo>")` for the
 analyzed repository, output its `response_text` verbatim, and stop. Each
-tick is deterministic (no model turn); `/loops service install` keeps it
-running when no shell is open.
+tick is the same analytics report, not a CI code fix. `/loops service
+install` keeps it running when no shell is open. Do not call
+`fix_github_pr_ci` from this skill.
 
 **Slack setup:** Call `cli_exec` with payload `integrations verify slack`.
 If Slack is not configured, call `slash_invoke` with

@@ -240,3 +240,23 @@ def test_plain_assistant_question_does_not_tag_the_next_turn() -> None:
     output = buffer.getvalue()
     assert "↗ answer" not in output
     assert "how many open PRs in opensre?" in output
+
+
+def test_selection_recap_lists_the_offered_rows() -> None:
+    """The picker erases itself; the recap keeps what the choice was made against."""
+    import io
+
+    from rich.console import Console
+
+    console = Console(file=io.StringIO(), force_terminal=False, width=120)
+
+    render_choice_selection(
+        console,
+        "What would you like to do next?",
+        "Exit demo",
+        options=("Set up an agent", "Connect to Slack", "Exit demo"),
+    )
+
+    out = console.file.getvalue()  # type: ignore[union-attr]
+    assert "↳ What would you like to do next?  Exit demo" in out
+    assert "offered: Set up an agent · Connect to Slack · Exit demo" in out

@@ -61,9 +61,12 @@ shell_run_tool = RegisteredTool(
         "a specific command, propose it exactly as requested — the approval gate confirms "
         "anything risky before it runs, so do not refuse a destructive command the user "
         "explicitly asked for. Do not volunteer destructive, credential-exfiltrating, or "
-        "unrelated commands the user did not ask for. Set quiet=true to hide the $ line "
-        "and stdout/stderr from the terminal while still returning output to the agent "
-        "(required for intermediate skill probes)."
+        "unrelated commands the user did not ask for. Set quiet=true to hide stdout/stderr "
+        "from the terminal while still returning output to the agent (required for "
+        "intermediate skill probes); a dim command line still shows what ran. When a "
+        "command errors (missing module, non-zero exit), fix and rerun it rather than "
+        "estimating the result another way; never present an approximation as the "
+        "measured figure."
     ),
     input_schema=object_schema(
         properties={
@@ -82,8 +85,8 @@ shell_run_tool = RegisteredTool(
             "quiet": {
                 "type": "boolean",
                 "description": (
-                    "When true, do not print the command line or stdout/stderr to the "
-                    "interactive shell. Tool result payload is unchanged. Use for "
+                    "When true, do not print stdout/stderr to the interactive shell; the "
+                    "command line still prints dimmed. Tool result payload is unchanged. Use for "
                     "intermediate skill fetches (delivering-morning-briefings weather/news "
                     "curls, repository scans) when the user should only see the "
                     "composed answer, not the raw $ output twice."

@@ -499,10 +499,11 @@ def _apply_theme(theme: CliTheme) -> None:
 
     MARKDOWN_THEME = Theme(
         {
-            # Sunny Droid-like reply: bright warm-grey body (#D0D0D0 TEXT), warm
-            # ``Ω`` accent. Strong stays bold TEXT; avoid icy blue chrome.
+            # Bright warm-grey body with the accent reserved for code spans; bold
+            # marks headings, strong text and table headers only, so structure
+            # stays visible when a reply is mostly file names and flags.
             "markdown.paragraph": theme.TEXT,
-            "markdown.code": f"bold {theme.HIGHLIGHT}",
+            "markdown.code": theme.HIGHLIGHT,
             "markdown.code_block": theme.TEXT,
             "markdown.h1": f"bold {theme.HIGHLIGHT}",
             "markdown.h2": f"bold {theme.WARNING}",
@@ -516,6 +517,8 @@ def _apply_theme(theme: CliTheme) -> None:
             "markdown.link": f"underline {theme.HIGHLIGHT}",
             "markdown.link_url": theme.DIM,
             "markdown.hr": theme.DIM,
+            "markdown.table.header": f"bold {theme.TEXT}",
+            "markdown.table.border": theme.DIM,
         }
     )
 

@@ -182,3 +182,16 @@ def test_palette_registry_keys_match_the_config_vocabulary() -> None:
     from infrastructure.terminal.theme import THEME_REGISTRY
 
     assert tuple(THEME_REGISTRY.keys()) == THEME_NAMES
+
+
+def test_markdown_theme_reserves_bold_for_structure() -> None:
+    # Arrange
+    from infrastructure.terminal import theme as ui_theme
+
+    styles = ui_theme.MARKDOWN_THEME.styles
+
+    # Act / Assert: code spans keep their colour without bold; table header is
+    # bold and the border is dim, so the body of a table never outweighs it.
+    assert styles["markdown.code"].bold is not True
+    assert styles["markdown.table.header"].bold is True
+    assert styles["markdown.table.border"] == styles["markdown.hr"]
