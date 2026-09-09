@@ -17,6 +17,10 @@ from core.domain.runbooks import (
 )
 from integrations.github.helpers import github_creds, github_source_available
 from integrations.github.runbooks.manifest import ManifestError, parse_manifest
+from integrations.github.runbooks.revisions import (
+    GitHubRevisionComparisonError,
+    is_github_revision_reachable,
+)
 from integrations.github.tools.commits import list_github_commits
 from integrations.github.tools.file_contents import get_github_file_contents
 
@@ -140,6 +144,41 @@ class GitHubRunbookSource:
             raise RunbookRetrievalError("GitHub returned content from an unexpected revision.")
         return content, uri, resolved_revision
 
+    def _verify_revision_boundary(self, revision: str) -> None:
+        if not _FULL_SHA_RE.fullmatch(revision):
+            return
+        if (
+            _FULL_SHA_RE.fullmatch(self._source.ref)
+            and revision.lower() == self._source.ref.lower()
+        ):
+            return
+        trusted_revision = self._resolve_revision(self._source.ref, verify_access=True)
+        if revision.lower() == trusted_revision:
+            return
+        try:
+            reachable = is_github_revision_reachable(
+                owner=self._owner,
+                repo=self._repo,
+                trusted_revision=trusted_revision,
+                candidate_revision=revision.lower(),
+                auth_token=str(
+                    self._github.get("github_token") or self._github.get("auth_token") or ""
+                ),
+            )
+        except GitHubRevisionComparisonError as exc:
+            logger.warning(
+                "GitHub runbook revision comparison failed for %s",
+                self._source.name,
+                exc_info=True,
+            )
+            raise RunbookRetrievalError(
+                "GitHub could not verify the requested runbook revision."
+            ) from exc
+        if not reachable:
+            raise RunbookRetrievalError(
+                "The requested runbook revision is not reachable from the configured ref."
+            )
+
     def verify(self) -> tuple[bool, str]:
         """Verify repository access and the manifest when one is configured."""
         if self._source.manifest:
@@ -174,6 +213,9 @@ class GitHubRunbookSource:
         if candidate_parts[: len(configured_ref_parts)] == configured_ref_parts:
             revision = self._source.ref
             path_parts = candidate_parts[len(configured_ref_parts) :]
+        elif candidate_parts and _FULL_SHA_RE.fullmatch(candidate_parts[0]):
+            revision = candidate_parts[0]
+            path_parts = candidate_parts[1:]
         else:
             return None
         path = _safe_markdown_path("/".join(path_parts))
@@ -215,6 +257,7 @@ class GitHubRunbookSource:
         if path is None:
             raise RunbookRetrievalError("Runbook reference contains an unsafe document path.")
         revision = reference.requested_revision or self._source.ref
+        self._verify_revision_boundary(revision)
         content, _resource_uri, resolved_revision = self._fetch_file(path, revision)
         truncated = len(content) > RUNBOOK_CONTENT_MAX_CHARS
         bounded = content[:RUNBOOK_CONTENT_MAX_CHARS]
