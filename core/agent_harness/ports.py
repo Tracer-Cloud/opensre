@@ -160,12 +160,17 @@ class ToolProvider(Protocol):
         confirm_fn: ConfirmFn | None,
         is_tty: bool | None,
         resolved_integrations: dict[str, Any] | None = None,
+        turn_user_message: str = "",
     ) -> list[Any]:
         """Return the agent tools available for this turn.
 
         When ``resolved_integrations`` is supplied it is the turn's single
         resolved-integration view (from ``TurnSnapshot``); the provider builds
         tools from it instead of resolving again, so tools and the prompt agree.
+
+        ``turn_user_message`` is what the user sent this turn; tools that must
+        not repeat work the message already settled (an answered menu) read it
+        from the scope.
         """
 
     def tool_resources(self) -> dict[str, Any]:

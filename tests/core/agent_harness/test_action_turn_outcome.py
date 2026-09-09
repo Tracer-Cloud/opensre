@@ -110,3 +110,37 @@ def test_iteration_cap_is_preserved_on_turn_result() -> None:
     assert "repeated tool calls produced no new result" in result.response_text
     assert _console_text(harness).count("repeated tool calls produced no new result") == 1
     assert harness.llm.invocations == 5
+
+
+def test_a_menu_answered_this_turn_is_not_asked_again_through_the_real_turn() -> None:
+    """The scope must carry the turn's message, or the answered-menu guard is blind.
+
+    The guard lives in ``ask_user_choice`` but reads ``turn_user_message`` off
+    the tool scope. The driver built that scope without the message, so the
+    guard never fired in the shell while its own unit tests passed.
+    """
+    # Arrange: this turn's message is the answer; the model asks the same thing.
+    title = "When should it run?"
+    answer_turn = f"1. {title}\nWeekdays at 08:00 (recommended)"
+    harness = ActionExecutionHarness(
+        llm=FakeActionLLM(
+            [
+                tool_response(
+                    "ask_user_choice",
+                    {"title": title, "options": ["Weekdays at 08:00 (recommended)", "Every day"]},
+                ),
+                no_tool_response("Scheduling it for weekdays."),
+            ]
+        )
+    )
+    session = Session()
+
+    # Act: a TTY turn, so a menu would really queue if the guard did not refuse.
+    result = run_action_tool_turn(
+        answer_turn, session, harness.console, llm_factory=harness.llm_factory, is_tty=True
+    )
+
+    # Assert: the call ran and was refused, so no menu was queued for a
+    # question this turn's message already answered.
+    assert (result.executed_count, result.executed_success_count) == (1, 0)
+    assert session.pending_user_choice is None

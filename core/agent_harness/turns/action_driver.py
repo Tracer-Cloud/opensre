@@ -896,6 +896,7 @@ def _run_action_turn(
             confirm_fn=args.confirm_fn,
             is_tty=args.is_tty,
             resolved_integrations=resolved_integrations,
+            turn_user_message=message,
         ),
         session,
         message,

@@ -158,8 +158,9 @@ class NullToolProvider:
         confirm_fn: ConfirmFn | None,
         is_tty: bool | None,
         resolved_integrations: dict[str, Any] | None = None,
+        turn_user_message: str = "",
     ) -> list[Any]:
-        _ = (confirm_fn, is_tty, resolved_integrations)
+        _ = (confirm_fn, is_tty, resolved_integrations, turn_user_message)
         return []
 
     def tool_resources(self) -> dict[str, Any]:
