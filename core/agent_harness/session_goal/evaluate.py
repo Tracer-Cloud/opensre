@@ -1,14 +1,17 @@
-"""SessionGoal completion — cheap-model judge plus a tool-evidence gate.
+"""SessionGoal completion — host evidence gate, judge as veto only.
 
 The action model does not get to close the goal by saying it is done. This
 module merges tool ticks, validates newly ticked items, then asks the
-transcript judge (:mod:`core.agent_harness.session_goal.judge`) for met /
-not yet / impossible. ``GOAL_REACHED`` without this-turn tools or stored
-findings stays active. Reply prose never ticks an item.
+transcript judge (:mod:`core.agent_harness.session_goal.judge`). The host
+accepts when there is tool or stored-finding evidence and no unfinished
+checklist item. The judge may veto a ``Contradiction:`` or declare
+``IMPOSSIBLE``. ``GOAL_REACHED`` without evidence stays active. A failed
+qualifying tool this turn blocks host accept. Reply prose never ticks an item.
 
 The judge client is injected: hosts build the loop's evaluate with
-:func:`build_session_goal_evaluator`. Without a judge only a fully ticked
-checklist can close a goal.
+:func:`build_session_goal_evaluator`. A missing or broken judge does not
+block host accept. Overflowed tool evidence (``tool_evidence is None``)
+stays unverified.
 """
 
 from __future__ import annotations
@@ -28,9 +31,11 @@ from core.agent_harness.session_goal.goal import (
 from core.agent_harness.session_goal.judge import (
     SessionGoalJudgeVerdict,
     invoke_session_goal_judge,
+    judge_reason_is_contradiction,
 )
 from core.agent_harness.session_goal.plan_credit import credit_completed_plan_steps
 from core.agent_harness.session_goal.progress import is_session_goal_progress_text
+from core.agent_harness.session_goal.review_input import tool_evidence_has_failure
 from core.agent_harness.session_goal.validate import (
     invoke_checklist_tick_validator,
     kept_tick_indices,
@@ -107,6 +112,17 @@ def _need_tool_evidence_reason(judge_reason: str) -> str:
     if extra:
         return f"{SessionGoalReason.NEED_TOOL_EVIDENCE} — {extra}"
     return SessionGoalReason.NEED_TOOL_EVIDENCE
+
+
+def _host_can_accept(
+    *,
+    evidence: bool,
+    unfinished: bool,
+    tool_failed: bool,
+    unverified: bool,
+) -> bool:
+    """Host accept: real evidence, no open item, no failed tool, evidence still reviewable."""
+    return bool(evidence) and not unfinished and not tool_failed and not unverified
 
 
 def _ticked_items(goal: SessionGoal, newly: frozenset[int]) -> tuple[tuple[int, str], ...]:
@@ -205,9 +221,16 @@ def _verdict_from_judge(
     parsed: SessionGoalJudgeVerdict | None,
     *,
     evidence: bool,
+    host_can_accept: bool,
+    tool_failed: bool,
     fallback_reason: str,
 ) -> SessionGoalVerdict:
     if parsed is None:
+        if host_can_accept:
+            return SessionGoalVerdict(
+                status=SessionGoalStatus.ACHIEVED,
+                reason=SessionGoalReason.ACHIEVED_TOOL_EVIDENCE,
+            )
         return SessionGoalVerdict(
             status=SessionGoalStatus.ACTIVE,
             reason=SessionGoalReason.JUDGE_UNAVAILABLE,
@@ -219,16 +242,33 @@ def _verdict_from_judge(
             status=SessionGoalStatus.IMPOSSIBLE,
             reason=reason or SessionGoalReason.IMPOSSIBLE,
         )
+    if judge_reason_is_contradiction(reason):
+        return SessionGoalVerdict(
+            status=SessionGoalStatus.ACTIVE,
+            reason=reason,
+            repeats_previous=repeated,
+        )
     if parsed.verdict == "GOAL_REACHED":
-        if evidence:
+        if evidence and not tool_failed:
             return SessionGoalVerdict(
                 status=SessionGoalStatus.ACHIEVED,
                 reason=reason or SessionGoalReason.ACHIEVED_TOOL_EVIDENCE,
+            )
+        if evidence and tool_failed:
+            return SessionGoalVerdict(
+                status=SessionGoalStatus.ACTIVE,
+                reason=reason or fallback_reason,
+                repeats_previous=repeated,
             )
         return SessionGoalVerdict(
             status=SessionGoalStatus.ACTIVE,
             reason=_need_tool_evidence_reason(reason),
             repeats_previous=repeated,
+        )
+    if host_can_accept:
+        return SessionGoalVerdict(
+            status=SessionGoalStatus.ACHIEVED,
+            reason=SessionGoalReason.ACHIEVED_TOOL_EVIDENCE,
         )
     return SessionGoalVerdict(
         status=SessionGoalStatus.ACTIVE,
@@ -323,9 +363,17 @@ def evaluate_session_goal(
             judge=judge,
             judge_llm=judge_llm,
         )
+        tool_failed = tool_evidence_has_failure(tool_evidence)
         verdict = _verdict_from_judge(
             parsed,
             evidence=evidence,
+            host_can_accept=_host_can_accept(
+                evidence=evidence,
+                unfinished=bool(current.unfinished_items),
+                tool_failed=tool_failed,
+                unverified=current.tool_evidence is None,
+            ),
+            tool_failed=tool_failed,
             fallback_reason=derive_session_goal_reason(current),
         )
     verdict = _with_rejected_ticks(verdict, review.rejected)

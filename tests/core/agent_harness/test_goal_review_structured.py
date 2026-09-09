@@ -1,13 +1,19 @@
-"""Inner ReAct goal reviewer uses closed structured verdicts."""
+"""ReAct goal gates: host rejects stay on; same-LLM review is opt-in."""
 
 from __future__ import annotations
 
 from typing import Any
 
+import pytest
+
+from config.constants.llm import OPENSRE_REACT_GOAL_LLM_REVIEW_ENV
 from core.agent.goals import GoalObservation
 from core.agent_harness.session.pending_choice import AskUserQuestion, format_ask_user_answers
 from core.agent_harness.turns.action_driver import _goal_review_user_request
-from core.agent_harness.turns.goal_review import build_goal_reviewer
+from core.agent_harness.turns.goal_review import (
+    build_gather_goal_reviewer,
+    build_goal_reviewer,
+)
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
 from core.llm.types import AgentLLMResponse
 
@@ -61,6 +67,22 @@ def test_goal_reviewer_rejects_while_task_plan_incomplete() -> None:
 
 
 def test_goal_reviewer_ignores_plan_gate_when_complete() -> None:
+    llm = _ScriptedLLM('{"verdict": "NOT_REACHED"}')
+    goal = build_goal_reviewer(
+        llm,
+        "check checkout latency",
+        executed_tool_names=["call_mcp_tool"],
+        plan_incomplete=lambda: False,
+    )
+    assert goal.verify is not None
+    assert goal.verify(_obs()) is True
+    assert llm.invokes == 0
+
+
+def test_goal_reviewer_opt_in_llm_still_accepts_reached(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(OPENSRE_REACT_GOAL_LLM_REVIEW_ENV, "1")
     llm = _ScriptedLLM('{"verdict": "GOAL_REACHED"}')
     goal = build_goal_reviewer(
         llm,
@@ -101,19 +123,40 @@ def test_task_plan_blocks_conclusion_helpers() -> None:
     assert task_plan_blocks_conclusion(task_plan=None, plan_only=False) is False
 
 
-def test_goal_reviewer_accepts_on_structured_reached() -> None:
+def test_goal_reviewer_accepts_on_structured_reached(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(OPENSRE_REACT_GOAL_LLM_REVIEW_ENV, "1")
     llm = _ScriptedLLM('{"verdict": "GOAL_REACHED"}')
     goal = build_goal_reviewer(llm, "delete the cron", executed_tool_names=["shell_run"])
     assert goal.verify is not None
     assert goal.verify(_obs()) is True
 
 
-def test_goal_reviewer_fails_open_on_free_text() -> None:
+def test_goal_reviewer_fails_open_on_free_text(monkeypatch: pytest.MonkeyPatch) -> None:
     """Prose without JSON must accept (fail open) — never force extra ReAct work."""
+    monkeypatch.setenv(OPENSRE_REACT_GOAL_LLM_REVIEW_ENV, "1")
     llm = _ScriptedLLM("NOT_REACHED — keep going")
     goal = build_goal_reviewer(llm, "delete the cron", executed_tool_names=["shell_run"])
     assert goal.verify is not None
     assert goal.verify(_obs()) is True
+
+
+def test_goal_reviewer_skips_llm_by_default() -> None:
+    llm = _ScriptedLLM('{"verdict": "NOT_REACHED"}')
+    goal = build_goal_reviewer(llm, "delete the cron", executed_tool_names=["shell_run"])
+    assert goal.verify is not None
+    assert goal.verify(_obs()) is True
+    assert llm.invokes == 0
+
+
+def test_gather_reviewer_rejects_discovery_only_without_llm() -> None:
+    llm = _ScriptedLLM('{"verdict": "GOAL_REACHED"}')
+    calls = [("list_posthog_tools", {})]
+    goal = build_gather_goal_reviewer(llm, "how many Windows users?", executed_tool_calls=calls)
+    assert goal.verify is not None
+    assert goal.verify(_obs()) is False
+    assert llm.invokes == 0
 
 
 def test_structured_answer_goal_review_recovers_latest_non_qa_user_request() -> None:

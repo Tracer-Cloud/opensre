@@ -509,13 +509,11 @@ def _build_action_agent(
         # cache_control breakpoint is not invalidated every turn.
         system = envelope.render_cached()
         user_message = build_action_user_message(message, prefix=envelope.render_ephemeral())
-        # Reviewed goal: when the agent concludes after tool work, one LLM
-        # check confirms the user's request was carried out; a NOT_REACHED
-        # verdict nudges the loop to continue instead of stopping short
-        # (e.g. "remove the cron loops" ending after only listing them).
-        # The reviewer reads executed tool names from the shared list the
-        # event tap below fills, so it can stand down on handoff/dispatch
-        # turns whose outcome is not reviewable at conclusion time.
+        # ReAct goal: host gates (unfinished plan) reject stop. Same-LLM
+        # review is opt-in. The verifier reads executed tool names from the
+        # shared list the event tap below fills, so it can stand down on
+        # handoff/dispatch turns whose outcome is not reviewable at
+        # conclusion time.
         goal = build_goal_reviewer(
             llm,
             _goal_review_user_request(message, turn_snapshot),

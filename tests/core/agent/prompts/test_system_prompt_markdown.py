@@ -16,6 +16,14 @@ def test_system_prompt_base_comes_from_markdown_file() -> None:
     assert path.read_text(encoding="utf-8") == _SYSTEM_PROMPT_BASE
 
 
+def test_system_prompt_completion_is_the_user_request_not_a_tool_call() -> None:
+    collapsed = " ".join(_SYSTEM_PROMPT_BASE.split())
+    assert "The user's request is the finish line, not that a tool ran" in collapsed
+    assert "Listing tools, schemas, or a drafted query is not completion" in collapsed
+    assert "Propose done with the evidence" in collapsed
+    assert "If you cannot complete the request, say what blocked you and stop" in collapsed
+
+
 def test_system_prompt_runs_explicit_commands_without_repository_probe() -> None:
     assert "execute it directly with the matching tool" in _SYSTEM_PROMPT_BASE
     assert "call `cli_exec` with the leading `opensre` prefix removed" in _SYSTEM_PROMPT_BASE

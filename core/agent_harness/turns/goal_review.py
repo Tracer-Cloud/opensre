@@ -1,9 +1,11 @@
-"""LLM goal reviewer for action and evidence-gather turns.
+"""ReAct goal gates for action and evidence-gather turns.
 
-Builds a :class:`~core.agent.goals.Goal` whose ``verify`` asks the turn's own
-LLM one small review question when the agent concludes after executing tools.
-If the verdict is ``NOT_REACHED`` the ReAct loop nudges the agent to continue.
-Two flavors share the same reviewer:
+Builds a :class:`~core.agent.goals.Goal` whose ``verify`` rejects stop when a
+host gate still applies (unfinished task plan, gather discovery-only). An
+optional same-LLM review (``OPENSRE_REACT_GOAL_LLM_REVIEW=1``) can also reject
+when the agent concludes after tools; default is off so the acting prompt
+proposes done and these host gates accept or refuse. Two flavors share the
+same verifier:
 
 * :func:`build_goal_reviewer` — action turns ("remove the cron loops" must not
   stop after only listing them).
@@ -12,12 +14,11 @@ Two flavors share the same reviewer:
   observed live: three PostHog turns in a row ended on MCP tool listings and
   never ran the count the user asked for).
 
-The review is deliberately conservative — a wrong ``NOT_REACHED`` makes the
-agent flail through extra actions the user never asked for (observed live:
-duplicate async dispatches). It fails open on any LLM error, runs at
-most once per turn, and is skipped entirely when no tools ran, when the agent
-is asking the user a question, or when the turn ran a tool whose outcome is
-not reviewable this turn (async dispatch, assistant handoff).
+When the LLM review is opted in it is conservative — a wrong ``NOT_REACHED``
+makes the agent flail (observed live: duplicate async dispatches). It fails
+open on any LLM error, runs at most once per turn, and is skipped entirely
+when no tools ran, when the agent is asking the user a question, or when the
+turn ran a tool whose outcome is not reviewable this turn.
 
 The reviewer learns which tools ran through :func:`tap_executed_tool_names`
 (action) or :func:`tap_executed_tool_calls` (gather — needs args so discovery
@@ -30,6 +31,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from config.constants.llm import react_goal_llm_review_enabled
 from core.agent.goals import Goal, GoalObservation
 from core.agent_harness.closed_llm_verdict import invoke_closed_goal_verdict
 from core.agent_harness.turns.gather_discovery_budget import (
@@ -219,6 +221,8 @@ class _LLMGoalReviewer:
             return False
         if self.reject_discovery_only and _gather_ran_only_discovery(self.executed_tool_calls):
             return False
+        if not react_goal_llm_review_enabled():
+            return True
         if self.reviews_remaining <= 0:
             return True
         self.reviews_remaining -= 1

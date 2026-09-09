@@ -89,8 +89,7 @@ class HeadlessAgent:
     ) -> None:
         self._tools = tools
         self._llm_factory = llm_factory
-        # Session-goal completion is judged by a cheap model the host injects.
-        # No judge: only a fully ticked checklist can close a goal.
+        # Session-goal completion: host evidence gate; injected judge may veto.
         self._goal_evaluate = (
             build_session_goal_evaluator(judge_llm_factory)
             if judge_llm_factory is not None

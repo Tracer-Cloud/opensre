@@ -6,17 +6,36 @@ from collections.abc import Sequence
 from dataclasses import replace
 
 from core.agent_harness.session_goal.goal import SessionGoal
+from core.agent_harness.turns.gather_discovery_budget import is_gather_discovery_call
 from core.llm.types import ToolCall
 from core.tool import ToolExecutionResult
 
 _BOOKKEEPING_TOOLS = frozenset({"session_goal_set", "session_goal_complete", "update_plan"})
 _MAX_REVIEW_INPUT_CHARS = 64000
+_OUTCOME_ERROR_MARK = "\nOutcome: error\n"
+
+
+def tool_evidence_has_failure(tool_evidence: str) -> bool:
+    """True when this-turn observations include a qualifying tool that errored."""
+    return _OUTCOME_ERROR_MARK in (tool_evidence or "")
+
+
+def _qualifying_success(call: ToolCall, result: ToolExecutionResult) -> bool:
+    """True for a successful fetch or mutation — not bookkeeping, not schema listing."""
+    if result.is_error:
+        return False
+    args = call.input if isinstance(call.input, dict) else {}
+    return not is_gather_discovery_call(call.name, args)
 
 
 def collect_tool_evidence(
     results: Sequence[tuple[ToolCall, ToolExecutionResult]],
 ) -> tuple[str, int]:
-    """Include actual tool arguments, outcomes, and provider-visible results."""
+    """Include actual tool arguments, outcomes, and provider-visible results.
+
+    Listings stay in the text so a judge can see them. They do not count as
+    successful evidence — listing tools is not completion.
+    """
     observations = [
         (call, result) for call, result in results if call.name not in _BOOKKEEPING_TOOLS
     ]
@@ -25,7 +44,7 @@ def collect_tool_evidence(
         f"Outcome: {'error' if result.is_error else 'success'}\nResult: {result.content}"
         for call, result in observations
     )
-    return text, sum(not result.is_error for _call, result in observations)
+    return text, sum(_qualifying_success(call, result) for call, result in observations)
 
 
 def retain_tool_evidence(goal: SessionGoal, observations: str, *, succeeded: bool) -> SessionGoal:

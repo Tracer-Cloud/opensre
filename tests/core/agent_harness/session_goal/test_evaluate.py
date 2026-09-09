@@ -276,7 +276,7 @@ def test_outer_loop_rejects_bare_claim_until_budget() -> None:
     assert outcome.goal.status == SessionGoalStatus.BUDGET_EXHAUSTED
 
 
-def test_llm_evaluator_rejects_soft_achieve() -> None:
+def test_unfinished_checklist_keeps_a_not_reached_verdict_active() -> None:
     class _LLM:
         model_id = "test"
 
@@ -292,7 +292,11 @@ def test_llm_evaluator_rejects_soft_achieve() -> None:
 
     evaluate = build_session_goal_evaluator(lambda: _LLM())  # type: ignore[arg-type]
     session = SessionCore()
-    goal = SessionGoal(condition="finish migration", max_outer_turns=3)
+    goal = SessionGoal(
+        condition="finish migration",
+        max_outer_turns=3,
+        checklist=("list the runs", "filter by SHA"),
+    )
     attach_session_goal(session, goal)
 
     status = evaluate(
@@ -304,6 +308,74 @@ def test_llm_evaluator_rejects_soft_achieve() -> None:
     assert session.session_goal is not None
     assert session.session_goal.status == SessionGoalStatus.ACTIVE
     assert "SHA" in session.session_goal.last_reason
+
+
+def test_host_accepts_when_tools_succeeded_and_the_judge_only_says_not_yet() -> None:
+    """The judge is a veto, not the accept path — successful tools close /goal."""
+    session = SessionCore()
+    goal = SessionGoal(condition="count Windows users", max_outer_turns=3)
+    attach_session_goal(session, goal)
+    verdict = evaluate_session_goal(
+        goal,
+        _result("284 users.", executed=1, success=1),
+        session=session,
+        judge=_not_yet,
+    )
+    assert verdict.status == SessionGoalStatus.ACHIEVED
+    assert verdict.reason == SessionGoalReason.ACHIEVED_TOOL_EVIDENCE
+
+
+def test_a_failed_tool_this_turn_blocks_a_reached_verdict() -> None:
+    action = ToolCallingTurnResult(
+        1,
+        1,
+        1,
+        False,
+        True,
+        tool_evidence="Tool: deploy\nArguments: {}\nOutcome: error\nResult: rollout failed",
+        evidence_success_count=1,
+    )
+    verdict = evaluate_session_goal(
+        SessionGoal(condition="deploy prod"),
+        TurnResult("cli_agent_handled", action, "Deployed."),
+        judge=_reached,
+    )
+    assert verdict.status == SessionGoalStatus.ACTIVE
+
+
+def test_a_failed_tool_this_turn_blocks_host_accept() -> None:
+    action = ToolCallingTurnResult(
+        1,
+        1,
+        1,
+        False,
+        True,
+        tool_evidence="Tool: deploy\nArguments: {}\nOutcome: error\nResult: rollout failed",
+        evidence_success_count=1,
+    )
+    verdict = evaluate_session_goal(
+        SessionGoal(condition="deploy prod"),
+        TurnResult("cli_agent_handled", action, "Deployed."),
+        judge=_not_yet,
+    )
+    assert verdict.status == SessionGoalStatus.ACTIVE
+
+
+def test_a_contradiction_vetoes_host_accept() -> None:
+    session = SessionCore()
+    goal = SessionGoal(condition="count rows", max_outer_turns=3)
+    attach_session_goal(session, goal)
+    verdict = evaluate_session_goal(
+        goal,
+        _result("All 5 checked. | 3 rows |", executed=1, success=1),
+        session=session,
+        judge=lambda **_kw: SessionGoalJudgeVerdict(
+            verdict="NOT_REACHED",
+            reason="Contradiction: the sentence says 5 but the table lists 3 rows",
+        ),
+    )
+    assert verdict.status == SessionGoalStatus.ACTIVE
+    assert verdict.reason.startswith("Contradiction:")
 
 
 def test_llm_reject_survives_outer_loop_session_reread() -> None:
@@ -329,7 +401,11 @@ def test_llm_reject_survives_outer_loop_session_reread() -> None:
         _chat,
         session,
         "go",
-        goal=SessionGoal(condition="finish migration", max_outer_turns=2),
+        goal=SessionGoal(
+            condition="finish migration",
+            max_outer_turns=2,
+            checklist=("patch the job", "verify the SHA filter"),
+        ),
         evaluate=build_session_goal_evaluator(lambda: _LLM()),  # type: ignore[arg-type]
         on_progress=lambda g: progress_updates.append(g.status),
     )
@@ -388,7 +464,7 @@ def test_llm_evaluator_confirms_soft_achieve() -> None:
     assert status == SessionGoalStatus.ACHIEVED
 
 
-def test_llm_evaluator_fails_closed_on_free_text_verdict() -> None:
+def test_unusable_judge_output_does_not_block_host_accept() -> None:
     class _LLM:
         model_id = "test"
 
@@ -408,9 +484,9 @@ def test_llm_evaluator_fails_closed_on_free_text_verdict() -> None:
         _result("patched", executed=1, success=1),
         session=session,
     )
-    assert status == SessionGoalStatus.ACTIVE
+    assert status == SessionGoalStatus.ACHIEVED
     assert session.session_goal is not None
-    assert session.session_goal.status == SessionGoalStatus.ACTIVE
+    assert session.session_goal.status == SessionGoalStatus.ACHIEVED
 
 
 def test_pending_user_choice_outranks_a_reached_verdict_with_evidence() -> None:
@@ -469,20 +545,17 @@ def test_a_met_verdict_ticks_every_checklist_item() -> None:
     assert session.session_goal.completed == frozenset({0, 1})
 
 
-def test_without_a_judge_only_a_ticked_checklist_can_close_the_goal() -> None:
-    # Arrange: no judge, no judge client — an in-memory host.
+def test_without_a_judge_successful_tools_close_the_goal() -> None:
     session = SessionCore()
     open_goal = SessionGoal(condition="count users")
     attach_session_goal(session, open_goal)
 
-    # Act
     verdict = evaluate_session_goal(
         open_goal, _result("284 users.", executed=1, success=1), session=session
     )
 
-    # Assert: a confident tool-backed reply is not enough without a judge.
-    assert verdict.status == SessionGoalStatus.ACTIVE
-    assert verdict.reason == SessionGoalReason.JUDGE_UNAVAILABLE
+    assert verdict.status == SessionGoalStatus.ACHIEVED
+    assert verdict.reason == SessionGoalReason.ACHIEVED_TOOL_EVIDENCE
 
 
 def test_a_rejected_tick_names_its_reason_on_the_status_line() -> None:
@@ -532,8 +605,7 @@ def test_a_rejected_tick_names_its_reason_on_the_status_line() -> None:
     assert session.session_goal.completed == frozenset()
 
 
-def test_a_judge_client_that_cannot_be_built_keeps_the_goal_active() -> None:
-    # Arrange: the host's factory raises (no credentials).
+def test_a_judge_client_that_cannot_be_built_does_not_block_host_accept() -> None:
     def _broken_factory() -> object:
         raise RuntimeError("no llm configured")
 
@@ -542,13 +614,11 @@ def test_a_judge_client_that_cannot_be_built_keeps_the_goal_active() -> None:
     goal = SessionGoal(condition="count users")
     attach_session_goal(session, goal)
 
-    # Act
     status = evaluate(goal, _result("284 users.", executed=1, success=1), session=session)
 
-    # Assert
-    assert status == SessionGoalStatus.ACTIVE
+    assert status == SessionGoalStatus.ACHIEVED
     assert session.session_goal is not None
-    assert session.session_goal.last_reason == SessionGoalReason.JUDGE_UNAVAILABLE
+    assert session.session_goal.last_reason == SessionGoalReason.ACHIEVED_TOOL_EVIDENCE
 
 
 def test_the_tick_tool_itself_is_not_evidence_for_a_met_verdict() -> None:

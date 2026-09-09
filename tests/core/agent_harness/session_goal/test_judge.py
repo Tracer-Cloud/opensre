@@ -90,7 +90,11 @@ def test_chatty_reply_without_tools_stays_not_yet() -> None:
 
 def test_judge_not_yet_reason_is_the_status_reason() -> None:
     verdict = evaluate_session_goal(
-        SessionGoal(condition="find the failing run", max_outer_turns=4),
+        SessionGoal(
+            condition="find the failing run",
+            max_outer_turns=4,
+            checklist=("list the runs", "filter by SHA"),
+        ),
         _result("I listed runs on main.", executed=1, success=1),
         judge=_not_yet,
     )
@@ -116,7 +120,7 @@ def test_impossible_is_terminal() -> None:
     assert session.session_goal.status == SessionGoalStatus.IMPOSSIBLE
 
 
-def test_transport_failure_stays_active() -> None:
+def test_transport_failure_does_not_block_host_accept() -> None:
     class _Boom:
         model_id = "test"
 
@@ -133,14 +137,39 @@ def test_transport_failure_stays_active() -> None:
     attach_session_goal(session, goal)
     verdict = evaluate_session_goal(
         goal,
-        _result("still working", executed=1, success=1),
+        _result("patched", executed=1, success=1),
+        session=session,
+        judge_llm=_Boom(),  # type: ignore[arg-type]
+    )
+    assert verdict.status == SessionGoalStatus.ACHIEVED
+    assert verdict.reason == SessionGoalReason.ACHIEVED_TOOL_EVIDENCE
+    assert session.session_goal is not None
+    assert session.session_goal.status == SessionGoalStatus.ACHIEVED
+
+
+def test_transport_failure_without_tools_stays_active() -> None:
+    class _Boom:
+        model_id = "test"
+
+        def invoke(self, messages, *, system=None, tools=None):  # noqa: ANN001
+            _ = (messages, system, tools)
+            raise RuntimeError("classifier down")
+
+        def with_structured_output(self, model):  # noqa: ANN001
+            _ = model
+            raise RuntimeError("classifier down")
+
+    session = SessionCore()
+    goal = SessionGoal(condition="finish migration", max_outer_turns=3)
+    attach_session_goal(session, goal)
+    verdict = evaluate_session_goal(
+        goal,
+        _result("still working"),
         session=session,
         judge_llm=_Boom(),  # type: ignore[arg-type]
     )
     assert verdict.status == SessionGoalStatus.ACTIVE
     assert verdict.reason == SessionGoalReason.JUDGE_UNAVAILABLE
-    assert session.session_goal is not None
-    assert session.session_goal.status == SessionGoalStatus.ACTIVE
 
 
 def test_structured_llm_not_reached_does_not_false_complete() -> None:
@@ -158,7 +187,11 @@ def test_structured_llm_not_reached_does_not_false_complete() -> None:
             return []
 
     status = evaluate_session_goal(
-        SessionGoal(condition="find the failing run", max_outer_turns=3),
+        SessionGoal(
+            condition="find the failing run",
+            max_outer_turns=3,
+            checklist=("list the runs", "filter by SHA"),
+        ),
         _result("listed runs", executed=1, success=1),
         judge_llm=_LLM(),  # type: ignore[arg-type]
     )
@@ -196,7 +229,9 @@ def test_the_judge_is_told_to_reject_a_self_contradicting_reply() -> None:
     )
 
     # Assert: the rules and the previous verdict both reach the model.
+    assert "refute" in seen["system"]
     assert "Contradiction:" in seen["system"]
     assert "repeats_previous" in seen["system"]
     assert "Previous verdict reason:" in seen["prompt"]
     assert "cannot be met truthfully" in seen["system"]
+    assert "When in doubt, set verdict to NOT_REACHED." in seen["system"]

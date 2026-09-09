@@ -14,7 +14,7 @@ by :func:`render_prompt_region`, which ``PromptBuilder`` calls per redraw.
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 from prompt_toolkit.formatted_text import ANSI
 from rich.console import Console
@@ -81,7 +81,7 @@ def render_prompt_region(session: Session, state: ReplState, spinner: SpinnerSta
     else:
         base = prompt_rendering._prompt_message(session).value
     plan = session.task_plan
-    if plan is None or not plan.steps:
+    if plan is None or not plan.steps or _plan_already_in_transcript(session, plan, state):
         # Drop expand so the next plan opens collapsed rather than inheriting
         # a sticky Ctrl+P from a previous checklist.
         state.plan_expanded = False
@@ -134,6 +134,19 @@ def render_prompt_region(session: Session, state: ReplState, spinner: SpinnerSta
 
 
 _CONFIRM_HINT = "↑↓ Navigate • Enter confirm • Esc cancel"
+
+
+def _plan_already_in_transcript(session: Session, plan: Any, state: ReplState) -> bool:
+    """True once a finished plan's breakdown is in scrollback and no turn is running.
+
+    The one-shot ``Plan complete`` breakdown is the durable record; keeping the
+    pinned copy as well showed the same checklist twice.
+    """
+    return bool(
+        plan.all_completed
+        and getattr(session, "task_plan_breakdown_emitted", False)
+        and not state.is_dispatch_running()
+    )
 
 
 def _confirmation_block(state: ReplState) -> str:

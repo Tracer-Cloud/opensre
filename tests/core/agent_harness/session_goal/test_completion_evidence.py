@@ -20,7 +20,10 @@ from core.agent_harness.session_goal.persist import (
     session_goal_from_payload,
     session_goal_to_payload,
 )
-from core.agent_harness.session_goal.review_input import retain_tool_evidence
+from core.agent_harness.session_goal.review_input import (
+    collect_tool_evidence,
+    retain_tool_evidence,
+)
 from core.agent_harness.session_goal.run_until import run_until_session_goal
 from core.agent_harness.turns.headless_adapters import BufferOutputSink, NullToolProvider
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
@@ -154,7 +157,7 @@ def test_actual_results_and_full_reply_reach_both_reviewers(
             assert "bookkeeping only" not in prompt
             return super().invoke(messages)
 
-    # Even a validator-approved checklist must not bypass the whole-goal judge.
+    # A failed deploy this turn blocks host accept even if a read succeeded.
     validator = Reviewer([AgentLLMResponse(content='{"items":[{"index":0,"verdict":"VALID"}]}')])
     judge = Reviewer([AgentLLMResponse(content='{"verdict":"NOT_REACHED"}')])
     verdict = evaluate_session_goal(
@@ -259,3 +262,16 @@ def test_evidence_overflow_remains_unverified_after_restore() -> None:
     verdict = evaluate_session_goal(restored, _result(), judge_llm=reviewer)
     assert verdict.status == SessionGoalStatus.ACTIVE
     assert reviewer.invocations == 0
+
+
+def test_listing_tools_is_not_session_goal_evidence() -> None:
+    text, successes = collect_tool_evidence(
+        [
+            (
+                ToolCall(id="1", name="list_posthog_tools", input={}),
+                ToolExecutionResult(content="available tools"),
+            )
+        ]
+    )
+    assert "list_posthog_tools" in text
+    assert successes == 0

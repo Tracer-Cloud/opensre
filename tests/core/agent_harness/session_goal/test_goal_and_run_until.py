@@ -273,7 +273,11 @@ def test_the_judge_reason_is_painted_between_turns() -> None:
         _chat,
         session,
         "go",
-        goal=SessionGoal(condition="find the failing run", max_outer_turns=2),
+        goal=SessionGoal(
+            condition="find the failing run",
+            max_outer_turns=2,
+            checklist=("list the runs", "filter by SHA"),
+        ),
         evaluate=lambda goal, result, *, session=None: (
             evaluate_session_goal(goal, result, session=session, judge=_not_yet).status
         ),
@@ -295,7 +299,12 @@ def test_a_resumed_goal_counts_its_next_turn() -> None:
     session = SessionCore()
     attach_session_goal(
         session,
-        SessionGoal(condition="find the failing run", max_outer_turns=5, turns_used=2),
+        SessionGoal(
+            condition="find the failing run",
+            max_outer_turns=5,
+            turns_used=2,
+            checklist=("list the runs", "filter by SHA"),
+        ),
     )
 
     def _chat(message: str) -> TurnResult:

@@ -188,6 +188,7 @@ EXPORTS: dict[str, str] = {
     "LLM_AUTH_METHOD_ENV": "llm",
     "LLM_PROVIDER_ENV": "llm",
     "OPENSRE_LLM_NATIVE_STRUCTURED_OUTPUT_ENV": "llm",
+    "OPENSRE_REACT_GOAL_LLM_REVIEW_ENV": "llm",
     # mariadb
     "MARIADB_DATABASE_ENV": "mariadb",
     "MARIADB_HOST_ENV": "mariadb",

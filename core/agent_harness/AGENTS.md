@@ -69,7 +69,7 @@ chat path — the action agent owns tools.
 **No keyword intent routing around the agent.** Do not scan user text with
 regex/keywords to attach goals or bypass the ReAct loop. Session goals attach
 through the structured `session_goal_set` tool or explicit host APIs.
-Checklist progress uses `session_goal:done=<index>` in replies.
+Checklist progress uses the `session_goal_complete` tool, not reply tags.
 
 Do **not** duplicate the default port stack outside `DefaultHeadlessBuild`.
 Expand `AgentBuildConfig` through `resolve_agent_ports` — do not re-copy the

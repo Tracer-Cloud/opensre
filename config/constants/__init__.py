@@ -467,6 +467,9 @@ if TYPE_CHECKING:
     from config.constants.llm import (
         OPENSRE_LLM_NATIVE_STRUCTURED_OUTPUT_ENV as OPENSRE_LLM_NATIVE_STRUCTURED_OUTPUT_ENV,
     )
+    from config.constants.llm import (
+        OPENSRE_REACT_GOAL_LLM_REVIEW_ENV as OPENSRE_REACT_GOAL_LLM_REVIEW_ENV,
+    )
     from config.constants.mariadb import (
         MARIADB_DATABASE_ENV as MARIADB_DATABASE_ENV,
     )

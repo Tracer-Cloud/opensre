@@ -280,7 +280,7 @@ def derive_session_goal_checklist(
     start of the condition, a line start, or after a colon or semicolon;
     ``(1)`` counts anywhere. A single-item checklist would only echo the
     condition, so a condition without enumerated steps gets no checklist and
-    the judge alone decides.
+    the host accepts on tool evidence (the judge may only veto).
     """
     provided = tuple(str(item).strip() for item in items if str(item).strip())
     if provided:

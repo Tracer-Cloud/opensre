@@ -282,3 +282,40 @@ def test_plan_breakdown_dims_work_notes_and_accents_checked_steps() -> None:
     assert ui_theme.TEXT_ANSI in out
     # Caption is secondary, distinct from step body and work notes.
     assert ui_theme.SECONDARY_ANSI in out
+
+
+def _completed_plan():
+    from core.agent_harness.task_plan.plan import PlanStep, PlanStepStatus, TaskPlan
+
+    return TaskPlan(
+        steps=tuple(
+            PlanStep(step=text, status=PlanStepStatus.COMPLETED)
+            for text in ("Confirm repository context", "Run the analysis")
+        )
+    )
+
+
+def test_a_finished_plan_leaves_the_prompt_once_its_breakdown_is_in_scrollback() -> None:
+    # Arrange: the turn ended, the one-shot "Plan complete" breakdown was printed.
+    session = Session()
+    session.task_plan = _completed_plan()
+    session.task_plan_breakdown_emitted = True
+
+    # Act
+    rendered = _strip_ansi(render_prompt_region(session, ReplState(), SpinnerState()).value)
+
+    # Assert: no second copy pinned above the prompt.
+    assert "Plan" not in rendered
+
+
+def test_a_finished_plan_stays_pinned_until_its_breakdown_is_printed() -> None:
+    # Arrange: steps are all completed but the breakdown has not been emitted yet.
+    session = Session()
+    session.task_plan = _completed_plan()
+    session.task_plan_breakdown_emitted = False
+
+    # Act
+    rendered = _strip_ansi(render_prompt_region(session, ReplState(), SpinnerState()).value)
+
+    # Assert
+    assert "Plan complete · 2/2" in rendered or "Plan · 2/2" in rendered
