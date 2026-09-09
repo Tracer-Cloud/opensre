@@ -36,6 +36,7 @@ from core.agent_harness.session_goal.judge import (
     SessionGoalJudgeVerdict,
     invoke_session_goal_judge,
     judge_reason_is_contradiction,
+    read_observations,
 )
 from core.agent_harness.session_goal.plan_credit import credit_completed_plan_steps
 from core.agent_harness.session_goal.progress import is_session_goal_progress_text
@@ -208,6 +209,12 @@ def _run_judge(
             )
         if judge_llm is None:
             return None
+        reading = read_observations(
+            judge_llm,
+            condition=current.condition,
+            tool_evidence=tool_evidence,
+            prior_tool_evidence=current.tool_evidence,
+        )
         return invoke_session_goal_judge(
             judge_llm,
             condition=current.condition,
@@ -218,6 +225,7 @@ def _run_judge(
             findings=current.findings,
             prior_tool_evidence=current.tool_evidence,
             previous_reason=current.last_verdict,
+            independent_reading=reading or "",
         )
     except Exception:
         log.debug("session-goal judge unavailable", exc_info=True)
