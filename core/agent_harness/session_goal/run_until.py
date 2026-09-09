@@ -137,7 +137,6 @@ def _announce_working(
 
 _NO_PROGRESS_TURNS = 2
 STALL_MENU_TITLE = "The goal made no progress in 2 turns. How should I continue?"
-SAME_VERDICT_MENU_TITLE = "The judge gave the same verdict twice. How should I continue?"
 STALL_OPTION_MORE = "Keep going for one more turn"
 STALL_OPTION_STOP = "Stop here; the work above is enough"
 STALL_COMMANDS: Mapping[str, str] = MappingProxyType(
@@ -190,11 +189,11 @@ def pause_for_no_progress(
 ) -> SessionGoal:
     """Stop a stalled goal this invocation; the shell also opens a menu.
 
-    Two full turns without a tick or a successful tool, or the same judge
-    verdict twice, means repeating the same steps to the budget. The
-    interactive shell asks: one more turn, stop, or typed guidance. Headless
-    hosts have no ``/choose`` picker — they keep the goal active and return
-    so the next message continues.
+    Two full turns without a tick or a successful tool means the loop is
+    idle. The interactive shell asks: one more turn, stop, or typed guidance.
+    Headless hosts have no ``/choose`` picker — they keep the goal active
+    and return so the next message continues. A repeated not-yet after a
+    successful tool is not a stall: the next turn continues under budget.
     """
     if session_terminal(session) is None:
         return _yield_after_stall(
@@ -319,21 +318,6 @@ def _finish_outer_turn(
 
     if goal_has_stalled(active):
         active = pause_for_no_progress(session, active, on_progress)
-        return active, last, True
-
-    ticked = bool(active.completed - completed_before)
-    # Same-verdict stall is for an idle plateau: the judge repeated itself
-    # and this turn added no tick and no tool. A successful tool is new
-    # work — Claude keeps going; do not stop because the judge still says
-    # not-yet or contradiction. Two idle turns still stall above.
-    if active.verdict_repeated and not ticked and not turn_evidence:
-        active = pause_for_no_progress(
-            session,
-            active,
-            on_progress,
-            reason=SessionGoalReason.PAUSED_SAME_VERDICT,
-            menu_title=SAME_VERDICT_MENU_TITLE,
-        )
         return active, last, True
 
     # Still active under budget: paint the verdict (the judge's reason) before

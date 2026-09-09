@@ -407,14 +407,10 @@ def test_a_goal_turn_the_driver_could_not_run_pauses_the_goal_instead_of_retryin
     assert outcome.goal.last_reason == SessionGoalReason.PAUSED_TURN_FAILED
 
 
-def test_the_same_judge_verdict_twice_pauses_when_the_turn_used_no_tool() -> None:
-    # Arrange: no tool, and the judge keeps saying the same not-yet.
-    from core.agent_harness.session_goal.evaluate import evaluate_session_goal
-    from core.agent_harness.session_goal.goal import SessionGoalReason
-    from core.agent_harness.session_goal.judge import SessionGoalJudgeVerdict
-    from surfaces.interactive_shell.session import Session
-
-    session = Session()
+def test_one_idle_turn_after_a_tool_does_not_pause_the_goal() -> None:
+    # Arrange: tools, then one idle not-yet. Live five-PR runs stalled here
+    # and returned a wrong table. Claude keeps going.
+    session = SessionCore()
     turns: list[str] = []
 
     def _chat(message: str) -> TurnResult:
@@ -433,11 +429,8 @@ def test_the_same_judge_verdict_twice_pauses_when_the_turn_used_no_tool() -> Non
             )
         return _idle_turn("still no table")
 
-    seen_previous: list[str] = []
-
     def _same(**kw: object) -> SessionGoalJudgeVerdict:
         previous = str(kw.get("previous_reason", ""))
-        seen_previous.append(previous)
         return SessionGoalJudgeVerdict(
             verdict="NOT_REACHED",
             reason="need a live Actions query",
@@ -448,18 +441,15 @@ def test_the_same_judge_verdict_twice_pauses_when_the_turn_used_no_tool() -> Non
         _chat,
         session,
         "go",
-        goal=SessionGoal(condition="table with the five PRs", max_outer_turns=6),
+        goal=SessionGoal(condition="table with the five PRs", max_outer_turns=3),
         evaluate=lambda goal, result, *, session=None: (
             evaluate_session_goal(goal, result, session=session, judge=_same).status
         ),
     )
 
-    assert seen_previous == ["", "need a live Actions query"]
-    assert len(turns) == 2
-    assert outcome.goal.status == SessionGoalStatus.PAUSED
-    assert outcome.goal.last_reason == SessionGoalReason.PAUSED_SAME_VERDICT
-    assert session.pending_user_choice is not None
-    assert "same verdict" in session.pending_user_choice.title
+    assert len(turns) == 3
+    assert outcome.goal.status == SessionGoalStatus.BUDGET_EXHAUSTED
+    assert session.pending_user_choice is None
 
 
 def test_a_repeated_verdict_does_not_stop_a_turn_that_used_a_tool() -> None:
@@ -602,10 +592,7 @@ def test_headless_stall_keeps_the_goal_so_the_next_message_continues() -> None:
     assert second.goal.status == SessionGoalStatus.ACTIVE
 
 
-def test_headless_same_verdict_twice_stays_active_without_a_menu() -> None:
-    from core.agent_harness.session_goal.evaluate import evaluate_session_goal
-    from core.agent_harness.session_goal.judge import SessionGoalJudgeVerdict
-
+def test_headless_same_verdict_after_a_tool_keeps_going() -> None:
     session = SessionCore()
     turns: list[str] = []
 
@@ -637,12 +624,11 @@ def test_headless_same_verdict_twice_stays_active_without_a_menu() -> None:
         _chat,
         session,
         "go",
-        goal=SessionGoal(condition="table with the five PRs", max_outer_turns=6),
+        goal=SessionGoal(condition="table with the five PRs", max_outer_turns=3),
         evaluate=lambda goal, result, *, session=None: (
             evaluate_session_goal(goal, result, session=session, judge=_same).status
         ),
     )
-    assert len(turns) == 2
-    assert outcome.goal.status == SessionGoalStatus.ACTIVE
-    assert outcome.goal.last_reason == SessionGoalReason.WAITING_AFTER_SAME_VERDICT
+    assert len(turns) == 3
+    assert outcome.goal.status == SessionGoalStatus.BUDGET_EXHAUSTED
     assert session.pending_user_choice is None

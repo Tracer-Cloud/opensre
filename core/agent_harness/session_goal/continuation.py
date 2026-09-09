@@ -1,7 +1,7 @@
 """Session-goal continuation prompts for an attached SessionGoal.
 
-Leaf module: imports :mod:`core.agent_harness.session_goal.goal` only —
-do not import this from ``goal`` (avoids ``py/cyclic-import``). Distinct from
+Leaf module: imports goal + the contradiction helper. Do not import this
+from ``goal`` (avoids ``py/cyclic-import``). Distinct from
 :mod:`core.agent_harness.session_goal.progress` (presentation).
 """
 
@@ -23,9 +23,7 @@ _USE_A_TOOL = (
 def start_goal_prompt(goal: SessionGoal, message: str) -> str:
     """First or resumed goal turn: keep the user text, require a tool.
 
-    When the user text *is* the condition (``/goal set`` / ``goal=``), do not
-    paste it twice. Live five-PR runs then treated the duplicate as work
-    already done and answered from memory.
+    When the user text is the condition itself, it appears once, in the header.
     """
     text = message.strip()
     if text.startswith(_SESSION_GOAL_MARK):
@@ -64,11 +62,9 @@ def continuation_prompt(goal: SessionGoal) -> str:
             )
     unfinished = goal.unfinished_items
     follow_reason = (
-        "Follow the last progress reason. Do not claim the goal is met in prose — "
-        "the host judge decides."
+        f"{_USE_A_TOOL} Follow the last progress reason. Do not claim the goal "
+        "is met in prose — the host judge decides."
     )
-    if not goal.tool_success_seen and not goal.findings:
-        follow_reason = f"{_USE_A_TOOL} {follow_reason}"
     if unfinished:
         pending = "\n".join(f"  - [{index}] {item}" for index, item in unfinished)
         return (

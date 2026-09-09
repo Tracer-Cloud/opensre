@@ -32,17 +32,27 @@ def _goal() -> SessionGoal:
 
 
 def test_a_first_goal_turn_keeps_the_user_text_and_requires_a_tool() -> None:
-    prompt = start_goal_prompt(_goal(), "also check attempt numbers")
-    assert "also check attempt numbers" in prompt
-    assert "how many github actions runs failed?" in prompt
+    # Arrange: the user text differs from the goal condition.
+    goal = _goal()
+
+    # Act
+    prompt = start_goal_prompt(goal, "also check attempt numbers")
+
+    # Assert: header, condition, tool rule, and the user text exactly once.
     assert prompt.startswith("[session_goal]")
+    assert "how many github actions runs failed?" in prompt
     assert "Use a tool" in prompt
     assert prompt.count("also check attempt numbers") == 1
 
 
 def test_start_prompt_does_not_repeat_the_condition_as_the_user_text() -> None:
+    # Arrange: the user text is the condition itself (/goal set autosubmit).
     goal = SessionGoal(condition="count users")
+
+    # Act
     prompt = start_goal_prompt(goal, "count users")
+
+    # Assert: the condition appears once, the tool rule stays.
     assert prompt.count("count users") == 1
     assert "Use a tool" in prompt
 
@@ -50,6 +60,15 @@ def test_start_prompt_does_not_repeat_the_condition_as_the_user_text() -> None:
 def test_continuation_without_tool_evidence_requires_a_tool() -> None:
     prompt = continuation_prompt(_goal())
     assert "Use a tool" in prompt
+
+
+def test_continuation_still_requires_a_tool_after_earlier_tool_work() -> None:
+    goal = SessionGoal(
+        condition="how many github actions runs failed?",
+        tool_success_seen=True,
+        findings=("listed the PRs",),
+    )
+    assert "Use a tool" in continuation_prompt(goal)
 
 
 def test_the_previous_answer_reaches_the_next_turn() -> None:
