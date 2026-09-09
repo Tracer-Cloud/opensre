@@ -69,6 +69,7 @@ SPI_ROLE_NAMES: dict[str, frozenset[str]] = {
     "session_goal": frozenset(
         {
             "MAX_GOAL_CONDITION_CHARS",
+            "SESSION_GOAL_UNBOUNDED_TURNS",
             "SessionGoal",
             "SessionGoalReason",
             "SessionGoalStatus",
