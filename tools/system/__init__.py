@@ -15,6 +15,7 @@ TOOL_MODULES = (
     "agent_memory.tool",
     "fleet_monitoring",
     "python_execution_tool",
+    "runbook_guidance_tool.tool",
     "sre_guidance_tool",
     "work_items.tool",
     "workspace_git_scan.tool",

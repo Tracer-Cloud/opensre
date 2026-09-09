@@ -46,7 +46,11 @@ def test_goal_set_queues_condition_as_immediate_turn() -> None:
     assert session.terminal.pending_prompt_autosubmit is True
     assert session.session_goal is not None
     assert session.session_goal.host_owned is True
+    # A condition without numbered steps gets no checklist: one item would only echo it.
+    assert session.session_goal.checklist == ()
     assert session.session_goal.max_outer_turns == 3
+    # The block printed here is remembered, so the loop's first paint is one line.
+    assert session.terminal.goal_paint_signature is not None
     assert session.session_goal.started_at is not None
     out = buf.getvalue()
     assert "◎ /goal active" in out

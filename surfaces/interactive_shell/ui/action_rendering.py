@@ -373,6 +373,7 @@ class ActionRenderObserver:
         self.message = message
         self.planned_count = 0
         self._pending_skill_calls: dict[str, str] = {}
+        self._last_skill_header: str = ""
         self._pending_result_tools: set[str] = set()
 
     def __call__(self, kind: str, data: dict[str, Any]) -> None:
@@ -515,6 +516,7 @@ class ActionRenderObserver:
         raw_name = str(args.get("name", "")).strip() if isinstance(args, dict) else ""
         slug = strip_terminal_controls(raw_name.replace("_", "-").lower()) or "skill"
         self._pending_skill_calls[str(data.get("id") or "")] = slug
+        self._last_skill_header = slug
         # ``Text`` renders the (model-supplied) skill name literally — never
         # through Rich markup.
         line = Text()
@@ -564,11 +566,16 @@ class ActionRenderObserver:
         The next block (another call, a note, or the ``Ω`` reply) opens with
         its own blank line — do not add one here or the gap doubles.
         """
-        if self._pending_skill_calls.pop(str(data.get("id") or ""), None) is None:
+        slug = self._pending_skill_calls.pop(str(data.get("id") or ""), None)
+        if slug is None:
             return
         output = data.get("output")
         activated = isinstance(output, dict) and bool(output.get("ok"))
-        label = "Skill activated" if activated else "Skill failed to load"
+        # Several skills loading in one batch print their headers first and
+        # their results after; name the skill whenever the line would land
+        # under another skill's header.
+        subject = "Skill" if slug == self._last_skill_header else slug
+        label = f"{subject} activated" if activated else f"{subject} failed to load"
         self.console.print(Text(f"  ↳ {label}", style=DIM))
 
 

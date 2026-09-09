@@ -18,10 +18,13 @@ def turn_interaction_facts_block(turn_snapshot: TurnSnapshot) -> str:
     surface = turn_snapshot.prompt_surface or "unknown"
     goal = "attached" if turn_snapshot.session_goal_attached else "none"
     menu = "available" if turn_snapshot.interactive_choice_available else "unavailable"
+    brief = turn_snapshot.session_goal_brief.strip()
+    goal_lines = "".join(f"  {line}\n" for line in brief.splitlines()) if brief else ""
     return (
         "TURN INTERACTION (authoritative for this turn):\n"
         f"- surface: {surface}\n"
         f"- session_goal: {goal}\n"
+        f"{goal_lines}"
         f"- ask_user_choice menu: {menu}\n"
         "Optional follow-ups (run tests, commit, build next): call "
         "ask_user_choice only when the menu is available AND session_goal is "

@@ -21,28 +21,30 @@ def _display_safe(text: str) -> str:
 
 
 def render_choice_selection(console: Console, title: str, answer: str) -> None:
-    """Persist selected choice(s) as an Ask User card after the picker closes.
+    """Persist the pick after the menu closes, as an answer line rather than a repeated question.
 
-    Must not use the plan-step ``✓`` glyph — that makes a single pick look like
-    another ``Plan complete`` row. Same hierarchy as :func:`render_ask_user_qa`:
-    accent header, bold question, brand answer(s). Leading blank separates the
-    card from Plan complete / reply text above.
+    The menu itself is erased, so this is the transcript's only record of the
+    choice. It must read as "answered", not as the question asked again: no
+    header, the question dim on one line with a single answer after it, and a
+    multi-select listed underneath. Must not use the plan-step ``✓`` glyph.
+    Leading blank separates it from Plan complete / reply text above.
     """
     console.print()
-    console.print(Text("Ask User", style=f"bold {ui_theme.HIGHLIGHT}"))
-    console.print()
-    qline = Text()
-    qline.append("  1.  ", style=str(ui_theme.DIM))
-    qline.append(_display_safe(title.strip()), style=f"bold {ui_theme.TEXT}")
-    console.print(qline)
-    # Multi-select arrives as one option per line; keep every line indented
-    # under the question so the set reads as one block.
-    for line in _display_safe(answer.strip()).splitlines():
-        if not line.strip():
-            continue
+    question = _display_safe(title.strip())
+    answers = [line for line in _display_safe(answer.strip()).splitlines() if line.strip()]
+    line = Text()
+    line.append("  ↳ ", style=str(ui_theme.DIM))
+    line.append(question, style=str(ui_theme.DIM))
+    if len(answers) == 1:
+        line.append("  ", style=str(ui_theme.DIM))
+        line.append(answers[0], style=str(ui_theme.BRAND))
+        console.print(line)
+        return
+    console.print(line)
+    for item in answers:
         aline = Text()
         aline.append("      ", style=str(ui_theme.DIM))
-        aline.append(line, style=str(ui_theme.BRAND))
+        aline.append(item, style=str(ui_theme.BRAND))
         console.print(aline)
 
 

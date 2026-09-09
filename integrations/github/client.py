@@ -26,9 +26,9 @@ JsonPayload = dict[str, Any] | list[Any]
 _DEFAULT_PAGINATE_MAX_PAGES = 50
 
 
-@dataclass(frozen=True)
+@dataclass
 class GitHubApiError(RuntimeError):
-    """Typed GitHub API failure with enough context for callers to report safely."""
+    """Typed API failure; exception metadata must remain writable during propagation."""
 
     message: str
     status_code: int | None = None

@@ -154,7 +154,7 @@ def test_run_repl_async_is_the_already_gated_shell_body(monkeypatch: Any) -> Non
     monkeypatch.setattr(
         main_entrypoint, "pass_sign_in_gate", lambda _console: gated.append(True) or False
     )
-    monkeypatch.setattr(main_entrypoint, "offer_loop_suggestions", lambda *_a, **_k: None)
+    monkeypatch.setattr(main_entrypoint, "offer_demo", lambda *_a, **_k: None)
     monkeypatch.setattr(main_entrypoint, "InteractiveShellController", _Controller)
 
     class _SessionStore:
@@ -196,29 +196,12 @@ def _boot_repl_without_prompt(monkeypatch: Any) -> None:
     monkeypatch.setattr(main_entrypoint.SessionManager, "for_session", lambda _s: _SessionStore())
 
 
-def test_run_repl_async_does_not_open_loops_after_a_failed_demo(monkeypatch: Any) -> None:
-    loops: list[str] = []
+def test_run_repl_async_always_offers_the_demo(monkeypatch: Any) -> None:
+    offered: list[bool] = []
     _boot_repl_without_prompt(monkeypatch)
-    monkeypatch.setattr(main_entrypoint, "should_offer_demo", lambda: True)
-    monkeypatch.setattr(main_entrypoint, "offer_demo", lambda *_a, **_k: False)
-    monkeypatch.setattr(main_entrypoint, "demo_already_offered", lambda: False)
     monkeypatch.setattr(
-        main_entrypoint, "offer_loop_suggestions", lambda *_a, **_k: loops.append("opened")
+        main_entrypoint, "offer_demo", lambda *_a, **_k: offered.append(True) or False
     )
 
     assert asyncio.run(main_entrypoint.run_repl_async()) == 0
-    assert loops == []
-
-
-def test_run_repl_async_opens_loops_after_a_skipped_demo(monkeypatch: Any) -> None:
-    loops: list[str] = []
-    _boot_repl_without_prompt(monkeypatch)
-    monkeypatch.setattr(main_entrypoint, "should_offer_demo", lambda: True)
-    monkeypatch.setattr(main_entrypoint, "offer_demo", lambda *_a, **_k: False)
-    monkeypatch.setattr(main_entrypoint, "demo_already_offered", lambda: True)
-    monkeypatch.setattr(
-        main_entrypoint, "offer_loop_suggestions", lambda *_a, **_k: loops.append("opened")
-    )
-
-    assert asyncio.run(main_entrypoint.run_repl_async()) == 0
-    assert loops == ["opened"]
+    assert offered == [True]

@@ -33,6 +33,9 @@ if TYPE_CHECKING:
         OPENSRE_ACCOUNT_TOKEN_ENV as OPENSRE_ACCOUNT_TOKEN_ENV,
     )
     from config.constants.account import (
+        OPENSRE_ACCOUNT_USAGE_PATH as OPENSRE_ACCOUNT_USAGE_PATH,
+    )
+    from config.constants.account import (
         OPENSRE_APP_URL_DEFAULT as OPENSRE_APP_URL_DEFAULT,
     )
     from config.constants.account import (
@@ -809,6 +812,12 @@ if TYPE_CHECKING:
     from config.constants.repl_theme import (
         Theme as Theme,
     )
+    from config.constants.runbooks import (
+        RUNBOOK_CONTENT_MAX_CHARS as RUNBOOK_CONTENT_MAX_CHARS,
+    )
+    from config.constants.runbooks import (
+        RUNBOOK_MANIFEST_MAX_CHARS as RUNBOOK_MANIFEST_MAX_CHARS,
+    )
     from config.constants.runtime_metadata import (
         GITHUB_REPO_ENV as GITHUB_REPO_ENV,
     )
@@ -893,6 +902,7 @@ if TYPE_CHECKING:
     from config.constants.signoz import (
         SIGNOZ_URL_ENV as SIGNOZ_URL_ENV,
     )
+    from config.constants.skills import ONBOARDING_SKILL_NAME as ONBOARDING_SKILL_NAME
     from config.constants.slack import (
         SLACK_ACCESS_TOKEN_ENV as SLACK_ACCESS_TOKEN_ENV,
     )
@@ -986,6 +996,12 @@ if TYPE_CHECKING:
     from config.constants.tenancy import (
         INTEGRATIONS_STORE_PATH_ENV as INTEGRATIONS_STORE_PATH_ENV,
     )
+    from config.constants.terminal_host import (
+        APPLE_TERMINAL_PROGRAM as APPLE_TERMINAL_PROGRAM,
+    )
+    from config.constants.terminal_host import (
+        TERM_PROGRAM_ENV as TERM_PROGRAM_ENV,
+    )
     from config.constants.tooling import (
         DEFAULT_APPROVAL_EXPIRY_SECONDS as DEFAULT_APPROVAL_EXPIRY_SECONDS,
     )
@@ -1000,6 +1016,9 @@ if TYPE_CHECKING:
     )
     from config.constants.tracer import (
         TRACER_JWT_TOKEN_ENV as TRACER_JWT_TOKEN_ENV,
+    )
+    from config.constants.turn_concurrency import (
+        DEFAULT_SCHEDULED_RUN_CONCURRENCY as DEFAULT_SCHEDULED_RUN_CONCURRENCY,
     )
     from config.constants.turn_concurrency import (
         OPENSRE_MAX_CONCURRENT_TURNS_ENV as OPENSRE_MAX_CONCURRENT_TURNS_ENV,

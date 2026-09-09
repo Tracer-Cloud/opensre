@@ -13,6 +13,8 @@ from __future__ import annotations
 import os
 import shutil
 import sys
+import textwrap
+from collections.abc import Callable
 from typing import Literal
 
 from rich.console import Console
@@ -183,14 +185,29 @@ def _sanitize_menu(
     )
 
 
+def _wrap_note(note: str, width: int) -> tuple[str, ...]:
+    """Physical rows for a dim note; empty when there is nothing to say."""
+    text = strip_terminal_controls(note).strip()
+    if not text:
+        return ()
+    inner = max(1, width - len(_BLOCK_INDENT))
+    return tuple(textwrap.wrap(text, width=inner))
+
+
 def _menu_height(
-    crumb: str, labels: list[str], *, multi_select: bool = False, header: str = ""
+    crumb: str,
+    labels: list[str],
+    *,
+    multi_select: bool = False,
+    header: str = "",
+    note: str = "",
 ) -> int:
-    # [gap], [header], title, [crumb], blank, choices, [Submit], blank, hint
+    # [gap], [header], title, [note…], [crumb], blank, choices, [Submit], blank, hint
     submit = 1 if multi_select else 0
     gap = _HEADER_SECTION_GAP if header else 0
     lead = _MENU_LEADING_LINES + gap + (1 if header else 0)
-    return lead + 1 + (1 if crumb else 0) + 1 + len(labels) + submit + 1 + 1
+    notes = len(_wrap_note(note, _menu_paint_width()))
+    return lead + 1 + notes + (1 if crumb else 0) + 1 + len(labels) + submit + 1 + 1
 
 
 def write_menu_line(text: str = "") -> None:
@@ -322,6 +339,7 @@ def _draw_menu(
     header: str = "",
     letter_keys: bool = False,
     numbered: bool = True,
+    note: str = "",
 ) -> None:
     out = sys.stdout
     w = _menu_paint_width()
@@ -346,6 +364,10 @@ def _draw_menu(
     else:
         write_menu_line(
             f"{ui_theme.PROMPT_ACCENT_ANSI}{_clip_to_row(f'{_BLOCK_INDENT}{title}', w)}{ui_theme.ANSI_RESET}"
+        )
+    for line in _wrap_note(note, w):
+        write_menu_line(
+            f"{ui_theme.DIM_COUNTER_ANSI}{_clip_to_row(f'{_BLOCK_INDENT}{line}', w)}{ui_theme.ANSI_RESET}"
         )
     if crumb:
         write_menu_line(
@@ -382,11 +404,26 @@ def _draw_menu(
 
 
 def _erase_menu(
-    crumb: str, labels: list[str], *, multi_select: bool = False, header: str = ""
+    crumb: str,
+    labels: list[str],
+    *,
+    multi_select: bool = False,
+    header: str = "",
+    note: str = "",
+    drawn_height: int | None = None,
 ) -> None:
-    """Move cursor up to the start of this menu block and wipe it."""
+    """Move cursor up to the start of this menu block and wipe it.
+
+    ``drawn_height`` is the row count from the last paint. Recalculating from
+    the current terminal width can disagree after a resize and delete the
+    wrong number of rows.
+    """
     _, crumb, labels = _sanitize_menu("", crumb, labels)
-    height = _menu_height(crumb, labels, multi_select=multi_select, header=header)
+    height = (
+        drawn_height
+        if drawn_height is not None
+        else _menu_height(crumb, labels, multi_select=multi_select, header=header, note=note)
+    )
     _erase_menu_block(height, delete=True)
     sys.stdout.flush()
 
@@ -406,6 +443,7 @@ def _pick(
     header: str = "",
     letter_keys: bool = False,
     numbered: bool = True,
+    note: str = "",
 ) -> int | str | None:
     """Draw an inline menu; return index, custom typed string, or None on Esc.
 
@@ -425,7 +463,7 @@ def _pick(
     if len(selected_values) != len(labels):
         selected_values = list(labels)
     idx = initial_index % len(labels)
-    height = _menu_height(crumb, labels, multi_select=multi_select, header=header)
+    height = _menu_height(crumb, labels, multi_select=multi_select, header=header, note=note)
     draft = ""
     first = True
     checked: set[int] = set()
@@ -447,9 +485,10 @@ def _pick(
             header=header,
             letter_keys=letter_keys,
             numbered=numbered,
+            note=note,
         )
         first = False
-        height = _menu_height(crumb, display, multi_select=multi_select, header=header)
+        height = _menu_height(crumb, display, multi_select=multi_select, header=header, note=note)
         if on_custom:
             action = read_menu_or_char(allow_chars=True)
         elif multi_select:
@@ -504,10 +543,14 @@ def _pick(
                         parts.append(selected_values[index])
                 if not parts:
                     continue
-                _erase_menu(crumb, display, multi_select=True, header=header)
+                _erase_menu(
+                    crumb, display, multi_select=True, header=header, note=note, drawn_height=height
+                )
                 return "\n".join(parts)
             if action in ("cancel", "eof"):
-                _erase_menu(crumb, display, multi_select=True, header=header)
+                _erase_menu(
+                    crumb, display, multi_select=True, header=header, note=note, drawn_height=height
+                )
                 return None
             continue
         select_index = (
@@ -520,7 +563,7 @@ def _pick(
                 if select_index == custom_index:
                     idx = select_index
                     continue
-                _erase_menu(crumb, labels, header=header)
+                _erase_menu(crumb, labels, header=header, note=note, drawn_height=height)
                 return select_index
             continue
         if action == "enter":
@@ -528,12 +571,18 @@ def _pick(
                 text = draft.strip()
                 if not text:
                     continue
-                _erase_menu(crumb, display, header=header)
+                _erase_menu(crumb, display, header=header, note=note, drawn_height=height)
                 return text
-            _erase_menu(crumb, labels, header=header)
+            _erase_menu(crumb, labels, header=header, note=note, drawn_height=height)
             return idx
         if action in ("cancel", "eof"):
-            _erase_menu(crumb, display if on_custom else labels, header=header)
+            _erase_menu(
+                crumb,
+                display if on_custom else labels,
+                header=header,
+                note=note,
+                drawn_height=height,
+            )
             return None
         if action == "ignore":
             continue
@@ -550,6 +599,8 @@ def repl_choose_one(
     header: str = "",
     letter_keys: bool = False,
     numbered: bool = True,
+    note: str = "",
+    on_custom_answer: Callable[[], None] | None = None,
 ) -> str | None:
     """Show an inline erasing arrow-key menu; return selected value or None on Esc.
 
@@ -559,8 +610,13 @@ def repl_choose_one(
     ``header`` (e.g. ``Ask User``) renders as an accent line above the title,
     which then reads as the plain question; omit it for slash-command pickers.
 
+    ``note`` is dim intro copy inside the menu block so leaving (Esc, a pick)
+    erases it with the options instead of leaving it in the transcript.
+
     When ``custom_label`` is set and that row is focused, the user types on that
     row in place (same option array) instead of opening a separate prompt.
+    ``on_custom_answer`` marks a typed single-select answer, even when its text
+    matches a predefined value.
 
     When ``multi_select`` is True, checkboxes appear and the return value is a
     newline-joined string of selected **values** (``choices[i][0]``).
@@ -593,10 +649,13 @@ def repl_choose_one(
             header=header,
             letter_keys=letter_keys,
             numbered=numbered,
+            note=note,
         )
         if picked is None:
             return None
         if isinstance(picked, str):
+            if not multi_select and on_custom_answer is not None:
+                on_custom_answer()
             return picked
         value = choices[picked][0]
         return value if isinstance(value, str) else None

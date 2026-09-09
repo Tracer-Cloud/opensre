@@ -108,8 +108,10 @@ Extract ONLY durable knowledge worth keeping across future sessions:
 - lessons learned from real incidents or investigations the user confirmed
 
 Do NOT extract: transient session state, one-off command outputs, secrets,
-credentials, or anything already captured by an existing memory (unless it
-needs updating — then reuse the existing name exactly).
+credentials, scheduled loops or tasks created in this session, demo or
+onboarding outcomes, the status of work just done (the shell already shows
+it and it goes stale), or anything already captured by an existing memory
+(unless it needs updating — then reuse the existing name exactly).
 
 User-authored statements are the source of truth. Do NOT store infrastructure
 facts or investigation learnings that appear only in assistant/tool output.

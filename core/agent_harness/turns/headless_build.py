@@ -25,7 +25,10 @@ from rich.console import Console
 
 from core.agent_harness.agent_build_config import AgentBuildConfig
 from core.agent_harness.error_reporting import DefaultErrorReporter
-from core.agent_harness.llm_resolution import default_llm_factory
+from core.agent_harness.llm_resolution import (
+    default_classification_llm_factory,
+    default_llm_factory,
+)
 from core.agent_harness.ports import (
     ErrorReporter,
     LlmFactory,
@@ -173,6 +176,7 @@ class DefaultHeadlessBuild:
             prompts=prompts if prompts is not None else self.prompts(),
             error_reporter=self._error_reporter,
             llm_factory=llm_factory if llm_factory is not None else default_llm_factory,
+            judge_llm_factory=default_classification_llm_factory,
         )
 
 

@@ -5,10 +5,14 @@ description: "See how reliable your CI is and how much developer time it costs, 
 
 ## Overview
 
-On its first interactive launch OpenSRE asks which demo to run. The recommended
-one analyzes a real repository from your machine and reports CI/CD reliability
-KPIs, including the developer time lost to unreliable CI. It is read-only and
-takes a couple of minutes.
+On every interactive launch OpenSRE asks which demo to run. The recommended
+option analyzes a real repository from your machine and reports CI/CD
+reliability KPIs, including the developer time lost to unreliable CI. That
+analysis is read-only and takes a couple of minutes.
+
+The other choices set up a recurring CI/CD agent, show the upcoming managed
+service, or connect Slack. Press Escape to skip, or use the custom-answer row
+to type a different request.
 
 Run it again at any time with `/demo`, or by asking:
 
@@ -25,11 +29,20 @@ how much developer time does flaky CI cost us
 
 ## What happens
 
-1. **Scan.** OpenSRE finds git repositories under your home directory, counts commits in the last 30 days (total and yours) and uncommitted files, notes which have GitHub Actions workflows, and draws the activity chart. Clones of the same repository are folded into one row.
-2. **Pick.** It offers up to three of your repositories that have CI configured, the ones you contributed to first, plus an open-source example, and asks which one to analyze. Without a GitHub token it stops here and shows the setup command.
-3. **Analyze.** It reads the last 30 days of workflow runs and reports the KPIs below.
-4. **Next step.** It offers to set up the CI reliability agent, connect Slack, or exit.
-   The agent option schedules the check described below without leaving the shell.
+The agent guides you through the selected demo in the shell.
+
+1. **Scan.** It scans your home directory for git checkouts and paints a bar
+   chart of the last 30 days of commits, your own contributions first.
+2. **Pick a repository.** A menu lists your checkouts that have GitHub Actions
+   workflows, then the open-source example, then a row to type your own.
+3. **Analyze.** It reads the repository's Actions history for the last 30 days
+   under a spinner and paints the report, ending with the one-sentence headline.
+4. **Next step.** A menu offers the CI reliability agent (it schedules the
+   check for the repository you just analyzed, no second repository question),
+   the Slack hand-off, or exit.
+
+Typing a request such as `analyze owner/repo CI/CD performance for the last
+30 days` skips the scan and repository picker.
 
 ## The KPIs
 
@@ -39,7 +52,8 @@ how much developer time does flaky CI cost us
 | PR-triggered failed workflows and failure rate | Pull request runs that failed, including runs that only passed after a re-run |
 | CI reliability failures | Failures where the identical commit passed later, by re-run or a fresh run. CI, not the code, was at fault |
 | Source-code failures | Failures that passed only after the branch moved to a new commit |
-| Developer time blocked by unreliable CI | Per merged PR: how much later its commits went green than they would have had CI run normally. For each commit with a CI reliability failure, the expected green time is the first queued run plus the slowest workflow's normal duration; the actual green time is when its last workflow passed |
+| Developer downtime from unreliable CI | The working-hours part of the wait below, attributed to each PR's author, with the heaviest-hit developers in hours per week |
+| Wall-clock wait on merged PRs | Per merged PR: how much later its commits went green than they would have had CI run normally. For each commit with a CI reliability failure, the expected green time is the first queued run plus the slowest workflow's normal duration; the actual green time is when its last workflow passed |
 | Normal duration | Per workflow, the median duration of first-attempt passing runs |
 | Default-branch red time | Hours during which at least one push-triggered workflow on the default branch stayed red, overlaps counted once, with mean time to recovery |
 
@@ -52,16 +66,30 @@ invisible; the merge time still bounds the wait. When GitHub omits a PR number,
 the run belongs to the first later merge of that head repository and branch.
 When it attaches several, the run belongs to the merged PR whose lifetime
 contains the run.
-The report also shows the total across all PRs when it differs, the typical
-wait per blocked PR, and the longest wait with its PR.
+
+Developer downtime is the part of each wait that falls inside working hours:
+Monday to Friday, 09:00 to 18:00 in this machine's timezone, printed with the
+figure. A re-run that happened over a weekend adds wall-clock wait but no
+downtime. Each blocked PR is attributed to its author, so the report can say
+how many hours a week the heaviest-hit developers lost.
+
+The report shows the calculation, not only its result. It states the formula
+(expected green = first run queued + normal duration; blocked = actually green
+minus expected green, in working hours), then a table of the most blocked PRs
+with their author, queue time, normal duration, expected and actual green
+times, and the working-hours and wall-clock wait, then the sum across all
+blocked PRs, the division by the developers affected, the per-week figure,
+and the heaviest-hit developers. The wall-clock total across PRs not merged
+yet is shown when it differs.
 
 ## The CI reliability agent
 
-Pick "Set up an agent that reports CI/CD reliability every weekday" from `/demo`
-to schedule the same analysis as a recurring check. The demo scans your
+Pick "Set up an agent that improves CI/CD reliability over time" from the
+startup menu to schedule the analysis as a recurring check. The demo scans your
 machine, asks which repository to watch and when to run (weekdays at 08:00
-local time is the default), creates the loop, runs it once, and shows the
-first report. Every run analyzes the last 7 days.
+local time is the default), and creates the loop. Choosing this option after
+an analytics report schedules that repository without asking you to pick it
+again. Every run analyzes the last 7 days; use `/loops run <id>` to run it now.
 
 - Reports land in this shell's inbox: `/loops messages`. The loop never posts
   to Slack or any chat channel, even when those integrations are configured.
@@ -70,8 +98,7 @@ first report. Every run analyzes the last 7 days.
   report, and the raw figures are saved as JSON next to the report path named
   at the end of every delivery, under `~/.opensre/ci_reliability_reports/`.
 - The loop fires while the shell is open. To keep it running when the shell is
-  closed, pick "Keep it running when this shell is closed" at the end of the
-  demo or run `/loops service install`; it installs a per-user service (launchd
+  closed, run `/loops service install`; it installs a per-user service (launchd
   on macOS, systemd on Linux) that starts at login. `/loops service remove`
   deletes it. Windows is not supported yet; run `opensre cron start --service`
   from Task Scheduler instead.
@@ -89,4 +116,4 @@ first report. Every run analyzes the last 7 days.
 | --- | --- |
 | **"GitHub token is required"** | Run `opensre integrations setup github` and rerun the demo |
 | **No repositories offered** | None of the checkouts under your home directory has a GitHub origin and a `.github/workflows` folder; pick the example repository |
-| **The picker did not appear** | It shows once per machine. Use `/demo` to open it again |
+| **The picker did not appear** | It needs an interactive TTY. Run `uv run opensre` in a terminal, or type `/demo` |

@@ -169,6 +169,9 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
         self._terminated_by_tool = False
         self._cancelled = False
         self._iterations_used = 0
+        # Provider-reported usage summed over every model call of this run.
+        self._input_tokens = 0
+        self._output_tokens = 0
         self._stop_reason = "iteration_cap"
         self._seen_observations: set[bytes] = set()
         self._stagnant_iterations = 0
@@ -378,6 +381,10 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
             span_attrs["has_tool_calls"] = response.has_tool_calls
             span_attrs["tool_call_count"] = len(response.tool_calls)
             span_attrs["content_chars"] = len(response.content or "")
+        input_tokens = int(getattr(response, "input_tokens", 0) or 0)
+        output_tokens = int(getattr(response, "output_tokens", 0) or 0)
+        self._input_tokens += input_tokens
+        self._output_tokens += output_tokens
         response = self._host._after_response(provider_request, response)
         self._host._emit_runtime(
             ProviderRequestEndEvent(
@@ -386,6 +393,9 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
                 data={
                     "tool_call_count": len(response.tool_calls),
                     "content_chars": len(response.content or ""),
+                    # Per call, so a run that raises later still reported this spend.
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens,
                 },
             )
         )
@@ -658,6 +668,8 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
             hit_iteration_cap=self._hit_cap,
             llm_iterations_used=self._iterations_used,
             final_system_prompt=self._final_system_prompt,
+            input_tokens=self._input_tokens,
+            output_tokens=self._output_tokens,
         )
         self._host._emit_runtime(
             AgentEndEvent(

@@ -695,3 +695,18 @@ def test_react_loop_records_partial_iterations_when_llm_raises() -> None:
         agent.run([{"role": "user", "content": "hello"}])
 
     assert agent._react_iterations_used == 3
+
+
+def test_run_sums_provider_reported_usage_across_model_calls() -> None:
+    # Arrange: two model calls, each reporting exact usage.
+    first = replace(_tool_call_response("c1", "query_logs"), input_tokens=120, output_tokens=30)
+    second = replace(_text_response("done"), input_tokens=200, output_tokens=50)
+    llm = FakeLLM(iter([first, second]))
+
+    # Act
+    result = _agent(llm, _tools(FakeTool("query_logs", {"ok": True}))).run(
+        [{"role": "user", "content": "hello"}]
+    )
+
+    # Assert: the run carries the totals the host records on the session.
+    assert (result.input_tokens, result.output_tokens) == (320, 80)

@@ -38,7 +38,6 @@ from rich.console import Console
 
 import infrastructure.terminal.theme as ui_theme
 from core.agent_harness.spi.prompt_chrome import WANT_ME_TO_MARKER
-from core.agent_harness.spi.session_goal import strip_session_goal_progress_tags
 from surfaces.interactive_shell.ui.streaming.renderer import (
     _build_markdown_block,
     render_reply_block,
@@ -221,7 +220,7 @@ def stream_to_console_state(
 
     def _render_paragraph_body(text: str, *, source_break: bool = True) -> None:
         nonlocal rendered_paragraphs
-        visible = strip_session_goal_progress_tags(text)
+        visible = text
         if not visible.strip():
             return
         markdown = _build_markdown_block(visible)
@@ -250,8 +249,6 @@ def stream_to_console_state(
 
     def _render_paragraph(text: str, *, source_break: bool = True) -> None:
         nonlocal deferred_closer
-        # Keep raw ``text`` (with progress tags) for Want-me-to detection; render
-        # only the scrubbed visible body so ``session_goal:…`` never hits the TTY.
         if not text.strip():
             return
         if defer_want_me_to_closer and _paragraph_has_want_me_to(text):

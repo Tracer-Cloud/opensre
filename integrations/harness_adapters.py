@@ -48,6 +48,7 @@ def register_harness_adapters() -> None:
     ).install()
 
     _register_vcs_repo_scope_providers()
+    _register_runbook_source_providers()
     _register_cli_llm_adapters()
     _register_alert_source_detectors()
     _register_alert_source_routing()
@@ -71,6 +72,17 @@ def _register_vcs_repo_scope_providers() -> None:
     clear_vcs_repo_scope_providers()
     register_vcs_repo_scope_provider(GITHUB_VCS_REPO_SCOPE_PROVIDER)
     register_vcs_repo_scope_provider(GITLAB_VCS_REPO_SCOPE_PROVIDER)
+
+
+def _register_runbook_source_providers() -> None:
+    from infrastructure.harness_providers import (
+        clear_runbook_source_providers,
+        register_runbook_source_provider,
+    )
+    from integrations.github.runbooks import build_github_runbook_source
+
+    clear_runbook_source_providers()
+    register_runbook_source_provider("github", build_github_runbook_source)
 
 
 def _register_alert_source_detectors() -> None:

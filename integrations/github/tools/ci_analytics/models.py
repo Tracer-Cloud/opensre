@@ -89,6 +89,23 @@ class ClassifiedFailure:
 
 
 @dataclass(frozen=True)
+class CommitWait:
+    """One commit's wait: the inputs and the two timestamps the subtraction uses."""
+
+    queued: datetime
+    """When the commit's first run was queued."""
+
+    normal_minutes: float
+    """Normal duration of the slowest workflow on the commit."""
+
+    expected_green: datetime
+    """``queued`` plus ``normal_minutes``: when the commit should have been green."""
+
+    actual_green: datetime
+    """When its last workflow first passed, or the next push or merge if earlier."""
+
+
+@dataclass(frozen=True)
 class PullRequestDelay:
     """How much later one PR went green than it should have, because CI misbehaved.
 
@@ -109,9 +126,42 @@ class PullRequestDelay:
     url: str
     """The first CI-caused failure on the PR, for the report link."""
 
+    expected_green: datetime | None = None
+    """When the first delayed commit should have been green had CI run normally."""
+
+    actual_green: datetime | None = None
+    """When the last delayed commit actually went green, or the wait was cut off."""
+
+    author: str = ""
+    """GitHub login of the PR author, the developer who waited."""
+
+    working_minutes: float = 0.0
+    """The part of ``delay_minutes`` inside the report's working hours."""
+
+    first_queued: datetime | None = None
+    """When the first delayed commit's first run was queued."""
+
+    normal_minutes: float = 0.0
+    """Normal duration added to ``first_queued`` to get ``expected_green``."""
+
     @property
     def label(self) -> str:
         return f"PR #{self.pr_number} ({self.branch})" if self.pr_number else self.branch
+
+
+@dataclass(frozen=True)
+class DeveloperWait:
+    """One developer's downtime from unreliable CI over the report window."""
+
+    login: str
+    pull_requests: int
+    working_minutes: float
+    wall_minutes: float
+    window_days: int
+
+    @property
+    def working_minutes_per_week(self) -> float:
+        return self.working_minutes / (self.window_days / 7) if self.window_days else 0.0
 
 
 @dataclass(frozen=True)
@@ -124,6 +174,8 @@ class MergedPullRequest:
     """owner/name of the head repository at merge time."""
 
     merged_at: datetime
+    author: str = ""
+    """GitHub login of the PR author."""
 
 
 @dataclass(frozen=True)
@@ -187,6 +239,11 @@ class CiAnalyticsReport:
     workflows: tuple[WorkflowSummary, ...] = field(default_factory=tuple)
     coverage_notices: tuple[str, ...] = field(default_factory=tuple)
     pr_delays: tuple[PullRequestDelay, ...] = field(default_factory=tuple)
+    blocked_working_minutes: float = 0.0
+    """The part of ``blocked_minutes`` inside working hours: developer downtime."""
+
+    working_hours_label: str = ""
+    """The working window the downtime figure assumes, for the report."""
 
     @property
     def pr_failure_rate(self) -> float | None:
@@ -205,20 +262,45 @@ class CiAnalyticsReport:
 
     @property
     def blocked_pr_delays(self) -> tuple[PullRequestDelay, ...]:
-        """Critical-path PRs that actually waited, worst first."""
+        """Critical-path PRs that actually waited, worst working-hours wait first."""
         delays = [d for d in self.pr_delays if d.critical_path and d.delay_minutes > 0]
-        return tuple(sorted(delays, key=lambda d: -d.delay_minutes))
+        return tuple(sorted(delays, key=lambda d: (-d.working_minutes, -d.delay_minutes)))
+
+    @property
+    def developer_waits(self) -> tuple[DeveloperWait, ...]:
+        """Blocked merged PRs grouped by author, heaviest working-hours wait first."""
+        totals: dict[str, list[float]] = {}
+        for delay in self.blocked_pr_delays:
+            login = delay.author or "unknown"
+            entry = totals.setdefault(login, [0, 0.0, 0.0])
+            entry[0] += 1
+            entry[1] += delay.working_minutes
+            entry[2] += delay.delay_minutes
+        waits = [
+            DeveloperWait(
+                login=login,
+                pull_requests=int(prs),
+                working_minutes=working,
+                wall_minutes=wall,
+                window_days=self.window_days,
+            )
+            for login, (prs, working, wall) in totals.items()
+        ]
+        return tuple(sorted(waits, key=lambda w: (-w.working_minutes, -w.wall_minutes)))
+
+    @property
+    def developers_affected(self) -> int:
+        return sum(1 for wait in self.developer_waits if wait.working_minutes > 0)
+
+    @property
+    def median_working_minutes(self) -> float | None:
+        """Typical working-hours wait per blocked merged PR."""
+        return _median([d.working_minutes for d in self.blocked_pr_delays if d.working_minutes > 0])
 
     @property
     def median_delay_minutes(self) -> float | None:
-        """Typical wait per blocked merged PR, so one long outlier does not read as the norm."""
-        delays = sorted(d.delay_minutes for d in self.blocked_pr_delays)
-        if not delays:
-            return None
-        middle = len(delays) // 2
-        if len(delays) % 2:
-            return delays[middle]
-        return (delays[middle - 1] + delays[middle]) / 2
+        """Typical wall-clock wait per blocked merged PR."""
+        return _median([d.delay_minutes for d in self.blocked_pr_delays])
 
     @property
     def longest_delay(self) -> PullRequestDelay | None:
@@ -236,11 +318,23 @@ class CiAnalyticsReport:
         return tuple(o for o in self.outages if o.ongoing)
 
 
+def _median(values: list[float]) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values)
+    middle = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[middle]
+    return (ordered[middle - 1] + ordered[middle]) / 2
+
+
 __all__ = [
     "FAILED_CONCLUSIONS",
     "SUCCESS_CONCLUSION",
     "CiAnalyticsReport",
     "ClassifiedFailure",
+    "CommitWait",
+    "DeveloperWait",
     "FailureKind",
     "MergedPullRequest",
     "Outage",

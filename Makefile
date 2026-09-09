@@ -7,7 +7,7 @@ export
 	dev docs-dev \
 	build-gateway-image deploy-gateway destroy-gateway \
 	install-gateway-on-new-server destroy-gateway-on-new-server \
-	test test-full test-cov test-scope test-cli-smoke test-turn-live test-grafana \
+	test test-full test-cov test-scope test-cli-smoke test-grafana \
 	clean lint format-check format typecheck vulture \
 	check-imports check-cycles check-layers check-imports-strict check-layers-strict check help
 
@@ -117,14 +117,6 @@ test-scope:
 # Run the CLI smoke suite against the installed opensre entrypoint.
 test-cli-smoke:
 	$(PYTHON) -m pytest -v tests/cli/test_smoke.py
-
-# Run the live-LLM turn scenario suite sharded across local processes, mirroring
-# the CI turn-live job. The suite is IO-bound on LLM calls, so running all shards
-# concurrently collapses wall time to ~one shard. Override shard count/subset:
-#   make test-turn-live ARGS="--shards 4"
-#   make test-turn-live ARGS="--indexes 0,3"
-test-turn-live:
-	$(PYTHON) .github/ci/run_live_turn_shards.py $(ARGS)
 
 # Run Grafana integration tests
 test-grafana:

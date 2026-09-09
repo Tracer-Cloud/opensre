@@ -104,31 +104,12 @@ def test_decide_submits_normal_turn_with_exclusive_stdin_wait() -> None:
     )
 
 
-def test_goal_autosubmit_waits_even_without_exclusive_stdin() -> None:
-    """Prose ``/goal`` work turns must hold the next prompt until crawl finishes."""
-    from surfaces.interactive_shell.controller import _should_wait_until_turn_finishes
+def test_only_exclusive_stdin_commands_hold_the_next_prompt() -> None:
+    """A ``/goal`` work turn keeps the prompt open so the spinner and status row paint."""
+    from surfaces.interactive_shell.runtime.input.actions import SubmitTurn
 
-    assert (
-        _should_wait_until_turn_finishes(
-            exclusive_stdin=False,
-            goal_condition_autosubmitted=True,
-        )
-        is True
-    )
-    assert (
-        _should_wait_until_turn_finishes(
-            exclusive_stdin=False,
-            goal_condition_autosubmitted=False,
-        )
-        is False
-    )
-    assert (
-        _should_wait_until_turn_finishes(
-            exclusive_stdin=True,
-            goal_condition_autosubmitted=False,
-        )
-        is True
-    )
+    assert SubmitTurn(text="count the open PRs", wait_until_idle=False).wait_until_idle is False
+    assert SubmitTurn(text="/onboard", wait_until_idle=True).wait_until_idle is True
 
 
 def _plan(*statuses: str):

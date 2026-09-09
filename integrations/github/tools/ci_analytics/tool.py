@@ -15,15 +15,14 @@ from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel, report_run_error
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
-from integrations.github.client import GitHubApiError, GitHubRestClient, resolve_github_token
+from integrations.github.client import GitHubApiError, resolve_github_token
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
     github_creds,
     github_source_available,
 )
 from integrations.github.repo_scope import detect_git_remote_repo_scope
-from integrations.github.tools.ci_analytics.collector import collect_runs
-from integrations.github.tools.ci_analytics.metrics import compute_report
+from integrations.github.tools.ci_analytics.analysis import analyze_repository
 from integrations.github.tools.ci_analytics.models import CiAnalyticsReport, FailureKind
 from integrations.github.tools.ci_analytics.render import (
     format_minutes,
@@ -115,11 +114,25 @@ def report_payload(report: CiAnalyticsReport) -> dict[str, Any]:
         "blocked_minutes": round(report.blocked_minutes, 1),
         "blocked_minutes_all": round(report.blocked_minutes_all, 1),
         "merged_pr_branches": report.merged_pr_branches,
+        "blocked_working_minutes": round(report.blocked_working_minutes, 1),
+        "working_hours": report.working_hours_label,
+        "developers_affected": report.developers_affected,
+        "developers": [
+            {
+                "login": w.login,
+                "pull_requests": w.pull_requests,
+                "working_minutes": round(w.working_minutes, 1),
+                "working_minutes_per_week": round(w.working_minutes_per_week, 1),
+            }
+            for w in report.developer_waits[:10]
+        ],
         "blocked_prs": [
             {
                 "pr_number": d.pr_number,
+                "author": d.author,
                 "branch": d.branch,
                 "delay_minutes": round(d.delay_minutes, 1),
+                "working_minutes": round(d.working_minutes, 1),
                 "commits": d.commits,
             }
             for d in report.blocked_pr_delays[:10]
@@ -170,7 +183,8 @@ def report_payload(report: CiAnalyticsReport) -> dict[str, Any]:
         "executions": "Completed workflow runs counted in the window",
         "pr_failure_rate": "Failed share of PR-triggered runs",
         "reliability_failures": "Failures that passed later on the identical commit",
-        "blocked_minutes": "Minutes merged PRs waited past their expected green time because of CI",
+        "blocked_minutes": "Wall-clock minutes merged PRs waited past their expected green time",
+        "blocked_working_minutes": "The part of that wait inside working hours: developer downtime",
         "red_hours": "Hours the default branch had at least one red workflow",
         "headline": "One sentence naming the biggest cost, to repeat verbatim",
         "response_text": "The rendered report, or a one-line summary when the shell painted it",
@@ -237,7 +251,8 @@ def analyze_github_ci_reliability(
             "owner/repo is required unless the workspace origin identifies a GitHub repository.",
             response_text="I need a GitHub repository (owner/repo) to analyze.",
         )
-    if not resolve_github_token(github_token):
+    token = resolve_github_token(github_token)
+    if not token:
         message = (
             f"A GitHub token is required to read the Actions history of {repo_owner}/{repo_name}. "
             "Run `opensre integrations setup github` and try again."
@@ -254,13 +269,7 @@ def analyze_github_ci_reliability(
         )
     started = time.monotonic()
     try:
-        collected = collect_runs(
-            GitHubRestClient(github_token),
-            owner=repo_owner,
-            repo=repo_name,
-            window_days=window,
-            now=now,
-        )
+        analysis = analyze_repository(repo_owner, repo_name, token=token, days=window, now=now)
     except (GitHubApiError, ValueError) as exc:
         report_run_error(
             exc,
@@ -272,34 +281,26 @@ def analyze_github_ci_reliability(
         )
         message = _failure_message(exc, repository=f"{repo_owner}/{repo_name}")
         return tool_unavailable(_SOURCE, message, response_text=message)
-    report = compute_report(
-        owner=repo_owner,
-        repo=repo_name,
-        default_branch=collected.default_branch,
-        window_days=window,
-        branch_runs=collected.branch_runs,
-        pr_runs=collected.pr_runs,
-        merged_prs=collected.merged_prs,
-        now=now,
-        coverage_notices=collected.coverage_notices,
-    )
+    report = analysis.report
     summary = (
         f"{repo_owner}/{repo_name}: {report.executions} runs in {window} days, "
         f"{report.pr_failures} of {report.pr_executions} PR runs failed, "
         f"{report.count(FailureKind.RELIABILITY)} CI-caused, "
-        f"{format_minutes(report.blocked_minutes)} of developer time blocked on merged PRs."
+        f"{format_minutes(report.blocked_working_minutes)} of developer downtime "
+        f"({format_minutes(report.blocked_minutes)} wall clock) on merged PRs."
     )
     rendered = console is not None
     if console is not None:
-        read = len(collected.branch_runs) + len(collected.pr_runs)
-        console.print(f"  [dim]Read {read} runs in {time.monotonic() - started:.0f}s.[/dim]")
+        console.print(
+            f"  [dim]Read {analysis.runs_read} runs in {time.monotonic() - started:.0f}s.[/dim]"
+        )
         console.print()
     base = {
         "source": _SOURCE,
         "success": True,
         "owner": repo_owner,
         "repo": repo_name,
-        "default_branch": collected.default_branch,
+        "default_branch": report.default_branch,
         "window_days": window,
         "summary": summary,
         "headline": headline(report),

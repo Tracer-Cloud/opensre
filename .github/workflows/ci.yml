@@ -247,8 +247,7 @@ jobs:
               tests/masking
           - os: ubuntu-latest
             shard: cli-runtime-1
-            # Live shell action-agent contracts are validated on openai,
-            # matching interactive-shell-live.yml. The
+            # Live shell action-agent contracts are validated on openai. The
             # default anthropic tool-call model (haiku) cannot reliably perform
             # compound action planning, so pin this shard to openai.
             # ``tests/core/agent`` runs here because it contains the live
@@ -524,8 +523,8 @@ jobs:
       - name: Validate pytest marker
         if: steps.changes.outputs.source == 'true' || github.event_name == 'push'
         env:
-          # Fork PRs do not receive repository secrets; skip live_llm contracts
-          # (see interactive-shell-live.yml). Index a JSON string array so the
+          # Fork PRs do not receive repository secrets; skip live_llm contracts.
+          # Index a JSON string array so the
           # value is always a marker string — never a bare boolean from
           # ``a && 'x' || 'y'`` (boolean false → ``-m false`` → xdist
           # ``N workers [0 items]``, which can still exit 0). An empty

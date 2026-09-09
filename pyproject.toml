@@ -18,10 +18,7 @@ dependencies = [
     "anthropic>=0.77.1",
     "mcp>=1.28.1",
     "openai>=2.0.0",
-    # Held below 1.96: LiteLLM 1.97 updates GPT-5.6 prices while family
-    # suffixes still use OpenSRE's local launch-rate fallback, producing
-    # inconsistent cost estimates. Lift after canonical fallback is reconciled.
-    "litellm>=1.90.0,<1.96.0",
+    "litellm>=1.90.0,<1.100.0",
     # Data validation
     "pydantic>=2.12.5,<3",
     "pydantic-settings>=2.12.0,<3",

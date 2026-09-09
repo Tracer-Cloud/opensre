@@ -1,65 +1,48 @@
-"""SessionGoal completion — structured verdict, not model self-report alone.
+"""SessionGoal completion — cheap-model judge plus a tool-evidence gate.
 
-The action/assistant model may emit ``session_goal:achieved``. That tag is a
-claim, not proof. This module is the independent host check:
+The action model does not get to close the goal by saying it is done. This
+module merges tool ticks, validates newly ticked items, then asks the
+transcript judge (:mod:`core.agent_harness.session_goal.judge`) for met /
+not yet / impossible. ``GOAL_REACHED`` without this-turn tools or stored
+findings stays active. Reply prose never ticks an item.
 
-* Checklist complete (via ``done=`` indices) → achieved.
-* ``achieved`` with tool evidence on an incomplete **short** checklist (≤2
-  items) → complete the checklist (same-turn query+report) and achieve. A
-  longer checklist keeps explicit ``done=`` tracking, so the claim is ignored.
-* ``achieved`` with an incomplete checklist and **no** tool evidence → stay
-  active (ignore the tag).
-* Short checklist (≤2 items), no prior-turn progress, tools succeeded, and a
-  non-empty reply → achieve even when the model only tagged part of the
-  checklist (e.g. ``done=0`` for query, forgot report) or omitted tags
-  entirely — avoids a redundant session-goal turn that repeats the answer.
-* ``achieved`` on a **host-owned** (``/goal set``) goal → achieved without tools
-  (explicit slash-path product rule).
-* Host-owned goal, **no** ``achieved`` tag, but tools succeeded (action **or**
-  gather) and the reply is non-empty → achieve (same-turn answer). Waiting for
-  a scrubbed/forgotten tag forced a redundant outer turn that repeated the
-  live answer. Gather successes count: metric handoffs often leave action
-  ``executed_success_count`` at 0. Final-route identity alone
-  (``cli_agent_fallback`` / summarize) is not evidence — unsupported fallbacks
-  must not close the goal.
-* Host-owned goal whose reply reports cohort identity unverified (product
-  refuse + draft path) → achieve without requiring gather successes.
-  Models often stop before a count query; staying ACTIVE forced a redundant
-  outer turn.
-* ``achieved`` with no checklist on a handoff goal → require tool evidence, or
-  stay active.
-* Hosts may wrap :func:`evaluate_session_goal` with an LLM confirm for the
-  tool-evidence path (:mod:`core.agent_harness.session_goal.confirm`).
+The judge client is injected: hosts build the loop's evaluate with
+:func:`build_session_goal_evaluator`. Without a judge only a fully ticked
+checklist can close a goal.
 """
 
 from __future__ import annotations
 
-import re
-from dataclasses import dataclass
+import logging
+from collections.abc import Callable
+from dataclasses import dataclass, replace
 from typing import Any
 
 from core.agent_harness.session_goal.goal import (
     SessionGoal,
     SessionGoalReason,
     SessionGoalStatus,
-    apply_session_goal_progress,
     attach_session_goal,
+    derive_session_goal_reason,
 )
+from core.agent_harness.session_goal.judge import (
+    SessionGoalJudgeVerdict,
+    invoke_session_goal_judge,
+)
+from core.agent_harness.session_goal.plan_credit import credit_completed_plan_steps
 from core.agent_harness.session_goal.progress import is_session_goal_progress_text
-from core.agent_harness.turns.cohort_identity import (
-    goal_needs_cohort_identity,
-    reply_reports_cohort_unverified,
+from core.agent_harness.session_goal.validate import (
+    invoke_checklist_tick_validator,
+    kept_tick_indices,
+    rejected_tick_reasons,
 )
+from core.llm.types import AgentLLMClient
 
-# Standalone progress tag — same token shape as strip_session_goal_progress_tags.
-_ACHIEVED_CLAIM = re.compile(r"session_goal:achieved")
+log = logging.getLogger(__name__)
 
-# Pre-fix host reasons embedded the tag grammar; neutralize before scanning so
-# old progress status text cannot look like a claim.
-_LEGACY_WAITING_WITH_TAG = (
-    "waiting for session_goal:achieved with tool evidence",
-    "waiting for session_goal:achieved",
-)
+JudgeFn = Callable[..., SessionGoalJudgeVerdict | None]
+ValidateFn = Callable[..., frozenset[int] | None]
+JudgeLlmFactory = Callable[[], AgentLLMClient]
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,6 +51,16 @@ class SessionGoalVerdict:
 
     status: str
     reason: str
+    #: The judge said this verdict repeats the previous turn's blocking problem.
+    repeats_previous: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class _TickReview:
+    """Ticks that survived validation, plus why the others were refused."""
+
+    kept: frozenset[int] | None
+    rejected: tuple[str, ...]
 
 
 def session_goal_reply_text(result: Any) -> str:
@@ -81,123 +74,183 @@ def session_goal_reply_text(result: Any) -> str:
     return ""
 
 
-def reply_claims_session_goal_achieved(text: str) -> bool:
-    """True when ``text`` contains a real ``session_goal:achieved`` progress tag.
-
-    Host status reasons never embed tag grammar (:class:`SessionGoalReason`).
-    Legacy progress phrases that did are stripped before the token scan.
-    """
-    if not text:
-        return False
-    scrubbed = text
-    for phrase in _LEGACY_WAITING_WITH_TAG:
-        scrubbed = scrubbed.replace(phrase, "")
-    return _ACHIEVED_CLAIM.search(scrubbed) is not None
-
-
-def turn_has_session_goal_evidence(result: Any) -> bool:
+def turn_has_session_goal_evidence(result: Any, *, bookkeeping_calls: int = 0) -> bool:
     """True when the turn ran a tool **successfully** — not prose, not a claim.
 
     A tool that ran and errored is not evidence the goal was met, so a failed
-    call must not let an ``achieved`` claim through. ``executed_count`` alone
-    would say yes to a turn whose only action failed.
+    call must not let a ``GOAL_REACHED`` verdict through. ``executed_count``
+    alone would say yes to a turn whose only action failed. The goal's own
+    tools (``session_goal_set``, ``session_goal_complete``) are bookkeeping:
+    ``bookkeeping_calls`` of the successes are discounted so a tick cannot be
+    the evidence for itself.
     """
     action = getattr(result, "action_result", None)
+    qualified = getattr(action, "evidence_success_count", None)
+    if qualified is not None:
+        return bool(qualified > 0)
     action_succeeded = 0
     if action is not None:
         try:
             action_succeeded = int(getattr(action, "executed_success_count", 0) or 0)
         except (TypeError, ValueError):
             action_succeeded = 0
-    return action_succeeded > 0
+    return action_succeeded - max(0, bookkeeping_calls) > 0
 
 
-# metric_read-style attach usually emits query + report (2 items). Longer
-# walkthroughs must keep explicit ``done=`` tracking so a partial first turn
-# cannot false-complete the whole checklist.
-_SAME_TURN_CHECKLIST_MAX_ITEMS = 2
+def goal_has_session_goal_evidence(goal: SessionGoal, result: Any) -> bool:
+    """True when this turn succeeded at a tool, or an earlier turn stored findings."""
+    return turn_has_session_goal_evidence(result) or goal.tool_success_seen or bool(goal.findings)
+
+
+def _need_tool_evidence_reason(judge_reason: str) -> str:
+    extra = judge_reason.strip()
+    if extra:
+        return f"{SessionGoalReason.NEED_TOOL_EVIDENCE} — {extra}"
+    return SessionGoalReason.NEED_TOOL_EVIDENCE
+
+
+def _ticked_items(goal: SessionGoal, newly: frozenset[int]) -> tuple[tuple[int, str], ...]:
+    return tuple(
+        (index, goal.checklist[index])
+        for index in sorted(newly)
+        if 0 <= index < len(goal.checklist)
+    )
+
+
+def _review_ticks(
+    current: SessionGoal,
+    *,
+    newly: frozenset[int],
+    text: str,
+    evidence: bool,
+    tool_evidence: str,
+    validate: ValidateFn | None,
+    validate_llm: AgentLLMClient | None,
+) -> _TickReview:
+    """Validate this turn's ticks. No validator configured means every tick stands."""
+    if not newly:
+        return _TickReview(kept=newly, rejected=())
+    ticked = _ticked_items(current, newly)
+    try:
+        if validate is not None:
+            kept = validate(
+                newly=newly,
+                condition=current.condition,
+                reply=text,
+                evidence=evidence,
+                ticked=ticked,
+            )
+            return _TickReview(kept=kept, rejected=())
+        if validate_llm is None:
+            return _TickReview(kept=newly, rejected=())
+        parsed = invoke_checklist_tick_validator(
+            validate_llm,
+            condition=current.condition,
+            reply=text,
+            evidence=evidence,
+            ticked=ticked,
+            tool_evidence=tool_evidence,
+            findings=current.findings,
+            prior_tool_evidence=current.tool_evidence,
+        )
+    except Exception:
+        log.debug("session-goal tick validator unavailable", exc_info=True)
+        return _TickReview(kept=None, rejected=())
+    if parsed is None:
+        return _TickReview(kept=None, rejected=())
+    return _TickReview(
+        kept=kept_tick_indices(parsed, newly=newly),
+        rejected=rejected_tick_reasons(parsed, newly=newly),
+    )
+
+
+def _run_judge(
+    current: SessionGoal,
+    *,
+    text: str,
+    evidence: bool,
+    tool_evidence: str,
+    judge: JudgeFn | None,
+    judge_llm: AgentLLMClient | None,
+) -> SessionGoalJudgeVerdict | None:
+    unfinished = current.unfinished_items
+    try:
+        if judge is not None:
+            return judge(
+                condition=current.condition,
+                reply=text,
+                evidence=evidence,
+                unfinished=unfinished,
+                previous_reason=current.last_verdict,
+            )
+        if judge_llm is None:
+            return None
+        return invoke_session_goal_judge(
+            judge_llm,
+            condition=current.condition,
+            reply=text,
+            evidence=evidence,
+            unfinished=unfinished,
+            tool_evidence=tool_evidence,
+            findings=current.findings,
+            prior_tool_evidence=current.tool_evidence,
+            previous_reason=current.last_verdict,
+        )
+    except Exception:
+        log.debug("session-goal judge unavailable", exc_info=True)
+        return None
+
+
+def _verdict_from_judge(
+    parsed: SessionGoalJudgeVerdict | None,
+    *,
+    evidence: bool,
+    fallback_reason: str,
+) -> SessionGoalVerdict:
+    if parsed is None:
+        return SessionGoalVerdict(
+            status=SessionGoalStatus.ACTIVE,
+            reason=SessionGoalReason.JUDGE_UNAVAILABLE,
+        )
+    reason = parsed.reason.strip()
+    repeated = bool(getattr(parsed, "repeats_previous", False))
+    if parsed.verdict == "IMPOSSIBLE":
+        return SessionGoalVerdict(
+            status=SessionGoalStatus.IMPOSSIBLE,
+            reason=reason or SessionGoalReason.IMPOSSIBLE,
+        )
+    if parsed.verdict == "GOAL_REACHED":
+        if evidence:
+            return SessionGoalVerdict(
+                status=SessionGoalStatus.ACHIEVED,
+                reason=reason or SessionGoalReason.ACHIEVED_TOOL_EVIDENCE,
+            )
+        return SessionGoalVerdict(
+            status=SessionGoalStatus.ACTIVE,
+            reason=_need_tool_evidence_reason(reason),
+            repeats_previous=repeated,
+        )
+    return SessionGoalVerdict(
+        status=SessionGoalStatus.ACTIVE,
+        reason=reason or fallback_reason,
+        repeats_previous=repeated,
+    )
+
+
+def _with_rejected_ticks(
+    verdict: SessionGoalVerdict, rejected: tuple[str, ...]
+) -> SessionGoalVerdict:
+    """Tell the user why a tick was refused, on the same status line."""
+    if not rejected or verdict.status != SessionGoalStatus.ACTIVE:
+        return verdict
+    return replace(verdict, reason=f"{verdict.reason} (tick rejected: {rejected[0]})")
 
 
 def _complete_checklist(goal: SessionGoal) -> SessionGoal:
-    return goal.with_completed(frozenset(range(len(goal.checklist))))
-
-
-def _same_turn_completable(goal: SessionGoal) -> bool:
-    """True when one turn may close the whole checklist without ``done=`` tags.
-
-    Applies to both same-turn paths (claimed and unclaimed): a walkthrough long
-    enough to span turns must track progress explicitly, so a first turn that
-    touched one item cannot mark the rest done.
-    """
-    return len(goal.checklist) <= _SAME_TURN_CHECKLIST_MAX_ITEMS
-
-
-def _reply_is_nonempty_and_not_progress_text(text: str) -> bool:
-    """True when the assistant reply is real content, not ``/goal`` status chrome."""
-    return bool(text.strip()) and not is_session_goal_progress_text(text)
-
-
-def _short_checklist_has_achieved_claim_and_tool_evidence(
-    goal: SessionGoal,
-    *,
-    claimed: bool,
-    has_evidence: bool,
-) -> bool:
-    """True when a short checklist turn claimed achieved and tools succeeded."""
-    return _same_turn_completable(goal) and claimed and has_evidence
-
-
-def _short_checklist_has_no_prior_progress_and_tool_answer(
-    goal: SessionGoal,
-    *,
-    has_evidence: bool,
-    text: str,
-    completed_before: frozenset[int],
-) -> bool:
-    """True when the first short-checklist turn already has tools and a reply."""
-    return (
-        _same_turn_completable(goal)
-        and has_evidence
-        and bool(text.strip())
-        and not completed_before
-    )
-
-
-def _host_owned_achieved_claim_lacks_tool_evidence(
-    goal: SessionGoal,
-    *,
-    has_evidence: bool,
-) -> bool:
-    """True when a host-owned ``/goal`` achieved-claim has no tool evidence."""
-    return goal.host_owned and not has_evidence
-
-
-def _host_owned_goal_has_unverified_cohort_reply(goal: SessionGoal, text: str) -> bool:
-    """True when a host-owned signup/retention ``/goal`` reply says identity is open.
-
-    Prefer this over tool-evidence achieve so optional LLM confirm cannot veto
-    a correct refuse+draft as "metric not reached".
-    """
-    return (
-        goal.host_owned
-        and _reply_is_nonempty_and_not_progress_text(text)
-        and goal_needs_cohort_identity(goal.condition)
-        and reply_reports_cohort_unverified(text)
-    )
-
-
-def _host_owned_goal_has_tool_evidence_and_answer_reply(
-    goal: SessionGoal,
-    text: str,
-    *,
-    has_evidence: bool,
-) -> bool:
-    """True when a host-owned ``/goal`` already has tools and a real answer reply.
-
-    Do not wait for ``session_goal:achieved`` — that tag is scrubbed from the
-    visible reply and models often omit it.
-    """
-    return goal.host_owned and has_evidence and _reply_is_nonempty_and_not_progress_text(text)
+    """A met goal shows every item ticked, whatever the model remembered to tick."""
+    if not goal.checklist or goal.checklist_complete:
+        return goal
+    return replace(goal, completed=frozenset(range(len(goal.checklist))), new_ticks=frozenset())
 
 
 def evaluate_session_goal(
@@ -205,8 +258,12 @@ def evaluate_session_goal(
     result: Any,
     *,
     session: Any | None = None,
+    judge: JudgeFn | None = None,
+    judge_llm: AgentLLMClient | None = None,
+    validate: ValidateFn | None = None,
+    validate_llm: AgentLLMClient | None = None,
 ) -> SessionGoalVerdict:
-    """Independent structured evaluation of an session goal."""
+    """Independent evaluation of a session goal (ticks + judge + evidence gate)."""
     if session is not None and getattr(session, "pending_user_choice", None) is not None:
         return SessionGoalVerdict(
             status=SessionGoalStatus.ACTIVE,
@@ -214,106 +271,67 @@ def evaluate_session_goal(
         )
 
     text = session_goal_reply_text(result)
+    completed_before = goal.completed - goal.new_ticks
     current = goal
+    bookkeeping = goal.bookkeeping_calls
     if session is not None:
         stored = getattr(session, "session_goal", None)
         if isinstance(stored, SessionGoal):
-            current = stored
-    completed_before = current.completed
-    current = apply_session_goal_progress(current, text)
+            # The goal's tools attach onto the session copy; the loop copy may be stale.
+            bookkeeping = max(bookkeeping, stored.bookkeeping_calls)
+            if stored.completed - current.completed:
+                current = current.with_completed(current.completed | stored.completed)
+    current = credit_completed_plan_steps(current, session)
+    turn_evidence = turn_has_session_goal_evidence(result, bookkeeping_calls=bookkeeping)
+    evidence = turn_evidence or current.tool_success_seen or bool(current.findings)
+    tool_evidence = getattr(getattr(result, "action_result", None), "tool_evidence", "")
+    if turn_evidence:
+        current = current.with_tool_progress()
 
-    claimed = reply_claims_session_goal_achieved(text)
-    evidence = turn_has_session_goal_evidence(result)
+    newly = current.new_ticks | (current.completed - completed_before)
+    review = _review_ticks(
+        current,
+        newly=newly,
+        text=text,
+        evidence=evidence,
+        tool_evidence=tool_evidence,
+        validate=validate,
+        validate_llm=validate_llm,
+    )
+    kept = review.kept or frozenset()
+    if kept != newly:
+        current = current.with_completed((current.completed - newly) | kept)
+    if current.new_ticks or current.bookkeeping_calls:
+        current = replace(current, new_ticks=frozenset(), bookkeeping_calls=0)
 
-    if current.checklist:
-        if current.checklist_complete:
-            verdict = SessionGoalVerdict(
-                status=SessionGoalStatus.ACHIEVED,
-                reason=SessionGoalReason.CHECKLIST_COMPLETE,
-            )
-        elif _short_checklist_has_achieved_claim_and_tool_evidence(
-            current,
-            claimed=claimed,
-            has_evidence=evidence,
-        ):
-            current = _complete_checklist(current)
-            verdict = SessionGoalVerdict(
-                status=SessionGoalStatus.ACHIEVED,
-                reason=SessionGoalReason.CHECKLIST_COMPLETE_SAME_TURN,
-            )
-        elif claimed:
-            nxt = current.next_checklist_item
-            next_label = nxt[1] if nxt is not None else None
-            done = len(current.completed & frozenset(range(len(current.checklist))))
-            total = len(current.checklist)
-            verdict = SessionGoalVerdict(
-                status=SessionGoalStatus.ACTIVE,
-                reason=SessionGoalReason.achieved_ignored_incomplete(done, total, next_label),
-            )
-        elif _short_checklist_has_no_prior_progress_and_tool_answer(
-            current,
-            has_evidence=evidence,
-            text=text,
-            completed_before=completed_before,
-        ):
-            current = _complete_checklist(current)
-            verdict = SessionGoalVerdict(
-                status=SessionGoalStatus.ACHIEVED,
-                reason=SessionGoalReason.CHECKLIST_COMPLETE_SAME_TURN,
-            )
-        else:
-            done = len(current.completed & frozenset(range(len(current.checklist))))
-            total = len(current.checklist)
-            nxt = current.next_checklist_item
-            if nxt is None:
-                reason = SessionGoalReason.checklist_progress(done, total)
-            else:
-                reason = SessionGoalReason.checklist_progress(done, total, nxt[1])
-            verdict = SessionGoalVerdict(status=SessionGoalStatus.ACTIVE, reason=reason)
-    elif claimed:
-        if current.host_owned or evidence:
-            soft_host = _host_owned_achieved_claim_lacks_tool_evidence(
-                current,
-                has_evidence=evidence,
-            )
-            verdict = SessionGoalVerdict(
-                status=SessionGoalStatus.ACHIEVED,
-                reason=(
-                    SessionGoalReason.ACHIEVED_HOST_SET
-                    if soft_host
-                    else SessionGoalReason.ACHIEVED_TOOL_EVIDENCE
-                ),
-            )
-        else:
-            verdict = SessionGoalVerdict(
-                status=SessionGoalStatus.ACTIVE,
-                reason=SessionGoalReason.NO_TOOL_EVIDENCE,
-            )
+    if current.checklist_complete and evidence and judge is None and judge_llm is None:
+        verdict = SessionGoalVerdict(
+            status=SessionGoalStatus.ACHIEVED,
+            reason=SessionGoalReason.CHECKLIST_COMPLETE,
+        )
+    elif is_session_goal_progress_text(text):
+        verdict = SessionGoalVerdict(
+            status=SessionGoalStatus.ACTIVE,
+            reason=current.last_reason.strip() or derive_session_goal_reason(current),
+        )
     else:
-        if _host_owned_goal_has_unverified_cohort_reply(current, text):
-            verdict = SessionGoalVerdict(
-                status=SessionGoalStatus.ACHIEVED,
-                reason=SessionGoalReason.ACHIEVED_HOST_SET,
-            )
-        elif _host_owned_goal_has_tool_evidence_and_answer_reply(
+        parsed = _run_judge(
             current,
-            text,
-            has_evidence=evidence,
-        ):
-            verdict = SessionGoalVerdict(
-                status=SessionGoalStatus.ACHIEVED,
-                reason=SessionGoalReason.ACHIEVED_TOOL_EVIDENCE,
-            )
-        elif current.host_owned:
-            verdict = SessionGoalVerdict(
-                status=SessionGoalStatus.ACTIVE,
-                reason=SessionGoalReason.WAITING_HOST_SIGNAL,
-            )
-        else:
-            verdict = SessionGoalVerdict(
-                status=SessionGoalStatus.ACTIVE,
-                reason=SessionGoalReason.WAITING_TOOL_EVIDENCE,
-            )
+            text=text,
+            evidence=evidence,
+            tool_evidence=tool_evidence,
+            judge=judge,
+            judge_llm=judge_llm,
+        )
+        verdict = _verdict_from_judge(
+            parsed,
+            evidence=evidence,
+            fallback_reason=derive_session_goal_reason(current),
+        )
+    verdict = _with_rejected_ticks(verdict, review.rejected)
+    if verdict.status == SessionGoalStatus.ACHIEVED:
+        current = _complete_checklist(current)
+    current = current.with_verdict(verdict.reason, repeated=verdict.repeats_previous)
 
     if session is not None:
         updated = current.with_status(verdict.status).with_reason(verdict.reason)
@@ -326,16 +344,66 @@ def default_evaluate_session_goal(
     result: Any,
     *,
     session: Any | None = None,
+    judge: JudgeFn | None = None,
+    judge_llm: AgentLLMClient | None = None,
+    validate: ValidateFn | None = None,
+    validate_llm: AgentLLMClient | None = None,
 ) -> str:
     """Loop-facing evaluate: status string; reason stored on the session goal."""
-    return evaluate_session_goal(goal, result, session=session).status
+    return evaluate_session_goal(
+        goal,
+        result,
+        session=session,
+        judge=judge,
+        judge_llm=judge_llm,
+        validate=validate,
+        validate_llm=validate_llm,
+    ).status
+
+
+def build_session_goal_evaluator(llm_factory: JudgeLlmFactory) -> Callable[..., str]:
+    """The loop's evaluate for a host: one cheap-model client judges and validates.
+
+    The client is resolved on the first evaluation, not at build time, so an
+    agent that never runs a goal never pays for the client. A factory that
+    raises leaves the goal active with :attr:`SessionGoalReason.JUDGE_UNAVAILABLE`.
+    """
+    client: AgentLLMClient | None = None
+    resolved = False
+
+    def _client() -> AgentLLMClient | None:
+        nonlocal client, resolved
+        if not resolved:
+            resolved = True
+            try:
+                client = llm_factory()
+            except Exception:
+                log.debug("session-goal judge client unavailable", exc_info=True)
+                client = None
+        return client
+
+    def _evaluate(goal: SessionGoal, result: Any, *, session: Any | None = None) -> str:
+        llm = _client()
+        if llm is None:
+            return default_evaluate_session_goal(
+                goal, result, session=session, judge=lambda **_kw: None, validate=lambda **_kw: None
+            )
+        return default_evaluate_session_goal(
+            goal, result, session=session, judge_llm=llm, validate_llm=llm
+        )
+
+    return _evaluate
 
 
 __all__ = [
+    "JudgeFn",
+    "JudgeLlmFactory",
     "SessionGoalVerdict",
+    "ValidateFn",
+    "build_session_goal_evaluator",
     "default_evaluate_session_goal",
     "evaluate_session_goal",
-    "reply_claims_session_goal_achieved",
+    "goal_has_session_goal_evidence",
     "session_goal_reply_text",
     "turn_has_session_goal_evidence",
 ]

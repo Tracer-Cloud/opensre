@@ -245,7 +245,10 @@ def test_plan_breakdown_dims_work_notes_and_accents_checked_steps() -> None:
 
     ui_theme.set_active_theme("amber")
     # A 16-color render of theme DIM must not pin work notes to bright-black.
-    Style.parse(str(ui_theme.DIM))._make_ansi_codes(ColorSystem.STANDARD)
+    # Rich stores the first color_system on the cached Style; reset it so this
+    # poison does not leak to later tests in the same process.
+    dim_style = Style.parse(str(ui_theme.DIM))
+    dim_style._make_ansi_codes(ColorSystem.STANDARD)
     breakdown = (
         "Plan complete · 2/2\n"
         "  ✓ Confirm repository\n"
@@ -262,8 +265,12 @@ def test_plan_breakdown_dims_work_notes_and_accents_checked_steps() -> None:
         no_color=False,
         width=80,
     )
-    render_plan_breakdown(console, breakdown)
-    out = buf.getvalue()
+    try:
+        render_plan_breakdown(console, breakdown)
+        out = buf.getvalue()
+    finally:
+        dim_style._ansi = None
+        Style.parse.cache_clear()
     plain = _strip_ansi(out)
     assert "Plan complete · 2/2" in plain
     assert "✓ Confirm repository" in plain

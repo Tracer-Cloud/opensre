@@ -4,16 +4,16 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.agent_harness.spi.grounding import list_action_skills, load_skill_body
+from core.agent_harness.spi.grounding import list_action_skills
 from core.agent_harness.tools import ActionToolScope, execute_with_action_context
 from core.domain.types.tools import ToolSurface
 from core.tool import RegisteredTool, SideEffectLevel
 from core.tool_framework.utils import object_schema, string_property
 from tools.interactive_shell.action_names import ActionToolName
+from tools.interactive_shell.actions.skill_entry import enter_skill
 
 
 def execute_skill_view_tool(args: dict[str, Any], ctx: ActionToolScope) -> dict[str, Any]:
-    _ = ctx
     name = str(args.get("name", "")).strip()
     if not name:
         available = [skill.name for skill in list_action_skills()]
@@ -22,24 +22,7 @@ def execute_skill_view_tool(args: dict[str, Any], ctx: ActionToolScope) -> dict[
             "error": "missing skill name",
             "available": available,
         }
-    body = load_skill_body(name)
-    if not body:
-        available = [skill.name for skill in list_action_skills()]
-        return {
-            "ok": False,
-            "name": name,
-            "error": f"unknown skill {name!r}",
-            "available": available,
-        }
-    slug = name.replace("_", "-").lower()
-    # ``summary`` is what the user sees; ``content`` is for the model only.
-    # Without it the generic formatter prints the whole skill body on screen.
-    return {
-        "ok": True,
-        "name": slug,
-        "summary": f"loaded the {slug} skill",
-        "content": body,
-    }
+    return enter_skill(name, ctx)
 
 
 def run_skill_view(*, name: str, context: Any) -> dict[str, Any]:
@@ -52,7 +35,9 @@ skill_view_tool = RegisteredTool(
         "Load the full body of one action-agent skill by name from the "
         "SKILLS INDEX. Call this in the same turn when the user request matches "
         "an indexed skill, BEFORE emitting that skill's tool sequence. Do not "
-        "invent workflow steps from the one-line index description alone."
+        "invent workflow steps from the one-line index description alone. A "
+        "skill may open its own menu on load; the result then tells you to end "
+        "the turn."
     ),
     input_schema=object_schema(
         properties={

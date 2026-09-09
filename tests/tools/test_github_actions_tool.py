@@ -228,6 +228,29 @@ def test_list_workflow_runs_happy_path() -> None:
     assert result["workflow_runs"][0]["id"] == 101
 
 
+def test_list_workflow_runs_passes_head_sha_filter() -> None:
+    workflow_tool = cast(Any, list_github_actions_workflow_runs)
+    captured: dict[str, object] = {}
+
+    def _capture(config: object, tool: str, arguments: dict[str, object]) -> object:
+        captured["tool"] = tool
+        captured["arguments"] = arguments
+        return _mcp_response(config, tool, arguments)
+
+    with (
+        patch("integrations.github.tools.actions.resolve_github_mcp_config", return_value=object()),
+        patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=_capture),
+    ):
+        result = workflow_tool(
+            owner="org",
+            repo="repo",
+            head_sha="abc123def",
+            github_token="tok",
+        )
+    assert result["head_sha"] == "abc123def"
+    assert captured["arguments"]["workflow_runs_filter"] == {"head_sha": "abc123def"}
+
+
 def test_list_active_runs_happy_path() -> None:
     active_tool = cast(Any, list_github_actions_active_runs)
     with (

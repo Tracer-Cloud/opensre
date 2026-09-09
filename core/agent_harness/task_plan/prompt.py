@@ -12,8 +12,9 @@ from core.agent_harness.task_plan.progress import format_task_plan_plain
 
 ASK_USER_ANSWERED_GUIDANCE = (
     "ASK USER JUST ANSWERED (this turn). Continue — do not sit idle. "
-    "If this is the FIRST round and the answers open new discriminating "
-    "questions, call ask_user_choice for ONE more scoped round. If two rounds "
+    "The answer settles the question it belongs to: do not re-ask it, do not ask "
+    "what it means, and do not open another round unless the work is impossible "
+    "without one more fixed choice. If two rounds "
     "are already answered (see the Q&A above), do NOT ask again — write the "
     "plan now with your best reading of the answers. Two rounds is the hard "
     "maximum.\n"
@@ -38,9 +39,10 @@ ASK_USER_ANSWERED_GUIDANCE = (
 
 ASK_USER_ANSWERED_PLAN_ONLY_GUIDANCE = (
     "ASK USER JUST ANSWERED (this turn). This request is plan-only — answering "
-    "does not authorize execution. If this is the FIRST round and the answers "
-    "open new discriminating questions, call ask_user_choice for ONE more "
-    "scoped round. If two rounds are already answered, do NOT ask again. "
+    "does not authorize execution. The answer settles the question it belongs "
+    "to: do not re-ask it or ask what it means; open another round only when the "
+    "plan is impossible without one more fixed choice. If two rounds are already "
+    "answered, do NOT ask again. "
     "Then update_plan with every step pending and STOP. Put the rationale in "
     "explanation=... "
     "If this is a diagnosis: Facts; What the signature tells us (what each "

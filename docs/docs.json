@@ -166,6 +166,7 @@
                 "expanded": false,
                 "pages": [
                   "alertmanager",
+                  "runbook-guided-investigations",
                   "incident_io",
                   "opsgenie",
                   "pagerduty",

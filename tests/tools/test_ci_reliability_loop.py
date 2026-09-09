@@ -168,12 +168,12 @@ def test_build_report_renders_the_analytics_and_keeps_a_json_snapshot(
     import json
 
     from integrations.github import client as github_client
-    from integrations.github.tools.ci_analytics import collector
+    from integrations.github.tools.ci_analytics import analysis
     from integrations.github.tools.ci_analytics.collector import CollectedRuns
 
     monkeypatch.setattr(github_client, "resolve_github_token", lambda _t: "tok")
     monkeypatch.setattr(
-        collector,
+        analysis,
         "collect_runs",
         lambda *_a, **_k: CollectedRuns(
             default_branch="main", branch_runs=[], pr_runs=[], merged_prs=(), coverage_notices=()

@@ -167,6 +167,35 @@ def account_login(
     presenter.success(result)
 
 
+@account_command.command(name="usage")
+@click.option(
+    "--dev",
+    is_flag=True,
+    help="Use the local webapp at http://localhost:3000.",
+)
+@click.option(
+    "--browser/--no-browser",
+    default=True,
+    help="Open the usage page in the browser (default: yes).",
+)
+@click.pass_context
+def account_usage(ctx: click.Context, dev: bool, browser: bool) -> None:
+    """Open the credits, usage and top-up page."""
+    app_url = _optional_app_url(app_url=None, dev=_dev_enabled(ctx, dev))
+    try:
+        if browser:
+            url, opened = account_auth.open_usage_page(app_url=app_url)
+        else:
+            url, opened = account_auth.usage_page_url(app_url), False
+    except account_auth.AccountAuthError as exc:
+        raise click.ClickException(str(exc)) from exc
+    if _json_enabled(ctx):
+        click.echo(json.dumps({"url": url, "opened": opened}, indent=2))
+        return
+    click.echo(f"Usage and top-up: {url}")
+    click.echo("Opened in your browser." if opened else "Open it in your browser.")
+
+
 @account_command.command(name="status")
 @click.option(
     "--dev",

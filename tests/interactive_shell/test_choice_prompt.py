@@ -51,11 +51,16 @@ def test_selection_is_auto_submitted_as_next_user_message(
 
     assert _handler(session, console) is True
     assert session.pending_user_choice is None
-    assert session.terminal.pending_prompt_default == "Commit the changes"
+    # The question travels with the answer so the next turn cannot be re-routed.
+    assert session.terminal.pending_prompt_default == format_ask_user_answers(
+        _CHOICE.items(), ("Commit the changes",)
+    )
     assert session.terminal.pending_prompt_autosubmit is True
     output = buf.getvalue()
-    # Ask User card — not a plan-step ``✓`` (that glued picks into Plan complete).
-    assert "Ask User" in output
+    # Single-pick recap is one answered line — not an Ask User card and not a
+    # plan-step ``✓`` (that glued picks into Plan complete).
+    assert "Ask User" not in output
+    assert "↳" in output
     assert "✓" not in output
     assert _CHOICE.title in output
     assert "Commit the changes" in output
@@ -181,6 +186,45 @@ def test_batch_custom_option_is_captured_inline_and_auto_submitted(
     )
 
 
+def test_slash_command_typed_into_the_menu_runs_as_a_command_not_an_answer(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange: the user types a slash command into the custom row.
+    session = Session()
+    session.pending_user_choice = _CHOICE
+    console, buf = _console()
+    monkeypatch.setattr(choice_prompt, "repl_tty_interactive", lambda: True)
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", lambda **_kw: "/loops messages")
+
+    # Act
+    assert _handler(session, console) is True
+
+    # Assert: the menu closes, the command runs, nothing is handed to the model as an answer.
+    assert session.terminal.pending_prompt_default == "/loops messages"
+    assert session.terminal.awaiting_handoff_answer is False
+    assert "Running /loops messages" in buf.getvalue()
+
+
+def test_option_mapped_to_a_command_runs_that_command(monkeypatch: pytest.MonkeyPatch) -> None:
+    from core.agent_harness.session.pending_choice import PendingUserChoice
+
+    session = Session()
+    session.pending_user_choice = PendingUserChoice(
+        title="How should I continue?",
+        options=("Keep going", "Stop here"),
+        commands={"Stop here": "/goal clear"},
+    )
+    console, buf = _console()
+    monkeypatch.setattr(choice_prompt, "repl_tty_interactive", lambda: True)
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", lambda **_kw: "Stop here")
+
+    assert _handler(session, console) is True
+
+    assert session.terminal.pending_prompt_default == "/goal clear"
+    assert session.terminal.awaiting_handoff_answer is False
+    assert "Running /goal clear" in buf.getvalue()
+
+
 def test_single_choice_types_custom_in_place(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -202,8 +246,35 @@ def test_single_choice_types_custom_in_place(
     choices = seen["choices"]
     assert isinstance(choices, list)
     assert (CUSTOM_OPTION, CUSTOM_OPTION) in choices
-    assert session.terminal.pending_prompt_default == "typed by hand"
+    assert session.terminal.pending_prompt_default == format_ask_user_answers(
+        _CHOICE.items(), ("typed by hand",)
+    )
     assert session.terminal.pending_prompt_autosubmit is True
+
+
+def test_single_choice_paints_the_pending_note_inside_the_menu(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The explainer rides the menu paint (cleared on close), not the transcript."""
+    session = Session()
+    session.pending_user_choice = PendingUserChoice(
+        title=_CHOICE.title,
+        options=_CHOICE.options,
+        note="Why I am asking, in one line.",
+    )
+    console, buf = _console()
+    seen: dict[str, object] = {}
+
+    def _pick(**kwargs: object) -> str:
+        seen["note"] = kwargs.get("note")
+        return _CHOICE.options[0]
+
+    monkeypatch.setattr(choice_prompt, "repl_tty_interactive", lambda: True)
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", _pick)
+
+    assert _handler(session, console) is True
+    assert seen["note"] == "Why I am asking, in one line."
+    assert "Why I am asking" not in buf.getvalue()
 
 
 def test_non_tty_batch_prints_every_question(monkeypatch: pytest.MonkeyPatch) -> None:

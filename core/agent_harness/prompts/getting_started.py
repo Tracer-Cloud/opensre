@@ -1,30 +1,38 @@
-"""Stable getting-started choices for the interactive agent."""
+"""Stable getting-started choices for the interactive agent and first-visit picker.
+
+Each selectable demo option is owned by an action skill via ``getting_started``
+and ``demo_order`` frontmatter. The custom-answer row is added by the UI.
+"""
 
 from __future__ import annotations
 
-GETTING_STARTED_OPTIONS: tuple[str, ...] = (
-    "Explore a repo and analyze its CI/CD performance (recommended)",
-    "Set up an agent that improves CI/CD reliability over time",
-    "Connect OpenSRE to Slack and hand off DevOps chores for your team",
-)
+from config.constants.skills import ONBOARDING_SKILL_NAME
+from core.agent_harness.prompts.skills import getting_started_skills
 
-_GETTING_STARTED_RULE = (
-    "When the user asks what you can do, what you're capable of, how you can "
-    "help, what tools you have, or for a demo / getting-started suggestion: "
-    "call `ask_user_choice` with ONLY the getting-started options below, in "
-    "the order shown. Use each option verbatim; do not rephrase, add, remove, "
-    "or reorder options. The interactive surface adds `Or type your own "
-    "answer...` automatically, so do not include a custom-answer option. Do "
-    "not list platform features, slash commands, AGENTS.md capabilities, or "
-    "add a Want-me-to closer that invents another action."
+GETTING_STARTED_CUSTOM = "Or type your own answer..."
+
+GETTING_STARTED_OPTIONS: tuple[str, ...] = tuple(
+    skill.getting_started or "" for skill in getting_started_skills()
 )
+GETTING_STARTED_MENU: tuple[str, ...] = (*GETTING_STARTED_OPTIONS, GETTING_STARTED_CUSTOM)
 
 
 def load_getting_started_block() -> str:
-    """Return the agent rule and exact selectable starter prompts."""
-    lines = [_GETTING_STARTED_RULE, ""]
-    lines.extend(f"- {option}" for option in GETTING_STARTED_OPTIONS)
-    return "\n".join(lines)
+    """Route capability and demo requests to the master skill that owns the menu."""
+    return (
+        "When the user asks what you can do, what you're capable of, how you can "
+        "help, what tools you have, or for a demo / getting-started suggestion: "
+        f'call skill_view(name="{ONBOARDING_SKILL_NAME}") and follow that master skill. '
+        "It owns the Ask User menu and the references to child skills. "
+        "Do not invent a separate getting-started menu. When an answer arrives, "
+        "continue the active skill instead of reopening onboarding."
+    )
 
 
-__all__ = ["GETTING_STARTED_OPTIONS", "load_getting_started_block"]
+__all__ = [
+    "GETTING_STARTED_CUSTOM",
+    "GETTING_STARTED_MENU",
+    "GETTING_STARTED_OPTIONS",
+    "getting_started_skills",
+    "load_getting_started_block",
+]

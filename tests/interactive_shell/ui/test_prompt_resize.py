@@ -118,8 +118,9 @@ def test_resize_with_banner_hook_skips_partial_erase_and_redraws() -> None:
 
     banner_calls: list[int] = []
 
-    def _rerender() -> None:
+    def _rerender() -> bool:
         banner_calls.append(1)
+        return True
 
     install_shrink_resize_guard(app, rerender_banner=_rerender)
     app._on_resize()
@@ -131,6 +132,34 @@ def test_resize_with_banner_hook_skips_partial_erase_and_redraws() -> None:
     app._redraw.assert_called_once()
     assert renderer._min_available_height == 0
     assert renderer._last_screen is None
+
+
+def test_resize_during_a_turn_erases_the_live_region_instead_of_forgetting_it() -> None:
+    """Reset without erase left one stale frame per resize signal, stacking down the screen."""
+    terminal = io.StringIO()
+    output = Vt100_Output(
+        terminal,
+        get_size=lambda: Size(rows=30, columns=80),
+        term="xterm-256color",
+        enable_cpr=False,
+    )
+    app: Any = MagicMock()
+    app.output = output
+    renderer = MagicMock()
+    renderer._last_screen = _Screen(height=6)
+    renderer.reset = MagicMock()
+    app.renderer = renderer
+    original_on_resize = MagicMock()
+    app._on_resize = original_on_resize
+    app._redraw = MagicMock()
+
+    install_shrink_resize_guard(app, rerender_banner=lambda: False)
+    app._on_resize()
+
+    # prompt-toolkit's own resize path erases from the top row and redraws.
+    original_on_resize.assert_called_once()
+    renderer.reset.assert_not_called()
+    app._redraw.assert_not_called()
 
 
 def test_shrink_resize_guard_disables_autowrap_after_render() -> None:

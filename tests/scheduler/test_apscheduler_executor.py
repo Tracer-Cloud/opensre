@@ -24,7 +24,7 @@ class _FakeScheduler:
         self.event_codes.append(event.code)
 
 
-def test_worker_receives_each_fire_time_without_submission_listener() -> None:
+def test_worker_receives_each_eligible_fire_time_without_submission_listener() -> None:
     started = threading.Event()
     release = threading.Event()
     observed: list[datetime] = []

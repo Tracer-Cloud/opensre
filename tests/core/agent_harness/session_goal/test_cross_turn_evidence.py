@@ -14,7 +14,9 @@ nothing hands turn N+1 the evidence turn N gathered.
 from __future__ import annotations
 
 from core.agent_harness.session.session_core import SessionCore
+from core.agent_harness.session_goal.evaluate import evaluate_session_goal
 from core.agent_harness.session_goal.goal import SessionGoal
+from core.agent_harness.session_goal.judge import SessionGoalJudgeVerdict
 from core.agent_harness.session_goal.run_until import run_until_session_goal
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
 
@@ -58,9 +60,17 @@ def test_continuation_turn_is_told_what_earlier_turns_gathered() -> None:
         goal=SessionGoal(
             condition="weather brief for Antarctica and Hawaii, then send it",
             max_outer_turns=3,
-            # Three items: a two-item checklist hits the same-turn completion
-            # shortcut and the loop never reaches a continuation.
             checklist=("fetch the weather", "correlate news", "send the brief"),
+        ),
+        evaluate=lambda goal, result, *, session=None: (
+            evaluate_session_goal(
+                goal,
+                result,
+                session=session,
+                judge=lambda **_kw: SessionGoalJudgeVerdict(
+                    verdict="NOT_REACHED", reason="brief not sent yet"
+                ),
+            ).status
         ),
     )
 

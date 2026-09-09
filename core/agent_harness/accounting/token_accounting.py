@@ -12,6 +12,7 @@ then renders the accumulated totals for display.
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any
 
@@ -127,6 +128,41 @@ def record_llm_turn(
     return inp, out, estimated
 
 
+def record_provider_usage(session: Any | None, *, input_tokens: int, output_tokens: int) -> None:
+    """Accumulate one model call's provider-reported usage onto ``session.tokens``.
+
+    Only exact counts are recorded: a call whose provider reported nothing adds
+    nothing rather than an estimate. This is what ``/cost`` and the ``/goal``
+    token delta read.
+    """
+    if session is None or (input_tokens <= 0 and output_tokens <= 0):
+        return
+    tokens = getattr(session, "tokens", None)
+    if tokens is not None and callable(getattr(tokens, "record", None)):
+        tokens.record(input_tokens=input_tokens, output_tokens=output_tokens, estimated=False)
+
+
+def tap_provider_usage(inner: Callable[[Any], None] | None, session: Any) -> Callable[[Any], None]:
+    """Wrap a runtime-event callback so every finished model call lands on ``session.tokens``.
+
+    Recording per call, not per run, keeps the spend of a run that raises on a
+    later call.
+    """
+
+    def _callback(event: Any) -> None:
+        if getattr(event, "type", "") == "provider_request_end":
+            data = getattr(event, "data", None) or {}
+            record_provider_usage(
+                session,
+                input_tokens=int(data.get("input_tokens", 0) or 0),
+                output_tokens=int(data.get("output_tokens", 0) or 0),
+            )
+        if inner is not None:
+            inner(event)
+
+    return _callback
+
+
 def record_invoke_response(
     session: Any | None,
     *,
@@ -232,6 +268,8 @@ __all__ = [
     "build_llm_run_info",
     "estimate_tokens",
     "format_token_total",
+    "record_provider_usage",
+    "tap_provider_usage",
     "record_invoke_response",
     "record_llm_turn",
     "resolve_model_name",

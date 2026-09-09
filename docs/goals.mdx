@@ -50,8 +50,10 @@ first real attempt is turn 1 of 4.
 <Tip>
   Write the condition the way you would brief a teammate: say what "done" looks
   like, and say what to do when something is missing ("otherwise draft the query
-  and end with one setup CTA"). A condition that can never be satisfied will just
-  burn the whole turn budget.
+  and end with one setup CTA"). After every turn a separate small model reads
+  what OpenSRE reported and decides met, not yet, or impossible, so the finish
+  line has to be something the reply can show: a count, a table, a passing
+  check. Numbered steps in the condition become the checklist.
 </Tip>
 
 ## Watching progress
@@ -133,8 +135,9 @@ resume.
 | State | What happened |
 | --- | --- |
 | `active` | Still working |
-| `paused` | You ran `/goal pause` |
-| `achieved` | OpenSRE reached the condition you described |
+| `paused` | You ran `/goal pause`, the goal made no progress for two turns and is waiting for your pick, or a turn failed (for example the model call was rejected). Fix the cause, then `/goal resume` |
+| `achieved` | The judge confirmed the condition from what OpenSRE did and reported, backed by at least one successful tool call |
+| `impossible` | The judge decided this session cannot meet the condition (missing access, contradicted facts). Read the reason, then set a different goal |
 | `budget_exhausted` | It used every turn without getting there — read the last reply, then set a narrower goal or raise `--max-turns` |
 | `cancelled` | You interrupted the run with **Ctrl+C** |
 | `cleared` | You ran `/goal clear` |
@@ -157,15 +160,13 @@ A goal belongs to the session it was set in and is restored with it, so a goal
 you set in the shell is still there after `/resume`.
 
 Goals are remembered in chat transports such as Slack and Telegram as well, and
-the same status line appears in the timeline while OpenSRE works. One difference
-matters there: `/goal set` does **not** start the work on its own. OpenSRE stores
-the goal and replies with a hint to run the condition in the interactive shell,
-and the goal sits at turn 0 until you send your next message — that message
-becomes the first turn, and continuation proceeds normally from there.
+the same status line appears in the timeline while OpenSRE works. `/goal set`
+starts the condition on that turn — the same as the interactive shell — and
+continuation proceeds from there.
 
 <Note>
-  Set goals from the interactive shell when you want the work to begin
-  immediately without sending a follow-up message.
+  After `/goal set`, OpenSRE begins the work immediately. You do not need a
+  follow-up message to start the first turn.
 </Note>
 
 ## Related docs

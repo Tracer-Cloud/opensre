@@ -104,6 +104,13 @@ def _fallback_descriptors() -> tuple[ToolDescriptor, ...]:
             "tools.interactive_shell.actions.propose_scheduled_delivery",
         ),
         ToolDescriptor(
+            "session_goal_complete",
+            (ToolSurface.ACTION,),
+            "interactive_shell",
+            None,
+            "tools.interactive_shell.actions.session_goal",
+        ),
+        ToolDescriptor(
             "session_goal_set",
             (ToolSurface.ACTION,),
             "interactive_shell",

@@ -63,6 +63,11 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
         "surfaces.cli.commands.integrations:integrations",
     ),
     CommandSpec(
+        "runbooks",
+        "Manage organization-owned runbook sources.",
+        "surfaces.cli.commands.runbooks:runbooks_command",
+    ),
+    CommandSpec(
         "guardrails",
         "Manage sensitive information guardrail rules.",
         "surfaces.cli.commands.guardrails:guardrails",

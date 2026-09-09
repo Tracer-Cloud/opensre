@@ -140,6 +140,27 @@ def test_auto_submitted_single_choice_is_not_echoed_as_a_user_turn() -> None:
     assert session.terminal.pending_choice_response == "Blue-green"
 
 
+def test_single_answer_with_its_question_marks_only_the_label_as_the_choice() -> None:
+    # Arrange: a single-menu answer arrives as "1. question\nlabel", auto-submitted.
+    from core.agent_harness.session.pending_choice import AskUserQuestion, format_ask_user_answers
+    from surfaces.interactive_shell.session import Session
+    from surfaces.interactive_shell.ui.input_prompt.rendering import render_submitted_prompt
+
+    session = Session()
+    session.terminal.awaiting_handoff_answer = True
+    session.terminal.last_input_autosubmitted = True
+    question = AskUserQuestion(label="", title="Which repository should I analyze?", options=("a",))
+    buffer = io.StringIO()
+    console = Console(file=buffer, force_terminal=False, highlight=False, width=80)
+
+    # Act
+    render_submitted_prompt(console, session, format_ask_user_answers((question,), ("acme/app",)))
+
+    # Assert: no second user row, and the acknowledgement filter sees the label alone.
+    assert buffer.getvalue() == ""
+    assert session.terminal.pending_choice_response == "acme/app"
+
+
 def test_choice_selection_strips_terminal_controls() -> None:
     buffer = io.StringIO()
     console = Console(file=buffer, force_terminal=False, highlight=False, width=80)
@@ -149,11 +170,12 @@ def test_choice_selection_strips_terminal_controls() -> None:
     output = buffer.getvalue()
     assert "\x1b" not in output
     assert "\x07" not in output
-    assert "Ask User" in output
-    assert "Deploy?" in output
-    assert "Canary" in output
+    # One answered line, not the question asked again under a new header.
+    assert "Ask User" not in output
+    assert "Deploy?" in output and "Canary" in output
+    assert output.strip().count("\n") == 0
     assert "✓" not in output
-    # Section gap above the card so it does not join Plan complete.
+    # Section gap above the line so it does not join Plan complete.
     assert output.startswith("\n")
 
 
@@ -166,10 +188,9 @@ def test_multi_select_choice_indents_every_selected_line() -> None:
     # Act
     render_choice_selection(console, "Select Complex Demos", answer)
 
-    # Assert: Ask User card — question, then every option indented under it.
+    # Assert: the question once, then every option indented under it.
     lines = [line.rstrip() for line in buffer.getvalue().splitlines() if line.strip()]
-    assert lines[0] == "Ask User"
-    assert "1.  Select Complex Demos" in lines[1] or lines[1].endswith("Select Complex Demos")
+    assert lines[0].endswith("Select Complex Demos")
     for label in ("Audit the architecture", "Find failing PRs", "Remediate alerts"):
         assert any(label in line and line.startswith(" ") for line in lines)
         assert label not in lines
@@ -188,7 +209,7 @@ def test_choice_selection_is_not_a_plan_step() -> None:
     )
 
     output = buffer.getvalue()
-    assert "Ask User" in output
+    assert "Ask User" not in output
     assert "Choose a Demo" in output
     assert "Explore a repo" in output
     assert "✓ Choose a Demo" not in output

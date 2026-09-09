@@ -1,17 +1,19 @@
 """Session goal — cross-turn continuation (distinct from ReAct Goal).
 
 Attach via an explicit host call (:func:`attach_session_goal`) or the structured
-``session_goal`` action tool. Do not detect goals by scanning user prose.
+``session_goal_set`` action tool. Do not detect goals by scanning user prose.
 
-Progress uses ``session_goal:done=<indices>`` in the assistant reply.
+Checklist ticks come from the ``session_goal_complete`` tool; a cheap-model
+judge decides met / not yet / impossible. Reply prose never ticks or closes.
 
 The host loop (:mod:`core.agent_harness.session_goal.run_until`) calls ``chat``
-until the goal is achieved, cleared, cancelled, or hits ``max_outer_turns``.
+until the goal is achieved, impossible, cleared, cancelled, or hits ``max_outer_turns``.
 
 Related leaf modules (import them directly — this module must not import them):
 
-* :mod:`core.agent_harness.session_goal.evaluate` — structured completion
-* :mod:`core.agent_harness.session_goal.confirm` — optional LLM confirm
+* :mod:`core.agent_harness.session_goal.evaluate` — host completion + evidence gate
+* :mod:`core.agent_harness.session_goal.judge` — cheap-model transcript verdict
+* :mod:`core.agent_harness.session_goal.validate` — cheap-model check of new ticks
 * :mod:`core.agent_harness.session_goal.progress` — progress / status-line formatting only
 * :mod:`core.agent_harness.session_goal.continuation` — session-goal continuation prompts
 * :mod:`core.agent_harness.session_goal.persist` — flush / restore
@@ -23,6 +25,7 @@ from __future__ import annotations
 
 import re
 import time
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -35,13 +38,14 @@ class SessionGoalStatus:
     ACTIVE = "active"
     PAUSED = "paused"
     ACHIEVED = "achieved"
+    IMPOSSIBLE = "impossible"
     CLEARED = "cleared"
     BUDGET_EXHAUSTED = "budget_exhausted"
     CANCELLED = "cancelled"
 
 
 class SessionGoalReason:
-    """Stable host reason strings for evaluate and LLM confirm.
+    """Stable host reason strings for evaluate and the judge.
 
     Call sites compare with ``==`` / helpers — do not invent parallel phrases.
     Never embed ``session_goal:…`` tag grammar here: progress reasons can land in
@@ -50,23 +54,25 @@ class SessionGoalReason:
 
     WORKING_PREFIX = "working"
     ACHIEVED_TOOL_EVIDENCE = "achieved with tool evidence"
-    ACHIEVED_HOST_SET = "achieved (host-set goal)"
     ACHIEVED_GENERIC = "goal achieved"
     CHECKLIST_COMPLETE = "checklist complete"
-    # Short checklist + tools + reply in one turn, but the model forgot done= tags.
-    CHECKLIST_COMPLETE_SAME_TURN = "checklist complete (same-turn answer)"
+    IMPOSSIBLE = "impossible"
+    NEED_TOOL_EVIDENCE = "not yet: need successful tool work"
     WAITING_HOST_SIGNAL = "waiting for an achieved signal"
     WAITING_TOOL_EVIDENCE = "waiting for an achieved signal with tool evidence"
     WAITING_USER_CHOICE = "waiting for user choice"
     PAUSED_USER_CHOICE = "paused — waiting for your choice"
+    PAUSED_NO_PROGRESS = "paused — no progress after 2 turns"
+    PAUSED_SAME_VERDICT = "paused — the judge returned the same verdict twice"
+    # A goal turn raised (model call rejected, provider down): the loop must not
+    # spend the next turn on the same failure.
+    PAUSED_TURN_FAILED = "paused — the last turn failed; fix the cause, then /goal resume"
     # Distinct from PAUSED_USER_CHOICE: user ran ``/goal pause`` (status=paused).
     PAUSED_BY_USER = "paused by you"
     BUDGET_EXHAUSTED = "session-goal turn budget exhausted"
     CANCELLED = "goal cancelled"
     CLEARED = "goal cleared"
-    LLM_CONFIRM_NOT_REACHED = "LLM confirm: not reached"
-    LLM_CONFIRM_UNAVAILABLE = "LLM confirm unavailable; staying active"
-    NO_TOOL_EVIDENCE = "achieved tag ignored; no tool evidence yet"
+    JUDGE_UNAVAILABLE = "judge unavailable; staying active"
 
     @staticmethod
     def is_working(reason: str) -> bool:
@@ -86,11 +92,6 @@ class SessionGoalReason:
             return f"checklist {done}/{total} done"
         return f"checklist {done}/{total} done — next: {next_item}"
 
-    @staticmethod
-    def achieved_ignored_incomplete(done: int, total: int, next_item: str | None) -> str:
-        next_bit = f" — next: {next_item}" if next_item else ""
-        return f"achieved tag ignored; checklist {done}/{total} incomplete{next_bit}"
-
 
 # Character budgets for goal text. The ellipsis arithmetic lives in
 # ``truncate_message`` so no call site repeats ``limit - len("...")``.
@@ -106,16 +107,17 @@ MAX_GOAL_CONDITION_CHARS = 400
 # Session-goal turns a goal may run before the host stops on budget.
 _DEFAULT_MAX_OUTER_TURNS = 5
 
-_DONE_TAG = re.compile(r"session_goal:done=([0-9,\s]+)")
-# Progress tokens removed before the user sees the reply. Match the bare token
-# (not only whitespace-bounded forms) so ``done=1,session_goal:achieved`` and
-# leading/trailing comma-joined tags never leak through a display path.
-_PROGRESS_TAG = re.compile(
-    r"session_goal:(?:achieved|done=[0-9]+(?:\s*,\s*[0-9]+)*)",
-)
 # Accidental paste of the interactive-shell prompt line into user text /
 # goal conditions (``[1] ❯ question`` → ``question``).
 _SHELL_PROMPT_CHROME = re.compile(r"^(?:\[\d+\]\s*)?❯\s+")
+# Bulleted steps on their own lines: ``- item`` / ``* item``.
+_BULLET_STEPS = re.compile(r"(?:^|\n)\s*[-*]\s+(\S.+)")
+# A step number: ``1. ``, ``2) ``, ``(3) `` — at a line start, after a space,
+# or straight after a colon or semicolon. ``group(1)`` is the opening
+# parenthesis when the marker is ``(n)``.
+_STEP_NUMBER = re.compile(r"(?:^|(?<=[\s:;]))(\()?(\d+)[.)]\s+")
+# Where an inline enumeration may begin: after these, ``1. …`` is a list, not prose.
+_LIST_LEAD_PUNCTUATION = (":", ";")
 
 
 @dataclass(slots=True)
@@ -148,10 +150,26 @@ class SessionGoal:
     token_baseline_input: int = 0
     token_baseline_output: int = 0
     # True when attached via ``/goal set``. While ACTIVE or PAUSED, a new goal
-    # must not replace it. Host-owned condition-only goals may achieve on the
-    # ``session_goal:achieved`` tag without tool evidence (product rule for the
-    # slash path — agent-attached goals still require tools).
+    # must not replace it. ``GOAL_REACHED`` still requires successful tool work.
     host_owned: bool = False
+    # ``turns_used`` when ``completed`` last grew. Stall detection compares
+    # against this so a later plateau still pauses after two idle turns.
+    last_progress_turns_used: int = 0
+    # The judge's previous verdict reason, shown to the judge next time so it
+    # can say whether its new verdict repeats the same blocking problem.
+    last_verdict: str = ""
+    # The judge said this turn's verdict repeats the previous one. Ephemeral.
+    verdict_repeated: bool = False
+    # Checklist indices added since the last evaluate. Ephemeral — not persisted.
+    new_ticks: frozenset[int] = frozenset()
+    # Successful calls this turn to the goal's own tools (``session_goal_set``,
+    # ``session_goal_complete``). Bookkeeping, not evidence — subtracted before
+    # the evidence gate so a tick cannot vouch for itself. Ephemeral.
+    bookkeeping_calls: int = 0
+    # Earlier raw observations for reviewers; None means the evidence exceeded
+    # the review budget and must not be treated as complete after restore.
+    tool_evidence: tuple[str, ...] | None = ()
+    tool_success_seen: bool = False
 
     def with_status(self, status: str) -> SessionGoal:
         return replace(self, status=status)
@@ -160,7 +178,33 @@ class SessionGoal:
         return replace(self, turns_used=self.turns_used + 1)
 
     def with_completed(self, completed: frozenset[int]) -> SessionGoal:
-        return replace(self, completed=completed)
+        if completed == self.completed:
+            return self
+        added = completed - self.completed
+        if added:
+            return replace(
+                self,
+                completed=completed,
+                last_progress_turns_used=self.turns_used,
+                new_ticks=added,
+            )
+        return replace(self, completed=completed, new_ticks=frozenset())
+
+    def with_bookkeeping_call(self) -> SessionGoal:
+        """Count one goal-tool call so it does not pass as tool evidence."""
+        return replace(self, bookkeeping_calls=self.bookkeeping_calls + 1)
+
+    def with_verdict(self, reason: str, *, repeated: bool) -> SessionGoal:
+        """Remember the judge's reason for next time, and whether it repeated the last one."""
+        return replace(
+            self,
+            last_verdict=truncate_message(reason.strip(), MAX_GOAL_REASON_CHARS),
+            verdict_repeated=repeated,
+        )
+
+    def with_tool_progress(self) -> SessionGoal:
+        """Mark this turn as progress so a later no-tool plateau can still stall."""
+        return replace(self, last_progress_turns_used=self.turns_used)
 
     def with_finding(self, finding: str) -> SessionGoal:
         """Append one turn's answer to what later turns are told."""
@@ -198,6 +242,56 @@ class SessionGoal:
         return unfinished[0] if unfinished else None
 
 
+def _starts_a_list(condition: str, first: re.Match[str]) -> bool:
+    """True when the first marker sits where an enumeration can begin.
+
+    ``(1)`` is unambiguous anywhere. ``1.`` / ``1)`` count only at the start of
+    the condition, at a line start, or after a colon or semicolon — a ``1.``
+    in the middle of a sentence is prose.
+    """
+    if first.group(1):
+        return True
+    lead = condition[: first.start()].rstrip(" \t")
+    return not lead or lead.endswith("\n") or lead.endswith(_LIST_LEAD_PUNCTUATION)
+
+
+def _numbered_steps(condition: str) -> tuple[str, ...]:
+    """Steps numbered 1, 2, 3… in order, on one line or several; else nothing."""
+    marks = list(_STEP_NUMBER.finditer(condition))
+    if len(marks) < 2 or not _starts_a_list(condition, marks[0]):
+        return ()
+    if [int(mark.group(2)) for mark in marks] != list(range(1, len(marks) + 1)):
+        return ()
+    items: list[str] = []
+    for position, mark in enumerate(marks):
+        end = marks[position + 1].start() if position + 1 < len(marks) else len(condition)
+        items.append(condition[mark.end() : end].strip().rstrip(",;").strip())
+    return tuple(item for item in items if item)
+
+
+def derive_session_goal_checklist(
+    condition: str,
+    items: Sequence[str] = (),
+) -> tuple[str, ...]:
+    """Checklist for a new goal: caller items, else two or more steps written into ``condition``.
+
+    Steps are ``1. … 2. …`` (also ``1)`` / ``(1)``, inline or one per line) or
+    bulleted lines. An inline ``1.`` counts only where a list can begin: the
+    start of the condition, a line start, or after a colon or semicolon;
+    ``(1)`` counts anywhere. A single-item checklist would only echo the
+    condition, so a condition without enumerated steps gets no checklist and
+    the judge alone decides.
+    """
+    provided = tuple(str(item).strip() for item in items if str(item).strip())
+    if provided:
+        return provided
+    numbered = _numbered_steps(condition)
+    if len(numbered) >= 2:
+        return numbered
+    bullets = tuple(match.group(1).strip() for match in _BULLET_STEPS.finditer(condition))
+    return bullets if len(bullets) >= 2 else ()
+
+
 def build_session_goal(
     condition: str,
     *,
@@ -205,14 +299,14 @@ def build_session_goal(
     max_outer_turns: int | None = None,
 ) -> SessionGoal:
     """Build an active agent-attached goal from structured tool input."""
-    clean_items = tuple(item.strip() for item in checklist if item.strip())
-    max_turns = max(1, max_outer_turns) if max_outer_turns is not None else _DEFAULT_MAX_OUTER_TURNS
-    if clean_items and max_outer_turns is None:
-        max_turns = max(max_turns, len(clean_items))
     goal_condition = truncate_message(
         strip_shell_prompt_chrome(condition),
         MAX_GOAL_CONDITION_CHARS,
     )
+    clean_items = derive_session_goal_checklist(goal_condition, checklist)
+    max_turns = max(1, max_outer_turns) if max_outer_turns is not None else _DEFAULT_MAX_OUTER_TURNS
+    if clean_items and max_outer_turns is None:
+        max_turns = max(max_turns, len(clean_items))
     return SessionGoal(
         condition=goal_condition,
         max_outer_turns=max_turns,
@@ -272,19 +366,33 @@ def attach_session_goal(session: Any, goal: SessionGoal) -> SessionGoal:
     Fresh active goals get a start stamp (duration / token delta) unless the
     caller already set ``started_at`` (e.g. restore from payload). Leading
     shell prompt chrome in ``condition`` is stripped so a pasted ``[n] ❯``
-    line never becomes the durable goal text.
+    line never becomes the durable goal text. A new goal identity drops the
+    session task plan so completed steps from earlier work cannot credit it.
     """
+    previous = getattr(session, "session_goal", None)
+    new_identity = goal.started_at is None or (
+        isinstance(previous, SessionGoal) and previous.started_at != goal.started_at
+    )
     cleaned = strip_shell_prompt_chrome(goal.condition)
     if cleaned != goal.condition:
         goal = replace(goal, condition=cleaned)
     if goal.started_at is None and goal.status == SessionGoalStatus.ACTIVE:
         goal = mark_session_goal_started(goal, session=session)
     session.session_goal = goal
+    if new_identity:
+        _discard_session_task_plan(session)
     return goal
 
 
 def clear_session_goal(session: Any) -> None:
     session.session_goal = None
+    _discard_session_task_plan(session)
+
+
+def _discard_session_task_plan(session: Any) -> None:
+    """Drop the live plan so a later goal cannot inherit completed steps."""
+    if hasattr(session, "task_plan"):
+        session.task_plan = None
 
 
 def session_goal_elapsed_seconds(
@@ -344,48 +452,6 @@ def session_goal_is_attached(session: Any) -> bool:
     return bool(goal.status in (SessionGoalStatus.ACTIVE, SessionGoalStatus.PAUSED))
 
 
-def _done_indices_from_text(text: str) -> frozenset[int]:
-    found: set[int] = set()
-    for match in _DONE_TAG.finditer(text):
-        for piece in match.group(1).split(","):
-            piece = piece.strip()
-            if not piece:
-                continue
-            try:
-                found.add(int(piece))
-            except ValueError:
-                continue
-    return frozenset(found)
-
-
-def apply_session_goal_progress(goal: SessionGoal, text: str) -> SessionGoal:
-    """Merge ``session_goal:done=…`` indices from ``text`` into ``goal.completed``."""
-    if not text:
-        return goal
-    newly = _done_indices_from_text(text)
-    if not newly:
-        return goal
-    if goal.checklist:
-        newly = frozenset(i for i in newly if 0 <= i < len(goal.checklist))
-    if not newly:
-        return goal
-    return goal.with_completed(goal.completed | newly)
-
-
-def strip_session_goal_progress_tags(text: str) -> str:
-    """Remove harness progress tags from user-visible assistant text."""
-    if not text:
-        return text
-    cleaned = _PROGRESS_TAG.sub("", text)
-    cleaned = re.sub(r"[ \t]*,[ \t]*", ", ", cleaned)
-    cleaned = re.sub(r"^[,\s]+", "", cleaned)
-    cleaned = re.sub(r"[,\s]+$", "", cleaned)
-    cleaned = re.sub(r"[ \t]+\n", "\n", cleaned)
-    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
-    cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
-    return cleaned.strip()
-
-
 def strip_shell_prompt_chrome(text: str) -> str:
     """Strip leading ``[n] ❯`` prompt chrome pasted into user/goal text."""
     if not text:
@@ -407,6 +473,8 @@ def derive_session_goal_reason(goal: SessionGoal) -> str:
     """
     if goal.status == SessionGoalStatus.ACHIEVED:
         return SessionGoalReason.ACHIEVED_GENERIC
+    if goal.status == SessionGoalStatus.IMPOSSIBLE:
+        return goal.last_reason.strip() or SessionGoalReason.IMPOSSIBLE
     if goal.status == SessionGoalStatus.PAUSED:
         return SessionGoalReason.PAUSED_BY_USER
     if goal.status == SessionGoalStatus.BUDGET_EXHAUSTED:
@@ -439,10 +507,10 @@ __all__ = [
     "SessionGoal",
     "SessionGoalReason",
     "SessionGoalStatus",
-    "apply_session_goal_progress",
     "attach_session_goal",
     "build_session_goal",
     "clear_session_goal",
+    "derive_session_goal_checklist",
     "derive_session_goal_reason",
     "mark_session_goal_started",
     "refresh_session_goal_reason",
@@ -451,6 +519,5 @@ __all__ = [
     "session_goal_is_attached",
     "session_goal_is_paused",
     "session_goal_token_delta",
-    "strip_session_goal_progress_tags",
     "strip_shell_prompt_chrome",
 ]

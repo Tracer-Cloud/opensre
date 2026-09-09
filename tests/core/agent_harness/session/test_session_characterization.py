@@ -26,6 +26,8 @@ _CORE_FIELDS = (
     "pending_schedule_offer",
     "pending_user_choice",
     "ask_user_rounds",
+    "active_skill",
+    "active_skill_tools",
     "task_plan",
     "task_plan_work",
     "task_plan_work_step_texts",

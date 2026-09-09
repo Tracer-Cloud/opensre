@@ -251,7 +251,11 @@ def _merged_pr(row: dict[str, Any], *, since: datetime) -> MergedPullRequest | N
     head_repo = str(repo.get("full_name") or "").strip() if isinstance(repo, dict) else ""
     if not ref:
         return None
-    return MergedPullRequest(number=number, branch=ref, head_repo=head_repo, merged_at=merged_at)
+    user = row.get("user")
+    author = str(user.get("login") or "").strip() if isinstance(user, dict) else ""
+    return MergedPullRequest(
+        number=number, branch=ref, head_repo=head_repo, merged_at=merged_at, author=author
+    )
 
 
 def parse_run(row: dict[str, Any]) -> WorkflowRun | None:

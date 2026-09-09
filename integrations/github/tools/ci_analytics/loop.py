@@ -7,10 +7,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from zoneinfo import ZoneInfo
 
 from config.constants.paths import OPENSRE_HOME_DIR
-from config.runtime_metadata.probes import local_tz_name
 from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_PROMPT_PARAM,
     LOOP_REPORT_ARGS_PARAM,
@@ -24,6 +22,10 @@ from infrastructure.scheduling.scheduler.loops import (
 )
 from infrastructure.scheduling.scheduler.storage import list_tasks, update_task
 from infrastructure.scheduling.scheduler.types import Provider, TaskKind
+from integrations.github.tools.ci_analytics.working_hours import (
+    local_timezone,
+    local_working_hours,
+)
 
 DEFAULT_LOOP_TIME = "08:00"
 LOOP_WINDOW_DAYS = 7
@@ -125,9 +127,8 @@ def build_report(args: Mapping[str, str], *, snapshot_dir: Path | None = None) -
     the numbers can be traced back to the JSON snapshot named at the end.
     Raises ``RuntimeError`` with a generic message when GitHub cannot be read.
     """
-    from integrations.github.client import GitHubApiError, GitHubRestClient, resolve_github_token
-    from integrations.github.tools.ci_analytics.collector import collect_runs
-    from integrations.github.tools.ci_analytics.metrics import compute_report
+    from integrations.github.client import GitHubApiError, resolve_github_token
+    from integrations.github.tools.ci_analytics.analysis import analyze_repository
     from integrations.github.tools.ci_analytics.render import headline, render_markdown
     from integrations.github.tools.ci_analytics.tool import report_payload
 
@@ -143,22 +144,12 @@ def build_report(args: Mapping[str, str], *, snapshot_dir: Path | None = None) -
         )
     now = datetime.now(UTC)
     try:
-        collected = collect_runs(
-            GitHubRestClient(token), owner=owner, repo=repo, window_days=days, now=now
+        analysis = analyze_repository(
+            owner, repo, token=token, days=days, working_hours=local_working_hours(), now=now
         )
     except (GitHubApiError, ValueError) as exc:
         raise RuntimeError(f"Could not read the GitHub Actions history of {owner}/{repo}.") from exc
-    report = compute_report(
-        owner=owner,
-        repo=repo,
-        default_branch=collected.default_branch,
-        window_days=days,
-        branch_runs=collected.branch_runs,
-        pr_runs=collected.pr_runs,
-        merged_prs=collected.merged_prs,
-        now=now,
-        coverage_notices=collected.coverage_notices,
-    )
+    report = analysis.report
     snapshot = _write_snapshot(
         snapshot_dir or OPENSRE_HOME_DIR / SNAPSHOT_DIRNAME,
         owner,
@@ -174,16 +165,6 @@ def _write_snapshot(root: Path, owner: str, repo: str, now: datetime, payload: d
     target.parent.mkdir(parents=True, exist_ok=True)
     target.write_text(json.dumps(payload, indent=2, sort_keys=True, default=str), encoding="utf-8")
     return target
-
-
-def local_timezone() -> str:
-    """This machine's IANA timezone, or UTC when it cannot be resolved."""
-    name = local_tz_name()
-    try:
-        ZoneInfo(name)
-    except (KeyError, ValueError, OSError):
-        return "UTC"
-    return name
 
 
 def loop_card(scheduled: ScheduledLoop) -> list[str]:

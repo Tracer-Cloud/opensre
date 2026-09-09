@@ -21,12 +21,18 @@ from core.agent_harness.spi.session_goal import (
     SessionGoalStatus,
     attach_session_goal,
     clear_session_goal,
+    derive_session_goal_checklist,
     format_session_goal_progress,
+    goal_paint_signature,
     session_goal_is_active,
     session_goal_is_attached,
     session_goal_is_paused,
 )
-from core.agent_harness.spi.session_state import clear_pending_autosubmit, set_auto_command
+from core.agent_harness.spi.session_state import (
+    clear_pending_autosubmit,
+    session_terminal,
+    set_auto_command,
+)
 from infrastructure.evidence.evidence_compaction import truncate_message
 from infrastructure.terminal.theme import DIM, ERROR, HIGHLIGHT
 from surfaces.interactive_shell.runtime import Session
@@ -108,24 +114,39 @@ def _set(session: Session, console: Console, args: list[str]) -> bool:
     if not condition:
         _print_set_usage(console)
         return True
+    checklist = derive_session_goal_checklist(condition)
     goal = SessionGoal(
         condition=condition,
         max_outer_turns=max_turns,
         status=SessionGoalStatus.ACTIVE,
         host_owned=True,
+        checklist=checklist,
+        step_count=len(checklist) or None,
     )
     goal = attach_session_goal(session, goal)
-    # Setting starts work immediately: queue the condition on the REPL loop
-    # (no-op terminal → turn-outcome hint on headless SessionCore).
-    set_auto_command(session, condition)
+    _queue_condition(session, condition)
     _persist_goal_state(session)
-    print_repl_text(console, format_session_goal_progress(goal, session=session), markup=False)
+    _print_goal_block(session, console, goal)
     console.print(
         f"[{DIM}]→ next: condition runs as its own prompt turn "
         f"(look for [/][{HIGHLIGHT}][N] ❯[/][{DIM}] below). [/]"
         f"[{DIM}]{_HELP_FOOTER}[/]"
     )
     return True
+
+
+def _queue_condition(session: Session, condition: str) -> None:
+    """Start the work: the REPL autosubmits the condition; headless hosts run it in-loop."""
+    if session_terminal(session) is not None:
+        set_auto_command(session, condition)
+
+
+def _print_goal_block(session: Session, console: Console, goal: SessionGoal) -> None:
+    """Print the full block once and remember it, so the loop repaints one line per turn."""
+    print_repl_text(console, format_session_goal_progress(goal, session=session), markup=False)
+    terminal = session_terminal(session)
+    if terminal is not None:
+        terminal.goal_paint_signature = goal_paint_signature(goal)
 
 
 def _pause(session: Session, console: Console) -> bool:
@@ -170,9 +191,9 @@ def _resume(session: Session, console: Console) -> bool:
         else SessionGoalReason.WAITING_TOOL_EVIDENCE
     )
     resumed = attach_session_goal(session, resumed)
-    set_auto_command(session, resumed.condition)
+    _queue_condition(session, resumed.condition)
     _persist_goal_state(session)
-    print_repl_text(console, format_session_goal_progress(resumed, session=session), markup=False)
+    _print_goal_block(session, console, resumed)
     console.print(
         f"[{DIM}]→ next: condition runs as its own prompt turn "
         f"(look for [/][{HIGHLIGHT}][N] ❯[/][{DIM}] below). [/]"
@@ -197,9 +218,9 @@ def _edit(session: Session, console: Console, args: list[str]) -> bool:
     edited = replace(goal, condition=condition)
     edited = attach_session_goal(session, edited)
     if session_goal_is_active(session):
-        set_auto_command(session, condition)
+        _queue_condition(session, condition)
     _persist_goal_state(session)
-    print_repl_text(console, format_session_goal_progress(edited, session=session), markup=False)
+    _print_goal_block(session, console, edited)
     if session_goal_is_active(session):
         console.print(
             f"[{DIM}]→ next: updated condition runs as its own prompt turn "

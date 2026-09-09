@@ -4,9 +4,9 @@ slug: "quickstart"
 ---
 
 <Steps>
-  <Step title="Install OpenSRE">
+  <Step title="Install OpenSRE" id="install-opensre">
     <Tabs>
-      <Tab title="macOS / Linux">
+      <Tab title="macOS" id="install-opensre-macos">
         Choose one install method. The one-line installer tracks the latest stable build from `main`.
 
         ```bash
@@ -22,7 +22,23 @@ slug: "quickstart"
           ![Installing OpenSRE with the one-line curl installer](/images/quickstart-install.gif)
         </Frame>
       </Tab>
-      <Tab title="Windows">
+      <Tab title="Linux" id="install-opensre-linux">
+        Choose one install method. The one-line installer tracks the latest stable build from `main`.
+
+        ```bash
+        curl -fsSL https://install.opensre.com | bash
+        ```
+
+        ```bash
+        brew tap tracer-cloud/tap
+        brew install tracer-cloud/tap/opensre
+        ```
+
+        <Frame>
+          ![Installing OpenSRE with the one-line curl installer](/images/quickstart-install.gif)
+        </Frame>
+      </Tab>
+      <Tab title="Windows" id="install-opensre-windows">
         ```powershell
         irm https://install.opensre.com | iex
         ```
@@ -32,6 +48,8 @@ slug: "quickstart"
         </Frame>
       </Tab>
     </Tabs>
+
+    Before installing, check the [supported platforms and architectures](https://github.com/Tracer-Cloud/opensre/blob/main/SETUP.md#supported-platforms-and-architectures) table for release availability and CI coverage, including the Windows arm64 limitation.
 
   </Step>
 
@@ -45,7 +63,12 @@ slug: "quickstart"
     The browser opens the OpenSRE sign-up page, where you can use email or another enabled provider. A successful login activates the OpenSRE-hosted model. When setup finishes, OpenSRE validates the new session and opens the interactive shell. Add integrations later with `opensre integrations setup <service>` when you want OpenSRE to query a specific tool.
 
     <Tabs>
-      <Tab title="macOS / Linux">
+      <Tab title="macOS">
+        <Frame>
+          ![Signing in to an OpenSRE account from setup](/images/quickstart-onboard.gif)
+        </Frame>
+      </Tab>
+      <Tab title="Linux">
         <Frame>
           ![Signing in to an OpenSRE account from setup](/images/quickstart-onboard.gif)
         </Frame>
@@ -79,7 +102,12 @@ slug: "quickstart"
     Inside the interactive shell, `/help` lists commands, `/status` shows the current setup, `/effort` changes reasoning effort, and `/exit` closes the shell.
 
     <Tabs>
-      <Tab title="macOS / Linux">
+      <Tab title="macOS">
+        <Frame>
+          ![Running an OpenSRE turn on a sample incident](/images/quickstart-investigate.gif)
+        </Frame>
+      </Tab>
+      <Tab title="Linux">
         <Frame>
           ![Running an OpenSRE turn on a sample incident](/images/quickstart-investigate.gif)
         </Frame>

@@ -442,6 +442,110 @@ def test_stale_rerun_after_the_merge_waits_only_until_the_merge() -> None:
     assert report.blocked_minutes == 24 * 60 - 10
 
 
+def test_working_hours_count_only_the_part_of_a_wait_a_developer_sat_through() -> None:
+    # Arrange: CI failed Friday 16:00 UTC and was re-run to green Monday 11:00 UTC.
+    # _T0 is Tuesday 09:00; Friday 16:00 is +3 days +7 hours.
+    friday_1600 = 3 * 24 * 60 + 7 * 60
+    monday_1100 = friday_1600 + 2 * 24 * 60 + 19 * 60
+    pr_runs = [
+        _run(
+            1,
+            sha="m",
+            conclusion="success",
+            start_minutes=monday_1100,
+            queued_minutes=monday_1100 - friday_1600,
+            attempt=2,
+            earlier_failure_started_at=_T0 + timedelta(minutes=friday_1600),
+        ),
+    ]
+    merged = (
+        MergedPullRequest(
+            number=1,
+            branch="feat/x",
+            head_repo="",
+            merged_at=_T0 + timedelta(days=7),
+            author="alice",
+        ),
+    )
+
+    # Act
+    report = compute_report(
+        owner="o",
+        repo="r",
+        default_branch="main",
+        window_days=30,
+        branch_runs=[],
+        pr_runs=pr_runs,
+        merged_prs=merged,
+        now=_T0 + timedelta(days=8),
+    )
+
+    # Assert: expected green Friday 16:10; wall clock to Monday 11:10 is 67h, working
+    # hours (Mon-Fri 09-18 UTC) are Friday 16:10-18:00 plus Monday 09:00-11:10 = 4h.
+    delay = report.blocked_pr_delays[0]
+    assert round(delay.delay_minutes) == 67 * 60
+    assert round(delay.working_minutes) == 240
+    assert delay.author == "alice"
+    assert report.blocked_working_minutes == delay.working_minutes
+    assert "Mon-Fri 09:00-18:00 UTC" in report.working_hours_label
+
+
+def test_developer_waits_group_blocked_prs_by_author() -> None:
+    # Arrange: alice waited on two PRs, bob on one, all inside working hours.
+    merged = tuple(
+        MergedPullRequest(
+            number=n, branch=f"feat/{n}", head_repo="", merged_at=_T0 + timedelta(days=1), author=a
+        )
+        for n, a in ((1, "alice"), (2, "alice"), (3, "bob"))
+    )
+    pr_runs = []
+    for n in (1, 2, 3):
+        pr_runs.append(_run(n * 10, branch=f"feat/{n}", sha=f"s{n}", conclusion="failure"))
+        pr_runs.append(
+            _run(
+                n * 10 + 1, branch=f"feat/{n}", sha=f"s{n}", conclusion="success", start_minutes=50
+            )
+        )
+
+    # Act
+    report = compute_report(
+        owner="o",
+        repo="r",
+        default_branch="main",
+        window_days=7,
+        branch_runs=[],
+        pr_runs=pr_runs,
+        merged_prs=merged,
+        now=_T0 + timedelta(days=2),
+    )
+
+    # Assert: 50 minutes per PR; alice 100, bob 50; per week over a 7-day window.
+    waits = report.developer_waits
+    assert [(w.login, w.pull_requests, w.working_minutes) for w in waits] == [
+        ("alice", 2, 100.0),
+        ("bob", 1, 50.0),
+    ]
+    assert waits[0].working_minutes_per_week == 100.0
+    assert report.developers_affected == 2
+    assert "Heaviest hit: alice 1.7h/week over 2 PRs" in render_markdown(report)
+
+
+def test_merged_pr_row_keeps_the_author_login() -> None:
+    from integrations.github.tools.ci_analytics.collector import _merged_pr
+
+    row = {
+        "number": 7,
+        "merged_at": "2026-09-02T09:00:00Z",
+        "updated_at": "2026-09-02T09:00:00Z",
+        "head": {"ref": "feat/x", "repo": {"full_name": "o/r"}},
+        "user": {"login": "alice"},
+    }
+
+    parsed = _merged_pr(row, since=_T0 - timedelta(days=30))
+
+    assert parsed is not None and parsed.author == "alice"
+
+
 def test_source_code_failures_do_not_add_blocked_time() -> None:
     pr_runs = [
         _run(1, sha="old", conclusion="failure", start_minutes=0),
@@ -951,7 +1055,15 @@ def test_render_shows_the_kpi_block_and_classification() -> None:
     assert "GitHub Actions executions: **3**" in text
     assert "Raw PR workflow failure rate: **50.0%**" in text
     assert "CI reliability failures, passed later on the same commit: **1**" in text
-    assert "Developer time blocked by unreliable CI: 40m" in text
+    assert (
+        "Developer Blocked Time, estimated bottom-up: 40m of working time across 1 developer"
+        in text
+    )
+    # The calculation is shown, not just its result: inputs, formula, sum, division.
+    assert "expected green = first run queued + normal duration" in text
+    assert "| + normal | = expected green |" in text
+    assert "Σ blocked = 40m of working time across 1 merged PR" in text
+    assert "÷ 1 developer = 40m each in 30 days" in text
     assert "| CI | 3 | 1 | 1 | 10m |" in text
 
 
@@ -968,7 +1080,7 @@ def test_tool_failure_text_never_carries_exception_detail() -> None:
     with (
         patch("integrations.github.tools.ci_analytics.tool.resolve_github_token", return_value="t"),
         patch(
-            "integrations.github.tools.ci_analytics.tool.collect_runs",
+            "integrations.github.tools.ci_analytics.analysis.collect_runs",
             side_effect=GitHubApiError(secret_detail, status_code=403),
         ),
     ):
@@ -993,7 +1105,9 @@ def test_tool_renders_report_from_collected_runs() -> None:
     )
     with (
         patch("integrations.github.tools.ci_analytics.tool.resolve_github_token", return_value="t"),
-        patch("integrations.github.tools.ci_analytics.tool.collect_runs", return_value=collected),
+        patch(
+            "integrations.github.tools.ci_analytics.analysis.collect_runs", return_value=collected
+        ),
     ):
         result = analyze_github_ci_reliability(owner="o", repo="r", days=7)
 
@@ -1001,8 +1115,8 @@ def test_tool_renders_report_from_collected_runs() -> None:
     assert result["reliability_failures"] == 1
     assert result["blocked_minutes"] == 40.0
     assert result["headline"] == (
-        "Unreliable CI blocked merged pull requests for 40m in the last 7 days; "
-        "the typical blocked PR waited 40m, the longest 40m."
+        "Unreliable CI cost 1 developer 40m of working time in the last 7 days, up to 40m a "
+        "week for the worst hit; 40m of wall-clock wait across 1 merged PR."
     )
     assert "Coverage notice: sample" in result["response_text"]
 
@@ -1034,7 +1148,9 @@ def test_tool_shows_progress_lines_around_the_painted_report() -> None:
 
     with (
         patch("integrations.github.tools.ci_analytics.tool.resolve_github_token", return_value="t"),
-        patch("integrations.github.tools.ci_analytics.tool.collect_runs", return_value=collected),
+        patch(
+            "integrations.github.tools.ci_analytics.analysis.collect_runs", return_value=collected
+        ),
     ):
         result = analyze_github_ci_reliability(owner="o", repo="r[1]", days=7, context=context)
 

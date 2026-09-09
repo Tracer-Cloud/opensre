@@ -308,7 +308,7 @@ def _github_star_history_case() -> ToolFailureCase:
 def _github_ci_analytics_case() -> ToolFailureCase:
     def patch(mp: pytest.MonkeyPatch) -> None:
         from integrations.github.client import GitHubApiError
-        from integrations.github.tools.ci_analytics import tool as mod
+        from integrations.github.tools.ci_analytics import analysis as mod
 
         mp.setattr(mod, "collect_runs", MagicMock(side_effect=GitHubApiError("boom")))
 
@@ -697,6 +697,34 @@ def _x_mcp_call_tool_case() -> ToolFailureCase:
     )
 
 
+def _runbook_guidance_case() -> ToolFailureCase:
+    def patch(mp: pytest.MonkeyPatch) -> None:
+        from tools.system.runbook_guidance_tool import tool as mod
+
+        mp.setattr(
+            mod,
+            "load_runbook_sources",
+            MagicMock(side_effect=RuntimeError("config")),
+        )
+
+    def invoke() -> dict[str, Any]:
+        from core.tool import AgentToolContext
+        from tools.system.runbook_guidance_tool import load_runbook_guidance
+
+        return load_runbook_guidance(
+            alertname="CheckoutDown",
+            context=AgentToolContext(resolved_integrations={}),
+        )
+
+    return ToolFailureCase(
+        "runbook_guidance",
+        patch,
+        invoke,
+        "load_runbook_guidance",
+        "knowledge",
+    )
+
+
 _TOOL_FAILURE_CASES: list[ToolFailureCase] = [
     _azure_case(),
     _openobserve_case(),
@@ -723,6 +751,7 @@ _TOOL_FAILURE_CASES: list[ToolFailureCase] = [
     _sentry_mcp_call_tool_case(),
     _x_mcp_list_case(),
     _x_mcp_call_tool_case(),
+    _runbook_guidance_case(),
 ]
 
 
@@ -918,6 +947,7 @@ _MIGRATED_TOOL_NAMES: frozenset[str] = frozenset(
         # X MCP — both swallow sites in x_mcp_tool/__init__.py.
         "list_x_tools",
         "call_x_tool",
+        "load_runbook_guidance",
     }
 )
 
@@ -1151,6 +1181,7 @@ _TOOLS_WITHOUT_DELIBERATE_CATCH: frozenset[str] = frozenset(
         "search_sentry_issues",
         "shell_run",
         "skill_view",
+        "session_goal_complete",
         "session_goal_set",
         "propose_scheduled_delivery",
         "slack_add_reaction",

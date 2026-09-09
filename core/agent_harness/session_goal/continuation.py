@@ -32,6 +32,10 @@ def continuation_prompt(goal: SessionGoal) -> str:
             "not replace it with a different number silently.\n\n"
         )
     unfinished = goal.unfinished_items
+    follow_reason = (
+        "Follow the last progress reason. Do not claim the goal is met in prose — "
+        "the host judge decides."
+    )
     if unfinished:
         pending = "\n".join(f"  - [{index}] {item}" for index, item in unfinished)
         return (
@@ -40,26 +44,14 @@ def continuation_prompt(goal: SessionGoal) -> str:
             f"{reason_block}"
             "Unfinished checklist items (0-based indices):\n"
             f"{pending}\n\n"
-            "Take the next unfinished item now. When you complete an item, include "
-            "`session_goal:done=<index>` (comma-separate multiple). When every "
-            "item is done, you may also include `session_goal:achieved`."
-        )
-    if goal.host_owned:
-        return (
-            "[session_goal] Continue the active goal without asking whether to "
-            f"continue. Goal: {goal.condition}\n\n"
-            f"{reason_block}"
-            "Answer the condition directly. Do not run `/goal` as a tool. When the "
-            "condition is met, include the exact tag `session_goal:achieved` in "
-            "your reply (no further tool work required for a host-set goal)."
+            "Take the next unfinished item now. When you complete an item, call "
+            f"session_goal_complete with that index. {follow_reason}"
         )
     return (
         "[session_goal] Continue the active goal without asking whether to "
         f"continue. Goal: {goal.condition}\n\n"
         f"{reason_block}"
-        "Take the next unfinished step now. When the goal is met after real tool "
-        "work, include the exact tag `session_goal:achieved` in your reply. "
-        "Do not emit that tag with no tool evidence — the host will ignore it."
+        f"Take the next unfinished step now. {follow_reason}"
     )
 
 

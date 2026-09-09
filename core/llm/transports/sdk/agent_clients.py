@@ -286,7 +286,7 @@ class AnthropicAgentClient:
                 f"{self.provider_name} API returned an unexpected response: {type(response).__name__}"
             )
 
-        emit_provider_usage(
+        input_tokens, output_tokens = emit_provider_usage(
             self._model,
             getattr(response, "usage", None),
             input_key="input_tokens",
@@ -310,6 +310,8 @@ class AnthropicAgentClient:
             raw_content=content_blocks,
             cache_read_tokens=cache_read,
             cache_creation_tokens=cache_write,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
         )
 
     @staticmethod
@@ -474,7 +476,7 @@ class BedrockConverseAgentClient:
         if response is None:
             raise RuntimeError("Bedrock invocation failed without a response") from last_err
 
-        emit_provider_usage(
+        input_tokens, output_tokens = emit_provider_usage(
             self._model,
             response.get("usage"),
             input_key="inputTokens",
@@ -491,6 +493,8 @@ class BedrockConverseAgentClient:
             tool_calls=tool_calls,
             stop_reason=stop_reason,
             raw_content=raw_message,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
         )
 
     @staticmethod
@@ -708,7 +712,7 @@ class OpenAIAgentClient:
             raise RuntimeError(f"{self._provider_label} invocation failed") from last_err
 
         if use_responses:
-            emit_provider_usage(
+            input_tokens, output_tokens = emit_provider_usage(
                 self._model,
                 getattr(response, "usage", None),
                 input_key="input_tokens",
@@ -720,6 +724,8 @@ class OpenAIAgentClient:
                 tool_calls=responses_tool_calls,
                 stop_reason="tool_calls" if responses_tool_calls else "stop",
                 raw_content=response_raw_message(response),
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
             )
 
         if not hasattr(response, "choices") or not response.choices:
@@ -727,7 +733,7 @@ class OpenAIAgentClient:
                 f"{self._provider_label} API returned an unexpected response: "
                 f"{type(response).__name__}"
             )
-        emit_provider_usage(
+        input_tokens, output_tokens = emit_provider_usage(
             self._model,
             getattr(response, "usage", None),
             input_key="prompt_tokens",
@@ -755,6 +761,8 @@ class OpenAIAgentClient:
             # exclude_none=True strips null fields (refusal, audio, function_call …)
             # that strict OpenAI-compatible endpoints may reject on replay.
             raw_content=msg.model_dump(exclude_none=True),
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
         )
 
     @staticmethod

@@ -116,8 +116,8 @@ class PromptBuilder:
         )
         install_session_key_bindings(self.pt_session, output_kb)
 
-    def _rerender_banner_if_idle(self) -> None:
-        """Clear the viewport and reprint the launch banner at the new width.
+    def _rerender_banner_if_idle(self) -> bool:
+        """Clear the viewport and reprint the launch banner at the new width; True when done.
 
         The banner is static scrollback laid out for the width it was printed
         at; a resize reflows it into sliced / wrapped garbage. While nothing
@@ -128,7 +128,7 @@ class PromptBuilder:
         No startup spin here — SIGWINCH must stay instant.
         """
         if self.session.terminal.submitted_turn_count > 0 or self.pt_app is None:
-            return
+            return False
         repl_clear_screen()
         drain_stale_cpr_bytes()
         console = Console(
@@ -138,6 +138,7 @@ class PromptBuilder:
             legacy_windows=False,
         )
         render_launch_banner(console, session=self.session, animate=False)
+        return True
 
     def _expand_collapsed_output(self, text: str) -> None:
         """Suspend the prompt and expand the next folded tool result (Ctrl+O).

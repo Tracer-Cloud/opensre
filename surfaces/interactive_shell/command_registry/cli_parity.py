@@ -248,9 +248,13 @@ def _cmd_account(session: Session, console: Console, args: list[str]) -> bool:  
         console.print(message)
         publish_headless_slash_response(session, message=message)
         return True
-    capture_output = subcommand in {"status", "logout"}
+    cli_args = list(args)
+    if subcommand == "usage" and session_terminal(session) is None and "--no-browser" not in args:
+        # A chat user cannot use a browser opened on the server; give them the URL.
+        cli_args.append("--no-browser")
+    capture_output = subcommand in {"status", "usage", "logout"}
     handled = run_cli_command(
-        console, ["account", *args], capture_output=capture_output, session=session
+        console, ["account", *cli_args], capture_output=capture_output, session=session
     )
     if subcommand == "logout" and session_terminal(session) is not None:
         from config.account import account_llm_route
@@ -301,6 +305,10 @@ def _cmd_config(session: Session, console: Console, args: list[str]) -> bool:
     return run_cli_command(console, ["config", *args], session=session)
 
 
+def _cmd_runbooks(session: Session, console: Console, args: list[str]) -> bool:
+    return run_cli_command(console, ["runbooks", *args], session=session)
+
+
 def _cmd_messaging(session: Session, console: Console, args: list[str]) -> bool:
     return run_cli_command(console, ["messaging", *args], session=session)
 
@@ -331,7 +339,13 @@ COMMANDS: list[SlashCommand] = [
         "/account",
         "Sign in to OpenSRE and inspect the local account.",
         _cmd_account,
-        usage=("/account", "/account login", "/account status", "/account logout"),
+        usage=(
+            "/account",
+            "/account login",
+            "/account status",
+            "/account usage",
+            "/account logout",
+        ),
     ),
     SlashCommand(
         "/auth",
@@ -394,6 +408,17 @@ COMMANDS: list[SlashCommand] = [
         "Show or edit local OpenSRE config.",
         _cmd_config,
         usage=("/config show", "/config set <key> <value>"),
+    ),
+    SlashCommand(
+        "/runbooks",
+        "Manage trusted runbook sources for guided investigations.",
+        _cmd_runbooks,
+        usage=(
+            "/runbooks list",
+            "/runbooks add github --name <name> --repo <owner/repo>",
+            "/runbooks verify <name>",
+            "/runbooks remove <name>",
+        ),
     ),
     SlashCommand(
         "/messaging",

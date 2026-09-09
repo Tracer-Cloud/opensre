@@ -72,16 +72,19 @@ SPI_ROLE_NAMES: dict[str, frozenset[str]] = {
             "SessionGoal",
             "SessionGoalReason",
             "SessionGoalStatus",
+            "GoalPaintSignature",
             "attach_session_goal",
             "build_session_goal",
             "clear_session_goal",
+            "derive_session_goal_checklist",
             "format_session_goal_progress",
             "format_session_goal_status_line",
+            "goal_paint_signature",
             "run_until_session_goal",
+            "same_goal_identity",
             "session_goal_is_active",
             "session_goal_is_attached",
             "session_goal_is_paused",
-            "strip_session_goal_progress_tags",
         }
     ),
     "session_state": frozenset(
@@ -134,8 +137,12 @@ SPI_ROLE_NAMES: dict[str, frozenset[str]] = {
     ),
     "grounding": frozenset(
         {
+            "ActionSkill",
             "CacheStats",
+            "GETTING_STARTED_CUSTOM",
             "GroundingSource",
+            "SkillToolCall",
+            "getting_started_skills",
             "list_action_skills",
             "load_skill_body",
             "log_grounding_cache_diagnostics",
@@ -203,11 +210,13 @@ RUNTIME = frozenset(
 TOOLS = frozenset(
     {
         "ActionToolScope",
+        "ToolExecutor",
         "action_context_from_agent_context",
         "action_scope_from_agent_context",
         "capability_available_from_sources",
         "coerce_gathered_evidence",
         "execute_with_action_context",
+        "registered_single_turn_tool_names",
     }
 )
 

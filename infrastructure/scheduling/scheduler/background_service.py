@@ -13,6 +13,7 @@ import plistlib
 import shutil
 import subprocess
 import sys
+import time
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,6 +23,8 @@ from config.constants.paths import OPENSRE_HOME_DIR
 SERVICE_LABEL = "com.opensre.scheduler"
 _LOGS_DIRNAME = "logs"
 _COMMAND_TIMEOUT_SECONDS = 30
+_UNLOAD_WAIT_SECONDS = 15.0
+_UNLOAD_POLL_SECONDS = 0.5
 
 Runner = Callable[[Sequence[str]], subprocess.CompletedProcess[str]]
 
@@ -70,6 +73,7 @@ def install_background_service(
     system: str = "",
     run: Runner = _run,
     command: Sequence[str] | None = None,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> BackgroundServiceState:
     """Install and start the service; raises ``RuntimeError`` when the OS refuses.
 
@@ -85,7 +89,16 @@ def install_background_service(
         unit.parent.mkdir(parents=True, exist_ok=True)
         unit.write_bytes(plistlib.dumps(_launchd_definition(argv, log_path)))
         domain = f"gui/{os.getuid()}"
-        run(["launchctl", "bootout", f"{domain}/{SERVICE_LABEL}"])
+        target = f"{domain}/{SERVICE_LABEL}"
+        run(["launchctl", "bootout", target])
+        # bootout only starts the teardown; bootstrapping the same label while
+        # the old process is still exiting fails with "5: Input/output error".
+        if not _wait_until_unloaded(run, ["launchctl", "print", target], sleep=sleep):
+            unit.unlink(missing_ok=True)
+            raise RuntimeError(
+                "launchctl bootstrap skipped: the previous scheduler service is still "
+                "stopping; try again in a few seconds"
+            )
         _activate(unit, run(["launchctl", "bootstrap", domain, str(unit)]), "launchctl bootstrap")
         return BackgroundServiceState("Darwin", True, True, unit, log_path)
     if name == "Linux":
@@ -103,7 +116,11 @@ def install_background_service(
 
 
 def remove_background_service(
-    *, home: Path | None = None, system: str = "", run: Runner = _run
+    *,
+    home: Path | None = None,
+    system: str = "",
+    run: Runner = _run,
+    sleep: Callable[[float], None] = time.sleep,
 ) -> BackgroundServiceState:
     """Stop and delete the service; a missing service is not an error.
 
@@ -116,7 +133,7 @@ def remove_background_service(
         unit = _launchd_unit_path(home)
         target = f"gui/{os.getuid()}/{SERVICE_LABEL}"
         run(["launchctl", "bootout", target])
-        if run(["launchctl", "print", target]).returncode == 0:
+        if not _wait_until_unloaded(run, ["launchctl", "print", target], sleep=sleep):
             raise RuntimeError("launchctl bootout failed: the service is still loaded")
         unit.unlink(missing_ok=True)
         return BackgroundServiceState("Darwin", True, False, None, None)
@@ -158,6 +175,18 @@ def _unsupported(name: str) -> BackgroundServiceState:
         None,
         detail="run `opensre cron start --service` from your own scheduler instead.",
     )
+
+
+def _wait_until_unloaded(
+    run: Runner, query: Sequence[str], *, sleep: Callable[[float], None]
+) -> bool:
+    """Poll ``query`` (a service status command) until it reports no service, or give up."""
+    deadline = time.monotonic() + _UNLOAD_WAIT_SECONDS
+    while run(query).returncode == 0:
+        if time.monotonic() >= deadline:
+            return False
+        sleep(_UNLOAD_POLL_SECONDS)
+    return True
 
 
 def _activate(unit: Path, result: subprocess.CompletedProcess[str], step: str) -> None:

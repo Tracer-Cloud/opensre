@@ -24,6 +24,7 @@ from core.agent import Agent
 from core.agent.cancel import tool_resources_cancel_requested
 from core.agent.goals import Goal
 from core.agent_harness.accounting.self_recording_tools import SELF_RECORDING_ACTION_TOOL_NAMES
+from core.agent_harness.accounting.token_accounting import tap_provider_usage
 from core.agent_harness.agent_builder import AgentConfig, build_agent
 from core.agent_harness.ports import (
     ConfirmFn,
@@ -40,11 +41,12 @@ from core.agent_harness.prompts import (
 from core.agent_harness.session.integration_resolution import resolve_and_cache_integrations
 from core.agent_harness.session.pending_choice import parse_ask_user_answers
 from core.agent_harness.session.terminal_access import execute_cli_onboard_on_missing_key
-from core.agent_harness.session_goal.goal import strip_session_goal_progress_tags
+from core.agent_harness.session_goal.review_input import collect_tool_evidence
 from core.agent_harness.turns.action_dedup import (
     coerce_fingerprint_quiet,
     with_duplicate_action_call_guard,
 )
+from core.agent_harness.turns.action_menu_end import with_menu_turn_end
 from core.agent_harness.turns.conversation_recording import record_conversation_turn
 from core.agent_harness.turns.display_text import (
     cap_for_display,
@@ -59,6 +61,7 @@ from core.agent_harness.turns.goal_review import (
     tap_executed_tool_names,
     task_plan_blocks_conclusion,
 )
+from core.agent_harness.turns.skill_scope import scope_tools_to_active_skill
 from core.agent_harness.turns.turn_plan import TurnPlan
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
@@ -207,6 +210,14 @@ def _stash_collapsed_tool_output(session: SessionState, text: str | None) -> Non
     # Minimal test doubles without the ring API: only record a non-None peek.
     if text is not None:
         terminal.collapsed_tool_output = text
+
+
+def _preferred_tool_response_texts(result: Any) -> str:
+    texts = [
+        preferred_tool_response_text(tool_result)
+        for _tool_call, tool_result in _generic_tool_results(result)
+    ]
+    return "\n\n".join(text for text in texts if text)
 
 
 def _has_preferred_tool_response_text(result: Any) -> bool:
@@ -522,6 +533,9 @@ def _build_action_agent(
         session=session,
         user_text=message,
     )
+    # Every finished model call lands on ``session.tokens`` as it happens, so
+    # ``/cost`` and ``/goal`` count the spend even when a later call raises.
+    on_runtime_event = tap_provider_usage(on_runtime_event, session)
     if goal is not None:
         on_runtime_event = tap_executed_tool_names(on_runtime_event, executed_tool_names)
 
@@ -712,6 +726,11 @@ def _compose_response(
     if already_inline and terminal is not None:
         terminal.inline_tool_results = False
         display_generic = ""
+    if prefer_tool_response_text and not display_final and not display_generic:
+        # A tool that ships its own reply text (a schedule card, a report
+        # summary) is the closing when the model's is dropped for it; otherwise
+        # the turn ends with nothing visible after the call list.
+        display_final = _preferred_tool_response_texts(result)
     is_json = looks_like_json(generic_text)
     body, markers = split_output_truncation_markers(display_generic)
     truncated = bool(markers)
@@ -801,17 +820,15 @@ def _show_response(
 
     ``final_text`` arrives empty unless the closing message reads like a real
     reply; only then is it preferred over joined ``display_chunks``. Either way
-    visible prose streams through the sink (``Ω`` gutter on the shell). Progress
-    tags are scrubbed for display only — ``response_text`` keeps them for evaluate.
+    visible prose streams through the sink (``Ω`` gutter on the shell).
     """
     # Both branches stream through the sink so the shell paints the ``Ω`` gutter
     # (Droid / Claude Code rhythm). Bare ``print`` after a lone header left
     # agent prose unmarked and flush against Thinking chrome.
     body = final_text or ("\n".join(display_chunks) if display_chunks else "")
     if body:
-        visible = strip_session_goal_progress_tags(body)
-        if visible.strip():
-            output.stream(label="OpenSRE", chunks=iter([visible]))
+        if body.strip():
+            output.stream(label="OpenSRE", chunks=iter([body]))
             return
         if handled:
             _end_silent_tool_turn(output)
@@ -875,10 +892,14 @@ def _run_action_turn(
     resolved_integrations = _turn_resolved_integrations(session, turn_plan)
     history_start = len(session.history)
 
-    agent_tools = args.tools.action_tools(
-        confirm_fn=args.confirm_fn,
-        is_tty=args.is_tty,
-        resolved_integrations=resolved_integrations,
+    agent_tools = scope_tools_to_active_skill(
+        args.tools.action_tools(
+            confirm_fn=args.confirm_fn,
+            is_tty=args.is_tty,
+            resolved_integrations=resolved_integrations,
+        ),
+        session,
+        message,
     )
     tool_resources_provider = getattr(args.tools, "tool_resources", None)
     tool_resources = tool_resources_provider() if callable(tool_resources_provider) else {}
@@ -902,7 +923,9 @@ def _run_action_turn(
             turn_snapshot=turn_snapshot,
             resolved_integrations=resolved_integrations,
             llm_factory=args.llm_factory,
-            tool_hooks=with_duplicate_action_call_guard(args.tool_hooks),
+            tool_hooks=with_menu_turn_end(
+                with_duplicate_action_call_guard(args.tool_hooks), session
+            ),
             tool_resources=tool_resources,
             observer=observer,
         )
@@ -995,6 +1018,11 @@ def _run_action_turn(
         counts.handled,
         cancelled,
     )
+    tool_evidence, evidence_success_count = (
+        collect_tool_evidence(getattr(result, "tool_results", ()))
+        if getattr(session, "session_goal", None) is not None
+        else ("", None)
+    )
     return ToolCallingTurnResult(
         counts.planned_count,
         counts.executed_count,
@@ -1005,6 +1033,10 @@ def _run_action_turn(
         response_streamed=bool(use_final_text and not cancelled),
         hit_iteration_cap=bool(result.hit_iteration_cap and not cancelled),
         cancelled=cancelled,
+        input_tokens=int(getattr(result, "input_tokens", 0) or 0),
+        output_tokens=int(getattr(result, "output_tokens", 0) or 0),
+        tool_evidence=tool_evidence,
+        evidence_success_count=evidence_success_count,
     )
 
 

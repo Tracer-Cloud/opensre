@@ -60,9 +60,9 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         anti_examples=("User asks a docs/how-to question about OpenSRE features",),
     ),
     "/account": _mcp(
-        "Sign in to a personal OpenSRE account, inspect the local login, "
-        "or sign out. Signing out closes the interactive shell. Subcommands: login, "
-        "status, logout.",
+        "Sign in to a personal OpenSRE account, inspect the local login, open the "
+        "credits and top-up page, or sign out. Signing out closes the interactive "
+        "shell. Subcommands: login, status, usage, logout.",
         "User asks to sign in to OpenSRE or create a personal account",
         "User asks whether they are logged into OpenSRE",
         anti_examples=(
@@ -357,6 +357,15 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         anti_examples=(
             "User asks to connect an AWS integration (use /integrations)",
             "User asks what opensre remembers (use /memory)",
+        ),
+    ),
+    "/runbooks": _mcp(
+        "Manage organization-owned runbook sources for guided investigations. "
+        "Subcommands: list, add, verify, remove.",
+        "User asks to configure, list, verify, or remove trusted runbook sources",
+        anti_examples=(
+            "User asks to investigate an incident with a runbook (use runbook guidance tooling)",
+            "User asks how runbook-guided investigations work (answer from docs)",
         ),
     ),
     "/tasks": _mcp(

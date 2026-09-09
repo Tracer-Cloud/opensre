@@ -8,14 +8,16 @@ Host-scoped completion across many `chat` turns. **Not** the ReAct
 | Module | Owns |
 |--------|------|
 | `goal.py` | `SessionGoal`, statuses/reasons, attach/clear, reason derive |
-| `evaluate.py` | Structured host completion (claim ≠ proof) |
-| `confirm.py` | Optional LLM confirm after tool-evidence achieve |
+| `judge.py` | Cheap-model transcript verdict (met / not yet / impossible) |
+| `validate.py` | Cheap-model check of newly ticked checklist items |
+| `review_input.py` | Qualifying tool observations and complete, size-limited review input |
+| `evaluate.py` | Host completion: tool ticks + validator + judge + evidence gate |
 | `progress.py` | `SESSION_GOAL_PROGRESS_MARK` + progress / status-line formatting |
 | `continuation.py` | Session-goal continuation prompts |
 | `persist.py` | Flush / restore payload |
 | `run_until.py` | `run_until_session_goal` |
 
-Do **not** import progress/continuation/persist/evaluate/confirm/run_until from
+Do **not** import progress/continuation/persist/evaluate/judge/validate/run_until from
 `goal.py` (avoids `py/cyclic-import`). Callers import the leaf, or curated
 names from `session_goal` package `__init__`.
 

@@ -156,11 +156,17 @@ to size this against the task's memory limit before raising it.
 Scheduled callbacks use a bounded worker pool. At most two distinct tasks run
 at once by default; set `OPENSRE_SCHEDULER_MAX_CONCURRENT_RUNS` to a positive
 integer to change that limit. A task never overlaps its own previous run.
-Runs waiting for a scheduler worker appear as `pending` in run history.
+Runs waiting for a scheduler worker appear as `pending` in run history and
+resume after a scheduler restart. On restart, pending runs for paused tasks
+wait until the task is enabled again. A new tick is skipped while that task
+already has a queued or running scheduler callback; distinct tasks wait for
+worker capacity.
+Invalid concurrency settings fall back to two workers.
 
 Agentic scheduled runs also take a permit from
 `OPENSRE_MAX_CONCURRENT_TURNS`, so the lower of the scheduler and process-wide
-limits determines their effective concurrency.
+limits bounds their effective concurrency; interactive traffic shares the
+process-wide limit. Recovery work uses the same scheduler worker pool.
 
 By default the gateway process also runs the cron/loop scheduler. With more than
 one gateway task that would fire every scheduled task once per task. Run the

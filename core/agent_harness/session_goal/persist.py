@@ -29,6 +29,10 @@ def session_goal_to_payload(goal: SessionGoal) -> dict[str, Any]:
         "token_baseline_input": int(goal.token_baseline_input),
         "token_baseline_output": int(goal.token_baseline_output),
         "host_owned": bool(goal.host_owned),
+        "last_progress_turns_used": int(goal.last_progress_turns_used),
+        "tool_evidence": list(goal.tool_evidence) if goal.tool_evidence is not None else None,
+        "tool_success_seen": goal.tool_success_seen,
+        "last_verdict": goal.last_verdict,
     }
     if goal.started_at is not None:
         payload["started_at"] = float(goal.started_at)
@@ -86,6 +90,9 @@ def session_goal_from_payload(payload: Any) -> SessionGoal | None:
     except (TypeError, ValueError):
         token_in, token_out = 0, 0
     host_owned = bool(payload.get("host_owned", False))
+    last_progress_turns_used = _restore_last_progress_turns_used(payload, turns_used)
+    verdict_raw = payload.get("last_verdict")
+    last_verdict = verdict_raw.strip() if isinstance(verdict_raw, str) else ""
     return SessionGoal(
         condition=condition.strip(),
         max_outer_turns=max_outer,
@@ -99,7 +106,32 @@ def session_goal_from_payload(payload: Any) -> SessionGoal | None:
         token_baseline_input=token_in,
         token_baseline_output=token_out,
         host_owned=host_owned,
+        last_progress_turns_used=last_progress_turns_used,
+        tool_evidence=_restore_tool_evidence(payload),
+        tool_success_seen=payload.get("tool_success_seen") is True,
+        last_verdict=last_verdict,
     )
+
+
+def _restore_tool_evidence(payload: dict[str, Any]) -> tuple[str, ...] | None:
+    """Keep legacy goals empty and incomplete evidence explicitly unavailable."""
+    raw = payload.get("tool_evidence", [])
+    if isinstance(raw, list) and all(isinstance(item, str) for item in raw):
+        return tuple(raw)
+    return None
+
+
+def _restore_last_progress_turns_used(payload: dict[str, Any], turns_used: int) -> int:
+    """Stall watermark, or ``turns_used`` when the key is missing or unreadable."""
+    if "last_progress_turns_used" not in payload:
+        return turns_used
+    raw = payload.get("last_progress_turns_used")
+    if raw is None:
+        return turns_used
+    try:
+        return max(0, int(raw))
+    except (TypeError, ValueError):
+        return turns_used
 
 
 def session_goal_state_snapshot(session: Any) -> dict[str, Any]:

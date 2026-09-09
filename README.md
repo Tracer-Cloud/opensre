@@ -88,6 +88,8 @@ Our mission is to build AI SRE agents on top of this, scale it to thousands of r
 
 The root installer URL auto-detects Unix shell vs PowerShell and installs the latest build from `main`. OpenSRE moves quickly, so `main` is the latest stable version for normal installs.
 
+Before installing, check the [supported platforms and architectures](SETUP.md#supported-platforms-and-architectures) table for release availability and CI coverage.
+
 macOS / Linux:
 
 ```bash

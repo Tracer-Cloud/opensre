@@ -1309,19 +1309,3 @@ class TestDeferWantMeToCloser:
         )
         assert paint.deferred_closer is True
         assert buf.getvalue() == ""
-
-
-def test_stream_hides_session_goal_tags_but_keeps_them_in_return_text() -> None:
-    """Host evaluate needs tags; the TTY must not show them."""
-    console, buf = _tty_console()
-    text = "Hello done.\n\nsession_goal:done=0,1,2 session_goal:achieved"
-    result = stream_to_console(
-        console,
-        label="assistant",
-        chunks=_yield_chunks([text]),
-    )
-    painted = _strip_ansi(buf.getvalue())
-    assert "session_goal:" not in painted
-    assert "Hello done" in painted
-    assert "session_goal:done=0,1,2" in result
-    assert "session_goal:achieved" in result

@@ -31,6 +31,7 @@ EXPECTED_VISIBLE_COMMANDS = frozenset(
         "onboard",
         "posthog",
         "remote-sync",
+        "runbooks",
         "sentry",
         "setup",
         "uninstall",

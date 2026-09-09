@@ -9,8 +9,7 @@ transcript — only the one-shot ``Plan complete`` breakdown is.
 
 from __future__ import annotations
 
-from rich.console import Console, Group
-from rich.text import Text
+from rich.console import Console
 
 from core.agent_harness.spi.task_plan import (
     PLAN_STATUS_GLYPH,
@@ -22,7 +21,7 @@ from core.agent_harness.spi.task_plan import (
 )
 from infrastructure.terminal import theme as ui_theme
 from surfaces.interactive_shell.ui.input_prompt.layout import clip_prompt_text, prompt_line_width
-from surfaces.shared.terminal.components.rendering import print_repl_renderable
+from surfaces.shared.terminal.components.rendering import print_repl_text
 
 _STEP_INDENT = "  "
 # Steps shown before the plan collapses; a longer plan folds to a window
@@ -53,43 +52,39 @@ def render_plan_breakdown(console: Console, breakdown: str) -> None:
     text = (breakdown or "").rstrip("\n")
     if not text:
         return
-    rows: list[Text] = []
-    for raw in text.splitlines():
-        stripped = raw.lstrip()
-        if not stripped:
-            rows.append(Text(""))
-            continue
-        if stripped.startswith(_WORK_NOTE_MARKER):
-            # Theme DIM as raw truecolor. Rich Style.parse caches ANSI from
-            # the first color_system that rendered ``#6E6E6E``; a prior
-            # 16-color console then emits bright-black ``[90m`` instead of
-            # DIM_ANSI on a truecolor breakdown.
-            rows.append(Text.from_ansi(f"{ui_theme.DIM_ANSI}{raw}{ui_theme.ANSI_RESET}"))
-            continue
-        line = Text()
-        # Header (``Plan complete · n/n``) or a checklist step (``  ✓ …``).
-        if stripped.startswith("Plan"):
-            line.append(raw, style=str(ui_theme.SECONDARY))
-            rows.append(line)
-            continue
-        # Step row: accent the status glyph, keep the step title as body text.
-        indent_len = len(raw) - len(stripped)
-        if indent_len:
-            line.append(raw[:indent_len])
-        glyph, _, rest = stripped.partition(" ")
-        if glyph in PLAN_STATUS_GLYPH.values() and rest:
-            glyph_style = (
-                str(ui_theme.HIGHLIGHT)
-                if glyph == PLAN_STATUS_GLYPH[PlanStepStatus.COMPLETED]
-                else str(ui_theme.TEXT)
-            )
-            line.append(glyph, style=glyph_style)
-            line.append(" ")
-            line.append(rest, style=str(ui_theme.TEXT))
-        else:
-            line.append(stripped, style=str(ui_theme.TEXT))
-        rows.append(line)
-    print_repl_renderable(console, Group(*rows))
+    # Palette ANSI, not Rich Style. Style.parse caches the first color_system
+    # that rendered ``#6E6E6E``; a 16-color console on the same worker then
+    # re-emits work notes as bright-black ``[90m`` instead of DIM_ANSI.
+    print_repl_text(
+        console,
+        "\n".join(_breakdown_row_ansi(raw) for raw in text.splitlines()),
+        markup=False,
+    )
+
+
+def _breakdown_row_ansi(raw: str) -> str:
+    """One breakdown row in theme ANSI (header, checklist step, or work note)."""
+    stripped = raw.lstrip()
+    if not stripped:
+        return ""
+    if stripped.startswith(_WORK_NOTE_MARKER):
+        return f"{ui_theme.DIM_ANSI}{raw}{ui_theme.ANSI_RESET}"
+    if stripped.startswith("Plan"):
+        return f"{ui_theme.SECONDARY_ANSI}{raw}{ui_theme.ANSI_RESET}"
+    indent_len = len(raw) - len(stripped)
+    indent = raw[:indent_len]
+    glyph, _, rest = stripped.partition(" ")
+    if glyph in PLAN_STATUS_GLYPH.values() and rest:
+        glyph_ansi = (
+            ui_theme.HIGHLIGHT_ANSI
+            if glyph == PLAN_STATUS_GLYPH[PlanStepStatus.COMPLETED]
+            else ui_theme.TEXT_ANSI
+        )
+        return (
+            f"{indent}{glyph_ansi}{glyph}{ui_theme.ANSI_RESET} "
+            f"{ui_theme.TEXT_ANSI}{rest}{ui_theme.ANSI_RESET}"
+        )
+    return f"{indent}{ui_theme.TEXT_ANSI}{stripped}{ui_theme.ANSI_RESET}"
 
 
 def _overlay_line(text: str, style: str, width: int) -> str:

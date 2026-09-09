@@ -16,7 +16,11 @@ from core.agent_harness import (
 )
 from core.agent_harness.spi.session_goal import (
     SessionGoal,
+    SessionGoalReason,
     format_session_goal_progress,
+    format_session_goal_status_line,
+    goal_paint_signature,
+    same_goal_identity,
 )
 from core.tool import ToolExecutionHooks
 from infrastructure.turn_host.turn_output import TurnOutput
@@ -27,6 +31,26 @@ from surfaces.interactive_shell.runtime.shell_agent import shell_agent_build_con
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.telemetry import PromptRecorder
 from surfaces.shared.terminal.components.rendering import print_repl_text
+
+
+def goal_paint_text(goal: SessionGoal, session: Session) -> str:
+    """One status line per turn; the full block only when the goal itself changed.
+
+    The block (condition, reason, checklist) prints when a goal is first seen
+    and whenever its status, ticks, or checklist change. A repaint of a goal
+    already shown drops the condition, so it prints once per goal.
+    """
+    terminal = session.terminal
+    signature = goal_paint_signature(goal)
+    previous = terminal.goal_paint_signature
+    if goal.status == "active" and (
+        previous == signature or SessionGoalReason.is_working(goal.last_reason)
+    ):
+        return format_session_goal_status_line(goal, session=session)
+    terminal.goal_paint_signature = signature
+    return format_session_goal_progress(
+        goal, session=session, include_condition=not same_goal_identity(previous, signature)
+    )
 
 
 def execute_shell_turn(
@@ -63,7 +87,7 @@ def execute_shell_turn(
         )
 
     def _on_progress(goal: SessionGoal) -> None:
-        rendered = format_session_goal_progress(goal, session=session)
+        rendered = goal_paint_text(goal, session)
         if rendered:
             # Checklist uses ``[x]`` / ``[ ]`` — Rich markup must stay off.
             # CRLF under patch_stdout(raw=True) so rows do not staircase.

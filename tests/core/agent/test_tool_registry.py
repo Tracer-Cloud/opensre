@@ -231,6 +231,9 @@ def test_session_goal_control_tool_is_registered() -> None:
     entry = get_action_tool("session_goal_set")
     assert entry is not None
     assert "cross-turn conversational goal" in entry.description.lower()
+    complete = get_action_tool("session_goal_complete")
+    assert complete is not None
+    assert "checklist" in complete.description.lower()
 
 
 def test_single_agent_includes_action_and_chat_tools(monkeypatch) -> None:

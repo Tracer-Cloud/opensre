@@ -46,6 +46,11 @@ def _repl_table_width(console: Console) -> int:
     return max(40, min(console.width, term_cols) - 1)
 
 
+def repl_output_width(console: Console) -> int:
+    """The width :func:`print_repl_renderable` renders at; size full-width rows to it."""
+    return _repl_table_width(console)
+
+
 def _prepare_tty_for_rich(console: Console) -> int:
     """Return the width Rich should render at.
 
@@ -226,6 +231,16 @@ def print_repl_renderable(console: Console, renderable: Any) -> None:
     _console_print_prepared(console, renderable)
 
 
+def hyperlink(url: str, *, style: str = "") -> Text:
+    """The URL as clickable terminal text (OSC 8), still readable where links are unsupported.
+
+    The visible text stays the URL itself, so terminals that only auto-detect
+    URLs (or none at all) still show something the user can copy.
+    """
+    link_style = f"{style} link {url}".strip()
+    return Text(url, style=link_style)
+
+
 def repl_print(console: Console, *objects: Any, **kwargs: Any) -> None:
     """Print via Rich after resetting the TTY column (inline-menu safe)."""
     from surfaces.shared.terminal.components.choice_menu import prepare_repl_output_line
@@ -283,11 +298,13 @@ def repl_table(**kwargs: Any) -> Table:
 __all__ = [
     "_repl_output_already_prepared",
     "_repl_table_width",
+    "hyperlink",
     "print_repl_json",
     "print_repl_renderable",
     "print_repl_table",
     "print_repl_text",
     "repl_clear_screen",
+    "repl_output_width",
     "repl_print",
     "repl_print_continue",
     "repl_table",

@@ -22,15 +22,12 @@ MAX_GH_OUTPUT_CHARS = 6_000
 # Top-level ``gh`` commands that must never run under OpenSRE-injected credentials.
 # - auth: ``gh auth token`` prints GH_TOKEN to stdout (self-exfiltration)
 # - extension: install/run can download and execute arbitrary code
-# - workflow / run: trigger or re-run CI (arbitrary code via workflow YAML)
 # - secret: mutate repository secrets
 # - codespace / ssh-key / gpg-key / config: credential and host-config mutation surface
 _DENIED_TOP_LEVEL_COMMANDS = frozenset(
     {
         "auth",
         "extension",
-        "workflow",
-        "run",
         "secret",
         "codespace",
         "ssh-key",
@@ -38,6 +35,13 @@ _DENIED_TOP_LEVEL_COMMANDS = frozenset(
         "config",
     }
 )
+
+# Mutating ``gh run`` / ``gh workflow`` subcommands. ``list`` and ``view`` stay
+# allowed so a /goal can look up workflow runs by SHA.
+_DENIED_SUBCOMMANDS: dict[str, frozenset[str]] = {
+    "run": frozenset({"rerun", "cancel", "delete", "watch", "download"}),
+    "workflow": frozenset({"run", "enable", "disable"}),
+}
 
 # Global flags that consume a following value (after the ``gh`` binary).
 # Note: ``-h`` is ``--help`` (boolean), not a short form of ``--hostname``.
@@ -54,21 +58,26 @@ _VALUE_FLAGS = frozenset(
 
 
 def positional_gh_tokens(args: list[str] | tuple[str, ...]) -> list[str]:
-    """Return command positionals, skipping leading global flags."""
+    """Return command positionals with every flag removed, wherever it sits.
+
+    ``gh`` accepts global flags before and after the command word, so
+    ``run -R owner/repo rerun 123`` must read as ``run rerun``: a flag between
+    the command and its subcommand cannot hide a denied subcommand.
+    """
     positionals: list[str] = []
     i = 0
     cleaned = [str(a) for a in args]
     while i < len(cleaned):
         token = cleaned[i]
-        if not token or token == "--":
+        if not token:
             i += 1
             continue
+        if token == "--":
+            positionals.extend(cleaned[i + 1 :])
+            break
         if token.startswith("-"):
             name, _, inline = token.partition("=")
-            if inline:
-                i += 1
-                continue
-            if name in _VALUE_FLAGS and i + 1 < len(cleaned):
+            if not inline and name in _VALUE_FLAGS and i + 1 < len(cleaned):
                 nxt = cleaned[i + 1]
                 if nxt and not nxt.startswith("-"):
                     i += 2
@@ -77,20 +86,24 @@ def positional_gh_tokens(args: list[str] | tuple[str, ...]) -> list[str]:
             continue
         positionals.append(token)
         i += 1
-        while i < len(cleaned):
-            positionals.append(cleaned[i])
-            i += 1
-        break
     return positionals
 
 
 def denied_gh_command(args: list[str] | tuple[str, ...]) -> str | None:
-    """Return the blocked top-level ``gh`` command, or None if allowed."""
+    """Return the blocked ``gh`` command (or ``command sub``), or None if allowed."""
     positionals = positional_gh_tokens(args)
     if not positionals:
         return None
     command = positionals[0].lower()
-    return command if command in _DENIED_TOP_LEVEL_COMMANDS else None
+    if command in _DENIED_TOP_LEVEL_COMMANDS:
+        return command
+    denied_subs = _DENIED_SUBCOMMANDS.get(command)
+    if denied_subs is None:
+        return None
+    sub = positionals[1].lower() if len(positionals) > 1 else ""
+    if sub in denied_subs:
+        return f"{command} {sub}"
+    return None
 
 
 def build_gh_argv(*, args: list[str], repo: str | None = None) -> list[str]:

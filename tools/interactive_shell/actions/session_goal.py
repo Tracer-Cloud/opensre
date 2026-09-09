@@ -1,10 +1,11 @@
-"""Attach a structured conversational SessionGoal."""
+"""Attach a structured conversational SessionGoal and tick its checklist."""
 
 from __future__ import annotations
 
 from typing import Any
 
 from core.agent_harness.spi.session_goal import (
+    SessionGoal,
     attach_session_goal,
     build_session_goal,
     session_goal_is_attached,
@@ -38,7 +39,9 @@ def execute_session_goal_tool(args: dict[str, Any], ctx: ActionToolScope) -> dic
     )
     goal = attach_session_goal(
         ctx.session,
-        build_session_goal(condition, checklist=items, max_outer_turns=max_turns),
+        build_session_goal(
+            condition, checklist=items, max_outer_turns=max_turns
+        ).with_bookkeeping_call(),
     )
     return {
         "ok": True,
@@ -65,6 +68,81 @@ def run_session_goal(
         context,
         execute_session_goal_tool,
     )
+
+
+def execute_session_goal_complete_tool(
+    args: dict[str, Any], ctx: ActionToolScope
+) -> dict[str, Any]:
+    goal = getattr(ctx.session, "session_goal", None)
+    if not isinstance(goal, SessionGoal) or not session_goal_is_attached(ctx.session):
+        return {"ok": False, "error": "no active goal"}
+    raw_items = args.get("items")
+    if not isinstance(raw_items, list) or not raw_items:
+        return {"ok": False, "error": "items must be a non-empty list of checklist indices"}
+    indices: set[int] = set()
+    for value in raw_items:
+        try:
+            index = int(value)
+        except (TypeError, ValueError):
+            return {"ok": False, "error": "items must be checklist indices"}
+        if goal.checklist and (index < 0 or index >= len(goal.checklist)):
+            return {"ok": False, "error": f"index {index} is not on the checklist"}
+        indices.add(index)
+    updated = attach_session_goal(
+        ctx.session, goal.with_completed(goal.completed | indices).with_bookkeeping_call()
+    )
+    return {
+        "ok": True,
+        "completed": sorted(updated.completed),
+        "checklist_complete": updated.checklist_complete,
+        "unfinished": [item for _index, item in updated.unfinished_items],
+    }
+
+
+def run_session_goal_complete(
+    *,
+    items: list[int],
+    context: Any,
+) -> dict[str, Any]:
+    return execute_with_action_context(
+        {"items": items},
+        context,
+        execute_session_goal_complete_tool,
+    )
+
+
+session_goal_complete_tool = RegisteredTool(
+    name="session_goal_complete",
+    description=(
+        "Mark one or more /goal checklist items done by 0-based index. "
+        "Use this instead of writing session_goal:done= tags in the reply."
+    ),
+    use_cases=[
+        "A checklist step finished after a successful tool call",
+        "Several items completed in the same turn",
+    ],
+    anti_examples=[
+        "Claiming the whole goal is met in prose",
+        "Ticking an item that did not happen",
+    ],
+    input_schema=object_schema(
+        properties={
+            "items": {
+                "type": "array",
+                "items": {"type": "integer"},
+                "minItems": 1,
+                "description": "0-based checklist indices that this turn completed.",
+            },
+        },
+        required=("items",),
+    ),
+    source="interactive_shell",
+    surfaces=(ToolSurface.ACTION,),
+    side_effect_level=SideEffectLevel.MUTATING,
+    parallel_safe=False,
+    accepts_runtime_context=True,
+    run=run_session_goal_complete,
+)
 
 
 session_goal_tool = RegisteredTool(
@@ -115,4 +193,9 @@ session_goal_tool = RegisteredTool(
 )
 
 
-__all__ = ["execute_session_goal_tool", "session_goal_tool"]
+__all__ = [
+    "execute_session_goal_complete_tool",
+    "execute_session_goal_tool",
+    "session_goal_complete_tool",
+    "session_goal_tool",
+]

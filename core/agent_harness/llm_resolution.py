@@ -22,6 +22,13 @@ def default_reasoning_llm_factory() -> Any:
     return get_llm(LLMRole.REASONING)
 
 
+def default_classification_llm_factory() -> Any:
+    """Return the cheap classification-tier client (session-goal judge and validator)."""
+    from core.llm.factory import LLMRole, get_llm
+
+    return get_llm(LLMRole.CLASSIFICATION)
+
+
 def agent_llm_is_cli_backed() -> bool:
     """True when configured routing sends the agent LLM to a CLI subprocess backend.
 
@@ -35,6 +42,7 @@ def agent_llm_is_cli_backed() -> bool:
 
 __all__ = [
     "agent_llm_is_cli_backed",
+    "default_classification_llm_factory",
     "default_llm_factory",
     "default_reasoning_llm_factory",
 ]

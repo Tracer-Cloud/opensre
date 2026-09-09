@@ -16,7 +16,10 @@ from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any, cast
 
-from config.constants.turn_concurrency import OPENSRE_SCHEDULER_MAX_CONCURRENT_RUNS_ENV
+from config.constants.turn_concurrency import (
+    DEFAULT_SCHEDULED_RUN_CONCURRENCY,
+    OPENSRE_SCHEDULER_MAX_CONCURRENT_RUNS_ENV,
+)
 from infrastructure.scheduling.scheduler.executor import execute_task
 from infrastructure.scheduling.scheduler.operation_log import (
     record_scheduler_execution_operation,
@@ -31,19 +34,18 @@ from infrastructure.scheduling.scheduler.runners import SchedulerRunners
 from infrastructure.scheduling.scheduler.storage import (
     complete_run,
     default_task_store_path,
-    get_expired_claims,
+    get_recoverable_runs,
     get_task,
     list_tasks,
     record_task_success,
+    try_claim,
     try_queue_run,
-    try_start_run,
     update_task,
 )
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskStatus
 
 logger = logging.getLogger(__name__)
 TaskFilter = Callable[[ScheduledTask], bool]
-DEFAULT_SCHEDULED_RUN_CONCURRENCY = 2
 
 _RECOVERY_JOB_ID = "scheduler-claim-recovery"
 _RECOVERY_INTERVAL_SECONDS = 60
@@ -141,14 +143,16 @@ def _scheduled_job(
     task_id: str,
     runners: SchedulerRunners,
     *,
-    scheduled_run_time: datetime,
+    scheduled_run_time: datetime | None = None,
 ) -> None:
     """Job callback invoked by APScheduler on each cron tick."""
+    if scheduled_run_time is None:
+        raise RuntimeError("scheduled_run_time must be supplied by the scheduler executor")
     fire_time = _compute_fire_time(scheduled_run_time)
 
     task = get_task(task_id)
     if task is None:
-        claim = try_start_run(task_id, fire_time)
+        claim = try_claim(task_id, fire_time)
         if claim is None:
             return
         logger.warning("Task %s not found in store, skipping", task_id)
@@ -159,7 +163,7 @@ def _scheduled_job(
         complete_run(claim, status=TaskStatus.SKIPPED, error="missing_task")
         return
     if not task.enabled:
-        claim = try_start_run(task_id, fire_time)
+        claim = try_claim(task_id, fire_time)
         if claim is None:
             return
         logger.info("Task %s is disabled, skipping", task_id)
@@ -173,32 +177,34 @@ def _scheduled_job(
         complete_run(claim, status=TaskStatus.SKIPPED, error="disabled")
         return
 
-    result = execute_task(task, fire_time, runners, queued_claim=True)
+    result = execute_task(task, fire_time, runners)
 
     if result:
         record_task_success(task.id)
 
 
-def _recover_expired_tasks(
+def _recover_runs(
     runners: SchedulerRunners,
     *,
     task_filter: TaskFilter | None = None,
+    scheduled_run_time: datetime | None = None,
 ) -> None:
-    """Resubmit expired scheduled ticks through the normal fenced executor."""
+    """Resume pending and expired ticks within the scheduler worker pool."""
+    _ = scheduled_run_time
     eligible_task_ids = _desired_task_ids(task_filter=task_filter)
-    for expired in get_expired_claims(eligible_task_ids=eligible_task_ids):
-        task = get_task(expired.task_id)
+    for run in get_recoverable_runs(eligible_task_ids=eligible_task_ids):
+        task = get_task(run.task_id)
         if task is None or not task.enabled:
             continue
         if task_filter is not None and not task_filter(task):
             continue
-        result = execute_task(task, expired.fire_time, runners)
+        result = execute_task(task, run.fire_time, runners)
         if result:
             record_task_success(task.id)
         logger.info(
-            "Recovered expired task %s fire_time=%s result=%s",
-            expired.task_id,
-            expired.fire_time,
+            "Recovered task %s fire_time=%s result=%s",
+            run.task_id,
+            run.fire_time,
             result,
         )
 
@@ -213,7 +219,7 @@ def _register_recovery_job(
     from apscheduler.triggers.interval import IntervalTrigger
 
     scheduler.add_job(
-        _recover_expired_tasks,
+        _recover_runs,
         trigger=IntervalTrigger(seconds=_RECOVERY_INTERVAL_SECONDS),
         args=[runners],
         kwargs={"task_filter": task_filter},
@@ -222,6 +228,7 @@ def _register_recovery_job(
         replace_existing=True,
         max_instances=1,
         coalesce=True,
+        misfire_grace_time=None,
         next_run_time=datetime.now(UTC),
     )
 

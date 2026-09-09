@@ -76,6 +76,48 @@ def test_draw_menu_letter_keys_labels_options_alphabetically(monkeypatch) -> Non
     assert "1." not in plain
 
 
+def test_draw_menu_note_sits_inside_the_erased_block(monkeypatch) -> None:
+    out = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setattr(choice_menu, "_cols", lambda: 80)
+
+    choice_menu._draw_menu(
+        title="Which demo would you like me to run? (Esc to skip)",
+        crumb="",
+        labels=["Explore a repo"],
+        index=0,
+        erase_lines=0,
+        header="Ask User",
+        letter_keys=True,
+        note="For a demo, I'd rather use something real from your machine.",
+    )
+
+    plain = _ANSI_RE.sub("", out.getvalue())
+    assert "Ask User" in plain
+    assert "I'd rather use something real" in plain
+    assert "Explore a repo" in plain
+
+
+def test_erase_menu_uses_drawn_height_after_the_terminal_resizes(monkeypatch) -> None:
+    """A resize must not recompute wrap height for the leave erase."""
+    out = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", out)
+    monkeypatch.setattr(choice_menu, "_viewport_rows", lambda: 24)
+    drawn = 12
+
+    choice_menu._erase_menu(
+        "",
+        ["one"],
+        header="Ask User",
+        note="For a demo, I'd rather use something real from your machine than a toy example.",
+        drawn_height=drawn,
+    )
+
+    rendered = out.getvalue()
+    assert f"\x1b[{drawn}A" in rendered
+    assert f"\x1b[{drawn}M" in rendered
+
+
 def test_draw_menu_without_header_stays_tight(monkeypatch) -> None:
     """Slash pickers keep no blank above the title."""
     out = io.StringIO()

@@ -41,7 +41,11 @@ When you type `/` and browse with the arrow keys, the hint line above the prompt
 | **Ctrl+C** twice within 2s | Exit the REPL (prints `/resume` hint) |
 | **Ctrl+D** | Exit when the prompt is empty (same resume hint as `/exit`) |
 
-When you first launch the shell with no scheduled loops, a picker offers three starter loops (CI/CD, task management, daily brief). Escape skips; the picker returns on the next launch until a loop exists. See [Scheduled deliveries](/cron).
+Every launch starts guided onboarding and asks which demo to run. The four
+choices cover repository analysis, recurring CI/CD checks, the upcoming managed
+service, and Slack setup. Escape skips onboarding; "Or type your own answer..."
+lets you submit a different request. Type `/demo` to start again.
+See [CI/CD analytics demo](/cicd-analytics-demo).
 
 ## Quick reference
 
@@ -818,10 +822,11 @@ These spawn `opensre …` subprocesses. Output is captured into the REPL buffer 
 /account
 /account login
 /account status
+/account usage
 /account logout
 ```
 
-Sign in to a personal OpenSRE account, inspect the local login, or sign out. Same as `opensre account`. The browser opens the OpenSRE sign-up page, where you can use email or any enabled sign-in provider. The shell starts only for an `active` account state. `/account logout` revokes the saved session, invalidates the hosted-model route, and closes the shell before another turn. If `OPENSRE_ACCOUNT_TOKEN` is set in the environment, it overrides the token saved by login until you unset it.
+Sign in to a personal OpenSRE account, inspect the local login, open the credits and top-up page (`/account usage`, opens your browser; from a chat it replies with the link), or sign out. Same as `opensre account`. The browser opens the OpenSRE sign-up page, where you can use email or any enabled sign-in provider. The shell starts only for an `active` account state. `/account logout` revokes the saved session, invalidates the hosted-model route, and closes the shell before another turn. If `OPENSRE_ACCOUNT_TOKEN` is set in the environment, it overrides the token saved by login until you unset it.
 
 </Accordion>
 
@@ -1161,7 +1166,7 @@ Compound requests ("health then integrations") execute as an ordered sequence of
 /model show
 ```
 
-`opensre setup` must establish the account before this workflow is reachable. On first launch with no scheduled loops, the shell offers three starter loops — Escape skips. See [Scheduled deliveries](/cron).
+`opensre setup` must establish the account before this workflow is reachable. Every launch opens the demo picker — Escape continues to the prompt. The recommended option analyzes CI/CD performance; see [CI/CD analytics demo](/cicd-analytics-demo).
 
 ### Incident triage (local)
 

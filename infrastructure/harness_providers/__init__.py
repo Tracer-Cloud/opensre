@@ -91,6 +91,13 @@ from infrastructure.harness_providers.repo_scope import (
     register_vcs_repo_scope_provider,
 )
 from infrastructure.harness_providers.repo_scope import reset as _reset_repo_scope
+from infrastructure.harness_providers.runbooks import (
+    RunbookSourceFactory,
+    clear_runbook_source_providers,
+    register_runbook_source_provider,
+    resolve_runbook_source,
+)
+from infrastructure.harness_providers.runbooks import reset as _reset_runbooks
 from infrastructure.harness_providers.subprocess_presenter import (
     SubprocessPresenterProvider,
     resolve_subprocess_presenter,
@@ -120,6 +127,7 @@ def reset_harness_providers() -> None:
     _reset_tool_registry()
     _reset_cli_llm()
     _reset_repo_scope()
+    _reset_runbooks()
     _reset_prompt_fragments()
     _reset_message_context()
     _reset_evidence_sources()
@@ -165,6 +173,7 @@ __all__ = [
     "PromptFragmentFn",
     "RemoteIntegrationsFetcher",
     "RemoteIntegrationsProvider",
+    "RunbookSourceFactory",
     "SetupableIntegrationServicesFn",
     "SubprocessPresenterProvider",
     "ToolSources",
@@ -179,6 +188,7 @@ __all__ = [
     "clear_message_context_prefix_strippers",
     "clear_metric_query_drafts",
     "clear_preferred_evidence_sources",
+    "clear_runbook_source_providers",
     "clear_vcs_repo_scope_providers",
     "cli_provider_registration",
     "configured_integration_services",
@@ -200,12 +210,14 @@ __all__ = [
     "register_metric_query_draft",
     "register_metric_query_tools",
     "register_preferred_evidence_source",
+    "register_runbook_source_provider",
     "register_vcs_repo_scope_provider",
     "registered_discovery_targets",
     "registered_metric_query_tools",
     "reset_harness_providers",
     "resolve_integrations",
     "resolve_integrations_with_metadata",
+    "resolve_runbook_source",
     "resolve_subprocess_presenter",
     "resolve_surface_tool_map",
     "resolve_surface_tools",

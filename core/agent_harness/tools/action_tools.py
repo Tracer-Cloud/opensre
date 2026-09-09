@@ -12,6 +12,7 @@ from infrastructure.harness_providers import resolve_surface_tool_map, resolve_s
 from infrastructure.observability.trace.redaction import redact_sensitive
 
 _ACTION_SESSION_SOURCE = "_action_session"
+_SINGLE_TURN_TOOL_SURFACES = (ToolSurface.ACTION, ToolSurface.CHAT)
 
 
 class _IntegrationsSessionView(Protocol):
@@ -57,12 +58,7 @@ def get_action_tools_from_integrations_view(
     """Return action and chat tools available to the single turn agent."""
     sources = _sources_for_view(view, resolved_integrations)
     tools: list[RegisteredTool] = []
-    candidates = {
-        candidate.name: candidate
-        for surface in (ToolSurface.ACTION, ToolSurface.CHAT)
-        for candidate in resolve_surface_tools(surface)
-    }
-    for candidate in candidates.values():
+    for candidate in _registered_single_turn_tools().values():
         try:
             if not candidate.is_available(sources):
                 continue
@@ -73,6 +69,19 @@ def get_action_tools_from_integrations_view(
             ) from exc
         tools.append(candidate)
     return tools
+
+
+def _registered_single_turn_tools() -> dict[str, RegisteredTool]:
+    return {
+        candidate.name: candidate
+        for surface in _SINGLE_TURN_TOOL_SURFACES
+        for candidate in resolve_surface_tools(surface)
+    }
+
+
+def registered_single_turn_tool_names() -> frozenset[str]:
+    """Return every registered tool name the single-turn agent can reach."""
+    return frozenset(_registered_single_turn_tools())
 
 
 def get_action_tool(name: str) -> RegisteredTool | None:
@@ -89,4 +98,5 @@ __all__ = [
     "action_tool_names",
     "get_action_tool",
     "get_action_tools_from_integrations_view",
+    "registered_single_turn_tool_names",
 ]

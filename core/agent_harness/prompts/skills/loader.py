@@ -9,9 +9,15 @@ Layout (either form is supported):
   with an optional sibling ``<name>_report.md`` report template.
 - Flat: ``skills/<name>.md`` with optional ``skills/<name>_report.md``.
 
-Optional YAML frontmatter (``name``, ``description``, optional ``recurring``)
-feeds the compact index. Without frontmatter, the name is derived from the path
-and the description from the first ``WHEN TO USE`` / subtitle lines.
+Optional YAML frontmatter (``name``, ``description``, optional ``recurring``,
+optional ``getting_started`` + ``demo_order``, optional ``pre_execute``) feeds
+the compact index. ``getting_started`` is the verbatim first-visit demo menu
+label this skill owns; ``demo_order`` is its 1-based row (A=1).
+``pre_execute`` lists static tool calls (``{tool, args}``) the host runs when
+the skill is entered, before any model step; the loader keeps them as data and
+the entry point decides which tools are allowed. Without frontmatter, the name
+is derived from the path and the description from the first ``WHEN TO USE`` /
+subtitle lines.
 
 The harness prompt carries only :func:`load_skills_index` (~hundreds of
 chars). Full bodies load through the ``skill_view`` tool via
@@ -21,9 +27,11 @@ chars). Full bodies load through the ``skill_view`` tool via
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+from types import MappingProxyType
 from typing import Any
 
 import yaml
@@ -31,6 +39,8 @@ import yaml
 __all__ = (
     "ActionSkill",
     "SKILLS_HEADER",
+    "SkillToolCall",
+    "getting_started_skills",
     "list_action_skills",
     "load_skill_body",
     "load_skills_block",
@@ -49,6 +59,15 @@ _BANNER_RE = re.compile(r"^[=\-─]{8,}\s*$")
 
 
 @dataclass(frozen=True)
+class SkillToolCall:
+    """One static tool call a skill declares in ``pre_execute``."""
+
+    tool: str
+    args: Mapping[str, Any]
+    """Read-only tool input, shaped exactly like the tool's ``input_schema``."""
+
+
+@dataclass(frozen=True)
 class ActionSkill:
     """One discoverable action-agent skill (index metadata + path)."""
 
@@ -56,6 +75,17 @@ class ActionSkill:
     description: str
     path: Path
     recurring: str | None = None
+    tools: tuple[str, ...] = ()
+    """Tool names the skill's flow uses; an answer turn inside the skill offers only these."""
+
+    getting_started: str | None = None
+    """Verbatim first-visit demo label this skill owns; ``None`` when it is not a demo row."""
+
+    demo_order: int | None = None
+    """1-based demo menu order when ``getting_started`` is set (A=1)."""
+
+    pre_execute: tuple[SkillToolCall, ...] = ()
+    """Static tool calls run on skill entry (boot, ``/demo``, ``skill_view``) before the model."""
 
 
 def skills_dir() -> Path:
@@ -84,7 +114,12 @@ def _package_skill_path(package_dir: Path) -> Path | None:
 
 
 def _iter_skill_paths(directory: Path) -> list[Path]:
-    """Return skill recipe paths in stable order (packages then flat files)."""
+    """Return skill recipe paths in stable order (packages, nested packages, flat files).
+
+    A package directory may nest one level of child skill packages (e.g.
+    ``onboarding_cicd_fix/a_local_analysis/SKILL.md``); each child follows its
+    parent so related skills stay adjacent in the index.
+    """
     paths: list[Path] = []
     for child in sorted(directory.iterdir()):
         if not child.is_dir() or child.name.startswith("."):
@@ -92,6 +127,12 @@ def _iter_skill_paths(directory: Path) -> list[Path]:
         skill_file = _package_skill_path(child)
         if skill_file is not None:
             paths.append(skill_file)
+        for nested in sorted(child.iterdir()):
+            if not nested.is_dir() or nested.name.startswith("."):
+                continue
+            nested_file = _package_skill_path(nested)
+            if nested_file is not None:
+                paths.append(nested_file)
     paths.extend(sorted(directory.glob("*.md")))
     return paths
 
@@ -132,6 +173,34 @@ def _parse_frontmatter(raw: str) -> tuple[dict[str, Any], str]:
 
 def _string_field(value: Any) -> str:
     return value.strip() if isinstance(value, str) else ""
+
+
+def _string_list_field(value: Any) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        return ()
+    return tuple(item.strip() for item in value if isinstance(item, str) and item.strip())
+
+
+def _optional_int_field(value: Any) -> int | None:
+    if isinstance(value, bool) or not isinstance(value, int):
+        return None
+    return value
+
+
+def _pre_execute_field(value: Any) -> tuple[SkillToolCall, ...]:
+    """Parse ``pre_execute`` entries; malformed items are dropped like other bad frontmatter."""
+    if not isinstance(value, list):
+        return ()
+    calls: list[SkillToolCall] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        tool = _string_field(item.get("tool"))
+        args = item.get("args")
+        if not tool or not isinstance(args, dict):
+            continue
+        calls.append(SkillToolCall(tool=tool, args=MappingProxyType(dict(args))))
+    return tuple(calls)
 
 
 def _derive_description(body: str) -> str:
@@ -195,11 +264,16 @@ def _load_action_skill(skill_path: Path) -> ActionSkill | None:
         name = _name_from_path(skill_path)
     description = _string_field(frontmatter.get("description")) or _derive_description(body)
     recurring = _string_field(frontmatter.get("recurring")) or None
+    getting_started = _string_field(frontmatter.get("getting_started")) or None
     return ActionSkill(
         name=name,
         description=description,
         path=skill_path,
         recurring=recurring,
+        tools=_string_list_field(frontmatter.get("tools")),
+        getting_started=getting_started,
+        demo_order=_optional_int_field(frontmatter.get("demo_order")),
+        pre_execute=_pre_execute_field(frontmatter.get("pre_execute")),
     )
 
 
@@ -220,6 +294,18 @@ def list_action_skills() -> tuple[ActionSkill, ...]:
     return tuple(skills)
 
 
+def _demo_sort_key(skill: ActionSkill) -> tuple[int, str]:
+    order = skill.demo_order if skill.demo_order is not None else 10**9
+    return (order, skill.name)
+
+
+def getting_started_skills() -> tuple[ActionSkill, ...]:
+    """Skills that own a demo option, in menu order."""
+    owned = [skill for skill in list_action_skills() if skill.getting_started]
+    owned.sort(key=_demo_sort_key)
+    return tuple(owned)
+
+
 def _index_line(skill: ActionSkill) -> str:
     recurring = f" [recurring: {skill.recurring}]" if skill.recurring else ""
     return f"- {skill.name} — {skill.description}{recurring}"
@@ -238,8 +324,8 @@ def load_skills_index() -> str:
         "Skill matches outrank a generic docs/how-to answer.",
         "Before answering, check this catalog for an action-shaped match",
         '(including "set up", "install", "onboard me", "demo", "audit", or "fix").',
-        'Capability questions ("what can you do", "how can you help",',
-        '"what tools do you have") are NOT a skill_view match. Answer them directly.',
+        'For capability questions ("what can you do", "how can you help"),',
+        "follow the getting-started instruction to load the master skill.",
         "When the user request matches a skill below, call skill_view(name) in",
         "THIS turn BEFORE emitting that skill's tool sequence. Do not invent",
         "steps from the one-line description alone.",

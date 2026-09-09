@@ -4,24 +4,20 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from concurrent.futures import Future
+from copy import copy
 from datetime import datetime
 from functools import partial
-from types import SimpleNamespace
 from typing import Any
 
 from apscheduler.executors.base import run_job
 from apscheduler.executors.pool import ThreadPoolExecutor
 
 
-def _scheduled_invocation(job: Any, scheduled_run_time: datetime) -> SimpleNamespace:
-    """Bind one fire time to the fields APScheduler's ``run_job`` consumes."""
-    return SimpleNamespace(
-        id=job.id,
-        func=partial(job.func, scheduled_run_time=scheduled_run_time),
-        args=job.args,
-        kwargs=job.kwargs,
-        misfire_grace_time=job.misfire_grace_time,
-    )
+def _job_for_run_time(job: Any, scheduled_run_time: datetime) -> Any:
+    """Bind one fire time to a shallow copy of an APScheduler job."""
+    invocation = copy(job)
+    invocation.func = partial(job.func, scheduled_run_time=scheduled_run_time)
+    return invocation
 
 
 def _run_job_with_scheduled_time(
@@ -33,13 +29,13 @@ def _run_job_with_scheduled_time(
     """Run each submitted time with its own callback argument."""
     events: list[Any] = []
     for scheduled_run_time in run_times:
-        invocation = _scheduled_invocation(job, scheduled_run_time)
+        invocation = _job_for_run_time(job, scheduled_run_time)
         events.extend(run_job(invocation, jobstore_alias, [scheduled_run_time], logger_name))
     return events
 
 
 class ScheduledThreadPoolExecutor(ThreadPoolExecutor):
-    """Run scheduler jobs with exact fire times attached to each callback."""
+    """Run scheduler jobs with their exact APScheduler fire time attached."""
 
     def __init__(
         self,
@@ -51,8 +47,8 @@ class ScheduledThreadPoolExecutor(ThreadPoolExecutor):
         super().__init__(max_workers=max_workers)
 
     def _do_submit_job(self, job: Any, run_times: list[datetime]) -> None:
-        for scheduled_run_time in run_times:
-            if self._on_submit is not None:
+        if self._on_submit is not None:
+            for scheduled_run_time in run_times:
                 self._on_submit(job.id, scheduled_run_time)
 
         def callback(future: Future[list[Any]]) -> None:

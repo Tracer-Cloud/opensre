@@ -6,8 +6,9 @@ Surfaces and hosts import leaves they need, or curated names from this package.
 Layout (import the leaf — this ``__init__`` must not create import cycles):
 
 * :mod:`goal` — domain state, attach/clear, reason derive
-* :mod:`evaluate` — structured host completion (claim ≠ proof)
-* :mod:`confirm` — optional LLM confirm
+* :mod:`judge` — cheap-model transcript verdict
+* :mod:`validate` — cheap-model check of newly ticked items
+* :mod:`evaluate` — host completion + evidence gate
 * :mod:`progress` — progress / status-line formatting only
 * :mod:`continuation` — session-goal continuation prompts
 * :mod:`persist` — flush / restore
@@ -22,7 +23,6 @@ from core.agent_harness.session_goal.goal import (
     SessionGoal,
     SessionGoalReason,
     SessionGoalStatus,
-    apply_session_goal_progress,
     attach_session_goal,
     build_session_goal,
     clear_session_goal,
@@ -34,7 +34,6 @@ from core.agent_harness.session_goal.goal import (
     session_goal_is_attached,
     session_goal_is_paused,
     session_goal_token_delta,
-    strip_session_goal_progress_tags,
     strip_shell_prompt_chrome,
 )
 from core.agent_harness.session_goal.progress import (
@@ -54,7 +53,6 @@ __all__ = [
     "SessionGoalReason",
     "SessionGoalRunResult",
     "SessionGoalStatus",
-    "apply_session_goal_progress",
     "attach_session_goal",
     "build_session_goal",
     "clear_session_goal",
@@ -69,6 +67,5 @@ __all__ = [
     "session_goal_is_attached",
     "session_goal_is_paused",
     "session_goal_token_delta",
-    "strip_session_goal_progress_tags",
     "strip_shell_prompt_chrome",
 ]

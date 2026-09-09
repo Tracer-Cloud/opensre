@@ -21,6 +21,7 @@ class PromptBlockId(StrEnum):
     ACTION_VENDOR_FRAGMENTS = "action-agent-vendor-fragments"
     ACTION_RUNTIME_FACTS = "action-agent-runtime-facts"
     ACTION_SKILLS = "action-agent-skills"
+    ACTIVE_SKILL = "active-skill"
     ACTION_SETUP_STATE = "action-agent-setup-state"
     ASK_USER_ANSWERED = "ask-user-answered"
     CURRENT_TASK_PLAN = "current-task-plan"

@@ -35,6 +35,9 @@ class AgentRunResult:
     hit_iteration_cap: bool = False
     llm_iterations_used: int = 0
     final_system_prompt: str = ""
+    #: Provider-reported usage summed over the run's model calls (0 when unreported).
+    input_tokens: int = 0
+    output_tokens: int = 0
     """System prompt sent to the LLM on the last request (post-hook), for debugging."""
 
 
