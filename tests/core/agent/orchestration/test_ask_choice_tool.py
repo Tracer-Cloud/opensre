@@ -274,3 +274,45 @@ def test_allow_custom_from_the_model_reaches_the_pending_choice() -> None:
     assert result["ok"] is True
     assert session.pending_user_choice is not None
     assert session.pending_user_choice.custom_answer is False
+
+
+def _answer_turn(session: Session, message: str) -> ActionToolScope:
+    console = Console(file=io.StringIO(), force_terminal=False, highlight=False)
+    return ActionToolScope(
+        session=session, console=console, slash_ports=_Ports(), turn_user_message=message
+    )
+
+
+def test_a_question_answered_in_this_message_is_not_asked_again() -> None:
+    # Arrange: the turn's user message is the answer to the same question.
+    session = Session()
+    ctx = _answer_turn(session, "1. When should it run?\nWeekdays at 08:00 (recommended)")
+
+    # Act
+    result = execute_ask_user_choice_tool(
+        {
+            "title": "When should it run?",
+            "options": ["Weekdays at 08:00 (recommended)", "Every day"],
+        },
+        ctx,
+    )
+
+    # Assert: refused with the answer, nothing queued.
+    assert result["ok"] is False
+    assert "Weekdays at 08:00 (recommended)" in result["error"]
+    assert session.pending_user_choice is None
+
+
+def test_a_different_question_still_queues_on_an_answer_turn() -> None:
+    # Arrange
+    session = Session()
+    ctx = _answer_turn(session, "1. Which repository should the agent watch?\nTracer-Cloud/opensre")
+
+    # Act
+    result = execute_ask_user_choice_tool(
+        {"title": "When should it run?", "options": ["Weekdays at 08:00", "Every day"]}, ctx
+    )
+
+    # Assert
+    assert result["ok"] is True
+    assert result["menu"] == "queued"

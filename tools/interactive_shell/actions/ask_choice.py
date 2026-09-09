@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.agent_harness.spi.handoff import AskUserQuestion
+from core.agent_harness.spi.handoff import AskUserQuestion, parse_ask_user_answers
 from core.agent_harness.spi.session_state import (
     PendingUserChoice,
     session_terminal,
@@ -177,12 +177,33 @@ def _parse_questions(raw: object) -> tuple[list[AskUserQuestion] | None, str | N
     return parsed, None
 
 
+def _answered_this_turn(ctx: ActionToolScope, title: str) -> str | None:
+    """The answer the user gave to ``title`` in this turn's message, if any."""
+    wanted = " ".join(title.split()).casefold()
+    if not wanted:
+        return None
+    for asked, answer in parse_ask_user_answers(getattr(ctx, "turn_user_message", "") or ""):
+        if " ".join(asked.split()).casefold() == wanted:
+            return answer
+    return None
+
+
 def execute_ask_user_choice_tool(args: dict[str, Any], ctx: ActionToolScope) -> dict[str, Any]:
     questions, questions_error = _parse_questions(args.get("questions"))
     if questions_error is not None:
         return {"ok": False, "error": questions_error}
 
     title = strip_terminal_controls(str(args.get("title", ""))).strip()
+    for asked in [title, *[question.title for question in questions or ()]]:
+        answer = _answered_this_turn(ctx, asked)
+        if answer is not None:
+            return {
+                "ok": False,
+                "error": (
+                    f"The user already answered {asked!r} in this message: {answer!r}. "
+                    "Use that answer and continue with the next step; do not ask again."
+                ),
+            }
     options = _parse_options(args.get("options"))
 
     if questions:
