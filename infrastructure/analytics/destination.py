@@ -11,11 +11,17 @@ from urllib.parse import urlsplit
 
 from config.account import (
     AccountRecord,
+    account_metadata_path,
     load_account_record,
     normalize_account_app_url,
     resolve_account_token,
+    stored_account_token,
 )
-from config.constants.account import OPENSRE_APP_URL_DEFAULT, OPENSRE_APP_URL_ENV
+from config.constants.account import (
+    OPENSRE_ACCOUNT_TOKEN_ENV,
+    OPENSRE_APP_URL_DEFAULT,
+    OPENSRE_APP_URL_ENV,
+)
 from config.constants.analytics import (
     ANALYTICS_INGEST_PATH,
     ANALYTICS_SIGNATURE_HEADER,
@@ -61,11 +67,18 @@ def _env(name: str) -> str:
     return (os.getenv(name) or "").strip()
 
 
-def _load_account() -> AccountRecord | None:
+def _load_account() -> tuple[AccountRecord | None, bool]:
+    """Return the account record and whether reading it failed."""
     try:
-        return load_account_record()
+        path = account_metadata_path()
+        metadata_present = path.exists() or path.is_symlink()
+        record = load_account_record()
+        if record is not None:
+            return record, False
+        metadata_present = metadata_present or path.exists() or path.is_symlink()
+        return None, metadata_present
     except Exception:
-        return None
+        return None, True
 
 
 def _normalize(value: str | None) -> str | None:
@@ -95,6 +108,13 @@ def _account_token() -> str:
         return ""
 
 
+def _stored_account_token() -> str:
+    try:
+        return stored_account_token().strip()
+    except Exception:
+        return ""
+
+
 def resolve_analytics_destination() -> AnalyticsDestination | None:
     """Resolve a safe destination, failing closed on explicit misconfiguration."""
     silo_url = _env(WEBAPP_URL_ENV)
@@ -105,7 +125,9 @@ def resolve_analytics_destination() -> AnalyticsDestination | None:
             return None
         base_url = silo_base_url
     else:
-        account = _load_account()
+        account, account_load_failed = _load_account()
+        if account_load_failed:
+            return None
         if account is not None:
             account_base_url = _normalize(account.app_url)
             if account_base_url is None:
@@ -113,6 +135,14 @@ def resolve_analytics_destination() -> AnalyticsDestination | None:
             bearer_token = _account_token()
             if not bearer_token:
                 return None
+            environment_token = _env(OPENSRE_ACCOUNT_TOKEN_ENV)
+            if environment_token:
+                persisted_token = _stored_account_token()
+                if not persisted_token or not hmac.compare_digest(
+                    environment_token,
+                    persisted_token,
+                ):
+                    return None
             base_url = account_base_url
         else:
             anonymous_base_url = _anonymous_base_url()

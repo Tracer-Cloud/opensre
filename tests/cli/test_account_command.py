@@ -120,6 +120,7 @@ def test_login_uses_state_and_pkce_without_putting_tokens_in_browser_url(
     )
 
     assert result.record.email == "octocat@example.com"
+    assert result.effective_token_matches_login is True
     assert saved_tokens == ["osre_pat_secret"]
     assert saved_records == [result.record]
     assert cache_resets == [True]
@@ -194,6 +195,7 @@ def test_login_warns_when_env_token_would_override_and_does_not_revoke_it(
     )
 
     assert "OPENSRE_ACCOUNT_TOKEN" in result.warning
+    assert result.effective_token_matches_login is False
     assert revoked == [("https://app.opensre.com", "osre_pat_file_old")]
 
 
@@ -390,6 +392,34 @@ def test_login_force_replaces_valid_session(monkeypatch: pytest.MonkeyPatch) -> 
     assert analytics_links == [True]
     assert "Replacing the active session for octocat@example.com" in result.output
     assert "Signed in as octocat@example.com" in result.output
+
+
+def test_login_does_not_link_analytics_when_environment_token_overrides(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    analytics_links: list[bool] = []
+    monkeypatch.setattr(
+        "surfaces.cli.commands.account.account_status",
+        lambda **_: AccountStatus(AccountSessionState.SIGNED_OUT, None, "signed out"),
+    )
+    monkeypatch.setattr(
+        "surfaces.cli.account_auth.login_account",
+        lambda **_: AccountLoginResult(
+            record=_record(),
+            warning="OPENSRE_ACCOUNT_TOKEN overrides this login",
+            effective_token_matches_login=False,
+        ),
+    )
+    monkeypatch.setattr(
+        "surfaces.cli.commands.account.capture_account_authenticated",
+        lambda: analytics_links.append(True),
+    )
+
+    result = _invoke_account_login("--no-browser")
+
+    assert result.exit_code == 0, result.output
+    assert analytics_links == []
+    assert "OPENSRE_ACCOUNT_TOKEN overrides this login" in result.output
 
 
 def test_account_usage_opens_the_usage_page_and_prints_the_url(

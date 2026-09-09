@@ -78,6 +78,7 @@ class AccountLoginResult:
 
     record: AccountRecord
     warning: str = ""
+    effective_token_matches_login: bool = True
 
 
 @dataclass(frozen=True)
@@ -385,12 +386,20 @@ def login_account(
         _revoke_remote(previous_app_url, previous_token)
     env_token = os.getenv(OPENSRE_ACCOUNT_TOKEN_ENV, "").strip()
     warning = ""
-    if env_token and env_token != exchange.access_token:
+    effective_token_matches_login = not env_token or secrets.compare_digest(
+        env_token,
+        exchange.access_token,
+    )
+    if not effective_token_matches_login:
         warning = (
             f"{OPENSRE_ACCOUNT_TOKEN_ENV} is set in your environment and will keep "
             "overriding the token just saved. Unset it so this login is used."
         )
-    return AccountLoginResult(record=record, warning=warning)
+    return AccountLoginResult(
+        record=record,
+        warning=warning,
+        effective_token_matches_login=effective_token_matches_login,
+    )
 
 
 def logout_account() -> AccountLogoutResult:

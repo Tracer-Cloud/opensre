@@ -15,8 +15,10 @@ The app origin resolves in this order:
 2. The app URL saved with a personal CLI login.
 3. `OPENSRE_APP_URL`, then `https://app.opensre.com`.
 
-An invalid explicit URL, or a silo URL without `AGENT_USAGE_SECRET`, disables
-remote delivery for that process instead of falling through to another origin.
+An invalid explicit URL, an unreadable saved account, a silo URL without
+`AGENT_USAGE_SECRET`, or an environment account token that conflicts with the
+saved login disables remote delivery for that process instead of falling
+through to another origin or identity.
 
 The request carries the personal `osre_pat_...` bearer for a signed-in CLI or
 `AGENT_USAGE_SECRET` for a silo. It has no authorization header before login.

@@ -151,7 +151,8 @@ def account_login(
         raise click.ClickException(str(exc)) from exc
 
     record = result.record
-    capture_account_authenticated()
+    if result.effective_token_matches_login:
+        capture_account_authenticated()
     if json_output:
         click.echo(
             json.dumps(

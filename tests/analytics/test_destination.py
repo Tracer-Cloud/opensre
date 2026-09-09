@@ -5,6 +5,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 from dataclasses import replace
+from pathlib import Path
 
 from config.account import AccountRecord
 from infrastructure.analytics import destination
@@ -21,11 +22,14 @@ def _account() -> AccountRecord:
     )
 
 
-def test_anonymous_install_uses_first_party_production_endpoint(monkeypatch) -> None:
+def test_anonymous_install_uses_first_party_production_endpoint(
+    monkeypatch, tmp_path: Path
+) -> None:
     monkeypatch.delenv("OPENSRE_APP_URL", raising=False)
     monkeypatch.delenv("OPENSRE_WEBAPP_URL", raising=False)
     monkeypatch.delenv("AGENT_USAGE_SECRET", raising=False)
     monkeypatch.setattr(destination, "load_account_record", lambda: None)
+    monkeypatch.setattr(destination, "account_metadata_path", lambda: tmp_path / "account.json")
 
     resolved = destination.resolve_analytics_destination()
 
@@ -36,6 +40,7 @@ def test_anonymous_install_uses_first_party_production_endpoint(monkeypatch) -> 
 
 def test_signed_in_cli_uses_account_origin_and_bearer_token(monkeypatch) -> None:
     monkeypatch.delenv("OPENSRE_WEBAPP_URL", raising=False)
+    monkeypatch.delenv("OPENSRE_ACCOUNT_TOKEN", raising=False)
     monkeypatch.setattr(destination, "load_account_record", _account)
     monkeypatch.setattr(destination, "resolve_account_token", lambda: "osre_pat_secret")
 
@@ -145,10 +150,35 @@ def test_account_without_bearer_token_disables_delivery(monkeypatch) -> None:
     assert resolved is None
 
 
-def test_invalid_anonymous_override_disables_delivery(monkeypatch) -> None:
+def test_account_read_failure_disables_delivery(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("OPENSRE_WEBAPP_URL", raising=False)
+    account_path = tmp_path / "account.json"
+    account_path.write_text("malformed", encoding="utf-8")
+    monkeypatch.setattr(destination, "account_metadata_path", lambda: account_path)
+    monkeypatch.setattr(destination, "load_account_record", lambda: None)
+
+    resolved = destination.resolve_analytics_destination()
+
+    assert resolved is None
+
+
+def test_conflicting_environment_account_token_disables_delivery(monkeypatch) -> None:
+    monkeypatch.delenv("OPENSRE_WEBAPP_URL", raising=False)
+    monkeypatch.setenv("OPENSRE_ACCOUNT_TOKEN", "osre_pat_other_account")
+    monkeypatch.setattr(destination, "load_account_record", _account)
+    monkeypatch.setattr(destination, "resolve_account_token", lambda: "osre_pat_other_account")
+    monkeypatch.setattr(destination, "stored_account_token", lambda: "osre_pat_saved_login")
+
+    resolved = destination.resolve_analytics_destination()
+
+    assert resolved is None
+
+
+def test_invalid_anonymous_override_disables_delivery(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.delenv("OPENSRE_WEBAPP_URL", raising=False)
     monkeypatch.setenv("OPENSRE_APP_URL", "ftp://invalid.example")
     monkeypatch.setattr(destination, "load_account_record", lambda: None)
+    monkeypatch.setattr(destination, "account_metadata_path", lambda: tmp_path / "account.json")
 
     resolved = destination.resolve_analytics_destination()
 
