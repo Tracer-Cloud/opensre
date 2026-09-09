@@ -141,6 +141,11 @@ def _parse_bool(value: object, *, default: bool = False) -> bool:
     return default
 
 
+def _normalize_title(title: str) -> str:
+    """Identity for matching a question to an answer in this turn's message."""
+    return " ".join(title.split()).casefold()
+
+
 def _parse_questions(raw: object) -> tuple[list[AskUserQuestion] | None, str | None]:
     """Return ``(questions, error)``. Absent/empty ``raw`` yields ``([], None)``."""
     if raw is None:
@@ -150,6 +155,7 @@ def _parse_questions(raw: object) -> tuple[list[AskUserQuestion] | None, str | N
     if not raw:
         return [], None
     parsed: list[AskUserQuestion] = []
+    seen_titles: set[str] = set()
     for index, item in enumerate(raw):
         if not isinstance(item, dict):
             return None, f"questions[{index}] must be an object"
@@ -160,6 +166,12 @@ def _parse_questions(raw: object) -> tuple[list[AskUserQuestion] | None, str | N
             return None, f"questions[{index}].label is required"
         if not title:
             return None, f"questions[{index}].title is required"
+        title_key = _normalize_title(title)
+        if title_key in seen_titles:
+            return None, (
+                f"questions[{index}].title is already used; each question needs its own title"
+            )
+        seen_titles.add(title_key)
         option_error = _options_error(options)
         if option_error is not None:
             return None, f"questions[{index}]: {option_error}"
@@ -179,11 +191,11 @@ def _parse_questions(raw: object) -> tuple[list[AskUserQuestion] | None, str | N
 
 def _answered_this_turn(ctx: ActionToolScope, title: str) -> str | None:
     """The answer the user gave to ``title`` in this turn's message, if any."""
-    wanted = " ".join(title.split()).casefold()
+    wanted = _normalize_title(title)
     if not wanted:
         return None
     for asked, answer in parse_ask_user_answers(getattr(ctx, "turn_user_message", "") or ""):
-        if " ".join(asked.split()).casefold() == wanted:
+        if _normalize_title(asked) == wanted:
             return answer
     return None
 

@@ -93,6 +93,8 @@ Wait for the answer.
 
 ### 4. Schedule the loop
 
-Call `schedule_ci_reliability_loop(owner="<owner>", repo="<repo>")` for
-weekdays, or pass `weekdays=false` when they chose every day. Output
-`response_text` verbatim and stop.
+Call `schedule_ci_reliability_loop(owner="<owner>", repo="<repo>",
+include_report=true)` for weekdays, or pass `weekdays=false` when they
+chose every day. Output `response_text` verbatim and stop. When a same-day
+report exists it comes first, then the schedule card; otherwise the card
+alone.

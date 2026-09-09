@@ -147,8 +147,9 @@ Wait for the answer, then follow the selected option.
 
 **Recurring check:** Call
 `schedule_ci_reliability_loop(owner="<owner>", repo="<repo>")` for the
-analyzed repository, output its `response_text` verbatim, and stop. Each
-tick is the same analytics report, not a CI code fix. `/loops service
+analyzed repository, output its `response_text` verbatim, and stop. The
+report was already shown in step 3, so do not pass `include_report`.
+Each later tick is the same analytics report, not a CI code fix. `/loops service
 install` keeps it running when no shell is open. Do not call
 `fix_github_pr_ci` from this skill.
 

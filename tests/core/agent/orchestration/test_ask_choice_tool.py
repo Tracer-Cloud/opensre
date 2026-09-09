@@ -202,6 +202,20 @@ def test_one_item_questions_array_is_rejected() -> None:
     assert "title and options" in result["error"]
 
 
+def test_duplicate_question_titles_are_rejected() -> None:
+    result = execute_ask_user_choice_tool(
+        {
+            "questions": [
+                _question("Cadence", "When should it run?"),
+                _question("Again", "  WHEN SHOULD IT RUN?  "),
+            ]
+        },
+        _ctx(),
+    )
+    assert result["ok"] is False
+    assert "already used" in result["error"]
+
+
 def test_malformed_question_is_rejected() -> None:
     result = execute_ask_user_choice_tool(
         {"title": "Ask User", "questions": [{"label": "Codebase", "title": "Where?"}]},

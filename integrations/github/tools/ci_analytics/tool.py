@@ -236,6 +236,25 @@ def _from_snapshot(
     }
 
 
+def report_text_from_snapshot(
+    owner: str, repo: str, *, days: int = _DEFAULT_WINDOW_DAYS, include_benchmarks: bool = True
+) -> tuple[str, str]:
+    """``(markdown, generated_at)`` from today's snapshot, or ``("", "")`` when none.
+
+    Reads saved snapshots only; never resolves a token or starts a live fetch.
+    """
+    now = datetime.now(UTC)
+    snapshot = read_fresh_snapshot(snapshot_root(), owner, repo, window_days=days, now=now)
+    if snapshot is None:
+        return "", ""
+    result = _from_snapshot(
+        snapshot, owner, repo, days, None, include_benchmarks=include_benchmarks
+    )
+    if not result.get("success"):
+        return "", ""
+    return str(result.get("response_text") or "").strip(), str(snapshot.get("generated_at", ""))
+
+
 def _peer_payload(report: CiAnalyticsReport, *, from_snapshot: str | None) -> dict[str, Any]:
     return {
         "owner": report.owner,
@@ -538,4 +557,4 @@ def analyze_github_ci_reliability(
     )
 
 
-__all__ = ["TOOL_NAME", "analyze_github_ci_reliability"]
+__all__ = ["report_text_from_snapshot", "TOOL_NAME", "analyze_github_ci_reliability"]

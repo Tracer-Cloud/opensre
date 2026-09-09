@@ -84,6 +84,8 @@ def test_tool_returns_the_card_and_reports_a_bad_time(monkeypatch: pytest.Monkey
     assert ok["ok"] is True
     assert ok["task_id"] == "task1"
     assert "/loops messages" in ok["response_text"]
+    assert ok["report_as_of"] == ""
+    assert "Key results" not in ok["response_text"]
     assert calls[0]["time_text"] == ci_loop.DEFAULT_LOOP_TIME
     assert calls[0]["weekdays"] is True
     assert bad == {"ok": False, "error": "time must look like 08:30"}
@@ -106,6 +108,73 @@ def _scheduled_stub(owner: str, repo: str) -> ci_loop.ScheduledLoop:
     )
     loop = ManualLoop(task=task, channels=(Provider.INTERACTIVE_SHELL,), next_run="soon")
     return ci_loop.ScheduledLoop(loop=loop, reused=False)
+
+
+def test_tool_puts_todays_snapshot_report_above_the_schedule_card(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from datetime import UTC, datetime, timedelta
+
+    from integrations.github.tools.ci_analytics import tool as tool_module
+    from integrations.github.tools.ci_analytics.models import (
+        CiAnalyticsReport,
+        Outage,
+        WorkflowSummary,
+    )
+    from integrations.github.tools.ci_analytics.snapshots import report_to_dict, write_snapshot
+
+    now = datetime.now(UTC)
+    report = CiAnalyticsReport(
+        owner="acme",
+        repo="app",
+        default_branch="main",
+        window_days=30,
+        generated_at=now,
+        executions=100,
+        pr_executions=80,
+        pr_failures=8,
+        classified=(),
+        merged_pr_branches=10,
+        blocked_minutes=120.0,
+        blocked_minutes_all=150.0,
+        branch_runs=20,
+        branch_failures=2,
+        red_hours=36.4,
+        outages=(Outage(workflow="CI", started_at=now, ended_at=None, first_failure_url="u"),),
+        mean_recovery_hours=1.0,
+        workflows=(WorkflowSummary("CI", 100, 8, 3, 12.0),),
+        coverage_notices=(),
+        working_hours_label="Mon-Fri 09:00-18:00 UTC",
+    )
+    write_snapshot(
+        tmp_path,
+        "acme",
+        "app",
+        now - timedelta(minutes=5),
+        {
+            "generated_at": (now - timedelta(minutes=5)).isoformat(),
+            "window_days": 30,
+            "headline": "h",
+            "report": report_to_dict(report),
+        },
+    )
+    monkeypatch.setattr(tool_module, "snapshot_root", lambda _root=None: tmp_path)
+    monkeypatch.setattr(tool_module, "resolve_github_token", lambda _t=None: "")
+
+    def _schedule(*_a: object, **_k: object) -> ci_loop.ScheduledLoop:
+        return _scheduled_stub("acme", "app")
+
+    monkeypatch.setattr(ci_loop, "schedule_ci_reliability_loop", _schedule)
+
+    result = loop_tool.schedule_ci_reliability_loop(owner="acme", repo="app", include_report=True)
+
+    assert result["ok"] is True
+    assert result["report_as_of"].startswith(str(now.year))
+    text = result["response_text"]
+    assert text.index("Key results") < text.index("Scheduled:")
+    assert "36.4h of 30 days" in text
+    assert "Compared with" in text
+    assert "/loops messages" in text
 
 
 def test_loop_names_the_deterministic_builder_with_its_arguments(store_path: Path) -> None:
@@ -202,3 +271,43 @@ def test_build_report_without_a_token_raises_a_generic_error(
 
     with pytest.raises(RuntimeError, match="No GitHub token"):
         ci_loop.build_report({"owner": "acme", "repo": "app"})
+
+
+def test_tool_never_reads_github_live_when_no_snapshot_exists(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Arrange: a token is available and no snapshot exists for the repository.
+    from integrations.github.tools.ci_analytics import tool as tool_module
+
+    monkeypatch.setenv("GITHUB_TOKEN", "stub-token")
+    monkeypatch.setattr(tool_module, "snapshot_root", lambda _root=None: tmp_path)
+    live_calls: list[tuple[str, str]] = []
+
+    def _analyze(owner: str, repo: str, **_kwargs: object) -> object:
+        live_calls.append((owner, repo))
+        raise AssertionError("live read")
+
+    monkeypatch.setattr(tool_module, "analyze_repository", _analyze)
+    monkeypatch.setattr(
+        ci_loop, "schedule_ci_reliability_loop", lambda *_a, **_k: _scheduled_stub("acme", "app")
+    )
+
+    # Act
+    result = loop_tool.schedule_ci_reliability_loop(owner="acme", repo="app", include_report=True)
+
+    # Assert: the card alone, and GitHub was never contacted.
+    assert live_calls == []
+    assert result["ok"] is True
+    assert result["report_as_of"] == ""
+    assert result["response_text"].startswith("Scheduled:")
+
+
+def test_registered_tool_runs_the_scheduling_function() -> None:
+    # Arrange / Act: the registry entry is what the model actually calls.
+    from tools.registry import get_registered_tool
+
+    registered = get_registered_tool(loop_tool.TOOL_NAME)
+
+    # Assert
+    assert registered is not None
+    assert registered.run is loop_tool.schedule_ci_reliability_loop
