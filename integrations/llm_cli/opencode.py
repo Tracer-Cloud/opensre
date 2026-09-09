@@ -27,6 +27,7 @@ from integrations.llm_cli.env_overrides import (
     HTTP_LLM_PROVIDER_ENV_KEYS,
     nonempty_env_values,
 )
+from integrations.llm_cli.output import require_nonempty_output
 from integrations.llm_cli.probe_utils import run_version_probe
 from integrations.llm_cli.semver_utils import parse_semver_three_part
 
@@ -219,13 +220,7 @@ class OpenCodeAdapter:
         )
 
     def parse(self, *, stdout: str, stderr: str, returncode: int) -> str:
-        result = (stdout or "").strip()
-        if not result:
-            raise RuntimeError(
-                self.explain_failure(stdout=stdout, stderr=stderr, returncode=returncode)
-                + " (empty output)"
-            )
-        return result
+        return require_nonempty_output(stdout, stderr, returncode, self.explain_failure)
 
     def explain_failure(self, *, stdout: str, stderr: str, returncode: int) -> str:
         from integrations.llm_cli.failure_explain import explain_cli_failure
