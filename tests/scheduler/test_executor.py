@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import sqlite3
 import threading
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -140,7 +141,10 @@ class TestExecutor:
     ) -> None:
         from infrastructure.scheduling.scheduler.claim_lease import ClaimLeaseRenewer
 
-        monkeypatch.setattr(run_store, "_CLAIM_LEASE_SECONDS", 0.1)
+        # Long enough that a loaded CI runner cannot let the lease lapse before
+        # the renewer's first wake; the renewal interval stays far below it.
+        lease_seconds = 0.5
+        monkeypatch.setattr(run_store, "_CLAIM_LEASE_SECONDS", lease_seconds)
         renewed = threading.Event()
         real_renew = run_store.renew_claims
 
@@ -164,8 +168,12 @@ class TestExecutor:
         building = threading.Event()
         release = threading.Event()
         first_result: list[bool] = []
+        building_since: list[float] = []
 
         def build_slowly(*_args: object) -> str:
+            # The claim is written before build_message runs, so the original
+            # lease expires no later than this timestamp plus the lease length.
+            building_since.append(time.monotonic())
             building.set()
             assert release.wait(_SYNC_TIMEOUT_SECONDS)
             return "Scheduled report"
@@ -180,7 +188,8 @@ class TestExecutor:
             worker.start()
             assert building.wait(_SYNC_TIMEOUT_SECONDS)
             assert renewed.wait(_SYNC_TIMEOUT_SECONDS)
-            threading.Event().wait(0.12)
+            original_lease_over_at = building_since[0] + lease_seconds + 0.05
+            threading.Event().wait(max(0.0, original_lease_over_at - time.monotonic()))
             assert execute_task(task, fire_time, real_runners()) is False
             release.set()
             worker.join(_SYNC_TIMEOUT_SECONDS)
