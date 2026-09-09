@@ -294,3 +294,13 @@ def test_unrecovered_failure_is_the_latest_observation() -> None:
         "Tool: read_status\nArguments: {}\nOutcome: success\nResult: still there"
     )
     assert tool_evidence_has_unrecovered_failure(status_after_write) is True
+    other_write = (
+        "Tool: delete_job\nArguments: {}\nOutcome: error\nResult: denied\n\n"
+        "Tool: create_job\nArguments: {}\nOutcome: success\nResult: created"
+    )
+    assert tool_evidence_has_unrecovered_failure(other_write) is True
+    retried_write = (
+        "Tool: delete_job\nArguments: {}\nOutcome: error\nResult: denied\n\n"
+        "Tool: delete_job\nArguments: {}\nOutcome: success\nResult: removed"
+    )
+    assert tool_evidence_has_unrecovered_failure(retried_write) is False

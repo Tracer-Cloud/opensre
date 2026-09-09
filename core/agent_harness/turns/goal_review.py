@@ -161,20 +161,14 @@ _PLAN_INCOMPLETE_NUDGE = (
 _PLAN_TOOL_NAME = "update_plan"
 
 
-def plan_worked_this_turn(
-    executed_tool_names: Sequence[str],
-    *,
-    session_goal_active: bool = False,
-) -> bool:
-    """True when this turn is working the live plan, so unfinished steps block stop.
+def plan_worked_this_turn(executed_tool_names: Sequence[str]) -> bool:
+    """True when this turn touched the live plan, so unfinished steps block stop.
 
-    ``update_plan`` this turn is the usual signal. An active ``/goal`` is a
-    continuation of the same work, so a leftover in-progress plan still
-    blocks even if the model skipped the bookkeeping call. A plan left
-    from an earlier request must not pull an unrelated chat turn back
-    into plan execution.
+    ``update_plan`` is the structured signal. An active ``/goal`` alone is
+    not: the latest user message may redirect, and a leftover plan must
+    not pull that answer back into plan execution.
     """
-    return session_goal_active or _PLAN_TOOL_NAME in executed_tool_names
+    return _PLAN_TOOL_NAME in executed_tool_names
 
 
 def task_plan_blocks_conclusion(
@@ -221,7 +215,6 @@ class _LLMGoalReviewer:
     # Live plan gate: when True at conclusion, reject without spending the LLM
     # review budget (the overlay still shows unfinished work).
     plan_incomplete: Callable[[], bool] | None = None
-    session_goal_active: bool = False
     reviews_remaining: int = field(default=_MAX_GOAL_REVIEWS)
 
     def __call__(self, observation: GoalObservation) -> bool:
@@ -239,7 +232,7 @@ class _LLMGoalReviewer:
             return True
         if (
             self.plan_incomplete is not None
-            and plan_worked_this_turn(names, session_goal_active=self.session_goal_active)
+            and plan_worked_this_turn(names)
             and self.plan_incomplete()
         ):
             return False
@@ -286,7 +279,6 @@ def build_goal_reviewer(
     executed_tool_names: list[str],
     *,
     plan_incomplete: Callable[[], bool] | None = None,
-    session_goal_active: bool = False,
 ) -> Goal:
     """Build a reviewed :class:`Goal` for one action turn over ``user_goal``.
 
@@ -295,22 +287,20 @@ def build_goal_reviewer(
 
     ``plan_incomplete`` — when provided — rejects conclusions while the live
     task plan still has unfinished steps, so the shell does not go idle with
-    ``Plan · n/m`` and a mid-list ``●``. It applies to a turn that worked
-    the plan or to an active ``/goal`` continuation (see
-    :func:`plan_worked_this_turn`).
+    ``Plan · n/m`` and a mid-list ``●``. It applies only to a turn that
+    worked the plan (see :func:`plan_worked_this_turn`).
     """
     reviewer = _LLMGoalReviewer(
         llm=llm,
         user_goal=user_goal,
         executed_tool_names=executed_tool_names,
         plan_incomplete=plan_incomplete,
-        session_goal_active=session_goal_active,
     )
 
     def _nudge(_observation: GoalObservation) -> str:
         if (
             plan_incomplete is not None
-            and plan_worked_this_turn(executed_tool_names, session_goal_active=session_goal_active)
+            and plan_worked_this_turn(executed_tool_names)
             and plan_incomplete()
         ):
             return _PLAN_INCOMPLETE_NUDGE

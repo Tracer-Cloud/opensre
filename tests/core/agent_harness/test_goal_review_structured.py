@@ -66,18 +66,17 @@ def test_goal_reviewer_rejects_while_task_plan_incomplete() -> None:
     assert "unfinished steps" in goal.nudge(_obs())
 
 
-def test_goal_reviewer_rejects_plan_continuation_during_an_active_session_goal() -> None:
-    """``/goal`` is the same work — skip update_plan and the unfinished plan still blocks."""
+def test_goal_reviewer_lets_an_active_goal_redirect_over_a_stale_plan() -> None:
+    """A leftover plan must not pull a redirected /goal turn back into it."""
     llm = _ScriptedLLM('{"verdict": "GOAL_REACHED"}')
     goal = build_goal_reviewer(
         llm,
-        "remove the leftover cron",
+        "how are you doing?",
         executed_tool_names=["shell_run"],
         plan_incomplete=lambda: True,
-        session_goal_active=True,
     )
     assert goal.verify is not None
-    assert goal.verify(_obs()) is False
+    assert goal.verify(_obs(text="Doing well.")) is True
     assert llm.invokes == 0
 
 

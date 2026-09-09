@@ -34,10 +34,10 @@ def _is_status_or_discovery_tool(name: str) -> bool:
 def tool_evidence_has_unrecovered_failure(tool_evidence: str) -> bool:
     """True when a failed write still stands, or the latest observation errored.
 
-    A later successful write recovers a preliminary lookup or write failure.
-    A later status/list/read success does not recover a failed mutation.
+    A later successful call of the same write tool recovers that failure.
+    A later success of a different write, or of a status/list/read, does not.
     """
-    write_failed = False
+    failed_writes: set[str] = set()
     last_failed = False
     for block in (tool_evidence or "").split("\n\n"):
         name = ""
@@ -53,13 +53,13 @@ def tool_evidence_has_unrecovered_failure(tool_evidence: str) -> bool:
             continue
         if outcome_error:
             last_failed = True
-            if not _is_status_or_discovery_tool(name):
-                write_failed = True
+            if name and not _is_status_or_discovery_tool(name):
+                failed_writes.add(name)
         else:
             last_failed = False
-            if not _is_status_or_discovery_tool(name):
-                write_failed = False
-    return write_failed or last_failed
+            if name and not _is_status_or_discovery_tool(name):
+                failed_writes.discard(name)
+    return bool(failed_writes) or last_failed
 
 
 def _qualifying_success(call: ToolCall, result: ToolExecutionResult) -> bool:

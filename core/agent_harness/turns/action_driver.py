@@ -41,7 +41,6 @@ from core.agent_harness.prompts import (
 from core.agent_harness.session.integration_resolution import resolve_and_cache_integrations
 from core.agent_harness.session.pending_choice import parse_ask_user_answers
 from core.agent_harness.session.terminal_access import execute_cli_onboard_on_missing_key
-from core.agent_harness.session_goal.goal import session_goal_is_active
 from core.agent_harness.session_goal.review_input import collect_tool_evidence
 from core.agent_harness.turns.action_dedup import (
     coerce_fingerprint_quiet,
@@ -523,7 +522,6 @@ def _build_action_agent(
                 task_plan=getattr(session, "task_plan", None),
                 plan_only=bool(getattr(session, "plan_only_until_authorized", False)),
             ),
-            session_goal_active=session_goal_is_active(session),
         )
 
     # WAL first, observer second: the tool intent must be on disk before
