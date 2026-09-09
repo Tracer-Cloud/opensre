@@ -54,6 +54,9 @@ _JUDGE_SYSTEM = (
     "must match its own table or list, and a yes or no in a row must match "
     "the text. If they differ, set verdict to NOT_REACHED and start reason "
     f"with '{CONTRADICTION_REASON_PREFIX}' followed by the two values that disagree.\n"
+    "For IMPOSSIBLE or a Contradiction, copy into evidence_quote one short "
+    "passage exactly as it appears in the observations or the reply that "
+    "shows the problem; a verdict without a real quote is not accepted.\n"
     "When a previous verdict is given, set repeats_previous to true only when "
     "this verdict reports the same blocking problem as that one, however it is "
     "worded; a new or narrower problem is false.\n"
@@ -77,6 +80,14 @@ class SessionGoalJudgeVerdict(BaseModel):
     repeats_previous: bool = Field(
         default=False,
         description="True when this verdict reports the same blocking problem as the previous one.",
+    )
+    evidence_quote: str = Field(
+        default="",
+        description=(
+            "For IMPOSSIBLE or a Contradiction: one short passage copied exactly "
+            "from the supplied observations or reply that shows the problem. "
+            "Empty otherwise."
+        ),
     )
 
 

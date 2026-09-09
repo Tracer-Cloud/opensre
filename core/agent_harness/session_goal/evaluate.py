@@ -223,6 +223,33 @@ def _run_judge(
         return None
 
 
+def _normalize_quote(text: str) -> str:
+    return " ".join(text.split()).casefold()
+
+
+def judge_quote_is_supported(quote: str, observations: str) -> bool:
+    """True when the judge's quote appears in what it was shown (whitespace-insensitive)."""
+    needle = _normalize_quote(quote)
+    return bool(needle) and needle in _normalize_quote(observations)
+
+
+def _blocking_verdict_unsupported(
+    parsed: SessionGoalJudgeVerdict, *, tool_evidence: str, reply: str
+) -> bool:
+    """A blocking verdict over tool observations must quote them or the reply.
+
+    Without tool observations the judge reasons from the reply and the
+    condition alone, so an impossible verdict needs no quote there.
+    """
+    reason = parsed.reason.strip()
+    contradiction = judge_reason_is_contradiction(reason)
+    impossible = parsed.verdict == "IMPOSSIBLE" and bool(tool_evidence.strip())
+    if not (contradiction or impossible):
+        return False
+    quote = getattr(parsed, "evidence_quote", "")
+    return not judge_quote_is_supported(quote, f"{tool_evidence}\n{reply}")
+
+
 def _verdict_from_judge(
     parsed: SessionGoalJudgeVerdict | None,
     *,
@@ -232,6 +259,8 @@ def _verdict_from_judge(
     tool_failed: bool,
     unverified: bool,
     fallback_reason: str,
+    tool_evidence: str = "",
+    reply: str = "",
 ) -> SessionGoalVerdict:
     if parsed is None:
         if host_can_accept:
@@ -245,6 +274,13 @@ def _verdict_from_judge(
         )
     reason = parsed.reason.strip()
     repeated = bool(getattr(parsed, "repeats_previous", False))
+    if _blocking_verdict_unsupported(parsed, tool_evidence=tool_evidence, reply=reply):
+        # The judge blocked without pointing at the data: keep working, do not
+        # end the goal or pause on a claim nobody can check.
+        return SessionGoalVerdict(
+            status=SessionGoalStatus.ACTIVE,
+            reason=SessionGoalReason.judge_unsupported(reason or fallback_reason),
+        )
     if parsed.verdict == "IMPOSSIBLE":
         return SessionGoalVerdict(
             status=SessionGoalStatus.IMPOSSIBLE,
@@ -417,6 +453,8 @@ def evaluate_session_goal(
             tool_failed=unrecovered,
             unverified=unverified,
             fallback_reason=derive_session_goal_reason(current),
+            tool_evidence=tool_evidence,
+            reply=text,
         )
     verdict = _with_rejected_ticks(verdict, review.rejected)
     if verdict.status == SessionGoalStatus.ACHIEVED:
