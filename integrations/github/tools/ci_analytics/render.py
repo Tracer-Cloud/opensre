@@ -23,7 +23,7 @@ _TOP_DEVELOPERS = 3
 
 
 def render_markdown(report: CiAnalyticsReport) -> str:
-    """Compact report the shell prints as-is. Key results lead; counts follow."""
+    """Compact report: key results lead; counts follow."""
     lines = [
         f"**CI/CD reliability for {report.owner}/{report.repo}, last {report.window_days} days**",
         "",
@@ -37,14 +37,193 @@ def render_markdown(report: CiAnalyticsReport) -> str:
     return "\n".join(lines)
 
 
-def render_report(console: Any, report: CiAnalyticsReport) -> None:
-    """Paint the report to a Rich console: headline KPIs, classification, blocked time, table."""
-    now = report.generated_at
+def render_report(console: Any, report: CiAnalyticsReport, *, compact: bool = False) -> None:
+    """Paint the report: key results first. ``compact`` omits the counts appendix."""
     parts: list[Any] = [
         Text(
             f"CI/CD reliability for {report.owner}/{report.repo}, last {report.window_days} days",
             style="bold",
         ),
+        Text(""),
+    ]
+    if report.executions:
+        parts.append(Text("Key results", style="bold"))
+        for label, value in key_results(report):
+            parts.append(_kpi_line(label, value))
+        if not compact:
+            parts.extend(_details_parts(report))
+    else:
+        parts.append(Text("No completed workflow runs were found in this window.", style="dim"))
+    parts.extend(Text(notice, style="dim") for notice in report.coverage_notices)
+    console.print(Padding(Group(*parts), (0, 0, 0, 2)))
+
+
+def key_results(report: CiAnalyticsReport) -> list[tuple[str, str]]:
+    """The five figures a reader takes away, red time first."""
+    window_hours = max(1, report.window_days * 24)
+    red_share = report.red_hours / window_hours
+    results: list[tuple[str, str]] = [
+        (
+            f"{report.default_branch} branch red",
+            f"{_hours(report.red_hours)} of {report.window_days} days ({red_share:.1%}), "
+            f"{len(report.outages)} {_plural(len(report.outages), 'breakage')}",
+        )
+    ]
+    if report.mean_recovery_hours is not None:
+        results.append(("Mean time back to green", _hours(report.mean_recovery_hours)))
+    if report.pr_failures:
+        flaky = report.count(FailureKind.RELIABILITY)
+        of_failures = flaky / report.pr_failures
+        of_runs = flaky / report.pr_executions if report.pr_executions else 0.0
+        results.append(
+            (
+                "CI-caused failures",
+                f"{flaky} of {report.pr_failures} failed PR runs ({of_failures:.1%}); "
+                f"{of_runs:.1%} of all {report.pr_executions} PR runs",
+            )
+        )
+    elif report.pr_executions:
+        flaky = report.count(FailureKind.RELIABILITY)
+        flake_share = flaky / report.pr_executions
+        results.append(
+            ("CI-caused failures", f"{flaky} of {report.pr_executions} PR runs ({flake_share:.1%})")
+        )
+    slowest = max(
+        (w for w in report.workflows if w.normal_minutes is not None),
+        key=lambda w: w.normal_minutes or 0.0,
+        default=None,
+    )
+    if slowest is not None:
+        results.append(("Slowest normal run", f"{slowest.workflow}, {slowest.normal_minutes:.0f}m"))
+    if report.blocked_working_minutes > 0:
+        developers = report.developers_affected
+        per_week = (
+            report.blocked_working_minutes / developers / (report.window_days / 7)
+            if developers
+            else 0.0
+        )
+        extra = f", about {_working(per_week)} per developer a week" if developers else ""
+        results.append(
+            (
+                "Developer time blocked",
+                f"{_working(report.blocked_working_minutes)} of working time{extra}",
+            )
+        )
+    return results
+
+
+def key_results_payload(report: CiAnalyticsReport) -> list[dict[str, str]]:
+    """The key-results rows as JSON-ready pairs."""
+    return [{"label": label, "value": value} for label, value in key_results(report)]
+
+
+def comparison_figures(report: CiAnalyticsReport) -> dict[str, str]:
+    """Rate and duration fields that can sit next to another repository."""
+    window_hours = max(1, report.window_days * 24)
+    red_share = report.red_hours / window_hours
+    flaky = report.count(FailureKind.RELIABILITY)
+    flake = f"{flaky / report.pr_executions:.1%}" if report.pr_executions else "n/a"
+    slowest = max(
+        (w for w in report.workflows if w.normal_minutes is not None),
+        key=lambda w: w.normal_minutes or 0.0,
+        default=None,
+    )
+    return {
+        "Red time on main": f"{red_share:.1%}",
+        "Mean time to green": (
+            _hours(report.mean_recovery_hours) if report.mean_recovery_hours is not None else "n/a"
+        ),
+        "CI-caused failure rate": flake,
+        "Slowest normal run": f"{slowest.normal_minutes:.0f}m" if slowest is not None else "n/a",
+        "PR failure rate": _rate(report.pr_failure_rate),
+    }
+
+
+def render_comparison(
+    console: Any, user: CiAnalyticsReport, peers: list[CiAnalyticsReport]
+) -> None:
+    """One table: the user's repo first, then the benchmark columns."""
+    reports = [user, *peers]
+    labels = [f"{item.owner}/{item.repo}" for item in reports]
+    figures = [comparison_figures(item) for item in reports]
+    table = Table(show_edge=False, pad_edge=False, box=None, header_style="dim")
+    table.add_column("Metric", justify="left")
+    for label in labels:
+        table.add_column(label, justify="right")
+    for metric in figures[0]:
+        table.add_row(metric, *[row.get(metric, "n/a") for row in figures])
+    peers_label = " and ".join(labels[1:]) if labels[1:] else "benchmarks"
+    parts: list[Any] = [
+        Text(""),
+        Text(f"Compared with {peers_label} over the same {user.window_days} days", style="bold"),
+        table,
+        Text(
+            "Red time = red_hours / (days × 24); CI-caused = reliability_failures / PR runs.",
+            style="dim",
+        ),
+    ]
+    for notice in (item for peer in peers for item in peer.coverage_notices):
+        parts.append(Text(notice, style="dim"))
+    console.print(Padding(Group(*parts), (0, 0, 0, 2)))
+
+
+def comparison_markdown(user: CiAnalyticsReport, peers: list[CiAnalyticsReport]) -> str:
+    """Markdown form of :func:`render_comparison`."""
+    reports = [user, *peers]
+    labels = [f"{item.owner}/{item.repo}" for item in reports]
+    figures = [comparison_figures(item) for item in reports]
+    header = "| Metric | " + " | ".join(labels) + " |"
+    align = "| --- | " + " | ".join("---:" for _ in labels) + " |"
+    rows = [
+        "| " + metric + " | " + " | ".join(row.get(metric, "n/a") for row in figures) + " |"
+        for metric in figures[0]
+    ]
+    peers_label = " and ".join(labels[1:]) if labels[1:] else "benchmarks"
+    return "\n".join(
+        [
+            f"Compared with {peers_label} over the same {user.window_days} days:",
+            "",
+            header,
+            align,
+            *rows,
+            "",
+            "Red time = red_hours / (days × 24); CI-caused = reliability_failures / PR runs.",
+        ]
+    )
+
+
+def _details_markdown(report: CiAnalyticsReport) -> list[str]:
+    lines = [
+        "",
+        f"- GitHub Actions executions: **{report.executions}**",
+        f"- PR-triggered workflow executions: **{report.pr_executions}**",
+        f"- PR-triggered failed workflows: **{report.pr_failures}**",
+        f"- Raw PR workflow failure rate: **{_rate(report.pr_failure_rate)}**",
+    ]
+    if report.pr_failures:
+        lines.extend(_classification(report))
+        lines.extend(_blocked_time(report))
+    lines.extend(_default_branch(report))
+    if report.workflows:
+        lines.extend(
+            [
+                "",
+                "| Workflow | Runs | Failed | CI-caused | Normal duration |",
+                "| --- | ---: | ---: | ---: | ---: |",
+            ]
+        )
+        for summary in report.workflows[:_TOP_WORKFLOWS]:
+            normal = "n/a" if summary.normal_minutes is None else f"{summary.normal_minutes:.0f}m"
+            lines.append(
+                f"| {summary.workflow} | {summary.runs} | {summary.failures} |"
+                f" {summary.reliability_failures} | {normal} |"
+            )
+    return lines
+
+
+def _details_parts(report: CiAnalyticsReport) -> list[Any]:
+    now = report.generated_at
+    parts: list[Any] = [
         Text(""),
         _kpi_line("GitHub Actions executions", str(report.executions)),
         _kpi_line("PR-triggered workflow executions", str(report.pr_executions)),
@@ -122,87 +301,7 @@ def render_report(console: Any, report: CiAnalyticsReport) -> None:
                 normal,
             )
         parts.extend([Text(""), table])
-    if not report.executions:
-        parts.append(Text("No completed workflow runs were found in this window.", style="dim"))
-    parts.extend(Text(notice, style="dim") for notice in report.coverage_notices)
-    if report.executions:
-        parts.append(Text(""))
-        parts.append(Text("Key results", style="bold"))
-        for label, value, share in key_results(report):
-            line = _kpi_line(label, value)
-            if share is not None:
-                line.append(f"  {_bar(share)}", style="dim")
-            parts.append(line)
-    # Hang the block in the shell's two-column reply gutter like agent output.
-    console.print(Padding(Group(*parts), (0, 0, 0, 2)))
-
-
-_BAR_WIDTH = 20
-
-
-def _bar(share: float) -> str:
-    """A plain text bar for a share between 0 and 1, twenty cells wide."""
-    filled = max(0, min(_BAR_WIDTH, round(share * _BAR_WIDTH)))
-    return "█" * filled + "░" * (_BAR_WIDTH - filled)
-
-
-def key_results(report: CiAnalyticsReport) -> list[tuple[str, str, float | None]]:
-    """The five figures a reader takes away, each with an optional share for a bar.
-
-    Order follows the metric priority in the demo's metrics reference: red time
-    on the default branch, recovery, CI-caused failures, normal duration,
-    developer time blocked.
-    """
-    window_hours = max(1, report.window_days * 24)
-    results: list[tuple[str, str, float | None]] = []
-    red_share = report.red_hours / window_hours
-    results.append(
-        (
-            f"{report.default_branch} branch red",
-            f"{_hours(report.red_hours)} of {report.window_days} days ({red_share:.1%}), "
-            f"{len(report.outages)} {_plural(len(report.outages), 'breakage')}",
-            red_share,
-        )
-    )
-    if report.mean_recovery_hours is not None:
-        results.append(("Mean time back to green", _hours(report.mean_recovery_hours), None))
-    if report.pr_failures:
-        flaky = report.count(FailureKind.RELIABILITY)
-        of_failures = flaky / report.pr_failures
-        of_runs = flaky / report.pr_executions if report.pr_executions else 0.0
-        results.append(
-            (
-                "CI-caused failures",
-                f"{flaky} of {report.pr_failures} failed PR runs ({of_failures:.1%}); "
-                f"{of_runs:.1%} of all {report.pr_executions} PR runs",
-                of_failures,
-            )
-        )
-    slowest = max(
-        (w for w in report.workflows if w.normal_minutes is not None),
-        key=lambda w: w.normal_minutes or 0.0,
-        default=None,
-    )
-    if slowest is not None:
-        results.append(
-            ("Slowest normal run", f"{slowest.workflow}, {slowest.normal_minutes:.0f}m", None)
-        )
-    if report.blocked_working_minutes > 0:
-        developers = report.developers_affected
-        per_week = (
-            report.blocked_working_minutes / developers / (report.window_days / 7)
-            if developers
-            else 0.0
-        )
-        results.append(
-            (
-                "Developer time blocked",
-                f"{_working(report.blocked_working_minutes)} of working time"
-                + (f", about {_working(per_week)} per developer a week" if developers else ""),
-                None,
-            )
-        )
-    return results
+    return parts
 
 
 def _working(minutes: float) -> str:
@@ -302,7 +401,7 @@ def _day(when: datetime | None) -> str:
 
 
 def headline(report: CiAnalyticsReport) -> str:
-    """One deterministic sentence naming the biggest cost, for the agent to repeat verbatim."""
+    """One deterministic sentence naming the biggest cost."""
     if report.blocked_working_minutes > 0:
         heaviest = report.developer_waits[0]
         developers = report.developers_affected
@@ -425,8 +524,8 @@ def _plural(count: int, noun: str) -> str:
 def _key_results_markdown(report: CiAnalyticsReport) -> list[str]:
     if not report.executions:
         return []
-    lines = ["", "**Key results**"]
-    for label, value, _share in key_results(report):
+    lines = ["**Key results**"]
+    for label, value in key_results(report):
         lines.append(f"- {label}: **{value}**")
     return lines
 
@@ -436,7 +535,12 @@ ci_report_headline = headline
 
 __all__ = [
     "ci_report_headline",
+    "comparison_figures",
+    "comparison_markdown",
+    "key_results",
+    "key_results_payload",
     "render_ci_report",
+    "render_comparison",
     "format_minutes",
     "headline",
     "render_markdown",

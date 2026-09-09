@@ -26,8 +26,11 @@ from integrations.github.repo_scope import detect_git_remote_repo_scope
 from integrations.github.tools.ci_analytics.analysis import analyze_repository
 from integrations.github.tools.ci_analytics.models import CiAnalyticsReport, FailureKind
 from integrations.github.tools.ci_analytics.render import (
+    comparison_markdown,
     format_minutes,
     headline,
+    key_results_payload,
+    render_comparison,
     render_markdown,
     render_report,
 )
@@ -46,6 +49,7 @@ _SOURCE = "github"
 _DEFAULT_WINDOW_DAYS = 30
 _MIN_WINDOW_DAYS = 1
 _MAX_WINDOW_DAYS = 90
+_DEFAULT_BENCHMARKS = (("apache", "airflow"), ("fastapi", "fastapi"))
 
 
 def _available(sources: dict[str, dict]) -> bool:
@@ -167,7 +171,14 @@ def report_payload(report: CiAnalyticsReport) -> dict[str, Any]:
 
 
 def _from_snapshot(
-    snapshot: dict[str, Any], owner: str, repo: str, window: int, console: Any
+    snapshot: dict[str, Any],
+    owner: str,
+    repo: str,
+    window: int,
+    console: Any,
+    *,
+    include_benchmarks: bool = False,
+    token: str = "",
 ) -> dict[str, Any]:
     """Answer from a same-day snapshot with the same renderer as a live analysis."""
     generated = str(snapshot.get("generated_at", ""))[:16].replace("T", " ")
@@ -180,7 +191,15 @@ def _from_snapshot(
         )
         console.print()
     if report is not None:
-        result = _result(report, owner, repo, window, console)
+        result = _result(
+            report,
+            owner,
+            repo,
+            window,
+            console,
+            include_benchmarks=include_benchmarks,
+            token=token,
+        )
         result["summary"] += f" Figures as of {generated} UTC, from the saved snapshot."
         result["from_snapshot"] = snapshot.get("generated_at")
         if console is not None:
@@ -213,8 +232,113 @@ def _from_snapshot(
     }
 
 
+def _peer_payload(report: CiAnalyticsReport, *, from_snapshot: str | None) -> dict[str, Any]:
+    return {
+        "owner": report.owner,
+        "repo": report.repo,
+        "from_snapshot": from_snapshot,
+        "key_results": key_results_payload(report),
+        "red_hours": round(report.red_hours, 2),
+        "mean_recovery_hours": report.mean_recovery_hours,
+        "pr_failure_rate": report.pr_failure_rate,
+        "reliability_failures": report.count(FailureKind.RELIABILITY),
+        "pr_executions": report.pr_executions,
+    }
+
+
+def _load_peer_report(
+    owner: str,
+    repo: str,
+    *,
+    window: int,
+    token: str,
+    now: datetime,
+    console: Any,
+) -> tuple[CiAnalyticsReport, str | None] | None:
+    """A benchmark report from today's snapshot, or a live read. ``None`` on failure."""
+    snapshot = read_fresh_snapshot(snapshot_root(), owner, repo, window_days=window, now=now)
+    if snapshot is not None:
+        saved = snapshot.get("report")
+        if isinstance(saved, dict):
+            report = report_from_dict(saved)
+            return report, str(snapshot.get("generated_at") or "")
+    if console is not None:
+        console.print(
+            f"  [dim]Reading GitHub Actions history for {escape(f'{owner}/{repo}')} "
+            f"(benchmark), last {window} days…[/dim]"
+        )
+    try:
+        analysis = analyze_repository(owner, repo, token=token, days=window, now=now)
+    except (GitHubApiError, ValueError):
+        logger.warning("Benchmark analysis failed for %s/%s", owner, repo, exc_info=True)
+        return None
+    try:
+        write_snapshot(
+            snapshot_root(),
+            owner,
+            repo,
+            now,
+            {
+                "generated_at": now.isoformat(),
+                "window_days": window,
+                "headline": headline(analysis.report),
+                "report": report_to_dict(analysis.report),
+                **report_payload(analysis.report),
+            },
+        )
+    except OSError:
+        logger.warning("Could not save the CI reliability snapshot", exc_info=True)
+    return analysis.report, None
+
+
+def _attach_benchmarks(
+    result: dict[str, Any],
+    report: CiAnalyticsReport,
+    *,
+    window: int,
+    token: str,
+    console: Any,
+) -> dict[str, Any]:
+    """Add the host comparison table and structured benchmark rows."""
+    now = datetime.now(UTC)
+    peers: list[CiAnalyticsReport] = []
+    rows: list[dict[str, Any]] = []
+    skipped: list[str] = []
+    for owner, repo in _DEFAULT_BENCHMARKS:
+        if owner == report.owner and repo == report.repo:
+            continue
+        loaded = _load_peer_report(
+            owner, repo, window=window, token=token, now=now, console=console
+        )
+        if loaded is None:
+            skipped.append(f"{owner}/{repo}")
+            continue
+        peer, stamp = loaded
+        peers.append(peer)
+        rows.append(_peer_payload(peer, from_snapshot=stamp))
+    result["benchmarks"] = rows
+    if skipped:
+        result["benchmarks_skipped"] = skipped
+    if not peers:
+        return result
+    if console is not None:
+        render_comparison(console, report, peers)
+        return result
+    compare = comparison_markdown(report, peers)
+    result["comparison_text"] = compare
+    result["response_text"] = f"{result['response_text']}\n\n{compare}"
+    return result
+
+
 def _result(
-    report: CiAnalyticsReport, owner: str, repo: str, window: int, console: Any
+    report: CiAnalyticsReport,
+    owner: str,
+    repo: str,
+    window: int,
+    console: Any,
+    *,
+    include_benchmarks: bool = False,
+    token: str = "",
 ) -> dict[str, Any]:
     """The tool's return for ``report``: painted in the shell, markdown elsewhere."""
     summary = (
@@ -224,6 +348,7 @@ def _result(
         f"{format_minutes(report.blocked_working_minutes)} of developer downtime "
         f"({format_minutes(report.blocked_minutes)} wall clock) on merged PRs."
     )
+    takeaways = key_results_payload(report)
     base = {
         "source": _SOURCE,
         "success": True,
@@ -233,14 +358,21 @@ def _result(
         "window_days": window,
         "summary": summary,
         "headline": headline(report),
+        "key_results": takeaways,
         "rendered_in_shell": console is not None,
     }
     if console is not None:
-        # The shell already shows every figure; handing the raw numbers back
-        # as well only invites the model to retype them, so they stay out.
-        render_report(console, report)
-        return {**base, "coverage_notices": list(report.coverage_notices), "response_text": summary}
-    return {**base, **report_payload(report), "response_text": render_markdown(report)}
+        render_report(console, report, compact=include_benchmarks)
+        result = {
+            **base,
+            "coverage_notices": list(report.coverage_notices),
+            "response_text": summary,
+        }
+    else:
+        result = {**base, **report_payload(report), "response_text": render_markdown(report)}
+    if include_benchmarks and token:
+        result = _attach_benchmarks(result, report, window=window, token=token, console=console)
+    return result
 
 
 @tool(
