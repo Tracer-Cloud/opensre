@@ -1309,3 +1309,16 @@ def test_the_comparison_starts_on_its_own_line() -> None:
     lines = buf.getvalue().splitlines()
     heading = next(i for i, line in enumerate(lines) if "Compared with" in line)
     assert not lines[heading - 1].strip()
+
+
+def test_the_description_tells_the_model_the_comparison_cannot_be_skipped() -> None:
+    """Without this the model promised to skip a comparison it cannot turn off."""
+    # Arrange / Act
+    from tools.registry import get_registered_tool
+
+    registered = get_registered_tool(TOOL_NAME)
+
+    # Assert
+    assert registered is not None
+    assert "cannot be turned off" in registered.description
+    assert "never offer to skip" in registered.description

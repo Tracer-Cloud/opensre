@@ -168,3 +168,74 @@ def test_a_painted_tool_result_is_not_restated_in_the_closing() -> None:
 
     # Assert
     assert shown == ""
+
+
+def _painted_result(*, final_text: str) -> Any:
+    """A turn whose only tool painted its report straight to the console."""
+    from core.llm.types import ToolCall
+
+    class _ToolResult:
+        details = {"rendered_in_shell": True, "summary": "acme/app: 8151 runs in 30 days."}
+        content = "{}"
+        is_error = False
+
+    call = ToolCall(id="1", name="analyze_github_ci_reliability", input={})
+
+    class _Result:
+        tool_results = [(call, _ToolResult())]
+        executed = tool_results
+        planned = [call]
+
+    result = _Result()
+    result.final_text = final_text  # type: ignore[attr-defined]
+    return result
+
+
+def test_a_closing_written_over_a_painted_report_is_dropped() -> None:
+    """The model restates the figures, or contradicts them, without having seen them."""
+    # Arrange
+    from core.agent_harness.turns.action_driver import _compose_response, _TurnCounts
+
+    session = Session()
+    counts = _TurnCounts(
+        executed_entries=[],
+        executed_count=1,
+        executed_success_count=1,
+        generic_success_count=1,
+        planned_count=1,
+        handled=True,
+    )
+
+    # Act
+    _text, chunks, _use_final = _compose_response(
+        _painted_result(final_text="8151 runs total. Comparison skipped, as requested."),
+        session,
+        counts,
+    )
+
+    # Assert: the console already shows the report; nothing is added over it.
+    assert chunks == []
+
+
+def test_a_closing_question_survives_a_painted_report() -> None:
+    """A question seeks direction; dropping it would leave the user with dead air."""
+    # Arrange
+    from core.agent_harness.turns.action_driver import _compose_response, _TurnCounts
+
+    session = Session()
+    counts = _TurnCounts(
+        executed_entries=[],
+        executed_count=1,
+        executed_success_count=1,
+        generic_success_count=1,
+        planned_count=1,
+        handled=True,
+    )
+
+    # Act
+    _text, chunks, _use_final = _compose_response(
+        _painted_result(final_text="Want me to break this down by workflow?"), session, counts
+    )
+
+    # Assert
+    assert chunks == ["Want me to break this down by workflow?"]

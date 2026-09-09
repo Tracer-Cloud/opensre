@@ -228,6 +228,24 @@ def _has_preferred_tool_response_text(result: Any) -> bool:
     )
 
 
+def _painted_results_only(result: Any) -> bool:
+    """True when every executed tool painted its own output to the console.
+
+    Same hazard as a self-recording tool: the closing is written over output
+    the model did not see, so it restates the figures already on screen or
+    contradicts them (claiming a comparison was skipped while its table sits
+    above the reply).
+    """
+    results = list(getattr(result, "tool_results", []))
+    if not results:
+        return False
+    return all(
+        isinstance(getattr(tool_result, "details", None), dict)
+        and tool_result.details.get("rendered_in_shell") is True
+        for _tool_call, tool_result in results
+    )
+
+
 def _self_recording_tools_only(result: Any) -> bool:
     """True when every executed tool already printed to the console.
 
@@ -697,6 +715,7 @@ def _compose_response(
         (waiting_for_choice and _is_redundant_choice_invitation(result, final_text))
         or _is_choice_acknowledgement(final_text, selected_choice)
         or prefer_tool_response_text
+        or (_painted_results_only(result) and not _asks_the_user(final_text))
         or (
             _self_recording_tools_only(result)
             and not _grounded_output_tools_only(result)
