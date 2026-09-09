@@ -29,6 +29,10 @@ menus are not rendered until the harness flushes the canonical closer.
 
 from __future__ import annotations
 
+# Not part of __all__: exists so tests can substitute the renderer's Markdown
+# class via ``streaming.Markdown = ...`` — renderer._build_markdown_block reads
+# it back off this package rather than importing it directly.
+from infrastructure.terminal.markdown import ReplyMarkdown as Markdown  # noqa: F401
 from surfaces.interactive_shell.ui.streaming.closer import finish_deferred_closer
 from surfaces.interactive_shell.ui.streaming.console import StreamingConsole
 from surfaces.interactive_shell.ui.streaming.loop import (
@@ -44,11 +48,6 @@ from surfaces.interactive_shell.ui.streaming.renderer import (
     render_note_block,
     render_response_header,
 )
-
-# Not part of __all__: exists so tests can substitute the renderer's Markdown
-# class via ``streaming.Markdown = ...`` — renderer._build_markdown_block reads
-# it back off this package rather than importing it directly.
-from surfaces.shared.terminal.components.markdown import ReplyMarkdown as Markdown  # noqa: F401
 from surfaces.shared.terminal.components.token_format import (
     _CHARS_PER_TOKEN,  # noqa: F401  # not in __all__, but tests import it from this path directly
     format_token_count_short,

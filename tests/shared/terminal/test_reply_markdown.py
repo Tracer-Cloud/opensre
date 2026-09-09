@@ -8,7 +8,7 @@ from rich.console import Console
 from rich.text import Text
 
 import infrastructure.terminal.theme as ui_theme
-from surfaces.shared.terminal.components.markdown import ReplyMarkdown
+from infrastructure.terminal.markdown import ReplyMarkdown
 
 _TABLE = "| File | Jobs |\n| --- | --- |\n| .github/workflows/celebrate-merged-pr.yml | 1 |\n"
 

@@ -34,9 +34,9 @@ def render_resumed_session_history(
     messages: list[tuple[str, str]],
 ) -> None:
     """Render prior session activity in REPL turn order, including slash commands."""
+    from infrastructure.terminal.markdown import ReplyMarkdown
     from infrastructure.terminal.theme import MARKDOWN_THEME
     from surfaces.interactive_shell.ui.streaming import render_response_header
-    from surfaces.shared.terminal.components.markdown import ReplyMarkdown
 
     if not history and not messages:
         return

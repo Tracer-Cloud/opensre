@@ -42,6 +42,7 @@ from surfaces.interactive_shell.ui.streaming.renderer import (
     _build_markdown_block,
     render_reply_block,
     reply_gutter,
+    reply_width,
 )
 
 # Throttle for the optional ``update_streaming_progress`` hook on the
@@ -244,6 +245,7 @@ def stream_to_console_state(
             console.print(
                 reply_gutter(markdown, lead=rendered_paragraphs == 0),
                 style=str(ui_theme.TEXT),
+                width=reply_width(console),
             )
         rendered_paragraphs += 1
 

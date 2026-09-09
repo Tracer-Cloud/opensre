@@ -1309,3 +1309,24 @@ class TestDeferWantMeToCloser:
         )
         assert paint.deferred_closer is True
         assert buf.getvalue() == ""
+
+
+def test_reply_rows_stop_short_of_the_last_column() -> None:
+    # Arrange: a wide terminal and a reply that wraps once at that width.
+    width = 210
+    buf = io.StringIO()
+    console = Console(file=buf, force_terminal=True, width=width, highlight=False)
+    text = (
+        "Tracer-Cloud/opensre: 8151 runs in 30 days, 1174 of 5727 PR runs failed, 333 "
+        "CI-caused, 8.9d of developer downtime (43.4d wall clock) on merged PRs. Figures "
+        "as of 2026-09-09 17:01 UTC, from the saved snapshot."
+    )
+
+    # Act
+    publish_full_response(console, text)
+
+    # Assert: no rendered row reaches the terminal width, so the terminal never
+    # auto-wraps a padded row before the newline.
+    rows = [re.sub(r"\x1b\[[0-9;]*m", "", row) for row in buf.getvalue().split("\n")]
+    assert rows and max(len(row) for row in rows) < width
+    assert "snapshot." in "".join(rows)

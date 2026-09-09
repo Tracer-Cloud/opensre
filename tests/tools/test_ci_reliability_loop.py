@@ -342,3 +342,24 @@ def test_tool_uses_the_loops_seven_day_snapshot_when_no_thirty_day_one_exists(
     assert result["response_text"].index("Key results") < result["response_text"].index(
         "Scheduled:"
     )
+
+
+def test_analyze_markdown_keeps_details_when_benchmarks_are_requested(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Arrange: a non-terminal caller asks for the report with benchmarks.
+    from integrations.github.tools.ci_analytics import tool as tool_module
+
+    _write_report_snapshot(tmp_path, window_days=30)
+    monkeypatch.setattr(tool_module, "snapshot_root", lambda _root=None: tmp_path)
+
+    # Act
+    result = tool_module.analyze_github_ci_reliability(
+        owner="acme", repo="app", days=30, include_benchmarks=True, context=None
+    )
+
+    # Assert: benchmarks add a section; they do not remove the analysis details.
+    text = result["response_text"]
+    assert "Key results" in text
+    assert "Compared with" in text
+    assert "Workflow" in text or "Failure classification" in text

@@ -930,7 +930,7 @@ def test_collect_runs_reports_unavailable_attempt_history_instead_of_hiding_it()
 
     assert collected.pr_runs[0].retried_to_green is False
     assert any(
-        "attempt history was unavailable for 1 re-run" in n for n in collected.coverage_notices
+        "Re-run history could not be read for 1 re-run" in n for n in collected.coverage_notices
     )
 
 
@@ -952,7 +952,7 @@ def test_collect_runs_caps_attempt_lookups_and_says_so(monkeypatch: pytest.Monke
     collected = collect_runs(client, owner="o", repo="r", window_days=30, now=now)
 
     assert sum(run.retried_to_green for run in collected.pr_runs) == 1
-    assert any("1 re-run count as plain successes" in n for n in collected.coverage_notices)
+    assert any("1 later re-run counted as passes" in n for n in collected.coverage_notices)
 
 
 def _iso(value: datetime) -> str:

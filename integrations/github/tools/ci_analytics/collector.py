@@ -382,14 +382,14 @@ def _annotate_reruns(
     annotated = [checked.get(run.run_id, run) for run in runs]
     if lookups.unavailable:
         notices.append(
-            f"Coverage notice: attempt history was unavailable for {lookups.unavailable} "
-            f"re-run{'s' if lookups.unavailable != 1 else ''}; they count as plain successes."
+            f"Re-run history could not be read for {lookups.unavailable} "
+            f"re-run{'s' if lookups.unavailable != 1 else ''}; counted as passes."
         )
     if lookups.unchecked:
         notices.append(
-            f"Coverage notice: attempt history was checked for the first "
-            f"{_MAX_ATTEMPT_LOOKUPS} requests only; {lookups.unchecked} re-run"
-            f"{'s' if lookups.unchecked != 1 else ''} count as plain successes."
+            f"Re-run history was checked for the first {_MAX_ATTEMPT_LOOKUPS} runs; "
+            f"{lookups.unchecked} later re-run{'s' if lookups.unchecked != 1 else ''} "
+            "counted as passes."
         )
     return annotated
 

@@ -142,6 +142,16 @@ _REPLY_MARKER = "Ω"
 # (Droid: one marker column, body text shares a left edge).
 _NOTE_MARKER = "·"
 _GUTTER_WIDTH = 2
+# Reply rows stop short of the last column: a row padded to the full terminal
+# width followed by a newline leaves a blank line and a shifted continuation
+# in Terminal.app. Cursor keeps a similar right margin.
+_RIGHT_MARGIN = 2
+_MIN_REPLY_WIDTH = 20
+
+
+def reply_width(console: Console) -> int:
+    """Render width for reply rows: the console width less the right margin."""
+    return max(_MIN_REPLY_WIDTH, console.width - _RIGHT_MARGIN)
 
 
 def render_note_block(console: Console, text: str) -> None:
@@ -165,6 +175,7 @@ def render_note_block(console: Console, text: str) -> None:
                 marker_style=ui_theme.reply_marker_style(),
             ),
             style=str(ui_theme.SECONDARY),
+            width=reply_width(console),
         )
 
 
@@ -207,6 +218,7 @@ def render_reply_block(console: Console, text: str, *, lead: bool = True) -> Non
         console.print(
             reply_gutter(_build_markdown_block(visible), lead=lead),
             style=str(ui_theme.TEXT),
+            width=reply_width(console),
         )
 
 

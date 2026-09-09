@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -176,6 +177,9 @@ def test_a_saved_report_round_trips_and_paints_like_a_live_one(tmp_path: Path, m
 
         def print(self, *args: Any, **_kwargs: Any) -> None:
             painted.append(args[0] if args else "")
+
+        def use_theme(self, _theme: Any) -> contextlib.AbstractContextManager[None]:
+            return contextlib.nullcontext()
 
     monkeypatch.setattr(tool_module, "_console", lambda _context: _Console())
 

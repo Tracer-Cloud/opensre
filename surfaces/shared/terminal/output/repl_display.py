@@ -158,7 +158,7 @@ class _ReplEventLogDisplay:
     def print_above(self, text: str) -> None:
         if not text.strip():
             return
-        from surfaces.shared.terminal.components.markdown import ReplyMarkdown
+        from infrastructure.terminal.markdown import ReplyMarkdown
 
         from infrastructure.terminal.theme import MARKDOWN_THEME
 

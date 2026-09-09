@@ -144,8 +144,8 @@ THEME_REGISTRY: dict[str, CliTheme] = {
         name="purple",
         HIGHLIGHT="#CCB7F0",
         BRAND="#9885B3",
-        TEXT="#B6BAC2",
-        SECONDARY="#A6A6A6",
+        TEXT="#D0D0D0",
+        SECONDARY="#B4B4BC",
         DIM="#6E6E6E",
         WARNING="#D8B06F",
         ERROR="#CF6B63",
@@ -517,7 +517,7 @@ def _apply_theme(theme: CliTheme) -> None:
             "markdown.link": f"underline {theme.HIGHLIGHT}",
             "markdown.link_url": theme.DIM,
             "markdown.hr": theme.DIM,
-            "markdown.table.header": f"bold {theme.TEXT}",
+            "markdown.table.header": f"bold {theme.HIGHLIGHT}",
             "markdown.table.border": theme.DIM,
         }
     )

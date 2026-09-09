@@ -15,11 +15,12 @@ from collections.abc import Callable
 from contextvars import ContextVar
 from typing import Any, Literal, cast
 
-from rich import box
 from rich.console import Console
 from rich.segment import Segment
 from rich.table import Table
 from rich.text import Text
+
+from infrastructure.terminal.markdown import REPLY_TABLE_BOX
 
 _REPL_OUTPUT_PREPARED = ContextVar("_REPL_OUTPUT_PREPARED", default=False)
 
@@ -286,7 +287,7 @@ def repl_clear_screen() -> None:
 def repl_table(**kwargs: Any) -> Table:
     """Minimal outer borders — closer to Claude Code than full ASCII grids."""
     opts: dict[str, Any] = {
-        "box": box.MINIMAL_HEAVY_HEAD,
+        "box": REPLY_TABLE_BOX,
         "show_edge": False,
         "pad_edge": False,
         "title_justify": "left",

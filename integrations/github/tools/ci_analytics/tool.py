@@ -185,6 +185,7 @@ def _from_snapshot(
     console: Any,
     *,
     include_benchmarks: bool = False,
+    compact: bool = False,
 ) -> dict[str, Any]:
     """Answer from a same-day snapshot with the same renderer as a live analysis."""
     generated = str(snapshot.get("generated_at", ""))[:16].replace("T", " ")
@@ -204,6 +205,7 @@ def _from_snapshot(
             window,
             console,
             include_benchmarks=include_benchmarks,
+            compact=compact,
         )
         result["summary"] += f" Figures as of {generated} UTC, from the saved snapshot."
         result["from_snapshot"] = snapshot.get("generated_at")
@@ -242,6 +244,8 @@ def report_text_from_snapshot(
 ) -> tuple[str, str]:
     """``(markdown, generated_at)`` from today's snapshot, or ``("", "")`` when none.
 
+    Compact: key results and the comparison, without the counts appendix.
+
     Reads saved snapshots only; never resolves a token or starts a live fetch.
     """
     now = datetime.now(UTC)
@@ -253,7 +257,7 @@ def report_text_from_snapshot(
     else:
         return "", ""
     result = _from_snapshot(
-        snapshot, owner, repo, window, None, include_benchmarks=include_benchmarks
+        snapshot, owner, repo, window, None, include_benchmarks=include_benchmarks, compact=True
     )
     if not result.get("success"):
         return "", ""
@@ -333,8 +337,13 @@ def _result(
     console: Any,
     *,
     include_benchmarks: bool = False,
+    compact: bool = False,
 ) -> dict[str, Any]:
-    """The tool's return for ``report``: painted in the shell, markdown elsewhere."""
+    """The tool's return for ``report``: painted in the shell, markdown elsewhere.
+
+    ``compact`` drops the counts appendix from the markdown; the shell painter
+    already drops it whenever the comparison table follows.
+    """
     summary = (
         f"{owner}/{repo}: {report.executions} runs in {window} days, "
         f"{report.pr_failures} of {report.pr_executions} PR runs failed, "
@@ -366,7 +375,7 @@ def _result(
         result = {
             **base,
             **report_payload(report),
-            "response_text": render_markdown(report, compact=include_benchmarks),
+            "response_text": render_markdown(report, compact=compact),
         }
     if include_benchmarks:
         result = _attach_benchmarks(result, report, window=window, console=console)

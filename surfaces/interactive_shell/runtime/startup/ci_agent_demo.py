@@ -22,6 +22,7 @@ from infrastructure.scheduling.scheduler.background_service import (
 )
 from infrastructure.scheduling.scheduler.local_delivery import get_loop_messages
 from infrastructure.scheduling.scheduler.loops import parse_loop_time
+from infrastructure.terminal.markdown import ReplyMarkdown
 from infrastructure.terminal.theme import WARNING
 from integrations.github import (
     DEFAULT_LOOP_TIME,
@@ -37,7 +38,6 @@ from surfaces.shared.terminal.components.choice_menu import (
     repl_choose_one,
 )
 from surfaces.shared.terminal.components.loaders import llm_loader
-from surfaces.shared.terminal.components.markdown import ReplyMarkdown
 from tools.system.workspace_git_scan.render import snapshot_renderable
 from tools.system.workspace_git_scan.scan import RepoActivity, WorkspaceSnapshot, scan_workspace
 

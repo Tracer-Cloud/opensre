@@ -40,8 +40,8 @@ def _echo_answer(text: str) -> None:
     from rich.console import Console
 
     from infrastructure.safety.terminal_output import strip_terminal_controls
+    from infrastructure.terminal.markdown import ReplyMarkdown
     from infrastructure.terminal.theme import MARKDOWN_CODE_THEME, MARKDOWN_THEME
-    from surfaces.shared.terminal.components.markdown import ReplyMarkdown
 
     console = Console()
     safe = strip_terminal_controls(text, keep_whitespace=True)
