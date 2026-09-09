@@ -29,6 +29,7 @@ from core.agent_harness.session_goal.evaluate import (
     turn_has_session_goal_evidence,
 )
 from core.agent_harness.session_goal.goal import (
+    SESSION_GOAL_CHECKPOINT_TURNS,
     SessionGoal,
     SessionGoalReason,
     SessionGoalStatus,
@@ -140,6 +141,7 @@ def _announce_working(
 
 _NO_PROGRESS_TURNS = 2
 STALL_MENU_TITLE = "The goal made no progress in 2 turns. How should I continue?"
+CHECKPOINT_MENU_TITLE = "The goal has run {turns} turns without finishing. How should I continue?"
 STALL_OPTION_MORE = "Keep going for one more turn"
 STALL_OPTION_STOP = "Stop here; the work above is enough"
 STALL_COMMANDS: Mapping[str, str] = MappingProxyType(
@@ -154,10 +156,19 @@ def goal_has_stalled(goal: SessionGoal) -> bool:
     return goal.turns_used - goal.last_progress_turns_used >= _NO_PROGRESS_TURNS
 
 
+def goal_reached_checkpoint(goal: SessionGoal) -> bool:
+    """True every ``SESSION_GOAL_CHECKPOINT_TURNS`` turns of a goal with no turn budget."""
+    if session_goal_has_turn_budget(goal.max_outer_turns):
+        return False
+    return goal.turns_used > 0 and goal.turns_used % SESSION_GOAL_CHECKPOINT_TURNS == 0
+
+
 def _headless_stall_reason(reason: str) -> str:
     """User-visible reason when this invocation yields but the goal stays active."""
     if reason == SessionGoalReason.PAUSED_SAME_VERDICT:
         return SessionGoalReason.WAITING_AFTER_SAME_VERDICT
+    if SessionGoalReason.is_checkpoint(reason):
+        return SessionGoalReason.WAITING_AFTER_CHECKPOINT
     return SessionGoalReason.WAITING_AFTER_STALL
 
 
@@ -323,6 +334,16 @@ def _finish_outer_turn(
 
     if goal_has_stalled(active):
         active = pause_for_no_progress(session, active, on_progress)
+        return active, last, True
+
+    if goal_reached_checkpoint(active):
+        active = pause_for_no_progress(
+            session,
+            active,
+            on_progress,
+            reason=SessionGoalReason.checkpoint(active.turns_used),
+            menu_title=CHECKPOINT_MENU_TITLE.format(turns=active.turns_used),
+        )
         return active, last, True
 
     # Still active under budget: paint the verdict (the judge's reason) before

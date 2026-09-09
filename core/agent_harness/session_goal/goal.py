@@ -70,6 +70,11 @@ class SessionGoalReason:
     #: inbound message continues (no ``/choose`` picker on Slack/Telegram/ask).
     WAITING_AFTER_STALL = "no progress after 2 turns — waiting for your next message"
     WAITING_AFTER_SAME_VERDICT = "same verdict twice — waiting for your next message"
+    #: A goal with no turn budget stops for a decision every N turns so it
+    #: cannot run on unattended while tools keep succeeding.
+    PAUSED_CHECKPOINT_PREFIX = "paused — "
+    PAUSED_CHECKPOINT_SUFFIX = " turns without an achieved signal; keep going or stop"
+    WAITING_AFTER_CHECKPOINT = "checkpoint reached — waiting for your next message"
     # A goal turn raised (model call rejected, provider down): the loop must not
     # spend the next turn on the same failure.
     PAUSED_TURN_FAILED = "paused — the last turn failed; fix the cause, then /goal resume"
@@ -91,6 +96,19 @@ class SessionGoalReason:
         if not session_goal_has_turn_budget(max_turns):
             return f"working — starting session-goal turn {turn}"
         return f"working — starting session-goal turn {turn}/{max_turns}"
+
+    @staticmethod
+    def checkpoint(turns_used: int) -> str:
+        return (
+            f"{SessionGoalReason.PAUSED_CHECKPOINT_PREFIX}{turns_used}"
+            f"{SessionGoalReason.PAUSED_CHECKPOINT_SUFFIX}"
+        )
+
+    @staticmethod
+    def is_checkpoint(reason: str) -> bool:
+        return reason.startswith(SessionGoalReason.PAUSED_CHECKPOINT_PREFIX) and reason.endswith(
+            SessionGoalReason.PAUSED_CHECKPOINT_SUFFIX
+        )
 
     @staticmethod
     def budget_exhausted(turns_used: int, max_outer_turns: int) -> str:
@@ -117,6 +135,8 @@ MAX_GOAL_CONDITION_CHARS = 400
 # 0 = no host turn budget (Claude / Cursor). Two idle turns still stall.
 # ``/goal set --max-turns N`` or ``max_turns`` on the attach tool sets a bound.
 SESSION_GOAL_UNBOUNDED_TURNS = 0
+# A goal without a budget pauses for a decision every this many turns.
+SESSION_GOAL_CHECKPOINT_TURNS = 10
 
 
 def session_goal_has_turn_budget(max_outer_turns: int) -> bool:
@@ -523,6 +543,7 @@ def refresh_session_goal_reason(goal: SessionGoal) -> SessionGoal:
 
 __all__ = [
     "MAX_GOAL_CONDITION_CHARS",
+    "SESSION_GOAL_CHECKPOINT_TURNS",
     "MAX_GOAL_REASON_CHARS",
     "SessionGoal",
     "SessionGoalReason",

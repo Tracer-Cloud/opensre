@@ -15,6 +15,8 @@ _MAX_REVIEW_INPUT_CHARS = 64000
 _OUTCOME_ERROR_MARK = "\nOutcome: error\n"
 _OUTCOME_ERROR_LINE = "Outcome: error"
 _OUTCOME_SUCCESS_LINE = "Outcome: success"
+_TOOL_LINE_PREFIX = "Tool: "
+_ARGUMENTS_LINE_PREFIX = "Arguments: "
 _STATUS_TOOL_PREFIXES = ("list_", "get_", "read_", "search_", "describe_", "show_")
 
 
@@ -34,17 +36,22 @@ def _is_status_or_discovery_tool(name: str) -> bool:
 def tool_evidence_has_unrecovered_failure(tool_evidence: str) -> bool:
     """True when a failed write still stands, or the latest observation errored.
 
-    A later successful call of the same write tool recovers that failure.
-    A later success of a different write, or of a status/list/read, does not.
+    A later success of the same write tool with the same arguments recovers
+    that failure. A different write, the same tool with other arguments
+    (``github_cli``, ``shell_run`` and MCP dispatchers serve many operations
+    under one name), or a status/list/read does not.
     """
-    failed_writes: set[str] = set()
+    failed_writes: set[tuple[str, str]] = set()
     last_failed = False
     for block in (tool_evidence or "").split("\n\n"):
         name = ""
+        arguments = ""
         outcome_error: bool | None = None
         for line in block.splitlines():
-            if line.startswith("Tool: "):
-                name = line[6:].strip()
+            if line.startswith(_TOOL_LINE_PREFIX):
+                name = line[len(_TOOL_LINE_PREFIX) :].strip()
+            elif line.startswith(_ARGUMENTS_LINE_PREFIX):
+                arguments = line[len(_ARGUMENTS_LINE_PREFIX) :].strip()
             elif line == _OUTCOME_ERROR_LINE:
                 outcome_error = True
             elif line == _OUTCOME_SUCCESS_LINE:
@@ -54,11 +61,11 @@ def tool_evidence_has_unrecovered_failure(tool_evidence: str) -> bool:
         if outcome_error:
             last_failed = True
             if name and not _is_status_or_discovery_tool(name):
-                failed_writes.add(name)
+                failed_writes.add((name, arguments))
         else:
             last_failed = False
             if name and not _is_status_or_discovery_tool(name):
-                failed_writes.discard(name)
+                failed_writes.discard((name, arguments))
     return bool(failed_writes) or last_failed
 
 

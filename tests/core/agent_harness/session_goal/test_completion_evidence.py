@@ -304,3 +304,24 @@ def test_unrecovered_failure_is_the_latest_observation() -> None:
         "Tool: delete_job\nArguments: {}\nOutcome: success\nResult: removed"
     )
     assert tool_evidence_has_unrecovered_failure(retried_write) is False
+
+
+def test_a_write_failure_is_recovered_only_by_the_same_tool_with_the_same_arguments() -> None:
+    """github_cli, shell_run and MCP dispatchers serve many operations under one name."""
+    # Arrange: one failed requested mutation, then a success of the same tool elsewhere.
+    other_arguments = (
+        "Tool: github_cli\nArguments: {'args': ['issue', 'close', '7']}\n"
+        "Outcome: error\nResult: denied\n\n"
+        "Tool: github_cli\nArguments: {'args': ['issue', 'comment', '7']}\n"
+        "Outcome: success\nResult: commented"
+    )
+    same_arguments = (
+        "Tool: github_cli\nArguments: {'args': ['issue', 'close', '7']}\n"
+        "Outcome: error\nResult: denied\n\n"
+        "Tool: github_cli\nArguments: {'args': ['issue', 'close', '7']}\n"
+        "Outcome: success\nResult: closed"
+    )
+
+    # Act / Assert: other arguments leave the failure standing; a retry clears it.
+    assert tool_evidence_has_unrecovered_failure(other_arguments) is True
+    assert tool_evidence_has_unrecovered_failure(same_arguments) is False

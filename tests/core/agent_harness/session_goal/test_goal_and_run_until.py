@@ -5,6 +5,7 @@ from __future__ import annotations
 from core.agent_harness.session.session_core import SessionCore
 from core.agent_harness.session_goal.evaluate import evaluate_session_goal
 from core.agent_harness.session_goal.goal import (
+    SESSION_GOAL_CHECKPOINT_TURNS,
     SessionGoal,
     SessionGoalReason,
     SessionGoalStatus,
@@ -105,6 +106,51 @@ def test_an_unbounded_goal_does_not_stop_on_turn_count() -> None:
     )
     assert len(turns) == 8
     assert outcome.goal.status != SessionGoalStatus.BUDGET_EXHAUSTED
+
+
+def test_an_unbounded_goal_pauses_for_a_decision_at_the_checkpoint() -> None:
+    """Successful tool activity alone must not let a goal without a budget run on unattended."""
+    # Arrange: every turn succeeds with a tool, the judge never says reached.
+    session = SessionCore()
+    turns: list[str] = []
+
+    def _chat(message: str) -> TurnResult:
+        turns.append(message)
+        return TurnResult(
+            final_intent="cli_agent_handled",
+            action_result=ToolCallingTurnResult(
+                planned_count=1,
+                executed_count=1,
+                executed_success_count=1,
+                has_unhandled_clause=False,
+                handled=True,
+            ),
+            assistant_response_text="still working",
+        )
+
+    # Act
+    outcome = run_until_session_goal(
+        _chat,
+        session,
+        "go",
+        goal=SessionGoal(condition="keep going", max_outer_turns=0),
+        evaluate=lambda goal, result, *, session=None: (
+            evaluate_session_goal(
+                goal,
+                result,
+                session=session,
+                judge=lambda **_kw: SessionGoalJudgeVerdict(
+                    verdict="NOT_REACHED", reason="not yet"
+                ),
+            ).status
+        ),
+        cancel_requested=lambda: len(turns) >= 2 * SESSION_GOAL_CHECKPOINT_TURNS,
+    )
+
+    # Assert: stopped at the checkpoint, still active for the next message (headless).
+    assert len(turns) == SESSION_GOAL_CHECKPOINT_TURNS
+    assert outcome.goal.status == SessionGoalStatus.ACTIVE
+    assert outcome.goal.last_reason == SessionGoalReason.WAITING_AFTER_CHECKPOINT
 
 
 def test_build_session_goal_from_structured_input() -> None:
