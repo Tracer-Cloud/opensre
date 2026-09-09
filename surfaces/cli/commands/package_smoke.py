@@ -25,19 +25,19 @@ _REQUIRED_TOOL_NAMES = frozenset(
 )
 _REQUIRED_ACTION_SKILL_NAMES = frozenset(
     {
-        "architecture-audit",
         # Nested onboarding tree: the router plus one child prove that frozen
         # builds bundle and discover skills/<package>/<child>/SKILL.md.
         "cicd-analytics-demo",
-        "github-ci-fix",
-        "github-security-fix",
-        "morning-report",
+        "fixing-github-ci",
+        "fixing-github-security-alerts",
+        "delivering-morning-briefings",
         "onboarding-cicd-fix",
     }
 )
 _REQUIRED_INTEGRATION_VERIFIER_NAMES = frozenset({"datadog", "grafana", "x_mcp"})
 _GUIDED_TOOL_NAMES = frozenset({"execute_python_code", "generate_work_status_report"})
-_ACTION_SKILL_BODY_MARKERS = {"architecture-audit": "REPORT TEMPLATE from"}
+# Proves the frozen build ships the fat skill body, not just the index entry.
+_ACTION_SKILL_BODY_MARKERS = {"fixing-github-ci": "fix_github_pr_ci"}
 
 
 def _load_required_tools() -> tuple[dict[str, RegisteredTool], int]:

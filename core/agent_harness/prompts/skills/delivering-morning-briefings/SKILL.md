@@ -1,10 +1,12 @@
 ---
-name: morning-report
+name: delivering-morning-briefings
 description: >-
   Weather + news morning briefing: fetch live weather and headlines, compose
   a plain-text briefing, deliver it. Multi-step; load before acting.
 metadata:
-  owner: Tracer Team
+  owner: Gust
+  last_changed_by: Vincent
+  last_changed_at: 2026-09-09
   usecases:
     - Weather and headlines morning briefing on demand
     - Recurring weekday briefing delivered to the shell inbox or a chat channel
@@ -130,12 +132,12 @@ The tool returns `response_text` = briefing + closer; show that to the user
 Defaults when they accept without overrides: weekdays 08:00 in their
 timezone if known else UTC, provider matching where you just delivered
 (Slack webhook by default — omit `chat_id`). Kind is `recurring_skill` with
-`skill_name` set to `morning-report`.
+`skill_name` set to `delivering-morning-briefings`.
 
 Example after Slack webhook delivery:
 
 ```text
-propose_scheduled_delivery(kind="recurring_skill", skill_name="morning-report",
+propose_scheduled_delivery(kind="recurring_skill", skill_name="delivering-morning-briefings",
     city="<city used for the weather fetch>",
     cron="0 8 * * 1-5", timezone="UTC", provider="slack",
     briefing_text="<FULL composed weather + headlines briefing>")

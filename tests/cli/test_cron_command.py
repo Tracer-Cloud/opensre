@@ -147,7 +147,7 @@ def test_cron_log_status_identifies_reclaimed_attempts() -> None:
 def test_cron_add_allows_slack_without_chat_id(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """Webhook-bound Slack delivery does not need --chat-id (morning-report yes).
+    """Webhook-bound Slack delivery does not need --chat-id (delivering-morning-briefings yes).
 
     The webhook is the destination, so it must actually be configured — without
     one a bot-token install would store a task that delivers nowhere.
@@ -227,7 +227,7 @@ def test_cron_add_persists_github_ci_health_scope(
             "--kind",
             "recurring_skill",
             "--skill",
-            "github-ci-health",
+            "reporting-github-ci-failures",
             "--cron",
             "0 8 * * 1-5",
             "--provider",
@@ -243,7 +243,7 @@ def test_cron_add_persists_github_ci_health_scope(
 
     assert result.exit_code == 0, result.output
     task = list_tasks(store)[0]
-    assert task.skill_name == "github-ci-health"
+    assert task.skill_name == "reporting-github-ci-failures"
     assert task.skill_revision
     assert task.skill_inputs == {
         "owner": "acme",
@@ -268,7 +268,7 @@ def test_cron_add_persists_morning_report_city(
             "--kind",
             "recurring_skill",
             "--skill",
-            "morning-report",
+            "delivering-morning-briefings",
             "--cron",
             "0 8 * * 1-5",
             "--provider",
@@ -280,7 +280,7 @@ def test_cron_add_persists_morning_report_city(
 
     assert result.exit_code == 0, result.output
     task = list_tasks(store)[0]
-    assert task.skill_name == "morning-report"
+    assert task.skill_name == "delivering-morning-briefings"
     assert task.skill_revision
     assert task.skill_inputs == {"city": "New Delhi"}
 
@@ -293,7 +293,7 @@ def test_cron_add_rejects_city_for_unrelated_skill() -> None:
             "--kind",
             "recurring_skill",
             "--skill",
-            "github-ci-health",
+            "reporting-github-ci-failures",
             "--cron",
             "0 8 * * 1-5",
             "--provider",
@@ -319,7 +319,7 @@ def test_cron_add_requires_repository_scope_for_github_ci_health() -> None:
             "--kind",
             "recurring_skill",
             "--skill",
-            "github-ci-health",
+            "reporting-github-ci-failures",
             "--cron",
             "0 8 * * *",
             "--provider",
@@ -339,7 +339,7 @@ def test_cron_add_rejects_branch_and_pr_for_github_ci_health() -> None:
             "--kind",
             "recurring_skill",
             "--skill",
-            "github-ci-health",
+            "reporting-github-ci-failures",
             "--cron",
             "0 8 * * *",
             "--provider",
@@ -380,7 +380,10 @@ def test_cron_add_rejects_github_scope_for_an_unrelated_kind() -> None:
     )
 
     assert result.exit_code == 2
-    assert "only valid with --kind recurring_skill --skill github-ci-health" in result.output
+    assert (
+        "only valid with --kind recurring_skill --skill reporting-github-ci-failures"
+        in result.output
+    )
 
 
 def test_cron_add_allows_interactive_shell_without_chat_id(
@@ -443,7 +446,7 @@ def test_cron_add_rejects_non_recurring_skill() -> None:
             "--kind",
             "recurring_skill",
             "--skill",
-            "architecture-audit",
+            "fixing-github-ci",
             "--cron",
             "0 8 * * 1-5",
             "--provider",

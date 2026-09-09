@@ -188,7 +188,7 @@ class TestRecurringSkillStoreIdentity:
     def test_changed_skill_revision_updates_existing_schedule(self, store_path: Path) -> None:
         from core.agent_harness.prompts.skills.schedule import find_action_skill, skill_revision
 
-        skill = find_action_skill("morning-report")
+        skill = find_action_skill("delivering-morning-briefings")
         assert skill is not None
         revision_a = skill_revision(skill)
         revision_b = "1" * 64
@@ -198,7 +198,7 @@ class TestRecurringSkillStoreIdentity:
             "timezone": "UTC",
             "provider": Provider.SLACK,
             "chat_id": "C0123ABCD",
-            "skill_name": "morning-report",
+            "skill_name": "delivering-morning-briefings",
             "skill_inputs": {},
         }
         first = add_task(ScheduledTask(**base, skill_revision=revision_a), store_path)

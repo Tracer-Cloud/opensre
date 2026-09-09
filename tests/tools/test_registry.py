@@ -354,7 +354,7 @@ def test_architecture_audit_skill_guidance_does_not_attach_to_unrelated_tools() 
 
     assert "Required reply template" not in tool_def.skill_guidance
     assert "Propose, do not execute" not in tool_def.skill_guidance
-    assert tool_def.skill_guidance == "" or "architecture-audit" not in tool_def.skill_guidance
+    assert tool_def.skill_guidance == "" or "architecture" not in tool_def.skill_guidance
 
 
 def test_python_execution_skill_guidance_does_not_attach_to_unrelated_tools() -> None:
@@ -362,7 +362,7 @@ def test_python_execution_skill_guidance_does_not_attach_to_unrelated_tools() ->
 
     tool_def = tools_by_name["get_github_file_contents"]
 
-    assert "github-star-velocity" not in tool_def.skill_guidance
+    assert "measuring-github-star-velocity" not in tool_def.skill_guidance
 
 
 def test_github_issue_mutation_execution_remains_chat_only() -> None:

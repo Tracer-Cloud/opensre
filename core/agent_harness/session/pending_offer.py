@@ -19,7 +19,7 @@ from typing import Any, Protocol, runtime_checkable
 from config.constants.slash_commands import INTEGRATIONS_SETUP_PREFIX
 from core.agent_harness.session.want_me_to import offer_from_assistant_content
 
-# Common morning-report defaults → human cadence labels (exact cron match only).
+# Common delivering-morning-briefings defaults → human cadence labels (exact cron match only).
 _CADENCE_LABELS: dict[str, str] = {
     "0 8 * * 1-5": "every weekday at 8am",
     "0 9 * * 1-5": "every weekday at 9am",
@@ -86,11 +86,11 @@ class PendingScheduleOffer:
             skill = self.skill_name.strip()
             if skill:
                 args.extend(["--skill", skill])
-            if skill == "morning-report":
+            if skill == "delivering-morning-briefings":
                 city = self.skill_inputs.get("city", "").strip()
                 if city:
                     args.extend(["--city", city])
-            elif skill == "github-ci-health":
+            elif skill == "reporting-github-ci-failures":
                 for key, flag in (
                     ("owner", "--owner"),
                     ("repo", "--repo"),

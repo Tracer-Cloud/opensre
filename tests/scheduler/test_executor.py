@@ -916,7 +916,7 @@ class TestExecutor:
         ("skill_name", "skill_revision", "error_text"),
         [
             ("missing-skill-xyz", "abc123", "not installed"),
-            ("morning-report", "0" * 64, "changed since it was scheduled"),
+            ("delivering-morning-briefings", "0" * 64, "changed since it was scheduled"),
         ],
     )
     def test_invalid_recurring_skill_is_visible_in_run_history(

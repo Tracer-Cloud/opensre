@@ -10,7 +10,7 @@ from urllib.parse import quote
 from infrastructure.scheduling.scheduler.agent_runner import AgentPayload
 from integrations.github import GitHubApiError, GitHubRestClient
 
-CI_HEALTH_SKILL_NAME = "github-ci-health"
+CI_HEALTH_SKILL_NAME = "reporting-github-ci-failures"
 MAX_OPEN_PRS = 100
 MAX_CHECK_RUNS_PER_SHA = 1_000
 _CHECK_PAGES_FOR_TRUNCATION_DETECTION = 11

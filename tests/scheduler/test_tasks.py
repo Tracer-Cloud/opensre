@@ -201,14 +201,14 @@ class TestRecurringSkillBuilders:
     def test_recurring_skill_uses_agent_runner(self) -> None:
         from core.agent_harness.prompts.skills.schedule import find_action_skill, skill_revision
 
-        skill = find_action_skill("morning-report")
+        skill = find_action_skill("delivering-morning-briefings")
         assert skill is not None
         task = ScheduledTask(
             kind=TaskKind.RECURRING_SKILL,
             cron="0 8 * * 1-5",
             provider=Provider.SLACK,
             chat_id="C123",
-            skill_name="morning-report",
+            skill_name="delivering-morning-briefings",
             skill_revision=skill_revision(skill),
         )
         captured: dict[str, object] = {}
@@ -220,7 +220,7 @@ class TestRecurringSkillBuilders:
         msg = tasks_mod.build_message(task, runners_with_agent(_agent))
         assert "Good morning!" in msg
         assert captured["source"] == "scheduled_recurring_skill"
-        assert captured["skill_name"] == "morning-report"
+        assert captured["skill_name"] == "delivering-morning-briefings"
 
     def test_recurring_skill_revision_mismatch_raises(self) -> None:
         task = ScheduledTask(
@@ -228,7 +228,7 @@ class TestRecurringSkillBuilders:
             cron="0 8 * * 1-5",
             provider=Provider.SLACK,
             chat_id="C123",
-            skill_name="morning-report",
+            skill_name="delivering-morning-briefings",
             skill_revision="0" * 64,
         )
         with pytest.raises(RuntimeError, match="changed since it was scheduled"):

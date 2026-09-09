@@ -20,7 +20,7 @@ class _NoContext:
 
 
 def _skill_view_result() -> dict[str, object]:
-    return execute_skill_view_tool({"name": "morning-report"}, _NoContext())
+    return execute_skill_view_tool({"name": "delivering-morning-briefings"}, _NoContext())
 
 
 def test_loading_a_skill_emits_nothing_from_the_generic_formatter() -> None:
@@ -37,7 +37,8 @@ def test_loading_a_skill_emits_nothing_from_the_generic_formatter() -> None:
 
     # Act
     shown = format_generic_tool_payload(
-        ToolCall(id="t1", name="skill_view", input={"name": "morning-report"}), _Result()
+        ToolCall(id="t1", name="skill_view", input={"name": "delivering-morning-briefings"}),
+        _Result(),
     )
 
     # Assert

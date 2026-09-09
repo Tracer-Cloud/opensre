@@ -1,6 +1,6 @@
 """``opensre posthog report`` — PostHog per-metric summary reports (#3824).
 
-Uses the headless posthog-summary skill path (not the
+Uses the headless summarizing-posthog-analytics skill path (not the
 generic ``opensre cron`` kinds). Tasks are stored in the shared scheduler store
 but are created and listed only through this command group.
 """

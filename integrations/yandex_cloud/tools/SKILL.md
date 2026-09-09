@@ -1,5 +1,5 @@
 ---
-name: yandex-cloud
+name: querying-yandex-cloud
 description: >
   Read Yandex Cloud through its REST API. Applies to any question about VMs,
   metrics, logs, audit events, Kubernetes, managed databases, serverless,
@@ -11,7 +11,7 @@ tools:
   - execute_yc_operation
 ---
 
-# yandex-cloud
+# querying-yandex-cloud
 
 Three rules first, because they are the ones that waste a whole investigation
 when they are missed.

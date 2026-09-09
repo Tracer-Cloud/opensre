@@ -10,7 +10,9 @@ description: >-
 getting_started: Set up an agent that improves CI/CD reliability over time
 demo_order: 2
 metadata:
-  owner: Tracer Team
+  owner: Vincent
+  last_changed_by: Vincent
+  last_changed_at: 2026-09-09
   usecases:
     - First-experience demo: schedule a weekday CI/CD reliability agent for one repo
     - Watch CI reliability over time without a one-shot analytics report
@@ -20,10 +22,6 @@ metadata:
     - A local git checkout for the workspace scan (optional; a named repository also works)
   type: report
   version: "1.0"
-tools:
-  - scan_local_git_workspace
-  - schedule_ci_reliability_loop
-  - ask_user_choice
 ---
 
 # CI/CD reliability agent

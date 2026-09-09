@@ -810,5 +810,5 @@ def test_skill_guidance_attaches_to_security_fix_tool() -> None:
     tool = tools_by_name["fix_github_security_alert"]
 
     assert "Workflow guidance:" in tool.description
-    assert '<skill name="github-security-fix"' in tool.skill_guidance
+    assert '<skill name="operating-github-security-fixer"' in tool.skill_guidance
     assert "Secret-scanning alerts are refused" in tool.skill_guidance

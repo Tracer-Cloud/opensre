@@ -143,7 +143,7 @@ issue to enumerate issues over a custom window.
 ### Morning digest (scheduled)
 
 Deliver a daily unresolved-issues summary to Slack, Telegram, or Rocket.Chat.
-This uses the headless **sentry-summary** skill path (tools + LLM via the
+This uses the headless **summarizing-sentry-issues** skill path (tools + LLM via the
 gateway), not generic `opensre cron` kinds.
 When an uptime watch schedule is running, the skill also calls
 `get_sentry_uptime_digest` to include downtime/recovery context.
@@ -225,7 +225,7 @@ opensre sentry uptime watch add \
 Requires `alerts:read` (or equivalent) on the Sentry token.
 `list_sentry_uptime_alerts` exposes the same monitor list in chat.
 
-Schedule an uptime watch alongside the morning digest so `sentry-summary` can
+Schedule an uptime watch alongside the morning digest so `summarizing-sentry-issues` can
 include yesterday's downtime summary via `get_sentry_uptime_digest`.
 
 Follow-ups (not in v1): inbound Sentry webhooks and auto-remediation attempts.

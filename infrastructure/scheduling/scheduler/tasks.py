@@ -45,7 +45,7 @@ def build_message(task: ScheduledTask, runners: SchedulerRunners) -> str:
 
 
 def _build_sentry_morning_digest(task: ScheduledTask, runners: SchedulerRunners) -> str:
-    """Build a Sentry morning digest via the headless sentry-summary skill path."""
+    """Build a Sentry morning digest via the headless summarizing-sentry-issues skill path."""
     try:
         safe_params = {k: v for k, v in task.params.items() if k not in _CREDENTIAL_KEYS}
         payload = {
@@ -103,7 +103,7 @@ def _build_github_pr_sweep(task: ScheduledTask, runners: SchedulerRunners) -> st
 
 
 def _build_posthog_metric_report(task: ScheduledTask, runners: SchedulerRunners) -> str:
-    """Build a PostHog per-metric report via the headless posthog-summary skill path."""
+    """Build a PostHog per-metric report via the headless summarizing-posthog-analytics skill path."""
     try:
         safe_params = {k: v for k, v in task.params.items() if k not in _CREDENTIAL_KEYS}
         payload = {

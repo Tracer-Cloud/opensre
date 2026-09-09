@@ -1,12 +1,14 @@
 ---
-name: github-ci-health
+name: reporting-github-ci-failures
 description: >-
   Read-only GitHub CI health report of the checks failing right now for one
   repository, optionally narrowed to a branch or pull request. Not for CI/CD
   performance, reliability KPIs, failure rates, or downtime over a period
   (use cicd-analytics-demo).
 metadata:
-  owner: Tracer Team
+  owner: Ceren
+  last_changed_by: Vincent
+  last_changed_at: 2026-09-09
   usecases:
     - Report the checks failing right now for one repository, branch, or pull request
     - Unattended recurring CI health report delivered to the shell inbox or a chat channel
@@ -47,7 +49,7 @@ This workflow is read-only. Never call `fix_github_pr_ci`, `github_cli`,
 execution. Repairs must be requested interactively and explicitly approved.
 
 When offering this report as a recurring task interactively, use kind
-`recurring_skill` and skill name `github-ci-health`. Pass the exact `owner` and
+`recurring_skill` and skill name `reporting-github-ci-failures`. Pass the exact `owner` and
 `repo`, plus at most one of `branch` or `pr_number`, to
 `propose_scheduled_delivery` so confirmation preserves the repository scope.
 

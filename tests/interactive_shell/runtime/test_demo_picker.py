@@ -156,7 +156,7 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
     assert session.active_skill == "cicd-analytics-demo"
     assert session.pending_user_choice is not None
     assert session.pending_user_choice.title == "Which repository should I analyze?"
-    assert "analyze_github_ci_reliability" in session.active_skill_tools
+    assert session.active_skill_tools == ()  # The demo declares no tool scope.
     assert onboarding_outcomes == [("ci_analytics", False)]
 
 
@@ -327,19 +327,7 @@ def test_startup_without_a_menu_hook_does_not_fall_back_to_a_model_turn(
     assert session.active_skill is None
 
 
-def test_demo_skills_keep_their_tool_contracts_after_moving() -> None:
-    by_name = {skill.name: skill for skill in list_action_skills()}
-    assert by_name["cicd-analytics-demo"].tools == (
-        "scan_local_git_workspace",
-        "analyze_github_ci_reliability",
-        "schedule_ci_reliability_loop",
-        "cli_exec",
-        "slash_invoke",
-        "ask_user_choice",
-    )
-    assert by_name["cicd-reliability-agent"].tools == (
-        "scan_local_git_workspace",
-        "schedule_ci_reliability_loop",
-        "ask_user_choice",
-    )
-    assert by_name["slack-handoff"].tools == ("cli_exec", "slash_invoke")
+def test_bundled_skills_declare_no_tool_scope() -> None:
+    """Skills stay flexible: no bundled skill narrows the catalog on its answer turns."""
+    scoped = [skill.name for skill in list_action_skills() if skill.tools]
+    assert scoped == []

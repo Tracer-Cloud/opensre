@@ -1,10 +1,12 @@
 ---
-name: github-security-fix
+name: fixing-github-security-alerts
 description: >-
   Remediate GitHub security / Dependabot / CodeQL / code-quality alerts via
   fix_github_security_alert
 metadata:
-  owner: Tracer Team
+  owner: Vaibhav
+  last_changed_by: Vincent
+  last_changed_at: 2026-09-09
   usecases:
     - Remediate Dependabot, CodeQL, and code-quality alerts and raise a pull request
     - Fix the findings behind a security alert URL or a security and quality page URL
@@ -63,6 +65,8 @@ Use other workflows for these requests:
   fix; otherwise leave it false for a local diff.
 - Never use `github_cli` to run a raw `gh` workflow around this. The fixer owns
   alert context, fix execution, branch safety, and PR creation.
+- The tool runs one alert per call. Do not loop over multiple alerts unless the
+  user explicitly asks to continue after the first result.
 - The tool fixes findings itself: built-in fixers first, then an auto-detected
   coding agent CLI (no configuration needed). Never add coding-agent advice,
   CLI names, or install commands beyond what the tool's `error` text already

@@ -81,7 +81,7 @@ class TestPythonExecutionToolMetadata:
         registered = get_registered_tool_map("chat")["execute_python_code"]
         marker = "Stargazers are returned **oldest first**"
         assert "Workflow guidance:" in registered.description
-        assert '<skill name="github-star-velocity"' in registered.skill_guidance
+        assert '<skill name="measuring-github-star-velocity"' in registered.skill_guidance
         assert marker in registered.skill_guidance
         assert marker in registered.description
 

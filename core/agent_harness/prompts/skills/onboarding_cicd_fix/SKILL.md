@@ -7,7 +7,9 @@ description: >-
   "what can you do?". Direct repository analysis, recurring-loop setup, Slack
   setup, and CI-fix requests should load their specialist skill directly.
 metadata:
-  owner: Tracer Team
+  owner: Vincent
+  last_changed_by: Vincent
+  last_changed_at: 2026-09-09
   usecases:
     - Interactive-shell startup and /demo
     - Show the available onboarding paths and follow the selected child skill
@@ -21,8 +23,6 @@ metadata:
     - core/agent_harness/prompts/skills/onboarding_cicd_fix/b_local_scheduled_loops/SKILL.md
     - core/agent_harness/prompts/skills/onboarding_cicd_fix/c_remote_managed_service/SKILL.md
     - core/agent_harness/prompts/skills/onboarding_cicd_fix/d_remote_slack/SKILL.md
-# A router leaves tool scope open so its children and custom requests can run.
-tools: []
 # The host runs this on entry (startup, /demo, skill_view) before any model step.
 pre_execute:
   - tool: ask_user_choice

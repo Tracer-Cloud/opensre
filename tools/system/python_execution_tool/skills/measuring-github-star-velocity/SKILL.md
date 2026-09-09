@@ -1,5 +1,5 @@
 ---
-name: github-star-velocity
+name: measuring-github-star-velocity
 description: Compute GitHub repository star velocity over a rolling time window using the stargazers API.
 tools:
   - execute_python_code

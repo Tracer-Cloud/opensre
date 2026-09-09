@@ -12,7 +12,9 @@ description: >-
 getting_started: Explore a repo and analyze its CI/CD performance (recommended)
 demo_order: 1
 metadata:
-  owner: Tracer Team
+  owner: Vincent
+  last_changed_by: Vincent
+  last_changed_at: 2026-09-09
   usecases:
     - First-experience demo: scan the machine, pick a repository, analyze its CI/CD
     - CI/CD reliability KPIs for one repository over the last 30 days
@@ -23,13 +25,6 @@ metadata:
     - A local git checkout for the workspace scan (optional; a named repository also works)
   type: analytics
   version: "1.1"
-tools:
-  - scan_local_git_workspace
-  - analyze_github_ci_reliability
-  - schedule_ci_reliability_loop
-  - cli_exec
-  - slash_invoke
-  - ask_user_choice
 ---
 
 # CI/CD analytics demo

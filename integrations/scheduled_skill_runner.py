@@ -29,11 +29,11 @@ or change any external system.
 
 def _prefetched_context(skill_name: str, inputs: dict[str, str]) -> str:
     """Fetch integration-owned context without reversing core dependency direction."""
-    if skill_name == "github-ci-health":
+    if skill_name == "reporting-github-ci-failures":
         from integrations.github.ci_health_runner import run_github_ci_health
 
         return run_github_ci_health(inputs)
-    if skill_name == "morning-report":
+    if skill_name == "delivering-morning-briefings":
         from integrations.morning_report import format_fetched_briefing_inputs
 
         return format_fetched_briefing_inputs(inputs)
@@ -58,7 +58,7 @@ def run_scheduled_recurring_skill(payload: AgentPayload) -> str:
         rendered = "\n".join(f"- {key}: {value}" for key, value in sorted(inputs.items()))
         input_block = f"\nValidated inputs:\n{rendered}\n"
     fetch_block = _prefetched_context(resolved.name, inputs)
-    if resolved.name == "github-ci-health":
+    if resolved.name == "reporting-github-ci-failures":
         # The prefetcher renders the complete final report. Returning it
         # directly preserves every scoped failure instead of sending it
         # through the action agent's intentionally short message preview.

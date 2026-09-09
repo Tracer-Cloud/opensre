@@ -1,11 +1,11 @@
 ---
-name: github-security-fix
+name: operating-github-security-fixer
 description: Use when the user asks OpenSRE to fix GitHub security and quality issues, Security and quality page findings, Code Quality standard findings, Dependabot alerts, code-scanning or CodeQL alerts, vulnerable dependencies, repo security issues, or to fix findings and optionally open a pull request.
 tools:
   - fix_github_security_alert
 ---
 
-# GitHub Security And Quality Fix
+# operating-github-security-fixer
 
 Use `fix_github_security_alert` for GitHub security remediation requests, not
 `github_cli` or `shell_run`.

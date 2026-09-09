@@ -1,4 +1,4 @@
-"""Acceptance coverage for first-class recurring morning-report schedules."""
+"""Acceptance coverage for first-class recurring delivering-morning-briefings schedules."""
 
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ def test_scheduled_morning_report_runs_the_skill_and_delivers_once(
     )
 
     def fake_prefetch(name: str, inputs: dict[str, str]) -> str:
-        assert name == "morning-report"
+        assert name == "delivering-morning-briefings"
         assert inputs == {"city": "New Delhi"}
         return "Weather: New Delhi: sunny\nHeadlines:\n- Skill headline"
 
@@ -82,7 +82,7 @@ def test_scheduled_morning_report_runs_the_skill_and_delivers_once(
             "--kind",
             "recurring_skill",
             "--skill",
-            "morning-report",
+            "delivering-morning-briefings",
             "--cron",
             "0 8 * * 1-5",
             "--provider",
@@ -94,7 +94,7 @@ def test_scheduled_morning_report_runs_the_skill_and_delivers_once(
     assert created.exit_code == 0, created.output
     task = list_tasks(store_path)[0]
     assert task.kind is TaskKind.RECURRING_SKILL
-    assert task.skill_name == "morning-report"
+    assert task.skill_name == "delivering-morning-briefings"
     assert task.skill_revision
     assert task.skill_inputs == {"city": "New Delhi"}
 
@@ -106,7 +106,7 @@ def test_scheduled_morning_report_runs_the_skill_and_delivers_once(
 
     assert success is True
     assert len(prompts) == 1
-    assert load_skill_body("morning-report") in prompts[0]
+    assert load_skill_body("delivering-morning-briefings") in prompts[0]
     assert "Daily Reliability Summary" not in prompts[0]
     assert delivery.messages == [
         "Good morning! Here is your briefing.\n"
