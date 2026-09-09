@@ -196,19 +196,35 @@ def _launchd_definition(argv: Sequence[str], log_path: Path) -> dict[str, object
 def _systemd_definition(argv: Sequence[str], log_path: Path) -> str:
     exec_start = " ".join(_systemd_quote(part) for part in argv)
     path_env = os.environ.get("PATH", "/usr/bin:/bin")
+    escaped_path = _systemd_escape_env(path_env)
     return (
         "[Unit]\n"
         "Description=OpenSRE scheduler\n"
         "After=network-online.target\n\n"
         "[Service]\n"
         f"ExecStart={exec_start}\n"
-        f'Environment="PATH={path_env}"\n'
+        f'Environment="PATH={escaped_path}"\n'
         "Restart=always\n"
         "RestartSec=10\n"
         f"StandardOutput=append:{log_path}\n"
         f"StandardError=append:{log_path}\n\n"
         "[Install]\n"
         "WantedBy=default.target\n"
+    )
+
+
+def _systemd_escape_env(value: str) -> str:
+    """Escape an environment variable value for systemd unit file syntax.
+
+    In systemd unit syntax, values inside double quotes support C-style
+    escapes: backslashes must be doubled, double quotes escaped with a
+    backslash, and newlines encoded as '\\n'.
+    """
+    return (
+        value.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("\n", "\\n")
+        .replace("\r", "\\r")
     )
 
 

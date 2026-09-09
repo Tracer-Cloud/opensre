@@ -129,6 +129,25 @@ def test_linux_install_writes_a_systemd_user_unit(
     assert runner.commands[-1][:4] == ["systemctl", "--user", "enable", "--now"]
 
 
+def test_linux_install_escapes_systemd_special_characters_in_path(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(svc, "OPENSRE_HOME_DIR", tmp_path / ".opensre")
+    monkeypatch.setenv("PATH", r'/usr/bin:/bin with "quotes":/path\with\backslash')
+    runner = _Runner()
+
+    state = svc.install_background_service(
+        home=tmp_path,
+        system="Linux",
+        run=runner,
+        command=["/usr/bin/opensre", "cron", "start", "--service"],
+    )
+
+    assert state.unit_path is not None
+    unit = state.unit_path.read_text()
+    assert r'Environment="PATH=/usr/bin:/bin with \"quotes\":/path\\with\\backslash"' in unit
+
+
 def test_other_platforms_are_reported_unsupported_without_touching_the_os(tmp_path: Path) -> None:
     runner = _Runner()
 
