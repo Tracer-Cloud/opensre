@@ -23,6 +23,8 @@ metadata:
 tools:
   - cli_exec
   - slash_invoke
+references:
+  - common/progress.md
 ---
 
 # Slack handoff
@@ -71,15 +73,3 @@ so and skip setup.
 
 Two sentences: mention OpenSRE in a channel or DM it; do not post anything
 from this demo. Then stop.
-
-## Progress updates
-
-Before every numbered step's tool calls, emit this exact header format as
-assistant text in the same response, followed by one short status sentence:
-
-```text
-### [n/3] <step name>
-<One-sentence status.>
-```
-
-Never start tool calls for a new step without its header.

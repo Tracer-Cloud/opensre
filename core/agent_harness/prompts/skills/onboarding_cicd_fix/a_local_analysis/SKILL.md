@@ -30,6 +30,10 @@ tools:
   - cli_exec
   - slash_invoke
   - ask_user_choice
+references:
+  - common/numbers_from_tools.md
+  - common/ask_once.md
+  - common/progress.md
 ---
 
 # CI/CD analytics demo
@@ -55,8 +59,6 @@ Slack setup.
 
 ## Workflow rules
 
-- Every number in the reply comes from a tool result. Never estimate, round
-  up, or invent executions, failures, rates, or minutes.
 - Never run `gh`, `git`, or `shell_run` for this flow; the scan and
   analysis tools own discovery and analysis end to end and are read-only.
   The analysis itself is read-only: no Slack messages, no pushes, no
@@ -72,9 +74,6 @@ Slack setup.
   not fall back to a different data source.
 - Decision points use `ask_user_choice` with the exact option texts below.
   End the turn after calling it; the answer arrives as the next user message.
-- Ask each question once. When the answer arrives, continue with the next
-  step immediately: do not reload this skill, do not restate the options, and
-  never ask what the answer or the request "means".
 - Which question was answered decides the next step. An answer to `Which
   repository should I analyze?` (or a repository named in the request) is the
   repository: go straight to step 3. An answer to `What would you like to do
@@ -139,15 +138,3 @@ hand off a chore from Slack: mention OpenSRE in a channel or DM it.
 Never post, reply, or send anything to Slack in this demo.
 
 **Exit demo:** Reply with one line and stop.
-
-## Progress updates
-
-Before every numbered step's tool calls, emit this exact header format as
-assistant text in the same response, followed by one short status sentence:
-
-```text
-### [n/4] <step name>
-<One-sentence status.>
-```
-
-Never start tool calls for a new step without its header.

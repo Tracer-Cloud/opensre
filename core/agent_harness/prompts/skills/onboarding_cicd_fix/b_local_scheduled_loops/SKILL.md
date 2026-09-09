@@ -24,6 +24,9 @@ tools:
   - scan_local_git_workspace
   - schedule_ci_reliability_loop
   - ask_user_choice
+references:
+  - common/ask_once.md
+  - common/progress.md
 ---
 
 # CI/CD reliability agent
@@ -51,7 +54,6 @@ the shell inbox.
   and stop. Do not fall back to another data source.
 - Decision points use `ask_user_choice` with the exact option texts below.
   End the turn after calling it; the answer arrives as the next user message.
-- Ask each question once. When the answer arrives, continue immediately.
 - Output `schedule_ci_reliability_loop`'s `response_text` exactly and stop.
   The loop delivers to this shell's inbox and never posts to Slack.
 
@@ -91,15 +93,3 @@ Wait for the answer.
 Call `schedule_ci_reliability_loop(owner="<owner>", repo="<repo>")` for
 weekdays, or pass `weekdays=false` when they chose every day. Output
 `response_text` verbatim and stop.
-
-## Progress updates
-
-Before every numbered step's tool calls, emit this exact header format as
-assistant text in the same response, followed by one short status sentence:
-
-```text
-### [n/4] <step name>
-<One-sentence status.>
-```
-
-Never start tool calls for a new step without its header.

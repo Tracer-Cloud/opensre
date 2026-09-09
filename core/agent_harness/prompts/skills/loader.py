@@ -10,14 +10,16 @@ Layout (either form is supported):
 - Flat: ``skills/<name>.md`` with optional ``skills/<name>_report.md``.
 
 Optional YAML frontmatter (``name``, ``description``, optional ``recurring``,
-optional ``getting_started`` + ``demo_order``, optional ``pre_execute``) feeds
-the compact index. ``getting_started`` is the verbatim first-visit demo menu
-label this skill owns; ``demo_order`` is its 1-based row (A=1).
-``pre_execute`` lists static tool calls (``{tool, args}``) the host runs when
-the skill is entered, before any model step; the loader keeps them as data and
-the entry point decides which tools are allowed. Without frontmatter, the name
-is derived from the path and the description from the first ``WHEN TO USE`` /
-subtitle lines.
+optional ``getting_started`` + ``demo_order``, optional ``pre_execute``,
+optional ``references``) feeds the compact index. ``getting_started`` is the
+verbatim first-visit demo menu label this skill owns; ``demo_order`` is its
+1-based row (A=1). ``pre_execute`` lists static tool calls (``{tool, args}``)
+the host runs when the skill is entered, before any model step; the loader
+keeps them as data and the entry point decides which tools are allowed.
+``references`` lists sibling markdown files appended after the body (resolved
+from the skill folder, its parent package, or the skills tree; paths that
+leave the tree are ignored). Without frontmatter, the name is derived from
+the path and the description from the first ``WHEN TO USE`` / subtitle lines.
 
 The harness prompt carries only :func:`load_skills_index` (~hundreds of
 chars). Full bodies load through the ``skill_view`` tool via
@@ -54,6 +56,7 @@ _PACKAGE_SKILL_FILENAME = "SKILL.md"
 _REPORT_TEMPLATE_SUFFIX = "_report.md"
 _REPO_SKILLS_PREFIX = "core/agent_harness/prompts/skills"
 _REPORT_TEMPLATE_HEADER = "REPORT TEMPLATE from `{repo_path}` (fill exactly; keep all headings):"
+_REFERENCE_HEADER = "SHARED RULES from `{repo_path}`:"
 _SKILL_NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _BANNER_RE = re.compile(r"^[=\-─]{8,}\s*$")
 
@@ -86,6 +89,9 @@ class ActionSkill:
 
     pre_execute: tuple[SkillToolCall, ...] = ()
     """Static tool calls run on skill entry (boot, ``/demo``, ``skill_view``) before the model."""
+
+    references: tuple[str, ...] = ()
+    """Sibling markdown paths appended after the body; unresolved or out-of-tree entries are skipped."""
 
 
 def skills_dir() -> Path:
@@ -238,6 +244,71 @@ def _derive_description(body: str) -> str:
     return "Action-agent skill"
 
 
+def _path_is_under(path: Path, root: Path) -> bool:
+    """Return True when ``path`` is ``root`` or a file inside it."""
+    try:
+        path.relative_to(root)
+    except ValueError:
+        return False
+    return True
+
+
+def _resolve_skill_reference(skill_path: Path, ref: str) -> Path | None:
+    """Resolve one ``references:`` entry to a markdown file under the skills tree."""
+    name = _string_field(ref)
+    if not name:
+        return None
+    relative = Path(name)
+    if relative.is_absolute():
+        return None
+    root = skills_dir().resolve()
+    seen: set[Path] = set()
+    for raw_candidate in (
+        skill_path.parent / relative,
+        skill_path.parent.parent / relative,
+        root / relative,
+    ):
+        try:
+            candidate = raw_candidate.resolve()
+        except OSError:
+            continue
+        if candidate in seen:
+            continue
+        seen.add(candidate)
+        if not _path_is_under(candidate, root):
+            continue
+        if candidate == skill_path.resolve():
+            continue
+        if candidate.name == _PACKAGE_SKILL_FILENAME:
+            continue
+        if candidate.is_file() and candidate.suffix.lower() == ".md":
+            return candidate
+    return None
+
+
+def _skill_body_with_references(skill_path: Path, body: str, references: tuple[str, ...]) -> str:
+    if not body or not references:
+        return body
+    chunks: list[str] = []
+    appended: set[Path] = set()
+    for ref in references:
+        path = _resolve_skill_reference(skill_path, ref)
+        if path is None or path in appended:
+            continue
+        try:
+            text = path.read_text(encoding="utf-8").strip()
+        except OSError:
+            continue
+        if not text:
+            continue
+        appended.add(path)
+        header = _REFERENCE_HEADER.format(repo_path=_repo_relative_path(path))
+        chunks.append(f"{header}\n\n{text}")
+    if not chunks:
+        return body
+    return "".join((body, "\n\n", "\n\n".join(chunks)))
+
+
 def _skill_body_with_optional_template(skill_path: Path, body: str) -> str:
     if not body:
         return ""
@@ -274,6 +345,7 @@ def _load_action_skill(skill_path: Path) -> ActionSkill | None:
         getting_started=getting_started,
         demo_order=_optional_int_field(frontmatter.get("demo_order")),
         pre_execute=_pre_execute_field(frontmatter.get("pre_execute")),
+        references=_string_list_field(frontmatter.get("references")),
     )
 
 
@@ -345,14 +417,16 @@ def load_skills_block() -> str:
 
 
 def load_skill_body(name: str) -> str:
-    """Return one skill's full body (+ report template), or ``\"\"`` if unknown."""
+    """Return one skill's full body (+ references + report template), or ``\"\"`` if unknown."""
     needle = name.strip().lower().replace("_", "-")
     if not needle:
         return ""
     for skill in list_action_skills():
         if skill.name == needle:
             raw = skill.path.read_text(encoding="utf-8")
-            _frontmatter, body = _parse_frontmatter(raw)
+            frontmatter, body = _parse_frontmatter(raw)
+            refs = _string_list_field(frontmatter.get("references"))
+            body = _skill_body_with_references(skill.path, body, refs)
             return _skill_body_with_optional_template(skill.path, body)
     return ""
 

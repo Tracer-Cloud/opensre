@@ -130,6 +130,59 @@ def test_loader_discovers_nested_and_legacy_packages_without_hidden_directories(
         loader.clear_skills_caches()
 
 
+def test_references_append_sibling_markdown_and_ignore_paths_outside_the_tree(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    (tmp_path / "common").mkdir()
+    (tmp_path / "common" / "rule.md").write_text("# Shared\n\nDo it once.")
+    outside = tmp_path.parent / "outside.md"
+    outside.write_text("SECRET")
+    skill_dir = tmp_path / "demo"
+    skill_dir.mkdir()
+    (skill_dir / "SKILL.md").write_text(
+        "---\n"
+        "name: demo\n"
+        "description: demo recipe\n"
+        "references:\n"
+        "  - common/rule.md\n"
+        "  - ../outside.md\n"
+        "  - missing.md\n"
+        "---\n"
+        "Body of demo."
+    )
+    monkeypatch.setattr(loader, "skills_dir", lambda: tmp_path)
+    loader.clear_skills_caches()
+    try:
+        body = loader.load_skill_body("demo")
+        skill = next(s for s in loader.list_action_skills() if s.name == "demo")
+        assert skill.references == ("common/rule.md", "../outside.md", "missing.md")
+        assert body.startswith("Body of demo.")
+        assert "Do it once." in body
+        assert "SHARED RULES from" in body
+        assert "SECRET" not in body
+    finally:
+        loader.clear_skills_caches()
+
+
+def test_onboarding_children_load_shared_rules_once() -> None:
+    loader.clear_skills_caches()
+    analytics = loader.load_skill_body("cicd-analytics-demo")
+    reliability = loader.load_skill_body("cicd-reliability-agent")
+    slack = loader.load_skill_body("slack-handoff")
+    analytics_card = next(
+        s for s in loader.list_action_skills() if s.name == "cicd-analytics-demo"
+    ).path.read_text(encoding="utf-8")
+    assert "Every number in the reply comes from a tool result" in analytics
+    assert "Ask each question once." in analytics
+    assert "Ask each question once." in reliability
+    assert "### [n/N] <step name>" in analytics
+    assert "### [n/N] <step name>" in slack
+    assert analytics.count("Every number in the reply comes from a tool result") == 1
+    assert "Every number in the reply comes from a tool result" not in analytics_card
+    assert "## Progress updates" not in analytics_card
+
+
 def test_pre_execute_keeps_well_formed_calls_and_drops_the_rest(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

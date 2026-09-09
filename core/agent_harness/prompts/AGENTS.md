@@ -46,3 +46,5 @@ Use ordinary Markdown, following
 - A static menu a skill always opens on entry belongs in `pre_execute`
   frontmatter (`tool: ask_user_choice` + `args`), not in prose the model must
   replay; the host runs it before any model step (see `onboarding_cicd_fix`).
+- Rules shared by sibling skills belong in a markdown file listed under
+  `references:` (resolved inside the skills tree), not copied into each body.
