@@ -965,6 +965,9 @@ _TOOLS_WITHOUT_DELIBERATE_CATCH: frozenset[str] = frozenset(
         # registry that this test enumerates.
         "alertmanager_alerts",
         "alertmanager_silences",
+        # count_files catches only FileCountError (missing path, not a
+        # directory); an unexpected walk error reaches the global wrapper.
+        "count_files",
         # read_structured_file catches only StructureError (unreadable file,
         # unknown key); a parser failure it did not anticipate reaches the
         # global wrapper.

@@ -35,12 +35,24 @@ class KeysAsWritten(yaml.SafeLoader):
     their normal types.
     """
 
+    #: Keys YAML resolves to booleans; kept as the words the file spells.
+    _BOOL_TAG = "tag:yaml.org,2002:bool"
+    #: ``<<`` pulls an anchored mapping in; PyYAML normally expands it for us.
+    _MERGE_TAG = "tag:yaml.org,2002:merge"
+
     def construct_mapping(self, node: Any, deep: bool = False) -> dict[Any, Any]:
+        """Build the mapping, expanding ``<<`` merges and keeping keys as written.
+
+        ``SafeConstructor.construct_mapping`` normally expands ``<<`` for us;
+        overriding it means doing that here, or an anchored document fails to
+        load at all.
+        """
+        self.flatten_mapping(node)
         mapping: dict[Any, Any] = {}
         for key_node, value_node in node.value:
             key = (
                 key_node.value
-                if key_node.tag == "tag:yaml.org,2002:bool"
+                if key_node.tag == self._BOOL_TAG
                 else self.construct_object(key_node, deep=deep)
             )
             mapping[key] = self.construct_object(value_node, deep=deep)

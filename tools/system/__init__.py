@@ -13,6 +13,7 @@ from __future__ import annotations
 
 TOOL_MODULES = (
     "agent_memory.tool",
+    "file_count.tool",
     "fleet_monitoring",
     "python_execution_tool",
     "runbook_guidance_tool.tool",

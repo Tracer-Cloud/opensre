@@ -201,6 +201,7 @@
                 "pages": [
                   "architecture-audit-tool",
                   "structured-file-tool",
+                  "counting-files",
                   "bitbucket",
                   "cicd-analytics-demo",
                   "github",

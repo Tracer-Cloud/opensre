@@ -1,0 +1,49 @@
+---
+title: "Counting files"
+description: "Ask how many files of a kind a directory holds and get the project's files, not its caches"
+---
+
+## Overview
+
+"How many test files are in this package" has an exact answer, and the obvious
+shell command gets it wrong. `find -type f` counts everything on disk, so
+compiled caches under `__pycache__` are counted alongside the modules you wrote
+— in this repository that turns 103 test files into 233.
+
+OpenSRE counts the files that belong to the project. Ask in the interactive
+shell (`opensre`):
+
+```
+How many test files are under tests/interactive_shell?
+How many Python files does surfaces/interactive_shell have?
+How many workflow files are in .github/workflows?
+```
+
+## What you get back
+
+One sentence naming the count, the pattern and the directory:
+
+```
+103 files matching test_*.py under tests/interactive_shell, not counting
+generated directories
+```
+
+Up to twenty matching paths come back as examples. The count itself always
+covers the whole tree.
+
+## What is skipped
+
+Directories whose contents are generated, vendored, or version-control
+bookkeeping: `__pycache__`, `.venv`, `venv`, `site-packages`, `node_modules`,
+`build`, `dist`, `.git`, and the `.mypy_cache`, `.pytest_cache`, `.ruff_cache`
+and `.tox` caches.
+
+Symlinked directories are not followed, so a link pointing back up the tree
+cannot make the count run away.
+
+## What it does not do
+
+- Counting entries inside a YAML, JSON or TOML file is a different question:
+  see [Structured file reads](/structured-file-tool).
+- Searching file contents is a shell command with `rg`.
+- Listing every file name: you get the count and a few examples.

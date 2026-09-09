@@ -172,3 +172,28 @@ def test_the_tool_is_registered_and_read_only() -> None:
     assert registered is not None
     assert registered.side_effect_level == "read_only"
     assert "path" in registered.public_input_schema["properties"]
+
+
+def test_a_merged_anchor_is_expanded(tmp_path: Path) -> None:
+    """``<<`` pulls an anchored mapping in; skipping it made the file unreadable."""
+    # Arrange: two jobs that share defaults through an anchor.
+    path = tmp_path / "anchored.yml"
+    path.write_text(
+        "defaults: &defaults\n"
+        "  runs-on: ubuntu-latest\n"
+        "jobs:\n"
+        "  build:\n"
+        "    <<: *defaults\n"
+        "    steps: []\n"
+        "  test:\n"
+        "    <<: *defaults\n"
+        "    steps: []\n"
+    )
+
+    # Act
+    jobs = describe(path, "jobs")
+    build = describe(path, "jobs.build")
+
+    # Assert: the file loads, and the merged key is part of the job.
+    assert jobs.count == 2
+    assert build.keys == ("runs-on", "steps")
