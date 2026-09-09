@@ -355,7 +355,7 @@ def test_analyze_markdown_keeps_details_when_benchmarks_are_requested(
 
     # Act
     result = tool_module.analyze_github_ci_reliability(
-        owner="acme", repo="app", days=30, include_benchmarks=True, context=None
+        owner="acme", repo="app", days=30, context=None
     )
 
     # Assert: benchmarks add a section; they do not remove the analysis details.

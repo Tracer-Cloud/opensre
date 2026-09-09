@@ -186,55 +186,35 @@ def _from_snapshot(
     *,
     include_benchmarks: bool = True,
     compact: bool = False,
-) -> dict[str, Any]:
-    """Answer from a same-day snapshot with the same renderer as a live analysis."""
-    generated = str(snapshot.get("generated_at", ""))[:16].replace("T", " ")
+) -> dict[str, Any] | None:
+    """Answer from a same-day snapshot, or ``None`` when it holds no usable report.
+
+    A snapshot written before the report object was saved cannot produce the
+    comparison, so it counts as a miss and the caller reads GitHub instead.
+    """
     saved = snapshot.get("report")
     report = report_from_dict(saved) if isinstance(saved, dict) else None
+    if report is None:
+        return None
+    generated = str(snapshot.get("generated_at", ""))[:16].replace("T", " ")
     if console is not None:
         console.print(
             f"  [dim]Using the CI reliability snapshot of {escape(f'{owner}/{repo}')} "
             f"from {generated} UTC (same {window}-day window).[/dim]"
         )
         console.print()
-    if report is not None:
-        result = _result(
-            report,
-            owner,
-            repo,
-            window,
-            console,
-            include_benchmarks=include_benchmarks,
-            compact=compact,
-        )
-        result["summary"] += f" Figures as of {generated} UTC, from the saved snapshot."
-        result["from_snapshot"] = snapshot.get("generated_at")
-        return result
-    # An older snapshot without the report object: the figures only.
-    figures = {
-        key: value
-        for key, value in snapshot.items()
-        if key not in {"generated_at", "headline", "snapshot_path", "window_days", "markdown"}
-    }
-    summary = (
-        f"{owner}/{repo}: {snapshot.get('executions')} runs in {window} days, "
-        f"{snapshot.get('pr_failures')} of {snapshot.get('pr_executions')} PR runs failed, "
-        f"{snapshot.get('reliability_failures')} CI-caused. "
-        f"Figures as of {generated} UTC, from the saved snapshot."
+    result = _result(
+        report,
+        owner,
+        repo,
+        window,
+        console,
+        include_benchmarks=include_benchmarks,
+        compact=compact,
     )
-    return {
-        "source": _SOURCE,
-        "success": True,
-        "owner": owner,
-        "repo": repo,
-        "window_days": window,
-        "summary": summary,
-        "headline": str(snapshot.get("headline", "")),
-        "from_snapshot": snapshot.get("generated_at"),
-        "rendered_in_shell": False,
-        **figures,
-        "response_text": summary,
-    }
+    result["summary"] += f" Figures as of {generated} UTC, from the saved snapshot."
+    result["from_snapshot"] = snapshot.get("generated_at")
+    return result
 
 
 def report_text_from_snapshot(
@@ -257,7 +237,7 @@ def report_text_from_snapshot(
     result = _from_snapshot(
         snapshot, owner, repo, window, None, include_benchmarks=include_benchmarks, compact=True
     )
-    if not result.get("success"):
+    if result is None or not result.get("success"):
         return "", ""
     return str(result.get("response_text") or "").strip(), str(snapshot.get("generated_at", ""))
 
@@ -499,7 +479,7 @@ def analyze_github_ci_reliability(
     )
     token = resolve_github_token(github_token)
     if snapshot is not None:
-        return _from_snapshot(
+        answered = _from_snapshot(
             snapshot,
             repo_owner,
             repo_name,
@@ -507,6 +487,8 @@ def analyze_github_ci_reliability(
             console,
             compact=brief,
         )
+        if answered is not None:
+            return answered
     if not token:
         message = (
             f"A GitHub token is required to read the Actions history of {repo_owner}/{repo_name}. "

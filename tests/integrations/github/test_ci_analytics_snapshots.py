@@ -61,20 +61,7 @@ def test_the_tool_answers_from_a_fresh_snapshot_without_reading_github(
 
     # Arrange: a snapshot exists; GitHub must not be read.
     now = datetime.now(UTC)
-    write_snapshot(
-        tmp_path,
-        "apache",
-        "airflow",
-        now - timedelta(minutes=5),
-        _payload(
-            generated_at=(now - timedelta(minutes=5)).isoformat(),
-            headline="Red for 24.5h on main",
-            markdown="# CI/CD reliability for apache/airflow\n| a | b |",
-            pr_failures=1168,
-            pr_executions=5722,
-            reliability_failures=333,
-        ),
-    )
+    _write_report_snapshot(tmp_path, _report(), now)
     monkeypatch.setattr(tool_module, "snapshot_root", lambda _root=None: tmp_path)
     monkeypatch.setattr(tool_module, "resolve_github_token", lambda _t=None: "tok")
 
@@ -88,11 +75,13 @@ def test_the_tool_answers_from_a_fresh_snapshot_without_reading_github(
         owner="apache", repo="airflow", days=30, github_token="tok"
     )
 
-    # Assert: figures and provenance come from the snapshot.
+    # Assert: figures and provenance come from the saved report, not a fetch.
+    from integrations.github.tools.ci_analytics.render import headline
+
     assert result["success"] is True
     assert result["from_snapshot"]
     assert result["red_hours"] == 24.5
-    assert result["headline"] == "Red for 24.5h on main"
+    assert result["headline"] == headline(_report())
     assert "as of" in result["summary"]
 
 
@@ -258,7 +247,6 @@ def test_include_benchmarks_builds_the_comparison_from_snapshots(
         owner="acme",
         repo="app",
         days=30,
-        include_benchmarks=True,
         github_token="tok",
     )
 
@@ -295,7 +283,6 @@ def test_include_benchmarks_skips_a_peer_that_cannot_be_fetched(
         owner="acme",
         repo="app",
         days=30,
-        include_benchmarks=True,
     )
 
     assert result["benchmarks_skipped"] == ["fastapi/fastapi (no same-day snapshot)"]
@@ -321,9 +308,7 @@ def test_include_benchmarks_says_when_every_peer_snapshot_is_missing(
 
     monkeypatch.setattr(tool_module, "analyze_repository", _boom)
 
-    result = cast(Any, tool_module.analyze_github_ci_reliability)(
-        owner="acme", repo="app", days=30, include_benchmarks=True
-    )
+    result = cast(Any, tool_module.analyze_github_ci_reliability)(owner="acme", repo="app", days=30)
 
     assert result["success"] is True
     assert result["benchmarks"] == []
@@ -349,12 +334,52 @@ def test_a_fresh_snapshot_answers_without_a_github_token(tmp_path: Path, monkeyp
 
     monkeypatch.setattr(tool_module, "analyze_repository", _boom)
 
-    result = cast(Any, tool_module.analyze_github_ci_reliability)(
-        owner="acme", repo="app", days=30, include_benchmarks=True
-    )
+    result = cast(Any, tool_module.analyze_github_ci_reliability)(owner="acme", repo="app", days=30)
 
     assert result["success"] is True
     assert result["from_snapshot"]
     assert "Compared with apache/airflow and fastapi/fastapi" in result["response_text"]
     assert "fastapi/fastapi: default branch stayed green in this window." in result["response_text"]
     assert "opensre integrations setup github" not in result.get("response_text", "")
+
+
+def test_a_snapshot_without_a_saved_report_is_a_miss_not_a_lesser_answer(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A snapshot written before the report object cannot build the comparison.
+
+    Answering from it would drop the comparison the report always carries, so
+    it counts as a cache miss and GitHub is read instead.
+    """
+    # Arrange: a fresh snapshot in the old shape, and a token to read with.
+    from typing import Any, cast
+
+    from integrations.github.tools.ci_analytics import tool as tool_module
+
+    now = datetime.now(UTC)
+    write_snapshot(
+        tmp_path,
+        "apache",
+        "airflow",
+        now - timedelta(minutes=5),
+        _payload(generated_at=(now - timedelta(minutes=5)).isoformat(), headline="old shape"),
+    )
+    monkeypatch.setattr(tool_module, "snapshot_root", lambda _root=None: tmp_path)
+    monkeypatch.setattr(tool_module, "resolve_github_token", lambda _t=None: "tok")
+    reads: list[str] = []
+
+    def _analyze(owner: str, repo: str, **_kwargs: Any) -> Any:
+        reads.append(f"{owner}/{repo}")
+        return type("A", (), {"report": _report(), "runs_read": 1})()
+
+    monkeypatch.setattr(tool_module, "analyze_repository", _analyze)
+
+    # Act
+    result = cast(Any, tool_module.analyze_github_ci_reliability)(
+        owner="apache", repo="airflow", days=30, github_token="tok"
+    )
+
+    # Assert
+    assert reads == ["apache/airflow"]
+    assert result["success"] is True
+    assert not result.get("from_snapshot")
