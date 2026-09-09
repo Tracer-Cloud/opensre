@@ -239,3 +239,96 @@ def test_the_judge_is_told_to_reject_a_self_contradicting_reply() -> None:
     assert "When in doubt, set verdict to NOT_REACHED." in seen["system"]
     assert "not the assistant reply" in seen["system"]
     assert "evidence_quote" in seen["system"]
+
+
+def test_the_observations_are_read_without_the_reply() -> None:
+    """The reading call sees the condition and the tool observations only."""
+    from core.agent_harness.session_goal.judge import read_observations
+
+    # Arrange: a client that records what it is given and answers tersely.
+    seen: dict[str, str] = {}
+
+    class _LLM:
+        model_id = "test"
+
+        def invoke(self, messages, *, system=None, tools=None):  # noqa: ANN001
+            _ = tools
+            seen["system"] = system or ""
+            seen["prompt"] = str(messages[-1].get("content", "")) if messages else ""
+            return AgentLLMResponse(content='{"answer": "#6140: no re-run (attempt 1 success)"}')
+
+        def tool_schemas(self, tools):  # noqa: ANN001
+            _ = tools
+            return []
+
+    # Act
+    reading = read_observations(
+        _LLM(),  # type: ignore[arg-type]
+        condition="did CI on #6140 fail then pass?",
+        tool_evidence="Tool: gh\nArguments: {}\nOutcome: success\nResult: attempt 1 success",
+    )
+
+    # Assert: the reply is not part of the input; the answer comes back.
+    assert reading == "#6140: no re-run (attempt 1 success)"
+    assert "never see the assistant" in seen["system"]
+    assert "Latest assistant reply" not in seen["prompt"]
+    assert "attempt 1 success" in seen["prompt"]
+
+
+def test_the_judge_compares_the_reply_with_the_independent_reading() -> None:
+    """A Yes the model invents is checked against what the observations say."""
+    # Arrange: first call is the reading, second is the verdict; record the judge prompt.
+    calls: list[str] = []
+    seen: dict[str, str] = {}
+
+    class _LLM:
+        model_id = "test"
+
+        def invoke(self, messages, *, system=None, tools=None):  # noqa: ANN001
+            _ = tools
+            calls.append(system or "")
+            if "never see the assistant" in (system or ""):
+                return AgentLLMResponse(content='{"answer": "#6140: no re-run"}')
+            seen["system"] = system or ""
+            seen["prompt"] = str(messages[-1].get("content", "")) if messages else ""
+            return AgentLLMResponse(
+                content=(
+                    '{"verdict": "NOT_REACHED", "reason": "Contradiction: reply says Yes for '
+                    '#6140, observations read no re-run", "evidence_quote": "attempt 1 success"}'
+                )
+            )
+
+        def tool_schemas(self, tools):  # noqa: ANN001
+            _ = tools
+            return []
+
+    session = SessionCore()
+    goal = SessionGoal(condition="did CI on #6140 fail then pass?", max_outer_turns=3)
+    attach_session_goal(session, goal)
+    result = TurnResult(
+        "cli_agent_handled",
+        ToolCallingTurnResult(
+            1,
+            1,
+            1,
+            False,
+            True,
+            tool_evidence="Tool: gh\nArguments: {}\nOutcome: success\nResult: attempt 1 success",
+            evidence_success_count=1,
+        ),
+        "| #6140 | Yes |",
+    )
+
+    # Act
+    verdict = evaluate_session_goal(goal, result, session=session, judge_llm=_LLM())  # type: ignore[arg-type]
+
+    # Assert: two calls, the reading reached the judge, the goal stays active.
+    assert len(calls) == 2
+    assert "Independent reading of the observations" in seen["prompt"]
+    assert "#6140: no re-run" in seen["prompt"]
+    assert (
+        "compare the reply's key facts" in seen["system"].lower()
+        or "independent reading" in seen["system"].lower()
+    )
+    assert verdict.status == SessionGoalStatus.ACTIVE
+    assert verdict.reason.startswith("Contradiction:")
