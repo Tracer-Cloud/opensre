@@ -191,6 +191,7 @@ class SessionGoal:
     # Session token totals when the goal was attached — delta is goal spend.
     token_baseline_input: int = 0
     token_baseline_output: int = 0
+    token_baseline_cached: int = 0
     # True when attached via ``/goal set``. While ACTIVE or PAUSED, a new goal
     # must not replace it. ``GOAL_REACHED`` still requires successful tool work.
     host_owned: bool = False
@@ -382,6 +383,22 @@ def _session_token_totals(session: Any | None) -> tuple[int, int]:
         return 0, 0
 
 
+def _session_cached_total(session: Any | None) -> int:
+    tokens = getattr(session, "tokens", None) if session is not None else None
+    cached_total = getattr(tokens, "cached_total", None)
+    if not callable(cached_total):
+        return 0
+    try:
+        return max(0, int(cached_total()))
+    except (TypeError, ValueError):
+        return 0
+
+
+def session_goal_cached_tokens(goal: SessionGoal, *, session: Any | None = None) -> int:
+    """Input tokens served from the provider's prompt cache since attach."""
+    return max(0, _session_cached_total(session) - int(goal.token_baseline_cached))
+
+
 def mark_session_goal_started(
     goal: SessionGoal,
     *,
@@ -402,6 +419,7 @@ def mark_session_goal_started(
         started_at=float(time.time() if now is None else now),
         token_baseline_input=max(0, int(input_tokens)),
         token_baseline_output=max(0, int(output_tokens)),
+        token_baseline_cached=_session_cached_total(session),
     )
 
 
@@ -564,6 +582,7 @@ __all__ = [
     "session_goal_is_active",
     "session_goal_is_attached",
     "session_goal_is_paused",
+    "session_goal_cached_tokens",
     "session_goal_token_delta",
     "strip_shell_prompt_chrome",
 ]

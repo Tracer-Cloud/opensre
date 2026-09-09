@@ -387,6 +387,7 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
             span_attrs["content_chars"] = len(response.content or "")
         input_tokens = int(getattr(response, "input_tokens", 0) or 0)
         output_tokens = int(getattr(response, "output_tokens", 0) or 0)
+        cache_read_tokens = int(getattr(response, "cache_read_tokens", 0) or 0)
         self._input_tokens += input_tokens
         self._output_tokens += output_tokens
         response = self._host._after_response(provider_request, response)
@@ -400,6 +401,8 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
                     # Per call, so a run that raises later still reported this spend.
                     "input_tokens": input_tokens,
                     "output_tokens": output_tokens,
+                    # Part of input_tokens served from the provider's prompt cache.
+                    "cache_read_tokens": cache_read_tokens,
                 },
             )
         )

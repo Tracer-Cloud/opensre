@@ -328,3 +328,22 @@ def test_a_write_failure_is_recovered_only_by_the_same_tool_with_the_same_argume
     # Act / Assert: other arguments leave the failure standing; a retry clears it.
     assert tool_evidence_has_unrecovered_failure(other_arguments) is True
     assert tool_evidence_has_unrecovered_failure(same_arguments) is False
+
+
+def test_a_huge_tool_result_is_bounded_in_the_judge_evidence() -> None:
+    """One run listing must not push the review past its cap and mute the judge."""
+    from core.agent_harness.session_goal.review_input import collect_tool_evidence
+    from core.llm.types import ToolCall
+    from core.tool import ToolExecutionResult
+
+    # Arrange: one result far larger than the per-result bound.
+    call = ToolCall(id="1", name="list_github_actions_workflow_runs", input={"head_sha": "abc"})
+    result = ToolExecutionResult(content="x" * 50_000, is_error=False)
+
+    # Act
+    text, successes = collect_tool_evidence([(call, result)])
+
+    # Assert: head kept, remainder marked, still counted as evidence.
+    assert "[result truncated: 38000 more characters]" in text
+    assert len(text) < 13_000
+    assert successes == 1

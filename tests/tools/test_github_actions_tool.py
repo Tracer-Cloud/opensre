@@ -249,6 +249,10 @@ def test_list_workflow_runs_passes_head_sha_filter() -> None:
         )
     assert result["head_sha"] == "abc123def"
     assert captured["arguments"]["workflow_runs_filter"] == {"head_sha": "abc123def"}
+    # One commit's history is compact: attempts and conclusions, no actor or PR detail.
+    row = result["workflow_runs"][0]
+    assert "run_attempt" in row and "conclusion" in row
+    assert "pull_requests" not in row and "actor" not in row
 
 
 def test_list_active_runs_happy_path() -> None:

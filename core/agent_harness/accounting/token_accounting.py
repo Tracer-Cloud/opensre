@@ -128,7 +128,13 @@ def record_llm_turn(
     return inp, out, estimated
 
 
-def record_provider_usage(session: Any | None, *, input_tokens: int, output_tokens: int) -> None:
+def record_provider_usage(
+    session: Any | None,
+    *,
+    input_tokens: int,
+    output_tokens: int,
+    cache_read_tokens: int = 0,
+) -> None:
     """Accumulate one model call's provider-reported usage onto ``session.tokens``.
 
     Only exact counts are recorded: a call whose provider reported nothing adds
@@ -139,7 +145,12 @@ def record_provider_usage(session: Any | None, *, input_tokens: int, output_toke
         return
     tokens = getattr(session, "tokens", None)
     if tokens is not None and callable(getattr(tokens, "record", None)):
-        tokens.record(input_tokens=input_tokens, output_tokens=output_tokens, estimated=False)
+        tokens.record(
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            estimated=False,
+            cache_read_tokens=max(0, cache_read_tokens),
+        )
 
 
 def tap_provider_usage(inner: Callable[[Any], None] | None, session: Any) -> Callable[[Any], None]:
@@ -156,6 +167,7 @@ def tap_provider_usage(inner: Callable[[Any], None] | None, session: Any) -> Cal
                 session,
                 input_tokens=int(data.get("input_tokens", 0) or 0),
                 output_tokens=int(data.get("output_tokens", 0) or 0),
+                cache_read_tokens=int(data.get("cache_read_tokens", 0) or 0),
             )
         if inner is not None:
             inner(event)

@@ -719,11 +719,14 @@ class OpenAIAgentClient:
                 output_key="output_tokens",
             )
             responses_tool_calls = response_tool_calls(response)
+            cache_read, cache_write = extract_cache_tokens(getattr(response, "usage", None))
             return AgentLLMResponse(
                 content=str(getattr(response, "output_text", "") or ""),
                 tool_calls=responses_tool_calls,
                 stop_reason="tool_calls" if responses_tool_calls else "stop",
                 raw_content=response_raw_message(response),
+                cache_read_tokens=cache_read,
+                cache_creation_tokens=cache_write,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
             )
@@ -739,6 +742,7 @@ class OpenAIAgentClient:
             input_key="prompt_tokens",
             output_key="completion_tokens",
         )
+        cache_read, cache_write = extract_cache_tokens(getattr(response, "usage", None))
         choice = response.choices[0]
         msg = choice.message
         content = msg.content or ""
@@ -761,6 +765,8 @@ class OpenAIAgentClient:
             # exclude_none=True strips null fields (refusal, audio, function_call …)
             # that strict OpenAI-compatible endpoints may reject on replay.
             raw_content=msg.model_dump(exclude_none=True),
+            cache_read_tokens=cache_read,
+            cache_creation_tokens=cache_write,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
         )

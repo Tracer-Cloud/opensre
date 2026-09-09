@@ -28,6 +28,7 @@ def session_goal_to_payload(goal: SessionGoal) -> dict[str, Any]:
         "last_reason": goal.last_reason,
         "token_baseline_input": int(goal.token_baseline_input),
         "token_baseline_output": int(goal.token_baseline_output),
+        "token_baseline_cached": int(goal.token_baseline_cached),
         "host_owned": bool(goal.host_owned),
         "last_progress_turns_used": int(goal.last_progress_turns_used),
         "tool_evidence": list(goal.tool_evidence) if goal.tool_evidence is not None else None,
@@ -87,8 +88,9 @@ def session_goal_from_payload(payload: Any) -> SessionGoal | None:
     try:
         token_in = max(0, int(payload.get("token_baseline_input", 0) or 0))
         token_out = max(0, int(payload.get("token_baseline_output", 0) or 0))
+        token_cached = max(0, int(payload.get("token_baseline_cached", 0) or 0))
     except (TypeError, ValueError):
-        token_in, token_out = 0, 0
+        token_in, token_out, token_cached = 0, 0, 0
     host_owned = bool(payload.get("host_owned", False))
     last_progress_turns_used = _restore_last_progress_turns_used(payload, turns_used)
     verdict_raw = payload.get("last_verdict")
@@ -105,6 +107,7 @@ def session_goal_from_payload(payload: Any) -> SessionGoal | None:
         started_at=started_at,
         token_baseline_input=token_in,
         token_baseline_output=token_out,
+        token_baseline_cached=token_cached,
         host_owned=host_owned,
         last_progress_turns_used=last_progress_turns_used,
         tool_evidence=_restore_tool_evidence(payload),

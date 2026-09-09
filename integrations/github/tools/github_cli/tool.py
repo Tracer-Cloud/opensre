@@ -83,7 +83,10 @@ def _normalize_args(args: list[str] | None) -> list[str]:
         "Pass args after the gh binary; optional repo as owner/name for -R. "
         "After the call, reply from the result summary — plain prose for simple "
         "confirms; chat-like markdown bullets for multi-item reads (not report "
-        "tables/headers). Not raw JSON/GraphQL dumps."
+        "tables/headers). Not raw JSON/GraphQL dumps. For a commit's workflow "
+        "run history with attempts and conclusions use "
+        "list_github_actions_workflow_runs with head_sha; gh run list does not "
+        "show attempts."
     ),
     use_cases=[
         "Creating a GitHub issue (title/body/assignee/labels) when the user asks",

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import replace
+from typing import Any
 
 from core.agent_harness.session_goal.goal import SessionGoal
 from core.agent_harness.turns.gather_discovery_budget import is_gather_discovery_call
@@ -12,6 +13,8 @@ from core.tool import ToolExecutionResult
 
 _BOOKKEEPING_TOOLS = frozenset({"session_goal_set", "session_goal_complete", "update_plan"})
 _MAX_REVIEW_INPUT_CHARS = 64000
+# Per tool result, so one large listing cannot push the whole review over the cap.
+_MAX_RESULT_CHARS = 12000
 _OUTCOME_ERROR_MARK = "\nOutcome: error\n"
 _OUTCOME_ERROR_LINE = "Outcome: error"
 _OUTCOME_SUCCESS_LINE = "Outcome: success"
@@ -90,10 +93,24 @@ def collect_tool_evidence(
     ]
     text = "\n\n".join(
         f"Tool: {call.name}\nArguments: {call.input}\n"
-        f"Outcome: {'error' if result.is_error else 'success'}\nResult: {result.content}"
+        f"Outcome: {'error' if result.is_error else 'success'}\n"
+        f"Result: {_bounded_result(result.content)}"
         for call, result in observations
     )
     return text, sum(_qualifying_success(call, result) for call, result in observations)
+
+
+def _bounded_result(content: Any) -> str:
+    """One tool result for the judge: whole when short, head plus a marker when long.
+
+    A single run listing can be hundreds of kilobytes; without a bound the
+    review input overflowed and the judge went unavailable for the turn.
+    """
+    text = str(content)
+    if len(text) <= _MAX_RESULT_CHARS:
+        return text
+    dropped = len(text) - _MAX_RESULT_CHARS
+    return f"{text[:_MAX_RESULT_CHARS]}\n[result truncated: {dropped} more characters]"
 
 
 def retain_tool_evidence(goal: SessionGoal, observations: str, *, succeeded: bool) -> SessionGoal:

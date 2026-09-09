@@ -117,6 +117,25 @@ def _normalize_job(job: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+_RUN_HISTORY_FIELDS = (
+    "id",
+    "name",
+    "status",
+    "conclusion",
+    "run_number",
+    "run_attempt",
+    "event",
+    "created_at",
+    "updated_at",
+    "html_url",
+)
+
+
+def _run_history_row(run: dict[str, Any]) -> dict[str, Any]:
+    """The fields that answer "did this workflow fail and get re-run on this commit"."""
+    return {key: run.get(key) for key in _RUN_HISTORY_FIELDS}
+
+
 def _normalize_run(run: dict[str, Any]) -> dict[str, Any]:
     """Normalize workflow run data."""
     actor_raw = run.get("actor")
@@ -377,11 +396,17 @@ def _map_list_github_actions_workflow_runs(
 @tool(
     name="list_github_actions_workflow_runs",
     source="github",
-    description="List recent GitHub Actions workflow runs for a repository.",
+    description=(
+        "List GitHub Actions workflow runs for a repository, each with status, "
+        "conclusion and run_attempt. With head_sha it is the run history of one "
+        "commit: a run_attempt above 1 means that workflow was re-run on that "
+        "commit, and its conclusion says whether the re-run passed."
+    ),
     use_cases=[
         "Checking which deploy or test workflow failed right before an incident",
         "Reviewing recent workflow status, trigger, and branch context",
         "Finding a run that matches an outage window or rollback event",
+        "Telling whether a commit's workflow failed and was re-run to green (run_attempt per run)",
     ],
     requires=["owner", "repo"],
     surfaces=(ToolSurface.CHAT, ToolSurface.ACTION),
@@ -478,6 +503,10 @@ def list_github_actions_workflow_runs(
     if payload.get("available"):
         workflow_runs_raw = _extract_list(result, "workflow_runs")
         workflow_runs = [_normalize_run(item) for item in workflow_runs_raw]
+        if head_sha:
+            # One commit's history is read for attempts and conclusions; the
+            # per-run actor and pull-request detail only inflates the context.
+            workflow_runs = [_run_history_row(item) for item in workflow_runs]
         if window_hours > NO_RUN_WINDOW:
             windowed = window_runs(
                 workflow_runs,

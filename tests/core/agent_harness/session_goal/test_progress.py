@@ -308,3 +308,24 @@ def test_is_session_goal_progress_text_uses_progress_constants() -> None:
     assert is_session_goal_progress_text(progress_text) is True
     assert is_session_goal_progress_text(SessionGoalReason.WAITING_HOST_SIGNAL) is True
     assert is_session_goal_progress_text("272 Windows users last 7 days.") is False
+
+
+def test_headline_shows_the_cached_share_of_the_spend() -> None:
+    """Hosted routes serve most goal-turn input from the prompt cache; say so."""
+    from core.agent_harness.accounting.token_usage import TokenUsage
+    from core.agent_harness.session.session_core import SessionCore
+    from core.agent_harness.session_goal.goal import attach_session_goal
+    from core.agent_harness.session_goal.progress import format_session_goal_progress
+
+    # Arrange: a goal attached before two calls, one mostly cached.
+    session = SessionCore()
+    session.tokens = TokenUsage()
+    goal = attach_session_goal(session, SessionGoal(condition="count users"))
+    session.tokens.record(input_tokens=100_000, output_tokens=500, cache_read_tokens=80_000)
+    session.tokens.record(input_tokens=100_000, output_tokens=500, cache_read_tokens=90_000)
+
+    # Act
+    text = format_session_goal_progress(goal, session=session)
+
+    # Assert
+    assert "+201k tokens (170k cached)" in text

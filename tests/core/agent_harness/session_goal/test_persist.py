@@ -278,3 +278,20 @@ def test_the_last_verdict_survives_a_round_trip() -> None:
 
     assert restored is not None
     assert restored.last_verdict == "Contradiction: 5 vs 3"
+
+
+def test_cached_token_baseline_round_trips() -> None:
+    from core.agent_harness.session_goal.persist import (
+        session_goal_from_payload,
+        session_goal_to_payload,
+    )
+
+    # Arrange
+    goal = SessionGoal(condition="c", token_baseline_cached=4_200)
+
+    # Act
+    restored = session_goal_from_payload(session_goal_to_payload(goal))
+
+    # Assert
+    assert restored is not None
+    assert restored.token_baseline_cached == 4_200

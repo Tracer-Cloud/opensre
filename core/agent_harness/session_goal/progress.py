@@ -15,6 +15,7 @@ from core.agent_harness.session_goal.goal import (
     SessionGoalReason,
     SessionGoalStatus,
     derive_session_goal_reason,
+    session_goal_cached_tokens,
     session_goal_elapsed_seconds,
     session_goal_has_turn_budget,
     session_goal_token_delta,
@@ -35,6 +36,15 @@ def _turn_label(goal: SessionGoal) -> str:
     if session_goal_has_turn_budget(goal.max_outer_turns):
         return f"turn {goal.turns_used}/{goal.max_outer_turns}"
     return f"turn {goal.turns_used}"
+
+
+def _tokens_with_cached(goal: SessionGoal, session: Any | None) -> str:
+    """``342.8k`` or ``342.8k (280k cached)`` when the provider served part from cache."""
+    spent = format_token_count_compact(session_goal_token_delta(goal, session=session))
+    cached = session_goal_cached_tokens(goal, session=session)
+    if cached <= 0:
+        return spent
+    return f"{spent} ({format_token_count_compact(cached)} cached)"
 
 
 def format_duration_compact(seconds: float) -> str:
@@ -87,11 +97,14 @@ def _headline(
         output_tokens=output_tokens,
     )
     token_text = format_token_count_compact(tokens)
+    cached = session_goal_cached_tokens(goal, session=session)
+    cached_text = f" ({format_token_count_compact(cached)} cached)" if cached > 0 else ""
     mark = SESSION_GOAL_PROGRESS_MARK
     word = SESSION_GOAL_USER_WORD
     working = " · working…" if label == "active" and SessionGoalReason.is_working(reason) else ""
     return (
-        f"{mark} {word} {label}{working} · {duration} · {_turn_label(goal)} · +{token_text} tokens"
+        f"{mark} {word} {label}{working} · {duration} · {_turn_label(goal)} · "
+        f"+{token_text} tokens{cached_text}"
     )
 
 
@@ -188,7 +201,7 @@ def format_session_goal_status_line(
     if goal.status == SessionGoalStatus.ACTIVE:
         elapsed = session_goal_elapsed_seconds(goal, now=now)
         duration = format_duration_compact(elapsed) if elapsed is not None else "—"
-        tokens = format_token_count_compact(session_goal_token_delta(goal, session=session))
+        tokens = _tokens_with_cached(goal, session)
         return (
             f"{mark} {word} active · {duration} · {_turn_label(goal)} "
             f"· +{tokens} tok · {condition} · {reason}"
@@ -196,7 +209,7 @@ def format_session_goal_status_line(
     if goal.status == SessionGoalStatus.PAUSED:
         elapsed = session_goal_elapsed_seconds(goal, now=now)
         duration = format_duration_compact(elapsed) if elapsed is not None else "—"
-        tokens = format_token_count_compact(session_goal_token_delta(goal, session=session))
+        tokens = _tokens_with_cached(goal, session)
         return (
             f"{mark} {word} paused · {duration} · {_turn_label(goal)} "
             f"· +{tokens} tok · {condition} · {reason}"
