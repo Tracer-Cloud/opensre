@@ -136,6 +136,36 @@ def _run_history_row(run: dict[str, Any]) -> dict[str, Any]:
     return {key: run.get(key) for key in _RUN_HISTORY_FIELDS}
 
 
+def _workflow_verdicts(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """One line per workflow on the commit, stated so the reader copies rather than infers.
+
+    The listing carries each run's latest attempt only, so ``re_run`` is
+    ``latest_attempt > 1`` and ``re_run_to_green`` adds ``latest_conclusion
+    == "success"``; earlier attempts' conclusions are not in the listing.
+    """
+    latest: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        name = str(row.get("name") or "")
+        attempt = int(row.get("run_attempt") or 1)
+        current = latest.get(name)
+        if current is None or attempt > int(current.get("run_attempt") or 1):
+            latest[name] = row
+    verdicts: list[dict[str, Any]] = []
+    for name, row in latest.items():
+        attempt = int(row.get("run_attempt") or 1)
+        conclusion = str(row.get("conclusion") or row.get("status") or "")
+        verdicts.append(
+            {
+                "workflow": name,
+                "latest_attempt": attempt,
+                "latest_conclusion": conclusion,
+                "re_run": attempt > 1,
+                "re_run_to_green": attempt > 1 and conclusion == "success",
+            }
+        )
+    return verdicts
+
+
 def _normalize_run(run: dict[str, Any]) -> dict[str, Any]:
     """Normalize workflow run data."""
     actor_raw = run.get("actor")
@@ -495,6 +525,9 @@ def _map_list_github_actions_workflow_runs(
         "conclusion and run_attempt. With head_sha it is the run history of one "
         "commit: a run_attempt above 1 means that workflow was re-run on that "
         "commit, and its conclusion says whether the re-run passed. The result "
+        "also carries workflow_verdicts, one line per workflow with "
+        "latest_attempt, latest_conclusion, re_run and re_run_to_green: copy "
+        "those into the answer instead of inferring them from the rows. It "
         "reports history_fully_fetched — when false, more runs for that commit "
         "may exist beyond the pages fetched, so a missing attempt is not proof "
         "it did not happen."
@@ -612,6 +645,7 @@ def list_github_actions_workflow_runs(
     if payload.get("available"):
         if history is not None:
             workflow_runs = [_run_history_row(item) for item in workflow_runs]
+            payload["workflow_verdicts"] = _workflow_verdicts(workflow_runs)
             payload["runs_fetched_before_commit_filter"] = history.fetched_before_filter
             payload["history_fully_fetched"] = history.fully_fetched
             payload["pages_fetched"] = history.pages_fetched

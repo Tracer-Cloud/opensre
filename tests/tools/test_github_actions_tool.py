@@ -802,3 +802,36 @@ def test_get_step_log_unavailable_payload_carries_truncation_keys() -> None:
     assert result["original_lines"] is None
     assert result["retry_attempted"] is False
     assert result["retry_error"] is None
+
+
+def test_head_sha_history_states_a_verdict_per_workflow() -> None:
+    """A cancelled second attempt is a re-run but not a re-run to green."""
+    workflow_tool = cast(Any, list_github_actions_workflow_runs)
+    sha = "feedface0001"
+    runs = [
+        {**_workflow_run(1, sha, "CI"), "run_attempt": 2, "conclusion": "cancelled"},
+        {**_workflow_run(2, sha, "CodeQL")},
+        {**_workflow_run(3, sha, "Release"), "run_attempt": 2, "conclusion": "success"},
+        _workflow_run(4, "othersha0000", "CI"),
+    ]
+
+    def _respond(_config: object, _tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        return _runs_mcp_response(arguments, runs)
+
+    with (
+        patch("integrations.github.tools.actions.resolve_github_mcp_config", return_value=object()),
+        patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=_respond),
+    ):
+        result = workflow_tool(owner="org", repo="repo", head_sha=sha, github_token="tok")
+
+    verdicts = {item["workflow"]: item for item in result["workflow_verdicts"]}
+    assert set(verdicts) == {"CI", "CodeQL", "Release"}
+    assert verdicts["CI"] == {
+        "workflow": "CI",
+        "latest_attempt": 2,
+        "latest_conclusion": "cancelled",
+        "re_run": True,
+        "re_run_to_green": False,
+    }
+    assert verdicts["CodeQL"]["re_run"] is False
+    assert verdicts["Release"]["re_run_to_green"] is True
