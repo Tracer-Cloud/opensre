@@ -31,6 +31,12 @@ def capture_cli_invoked(properties: Properties | None = None) -> None:
     _capture(properties)
 
 
+def capture_account_authenticated() -> None:
+    from infrastructure.analytics.capture import capture_account_authenticated as _capture
+
+    _capture()
+
+
 def analytics_needs_flush() -> bool:
     from infrastructure.analytics.provider import analytics_needs_flush as _needs_flush
 

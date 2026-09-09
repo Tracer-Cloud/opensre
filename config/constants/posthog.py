@@ -1,17 +1,10 @@
-"""PostHog constants — OpenSRE's own product analytics, and the PostHog integration.
-
-Two unrelated things share the vendor name. ``POSTHOG_CAPTURE_API_KEY`` is a
-write-only key for *OpenSRE's* analytics project; the ``*_ENV`` names further
-down identify the credentials a *user* supplies to let agent tools query
-*their* PostHog. Nothing is shared between them but the default host.
-"""
+"""Constants for the user-configured PostHog integration."""
 
 from __future__ import annotations
 
 from typing import Final
 
 POSTHOG_HOST: Final[str] = "https://us.i.posthog.com"
-POSTHOG_CAPTURE_API_KEY: Final[str] = "phc_zutpVhmQw7oUmMkbawKNdYCKQWjpfASATtf5ywB75W2"
 
 DEFAULT_POSTHOG_URL: Final[str] = POSTHOG_HOST
 DEFAULT_POSTHOG_TIMEOUT_SECONDS: Final[float] = 15.0

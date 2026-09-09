@@ -81,6 +81,16 @@ def capture_cli_invoked(properties: Properties | None = None) -> None:
         capture_exception(exc)
 
 
+def capture_account_authenticated() -> None:
+    """Link this installation ID to server-resolved account identity."""
+    try:
+        analytics = get_analytics()
+        analytics.refresh_destination()
+        analytics.capture(Event.ACCOUNT_AUTHENTICATED)
+    except Exception as exc:
+        capture_exception(exc)
+
+
 def capture_gateway_turn_started(*, surface: str) -> None:
     """Mark the start of one Slack/Telegram gateway agent turn."""
     _capture(Event.GATEWAY_TURN_STARTED, {"surface": surface})
@@ -114,7 +124,7 @@ def capture_gateway_turn_failed(
     """Mark a failed gateway agent turn (exception during dispatch).
 
     ``surface`` may be omitted when transport context was unbound so failures
-    still land in PostHog for regression detection.
+    still land in product analytics for regression detection.
     """
     props: Properties = {
         "duration_ms": round(duration_ms),

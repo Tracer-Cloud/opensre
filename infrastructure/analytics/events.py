@@ -8,6 +8,7 @@ from enum import StrEnum
 class Event(StrEnum):
     # Lifecycle
     CLI_INVOKED = "cli_invoked"
+    ACCOUNT_AUTHENTICATED = "account_authenticated"
     REPL_EXECUTION_POLICY_DECISION = "repl_execution_policy_decision"
     INSTALL_DETECTED = "install_detected"
     USER_ID_LOAD_FAILED = "user_id_load_failed"

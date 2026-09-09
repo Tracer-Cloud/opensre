@@ -7,7 +7,7 @@ from infrastructure.observability.errors.sentry import capture_exception
 
 
 def identify_saved_github_username() -> None:
-    """Re-attach a previously saved GitHub handle to PostHog for this process.
+    """Re-attach a previously saved GitHub handle to analytics for this process.
 
     The integration store persists ``credentials.username`` across REPL sessions
     (used by the welcome banner), but analytics persistent properties are
@@ -21,16 +21,11 @@ def identify_saved_github_username() -> None:
 
 
 def identify_github_username(username: str) -> None:
-    """Attach the authenticated GitHub username to PostHog.
+    """Attach the authenticated GitHub username to product analytics.
 
-    Calls :meth:`~infrastructure.analytics.provider.Analytics.identify` to persist
-    ``github_username`` on the person profile AND
-    :meth:`~infrastructure.analytics.provider.Analytics.set_persistent_property` so the
-    property is stamped directly on every subsequent event.  Both are needed:
-    the ``$identify`` call keeps the person profile up-to-date for cohort
-    queries, while the persistent property makes ``github_username`` queryable
-    as a plain ``properties.github_username`` filter on any event without
-    requiring a person-profile join.
+    Emits an identity control and stores ``github_username`` as a persistent
+    property so subsequent events carry it directly and can filter on
+    ``properties.github_username`` without an identity-profile join.
 
     No-op for an empty username. Best-effort: telemetry kill-switches make the
     underlying calls no-ops, and any unexpected error is swallowed to Sentry.

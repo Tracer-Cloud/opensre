@@ -6,6 +6,7 @@ import atexit
 import contextlib
 import hashlib
 import json
+import math
 import os
 import platform
 import queue
@@ -15,7 +16,7 @@ import threading
 import time
 import uuid
 from collections.abc import Iterator
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Final
@@ -23,12 +24,22 @@ from typing import Final
 import httpx
 
 from config.constants import get_store_path
-from config.constants.posthog import POSTHOG_CAPTURE_API_KEY, POSTHOG_HOST
+from config.constants.analytics import (
+    ANALYTICS_DISABLED_ENV,
+    ANALYTICS_EVENT_SCHEMA_VERSION,
+    ANALYTICS_LOG_EVENTS_ENV,
+    ANALYTICS_MAX_PAYLOAD_BYTES,
+    ANALYTICS_SOURCE,
+)
 from config.version import get_opensre_version
 from infrastructure.analytics.analytics_runtime import (
     detect_analytics_runtime,
     detect_container_runtime,
     is_ci_environment,
+)
+from infrastructure.analytics.destination import (
+    AnalyticsDestination,
+    resolve_analytics_destination,
 )
 from infrastructure.analytics.events import Event
 from infrastructure.analytics.usage_context import (
@@ -46,8 +57,7 @@ _SEND_TIMEOUT = 2.0
 # Interactive /quit drains under a spinner with this budget; atexit stays non-blocking.
 _SHUTDOWN_WAIT = 0.5
 
-_EVENT_LOG_ENV_VAR: Final[str] = "OPENSRE_ANALYTICS_LOG_EVENTS"
-_EVENT_LOG_FILENAME: Final[str] = "posthog_events.txt"
+_EVENT_LOG_FILENAME: Final[str] = "analytics_events.txt"
 _EVENT_LOG_MAX_LINES: Final[int] = 1000
 _ANONYMOUS_ID_LOCK_WAIT_SECONDS: Final[float] = 5.0
 _ANONYMOUS_ID_LOCK_RETRY_SECONDS: Final[float] = 0.01
@@ -79,10 +89,21 @@ type PropertyValue = JsonValue
 type Properties = dict[str, JsonValue]
 
 
+def _new_event_id() -> str:
+    return str(uuid.uuid4())
+
+
+def _event_timestamp() -> str:
+    return datetime.now(UTC).isoformat()
+
+
 @dataclass(frozen=True, slots=True)
 class _Envelope:
     event: str
     properties: Properties
+    destination: AnalyticsDestination | None = field(repr=False)
+    event_id: str = field(default_factory=_new_event_id)
+    occurred_at: str = field(default_factory=_event_timestamp)
 
 
 @dataclass(frozen=True, slots=True)
@@ -108,7 +129,7 @@ _ONE_TIME_EVENTS: Final[frozenset[str]] = frozenset({Event.INSTALL_DETECTED.valu
 def _is_opted_out() -> bool:
     return (
         os.getenv("OPENSRE_NO_TELEMETRY", "0") == "1"
-        or os.getenv("OPENSRE_ANALYTICS_DISABLED", "0") == "1"
+        or os.getenv(ANALYTICS_DISABLED_ENV, "0") == "1"
         or os.getenv("DO_NOT_TRACK", "0") == "1"
     )
 
@@ -427,7 +448,7 @@ def _event_logging_enabled() -> bool:
     Set ``OPENSRE_ANALYTICS_LOG_EVENTS=0`` to disable. Any value other than
     ``"0"`` (including unset, ``"1"``, ``"true"``, etc.) leaves it on.
     """
-    return os.getenv(_EVENT_LOG_ENV_VAR, "1") != "0"
+    return os.getenv(ANALYTICS_LOG_EVENTS_ENV, "1") != "0"
 
 
 def _format_property(key: str, value: JsonValue) -> str:
@@ -454,7 +475,7 @@ def _event_log_path() -> Path:
     The log lives next to ``anonymous_id`` and ``analytics_errors.log`` under
     ``~/.opensre/`` (or the equivalent on other platforms) rather than
     in the user's current working directory. This prevents a stray
-    ``posthog_events.txt`` from showing up in every shell where the user runs
+    ``analytics_events.txt`` from showing up in every shell where the user runs
     ``opensre``, and keeps related telemetry artifacts in one place.
     """
     return _CONFIG_DIR / _EVENT_LOG_FILENAME
@@ -528,9 +549,8 @@ def _log_event_line(event: str, properties: Properties) -> None:
 def _log_debug_line(message: str) -> None:
     """Append a non-event diagnostic line (e.g. send retries before exhaustion).
 
-    Only emitted when ``OPENSRE_ANALYTICS_LOG_EVENTS=1`` so the cost is opt-in.
-    Use ``_log_failure`` instead for terminal failures that must always be
-    recorded.
+    Emitted unless ``OPENSRE_ANALYTICS_LOG_EVENTS=0``. Use ``_log_failure``
+    instead for terminal failures that must always be recorded.
     """
     if not _event_logging_enabled():
         return
@@ -589,8 +609,8 @@ def _log_failure(stage: str, error: BaseException, **extra: object) -> None:
     swallowed — the telemetry layer must never crash the CLI, even when its
     own diagnostics are broken.
 
-    Mirrored to the opt-in debug log so developers running with
-    ``OPENSRE_ANALYTICS_LOG_EVENTS=1`` see failures inline with events.
+    Mirrored to the local event log unless it is disabled so developers see
+    failures inline with events.
     """
     line = _failure_breadcrumb_line(stage, error, extra)
 
@@ -632,17 +652,20 @@ class _InvalidPropertyValue(TypeError):
     """Raised internally when a caller submits a property value we cannot serialize."""
 
 
+class _PayloadTooLarge(ValueError):
+    """Raised internally when an event exceeds the ingest contract's body limit."""
+
+
 def _coerce_properties(
     event: str,
     properties: Properties | None,
 ) -> Properties:
-    """Return a sanitized copy of ``properties`` enforcing the ``str | bool`` contract.
+    """Return a sanitized, JSON-compatible copy of ``properties``.
 
-    PostHog event values are typed as ``str | bool``; a buggy caller could still
-    pass a number, ``None``, or an arbitrary object. We accept ``str | bool``
-    as-is, drop ``None`` silently, coerce ``int`` and ``float`` to ``str``, and
-    drop anything else with a ``_log_failure`` breadcrumb so the misuse stays
-    observable without crashing capture.
+    Existing analytics queries expect scalar numerics as strings, so preserve
+    that contract while allowing nested JSON arrays and objects used by AI
+    events. Drop unsupported values with a failure breadcrumb rather than
+    crashing the product path.
     """
     if not properties:
         return {}
@@ -671,7 +694,9 @@ def _coerce_properties(
 
 
 def _is_json_value(value: object) -> bool:
-    if isinstance(value, bool | str | int | float):
+    if isinstance(value, float):
+        return math.isfinite(value)
+    if isinstance(value, bool | str | int):
         return True
     if isinstance(value, list):
         return all(_is_json_value(item) for item in value)
@@ -715,9 +740,12 @@ class Analytics:
         self._persistent_properties: Properties = {}
         self._identified_organization_groups: set[str] = set()
         self._org_group_lock = threading.Lock()
+        self._destination: AnalyticsDestination | None = None
 
         if not self._disabled:
-            # Never block interpreter exit on PostHog; callers that need a
+            self._destination = resolve_analytics_destination()
+
+            # Never block interpreter exit on analytics; callers that need a
             # best-effort drain (e.g. install) pass flush=True explicitly.
             def _atexit_shutdown() -> None:
                 self.shutdown(flush=False)
@@ -735,7 +763,11 @@ class Analytics:
             | _coerce_properties(event.value, properties)
         )
         self._ensure_organization_group(merged)
-        envelope = _Envelope(event=event.value, properties=merged)
+        envelope = _Envelope(
+            event=event.value,
+            properties=merged,
+            destination=self._destination,
+        )
         self._enqueue(envelope)
 
     def set_persistent_property(self, key: str, value: JsonScalar) -> None:
@@ -751,12 +783,18 @@ class Analytics:
             return
         self._persistent_properties[key] = value
 
-    def identify(self, set_properties: Properties) -> None:
-        """Attach person properties to the anonymous distinct id via a ``$identify`` event.
+    def refresh_destination(self) -> None:
+        """Reload endpoint credentials after account state changes in-process."""
+        if self._disabled or self._shutdown:
+            return
+        self._destination = resolve_analytics_destination()
 
-        Overrides the project-wide ``$process_person_profile: False`` default for this
-        single event so PostHog creates/updates the person profile. No-ops when telemetry
-        is disabled, exactly like :meth:`capture`.
+    def identify(self, set_properties: Properties) -> None:
+        """Emit a ``$identify`` control event for downstream identity handling.
+
+        Overrides the project-wide ``$process_person_profile: False`` default for
+        this event. No-ops when telemetry is disabled, exactly like
+        :meth:`capture`.
         """
         if self._disabled or self._shutdown:
             return
@@ -771,7 +809,13 @@ class Analytics:
             }
         )
         self._ensure_organization_group(properties)
-        self._enqueue(_Envelope(event="$identify", properties=properties))
+        self._enqueue(
+            _Envelope(
+                event="$identify",
+                properties=properties,
+                destination=self._destination,
+            )
+        )
 
     def group_identify(
         self,
@@ -779,10 +823,10 @@ class Analytics:
         group_key: str,
         set_properties: Properties | None = None,
     ) -> None:
-        """Create/update a PostHog group via a ``$groupidentify`` event.
+        """Emit a ``$groupidentify`` control event for downstream group handling.
 
-        Used so CLI/gateway events that stamp ``$groups.organization`` attach to
-        the same org group the webapp uses for integration inventory.
+        Used alongside CLI/gateway events that stamp ``$groups.organization``
+        with the same organization key as the webapp integration inventory.
         """
         if self._disabled or self._shutdown:
             return
@@ -796,7 +840,13 @@ class Analytics:
             "$group_key": key,
             "$group_set": coerced,
         }
-        self._enqueue(_Envelope(event="$groupidentify", properties=properties))
+        self._enqueue(
+            _Envelope(
+                event="$groupidentify",
+                properties=properties,
+                destination=self._destination,
+            )
+        )
 
     def _ensure_organization_group(self, properties: Properties) -> None:
         """Emit ``$groupidentify`` once per process for each organization id seen."""
@@ -873,7 +923,10 @@ class Analytics:
 
     def _worker_loop(self) -> None:
         try:
-            with httpx.Client(timeout=_SEND_TIMEOUT, trust_env=False) as client:
+            with httpx.Client(
+                timeout=_SEND_TIMEOUT,
+                trust_env=False,
+            ) as client:
                 while True:
                     item = self._queue.get()
                     if item is None:
@@ -901,6 +954,9 @@ class Analytics:
             _log_failure("worker_loop_fatal", exc)
 
     def _send(self, client: httpx.Client, item: _Envelope) -> None:
+        destination = item.destination
+        if destination is None:
+            return
         properties: Properties = {
             **item.properties,
             "distinct_id": self._anonymous_id,
@@ -912,22 +968,45 @@ class Analytics:
             properties["$insert_id"] = insert_id
         _log_event_line(item.event, properties)
         payload = {
-            "api_key": POSTHOG_CAPTURE_API_KEY,
+            "schema_version": ANALYTICS_EVENT_SCHEMA_VERSION,
+            "event_id": insert_id or item.event_id,
+            "occurred_at": item.occurred_at,
+            "source": ANALYTICS_SOURCE,
+            "anonymous_id": self._anonymous_id,
             "event": item.event,
             "properties": properties,
         }
+        body = json.dumps(
+            payload,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+        if len(body) > ANALYTICS_MAX_PAYLOAD_BYTES:
+            _log_failure(
+                "analytics_send",
+                _PayloadTooLarge(
+                    f"payload has {len(body)} bytes; limit is {ANALYTICS_MAX_PAYLOAD_BYTES}"
+                ),
+                event=item.event,
+            )
+            return
         try:
-            client.post(f"{POSTHOG_HOST}/capture/", json=payload).raise_for_status()
+            client.post(
+                destination.endpoint_url,
+                content=body,
+                headers=destination.headers(body),
+            ).raise_for_status()
         except httpx.TransportError as exc:
             # Network/TLS failures (ConnectTimeout, ConnectError, ReadTimeout, …) are
             # transient infrastructure issues, not application bugs — log only.
-            _log_failure("posthog_send", exc, event=item.event)
+            _log_failure("analytics_send", exc, event=item.event)
         except httpx.HTTPStatusError as exc:
-            # PostHog HTTP errors (4xx config issues, 5xx transient infra failures)
+            # Webapp HTTP errors (4xx contract/auth issues, 5xx storage failures)
             # are not application bugs — log only, do not surface to Sentry.
-            _log_failure("posthog_send", exc, event=item.event)
+            _log_failure("analytics_send", exc, event=item.event)
         except Exception as exc:
-            _log_failure("posthog_send", exc, event=item.event)
+            _log_failure("analytics_send", exc, event=item.event)
             _capture_sentry_failure(exc)
 
     def _mark_done(self) -> None:

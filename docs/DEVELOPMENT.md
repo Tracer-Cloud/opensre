@@ -91,24 +91,29 @@ service has `DATABASE_URI` and `REDIS_URI` set before deploying. Set
 
 `opensre` ships with two telemetry stacks, both opt-out:
 
-- **PostHog** — anonymous product analytics (commands used, success/failure, rough runtime, CLI/Python/OS/arch, and limited command metadata).
+- **Product analytics** — lifecycle and usage events sent through `app.opensre.com` (commands used, success/failure, rough runtime, CLI/Python/OS/arch, and limited command metadata).
 - **Sentry** — crashes and errors (stack traces, environment, release).
 
 Events are tagged with `entrypoint`, `opensre.runtime`, and `deployment_method`. Sensitive headers, paths, and secret-shaped keys are scrubbed before send.
 
-PostHog product events also carry `execution_environment` (`local`, `ci`, `container`,
+Product events also carry `execution_environment` (`local`, `ci`, `container`,
 or `ci_container`), `is_ci`, `is_container`, and `container_runtime`. Use these
-first-party fields to exclude automated environments from product funnels; PostHog's
-virtual traffic classification intentionally treats CLI HTTP clients as automation.
+first-party fields to exclude automated environments from product funnels.
 
-A random install ID is stored under `~/.opensre/anonymous_id`. PostHog `distinct_id` is scoped to that ID. Telemetry is off in GitHub Actions and pytest.
+A random install ID is stored under `~/.opensre/anonymous_id`. The analytics
+`anonymous_id` and downstream `distinct_id` are scoped to that ID. Signed-in
+requests use the existing OpenSRE account token so the server can resolve the
+user. Telemetry is off in GitHub Actions and pytest.
 
-When a user signs in to GitHub (wizard or `/integrations setup`), OpenSRE sets `github_username` as a PostHog **person property** (via `$identify`/`$set`). That is the only intentional PII it sends.
+When a user signs in to GitHub (wizard or `/integrations setup`), OpenSRE emits
+`github_username` in an identity control and on subsequent product events. The
+first-party endpoint also resolves the signed-in OpenSRE account from its bearer
+token.
 
 ### Kill-switch matrix
 
-| Env var                        | PostHog    | Sentry     |
-| ------------------------------ | ---------- | ---------- |
+| Env var                        | Product analytics | Sentry     |
+| ------------------------------ | ----------------- | ---------- |
 | `OPENSRE_NO_TELEMETRY=1`       | disabled   | disabled   |
 | `DO_NOT_TRACK=1`               | disabled   | disabled   |
 | `OPENSRE_ANALYTICS_DISABLED=1` | disabled   | unaffected |
@@ -129,12 +134,15 @@ Self-hosted users can set `SENTRY_DSN` to their project; unset uses the bundled 
 
 Set `OPENSRE_DEPLOYMENT_METHOD` to `railway`, `ec2`, `vercel`, or `local` (default `local`) to label Sentry events.
 
-### Local PostHog event log
+### Local product event log
 
-By default, outbound PostHog payloads are also appended to `~/.opensre/posthog_events.txt` (rotates at 1000 lines). Disable:
+By default, outbound product event properties are also appended to
+`~/.opensre/analytics_events.txt` (rotates at 1000 lines). Disable:
 
 ```bash
 export OPENSRE_ANALYTICS_LOG_EVENTS=0
 ```
 
-We do not collect alert contents, file contents, hostnames, credentials, raw CLI arguments, or PII by design.
+Metadata events do not collect alert contents, file contents, hostnames,
+credentials, or raw CLI arguments. The separately documented `$ai_generation`
+event contains redacted prompt and response text.

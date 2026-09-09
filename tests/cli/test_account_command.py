@@ -367,6 +367,7 @@ def test_login_json_reports_already_active_session(monkeypatch: pytest.MonkeyPat
 
 def test_login_force_replaces_valid_session(monkeypatch: pytest.MonkeyPatch) -> None:
     login_calls: list[object] = []
+    analytics_links: list[bool] = []
     monkeypatch.setattr(
         "surfaces.cli.commands.account.account_status",
         lambda **_: AccountStatus(AccountSessionState.ACTIVE, _record(), "ok"),
@@ -377,11 +378,16 @@ def test_login_force_replaces_valid_session(monkeypatch: pytest.MonkeyPatch) -> 
         return AccountLoginResult(record=_record())
 
     monkeypatch.setattr("surfaces.cli.account_auth.login_account", fake_login)
+    monkeypatch.setattr(
+        "surfaces.cli.commands.account.capture_account_authenticated",
+        lambda: analytics_links.append(True),
+    )
 
     result = _invoke_account_login("--no-browser", "--force")
 
     assert result.exit_code == 0, result.output
     assert login_calls == [True]
+    assert analytics_links == [True]
     assert "Replacing the active session for octocat@example.com" in result.output
     assert "Signed in as octocat@example.com" in result.output
 

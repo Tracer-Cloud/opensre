@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -60,8 +61,14 @@ def _stub_httpx_client(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object
         def __exit__(self, _exc_type, _exc, _tb) -> None:
             return None
 
-        def post(self, url: str, json: dict[str, object]) -> _StubResponse:
-            posted_payloads.append({"url": url, "json": json})
+        def post(
+            self,
+            url: str,
+            *,
+            content: bytes,
+            headers: dict[str, str],
+        ) -> _StubResponse:
+            posted_payloads.append({"url": url, "json": json.loads(content), "headers": headers})
             return _StubResponse()
 
     monkeypatch.setattr(provider.httpx, "Client", _StubClient)

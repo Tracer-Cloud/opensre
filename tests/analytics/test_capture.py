@@ -15,6 +15,7 @@ class _StubAnalytics:
         self.events: list[tuple[Event, dict[str, object] | None]] = []
         self.identified: list[dict[str, object]] = []
         self.persistent_properties: dict[str, object] = {}
+        self.destination_refreshes = 0
 
     def capture(self, event: Event, properties: dict[str, object] | None = None) -> None:
         self.events.append((event, properties))
@@ -24,6 +25,9 @@ class _StubAnalytics:
 
     def set_persistent_property(self, key: str, value: object) -> None:
         self.persistent_properties[key] = value
+
+    def refresh_destination(self) -> None:
+        self.destination_refreshes += 1
 
 
 def test_capture_cli_invoked_uses_safe_capture(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -52,6 +56,23 @@ def test_capture_cli_invoked_reports_analytics_failures_to_sentry(
     capture.capture_cli_invoked()
 
     assert captured_errors == [expected_error]
+
+
+def test_capture_account_authenticated_refreshes_credentials_before_link_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _OrderCheckingAnalytics(_StubAnalytics):
+        def capture(self, event: Event, properties: dict[str, object] | None = None) -> None:
+            assert self.destination_refreshes == 1
+            super().capture(event, properties)
+
+    stub = _OrderCheckingAnalytics()
+    monkeypatch.setattr(capture, "get_analytics", lambda: stub)
+
+    capture.capture_account_authenticated()
+
+    assert stub.destination_refreshes == 1
+    assert stub.events == [(Event.ACCOUNT_AUTHENTICATED, None)]
 
 
 def test_identify_github_username_sets_person_property(monkeypatch: pytest.MonkeyPatch) -> None:

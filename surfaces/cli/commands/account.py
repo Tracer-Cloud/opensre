@@ -14,6 +14,7 @@ from surfaces.cli.account_ui import (
     render_account_logout,
     render_account_status,
 )
+from surfaces.cli.telemetry import capture_account_authenticated
 from surfaces.shared.account_session import AccountSessionState, AccountStatus, account_status
 
 
@@ -150,6 +151,7 @@ def account_login(
         raise click.ClickException(str(exc)) from exc
 
     record = result.record
+    capture_account_authenticated()
     if json_output:
         click.echo(
             json.dumps(

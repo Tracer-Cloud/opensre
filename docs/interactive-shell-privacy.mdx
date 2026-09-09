@@ -19,7 +19,7 @@ identifiers and tokens, so the shell:
 
 The history file is `~/.opensre/interactive_history`. See
 [Prompt and response logging](#prompt-and-response-logging) for the separate LLM
-turn log and PostHog forwarding.
+turn log and remote product-analytics forwarding.
 
 ## Defaults
 
@@ -99,7 +99,8 @@ output, not just what you typed) and is used for two purposes:
 1. **Local debugging / `/resume`**: appended as JSON Lines to
    `~/.opensre/prompt_log.jsonl`, and folded into the session file so `/resume`
    can restore conversation context.
-2. **Product analytics**: forwarded to PostHog as an `$ai_generation` event
+2. **Product analytics**: forwarded through the first-party OpenSRE app endpoint
+   as an `$ai_generation` event
    (model, provider, latency, token counts, and the prompt/response text) so
    usage and quality can be tracked. Failed turns carry structured error properties (`$ai_is_error`,
    `$ai_error`, `error_kind`). Turns handled entirely by terminal tools or slash
@@ -115,15 +116,15 @@ output, not just what you typed) and is used for two purposes:
 | --- | --- | --- |
 | Logging | **on** | Each LLM turn is recorded. |
 | Local JSONL file | **on** | Turns are appended to `~/.opensre/prompt_log.jsonl`. |
-| PostHog forwarding | **on** | Turns are also sent as a PostHog `$ai_generation` event. |
+| Remote forwarding | **on** | Turns are also sent as a product-analytics `$ai_generation` event. |
 | Redaction | **on** | Known token shapes (same patterns as command history) are stripped from the prompt and response before either sink. |
 
 ### Environment variables
 
 | Variable | Default | Effect |
 | --- | --- | --- |
-| `OPENSRE_PROMPT_LOG_DISABLED` | `0` | Set to `1` to disable prompt/response logging entirely (both local file and PostHog). |
-| `OPENSRE_PROMPT_LOG_LOCAL_DISABLED` | `0` | Set to `1` to skip the local JSONL file while leaving PostHog forwarding (if enabled) unaffected. |
+| `OPENSRE_PROMPT_LOG_DISABLED` | `0` | Set to `1` to disable prompt/response logging entirely (both local file and remote analytics). |
+| `OPENSRE_PROMPT_LOG_LOCAL_DISABLED` | `0` | Set to `1` to skip the local JSONL file while leaving remote forwarding (if enabled) unaffected. |
 | `OPENSRE_PROMPT_LOG_REDACT` | `1` | Set to `0` to log/send raw prompt and response text without redaction. |
 | `OPENSRE_PROMPT_LOG_PATH` | `~/.opensre/prompt_log.jsonl` | Override the local JSONL file path. |
 
@@ -131,9 +132,9 @@ The separate operations log at `~/.opensre/operations_log.jsonl` records agent
 and scheduler lifecycle breadcrumbs such as loop start, iteration outcome, loop
 creation, and delivery status. It does not store prompt or response bodies.
 
-PostHog forwarding for this event also honors the global telemetry opt-outs: set
+Remote forwarding for this event also honors the global telemetry opt-outs: set
 **`OPENSRE_NO_TELEMETRY=1`**, `OPENSRE_ANALYTICS_DISABLED=1`, or `DO_NOT_TRACK=1`
-to stop all PostHog traffic (including `$ai_generation`) without touching the
+to stop all product analytics (including `$ai_generation`) without touching the
 local JSONL file. See
 [Environment variables](/configuration/environment-variables#telemetry-monitoring).
 
@@ -170,14 +171,14 @@ proper secret handling. Treat the file as confidential and be aware:
   shapes, use `/history off` for that session and run `/history clear`
   afterwards.
 
-The prompt/response log has the same caveats, plus one more: with PostHog
+The prompt/response log has the same caveats, plus one more: with remote
 forwarding on (the default), redacted prompt/response text leaves your machine.
 If you discuss confidential systems or data in the interactive shell, set
 `OPENSRE_NO_TELEMETRY=1` (or `OPENSRE_PROMPT_LOG_DISABLED=1` to also stop the
 local file) rather than relying on redaction alone.
 
 For a strong local posture: set `OPENSRE_HISTORY_ENABLED=0` and
-`OPENSRE_NO_TELEMETRY=1`. That stops command-history persistence and PostHog.
+`OPENSRE_NO_TELEMETRY=1`. That stops command-history persistence and remote analytics.
 Up-arrow recall across sessions is lost. `/resume` conversation context also
 depends on session files and the prompt log — set
 `OPENSRE_PROMPT_LOG_DISABLED=1` (or clear session/prompt-log data) if you need

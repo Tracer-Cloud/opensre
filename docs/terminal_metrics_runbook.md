@@ -5,10 +5,11 @@ by the CLI.
 
 ## Event Groups
 
-- Test execution lifecycle: `test_run_started`, `test_run_completed`, `test_run_failed`,
-  `test_synthetic_started`, `test_synthetic_completed`, `test_synthetic_failed`
-- Interactive terminal behavior: `terminal_actions_planned`, `terminal_actions_executed`,
-  `terminal_turn_summarized`
+- Interactive terminal behavior: `terminal_actions_planned`,
+  `terminal_actions_executed`, `terminal_turn_summarized`
+- Agent-loop reliability: `react_turn_completed`, `$ai_generation`
+- Gateway reliability: `gateway_turn_started`, `gateway_turn_completed`,
+  `gateway_turn_failed`
 
 ## Core KPIs
 

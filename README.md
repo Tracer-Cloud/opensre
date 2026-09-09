@@ -284,7 +284,7 @@ OpenSRE is designed with production environments in mind: structured and auditab
 
 ## Telemetry
 
-PostHog (product analytics) and Sentry (errors) are **opt-out**. Quick disable:
+First-party product analytics and Sentry (errors) are **opt-out**. Quick disable:
 
 ```bash
 export OPENSRE_NO_TELEMETRY=1

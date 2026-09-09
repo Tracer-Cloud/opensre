@@ -496,12 +496,12 @@ def init_sentry(entrypoint: str | None = None) -> None:
 
     DSN sourcing precedence: ``OPENSRE_SENTRY_DSN`` env var, ``SENTRY_DSN``
     env var, then the bundled constant. Set ``OPENSRE_NO_TELEMETRY=1`` or
-    ``DO_NOT_TRACK=1`` to disable both Sentry and PostHog product analytics.
+    ``DO_NOT_TRACK=1`` to disable both Sentry and product analytics.
     ``OPENSRE_SENTRY_DISABLED=1`` disables Sentry only;
     ``OPENSRE_SENTRY_LOGGING_DISABLED=1`` disables automatic forwarding of
     ``logger.error`` and ``logger.exception`` calls to Sentry as events,
     without affecting ``capture_exception``.
-    ``OPENSRE_ANALYTICS_DISABLED=1`` disables PostHog only.
+    ``OPENSRE_ANALYTICS_DISABLED=1`` disables product analytics only.
 
     ``entrypoint`` identifies the calling surface (``cli``, ``webapp``,
     ``remote``, ``mcp``, ``integrations``, ``wizard``, ``pipeline``,

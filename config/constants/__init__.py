@@ -56,6 +56,33 @@ if TYPE_CHECKING:
     from config.constants.alertmanager import (
         ALERTMANAGER_USERNAME_ENV as ALERTMANAGER_USERNAME_ENV,
     )
+    from config.constants.analytics import (
+        ANALYTICS_DISABLED_ENV as ANALYTICS_DISABLED_ENV,
+    )
+    from config.constants.analytics import (
+        ANALYTICS_EVENT_SCHEMA_VERSION as ANALYTICS_EVENT_SCHEMA_VERSION,
+    )
+    from config.constants.analytics import (
+        ANALYTICS_INGEST_PATH as ANALYTICS_INGEST_PATH,
+    )
+    from config.constants.analytics import (
+        ANALYTICS_LOG_EVENTS_ENV as ANALYTICS_LOG_EVENTS_ENV,
+    )
+    from config.constants.analytics import (
+        ANALYTICS_MAX_PAYLOAD_BYTES as ANALYTICS_MAX_PAYLOAD_BYTES,
+    )
+    from config.constants.analytics import (
+        ANALYTICS_SIGNATURE_HEADER as ANALYTICS_SIGNATURE_HEADER,
+    )
+    from config.constants.analytics import (
+        ANALYTICS_SIGNATURE_VERSION as ANALYTICS_SIGNATURE_VERSION,
+    )
+    from config.constants.analytics import (
+        ANALYTICS_SOURCE as ANALYTICS_SOURCE,
+    )
+    from config.constants.analytics import (
+        ANALYTICS_TIMESTAMP_HEADER as ANALYTICS_TIMESTAMP_HEADER,
+    )
     from config.constants.aws import (
         AWS_ACCESS_KEY_ID_ENV as AWS_ACCESS_KEY_ID_ENV,
     )
@@ -682,9 +709,6 @@ if TYPE_CHECKING:
     )
     from config.constants.posthog import (
         POSTHOG_BASE_URL_ENV as POSTHOG_BASE_URL_ENV,
-    )
-    from config.constants.posthog import (
-        POSTHOG_CAPTURE_API_KEY as POSTHOG_CAPTURE_API_KEY,
     )
     from config.constants.posthog import (
         POSTHOG_HOST as POSTHOG_HOST,
