@@ -292,12 +292,10 @@ def _attach_benchmarks(
     result["benchmarks"] = rows
     if skipped:
         result["benchmarks_skipped"] = skipped
-    if not peers:
-        return result
     if console is not None:
-        render_comparison(console, report, peers)
+        render_comparison(console, report, peers, skipped=skipped)
         return result
-    compare = comparison_markdown(report, peers)
+    compare = comparison_markdown(report, peers, skipped=skipped)
     result["comparison_text"] = compare
     result["response_text"] = f"{result['response_text']}\n\n{compare}"
     return result

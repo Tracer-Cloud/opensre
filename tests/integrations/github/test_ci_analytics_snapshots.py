@@ -297,6 +297,35 @@ def test_include_benchmarks_skips_a_peer_that_cannot_be_fetched(
     assert result["benchmarks_skipped"] == ["fastapi/fastapi (no same-day snapshot)"]
     assert [row["repo"] for row in result["benchmarks"]] == ["airflow"]
     assert "Compared with apache/airflow" in result["response_text"]
+    assert "Skipped fastapi/fastapi (no same-day snapshot)." in result["response_text"]
+
+
+def test_include_benchmarks_says_when_every_peer_snapshot_is_missing(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from typing import Any, cast
+
+    from integrations.github.tools.ci_analytics import tool as tool_module
+
+    now = datetime.now(UTC)
+    _write_report_snapshot(tmp_path, _report(owner="acme", repo="app"), now)
+    monkeypatch.setattr(tool_module, "snapshot_root", lambda _root=None: tmp_path)
+    monkeypatch.setattr(tool_module, "resolve_github_token", lambda _t=None: "")
+
+    def _boom(*_a: Any, **_k: Any) -> Any:
+        raise AssertionError("A missing peer must not start a live GitHub read")
+
+    monkeypatch.setattr(tool_module, "analyze_repository", _boom)
+
+    result = cast(Any, tool_module.analyze_github_ci_reliability)(
+        owner="acme", repo="app", days=30, include_benchmarks=True
+    )
+
+    assert result["success"] is True
+    assert result["benchmarks"] == []
+    assert "No benchmark columns" in result["response_text"]
+    assert "Skipped apache/airflow (no same-day snapshot)." in result["response_text"]
+    assert "Skipped fastapi/fastapi (no same-day snapshot)." in result["response_text"]
 
 
 def test_a_fresh_snapshot_answers_without_a_github_token(tmp_path: Path, monkeypatch) -> None:

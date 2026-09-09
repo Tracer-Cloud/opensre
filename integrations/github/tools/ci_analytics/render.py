@@ -139,10 +139,33 @@ def comparison_figures(report: CiAnalyticsReport) -> dict[str, str]:
     }
 
 
+def skip_lines(skipped: list[str]) -> list[str]:
+    """Guest-visible reason a benchmark column is missing."""
+    return [f"Skipped {item}." for item in skipped]
+
+
 def render_comparison(
-    console: Any, user: CiAnalyticsReport, peers: list[CiAnalyticsReport]
+    console: Any,
+    user: CiAnalyticsReport,
+    peers: list[CiAnalyticsReport],
+    *,
+    skipped: list[str] | None = None,
 ) -> None:
     """One table: the user's repo first, then the benchmark columns."""
+    missed = list(skipped or [])
+    if not peers:
+        parts: list[Any] = [
+            Text(""),
+            Text("Compared with well-known repositories", style="bold"),
+            Text(
+                "No benchmark columns — no same-day snapshot. "
+                "The report above is this repository only.",
+                style="dim",
+            ),
+        ]
+        parts.extend(Text(line, style="dim") for line in skip_lines(missed))
+        console.print(Padding(Group(*parts), (0, 0, 0, 2)))
+        return
     reports = [user, *peers]
     labels = [f"{item.owner}/{item.repo}" for item in reports]
     figures = [comparison_figures(item) for item in reports]
@@ -153,7 +176,7 @@ def render_comparison(
     for metric in figures[0]:
         table.add_row(metric, *[row.get(metric, "n/a") for row in figures])
     peers_label = " and ".join(labels[1:]) if labels[1:] else "benchmarks"
-    parts: list[Any] = [
+    parts = [
         Text(""),
         Text(f"Compared with {peers_label} over the same {user.window_days} days", style="bold"),
         table,
@@ -162,13 +185,28 @@ def render_comparison(
             style="dim",
         ),
     ]
-    for notice in _comparison_notes(peers):
-        parts.append(Text(notice, style="dim"))
+    parts.extend(Text(notice, style="dim") for notice in _comparison_notes(peers))
+    parts.extend(Text(line, style="dim") for line in skip_lines(missed))
     console.print(Padding(Group(*parts), (0, 0, 0, 2)))
 
 
-def comparison_markdown(user: CiAnalyticsReport, peers: list[CiAnalyticsReport]) -> str:
+def comparison_markdown(
+    user: CiAnalyticsReport,
+    peers: list[CiAnalyticsReport],
+    *,
+    skipped: list[str] | None = None,
+) -> str:
     """Markdown form of :func:`render_comparison`."""
+    missed = list(skipped or [])
+    if not peers:
+        lines = [
+            "Compared with well-known repositories:",
+            "",
+            "No benchmark columns — no same-day snapshot. "
+            "The report above is this repository only.",
+            *skip_lines(missed),
+        ]
+        return "\n".join(lines)
     reports = [user, *peers]
     labels = [f"{item.owner}/{item.repo}" for item in reports]
     figures = [comparison_figures(item) for item in reports]
@@ -189,6 +227,7 @@ def comparison_markdown(user: CiAnalyticsReport, peers: list[CiAnalyticsReport])
             "",
             "Red time = red_hours / (days × 24); CI-caused = reliability_failures / PR runs.",
             *_comparison_notes(peers),
+            *skip_lines(missed),
         ]
     )
 
@@ -554,6 +593,7 @@ __all__ = [
     "ci_report_headline",
     "comparison_figures",
     "comparison_markdown",
+    "skip_lines",
     "key_results",
     "key_results_payload",
     "render_ci_report",
