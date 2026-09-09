@@ -184,7 +184,7 @@ def _from_snapshot(
     window: int,
     console: Any,
     *,
-    include_benchmarks: bool = False,
+    include_benchmarks: bool = True,
     compact: bool = False,
 ) -> dict[str, Any]:
     """Answer from a same-day snapshot with the same renderer as a live analysis."""
@@ -334,13 +334,12 @@ def _result(
     window: int,
     console: Any,
     *,
-    include_benchmarks: bool = False,
+    include_benchmarks: bool = True,
     compact: bool = False,
 ) -> dict[str, Any]:
     """The tool's return for ``report``: painted in the shell, markdown elsewhere.
 
-    ``compact`` drops the counts appendix from the markdown; the shell painter
-    already drops it whenever the comparison table follows.
+    ``compact`` drops the counts appendix from both forms.
     """
     summary = (
         f"{owner}/{repo}: {report.executions} runs in {window} days, "
@@ -365,7 +364,7 @@ def _result(
     if console is not None:
         # The painted report is the turn's output; a reply restating its figures
         # would print them twice.
-        render_report(console, report, compact=include_benchmarks)
+        render_report(console, report, compact=compact)
         result = {**base, "coverage_notices": list(report.coverage_notices)}
     else:
         result = {
@@ -412,7 +411,7 @@ def _result(
         "headline": "One sentence naming the biggest cost (already painted; do not repeat)",
         "key_results": "The five takeaway rows, red time first, even when the shell painted the report",
         "response_text": "The rendered report, or a one-line summary when the shell painted it",
-        "benchmarks": "When include_benchmarks is true: Airflow and FastAPI rows from the same window",
+        "benchmarks": "Airflow and FastAPI rows from the same window, when a snapshot exists",
     },
     surfaces=(ToolSurface.CHAT, ToolSurface.ACTION),
     side_effect_level=SideEffectLevel.READ_ONLY,
@@ -439,11 +438,12 @@ def _result(
                 "type": "string",
                 "description": "Local checkout used to detect owner/repo when not given.",
             },
-            "include_benchmarks": {
+            "compact": {
                 "type": "boolean",
                 "description": (
-                    "Also compare this repository with apache/airflow and fastapi/fastapi "
-                    "over the same window. Default false."
+                    "Key results and the comparison only, without the counts appendix "
+                    "(executions, failure classification, blocked time, workflows). "
+                    "Use for a first-look report. Default false."
                 ),
             },
             "github_token": {"type": "string"},
@@ -460,7 +460,7 @@ def analyze_github_ci_reliability(
     repo: str | None = None,
     days: int | None = None,
     workspace: str | None = None,
-    include_benchmarks: bool = False,
+    compact: bool = False,
     github_token: str | None = None,
     context: Any = None,
     **_kwargs: Any,
@@ -470,11 +470,13 @@ def analyze_github_ci_reliability(
     In the interactive shell the report is painted straight to the console so
     every figure the user sees is the computed one; the returned
     ``response_text`` then only summarizes. Other surfaces get the markdown.
-    When ``include_benchmarks`` is true the same call also paints one comparison
-    table against apache/airflow and fastapi/fastapi (snapshots first).
+    The same call also paints one comparison table against apache/airflow and
+    fastapi/fastapi, built from same-day snapshots only — never a live fetch. The
+    comparison is not the model's choice to make; ``compact`` drops the counts
+    appendix.
     """
     window = min(max(int(days or _DEFAULT_WINDOW_DAYS), _MIN_WINDOW_DAYS), _MAX_WINDOW_DAYS)
-    compare = _flag(include_benchmarks)
+    brief = _flag(compact)
     repo_owner = (owner or "").strip()
     repo_name = (repo or "").strip().removesuffix(".git")
     if not repo_owner or not repo_name:
@@ -500,7 +502,7 @@ def analyze_github_ci_reliability(
             repo_name,
             window,
             console,
-            include_benchmarks=compare,
+            compact=brief,
         )
     if not token:
         message = (
@@ -567,7 +569,7 @@ def analyze_github_ci_reliability(
         repo_name,
         window,
         console,
-        include_benchmarks=compare,
+        compact=brief,
     )
 
 

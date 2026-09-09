@@ -1,8 +1,8 @@
 # Comparing a repository's CI/CD metrics to public benchmarks
 
 Phase 2 of the analytics demo (metric definitions in `metrics.md`): the
-analyze call with `include_benchmarks=true` already paints one comparison
-table next to apache/airflow and fastapi/fastapi over the same window. Load
+analyze call already paints one comparison table next to apache/airflow and
+fastapi/fastapi over the same window. Load
 this reference only when the user asks what a compared figure means.
 
 ## Rules
@@ -23,7 +23,7 @@ this reference only when the user asks what a compared figure means.
 
 ## Default benchmarks
 
-The tool always uses these two when `include_benchmarks` is true:
+The tool always uses these two, from same-day snapshots:
 
 | Repository | Why it works as a benchmark |
 |------------|-----------------------------|

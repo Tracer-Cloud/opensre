@@ -162,7 +162,10 @@ def render_comparison(
     skipped: list[str] | None = None,
 ) -> None:
     """One table: the user's repo first, then the benchmark columns."""
-    _paint(console, "\n".join(["", comparison_markdown(user, peers, skipped=skipped)]))
+    # A markdown leading newline is dropped, so the heading would sit on the
+    # report's last bullet; separate the two sections here.
+    console.print()
+    _paint(console, comparison_markdown(user, peers, skipped=skipped))
 
 
 def comparison_markdown(

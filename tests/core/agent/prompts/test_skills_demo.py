@@ -63,7 +63,9 @@ def test_master_menu_matches_four_unique_children_and_preserves_specialists() ->
         "Exit demo",
     )
     body = loader.load_skill_body("cicd-analytics-demo")
-    assert "include_benchmarks=true" in body
+    # The comparison is the tool's job, not a flag the model can forget.
+    assert "include_benchmarks" not in body
+    assert "compact=true" in body
     assert "Compare these numbers" not in body
     assert "Output its `headline`" not in body
     assert menu["allow_custom"] is False

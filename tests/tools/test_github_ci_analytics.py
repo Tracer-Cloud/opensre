@@ -1261,3 +1261,51 @@ def test_the_painted_report_follows_a_theme_change() -> None:
     # Assert: the second paint used the theme built for the new palette.
     assert themes[1] is expected
     assert themes[0] is not themes[1]
+
+
+def test_the_comparison_is_not_a_choice_the_model_can_forget() -> None:
+    """The model chooses brevity, never whether to compare.
+
+    A flag advertising "Default false" led the demo to call the tool with
+    benchmarks off, so the comparison table Vincent asked for was missing.
+    """
+    # Arrange / Act
+    from tools.registry import get_registered_tool
+
+    registered = get_registered_tool(TOOL_NAME)
+
+    # Assert
+    assert registered is not None
+    properties = registered.public_input_schema["properties"]
+    assert "include_benchmarks" not in properties
+    assert "compact" in properties
+
+
+def test_the_comparison_starts_on_its_own_line() -> None:
+    """A markdown leading newline is dropped, gluing the heading to a bullet."""
+    # Arrange
+    from rich.console import Console
+
+    from integrations.github.tools.ci_analytics.render import render_comparison, render_report
+
+    report = compute_report(
+        owner="o",
+        repo="r",
+        default_branch="main",
+        window_days=30,
+        branch_runs=[_run(9, event="push", branch="main")],
+        pr_runs=[_run(1, conclusion="failure")],
+        merged_prs=_merged("A"),
+        now=_T0 + timedelta(days=1),
+    )
+    buf = io.StringIO()
+    console = Console(file=buf, force_terminal=False, width=100)
+
+    # Act
+    render_report(console, report, compact=True)
+    render_comparison(console, report, [report])
+
+    # Assert: a blank line separates the report from the comparison heading.
+    lines = buf.getvalue().splitlines()
+    heading = next(i for i, line in enumerate(lines) if "Compared with" in line)
+    assert not lines[heading - 1].strip()

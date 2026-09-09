@@ -127,7 +127,7 @@ the answer.
 ### 3. Analyze CI/CD reliability
 
 Call
-`analyze_github_ci_reliability(owner="<owner>", repo="<repo>", include_benchmarks=true)`
+`analyze_github_ci_reliability(owner="<owner>", repo="<repo>", compact=true)`
 for the chosen repository. The tool paints the report (key results first)
 and the comparison table itself. Do not restate figures, do not output
 `headline`, and do not call the tool again for benchmarks. A peer without
