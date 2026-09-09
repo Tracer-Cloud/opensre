@@ -122,8 +122,7 @@ these exact options:
 - `Connect OpenSRE to Slack and hand off DevOps chores for your team`
 - `Exit demo`
 
-Wait for the answer, then follow the selected option. Its branch below is the
-whole next turn: one tool call, its `response_text`, stop.
+Wait for the answer, then follow the selected option.
 
 **Recurring check:** Call
 `schedule_ci_reliability_loop(owner="<owner>", repo="<repo>")` for the
