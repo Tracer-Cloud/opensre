@@ -407,14 +407,67 @@ def test_a_goal_turn_the_driver_could_not_run_pauses_the_goal_instead_of_retryin
     assert outcome.goal.last_reason == SessionGoalReason.PAUSED_TURN_FAILED
 
 
-def test_the_same_judge_verdict_twice_pauses_the_goal_even_when_tools_ran() -> None:
-    # Arrange: every turn runs a tool, and the judge keeps saying the same thing.
+def test_the_same_judge_verdict_twice_pauses_when_the_turn_used_no_tool() -> None:
+    # Arrange: no tool, and the judge keeps saying the same not-yet.
     from core.agent_harness.session_goal.evaluate import evaluate_session_goal
     from core.agent_harness.session_goal.goal import SessionGoalReason
     from core.agent_harness.session_goal.judge import SessionGoalJudgeVerdict
     from surfaces.interactive_shell.session import Session
 
     session = Session()
+    turns: list[str] = []
+
+    def _chat(message: str) -> TurnResult:
+        turns.append(message)
+        if len(turns) == 1:
+            return TurnResult(
+                final_intent="cli_agent_handled",
+                action_result=ToolCallingTurnResult(
+                    planned_count=1,
+                    executed_count=1,
+                    executed_success_count=1,
+                    has_unhandled_clause=False,
+                    handled=True,
+                ),
+                assistant_response_text="listed the PRs",
+            )
+        return _idle_turn("still no table")
+
+    seen_previous: list[str] = []
+
+    def _same(**kw: object) -> SessionGoalJudgeVerdict:
+        previous = str(kw.get("previous_reason", ""))
+        seen_previous.append(previous)
+        return SessionGoalJudgeVerdict(
+            verdict="NOT_REACHED",
+            reason="need a live Actions query",
+            repeats_previous=bool(previous),
+        )
+
+    outcome = run_until_session_goal(
+        _chat,
+        session,
+        "go",
+        goal=SessionGoal(condition="table with the five PRs", max_outer_turns=6),
+        evaluate=lambda goal, result, *, session=None: (
+            evaluate_session_goal(goal, result, session=session, judge=_same).status
+        ),
+    )
+
+    assert seen_previous == ["", "need a live Actions query"]
+    assert len(turns) == 2
+    assert outcome.goal.status == SessionGoalStatus.PAUSED
+    assert outcome.goal.last_reason == SessionGoalReason.PAUSED_SAME_VERDICT
+    assert session.pending_user_choice is not None
+    assert "same verdict" in session.pending_user_choice.title
+
+
+def test_a_repeated_verdict_does_not_stop_a_turn_that_used_a_tool() -> None:
+    # Arrange: every turn runs a tool; the judge keeps saying contradiction.
+    from core.agent_harness.session_goal.evaluate import evaluate_session_goal
+    from core.agent_harness.session_goal.judge import SessionGoalJudgeVerdict
+
+    session = SessionCore()
     turns: list[str] = []
 
     def _chat(message: str) -> TurnResult:
@@ -431,36 +484,68 @@ def test_the_same_judge_verdict_twice_pauses_the_goal_even_when_tools_ran() -> N
             assistant_response_text="All 5 checked. | 3 rows |",
         )
 
-    seen_previous: list[str] = []
-
     def _same(**kw: object) -> SessionGoalJudgeVerdict:
-        # The judge is shown its previous reason and says whether it repeats it.
         previous = str(kw.get("previous_reason", ""))
-        seen_previous.append(previous)
         return SessionGoalJudgeVerdict(
             verdict="NOT_REACHED",
             reason="Contradiction: the sentence says 5 but the table lists 3 rows",
             repeats_previous=bool(previous),
         )
 
-    # Act
     outcome = run_until_session_goal(
         _chat,
         session,
         "go",
-        goal=SessionGoal(condition="table with the false sentence", max_outer_turns=6),
+        goal=SessionGoal(condition="table with the false sentence", max_outer_turns=3),
         evaluate=lambda goal, result, *, session=None: (
             evaluate_session_goal(goal, result, session=session, judge=_same).status
         ),
     )
 
-    # Assert: the second call saw the first reason; two turns, then the pause and menu.
-    assert seen_previous == ["", "Contradiction: the sentence says 5 but the table lists 3 rows"]
-    assert len(turns) == 2
-    assert outcome.goal.status == SessionGoalStatus.PAUSED
-    assert outcome.goal.last_reason == SessionGoalReason.PAUSED_SAME_VERDICT
-    assert session.pending_user_choice is not None
-    assert "same verdict" in session.pending_user_choice.title
+    assert len(turns) == 3
+    assert outcome.goal.status == SessionGoalStatus.BUDGET_EXHAUSTED
+    assert outcome.goal.findings == ()
+
+
+def test_a_contradicted_reply_is_not_stored_as_an_established_finding() -> None:
+    from core.agent_harness.session_goal.evaluate import evaluate_session_goal
+    from core.agent_harness.session_goal.judge import SessionGoalJudgeVerdict
+
+    session = SessionCore()
+
+    def _chat(_message: str) -> TurnResult:
+        return TurnResult(
+            final_intent="cli_agent_handled",
+            action_result=ToolCallingTurnResult(
+                planned_count=1,
+                executed_count=1,
+                executed_success_count=1,
+                has_unhandled_clause=False,
+                handled=True,
+            ),
+            assistant_response_text="All 5 PRs re-ran to green.",
+        )
+
+    outcome = run_until_session_goal(
+        _chat,
+        session,
+        "go",
+        goal=SessionGoal(condition="which PRs re-ran to green", max_outer_turns=1),
+        evaluate=lambda goal, result, *, session=None: (
+            evaluate_session_goal(
+                goal,
+                result,
+                session=session,
+                judge=lambda **_kw: SessionGoalJudgeVerdict(
+                    verdict="NOT_REACHED",
+                    reason="Contradiction: the sentence says 5 but only one SHA shows attempt 2",
+                ),
+            ).status
+        ),
+    )
+
+    assert outcome.goal.findings == ()
+    assert "All 5 PRs re-ran to green." in outcome.goal.last_answer
 
 
 def _stay_active(_goal: SessionGoal, _result: TurnResult, *, session: object | None = None) -> str:
@@ -518,28 +603,33 @@ def test_headless_stall_keeps_the_goal_so_the_next_message_continues() -> None:
 
 
 def test_headless_same_verdict_twice_stays_active_without_a_menu() -> None:
+    from core.agent_harness.session_goal.evaluate import evaluate_session_goal
+    from core.agent_harness.session_goal.judge import SessionGoalJudgeVerdict
+
     session = SessionCore()
     turns: list[str] = []
 
     def _chat(message: str) -> TurnResult:
         turns.append(message)
-        return TurnResult(
-            final_intent="cli_agent_handled",
-            action_result=ToolCallingTurnResult(
-                planned_count=1,
-                executed_count=1,
-                executed_success_count=1,
-                has_unhandled_clause=False,
-                handled=True,
-            ),
-            assistant_response_text="All 5 checked. | 3 rows |",
-        )
+        if len(turns) == 1:
+            return TurnResult(
+                final_intent="cli_agent_handled",
+                action_result=ToolCallingTurnResult(
+                    planned_count=1,
+                    executed_count=1,
+                    executed_success_count=1,
+                    has_unhandled_clause=False,
+                    handled=True,
+                ),
+                assistant_response_text="listed the PRs",
+            )
+        return _idle_turn("still no table")
 
     def _same(**kw: object) -> SessionGoalJudgeVerdict:
         previous = str(kw.get("previous_reason", ""))
         return SessionGoalJudgeVerdict(
             verdict="NOT_REACHED",
-            reason="Contradiction: the sentence says 5 but the table lists 3 rows",
+            reason="need a live Actions query",
             repeats_previous=bool(previous),
         )
 
@@ -547,7 +637,7 @@ def test_headless_same_verdict_twice_stays_active_without_a_menu() -> None:
         _chat,
         session,
         "go",
-        goal=SessionGoal(condition="table with the false sentence", max_outer_turns=6),
+        goal=SessionGoal(condition="table with the five PRs", max_outer_turns=6),
         evaluate=lambda goal, result, *, session=None: (
             evaluate_session_goal(goal, result, session=session, judge=_same).status
         ),

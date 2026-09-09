@@ -37,6 +37,7 @@ from core.agent_harness.session_goal.goal import (
     session_goal_is_active,
     session_goal_is_paused,
 )
+from core.agent_harness.session_goal.judge import judge_reason_is_contradiction
 from core.agent_harness.session_goal.review_input import retain_tool_evidence
 from core.agent_harness.turns.turn_results import TurnResult
 
@@ -290,7 +291,10 @@ def _finish_outer_turn(
     # a fresh chat call and history carries prose only, so this is the only way
     # a later turn learns what earlier ones established.
     reply_text = session_goal_reply_text(last)
-    if turn_evidence:
+    # A contradicted reply is not established. Live five-PR runs stored the
+    # wrong all-Yes table as a finding, then told the next turn to treat it
+    # as done.
+    if turn_evidence and not judge_reason_is_contradiction(active.last_reason):
         active = active.with_finding(reply_text)
         attach_session_goal(session, active)
     # Recorded even without tool evidence. Evidence gates *closing* the goal and
@@ -318,10 +322,11 @@ def _finish_outer_turn(
         return active, last, True
 
     ticked = bool(active.completed - completed_before)
-    if active.verdict_repeated and not ticked:
-        # Tools ran, but no item was ticked and the judge says its verdict
-        # repeats the last one: the loop is going round and the budget would
-        # go the same way.
+    # Same-verdict stall is for an idle plateau: the judge repeated itself
+    # and this turn added no tick and no tool. A successful tool is new
+    # work — Claude keeps going; do not stop because the judge still says
+    # not-yet or contradiction. Two idle turns still stall above.
+    if active.verdict_repeated and not ticked and not turn_evidence:
         active = pause_for_no_progress(
             session,
             active,

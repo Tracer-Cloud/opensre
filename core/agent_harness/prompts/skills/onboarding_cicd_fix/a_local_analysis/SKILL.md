@@ -74,8 +74,12 @@ Slack setup.
   End the turn after calling it; the answer arrives as the next user message.
 - Ask each question once. When the answer arrives, continue with the next
   step immediately: do not reload this skill, do not restate the options, and
-  never ask what the answer or the request "means". A repository name in the
-  request or in the answer is the repository; go straight to step 3.
+  never ask what the answer or the request "means".
+- Which question was answered decides the next step. An answer to `Which
+  repository should I analyze?` (or a repository named in the request) is the
+  repository: go straight to step 3. An answer to `What would you like to do
+  next?` picks a branch under step 4: the analysis is already done, do not run
+  it again, go straight to that branch and call only its tool.
 
 ## Workflow
 
@@ -118,7 +122,8 @@ these exact options:
 - `Connect OpenSRE to Slack and hand off DevOps chores for your team`
 - `Exit demo`
 
-Wait for the answer, then follow the selected option.
+Wait for the answer, then follow the selected option. Its branch below is the
+whole next turn: one tool call, its `response_text`, stop.
 
 **Recurring check:** Call
 `schedule_ci_reliability_loop(owner="<owner>", repo="<repo>")` for the
