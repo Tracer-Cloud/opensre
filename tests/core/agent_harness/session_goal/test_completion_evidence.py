@@ -226,9 +226,12 @@ def test_prior_observations_support_completion_after_restore() -> None:
                 assert "CREATED_1" in prompt and "CREATED_2" in prompt
             return super().invoke(messages)
 
+    # Each turn with tool observations reads them first, then judges.
     reviewer = Reviewer(
         [
+            AgentLLMResponse(content='{"answer":"first created"}'),
             AgentLLMResponse(content='{"verdict":"NOT_REACHED"}'),
+            AgentLLMResponse(content='{"answer":"both created"}'),
             AgentLLMResponse(content='{"verdict":"NOT_REACHED"}'),
             AgentLLMResponse(
                 content='{"items":[{"index":0,"verdict":"VALID"},{"index":1,"verdict":"VALID"}]}'
@@ -249,7 +252,7 @@ def test_prior_observations_support_completion_after_restore() -> None:
     )
     assert outcome.goal.status == SessionGoalStatus.ACHIEVED
     assert outcome.turn_count == 3
-    assert reviewer.invocations == 4
+    assert reviewer.invocations == 6
 
 
 def test_evidence_overflow_remains_unverified_after_restore() -> None:
