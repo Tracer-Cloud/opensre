@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import sys
 from typing import Any, cast
 
 from config.constants.google_docs import (
@@ -209,10 +208,6 @@ def load_env_integration_services() -> list[str]:
         or os.getenv(YC_USE_METADATA_ENV, "").strip().lower() in {"1", "true", "yes", "on"},
     )
 
-    impl = sys.modules.get("integrations._catalog_impl")
-    if impl is not None:
-        services.extend(impl.external_env_presence_services())
-
     return list(dict.fromkeys(services))
 
 
@@ -343,18 +338,6 @@ def configured_integration_health() -> list[tuple[str, str]]:
     return health
 
 
-def register_classifier(service: str, classify: Any) -> None:
-    _load_catalog_impl().register_classifier(service, classify)
-
-
-def register_env_loader(service: str, loader: Any) -> None:
-    _load_catalog_impl().register_env_loader(service, loader)
-
-
-def register_env_presence(service: str, is_configured: Any) -> None:
-    _load_catalog_impl().register_env_presence(service, is_configured)
-
-
 __all__ = [
     "classify_integrations",
     "configured_integration_health",
@@ -364,8 +347,5 @@ __all__ = [
     "load_integrations",
     "merge_integrations_by_service",
     "merge_local_integrations",
-    "register_classifier",
-    "register_env_loader",
-    "register_env_presence",
     "resolve_effective_integrations",
 ]

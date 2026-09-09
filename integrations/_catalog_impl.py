@@ -2,11 +2,9 @@
 
 from __future__ import annotations
 
-import functools
 import json
 import logging
 import os
-import threading
 from collections.abc import Callable
 from typing import Any
 
@@ -346,10 +344,8 @@ from integrations.registry import (
     DIRECT_CLASSIFIED_EFFECTIVE_SERVICES,
     INTEGRATION_SPECS_BY_SERVICE,
     SKIP_CLASSIFIED_SERVICES,
-    builtin_claimed_keys,
     external_integration_services,
     family_key,
-    normalize_service_key,
     service_key,
 )
 from integrations.rocketchat import classify as _classify_rocketchat
@@ -555,141 +551,6 @@ _CLASSIFIERS: dict[str, _ClassifyFn] = {
     "yandex_cloud": _classify_yandex_cloud,
 }
 
-#: Classifiers contributed by out-of-tree integration packages.
-_EXTERNAL_CLASSIFIERS: dict[str, _ClassifyFn] = {}
-
-#: Environment loaders contributed by out-of-tree integration packages. Each
-#: returns an active record, or None when its variables are not set.
-_EXTERNAL_ENV_LOADERS: dict[str, Any] = {}
-
-#: Cheap "is this configured?" predicates for out-of-tree integrations, used by
-#: the startup-safe presence check that must not touch the keyring.
-_EXTERNAL_ENV_PRESENCE: dict[str, Callable[[], bool]] = {}
-
-
-#: Which package registered each hook, keyed by ``(hook, service)``. The hook
-#: maps themselves store only the callable, and the entry has to be attributable
-#: to decide whether a second registration is the same plugin reloading or a
-#: different one taking the key over.
-_EXTERNAL_HOOK_OWNERS: dict[tuple[str, str], str] = {}
-
-#: Serialises claiming a key with installing the callback. Reading the current
-#: owner and then writing is a check-then-act: two packages registering the same
-#: key concurrently could both see it free and the later one would win silently.
-_HOOK_REGISTRATION_LOCK = threading.Lock()
-
-
-def _hook_owner(callback: Any) -> str:
-    """Return the top-level package *callback* was defined in, or "" if unknown.
-
-    Owner is inferred rather than passed in so the hook signatures stay as they
-    are. A plugin that reloads produces a new function object from the same
-    package, which has to keep working; a different package must not.
-    """
-    target = callback
-    while isinstance(target, functools.partial):
-        target = target.func
-    module = str(getattr(target, "__module__", "") or "")
-    root = module.split(".", 1)[0]
-    # ``functools`` is what a partial reports through its type, and a builtin
-    # says nothing about who registered it - neither identifies a plugin.
-    return "" if root in {"functools", "builtins"} else root
-
-
-def _install_external_hook(
-    target: dict[str, Any], service: str, callback: Any, *, hook: str
-) -> None:
-    """Claim *service* for *callback* and install it into *target*, as one step.
-
-    Claiming and installing are a single critical section: read the owner, then
-    write, and two packages registering the same key concurrently would both see
-    it free and the later one would take it with nothing reported.
-    """
-    with _HOOK_REGISTRATION_LOCK:
-        target[_claim_external_hook(service, callback, hook=hook)] = callback
-
-
-def _claim_external_hook(service: str, callback: Any, *, hook: str) -> str:
-    """Return the key *hook* may be stored under, or raise if it is not allowed.
-
-    Callers reach this through :func:`_install_external_hook`, which holds the
-    registration lock across the check and the write.
-
-    ``register_integration_spec`` already refuses built-in keys and keys another
-    plugin holds, but each hook below can be called without ever registering a
-    spec. Two packages registering under the same key would otherwise be settled
-    by import order, with the later one classifying, loading or reporting
-    presence for the earlier one's integration.
-
-    Normalized for the same reason the registry normalizes: every lookup here is
-    by a stripped, lower-cased key, so storing ``"GitHub"`` verbatim would both
-    slip past this check and register under a name nothing ever queries.
-    """
-    key = normalize_service_key(service)
-    if not key:
-        raise ValueError(f"Cannot register {hook} without a service name.")
-    if key in builtin_claimed_keys():
-        raise ValueError(
-            f"Cannot register {hook} for {service!r}: a built-in integration already "
-            "answers to that key."
-        )
-
-    owner = _hook_owner(callback)
-    previous = _EXTERNAL_HOOK_OWNERS.get((hook, key))
-    if previous is not None and (not owner or previous != owner):
-        held_by = f"{previous!r}" if previous else "another package"
-        raise ValueError(
-            f"Cannot register {hook} for {key!r}: already registered by {held_by}. "
-            "Two packages cannot share one integration's hooks; pick a key unique to "
-            "this integration."
-        )
-
-    _EXTERNAL_HOOK_OWNERS[(hook, key)] = owner
-    return key
-
-
-def register_classifier(service: str, classify: _ClassifyFn) -> None:
-    """Register the classifier for an integration shipped outside this repo."""
-    _install_external_hook(_EXTERNAL_CLASSIFIERS, service, classify, hook="a classifier")
-
-
-def register_env_loader(service: str, loader: Any) -> None:
-    """Register an environment loader for an out-of-tree integration.
-
-    The loader is called with no arguments during ``load_env_integrations`` and
-    returns a record in the same shape ``_active_env_record`` produces, or None
-    when the integration is not configured in the environment. The record must
-    be for *service*: one naming a different integration is dropped, since the
-    merge that follows lets a later record replace an earlier one by service.
-    """
-    _install_external_hook(_EXTERNAL_ENV_LOADERS, service, loader, hook="an environment loader")
-
-
-def register_env_presence(service: str, is_configured: Callable[[], bool]) -> None:
-    """Register the startup-safe presence check for an out-of-tree integration.
-
-    ``load_env_integration_services`` runs before the first prompt and must not
-    resolve secrets, so it cannot call the full loader registered above. Without
-    a predicate here an integration configured purely from the environment stays
-    invisible to the welcome, REPL and health surfaces even though verification
-    and tool resolution both see it.
-    """
-    _install_external_hook(_EXTERNAL_ENV_PRESENCE, service, is_configured, hook="a presence check")
-
-
-def external_env_presence_services() -> list[str]:
-    """Return the out-of-tree services whose environment variables are set."""
-    present: list[str] = []
-    # Snapshot: a plugin registering from another thread would otherwise turn
-    # this into "dictionary changed size during iteration" mid-startup.
-    for service, is_configured in list(_EXTERNAL_ENV_PRESENCE.items()):
-        try:
-            if is_configured():
-                present.append(service)
-        except Exception as exc:  # a plugin predicate must not break startup
-            _report_env_loader_failure(exc, integration=service)
-    return present
-
 
 def _classify_service_instance(
     key: str, credentials: dict[str, Any], *, record_id: str
@@ -701,7 +562,7 @@ def _classify_service_instance(
     ``key`` itself, but Grafana splits into ``grafana`` or ``grafana_local``
     based on its ``is_local`` property.
     """
-    handler = _CLASSIFIERS.get(key) or _EXTERNAL_CLASSIFIERS.get(key)
+    handler = _CLASSIFIERS.get(key)
     if handler is not None:
         return handler(credentials, record_id)
     # Fallback for unknown services: pass through credentials + record id.
@@ -2106,27 +1967,6 @@ def load_env_integrations() -> list[dict[str, Any]]:
                     yandex_cloud_config.model_dump(exclude={"integration_id"}),
                 )
             )
-
-    for service, loader in list(_EXTERNAL_ENV_LOADERS.items()):
-        try:
-            record = loader()
-        except Exception as exc:
-            _report_env_loader_failure(exc, integration=service)
-        else:
-            if not record:
-                continue
-            emitted = normalize_service_key(str(record.get("service", service)))
-            if emitted != service:
-                # The merge below replaces an earlier record with a later one of
-                # the same service, so an emitted name other than the registered
-                # one would let this loader stand in for another integration.
-                logger.warning(
-                    "load_env_integrations: loader registered for %r emitted %r; dropping it",
-                    service,
-                    emitted,
-                )
-                continue
-            integrations.append(record)
 
     return integrations
 
