@@ -2,8 +2,9 @@
 
 ``/goal set`` attaches a completion condition and immediately queues that
 condition as the next turn (autosubmit). Status shows the progress line
-(``SESSION_GOAL_PROGRESS_MARK`` + ``/goal active``) with duration, turn budget,
-and token delta. User-facing copy never says ``SessionGoal`` — only ``/goal``.
+(``SESSION_GOAL_PROGRESS_MARK`` + ``/goal active``) with duration, optional
+turn budget (``--max-turns``), and token delta. User-facing copy never says
+``SessionGoal`` — only ``/goal``.
 """
 
 from __future__ import annotations
@@ -16,6 +17,7 @@ from rich.markup import escape as _rich_escape
 from core.agent_harness import SessionManager
 from core.agent_harness.spi.session_goal import (
     MAX_GOAL_CONDITION_CHARS,
+    SESSION_GOAL_UNBOUNDED_TURNS,
     SessionGoal,
     SessionGoalReason,
     SessionGoalStatus,
@@ -97,7 +99,7 @@ def _show(session: Session, console: Console) -> bool:
 
 
 def _set(session: Session, console: Console, args: list[str]) -> bool:
-    max_turns = 5
+    max_turns = SESSION_GOAL_UNBOUNDED_TURNS
     rest = list(args)
     while rest and rest[0].startswith("--"):
         flag = rest.pop(0)

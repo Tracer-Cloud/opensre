@@ -16,6 +16,14 @@ def _console() -> tuple[Console, StringIO]:
     return Console(file=buf, force_terminal=False, width=120), buf
 
 
+def test_goal_set_is_unbounded_unless_max_turns_is_set() -> None:
+    session = Session()
+    console, _buf = _console()
+    assert _cmd_goal(session, console, ["set", "count the open PRs"])
+    assert session.session_goal is not None
+    assert session.session_goal.max_outer_turns == 0
+
+
 def test_goal_set_show_and_clear() -> None:
     session = Session()
     console, buf = _console()

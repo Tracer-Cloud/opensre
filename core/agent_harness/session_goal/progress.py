@@ -16,6 +16,7 @@ from core.agent_harness.session_goal.goal import (
     SessionGoalStatus,
     derive_session_goal_reason,
     session_goal_elapsed_seconds,
+    session_goal_has_turn_budget,
     session_goal_token_delta,
 )
 from infrastructure.evidence.evidence_compaction import truncate_message
@@ -28,6 +29,12 @@ SESSION_GOAL_USER_WORD = "/goal"
 # Status-line condition shares a Slack/Telegram timeline row with status,
 # turn counter, and reason.
 _MAX_STATUS_LINE_CONDITION_CHARS = 60
+
+
+def _turn_label(goal: SessionGoal) -> str:
+    if session_goal_has_turn_budget(goal.max_outer_turns):
+        return f"turn {goal.turns_used}/{goal.max_outer_turns}"
+    return f"turn {goal.turns_used}"
 
 
 def format_duration_compact(seconds: float) -> str:
@@ -84,8 +91,7 @@ def _headline(
     word = SESSION_GOAL_USER_WORD
     working = " · working…" if label == "active" and SessionGoalReason.is_working(reason) else ""
     return (
-        f"{mark} {word} {label}{working} · {duration} · "
-        f"turn {goal.turns_used}/{goal.max_outer_turns} · +{token_text} tokens"
+        f"{mark} {word} {label}{working} · {duration} · {_turn_label(goal)} · +{token_text} tokens"
     )
 
 
@@ -184,7 +190,7 @@ def format_session_goal_status_line(
         duration = format_duration_compact(elapsed) if elapsed is not None else "—"
         tokens = format_token_count_compact(session_goal_token_delta(goal, session=session))
         return (
-            f"{mark} {word} active · {duration} · turn {goal.turns_used}/{goal.max_outer_turns} "
+            f"{mark} {word} active · {duration} · {_turn_label(goal)} "
             f"· +{tokens} tok · {condition} · {reason}"
         )
     if goal.status == SessionGoalStatus.PAUSED:
@@ -192,13 +198,10 @@ def format_session_goal_status_line(
         duration = format_duration_compact(elapsed) if elapsed is not None else "—"
         tokens = format_token_count_compact(session_goal_token_delta(goal, session=session))
         return (
-            f"{mark} {word} paused · {duration} · turn {goal.turns_used}/{goal.max_outer_turns} "
+            f"{mark} {word} paused · {duration} · {_turn_label(goal)} "
             f"· +{tokens} tok · {condition} · {reason}"
         )
-    return (
-        f"{mark} {word} {goal.status} · turn {goal.turns_used}/{goal.max_outer_turns} · "
-        f"{condition} · {reason}"
-    )
+    return f"{mark} {word} {goal.status} · {_turn_label(goal)} · {condition} · {reason}"
 
 
 def is_session_goal_progress_text(text: str) -> bool:

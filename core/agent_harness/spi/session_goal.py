@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from core.agent_harness.session_goal.goal import (
     MAX_GOAL_CONDITION_CHARS,
+    SESSION_GOAL_UNBOUNDED_TURNS,
     SessionGoal,
     SessionGoalReason,
     SessionGoalStatus,
@@ -27,6 +28,7 @@ from core.agent_harness.session_goal.run_until import run_until_session_goal
 __all__ = [
     "GoalPaintSignature",
     "MAX_GOAL_CONDITION_CHARS",
+    "SESSION_GOAL_UNBOUNDED_TURNS",
     "SessionGoal",
     "SessionGoalReason",
     "SessionGoalStatus",

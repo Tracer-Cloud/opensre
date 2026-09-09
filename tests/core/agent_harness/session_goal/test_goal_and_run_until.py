@@ -63,6 +63,50 @@ def test_a_checklist_comes_from_numbered_steps_or_explicit_items_only() -> None:
     assert derive_session_goal_checklist("ignored", ("A", "B")) == ("A", "B")
 
 
+def test_build_session_goal_is_unbounded_unless_the_caller_sets_a_cap() -> None:
+    goal = build_session_goal(condition="count the open PRs")
+    assert goal.max_outer_turns == 0
+
+
+def test_an_unbounded_goal_does_not_stop_on_turn_count() -> None:
+    session = SessionCore()
+    turns: list[str] = []
+
+    def _chat(message: str) -> TurnResult:
+        turns.append(message)
+        return TurnResult(
+            final_intent="cli_agent_handled",
+            action_result=ToolCallingTurnResult(
+                planned_count=1,
+                executed_count=1,
+                executed_success_count=1,
+                has_unhandled_clause=False,
+                handled=True,
+            ),
+            assistant_response_text="still working",
+        )
+
+    outcome = run_until_session_goal(
+        _chat,
+        session,
+        "go",
+        goal=SessionGoal(condition="keep going", max_outer_turns=0),
+        evaluate=lambda goal, result, *, session=None: (
+            evaluate_session_goal(
+                goal,
+                result,
+                session=session,
+                judge=lambda **_kw: SessionGoalJudgeVerdict(
+                    verdict="NOT_REACHED", reason="not yet"
+                ),
+            ).status
+        ),
+        cancel_requested=lambda: len(turns) >= 8,
+    )
+    assert len(turns) == 8
+    assert outcome.goal.status != SessionGoalStatus.BUDGET_EXHAUSTED
+
+
 def test_build_session_goal_from_structured_input() -> None:
     goal = build_session_goal(
         condition=_FIVE_STEP_ASK,

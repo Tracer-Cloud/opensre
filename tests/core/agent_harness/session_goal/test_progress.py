@@ -265,7 +265,7 @@ def test_finished_goal_headline_keeps_elapsed_time_and_tokens() -> None:
     )
 
     # Assert: the headline reads like the active one; the condition is not repeated.
-    assert text.startswith("◎ /goal achieved · 45s · turn 1/5 · +1.2k tokens")
+    assert text.startswith("◎ /goal achieved · 45s · turn 1 · +1.2k tokens")
     assert "condition:" not in text
 
 

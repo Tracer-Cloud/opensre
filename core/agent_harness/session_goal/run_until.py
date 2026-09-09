@@ -34,6 +34,7 @@ from core.agent_harness.session_goal.goal import (
     SessionGoalStatus,
     attach_session_goal,
     refresh_session_goal_reason,
+    session_goal_has_turn_budget,
     session_goal_is_active,
     session_goal_is_paused,
 )
@@ -125,7 +126,9 @@ def _announce_working(
     on_progress: ProgressFn | None,
 ) -> SessionGoal:
     """Paint a clear 'working now' line before a session-goal ``chat`` starts."""
-    next_turn = min(active.turns_used + 1, active.max_outer_turns)
+    next_turn = active.turns_used + 1
+    if session_goal_has_turn_budget(active.max_outer_turns):
+        next_turn = min(next_turn, active.max_outer_turns)
     working = active.with_reason(
         SessionGoalReason.working_session_turn(next_turn, active.max_outer_turns)
     )
@@ -260,7 +263,6 @@ def _finish_outer_turn(
     *,
     evaluate_fn: EvaluateFn,
     on_progress: ProgressFn | None,
-    completed_before: frozenset[int] = frozenset(),
 ) -> tuple[SessionGoal, TurnResult, bool]:
     """Evaluate → single paint. Returns ``(goal, result, stop)``."""
     if last.cancelled:
@@ -312,7 +314,10 @@ def _finish_outer_turn(
         ended = _end(session, active, next_status, on_progress, reason=active.last_reason)
         return ended, last, True
 
-    if active.turns_used >= active.max_outer_turns:
+    if (
+        session_goal_has_turn_budget(active.max_outer_turns)
+        and active.turns_used >= active.max_outer_turns
+    ):
         ended = _end(session, active, SessionGoalStatus.BUDGET_EXHAUSTED, on_progress)
         return ended, last, True
 
@@ -417,7 +422,6 @@ def run_until_session_goal(
         last,
         evaluate_fn=evaluate_fn,
         on_progress=on_progress,
-        completed_before=pre_chat_completed,
     )
     if stop:
         return SessionGoalRunResult(goal=active, last_result=last, turn_count=active.turns_used)
@@ -427,12 +431,14 @@ def run_until_session_goal(
             active = _end(session, active, SessionGoalStatus.CANCELLED, on_progress)
             break
 
-        if active.turns_used >= active.max_outer_turns:
+        if (
+            session_goal_has_turn_budget(active.max_outer_turns)
+            and active.turns_used >= active.max_outer_turns
+        ):
             active = _end(session, active, SessionGoalStatus.BUDGET_EXHAUSTED, on_progress)
             break
 
         _announce_working(session, active, on_progress)
-        completed_before = active.completed
         last = _chat_or_pause(chat, continuation_prompt(active), session, on_progress)
         active = _record_goal_turn(session, active)
         active, last, stop = _finish_outer_turn(
@@ -441,7 +447,6 @@ def run_until_session_goal(
             last,
             evaluate_fn=evaluate_fn,
             on_progress=on_progress,
-            completed_before=completed_before,
         )
         if stop:
             break

@@ -47,7 +47,7 @@ def session_goal_from_payload(payload: Any) -> SessionGoal | None:
     if not isinstance(condition, str) or not condition.strip():
         return None
     try:
-        max_outer = max(1, int(payload.get("max_outer_turns", 5)))
+        max_outer = max(0, int(payload.get("max_outer_turns", 0)))
         turns_used = max(0, int(payload.get("turns_used", 0)))
     except (TypeError, ValueError):
         return None

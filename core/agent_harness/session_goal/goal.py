@@ -7,7 +7,9 @@ Checklist ticks come from the ``session_goal_complete`` tool; a cheap-model
 judge decides met / not yet / impossible. Reply prose never ticks or closes.
 
 The host loop (:mod:`core.agent_harness.session_goal.run_until`) calls ``chat``
-until the goal is achieved, impossible, cleared, cancelled, or hits ``max_outer_turns``.
+until the goal is achieved, impossible, cleared, cancelled, or hits a
+caller-set ``max_outer_turns`` (default: no host cap; two idle turns still
+stall).
 
 Related leaf modules (import them directly — this module must not import them):
 
@@ -86,6 +88,8 @@ class SessionGoalReason:
 
     @staticmethod
     def working_session_turn(turn: int, max_turns: int) -> str:
+        if not session_goal_has_turn_budget(max_turns):
+            return f"working — starting session-goal turn {turn}"
         return f"working — starting session-goal turn {turn}/{max_turns}"
 
     @staticmethod
@@ -110,8 +114,15 @@ MAX_GOAL_REASON_CHARS = 240
 MAX_GOAL_FINDINGS = 4
 MAX_GOAL_CONDITION_CHARS = 400
 
-# Session-goal turns a goal may run before the host stops on budget.
-_DEFAULT_MAX_OUTER_TURNS = 5
+# 0 = no host turn budget (Claude / Cursor). Two idle turns still stall.
+# ``/goal set --max-turns N`` or ``max_turns`` on the attach tool sets a bound.
+SESSION_GOAL_UNBOUNDED_TURNS = 0
+
+
+def session_goal_has_turn_budget(max_outer_turns: int) -> bool:
+    """True when the host should stop after ``max_outer_turns`` session-goal turns."""
+    return max_outer_turns > 0
+
 
 # Accidental paste of the interactive-shell prompt line into user text /
 # goal conditions (``[1] ❯ question`` → ``question``).
@@ -131,7 +142,7 @@ class SessionGoal:
     """Host-scoped completion condition spanning multiple ``chat`` turns."""
 
     condition: str
-    max_outer_turns: int = 5
+    max_outer_turns: int = SESSION_GOAL_UNBOUNDED_TURNS
     status: str = SessionGoalStatus.ACTIVE
     turns_used: int = 0
     step_count: int | None = None
@@ -310,9 +321,12 @@ def build_session_goal(
         MAX_GOAL_CONDITION_CHARS,
     )
     clean_items = derive_session_goal_checklist(goal_condition, checklist)
-    max_turns = max(1, max_outer_turns) if max_outer_turns is not None else _DEFAULT_MAX_OUTER_TURNS
-    if clean_items and max_outer_turns is None:
-        max_turns = max(max_turns, len(clean_items))
+    if max_outer_turns is None or max_outer_turns <= 0:
+        max_turns = SESSION_GOAL_UNBOUNDED_TURNS
+    else:
+        max_turns = max(1, max_outer_turns)
+        if clean_items:
+            max_turns = max(max_turns, len(clean_items))
     return SessionGoal(
         condition=goal_condition,
         max_outer_turns=max_turns,
