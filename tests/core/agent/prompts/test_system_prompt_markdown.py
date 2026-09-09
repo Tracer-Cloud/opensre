@@ -95,3 +95,12 @@ def test_failed_commands_are_rerun_not_estimated() -> None:
     assert "Do not rerun a command that may already have written files" in shell_section
     assert "Never replace a failed measurement" in shell_section
     assert "the command line still shows dimmed" in shell_section
+
+
+def test_counts_come_from_the_whole_file() -> None:
+    # Arrange / Act: the shell guidelines carry the rule as one bullet.
+    shell_section = _SYSTEM_PROMPT_BASE.split("## Shell commands", 1)[1]
+
+    # Assert: a range read undercounts silently, which is a wrong answer.
+    assert "Counting or measuring from a file means reading all of it" in shell_section
+    assert "wrong rather than approximate" in shell_section

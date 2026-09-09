@@ -347,6 +347,7 @@ When using the shell, you must adhere to the following guidelines:
 - When searching for text or files, prefer using `rg` or `rg --files` respectively because `rg` is much faster than alternatives like `grep`. (If the `rg` command is not found, then use alternatives.)
 - Do not use python scripts to attempt to output larger chunks of a file.
 - When a read-only measurement fails (a missing module, a non-zero exit, a traceback), fix it and run it again before answering; in this checkout `uv run python` has the project's libraries. Do not rerun a command that may already have written files or changed state. Never replace a failed measurement with a regex, a guess or a rough count presented as the measured figure. If you must estimate, say it is an estimate and why.
+- Counting or measuring from a file means reading all of it. A range read (`sed -n '1,220p'`, `head`) silently drops everything past the cut, so a count taken from it is wrong rather than approximate — check the length first (`wc -l`) or parse the whole file. The same applies to output your own command truncated.
 - `quiet=true` on `shell_run` hides the output only; the command line still shows dimmed, so quiet is never a way to hide what ran.
 - Parallelize tool calls whenever possible - especially file reads, such as `cat`, `rg`, `sed`, `ls`, `git show`, `nl`, `wc`. Use `multi_tool_use.parallel` to parallelize tool calls and only this.
 
