@@ -126,21 +126,21 @@ def resolve_analytics_destination() -> AnalyticsDestination | None:
             return None
         base_url = silo_base_url
     else:
-        account, account_load_failed = _load_account()
-        if account_load_failed:
-            return None
-        if account is not None:
-            environment_token = _env(OPENSRE_ACCOUNT_TOKEN_ENV)
-            if environment_token and keyring_is_disabled():
-                explicit_base_url = _env(OPENSRE_APP_URL_ENV)
-                if not explicit_base_url:
-                    return None
-                environment_base_url = _normalize(explicit_base_url)
-                if environment_base_url is None:
-                    return None
-                base_url = environment_base_url
-                bearer_token = environment_token
-            else:
+        environment_token = _env(OPENSRE_ACCOUNT_TOKEN_ENV)
+        if environment_token and keyring_is_disabled():
+            explicit_base_url = _env(OPENSRE_APP_URL_ENV)
+            if not explicit_base_url:
+                return None
+            environment_base_url = _normalize(explicit_base_url)
+            if environment_base_url is None:
+                return None
+            base_url = environment_base_url
+            bearer_token = environment_token
+        else:
+            account, account_load_failed = _load_account()
+            if account_load_failed:
+                return None
+            if account is not None:
                 account_base_url = _normalize(account.app_url)
                 bearer_token = _account_token()
                 if account_base_url is None or not bearer_token:
@@ -153,12 +153,14 @@ def resolve_analytics_destination() -> AnalyticsDestination | None:
                     ):
                         return None
                 base_url = account_base_url
-        else:
-            anonymous_base_url = _anonymous_base_url()
-            bearer_token = ""
-            if anonymous_base_url is None:
+            elif environment_token:
                 return None
-            base_url = anonymous_base_url
+            else:
+                anonymous_base_url = _anonymous_base_url()
+                bearer_token = ""
+                if anonymous_base_url is None:
+                    return None
+                base_url = anonymous_base_url
     return AnalyticsDestination(
         endpoint_url=f"{base_url.rstrip('/')}{ANALYTICS_INGEST_PATH}",
         bearer_token=bearer_token,

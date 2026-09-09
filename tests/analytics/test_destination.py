@@ -175,12 +175,13 @@ def test_conflicting_environment_account_token_disables_delivery(monkeypatch) ->
     assert resolved is None
 
 
-def test_environment_only_account_token_is_supported(monkeypatch) -> None:
+def test_environment_only_account_token_is_supported(monkeypatch, tmp_path: Path) -> None:
     monkeypatch.delenv("OPENSRE_WEBAPP_URL", raising=False)
     monkeypatch.setenv("OPENSRE_ACCOUNT_TOKEN", "osre_pat_environment_only")
     monkeypatch.setenv("OPENSRE_DISABLE_KEYRING", "1")
     monkeypatch.setenv("OPENSRE_APP_URL", "http://localhost:3000")
-    monkeypatch.setattr(destination, "load_account_record", _account)
+    monkeypatch.setattr(destination, "load_account_record", lambda: None)
+    monkeypatch.setattr(destination, "account_metadata_path", lambda: tmp_path / "account.json")
 
     resolved = destination.resolve_analytics_destination()
 
