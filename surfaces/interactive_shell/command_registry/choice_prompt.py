@@ -14,6 +14,7 @@ from __future__ import annotations
 from rich.console import Console
 from rich.markup import escape
 
+from config.constants.skills import SKIP_DEMO_OPTION
 from core.agent_harness.spi.handoff import format_ask_user_answers
 from infrastructure.terminal import theme as ui_theme
 from infrastructure.terminal.notify import NotifyEvent, play_notification
@@ -30,6 +31,18 @@ from surfaces.shared.terminal.components.choice_menu import (
     repl_choose_one,
     repl_tty_interactive,
 )
+
+_CANCELLED = "Selection cancelled — type a reply instead."
+_DEMO_SKIPPED = "Demo skipped — type a request, or /demo to come back to it."
+
+
+def _leave_menu(session: Session, console: Console, note: str) -> None:
+    """Close the menu with no answer for the model and leave the skill."""
+    console.print(f"[{ui_theme.DIM}]{note}[/]")
+    session.terminal.awaiting_handoff_answer = False
+    session.active_skill = None
+    session.active_skill_tools = ()
+    session.skill_hooks_fired = set()
 
 
 def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
@@ -56,11 +69,7 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
     if pending.is_batch():
         picked = repl_ask_user(items)
         if picked is None:
-            console.print(f"[{ui_theme.DIM}]Selection cancelled — type a reply instead.[/]")
-            session.terminal.awaiting_handoff_answer = False
-            session.active_skill = None
-            session.active_skill_tools = ()
-            session.skill_hooks_fired = set()
+            _leave_menu(session, console, _CANCELLED)
             return True
         session.terminal.set_auto_command(format_ask_user_answers(items, picked))
         session.terminal.awaiting_handoff_answer = True
@@ -87,11 +96,11 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
     )
     capture_onboarding_choice(session.active_skill, picked_one, custom=custom_answer)
     if picked_one is None:
-        console.print(f"[{ui_theme.DIM}]Selection cancelled — type a reply instead.[/]")
-        session.terminal.awaiting_handoff_answer = False
-        session.active_skill = None
-        session.active_skill_tools = ()
-        session.skill_hooks_fired = set()
+        _leave_menu(session, console, _CANCELLED)
+        return True
+    if picked_one == SKIP_DEMO_OPTION:
+        # A shell decision, not an answer for the model: the demo is over.
+        _leave_menu(session, console, _DEMO_SKIPPED)
         return True
 
     command = pending.commands.get(picked_one) or (picked_one if picked_one.startswith("/") else "")

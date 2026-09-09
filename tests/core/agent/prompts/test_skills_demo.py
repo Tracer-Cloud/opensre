@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 import core.agent_harness.prompts.skills.loader as loader
-from config.constants.skills import ONBOARDING_SKILL_NAME
+from config.constants.skills import ONBOARDING_SKILL_NAME, SKIP_DEMO_OPTION
 from core.agent_harness.prompts.action import build_action_system_prompt
 from core.agent_harness.prompts.action.assemble import build_action_system_prompt_envelope
 from core.agent_harness.prompts.getting_started import (
@@ -45,7 +45,7 @@ def test_master_menu_matches_four_unique_children_and_preserves_specialists() ->
     menu = master_skill.pre_execute[0].args
     assert menu["title"] == "Which demo would you like me to run? (Esc to skip)"
     assert menu["note"]
-    assert tuple(menu["options"]) == GETTING_STARTED_OPTIONS
+    assert tuple(menu["options"]) == (*GETTING_STARTED_OPTIONS, SKIP_DEMO_OPTION)
     assert "Call `ask_user_choice`" not in master
     for skill in children:
         assert f"`{skill.name}`" in master

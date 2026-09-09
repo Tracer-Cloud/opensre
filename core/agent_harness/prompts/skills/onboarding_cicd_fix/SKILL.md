@@ -36,6 +36,7 @@ pre_execute:
         - Set up an agent that improves CI/CD reliability over time
         - Run CI/CD improvements with a managed service (coming soon)
         - Connect OpenSRE to Slack and hand off DevOps chores for your team
+        - Skip the demo and open the shell
 ---
 
 # CI/CD onboarding
@@ -50,8 +51,9 @@ onboarding question twice for one request.
 The menu opens on entry, without you. Do not call `ask_user_choice` yourself
 and do not narrate before it; end the turn and wait for the answer. The UI adds
 `Or type your own answer...`. If the entry result reports that the menu is
-unavailable, show the four `pre_execute` options as a numbered list and wait
-for a reply.
+unavailable, show the `pre_execute` options as a numbered list and wait for a
+reply. The last option, skipping the demo, is handled by the shell and never
+reaches you.
 
 ## Follow the selected child
 

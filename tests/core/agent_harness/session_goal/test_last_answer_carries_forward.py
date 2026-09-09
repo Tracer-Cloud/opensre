@@ -187,6 +187,19 @@ def test_a_new_goal_says_earlier_goals_are_finished() -> None:
     first = start_goal_prompt(fresh, "count users")
     later = start_goal_prompt(resumed, "count users")
 
-    # Assert: only the first turn declares the break from earlier goals.
+    # Assert: the first turn declares a new goal; a resumed start does not.
+    assert "This is a new goal." in first
+    assert "This is a new goal." not in later
     assert "Earlier goals in this conversation are finished" in first
-    assert "Earlier goals in this conversation are finished" not in later
+
+
+def test_a_continuation_turn_also_breaks_from_earlier_goals() -> None:
+    """Turn 2 of a goal drifted back into the previous goal's listing (E9)."""
+    # Arrange
+    goal = _goal().with_reason("not yet: inspect the run history")
+
+    # Act
+    prompt = continuation_prompt(goal)
+
+    # Assert
+    assert "Earlier goals in this conversation are finished" in prompt
