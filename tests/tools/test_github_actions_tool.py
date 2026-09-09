@@ -328,8 +328,17 @@ class _RestRuns:
     def __init__(self, _token: str | None = None) -> None:
         pass
 
-    def paginate(self, path: str, *, params: dict[str, Any], collection_key: str) -> list[Any]:
-        _RestRuns.calls.append({"path": path, "params": params, "collection_key": collection_key})
+    def paginate(
+        self, path: str, *, params: dict[str, Any], collection_key: str, max_pages: int = 0
+    ) -> list[Any]:
+        _RestRuns.calls.append(
+            {
+                "path": path,
+                "params": params,
+                "collection_key": collection_key,
+                "max_pages": max_pages,
+            }
+        )
         if _RestRuns.error is not None:
             raise _RestRuns.error
         return list(_RestRuns.runs)
@@ -1055,3 +1064,46 @@ def test_head_sha_history_pages_at_the_api_maximum_and_flags_an_unreached_commit
     assert result["workflow_runs"] == []
     assert result["history_fully_fetched"] is False
     assert "history is incomplete" in result["history_note"]
+
+
+def test_a_rest_timeout_falls_back_to_mcp_paging() -> None:
+    """urlopen raises TimeoutError itself; the tool must not fail the whole call."""
+    from integrations.github.tools import actions as actions_module
+
+    workflow_tool = cast(Any, list_github_actions_workflow_runs)
+    _RestRuns.calls, _RestRuns.runs = [], []
+    _RestRuns.error = TimeoutError("timed out")
+
+    def _mcp(_config: object, _tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        return _runs_mcp_response(arguments, [_workflow_run(1, _FULL, "CI")])
+
+    with (
+        patch("integrations.github.tools.actions.resolve_github_mcp_config", return_value=object()),
+        patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=_mcp),
+        patch.object(actions_module, "GitHubRestClient", _RestRuns),
+    ):
+        result = workflow_tool(owner="org", repo="repo", head_sha=_FULL, github_token="tok")
+
+    assert "history_source" not in result
+    assert [row["name"] for row in result["workflow_runs"]] == ["CI"]
+
+
+def test_rest_history_at_the_page_cap_is_not_marked_complete() -> None:
+    from integrations.github.tools import actions as actions_module
+
+    workflow_tool = cast(Any, list_github_actions_workflow_runs)
+    _RestRuns.calls, _RestRuns.error = [], None
+    cap = _HEAD_SHA_MAX_PAGES * _GITHUB_RUNS_PER_PAGE_MAX
+    _RestRuns.runs = [_workflow_run(index, _FULL, f"wf-{index}") for index in range(cap)]
+
+    with (
+        patch("integrations.github.tools.actions.resolve_github_mcp_config", return_value=object()),
+        patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=AssertionError),
+        patch.object(actions_module, "GitHubRestClient", _RestRuns),
+    ):
+        result = workflow_tool(owner="org", repo="repo", head_sha=_FULL, github_token="tok")
+
+    assert _RestRuns.calls[0]["max_pages"] == _HEAD_SHA_MAX_PAGES
+    assert result["history_source"] == "rest"
+    assert result["history_fully_fetched"] is False
+    assert result["pages_fetched"] == _HEAD_SHA_MAX_PAGES

@@ -391,8 +391,10 @@ def _commit_run_history_rest(
             f"repos/{owner}/{repo}/actions/runs",
             params={"head_sha": head_sha, "per_page": _GITHUB_RUNS_PER_PAGE_MAX},
             collection_key="workflow_runs",
+            max_pages=_HEAD_SHA_MAX_PAGES,
         )
-    except GitHubApiError:
+    except (GitHubApiError, OSError):
+        # OSError covers the socket timeout urlopen raises directly.
         return None
     runs = [
         _normalize_run(item)
@@ -404,12 +406,14 @@ def _commit_run_history_rest(
         "available": True,
         "history_source": "rest",
     }
+    # paginate stops silently at max_pages; a full cap means more may exist.
+    page_cap = _HEAD_SHA_MAX_PAGES * _GITHUB_RUNS_PER_PAGE_MAX
     return CommitRunHistory(
         payload=payload,
         runs=runs,
-        fully_fetched=True,
+        fully_fetched=len(raw_runs) < page_cap,
         fetched_before_filter=len(raw_runs),
-        pages_fetched=1,
+        pages_fetched=max(1, -(-len(raw_runs) // _GITHUB_RUNS_PER_PAGE_MAX)),
     )
 
 
