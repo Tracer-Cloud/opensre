@@ -195,12 +195,14 @@ def _launchd_definition(argv: Sequence[str], log_path: Path) -> dict[str, object
 
 def _systemd_definition(argv: Sequence[str], log_path: Path) -> str:
     exec_start = " ".join(_systemd_quote(part) for part in argv)
+    path_env = os.environ.get("PATH", "/usr/bin:/bin")
     return (
         "[Unit]\n"
         "Description=OpenSRE scheduler\n"
         "After=network-online.target\n\n"
         "[Service]\n"
         f"ExecStart={exec_start}\n"
+        f'Environment="PATH={path_env}"\n'
         "Restart=always\n"
         "RestartSec=10\n"
         f"StandardOutput=append:{log_path}\n"

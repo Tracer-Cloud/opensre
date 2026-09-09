@@ -111,6 +111,7 @@ def test_linux_install_writes_a_systemd_user_unit(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(svc, "OPENSRE_HOME_DIR", tmp_path / ".opensre")
+    monkeypatch.setenv("PATH", "/custom/bin:/usr/bin")
     runner = _Runner()
 
     state = svc.install_background_service(
@@ -123,6 +124,7 @@ def test_linux_install_writes_a_systemd_user_unit(
     assert state.unit_path is not None
     unit = state.unit_path.read_text()
     assert "ExecStart=/usr/bin/opensre cron start --service" in unit
+    assert 'Environment="PATH=/custom/bin:/usr/bin"' in unit
     assert "Restart=always" in unit
     assert runner.commands[-1][:4] == ["systemctl", "--user", "enable", "--now"]
 
