@@ -15,10 +15,16 @@ from typing import Any
 
 from core.agent_harness.spi.grounding import ActionSkill, list_action_skills, load_skill_body
 from core.agent_harness.tools import ActionToolScope, ToolExecutor
-from tools.interactive_shell.actions.ask_choice import execute_ask_user_choice_tool
+from core.tool import RegisteredTool
+from tools.interactive_shell.actions.ask_choice import (
+    ask_user_choice_tool,
+    execute_ask_user_choice_tool,
+)
 
-_PRE_EXECUTE_TOOLS: Mapping[str, ToolExecutor] = MappingProxyType(
-    {"ask_user_choice": execute_ask_user_choice_tool}
+# Allowlisted hook tools: the registered tool (its public schema gates the
+# frontmatter args exactly as it gates a model call) and the executor to run.
+_PRE_EXECUTE_TOOLS: Mapping[str, tuple[RegisteredTool, ToolExecutor]] = MappingProxyType(
+    {"ask_user_choice": (ask_user_choice_tool, execute_ask_user_choice_tool)}
 )
 
 MENU_QUEUED_INSTRUCTION = (
@@ -37,13 +43,19 @@ def _skill_by_name(name: str) -> ActionSkill | None:
 def _run_pre_execute(skill: ActionSkill, ctx: ActionToolScope) -> list[dict[str, Any]]:
     results: list[dict[str, Any]] = []
     for call in skill.pre_execute:
-        executor = _PRE_EXECUTE_TOOLS.get(call.tool)
-        if executor is None:
+        allowed = _PRE_EXECUTE_TOOLS.get(call.tool)
+        if allowed is None:
             results.append(
                 {"ok": False, "tool": call.tool, "error": "pre_execute tool not allowed"}
             )
             continue
-        outcome = executor(dict(call.args), ctx)
+        tool, executor = allowed
+        args = dict(call.args)
+        validation_error = tool.validate_public_input(args)
+        if validation_error is not None:
+            results.append({"ok": False, "tool": call.tool, "error": validation_error})
+            continue
+        outcome = executor(args, ctx)
         payload: dict[str, Any] = (
             dict(outcome) if isinstance(outcome, dict) else {"ok": bool(outcome)}
         )

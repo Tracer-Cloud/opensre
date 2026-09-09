@@ -64,6 +64,16 @@ def hooked_skills(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[N
         "---\n"
         "Body."
     )
+    (tmp_path / "malformed_skill.md").write_text(
+        "---\n"
+        "name: malformed-skill\n"
+        "description: declares a menu the tool schema rejects\n"
+        "pre_execute:\n"
+        "  - tool: ask_user_choice\n"
+        "    args: {title: 'Which one?', options: 'first, second'}\n"
+        "---\n"
+        "Body."
+    )
     monkeypatch.setattr(loader, "skills_dir", lambda: tmp_path)
     loader.clear_skills_caches()
     yield
@@ -100,6 +110,24 @@ def test_entry_refuses_hooks_outside_the_allowlist(hooked_skills: None) -> None:
     assert session.active_skill == "rogue-skill"
     assert result["pre_execute"] == [
         {"ok": False, "tool": "shell_run", "error": "pre_execute tool not allowed"}
+    ]
+    assert session.pending_user_choice is None
+    assert session.terminal.pending_prompt_default is None
+    assert MENU_QUEUED_INSTRUCTION not in result["content"]
+
+
+def test_hook_args_are_gated_by_the_tool_schema_like_a_model_call(hooked_skills: None) -> None:
+    """Frontmatter must not get a looser contract than the model: bad args are refused, not coerced."""
+    session = Session()
+
+    result = enter_skill("malformed-skill", _scope(session))
+
+    assert result["pre_execute"] == [
+        {
+            "ok": False,
+            "tool": "ask_user_choice",
+            "error": "ask_user_choice.options has invalid type/value.",
+        }
     ]
     assert session.pending_user_choice is None
     assert session.terminal.pending_prompt_default is None
