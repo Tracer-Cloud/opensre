@@ -45,6 +45,7 @@ __all__ = (
     "getting_started_skills",
     "list_action_skills",
     "load_skill_body",
+    "load_skill_reference",
     "load_skills_block",
     "load_skills_index",
     "skills_dir",
@@ -54,9 +55,11 @@ SKILLS_HEADER = f"{'=' * 40} SKILLS INDEX {'=' * 40}"
 
 _PACKAGE_SKILL_FILENAME = "SKILL.md"
 _REPORT_TEMPLATE_SUFFIX = "_report.md"
+_REFERENCES_DIRNAME = "references"
 _REPO_SKILLS_PREFIX = "core/agent_harness/prompts/skills"
 _REPORT_TEMPLATE_HEADER = "REPORT TEMPLATE from `{repo_path}` (fill exactly; keep all headings):"
 _SKILL_NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
+_REFERENCE_NAME_RE = re.compile(r"^[a-z0-9]+(?:[-_][a-z0-9]+)*$")
 _BANNER_RE = re.compile(r"^[=\-─]{8,}\s*$")
 
 
@@ -88,6 +91,9 @@ class ActionSkill:
 
     pre_execute: tuple[SkillToolCall, ...] = ()
     """Static tool calls run on skill entry (boot, ``/demo``, ``skill_view``) before the model."""
+
+    references: tuple[str, ...] = ()
+    """Stems of ``references/*.md`` files bundled with a package skill, loadable on demand."""
 
 
 def skills_dir() -> Path:
@@ -137,6 +143,16 @@ def _iter_skill_paths(directory: Path) -> list[Path]:
                 paths.append(nested_file)
     paths.extend(sorted(directory.glob("*.md")))
     return paths
+
+
+def _skill_references(skill_path: Path) -> tuple[str, ...]:
+    """Return sorted stems of the skill's bundled ``references/*.md`` files."""
+    if skill_path.name != _PACKAGE_SKILL_FILENAME:
+        return ()
+    references_dir = skill_path.parent / _REFERENCES_DIRNAME
+    if not references_dir.is_dir():
+        return ()
+    return tuple(sorted(path.stem for path in references_dir.glob("*.md") if path.is_file()))
 
 
 def _report_template_path(skill_path: Path) -> Path:
@@ -276,6 +292,7 @@ def _load_action_skill(skill_path: Path) -> ActionSkill | None:
         getting_started=getting_started,
         demo_order=_optional_int_field(frontmatter.get("demo_order")),
         pre_execute=_pre_execute_field(frontmatter.get("pre_execute")),
+        references=_skill_references(skill_path),
     )
 
 
@@ -356,6 +373,29 @@ def load_skill_body(name: str) -> str:
             raw = skill.path.read_text(encoding="utf-8")
             _frontmatter, body = _parse_frontmatter(raw)
             return _skill_body_with_optional_template(skill.path, body)
+    return ""
+
+
+def load_skill_reference(name: str, reference: str) -> str:
+    """Return one bundled ``references/<reference>.md`` file of a skill, or ``""`` if unknown.
+
+    ``reference`` must be a plain slug (no path separators), so a skill body can
+    link only files inside its own ``references/`` directory.
+    """
+    needle = normalize_skill_name(name)
+    slug = reference.strip().lower()
+    if not needle or not _REFERENCE_NAME_RE.match(slug):
+        return ""
+    for skill in list_action_skills():
+        if skill.name != needle:
+            continue
+        if slug not in skill.references:
+            return ""
+        reference_path = skill.path.parent / _REFERENCES_DIRNAME / f"{slug}.md"
+        try:
+            return reference_path.read_text(encoding="utf-8").strip()
+        except OSError:
+            return ""
     return ""
 
 

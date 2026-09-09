@@ -27,3 +27,36 @@ def test_skill_view_unknown_name_lists_available() -> None:
     assert result["ok"] is False
     assert "delivering-morning-briefings" in result["available"]
     assert "fixing-github-ci" in result["available"]
+
+
+class _SessionStub:
+    active_skill: str | None = None
+    active_skill_tools: tuple[str, ...] = ()
+
+
+class _CtxStub:
+    def __init__(self) -> None:
+        self.session = _SessionStub()
+
+
+def test_skill_view_reference_loads_without_reentering_skill() -> None:
+    ctx = _CtxStub()
+    result = execute_skill_view_tool(
+        {"name": "cicd-analytics-demo", "reference": "metrics"},
+        ctx,  # type: ignore[arg-type]
+    )
+    assert result["ok"] is True
+    assert result["reference"] == "metrics"
+    assert "red_hours" in result["content"]
+    # A reference load never re-enters the skill: no activation, no pre_execute.
+    assert ctx.session.active_skill is None
+    assert "pre_execute" not in result
+
+
+def test_skill_view_unknown_reference_lists_available_references() -> None:
+    result = execute_skill_view_tool(
+        {"name": "cicd-analytics-demo", "reference": "no-such-reference"},
+        ctx=None,  # type: ignore[arg-type]
+    )
+    assert result["ok"] is False
+    assert "metrics" in result["available_references"]
