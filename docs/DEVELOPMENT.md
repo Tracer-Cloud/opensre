@@ -100,15 +100,11 @@ Product events also carry `execution_environment` (`local`, `ci`, `container`,
 or `ci_container`), `is_ci`, `is_container`, and `container_runtime`. Use these
 first-party fields to exclude automated environments from product funnels.
 
-A random install ID is stored under `~/.opensre/anonymous_id`. The analytics
-`anonymous_id` and downstream `distinct_id` are scoped to that ID. Signed-in
-requests use the existing OpenSRE account token so the server can resolve the
-user. Telemetry is off in GitHub Actions and pytest.
+A random install ID is stored under `~/.opensre/anonymous_id`. Telemetry is off
+in GitHub Actions and pytest.
 
 When a user signs in to GitHub (wizard or `/integrations setup`), OpenSRE emits
-`github_username` in an identity control and on subsequent product events. The
-first-party endpoint also resolves the signed-in OpenSRE account from its bearer
-token.
+`github_username` on subsequent product events.
 
 ### Kill-switch matrix
 

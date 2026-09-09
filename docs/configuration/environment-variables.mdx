@@ -349,6 +349,8 @@ Want credentials only from the environment, never on disk? Set `OPENSRE_DISABLE_
 | Variable | Default | Description |
 | --- | --- | --- |
 | `OPENSRE_DISABLE_KEYRING` | `0` | Disable local credential storage; credentials must come from the environment |
+| `OPENSRE_ACCOUNT_TOKEN` |  | Personal OpenSRE account token; with `OPENSRE_DISABLE_KEYRING=1`, also set `OPENSRE_APP_URL` |
+| `OPENSRE_APP_URL` | `https://app.opensre.com` | OpenSRE app origin; set it explicitly with an environment-only account token |
 | `OPENSRE_LLM_AUTH_METADATA_PATH` | `~/.opensre/llm-auth.json` | Non-secret LLM auth metadata path used by prompt-safe status checks |
 | `OPENSRE_API_KEY` |  | API key for remote OpenSRE instances |
 

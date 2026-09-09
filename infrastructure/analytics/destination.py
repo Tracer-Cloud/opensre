@@ -130,21 +130,29 @@ def resolve_analytics_destination() -> AnalyticsDestination | None:
         if account_load_failed:
             return None
         if account is not None:
-            account_base_url = _normalize(account.app_url)
-            if account_base_url is None:
-                return None
-            bearer_token = _account_token()
-            if not bearer_token:
-                return None
             environment_token = _env(OPENSRE_ACCOUNT_TOKEN_ENV)
-            if environment_token and not keyring_is_disabled():
-                persisted_token = _stored_account_token()
-                if not persisted_token or not hmac.compare_digest(
-                    environment_token,
-                    persisted_token,
-                ):
+            if environment_token and keyring_is_disabled():
+                explicit_base_url = _env(OPENSRE_APP_URL_ENV)
+                if not explicit_base_url:
                     return None
-            base_url = account_base_url
+                environment_base_url = _normalize(explicit_base_url)
+                if environment_base_url is None:
+                    return None
+                base_url = environment_base_url
+                bearer_token = environment_token
+            else:
+                account_base_url = _normalize(account.app_url)
+                bearer_token = _account_token()
+                if account_base_url is None or not bearer_token:
+                    return None
+                if environment_token:
+                    persisted_token = _stored_account_token()
+                    if not persisted_token or not hmac.compare_digest(
+                        environment_token,
+                        persisted_token,
+                    ):
+                        return None
+                base_url = account_base_url
         else:
             anonymous_base_url = _anonymous_base_url()
             bearer_token = ""

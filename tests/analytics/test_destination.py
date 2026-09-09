@@ -179,6 +179,7 @@ def test_environment_only_account_token_is_supported(monkeypatch) -> None:
     monkeypatch.delenv("OPENSRE_WEBAPP_URL", raising=False)
     monkeypatch.setenv("OPENSRE_ACCOUNT_TOKEN", "osre_pat_environment_only")
     monkeypatch.setenv("OPENSRE_DISABLE_KEYRING", "1")
+    monkeypatch.setenv("OPENSRE_APP_URL", "http://localhost:3000")
     monkeypatch.setattr(destination, "load_account_record", _account)
 
     resolved = destination.resolve_analytics_destination()
@@ -186,6 +187,18 @@ def test_environment_only_account_token_is_supported(monkeypatch) -> None:
     assert resolved is not None
     assert resolved.endpoint_url == "http://localhost:3000/api/analytics/events"
     assert resolved.headers()["Authorization"] == "Bearer osre_pat_environment_only"
+
+
+def test_environment_only_account_token_requires_explicit_origin(monkeypatch) -> None:
+    monkeypatch.delenv("OPENSRE_WEBAPP_URL", raising=False)
+    monkeypatch.delenv("OPENSRE_APP_URL", raising=False)
+    monkeypatch.setenv("OPENSRE_ACCOUNT_TOKEN", "osre_pat_environment_only")
+    monkeypatch.setenv("OPENSRE_DISABLE_KEYRING", "1")
+    monkeypatch.setattr(destination, "load_account_record", _account)
+
+    resolved = destination.resolve_analytics_destination()
+
+    assert resolved is None
 
 
 def test_invalid_anonymous_override_disables_delivery(monkeypatch, tmp_path: Path) -> None:

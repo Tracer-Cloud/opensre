@@ -19,6 +19,8 @@ An invalid explicit URL, an unreadable saved account, a silo URL without
 `AGENT_USAGE_SECRET`, or an environment account token that conflicts with the
 saved login while local credential storage is enabled disables remote delivery
 for that process instead of falling through to another origin or identity.
+Environment-only account delivery requires `OPENSRE_APP_URL` and uses that
+explicit origin rather than independently persisted account metadata.
 
 The request carries the personal `osre_pat_...` bearer for a signed-in CLI or
 `AGENT_USAGE_SECRET` for a silo. It has no authorization header before login.
