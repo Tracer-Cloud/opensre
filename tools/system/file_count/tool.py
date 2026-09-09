@@ -47,8 +47,9 @@ def _summary(tally: FileTally) -> str:
         "Count the files under a directory whose names match a glob, skipping "
         "generated directories (`__pycache__`, `.venv`, `node_modules`, `build`, "
         "`dist`, caches, `.git`). Use this for 'how many … files' questions instead "
-        "of `find`, which counts compiled caches as well and turns 103 test files "
-        "into 233. The count covers the whole tree, never a sample. Read-only."
+        "of `find`, which counts compiled caches as project files. The count covers "
+        "the whole tree, never a sample, and the path must be inside the working "
+        "directory. Read-only."
     ),
     use_cases=[
         "How many test files are under tests/?",

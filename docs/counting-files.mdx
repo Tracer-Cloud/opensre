@@ -5,13 +5,9 @@ description: "Ask how many files of a kind a directory holds and get the project
 
 ## Overview
 
-"How many test files are in this package" has an exact answer, and the obvious
-shell command gets it wrong. `find -type f` counts everything on disk, so
-compiled caches under `__pycache__` are counted alongside the modules you wrote
-— in this repository that turns 103 test files into 233.
-
-OpenSRE counts the files that belong to the project. Ask in the interactive
-shell (`opensre`):
+OpenSRE counts the files that belong to your project: the modules you wrote,
+not the compiled caches and vendored packages sitting beside them. Ask in the
+interactive shell (`opensre`):
 
 ```
 How many test files are under tests/interactive_shell?

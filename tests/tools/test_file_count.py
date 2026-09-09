@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
+import tools.system.file_count.count as count_module
 from tools.system.file_count.count import FileCountError, count_matching_files
 from tools.system.file_count.tool import TOOL_NAME, count_files
 
@@ -131,19 +133,27 @@ def test_a_symlinked_root_is_judged_by_where_it_lands(tmp_path: Path, monkeypatc
         count_matching_files(Path("escape"))
 
 
-def test_an_unreadable_subtree_raises_instead_of_undercounting(tmp_path: Path, monkeypatch) -> None:
-    """A skipped subtree would make an exact-looking count partial."""
+def test_an_unreadable_subtree_raises_instead_of_undercounting(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A skipped subtree would make an exact-looking count partial.
+
+    The walk error is simulated rather than produced with ``chmod``: as root,
+    or on a filesystem that ignores the mode, an unreadable directory is still
+    readable and the test would pass for the wrong reason.
+    """
     # Arrange
-    monkeypatch.chdir(tmp_path)
     _tree(tmp_path)
-    locked = tmp_path / "pkg" / "locked"
-    locked.mkdir()
-    (locked / "test_hidden.py").write_text("")
-    locked.chmod(0o000)
+
+    def _walk_that_fails(top: Any, onerror: Any = None, followlinks: bool = False) -> Any:
+        denied = PermissionError(13, "Permission denied")
+        denied.filename = str(Path(top) / "locked")
+        if onerror is not None:
+            onerror(denied)
+        return iter(())
+
+    monkeypatch.setattr(count_module.os, "walk", _walk_that_fails)
 
     # Act / Assert
-    try:
-        with pytest.raises(FileCountError, match="cannot read"):
-            count_matching_files(Path("."), "test_*.py")
-    finally:
-        locked.chmod(0o755)
+    with pytest.raises(FileCountError, match="cannot read"):
+        count_matching_files(Path("."), "test_*.py")
