@@ -28,6 +28,7 @@ _CORE_FIELDS = (
     "ask_user_rounds",
     "active_skill",
     "active_skill_tools",
+    "skill_hooks_fired",
     "task_plan",
     "task_plan_work",
     "task_plan_work_step_texts",
