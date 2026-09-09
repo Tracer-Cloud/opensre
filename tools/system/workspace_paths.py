@@ -29,4 +29,18 @@ def resolve_within_workspace(path: str | Path, *, workspace: Path | None = None)
     return resolved
 
 
-__all__ = ["WorkspacePathError", "resolve_within_workspace"]
+def workspace_relative(path: Path, *, workspace: Path | None = None) -> str:
+    """Render ``path`` the way the caller wrote it, relative to the workspace.
+
+    Resolving a path for safety turns it absolute; showing that back would put
+    the operator's home directory in every answer.
+    """
+    root = (workspace or Path.cwd()).resolve()
+    try:
+        relative = path.resolve().relative_to(root)
+    except ValueError:
+        return str(path)
+    return str(relative) if relative.parts else "."
+
+
+__all__ = ["WorkspacePathError", "resolve_within_workspace", "workspace_relative"]

@@ -15,7 +15,11 @@ from typing import Any
 
 import yaml
 
-from tools.system.workspace_paths import WorkspacePathError, resolve_within_workspace
+from tools.system.workspace_paths import (
+    WorkspacePathError,
+    resolve_within_workspace,
+    workspace_relative,
+)
 
 #: Extensions this module knows how to load.
 FORMAT_BY_SUFFIX: dict[str, str] = {
@@ -130,7 +134,7 @@ def describe(path: Path, key: str = "") -> StructureView:
     if isinstance(target, dict):
         names = [str(name) for name in target]
         return StructureView(
-            path=str(path),
+            path=workspace_relative(path),
             file_format=file_format,
             key=key,
             kind="mapping",
@@ -139,7 +143,7 @@ def describe(path: Path, key: str = "") -> StructureView:
         )
     if isinstance(target, list):
         return StructureView(
-            path=str(path),
+            path=workspace_relative(path),
             file_format=file_format,
             key=key,
             kind="list",
@@ -147,7 +151,7 @@ def describe(path: Path, key: str = "") -> StructureView:
             keys=(),
         )
     return StructureView(
-        path=str(path),
+        path=workspace_relative(path),
         file_format=file_format,
         key=key,
         # A scalar's contents are never returned: a config file may hold a

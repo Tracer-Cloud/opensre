@@ -12,7 +12,11 @@ from dataclasses import dataclass
 from fnmatch import fnmatch
 from pathlib import Path
 
-from tools.system.workspace_paths import WorkspacePathError, resolve_within_workspace
+from tools.system.workspace_paths import (
+    WorkspacePathError,
+    resolve_within_workspace,
+    workspace_relative,
+)
 
 #: Directories whose contents are generated, vendored, or version-control
 #: bookkeeping. Counting them answers a question nobody asked.
@@ -85,9 +89,9 @@ def count_matching_files(root: Path, pattern: str = "*") -> FileTally:
                 continue
             count += 1
             if len(matched) < MAX_LISTED_NAMES:
-                matched.append(str(Path(current, name)))
+                matched.append(workspace_relative(Path(current, name)))
     return FileTally(
-        root=str(root),
+        root=workspace_relative(root),
         pattern=glob,
         count=count,
         names=tuple(matched),

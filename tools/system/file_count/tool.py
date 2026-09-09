@@ -33,7 +33,13 @@ _INPUT_SCHEMA: dict[str, Any] = {
 
 
 def _summary(tally: FileTally) -> str:
-    described = "files" if tally.pattern == "*" else f"files matching {tally.pattern}"
+    """One sentence naming the count and the glob that produced it.
+
+    The glob is fenced: a pattern like ``*test*`` is otherwise read as markdown
+    emphasis and reaches the reader as ``test``, so the sentence would name a
+    filter that was never used.
+    """
+    described = "files" if tally.pattern == "*" else f"files matching `{tally.pattern}`"
     if tally.count == 1:
         described = described.replace("files", "file", 1)
     return f"{tally.count} {described} under {tally.root}, not counting generated directories"

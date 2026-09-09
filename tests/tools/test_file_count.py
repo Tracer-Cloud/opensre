@@ -96,7 +96,8 @@ def test_the_tool_names_the_glob_it_counted(tmp_path: Path) -> None:
     # Assert
     assert result["ok"] is True
     assert result["count"] == 2
-    assert "2 files matching test_*.py" in result["response_text"]
+    # The glob is fenced: unfenced, `*test*` reaches the reader as emphasis.
+    assert "2 files matching `test_*.py`" in result["response_text"]
     assert "not counting generated directories" in result["response_text"]
 
 
@@ -157,3 +158,17 @@ def test_an_unreadable_subtree_raises_instead_of_undercounting(
     # Act / Assert
     with pytest.raises(FileCountError, match="cannot read"):
         count_matching_files(Path("."), "test_*.py")
+
+
+def test_the_reported_path_stays_relative_to_the_workspace(tmp_path: Path) -> None:
+    """Resolving for safety turns a path absolute; the answer should not show that."""
+    # Arrange
+    _tree(tmp_path)
+
+    # Act
+    result = count_files(path="pkg", pattern="test_*.py")
+
+    # Assert: no home directory in the sentence the reader sees.
+    assert "under pkg," in result["response_text"]
+    assert str(tmp_path) not in result["response_text"]
+    assert all(not name.startswith("/") for name in result["names"])
