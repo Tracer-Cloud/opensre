@@ -35,7 +35,7 @@ project the user will recognize:
 
 | Repository | Why it works as a benchmark |
 |------------|-----------------------------|
-| `langchain-ai/langchain` | Python monorepo, dozens of Actions workflows, high PR volume, familiar to most teams |
+| `apache/airflow` | Python monorepo, dozens of Actions workflows, high PR volume, familiar to most teams |
 | `fastapi/fastapi` | Mid-size Python project with a lean Actions setup; a realistic target for a small team |
 | `pydantic/pydantic` | Library CI with a matrix build; good "normal duration" reference |
 | `astral-sh/ruff` | Rust toolchain on Actions; fast, disciplined CI |
@@ -51,7 +51,7 @@ the user asks for Kubernetes by name, say this in one sentence and offer
 `grafana/grafana` or `pytorch/pytorch` as a large-project stand-in.
 
 Let the user pick when they name a repository; otherwise take
-`langchain-ai/langchain` plus the row above closest to the user's language
+`apache/airflow` plus the row above closest to the user's language
 and repository size.
 
 ## Metric mapping
@@ -93,10 +93,10 @@ the headline already covers the biggest one.
 ## Reply shape
 
 ```
-Compared with langchain-ai/langchain and fastapi/fastapi over the same 30 days:
+Compared with apache/airflow and fastapi/fastapi over the same 30 days:
 
-| Metric                       | <owner/repo> | langchain-ai/langchain | fastapi/fastapi |
-|------------------------------|-------------:|-----------------------:|----------------:|
+| Metric                       | <owner/repo> | apache/airflow | fastapi/fastapi |
+|------------------------------|-------------:|---------------:|----------------:|
 | Red time on main             |        4.2 % |                  1.1 % |           0.3 % |
 | Mean time to green (h)       |          6.5 |                    1.8 |             0.9 |
 | Flake rate                   |        7.9 % |                  2.4 % |           0.6 % |
@@ -107,7 +107,7 @@ Compared with langchain-ai/langchain and fastapi/fastapi over the same 30 days:
 Red time = red_hours / (days × 24); flake rate = reliability_failures / pr_executions.
 fastapi/fastapi: <coverage notice from the tool, if any>
 
-Your flake rate is roughly three times LangChain's; the recurring reliability agent
+Your flake rate is roughly three times Airflow's; the recurring reliability agent
 targets exactly those same-commit fail-then-pass runs.
 ```
 
