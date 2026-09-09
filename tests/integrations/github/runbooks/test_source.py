@@ -67,10 +67,36 @@ def test_resolve_reference_accepts_only_configured_repository_and_ref() -> None:
     )
     assert (
         source.resolve_reference(
+            f"https://github.com/acme/operations/blob/{'a' * 40}/runbooks/checkout.md"
+        )
+        is None
+    )
+    assert (
+        source.resolve_reference(
             "https://github.com/acme/operations/blob/main/runbooks/%00checkout.md"
         )
         is None
     )
+
+
+def test_resolve_reference_accepts_a_url_at_an_explicitly_pinned_sha() -> None:
+    revision = "a" * 40
+    source = GitHubRunbookSource(
+        RunbookSourceConfig(
+            name="pinned-runbook",
+            provider="github",
+            repository="acme/operations",
+            ref=revision,
+        ),
+        _GITHUB,
+    )
+
+    reference = source.resolve_reference(
+        f"https://github.com/acme/operations/blob/{revision}/runbooks/checkout.md"
+    )
+
+    assert reference is not None
+    assert reference.requested_revision == revision
 
 
 def test_catalog_revision_pins_document_fetch() -> None:
