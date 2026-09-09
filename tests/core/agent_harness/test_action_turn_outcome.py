@@ -271,3 +271,55 @@ def test_an_interpretation_of_a_painted_report_is_kept() -> None:
 
     # Assert
     assert chunks == [judgement]
+
+
+def test_a_plan_update_does_not_rescue_a_restated_closing() -> None:
+    """The real demo turn updates its plan and paints the report in one go.
+
+    Requiring every result to be painted let that turn keep a closing that
+    repeated the figures, because ``update_plan`` is not a painted result.
+    """
+    # Arrange
+    from core.agent_harness.turns.action_driver import _compose_response, _TurnCounts
+    from core.llm.types import ToolCall
+
+    class _Painted:
+        details = {
+            "rendered_in_shell": True,
+            "key_results": [
+                {"label": "main branch red", "value": "36.4h of 30 days (5.1%)"},
+                {"label": "CI-caused failures", "value": "333 of 1174 failed PR runs"},
+                {"label": "Mean time back to green", "value": "1.0h"},
+            ],
+        }
+        content = "{}"
+        is_error = False
+
+    class _Plan:
+        details = {"ok": True, "steps": []}
+        content = "{}"
+        is_error = False
+
+    plan_call = ToolCall(id="1", name="update_plan", input={})
+    report_call = ToolCall(id="2", name="analyze_github_ci_reliability", input={})
+
+    class _Result:
+        tool_results = [(plan_call, _Plan()), (report_call, _Painted())]
+        executed = tool_results
+        planned = [plan_call, report_call]
+        final_text = "Main was red 36.4h (5.1%), with 333 of 1174 PR runs CI-caused; 1.0h to green."
+
+    counts = _TurnCounts(
+        executed_entries=[],
+        executed_count=2,
+        executed_success_count=2,
+        generic_success_count=1,
+        planned_count=2,
+        handled=True,
+    )
+
+    # Act
+    _text, chunks, _use_final = _compose_response(_Result(), Session(), counts)
+
+    # Assert
+    assert chunks == []

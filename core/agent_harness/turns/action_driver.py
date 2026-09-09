@@ -51,6 +51,7 @@ from core.agent_harness.turns.conversation_recording import record_conversation_
 from core.agent_harness.turns.display_text import (
     cap_for_display,
     format_generic_tool_payload,
+    host_rendered,
     looks_like_json,
     preferred_tool_response_text,
     split_output_truncation_markers,
@@ -229,15 +230,19 @@ def _has_preferred_tool_response_text(result: Any) -> bool:
 
 
 def _painted_results_only(result: Any) -> bool:
-    """True when every executed tool painted its own output to the console."""
-    results = list(getattr(result, "tool_results", []))
-    if not results:
-        return False
-    return all(
-        isinstance(getattr(tool_result, "details", None), dict)
-        and tool_result.details.get("rendered_in_shell") is True
-        for _tool_call, tool_result in results
-    )
+    """True when the turn's content came from tools that painted it themselves.
+
+    ``update_plan`` and the menu tools carry no content of their own — the host
+    draws them — so a turn that also updates its plan still counts.
+    """
+    painted = 0
+    for tool_call, tool_result in getattr(result, "tool_results", []):
+        details = getattr(tool_result, "details", None)
+        if isinstance(details, dict) and details.get("rendered_in_shell") is True:
+            painted += 1
+        elif not host_rendered(tool_call, tool_result):
+            return False
+    return painted > 0
 
 
 #: How many of the painted figures a closing must repeat to count as a restatement.

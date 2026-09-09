@@ -29,7 +29,7 @@ _HOST_RENDERED_TOOL_NAMES: frozenset[str] = frozenset(
 )
 
 
-def _host_rendered(tool_call: ToolCall, tool_result: Any) -> bool:
+def host_rendered(tool_call: ToolCall, tool_result: Any) -> bool:
     """True when the console already shows this result, so it is not re-shown."""
     if tool_call.name in _HOST_RENDERED_TOOL_NAMES:
         return True
@@ -120,7 +120,7 @@ def _visible_stdout(stdout: str) -> str:
 
 def format_generic_tool_payload(tool_call: ToolCall, tool_result: Any) -> str:
     """Build a user-visible summary for one non-self-recording tool result."""
-    if _host_rendered(tool_call, tool_result) and not getattr(tool_result, "is_error", False):
+    if host_rendered(tool_call, tool_result) and not getattr(tool_result, "is_error", False):
         return ""
     preferred_response = preferred_tool_response_text(tool_result)
     if preferred_response:
@@ -195,6 +195,7 @@ def preferred_tool_response_text(tool_result: Any) -> str:
 
 __all__ = [
     "DISPLAY_OUTPUT_MAX_CHARS",
+    "host_rendered",
     "DISPLAY_OUTPUT_MAX_LINES",
     "cap_for_display",
     "format_generic_tool_payload",
