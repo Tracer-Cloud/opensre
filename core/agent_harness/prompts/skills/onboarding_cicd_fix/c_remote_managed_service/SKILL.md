@@ -7,8 +7,8 @@ getting_started: Run CI/CD improvements with a managed service (coming soon)
 demo_order: 3
 metadata:
   owner: Vincent
-  last_changed_by: Vincent
-  last_changed_at: 2026-09-09
+  last_changed_by: Yauhen
+  last_changed_at: 2026-09-10
   usecases:
     - Reserved slot for the remote managed-service onboarding demo
   requires:
