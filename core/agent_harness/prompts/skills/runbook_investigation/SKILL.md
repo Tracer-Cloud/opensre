@@ -3,6 +3,16 @@ name: runbook-investigation
 description: >-
   Investigate an incident with organization-owned runbook guidance, loaded by
   URL or exact alert identity. Multi-step; load before acting.
+metadata:
+  owner: Tracer Team
+  usecases:
+    - Investigating an incident using an organization-owned runbook
+    - Triaging an alert against configured runbook guidance and live evidence
+  requires:
+    - Read access to a configured trusted runbook source
+    - Diagnostic tools for the affected service
+  type: audit
+  version: "1.0"
 ---
 ══════════════════════════════════════════════════════════
 RUNBOOK-GUIDED INVESTIGATION SKILL — interactive-shell action agent:
