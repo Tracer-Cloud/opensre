@@ -19,7 +19,10 @@ from core.agent_harness.session.terminal_access import (
     session_terminal,
     set_auto_command,
 )
-from core.agent_harness.session_goal.continuation import continuation_prompt
+from core.agent_harness.session_goal.continuation import (
+    continuation_prompt,
+    start_goal_prompt,
+)
 from core.agent_harness.session_goal.evaluate import (
     default_evaluate_session_goal,
     session_goal_reply_text,
@@ -379,9 +382,12 @@ def run_until_session_goal(
         _announce_working(session, pre, on_progress)
 
     pre_chat_completed = pre.completed if isinstance(pre, SessionGoal) else frozenset()
+    first = message
+    if isinstance(pre, SessionGoal) and pre.status == SessionGoalStatus.ACTIVE:
+        first = start_goal_prompt(pre, message)
     # Also covers a goal attached by ``session_goal_set`` inside this very turn:
     # the pause applies to whatever goal is active when the turn raises.
-    last = _chat_or_pause(chat, message, session, on_progress)
+    last = _chat_or_pause(chat, first, session, on_progress)
     active = getattr(session, "session_goal", None)
     if not isinstance(active, SessionGoal) or not session_goal_is_active(session):
         # Paused after the first chat (e.g. slash during turn) — keep state.
@@ -402,7 +408,9 @@ def run_until_session_goal(
     if not had_active_before and active.host_owned and active.turns_used == 0:
         if session_terminal(session) is not None:
             return SessionGoalRunResult(goal=active, last_result=last, turn_count=0)
-        last = _chat_or_pause(chat, active.condition, session, on_progress)
+        last = _chat_or_pause(
+            chat, start_goal_prompt(active, active.condition), session, on_progress
+        )
         stored = getattr(session, "session_goal", None)
         if isinstance(stored, SessionGoal):
             active = stored

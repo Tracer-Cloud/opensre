@@ -12,6 +12,20 @@ from core.agent_harness.session_goal.goal import (
     derive_session_goal_reason,
 )
 
+_SESSION_GOAL_MARK = "[session_goal]"
+_USE_A_TOOL = (
+    "Use a tool that can satisfy the condition now. "
+    "Do not answer from memory or claim the work is already done."
+)
+
+
+def start_goal_prompt(goal: SessionGoal, message: str) -> str:
+    """First or resumed goal turn: keep the user text, require a tool."""
+    text = message.strip()
+    if text.startswith(_SESSION_GOAL_MARK):
+        return message
+    return f"{_SESSION_GOAL_MARK} Goal: {goal.condition}\n{_USE_A_TOOL}\n\n{text}"
+
 
 def continuation_prompt(goal: SessionGoal) -> str:
     """User-visible follow-up message for the next session-goal turn."""
@@ -36,6 +50,8 @@ def continuation_prompt(goal: SessionGoal) -> str:
         "Follow the last progress reason. Do not claim the goal is met in prose — "
         "the host judge decides."
     )
+    if not goal.tool_success_seen and not goal.findings:
+        follow_reason = f"{_USE_A_TOOL} {follow_reason}"
     if unfinished:
         pending = "\n".join(f"  - [{index}] {item}" for index, item in unfinished)
         return (
@@ -57,4 +73,5 @@ def continuation_prompt(goal: SessionGoal) -> str:
 
 __all__ = [
     "continuation_prompt",
+    "start_goal_prompt",
 ]

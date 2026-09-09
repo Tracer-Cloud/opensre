@@ -14,7 +14,10 @@ unverified answer cannot become settled by being repeated.
 from __future__ import annotations
 
 from core.agent_harness.session.session_core import SessionCore
-from core.agent_harness.session_goal.continuation import continuation_prompt
+from core.agent_harness.session_goal.continuation import (
+    continuation_prompt,
+    start_goal_prompt,
+)
 from core.agent_harness.session_goal.evaluate import evaluate_session_goal
 from core.agent_harness.session_goal.goal import SessionGoal
 from core.agent_harness.session_goal.judge import SessionGoalJudgeVerdict
@@ -26,6 +29,18 @@ _ANSWER = "73 GitHub Actions runs failed out of 800 completed, last 24 hours."
 
 def _goal() -> SessionGoal:
     return SessionGoal(condition="how many github actions runs failed?", max_outer_turns=5)
+
+
+def test_a_first_goal_turn_keeps_the_user_text_and_requires_a_tool() -> None:
+    prompt = start_goal_prompt(_goal(), "how many github actions runs failed?")
+    assert "how many github actions runs failed?" in prompt
+    assert prompt.startswith("[session_goal]")
+    assert "Use a tool" in prompt
+
+
+def test_continuation_without_tool_evidence_requires_a_tool() -> None:
+    prompt = continuation_prompt(_goal())
+    assert "Use a tool" in prompt
 
 
 def test_the_previous_answer_reaches_the_next_turn() -> None:

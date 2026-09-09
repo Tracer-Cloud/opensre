@@ -137,7 +137,8 @@ def test_five_step_outer_loop_continues_until_achieved() -> None:
     )
 
     assert len(turns) == 5
-    assert turns[0] == _FIVE_STEP_ASK
+    assert _FIVE_STEP_ASK in turns[0]
+    assert "[session_goal]" in turns[0]
     assert outcome.goal.status == SessionGoalStatus.ACHIEVED
     assert outcome.turn_count == 5
     assert outcome.goal.completed == frozenset({0, 1, 2, 3, 4})
@@ -399,7 +400,9 @@ def test_a_goal_turn_the_driver_could_not_run_pauses_the_goal_instead_of_retryin
     )
 
     # Assert: one turn, paused with the failure reason, no continuation into the same error.
-    assert turns == ["count the open PRs"]
+    assert len(turns) == 1
+    assert "count the open PRs" in turns[0]
+    assert "[session_goal]" in turns[0]
     assert outcome.goal.status == SessionGoalStatus.PAUSED
     assert outcome.goal.last_reason == SessionGoalReason.PAUSED_TURN_FAILED
 
@@ -509,7 +512,7 @@ def test_headless_stall_keeps_the_goal_so_the_next_message_continues() -> None:
         "try the SHA filter",
         evaluate=_stay_active,
     )
-    assert "try the SHA filter" in turns
+    assert any("try the SHA filter" in turn for turn in turns)
     assert second.goal.turns_used >= 3
     assert second.goal.status == SessionGoalStatus.ACTIVE
 

@@ -13,7 +13,7 @@ Host-scoped completion across many `chat` turns. **Not** the ReAct
 | `review_input.py` | Qualifying tool observations and complete, size-limited review input |
 | `evaluate.py` | Host completion: ``GOAL_REACHED`` needs evidence; ``NOT_REACHED`` continues |
 | `progress.py` | `SESSION_GOAL_PROGRESS_MARK` + progress / status-line formatting |
-| `continuation.py` | Session-goal continuation prompts |
+| `continuation.py` | First-turn and continuation prompts (require a tool when none ran) |
 | `persist.py` | Flush / restore payload |
 | `run_until.py` | `run_until_session_goal` |
 

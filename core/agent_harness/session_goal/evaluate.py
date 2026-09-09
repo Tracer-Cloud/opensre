@@ -388,7 +388,10 @@ def evaluate_session_goal(
     verdict = _with_rejected_ticks(verdict, review.rejected)
     if verdict.status == SessionGoalStatus.ACHIEVED:
         current = _complete_checklist(current)
-    current = current.with_verdict(verdict.reason, repeated=verdict.repeats_previous)
+    # A first verdict cannot repeat a previous one. Cheap judges still set the
+    # flag when last_verdict is empty, which stalled live /goal after one turn.
+    repeated = verdict.repeats_previous and bool(current.last_verdict.strip())
+    current = current.with_verdict(verdict.reason, repeated=repeated)
 
     if session is not None:
         updated = current.with_status(verdict.status).with_reason(verdict.reason)

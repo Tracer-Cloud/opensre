@@ -169,7 +169,9 @@ def test_goal_set_on_headless_starts_the_condition_turn() -> None:
             evaluate_session_goal(goal, result, session=session, judge=_reached).status
         ),
     )
-    assert turns == ["/goal set count windows users", "count windows users"]
+    assert turns[0] == "/goal set count windows users"
+    assert "count windows users" in turns[1]
+    assert "[session_goal]" in turns[1]
     assert outcome.goal.status == SessionGoalStatus.ACHIEVED
     assert outcome.goal.turns_used == 1
 
@@ -323,6 +325,27 @@ def test_not_yet_keeps_the_goal_open_even_after_successful_tools() -> None:
     )
     assert verdict.status == SessionGoalStatus.ACTIVE
     assert verdict.reason == "not yet"
+    assert session.session_goal is not None
+    assert session.session_goal.verdict_repeated is False
+
+
+def test_repeats_previous_is_ignored_when_there_is_no_previous_reason() -> None:
+    session = SessionCore()
+    goal = SessionGoal(condition="write ok to a file")
+    attach_session_goal(session, goal)
+    verdict = evaluate_session_goal(
+        goal,
+        _result("I will write it next turn."),
+        session=session,
+        judge=lambda **_kw: SessionGoalJudgeVerdict(
+            verdict="NOT_REACHED",
+            reason="need a successful write",
+            repeats_previous=True,
+        ),
+    )
+    assert verdict.status == SessionGoalStatus.ACTIVE
+    assert session.session_goal is not None
+    assert session.session_goal.verdict_repeated is False
 
 
 def test_not_yet_after_tools_runs_another_turn() -> None:
