@@ -50,17 +50,48 @@ def test_a_job_count_ignores_nested_keys(tmp_path: Path) -> None:
     assert view.keys == ("build", "test")
 
 
-def test_the_workflow_trigger_key_is_reachable(tmp_path: Path) -> None:
-    """YAML reads a bare ``on:`` as the boolean True, hiding it from a plain lookup."""
+def test_a_bare_yaml_word_key_keeps_the_spelling_the_file_shows(tmp_path: Path) -> None:
+    """YAML 1.1 reads a bare ``on:`` as the boolean True, which hides and collapses keys."""
     # Arrange
     path = _workflow(tmp_path)
 
     # Act
-    view = describe(path, "on")
+    triggers = describe(path, "on")
+    top_level = describe(path)
+
+    # Assert: reachable by name, and listed by name rather than as ``True``.
+    assert triggers.count == 2
+    assert triggers.keys == ("push", "pull_request")
+    assert "on" in top_level.keys
+    assert "True" not in top_level.keys
+
+
+def test_two_yaml_word_keys_do_not_collapse_into_one(tmp_path: Path) -> None:
+    """``on`` and ``yes`` both resolve to True, which would undercount the mapping."""
+    # Arrange
+    path = tmp_path / "flags.yml"
+    path.write_text("on: 1\nyes: 2\noff: 3\n")
+
+    # Act
+    view = describe(path)
 
     # Assert
-    assert view.count == 2
-    assert view.keys == ("push", "pull_request")
+    assert view.count == 3
+    assert view.keys == ("on", "yes", "off")
+
+
+def test_a_scalar_value_is_never_returned(tmp_path: Path) -> None:
+    """A config file may hold a token; this tool reports structure, not contents."""
+    # Arrange
+    path = tmp_path / "config.toml"
+    path.write_text('[auth]\ntoken = "super-secret-value"\n')
+
+    # Act
+    result = read_structured_file(path=str(path), key="auth.token")
+
+    # Assert
+    assert "super-secret-value" not in json.dumps(result)
+    assert result["response_text"] == "`auth.token` holds a single str value"
 
 
 def test_a_dotted_path_walks_into_a_toml_table(tmp_path: Path) -> None:

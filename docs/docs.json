@@ -200,6 +200,7 @@
                 "expanded": false,
                 "pages": [
                   "architecture-audit-tool",
+                  "structured-file-tool",
                   "bitbucket",
                   "cicd-analytics-demo",
                   "github",

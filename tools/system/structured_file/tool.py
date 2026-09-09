@@ -50,7 +50,7 @@ def _summary(view: StructureView) -> str:
     if view.kind == "list":
         items = "item" if view.count == 1 else "items"
         return f"{view.count} {items} {where}"
-    return f"`{view.key or view.path}` holds {view.kind}: {view.value}"
+    return f"`{view.key or view.path}` holds a single {view.kind} value"
 
 
 @tool(
@@ -63,7 +63,9 @@ def _summary(view: StructureView) -> str:
         "a count or a list taken from such a file — how many jobs a workflow "
         "defines, how many dependencies a project declares — instead of matching "
         "indentation in shell output, which also counts nested keys and gives a "
-        "different number. Read-only."
+        "different number. Reports structure only — names and counts, never a "
+        "value, so a config file's secrets are not echoed; read a value with "
+        "shell_run. Read-only."
     ),
     use_cases=[
         "How many jobs does .github/workflows/ci.yml define?",
@@ -78,7 +80,7 @@ def _summary(view: StructureView) -> str:
     outputs={
         "count": "Number of entries when the key holds a mapping or a list",
         "keys": "Entry names when the key holds a mapping",
-        "response_text": "One sentence naming the kind and the count",
+        "response_text": "One sentence naming the count and the entry names",
     },
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.READ_ONLY,
@@ -104,7 +106,6 @@ def read_structured_file(path: str, key: str = "", **_kwargs: Any) -> dict[str, 
         "kind": view.kind,
         "count": view.count,
         "keys": list(view.keys),
-        "value": view.value,
         "summary": summary,
         "response_text": summary,
     }

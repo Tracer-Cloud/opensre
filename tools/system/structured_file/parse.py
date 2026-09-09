@@ -26,6 +26,27 @@ FORMAT_BY_SUFFIX: dict[str, str] = {
 MAX_LISTED_KEYS = 60
 
 
+class KeysAsWritten(yaml.SafeLoader):
+    """``SafeLoader`` that keeps mapping keys as the text the file shows.
+
+    YAML 1.1 resolves bare ``on``, ``off``, ``yes`` and ``no`` to booleans, so a
+    workflow's ``on:`` would be reported as ``True``, and two keys spelled
+    differently could collapse into one and undercount the mapping. Values keep
+    their normal types.
+    """
+
+    def construct_mapping(self, node: Any, deep: bool = False) -> dict[Any, Any]:
+        mapping: dict[Any, Any] = {}
+        for key_node, value_node in node.value:
+            key = (
+                key_node.value
+                if key_node.tag == "tag:yaml.org,2002:bool"
+                else self.construct_object(key_node, deep=deep)
+            )
+            mapping[key] = self.construct_object(value_node, deep=deep)
+        return mapping
+
+
 @dataclass(frozen=True)
 class StructureView:
     """What one path inside a parsed file contains."""
@@ -36,7 +57,6 @@ class StructureView:
     kind: str
     count: int | None
     keys: tuple[str, ...]
-    value: str | None
 
 
 class StructureError(ValueError):
@@ -55,33 +75,12 @@ def load_structured_file(path: Path) -> Any:
         raise StructureError(f"cannot read {path}: {type(exc).__name__}") from exc
     try:
         if file_format == "yaml":
-            return yaml.safe_load(raw.decode("utf-8"))
+            return yaml.load(raw.decode("utf-8"), Loader=KeysAsWritten)  # noqa: S506
         if file_format == "json":
             return json.loads(raw)
         return tomllib.loads(raw.decode("utf-8"))
     except (UnicodeDecodeError, ValueError, yaml.YAMLError) as exc:
         raise StructureError(f"{path} is not valid {file_format}: {type(exc).__name__}") from exc
-
-
-#: Words YAML 1.1 reads as booleans, so ``on:`` in a workflow is the key ``True``.
-_YAML_WORD_KEYS: dict[str, bool] = {
-    "on": True,
-    "off": False,
-    "yes": True,
-    "no": False,
-    "true": True,
-    "false": False,
-}
-
-
-def _member(mapping: dict[Any, Any], name: str) -> tuple[Any, bool]:
-    """Fetch ``name`` from ``mapping``, allowing for YAML's boolean spellings."""
-    if name in mapping:
-        return mapping[name], True
-    spelled = _YAML_WORD_KEYS.get(name.lower())
-    if spelled is not None and spelled in mapping:
-        return mapping[spelled], True
-    return None, False
 
 
 def resolve_key(document: Any, key: str) -> Any:
@@ -95,16 +94,12 @@ def resolve_key(document: Any, key: str) -> Any:
     current = document
     remaining = key
     while remaining:
-        if isinstance(current, dict):
-            whole, found = _member(current, remaining)
-            if found:
-                return whole
+        if isinstance(current, dict) and remaining in current:
+            return current[remaining]
         head, _, remaining_tail = remaining.partition(".")
-        if not isinstance(current, dict):
+        if not isinstance(current, dict) or head not in current:
             raise StructureError(f"{key!r} is not in this file")
-        current, found = _member(current, head)
-        if not found:
-            raise StructureError(f"{key!r} is not in this file")
+        current = current[head]
         remaining = remaining_tail
     return current
 
@@ -123,7 +118,6 @@ def describe(path: Path, key: str = "") -> StructureView:
             kind="mapping",
             count=len(names),
             keys=tuple(names[:MAX_LISTED_KEYS]),
-            value=None,
         )
     if isinstance(target, list):
         return StructureView(
@@ -133,21 +127,22 @@ def describe(path: Path, key: str = "") -> StructureView:
             kind="list",
             count=len(target),
             keys=(),
-            value=None,
         )
     return StructureView(
         path=str(path),
         file_format=file_format,
         key=key,
+        # A scalar's contents are never returned: a config file may hold a
+        # token, and this tool exists to describe structure.
         kind=type(target).__name__,
         count=None,
         keys=(),
-        value=str(target),
     )
 
 
 __all__ = [
     "FORMAT_BY_SUFFIX",
+    "KeysAsWritten",
     "MAX_LISTED_KEYS",
     "StructureError",
     "StructureView",
