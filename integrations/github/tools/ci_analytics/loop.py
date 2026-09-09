@@ -23,6 +23,7 @@ from infrastructure.scheduling.scheduler.storage import list_tasks, update_task
 from infrastructure.scheduling.scheduler.types import Provider, TaskKind
 from integrations.github.tools.ci_analytics.snapshots import (
     SNAPSHOT_DIRNAME,
+    report_to_dict,
     snapshot_root,
     write_snapshot,
 )
@@ -162,7 +163,7 @@ def build_report(args: Mapping[str, str], *, snapshot_dir: Path | None = None) -
             "generated_at": now.isoformat(),
             "window_days": days,
             "headline": headline(report),
-            "markdown": render_markdown(report),
+            "report": report_to_dict(report),
             **report_payload(report),
         },
     )

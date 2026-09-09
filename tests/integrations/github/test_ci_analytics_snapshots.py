@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import Any
 
 from integrations.github.tools.ci_analytics.snapshots import (
     read_fresh_snapshot,
@@ -92,6 +93,82 @@ def test_the_tool_answers_from_a_fresh_snapshot_without_reading_github(
     assert result["red_hours"] == 24.5
     assert result["headline"] == "Red for 24.5h on main"
     assert "as of" in result["summary"]
-    # Off the shell the saved report text is the response; the figures never leak as prose.
-    assert result["response_text"].startswith("# CI/CD reliability for apache/airflow")
-    assert "markdown" not in result
+
+
+def _report() -> Any:
+    from integrations.github.tools.ci_analytics.models import (
+        CiAnalyticsReport,
+        Outage,
+        WorkflowSummary,
+    )
+
+    now = datetime(2026, 9, 9, 16, 0, tzinfo=UTC)
+    return CiAnalyticsReport(
+        owner="apache",
+        repo="airflow",
+        default_branch="main",
+        window_days=30,
+        generated_at=now,
+        executions=100,
+        pr_executions=80,
+        pr_failures=8,
+        classified=(),
+        merged_pr_branches=10,
+        blocked_minutes=120.0,
+        blocked_minutes_all=150.0,
+        branch_runs=20,
+        branch_failures=2,
+        red_hours=24.5,
+        outages=(Outage(workflow="CI", started_at=now, ended_at=None, first_failure_url="u"),),
+        mean_recovery_hours=6.1,
+        workflows=(WorkflowSummary("CI", 100, 8, 3, 12.0),),
+        coverage_notices=("partial",),
+        working_hours_label="Mon-Fri 09:00-18:00 UTC",
+    )
+
+
+def test_a_saved_report_round_trips_and_paints_like_a_live_one(tmp_path: Path, monkeypatch) -> None:
+    from typing import Any, cast
+
+    from integrations.github.tools.ci_analytics import tool as tool_module
+    from integrations.github.tools.ci_analytics.snapshots import report_from_dict, report_to_dict
+
+    # Arrange: the report object is saved and rebuilt with its nested types intact.
+    report = _report()
+    rebuilt = report_from_dict(report_to_dict(report))
+    assert rebuilt == report
+    now = datetime.now(UTC)
+    write_snapshot(
+        tmp_path,
+        "apache",
+        "airflow",
+        now - timedelta(minutes=5),
+        {
+            "generated_at": (now - timedelta(minutes=5)).isoformat(),
+            "window_days": 30,
+            "headline": "h",
+            "report": report_to_dict(report),
+        },
+    )
+    monkeypatch.setattr(tool_module, "snapshot_root", lambda _root=None: tmp_path)
+    monkeypatch.setattr(tool_module, "resolve_github_token", lambda _t=None: "tok")
+    painted: list[Any] = []
+
+    class _Console:
+        is_terminal = True
+
+        def print(self, *args: Any, **_kwargs: Any) -> None:
+            painted.append(args[0] if args else "")
+
+    monkeypatch.setattr(tool_module, "_console", lambda _context: _Console())
+
+    # Act: through the shell console the saved report is painted, not markdown.
+    result = cast(Any, tool_module.analyze_github_ci_reliability)(
+        owner="apache", repo="airflow", days=30, github_token="tok", context=object()
+    )
+
+    # Assert
+    assert result["rendered_in_shell"] is True
+    assert result["from_snapshot"]
+    assert "coverage_notices" in result and "red_hours" not in result
+    assert any(not isinstance(item, str) for item in painted)

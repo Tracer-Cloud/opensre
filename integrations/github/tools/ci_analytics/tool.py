@@ -7,7 +7,6 @@ from datetime import UTC, datetime
 from http import HTTPStatus
 from typing import Any
 
-from rich.markdown import Markdown
 from rich.markup import escape
 
 from core.agent_harness.tools import action_context_from_agent_context
@@ -33,6 +32,8 @@ from integrations.github.tools.ci_analytics.render import (
 )
 from integrations.github.tools.ci_analytics.snapshots import (
     read_fresh_snapshot,
+    report_from_dict,
+    report_to_dict,
     snapshot_root,
     write_snapshot,
 )
@@ -165,28 +166,35 @@ def report_payload(report: CiAnalyticsReport) -> dict[str, Any]:
 def _from_snapshot(
     snapshot: dict[str, Any], owner: str, repo: str, window: int, console: Any
 ) -> dict[str, Any]:
-    """Answer from a same-day snapshot: the figures, and when they were computed."""
+    """Answer from a same-day snapshot with the same renderer as a live analysis."""
     generated = str(snapshot.get("generated_at", ""))[:16].replace("T", " ")
-    summary = (
-        f"{owner}/{repo}: {snapshot.get('executions')} runs in {window} days, "
-        f"{snapshot.get('pr_failures')} of {snapshot.get('pr_executions')} PR runs failed, "
-        f"{snapshot.get('reliability_failures')} CI-caused "
-        f"(figures as of {generated} UTC, from the saved snapshot)."
-    )
-    markdown = str(snapshot.get("markdown") or "")
+    saved = snapshot.get("report")
+    report = report_from_dict(saved) if isinstance(saved, dict) else None
     if console is not None:
         console.print(
             f"  [dim]Using the CI reliability snapshot of {escape(f'{owner}/{repo}')} "
             f"from {generated} UTC (same {window}-day window).[/dim]"
         )
-        if markdown:
-            console.print(Markdown(markdown))
         console.print()
+    if report is not None:
+        result = _result(report, owner, repo, window, console)
+        result["summary"] += f" Figures as of {generated} UTC, from the saved snapshot."
+        result["from_snapshot"] = snapshot.get("generated_at")
+        if console is not None:
+            result["response_text"] = result["summary"]
+        return result
+    # An older snapshot without the report object: the figures only.
     figures = {
         key: value
         for key, value in snapshot.items()
         if key not in {"generated_at", "headline", "snapshot_path", "window_days", "markdown"}
     }
+    summary = (
+        f"{owner}/{repo}: {snapshot.get('executions')} runs in {window} days, "
+        f"{snapshot.get('pr_failures')} of {snapshot.get('pr_executions')} PR runs failed, "
+        f"{snapshot.get('reliability_failures')} CI-caused. "
+        f"Figures as of {generated} UTC, from the saved snapshot."
+    )
     return {
         "source": _SOURCE,
         "success": True,
@@ -196,10 +204,40 @@ def _from_snapshot(
         "summary": summary,
         "headline": str(snapshot.get("headline", "")),
         "from_snapshot": snapshot.get("generated_at"),
-        "rendered_in_shell": console is not None and bool(markdown),
+        "rendered_in_shell": False,
         **figures,
-        "response_text": summary if console is not None else (markdown or summary),
+        "response_text": summary,
     }
+
+
+def _result(
+    report: CiAnalyticsReport, owner: str, repo: str, window: int, console: Any
+) -> dict[str, Any]:
+    """The tool's return for ``report``: painted in the shell, markdown elsewhere."""
+    summary = (
+        f"{owner}/{repo}: {report.executions} runs in {window} days, "
+        f"{report.pr_failures} of {report.pr_executions} PR runs failed, "
+        f"{report.count(FailureKind.RELIABILITY)} CI-caused, "
+        f"{format_minutes(report.blocked_working_minutes)} of developer downtime "
+        f"({format_minutes(report.blocked_minutes)} wall clock) on merged PRs."
+    )
+    base = {
+        "source": _SOURCE,
+        "success": True,
+        "owner": owner,
+        "repo": repo,
+        "default_branch": report.default_branch,
+        "window_days": window,
+        "summary": summary,
+        "headline": headline(report),
+        "rendered_in_shell": console is not None,
+    }
+    if console is not None:
+        # The shell already shows every figure; handing the raw numbers back
+        # as well only invites the model to retype them, so they stay out.
+        render_report(console, report)
+        return {**base, "coverage_notices": list(report.coverage_notices), "response_text": summary}
+    return {**base, **report_payload(report), "response_text": render_markdown(report)}
 
 
 @tool(
@@ -350,44 +388,16 @@ def analyze_github_ci_reliability(
             "generated_at": now.isoformat(),
             "window_days": window,
             "headline": headline(report),
-            "markdown": render_markdown(report),
+            "report": report_to_dict(report),
             **report_payload(report),
         },
     )
-    summary = (
-        f"{repo_owner}/{repo_name}: {report.executions} runs in {window} days, "
-        f"{report.pr_failures} of {report.pr_executions} PR runs failed, "
-        f"{report.count(FailureKind.RELIABILITY)} CI-caused, "
-        f"{format_minutes(report.blocked_working_minutes)} of developer downtime "
-        f"({format_minutes(report.blocked_minutes)} wall clock) on merged PRs."
-    )
-    rendered = console is not None
     if console is not None:
         console.print(
             f"  [dim]Read {analysis.runs_read} runs in {time.monotonic() - started:.0f}s.[/dim]"
         )
         console.print()
-    base = {
-        "source": _SOURCE,
-        "success": True,
-        "owner": repo_owner,
-        "repo": repo_name,
-        "default_branch": report.default_branch,
-        "window_days": window,
-        "summary": summary,
-        "headline": headline(report),
-        "rendered_in_shell": rendered,
-    }
-    if rendered:
-        # The shell already shows every figure; handing the raw numbers back
-        # as well only invites the model to retype them, so they stay out.
-        render_report(console, report)
-        return {
-            **base,
-            "coverage_notices": list(report.coverage_notices),
-            "response_text": summary,
-        }
-    return {**base, **report_payload(report), "response_text": render_markdown(report)}
+    return _result(report, repo_owner, repo_name, window, console)
 
 
 __all__ = ["TOOL_NAME", "analyze_github_ci_reliability"]
