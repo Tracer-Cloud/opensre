@@ -5,8 +5,8 @@ We want to have a very specific tests that validates wether the agent is working
 The test goes like this:
 - We start the gateway and get the agent
 - We send a message to the agent: "send a message to slack with the temperature in antartica, compute the temperature first and then send the message"
-- We expect the agent to produce three action turns (compute, Slack send, finalize)
-  plus one ReAct goal-review invoke on the same LLM client
+- We expect the agent to produce three action turns (compute, Slack send, finalize).
+  The ReAct same-LLM reviewer is off by default, so there is no fourth invoke.
 """
 
 from __future__ import annotations
@@ -51,8 +51,8 @@ class _ComputeThenSlackLLM:
     * Turn 2 (once the compute step has run) emits ``slack_send_message`` with the
       temperature embedded in the message body.
     * Turn 3 concludes with a plain reply and no tool call.
-    * Turn 4 is the ReAct goal-reviewer invoke on this same client (structured
-      ``GOAL_REACHED`` / ``NOT_REACHED``); it is not another action turn.
+    The ReAct same-LLM reviewer is off by default, so this client is not
+    invoked a fourth time.
 
     """
 
@@ -219,9 +219,9 @@ def test_agent_computes_temperature_then_sends_it_to_slack(
         is_tty=True,
     )
 
-    # Compute → Slack → finalize, then the ReAct goal-reviewer invoke on the
-    # same client (fourth call). The behavioral contract is the two tools.
-    assert llm.turns == 4
+    # Compute → Slack → finalize. The ReAct reviewer is off, so no fourth call.
+    # The behavioral contract is the two tools.
+    assert llm.turns == 3
     # Turn 1 actually executed a shell command to compute the temperature.
     shell_entries = [entry for entry in session.history if entry.get("type") == "shell"]
     assert shell_entries, "expected the compute turn to run a shell command"
