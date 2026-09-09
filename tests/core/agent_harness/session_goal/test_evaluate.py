@@ -310,55 +310,157 @@ def test_unfinished_checklist_keeps_a_not_reached_verdict_active() -> None:
     assert "SHA" in session.session_goal.last_reason
 
 
-def test_host_accepts_when_tools_succeeded_and_the_judge_only_says_not_yet() -> None:
-    """The judge is a veto, not the accept path — successful tools close /goal."""
+def test_not_yet_keeps_the_goal_open_even_after_successful_tools() -> None:
+    """Claude-like: the judge's not-yet starts another turn. Tools are not enough."""
     session = SessionCore()
     goal = SessionGoal(condition="count Windows users", max_outer_turns=3)
     attach_session_goal(session, goal)
     verdict = evaluate_session_goal(
         goal,
-        _result("284 users.", executed=1, success=1),
+        _result("No evidence found.", executed=1, success=1),
         session=session,
         judge=_not_yet,
     )
-    assert verdict.status == SessionGoalStatus.ACHIEVED
-    assert verdict.reason == SessionGoalReason.ACHIEVED_TOOL_EVIDENCE
+    assert verdict.status == SessionGoalStatus.ACTIVE
+    assert verdict.reason == "not yet"
+
+
+def test_not_yet_after_tools_runs_another_turn() -> None:
+    """Live miss: six gh calls + 'no evidence found' used to close /goal."""
+    session = SessionCore()
+    turns: list[str] = []
+
+    def _chat(message: str) -> TurnResult:
+        turns.append(message)
+        if len(turns) == 1:
+            return _result("No evidence found.", executed=6, success=6)
+        return _result("Only #6123 Release was re-run to green.", executed=1, success=1)
+
+    seen = {"n": 0}
+
+    def _judge(**_kw: object) -> SessionGoalJudgeVerdict:
+        seen["n"] += 1
+        if seen["n"] == 1:
+            return _not_yet()
+        return _reached()
+
+    outcome = run_until_session_goal(
+        _chat,
+        session,
+        "go",
+        goal=SessionGoal(condition="which merged PRs were re-run to green", max_outer_turns=4),
+        evaluate=lambda goal, result, *, session=None: (
+            evaluate_session_goal(goal, result, session=session, judge=_judge).status
+        ),
+    )
+
+    assert len(turns) == 2
+    assert outcome.goal.status == SessionGoalStatus.ACHIEVED
+
+
+def _failed_deploy_result() -> TurnResult:
+    return TurnResult(
+        "cli_agent_handled",
+        ToolCallingTurnResult(
+            1,
+            1,
+            0,
+            False,
+            True,
+            tool_evidence="Tool: deploy\nArguments: {}\nOutcome: error\nResult: rollout failed",
+            evidence_success_count=0,
+        ),
+        "Deployed.",
+    )
 
 
 def test_a_failed_tool_this_turn_blocks_a_reached_verdict() -> None:
-    action = ToolCallingTurnResult(
-        1,
-        1,
-        1,
-        False,
-        True,
-        tool_evidence="Tool: deploy\nArguments: {}\nOutcome: error\nResult: rollout failed",
-        evidence_success_count=1,
-    )
     verdict = evaluate_session_goal(
-        SessionGoal(condition="deploy prod"),
-        TurnResult("cli_agent_handled", action, "Deployed."),
+        SessionGoal(
+            condition="deploy prod",
+            findings=("listed the target",),
+            tool_success_seen=True,
+        ),
+        _failed_deploy_result(),
         judge=_reached,
     )
     assert verdict.status == SessionGoalStatus.ACTIVE
 
 
 def test_a_failed_tool_this_turn_blocks_host_accept() -> None:
-    action = ToolCallingTurnResult(
-        1,
-        1,
-        1,
-        False,
-        True,
-        tool_evidence="Tool: deploy\nArguments: {}\nOutcome: error\nResult: rollout failed",
-        evidence_success_count=1,
-    )
     verdict = evaluate_session_goal(
-        SessionGoal(condition="deploy prod"),
-        TurnResult("cli_agent_handled", action, "Deployed."),
+        SessionGoal(
+            condition="deploy prod",
+            findings=("listed the target",),
+            tool_success_seen=True,
+        ),
+        _failed_deploy_result(),
         judge=_not_yet,
     )
     assert verdict.status == SessionGoalStatus.ACTIVE
+
+
+def test_a_recovered_failure_does_not_block_a_reached_verdict() -> None:
+    action = ToolCallingTurnResult(
+        2,
+        2,
+        1,
+        False,
+        True,
+        tool_evidence=(
+            "Tool: list_jobs\nArguments: {}\nOutcome: error\nResult: timeout\n\n"
+            "Tool: delete_job\nArguments: {}\nOutcome: success\nResult: removed"
+        ),
+        evidence_success_count=1,
+    )
+    verdict = evaluate_session_goal(
+        SessionGoal(condition="remove scheduled jobs"),
+        TurnResult("cli_agent_handled", action, "Removed the jobs."),
+        judge=_reached,
+    )
+    assert verdict.status == SessionGoalStatus.ACHIEVED
+
+
+def test_no_judge_complete_checklist_stays_active_when_a_tool_failed() -> None:
+    session = SessionCore()
+    goal = SessionGoal(
+        condition="checklist",
+        checklist=("A", "B"),
+        completed=frozenset({0}),
+        findings=("listed the jobs",),
+        tool_success_seen=True,
+    )
+    attach_session_goal(session, goal)
+    attach_session_goal(session, goal.with_completed(frozenset({0, 1})))
+    verdict = evaluate_session_goal(
+        goal,
+        _failed_deploy_result(),
+        session=session,
+        validate=_keep_ticks,
+    )
+    assert verdict.status == SessionGoalStatus.ACTIVE
+    assert verdict.reason == SessionGoalReason.TOOL_FAILED
+
+
+def test_no_judge_complete_checklist_stays_active_when_evidence_overflowed() -> None:
+    session = SessionCore()
+    goal = SessionGoal(
+        condition="checklist",
+        checklist=("A", "B"),
+        completed=frozenset({0, 1}),
+        findings=("earlier work",),
+        tool_evidence=None,
+        tool_success_seen=True,
+    )
+    attach_session_goal(session, goal)
+    verdict = evaluate_session_goal(
+        goal,
+        _result("Restored.", executed=1, success=1),
+        session=session,
+        validate=_keep_ticks,
+    )
+    assert verdict.status == SessionGoalStatus.ACTIVE
+    assert verdict.reason == SessionGoalReason.UNVERIFIED_OVERFLOW
 
 
 def test_a_contradiction_vetoes_host_accept() -> None:

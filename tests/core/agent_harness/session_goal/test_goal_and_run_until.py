@@ -6,6 +6,7 @@ from core.agent_harness.session.session_core import SessionCore
 from core.agent_harness.session_goal.evaluate import evaluate_session_goal
 from core.agent_harness.session_goal.goal import (
     SessionGoal,
+    SessionGoalReason,
     SessionGoalStatus,
     attach_session_goal,
     build_session_goal,
@@ -457,3 +458,98 @@ def test_the_same_judge_verdict_twice_pauses_the_goal_even_when_tools_ran() -> N
     assert outcome.goal.last_reason == SessionGoalReason.PAUSED_SAME_VERDICT
     assert session.pending_user_choice is not None
     assert "same verdict" in session.pending_user_choice.title
+
+
+def _stay_active(_goal: SessionGoal, _result: TurnResult, *, session: object | None = None) -> str:
+    _ = session
+    return SessionGoalStatus.ACTIVE
+
+
+def _idle_turn(text: str = "still looking") -> TurnResult:
+    return TurnResult(
+        final_intent="cli_agent_handled",
+        action_result=ToolCallingTurnResult(
+            planned_count=0,
+            executed_count=0,
+            executed_success_count=0,
+            has_unhandled_clause=False,
+            handled=True,
+        ),
+        assistant_response_text=text,
+    )
+
+
+def test_headless_stall_keeps_the_goal_so_the_next_message_continues() -> None:
+    session = SessionCore()
+    turns: list[str] = []
+
+    def _chat(message: str) -> TurnResult:
+        turns.append(message)
+        return _idle_turn()
+
+    first = run_until_session_goal(
+        _chat,
+        session,
+        "find the failing run",
+        goal=SessionGoal(
+            condition="find the failing run",
+            max_outer_turns=6,
+            checklist=("list the runs", "filter by SHA"),
+        ),
+        evaluate=_stay_active,
+    )
+    assert first.goal.status == SessionGoalStatus.ACTIVE
+    assert first.goal.last_reason == SessionGoalReason.WAITING_AFTER_STALL
+    assert first.turn_count == 2
+    assert session.pending_user_choice is None
+
+    second = run_until_session_goal(
+        _chat,
+        session,
+        "try the SHA filter",
+        evaluate=_stay_active,
+    )
+    assert "try the SHA filter" in turns
+    assert second.goal.turns_used >= 3
+    assert second.goal.status == SessionGoalStatus.ACTIVE
+
+
+def test_headless_same_verdict_twice_stays_active_without_a_menu() -> None:
+    session = SessionCore()
+    turns: list[str] = []
+
+    def _chat(message: str) -> TurnResult:
+        turns.append(message)
+        return TurnResult(
+            final_intent="cli_agent_handled",
+            action_result=ToolCallingTurnResult(
+                planned_count=1,
+                executed_count=1,
+                executed_success_count=1,
+                has_unhandled_clause=False,
+                handled=True,
+            ),
+            assistant_response_text="All 5 checked. | 3 rows |",
+        )
+
+    def _same(**kw: object) -> SessionGoalJudgeVerdict:
+        previous = str(kw.get("previous_reason", ""))
+        return SessionGoalJudgeVerdict(
+            verdict="NOT_REACHED",
+            reason="Contradiction: the sentence says 5 but the table lists 3 rows",
+            repeats_previous=bool(previous),
+        )
+
+    outcome = run_until_session_goal(
+        _chat,
+        session,
+        "go",
+        goal=SessionGoal(condition="table with the false sentence", max_outer_turns=6),
+        evaluate=lambda goal, result, *, session=None: (
+            evaluate_session_goal(goal, result, session=session, judge=_same).status
+        ),
+    )
+    assert len(turns) == 2
+    assert outcome.goal.status == SessionGoalStatus.ACTIVE
+    assert outcome.goal.last_reason == SessionGoalReason.WAITING_AFTER_SAME_VERDICT
+    assert session.pending_user_choice is None

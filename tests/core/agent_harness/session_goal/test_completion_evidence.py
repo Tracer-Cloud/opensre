@@ -23,6 +23,7 @@ from core.agent_harness.session_goal.persist import (
 from core.agent_harness.session_goal.review_input import (
     collect_tool_evidence,
     retain_tool_evidence,
+    tool_evidence_has_unrecovered_failure,
 )
 from core.agent_harness.session_goal.run_until import run_until_session_goal
 from core.agent_harness.turns.headless_adapters import BufferOutputSink, NullToolProvider
@@ -275,3 +276,16 @@ def test_listing_tools_is_not_session_goal_evidence() -> None:
     )
     assert "list_posthog_tools" in text
     assert successes == 0
+
+
+def test_unrecovered_failure_is_the_latest_observation() -> None:
+    recovered = (
+        "Tool: list_jobs\nArguments: {}\nOutcome: error\nResult: timeout\n\n"
+        "Tool: delete_job\nArguments: {}\nOutcome: success\nResult: removed"
+    )
+    later_error = (
+        "Tool: read_status\nArguments: {}\nOutcome: success\nResult: healthy\n\n"
+        "Tool: deploy\nArguments: {}\nOutcome: error\nResult: rollout failed"
+    )
+    assert tool_evidence_has_unrecovered_failure(recovered) is False
+    assert tool_evidence_has_unrecovered_failure(later_error) is True

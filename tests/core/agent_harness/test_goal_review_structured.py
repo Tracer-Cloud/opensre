@@ -56,7 +56,7 @@ def test_goal_reviewer_rejects_while_task_plan_incomplete() -> None:
     goal = build_goal_reviewer(
         llm,
         "check checkout latency",
-        executed_tool_names=["call_mcp_tool"],
+        executed_tool_names=["update_plan", "call_mcp_tool"],
         plan_incomplete=lambda: True,
     )
     assert goal.verify is not None
@@ -64,6 +64,28 @@ def test_goal_reviewer_rejects_while_task_plan_incomplete() -> None:
     assert llm.invokes == 0  # deterministic plan gate — no LLM spend
     assert goal.nudge is not None
     assert "unfinished steps" in goal.nudge(_obs())
+
+
+def test_goal_reviewer_lets_an_unrelated_turn_conclude_over_a_stale_plan() -> None:
+    """A plan left from an earlier request does not pull this turn back into it."""
+    # Arrange: the plan is unfinished, but this turn never touched it.
+    llm = _ScriptedLLM('{"verdict": "NOT_REACHED"}')
+    goal = build_goal_reviewer(
+        llm,
+        "how are you doing?",
+        executed_tool_names=["call_mcp_tool"],
+        plan_incomplete=lambda: True,
+    )
+    assert goal.verify is not None and goal.nudge is not None
+
+    # Act
+    accepted = goal.verify(_obs(text="Doing well."))
+    nudge = goal.nudge(_obs(text="Doing well."))
+
+    # Assert: no plan rejection, no plan nudge, no LLM spend.
+    assert accepted is True
+    assert "unfinished steps" not in nudge
+    assert llm.invokes == 0
 
 
 def test_goal_reviewer_ignores_plan_gate_when_complete() -> None:

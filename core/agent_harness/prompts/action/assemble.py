@@ -175,9 +175,15 @@ def build_action_system_prompt_envelope(turn_snapshot: TurnSnapshot) -> PromptEn
             id=PromptBlockId.ASK_USER_ANSWERED,
             kind=PromptBlockKind.RULE,
             tier=PromptTier.EPHEMERAL,
-            content=ask_user_answered_block(
-                turn_snapshot.text,
-                plan_only=turn_snapshot.plan_only_until_authorized,
+            # A skill's own decision rules govern its answer turns; the generic
+            # plan-and-execute guidance would send the model back to the plan.
+            content=(
+                ""
+                if turn_snapshot.active_skill
+                else ask_user_answered_block(
+                    turn_snapshot.text,
+                    plan_only=turn_snapshot.plan_only_until_authorized,
+                )
             ),
             provenance="core.agent_harness.task_plan.prompt",
             suffix="\n\n",

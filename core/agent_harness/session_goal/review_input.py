@@ -13,11 +13,31 @@ from core.tool import ToolExecutionResult
 _BOOKKEEPING_TOOLS = frozenset({"session_goal_set", "session_goal_complete", "update_plan"})
 _MAX_REVIEW_INPUT_CHARS = 64000
 _OUTCOME_ERROR_MARK = "\nOutcome: error\n"
+_OUTCOME_ERROR_LINE = "Outcome: error"
+_OUTCOME_SUCCESS_LINE = "Outcome: success"
 
 
 def tool_evidence_has_failure(tool_evidence: str) -> bool:
     """True when this-turn observations include a qualifying tool that errored."""
     return _OUTCOME_ERROR_MARK in (tool_evidence or "")
+
+
+def tool_evidence_has_unrecovered_failure(tool_evidence: str) -> bool:
+    """True when the latest this-turn observation is an error.
+
+    A later success recovers a preliminary failure. A later error after a
+    successful lookup still blocks — the requested operation failed.
+    """
+    last_failed: bool | None = None
+    for block in (tool_evidence or "").split("\n\n"):
+        for line in block.splitlines():
+            if line == _OUTCOME_ERROR_LINE:
+                last_failed = True
+                break
+            if line == _OUTCOME_SUCCESS_LINE:
+                last_failed = False
+                break
+    return bool(last_failed)
 
 
 def _qualifying_success(call: ToolCall, result: ToolExecutionResult) -> bool:

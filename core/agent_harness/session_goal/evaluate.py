@@ -1,17 +1,18 @@
-"""SessionGoal completion — host evidence gate, judge as veto only.
+"""SessionGoal completion — judge decides met; tools are required to accept.
 
 The action model does not get to close the goal by saying it is done. This
 module merges tool ticks, validates newly ticked items, then asks the
-transcript judge (:mod:`core.agent_harness.session_goal.judge`). The host
-accepts when there is tool or stored-finding evidence and no unfinished
-checklist item. The judge may veto a ``Contradiction:`` or declare
-``IMPOSSIBLE``. ``GOAL_REACHED`` without evidence stays active. A failed
-qualifying tool this turn blocks host accept. Reply prose never ticks an item.
+transcript judge (:mod:`core.agent_harness.session_goal.judge`).
+``GOAL_REACHED`` needs tool or stored-finding evidence. ``NOT_REACHED``
+keeps the goal active so the next turn continues — successful tools are
+not enough. The judge may also veto a ``Contradiction:`` or declare
+``IMPOSSIBLE``. An unrecovered tool error this turn blocks accept.
+Reply prose never ticks an item.
 
 The judge client is injected: hosts build the loop's evaluate with
 :func:`build_session_goal_evaluator`. A missing or broken judge does not
-block host accept. Overflowed tool evidence (``tool_evidence is None``)
-stays unverified.
+block host accept after real tools. Overflowed tool evidence
+(``tool_evidence is None``) stays unverified.
 """
 
 from __future__ import annotations
@@ -35,7 +36,7 @@ from core.agent_harness.session_goal.judge import (
 )
 from core.agent_harness.session_goal.plan_credit import credit_completed_plan_steps
 from core.agent_harness.session_goal.progress import is_session_goal_progress_text
-from core.agent_harness.session_goal.review_input import tool_evidence_has_failure
+from core.agent_harness.session_goal.review_input import tool_evidence_has_unrecovered_failure
 from core.agent_harness.session_goal.validate import (
     invoke_checklist_tick_validator,
     kept_tick_indices,
@@ -265,11 +266,6 @@ def _verdict_from_judge(
             reason=_need_tool_evidence_reason(reason),
             repeats_previous=repeated,
         )
-    if host_can_accept:
-        return SessionGoalVerdict(
-            status=SessionGoalStatus.ACHIEVED,
-            reason=SessionGoalReason.ACHIEVED_TOOL_EVIDENCE,
-        )
     return SessionGoalVerdict(
         status=SessionGoalStatus.ACTIVE,
         reason=reason or fallback_reason,
@@ -344,11 +340,30 @@ def evaluate_session_goal(
     if current.new_ticks or current.bookkeeping_calls:
         current = replace(current, new_ticks=frozenset(), bookkeeping_calls=0)
 
+    tool_failed = tool_evidence_has_unrecovered_failure(tool_evidence)
+    unverified = current.tool_evidence is None
+    host_can_accept = _host_can_accept(
+        evidence=evidence,
+        unfinished=bool(current.unfinished_items),
+        tool_failed=tool_failed,
+        unverified=unverified,
+    )
     if current.checklist_complete and evidence and judge is None and judge_llm is None:
-        verdict = SessionGoalVerdict(
-            status=SessionGoalStatus.ACHIEVED,
-            reason=SessionGoalReason.CHECKLIST_COMPLETE,
-        )
+        if host_can_accept:
+            verdict = SessionGoalVerdict(
+                status=SessionGoalStatus.ACHIEVED,
+                reason=SessionGoalReason.CHECKLIST_COMPLETE,
+            )
+        elif tool_failed:
+            verdict = SessionGoalVerdict(
+                status=SessionGoalStatus.ACTIVE,
+                reason=SessionGoalReason.TOOL_FAILED,
+            )
+        else:
+            verdict = SessionGoalVerdict(
+                status=SessionGoalStatus.ACTIVE,
+                reason=SessionGoalReason.UNVERIFIED_OVERFLOW,
+            )
     elif is_session_goal_progress_text(text):
         verdict = SessionGoalVerdict(
             status=SessionGoalStatus.ACTIVE,
@@ -363,16 +378,10 @@ def evaluate_session_goal(
             judge=judge,
             judge_llm=judge_llm,
         )
-        tool_failed = tool_evidence_has_failure(tool_evidence)
         verdict = _verdict_from_judge(
             parsed,
             evidence=evidence,
-            host_can_accept=_host_can_accept(
-                evidence=evidence,
-                unfinished=bool(current.unfinished_items),
-                tool_failed=tool_failed,
-                unverified=current.tool_evidence is None,
-            ),
+            host_can_accept=host_can_accept,
             tool_failed=tool_failed,
             fallback_reason=derive_session_goal_reason(current),
         )

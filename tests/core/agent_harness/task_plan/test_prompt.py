@@ -224,3 +224,62 @@ def test_current_task_plan_block_completed_status() -> None:
     block = current_task_plan_block(plan)
     assert "CURRENT PLAN (complete" in block
     assert "in_progress" not in block
+
+
+def test_current_task_plan_block_defers_to_the_latest_message() -> None:
+    """A plan from an earlier turn yields to a new question or a skill branch."""
+    from core.agent_harness.task_plan.prompt import (
+        PLAN_PRECEDENCE_RULE,
+        current_task_plan_block,
+    )
+
+    # Arrange: an unfinished plan with a step still in progress.
+    plan, error = parse_task_plan(
+        {
+            "plan": [
+                {"step": "Load the skill", "status": "completed"},
+                {"step": "Confirm the repository", "status": "in_progress"},
+                {"step": "Run the analysis", "status": "pending"},
+            ]
+        }
+    )
+    assert error is None and plan is not None
+
+    # Act
+    block = current_task_plan_block(plan)
+
+    # Assert: precedence rule present; the keep-working rule is scoped to
+    # continuation turns.
+    assert PLAN_PRECEDENCE_RULE in block
+    assert "latest message decides" in block
+    assert "When this turn continues the plan: Do not conclude" in block
+
+
+def test_skill_answer_turn_omits_the_generic_answered_guidance() -> None:
+    """Inside a skill the skill's own rules govern the answer turn."""
+    from core.agent_harness.session.pending_choice import (
+        AskUserQuestion,
+        format_ask_user_answers,
+    )
+
+    # Arrange: an Ask User answer while a skill is active.
+    answers = format_ask_user_answers(
+        (AskUserQuestion(label="Next", title="What next?", options=("Schedule", "Exit")),),
+        ("Schedule",),
+    )
+    snapshot = TurnSnapshot(
+        text=answers,
+        conversation_messages=(),
+        configured_integrations=(),
+        configured_integrations_known=True,
+        reasoning_effort=None,
+        active_skill="cicd-analytics-demo",
+    )
+
+    # Act
+    envelope = build_action_system_prompt_envelope(snapshot)
+
+    # Assert: no generic plan-and-execute block; the skill block carries precedence.
+    assert envelope.block(PromptBlockId.ASK_USER_ANSWERED) is None
+    skill_block = envelope.require_block(PromptBlockId.ACTIVE_SKILL)
+    assert "The skill decides the next tool call" in skill_block.content

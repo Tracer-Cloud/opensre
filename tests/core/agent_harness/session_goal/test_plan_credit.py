@@ -120,16 +120,19 @@ def test_a_stalled_goal_pauses_and_offers_the_ways_forward_as_a_menu() -> None:
     assert session.terminal.pending_prompt_default == "/choose"
 
 
-def test_headless_stall_pauses_without_a_choose_menu() -> None:
+def test_headless_stall_keeps_the_goal_active_without_a_choose_menu() -> None:
     from core.agent_harness.session import InMemorySessionStore, SessionCore
+    from core.agent_harness.session_goal.goal import SessionGoalReason
 
     session = SessionCore(store=InMemorySessionStore())
     painted: list[SessionGoal] = []
 
-    paused = pause_for_no_progress(session, _goal("a", "b", turns_used=2), painted.append)
+    waiting = pause_for_no_progress(session, _goal("a", "b", turns_used=2), painted.append)
 
-    assert paused.status == "paused"
-    assert painted and painted[-1].status == "paused"
+    assert waiting.status == "active"
+    assert waiting.last_reason == SessionGoalReason.WAITING_AFTER_STALL
+    assert waiting.last_progress_turns_used == 2
+    assert painted and painted[-1].status == "active"
     assert session.pending_user_choice is None
 
 

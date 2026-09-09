@@ -148,6 +148,34 @@ def goal_has_stalled(goal: SessionGoal) -> bool:
     return goal.turns_used - goal.last_progress_turns_used >= _NO_PROGRESS_TURNS
 
 
+def _headless_stall_reason(reason: str) -> str:
+    """User-visible reason when this invocation yields but the goal stays active."""
+    if reason == SessionGoalReason.PAUSED_SAME_VERDICT:
+        return SessionGoalReason.WAITING_AFTER_SAME_VERDICT
+    return SessionGoalReason.WAITING_AFTER_STALL
+
+
+def _yield_after_stall(
+    session: Any,
+    active: SessionGoal,
+    on_progress: ProgressFn | None,
+    *,
+    reason: str,
+) -> SessionGoal:
+    """Stop this invocation; keep ACTIVE so the next inbound message continues.
+
+    Reset the stall clock so the next message is not immediately treated as
+    another two-turn plateau.
+    """
+    waiting = replace(active, last_progress_turns_used=active.turns_used).with_reason(reason)
+    attach_session_goal(session, waiting)
+    try:
+        _paint(session, waiting, on_progress, rederive=False)
+    except Exception:
+        log.debug("session-goal stall yield paint failed", exc_info=True)
+    return waiting
+
+
 def pause_for_no_progress(
     session: Any,
     active: SessionGoal,
@@ -156,17 +184,22 @@ def pause_for_no_progress(
     reason: str = SessionGoalReason.PAUSED_NO_PROGRESS,
     menu_title: str = STALL_MENU_TITLE,
 ) -> SessionGoal:
-    """Pause a stalled goal; the shell also opens a menu with the ways forward.
+    """Stop a stalled goal this invocation; the shell also opens a menu.
 
     Two full turns without a tick or a successful tool, or the same judge
     verdict twice, means repeating the same steps to the budget. The
-    interactive shell asks: one more turn, stop, or typed guidance (the custom
-    row). Headless hosts have no ``/choose`` handler, so they only pause and
-    return.
+    interactive shell asks: one more turn, stop, or typed guidance. Headless
+    hosts have no ``/choose`` picker — they keep the goal active and return
+    so the next message continues.
     """
-    paused = _end(session, active, SessionGoalStatus.PAUSED, on_progress, reason=reason)
     if session_terminal(session) is None:
-        return paused
+        return _yield_after_stall(
+            session,
+            active,
+            on_progress,
+            reason=_headless_stall_reason(reason),
+        )
+    paused = _end(session, active, SessionGoalStatus.PAUSED, on_progress, reason=reason)
     session.pending_user_choice = PendingUserChoice(
         title=menu_title,
         options=(STALL_OPTION_MORE, STALL_OPTION_STOP),

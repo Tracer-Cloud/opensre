@@ -27,7 +27,7 @@ vs metric ``call_*_tool`` can be distinguished).
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -158,6 +158,18 @@ _PLAN_INCOMPLETE_NUDGE = (
 )
 
 
+_PLAN_TOOL_NAME = "update_plan"
+
+
+def plan_worked_this_turn(executed_tool_names: Sequence[str]) -> bool:
+    """True when the turn touched the live plan, so its unfinished steps are this turn's work.
+
+    A plan left over from an earlier request must not pull an unrelated turn
+    (a question, a remark, a skill's next branch) back into plan execution.
+    """
+    return _PLAN_TOOL_NAME in executed_tool_names
+
+
 def task_plan_blocks_conclusion(
     *,
     task_plan: Any | None,
@@ -217,7 +229,11 @@ class _LLMGoalReviewer:
             names = [name for name, _ in self.executed_tool_calls]
         if any(name in self.skip_tool_names for name in names):
             return True
-        if self.plan_incomplete is not None and self.plan_incomplete():
+        if (
+            self.plan_incomplete is not None
+            and plan_worked_this_turn(names)
+            and self.plan_incomplete()
+        ):
             return False
         if self.reject_discovery_only and _gather_ran_only_discovery(self.executed_tool_calls):
             return False
@@ -270,7 +286,8 @@ def build_goal_reviewer(
 
     ``plan_incomplete`` — when provided — rejects conclusions while the live
     task plan still has unfinished steps, so the shell does not go idle with
-    ``Plan · n/m`` and a mid-list ``●``.
+    ``Plan · n/m`` and a mid-list ``●``. It applies only to a turn that worked
+    the plan (see :func:`plan_worked_this_turn`).
     """
     reviewer = _LLMGoalReviewer(
         llm=llm,
@@ -280,7 +297,11 @@ def build_goal_reviewer(
     )
 
     def _nudge(_observation: GoalObservation) -> str:
-        if plan_incomplete is not None and plan_incomplete():
+        if (
+            plan_incomplete is not None
+            and plan_worked_this_turn(executed_tool_names)
+            and plan_incomplete()
+        ):
             return _PLAN_INCOMPLETE_NUDGE
         return (
             f"Goal not yet met: {user_goal}. "
@@ -334,6 +355,7 @@ def build_gather_goal_reviewer(
 __all__ = [
     "build_gather_goal_reviewer",
     "build_goal_reviewer",
+    "plan_worked_this_turn",
     "tap_executed_tool_calls",
     "tap_executed_tool_names",
     "task_plan_blocks_conclusion",

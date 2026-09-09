@@ -58,6 +58,18 @@ ASK_USER_ANSWERED_PLAN_ONLY_GUIDANCE = (
 )
 
 
+PLAN_PRECEDENCE_RULE = (
+    "This plan was made in an earlier turn. The user's latest message decides "
+    "what this turn does. If it continues the plan (a plan continuation, a "
+    "go-ahead, or an answer to this plan's own question), work the next step. "
+    "If it asks for something else — a question, a remark, a new request — "
+    "answer that and leave the plan as it is; do not resume it unasked and do "
+    "not announce that you will continue it. Inside an ACTIVE SKILL, the "
+    "skill's branch for the answer is the next step: update the plan to match "
+    "the skill instead of replaying steps the plan still lists."
+)
+
+
 def ask_user_answered_block(text: str, *, plan_only: bool = False) -> str:
     """Ephemeral start-now rule when this turn is structured Ask User answers."""
     if not parse_ask_user_answers(text):
@@ -90,6 +102,7 @@ def current_task_plan_block(
     ]
     if plan.explanation:
         lines.append(f"explanation: {plan.explanation}")
+    lines.append(PLAN_PRECEDENCE_RULE)
     if plan.all_pending and not plan_only:
         lines.append(
             "Execution is authorized: set the first step to in_progress and "
@@ -102,15 +115,15 @@ def current_task_plan_block(
     if in_progress is not None:
         lines.append(f"now: {in_progress}")
         lines.append(
-            "Do not conclude this turn while a step is in_progress. "
-            "Keep working that step, or ask_user_choice if facts are missing. "
-            "Do not start another workload."
+            "When this turn continues the plan: Do not conclude this turn while "
+            "a step is in_progress. Keep working that step, or ask_user_choice "
+            "if facts are missing. Do not start another workload."
         )
     elif not plan.all_completed and not plan_only:
         lines.append(
-            "Work remains on this plan and no step is in_progress. "
-            "Call update_plan to set the next pending step in_progress and "
-            "execute it now — do not end the turn idle."
+            "When this turn continues the plan: Work remains on this plan and "
+            "no step is in_progress. Call update_plan to set the next pending "
+            "step in_progress and execute it now — do not end the turn idle."
         )
     lines.append("")
     return "\n".join(lines)
@@ -119,6 +132,7 @@ def current_task_plan_block(
 __all__ = [
     "ASK_USER_ANSWERED_GUIDANCE",
     "ASK_USER_ANSWERED_PLAN_ONLY_GUIDANCE",
+    "PLAN_PRECEDENCE_RULE",
     "ask_user_answered_block",
     "current_task_plan_block",
 ]

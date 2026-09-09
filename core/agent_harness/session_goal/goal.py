@@ -64,6 +64,10 @@ class SessionGoalReason:
     PAUSED_USER_CHOICE = "paused — waiting for your choice"
     PAUSED_NO_PROGRESS = "paused — no progress after 2 turns"
     PAUSED_SAME_VERDICT = "paused — the judge returned the same verdict twice"
+    #: Headless stall: this invocation stops, the goal stays active so the next
+    #: inbound message continues (no ``/choose`` picker on Slack/Telegram/ask).
+    WAITING_AFTER_STALL = "no progress after 2 turns — waiting for your next message"
+    WAITING_AFTER_SAME_VERDICT = "same verdict twice — waiting for your next message"
     # A goal turn raised (model call rejected, provider down): the loop must not
     # spend the next turn on the same failure.
     PAUSED_TURN_FAILED = "paused — the last turn failed; fix the cause, then /goal resume"
@@ -73,6 +77,8 @@ class SessionGoalReason:
     CANCELLED = "goal cancelled"
     CLEARED = "goal cleared"
     JUDGE_UNAVAILABLE = "judge unavailable; staying active"
+    TOOL_FAILED = "a tool failed this turn; staying active"
+    UNVERIFIED_OVERFLOW = "tool evidence overflowed; staying unverified"
 
     @staticmethod
     def is_working(reason: str) -> bool:
