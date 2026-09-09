@@ -249,10 +249,13 @@ def test_list_workflow_runs_passes_head_sha_filter() -> None:
         )
     assert result["head_sha"] == "abc123def"
     assert captured["arguments"]["workflow_runs_filter"] == {"head_sha": "abc123def"}
-    # One commit's history is compact: attempts and conclusions, no actor or PR detail.
-    row = result["workflow_runs"][0]
-    assert "run_attempt" in row and "conclusion" in row
-    assert "pull_requests" not in row and "actor" not in row
+    # The MCP page is repository-wide; only the commit's runs are kept, as
+    # compact rows, and the raw page is not repeated in the payload.
+    assert result["runs_fetched_before_commit_filter"] >= len(result["workflow_runs"])
+    for row in result["workflow_runs"]:
+        assert "run_attempt" in row and "conclusion" in row
+        assert "pull_requests" not in row and "actor" not in row
+    assert "text" not in result and "structured_content" not in result
 
 
 def test_list_active_runs_happy_path() -> None:

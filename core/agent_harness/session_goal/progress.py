@@ -39,12 +39,12 @@ def _turn_label(goal: SessionGoal) -> str:
 
 
 def _tokens_with_cached(goal: SessionGoal, session: Any | None) -> str:
-    """``342.8k`` or ``342.8k (280k cached)`` when the provider served part from cache."""
+    """``342.8k tok`` or ``342.8k tok (280k cached)`` when part came from the cache."""
     spent = format_token_count_compact(session_goal_token_delta(goal, session=session))
     cached = session_goal_cached_tokens(goal, session=session)
     if cached <= 0:
-        return spent
-    return f"{spent} ({format_token_count_compact(cached)} cached)"
+        return f"{spent} tok"
+    return f"{spent} tok ({format_token_count_compact(cached)} cached)"
 
 
 def format_duration_compact(seconds: float) -> str:
@@ -204,7 +204,7 @@ def format_session_goal_status_line(
         tokens = _tokens_with_cached(goal, session)
         return (
             f"{mark} {word} active · {duration} · {_turn_label(goal)} "
-            f"· +{tokens} tok · {condition} · {reason}"
+            f"· +{tokens} · {condition} · {reason}"
         )
     if goal.status == SessionGoalStatus.PAUSED:
         elapsed = session_goal_elapsed_seconds(goal, now=now)
@@ -212,7 +212,7 @@ def format_session_goal_status_line(
         tokens = _tokens_with_cached(goal, session)
         return (
             f"{mark} {word} paused · {duration} · {_turn_label(goal)} "
-            f"· +{tokens} tok · {condition} · {reason}"
+            f"· +{tokens} · {condition} · {reason}"
         )
     return f"{mark} {word} {goal.status} · {_turn_label(goal)} · {condition} · {reason}"
 

@@ -504,9 +504,20 @@ def list_github_actions_workflow_runs(
         workflow_runs_raw = _extract_list(result, "workflow_runs")
         workflow_runs = [_normalize_run(item) for item in workflow_runs_raw]
         if head_sha:
-            # One commit's history is read for attempts and conclusions; the
-            # per-run actor and pull-request detail only inflates the context.
-            workflow_runs = [_run_history_row(item) for item in workflow_runs]
+            # The MCP server has returned repository-wide pages for this filter;
+            # keep only the commit's runs. One commit's history is read for
+            # attempts and conclusions, so the rows are compact too.
+            fetched = len(workflow_runs)
+            workflow_runs = [
+                _run_history_row(item)
+                for item in workflow_runs
+                if str(item.get("head_sha") or "").startswith(head_sha)
+            ]
+            payload["runs_fetched_before_commit_filter"] = fetched
+        # The raw MCP page (text, content, structured_content) is the same data
+        # again, unfiltered and several times larger; the rows are the result.
+        for raw_key in ("text", "content", "structured_content"):
+            payload.pop(raw_key, None)
         if window_hours > NO_RUN_WINDOW:
             windowed = window_runs(
                 workflow_runs,
