@@ -158,9 +158,9 @@ at once by default; set `OPENSRE_SCHEDULER_MAX_CONCURRENT_RUNS` to a positive
 integer to change that limit. A task never overlaps its own previous run.
 Runs waiting for a scheduler worker appear as `pending` in run history and
 resume after a scheduler restart. On restart, pending runs for paused tasks
-wait until the task is enabled again. A new tick is skipped while that task
-already has a queued or running scheduler callback; distinct tasks wait for
-worker capacity.
+wait until the task is enabled again. Admitted runs wait until both a worker
+and the task are available. Cron ticks rejected because the same job is already
+queued or running are skipped.
 Invalid concurrency settings fall back to two workers.
 
 Agentic scheduled runs also take a permit from
