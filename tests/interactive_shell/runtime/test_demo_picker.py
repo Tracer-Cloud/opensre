@@ -21,7 +21,6 @@ from core.agent_harness.session.pending_choice import PendingUserChoice, format_
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
 from surfaces.interactive_shell.runtime.action_turn import run_action_tool_turn
 from surfaces.interactive_shell.session import Session
-from surfaces.interactive_shell.ui.ask_user import CUSTOM_OPTION
 from surfaces.shared.terminal.components import choice_menu, cpr_stdin
 from tests.core.agent.orchestration.action_execution_test_harness import (
     FakeActionLLM,
@@ -127,9 +126,8 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
         "choices": [
             *((option, option) for option in GETTING_STARTED_OPTIONS),
             (SKIP_DEMO_OPTION, SKIP_DEMO_OPTION),
-            (CUSTOM_OPTION, CUSTOM_OPTION),
         ],
-        "custom_label": CUSTOM_OPTION,
+        "custom_label": None,
         "multi_select": False,
         "header": "Ask User",
         "letter_keys": True,

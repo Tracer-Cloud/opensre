@@ -76,7 +76,9 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
         return True
 
     option_choices = [(option, option) for option in items[0].options]
-    option_choices.append((CUSTOM_OPTION, CUSTOM_OPTION))
+    custom_label = CUSTOM_OPTION if pending.custom_answer else None
+    if custom_label is not None:
+        option_choices.append((custom_label, custom_label))
     custom_answer = False
 
     def mark_custom_answer() -> None:
@@ -87,7 +89,7 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
     picked_one = repl_choose_one(
         title=items[0].title,
         choices=option_choices,
-        custom_label=CUSTOM_OPTION,
+        custom_label=custom_label,
         multi_select=items[0].multi_select,
         header="Ask User",
         letter_keys=True,

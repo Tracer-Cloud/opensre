@@ -56,7 +56,8 @@ def test_master_menu_matches_four_unique_children_and_preserves_specialists() ->
         "scan_local_git_workspace",
         "analyze_github_ci_reliability",
     ]
-    assert GETTING_STARTED_CUSTOM in master
+    assert menu["allow_custom"] is False
+    assert GETTING_STARTED_CUSTOM not in master
     assert "not implemented yet" in loader.load_skill_body("remote-managed-service")
     discovered = [
         loader._load_action_skill(path) for path in loader._iter_skill_paths(loader.skills_dir())

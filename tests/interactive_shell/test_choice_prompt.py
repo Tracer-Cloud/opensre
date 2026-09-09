@@ -290,3 +290,31 @@ def test_non_tty_batch_prints_every_question(monkeypatch: pytest.MonkeyPatch) ->
         assert question.title in output
         for option in question.options:
             assert option in output
+
+
+def test_single_choice_without_custom_row_when_the_menu_disallows_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The startup demo menu declares allow_custom false: options only."""
+    # Arrange
+    session = Session()
+    session.pending_user_choice = PendingUserChoice(
+        title="Which demo?", options=("A", "B"), custom_answer=False
+    )
+    console, _buf = _console()
+    seen: dict[str, object] = {}
+
+    def _pick(**kwargs: object) -> str:
+        seen["custom_label"] = kwargs.get("custom_label")
+        seen["choices"] = kwargs["choices"]
+        return "A"
+
+    monkeypatch.setattr(choice_prompt, "repl_tty_interactive", lambda: True)
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", _pick)
+
+    # Act
+    assert _handler(session, console) is True
+
+    # Assert
+    assert seen["custom_label"] is None
+    assert (CUSTOM_OPTION, CUSTOM_OPTION) not in seen["choices"]  # type: ignore[operator]
