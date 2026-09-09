@@ -22,8 +22,8 @@ def _run(name: str, fn: Callable[[], tuple[bool, str]]) -> dict[str, str]:
 def _check_python_version() -> tuple[bool, str]:
     version = platform.python_version()
     major, minor = sys.version_info[:2]
-    if (major, minor) < (3, 11):
-        return False, f"Python {version} — opensre requires >= 3.11"
+    if (major, minor) < (3, 12):
+        return False, f"Python {version} — opensre requires >= 3.12"
     return True, f"Python {version}"
 
 

@@ -16,14 +16,14 @@ def test_check_python_version_ok(monkeypatch) -> None:
 
 
 def test_check_python_version_too_old(monkeypatch) -> None:
-    monkeypatch.setattr(doctor.platform, "python_version", lambda: "3.10.14")
-    monkeypatch.setattr(doctor.sys, "version_info", (3, 10, 14, "final", 0))
+    monkeypatch.setattr(doctor.platform, "python_version", lambda: "3.11.10")
+    monkeypatch.setattr(doctor.sys, "version_info", (3, 11, 10, "final", 0))
 
     ok, detail = doctor._check_python_version()
 
     assert ok is False
-    assert "Python 3.10.14" in detail
-    assert "requires >= 3.11" in detail
+    assert "Python 3.11.10" in detail
+    assert "requires >= 3.12" in detail
 
 
 def test_check_env_file_counts_non_comment_keys(monkeypatch, tmp_path) -> None:

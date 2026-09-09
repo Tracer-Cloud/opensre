@@ -269,7 +269,7 @@ Error: exit code 0
 
 ### Environment
 - OS: macOS 14.2
-- Python: 3.11.5
+- Python: 3.12.8
 - opensre version: v0.2.1
 ```
 
