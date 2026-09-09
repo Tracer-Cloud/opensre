@@ -385,8 +385,8 @@ def test_a_not_yet_becomes_reached_when_the_reading_covers_all_and_the_reply_mat
     assert "agrees with an independent reading" in verdict.reason
 
 
-def test_an_unsupported_contradiction_does_not_block_when_the_reading_agrees() -> None:
-    """A nitpick the judge cannot quote from the data must not hold a covered, matching reply."""
+def test_a_contradiction_does_not_block_when_the_judge_says_the_reply_matches_the_reading() -> None:
+    """E37: a correct No was called a contradiction by quoting re_run true; the reading said No."""
 
     class _LLM:
         model_id = "test"
@@ -399,9 +399,9 @@ def test_an_unsupported_contradiction_does_not_block_when_the_reading_agrees() -
                 )
             return AgentLLMResponse(
                 content=(
-                    '{"verdict": "NOT_REACHED", "reason": "Contradiction: the table marks the '
-                    'workflow as dash but CI ran", "reply_matches_reading": true, '
-                    '"evidence_quote": "workflow column shows dash"}'
+                    '{"verdict": "NOT_REACHED", "reason": "Contradiction: the reply says No '
+                    'but the observations show re_run: true", "reply_matches_reading": true, '
+                    '"evidence_quote": "re_run: true"}'
                 )
             )
 
@@ -420,7 +420,10 @@ def test_an_unsupported_contradiction_does_not_block_when_the_reading_agrees() -
             1,
             False,
             True,
-            tool_evidence="Tool: gh\nArguments: {}\nOutcome: success\nResult: re_run_to_green: false",
+            tool_evidence=(
+                "Tool: gh\nArguments: {}\nOutcome: success\n"
+                "Result: re_run: true, re_run_to_green: false"
+            ),
             evidence_success_count=1,
         ),
         "| #6143 | No | — |",
