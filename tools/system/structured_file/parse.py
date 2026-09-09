@@ -15,6 +15,8 @@ from typing import Any
 
 import yaml
 
+from tools.system.workspace_paths import WorkspacePathError, resolve_within_workspace
+
 #: Extensions this module knows how to load.
 FORMAT_BY_SUFFIX: dict[str, str] = {
     ".yml": "yaml",
@@ -77,6 +79,10 @@ class StructureError(ValueError):
 
 def load_structured_file(path: Path) -> Any:
     """Return the parsed document, chosen by suffix."""
+    try:
+        path = resolve_within_workspace(path)
+    except WorkspacePathError as exc:
+        raise StructureError(str(exc)) from exc
     file_format = FORMAT_BY_SUFFIX.get(path.suffix.lower())
     if file_format is None:
         supported = ", ".join(sorted(set(FORMAT_BY_SUFFIX)))

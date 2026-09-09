@@ -12,6 +12,8 @@ from dataclasses import dataclass
 from fnmatch import fnmatch
 from pathlib import Path
 
+from tools.system.workspace_paths import WorkspacePathError, resolve_within_workspace
+
 #: Directories whose contents are generated, vendored, or version-control
 #: bookkeeping. Counting them answers a question nobody asked.
 GENERATED_DIRECTORIES: frozenset[str] = frozenset(
@@ -52,19 +54,29 @@ class FileCountError(ValueError):
 def count_matching_files(root: Path, pattern: str = "*") -> FileTally:
     """Count files under ``root`` whose name matches ``pattern``.
 
-    Generated directories are pruned, symlinked directories are not followed
-    (a link back up the tree would count forever), and the count covers the
-    whole remaining tree — never a truncated sample.
+    ``root`` must resolve inside the working directory. Generated directories
+    are pruned, symlinked directories are not followed (a link back up the tree
+    would count forever), an unreadable subtree raises rather than being skipped,
+    and the count covers the whole remaining tree — never a truncated sample.
     """
+    try:
+        root = resolve_within_workspace(root)
+    except WorkspacePathError as exc:
+        raise FileCountError(str(exc)) from exc
     if not root.exists():
         raise FileCountError(f"{root} does not exist")
     if not root.is_dir():
         raise FileCountError(f"{root} is not a directory")
+
+    def _stop(error: OSError) -> None:
+        # A silently skipped subtree would make an exact-looking count partial.
+        raise FileCountError(f"cannot read {error.filename}: {type(error).__name__}")
+
     glob = pattern.strip() or "*"
     matched: list[str] = []
     count = 0
     skipped = 0
-    for current, directories, files in os.walk(root, followlinks=False):
+    for current, directories, files in os.walk(root, onerror=_stop, followlinks=False):
         keep = [name for name in directories if name not in GENERATED_DIRECTORIES]
         skipped += len(directories) - len(keep)
         directories[:] = keep

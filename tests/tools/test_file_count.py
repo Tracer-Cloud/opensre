@@ -10,6 +10,12 @@ from tools.system.file_count.count import FileCountError, count_matching_files
 from tools.system.file_count.tool import TOOL_NAME, count_files
 
 
+@pytest.fixture(autouse=True)
+def _work_where_the_files_are(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tools only read inside the working directory; point it at the fixture tree."""
+    monkeypatch.chdir(tmp_path)
+
+
 def _tree(root: Path) -> None:
     """Two real test modules plus the caches a build leaves behind."""
     (root / "pkg").mkdir()
@@ -102,3 +108,42 @@ def test_the_tool_is_registered_and_read_only() -> None:
     assert registered is not None
     assert registered.side_effect_level == "read_only"
     assert set(registered.public_input_schema["properties"]) == {"path", "pattern"}
+
+
+def test_a_path_outside_the_working_directory_is_refused(tmp_path: Path) -> None:
+    """Read-only tools run without an approval gate, so the root must stay inside."""
+    # Arrange / Act / Assert
+    with pytest.raises(FileCountError, match="outside the working directory"):
+        count_matching_files(Path("/etc"))
+    with pytest.raises(FileCountError, match="outside the working directory"):
+        count_matching_files(Path("../.."))
+
+
+def test_a_symlinked_root_is_judged_by_where_it_lands(tmp_path: Path, monkeypatch) -> None:
+    # Arrange: a link inside the workspace pointing outside it.
+    workspace = tmp_path / "work"
+    workspace.mkdir()
+    (workspace / "escape").symlink_to(tmp_path.parent, target_is_directory=True)
+    monkeypatch.chdir(workspace)
+
+    # Act / Assert
+    with pytest.raises(FileCountError, match="outside the working directory"):
+        count_matching_files(Path("escape"))
+
+
+def test_an_unreadable_subtree_raises_instead_of_undercounting(tmp_path: Path, monkeypatch) -> None:
+    """A skipped subtree would make an exact-looking count partial."""
+    # Arrange
+    monkeypatch.chdir(tmp_path)
+    _tree(tmp_path)
+    locked = tmp_path / "pkg" / "locked"
+    locked.mkdir()
+    (locked / "test_hidden.py").write_text("")
+    locked.chmod(0o000)
+
+    # Act / Assert
+    try:
+        with pytest.raises(FileCountError, match="cannot read"):
+            count_matching_files(Path("."), "test_*.py")
+    finally:
+        locked.chmod(0o755)
