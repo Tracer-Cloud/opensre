@@ -89,24 +89,26 @@ Steps, in order:
    first or only tool — steps 1–3 must have run first.>
 -->
 
-<!-- Multi-step skills must also include the step-labeling block below (house
-     UX style), with N replaced by the skill's total step count. The terminal
-     renders this narration live, turning the tool stream into a readable
-     story instead of a wall of raw commands:
+<!-- Multi-step skills must also include the Plan block below (house UX
+     style). Progress lives in the update_plan tool — the shell renders the
+     checklist as a pinned overlay and re-injects it every turn as the
+     CURRENT PLAN block, so it survives ask_user_choice turn boundaries where
+     prose headers vanish. Never ask for hand-emitted "### [n/N]" step
+     headers. See onboarding_cicd_fix/a_local_analysis (cicd-analytics-demo)
+     for a filled-in example:
 
-Step labeling rules (UX):
-- Before every numbered step's tool calls, emit this exact header format as
-  assistant text in the SAME response as the tool calls, then one short
-  status sentence:
-    ### [n/N] <step name>
-    <One-sentence status or question.>
-- Never start tool calls for a new step without its header.
-- After a step's tool results are in, state its outcome in one line (start
-  it with ✓ on success, ✗ plus what failed otherwise) before the next
-  step's header.
-- Reuse the step's own name from this skill as the phase name and its own
-  number as n, even when a step is trivial or already satisfied (a ✓ line
-  with no tool calls is fine); never renumber mid-run.
+Plan (multi-step skills):
+- On entry, before the first workflow tool call, call update_plan with the
+  skill's fixed steps verbatim, the first step in_progress, and a one-line
+  explanation (not a diagnosis; no hypothesis table).
+- When the request already fixes an input (repo named, already verified, …),
+  omit the skipped steps from the plan instead of renumbering.
+- After a step's tool results, call update_plan marking it completed and the
+  next step in_progress, in the same response as the next step's tool calls.
+  When the next step is an ask_user_choice, mark the step and call the menu
+  in the same response, then end the turn.
+- Do not narrate the plan or repeat step names in prose; the shell renders
+  the checklist.
 -->
 
 Compact examples:

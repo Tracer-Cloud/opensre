@@ -62,6 +62,28 @@ def test_master_menu_matches_four_unique_children_and_preserves_specialists() ->
     assert loader.load_skill_body("fixing-github-ci")
 
 
+def test_multi_step_skills_track_progress_with_update_plan_not_step_headers() -> None:
+    """Progress lives in update_plan (survives ask_user_choice turn boundaries).
+
+    The old hand-emitted "### [n/N]" header protocol must not creep back: it
+    contradicted the base prompt's header rules and vanished from context at
+    every menu answer.
+    """
+    loader.clear_skills_caches()
+    multi_step = (
+        "cicd-analytics-demo",
+        "cicd-reliability-agent",
+        "slack-handoff",
+        "delivering-morning-briefings",
+    )
+    for name in multi_step:
+        body = loader.load_skill_body(name)
+        assert "update_plan" in body, name
+        assert "### [" not in body, name
+    for name in (ONBOARDING_SKILL_NAME, "remote-managed-service"):
+        assert "### [" not in loader.load_skill_body(name), name
+
+
 def test_capability_and_demo_prompts_load_master_instead_of_defining_another_menu() -> None:
     snapshot = TurnSnapshot(
         text="What can you do?",
