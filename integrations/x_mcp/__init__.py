@@ -29,28 +29,27 @@ local connection.
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
-from collections.abc import AsyncIterator, Coroutine, Mapping
-from contextlib import AsyncExitStack, asynccontextmanager
+from collections.abc import Mapping
 from dataclasses import dataclass
 from http import HTTPStatus
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 import httpx
-import mcp_types as types
 from pydantic import Field, field_validator, model_validator
 from typing_extensions import TypedDict
 
 from config.constants.x_mcp import X_MCP_AUTH_TOKEN_ENV, X_MCP_URL_ENV
 from config.strict_config import StrictConfigModel
 from integrations._validation_helpers import report_classify_failure, report_validation_failure
-from integrations.mcp_streamable_http_compat import streamable_http_client
+from integrations.mcp_client import (
+    McpSessionOptions,
+    call_mcp_tool,
+    list_mcp_tools,
+    root_cause_message,
+)
 from integrations.mcp_transport import McpTransportMode
-
-if TYPE_CHECKING:
-    from mcp.client.session import ClientSession  # type: ignore[import-not-found]
 
 logger = logging.getLogger(__name__)
 
@@ -237,118 +236,20 @@ def x_mcp_runtime_unavailable_reason(config: XMCPConfig) -> str | None:
     return None
 
 
-@asynccontextmanager
-async def _open_x_mcp_session(config: XMCPConfig) -> AsyncIterator[ClientSession]:
-    """Open an MCP client session for X using the configured transport."""
-    from mcp.client.session import ClientSession  # type: ignore[import-not-found]
-    from mcp.client.sse import sse_client  # type: ignore[import-not-found]
-    from mcp.client.stdio import (  # type: ignore[import-not-found]
-        StdioServerParameters,
-        stdio_client,
-    )
-
-    stack = AsyncExitStack()
-    try:
-        if config.mode == "stdio":
-            if not config.command:
-                raise ValueError(
-                    "Invalid X MCP config: mode=stdio requires command "
-                    "(set X_MCP_COMMAND or pass command in config)."
-                )
-            server_params = StdioServerParameters(
-                command=config.command,
-                args=list(config.args),
-                env={
-                    **os.environ,
-                    # Suppress terminal control codes so the MCP server's stdout
-                    # stays clean JSON-RPC (mirrors integrations/github/mcp.py mitigation).
-                    "NO_COLOR": "1",
-                    "TERM": "dumb",
-                    **config.subprocess_env,
-                },
-            )
-            read_stream, write_stream = await stack.enter_async_context(stdio_client(server_params))
-
-        elif config.mode == "sse":
-            if not config.url:
-                raise ValueError(
-                    "Invalid X MCP config: mode=sse requires url "
-                    "(set X_MCP_URL, e.g. http://127.0.0.1:8000/sse)."
-                )
-            read_stream, write_stream = await stack.enter_async_context(
-                sse_client(
-                    config.url,
-                    headers=config.request_headers,
-                    timeout=config.timeout_seconds,
-                    sse_read_timeout=max(60.0, config.timeout_seconds),
-                )
-            )
-
-        elif config.mode == "streamable-http":
-            if not config.url:
-                raise ValueError(
-                    "Invalid X MCP config: mode=streamable-http requires url "
-                    "(set X_MCP_URL, e.g. http://127.0.0.1:8000/mcp)."
-                )
-            read_timeout = max(60.0, config.timeout_seconds)
-            http_client = await stack.enter_async_context(
-                httpx.AsyncClient(
-                    headers=config.request_headers,
-                    timeout=httpx.Timeout(config.timeout_seconds, read=read_timeout),
-                )
-            )
-            read_stream, write_stream, _ = await stack.enter_async_context(
-                streamable_http_client(
-                    config.url,
-                    http_client=http_client,
-                    headers=config.request_headers,
-                    timeout=config.timeout_seconds,
-                    sse_read_timeout=read_timeout,
-                )
-            )
-
-        else:
-            raise ValueError(
-                f"Unsupported X MCP mode '{config.mode}'. "
-                "Supported modes: stdio, sse, streamable-http."
-            )
-
-        session = await stack.enter_async_context(ClientSession(read_stream, write_stream))
-        await session.initialize()
-        yield session
-
-    finally:
-        await stack.aclose()
-
-
-def _run_async(coro: Coroutine[object, object, object]) -> object:
-    try:
-        return asyncio.run(coro)
-    except BaseException:
-        close = getattr(coro, "close", None)
-        if callable(close):
-            close()
-        raise
-
-
-def _root_cause_message(exc: BaseException) -> str:
-    """Best-effort unwrap for ExceptionGroup/TaskGroup chains."""
-    if isinstance(exc, BaseExceptionGroup) and exc.exceptions:
-        return _root_cause_message(exc.exceptions[0])
-    cause = getattr(exc, "__cause__", None)
-    if isinstance(cause, BaseException):
-        return _root_cause_message(cause)
-    context = getattr(exc, "__context__", None)
-    if isinstance(context, BaseException):
-        return _root_cause_message(context)
-    if isinstance(exc, TimeoutError):
-        return "X MCP tool call timed out"
-    return str(exc).strip() or exc.__class__.__name__
+def _session_options(config: XMCPConfig) -> McpSessionOptions:
+    return {
+        "session_url": config.url,
+        "stdio_env": config.subprocess_env,
+        "integration_name": "X",
+        "config_env_name": "X_MCP",
+        "sse_url_hint": "http://127.0.0.1:8000/sse",
+        "streamable_url_hint": "http://127.0.0.1:8000/mcp",
+    }
 
 
 def describe_x_mcp_error(err: BaseException, config: XMCPConfig) -> str:
     """Render a human-readable error with a setup hint when useful."""
-    detail = _root_cause_message(err)
+    detail = root_cause_message(err, timeout_message="X MCP tool call timed out")
     hints: list[str] = []
 
     if isinstance(err, httpx.HTTPStatusError) and err.response.status_code in (
@@ -372,91 +273,26 @@ def describe_x_mcp_error(err: BaseException, config: XMCPConfig) -> str:
             "Raise XMCPConfig.timeout_seconds if the tool is expected to be slow."
         )
 
-    if hints:
-        return f"{detail} Hint: {' '.join(hints)}"
-    return detail
-
-
-def _tool_result_to_dict(result: types.CallToolResult) -> XMCPToolCallResult:
-    text_parts: list[str] = []
-    content_items: list[XMCPContentItem] = []
-
-    for item in result.content:
-        if isinstance(item, types.TextContent):
-            text_parts.append(item.text)
-            content_items.append({"type": "text", "text": item.text})
-        elif isinstance(item, types.EmbeddedResource):
-            resource = item.resource
-            if isinstance(resource, types.TextResourceContents):
-                content_items.append(
-                    {
-                        "type": "resource_text",
-                        "uri": str(resource.uri),
-                        "text": resource.text,
-                    }
-                )
-                text_parts.append(resource.text)
-            elif isinstance(resource, types.BlobResourceContents):
-                content_items.append(
-                    {
-                        "type": "resource_blob",
-                        "uri": str(resource.uri),
-                        "mime_type": resource.mime_type or "",
-                    }
-                )
-        else:
-            content_items.append({"type": getattr(item, "type", "unknown")})
-
-    structured = result.structured_content
-    text_output = "\n".join(part.strip() for part in text_parts if part.strip()).strip()
-    return {
-        "is_error": bool(result.is_error),
-        "text": text_output,
-        "content": content_items,
-        "structured_content": structured,
-    }
-
-
-async def _list_tools_async(config: XMCPConfig) -> list[types.Tool]:
-    async with _open_x_mcp_session(config) as session:
-        result = await session.list_tools()
-        return list(result.tools)
-
-
-def _list_tools_sync(config: XMCPConfig) -> list[types.Tool]:
-    # Bound session open (transport connect + MCP `initialize` handshake) and
-    # the list_tools RPC together, so a server that accepts a connection but
-    # never completes the handshake or responds cannot hang the pipeline.
-    return cast(
-        list[types.Tool],
-        _run_async(asyncio.wait_for(_list_tools_async(config), timeout=config.timeout_seconds)),
-    )
+    return f"{detail} Hint: {' '.join(hints)}" if hints else detail
 
 
 def list_x_mcp_tools(config: XMCPConfig) -> list[XMCPToolDescriptor]:
     """List available tools from the configured X MCP server."""
-    tools = _list_tools_sync(config)
     return [
-        {
-            "name": tool.name,
-            "description": tool.description or "",
-            "input_schema": tool.input_schema,
-        }
-        for tool in tools
+        cast(
+            XMCPToolDescriptor,
+            {
+                "name": tool.name,
+                "description": tool.description or "",
+                "input_schema": tool.input_schema,
+            },
+        )
+        for tool in list_mcp_tools(
+            config,
+            timeout_entire_operation=True,
+            **_session_options(config),
+        )
     ]
-
-
-async def _call_tool_async(
-    config: XMCPConfig,
-    tool_name: str,
-    arguments: dict[str, object] | None = None,
-) -> XMCPToolCallResult:
-    async with _open_x_mcp_session(config) as session:
-        result = await session.call_tool(tool_name, arguments or {})
-        payload = _tool_result_to_dict(result)
-        payload["tool"] = tool_name
-        payload["arguments"] = arguments or {}
-        return payload
 
 
 def call_x_mcp_tool(
@@ -465,15 +301,15 @@ def call_x_mcp_tool(
     arguments: dict[str, object] | None = None,
 ) -> XMCPToolCallResult:
     """Call an X MCP tool and normalize the result."""
-    # Bound session open (transport connect + MCP `initialize` handshake) and
-    # the call_tool RPC together, so a server that accepts a connection but
-    # never completes the handshake or responds cannot hang the pipeline.
     return cast(
         XMCPToolCallResult,
-        _run_async(
-            asyncio.wait_for(
-                _call_tool_async(config, tool_name, arguments), timeout=config.timeout_seconds
-            )
+        call_mcp_tool(
+            config,
+            tool_name,
+            arguments,
+            timeout_call=False,
+            timeout_entire_operation=True,
+            **_session_options(config),
         ),
     )
 

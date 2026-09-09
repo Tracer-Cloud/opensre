@@ -195,6 +195,10 @@ EXPORTS: dict[str, str] = {
     "MARIADB_PORT_ENV": "mariadb",
     "MARIADB_SSL_ENV": "mariadb",
     "MARIADB_USERNAME_ENV": "mariadb",
+    # mcp
+    "MCP_NO_COLOR_ENV": "mcp",
+    "MCP_TERMINAL_ENV": "mcp",
+    "MCP_TERMINAL_DUMB_VALUE": "mcp",
     # memory
     "OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV": "memory",
     "OPENSRE_MEMORY_DIR_ENV": "memory",

@@ -23,17 +23,14 @@ https://mcp.sentry.dev for the hosted endpoint and the required token scopes
 
 from __future__ import annotations
 
-import asyncio
 import logging
 import os
-from collections.abc import AsyncIterator, Coroutine, Mapping
-from contextlib import AsyncExitStack, asynccontextmanager
+from collections.abc import Mapping
 from dataclasses import dataclass
 from http import HTTPStatus
-from typing import TYPE_CHECKING, Any, cast
+from typing import Any, cast
 
 import httpx
-import mcp_types as types
 from pydantic import Field, field_validator, model_validator
 from typing_extensions import TypedDict
 
@@ -44,11 +41,13 @@ from config.constants.sentry_mcp import (
 )
 from config.strict_config import StrictConfigModel
 from integrations._validation_helpers import report_classify_failure, report_validation_failure
-from integrations.mcp_streamable_http_compat import streamable_http_client
+from integrations.mcp_client import (
+    McpSessionOptions,
+    call_mcp_tool,
+    list_mcp_tools,
+    root_cause_message,
+)
 from integrations.mcp_transport import McpTransportMode
-
-if TYPE_CHECKING:
-    from mcp.client.session import ClientSession  # type: ignore[import-not-found]
 
 logger = logging.getLogger(__name__)
 
@@ -250,120 +249,23 @@ def sentry_mcp_runtime_unavailable_reason(config: SentryMCPConfig) -> str | None
     return None
 
 
-@asynccontextmanager
-async def _open_sentry_mcp_session(config: SentryMCPConfig) -> AsyncIterator[ClientSession]:
-    """Open an MCP client session for Sentry using the configured transport."""
-    from mcp.client.session import ClientSession  # type: ignore[import-not-found]
-    from mcp.client.sse import sse_client  # type: ignore[import-not-found]
-    from mcp.client.stdio import (  # type: ignore[import-not-found]
-        StdioServerParameters,
-        stdio_client,
-    )
-
-    stack = AsyncExitStack()
-    try:
-        if config.mode == "stdio":
-            if not config.command:
-                raise ValueError(
-                    "Invalid Sentry MCP config: mode=stdio requires command "
-                    "(set SENTRY_MCP_COMMAND or pass command in config)."
-                )
-            server_params = StdioServerParameters(
-                command=config.command,
-                args=list(config.args),
-                env={
-                    **os.environ,
-                    # Suppress terminal control codes so the MCP server's stdout
-                    # stays clean JSON-RPC (mirrors integrations/github/mcp.py mitigation).
-                    "NO_COLOR": "1",
-                    "TERM": "dumb",
-                    **({"SENTRY_ACCESS_TOKEN": config.auth_token} if config.auth_token else {}),
-                    **({"SENTRY_HOST": config.host} if config.host else {}),
-                    **({"MCP_SKILLS": ",".join(config.skills)} if config.skills else {}),
-                },
-            )
-            read_stream, write_stream = await stack.enter_async_context(stdio_client(server_params))
-
-        elif config.mode == "sse":
-            if not config.url:
-                raise ValueError(
-                    "Invalid Sentry MCP config: mode=sse requires url "
-                    "(set SENTRY_MCP_URL, e.g. https://mcp.sentry.dev/sse)."
-                )
-            read_stream, write_stream = await stack.enter_async_context(
-                sse_client(
-                    config.session_url,
-                    headers=config.request_headers,
-                    timeout=config.timeout_seconds,
-                    sse_read_timeout=max(60.0, config.timeout_seconds),
-                )
-            )
-
-        elif config.mode == "streamable-http":
-            if not config.url:
-                raise ValueError(
-                    "Invalid Sentry MCP config: mode=streamable-http requires url "
-                    "(set SENTRY_MCP_URL)."
-                )
-            read_timeout = max(60.0, config.timeout_seconds)
-            http_client = await stack.enter_async_context(
-                httpx.AsyncClient(
-                    headers=config.request_headers,
-                    timeout=httpx.Timeout(config.timeout_seconds, read=read_timeout),
-                )
-            )
-            read_stream, write_stream, _ = await stack.enter_async_context(
-                streamable_http_client(
-                    config.session_url,
-                    http_client=http_client,
-                    headers=config.request_headers,
-                    timeout=config.timeout_seconds,
-                    sse_read_timeout=read_timeout,
-                )
-            )
-
-        else:
-            raise ValueError(
-                f"Unsupported Sentry MCP mode '{config.mode}'. "
-                "Supported modes: stdio, sse, streamable-http."
-            )
-
-        session = await stack.enter_async_context(ClientSession(read_stream, write_stream))
-        await session.initialize()
-        yield session
-
-    finally:
-        await stack.aclose()
-
-
-def _run_async(coro: Coroutine[object, object, object]) -> object:
-    try:
-        return asyncio.run(coro)
-    except BaseException:
-        close = getattr(coro, "close", None)
-        if callable(close):
-            close()
-        raise
-
-
-def _root_cause_message(exc: BaseException) -> str:
-    """Best-effort unwrap for ExceptionGroup/TaskGroup chains."""
-    if isinstance(exc, BaseExceptionGroup) and exc.exceptions:
-        return _root_cause_message(exc.exceptions[0])
-    cause = getattr(exc, "__cause__", None)
-    if isinstance(cause, BaseException):
-        return _root_cause_message(cause)
-    context = getattr(exc, "__context__", None)
-    if isinstance(context, BaseException):
-        return _root_cause_message(context)
-    if isinstance(exc, TimeoutError):
-        return "Sentry MCP tool call timed out"
-    return str(exc).strip() or exc.__class__.__name__
+def _session_options(config: SentryMCPConfig) -> McpSessionOptions:
+    return {
+        "session_url": config.session_url,
+        "stdio_env": {
+            **({"SENTRY_ACCESS_TOKEN": config.auth_token} if config.auth_token else {}),
+            **({"SENTRY_HOST": config.host} if config.host else {}),
+            **({"MCP_SKILLS": ",".join(config.skills)} if config.skills else {}),
+        },
+        "integration_name": "Sentry",
+        "config_env_name": "SENTRY_MCP",
+        "sse_url_hint": "https://mcp.sentry.dev/sse",
+    }
 
 
 def describe_sentry_mcp_error(err: BaseException, config: SentryMCPConfig) -> str:
     """Render a human-readable error with a setup hint when useful."""
-    detail = _root_cause_message(err)
+    detail = root_cause_message(err, timeout_message="Sentry MCP tool call timed out")
     hints: list[str] = []
 
     if isinstance(err, httpx.HTTPStatusError) and err.response.status_code in (
@@ -374,7 +276,7 @@ def describe_sentry_mcp_error(err: BaseException, config: SentryMCPConfig) -> st
             "Authentication failed. Check SENTRY_MCP_AUTH_TOKEN is a valid user auth token "
             "with the required scopes (at least `org:read`)."
         )
-    elif config.mode != "stdio" and not config.auth_token:
+    elif config.mode != McpTransportMode.STDIO and not config.auth_token:
         hints.append("No auth token configured. Set SENTRY_MCP_AUTH_TOKEN to a user auth token.")
 
     if "timed out" in detail.lower():
@@ -383,90 +285,22 @@ def describe_sentry_mcp_error(err: BaseException, config: SentryMCPConfig) -> st
             "Raise SentryMCPConfig.timeout_seconds if the tool is expected to be slow."
         )
 
-    if hints:
-        return f"{detail} Hint: {' '.join(hints)}"
-    return detail
-
-
-def _tool_result_to_dict(result: types.CallToolResult) -> SentryMCPToolCallResult:
-    text_parts: list[str] = []
-    content_items: list[SentryMCPContentItem] = []
-
-    for item in result.content:
-        if isinstance(item, types.TextContent):
-            text_parts.append(item.text)
-            content_items.append({"type": "text", "text": item.text})
-        elif isinstance(item, types.EmbeddedResource):
-            resource = item.resource
-            if isinstance(resource, types.TextResourceContents):
-                content_items.append(
-                    {
-                        "type": "resource_text",
-                        "uri": str(resource.uri),
-                        "text": resource.text,
-                    }
-                )
-                text_parts.append(resource.text)
-            elif isinstance(resource, types.BlobResourceContents):
-                content_items.append(
-                    {
-                        "type": "resource_blob",
-                        "uri": str(resource.uri),
-                        "mime_type": resource.mime_type or "",
-                    }
-                )
-        else:
-            content_items.append({"type": getattr(item, "type", "unknown")})
-
-    structured = result.structured_content
-    text_output = "\n".join(part.strip() for part in text_parts if part.strip()).strip()
-    return {
-        "is_error": bool(result.is_error),
-        "text": text_output,
-        "content": content_items,
-        "structured_content": structured,
-    }
-
-
-async def _list_tools_async(config: SentryMCPConfig) -> list[types.Tool]:
-    async with _open_sentry_mcp_session(config) as session:
-        result = await session.list_tools()
-        return list(result.tools)
-
-
-def _list_tools_sync(config: SentryMCPConfig) -> list[types.Tool]:
-    return cast(list[types.Tool], _run_async(_list_tools_async(config)))
+    return f"{detail} Hint: {' '.join(hints)}" if hints else detail
 
 
 def list_sentry_mcp_tools(config: SentryMCPConfig) -> list[SentryMCPToolDescriptor]:
     """List available tools from the Sentry MCP server."""
-    tools = _list_tools_sync(config)
     return [
-        {
-            "name": tool.name,
-            "description": tool.description or "",
-            "input_schema": tool.input_schema,
-        }
-        for tool in tools
-    ]
-
-
-async def _call_tool_async(
-    config: SentryMCPConfig,
-    tool_name: str,
-    arguments: dict[str, object] | None = None,
-) -> SentryMCPToolCallResult:
-    async with _open_sentry_mcp_session(config) as session:
-        # Bound the call uniformly across transports so a hung MCP tool cannot
-        # block the agent turn indefinitely.
-        result = await asyncio.wait_for(
-            session.call_tool(tool_name, arguments or {}),
-            timeout=config.timeout_seconds,
+        cast(
+            SentryMCPToolDescriptor,
+            {
+                "name": tool.name,
+                "description": tool.description or "",
+                "input_schema": tool.input_schema,
+            },
         )
-        payload = _tool_result_to_dict(result)
-        payload["tool"] = tool_name
-        payload["arguments"] = arguments or {}
-        return payload
+        for tool in list_mcp_tools(config, **_session_options(config))
+    ]
 
 
 def call_sentry_mcp_tool(
@@ -477,7 +311,13 @@ def call_sentry_mcp_tool(
     """Call a Sentry MCP tool and normalize the result."""
     return cast(
         SentryMCPToolCallResult,
-        _run_async(_call_tool_async(config, tool_name, arguments)),
+        call_mcp_tool(
+            config,
+            tool_name,
+            arguments,
+            timeout_call=True,
+            **_session_options(config),
+        ),
     )
 
 

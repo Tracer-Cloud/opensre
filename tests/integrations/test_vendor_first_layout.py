@@ -33,6 +33,9 @@ ALLOWED_FLAT_MODULES = frozenset(
         "daily_update.py",
         "effective_models.py",
         "harness_adapters.py",
+        # Shared MCP transport lifecycle and result normalization for MCP vendor
+        # packages, not a vendor integration itself.
+        "mcp_client.py",
         "mcp_streamable_http_compat.py",
         "mcp_transport.py",
         "messaging_security.py",

@@ -485,6 +485,15 @@ if TYPE_CHECKING:
     from config.constants.mariadb import (
         MARIADB_USERNAME_ENV as MARIADB_USERNAME_ENV,
     )
+    from config.constants.mcp import (
+        MCP_NO_COLOR_ENV as MCP_NO_COLOR_ENV,
+    )
+    from config.constants.mcp import (
+        MCP_TERMINAL_DUMB_VALUE as MCP_TERMINAL_DUMB_VALUE,
+    )
+    from config.constants.mcp import (
+        MCP_TERMINAL_ENV as MCP_TERMINAL_ENV,
+    )
     from config.constants.memory import (
         OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV as OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV,
     )
