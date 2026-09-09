@@ -113,6 +113,13 @@ once, following these rules, and treat a rename as a breaking change.
    must not be derived from its `name`, so a rename does not break stored
    tasks or dashboards. Read skill names from one constant where product
    code branches on them.
+8. **Renaming a skill adds its old slug to `LEGACY_SKILL_NAMES`** in
+   `skills/naming.py`. Persisted recurring schedules store the `name` they
+   were confirmed with; the map lets `find_action_skill` and `skill_view`
+   resolve the old slug, and the scheduler re-pins such a task to the new
+   name on its next tick. A tool-usage card beside a tool also needs its
+   path updated in `_skill_guidance_files()` — `tests/tools/test_registry.py`
+   fails on a stale path.
 
 Sanctioned verbs (add a new one here before using it): `analyzing`,
 `connecting`, `delegating`, `delivering`, `fixing`, `investigating`,

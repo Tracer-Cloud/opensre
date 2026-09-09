@@ -11,9 +11,16 @@ from __future__ import annotations
 
 import logging
 
-from core.agent_harness import resolve_scheduled_skill
+from core.agent_harness import (
+    is_legacy_skill_name,
+    normalize_skill_name,
+    pin_recurring_skill,
+    resolve_scheduled_skill,
+)
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_PROMPT_PARAM
+from infrastructure.scheduling.scheduler.operation_log import record_scheduler_task_operation
 from infrastructure.scheduling.scheduler.runners import SchedulerRunners
+from infrastructure.scheduling.scheduler.storage import update_task
 from infrastructure.scheduling.scheduler.types import ScheduledTask, TaskKind
 
 logger = logging.getLogger(__name__)
@@ -197,15 +204,43 @@ def _build_recurring_skill(task: ScheduledTask, runners: SchedulerRunners) -> st
     skill_name = task.skill_name.strip()
     if not skill_name:
         raise RuntimeError(f"Recurring skill task {task.id} is missing skill_name.")
-    resolve_scheduled_skill(skill_name, task.skill_revision)
+    if is_legacy_skill_name(skill_name):
+        _migrate_renamed_skill(task)
+    resolve_scheduled_skill(task.skill_name, task.skill_revision)
     return runners.agent(
         {
             "source": "scheduled_recurring_skill",
             "task_id": task.id,
-            "skill_name": skill_name,
+            "skill_name": task.skill_name,
             "skill_revision": task.skill_revision,
             "skill_inputs": dict(task.skill_inputs),
         }
+    )
+
+
+def _migrate_renamed_skill(task: ScheduledTask) -> None:
+    """Move a persisted schedule from a retired skill slug to its successor.
+
+    The revision pin is recomputed because a rename rewrites the body's own
+    name references; only slugs listed in ``LEGACY_SKILL_NAMES`` qualify, so
+    this never accepts an arbitrary recipe change unattended.
+    """
+    previous = task.skill_name
+    skill_name, skill_revision = pin_recurring_skill(normalize_skill_name(previous))
+    task.skill_name = skill_name
+    task.skill_revision = skill_revision
+    if not update_task(task):
+        logger.warning(
+            "Recurring skill task %s (%s -> %s) is not in the task store; running unmigrated.",
+            task.id,
+            previous,
+            skill_name,
+        )
+        return
+    record_scheduler_task_operation(
+        "scheduled_skill_renamed",
+        task,
+        extra={"from_skill_name": previous},
     )
 
 

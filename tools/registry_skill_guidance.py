@@ -25,13 +25,19 @@ def _skill_guidance_files() -> tuple[Path, ...]:
 
     explicit = (
         REPO_ROOT / "integrations" / "github" / "tools" / "workflow" / "SKILL.md",
-        REPO_ROOT / "integrations" / "sentry" / "tools" / "skills" / "sentry-summary" / "SKILL.md",
+        REPO_ROOT
+        / "integrations"
+        / "sentry"
+        / "tools"
+        / "skills"
+        / "summarizing-sentry-issues"
+        / "SKILL.md",
         REPO_ROOT
         / "integrations"
         / "posthog"
         / "tools"
         / "skills"
-        / "posthog-summary"
+        / "summarizing-posthog-analytics"
         / "SKILL.md",
         REPO_ROOT / "integrations" / "github" / "tools" / "github_cli" / "SKILL.md",
         REPO_ROOT / "integrations" / "github" / "tools" / "ci_fix" / "SKILL.md",

@@ -77,3 +77,15 @@ def test_skill_revision_changes_when_body_changes() -> None:
     finally:
         skill.path.write_text(original, encoding="utf-8")
         clear_skills_caches()
+
+
+def test_legacy_skill_names_resolve_to_their_renamed_successor() -> None:
+    """Persisted schedules still carry the pre-gerund slugs."""
+    for legacy, current in (
+        ("morning-report", "delivering-morning-briefings"),
+        ("github-ci-health", "reporting-github-ci-failures"),
+        ("github_ci_fix", "fixing-github-ci"),
+    ):
+        skill = find_action_skill(legacy)
+        assert skill is not None and skill.name == current
+        assert load_skill_body(legacy) == load_skill_body(current)

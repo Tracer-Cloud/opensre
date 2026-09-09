@@ -36,6 +36,8 @@ from typing import Any
 
 import yaml
 
+from core.agent_harness.prompts.skills.naming import normalize_skill_name
+
 __all__ = (
     "ActionSkill",
     "SKILLS_HEADER",
@@ -346,7 +348,7 @@ def load_skills_block() -> str:
 
 def load_skill_body(name: str) -> str:
     """Return one skill's full body (+ report template), or ``\"\"`` if unknown."""
-    needle = name.strip().lower().replace("_", "-")
+    needle = normalize_skill_name(name)
     if not needle:
         return ""
     for skill in list_action_skills():

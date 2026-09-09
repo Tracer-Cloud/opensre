@@ -1,19 +1,25 @@
 
 
 # LIST OF METRICS THAT CAN BE USED THROUGHOUT
+**objective**
+- Optimize GitHub CICD operations for high developer productivity
 
 **list of metrics:**
-- Red time on main — hours and % of the window with at least one push-triggered workflow red; number of outages; longest outage
-- Mean time to green — average default-branch outage duration
-- PR failure rate — failed ÷ (failed + passed) PR executions
-- Flake rate — failures the identical SHA later passed, as % of all failures and per 100 executions
-- Top 3 flaky workflows/jobs — by same-SHA fail→pass count
-- Normal CI duration — median first-attempt pass time of the slowest required workflow
-- Merged PRs delayed by a flake — count and % of merged PRs
-- Blocked developer time — working-hours wait on those PRs, capped at one working day per PR; uncapped total shown as "delivery delay"
-- Waiting for maintainer approval — fork PRs held in action_required: count and median wait (reported separately, excluded from all of the above)
-- Merged red — merged PRs with a check that never went green in the window
 
+**Metric #1: Red time on main**
+Best top-line reliability indicator. Answers: “How unavailable/unhealthy is our mainline CI?”
+
+**Metric #2: Mean time to green**
+Measures recovery. Two orgs can have the same red time but radically different incident/recovery patterns.
+
+**Metric #3: Flake rate**
+Probably the strongest CI-specific developer-friction signal you can derive without logs. Same-SHA fail→pass is simple and explainable.
+
+**Metric #4: Normal CI duration**
+Captures the unavoidable feedback-loop latency developers experience when everything works correctly.
+
+**Metric #5: Merged PRs delayed by a flake**
+Connects CI instability to actual delivery impact instead of just reporting infrastructure statistics.
 
 
 

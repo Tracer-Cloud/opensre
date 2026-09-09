@@ -11,12 +11,12 @@ from core.agent_harness.prompts.skills.loader import (
     list_action_skills,
     load_skill_body,
 )
+from core.agent_harness.prompts.skills.naming import normalize_skill_name
 
 __all__ = (
     "ScheduledSkillResolution",
     "find_action_skill",
     "is_recurring_skill",
-    "normalize_skill_name",
     "pin_recurring_skill",
     "resolve_scheduled_skill",
     "skill_revision",
@@ -35,11 +35,6 @@ class ScheduledSkillResolution:
     @property
     def name(self) -> str:
         return self.skill.name
-
-
-def normalize_skill_name(name: str) -> str:
-    """Return the canonical kebab-case skill slug."""
-    return name.strip().lower().replace("_", "-")
 
 
 def find_action_skill(name: str) -> ActionSkill | None:
