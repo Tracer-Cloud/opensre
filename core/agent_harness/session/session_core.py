@@ -171,7 +171,9 @@ class SessionCore:
 
     A question the user has settled must not be asked again later in the
     session, whether it comes back through a skill's entry hook or because the
-    model calls the menu tool itself.
+    model calls the menu tool itself. Session-scoped on purpose: ``/new`` starts
+    clean, and a ``/resume`` may ask again, since the answer's effect is not
+    restored either.
     """
 
     skills_already_prompted: set[str] = field(default_factory=set)
@@ -429,6 +431,8 @@ class SessionCore:
         self.pending_recovery_note = None
         self.gather_unreachable_tools.clear()
         self.gather_unreachable_sources.clear()
+        self.questions_already_answered.clear()
+        self.skills_already_prompted.clear()
         if rotate_identity:
             # Rotate session identity so the new post-reset session gets its own ID and file.
             self.session_id = str(uuid.uuid4())

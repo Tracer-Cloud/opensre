@@ -19,7 +19,11 @@ import core.agent_harness.prompts.skills.loader as loader
 from config.constants.skills import ONBOARDING_SKILL_NAME
 from core.agent_harness.tools import ActionToolScope
 from surfaces.interactive_shell.session import Session
-from tools.interactive_shell.actions.skill_entry import MENU_QUEUED_INSTRUCTION, enter_skill
+from tools.interactive_shell.actions.skill_entry import (
+    MENU_QUEUED_INSTRUCTION,
+    enter_skill,
+    pre_execute_queued_menu,
+)
 from tools.interactive_shell.actions.skill_view import execute_skill_view_tool
 
 
@@ -206,3 +210,36 @@ def test_demo_reopens_the_menu_after_the_session_answered_it() -> None:
     # Assert
     assert result["pre_execute"]
     assert session.pending_user_choice is not None
+
+
+def test_a_hook_that_queued_no_menu_does_not_count_as_prompted() -> None:
+    """A refusal or an unavailable menu must not silence the skill for good.
+
+    Recording the skill on any hook result meant one transient failure kept the
+    user from ever seeing the menu again in that session.
+    """
+    # Arrange: no terminal facet, so the menu reports itself unavailable.
+    session = Session()
+    scope = _scope(session, tty=False)
+
+    # Act
+    result = enter_skill(ONBOARDING_SKILL_NAME, scope)
+
+    # Assert: nothing opened, so nothing is remembered.
+    assert not pre_execute_queued_menu(result.get("pre_execute", []))
+    assert session.skills_already_prompted == set()
+
+
+def test_a_fresh_session_forgets_what_was_answered() -> None:
+    """``/new`` means a new session; a remembered answer would suppress its menus."""
+    # Arrange
+    session = Session()
+    enter_skill(ONBOARDING_SKILL_NAME, _scope(session))
+    session.questions_already_answered.add("which demo would you like me to run? (esc to skip)")
+
+    # Act
+    session.clear()
+
+    # Assert
+    assert session.questions_already_answered == set()
+    assert session.skills_already_prompted == set()

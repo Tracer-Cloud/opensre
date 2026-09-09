@@ -125,7 +125,7 @@ def enter_skill(name: str, ctx: Any, *, from_model: bool = False) -> dict[str, A
         and _may_open_menu(session, skill, from_model=from_model)
         else []
     )
-    if hooks and session is not None:
+    if pre_execute_queued_menu(hooks) and session is not None:
         already = getattr(session, "skills_already_prompted", None)
         if isinstance(already, set):
             already.add(skill.name)
