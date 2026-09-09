@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
@@ -11,6 +12,7 @@ from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
 from core.tool_framework import tool
 from core.tool_framework.utils import code_host_unavailable_payload
+from integrations.github.client import GitHubApiError, GitHubRestClient
 from integrations.github.envelope import normalize_github_tool_result
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
@@ -119,6 +121,7 @@ def _normalize_job(job: dict[str, Any]) -> dict[str, Any]:
 
 _RUN_HISTORY_FIELDS = (
     "id",
+    "workflow_id",
     "name",
     "status",
     "conclusion",
@@ -136,27 +139,74 @@ def _run_history_row(run: dict[str, Any]) -> dict[str, Any]:
     return {key: run.get(key) for key in _RUN_HISTORY_FIELDS}
 
 
+def _as_int(value: Any, default: int = 0) -> int:
+    """Parse a GitHub numeric field; ``default`` when missing or unparsable."""
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _workflow_group_key(row: dict[str, Any]) -> tuple[str, str]:
+    """Stable workflow identity; name is display-only and is not unique."""
+    workflow_id = row.get("workflow_id")
+    if workflow_id not in (None, "", 0, "0"):
+        return ("workflow", str(workflow_id))
+    run_id = row.get("id")
+    if run_id not in (None, ""):
+        return ("run", str(run_id))
+    return ("name", str(row.get("name") or ""))
+
+
+def _parse_run_time(raw: Any) -> datetime | None:
+    """Parse a GitHub timestamp; ``None`` when absent or unparsable."""
+    text = str(raw or "").strip()
+    if not text:
+        return None
+    try:
+        parsed = datetime.fromisoformat(text.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+
+
+def _run_recency_key(row: dict[str, Any]) -> tuple[int, float, int, int]:
+    """Order runs of one workflow; higher is later.
+
+    ``run_attempt`` is per run id, so it is only a last-resort tie-breaker.
+    ``run_number`` and timestamps choose among independent runs first.
+    """
+    when = _parse_run_time(row.get("updated_at")) or _parse_run_time(row.get("created_at"))
+    return (
+        _as_int(row.get("run_number")),
+        when.timestamp() if when is not None else 0.0,
+        _as_int(row.get("id")),
+        _as_int(row.get("run_attempt"), default=1),
+    )
+
+
 def _workflow_verdicts(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """One line per workflow on the commit, stated so the reader copies rather than infers.
 
-    The listing carries each run's latest attempt only, so ``re_run`` is
-    ``latest_attempt > 1`` and ``re_run_to_green`` adds ``latest_conclusion
-    == "success"``; earlier attempts' conclusions are not in the listing.
+    Grouped by ``workflow_id`` (name is display-only). The latest run of that
+    workflow is the highest ``run_number`` / newest timestamp, not the highest
+    ``run_attempt``. ``re_run`` is that run's ``run_attempt > 1``;
+    ``re_run_to_green`` adds ``latest_conclusion == "success"``.
     """
-    latest: dict[str, dict[str, Any]] = {}
+    latest: dict[tuple[str, str], dict[str, Any]] = {}
     for row in rows:
-        name = str(row.get("name") or "")
-        attempt = int(row.get("run_attempt") or 1)
-        current = latest.get(name)
-        if current is None or attempt > int(current.get("run_attempt") or 1):
-            latest[name] = row
+        key = _workflow_group_key(row)
+        current = latest.get(key)
+        if current is None or _run_recency_key(row) > _run_recency_key(current):
+            latest[key] = row
     verdicts: list[dict[str, Any]] = []
-    for name, row in latest.items():
-        attempt = int(row.get("run_attempt") or 1)
+    for row in latest.values():
+        attempt = _as_int(row.get("run_attempt"), default=1)
         conclusion = str(row.get("conclusion") or row.get("status") or "")
         verdicts.append(
             {
-                "workflow": name,
+                "workflow_id": row.get("workflow_id"),
+                "workflow": str(row.get("name") or ""),
                 "latest_attempt": attempt,
                 "latest_conclusion": conclusion,
                 "re_run": attempt > 1,
@@ -190,6 +240,7 @@ def _normalize_run(run: dict[str, Any]) -> dict[str, Any]:
 
     return {
         "id": run.get("id"),
+        "workflow_id": run.get("workflow_id"),
         "name": run.get("name", ""),
         "display_title": run.get("display_title", ""),
         "head_branch": run.get("head_branch", ""),
@@ -223,19 +274,13 @@ NO_RUN_WINDOW = 0
 #: ``head_sha``). Page newest-first until the commit's cluster is past or
 #: the listing ends. Cap pages so one tool call cannot scan the repo.
 _HEAD_SHA_MAX_PAGES = 10
+_FULL_SHA = re.compile(r"[0-9a-f]{40}")
 _GITHUB_RUNS_PER_PAGE_MAX = 100
 
 
 def _run_started_at(run: dict[str, Any]) -> datetime | None:
     """Parse a run's ``created_at``; ``None`` when absent or unparsable."""
-    raw = str(run.get("created_at") or "").strip()
-    if not raw:
-        return None
-    try:
-        parsed = datetime.fromisoformat(raw.replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=UTC)
+    return _parse_run_time(run.get("created_at"))
 
 
 @dataclass(frozen=True, slots=True)
@@ -329,6 +374,45 @@ def _fetch_workflow_run_page(
     return payload, runs
 
 
+def _commit_run_history_rest(
+    owner: str, repo: str, *, head_sha: str, github_token: str | None
+) -> CommitRunHistory | None:
+    """One commit's runs through the REST filter, or ``None`` when REST is unavailable.
+
+    The REST endpoint filters by ``head_sha`` server-side, so the history is
+    complete in one listing however old the commit is. The MCP listing does
+    not honour that filter and is repository-wide, so it stays the fallback.
+    """
+    if not _FULL_SHA.fullmatch(head_sha):
+        # The REST filter matches whole SHAs only; a prefix needs the page scan.
+        return None
+    try:
+        raw_runs = GitHubRestClient(github_token).paginate(
+            f"repos/{owner}/{repo}/actions/runs",
+            params={"head_sha": head_sha, "per_page": _GITHUB_RUNS_PER_PAGE_MAX},
+            collection_key="workflow_runs",
+        )
+    except GitHubApiError:
+        return None
+    runs = [
+        _normalize_run(item)
+        for item in raw_runs
+        if isinstance(item, dict) and _matches_head_sha(item, head_sha)
+    ]
+    payload: dict[str, Any] = {
+        "source": "github",
+        "available": True,
+        "history_source": "rest",
+    }
+    return CommitRunHistory(
+        payload=payload,
+        runs=runs,
+        fully_fetched=True,
+        fetched_before_filter=len(raw_runs),
+        pages_fetched=1,
+    )
+
+
 def _commit_run_history(
     config: Any,
     base_arguments: dict[str, Any],
@@ -343,7 +427,10 @@ def _commit_run_history(
     commit). Hitting the page cap while pages stay full is incomplete.
     A later page failure keeps already-fetched matches and reports incomplete.
     """
-    page_limit = max(1, min(per_page, _GITHUB_RUNS_PER_PAGE_MAX))
+    # A commit's runs sit behind everything newer in the repository-wide
+    # listing, so page at the API maximum whatever page size the caller asked.
+    page_limit = _GITHUB_RUNS_PER_PAGE_MAX if per_page < _GITHUB_RUNS_PER_PAGE_MAX else per_page
+    page_limit = max(1, min(page_limit, _GITHUB_RUNS_PER_PAGE_MAX))
     collected: list[dict[str, Any]] = []
     fetched = 0
     pages_fetched = 0
@@ -631,7 +718,11 @@ def list_github_actions_workflow_runs(
 
     history: CommitRunHistory | None = None
     if head_sha:
-        history = _commit_run_history(config, arguments, head_sha=head_sha, per_page=per_page)
+        history = _commit_run_history_rest(
+            owner, repo, head_sha=head_sha, github_token=github_token
+        )
+        if history is None:
+            history = _commit_run_history(config, arguments, head_sha=head_sha, per_page=per_page)
         payload = history.payload
         workflow_runs = history.runs
     else:
@@ -648,6 +739,13 @@ def list_github_actions_workflow_runs(
             payload["workflow_verdicts"] = _workflow_verdicts(workflow_runs)
             payload["runs_fetched_before_commit_filter"] = history.fetched_before_filter
             payload["history_fully_fetched"] = history.fully_fetched
+            if not workflow_runs and not history.fully_fetched:
+                payload["history_note"] = (
+                    f"No runs for this commit among the {history.fetched_before_filter} "
+                    "newest runs fetched and the listing was not exhausted: the commit's "
+                    "runs may be older than the pages read. Do not report that it has "
+                    "no runs; say the history is incomplete."
+                )
             payload["pages_fetched"] = history.pages_fetched
         _strip_raw_mcp_page(payload)
         if window_hours > NO_RUN_WINDOW:
