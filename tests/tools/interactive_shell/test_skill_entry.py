@@ -1,4 +1,9 @@
-"""Entering a skill runs its ``pre_execute`` hooks through the real tools, allowlisted."""
+"""Entering a skill runs its ``pre_execute`` hooks through the real tools, allowlisted.
+
+Unit coverage of ``tools/interactive_shell/actions/skill_entry.py``. The
+interactive-shell journeys that drive it (startup, ``/demo``, a model-issued
+``skill_view``) live in ``tests/interactive_shell/runtime/test_demo_picker.py``.
+"""
 
 from __future__ import annotations
 
@@ -11,15 +16,9 @@ import pytest
 from rich.console import Console
 
 import core.agent_harness.prompts.skills.loader as loader
-import surfaces.interactive_shell.runtime.slash_adapter as slash_adapter
 from config.constants.skills import ONBOARDING_SKILL_NAME
 from core.agent_harness.tools import ActionToolScope
-from surfaces.interactive_shell.runtime.action_turn import run_action_tool_turn
 from surfaces.interactive_shell.session import Session
-from tests.core.agent.orchestration.action_execution_test_harness import (
-    FakeActionLLM,
-    tool_response,
-)
 from tools.interactive_shell.actions.skill_entry import MENU_QUEUED_INSTRUCTION, enter_skill
 from tools.interactive_shell.actions.skill_view import execute_skill_view_tool
 
@@ -152,22 +151,3 @@ def test_skill_view_without_a_session_still_returns_the_body() -> None:
 
     assert result["ok"] is True
     assert result["pre_execute"] == []  # No scope to run hooks against; nothing is queued.
-
-
-def test_model_load_of_the_master_skill_opens_the_menu_and_ends_the_turn(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Mid-session "what can you do?" needs one model step, not a second one for the menu."""
-    monkeypatch.setattr(slash_adapter, "repl_tty_interactive", lambda: True)
-    session = Session()
-    session.resolved_integrations_cache = {}
-    console = Console(file=io.StringIO(), highlight=False)
-    llm = FakeActionLLM([tool_response("skill_view", {"name": ONBOARDING_SKILL_NAME})])
-
-    run_action_tool_turn("What can you do?", session, console, is_tty=True, llm_factory=lambda: llm)
-
-    assert llm.invocations == 1
-    assert session.active_skill == ONBOARDING_SKILL_NAME
-    assert session.pending_user_choice is not None
-    assert session.pending_user_choice.title == "Which demo would you like me to run? (Esc to skip)"
-    assert session.terminal.pending_prompt_default == "/choose"

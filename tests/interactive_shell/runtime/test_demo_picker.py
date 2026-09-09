@@ -292,6 +292,25 @@ def test_startup_and_demo_respect_tty_and_pending_input(monkeypatch: pytest.Monk
     assert _take_prompt(session) == "/choose"
 
 
+def test_model_load_of_the_master_skill_opens_the_menu_and_ends_the_turn(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Mid-session "what can you do?" needs one model step, not a second one for the menu."""
+    _offerable(monkeypatch)
+    session = Session()
+    session.resolved_integrations_cache = {}
+    console = Console(file=io.StringIO(), highlight=False)
+    llm = FakeActionLLM([tool_response("skill_view", {"name": ONBOARDING_SKILL_NAME})])
+
+    run_action_tool_turn("What can you do?", session, console, is_tty=True, llm_factory=lambda: llm)
+
+    assert llm.invocations == 1
+    assert session.active_skill == ONBOARDING_SKILL_NAME
+    assert session.pending_user_choice is not None
+    assert session.pending_user_choice.title == _TITLE
+    assert session.terminal.pending_prompt_default == "/choose"
+
+
 def test_startup_without_a_menu_hook_does_not_fall_back_to_a_model_turn(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
