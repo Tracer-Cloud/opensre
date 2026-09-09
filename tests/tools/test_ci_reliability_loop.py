@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -110,12 +111,9 @@ def _scheduled_stub(owner: str, repo: str) -> ci_loop.ScheduledLoop:
     return ci_loop.ScheduledLoop(loop=loop, reused=False)
 
 
-def test_tool_puts_todays_snapshot_report_above_the_schedule_card(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
-) -> None:
+def _write_report_snapshot(root: Path, *, window_days: int) -> datetime:
     from datetime import UTC, datetime, timedelta
 
-    from integrations.github.tools.ci_analytics import tool as tool_module
     from integrations.github.tools.ci_analytics.models import (
         CiAnalyticsReport,
         Outage,
@@ -128,7 +126,7 @@ def test_tool_puts_todays_snapshot_report_above_the_schedule_card(
         owner="acme",
         repo="app",
         default_branch="main",
-        window_days=30,
+        window_days=window_days,
         generated_at=now,
         executions=100,
         pr_executions=80,
@@ -147,17 +145,26 @@ def test_tool_puts_todays_snapshot_report_above_the_schedule_card(
         working_hours_label="Mon-Fri 09:00-18:00 UTC",
     )
     write_snapshot(
-        tmp_path,
+        root,
         "acme",
         "app",
         now - timedelta(minutes=5),
         {
             "generated_at": (now - timedelta(minutes=5)).isoformat(),
-            "window_days": 30,
+            "window_days": window_days,
             "headline": "h",
             "report": report_to_dict(report),
         },
     )
+    return now
+
+
+def test_tool_puts_todays_snapshot_report_above_the_schedule_card(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from integrations.github.tools.ci_analytics import tool as tool_module
+
+    now = _write_report_snapshot(tmp_path, window_days=30)
     monkeypatch.setattr(tool_module, "snapshot_root", lambda _root=None: tmp_path)
     monkeypatch.setattr(tool_module, "resolve_github_token", lambda _t=None: "")
 
@@ -311,3 +318,27 @@ def test_registered_tool_runs_the_scheduling_function() -> None:
     # Assert
     assert registered is not None
     assert registered.run is loop_tool.schedule_ci_reliability_loop
+
+
+def test_tool_uses_the_loops_seven_day_snapshot_when_no_thirty_day_one_exists(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Arrange: only the scheduled loop's own snapshot window is saved today.
+    from integrations.github.tools.ci_analytics import tool as tool_module
+    from integrations.github.tools.ci_analytics.loop import LOOP_WINDOW_DAYS
+
+    _write_report_snapshot(tmp_path, window_days=LOOP_WINDOW_DAYS)
+    monkeypatch.setattr(tool_module, "snapshot_root", lambda _root=None: tmp_path)
+    monkeypatch.setattr(
+        ci_loop, "schedule_ci_reliability_loop", lambda *_a, **_k: _scheduled_stub("acme", "app")
+    )
+
+    # Act
+    result = loop_tool.schedule_ci_reliability_loop(owner="acme", repo="app", include_report=True)
+
+    # Assert: the loop's report is used and says which window it covers.
+    assert result["report_as_of"] != ""
+    assert f"last {LOOP_WINDOW_DAYS} days" in result["response_text"]
+    assert result["response_text"].index("Key results") < result["response_text"].index(
+        "Scheduled:"
+    )

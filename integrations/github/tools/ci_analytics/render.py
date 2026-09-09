@@ -22,15 +22,16 @@ _TOP_BLOCKED_PRS = 5
 _TOP_DEVELOPERS = 3
 
 
-def render_markdown(report: CiAnalyticsReport) -> str:
-    """Compact report: key results lead; counts follow."""
+def render_markdown(report: CiAnalyticsReport, *, compact: bool = False) -> str:
+    """Markdown report: key results lead. ``compact`` omits the counts appendix."""
     lines = [
         f"**CI/CD reliability for {report.owner}/{report.repo}, last {report.window_days} days**",
         "",
     ]
     lines.extend(_key_results_markdown(report))
     if report.executions:
-        lines.extend(_details_markdown(report))
+        if not compact:
+            lines.extend(_details_markdown(report))
     else:
         lines.extend(["", "No completed workflow runs were found in this window."])
     lines.extend(f"- {notice}" for notice in report.coverage_notices)
@@ -180,10 +181,6 @@ def render_comparison(
         Text(""),
         Text(f"Compared with {peers_label} over the same {user.window_days} days", style="bold"),
         table,
-        Text(
-            "Red time = red_hours / (days × 24); CI-caused = reliability_failures / PR runs.",
-            style="dim",
-        ),
     ]
     parts.extend(Text(notice, style="dim") for notice in _comparison_notes(peers))
     parts.extend(Text(line, style="dim") for line in skip_lines(missed))
@@ -225,9 +222,7 @@ def comparison_markdown(
             align,
             *rows,
             "",
-            "Red time = red_hours / (days × 24); CI-caused = reliability_failures / PR runs.",
-            *_comparison_notes(peers),
-            *skip_lines(missed),
+            *[f"- {note}" for note in [*_comparison_notes(peers), *skip_lines(missed)]],
         ]
     )
 

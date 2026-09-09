@@ -24,6 +24,7 @@ from integrations.github.helpers import (
 )
 from integrations.github.repo_scope import detect_git_remote_repo_scope
 from integrations.github.tools.ci_analytics.analysis import analyze_repository
+from integrations.github.tools.ci_analytics.loop import LOOP_WINDOW_DAYS
 from integrations.github.tools.ci_analytics.models import CiAnalyticsReport, FailureKind
 from integrations.github.tools.ci_analytics.render import (
     comparison_markdown,
@@ -244,11 +245,15 @@ def report_text_from_snapshot(
     Reads saved snapshots only; never resolves a token or starts a live fetch.
     """
     now = datetime.now(UTC)
-    snapshot = read_fresh_snapshot(snapshot_root(), owner, repo, window_days=days, now=now)
-    if snapshot is None:
+    # The scheduled loop saves its own window; a same-day loop report counts too.
+    for window in dict.fromkeys((days, LOOP_WINDOW_DAYS)):
+        snapshot = read_fresh_snapshot(snapshot_root(), owner, repo, window_days=window, now=now)
+        if snapshot is not None:
+            break
+    else:
         return "", ""
     result = _from_snapshot(
-        snapshot, owner, repo, days, None, include_benchmarks=include_benchmarks
+        snapshot, owner, repo, window, None, include_benchmarks=include_benchmarks
     )
     if not result.get("success"):
         return "", ""
@@ -358,7 +363,11 @@ def _result(
             "response_text": summary,
         }
     else:
-        result = {**base, **report_payload(report), "response_text": render_markdown(report)}
+        result = {
+            **base,
+            **report_payload(report),
+            "response_text": render_markdown(report, compact=include_benchmarks),
+        }
     if include_benchmarks:
         result = _attach_benchmarks(result, report, window=window, console=console)
     return result
