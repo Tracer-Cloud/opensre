@@ -206,14 +206,19 @@ def _workflow_verdicts(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         name = str(row.get("name") or "")
         re_run = attempt > 1
         re_run_to_green = re_run and conclusion == "success"
+        finished = str(row.get("status") or "") == "completed" or bool(row.get("conclusion"))
         if re_run_to_green:
             summary = (
                 f"{name}: attempt {attempt} succeeded after an earlier attempt; re-run to green."
             )
+        elif re_run and not finished:
+            summary = f"{name}: attempt {attempt} is {conclusion}; re-run, not green yet."
         elif re_run:
             summary = (
                 f"{name}: attempt {attempt} ended {conclusion}; re-run, but not re-run to green."
             )
+        elif not finished:
+            summary = f"{name}: attempt 1 is {conclusion}; never re-run."
         else:
             summary = f"{name}: attempt 1 {conclusion}; never re-run."
         verdicts.append(
@@ -230,21 +235,30 @@ def _workflow_verdicts(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return verdicts
 
 
-def _history_summary(verdicts: list[dict[str, Any]]) -> str:
-    """One sentence for the commit, to be copied into an answer."""
+def _history_summary(verdicts: list[dict[str, Any]], *, fully_fetched: bool) -> str:
+    """One sentence for the commit, to be copied into an answer.
+
+    An incomplete history is said so in the sentence itself, since the
+    sentence is what gets copied.
+    """
     green = [item["workflow"] for item in verdicts if item["re_run_to_green"]]
     if green:
-        return "Re-run to green on this commit: " + ", ".join(green) + "."
-    re_run = [item["workflow"] for item in verdicts if item["re_run"]]
-    if re_run:
-        return (
-            "No workflow on this commit was re-run to green; re-run without green: "
-            + ", ".join(re_run)
-            + "."
-        )
-    if verdicts:
-        return "No workflow on this commit was re-run; every run is attempt 1."
-    return "No workflow runs found for this commit."
+        text = "Re-run to green on this commit: " + ", ".join(green) + "."
+    else:
+        re_run = [item["workflow"] for item in verdicts if item["re_run"]]
+        if re_run:
+            text = (
+                "No workflow on this commit was re-run to green; re-run without green: "
+                + ", ".join(re_run)
+                + "."
+            )
+        elif verdicts:
+            text = "No workflow on this commit was re-run; every run is attempt 1."
+        else:
+            text = "No workflow runs found for this commit."
+    if not fully_fetched:
+        text += " History incomplete: runs beyond the pages read may exist."
+    return text
 
 
 def _normalize_run(run: dict[str, Any]) -> dict[str, Any]:
@@ -773,7 +787,9 @@ def list_github_actions_workflow_runs(
         if history is not None:
             workflow_runs = [_run_history_row(item) for item in workflow_runs]
             payload["workflow_verdicts"] = _workflow_verdicts(workflow_runs)
-            payload["history_summary"] = _history_summary(payload["workflow_verdicts"])
+            payload["history_summary"] = _history_summary(
+                payload["workflow_verdicts"], fully_fetched=history.fully_fetched
+            )
             payload["runs_fetched_before_commit_filter"] = history.fetched_before_filter
             payload["history_fully_fetched"] = history.fully_fetched
             if not workflow_runs and not history.fully_fetched:
