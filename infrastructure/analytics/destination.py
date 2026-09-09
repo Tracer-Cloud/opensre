@@ -29,6 +29,7 @@ from config.constants.analytics import (
     ANALYTICS_TIMESTAMP_HEADER,
 )
 from config.constants.billing import USAGE_SECRET_ENV, WEBAPP_URL_ENV
+from config.secrets.store import keyring_is_disabled
 
 
 @dataclass(frozen=True, slots=True)
@@ -136,7 +137,7 @@ def resolve_analytics_destination() -> AnalyticsDestination | None:
             if not bearer_token:
                 return None
             environment_token = _env(OPENSRE_ACCOUNT_TOKEN_ENV)
-            if environment_token:
+            if environment_token and not keyring_is_disabled():
                 persisted_token = _stored_account_token()
                 if not persisted_token or not hmac.compare_digest(
                     environment_token,

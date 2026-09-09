@@ -17,8 +17,8 @@ The app origin resolves in this order:
 
 An invalid explicit URL, an unreadable saved account, a silo URL without
 `AGENT_USAGE_SECRET`, or an environment account token that conflicts with the
-saved login disables remote delivery for that process instead of falling
-through to another origin or identity.
+saved login while local credential storage is enabled disables remote delivery
+for that process instead of falling through to another origin or identity.
 
 The request carries the personal `osre_pat_...` bearer for a signed-in CLI or
 `AGENT_USAGE_SECRET` for a silo. It has no authorization header before login.
