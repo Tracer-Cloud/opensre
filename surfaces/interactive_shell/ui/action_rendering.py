@@ -119,9 +119,14 @@ def _is_internal_choice_command(name: str, data: dict[str, Any]) -> bool:
     return isinstance(args, dict) and str(args.get("command", "")).strip() == "/choose"
 
 
+def _collapsed_line(value: str) -> str:
+    """One line, whitespace collapsed. Do not truncate — the action log clips to width."""
+    return " ".join(value.split())
+
+
 def _bounded_preview(value: str, *, limit: int = _TOOL_PREVIEW_MAX_CHARS) -> str:
     """Keep live progress on one useful terminal line."""
-    collapsed = " ".join(value.split())
+    collapsed = _collapsed_line(value)
     if len(collapsed) <= limit:
         return collapsed
     return collapsed[: limit - 1].rstrip() + "…"
@@ -204,7 +209,7 @@ def _github_cli_display(args: dict[str, Any]) -> tuple[str, str]:
         command.extend(["-R", repo])
     command.extend(_compact_gh_args(args.get("args")))
     preview = shlex.join(command).replace("'…'", "…")
-    return "GitHub CLI", _bounded_preview(preview)
+    return "GitHub CLI", preview
 
 
 def _python_execution_display(args: dict[str, Any]) -> tuple[str, str]:
@@ -535,7 +540,7 @@ class ActionRenderObserver:
         args = data.get("input")
         label, content = tool_call_display(name, args if isinstance(args, dict) else {})
         if label in _COMMAND_TOOL_LABELS:
-            concise = _bounded_preview(content) if content else ""
+            concise = _collapsed_line(content) if content else ""
             detail = f"{_TOOL_CALL_MARKER} {label} · {content}" if content else f"{label}"
         else:
             concise = ""

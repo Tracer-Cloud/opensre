@@ -90,6 +90,8 @@ def test_failed_commands_are_rerun_not_estimated() -> None:
     shell_section = _SYSTEM_PROMPT_BASE.split("## Shell commands", 1)[1]
 
     # Assert
+    assert "read-only measurement" in shell_section
     assert "fix it and run it again before answering" in shell_section
+    assert "Do not rerun a command that may already have written files" in shell_section
     assert "Never replace a failed measurement" in shell_section
     assert "the command line still shows dimmed" in shell_section

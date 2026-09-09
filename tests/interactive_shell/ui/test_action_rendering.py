@@ -265,6 +265,41 @@ def test_github_cli_tool_call_display_uses_sdk_arguments_without_runtime_details
     assert "120" not in content
 
 
+def test_github_cli_tool_call_display_keeps_a_command_longer_than_the_preview_cap() -> None:
+    filename = "very-long-workflow-name-that-must-not-be-cut.yml"
+    fields = ",".join(f"field{index}" for index in range(40))
+    _label, content = tool_call_display(
+        "github_cli",
+        {"args": ["run", "list", "--workflow", filename, "--json", fields]},
+    )
+
+    assert filename in content
+    assert "field39" in content
+    assert len(content) > 180
+    assert not content.endswith("…")
+
+
+def test_action_log_keeps_the_full_collapsed_command_until_flush_clips() -> None:
+    filename = "very-long-workflow-name-that-must-not-be-cut.yml"
+    fields = ",".join(f"field{index}" for index in range(40))
+    observer, _buffer = _observer_with_buffer()
+
+    observer(
+        "tool_start",
+        {
+            "id": "t1",
+            "name": "github_cli",
+            "input": {"args": ["run", "list", "--workflow", filename, "--json", fields]},
+        },
+    )
+
+    entry = observer.session.terminal.action_log_entries[0]
+    assert filename in entry.concise
+    assert "field39" in entry.concise
+    assert len(entry.concise) > 180
+    assert not entry.concise.endswith("…")
+
+
 def test_python_tool_call_display_summarizes_execution_with_safe_input_values() -> None:
     label, content = tool_call_display(
         "execute_python_code",

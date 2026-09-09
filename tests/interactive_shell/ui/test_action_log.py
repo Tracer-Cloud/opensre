@@ -61,6 +61,25 @@ def test_no_inline_dotted_arguments_on_a_single_call() -> None:
     assert "per_page" not in out  # args are hidden behind Ctrl+O
 
 
+def test_a_long_collapsed_command_is_clipped_only_at_render_width() -> None:
+    command = "gh run list --workflow very-long-workflow-name-that-must-not-be-cut.yml --json " + (
+        ",".join(f"field{index}" for index in range(40))
+    )
+    session = Session()
+    _push(session, "1", "GitHub CLI", command, f"⏺ GitHub CLI · {command}")
+    buffer = io.StringIO()
+    console = Console(
+        file=buffer, force_terminal=True, highlight=False, color_system="truecolor", width=80
+    )
+
+    flush_action_log(console, session)
+
+    out = buffer.getvalue()
+    assert "field39" not in out  # clipped to the 80-column row
+    assert "very-long-workflow" in out
+    assert command in session.terminal.next_collapsed_output_for_expand()
+
+
 def test_a_lone_call_is_a_dim_line_not_a_one_row_box() -> None:
     session = Session()
     _push(session, "1", "GitHub CLI", "gh pr list", "⏺ GitHub CLI · gh pr list")
