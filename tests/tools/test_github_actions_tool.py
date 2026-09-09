@@ -963,9 +963,16 @@ def test_head_sha_history_states_a_verdict_per_workflow() -> None:
         "latest_conclusion": "cancelled",
         "re_run": True,
         "re_run_to_green": False,
+        "summary": "CI: attempt 2 ended cancelled; re-run, but not re-run to green.",
     }
     assert verdicts["CodeQL"]["re_run"] is False
     assert verdicts["Release"]["re_run_to_green"] is True
+    assert (
+        verdicts["CI"]["summary"]
+        == "CI: attempt 2 ended cancelled; re-run, but not re-run to green."
+    )
+    assert verdicts["CodeQL"]["summary"] == "CodeQL: attempt 1 success; never re-run."
+    assert result["history_summary"] == "Re-run to green on this commit: Release."
 
 
 def test_workflows_that_share_a_name_keep_separate_verdicts() -> None:
@@ -1036,6 +1043,7 @@ def test_the_latest_run_is_the_newest_run_not_the_highest_attempt() -> None:
             "latest_conclusion": "success",
             "re_run": False,
             "re_run_to_green": False,
+            "summary": "CI: attempt 1 success; never re-run.",
         }
     ]
 
