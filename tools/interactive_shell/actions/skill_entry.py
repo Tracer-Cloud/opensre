@@ -70,7 +70,35 @@ def pre_execute_queued_menu(results: list[dict[str, Any]]) -> bool:
     return any(item.get("ok") and item.get("menu") == "queued" for item in results)
 
 
-def enter_skill(name: str, ctx: Any) -> dict[str, Any]:
+def _forget_hook_questions(session: Any, skill: ActionSkill) -> None:
+    """Let a host-requested menu ask again what the session already answered.
+
+    ``/demo`` and startup mean "ask me that question", so the session must drop
+    its record of the answer; otherwise the menu tool refuses the hook and the
+    shell shows nothing at all.
+    """
+    settled = getattr(session, "questions_already_answered", None)
+    if not isinstance(settled, set):
+        return
+    for call in skill.pre_execute:
+        title = str(call.args.get("title", "")).strip()
+        if title:
+            settled.discard(" ".join(title.split()).casefold())
+
+
+def _may_open_menu(session: Any, skill: ActionSkill, *, from_model: bool) -> bool:
+    """True when this entry may open the skill's ``pre_execute`` menu.
+
+    The host opens it on request. The model must not reopen one the session has
+    already answered: a later message that routes back to the skill would ask
+    the same question a second time.
+    """
+    if not from_model:
+        return True
+    return skill.name not in (getattr(session, "skills_already_prompted", None) or set())
+
+
+def enter_skill(name: str, ctx: Any, *, from_model: bool = False) -> dict[str, Any]:
     """Activate ``name`` on the session, run its hooks, and return the body for the model."""
     skill = _skill_by_name(name)
     body = load_skill_body(name) if skill is not None else ""
@@ -88,11 +116,19 @@ def enter_skill(name: str, ctx: Any) -> dict[str, Any]:
         session.active_skill = skill.name
         session.active_skill_tools = tuple(skill.tools)
         session.skill_hooks_fired = set()
+    if skill.pre_execute and not from_model:
+        _forget_hook_questions(session, skill)
     hooks = (
         _run_pre_execute(skill, ctx)
-        if skill.pre_execute and isinstance(ctx, ActionToolScope)
+        if skill.pre_execute
+        and isinstance(ctx, ActionToolScope)
+        and _may_open_menu(session, skill, from_model=from_model)
         else []
     )
+    if hooks and session is not None:
+        already = getattr(session, "skills_already_prompted", None)
+        if isinstance(already, set):
+            already.add(skill.name)
     content = body
     if pre_execute_queued_menu(hooks):
         content = "".join((body, "\n\n", MENU_QUEUED_INSTRUCTION))

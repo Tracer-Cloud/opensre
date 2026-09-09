@@ -36,6 +36,14 @@ _CANCELLED = "Selection cancelled — type a reply instead."
 _DEMO_SKIPPED = "Demo skipped — type a request, or /demo to come back to it."
 
 
+def _remember_answered(session: Session, *titles: str) -> None:
+    """Record questions the user has settled, so nothing asks them again."""
+    settled = getattr(session, "questions_already_answered", None)
+    if not isinstance(settled, set):
+        return
+    settled.update(" ".join(title.split()).casefold() for title in titles if title.strip())
+
+
 def _leave_menu(session: Session, console: Console, note: str) -> None:
     """Close the menu with no answer for the model and leave the skill."""
     console.print(f"[{ui_theme.DIM}]{note}[/]")
@@ -71,6 +79,7 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
         if picked is None:
             _leave_menu(session, console, _CANCELLED)
             return True
+        _remember_answered(session, *(question.title for question in items))
         session.terminal.set_auto_command(format_ask_user_answers(items, picked))
         session.terminal.awaiting_handoff_answer = True
         return True
@@ -100,6 +109,7 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
     if picked_one is None:
         _leave_menu(session, console, _CANCELLED)
         return True
+    _remember_answered(session, items[0].title)
     if picked_one == SKIP_DEMO_OPTION:
         # A shell decision, not an answer for the model: the demo is over.
         _leave_menu(session, console, _DEMO_SKIPPED)

@@ -385,3 +385,40 @@ def test_a_fully_answered_batch_is_refused_with_the_answers() -> None:
     assert result["ok"] is False
     assert "'Every day'" in result["error"] and "'Inbox'" in result["error"]
     assert session.pending_user_choice is None
+
+
+def test_a_question_answered_earlier_in_the_session_is_not_asked_again() -> None:
+    """The demo menu came back because the model asked it itself, not through a hook.
+
+    A skill's entry hook is one way the question returns; the model calling
+    ``ask_user_choice`` with the same title is another, and the guard has to
+    cover both.
+    """
+    # Arrange: the user settled this question in an earlier turn.
+    session = Session()
+    session.questions_already_answered = {"which demo would you like me to run?"}
+    ctx = _ctx(session=session)
+
+    # Act
+    result = execute_ask_user_choice_tool(
+        {"title": "Which demo would you like me to run?", "options": ["A demo", "Another"]},
+        ctx,
+    )
+
+    # Assert
+    assert result["ok"] is False
+    assert "earlier in this session" in result["error"]
+    assert session.pending_user_choice is None
+
+
+def test_answering_a_menu_records_the_question_for_the_rest_of_the_session() -> None:
+    # Arrange
+    from surfaces.interactive_shell.command_registry.choice_prompt import _remember_answered
+
+    session = Session()
+
+    # Act
+    _remember_answered(session, "  Which demo would you like me to run?  ")
+
+    # Assert: stored normalized, so spacing and case cannot slip a repeat through.
+    assert session.questions_already_answered == {"which demo would you like me to run?"}

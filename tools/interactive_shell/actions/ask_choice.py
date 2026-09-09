@@ -200,6 +200,13 @@ def _answered_this_turn(ctx: ActionToolScope, title: str) -> str | None:
     return None
 
 
+def _answered_earlier(ctx: ActionToolScope, title: str) -> bool:
+    """True when this session already settled ``title`` in an earlier turn."""
+    wanted = _normalize_title(title)
+    settled = getattr(ctx.session, "questions_already_answered", None) or set()
+    return bool(wanted) and wanted in settled
+
+
 def _already_answered_error(answered: dict[str, str]) -> str:
     listed = "; ".join(f"{asked!r}: {answer!r}" for asked, answer in answered.items())
     return (
@@ -220,6 +227,8 @@ def execute_ask_user_choice_tool(args: dict[str, Any], ctx: ActionToolScope) -> 
     if questions:
         # Answered questions leave the batch; the rest are still asked.
         answered = {q.title: a for q in questions if (a := _answered_this_turn(ctx, q.title))}
+        settled = [q.title for q in questions if _answered_earlier(ctx, q.title)]
+        answered.update(dict.fromkeys(settled, "answered earlier in this session"))
         questions = [q for q in questions if q.title not in answered]
         if not questions:
             return {"ok": False, "error": _already_answered_error(answered)}
@@ -230,6 +239,14 @@ def execute_ask_user_choice_tool(args: dict[str, Any], ctx: ActionToolScope) -> 
             questions = None
     elif (answer := _answered_this_turn(ctx, title)) is not None:
         return {"ok": False, "error": _already_answered_error({title: answer})}
+    elif _answered_earlier(ctx, title):
+        return {
+            "ok": False,
+            "error": (
+                f"The user already answered {title!r} earlier in this session. "
+                "Continue from that answer; do not ask it again."
+            ),
+        }
 
     if questions:
         if getattr(ctx.session, "ask_user_rounds", 0) >= _MAX_ASK_ROUNDS:

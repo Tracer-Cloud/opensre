@@ -53,7 +53,7 @@ def execute_skill_view_tool(args: dict[str, Any], ctx: ActionToolScope) -> dict[
     reference = str(args.get("reference", "")).strip()
     if reference:
         return _view_skill_reference(name, reference)
-    return enter_skill(name, ctx)
+    return enter_skill(name, ctx, from_model=True)
 
 
 def run_skill_view(*, name: str, reference: str = "", context: Any) -> dict[str, Any]:
