@@ -115,9 +115,9 @@ once, following these rules, and treat a rename as a breaking change.
    code branches on them.
 
 Sanctioned verbs (add a new one here before using it): `analyzing`,
-`connecting`, `delegating`, `delivering`, `fixing`, `measuring`,
-`onboarding`, `operating`, `querying`, `reporting`, `scheduling`,
-`summarizing`, `tracking`.
+`connecting`, `delegating`, `delivering`, `fixing`, `investigating`,
+`measuring`, `onboarding`, `operating`, `querying`, `reporting`,
+`scheduling`, `summarizing`, `tracking`.
 
 Avoid: vague objects (`helper`, `utils`, `tools`, `data`, `files`), reserved
 prefixes (`anthropic-`, `claude-`), and mixing patterns across the collection.
@@ -129,6 +129,7 @@ Current collection:
 | `delivering-morning-briefings` | workflow | `skills/` | — |
 | `fixing-github-ci` | workflow | `skills/` | — |
 | `fixing-github-security-alerts` | workflow | `skills/` | — |
+| `investigating-incidents-with-runbooks` | workflow | `skills/` | — |
 | `reporting-github-ci-failures` | workflow | `skills/` | — |
 | `operating-github-cli` | tool usage | `integrations/github/tools/github_cli/` | `github_cli` |
 | `operating-github-ci-fixer` | tool usage | `integrations/github/tools/ci_fix/` | `fix_github_pr_ci` |

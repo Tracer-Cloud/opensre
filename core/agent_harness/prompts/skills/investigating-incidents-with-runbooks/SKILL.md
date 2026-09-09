@@ -1,10 +1,12 @@
 ---
-name: runbook-investigation
+name: investigating-incidents-with-runbooks
 description: >-
   Investigate an incident with organization-owned runbook guidance, loaded by
   URL or exact alert identity. Multi-step; load before acting.
 metadata:
-  owner: Tracer Team
+  owner: Anwesh
+  last_changed_by: Vincent
+  last_changed_at: 2026-09-09
   usecases:
     - Investigating an incident using an organization-owned runbook
     - Triaging an alert against configured runbook guidance and live evidence
