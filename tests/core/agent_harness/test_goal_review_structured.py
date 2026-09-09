@@ -66,6 +66,21 @@ def test_goal_reviewer_rejects_while_task_plan_incomplete() -> None:
     assert "unfinished steps" in goal.nudge(_obs())
 
 
+def test_goal_reviewer_rejects_plan_continuation_during_an_active_session_goal() -> None:
+    """``/goal`` is the same work — skip update_plan and the unfinished plan still blocks."""
+    llm = _ScriptedLLM('{"verdict": "GOAL_REACHED"}')
+    goal = build_goal_reviewer(
+        llm,
+        "remove the leftover cron",
+        executed_tool_names=["shell_run"],
+        plan_incomplete=lambda: True,
+        session_goal_active=True,
+    )
+    assert goal.verify is not None
+    assert goal.verify(_obs()) is False
+    assert llm.invokes == 0
+
+
 def test_goal_reviewer_lets_an_unrelated_turn_conclude_over_a_stale_plan() -> None:
     """A plan left from an earlier request does not pull this turn back into it."""
     # Arrange: the plan is unfinished, but this turn never touched it.

@@ -228,6 +228,7 @@ def _verdict_from_judge(
     *,
     evidence: bool,
     host_can_accept: bool,
+    judge_can_accept: bool,
     tool_failed: bool,
     unverified: bool,
     fallback_reason: str,
@@ -256,26 +257,34 @@ def _verdict_from_judge(
             repeats_previous=repeated,
         )
     if parsed.verdict == "GOAL_REACHED":
-        if evidence and not tool_failed and not unverified:
+        # Same overflow / unfinished / failed-tool gate as the host. A cheap
+        # GOAL_REACHED must not close on unreviewable or incomplete work.
+        if judge_can_accept:
             return SessionGoalVerdict(
                 status=SessionGoalStatus.ACHIEVED,
                 reason=reason or SessionGoalReason.ACHIEVED_TOOL_EVIDENCE,
             )
-        if evidence and tool_failed:
-            return SessionGoalVerdict(
-                status=SessionGoalStatus.ACTIVE,
-                reason=reason or fallback_reason,
-                repeats_previous=repeated,
-            )
-        if evidence and unverified:
+        if unverified:
             return SessionGoalVerdict(
                 status=SessionGoalStatus.ACTIVE,
                 reason=SessionGoalReason.UNVERIFIED_OVERFLOW,
                 repeats_previous=repeated,
             )
+        if tool_failed:
+            return SessionGoalVerdict(
+                status=SessionGoalStatus.ACTIVE,
+                reason=reason or fallback_reason,
+                repeats_previous=repeated,
+            )
+        if not evidence:
+            return SessionGoalVerdict(
+                status=SessionGoalStatus.ACTIVE,
+                reason=_need_tool_evidence_reason(reason),
+                repeats_previous=repeated,
+            )
         return SessionGoalVerdict(
             status=SessionGoalStatus.ACTIVE,
-            reason=_need_tool_evidence_reason(reason),
+            reason=reason or fallback_reason,
             repeats_previous=repeated,
         )
     return SessionGoalVerdict(
@@ -355,10 +364,19 @@ def evaluate_session_goal(
     any_failure = tool_evidence_has_failure(tool_evidence)
     unrecovered = tool_evidence_has_unrecovered_failure(tool_evidence)
     unverified = current.tool_evidence is None
+    unfinished = bool(current.unfinished_items)
     host_can_accept = _host_can_accept(
         evidence=evidence,
-        unfinished=bool(current.unfinished_items),
+        unfinished=unfinished,
         tool_failed=any_failure,
+        unverified=unverified,
+    )
+    # The judge may complete an open checklist (``_complete_checklist``).
+    # Overflow and an unrecovered write still block.
+    judge_can_accept = _host_can_accept(
+        evidence=evidence,
+        unfinished=False,
+        tool_failed=unrecovered,
         unverified=unverified,
     )
     if current.checklist_complete and evidence and judge is None and judge_llm is None:
@@ -395,6 +413,7 @@ def evaluate_session_goal(
             parsed,
             evidence=evidence,
             host_can_accept=host_can_accept,
+            judge_can_accept=judge_can_accept,
             tool_failed=unrecovered,
             unverified=unverified,
             fallback_reason=derive_session_goal_reason(current),

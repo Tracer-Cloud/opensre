@@ -15,6 +15,7 @@ _MAX_REVIEW_INPUT_CHARS = 64000
 _OUTCOME_ERROR_MARK = "\nOutcome: error\n"
 _OUTCOME_ERROR_LINE = "Outcome: error"
 _OUTCOME_SUCCESS_LINE = "Outcome: success"
+_STATUS_TOOL_PREFIXES = ("list_", "get_", "read_", "search_", "describe_", "show_")
 
 
 def tool_evidence_has_failure(tool_evidence: str) -> bool:
@@ -22,22 +23,43 @@ def tool_evidence_has_failure(tool_evidence: str) -> bool:
     return _OUTCOME_ERROR_MARK in (tool_evidence or "")
 
 
-def tool_evidence_has_unrecovered_failure(tool_evidence: str) -> bool:
-    """True when the latest this-turn observation is an error.
+def _is_status_or_discovery_tool(name: str) -> bool:
+    """True for a lookup — a later success of one of these does not recover a write."""
+    lower = name.strip().lower()
+    if lower.startswith(_STATUS_TOOL_PREFIXES):
+        return True
+    return is_gather_discovery_call(name.strip(), {})
 
-    A later success recovers a preliminary failure. A later error after a
-    successful lookup still blocks — the requested operation failed.
+
+def tool_evidence_has_unrecovered_failure(tool_evidence: str) -> bool:
+    """True when a failed write still stands, or the latest observation errored.
+
+    A later successful write recovers a preliminary lookup or write failure.
+    A later status/list/read success does not recover a failed mutation.
     """
-    last_failed: bool | None = None
+    write_failed = False
+    last_failed = False
     for block in (tool_evidence or "").split("\n\n"):
+        name = ""
+        outcome_error: bool | None = None
         for line in block.splitlines():
-            if line == _OUTCOME_ERROR_LINE:
-                last_failed = True
-                break
-            if line == _OUTCOME_SUCCESS_LINE:
-                last_failed = False
-                break
-    return bool(last_failed)
+            if line.startswith("Tool: "):
+                name = line[6:].strip()
+            elif line == _OUTCOME_ERROR_LINE:
+                outcome_error = True
+            elif line == _OUTCOME_SUCCESS_LINE:
+                outcome_error = False
+        if outcome_error is None:
+            continue
+        if outcome_error:
+            last_failed = True
+            if not _is_status_or_discovery_tool(name):
+                write_failed = True
+        else:
+            last_failed = False
+            if not _is_status_or_discovery_tool(name):
+                write_failed = False
+    return write_failed or last_failed
 
 
 def _qualifying_success(call: ToolCall, result: ToolExecutionResult) -> bool:

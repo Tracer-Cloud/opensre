@@ -458,6 +458,27 @@ def test_a_later_success_does_not_let_the_host_ignore_a_failed_tool() -> None:
     assert verdict.status == SessionGoalStatus.ACTIVE
 
 
+def test_a_later_status_success_does_not_recover_a_failed_write() -> None:
+    action = ToolCallingTurnResult(
+        2,
+        2,
+        1,
+        False,
+        True,
+        tool_evidence=(
+            "Tool: delete_job\nArguments: {}\nOutcome: error\nResult: denied\n\n"
+            "Tool: read_status\nArguments: {}\nOutcome: success\nResult: still there"
+        ),
+        evidence_success_count=1,
+    )
+    verdict = evaluate_session_goal(
+        SessionGoal(condition="remove scheduled jobs"),
+        TurnResult("cli_agent_handled", action, "Removed."),
+        judge=_reached,
+    )
+    assert verdict.status == SessionGoalStatus.ACTIVE
+
+
 def test_a_recovered_failure_does_not_block_a_reached_verdict() -> None:
     action = ToolCallingTurnResult(
         2,
