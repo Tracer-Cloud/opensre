@@ -4,7 +4,12 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.agent_harness import is_recurring_skill, normalize_skill_name, validate_skill_inputs
+from core.agent_harness import (
+    is_recurring_skill,
+    normalize_skill_name,
+    validate_recurring_skill_inputs,
+    validate_skill_inputs,
+)
 from core.agent_harness.spi.session_state import (
     PendingScheduleOffer,
     clear_competing_pending_offers,
@@ -114,6 +119,7 @@ def execute_propose_scheduled_delivery_tool(
     repo = str(args.get("repo", "") or "").strip()
     branch = str(args.get("branch", "") or "").strip()
     pr_number = str(args.get("pr_number", "") or "").strip()
+    workspace = str(args.get("workspace", "") or "").strip()
     city = str(args.get("city", "") or "").strip()
 
     if kind not in _KIND_VALUES:
@@ -181,43 +187,20 @@ def execute_propose_scheduled_delivery_tool(
         if blocked is not None:
             return blocked
 
-    scope_supplied = bool(owner or repo or branch or pr_number)
-    skill_inputs: dict[str, str] = {}
-    if skill_name == "delivering-morning-briefings":
-        if city:
-            skill_inputs["city"] = city
-    elif skill_name == "reporting-github-ci-failures":
-        if not owner or not repo:
-            return {
-                "ok": False,
-                "error": "owner and repo are required for reporting-github-ci-failures.",
-            }
-        if branch and pr_number:
-            return {"ok": False, "error": "Use either branch or pr_number, not both."}
-        if pr_number:
-            try:
-                if int(pr_number) < 1:
-                    raise ValueError
-            except ValueError:
-                return {"ok": False, "error": "pr_number must be a positive integer."}
-        skill_inputs = {"owner": owner, "repo": repo}
-        if branch:
-            skill_inputs["branch"] = branch
-        if pr_number:
-            skill_inputs["pr_number"] = pr_number
-    elif scope_supplied:
-        return {
-            "ok": False,
-            "error": "owner, repo, branch, and pr_number are only valid for reporting-github-ci-failures.",
-        }
-    elif city:
-        return {
-            "ok": False,
-            "error": "city is only valid for delivering-morning-briefings.",
-        }
-
     try:
-        skill_inputs = validate_skill_inputs(skill_inputs)
+        skill_inputs = validate_skill_inputs(
+            validate_recurring_skill_inputs(
+                skill_name,
+                {
+                    "city": city,
+                    "owner": owner,
+                    "repo": repo,
+                    "branch": branch,
+                    "pr_number": pr_number,
+                    "workspace": workspace,
+                },
+            )
+        )
     except ValueError as exc:
         return {"ok": False, "error": str(exc)}
 
@@ -267,6 +250,7 @@ def run_propose_scheduled_delivery(
     repo: str = "",
     branch: str = "",
     pr_number: str = "",
+    workspace: str = "",
     city: str = "",
     context: Any,
 ) -> dict[str, Any]:
@@ -284,6 +268,7 @@ def run_propose_scheduled_delivery(
             "repo": repo,
             "branch": branch,
             "pr_number": pr_number,
+            "workspace": workspace,
             "city": city,
         },
         context,
@@ -367,16 +352,29 @@ propose_scheduled_delivery_tool = RegisteredTool(
                 ),
             ),
             "owner": string_property(
-                description="Repository owner required by the reporting-github-ci-failures skill."
+                description=(
+                    "Repository owner required by the reporting-github-ci-failures and "
+                    "fixing-github-security-alerts skills."
+                )
             ),
             "repo": string_property(
-                description="Repository name required by the reporting-github-ci-failures skill."
+                description=(
+                    "Repository name required by the reporting-github-ci-failures and "
+                    "fixing-github-security-alerts skills."
+                )
             ),
             "branch": string_property(
                 description="Optional reporting-github-ci-failures branch filter; mutually exclusive with pr_number."
             ),
             "pr_number": string_property(
                 description="Optional positive reporting-github-ci-failures PR number; mutually exclusive with branch."
+            ),
+            "workspace": string_property(
+                description=(
+                    "Optional fixing-github-security-alerts local checkout path whose origin is "
+                    "the repository; each scheduled tick fixes one finding from a fresh linked "
+                    "worktree of that checkout."
+                )
             ),
             "city": string_property(
                 description=(

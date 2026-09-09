@@ -10,6 +10,7 @@ cleanup.
 from __future__ import annotations
 
 import re
+from collections.abc import Collection
 from dataclasses import dataclass
 from http import HTTPStatus
 from typing import Any, Literal
@@ -19,6 +20,7 @@ from integrations.github.client import GitHubApiError, GitHubRestClient
 from integrations.github.repo_scope import detect_git_remote_repo_scope
 from integrations.github.tools.security_fix.errors import (
     ERR_ALERT_NOT_FOUND,
+    ERR_FIX_ALREADY_OPEN,
     ERR_GITHUB_UNAVAILABLE,
     ERR_INVALID_INPUT,
     ERR_NO_AUTOFIXABLE_FINDING,
@@ -188,8 +190,14 @@ def gather_security_alert_context(
     workspace: str | None = None,
     github_token: str | None = None,
     prefer_builtin_local_fix: bool = False,
+    exclude: Collection[tuple[str, int]] = (),
 ) -> SecurityAlertContext:
-    """Resolve a GitHub alert and build the coding-agent task."""
+    """Resolve a GitHub alert and build the coding-agent task.
+
+    ``exclude`` lists ``(alert_type, number)`` pairs that automatic selection
+    skips (findings that already have a fix in flight); an explicit number is
+    never filtered.
+    """
     parsed_url = parse_security_alert_url(alert_url)
     normalized_type = parsed_url.alert_type if parsed_url else normalize_alert_type(alert_type)
     number = parsed_url.number if parsed_url and parsed_url.number is not None else alert_number
@@ -221,20 +229,13 @@ def gather_security_alert_context(
             alert_type=normalized_type,
             number=int(number),
         )
-    if normalized_type != "auto":
-        return _select_first_alert_context(
-            client,
-            owner=repo_owner,
-            repo=repo_name,
-            alert_type=normalized_type,
-            prefer_builtin_local_fix=prefer_builtin_local_fix,
-        )
     return _select_first_alert_context(
         client,
         owner=repo_owner,
         repo=repo_name,
-        alert_type="auto",
+        alert_type=normalized_type,
         prefer_builtin_local_fix=prefer_builtin_local_fix,
+        exclude=exclude,
     )
 
 
@@ -285,8 +286,10 @@ def _select_first_alert_context(
     repo: str,
     alert_type: AlertType,
     prefer_builtin_local_fix: bool,
+    exclude: Collection[tuple[str, int]] = (),
 ) -> SecurityAlertContext:
     selected_types = _SUPPORTED_AUTO_TYPES if alert_type == "auto" else (alert_type,)
+    excluded = set(exclude)
     candidates: list[tuple[int, bool, ResolvedAlertType, dict[str, Any]]] = []
     errors: list[str] = []
     for candidate in selected_types:
@@ -325,6 +328,14 @@ def _select_first_alert_context(
             ERR_ALERT_NOT_FOUND,
             f"No open Dependabot, code-scanning, or Code Quality findings found in {owner}/{repo}; no PR was created.",
         )
+    if excluded:
+        remaining = [item for item in candidates if (item[2], item[3]["number"]) not in excluded]
+        if not remaining:
+            raise GitHubSecurityFixError(
+                ERR_FIX_ALREADY_OPEN,
+                f"Every open supported finding in {owner}/{repo} already has an OpenSRE fix pull request open; no new PR was created.",
+            )
+        candidates = remaining
     if prefer_builtin_local_fix:
         local_candidates = [item for item in candidates if item[1]]
         if not local_candidates:

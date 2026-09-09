@@ -11,7 +11,11 @@ import click
 from rich.console import Console
 from rich.table import Table
 
-from core.agent_harness import pin_recurring_skill, validate_skill_inputs
+from core.agent_harness import (
+    pin_recurring_skill,
+    validate_recurring_skill_inputs,
+    validate_skill_inputs,
+)
 from infrastructure.scheduling.scheduler.credentials import requires_explicit_chat_id
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_PROMPT_PARAM
 from infrastructure.scheduling.scheduler.types import Provider, TaskKind, TaskRun, TaskStatus
@@ -115,6 +119,15 @@ def cron_command() -> None:
     "--pr", "pr_number", type=click.IntRange(min=1), default=None, help="Optional GitHub PR filter."
 )
 @click.option(
+    "--workspace",
+    type=str,
+    default="",
+    help=(
+        "Local checkout of the repository for the fixing-github-security-alerts skill "
+        "(defaults to CODING_WORKSPACE or the scheduler's working directory)."
+    ),
+)
+@click.option(
     "--city", type=str, default="", help="Optional city for the delivering-morning-briefings skill."
 )
 def cron_add(
@@ -131,6 +144,7 @@ def cron_add(
     repo: str,
     branch: str,
     pr_number: int | None,
+    workspace: str,
     city: str,
 ) -> None:
     """Add a new scheduled delivery task."""
@@ -160,11 +174,14 @@ def cron_add(
         raise click.ClickException("--skill is only valid with --kind recurring_skill.")
     skill_inputs = _recurring_skill_inputs(
         pinned_name,
-        city=city,
-        owner=owner,
-        repo=repo,
-        branch=branch,
-        pr_number=pr_number,
+        {
+            "city": city,
+            "owner": owner,
+            "repo": repo,
+            "branch": branch,
+            "pr_number": str(pr_number) if pr_number is not None else "",
+            "workspace": workspace,
+        },
     )
     task_params = {LOOP_PROMPT_PARAM: normalized_prompt} if normalized_prompt else {}
 
@@ -204,48 +221,13 @@ def cron_add(
     _console.print(f"  Provider: {added.provider.value}  Chat: {added.chat_id}")
 
 
-def _recurring_skill_inputs(
-    skill_name: str,
-    *,
-    city: str,
-    owner: str,
-    repo: str,
-    branch: str,
-    pr_number: int | None,
-) -> dict[str, str]:
-    """Validate and serialize inputs for the selected recurring skill."""
-    normalized_city = city.strip()
-    values_supplied = bool(owner.strip() or repo.strip() or branch.strip() or pr_number)
-    if skill_name == "delivering-morning-briefings":
-        if values_supplied:
-            raise click.UsageError(
-                "--owner, --repo, --branch, and --pr are only valid with "
-                "--kind recurring_skill --skill reporting-github-ci-failures."
-            )
-        return validate_skill_inputs({"city": normalized_city} if normalized_city else {})
-    if normalized_city:
-        raise click.UsageError(
-            "--city is only valid with --kind recurring_skill --skill delivering-morning-briefings."
-        )
-    if skill_name != "reporting-github-ci-failures":
-        if values_supplied:
-            raise click.UsageError(
-                "--owner, --repo, --branch, and --pr are only valid with "
-                "--kind recurring_skill --skill reporting-github-ci-failures."
-            )
-        return validate_skill_inputs({})
-    if not owner.strip() or not repo.strip():
-        raise click.UsageError(
-            "--owner and --repo are required for skill reporting-github-ci-failures."
-        )
-    if branch.strip() and pr_number is not None:
-        raise click.UsageError("Use either --branch or --pr, not both.")
-    params = {"owner": owner.strip(), "repo": repo.strip()}
-    if branch.strip():
-        params["branch"] = branch.strip()
-    if pr_number is not None:
-        params["pr_number"] = str(pr_number)
-    return validate_skill_inputs(params)
+def _recurring_skill_inputs(skill_name: str, supplied: dict[str, str]) -> dict[str, str]:
+    """Validate and serialize the skill-scoped options for the selected recurring skill."""
+    try:
+        inputs = validate_recurring_skill_inputs(skill_name, supplied, as_flags=True)
+    except ValueError as exc:
+        raise click.UsageError(str(exc)) from exc
+    return validate_skill_inputs(inputs)
 
 
 @cron_command.command(name="list")
