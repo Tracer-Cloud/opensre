@@ -241,9 +241,7 @@ def test_include_benchmarks_builds_the_comparison_from_snapshots(
     now = datetime.now(UTC)
     _write_report_snapshot(tmp_path, _report(owner="acme", repo="app", red_hours=48.0), now)
     _write_report_snapshot(tmp_path, _report(red_hours=24.5), now)
-    _write_report_snapshot(
-        tmp_path, _report(owner="fastapi", repo="fastapi", red_hours=2.0), now
-    )
+    _write_report_snapshot(tmp_path, _report(owner="fastapi", repo="fastapi", red_hours=2.0), now)
     monkeypatch.setattr(tool_module, "snapshot_root", lambda _root=None: tmp_path)
     monkeypatch.setattr(tool_module, "resolve_github_token", lambda _t=None: "tok")
 
