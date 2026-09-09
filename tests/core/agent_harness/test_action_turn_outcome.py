@@ -175,7 +175,15 @@ def _painted_result(*, final_text: str) -> Any:
     from core.llm.types import ToolCall
 
     class _ToolResult:
-        details = {"rendered_in_shell": True, "summary": "acme/app: 8151 runs in 30 days."}
+        details = {
+            "rendered_in_shell": True,
+            "summary": "acme/app: 8151 runs in 30 days.",
+            "key_results": [
+                {"label": "main branch red", "value": "36.4h of 30 days (5.1%)"},
+                {"label": "CI-caused failures", "value": "333 of 1174 failed PR runs"},
+                {"label": "Mean time back to green", "value": "1.0h"},
+            ],
+        }
         content = "{}"
         is_error = False
 
@@ -207,10 +215,9 @@ def test_a_closing_written_over_a_painted_report_is_dropped() -> None:
     )
 
     # Act
+    restatement = "36.4h red over 30 days, 333 of 1174 PR runs CI-caused, 1.0h back to green."
     _text, chunks, _use_final = _compose_response(
-        _painted_result(final_text="8151 runs total. Comparison skipped, as requested."),
-        session,
-        counts,
+        _painted_result(final_text=restatement), session, counts
     )
 
     # Assert: the console already shows the report; nothing is added over it.
@@ -239,3 +246,28 @@ def test_a_closing_question_survives_a_painted_report() -> None:
 
     # Assert
     assert chunks == ["Want me to break this down by workflow?"]
+
+
+def test_an_interpretation_of_a_painted_report_is_kept() -> None:
+    """Only the duplicate goes: a judgement the table does not carry survives."""
+    # Arrange
+    from core.agent_harness.turns.action_driver import _compose_response, _TurnCounts
+
+    session = Session()
+    counts = _TurnCounts(
+        executed_entries=[],
+        executed_count=1,
+        executed_success_count=1,
+        generic_success_count=1,
+        planned_count=1,
+        handled=True,
+    )
+    judgement = "The Windows label job is your worst offender; I would quarantine it first."
+
+    # Act
+    _text, chunks, _use_final = _compose_response(
+        _painted_result(final_text=judgement), session, counts
+    )
+
+    # Assert
+    assert chunks == [judgement]
