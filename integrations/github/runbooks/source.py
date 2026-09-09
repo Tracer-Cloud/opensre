@@ -174,9 +174,6 @@ class GitHubRunbookSource:
         if candidate_parts[: len(configured_ref_parts)] == configured_ref_parts:
             revision = self._source.ref
             path_parts = candidate_parts[len(configured_ref_parts) :]
-        elif candidate_parts and _FULL_SHA_RE.fullmatch(candidate_parts[0]):
-            revision = candidate_parts[0]
-            path_parts = candidate_parts[1:]
         else:
             return None
         path = _safe_markdown_path("/".join(path_parts))
