@@ -52,6 +52,12 @@ _MAX_WINDOW_DAYS = 90
 _DEFAULT_BENCHMARKS = (("apache", "airflow"), ("fastapi", "fastapi"))
 
 
+def _flag(value: Any) -> bool:
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes"}
+    return bool(value)
+
+
 def _available(sources: dict[str, dict]) -> bool:
     gh = sources.get("github", {})
     return bool(
@@ -405,8 +411,10 @@ def _result(
         "blocked_minutes": "Wall-clock minutes merged PRs waited past their expected green time",
         "blocked_working_minutes": "The part of that wait inside working hours: developer downtime",
         "red_hours": "Hours the default branch had at least one red workflow",
-        "headline": "One sentence naming the biggest cost, to repeat verbatim",
+        "headline": "One sentence naming the biggest cost (already painted; do not repeat)",
+        "key_results": "The five takeaway rows, red time first, even when the shell painted the report",
         "response_text": "The rendered report, or a one-line summary when the shell painted it",
+        "benchmarks": "When include_benchmarks is true: Airflow and FastAPI rows from the same window",
     },
     surfaces=(ToolSurface.CHAT, ToolSurface.ACTION),
     side_effect_level=SideEffectLevel.READ_ONLY,
@@ -433,6 +441,13 @@ def _result(
                 "type": "string",
                 "description": "Local checkout used to detect owner/repo when not given.",
             },
+            "include_benchmarks": {
+                "type": "boolean",
+                "description": (
+                    "Also compare this repository with apache/airflow and fastapi/fastapi "
+                    "over the same window. Default false."
+                ),
+            },
             "github_token": {"type": "string"},
         },
         "additionalProperties": False,
@@ -447,6 +462,7 @@ def analyze_github_ci_reliability(
     repo: str | None = None,
     days: int | None = None,
     workspace: str | None = None,
+    include_benchmarks: bool = False,
     github_token: str | None = None,
     context: Any = None,
     **_kwargs: Any,
@@ -456,8 +472,11 @@ def analyze_github_ci_reliability(
     In the interactive shell the report is painted straight to the console so
     every figure the user sees is the computed one; the returned
     ``response_text`` then only summarizes. Other surfaces get the markdown.
+    When ``include_benchmarks`` is true the same call also paints one comparison
+    table against apache/airflow and fastapi/fastapi (snapshots first).
     """
     window = min(max(int(days or _DEFAULT_WINDOW_DAYS), _MIN_WINDOW_DAYS), _MAX_WINDOW_DAYS)
+    compare = _flag(include_benchmarks)
     repo_owner = (owner or "").strip()
     repo_name = (repo or "").strip().removesuffix(".git")
     if not repo_owner or not repo_name:
@@ -483,7 +502,15 @@ def analyze_github_ci_reliability(
         snapshot_root(), repo_owner, repo_name, window_days=window, now=now
     )
     if snapshot is not None:
-        return _from_snapshot(snapshot, repo_owner, repo_name, window, console)
+        return _from_snapshot(
+            snapshot,
+            repo_owner,
+            repo_name,
+            window,
+            console,
+            include_benchmarks=compare,
+            token=token,
+        )
     if console is not None:
         # Two-column lead matches the shell's reply gutter so the tool's lines
         # hang with the agent's notes instead of breaking the transcript edge.
@@ -537,7 +564,15 @@ def analyze_github_ci_reliability(
             f"  [dim]Read {analysis.runs_read} runs in {time.monotonic() - started:.0f}s.[/dim]"
         )
         console.print()
-    return _result(report, repo_owner, repo_name, window, console)
+    return _result(
+        report,
+        repo_owner,
+        repo_name,
+        window,
+        console,
+        include_benchmarks=compare,
+        token=token,
+    )
 
 
 __all__ = ["TOOL_NAME", "analyze_github_ci_reliability"]

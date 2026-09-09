@@ -1061,6 +1061,8 @@ def test_render_shows_the_kpi_block_and_classification() -> None:
 
     text = render_markdown(report)
 
+    assert text.index("**Key results**") < text.index("GitHub Actions executions")
+    assert "main branch red" in text
     assert "GitHub Actions executions: **3**" in text
     assert "Raw PR workflow failure rate: **50.0%**" in text
     assert "CI reliability failures, passed later on the same commit: **1**" in text
@@ -1171,6 +1173,7 @@ def test_tool_shows_progress_lines_around_the_painted_report() -> None:
     assert "CI/CD reliability for o/r[1], last 7 days" in output
     assert result["rendered_in_shell"] is True
     assert "executions" not in result
+    assert result["key_results"]
 
 
 class TestAnalyzeGithubCiReliabilityContract(BaseToolContract):

@@ -62,8 +62,8 @@ def loop_prompt(owner: str, repo: str) -> str:
         f"Scheduled CI/CD reliability report for {owner}/{repo}. First call "
         f'analyze_github_ci_reliability(owner="{owner}", repo="{repo}", days={LOOP_WINDOW_DAYS}); '
         "this read-only tool is the only source of the report. The report body is the tool's "
-        "response_text followed by its headline, exactly as returned: do not compute, convert, "
-        "reword, or omit any figure, and never answer without the tool result."
+        "response_text exactly as returned: do not compute, convert, reword, or omit any "
+        "figure, do not add the headline, and never answer without the tool result."
     )
 
 

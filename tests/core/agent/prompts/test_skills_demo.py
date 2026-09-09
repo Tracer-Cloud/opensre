@@ -56,6 +56,16 @@ def test_master_menu_matches_four_unique_children_and_preserves_specialists() ->
         "scan_local_git_workspace",
         "analyze_github_ci_reliability",
     ]
+    next_options = analytics.after_tool[1].call.args["options"]
+    assert tuple(next_options) == (
+        "Set up an agent that improves CI/CD reliability over time",
+        "Connect OpenSRE to Slack and hand off DevOps chores for your team",
+        "Exit demo",
+    )
+    body = loader.load_skill_body("cicd-analytics-demo")
+    assert "include_benchmarks=true" in body
+    assert "Compare these numbers" not in body
+    assert "Output its `headline`" not in body
     assert menu["allow_custom"] is False
     assert GETTING_STARTED_CUSTOM not in master
     assert "not implemented yet" in loader.load_skill_body("remote-managed-service")

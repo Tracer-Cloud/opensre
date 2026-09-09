@@ -65,7 +65,6 @@ def _skill_with_hooks() -> ActionSkill:
                         {
                             "title": "What would you like to do next?",
                             "options": [
-                                "Compare these numbers with well-known open-source repositories",
                                 "Set up an agent that improves CI/CD reliability over time",
                                 "Connect OpenSRE to Slack and hand off DevOps chores for your team",
                                 "Exit demo",

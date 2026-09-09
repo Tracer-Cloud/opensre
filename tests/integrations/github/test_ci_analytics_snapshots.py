@@ -95,7 +95,7 @@ def test_the_tool_answers_from_a_fresh_snapshot_without_reading_github(
     assert "as of" in result["summary"]
 
 
-def _report() -> Any:
+def _report(*, owner: str = "apache", repo: str = "airflow", red_hours: float = 24.5) -> Any:
     from integrations.github.tools.ci_analytics.models import (
         CiAnalyticsReport,
         Outage,
@@ -104,8 +104,8 @@ def _report() -> Any:
 
     now = datetime(2026, 9, 9, 16, 0, tzinfo=UTC)
     return CiAnalyticsReport(
-        owner="apache",
-        repo="airflow",
+        owner=owner,
+        repo=repo,
         default_branch="main",
         window_days=30,
         generated_at=now,
@@ -118,12 +118,29 @@ def _report() -> Any:
         blocked_minutes_all=150.0,
         branch_runs=20,
         branch_failures=2,
-        red_hours=24.5,
+        red_hours=red_hours,
         outages=(Outage(workflow="CI", started_at=now, ended_at=None, first_failure_url="u"),),
         mean_recovery_hours=6.1,
         workflows=(WorkflowSummary("CI", 100, 8, 3, 12.0),),
         coverage_notices=("partial",),
         working_hours_label="Mon-Fri 09:00-18:00 UTC",
+    )
+
+
+def _write_report_snapshot(root: Path, report: Any, now: datetime) -> None:
+    from integrations.github.tools.ci_analytics.snapshots import report_to_dict
+
+    write_snapshot(
+        root,
+        report.owner,
+        report.repo,
+        now - timedelta(minutes=5),
+        {
+            "generated_at": (now - timedelta(minutes=5)).isoformat(),
+            "window_days": 30,
+            "headline": "h",
+            "report": report_to_dict(report),
+        },
     )
 
 
@@ -171,6 +188,7 @@ def test_a_saved_report_round_trips_and_paints_like_a_live_one(tmp_path: Path, m
     assert result["rendered_in_shell"] is True
     assert result["from_snapshot"]
     assert "coverage_notices" in result and "red_hours" not in result
+    assert result["key_results"]
     assert any(not isinstance(item, str) for item in painted)
 
 
@@ -211,3 +229,75 @@ def test_a_snapshot_write_failure_does_not_discard_the_analysis(
 
     assert result["success"] is True
     assert result["red_hours"] == 24.5
+
+
+def test_include_benchmarks_builds_the_comparison_from_snapshots(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from typing import Any, cast
+
+    from integrations.github.tools.ci_analytics import tool as tool_module
+
+    now = datetime.now(UTC)
+    _write_report_snapshot(tmp_path, _report(owner="acme", repo="app", red_hours=48.0), now)
+    _write_report_snapshot(tmp_path, _report(red_hours=24.5), now)
+    _write_report_snapshot(
+        tmp_path, _report(owner="fastapi", repo="fastapi", red_hours=2.0), now
+    )
+    monkeypatch.setattr(tool_module, "snapshot_root", lambda _root=None: tmp_path)
+    monkeypatch.setattr(tool_module, "resolve_github_token", lambda _t=None: "tok")
+
+    def _boom(*_a: Any, **_k: Any) -> Any:
+        raise AssertionError("GitHub must not be read when peer snapshots exist")
+
+    monkeypatch.setattr(tool_module, "analyze_repository", _boom)
+
+    result = cast(Any, tool_module.analyze_github_ci_reliability)(
+        owner="acme",
+        repo="app",
+        days=30,
+        include_benchmarks=True,
+        github_token="tok",
+    )
+
+    assert result["success"] is True
+    assert result["key_results"]
+    assert result["key_results"][0]["label"].startswith("main branch red")
+    assert "Compared with apache/airflow and fastapi/fastapi" in result["response_text"]
+    assert {row["owner"] + "/" + row["repo"] for row in result["benchmarks"]} == {
+        "apache/airflow",
+        "fastapi/fastapi",
+    }
+    assert "benchmarks_skipped" not in result
+
+
+def test_include_benchmarks_skips_a_peer_that_cannot_be_fetched(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from typing import Any, cast
+
+    from integrations.github.client import GitHubApiError
+    from integrations.github.tools.ci_analytics import tool as tool_module
+
+    now = datetime.now(UTC)
+    _write_report_snapshot(tmp_path, _report(owner="acme", repo="app"), now)
+    _write_report_snapshot(tmp_path, _report(), now)
+    monkeypatch.setattr(tool_module, "snapshot_root", lambda _root=None: tmp_path)
+    monkeypatch.setattr(tool_module, "resolve_github_token", lambda _t=None: "tok")
+
+    def _fail(owner: str, repo: str, **_k: Any) -> Any:
+        raise GitHubApiError(f"{owner}/{repo} unavailable", status_code=404)
+
+    monkeypatch.setattr(tool_module, "analyze_repository", _fail)
+
+    result = cast(Any, tool_module.analyze_github_ci_reliability)(
+        owner="acme",
+        repo="app",
+        days=30,
+        include_benchmarks=True,
+        github_token="tok",
+    )
+
+    assert result["benchmarks_skipped"] == ["fastapi/fastapi"]
+    assert [row["repo"] for row in result["benchmarks"]] == ["airflow"]
+    assert "Compared with apache/airflow" in result["response_text"]

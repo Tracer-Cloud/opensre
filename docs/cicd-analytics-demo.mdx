@@ -36,7 +36,9 @@ The agent guides you through the selected demo in the shell.
 2. **Pick a repository.** A menu lists your checkouts that have GitHub Actions
    workflows, then the open-source example, then a row to type your own.
 3. **Analyze.** It reads the repository's Actions history for the last 30 days
-   under a spinner and paints the report, ending with the one-sentence headline.
+   and paints the report (key results first: how long main was red) plus a
+   comparison table against apache/airflow and fastapi/fastapi over the same
+   window. A repository already read today is answered from its snapshot.
 4. **Next step.** A menu offers the CI reliability agent (it schedules the
    check for the repository you just analyzed, no second repository question),
    the Slack hand-off, or exit.

@@ -24,7 +24,7 @@ metadata:
     - GitHub token usable by OpenSRE with read access to the repository's Actions history
     - A local git checkout for the workspace scan (optional; a named repository also works)
   type: analytics
-  version: "1.2"
+  version: "1.3"
 tools:
   - scan_local_git_workspace
   - analyze_github_ci_reliability
@@ -48,7 +48,6 @@ after_tool:
     args:
       title: What would you like to do next?
       options:
-        - Compare these numbers with well-known open-source repositories
         - Set up an agent that improves CI/CD reliability over time
         - Connect OpenSRE to Slack and hand off DevOps chores for your team
         - Exit demo
@@ -87,6 +86,9 @@ Slack setup.
   Load it only when the user asks what a figure means or which metric to
   fix first, with `skill_view(name="cicd-analytics-demo", reference="metrics")`;
   answer from it and the tool's numbers. Do not load it during steps 1-4.
+- **Benchmark table**: [references/benchmarks.md](references/benchmarks.md).
+  Load it only when the user asks what a compared figure means. The analyze
+  call already paints the comparison; do not load this to re-run peers.
 
 ## Plan
 
@@ -124,31 +126,22 @@ the answer.
 
 ### 3. Analyze CI/CD reliability
 
-Call `analyze_github_ci_reliability(owner="<owner>", repo="<repo>")` for the
-chosen repository. Output its `headline` field verbatim as its own line.
-Nothing else: no computed, converted, or reworded figures, no recap, no
-bullet list.
+Call
+`analyze_github_ci_reliability(owner="<owner>", repo="<repo>", include_benchmarks=true)`
+for the chosen repository. The tool paints the report (key results first)
+and the comparison table itself. Do not restate figures, do not output
+`headline`, and do not call the tool again for benchmarks.
 
 ### 4. Offer what to do next
 
 The host opens `What would you like to do next?` after the analysis with
 these options:
 
-- `Compare these numbers with well-known open-source repositories`
 - `Set up an agent that improves CI/CD reliability over time`
 - `Connect OpenSRE to Slack and hand off DevOps chores for your team`
 - `Exit demo`
 
 Wait for the answer, then follow the selected option.
-
-**Compare with benchmarks:** Call
-`skill_view(name="cicd-analytics-demo", reference="benchmarks")` and follow
-it: one `analyze_github_ci_reliability` call per benchmark repository with
-the same `days`, then the comparison table, user's repository first. A
-benchmark analysed earlier today comes back from its snapshot in a second
-(`from_snapshot` gives the time); say "as of <time>" for those rows. Then
-offer the remaining options again with `ask_user_choice`, title `What would
-you like to do next?`, without the comparison row.
 
 **Recurring check:** Call
 `schedule_ci_reliability_loop(owner="<owner>", repo="<repo>")` for the
