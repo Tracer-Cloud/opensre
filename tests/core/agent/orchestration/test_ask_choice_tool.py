@@ -316,3 +316,58 @@ def test_a_different_question_still_queues_on_an_answer_turn() -> None:
     # Assert
     assert result["ok"] is True
     assert result["menu"] == "queued"
+
+
+def _question(label: str, title: str) -> dict[str, Any]:
+    return {"label": label, "title": title, "options": ["Weekdays at 08:00", "Every day"]}
+
+
+def test_a_batch_keeps_its_unanswered_questions() -> None:
+    # Arrange: one of three batched questions was answered in this message.
+    session = Session()
+    ctx = _answer_turn(session, "1. When should it run?\nEvery day")
+    batch = [
+        _question("Cadence", "When should it run?"),
+        _question("Channel", "Where should reports go?"),
+        _question("Window", "How many days back?"),
+    ]
+
+    # Act
+    result = execute_ask_user_choice_tool({"questions": batch}, ctx)
+
+    # Assert: the two open questions are queued, the answered one is gone.
+    assert result["ok"] is True
+    assert session.pending_user_choice is not None
+    titles = [q.title for q in session.pending_user_choice.questions]
+    assert titles == ["Where should reports go?", "How many days back?"]
+
+
+def test_a_batch_with_one_open_question_becomes_a_single_decision() -> None:
+    # Arrange
+    session = Session()
+    ctx = _answer_turn(session, "1. When should it run?\nEvery day")
+    batch = [_question("Cadence", "When should it run?"), _question("Channel", "Where to?")]
+
+    # Act
+    result = execute_ask_user_choice_tool({"questions": batch}, ctx)
+
+    # Assert
+    assert result["ok"] is True
+    assert session.pending_user_choice is not None
+    assert session.pending_user_choice.title == "Where to?"
+    assert session.pending_user_choice.questions == ()
+
+
+def test_a_fully_answered_batch_is_refused_with_the_answers() -> None:
+    # Arrange
+    session = Session()
+    ctx = _answer_turn(session, "1. When should it run?\nEvery day\n\n2. Where to?\nInbox")
+    batch = [_question("Cadence", "When should it run?"), _question("Channel", "Where to?")]
+
+    # Act
+    result = execute_ask_user_choice_tool({"questions": batch}, ctx)
+
+    # Assert
+    assert result["ok"] is False
+    assert "'Every day'" in result["error"] and "'Inbox'" in result["error"]
+    assert session.pending_user_choice is None

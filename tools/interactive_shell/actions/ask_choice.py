@@ -188,23 +188,36 @@ def _answered_this_turn(ctx: ActionToolScope, title: str) -> str | None:
     return None
 
 
+def _already_answered_error(answered: dict[str, str]) -> str:
+    listed = "; ".join(f"{asked!r}: {answer!r}" for asked, answer in answered.items())
+    return (
+        f"The user already answered in this message: {listed}. "
+        "Use the answers and continue with the next step; do not ask again."
+    )
+
+
 def execute_ask_user_choice_tool(args: dict[str, Any], ctx: ActionToolScope) -> dict[str, Any]:
     questions, questions_error = _parse_questions(args.get("questions"))
     if questions_error is not None:
         return {"ok": False, "error": questions_error}
 
     title = strip_terminal_controls(str(args.get("title", ""))).strip()
-    for asked in [title, *[question.title for question in questions or ()]]:
-        answer = _answered_this_turn(ctx, asked)
-        if answer is not None:
-            return {
-                "ok": False,
-                "error": (
-                    f"The user already answered {asked!r} in this message: {answer!r}. "
-                    "Use that answer and continue with the next step; do not ask again."
-                ),
-            }
     options = _parse_options(args.get("options"))
+    multi_select = _parse_bool(args.get("multi_select"), default=False)
+
+    if questions:
+        # Answered questions leave the batch; the rest are still asked.
+        answered = {q.title: a for q in questions if (a := _answered_this_turn(ctx, q.title))}
+        questions = [q for q in questions if q.title not in answered]
+        if not questions:
+            return {"ok": False, "error": _already_answered_error(answered)}
+        if answered and len(questions) == 1:
+            # One question left after the drop: ask it as a single decision.
+            only = questions[0]
+            title, options, multi_select = only.title, list(only.options), only.multi_select
+            questions = None
+    elif (answer := _answered_this_turn(ctx, title)) is not None:
+        return {"ok": False, "error": _already_answered_error({title: answer})}
 
     if questions:
         if getattr(ctx.session, "ask_user_rounds", 0) >= _MAX_ASK_ROUNDS:
@@ -240,7 +253,6 @@ def execute_ask_user_choice_tool(args: dict[str, Any], ctx: ActionToolScope) -> 
         option_error = _options_error(options)
         if option_error is not None:
             return {"ok": False, "error": option_error}
-        multi_select = _parse_bool(args.get("multi_select"), default=False)
         pending = PendingUserChoice(
             title=title,
             options=tuple(options),
