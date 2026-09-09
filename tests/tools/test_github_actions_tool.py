@@ -7,6 +7,7 @@ from typing import Any, cast
 from unittest.mock import patch
 
 from integrations.github.tools.actions import (
+    _HEAD_SHA_MAX_PAGES,
     extract_step_log,
     get_github_actions_step_log,
     list_github_actions_active_runs,
@@ -252,10 +253,120 @@ def test_list_workflow_runs_passes_head_sha_filter() -> None:
     # The MCP page is repository-wide; only the commit's runs are kept, as
     # compact rows, and the raw page is not repeated in the payload.
     assert result["runs_fetched_before_commit_filter"] >= len(result["workflow_runs"])
+    assert result["history_fully_fetched"] is True
+    assert result["pages_fetched"] == 1
     for row in result["workflow_runs"]:
         assert "run_attempt" in row and "conclusion" in row
         assert "pull_requests" not in row and "actor" not in row
     assert "text" not in result and "structured_content" not in result
+
+
+def _workflow_run(run_id: int, sha: str, name: str = "CI") -> dict[str, Any]:
+    return {
+        "id": run_id,
+        "name": name,
+        "head_sha": sha,
+        "status": "completed",
+        "conclusion": "success",
+        "run_attempt": 1,
+        "created_at": "2026-05-27T10:00:00Z",
+    }
+
+
+def _runs_mcp_response(arguments: dict[str, Any], runs: list[dict[str, Any]]) -> dict[str, Any]:
+    return {
+        "tool": "actions_list",
+        "arguments": arguments,
+        "is_error": False,
+        "text": json.dumps({"total_count": len(runs), "workflow_runs": runs}),
+        "structured_content": None,
+        "content": [],
+    }
+
+
+def test_head_sha_history_pages_until_the_commit_cluster_is_past() -> None:
+    """MCP listings are repository-wide; keep paging until this commit is past."""
+    calls: list[int] = []
+
+    def mcp_response(_config: object, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        page = int(arguments.get("page") or 1)
+        calls.append(page)
+        if page == 1:
+            runs = [_workflow_run(index, "other") for index in range(30)]
+        elif page == 2:
+            runs = [_workflow_run(100, "abc123", "Deploy")] + [
+                _workflow_run(index, "other") for index in range(29)
+            ]
+        else:
+            runs = [_workflow_run(index, "other") for index in range(30)]
+        return _runs_mcp_response(arguments, runs)
+
+    workflow_tool = cast(Any, list_github_actions_workflow_runs)
+    with (
+        patch("integrations.github.tools.actions.resolve_github_mcp_config", return_value=object()),
+        patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=mcp_response),
+    ):
+        result = workflow_tool(
+            owner="org", repo="repo", head_sha="abc123", per_page=30, github_token="tok"
+        )
+
+    assert calls == [1, 2, 3]
+    assert [row["id"] for row in result["workflow_runs"]] == [100]
+    assert result["history_fully_fetched"] is True
+    assert result["pages_fetched"] == 3
+
+
+def test_head_sha_history_is_incomplete_when_the_page_cap_is_hit() -> None:
+    """A full matching page through the cap is not the commit's complete history."""
+
+    def mcp_response(_config: object, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        page = int(arguments.get("page") or 1)
+        runs = [_workflow_run(page * 100 + index, "abc123", f"wf-{index}") for index in range(30)]
+        return _runs_mcp_response(arguments, runs)
+
+    workflow_tool = cast(Any, list_github_actions_workflow_runs)
+    with (
+        patch("integrations.github.tools.actions.resolve_github_mcp_config", return_value=object()),
+        patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=mcp_response),
+    ):
+        result = workflow_tool(
+            owner="org", repo="repo", head_sha="abc123", per_page=30, github_token="tok"
+        )
+
+    assert result["history_fully_fetched"] is False
+    assert result["pages_fetched"] == _HEAD_SHA_MAX_PAGES
+    assert len(result["workflow_runs"]) == _HEAD_SHA_MAX_PAGES * 30
+
+
+def test_a_later_page_failure_keeps_fetched_runs_and_says_incomplete() -> None:
+    def mcp_response(_config: object, tool: str, arguments: dict[str, Any]) -> dict[str, Any]:
+        page = int(arguments.get("page") or 1)
+        if page == 1:
+            return _runs_mcp_response(
+                arguments, [_workflow_run(index, "abc123") for index in range(30)]
+            )
+        return {
+            "tool": tool,
+            "arguments": arguments,
+            "is_error": True,
+            "text": "rate limited",
+            "structured_content": None,
+            "content": [],
+        }
+
+    workflow_tool = cast(Any, list_github_actions_workflow_runs)
+    with (
+        patch("integrations.github.tools.actions.resolve_github_mcp_config", return_value=object()),
+        patch("integrations.github.tools.actions.call_github_mcp_tool", side_effect=mcp_response),
+    ):
+        result = workflow_tool(
+            owner="org", repo="repo", head_sha="abc123", per_page=30, github_token="tok"
+        )
+
+    assert result["available"] is True
+    assert len(result["workflow_runs"]) == 30
+    assert result["history_fully_fetched"] is False
+    assert result["pages_fetched"] == 1
 
 
 def test_list_active_runs_happy_path() -> None:

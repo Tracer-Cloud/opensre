@@ -15,8 +15,15 @@ _BOOKKEEPING_TOOLS = frozenset({"session_goal_set", "session_goal_complete", "up
 _MAX_REVIEW_INPUT_CHARS = 64000
 # Per tool result, so one large listing cannot push the whole review over the cap.
 _MAX_RESULT_CHARS = 12000
+_RESULT_HEAD_CHARS = 8000
+_RESULT_TAIL_CHARS = 4000
+# This-turn join, leaving room for condition, reply, checklist, and findings.
+_MAX_TURN_EVIDENCE_CHARS = 48000
 _EARLIER_DROPPED = "(earlier observations dropped: review input over its size cap)"
-_TRUNCATED_MARK = "\n[observations truncated: review input over its size cap]"
+_TURN_DROPPED_MARK = "(earlier this-turn observations dropped: review input over its size cap)"
+_RESULT_INCOMPLETE_MARK = (
+    "[result truncated: {dropped} more characters omitted; treat this result as incomplete]"
+)
 _OUTCOME_ERROR_MARK = "\nOutcome: error\n"
 _OUTCOME_ERROR_LINE = "Outcome: error"
 _OUTCOME_SUCCESS_LINE = "Outcome: success"
@@ -88,31 +95,69 @@ def collect_tool_evidence(
     """Include actual tool arguments, outcomes, and provider-visible results.
 
     Listings stay in the text so a judge can see them. They do not count as
-    successful evidence — listing tools is not completion.
+    successful evidence — listing tools is not completion. Each result is
+    bounded, then this turn's join is capped so review stays under its cap.
     """
     observations = [
         (call, result) for call, result in results if call.name not in _BOOKKEEPING_TOOLS
     ]
-    text = "\n\n".join(
-        f"Tool: {call.name}\nArguments: {call.input}\n"
-        f"Outcome: {'error' if result.is_error else 'success'}\n"
-        f"Result: {_bounded_result(result.content)}"
-        for call, result in observations
-    )
+    blocks = [_observation_block(call, result) for call, result in observations]
+    text = _fit_latest_observations(blocks, _MAX_TURN_EVIDENCE_CHARS)
     return text, sum(_qualifying_success(call, result) for call, result in observations)
 
 
+def _observation_block(call: ToolCall, result: ToolExecutionResult) -> str:
+    """One tool observation: name, arguments, outcome, and a bounded result."""
+    return (
+        f"Tool: {call.name}\nArguments: {call.input}\n"
+        f"Outcome: {'error' if result.is_error else 'success'}\n"
+        f"Result: {_bounded_result(result.content)}"
+    )
+
+
+def _latest_blocks_within(blocks: Sequence[str], budget: int) -> list[str]:
+    """Keep a newest-last suffix of ``blocks`` that fits in ``budget`` characters."""
+    kept: list[str] = []
+    used = 0
+    for block in reversed(blocks):
+        extra = len(block) + (2 if kept else 0)
+        if used + extra > budget:
+            break
+        kept.append(block)
+        used += extra
+    kept.reverse()
+    return kept
+
+
+def _fit_latest_observations(blocks: Sequence[str], budget: int) -> str:
+    """Join observations, dropping the oldest when the turn exceeds ``budget``."""
+    if not blocks:
+        return ""
+    joined = "\n\n".join(blocks)
+    if len(joined) <= budget:
+        return joined
+    reserved = len(_TURN_DROPPED_MARK) + 2
+    kept = _latest_blocks_within(blocks, max(0, budget - reserved))
+    body = "\n\n".join(kept)
+    return f"{_TURN_DROPPED_MARK}\n\n{body}" if body else _TURN_DROPPED_MARK
+
+
 def _bounded_result(content: Any) -> str:
-    """One tool result for the judge: whole when short, head plus a marker when long.
+    """One tool result for the judge: whole when short, head and tail when long.
 
     A single run listing can be hundreds of kilobytes; without a bound the
     review input overflowed and the judge went unavailable for the turn.
+    The tail keeps a final status or summary that would otherwise be dropped.
     """
     text = str(content)
     if len(text) <= _MAX_RESULT_CHARS:
         return text
-    dropped = len(text) - _MAX_RESULT_CHARS
-    return f"{text[:_MAX_RESULT_CHARS]}\n[result truncated: {dropped} more characters]"
+    dropped = len(text) - _RESULT_HEAD_CHARS - _RESULT_TAIL_CHARS
+    return (
+        f"{text[:_RESULT_HEAD_CHARS]}\n"
+        f"{_RESULT_INCOMPLETE_MARK.format(dropped=dropped)}\n"
+        f"{text[-_RESULT_TAIL_CHARS:]}"
+    )
 
 
 def retain_tool_evidence(goal: SessionGoal, observations: str, *, succeeded: bool) -> SessionGoal:
@@ -162,13 +207,14 @@ def review_input(
     prompt = _render(earlier, tool_evidence)
     if len(prompt) <= _MAX_REVIEW_INPUT_CHARS:
         return prompt
-    # Over the cap: this turn's observations and the reply matter most. Drop
-    # the earlier observations, then trim this turn's from the end, marked.
+    # Over the cap: this turn's newest observations and the reply matter most.
+    # Drop earlier-turn observations, then keep this turn's tail, marked.
     prompt = _render(_EARLIER_DROPPED, tool_evidence)
     if len(prompt) <= _MAX_REVIEW_INPUT_CHARS:
         return prompt
-    overhead = len(_render(_EARLIER_DROPPED, "")) + len(_TRUNCATED_MARK)
+    prefix = f"{_TURN_DROPPED_MARK}\n"
+    overhead = len(_render(_EARLIER_DROPPED, "")) + len(prefix)
     keep = max(0, _MAX_REVIEW_INPUT_CHARS - overhead)
-    trimmed = f"{tool_evidence[:keep]}{_TRUNCATED_MARK}"
+    trimmed = f"{prefix}{tool_evidence[-keep:]}"
     prompt = _render(_EARLIER_DROPPED, trimmed)
     return prompt if len(prompt) <= _MAX_REVIEW_INPUT_CHARS else None

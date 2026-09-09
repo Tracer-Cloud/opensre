@@ -189,6 +189,12 @@ RATE_WINDOW_HOURS = 24
 #: No window: return the page as fetched, whatever the age of its runs.
 NO_RUN_WINDOW = 0
 
+#: MCP ``actions_list`` listings are repository-wide (it does not apply
+#: ``head_sha``). Page newest-first until the commit's cluster is past or
+#: the listing ends. Cap pages so one tool call cannot scan the repo.
+_HEAD_SHA_MAX_PAGES = 10
+_GITHUB_RUNS_PER_PAGE_MAX = 100
+
 
 def _run_started_at(run: dict[str, Any]) -> datetime | None:
     """Parse a run's ``created_at``; ``None`` when absent or unparsable."""
@@ -254,6 +260,94 @@ def window_runs(
         runs=inside,
         window_fully_fetched=older > 0 or page_exhausted,
         undated=undated,
+    )
+
+
+@dataclass(frozen=True, slots=True)
+class CommitRunHistory:
+    """One commit's workflow runs collected from newest-first MCP pages."""
+
+    payload: dict[str, Any]
+    runs: list[dict[str, Any]]
+    fully_fetched: bool
+    fetched_before_filter: int
+    pages_fetched: int
+
+
+def _matches_head_sha(run: dict[str, Any], head_sha: str) -> bool:
+    """True when ``run`` is for ``head_sha`` (full SHA or a prefix)."""
+    return str(run.get("head_sha") or "").startswith(head_sha)
+
+
+def _strip_raw_mcp_page(payload: dict[str, Any]) -> None:
+    """Drop the raw MCP echo; the normalized rows are the result."""
+    for raw_key in ("text", "content", "structured_content"):
+        payload.pop(raw_key, None)
+
+
+def _fetch_workflow_run_page(
+    config: Any, arguments: dict[str, Any]
+) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """One ``actions_list`` page and its normalized runs."""
+    result = call_github_mcp_tool(config, "actions_list", arguments)
+    payload = normalize_github_tool_result(result)
+    if not isinstance(payload, dict):
+        return {"error": "Unexpected payload format returned from GitHub MCP tool"}, []
+    if not payload.get("available"):
+        return payload, []
+    runs = [_normalize_run(item) for item in _extract_list(result, "workflow_runs")]
+    return payload, runs
+
+
+def _commit_run_history(
+    config: Any,
+    base_arguments: dict[str, Any],
+    *,
+    head_sha: str,
+    per_page: int,
+) -> CommitRunHistory:
+    """Collect one commit's runs from newest-first MCP pages.
+
+    Completeness is a short page (listing exhausted) or a full page with no
+    matches after at least one match (the listing has moved past this
+    commit). Hitting the page cap while pages stay full is incomplete.
+    A later page failure keeps already-fetched matches and reports incomplete.
+    """
+    page_limit = max(1, min(per_page, _GITHUB_RUNS_PER_PAGE_MAX))
+    collected: list[dict[str, Any]] = []
+    fetched = 0
+    pages_fetched = 0
+    saw_match = False
+    complete = False
+    last_payload: dict[str, Any] = {"available": False}
+
+    for page in range(1, _HEAD_SHA_MAX_PAGES + 1):
+        arguments = {**base_arguments, "page": page, "per_page": page_limit}
+        payload, page_runs = _fetch_workflow_run_page(config, arguments)
+        if not payload.get("available"):
+            if pages_fetched == 0:
+                return CommitRunHistory(payload, [], False, 0, 0)
+            break
+        last_payload = payload
+        pages_fetched += 1
+        fetched += len(page_runs)
+        matches = [run for run in page_runs if _matches_head_sha(run, head_sha)]
+        collected.extend(matches)
+        if matches:
+            saw_match = True
+        if len(page_runs) < page_limit:
+            complete = True
+            break
+        if saw_match and not matches:
+            complete = True
+            break
+
+    return CommitRunHistory(
+        payload=last_payload,
+        runs=collected,
+        fully_fetched=complete,
+        fetched_before_filter=fetched,
+        pages_fetched=pages_fetched,
     )
 
 
@@ -400,7 +494,10 @@ def _map_list_github_actions_workflow_runs(
         "List GitHub Actions workflow runs for a repository, each with status, "
         "conclusion and run_attempt. With head_sha it is the run history of one "
         "commit: a run_attempt above 1 means that workflow was re-run on that "
-        "commit, and its conclusion says whether the re-run passed."
+        "commit, and its conclusion says whether the re-run passed. The result "
+        "reports history_fully_fetched — when false, more runs for that commit "
+        "may exist beyond the pages fetched, so a missing attempt is not proof "
+        "it did not happen."
     ),
     use_cases=[
         "Checking which deploy or test workflow failed right before an incident",
@@ -421,7 +518,11 @@ def _map_list_github_actions_workflow_runs(
             "head_sha": {
                 "type": "string",
                 "default": "",
-                "description": "Only return runs for this commit SHA.",
+                "description": (
+                    "Only return runs for this commit SHA. Pages until the "
+                    "commit's history is complete or the page cap; see "
+                    "history_fully_fetched."
+                ),
             },
             "per_page": {"type": "integer", "default": 30},
             "window_hours": {
@@ -495,35 +596,35 @@ def list_github_actions_workflow_runs(
     if workflow_runs_filter:
         arguments["workflow_runs_filter"] = workflow_runs_filter
 
-    result = call_github_mcp_tool(config, "actions_list", arguments)
-    payload = normalize_github_tool_result(result)
+    history: CommitRunHistory | None = None
+    if head_sha:
+        history = _commit_run_history(config, arguments, head_sha=head_sha, per_page=per_page)
+        payload = history.payload
+        workflow_runs = history.runs
+    else:
+        result = call_github_mcp_tool(config, "actions_list", arguments)
+        payload = normalize_github_tool_result(result)
+        workflow_runs = [_normalize_run(item) for item in _extract_list(result, "workflow_runs")]
+
     if not isinstance(payload, dict):
         return {"error": "Unexpected payload format returned from GitHub MCP tool"}
 
     if payload.get("available"):
-        workflow_runs_raw = _extract_list(result, "workflow_runs")
-        workflow_runs = [_normalize_run(item) for item in workflow_runs_raw]
-        if head_sha:
-            # The MCP server has returned repository-wide pages for this filter;
-            # keep only the commit's runs. One commit's history is read for
-            # attempts and conclusions, so the rows are compact too.
-            fetched = len(workflow_runs)
-            workflow_runs = [
-                _run_history_row(item)
-                for item in workflow_runs
-                if str(item.get("head_sha") or "").startswith(head_sha)
-            ]
-            payload["runs_fetched_before_commit_filter"] = fetched
-        # The raw MCP page (text, content, structured_content) is the same data
-        # again, unfiltered and several times larger; the rows are the result.
-        for raw_key in ("text", "content", "structured_content"):
-            payload.pop(raw_key, None)
+        if history is not None:
+            workflow_runs = [_run_history_row(item) for item in workflow_runs]
+            payload["runs_fetched_before_commit_filter"] = history.fetched_before_filter
+            payload["history_fully_fetched"] = history.fully_fetched
+            payload["pages_fetched"] = history.pages_fetched
+        _strip_raw_mcp_page(payload)
         if window_hours > NO_RUN_WINDOW:
+            page_limit = per_page
+            if history is not None:
+                page_limit = len(workflow_runs) + 1 if history.fully_fetched else len(workflow_runs)
             windowed = window_runs(
                 workflow_runs,
                 window_hours=window_hours,
                 now=datetime.now(UTC),
-                page_limit=per_page,
+                page_limit=page_limit,
             )
             workflow_runs = windowed.runs
             payload["window_fully_fetched"] = windowed.window_fully_fetched
