@@ -38,6 +38,7 @@ from core.agent_harness.session_goal.judge import (
     invoke_session_goal_judge,
     judge_reason_is_contradiction,
     read_observations,
+    reply_agrees_with_reading,
 )
 from core.agent_harness.session_goal.plan_credit import credit_completed_plan_steps
 from core.agent_harness.session_goal.progress import is_session_goal_progress_text
@@ -228,7 +229,16 @@ def _run_judge(
             previous_reason=current.last_verdict,
             independent_reading=reading.answer if reading is not None else "",
         )
-        return _accept_agreeing_reading(parsed, reading)
+        return _accept_agreeing_reading(
+            parsed,
+            reading,
+            tie_break=lambda: (
+                reading is not None
+                and reply_agrees_with_reading(
+                    judge_llm, condition=current.condition, reading=reading.answer, reply=text
+                )
+            ),
+        )
     except Exception:
         log.debug("session-goal judge unavailable", exc_info=True)
         return None
@@ -264,6 +274,8 @@ def _blocking_verdict_unsupported(
 def _accept_agreeing_reading(
     parsed: SessionGoalJudgeVerdict | None,
     reading: SessionGoalReading | None,
+    *,
+    tie_break: Callable[[], bool],
 ) -> SessionGoalJudgeVerdict | None:
     """Turn a not-yet into reached when two independent views agree the work is done.
 
@@ -279,9 +291,11 @@ def _accept_agreeing_reading(
     if not parsed.reply_matches_reading:
         return parsed
     # The judge said the reply matches the blind reading and that the reading
-    # covers every item. A contradiction claimed in the same verdict is
-    # inconsistent with that (E37: "No" called a contradiction by quoting
-    # re_run: true while re_run_to_green was false); the two agreeing views win.
+    # covers every item. A contradiction claimed in the same verdict conflicts
+    # with that. Both flags come from one model call, so the conflict is
+    # settled by a narrow reply-versus-reading check, not by trusting a flag.
+    if judge_reason_is_contradiction(parsed.reason) and not tie_break():
+        return parsed
     return parsed.model_copy(
         update={"verdict": "GOAL_REACHED", "reason": SessionGoalReason.AGREES_WITH_READING}
     )

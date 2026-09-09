@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from core.agent_harness.session.session_core import SessionCore
 from core.agent_harness.session_goal.evaluate import evaluate_session_goal
 from core.agent_harness.session_goal.goal import (
@@ -385,18 +387,22 @@ def test_a_not_yet_becomes_reached_when_the_reading_covers_all_and_the_reply_mat
     assert "agrees with an independent reading" in verdict.reason
 
 
-def test_a_contradiction_does_not_block_when_the_judge_says_the_reply_matches_the_reading() -> None:
-    """E37: a correct No was called a contradiction by quoting re_run true; the reading said No."""
+def _conflicting_judge(agreement: str) -> Any:
+    """Reading covers; judge claims a contradiction yet says the reply matches; tie-break answers."""
 
     class _LLM:
         model_id = "test"
+        calls: list[str] = []
 
         def invoke(self, messages, *, system=None, tools=None):  # noqa: ANN001
             _ = (messages, tools)
+            _LLM.calls.append(system or "")
             if "never see the assistant" in (system or ""):
                 return AgentLLMResponse(
                     content='{"answer": "#6143: no re-run to green", "covered": true}'
                 )
+            if "compare an assistant reply" in (system or ""):
+                return AgentLLMResponse(content=agreement)
             return AgentLLMResponse(
                 content=(
                     '{"verdict": "NOT_REACHED", "reason": "Contradiction: the reply says No '
@@ -409,10 +415,11 @@ def test_a_contradiction_does_not_block_when_the_judge_says_the_reply_matches_th
             _ = tools
             return []
 
-    session = SessionCore()
-    goal = SessionGoal(condition="was CI on #6143 re-run to green?", max_outer_turns=3)
-    attach_session_goal(session, goal)
-    result = TurnResult(
+    return _LLM
+
+
+def _trap_result() -> TurnResult:
+    return TurnResult(
         "cli_agent_handled",
         ToolCallingTurnResult(
             1,
@@ -429,6 +436,33 @@ def test_a_contradiction_does_not_block_when_the_judge_says_the_reply_matches_th
         "| #6143 | No | — |",
     )
 
-    verdict = evaluate_session_goal(goal, result, session=session, judge_llm=_LLM())  # type: ignore[arg-type]
 
+def test_a_conflicting_verdict_closes_only_when_the_reply_and_reading_agree() -> None:
+    """A correct No called a contradiction by quoting a neighbouring field; the reading said No."""
+    # Arrange
+    llm = _conflicting_judge('{"agrees": true}')
+    session = SessionCore()
+    goal = SessionGoal(condition="was CI on #6143 re-run to green?", max_outer_turns=3)
+    attach_session_goal(session, goal)
+
+    # Act
+    verdict = evaluate_session_goal(goal, _trap_result(), session=session, judge_llm=llm())
+
+    # Assert: closed, and exactly one tie-break call was made.
     assert verdict.status == SessionGoalStatus.ACHIEVED
+    assert sum("compare an assistant reply" in c for c in llm.calls) == 1
+
+
+def test_a_conflicting_verdict_stays_open_when_the_tie_break_disagrees() -> None:
+    # Arrange
+    llm = _conflicting_judge('{"agrees": false, "difference": "#6143 yes/no"}')
+    session = SessionCore()
+    goal = SessionGoal(condition="was CI on #6143 re-run to green?", max_outer_turns=3)
+    attach_session_goal(session, goal)
+
+    # Act
+    verdict = evaluate_session_goal(goal, _trap_result(), session=session, judge_llm=llm())
+
+    # Assert
+    assert verdict.status == SessionGoalStatus.ACTIVE
+    assert verdict.reason.startswith("Contradiction:")
