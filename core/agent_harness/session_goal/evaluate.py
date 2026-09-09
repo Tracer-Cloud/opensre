@@ -228,7 +228,7 @@ def _run_judge(
             previous_reason=current.last_verdict,
             independent_reading=reading.answer if reading is not None else "",
         )
-        return _accept_agreeing_reading(parsed, reading)
+        return _accept_agreeing_reading(parsed, reading, observations=f"{tool_evidence}\n{text}")
     except Exception:
         log.debug("session-goal judge unavailable", exc_info=True)
         return None
@@ -262,7 +262,10 @@ def _blocking_verdict_unsupported(
 
 
 def _accept_agreeing_reading(
-    parsed: SessionGoalJudgeVerdict | None, reading: SessionGoalReading | None
+    parsed: SessionGoalJudgeVerdict | None,
+    reading: SessionGoalReading | None,
+    *,
+    observations: str = "",
 ) -> SessionGoalJudgeVerdict | None:
     """Turn a not-yet into reached when two independent views agree the work is done.
 
@@ -275,7 +278,13 @@ def _accept_agreeing_reading(
         return parsed
     if parsed.verdict != "NOT_REACHED" or not reading.covered:
         return parsed
-    if not parsed.reply_matches_reading or judge_reason_is_contradiction(parsed.reason):
+    if not parsed.reply_matches_reading:
+        return parsed
+    if judge_reason_is_contradiction(parsed.reason) and judge_quote_is_supported(
+        getattr(parsed, "evidence_quote", ""), observations
+    ):
+        # A contradiction the judge can point at in the data stands, even
+        # though it also said the reply matches the reading.
         return parsed
     return parsed.model_copy(
         update={"verdict": "GOAL_REACHED", "reason": SessionGoalReason.AGREES_WITH_READING}

@@ -383,3 +383,49 @@ def test_a_not_yet_becomes_reached_when_the_reading_covers_all_and_the_reply_mat
     # Assert
     assert verdict.status == SessionGoalStatus.ACHIEVED
     assert "agrees with an independent reading" in verdict.reason
+
+
+def test_an_unsupported_contradiction_does_not_block_when_the_reading_agrees() -> None:
+    """A nitpick the judge cannot quote from the data must not hold a covered, matching reply."""
+
+    class _LLM:
+        model_id = "test"
+
+        def invoke(self, messages, *, system=None, tools=None):  # noqa: ANN001
+            _ = (messages, tools)
+            if "never see the assistant" in (system or ""):
+                return AgentLLMResponse(
+                    content='{"answer": "#6143: no re-run to green", "covered": true}'
+                )
+            return AgentLLMResponse(
+                content=(
+                    '{"verdict": "NOT_REACHED", "reason": "Contradiction: the table marks the '
+                    'workflow as dash but CI ran", "reply_matches_reading": true, '
+                    '"evidence_quote": "workflow column shows dash"}'
+                )
+            )
+
+        def tool_schemas(self, tools):  # noqa: ANN001
+            _ = tools
+            return []
+
+    session = SessionCore()
+    goal = SessionGoal(condition="was CI on #6143 re-run to green?", max_outer_turns=3)
+    attach_session_goal(session, goal)
+    result = TurnResult(
+        "cli_agent_handled",
+        ToolCallingTurnResult(
+            1,
+            1,
+            1,
+            False,
+            True,
+            tool_evidence="Tool: gh\nArguments: {}\nOutcome: success\nResult: re_run_to_green: false",
+            evidence_success_count=1,
+        ),
+        "| #6143 | No | — |",
+    )
+
+    verdict = evaluate_session_goal(goal, result, session=session, judge_llm=_LLM())  # type: ignore[arg-type]
+
+    assert verdict.status == SessionGoalStatus.ACHIEVED
