@@ -3,7 +3,8 @@
 The action model does not get to close the goal by saying it is done. This
 module merges tool ticks, validates newly ticked items, then asks the
 transcript judge (:mod:`core.agent_harness.session_goal.judge`).
-``GOAL_REACHED`` needs tool or stored-finding evidence. ``NOT_REACHED``
+``GOAL_REACHED`` needs tool or stored-finding evidence and a quote from
+those observations when tools ran. ``NOT_REACHED``
 keeps the goal active so the next turn continues — successful tools are
 not enough. The judge may also veto a ``Contradiction:`` or declare
 ``IMPOSSIBLE``. An unrecovered tool error this turn blocks a reached
@@ -250,6 +251,18 @@ def _blocking_verdict_unsupported(
     return not judge_quote_is_supported(quote, f"{tool_evidence}\n{reply}")
 
 
+def _reached_verdict_unsupported(parsed: SessionGoalJudgeVerdict, *, tool_evidence: str) -> bool:
+    """``GOAL_REACHED`` after tools must quote the observations, not the reply.
+
+    The assistant table can say Yes while ``gh`` only shows attempt 1. A
+    quote taken from that table is not checkable against the world.
+    """
+    if parsed.verdict != "GOAL_REACHED" or not tool_evidence.strip():
+        return False
+    quote = getattr(parsed, "evidence_quote", "")
+    return not judge_quote_is_supported(quote, tool_evidence)
+
+
 def _verdict_from_judge(
     parsed: SessionGoalJudgeVerdict | None,
     *,
@@ -293,6 +306,12 @@ def _verdict_from_judge(
             repeats_previous=repeated,
         )
     if parsed.verdict == "GOAL_REACHED":
+        if _reached_verdict_unsupported(parsed, tool_evidence=tool_evidence):
+            return SessionGoalVerdict(
+                status=SessionGoalStatus.ACTIVE,
+                reason=SessionGoalReason.judge_unsupported(reason or fallback_reason),
+                repeats_previous=repeated,
+            )
         # Same overflow / unfinished / failed-tool gate as the host. A cheap
         # GOAL_REACHED must not close on unreviewable or incomplete work.
         if judge_can_accept:
@@ -535,6 +554,7 @@ __all__ = [
     "default_evaluate_session_goal",
     "evaluate_session_goal",
     "goal_has_session_goal_evidence",
+    "judge_quote_is_supported",
     "session_goal_reply_text",
     "turn_has_session_goal_evidence",
 ]
