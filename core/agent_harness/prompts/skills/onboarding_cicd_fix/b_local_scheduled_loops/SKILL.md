@@ -1,29 +1,31 @@
 ---
 name: cicd-reliability-agent
 description: >-
-  Schedules a recurring CI/CD reliability agent for one repository: scan local
-  checkouts, pick the repo, then schedule_ci_reliability_loop (weekday 08:00
-  local by default, inbox only). Use for the startup demo option "Set up an
-  agent that improves CI/CD reliability over time". Not a one-shot analysis
-  (cicd-analytics-demo) and not a current-failing-checks read (github-ci-health).
-  Multi-step; load before acting.
+  Schedules a recurring CI/CD reliability report for one repository: scan local
+  checkouts, pick the repo, analyze GitHub Actions now, then
+  schedule_ci_reliability_loop (weekday 08:00 local by default, inbox only).
+  Use for the startup demo option "Set up an agent that improves CI/CD reliability over time".
+  Not a one-shot analysis without a schedule (cicd-analytics-demo) and not a
+  current-failing-checks read (github-ci-health). Multi-step; load before
+  acting.
 getting_started: Set up an agent that improves CI/CD reliability over time
 demo_order: 2
 metadata:
   owner: Vincent
   last_changed_by: Yauhen
-  last_changed_at: 2026-09-09
+  last_changed_at: 2026-09-10
   usecases:
-    - First-experience demo: schedule a weekday CI/CD reliability agent for one repo
-    - Watch CI reliability over time without a one-shot analytics report
+    - First-experience demo: analyze once, then schedule a weekday CI reliability report
+    - Watch CI reliability over time after a live first report
     - Recurring weekday CI reliability check delivered to the shell inbox
   requires:
     - GitHub token usable by OpenSRE with read access to the repository's Actions history
     - A local git checkout for the workspace scan (optional; a named repository also works)
   type: report
-  version: "1.1"
+  version: "1.2"
 tools:
   - scan_local_git_workspace
+  - analyze_github_ci_reliability
   - schedule_ci_reliability_loop
   - ask_user_choice
 references:
@@ -40,8 +42,8 @@ after_tool:
 
 # CI/CD reliability agent
 
-Schedule a recurring CI/CD reliability check for one repository, delivered to
-the shell inbox.
+Analyze one repository's CI/CD reliability now, then schedule the same
+report for weekday mornings in this shell's inbox.
 
 ## Workflow rules
 
@@ -50,7 +52,8 @@ the shell inbox.
   and stop. Do not fall back to another data source.
 - Decision points use `ask_user_choice` with the exact option texts below.
   End the turn after calling it; the answer arrives as the next user message.
-- Output `schedule_ci_reliability_loop`'s `response_text` exactly and stop.
+- The analyze tool paints the report; do not restate its figures. Then output
+  `schedule_ci_reliability_loop`'s `response_text` exactly and stop.
 
 ## Plan
 
@@ -59,7 +62,8 @@ Track progress with the `update_plan` tool, not with headers or prose:
 - On entry, before the first workflow tool call, call `update_plan` with the
   steps below verbatim, the first step `in_progress`, and a one-line
   `explanation` (this is not a diagnosis; no hypothesis table):
-  `Scan this machine` / `Pick the repository` / `Schedule the loop`.
+  `Scan this machine` / `Pick the repository` / `Analyze CI/CD reliability` /
+  `Schedule the loop`.
 - When the request already names the repository, omit the first two steps
   from the plan instead of renumbering.
 - After a step's tool results, call `update_plan` marking it `completed` and
@@ -83,11 +87,19 @@ frontmatter and the host runs it. Do not call `ask_user_choice` for this
 question, and do not write your own version of it. End the turn and wait; the
 answer arrives as the next user message.
 
-### 3. Schedule the loop
+### 3. Analyze CI/CD reliability
 
-Call `schedule_ci_reliability_loop(owner="<owner>", repo="<repo>",
-include_report=true)`. The loop runs weekdays at 08:00 local time; the card
-states the schedule and how to run it at another time, so do not ask about the
-cadence.
-Output `response_text` verbatim and stop. When a same-day report exists it
-comes first, then the schedule card; otherwise the card alone.
+Call
+`analyze_github_ci_reliability(owner="<owner>", repo="<repo>", compact=true)`
+for the chosen repository. This reads GitHub now (a token is required); do
+not look for a saved snapshot. The tool paints the report. Do not restate
+figures.
+
+### 4. Schedule the loop
+
+Call `schedule_ci_reliability_loop(owner="<owner>", repo="<repo>")` for the
+analyzed repository. Do not pass `include_report`: the report was just shown.
+The loop runs weekdays at 08:00 local time; the card states the schedule and
+how to run it at another time, so do not ask about the cadence.
+Output `response_text` verbatim and stop. Each later tick is the same
+analytics report, not a CI code fix.

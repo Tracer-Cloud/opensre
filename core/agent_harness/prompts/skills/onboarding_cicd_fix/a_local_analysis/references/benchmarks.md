@@ -2,13 +2,13 @@
 
 Phase 2 of the analytics demo (metric definitions in `metrics.md`): the
 analyze call already paints one comparison table next to apache/airflow and
-fastapi/fastapi over the same window. Load
+fastapi/fastapi. Load
 this reference only when the user asks what a compared figure means.
 
 ## Rules
 
-- The host table is the source. Peers come from today's snapshot only; a
-  miss is skipped, not fetched live. Do not call
+- The host table is the source. Peer columns are figures shipped with the
+  product (the report names the day they were measured). Do not call
   `analyze_github_ci_reliability` again for a benchmark, and never quote a
   figure from memory, a blog post, or a previous session.
 - Compare **rates and durations**, never raw counts. A repository with 40 000
@@ -17,13 +17,12 @@ this reference only when the user asks what a compared figure means.
   `pr_failure_rate`, flake share, red share, `mean_recovery_hours`, and
   `normal_minutes`.
 - The user's repository is the first column; the benchmarks are context.
-- If the tool returns `benchmarks_skipped` or `coverage_notices` for a
-  peer, say so in one line. Do not substitute another repository without
-  telling the user.
+- If the tool returns `coverage_notices`, say so in one line. Do not
+  substitute another repository without telling the user.
 
 ## Default benchmarks
 
-The tool always uses these two, from same-day snapshots:
+The tool always uses these two:
 
 | Repository | Why it works as a benchmark |
 |------------|-----------------------------|

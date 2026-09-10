@@ -25,7 +25,7 @@ def test_skip_option_opens_the_plain_shell_without_a_model_turn(
     session = Session()
     session.active_skill = "onboarding-cicd-fix"
     session.pending_user_choice = PendingUserChoice(
-        title="Which demo would you like me to run? (Esc to skip)",
+        title="Which demo would you like me to run?",
         options=("Explore a repo", SKIP_DEMO_OPTION),
     )
     monkeypatch.setattr(choice_prompt, "repl_tty_interactive", lambda: True)

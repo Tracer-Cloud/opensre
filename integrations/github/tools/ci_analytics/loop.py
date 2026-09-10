@@ -181,7 +181,8 @@ def build_report(args: Mapping[str, str], *, snapshot_dir: Path | None = None) -
             **report_payload(report),
         },
     )
-    return "\n".join([render_markdown(report), "", headline(report), "", f"Raw data: {snapshot}"])
+    # The rendered report already leads with the headline sentence.
+    return "\n".join([render_markdown(report), "", f"Raw data: {snapshot}"])
 
 
 def loop_card(scheduled: ScheduledLoop) -> LoopCard:

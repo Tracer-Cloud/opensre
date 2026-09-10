@@ -22,9 +22,9 @@ TOOL_NAME = "schedule_ci_reliability_loop"
         "prompt loop that re-runs the reliability analytics and delivers the report "
         "to this shell's inbox. Weekdays at 08:00 local time unless told otherwise. "
         "Never posts to Slack or any chat channel. Returns the schedule card to "
-        "repeat verbatim; with include_report=true, today's saved report (key "
-        "results and compare) comes first when a same-day snapshot exists. Never "
-        "reads GitHub live."
+        "repeat verbatim. With include_report=true, a report already saved today "
+        "is placed above the card; otherwise the card stands alone. Never reads "
+        "GitHub live — analyze first when the user has not seen a report yet."
     ),
     use_cases=[
         "Set up an agent that improves CI/CD reliability over time",

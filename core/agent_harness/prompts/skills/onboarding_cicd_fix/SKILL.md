@@ -27,7 +27,7 @@ metadata:
 pre_execute:
   - tool: ask_user_choice
     args:
-      title: Which demo would you like me to run? (Esc to skip)
+      title: Which demo would you like me to run?
       note: >-
         Choose a demo using your own repositories or connect your team through
         Slack. The managed-service option is coming soon.

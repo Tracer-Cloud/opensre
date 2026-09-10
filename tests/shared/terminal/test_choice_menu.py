@@ -82,7 +82,7 @@ def test_draw_menu_note_sits_inside_the_erased_block(monkeypatch) -> None:
     monkeypatch.setattr(choice_menu, "_cols", lambda: 80)
 
     choice_menu._draw_menu(
-        title="Which demo would you like me to run? (Esc to skip)",
+        title="Which demo would you like me to run?",
         crumb="",
         labels=["Explore a repo"],
         index=0,

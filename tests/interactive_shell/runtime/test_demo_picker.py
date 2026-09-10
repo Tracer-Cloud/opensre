@@ -28,7 +28,7 @@ from tests.core.agent.orchestration.action_execution_test_harness import (
 )
 from tools.system.workspace_git_scan.scan import WorkspaceSnapshot
 
-_TITLE = "Which demo would you like me to run? (Esc to skip)"
+_TITLE = "Which demo would you like me to run?"
 _NOTE = (
     "Choose a demo using your own repositories or connect your team through Slack. "
     "The managed-service option is coming soon."

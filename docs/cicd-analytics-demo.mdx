@@ -36,9 +36,10 @@ The agent guides you through the selected demo in the shell.
 2. **Pick a repository.** A menu lists your checkouts that have GitHub Actions
    workflows, then the open-source example, then a row to type your own.
 3. **Analyze.** It reads the repository's Actions history for the last 30 days
-   and paints the report (key results first: how long main was red) plus a
-   comparison table against apache/airflow and fastapi/fastapi over the same
-   window. A repository already read today is answered from its snapshot.
+   and paints the report: one sentence on what waiting on CI cost, the key
+   results, then a comparison table against apache/airflow and fastapi/fastapi.
+   The benchmark columns ship with OpenSRE and name the day they were
+   measured. Every analysis reads GitHub; nothing is answered from a cache.
 4. **Next step.** A menu offers the CI reliability agent (it schedules the
    check for the repository you just analyzed, no second repository question),
    the Slack hand-off, or exit.
@@ -87,11 +88,13 @@ yet is shown when it differs.
 ## The CI reliability agent
 
 Pick "Set up an agent that improves CI/CD reliability over time" from the
-startup menu to schedule the analysis as a recurring check. The demo scans your
-machine, asks which repository to watch and when to run (weekdays at 08:00
-local time is the default), and creates the loop. Choosing this option after
-an analytics report schedules that repository without asking you to pick it
-again. Every run analyzes the last 7 days; use `/loops run <id>` to run it now.
+startup menu to analyze the repository now, then schedule that report as a
+recurring check.
+The demo scans your machine, asks which repository to watch, reads GitHub
+Actions (a token is required), and creates the loop (weekdays at 08:00 local
+time by default). Choosing this option after an analytics report schedules
+that repository without asking you to pick it again. Every later run analyzes
+the last 7 days; use `/loops run <id>` to run it now.
 
 - Reports land in this shell's inbox: `/loops messages`. The loop never posts
   to Slack or any chat channel, even when those integrations are configured.

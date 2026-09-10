@@ -208,7 +208,7 @@ def test_choice_selection_is_the_ask_user_card() -> None:
 
     render_choice_selection(
         console,
-        "Which demo would you like me to run? (Esc to skip)",
+        "Which demo would you like me to run?",
         "Explore a repo and analyze its CI/CD performance (recommended)",
     )
 
@@ -217,7 +217,7 @@ def test_choice_selection_is_the_ask_user_card() -> None:
     lines = [line.rstrip() for line in output.splitlines() if line.strip()]
     assert lines == [
         "Ask User",
-        "  1.  Which demo would you like me to run? (Esc to skip)",
+        "  1.  Which demo would you like me to run?",
         "      Explore a repo and analyze its CI/CD performance (recommended)",
     ]
     assert "↳" not in output

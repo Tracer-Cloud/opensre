@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from datetime import datetime
 from typing import Any
 
@@ -9,6 +10,14 @@ from rich.padding import Padding
 
 import infrastructure.terminal.theme as ui_theme
 from infrastructure.terminal.markdown import ReplyMarkdown
+from integrations.github.tools.ci_analytics.benchmarks import (
+    BENCHMARKS,
+    MEASURED_ON,
+    Benchmark,
+)
+from integrations.github.tools.ci_analytics.benchmarks import (
+    WINDOW_DAYS as BENCHMARK_WINDOW_DAYS,
+)
 from integrations.github.tools.ci_analytics.models import (
     CiAnalyticsReport,
     FailureKind,
@@ -41,6 +50,8 @@ def render_markdown(report: CiAnalyticsReport, *, compact: bool = False) -> str:
         f"last {report.window_days} days**",
         "",
     ]
+    if report.executions:
+        lines.extend([headline(report), ""])
     lines.extend(_key_results_markdown(report))
     if report.executions:
         if not compact:
@@ -105,20 +116,6 @@ def key_results(report: CiAnalyticsReport) -> list[tuple[str, str]]:
         results.append(
             ("Slowest normal run", f"{_plain(slowest.workflow)}, {slowest.normal_minutes:.0f}m")
         )
-    if report.blocked_working_minutes > 0:
-        developers = report.developers_affected
-        per_week = (
-            report.blocked_working_minutes / developers / (report.window_days / 7)
-            if developers
-            else 0.0
-        )
-        extra = f", about {_working(per_week)} per developer a week" if developers else ""
-        results.append(
-            (
-                "Developer time blocked",
-                f"{_working(report.blocked_working_minutes)} of working time{extra}",
-            )
-        )
     return results
 
 
@@ -149,79 +146,55 @@ def comparison_figures(report: CiAnalyticsReport) -> dict[str, str]:
     }
 
 
-def skip_lines(skipped: list[str]) -> list[str]:
-    """Guest-visible reason a benchmark column is missing."""
-    return [f"Skipped {_plain(item)}." for item in skipped]
-
-
 def render_comparison(
     console: Any,
     user: CiAnalyticsReport,
-    peers: list[CiAnalyticsReport],
-    *,
-    skipped: list[str] | None = None,
+    benchmarks: Sequence[Benchmark] = BENCHMARKS,
 ) -> None:
-    """One table: the user's repo first, then the benchmark columns."""
+    """One table: the user's repository first, then the shipped benchmark columns."""
     # A markdown leading newline is dropped, so the heading would sit on the
     # report's last bullet; separate the two sections here.
     console.print()
-    _paint(console, comparison_markdown(user, peers, skipped=skipped))
+    _paint(console, comparison_markdown(user, benchmarks))
 
 
 def comparison_markdown(
     user: CiAnalyticsReport,
-    peers: list[CiAnalyticsReport],
-    *,
-    skipped: list[str] | None = None,
+    benchmarks: Sequence[Benchmark] = BENCHMARKS,
 ) -> str:
     """Markdown form of :func:`render_comparison`."""
-    missed = list(skipped or [])
-    if not peers:
-        lines = [
-            "Compared with well-known repositories:",
-            "",
-            "No benchmark columns — no same-day snapshot. "
-            "The report above is this repository only.",
-            *skip_lines(missed),
-        ]
-        return "\n".join(lines)
-    reports = [user, *peers]
-    labels = [f"{_plain(item.owner)}/{_plain(item.repo)}" for item in reports]
-    figures = [comparison_figures(item) for item in reports]
+    if not benchmarks:
+        return "No benchmark figures shipped with this build."
+    labels = [f"{_plain(user.owner)}/{_plain(user.repo)}"] + [
+        _plain(item.label) for item in benchmarks
+    ]
+    figures: list[Mapping[str, str]] = [comparison_figures(user), *(b.figures for b in benchmarks)]
     header = "| Metric | " + " | ".join(labels) + " |"
     align = "| --- | " + " | ".join("---:" for _ in labels) + " |"
     rows = [
         "| " + metric + " | " + " | ".join(row.get(metric, "n/a") for row in figures) + " |"
         for metric in figures[0]
     ]
-    peers_label = " and ".join(labels[1:]) if labels[1:] else "benchmarks"
+    peers_label = " and ".join(labels[1:])
     return "\n".join(
         [
-            f"Compared with {peers_label} over the same {user.window_days} days:",
+            f"Compared with {peers_label}:",
             "",
             header,
             align,
             *rows,
             "",
-            *[f"- {note}" for note in [*_comparison_notes(peers), *skip_lines(missed)]],
+            f"- {_benchmark_note()}",
         ]
     )
 
 
-def _comparison_notes(peers: list[CiAnalyticsReport]) -> list[str]:
-    """Say when 0% red is a green window, not a missing fetch."""
-    notes: list[str] = []
-    seen: set[str] = set()
-    for peer in peers:
-        name = f"{_plain(peer.owner)}/{_plain(peer.repo)}"
-        if peer.red_hours == 0 and name not in seen:
-            seen.add(name)
-            if peer.branch_runs:
-                notes.append(f"{name}: default branch stayed green in this window.")
-            else:
-                notes.append(f"{name}: no default-branch runs in this window.")
-        notes.extend(peer.coverage_notices)
-    return notes
+def _benchmark_note() -> str:
+    """Name what the benchmark columns are, so they are never read as live figures."""
+    return (
+        f"Benchmark columns were measured with this tool over "
+        f"{BENCHMARK_WINDOW_DAYS} days on {MEASURED_ON:%d %b %Y}."
+    )
 
 
 def _details_markdown(report: CiAnalyticsReport) -> list[str]:
@@ -341,29 +314,27 @@ def _day(when: datetime | None) -> str:
 
 
 def headline(report: CiAnalyticsReport) -> str:
-    """One deterministic sentence naming the biggest cost."""
+    """One plain sentence naming what unreliable CI cost, for the top of the report."""
     if report.blocked_working_minutes > 0:
-        heaviest = report.developer_waits[0]
         developers = report.developers_affected
-        return (
-            f"Unreliable CI cost {developers} {_plural(developers, 'developer')} "
-            f"{_working(report.blocked_working_minutes)} of working time in the last "
-            f"{report.window_days} days, up to {_working(heaviest.working_minutes_per_week)} a "
-            f"week for the worst hit; {_minutes(report.blocked_minutes)} of wall-clock wait "
-            f"across {report.merged_pr_branches} merged {_plural(report.merged_pr_branches, 'PR')}."
+        cost = (
+            f"Waiting on CI cost {_working(report.blocked_working_minutes)} of developer time "
+            f"in the last {report.window_days} days"
         )
+        if not developers:
+            return f"{cost}."
+        per_week = report.blocked_working_minutes / developers / (report.window_days / 7)
+        return f"{cost}, about {_working(per_week)} per developer a week."
     if report.blocked_minutes > 0:
         return (
-            f"Unreliable CI blocked merged pull requests for {_minutes(report.blocked_minutes)} "
-            f"of wall-clock time in the last {report.window_days} days, all of it outside "
-            f"working hours ({report.working_hours_label})."
+            f"Waiting on CI held up merged pull requests for {_minutes(report.blocked_minutes)}, "
+            f"all of it outside working hours ({report.working_hours_label})."
         )
     if report.red_hours > 0:
         return (
-            f"{_plain(report.default_branch)} was red for {_hours(report.red_hours)} across "
-            f"{len(report.outages)} {_plural(len(report.outages), 'breakage')} in the last "
-            f"{report.window_days} days, with a mean recovery of "
-            f"{_hours(report.mean_recovery_hours or 0.0)}."
+            f"Nobody could merge on {_plain(report.default_branch)} for "
+            f"{_hours(report.red_hours)} in the last {report.window_days} days, across "
+            f"{len(report.outages)} {_plural(len(report.outages), 'breakage')}."
         )
     if report.pr_failures:
         return (
@@ -474,7 +445,6 @@ __all__ = [
     "ci_report_headline",
     "comparison_figures",
     "comparison_markdown",
-    "skip_lines",
     "key_results",
     "key_results_payload",
     "render_ci_report",

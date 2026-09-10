@@ -1129,8 +1129,8 @@ def test_tool_renders_report_from_collected_runs() -> None:
     assert result["reliability_failures"] == 1
     assert result["blocked_minutes"] == 40.0
     assert result["headline"] == (
-        "Unreliable CI cost 1 developer 40m of working time in the last 7 days, up to 40m a "
-        "week for the worst hit; 40m of wall-clock wait across 1 merged PR."
+        "Waiting on CI cost 40m of developer time in the last 7 days, "
+        "about 40m per developer a week."
     )
     assert "Coverage notice: sample" in result["response_text"]
 
@@ -1303,7 +1303,7 @@ def test_the_comparison_starts_on_its_own_line() -> None:
 
     # Act
     render_report(console, report, compact=True)
-    render_comparison(console, report, [report])
+    render_comparison(console, report)
 
     # Assert: a blank line separates the report from the comparison heading.
     lines = buf.getvalue().splitlines()
@@ -1322,3 +1322,34 @@ def test_the_description_tells_the_model_the_comparison_cannot_be_skipped() -> N
     assert registered is not None
     assert "cannot be turned off" in registered.description
     assert "never offer to skip" in registered.description
+    assert "same-day snapshot answers" not in registered.description
+    assert "shipped with the product" in registered.description
+
+
+def test_headline_names_the_cost_when_no_developer_can_be_attributed() -> None:
+    """blocked_working_minutes can be set without per-author waits."""
+    from integrations.github.tools.ci_analytics.models import CiAnalyticsReport
+    from integrations.github.tools.ci_analytics.render import headline
+
+    report = CiAnalyticsReport(
+        owner="o",
+        repo="r",
+        default_branch="main",
+        window_days=30,
+        generated_at=_T0,
+        executions=1,
+        pr_executions=1,
+        pr_failures=0,
+        classified=(),
+        merged_pr_branches=1,
+        blocked_minutes=60.0,
+        blocked_minutes_all=60.0,
+        branch_runs=0,
+        branch_failures=0,
+        red_hours=0.0,
+        outages=(),
+        mean_recovery_hours=None,
+        blocked_working_minutes=90.0,
+    )
+
+    assert headline(report) == ("Waiting on CI cost 1.5h of developer time in the last 30 days.")

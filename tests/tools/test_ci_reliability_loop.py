@@ -148,6 +148,15 @@ def _scheduled_stub(owner: str, repo: str) -> ci_loop.ScheduledLoop:
     return ci_loop.ScheduledLoop(loop=loop, reused=False)
 
 
+def _saved_report(root: Path, *, window_days: int) -> dict:
+    """Write a snapshot and hand back the report payload inside it."""
+    import json
+
+    _write_report_snapshot(root, window_days=window_days)
+    path = next((root / "acme" / "app").glob("*.json"))
+    return dict(json.loads(path.read_text())["report"])
+
+
 def _write_report_snapshot(root: Path, *, window_days: int) -> datetime:
     from datetime import UTC, datetime, timedelta
 
@@ -385,10 +394,19 @@ def test_analyze_markdown_keeps_details_when_benchmarks_are_requested(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Arrange: a non-terminal caller asks for the report with benchmarks.
-    from integrations.github.tools.ci_analytics import tool as tool_module
+    from typing import Any
 
-    _write_report_snapshot(tmp_path, window_days=30)
+    from integrations.github.tools.ci_analytics import tool as tool_module
+    from integrations.github.tools.ci_analytics.snapshots import report_from_dict
+
+    saved = _saved_report(tmp_path, window_days=30)
     monkeypatch.setattr(tool_module, "snapshot_root", lambda _root=None: tmp_path)
+    monkeypatch.setattr(tool_module, "resolve_github_token", lambda _t=None: "tok")
+
+    def _analyze(_owner: str, _repo: str, **_kwargs: Any) -> Any:
+        return type("A", (), {"report": report_from_dict(saved), "runs_read": 3})()
+
+    monkeypatch.setattr(tool_module, "analyze_repository", _analyze)
 
     # Act
     result = tool_module.analyze_github_ci_reliability(

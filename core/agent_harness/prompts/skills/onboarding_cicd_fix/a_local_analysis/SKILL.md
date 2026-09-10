@@ -128,11 +128,11 @@ the answer.
 
 Call
 `analyze_github_ci_reliability(owner="<owner>", repo="<repo>", compact=true)`
-for the chosen repository. The tool paints the report (key results first)
-and the comparison table itself. Do not restate figures, do not output
-`headline`, and do not call the tool again for benchmarks. A peer without
-a same-day snapshot is skipped (named in `benchmarks_skipped`); do not
-fetch it yourself.
+for the chosen repository. This reads GitHub now (a token is required); do
+not look for a saved snapshot. The tool paints the report — the cost
+sentence first, then key results and the comparison against shipped
+Airflow and FastAPI figures. Do not restate figures, do not output
+`headline`, and do not call the tool again for benchmarks.
 
 ### 4. Offer what to do next
 
@@ -143,7 +143,9 @@ these options:
 - `Connect OpenSRE to Slack and hand off DevOps chores for your team`
 - `Exit demo`
 
-Wait for the answer, then follow the selected option.
+Wait for the answer, then follow the selected option. The report already
+named the cost; do not repeat it. The first option schedules a weekday
+copy of this report, not a CI code fix.
 
 **Recurring check:** Call
 `schedule_ci_reliability_loop(owner="<owner>", repo="<repo>")` for the
