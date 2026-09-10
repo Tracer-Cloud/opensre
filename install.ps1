@@ -429,6 +429,18 @@ function Get-OpenSreRequestHeaders {
     }
 }
 
+function Get-OpenSreApiHeaders {
+    $headers = Get-OpenSreRequestHeaders
+    $token = $env:GITHUB_TOKEN
+    if (-not $token) {
+        $token = $env:GH_TOKEN
+    }
+    if ($token) {
+        $headers["Authorization"] = "Bearer $token"
+    }
+    return $headers
+}
+
 function Invoke-OpenSreWithRetry {
     param(
         [Parameter(Mandatory = $true)]
@@ -525,7 +537,7 @@ function Invoke-OpenSreRestMethod {
 
     $params = @{
         Uri = $Uri
-        Headers = Get-OpenSreRequestHeaders
+        Headers = Get-OpenSreApiHeaders
     }
 
     $command = Get-Command Invoke-RestMethod -ErrorAction Stop

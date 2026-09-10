@@ -76,6 +76,11 @@ jobs:
         # test_live_installers.py — Homebrew ships preinstalled on
         # macos-latest runners, so they aren't skipped.
         shell: bash
+        env:
+          # Shared runner IPs hit the unauthenticated GitHub API rate limit
+          # (403), which fails the canary. The installers forward this token to
+          # api.github.com only — never to asset downloads (issue #6128).
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -uo pipefail
           uv run python -m pytest ${{ matrix.test_path }} -v \

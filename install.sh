@@ -278,11 +278,17 @@ download_to() {
 
 download_text() {
   local url="$1"
+  local token="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
+  local -a headers=(
+    -H "Accept: application/vnd.github+json"
+    -H "User-Agent: opensre-install-script"
+  )
 
-  curl "${CURL_FLAGS[@]}" \
-    -H "Accept: application/vnd.github+json" \
-    -H "User-Agent: opensre-install-script" \
-    "$url"
+  if [ -n "$token" ]; then
+    headers+=(-H "Authorization: Bearer ${token}")
+  fi
+
+  curl "${CURL_FLAGS[@]}" "${headers[@]}" "$url"
 }
 
 fetch_release_json() {
