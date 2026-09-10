@@ -5,6 +5,7 @@ from __future__ import annotations
 import contextlib
 import json
 import os
+import re
 import uuid
 from datetime import UTC, datetime
 from pathlib import Path
@@ -40,6 +41,7 @@ class DecisionLedger:
         signal_fingerprint: str,
         channel_id: str,
         thread_ts: str,
+        signal_fingerprint_version: int | None = None,
     ) -> tuple[dict[str, Any], bool]:
         """Append a decision once per interaction; return ``(record, created)``."""
         path = decision_ledger_path()
@@ -73,6 +75,8 @@ class DecisionLedger:
                 "thread_ts": thread_ts,
                 "delivery_status": "pending" if decision.decision == "send" else "suppressed",
             }
+            if signal_fingerprint_version is not None:
+                record["signal_fingerprint_version"] = signal_fingerprint_version
             _append_jsonl(path, record)
             return dict(record), True
 
@@ -103,10 +107,19 @@ class DecisionLedger:
         decision = _decision_for_interaction(events, interaction_id)
         return _merge_delivery(decision, events) if decision is not None else None
 
-    def has_delivered_signal(self, *, signal_key: str, signal_fingerprint: str) -> bool:
+    def has_delivered_signal(
+        self,
+        *,
+        signal_key: str,
+        signal_state: str,
+        signal_fingerprint: str,
+        signal_fingerprint_version: int,
+        legacy_signal_fingerprint: str,
+    ) -> bool:
         """Whether the same unchanged signal was successfully delivered earlier."""
         events = _read_jsonl(decision_ledger_path())
         normalized_key = signal_key.strip().casefold()
+        normalized_state = _normalized(signal_state)
         delivered_ids = {
             event.get("decision_id")
             for event in events
@@ -115,11 +128,23 @@ class DecisionLedger:
         for record in events:
             if record.get("type") != "decision" or record.get("decision") != "send":
                 continue
+            if record.get("decision_id") not in delivered_ids:
+                continue
             if not normalized_key or record.get("signal_key") != normalized_key:
                 continue
-            if not signal_fingerprint or record.get("signal_fingerprint") != signal_fingerprint:
+            recorded_version = record.get("signal_fingerprint_version")
+            if recorded_version == signal_fingerprint_version:
+                if signal_fingerprint and record.get("signal_fingerprint") == signal_fingerprint:
+                    return True
                 continue
-            if record.get("decision_id") in delivered_ids:
+            if recorded_version is not None:
+                continue
+            legacy_match = (
+                legacy_signal_fingerprint
+                and record.get("signal_fingerprint") == legacy_signal_fingerprint
+            )
+            state_match = _contains_state(str(record.get("evidence_quote") or ""), normalized_state)
+            if legacy_match or state_match:
                 return True
         return False
 
@@ -201,6 +226,23 @@ def _append_jsonl(path: Path, record: dict[str, Any]) -> None:
         with contextlib.suppress(OSError):
             os.close(descriptor)
         raise
+
+
+def _normalized(value: str) -> str:
+    return " ".join(value.split()).casefold()
+
+
+def _contains_state(evidence_quote: str, normalized_state: str) -> bool:
+    if not normalized_state:
+        return False
+    normalized_quote = _normalized(evidence_quote)
+    return (
+        re.search(
+            rf"(?<!\w){re.escape(normalized_state)}(?!\w)",
+            normalized_quote,
+        )
+        is not None
+    )
 
 
 def _decision_for_interaction(

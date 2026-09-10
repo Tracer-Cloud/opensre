@@ -34,6 +34,7 @@ _BROADCAST_MENTIONS = ("<!channel>", "<!here>", "<!everyone>")
 _MIN_EVIDENCE_QUOTE_CHARS = 8
 _MAX_INTERACTION_PROMPT_CHARS = 44_000
 _MAX_SLACK_CONTEXT_PROMPT_CHARS = 20_000
+_SIGNAL_FINGERPRINT_VERSION = 2
 _WHITESPACE = re.compile(r"\s+")
 
 
@@ -197,7 +198,10 @@ class ProactiveJudgementRunner:
         signal_fingerprint = _signal_fingerprint(decision)
         if self._ledger.has_delivered_signal(
             signal_key=decision.signal_key,
+            signal_state=decision.signal_state,
             signal_fingerprint=signal_fingerprint,
+            signal_fingerprint_version=_SIGNAL_FINGERPRINT_VERSION,
+            legacy_signal_fingerprint=_legacy_signal_fingerprint(decision),
         ):
             return _suppression("Safety check suppressed an unchanged recurring signal.")
         if _normalized(decision.message) in _normalized(interaction.agent_outcome):
@@ -226,6 +230,7 @@ class ProactiveJudgementRunner:
             signal_fingerprint=signal_fingerprint,
             channel_id=trigger.channel_id,
             thread_ts=trigger.thread_ts,
+            signal_fingerprint_version=_SIGNAL_FINGERPRINT_VERSION,
         )
         decision_id = str(record.get("decision_id") or "")
         if not created:
@@ -377,6 +382,13 @@ def _signal_fingerprint(decision: ProactiveMessageDecision) -> str:
     if decision.decision != "send":
         return ""
     material = _normalized(decision.signal_state)
+    return hashlib.sha256(material.encode("utf-8")).hexdigest()
+
+
+def _legacy_signal_fingerprint(decision: ProactiveMessageDecision) -> str:
+    if decision.decision != "send":
+        return ""
+    material = "|".join((_normalized(decision.verified_information), _normalized(decision.owner)))
     return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 

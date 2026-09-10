@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from typing import Any
 
 from config.principal import StorageScope
@@ -97,6 +98,7 @@ def test_grounded_send_is_ledgered_before_same_thread_delivery(scope: StorageSco
     ]
     assert decision["slack_message_ts"] == "200.2"
     assert decision["delivery_status"] == "delivered"
+    assert decision["signal_fingerprint_version"] == 2
     assert cursor is not None and cursor["end_record_id"] == trigger.end_record_id
     assert 'untrusted="true"' in llm.prompts[0]
 
@@ -216,6 +218,57 @@ def test_changed_signal_with_reused_key_is_delivered(scope: StorageScope) -> Non
     assert first_outcome.status == "delivered"
     assert second_outcome.status == "delivered"
     assert sent == ["old", "new"]
+
+
+def test_legacy_delivered_signal_is_suppressed_after_fingerprint_upgrade(
+    scope: StorageScope,
+) -> None:
+    legacy_trigger = write_interaction(scope, session_id="session-legacy", suffix="legacy")
+    current_trigger = write_interaction(scope, session_id="session-current", suffix="current")
+    legacy_decision = _send_decision()
+    legacy_material = "|".join(
+        (
+            legacy_decision.verified_information.casefold(),
+            legacy_decision.owner.casefold(),
+        )
+    )
+    legacy_fingerprint = hashlib.sha256(legacy_material.encode("utf-8")).hexdigest()
+    with bound_storage_scope(scope):
+        record, _created = DecisionLedger().record_decision(
+            session_id=legacy_trigger.session_id,
+            interaction_id="assistant-legacy",
+            end_record_id=legacy_trigger.end_record_id,
+            policy_name="master-judgement",
+            policy_version=1,
+            decision=legacy_decision,
+            signal_fingerprint=legacy_fingerprint,
+            channel_id=legacy_trigger.channel_id,
+            thread_ts=legacy_trigger.thread_ts,
+        )
+        DecisionLedger().record_delivery(
+            str(record["decision_id"]),
+            status="delivered",
+            slack_message_ts="ts-legacy",
+        )
+
+    reworded = legacy_decision.model_copy(
+        update={
+            "verified_information": (
+                "The observed state remains: flaky test test_retry failed on attempt 1."
+            ),
+            "next_action": "Stabilize the retry fixture.",
+        }
+    )
+    deliveries: list[str] = []
+    with bound_storage_scope(scope):
+        outcome = ProactiveJudgementRunner(
+            context_reader=_context_reader,
+            delivery=lambda **_kwargs: deliveries.append("sent") or "ts-current",
+            llm_factory=lambda: _StructuredLLM(reworded),
+        ).run(current_trigger)
+
+    assert outcome.status == "suppressed"
+    assert deliveries == []
 
 
 def test_failed_delivery_does_not_suppress_later_occurrence(scope: StorageScope) -> None:
