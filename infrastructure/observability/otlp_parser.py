@@ -21,11 +21,13 @@ _EMPTY_DURATION_MILLISECONDS = 0.0
 _UNKNOWN_SPAN_NAME = "unknown"
 
 
-def extract_span_attributes(span: dict[str, Any]) -> dict[str, Any]:
+def extract_span_attributes(span: object) -> dict[str, Any]:
     """Flatten an OTLP attribute list into a plain key -> value mapping.
 
-    Handles the common OTLP/JSON scalar value kinds. Attributes without a key or
-    with an unsupported value kind are skipped.
+    ``span`` is a JSON-decoded value, so a non-mapping input or a non-list
+    ``attributes`` field yields an empty mapping. Handles the common OTLP/JSON
+    scalar value kinds. Attributes without a key or with an unsupported value
+    kind are skipped.
     """
     attributes: dict[str, Any] = {}
     if not isinstance(span, dict):
@@ -64,11 +66,13 @@ def _duration_ms(start_unix_nano: Any, end_unix_nano: Any) -> float:
     )
 
 
-def parse_otlp_trace(trace_data: dict[str, Any]) -> list[dict[str, Any]]:
+def parse_otlp_trace(trace_data: object) -> list[dict[str, Any]]:
     """Parse an OTLP/JSON trace into a flat list of span dicts.
 
-    The ``service_name`` is lifted from each batch's resource attributes so
-    callers can correlate spans to services without a nested lookup.
+    ``trace_data`` is a JSON-decoded value; a non-mapping input, a non-list
+    ``batches`` field, or a malformed batch is skipped. The ``service_name`` is
+    lifted from each batch's resource attributes so callers can correlate spans
+    to services without a nested lookup.
     """
     spans: list[dict[str, Any]] = []
     if not isinstance(trace_data, dict):
