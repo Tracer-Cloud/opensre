@@ -28,6 +28,35 @@ _RUN_COLUMNS = (
     "task_id, fire_time, started_at, finished_at, status, posted_message_id, "
     "error, provider, targets, attempt"
 )
+_RECOVERABLE_RUNS_QUERY = """
+    WITH recovery_candidates AS (
+        SELECT task_id, fire_time, attempt, started_at
+        FROM task_runs
+        WHERE status = ?
+        UNION ALL
+        SELECT task_id, fire_time, attempt, started_at
+        FROM task_runs
+        WHERE status = ? AND lease_expires_at != '' AND lease_expires_at < ?
+    )
+    SELECT current.task_id, current.fire_time
+    FROM recovery_candidates AS current
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM task_runs AS live
+        WHERE live.task_id = current.task_id
+        AND live.status = ?
+        AND live.lease_expires_at >= ?
+    )
+    AND (? IS NULL OR current.task_id IN (SELECT value FROM json_each(?)))
+    AND current.attempt = (
+        SELECT MAX(latest.attempt)
+        FROM task_runs AS latest
+        WHERE latest.task_id = current.task_id
+        AND latest.fire_time = current.fire_time
+    )
+    ORDER BY current.started_at, current.task_id, current.fire_time
+    LIMIT ?
+"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -226,17 +255,7 @@ def get_recoverable_runs(
     with database.connection(db_path) as conn:
         now_text = datetime.now(UTC).isoformat()
         rows = conn.execute(
-            "SELECT task_id, fire_time FROM task_runs AS current "
-            "WHERE (current.status = ? OR (current.status = ? "
-            "AND current.lease_expires_at != '' AND current.lease_expires_at < ?)) "
-            "AND NOT EXISTS (SELECT 1 FROM task_runs AS live "
-            "WHERE live.task_id = current.task_id AND live.status = ? "
-            "AND live.lease_expires_at >= ?) "
-            "AND (? IS NULL OR current.task_id IN (SELECT value FROM json_each(?))) "
-            "AND current.attempt = (SELECT MAX(latest.attempt) FROM task_runs AS latest "
-            "WHERE latest.task_id = current.task_id "
-            "AND latest.fire_time = current.fire_time) "
-            "ORDER BY current.started_at, current.task_id, current.fire_time LIMIT ?",
+            _RECOVERABLE_RUNS_QUERY,
             (
                 TaskStatus.PENDING.value,
                 TaskStatus.RUNNING.value,
