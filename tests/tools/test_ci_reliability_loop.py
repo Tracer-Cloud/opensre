@@ -54,7 +54,44 @@ def test_scheduling_the_same_repository_again_reuses_the_loop(store_path: Path) 
     assert second.reused is True
     assert second.task_id == first.task_id
     assert len(list_tasks(store_path)) == 1
-    assert ci_loop.loop_card(second)[0].startswith("Already scheduled")
+    assert ci_loop.loop_card(second).headline.startswith("Already scheduled")
+
+
+def test_the_card_is_a_bulleted_list_not_a_paragraph(store_path: Path) -> None:
+    """Markdown folds consecutive lines into one paragraph; the card must survive that.
+
+    Read as prose, the schedule, the inbox and the management commands ran
+    together into a block nobody finished reading.
+    """
+    # Arrange
+    scheduled = ci_loop.schedule_ci_reliability_loop(
+        "acme", "app", timezone="UTC", store_path=store_path
+    )
+
+    # Act
+    markdown = ci_loop.loop_card(scheduled).markdown()
+
+    # Assert: a bold headline, a blank line, then one bullet per fact.
+    headline, blank, *bullets = markdown.split("\n")
+    assert headline == "**Scheduled: CI reliability check · acme/app**"
+    assert blank == ""
+    assert all(line.startswith("- ") for line in bullets)
+    assert len(bullets) == 4
+
+
+def test_the_next_run_is_shown_in_the_schedule_timezone(store_path: Path) -> None:
+    """A raw UTC ISO stamp contradicted the local time the user had just picked."""
+    # Arrange: 08:00 in Chicago is not 08:00 UTC.
+    scheduled = ci_loop.schedule_ci_reliability_loop(
+        "acme", "app", timezone="America/Chicago", store_path=store_path
+    )
+
+    # Act
+    schedule_line = ci_loop.loop_card(scheduled).details[0]
+
+    # Assert
+    assert "T" not in schedule_line.split("next ")[1]
+    assert schedule_line.endswith("08:00")
 
 
 def test_unparseable_time_raises_before_anything_is_stored(store_path: Path) -> None:
@@ -306,7 +343,7 @@ def test_tool_never_reads_github_live_when_no_snapshot_exists(
     assert live_calls == []
     assert result["ok"] is True
     assert result["report_as_of"] == ""
-    assert result["response_text"].startswith("Scheduled:")
+    assert result["response_text"].startswith("**Scheduled:")
 
 
 def test_registered_tool_runs_the_scheduling_function() -> None:
@@ -382,5 +419,5 @@ def test_the_card_says_how_to_run_the_loop_at_another_time(
     result = loop_tool.schedule_ci_reliability_loop(owner="acme", repo="app")
 
     # Assert
-    assert "to run it at another time" in result["response_text"].lower()
+    assert "delete to reschedule" in result["response_text"].lower()
     assert "/loops delete task1" in result["response_text"]

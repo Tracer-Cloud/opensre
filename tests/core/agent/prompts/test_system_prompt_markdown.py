@@ -33,6 +33,14 @@ def test_system_prompt_runs_explicit_commands_without_repository_probe() -> None
     )
 
 
+def test_actionable_results_are_bullets_not_a_paragraph() -> None:
+    """A schedule card read as one dense block; nobody reached the commands in it."""
+    collapsed = " ".join(_SYSTEM_PROMPT_BASE.split())
+    assert "Three or more things the user can act on" in collapsed
+    assert "are one bullet each, never a run of sentences" in collapsed
+    assert "Repeat a card or list a tool already rendered line for line" in collapsed
+
+
 def test_finite_material_ambiguity_requires_selectable_clarification() -> None:
     text = _SYSTEM_PROMPT_BASE
     collapsed = " ".join(text.split())

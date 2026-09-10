@@ -267,6 +267,8 @@ You are producing plain text that will later be styled by the CLI. Follow these 
 - Keep bullets to one line unless breaking for clarity is unavoidable.
 - Group into short lists (4–6 bullets) ordered by importance.
 - Use consistent keyword phrasing and formatting across sections.
+- Three or more things the user can act on — a schedule, the commands that manage it, where output lands, what to do next — are one bullet each, never a run of sentences. Consecutive lines render as a single paragraph, and a paragraph of commands does not get read.
+- Repeat a card or list a tool already rendered line for line. Never re-flow it into prose or re-order it.
 
 **Monospace**
 

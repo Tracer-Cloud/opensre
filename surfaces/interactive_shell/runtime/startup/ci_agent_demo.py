@@ -146,10 +146,11 @@ def start_ci_agent_demo(
         return False
     reload_loop_scheduler()
     if console is not None:
-        headline, *details = loop_card(scheduled)
+        card = loop_card(scheduled)
         console.print()
-        render_note_block(console, headline)
-        console.print(reply_gutter(Text("\n".join(details)), lead=False))
+        render_note_block(console, card.headline)
+        bullets = "\n".join(f"- {detail}" for detail in card.details)
+        console.print(reply_gutter(ReplyMarkdown(bullets), lead=False))
         console.print()
     _record(OPTION_CI_AGENT)
     _run_first_pass(console, scheduled.task_id, owner=owner, repo=repo)

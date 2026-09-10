@@ -97,7 +97,7 @@ def schedule_ci_reliability_loop(
     except ValueError as exc:
         return {"ok": False, "error": str(exc)}
     task = scheduled.loop.task
-    card = "\n".join(ci_loop.loop_card(scheduled))
+    card = ci_loop.loop_card(scheduled).markdown()
     report, report_as_of = report_text_from_snapshot(owner, repo) if include_report else ("", "")
     return {
         "ok": True,

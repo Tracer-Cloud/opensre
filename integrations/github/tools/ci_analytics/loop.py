@@ -7,6 +7,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_PROMPT_PARAM,
@@ -50,6 +51,19 @@ class ScheduledLoop:
     @property
     def task_id(self) -> str:
         return self.loop.task.id
+
+
+@dataclass(frozen=True)
+class LoopCard:
+    """The scheduled loop as the user reads it: a headline and short facts."""
+
+    headline: str
+    details: tuple[str, ...]
+
+    def markdown(self) -> str:
+        """The card as markdown: bold headline, one bullet per fact."""
+        bullets = "\n".join(f"- {detail}" for detail in self.details)
+        return f"**{self.headline}**\n\n{bullets}"
 
 
 def loop_name(owner: str, repo: str) -> str:
@@ -170,26 +184,46 @@ def build_report(args: Mapping[str, str], *, snapshot_dir: Path | None = None) -
     return "\n".join([render_markdown(report), "", headline(report), "", f"Raw data: {snapshot}"])
 
 
-def loop_card(scheduled: ScheduledLoop) -> list[str]:
-    """Plain lines describing the loop: schedule, next run, where reports land."""
+def loop_card(scheduled: ScheduledLoop) -> LoopCard:
+    """What the user is told about the loop: one headline and one fact per line."""
     task = scheduled.loop.task
     verb = "Already scheduled" if scheduled.reused else "Scheduled"
     when = loop_time_label(task.cron) or task.cron
     cadence = "weekdays" if task.cron.split()[-1] == "1-5" else "every day"
-    lines = [
-        f"{verb}: {task.name}",
-        f"Runs {cadence} at {when} {task.timezone}; next run {scheduled.loop.next_run or 'pending'}.",
-        "Each report lands in this shell's inbox: /loops messages. "
-        f"Manage it with /loops list, /loops stop {task.id}, /loops delete {task.id}.",
-        f"To run it at another time, /loops delete {task.id} and schedule it again.",
-        "It runs while the shell is open, or under `opensre cron start` when it is not.",
-    ]
-    return lines
+    return LoopCard(
+        headline=f"{verb}: {task.name}",
+        details=(
+            f"Runs {cadence} at {when} {task.timezone}, next {_next_run_label(scheduled)}",
+            "Reports arrive in this shell's inbox: `/loops messages`",
+            f"Manage: `/loops list`, `/loops stop {task.id}`, "
+            f"`/loops delete {task.id}` (delete to reschedule)",
+            "Runs while the shell is open; `opensre cron start` keeps it running when it is not",
+        ),
+    )
+
+
+def _next_run_label(scheduled: ScheduledLoop) -> str:
+    """The next run in the schedule's own timezone, so it matches the time asked for."""
+    raw = scheduled.loop.next_run
+    if not raw:
+        return "pending"
+    try:
+        when = datetime.fromisoformat(raw)
+    except ValueError:
+        return raw
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=UTC)
+    try:
+        when = when.astimezone(ZoneInfo(scheduled.loop.task.timezone))
+    except (ZoneInfoNotFoundError, ValueError):
+        when = when.astimezone()
+    return when.strftime("%a %d %b %H:%M")
 
 
 __all__ = [
     "DEFAULT_LOOP_TIME",
     "LOOP_WINDOW_DAYS",
+    "LoopCard",
     "REPORT_NAME",
     "SNAPSHOT_DIRNAME",
     "ScheduledLoop",
