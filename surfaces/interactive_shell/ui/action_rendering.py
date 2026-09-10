@@ -27,7 +27,7 @@ from infrastructure.observability.trace.redaction import redact_sensitive
 from infrastructure.safety.terminal_output import strip_terminal_controls
 from infrastructure.terminal.theme import (
     BOLD_SKILL,
-    DIM,
+    ERROR,
     TEXT,
 )
 from infrastructure.text import is_data_blob
@@ -368,8 +368,8 @@ class ActionRenderObserver:
 
     Self-recording tools (``slash_invoke``, ``shell_run``, etc.) append their own
     history row; chat turns are recorded later by turn accounting when the
-    assistant runs. ``skill_view`` gets a dedicated live event: the skill name
-    on ``tool_start`` and an activation/failure child line on ``tool_end``.
+    assistant runs. ``skill_view`` gets a dedicated live event: one
+    ``Skill activated <name>`` (or ``failed to load``) line on ``tool_end``.
     """
 
     def __init__(self, *, session: Session, console: Console, message: str) -> None:
@@ -378,7 +378,6 @@ class ActionRenderObserver:
         self.message = message
         self.planned_count = 0
         self._pending_skill_calls: dict[str, str] = {}
-        self._last_skill_header: str = ""
         self._pending_result_tools: set[str] = set()
 
     def __call__(self, kind: str, data: dict[str, Any]) -> None:
@@ -516,19 +515,11 @@ class ActionRenderObserver:
         render_note_block(self.console, content)
 
     def _render_skill_start(self, data: dict[str, Any]) -> None:
-        """Print ``Skill <name>`` when the agent starts loading a skill."""
+        """Remember the skill slug for its ``tool_end``; nothing prints yet."""
         args = data.get("input")
         raw_name = str(args.get("name", "")).strip() if isinstance(args, dict) else ""
         slug = strip_terminal_controls(raw_name.replace("_", "-").lower()) or "skill"
         self._pending_skill_calls[str(data.get("id") or "")] = slug
-        self._last_skill_header = slug
-        # ``Text`` renders the (model-supplied) skill name literally — never
-        # through Rich markup.
-        line = Text()
-        line.append("Skill ", style=BOLD_SKILL)
-        line.append(slug, style=str(TEXT))
-        self.console.print()
-        self.console.print(line)
 
     def _render_tool_invocation(self, name: str, data: dict[str, Any]) -> None:
         """Buffer the running tool for the grouped action log — no inline args.
@@ -573,22 +564,27 @@ class ActionRenderObserver:
         self.session.terminal.inline_tool_results = True
 
     def _render_skill_end(self, data: dict[str, Any]) -> None:
-        """Print the ``↳`` child line under the skill's ``tool_start`` parent.
+        """Print one ``Skill activated <name>`` line once the skill has loaded.
 
-        The next block (another call, a note, or the ``Ω`` reply) opens with
-        its own blank line — do not add one here or the gap doubles.
+        Opens with its own blank line like every other block; the next block
+        (another call, a note, or the ``Ω`` reply) adds its own — do not add a
+        trailing one here or the gap doubles.
         """
         slug = self._pending_skill_calls.pop(str(data.get("id") or ""), None)
         if slug is None:
             return
         output = data.get("output")
         activated = isinstance(output, dict) and bool(output.get("ok"))
-        # Several skills loading in one batch print their headers first and
-        # their results after; name the skill whenever the line would land
-        # under another skill's header.
-        subject = "Skill" if slug == self._last_skill_header else slug
-        label = f"{subject} activated" if activated else f"{subject} failed to load"
-        self.console.print(Text(f"  ↳ {label}", style=DIM))
+        # ``Text`` renders the (model-supplied) skill name literally — never
+        # through Rich markup.
+        line = Text()
+        if activated:
+            line.append("Skill activated ", style=BOLD_SKILL)
+        else:
+            line.append("Skill failed to load ", style=ERROR)
+        line.append(slug, style=str(TEXT))
+        self.console.print()
+        self.console.print(line)
 
 
 __all__ = [
