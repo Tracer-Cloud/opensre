@@ -69,3 +69,41 @@ def test_parse_otlp_trace_handles_empty_and_malformed() -> None:
     assert parse_otlp_trace({}) == []
     assert parse_otlp_trace({"batches": ["not-a-dict"]}) == []
     assert parse_otlp_trace({"batches": [{"scopeSpans": [{"spans": []}]}]}) == []
+
+
+def test_extract_span_attributes_tolerates_null_and_non_dict_entries() -> None:
+    assert extract_span_attributes({"attributes": None}) == {}
+    assert extract_span_attributes(None) == {}
+    span = {
+        "attributes": [
+            None,
+            "junk",
+            {"key": "null-value", "value": None},
+            {"key": "ok", "value": {"stringValue": "v"}},
+        ]
+    }
+    assert extract_span_attributes(span) == {"ok": "v"}
+
+
+def test_parse_otlp_trace_tolerates_null_collections() -> None:
+    assert parse_otlp_trace({"batches": None}) == []
+
+    trace = {
+        "batches": [
+            {
+                "resource": None,
+                "scopeSpans": [
+                    {
+                        "spans": [
+                            {"name": "kept", "attributes": None, "status": None},
+                        ]
+                    }
+                ],
+            },
+            {"resource": {"attributes": None}, "scopeSpans": None},
+        ]
+    }
+    spans = parse_otlp_trace(trace)
+    assert [span["name"] for span in spans] == ["kept"]
+    assert spans[0]["attributes"] == {}
+    assert spans[0]["status_code"] == ""

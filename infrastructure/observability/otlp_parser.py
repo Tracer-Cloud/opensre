@@ -28,11 +28,20 @@ def extract_span_attributes(span: dict[str, Any]) -> dict[str, Any]:
     with an unsupported value kind are skipped.
     """
     attributes: dict[str, Any] = {}
-    for attr in span.get("attributes", []):
+    if not isinstance(span, dict):
+        return attributes
+    raw_attributes = span.get("attributes")
+    if not isinstance(raw_attributes, list):
+        return attributes
+    for attr in raw_attributes:
+        if not isinstance(attr, dict):
+            continue
         key = attr.get("key", "")
         if not key:
             continue
-        value = attr.get("value", {})
+        value = attr.get("value")
+        if not isinstance(value, dict):
+            continue
         for kind in _OTLP_SCALAR_KINDS:
             if kind in value:
                 attributes[key] = value[kind]
@@ -62,20 +71,36 @@ def parse_otlp_trace(trace_data: dict[str, Any]) -> list[dict[str, Any]]:
     callers can correlate spans to services without a nested lookup.
     """
     spans: list[dict[str, Any]] = []
+    if not isinstance(trace_data, dict):
+        return spans
+    raw_batches = trace_data.get("batches")
+    if not isinstance(raw_batches, list):
+        return spans
 
-    for batch in trace_data.get("batches", []):
+    for batch in raw_batches:
         if not isinstance(batch, dict):
             continue
-        resource_attributes = extract_span_attributes(batch.get("resource", {}))
+        resource = batch.get("resource")
+        resource_attributes = extract_span_attributes(
+            resource if isinstance(resource, dict) else {}
+        )
         service_name = str(resource_attributes.get("service.name", ""))
 
-        for scope in batch.get("scopeSpans", []):
+        raw_scopes = batch.get("scopeSpans")
+        if not isinstance(raw_scopes, list):
+            continue
+        for scope in raw_scopes:
             if not isinstance(scope, dict):
                 continue
-            for span in scope.get("spans", []):
+            raw_spans = scope.get("spans")
+            if not isinstance(raw_spans, list):
+                continue
+            for span in raw_spans:
                 if not isinstance(span, dict):
                     continue
-                status = span.get("status") or {}
+                status = span.get("status")
+                if not isinstance(status, dict):
+                    status = {}
                 spans.append(
                     {
                         "name": span.get("name", _UNKNOWN_SPAN_NAME),
