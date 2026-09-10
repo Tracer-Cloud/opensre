@@ -8,7 +8,7 @@ demo_order: 3
 metadata:
   owner: Vincent
   last_changed_by: Yauhen
-  last_changed_at: 2026-09-10
+  last_changed_at: 2026-09-09
   usecases:
     - Reserved slot for the remote managed-service onboarding demo
   requires:
