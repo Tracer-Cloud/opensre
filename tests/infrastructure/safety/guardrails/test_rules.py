@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
+import pytest
 import yaml
 
 from infrastructure.safety.guardrails.rules import GuardrailAction, load_rules
@@ -25,6 +27,19 @@ class TestLoadRules:
     def test_returns_empty_when_rules_key_missing(self, tmp_path: Path) -> None:
         path = _write_config(tmp_path, {"version": 1})
         assert load_rules(path) == []
+
+    def test_returns_empty_when_rules_key_is_null(self, tmp_path: Path) -> None:
+        path = tmp_path / "guardrails.yml"
+        path.write_text("rules:", encoding="utf-8")
+        assert load_rules(path) == []
+
+    def test_returns_empty_when_rules_value_is_not_a_list(
+        self, tmp_path: Path, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        path = _write_config(tmp_path, {"rules": "aws_key"})
+        with caplog.at_level(logging.WARNING, logger="infrastructure.safety.guardrails.rules"):
+            assert load_rules(path) == []
+        assert any("must be a list" in record.message for record in caplog.records)
 
     def test_parses_pattern_rule(self, tmp_path: Path) -> None:
         path = _write_config(
