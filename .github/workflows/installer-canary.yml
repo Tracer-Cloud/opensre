@@ -80,7 +80,9 @@ jobs:
           # Shared runner IPs hit the unauthenticated GitHub API rate limit
           # (403), which fails the canary. The installers forward this token to
           # api.github.com only — never to asset downloads (issue #6128).
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # GH_TOKEN mirrors config/constants/github.py (GH_TOKEN_ENV) and the
+          # report job below; the installers also accept GITHUB_TOKEN_ENV.
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -uo pipefail
           uv run python -m pytest ${{ matrix.test_path }} -v \

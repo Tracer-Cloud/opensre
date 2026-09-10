@@ -9,6 +9,8 @@ from pathlib import Path
 
 import pytest
 
+from config.constants import GH_TOKEN_ENV, GITHUB_TOKEN_ENV
+
 INSTALL_PS1 = Path(__file__).parents[2] / "install.ps1"
 
 
@@ -31,12 +33,17 @@ def test_install_ps1_api_headers_include_bearer_token() -> None:
     if shell is None:
         pytest.skip("PowerShell is not installed in this environment.")
 
+    script_path = str(INSTALL_PS1).replace("'", "''")
     script = textwrap.dedent(
         f"""
-        $env:GITHUB_TOKEN = 'test-token'
-        . '{INSTALL_PS1}' -SkipMain
-        $api = Get-OpenSreApiHeaders
-        Write-Output "API_AUTH=$($api['Authorization'])"
+        Remove-Item "Env:{GITHUB_TOKEN_ENV}" -ErrorAction SilentlyContinue
+        $env:{GH_TOKEN_ENV} = 'fallback-token'
+        . '{script_path}' -SkipMain
+        $fallback = Get-OpenSreApiHeaders
+        Write-Output "FALLBACK=$($fallback['Authorization'])"
+        $env:{GITHUB_TOKEN_ENV} = 'primary-token'
+        $primary = Get-OpenSreApiHeaders
+        Write-Output "PRIMARY=$($primary['Authorization'])"
         $download = Get-OpenSreRequestHeaders
         Write-Output "DOWNLOAD_HAS_AUTH=$($download.ContainsKey('Authorization'))"
         """
@@ -50,5 +57,6 @@ def test_install_ps1_api_headers_include_bearer_token() -> None:
 
     assert result.returncode == 0, result.stderr
     output = result.stdout + result.stderr
-    assert "API_AUTH=Bearer test-token" in output
+    assert "FALLBACK=Bearer fallback-token" in output
+    assert "PRIMARY=Bearer primary-token" in output
     assert "DOWNLOAD_HAS_AUTH=False" in output

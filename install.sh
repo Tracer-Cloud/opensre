@@ -278,17 +278,32 @@ download_to() {
 
 download_text() {
   local url="$1"
+  # Names mirror config/constants/github.py (GITHUB_TOKEN_ENV, GH_TOKEN_ENV).
   local token="${GITHUB_TOKEN:-${GH_TOKEN:-}}"
-  local -a headers=(
-    -H "Accept: application/vnd.github+json"
-    -H "User-Agent: opensre-install-script"
-  )
 
-  if [ -n "$token" ]; then
-    headers+=(-H "Authorization: Bearer ${token}")
+  if [ -z "$token" ]; then
+    curl "${CURL_FLAGS[@]}" \
+      -H "Accept: application/vnd.github+json" \
+      -H "User-Agent: opensre-install-script" \
+      "$url"
+    return
   fi
 
-  curl "${CURL_FLAGS[@]}" "${headers[@]}" "$url"
+  # Pass the token through a private curl config file: process arguments are
+  # visible to other users via ps on shared machines.
+  local config_file
+  config_file="$(mktemp "${TMPDIR:-/tmp}/opensre-curl.XXXXXX")"
+  chmod 600 "$config_file"
+  {
+    printf 'header = "Accept: application/vnd.github+json"\n'
+    printf 'header = "User-Agent: opensre-install-script"\n'
+    printf 'header = "Authorization: Bearer %s"\n' "$token"
+  } > "$config_file"
+
+  local status=0
+  curl "${CURL_FLAGS[@]}" --config "$config_file" "$url" || status=$?
+  rm -f "$config_file"
+  return "$status"
 }
 
 fetch_release_json() {
