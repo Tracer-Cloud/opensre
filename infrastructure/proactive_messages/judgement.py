@@ -195,10 +195,7 @@ class ProactiveJudgementRunner:
             return _suppression("Safety check found a claim unsupported by its evidence quote.")
 
         signal_fingerprint = _signal_fingerprint(decision)
-        if self._ledger.has_sent_signal(
-            signal_key=decision.signal_key.strip().casefold(),
-            signal_fingerprint=signal_fingerprint,
-        ):
+        if self._ledger.has_delivered_signal(signal_fingerprint=signal_fingerprint):
             return _suppression("Safety check suppressed an unchanged recurring signal.")
         if _normalized(decision.message) in _normalized(interaction.agent_outcome):
             return _suppression("Safety check suppressed information already in the agent outcome.")

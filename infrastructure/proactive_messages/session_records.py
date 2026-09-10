@@ -50,10 +50,19 @@ def latest_completed_interaction_boundary(
     )
     if user_index is None:
         return None
+    next_user_index = next(
+        (
+            index
+            for index in range(assistant_index + 1, len(records))
+            if records[index].get("type") == "message" and records[index].get("role") == "user"
+        ),
+        None,
+    )
+    end_index = len(records) - 1 if next_user_index is None else next_user_index - 1
     start_record_id = None
     if user_index > 0:
         start_record_id = str(records[user_index - 1].get("id") or "").strip() or None
-    end_record_id = str(records[-1].get("id") or "").strip()
+    end_record_id = str(records[end_index].get("id") or "").strip()
     if not end_record_id:
         return None
     return start_record_id, end_record_id
@@ -94,11 +103,17 @@ def load_trigger_interaction(trigger: ProactiveTrigger) -> ProactiveInteraction 
     if not assistant_rows:
         return None
     interaction_id = assistant_rows[-1][2]
+    last_assistant_index = next(
+        index
+        for index in range(len(messages_after_user) - 1, -1, -1)
+        if messages_after_user[index][2] == interaction_id
+    )
+    completed_messages = messages_after_user[: last_assistant_index + 1]
     return ProactiveInteraction(
         interaction_id=interaction_id,
         end_record_id=trigger.end_record_id,
-        messages=tuple((role, content) for role, content, _record_id in messages_after_user),
-        user_message=messages_after_user[0][1],
+        messages=tuple((role, content) for role, content, _record_id in completed_messages),
+        user_message=completed_messages[0][1],
         agent_outcome=assistant_rows[-1][1],
     )
 

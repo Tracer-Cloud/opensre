@@ -175,6 +175,58 @@ def test_unchanged_signal_is_suppressed_even_when_worded_differently(
     assert "unchanged recurring signal" in decisions[0]["rationale"]
 
 
+def test_changed_signal_with_reused_key_is_delivered(scope: StorageScope) -> None:
+    first = write_interaction(scope, session_id="session-old-signal", suffix="old")
+    second = write_interaction(
+        scope,
+        session_id="session-new-signal",
+        suffix="new",
+        assistant="The merged run shows flaky test test_retry failed on attempt 2.",
+    )
+    sent: list[str] = []
+
+    with bound_storage_scope(scope):
+        first_outcome = ProactiveJudgementRunner(
+            context_reader=_context_reader,
+            delivery=lambda **_kwargs: sent.append("old") or "ts-old",
+            llm_factory=lambda: _StructuredLLM(_send_decision()),
+        ).run(first)
+        changed = _send_decision().model_copy(
+            update={"verified_information": "flaky test test_retry failed on attempt 2"}
+        )
+        second_outcome = ProactiveJudgementRunner(
+            context_reader=_context_reader,
+            delivery=lambda **_kwargs: sent.append("new") or "ts-new",
+            llm_factory=lambda: _StructuredLLM(changed),
+        ).run(second)
+
+    assert first_outcome.status == "delivered"
+    assert second_outcome.status == "delivered"
+    assert sent == ["old", "new"]
+
+
+def test_failed_delivery_does_not_suppress_later_occurrence(scope: StorageScope) -> None:
+    first = write_interaction(scope, session_id="session-failed-signal", suffix="failed")
+    second = write_interaction(scope, session_id="session-retry-signal", suffix="retry")
+    delivered: list[str] = []
+
+    with bound_storage_scope(scope):
+        failed = ProactiveJudgementRunner(
+            context_reader=_context_reader,
+            delivery=lambda **_kwargs: None,
+            llm_factory=lambda: _StructuredLLM(_send_decision()),
+        ).run(first)
+        later = ProactiveJudgementRunner(
+            context_reader=_context_reader,
+            delivery=lambda **_kwargs: delivered.append("sent") or "ts-later",
+            llm_factory=lambda: _StructuredLLM(_send_decision()),
+        ).run(second)
+
+    assert failed.status == "delivery_failed"
+    assert later.status == "delivered"
+    assert delivered == ["sent"]
+
+
 def test_existing_send_intent_is_not_delivered_again_after_restart(scope: StorageScope) -> None:
     trigger = write_interaction(scope, session_id="session-restart")
     with bound_storage_scope(scope):

@@ -102,15 +102,20 @@ class DecisionLedger:
         decision = _decision_for_interaction(events, interaction_id)
         return _merge_delivery(decision, events) if decision is not None else None
 
-    def has_sent_signal(self, *, signal_key: str, signal_fingerprint: str) -> bool:
-        """Whether an earlier send decision represents the same unchanged signal."""
-        for record in _read_jsonl(decision_ledger_path()):
+    def has_delivered_signal(self, *, signal_fingerprint: str) -> bool:
+        """Whether the same unchanged signal was successfully delivered earlier."""
+        events = _read_jsonl(decision_ledger_path())
+        delivered_ids = {
+            event.get("decision_id")
+            for event in events
+            if event.get("type") == "delivery" and event.get("delivery_status") == "delivered"
+        }
+        for record in events:
             if record.get("type") != "decision" or record.get("decision") != "send":
                 continue
-            recorded_key = str(record.get("signal_key") or "").strip().casefold()
-            if signal_key and recorded_key == signal_key:
-                return True
-            if signal_fingerprint and record.get("signal_fingerprint") == signal_fingerprint:
+            if not signal_fingerprint or record.get("signal_fingerprint") != signal_fingerprint:
+                continue
+            if record.get("decision_id") in delivered_ids:
                 return True
         return False
 
