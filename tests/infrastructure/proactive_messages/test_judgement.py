@@ -12,6 +12,7 @@ from infrastructure.proactive_messages import (
     JudgementCursor,
     ProactiveJudgementRunner,
     ProactiveMessageDecision,
+    ProactiveTrigger,
 )
 from tests.infrastructure.proactive_messages.conftest import write_interaction
 
@@ -64,6 +65,35 @@ def _send_decision(
 
 def _context_reader(**_kwargs: Any) -> dict[str, Any]:
     return {"status": "read", "messages": [], "message_count": 0}
+
+
+def _record_legacy_delivery(
+    trigger: ProactiveTrigger,
+    decision: ProactiveMessageDecision,
+) -> None:
+    legacy_material = "|".join(
+        (
+            " ".join(decision.verified_information.split()).casefold(),
+            " ".join(decision.owner.split()).casefold(),
+        )
+    )
+    legacy_fingerprint = hashlib.sha256(legacy_material.encode("utf-8")).hexdigest()
+    record, _created = DecisionLedger().record_decision(
+        session_id=trigger.session_id,
+        interaction_id=f"legacy-{trigger.session_id}",
+        end_record_id=trigger.end_record_id,
+        policy_name="master-judgement",
+        policy_version=1,
+        decision=decision,
+        signal_fingerprint=legacy_fingerprint,
+        channel_id=trigger.channel_id,
+        thread_ts=trigger.thread_ts,
+    )
+    DecisionLedger().record_delivery(
+        str(record["decision_id"]),
+        status="delivered",
+        slack_message_ts="ts-legacy",
+    )
 
 
 def test_grounded_send_is_ledgered_before_same_thread_delivery(scope: StorageScope) -> None:
@@ -226,36 +256,11 @@ def test_legacy_delivered_signal_is_suppressed_after_fingerprint_upgrade(
     legacy_trigger = write_interaction(scope, session_id="session-legacy", suffix="legacy")
     current_trigger = write_interaction(scope, session_id="session-current", suffix="current")
     legacy_decision = _send_decision()
-    legacy_material = "|".join(
-        (
-            legacy_decision.verified_information.casefold(),
-            legacy_decision.owner.casefold(),
-        )
-    )
-    legacy_fingerprint = hashlib.sha256(legacy_material.encode("utf-8")).hexdigest()
     with bound_storage_scope(scope):
-        record, _created = DecisionLedger().record_decision(
-            session_id=legacy_trigger.session_id,
-            interaction_id="assistant-legacy",
-            end_record_id=legacy_trigger.end_record_id,
-            policy_name="master-judgement",
-            policy_version=1,
-            decision=legacy_decision,
-            signal_fingerprint=legacy_fingerprint,
-            channel_id=legacy_trigger.channel_id,
-            thread_ts=legacy_trigger.thread_ts,
-        )
-        DecisionLedger().record_delivery(
-            str(record["decision_id"]),
-            status="delivered",
-            slack_message_ts="ts-legacy",
-        )
+        _record_legacy_delivery(legacy_trigger, legacy_decision)
 
-    reworded = legacy_decision.model_copy(
+    current_decision = legacy_decision.model_copy(
         update={
-            "verified_information": (
-                "The observed state remains: flaky test test_retry failed on attempt 1."
-            ),
             "next_action": "Stabilize the retry fixture.",
         }
     )
@@ -264,11 +269,55 @@ def test_legacy_delivered_signal_is_suppressed_after_fingerprint_upgrade(
         outcome = ProactiveJudgementRunner(
             context_reader=_context_reader,
             delivery=lambda **_kwargs: deliveries.append("sent") or "ts-current",
-            llm_factory=lambda: _StructuredLLM(reworded),
+            llm_factory=lambda: _StructuredLLM(current_decision),
         ).run(current_trigger)
 
     assert outcome.status == "suppressed"
     assert deliveries == []
+
+
+def test_legacy_evidence_overlap_does_not_suppress_a_changed_signal(
+    scope: StorageScope,
+) -> None:
+    legacy_trigger = write_interaction(
+        scope,
+        session_id="session-legacy-overlap",
+        suffix="legacy-overlap",
+    )
+    current_trigger = write_interaction(
+        scope,
+        session_id="session-current-overlap",
+        suffix="current-overlap",
+        assistant="The merged run shows flaky test test_retry failed on attempt 2.",
+    )
+    legacy_decision = _send_decision().model_copy(
+        update={
+            "verified_information": ("flaky test test_retry failed on attempt 1 and attempt 2"),
+            "evidence_quote": "flaky test test_retry failed on attempt 1 and attempt 2",
+        }
+    )
+    changed = _send_decision(quote="flaky test test_retry failed on attempt 2").model_copy(
+        update={
+            "message": (
+                "CI follow-up: flaky test test_retry failed on attempt 2 in the merged run. "
+                "<@U_PROACTIVE>, isolate its shared retry state and rerun it under xdist "
+                "before the next merge."
+            ),
+            "signal_state": "attempt 2",
+            "verified_information": "flaky test test_retry failed on attempt 2",
+        }
+    )
+    deliveries: list[str] = []
+    with bound_storage_scope(scope):
+        _record_legacy_delivery(legacy_trigger, legacy_decision)
+        outcome = ProactiveJudgementRunner(
+            context_reader=_context_reader,
+            delivery=lambda **_kwargs: deliveries.append("sent") or "ts-current",
+            llm_factory=lambda: _StructuredLLM(changed),
+        ).run(current_trigger)
+
+    assert outcome.status == "delivered"
+    assert deliveries == ["sent"]
 
 
 def test_failed_delivery_does_not_suppress_later_occurrence(scope: StorageScope) -> None:

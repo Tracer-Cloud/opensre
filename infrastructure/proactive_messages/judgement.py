@@ -198,7 +198,6 @@ class ProactiveJudgementRunner:
         signal_fingerprint = _signal_fingerprint(decision)
         if self._ledger.has_delivered_signal(
             signal_key=decision.signal_key,
-            signal_state=decision.signal_state,
             signal_fingerprint=signal_fingerprint,
             signal_fingerprint_version=_SIGNAL_FINGERPRINT_VERSION,
             legacy_signal_fingerprint=_legacy_signal_fingerprint(decision),
