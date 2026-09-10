@@ -40,7 +40,10 @@ def write_snapshot(
     The owner and repository are stored in the file too, so a read can check
     that a snapshot belongs to the repository it is answering for.
     """
-    target = _folder(root, owner, repo) / f"{now:%Y-%m-%dT%H%M%SZ}.json"
+    window = int(payload.get("window_days") or 0)
+    stamp = f"{now:%Y-%m-%dT%H%M%SZ}"
+    name = f"{stamp}-{window}d.json" if window else f"{stamp}.json"
+    target = _folder(root, owner, repo) / name
     target.parent.mkdir(parents=True, exist_ok=True)
     stamped = {**payload, "owner": owner, "repo": repo}
     target.write_text(json.dumps(stamped, indent=2, sort_keys=True, default=str), encoding="utf-8")
