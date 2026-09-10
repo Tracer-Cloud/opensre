@@ -178,17 +178,19 @@ def test_the_schedule_card_report_comes_from_todays_saved_figures(
     assert "Next:" not in text
 
 
-def test_a_saved_report_from_today_answers_without_reading_github(
-    tmp_path: Path, monkeypatch
-) -> None:
-    """A first run is live; the next call the same day must not wait on GitHub again."""
-    # Arrange: a fresh snapshot exists and GitHub would return different figures.
+def test_a_saved_snapshot_never_answers_a_live_analysis(tmp_path: Path, monkeypatch) -> None:
+    """Most people run this for the first time; the demo has to be the first run.
+
+    A same-day snapshot used to answer instead of reading GitHub, so the
+    rehearsed path was one nobody else would take.
+    """
+    # Arrange: a fresh snapshot exists and GitHub is readable.
     from typing import Any, cast
 
     from integrations.github.tools.ci_analytics import tool as tool_module
 
     now = datetime.now(UTC)
-    _write_report_snapshot(tmp_path, _report(red_hours=24.5), now)
+    _write_report_snapshot(tmp_path, _report(), now)
     monkeypatch.setattr(tool_module, "snapshot_root", lambda _root=None: tmp_path)
     monkeypatch.setattr(tool_module, "resolve_github_token", lambda _t=None: "tok")
     reads: list[str] = []
@@ -204,35 +206,11 @@ def test_a_saved_report_from_today_answers_without_reading_github(
         owner="apache", repo="airflow", days=30, github_token="tok"
     )
 
-    # Assert: the saved figures win, and GitHub was not called.
-    assert reads == []
-    assert result["red_hours"] == 24.5
-    assert result.get("from_snapshot")
-    assert "as of" in result["summary"]
-
-
-def test_a_saved_report_answers_without_a_token(tmp_path: Path, monkeypatch) -> None:
-    """A warmed machine must not fail the demo just because GitHub is not called."""
-    from typing import Any, cast
-
-    from integrations.github.tools.ci_analytics import tool as tool_module
-
-    now = datetime.now(UTC)
-    _write_report_snapshot(tmp_path, _report(red_hours=24.5), now)
-    monkeypatch.setattr(tool_module, "snapshot_root", lambda _root=None: tmp_path)
-    monkeypatch.setattr(tool_module, "resolve_github_token", lambda _t=None: "")
-
-    def _analyze(*_a: Any, **_k: Any) -> Any:
-        raise AssertionError("GitHub must not be read when today's report is saved")
-
-    monkeypatch.setattr(tool_module, "analyze_repository", _analyze)
-
-    result = cast(Any, tool_module.analyze_github_ci_reliability)(
-        owner="apache", repo="airflow", days=30, github_token=""
-    )
-
-    assert result["success"] is True
-    assert result["red_hours"] == 24.5
+    # Assert: the figures are the ones just read, and nothing claims a snapshot.
+    assert reads == ["apache/airflow"]
+    assert result["red_hours"] == 1.0
+    assert "from_snapshot" not in result
+    assert "as of" not in result["summary"]
 
 
 def test_two_windows_written_in_the_same_second_do_not_overwrite(tmp_path: Path) -> None:

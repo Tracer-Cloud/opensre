@@ -178,42 +178,6 @@ def report_payload(report: CiAnalyticsReport) -> dict[str, Any]:
     }
 
 
-def _from_snapshot(
-    snapshot: dict[str, Any],
-    owner: str,
-    repo: str,
-    window: int,
-    console: Any,
-    *,
-    include_benchmarks: bool = True,
-    compact: bool = False,
-) -> dict[str, Any] | None:
-    """Answer from a saved report, or ``None`` when it holds no usable report object."""
-    saved = snapshot.get("report")
-    report = report_from_dict(saved) if isinstance(saved, dict) else None
-    if report is None:
-        return None
-    generated = str(snapshot.get("generated_at", ""))[:16].replace("T", " ")
-    if console is not None:
-        console.print(
-            f"  [dim]Using the CI reliability snapshot of {escape(f'{owner}/{repo}')} "
-            f"from {generated} UTC (same {window}-day window).[/dim]"
-        )
-        console.print()
-    result = _result(
-        report,
-        owner,
-        repo,
-        window,
-        console,
-        include_benchmarks=include_benchmarks,
-        compact=compact,
-    )
-    result["summary"] += f" Figures as of {generated} UTC, from the saved snapshot."
-    result["from_snapshot"] = snapshot.get("generated_at")
-    return result
-
-
 def report_text_from_snapshot(
     owner: str, repo: str, *, days: int = _DEFAULT_WINDOW_DAYS, include_benchmarks: bool = True
 ) -> tuple[str, str]:
@@ -323,12 +287,13 @@ def _result(
         "reliability KPIs: executions, PR failure rate, failures classified as "
         "CI-caused (same commit passed later) versus source-code, developer time "
         "blocked by unreliable CI on merged PRs, and default-branch red time. "
-        "Read-only. A saved report from today answers without another GitHub "
-        "read; a first run needs a token. Every report also carries a "
-        "comparison with apache/airflow and fastapi/fastapi from figures "
-        "shipped with the product, so a first run compares as well as a later "
-        "one. It cannot be turned off, so never offer to skip it. The report "
-        "is painted on screen — do not restate its figures."
+        "Read-only. Every analysis reads GitHub Actions and needs a token; a "
+        "saved snapshot is written for the scheduled loop, never used to answer "
+        "here. Every report also carries a comparison with apache/airflow and "
+        "fastapi/fastapi from figures shipped with the product, so a first run "
+        "compares as well as a later one. It cannot be turned off, so never "
+        "offer to skip it. The report is painted on screen — do not restate "
+        "its figures."
     ),
     use_cases=[
         "Analyze a repository's CI/CD performance and reliability",
@@ -413,9 +378,9 @@ def analyze_github_ci_reliability(
     ``response_text`` then only summarizes. Other surfaces get the markdown.
     The same call also paints one comparison table against the benchmark
     figures shipped with the product, so a first run compares as well as a
-    hundredth. A saved report from today is reused; a miss reads GitHub and
-    writes the snapshot. The comparison is not the model's choice to make;
-    ``compact`` drops the counts appendix.
+    hundredth. Every analysis reads GitHub: a saved snapshot is written for the
+    scheduled loop, never used to answer here. The comparison is not the
+    model's choice to make; ``compact`` drops the counts appendix.
     """
     window = min(max(int(days or _DEFAULT_WINDOW_DAYS), _MIN_WINDOW_DAYS), _MAX_WINDOW_DAYS)
     brief = _flag(compact)
@@ -433,21 +398,7 @@ def analyze_github_ci_reliability(
         )
     now = datetime.now(UTC)
     console = _console(context)
-    snapshot = read_fresh_snapshot(
-        snapshot_root(), repo_owner, repo_name, window_days=window, now=now
-    )
     token = resolve_github_token(github_token)
-    if snapshot is not None:
-        answered = _from_snapshot(
-            snapshot,
-            repo_owner,
-            repo_name,
-            window,
-            console,
-            compact=brief,
-        )
-        if answered is not None:
-            return answered
     if not token:
         message = (
             f"A GitHub token is required to read the Actions history of {repo_owner}/{repo_name}. "
