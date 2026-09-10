@@ -164,6 +164,7 @@ class ProactiveJudgementRunner:
         required_text = {
             "message": decision.message,
             "signal_key": decision.signal_key,
+            "signal_state": decision.signal_state,
             "verified_information": decision.verified_information,
             "evidence_quote": decision.evidence_quote,
             "owner": decision.owner,
@@ -190,9 +191,14 @@ class ProactiveJudgementRunner:
             decision.verified_information
         ) or evidence_quote not in _normalized(decision.message):
             return _suppression("Safety check found a claim unsupported by its evidence quote.")
+        if _normalized(decision.signal_state) not in evidence_quote:
+            return _suppression("Safety check could not ground the signal state.")
 
         signal_fingerprint = _signal_fingerprint(decision)
-        if self._ledger.has_delivered_signal(signal_fingerprint=signal_fingerprint):
+        if self._ledger.has_delivered_signal(
+            signal_key=decision.signal_key,
+            signal_fingerprint=signal_fingerprint,
+        ):
             return _suppression("Safety check suppressed an unchanged recurring signal.")
         if _normalized(decision.message) in _normalized(interaction.agent_outcome):
             return _suppression("Safety check suppressed information already in the agent outcome.")
@@ -370,13 +376,7 @@ def _evidence_is_grounded(
 def _signal_fingerprint(decision: ProactiveMessageDecision) -> str:
     if decision.decision != "send":
         return ""
-    material = "|".join(
-        _normalized(value)
-        for value in (
-            decision.verified_information,
-            decision.owner,
-        )
-    )
+    material = _normalized(decision.signal_state)
     return hashlib.sha256(material.encode("utf-8")).hexdigest()
 
 

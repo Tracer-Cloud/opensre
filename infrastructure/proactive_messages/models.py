@@ -43,6 +43,7 @@ class ProactiveMessageDecision(BaseModel):
     rationale: str = Field(default="", max_length=1_000)
     message: str = Field(default="", max_length=1_200)
     signal_key: str = Field(default="", max_length=160)
+    signal_state: str = Field(default="", max_length=500)
     new_verified_information: bool = False
     clear_owner_and_action: bool = False
     material_timing: bool = False

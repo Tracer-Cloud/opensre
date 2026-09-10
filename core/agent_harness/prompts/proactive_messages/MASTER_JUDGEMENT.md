@@ -82,6 +82,11 @@ reconnect, funding, or disable action needed before the next dependent run.
 
 Return `send` only when all required structured fields are true and populated.
 Copy the exact evidence quote into both `verified_information` and the outbound
-message. Keep the message under 1,200 characters. State why the fact matters
-now and the next action without a greeting or a question about adopting this
-policy. Otherwise return `suppress` and a short rationale.
+message. Use `signal_key` as the stable identity of the monitored subject,
+without status or changing values. Use `signal_state` for the shortest exact
+fragment of the evidence quote that distinguishes its current state, such as a
+threshold value, run identifier, or failure status. Reuse the same key and state
+for unchanged signals even when prose changes. Keep the message under 1,200
+characters. State why the fact matters now and the next action without a greeting
+or a question about adopting this policy. Otherwise return `suppress` and a short
+rationale.

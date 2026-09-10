@@ -61,6 +61,7 @@ class DecisionLedger:
                 "rationale": decision.rationale,
                 "message": decision.message if decision.decision == "send" else "",
                 "signal_key": decision.signal_key.strip().casefold(),
+                "signal_state": decision.signal_state,
                 "signal_fingerprint": signal_fingerprint,
                 "verified_information": decision.verified_information,
                 "evidence_quote": decision.evidence_quote,
@@ -102,9 +103,10 @@ class DecisionLedger:
         decision = _decision_for_interaction(events, interaction_id)
         return _merge_delivery(decision, events) if decision is not None else None
 
-    def has_delivered_signal(self, *, signal_fingerprint: str) -> bool:
+    def has_delivered_signal(self, *, signal_key: str, signal_fingerprint: str) -> bool:
         """Whether the same unchanged signal was successfully delivered earlier."""
         events = _read_jsonl(decision_ledger_path())
+        normalized_key = signal_key.strip().casefold()
         delivered_ids = {
             event.get("decision_id")
             for event in events
@@ -112,6 +114,8 @@ class DecisionLedger:
         }
         for record in events:
             if record.get("type") != "decision" or record.get("decision") != "send":
+                continue
+            if not normalized_key or record.get("signal_key") != normalized_key:
                 continue
             if not signal_fingerprint or record.get("signal_fingerprint") != signal_fingerprint:
                 continue

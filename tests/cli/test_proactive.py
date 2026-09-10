@@ -29,6 +29,7 @@ class _StructuredLLM:
                 "fixture before the next merge."
             ),
             signal_key="ci:test_retry:flaky",
+            signal_state="failed",
             new_verified_information=True,
             clear_owner_and_action=True,
             material_timing=True,

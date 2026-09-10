@@ -36,16 +36,19 @@ class _FailingStructuredLLM:
         raise RuntimeError("provider unavailable")
 
 
-def _send_decision(*, quote: str = "flaky test test_retry failed") -> ProactiveMessageDecision:
+def _send_decision(
+    *, quote: str = "flaky test test_retry failed on attempt 1"
+) -> ProactiveMessageDecision:
     return ProactiveMessageDecision(
         decision="send",
         rationale="An unresolved flaky test can break the next merge.",
         message=(
-            "CI follow-up: flaky test test_retry failed on the merged run. "
+            "CI follow-up: flaky test test_retry failed on attempt 1 in the merged run. "
             "<@U_PROACTIVE>, isolate its shared retry state and rerun it under xdist "
             "before the next merge."
         ),
         signal_key="github-ci:test_retry:flaky",
+        signal_state="attempt 1",
         new_verified_information=True,
         clear_owner_and_action=True,
         material_timing=True,
@@ -149,10 +152,12 @@ def test_unchanged_signal_is_suppressed_even_when_worded_differently(
     reworded = _send_decision().model_copy(
         update={
             "message": (
-                "CI follow-up: flaky test test_retry failed on the merged run. "
+                "CI follow-up: flaky test test_retry failed on attempt 1 in the merged run. "
                 "<@U_PROACTIVE>, stabilize its retry fixture before release."
             ),
-            "signal_key": "github-ci:test_retry:renamed-signal",
+            "verified_information": (
+                "The observed state remains: flaky test test_retry failed on attempt 1."
+            ),
             "next_action": "Stabilize the retry fixture.",
             "material_timing_reason": "Before release.",
         }
@@ -191,8 +196,16 @@ def test_changed_signal_with_reused_key_is_delivered(scope: StorageScope) -> Non
             delivery=lambda **_kwargs: sent.append("old") or "ts-old",
             llm_factory=lambda: _StructuredLLM(_send_decision()),
         ).run(first)
-        changed = _send_decision().model_copy(
-            update={"verified_information": "flaky test test_retry failed on attempt 2"}
+        changed = _send_decision(quote="flaky test test_retry failed on attempt 2").model_copy(
+            update={
+                "message": (
+                    "CI follow-up: flaky test test_retry failed on attempt 2 in the merged run. "
+                    "<@U_PROACTIVE>, isolate its shared retry state and rerun it under xdist "
+                    "before the next merge."
+                ),
+                "signal_state": "attempt 2",
+                "verified_information": "flaky test test_retry failed on attempt 2",
+            }
         )
         second_outcome = ProactiveJudgementRunner(
             context_reader=_context_reader,
