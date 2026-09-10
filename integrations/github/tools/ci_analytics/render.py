@@ -157,7 +157,9 @@ def peer_benchmarks(
 
 
 def render_comparison(
-    console: Any, user: CiAnalyticsReport, benchmarks: Sequence[Benchmark]
+    console: Any,
+    user: CiAnalyticsReport,
+    benchmarks: Sequence[Benchmark] | None = None,
 ) -> None:
     """One table: the user's repository first, then the benchmark columns."""
     # A markdown leading newline is dropped, so the heading would sit on the
@@ -166,8 +168,15 @@ def render_comparison(
     _paint(console, comparison_markdown(user, benchmarks))
 
 
-def comparison_markdown(user: CiAnalyticsReport, benchmarks: Sequence[Benchmark]) -> str:
-    """Markdown form of :func:`render_comparison`."""
+def comparison_markdown(
+    user: CiAnalyticsReport,
+    benchmarks: Sequence[Benchmark] | None = None,
+    *,
+    next_step: bool = True,
+) -> str:
+    """Markdown form of :func:`render_comparison`; ``next_step`` adds the closing recommendation."""
+    if benchmarks is None:
+        benchmarks = peer_benchmarks(user)
     if not benchmarks:
         return "No benchmark figures to compare with."
     labels = [f"{_plain(user.owner)}/{_plain(user.repo)}"] + [
@@ -190,7 +199,7 @@ def comparison_markdown(user: CiAnalyticsReport, benchmarks: Sequence[Benchmark]
             *rows,
             "",
             f"- {_benchmark_note()}",
-            f"- {_NEXT_STEP}",
+            *([f"- {_NEXT_STEP}"] if next_step else []),
         ]
     )
 
@@ -204,7 +213,7 @@ def _benchmark_note() -> str:
 
 
 #: Painted under the table so the next menu is not the first time the cost is named.
-_NEXT_STEP = "The wait at the top is the cost. Next: schedule a weekday copy of this report."
+_NEXT_STEP = "Next: schedule this report for weekday mornings, or hand it to your team in Slack."
 
 
 def _details_markdown(report: CiAnalyticsReport) -> list[str]:

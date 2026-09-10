@@ -201,7 +201,9 @@ def report_text_from_snapshot(
     report = report_from_dict(saved)
     text = render_markdown(report, compact=True)
     if include_benchmarks:
-        text = f"{text}\n\n{comparison_markdown(report, peer_benchmarks(report))}"
+        # This report sits above the schedule card, so the next step is already taken.
+        compare = comparison_markdown(report, peer_benchmarks(report), next_step=False)
+        text = f"{text}\n\n{compare}"
     return text.strip(), str(snapshot.get("generated_at", ""))
 
 
@@ -285,12 +287,13 @@ def _result(
         "reliability KPIs: executions, PR failure rate, failures classified as "
         "CI-caused (same commit passed later) versus source-code, developer time "
         "blocked by unreliable CI on merged PRs, and default-branch red time. "
-        "Read-only. A saved report from today answers without another GitHub "
-        "read; a first run needs a token. Every report also carries a "
-        "comparison with apache/airflow and fastapi/fastapi from figures "
-        "shipped with the product, so a first run compares as well as a later "
-        "one. It cannot be turned off, so never offer to skip it. The report "
-        "is painted on screen — do not restate its figures."
+        "Read-only. Every analysis reads GitHub Actions and needs a token; a "
+        "saved snapshot is written for the scheduled loop, never used to answer "
+        "here. Every report also carries a comparison with apache/airflow and "
+        "fastapi/fastapi from figures shipped with the product, so a first run "
+        "compares as well as a later one. It cannot be turned off, so never "
+        "offer to skip it. The report is painted on screen — do not restate "
+        "its figures."
     ),
     use_cases=[
         "Analyze a repository's CI/CD performance and reliability",
@@ -375,9 +378,9 @@ def analyze_github_ci_reliability(
     ``response_text`` then only summarizes. Other surfaces get the markdown.
     The same call also paints one comparison table against the benchmark
     figures shipped with the product, so a first run compares as well as a
-    hundredth. A saved report from today is reused; a miss reads GitHub and
-    writes the snapshot. The comparison is not the model's choice to make;
-    ``compact`` drops the counts appendix.
+    hundredth. Every analysis reads GitHub: a saved snapshot is written for the
+    scheduled loop, never used to answer here. The comparison is not the
+    model's choice to make; ``compact`` drops the counts appendix.
     """
     window = min(max(int(days or _DEFAULT_WINDOW_DAYS), _MIN_WINDOW_DAYS), _MAX_WINDOW_DAYS)
     brief = _flag(compact)
@@ -395,21 +398,7 @@ def analyze_github_ci_reliability(
         )
     now = datetime.now(UTC)
     console = _console(context)
-    snapshot = read_fresh_snapshot(
-        snapshot_root(), repo_owner, repo_name, window_days=window, now=now
-    )
     token = resolve_github_token(github_token)
-    if snapshot is not None:
-        answered = _from_snapshot(
-            snapshot,
-            repo_owner,
-            repo_name,
-            window,
-            console,
-            compact=brief,
-        )
-        if answered is not None:
-            return answered
     if not token:
         message = (
             f"A GitHub token is required to read the Actions history of {repo_owner}/{repo_name}. "

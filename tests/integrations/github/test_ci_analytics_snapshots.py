@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -100,39 +101,6 @@ def _write_report_snapshot(root: Path, report: Any, now: datetime) -> None:
     )
 
 
-def test_a_saved_report_from_today_answers_without_reading_github(
-    tmp_path: Path, monkeypatch
-) -> None:
-    """A first run is live; the next call the same day must not wait on GitHub again."""
-    # Arrange: a fresh snapshot exists and GitHub would return different figures.
-    from typing import Any, cast
-
-    from integrations.github.tools.ci_analytics import tool as tool_module
-
-    now = datetime.now(UTC)
-    _write_report_snapshot(tmp_path, _report(red_hours=24.5), now)
-    monkeypatch.setattr(tool_module, "snapshot_root", lambda _root=None: tmp_path)
-    monkeypatch.setattr(tool_module, "resolve_github_token", lambda _t=None: "tok")
-    reads: list[str] = []
-
-    def _analyze(owner: str, repo: str, **_kwargs: Any) -> Any:
-        reads.append(f"{owner}/{repo}")
-        return type("A", (), {"report": _report(red_hours=1.0), "runs_read": 3})()
-
-    monkeypatch.setattr(tool_module, "analyze_repository", _analyze)
-
-    # Act
-    result = cast(Any, tool_module.analyze_github_ci_reliability)(
-        owner="apache", repo="airflow", days=30, github_token="tok"
-    )
-
-    # Assert: the saved figures win, and GitHub was not called.
-    assert reads == []
-    assert result["red_hours"] == 24.5
-    assert result.get("from_snapshot")
-    assert "as of" in result["summary"]
-
-
 def test_the_comparison_needs_no_saved_peer_figures(tmp_path: Path, monkeypatch) -> None:
     """The benchmark columns ship with the product, so a first run compares too."""
     # Arrange: an empty snapshot directory — no peer has ever been analyzed here.
@@ -170,8 +138,10 @@ def test_the_report_leads_with_what_unreliable_ci_cost(tmp_path: Path, monkeypat
     monkeypatch.setattr(tool_module, "snapshot_root", lambda _root=None: tmp_path)
     monkeypatch.setattr(tool_module, "resolve_github_token", lambda _t=None: "tok")
 
+    blocked = dataclasses.replace(_report(owner="acme", repo="app"), blocked_working_minutes=90.0)
+
     def _analyze(_owner: str, _repo: str, **_kwargs: Any) -> Any:
-        return type("A", (), {"report": _report(owner="acme", repo="app"), "runs_read": 3})()
+        return type("A", (), {"report": blocked, "runs_read": 3})()
 
     monkeypatch.setattr(tool_module, "analyze_repository", _analyze)
 
@@ -181,12 +151,14 @@ def test_the_report_leads_with_what_unreliable_ci_cost(tmp_path: Path, monkeypat
     ]
 
     # Assert: the cost sentence sits above Key results and is not repeated as a row.
-    assert text.index("Waiting on CI") < text.index("**Key results**")
+    assert text.index("Waiting on CI cost") < text.index("**Key results**")
     assert "Developer time blocked" not in text
 
 
-def test_a_saved_report_round_trips_for_the_scheduled_loop(tmp_path: Path, monkeypatch) -> None:
-    """The loop still reads its own saved figures; only the live analysis stopped doing so."""
+def test_the_schedule_card_report_comes_from_todays_saved_figures(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """Scheduling with include_report reads today's snapshot; only the live analysis stopped."""
     # Arrange
     from integrations.github.tools.ci_analytics import tool as tool_module
     from integrations.github.tools.ci_analytics.snapshots import report_from_dict, report_to_dict
@@ -200,9 +172,60 @@ def test_a_saved_report_round_trips_for_the_scheduled_loop(tmp_path: Path, monke
     # Act
     text, generated_at = tool_module.report_text_from_snapshot("apache", "airflow")
 
-    # Assert
+    # Assert: the report, without a next step the card beneath it has already taken.
     assert generated_at
     assert "**Key results**" in text
+    assert "Next:" not in text
+
+
+def test_a_saved_snapshot_never_answers_a_live_analysis(tmp_path: Path, monkeypatch) -> None:
+    """Most people run this for the first time; the demo has to be the first run.
+
+    A same-day snapshot used to answer instead of reading GitHub, so the
+    rehearsed path was one nobody else would take.
+    """
+    # Arrange: a fresh snapshot exists and GitHub is readable.
+    from typing import Any, cast
+
+    from integrations.github.tools.ci_analytics import tool as tool_module
+
+    now = datetime.now(UTC)
+    _write_report_snapshot(tmp_path, _report(), now)
+    monkeypatch.setattr(tool_module, "snapshot_root", lambda _root=None: tmp_path)
+    monkeypatch.setattr(tool_module, "resolve_github_token", lambda _t=None: "tok")
+    reads: list[str] = []
+
+    def _analyze(owner: str, repo: str, **_kwargs: Any) -> Any:
+        reads.append(f"{owner}/{repo}")
+        return type("A", (), {"report": _report(red_hours=1.0), "runs_read": 3})()
+
+    monkeypatch.setattr(tool_module, "analyze_repository", _analyze)
+
+    # Act
+    result = cast(Any, tool_module.analyze_github_ci_reliability)(
+        owner="apache", repo="airflow", days=30, github_token="tok"
+    )
+
+    # Assert: the figures are the ones just read, and nothing claims a snapshot.
+    assert reads == ["apache/airflow"]
+    assert result["red_hours"] == 1.0
+    assert "from_snapshot" not in result
+    assert "as of" not in result["summary"]
+
+
+def test_a_benchmark_repository_is_not_compared_with_itself() -> None:
+    """Analyzing apache/airflow put an airflow column beside the airflow column."""
+    # Arrange
+    from integrations.github.tools.ci_analytics.render import comparison_markdown, peer_benchmarks
+
+    report = _report(owner="apache", repo="airflow")
+
+    # Act
+    markdown = comparison_markdown(report, peer_benchmarks(report))
+
+    # Assert: the analyzed repository appears once, as the first column.
+    assert markdown.count("apache/airflow") == 1
+    assert "fastapi/fastapi" in markdown
 
 
 def test_repositories_whose_names_join_the_same_way_do_not_share_a_snapshot(
@@ -242,45 +265,3 @@ def test_a_snapshot_write_failure_does_not_discard_the_analysis(
 
     assert result["success"] is True
     assert result["red_hours"] == 24.5
-
-
-def test_a_snapshot_without_a_saved_report_is_a_miss_not_a_lesser_answer(
-    tmp_path: Path, monkeypatch
-) -> None:
-    """A snapshot written before the report object cannot build the comparison.
-
-    Answering from it would drop the comparison the report always carries, so
-    it counts as a cache miss and GitHub is read instead.
-    """
-    # Arrange: a fresh snapshot in the old shape, and a token to read with.
-    from typing import Any, cast
-
-    from integrations.github.tools.ci_analytics import tool as tool_module
-
-    now = datetime.now(UTC)
-    write_snapshot(
-        tmp_path,
-        "apache",
-        "airflow",
-        now - timedelta(minutes=5),
-        _payload(generated_at=(now - timedelta(minutes=5)).isoformat(), headline="old shape"),
-    )
-    monkeypatch.setattr(tool_module, "snapshot_root", lambda _root=None: tmp_path)
-    monkeypatch.setattr(tool_module, "resolve_github_token", lambda _t=None: "tok")
-    reads: list[str] = []
-
-    def _analyze(owner: str, repo: str, **_kwargs: Any) -> Any:
-        reads.append(f"{owner}/{repo}")
-        return type("A", (), {"report": _report(), "runs_read": 1})()
-
-    monkeypatch.setattr(tool_module, "analyze_repository", _analyze)
-
-    # Act
-    result = cast(Any, tool_module.analyze_github_ci_reliability)(
-        owner="apache", repo="airflow", days=30, github_token="tok"
-    )
-
-    # Assert
-    assert reads == ["apache/airflow"]
-    assert result["success"] is True
-    assert not result.get("from_snapshot")

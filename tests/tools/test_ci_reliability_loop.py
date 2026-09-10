@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -148,27 +149,14 @@ def _scheduled_stub(owner: str, repo: str) -> ci_loop.ScheduledLoop:
     return ci_loop.ScheduledLoop(loop=loop, reused=False)
 
 
-def _saved_report(root: Path, *, window_days: int) -> dict:
-    """Write a snapshot and hand back the report payload inside it."""
-    import json
-
-    _write_report_snapshot(root, window_days=window_days)
-    path = next((root / "acme" / "app").glob("*.json"))
-    return dict(json.loads(path.read_text())["report"])
-
-
-def _write_report_snapshot(root: Path, *, window_days: int) -> datetime:
-    from datetime import UTC, datetime, timedelta
-
+def _sample_report(*, window_days: int, now: datetime) -> Any:
     from integrations.github.tools.ci_analytics.models import (
         CiAnalyticsReport,
         Outage,
         WorkflowSummary,
     )
-    from integrations.github.tools.ci_analytics.snapshots import report_to_dict, write_snapshot
 
-    now = datetime.now(UTC)
-    report = CiAnalyticsReport(
+    return CiAnalyticsReport(
         owner="acme",
         repo="app",
         default_branch="main",
@@ -190,6 +178,15 @@ def _write_report_snapshot(root: Path, *, window_days: int) -> datetime:
         coverage_notices=(),
         working_hours_label="Mon-Fri 09:00-18:00 UTC",
     )
+
+
+def _write_report_snapshot(root: Path, *, window_days: int) -> datetime:
+    from datetime import UTC, datetime, timedelta
+
+    from integrations.github.tools.ci_analytics.snapshots import report_to_dict, write_snapshot
+
+    now = datetime.now(UTC)
+    report = _sample_report(window_days=window_days, now=now)
     write_snapshot(
         root,
         "acme",
@@ -307,7 +304,7 @@ def test_build_report_renders_the_analytics_and_keeps_a_json_snapshot(
         {"owner": "acme", "repo": "app", "days": "7"}, snapshot_dir=tmp_path
     )
 
-    # Assert: header, headline, and a traceable snapshot on disk.
+    # Assert: header and a traceable snapshot on disk.
     assert "CI/CD reliability for acme/app, last 7 days" in report
     assert "Raw data: " in report
     snapshot = Path(report.rsplit("Raw data: ", 1)[1].strip())
@@ -390,21 +387,20 @@ def test_tool_uses_the_loops_seven_day_snapshot_when_no_thirty_day_one_exists(
     )
 
 
-def test_analyze_markdown_keeps_details_when_benchmarks_are_requested(
+def test_analyze_markdown_keeps_the_details_beside_the_comparison(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Arrange: a non-terminal caller asks for the report with benchmarks.
-    from typing import Any
+    # Arrange: a caller with no console gets markdown; the live read is stubbed.
+    from datetime import UTC, datetime
 
     from integrations.github.tools.ci_analytics import tool as tool_module
-    from integrations.github.tools.ci_analytics.snapshots import report_from_dict
 
-    saved = _saved_report(tmp_path, window_days=30)
+    report = _sample_report(window_days=30, now=datetime.now(UTC))
     monkeypatch.setattr(tool_module, "snapshot_root", lambda _root=None: tmp_path)
     monkeypatch.setattr(tool_module, "resolve_github_token", lambda _t=None: "tok")
 
     def _analyze(_owner: str, _repo: str, **_kwargs: Any) -> Any:
-        return type("A", (), {"report": report_from_dict(saved), "runs_read": 3})()
+        return type("A", (), {"report": report, "runs_read": 3})()
 
     monkeypatch.setattr(tool_module, "analyze_repository", _analyze)
 

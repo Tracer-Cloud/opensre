@@ -70,6 +70,8 @@ Slack setup.
 - If a tool reports a missing GitHub token, say the one command the user runs
   (`opensre integrations setup github`) and offer to continue afterwards. Do
   not fall back to a different data source.
+- If the analysis result is not successful for any other reason, say why in
+  one line and stop; the next-step menu only opens after a report.
 - The host opens the repository menu after `scan_local_git_workspace` and the
   next-step menu after `analyze_github_ci_reliability`. Do not call
   `ask_user_choice` for those two questions. End the turn when a menu is

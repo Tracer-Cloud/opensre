@@ -50,6 +50,9 @@ report for weekday mornings in this shell's inbox.
 - Never run `gh`, `git`, or `shell_run` for this flow.
 - If a tool reports a missing GitHub token, say `opensre integrations setup github`
   and stop. Do not fall back to another data source.
+- If the analysis result is not successful for any other reason (the
+  repository cannot be read, a rate limit, an error), say why in one line and
+  stop. Do not schedule a loop whose first report never appeared.
 - Decision points use `ask_user_choice` with the exact option texts below.
   End the turn after calling it; the answer arrives as the next user message.
 - The analyze tool paints the report; do not restate its figures. Then output

@@ -1286,7 +1286,11 @@ def test_the_comparison_starts_on_its_own_line() -> None:
     # Arrange
     from rich.console import Console
 
-    from integrations.github.tools.ci_analytics.render import render_comparison, render_report
+    from integrations.github.tools.ci_analytics.render import (
+        peer_benchmarks,
+        render_comparison,
+        render_report,
+    )
 
     report = compute_report(
         owner="o",
@@ -1303,13 +1307,13 @@ def test_the_comparison_starts_on_its_own_line() -> None:
 
     # Act
     render_report(console, report, compact=True)
-    render_comparison(console, report)
+    render_comparison(console, report, peer_benchmarks(report))
 
     # Assert: a blank line separates the report from the comparison heading.
     lines = buf.getvalue().splitlines()
     heading = next(i for i, line in enumerate(lines) if "Compared with" in line)
     assert not lines[heading - 1].strip()
-    assert "The wait at the top is the cost" in buf.getvalue()
+    assert "Next: schedule this report for weekday mornings" in buf.getvalue()
 
 
 def test_the_description_tells_the_model_the_comparison_cannot_be_skipped() -> None:
@@ -1329,6 +1333,7 @@ def test_the_description_tells_the_model_the_comparison_cannot_be_skipped() -> N
 
 def test_headline_names_the_cost_when_no_developer_can_be_attributed() -> None:
     """blocked_working_minutes can be set without per-author waits."""
+    # Arrange
     from integrations.github.tools.ci_analytics.models import CiAnalyticsReport
     from integrations.github.tools.ci_analytics.render import headline
 
@@ -1353,7 +1358,8 @@ def test_headline_names_the_cost_when_no_developer_can_be_attributed() -> None:
         blocked_working_minutes=90.0,
     )
 
-    assert headline(report) == ("Waiting on CI cost 1.5h of developer time in the last 30 days.")
+    # Act / Assert
+    assert headline(report) == "Waiting on CI cost 1.5h of developer time in the last 30 days."
 
 
 def test_headline_names_the_worst_hit_not_the_average() -> None:
