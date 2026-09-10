@@ -363,3 +363,24 @@ def test_analyze_markdown_keeps_details_when_benchmarks_are_requested(
     assert "Key results" in text
     assert "Compared with" in text
     assert "Workflow" in text or "Failure classification" in text
+
+
+def test_the_card_says_how_to_run_the_loop_at_another_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The demo no longer asks about cadence, so the card has to carry it.
+
+    Listing, stopping and deleting were there; changing when it runs was not,
+    and there is no reschedule command to point at.
+    """
+    # Arrange
+    monkeypatch.setattr(
+        ci_loop, "schedule_ci_reliability_loop", lambda *_a, **_k: _scheduled_stub("acme", "app")
+    )
+
+    # Act
+    result = loop_tool.schedule_ci_reliability_loop(owner="acme", repo="app")
+
+    # Assert
+    assert "to run it at another time" in result["response_text"].lower()
+    assert "/loops delete task1" in result["response_text"]

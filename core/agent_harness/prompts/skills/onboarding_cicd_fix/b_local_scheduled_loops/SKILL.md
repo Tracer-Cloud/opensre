@@ -87,6 +87,7 @@ answer arrives as the next user message.
 
 Call `schedule_ci_reliability_loop(owner="<owner>", repo="<repo>",
 include_report=true)`. The loop runs weekdays at 08:00 local time; the card
-says so and tells the user how to change it, so do not ask about the cadence.
+states the schedule and how to run it at another time, so do not ask about the
+cadence.
 Output `response_text` verbatim and stop. When a same-day report exists it
 comes first, then the schedule card; otherwise the card alone.

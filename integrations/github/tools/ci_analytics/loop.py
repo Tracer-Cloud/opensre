@@ -181,6 +181,7 @@ def loop_card(scheduled: ScheduledLoop) -> list[str]:
         f"Runs {cadence} at {when} {task.timezone}; next run {scheduled.loop.next_run or 'pending'}.",
         "Each report lands in this shell's inbox: /loops messages. "
         f"Manage it with /loops list, /loops stop {task.id}, /loops delete {task.id}.",
+        f"To run it at another time, /loops delete {task.id} and schedule it again.",
         "It runs while the shell is open, or under `opensre cron start` when it is not.",
     ]
     return lines
