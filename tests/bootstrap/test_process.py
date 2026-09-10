@@ -32,6 +32,10 @@ def test_configure_process_gateway_order(monkeypatch: pytest.MonkeyPatch) -> Non
         lambda **_kw: order.append("sentry"),
     )
     monkeypatch.setattr(
+        "infrastructure.observability.trace.otel_sdk.init_otel_tracing",
+        lambda: bool(order.append("otel")),
+    )
+    monkeypatch.setattr(
         "bootstrap.process.install_harness_adapters",
         lambda: order.append("adapters"),
     )
@@ -50,15 +54,26 @@ def test_configure_process_gateway_order(monkeypatch: pytest.MonkeyPatch) -> Non
 
     configure_process(GATEWAY_PROFILE, logger=logging.getLogger("test.process"))
 
-    assert order == ["env", "sentry", "adapters", "caps", "preload"], order
+    # Outbound instrumentation lands before any client an adapter builds.
+    assert order == ["env", "sentry", "otel", "adapters", "caps", "preload"], order
 
 
-def test_configure_process_cli_only_boots_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """CLI_PROFILE leaves Sentry and Rich adapters to surfaces/cli/startup."""
+def test_configure_process_cli_boots_env_and_outbound_tracing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """CLI_PROFILE leaves Sentry and Rich adapters to surfaces/cli/startup.
+
+    It does own outbound tracing: integration tools run in the CLI process, so
+    without this step their ``requests``/``boto3`` calls produce no spans.
+    """
     order: list[str] = []
     monkeypatch.setattr(
         "bootstrap.process.bootstrap_opensre_env_once",
         lambda **_kw: order.append("env"),
+    )
+    monkeypatch.setattr(
+        "infrastructure.observability.trace.otel_sdk.init_otel_tracing",
+        lambda: bool(order.append("otel")),
     )
     monkeypatch.setattr(
         "infrastructure.observability.errors.sentry.init_sentry",
@@ -75,7 +90,7 @@ def test_configure_process_cli_only_boots_env(monkeypatch: pytest.MonkeyPatch) -
 
     configure_process(CLI_PROFILE)
 
-    assert order == ["env"], order
+    assert order == ["env", "otel"], order
 
 
 def test_configure_process_web_skips_llm_preload(monkeypatch: pytest.MonkeyPatch) -> None:

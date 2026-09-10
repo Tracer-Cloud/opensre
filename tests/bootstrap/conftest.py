@@ -8,6 +8,18 @@ import pytest
 
 
 @pytest.fixture(autouse=True)
+def stub_otel_tracing(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep the OTLP boot step off the network in boot-order tests.
+
+    Tests that pin where the step runs replace this stub with a recording one.
+    """
+    monkeypatch.setattr(
+        "infrastructure.observability.trace.otel_sdk.init_otel_tracing",
+        lambda: False,
+    )
+
+
+@pytest.fixture(autouse=True)
 def reset_process_runtime() -> Iterator[None]:
     """Clear per-profile idempotency state around each test.
 

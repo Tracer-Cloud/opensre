@@ -94,6 +94,11 @@ service has `DATABASE_URI` and `REDIS_URI` set before deploying. Set
 - **Product analytics** — lifecycle and usage events sent through `app.opensre.com` (commands used, success/failure, rough runtime, CLI/Python/OS/arch, and limited command metadata).
 - **Sentry** — crashes and errors (stack traces, environment, release).
 
+A third stack is opt-in: set `OTEL_EXPORTER_OTLP_ENDPOINT` (or `GCLOUD_OTLP_ENDPOINT`)
+and OpenSRE exports OpenTelemetry client spans for every outbound integration call
+(`requests` and `boto3`) to that endpoint over OTLP/HTTP. With no endpoint set,
+nothing is traced or exported.
+
 Events are tagged with `entrypoint`, `opensre.runtime`, and `deployment_method`. Sensitive headers, paths, and secret-shaped keys are scrubbed before send.
 
 Product events also carry `execution_environment` (`local`, `ci`, `container`,

@@ -60,6 +60,7 @@ class BootStep(StrEnum):
 
     ENV = "env"
     SENTRY = "sentry"
+    OTEL_TRACING = "otel_tracing"
     HARNESS_ADAPTERS = "harness_adapters"
     SCHEDULER_RUNNERS = "scheduler_runners"
     CAPABILITY_WARNINGS = "capability_warnings"
@@ -79,7 +80,7 @@ class ProcessProfile:
 CLI_PROFILE: Final = ProcessProfile(
     name=ProcessName.CLI,
     # CLI owns Sentry (update tolerates a missing SDK) and Rich product adapters.
-    steps=frozenset({BootStep.ENV}),
+    steps=frozenset({BootStep.ENV, BootStep.OTEL_TRACING}),
 )
 GATEWAY_PROFILE: Final = ProcessProfile(
     name=ProcessName.GATEWAY,
@@ -87,6 +88,7 @@ GATEWAY_PROFILE: Final = ProcessProfile(
         {
             BootStep.ENV,
             BootStep.SENTRY,
+            BootStep.OTEL_TRACING,
             BootStep.HARNESS_ADAPTERS,
             BootStep.CAPABILITY_WARNINGS,
             BootStep.PRELOAD_LLM,
@@ -96,7 +98,9 @@ GATEWAY_PROFILE: Final = ProcessProfile(
 )
 WEB_PROFILE: Final = ProcessProfile(
     name=ProcessName.WEB,
-    steps=frozenset({BootStep.ENV, BootStep.SENTRY, BootStep.HARNESS_ADAPTERS}),
+    steps=frozenset(
+        {BootStep.ENV, BootStep.SENTRY, BootStep.OTEL_TRACING, BootStep.HARNESS_ADAPTERS}
+    ),
     sentry_entrypoint=SentryEntrypoint.WEBAPP,
 )
 SCHEDULER_WORKER_PROFILE: Final = ProcessProfile(
@@ -109,6 +113,7 @@ SCHEDULER_WORKER_PROFILE: Final = ProcessProfile(
         {
             BootStep.ENV,
             BootStep.SENTRY,
+            BootStep.OTEL_TRACING,
             BootStep.HARNESS_ADAPTERS,
             BootStep.SCHEDULER_RUNNERS,
         }
@@ -142,6 +147,12 @@ def _run_sentry(profile: ProcessProfile, _log: logging.Logger) -> None:
     init_sentry(entrypoint=profile.sentry_entrypoint)
 
 
+def _run_otel_tracing(_profile: ProcessProfile, _log: logging.Logger) -> None:
+    from infrastructure.observability.trace.otel_sdk import init_otel_tracing
+
+    init_otel_tracing()
+
+
 def _run_harness_adapters(_profile: ProcessProfile, _log: logging.Logger) -> None:
     install_harness_adapters()
     install_cli_auth_checker()
@@ -173,6 +184,9 @@ _STEP_ORDER: Final[
 ] = (
     (BootStep.ENV, _run_env),
     (BootStep.SENTRY, _run_sentry),
+    # Before adapters and any client construction, so outbound calls a later
+    # step makes are already covered by requests/botocore instrumentation.
+    (BootStep.OTEL_TRACING, _run_otel_tracing),
     (BootStep.HARNESS_ADAPTERS, _run_harness_adapters),
     (BootStep.SCHEDULER_RUNNERS, _run_scheduler_runners),
     (BootStep.CAPABILITY_WARNINGS, _run_capability_warnings),
