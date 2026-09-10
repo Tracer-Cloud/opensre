@@ -16,6 +16,10 @@ from __future__ import annotations
 
 from core.agent_harness.harness import AgentSession, SessionConfig
 from core.agent_harness.ports import OutputSink
+from core.agent_harness.prompts.proactive_messages import (
+    ProactiveMessagePolicy,
+    load_master_judgement,
+)
 from core.agent_harness.prompts.skills.naming import is_legacy_skill_name, normalize_skill_name
 from core.agent_harness.prompts.skills.schedule import (
     is_recurring_skill,
@@ -23,12 +27,13 @@ from core.agent_harness.prompts.skills.schedule import (
     resolve_scheduled_skill,
     validate_skill_inputs,
 )
-from core.agent_harness.session import SessionCore, SessionManager
+from core.agent_harness.session import SessionCore, SessionManager, session_path
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
 
 __all__ = [
     "AgentSession",
     "OutputSink",
+    "ProactiveMessagePolicy",
     "SessionConfig",
     "SessionCore",
     "SessionManager",
@@ -36,8 +41,10 @@ __all__ = [
     "TurnResult",
     "is_legacy_skill_name",
     "is_recurring_skill",
+    "load_master_judgement",
     "normalize_skill_name",
     "pin_recurring_skill",
     "resolve_scheduled_skill",
+    "session_path",
     "validate_skill_inputs",
 ]

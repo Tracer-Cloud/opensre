@@ -2384,7 +2384,7 @@ wheels = [
 
 [[package]]
 name = "opensre"
-version = "0.1"
+version = "0.2.0.dev2+proactive"
 source = { editable = "." }
 dependencies = [
     { name = "aiohttp" },

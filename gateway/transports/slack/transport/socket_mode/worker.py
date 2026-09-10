@@ -25,6 +25,7 @@ from gateway.transports.slack.transport.socket_mode.heartbeat import (
     ConnectionHeartbeat,
 )
 from gateway.transports.slack.turn_stack import build_slack_turn_stack
+from infrastructure.proactive_messages import ProactiveMessageService
 from infrastructure.turn_host.turn_callback import TurnCallback
 
 _EVENTS_API_REQUEST_TYPE = "events_api"
@@ -41,11 +42,13 @@ class SlackGatewayBackground:
         executor: ThreadPoolExecutor,
         bindings: BindingStore,
         heartbeat: ConnectionHeartbeat,
+        proactive: ProactiveMessageService | None = None,
     ) -> None:
         self._socket_client = socket_client
         self._executor = executor
         self._bindings = bindings
         self._heartbeat = heartbeat
+        self._proactive = proactive
 
     def stop(self, *, timeout: float = DEFAULT_STOP_TIMEOUT_SECONDS) -> bool:
         """Disconnect from Slack, wait up to ``timeout`` for in-flight turns, and clean up."""
@@ -66,6 +69,8 @@ class SlackGatewayBackground:
         waiter.start()
         waiter.join(budget.remaining)
         stopped = not waiter.is_alive()
+        if self._proactive is not None:
+            stopped = self._proactive.stop(timeout=budget.remaining) and stopped
         try:
             self._bindings.close()
         except Exception:
@@ -122,6 +127,7 @@ def start_slack_gateway_background(
         socket_client.connect()
     except Exception as exc:
         executor.shutdown(wait=False)
+        stack.proactive.stop(timeout=0.0)
         bindings.close()
         raise GatewayConfigurationError(f"Slack Socket Mode connect failed: {exc}") from exc
 
@@ -136,4 +142,5 @@ def start_slack_gateway_background(
         executor=executor,
         bindings=bindings,
         heartbeat=heartbeat,
+        proactive=stack.proactive,
     )
