@@ -335,6 +335,7 @@ def test_demo_skills_keep_their_tool_contracts_after_moving() -> None:
     )
     assert by_name["cicd-reliability-agent"].tools == (
         "scan_local_git_workspace",
+        "analyze_github_ci_reliability",
         "schedule_ci_reliability_loop",
         "ask_user_choice",
     )
