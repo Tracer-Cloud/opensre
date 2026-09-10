@@ -123,7 +123,7 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
         session.terminal.awaiting_handoff_answer = False
         session.terminal.set_auto_command(command)
         return True
-    render_choice_selection(console, items[0].title, picked_one, options=items[0].options)
+    render_choice_selection(console, items[0].title, picked_one)
     # The answer travels with its question, as the batched wizard's does: a bare
     # label such as "owner/repo (757 commits, CI configured)" reads to the
     # planner like a fresh request and gets re-asked or re-routed.

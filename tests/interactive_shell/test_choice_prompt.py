@@ -57,10 +57,11 @@ def test_selection_is_auto_submitted_as_next_user_message(
     )
     assert session.terminal.pending_prompt_autosubmit is True
     output = buf.getvalue()
-    # Single-pick recap is one answered line — not an Ask User card and not a
-    # plan-step ``✓`` (that glued picks into Plan complete).
-    assert "Ask User" not in output
-    assert "↳" in output
+    # Single-pick recap is the one-question Ask User card — not a ``↳`` line and
+    # not a plan-step ``✓`` (that glued picks into Plan complete).
+    assert "Ask User" in output
+    assert "↳" not in output
+    assert "offered:" not in output
     assert "✓" not in output
     assert _CHOICE.title in output
     assert "Commit the changes" in output

@@ -116,7 +116,8 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
     # The whole boot-to-pick sequence painted exactly one thing besides the
     # picker itself: the selection recap. No work-turn marker, no skill tree.
     painted = buffer.getvalue()
-    assert painted.strip().startswith(f"↳ {_TITLE}"), painted
+    assert painted.strip().startswith("Ask User"), painted
+    assert f"1.  {_TITLE}" in painted, painted
     for chrome in ("/goal", "Skill ", "activated", "skill_view", "[1]"):
         assert chrome not in painted, painted
     assert len(picker_calls) == 1

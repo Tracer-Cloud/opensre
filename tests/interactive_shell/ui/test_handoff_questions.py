@@ -170,12 +170,9 @@ def test_choice_selection_strips_terminal_controls() -> None:
     output = buffer.getvalue()
     assert "\x1b" not in output
     assert "\x07" not in output
-    # One answered line, not the question asked again under a new header.
-    assert "Ask User" not in output
     assert "Deploy?" in output and "Canary" in output
-    assert output.strip().count("\n") == 0
     assert "✓" not in output
-    # Section gap above the line so it does not join Plan complete.
+    # Section gap above the card so it does not join Plan complete.
     assert output.startswith("\n")
 
 
@@ -188,31 +185,43 @@ def test_multi_select_choice_indents_every_selected_line() -> None:
     # Act
     render_choice_selection(console, "Select Complex Demos", answer)
 
-    # Assert: the question once, then every option indented under it.
+    # Assert: the question once, then every option on its own row under it.
     lines = [line.rstrip() for line in buffer.getvalue().splitlines() if line.strip()]
-    assert lines[0].endswith("Select Complex Demos")
-    for label in ("Audit the architecture", "Find failing PRs", "Remediate alerts"):
-        assert any(label in line and line.startswith(" ") for line in lines)
-        assert label not in lines
+    assert lines[0] == "Ask User"
+    assert lines[1].endswith("Select Complex Demos")
+    assert lines[2:] == [
+        "      Audit the architecture",
+        "      Find failing PRs",
+        "      Remediate alerts",
+    ]
     assert "✓" not in buffer.getvalue()
 
 
-def test_choice_selection_is_not_a_plan_step() -> None:
-    """Single-pick recap must not look like another Plan complete checklist row."""
+def test_choice_selection_is_the_ask_user_card() -> None:
+    """Single-pick recap is the one-question Ask User card, not a ``↳`` line or plan row.
+
+    Header, numbered bold question, the answer on the row beneath — the same
+    shape the batched wizard leaves — and no ``offered:`` list of the other rows.
+    """
     buffer = io.StringIO()
-    console = Console(file=buffer, force_terminal=False, highlight=False, width=80)
+    console = Console(file=buffer, force_terminal=False, highlight=False, width=120)
 
     render_choice_selection(
         console,
-        "Choose a Demo",
+        "Which demo would you like me to run? (Esc to skip)",
         "Explore a repo and analyze its CI/CD performance (recommended)",
     )
 
     output = buffer.getvalue()
-    assert "Ask User" not in output
-    assert "Choose a Demo" in output
-    assert "Explore a repo" in output
-    assert "✓ Choose a Demo" not in output
+    assert output.startswith("\n")
+    lines = [line.rstrip() for line in output.splitlines() if line.strip()]
+    assert lines == [
+        "Ask User",
+        "  1.  Which demo would you like me to run? (Esc to skip)",
+        "      Explore a repo and analyze its CI/CD performance (recommended)",
+    ]
+    assert "↳" not in output
+    assert "offered:" not in output
     assert "✓" not in output
 
 
@@ -240,23 +249,3 @@ def test_plain_assistant_question_does_not_tag_the_next_turn() -> None:
     output = buffer.getvalue()
     assert "↗ answer" not in output
     assert "how many open PRs in opensre?" in output
-
-
-def test_selection_recap_lists_the_offered_rows() -> None:
-    """The picker erases itself; the recap keeps what the choice was made against."""
-    import io
-
-    from rich.console import Console
-
-    console = Console(file=io.StringIO(), force_terminal=False, width=120)
-
-    render_choice_selection(
-        console,
-        "What would you like to do next?",
-        "Exit demo",
-        options=("Set up an agent", "Connect to Slack", "Exit demo"),
-    )
-
-    out = console.file.getvalue()  # type: ignore[union-attr]
-    assert "↳ What would you like to do next?  Exit demo" in out
-    assert "offered: Set up an agent · Connect to Slack · Exit demo" in out
