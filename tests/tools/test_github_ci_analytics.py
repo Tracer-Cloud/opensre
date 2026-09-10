@@ -1129,8 +1129,8 @@ def test_tool_renders_report_from_collected_runs() -> None:
     assert result["reliability_failures"] == 1
     assert result["blocked_minutes"] == 40.0
     assert result["headline"] == (
-        "Waiting on CI cost 40m of developer time in the last 7 days, "
-        "about 40m per developer a week."
+        "Waiting on CI cost 1 developer 40m of working time in the last 7 days, "
+        "up to 40m a week for the worst hit."
     )
     assert "Coverage notice: sample" in result["response_text"]
 
@@ -1309,6 +1309,7 @@ def test_the_comparison_starts_on_its_own_line() -> None:
     lines = buf.getvalue().splitlines()
     heading = next(i for i, line in enumerate(lines) if "Compared with" in line)
     assert not lines[heading - 1].strip()
+    assert "The wait at the top is the cost" in buf.getvalue()
 
 
 def test_the_description_tells_the_model_the_comparison_cannot_be_skipped() -> None:
@@ -1353,3 +1354,65 @@ def test_headline_names_the_cost_when_no_developer_can_be_attributed() -> None:
     )
 
     assert headline(report) == ("Waiting on CI cost 1.5h of developer time in the last 30 days.")
+
+
+def test_headline_names_the_worst_hit_not_the_average() -> None:
+    """An average hides the person who waited most; that is the number guests remember."""
+    from integrations.github.tools.ci_analytics.models import (
+        CiAnalyticsReport,
+        PullRequestDelay,
+    )
+    from integrations.github.tools.ci_analytics.render import headline
+
+    delay = PullRequestDelay(
+        head_repo="o/r",
+        branch="feat/x",
+        author="heavy",
+        pr_number=1,
+        commits=1,
+        url="https://example.test/1",
+        expected_green=_T0,
+        actual_green=_T0,
+        delay_minutes=468.0,
+        working_minutes=468.0,
+        critical_path=True,
+    )
+    light = PullRequestDelay(
+        head_repo="o/r",
+        branch="feat/y",
+        author="light",
+        pr_number=2,
+        commits=1,
+        url="https://example.test/2",
+        expected_green=_T0,
+        actual_green=_T0,
+        delay_minutes=60.0,
+        working_minutes=60.0,
+        critical_path=True,
+    )
+    report = CiAnalyticsReport(
+        owner="o",
+        repo="r",
+        default_branch="main",
+        window_days=30,
+        generated_at=_T0,
+        executions=1,
+        pr_executions=1,
+        pr_failures=0,
+        classified=(),
+        merged_pr_branches=2,
+        blocked_minutes=528.0,
+        blocked_minutes_all=528.0,
+        branch_runs=0,
+        branch_failures=0,
+        red_hours=0.0,
+        outages=(),
+        mean_recovery_hours=None,
+        pr_delays=(delay, light),
+        blocked_working_minutes=528.0,
+    )
+
+    assert headline(report) == (
+        "Waiting on CI cost 2 developers 8.8h of working time in the last 30 days, "
+        "up to 1.8h a week for the worst hit."
+    )

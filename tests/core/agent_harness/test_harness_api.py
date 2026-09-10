@@ -167,6 +167,7 @@ SPI_ROLE_NAMES: dict[str, frozenset[str]] = {
             "AskUserQuestion",
             "format_ask_user_answers",
             "parse_ask_user_answers",
+            "question_key",
         }
     ),
     "task_plan": frozenset(

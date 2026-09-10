@@ -64,7 +64,7 @@ Track progress with the `update_plan` tool, not with headers or prose:
   `explanation` (this is not a diagnosis; no hypothesis table):
   `Scan this machine` / `Pick the repository` / `Analyze CI/CD reliability` /
   `Schedule the loop`.
-- When the request already names the repository, omit the first two steps
+- When the request or an Ask User answer already names the repository, omit the first two steps
   from the plan instead of renumbering.
 - After a step's tool results, call `update_plan` marking it `completed` and
   the next step `in_progress`, in the same response as the next step's tool
@@ -91,9 +91,9 @@ answer arrives as the next user message.
 
 Call
 `analyze_github_ci_reliability(owner="<owner>", repo="<repo>", compact=true)`
-for the chosen repository. This reads GitHub now (a token is required); do
-not look for a saved snapshot. The tool paints the report. Do not restate
-figures.
+for the chosen repository. A saved report from today is reused; otherwise
+this reads GitHub (a token is required). The tool paints the report. Do
+not restate figures.
 
 ### 4. Schedule the loop
 

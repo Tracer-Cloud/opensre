@@ -159,3 +159,27 @@ def test_the_same_hook_does_not_fire_twice(monkeypatch: pytest.MonkeyPatch) -> N
 
     assert first is not None
     assert session.pending_user_choice is None
+
+
+def test_a_question_the_session_already_answered_is_not_asked_again(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The shell asked the repository question itself; the scan's hook must not reopen it."""
+    import core.agent_harness.turns.skill_after_tool as after_tool
+
+    # Arrange: the repository answer is already on the session.
+    monkeypatch.setattr(after_tool, "list_action_skills", lambda: (_skill_with_hooks(),))
+    session = _session()
+    session.questions_already_answered = {"which repository should i analyze?"}
+    hooks = with_skill_after_tool(None, session)
+    details = {"repos": [{"github": "acme/one", "has_workflows": True, "commits": 4}]}
+
+    # Act
+    hooks.after_tool_call(
+        _request("scan_local_git_workspace"),
+        ToolExecutionResult(content="scanned", details=details),
+    )
+
+    # Assert
+    assert session.pending_user_choice is None
+    assert session.terminal.pending_prompt_default is None

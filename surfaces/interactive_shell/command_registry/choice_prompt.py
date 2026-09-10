@@ -14,12 +14,21 @@ from __future__ import annotations
 from rich.console import Console
 from rich.markup import escape
 
-from config.constants.skills import SKIP_DEMO_OPTION
-from core.agent_harness.spi.handoff import format_ask_user_answers
+from config.constants.skills import ONBOARDING_SKILL_NAME, SKIP_DEMO_OPTION
+from core.agent_harness.spi.handoff import (
+    AskUserQuestion,
+    format_ask_user_answers,
+    question_key,
+)
 from infrastructure.terminal import theme as ui_theme
 from infrastructure.terminal.notify import NotifyEvent, play_notification
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
+from surfaces.interactive_shell.runtime.startup.demo_repository import (
+    choose_demo_repository,
+    demo_skill_for,
+    repository_question,
+)
 from surfaces.interactive_shell.runtime.startup.onboarding_telemetry import (
     capture_onboarding_choice,
 )
@@ -41,7 +50,15 @@ def _remember_answered(session: Session, *titles: str) -> None:
     settled = getattr(session, "questions_already_answered", None)
     if not isinstance(settled, set):
         return
-    settled.update(" ".join(title.split()).casefold() for title in titles if title.strip())
+    settled.update(question_key(title) for title in titles if title.strip())
+
+
+def _demo_repository_question(session: Session, answer: str) -> str | None:
+    """The repository question the chosen demo needs, when the onboarding menu was answered."""
+    if session.active_skill != ONBOARDING_SKILL_NAME:
+        return None
+    skill = demo_skill_for(answer)
+    return repository_question(skill) if skill is not None else None
 
 
 def _leave_menu(session: Session, console: Console, note: str) -> None:
@@ -122,6 +139,24 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
         console.print(f"[{ui_theme.DIM}]Running {escape(command)}.[/]")
         session.terminal.awaiting_handoff_answer = False
         session.terminal.set_auto_command(command)
+        return True
+    repository_title = _demo_repository_question(session, picked_one)
+    if repository_title is not None:
+        # The demo's repository is the user's choice, made here: left to the
+        # model, the scan is skipped and the menu tied to it never opens.
+        repository = choose_demo_repository(console, repository_title)
+        if repository is None:
+            _leave_menu(session, console, _CANCELLED)
+            return True
+        _remember_answered(session, repository_title)
+        answered = (
+            items[0],
+            AskUserQuestion(label="", title=repository_title, options=(repository,)),
+        )
+        session.terminal.set_auto_command(
+            format_ask_user_answers(answered, (picked_one, repository))
+        )
+        session.terminal.awaiting_handoff_answer = True
         return True
     render_choice_selection(console, items[0].title, picked_one)
     # The answer travels with its question, as the batched wizard's does: a bare

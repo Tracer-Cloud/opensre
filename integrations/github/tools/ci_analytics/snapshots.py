@@ -1,10 +1,8 @@
 """On-disk snapshots of CI reliability reports, shared by the loop tick and the tool.
 
-A snapshot is the report's raw figures plus when they were computed. The
-loop writes one per tick; the tool writes one per live analysis and reuses a
-fresh one for the same repository and window instead of reading GitHub
-again, which matters for benchmark repositories whose 30-day history takes
-minutes to read.
+A snapshot is the report's raw figures plus when they were computed. The loop
+writes one per tick and the tool one per live analysis; the schedule card reads
+today's to show the report beside it. A live analysis never answers from one.
 """
 
 from __future__ import annotations

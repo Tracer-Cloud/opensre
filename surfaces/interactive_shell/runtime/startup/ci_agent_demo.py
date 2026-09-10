@@ -91,7 +91,7 @@ def marker_path() -> Path:
     return OPENSRE_HOME_DIR / MARKER_FILENAME
 
 
-def _scan_and_show(console: Console | None) -> WorkspaceSnapshot:
+def scan_and_show(console: Console | None) -> WorkspaceSnapshot:
     """Scan the home directory under a spinner and paint the activity chart."""
     home = Path.home()
     if console is not None:
@@ -122,7 +122,7 @@ def start_ci_agent_demo(
 ) -> bool:
     """Scan, choose a repository and time, then schedule and run the reliability loop."""
     if repository is None:
-        snapshot = _scan_and_show(console)
+        snapshot = scan_and_show(console)
         if not resolve_github_token(None):
             _warn(console, _LOOP_TOKEN_MISSING)
             return False

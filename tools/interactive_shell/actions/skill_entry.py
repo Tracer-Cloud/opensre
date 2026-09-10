@@ -14,6 +14,7 @@ from types import MappingProxyType
 from typing import Any
 
 from core.agent_harness.spi.grounding import ActionSkill, list_action_skills, load_skill_body
+from core.agent_harness.spi.handoff import question_key
 from core.agent_harness.tools import ActionToolScope, ToolExecutor
 from core.tool import RegisteredTool
 from tools.interactive_shell.actions.ask_choice import (
@@ -83,7 +84,7 @@ def _forget_hook_questions(session: Any, skill: ActionSkill) -> None:
     for call in skill.pre_execute:
         title = str(call.args.get("title", "")).strip()
         if title:
-            settled.discard(" ".join(title.split()).casefold())
+            settled.discard(question_key(title))
 
 
 def _may_open_menu(session: Any, skill: ActionSkill, *, from_model: bool) -> bool:

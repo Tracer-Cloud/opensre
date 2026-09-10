@@ -17,7 +17,11 @@ from config.constants.skills import ONBOARDING_SKILL_NAME, SKIP_DEMO_OPTION
 from core.agent_harness.prompts.action.assemble import build_action_system_prompt_envelope
 from core.agent_harness.prompts.getting_started import GETTING_STARTED_OPTIONS
 from core.agent_harness.prompts.skills import list_action_skills
-from core.agent_harness.session.pending_choice import PendingUserChoice, format_ask_user_answers
+from core.agent_harness.session.pending_choice import (
+    AskUserQuestion,
+    PendingUserChoice,
+    format_ask_user_answers,
+)
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
 from surfaces.interactive_shell.runtime.action_turn import run_action_tool_turn
 from surfaces.interactive_shell.session import Session
@@ -29,6 +33,8 @@ from tests.core.agent.orchestration.action_execution_test_harness import (
 from tools.system.workspace_git_scan.scan import WorkspaceSnapshot
 
 _TITLE = "Which demo would you like me to run?"
+_REPOSITORY_TITLE = "Which repository should I analyze?"
+_REPOSITORY = "acme/one"
 _NOTE = (
     "Choose a demo using your own repositories or connect your team through Slack. "
     "The managed-service option is coming soon."
@@ -41,6 +47,14 @@ def _offerable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(demo_picker, "capture_onboarding_demo_prompted", lambda: None)
     monkeypatch.setattr(choice_prompt, "repl_tty_interactive", lambda: True)
     monkeypatch.setattr(slash_adapter, "repl_tty_interactive", lambda: True)
+    # A repository demo asks for the repository in the shell; no scan in tests.
+    monkeypatch.setattr(choice_prompt, "choose_demo_repository", lambda _c, _q: _REPOSITORY)
+
+
+def _demo_with_repository(pending: PendingUserChoice, answer: str) -> str:
+    """The message the model receives: the demo pick, then the repository the shell asked for."""
+    repository = AskUserQuestion(label="", title=_REPOSITORY_TITLE, options=(_REPOSITORY,))
+    return format_ask_user_answers((*pending.items(), repository), (answer, _REPOSITORY))
 
 
 def _take_prompt(session: Session) -> str:
@@ -90,8 +104,15 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
         picker_calls.append(kwargs)
         return GETTING_STARTED_OPTIONS[0]
 
+    asked: list[str] = []
+
+    def choose_repository(_console: Any, question: str) -> str:
+        asked.append(question)
+        return _REPOSITORY
+
     monkeypatch.setattr(scan_tool, "scan_workspace", scan)
     monkeypatch.setattr(choice_prompt, "repl_choose_one", pick)
+    monkeypatch.setattr(choice_prompt, "choose_demo_repository", choose_repository)
     assert demo_picker.offer_demo(session, console)
     # The host asked the skill's question itself: no prose prompt, no model, no output.
     assert buffer.getvalue() == ""
@@ -113,12 +134,12 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
     )
     session.terminal.exclusive_stdin_active = False
     assert llm.invocations == 0  # Nothing before the pick used the model.
-    # The whole boot-to-pick sequence painted exactly one thing besides the
-    # picker itself: the selection recap. No work-turn marker, no skill tree.
+    # The shell asked the repository in the same turn; the card with both
+    # answers is painted when the answer is echoed. Nothing else: no work-turn
+    # marker, no skill tree.
+    assert asked == [_REPOSITORY_TITLE]
     painted = buffer.getvalue()
-    assert painted.strip().startswith("Ask User"), painted
-    assert f"1.  {_TITLE}" in painted, painted
-    for chrome in ("/goal", "Skill ", "activated", "skill_view", "[1]"):
+    for chrome in ("Ask User", "/goal", "Skill ", "activated", "skill_view", "[1]"):
         assert chrome not in painted, painted
     assert len(picker_calls) == 1
     assert callable(picker_calls[0].pop("on_custom_answer"))
@@ -136,7 +157,7 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
     }
     assert session.active_skill == ONBOARDING_SKILL_NAME
     answer = _take_prompt(session)
-    assert answer == format_ask_user_answers(pending.items(), (GETTING_STARTED_OPTIONS[0],))
+    assert answer == _demo_with_repository(pending, GETTING_STARTED_OPTIONS[0])
     envelope = build_action_system_prompt_envelope(
         TurnSnapshot.from_session(answer, session, surface="interactive_shell")
     )
@@ -144,14 +165,12 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
     assert "## Follow the selected child" not in envelope.render_cached()
 
     run_action_tool_turn(answer, session, console, is_tty=True, llm_factory=lambda: llm)
-    assert llm.invocations == 2
     assert len(scans) == 1
     assert session.active_skill == "cicd-analytics-demo"
-    assert session.pending_user_choice is not None
-    assert session.pending_user_choice.title == "Which repository should I analyze?"
-    assert "Use the open-source example repository (Tracer-Cloud/opensre)" in (
-        session.pending_user_choice.options
-    )
+    # The repository was answered in the shell; a scan the model runs anyway
+    # does not reopen that question, so the turn runs on to its end.
+    assert session.pending_user_choice is None
+    assert llm.invocations == 3
     assert "analyze_github_ci_reliability" in session.active_skill_tools
     assert onboarding_outcomes == [("ci_analytics", False)]
 
@@ -234,7 +253,7 @@ def test_onboarding_telemetry_failure_does_not_lose_the_answer(
     monkeypatch.setattr(onboarding_telemetry, "capture_onboarding_demo_selected", fail_capture)
     monkeypatch.setattr(choice_prompt, "repl_choose_one", lambda **_kw: answer)
     choice_prompt._cmd_choose(session, Console(file=io.StringIO()), [])
-    assert _take_prompt(session) == format_ask_user_answers(pending.items(), (answer,))
+    assert _take_prompt(session) == _demo_with_repository(pending, answer)
     assert session.active_skill == ONBOARDING_SKILL_NAME
 
 
@@ -262,7 +281,7 @@ def test_typed_option_label_keeps_its_custom_source_through_the_picker(
     monkeypatch.setattr(choice_menu, "leave_inline_menu", lambda: None)
     monkeypatch.setattr(cpr_stdin, "drain_stale_cpr_bytes", lambda: None)
     choice_prompt._cmd_choose(session, Console(file=io.StringIO()), [])
-    assert _take_prompt(session) == format_ask_user_answers(pending.items(), (answer,))
+    assert _take_prompt(session) == _demo_with_repository(pending, answer)
     assert onboarding_outcomes == [("custom", True) if typed else ("ci_analytics", False)]
 
 

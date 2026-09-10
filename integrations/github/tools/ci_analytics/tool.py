@@ -24,7 +24,7 @@ from integrations.github.helpers import (
 )
 from integrations.github.repo_scope import detect_git_remote_repo_scope
 from integrations.github.tools.ci_analytics.analysis import analyze_repository
-from integrations.github.tools.ci_analytics.benchmarks import BENCHMARKS, MEASURED_ON
+from integrations.github.tools.ci_analytics.benchmarks import MEASURED_ON
 from integrations.github.tools.ci_analytics.loop import LOOP_WINDOW_DAYS
 from integrations.github.tools.ci_analytics.models import CiAnalyticsReport, FailureKind
 from integrations.github.tools.ci_analytics.render import (
@@ -32,6 +32,7 @@ from integrations.github.tools.ci_analytics.render import (
     format_minutes,
     headline,
     key_results_payload,
+    peer_benchmarks,
     render_comparison,
     render_markdown,
     render_report,
@@ -177,42 +178,14 @@ def report_payload(report: CiAnalyticsReport) -> dict[str, Any]:
     }
 
 
-def _from_snapshot(
-    snapshot: dict[str, Any],
-    owner: str,
-    repo: str,
-    window: int,
-    *,
-    include_benchmarks: bool = True,
-) -> dict[str, Any] | None:
-    """The saved report as markdown, or ``None`` when the snapshot holds no report object."""
-    saved = snapshot.get("report")
-    report = report_from_dict(saved) if isinstance(saved, dict) else None
-    if report is None:
-        return None
-    generated = str(snapshot.get("generated_at", ""))[:16].replace("T", " ")
-    result = _result(
-        report,
-        owner,
-        repo,
-        window,
-        None,
-        include_benchmarks=include_benchmarks,
-        compact=True,
-    )
-    result["summary"] += f" Figures as of {generated} UTC, from the saved snapshot."
-    result["from_snapshot"] = snapshot.get("generated_at")
-    return result
-
-
 def report_text_from_snapshot(
     owner: str, repo: str, *, days: int = _DEFAULT_WINDOW_DAYS, include_benchmarks: bool = True
 ) -> tuple[str, str]:
     """``(markdown, generated_at)`` from today's snapshot, or ``("", "")`` when none.
 
-    Compact: key results and the comparison, without the counts appendix.
-
-    Reads saved snapshots only; never resolves a token or starts a live fetch.
+    Compact: the cost sentence, key results and the comparison, without the
+    counts appendix. Reads saved snapshots only; never resolves a token or
+    starts a live fetch.
     """
     now = datetime.now(UTC)
     # The scheduled loop saves its own window; a same-day loop report counts too.
@@ -222,10 +195,14 @@ def report_text_from_snapshot(
             break
     else:
         return "", ""
-    result = _from_snapshot(snapshot, owner, repo, window, include_benchmarks=include_benchmarks)
-    if result is None or not result.get("success"):
+    saved = snapshot.get("report")
+    if not isinstance(saved, dict):
         return "", ""
-    return str(result.get("response_text") or "").strip(), str(snapshot.get("generated_at", ""))
+    report = report_from_dict(saved)
+    text = render_markdown(report, compact=True)
+    if include_benchmarks:
+        text = f"{text}\n\n{comparison_markdown(report, peer_benchmarks(report))}"
+    return text.strip(), str(snapshot.get("generated_at", ""))
 
 
 def _attach_benchmarks(
@@ -235,15 +212,15 @@ def _attach_benchmarks(
     console: Any,
 ) -> dict[str, Any]:
     """Add the comparison against the benchmark figures shipped with the product."""
+    peers = peer_benchmarks(report)
     result["benchmarks"] = [
-        {"owner": item.owner, "repo": item.repo, "figures": dict(item.figures)}
-        for item in BENCHMARKS
+        {"owner": item.owner, "repo": item.repo, "figures": dict(item.figures)} for item in peers
     ]
     result["benchmarks_measured_on"] = MEASURED_ON.isoformat()
     if console is not None:
-        render_comparison(console, report)
+        render_comparison(console, report, peers)
         return result
-    compare = comparison_markdown(report)
+    compare = comparison_markdown(report, peers)
     result["comparison_text"] = compare
     result["response_text"] = f"{result['response_text']}\n\n{compare}"
     return result
@@ -308,13 +285,12 @@ def _result(
         "reliability KPIs: executions, PR failure rate, failures classified as "
         "CI-caused (same commit passed later) versus source-code, developer time "
         "blocked by unreliable CI on merged PRs, and default-branch red time. "
-        "Read-only. Every analysis reads GitHub Actions and needs a token; a "
-        "saved snapshot is written for the scheduled loop, never used to answer "
-        "here. Every report also carries a comparison with apache/airflow and "
-        "fastapi/fastapi from figures shipped with the product, so a first run "
-        "compares as well as a later one. It cannot be turned off, so never "
-        "offer to skip it. The report is painted on screen — do not restate "
-        "its figures."
+        "Read-only. A saved report from today answers without another GitHub "
+        "read; a first run needs a token. Every report also carries a "
+        "comparison with apache/airflow and fastapi/fastapi from figures "
+        "shipped with the product, so a first run compares as well as a later "
+        "one. It cannot be turned off, so never offer to skip it. The report "
+        "is painted on screen — do not restate its figures."
     ),
     use_cases=[
         "Analyze a repository's CI/CD performance and reliability",
@@ -336,7 +312,7 @@ def _result(
         "blocked_working_minutes": "The part of that wait inside working hours: developer downtime",
         "red_hours": "Hours the default branch had at least one red workflow",
         "headline": "One sentence naming the biggest cost (already painted; do not repeat)",
-        "key_results": "The five takeaway rows, red time first, even when the shell painted the report",
+        "key_results": "The takeaway rows, red time first, even when the shell painted the report",
         "response_text": "The rendered report, or a one-line summary when the shell painted it",
         "benchmarks": "Airflow and FastAPI rows from figures shipped with the product",
     },
@@ -399,9 +375,9 @@ def analyze_github_ci_reliability(
     ``response_text`` then only summarizes. Other surfaces get the markdown.
     The same call also paints one comparison table against the benchmark
     figures shipped with the product, so a first run compares as well as a
-    hundredth. Every analysis reads GitHub: a saved snapshot is written for the
-    scheduled loop, never used to answer here. The comparison is not the
-    model's choice to make; ``compact`` drops the counts appendix.
+    hundredth. A saved report from today is reused; a miss reads GitHub and
+    writes the snapshot. The comparison is not the model's choice to make;
+    ``compact`` drops the counts appendix.
     """
     window = min(max(int(days or _DEFAULT_WINDOW_DAYS), _MIN_WINDOW_DAYS), _MAX_WINDOW_DAYS)
     brief = _flag(compact)
@@ -419,7 +395,21 @@ def analyze_github_ci_reliability(
         )
     now = datetime.now(UTC)
     console = _console(context)
+    snapshot = read_fresh_snapshot(
+        snapshot_root(), repo_owner, repo_name, window_days=window, now=now
+    )
     token = resolve_github_token(github_token)
+    if snapshot is not None:
+        answered = _from_snapshot(
+            snapshot,
+            repo_owner,
+            repo_name,
+            window,
+            console,
+            compact=brief,
+        )
+        if answered is not None:
+            return answered
     if not token:
         message = (
             f"A GitHub token is required to read the Actions history of {repo_owner}/{repo_name}. "
@@ -472,7 +462,7 @@ def analyze_github_ci_reliability(
         )
     except OSError:
         # The analysis is the result; a snapshot that cannot be written only
-        # means the next call reads GitHub again.
+        # leaves the schedule card without today's report beside it.
         logger.warning("Could not save the CI reliability snapshot", exc_info=True)
     if console is not None:
         console.print(

@@ -44,7 +44,7 @@ _TOP_DEVELOPERS = 3
 
 
 def render_markdown(report: CiAnalyticsReport, *, compact: bool = False) -> str:
-    """Markdown report: key results lead. ``compact`` omits the counts appendix."""
+    """Markdown report: the cost sentence, then key results. ``compact`` omits the counts appendix."""
     lines = [
         f"**CI/CD reliability for {_plain(report.owner)}/{_plain(report.repo)}, "
         f"last {report.window_days} days**",
@@ -63,7 +63,7 @@ def render_markdown(report: CiAnalyticsReport, *, compact: bool = False) -> str:
 
 
 def render_report(console: Any, report: CiAnalyticsReport, *, compact: bool = False) -> None:
-    """Paint the report: key results first. ``compact`` omits the counts appendix."""
+    """Paint the report: the cost sentence, then key results. ``compact`` omits the counts appendix."""
     _paint(console, render_markdown(report, compact=compact))
 
 
@@ -78,7 +78,7 @@ def _paint(console: Any, markdown: str) -> None:
 
 
 def key_results(report: CiAnalyticsReport) -> list[tuple[str, str]]:
-    """The five figures a reader takes away, red time first."""
+    """The figures a reader takes away, red time first; the cost itself is the headline."""
     window_hours = max(1, report.window_days * 24)
     red_share = report.red_hours / window_hours
     results: list[tuple[str, str]] = [
@@ -146,25 +146,30 @@ def comparison_figures(report: CiAnalyticsReport) -> dict[str, str]:
     }
 
 
+def peer_benchmarks(
+    user: CiAnalyticsReport, benchmarks: Sequence[Benchmark] = BENCHMARKS
+) -> tuple[Benchmark, ...]:
+    """The shipped benchmarks other than the repository being analyzed."""
+    own = (user.owner.casefold(), user.repo.casefold())
+    return tuple(
+        item for item in benchmarks if (item.owner.casefold(), item.repo.casefold()) != own
+    )
+
+
 def render_comparison(
-    console: Any,
-    user: CiAnalyticsReport,
-    benchmarks: Sequence[Benchmark] = BENCHMARKS,
+    console: Any, user: CiAnalyticsReport, benchmarks: Sequence[Benchmark]
 ) -> None:
-    """One table: the user's repository first, then the shipped benchmark columns."""
+    """One table: the user's repository first, then the benchmark columns."""
     # A markdown leading newline is dropped, so the heading would sit on the
     # report's last bullet; separate the two sections here.
     console.print()
     _paint(console, comparison_markdown(user, benchmarks))
 
 
-def comparison_markdown(
-    user: CiAnalyticsReport,
-    benchmarks: Sequence[Benchmark] = BENCHMARKS,
-) -> str:
+def comparison_markdown(user: CiAnalyticsReport, benchmarks: Sequence[Benchmark]) -> str:
     """Markdown form of :func:`render_comparison`."""
     if not benchmarks:
-        return "No benchmark figures shipped with this build."
+        return "No benchmark figures to compare with."
     labels = [f"{_plain(user.owner)}/{_plain(user.repo)}"] + [
         _plain(item.label) for item in benchmarks
     ]
@@ -185,6 +190,7 @@ def comparison_markdown(
             *rows,
             "",
             f"- {_benchmark_note()}",
+            f"- {_NEXT_STEP}",
         ]
     )
 
@@ -195,6 +201,10 @@ def _benchmark_note() -> str:
         f"Benchmark columns were measured with this tool over "
         f"{BENCHMARK_WINDOW_DAYS} days on {MEASURED_ON:%d %b %Y}."
     )
+
+
+#: Painted under the table so the next menu is not the first time the cost is named.
+_NEXT_STEP = "The wait at the top is the cost. Next: schedule a weekday copy of this report."
 
 
 def _details_markdown(report: CiAnalyticsReport) -> list[str]:
@@ -317,14 +327,18 @@ def headline(report: CiAnalyticsReport) -> str:
     """One plain sentence naming what unreliable CI cost, for the top of the report."""
     if report.blocked_working_minutes > 0:
         developers = report.developers_affected
-        cost = (
-            f"Waiting on CI cost {_working(report.blocked_working_minutes)} of developer time "
-            f"in the last {report.window_days} days"
-        )
+        total = _working(report.blocked_working_minutes)
         if not developers:
-            return f"{cost}."
-        per_week = report.blocked_working_minutes / developers / (report.window_days / 7)
-        return f"{cost}, about {_working(per_week)} per developer a week."
+            return (
+                f"Waiting on CI cost {total} of developer time in the last "
+                f"{report.window_days} days."
+            )
+        heaviest = report.developer_waits[0]
+        return (
+            f"Waiting on CI cost {developers} {_plural(developers, 'developer')} {total} of "
+            f"working time in the last {report.window_days} days, up to "
+            f"{_working(heaviest.working_minutes_per_week)} a week for the worst hit."
+        )
     if report.blocked_minutes > 0:
         return (
             f"Waiting on CI held up merged pull requests for {_minutes(report.blocked_minutes)}, "
@@ -332,9 +346,10 @@ def headline(report: CiAnalyticsReport) -> str:
         )
     if report.red_hours > 0:
         return (
-            f"Nobody could merge on {_plain(report.default_branch)} for "
-            f"{_hours(report.red_hours)} in the last {report.window_days} days, across "
-            f"{len(report.outages)} {_plural(len(report.outages), 'breakage')}."
+            f"No merged pull request waited on a CI-caused failure in the last "
+            f"{report.window_days} days; {_plain(report.default_branch)} was red for "
+            f"{_hours(report.red_hours)} across {len(report.outages)} "
+            f"{_plural(len(report.outages), 'breakage')}."
         )
     if report.pr_failures:
         return (
@@ -447,6 +462,7 @@ __all__ = [
     "comparison_markdown",
     "key_results",
     "key_results_payload",
+    "peer_benchmarks",
     "render_ci_report",
     "render_comparison",
     "format_minutes",

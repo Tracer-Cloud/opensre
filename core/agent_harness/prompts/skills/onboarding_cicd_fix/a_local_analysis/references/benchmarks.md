@@ -17,8 +17,9 @@ this reference only when the user asks what a compared figure means.
   `pr_failure_rate`, flake share, red share, `mean_recovery_hours`, and
   `normal_minutes`.
 - The user's repository is the first column; the benchmarks are context.
-- If the tool returns `coverage_notices`, say so in one line. Do not
-  substitute another repository without telling the user.
+- The benchmark figures ship with OpenSRE and the table names the day they
+  were measured; a coverage notice in the result concerns the user's
+  repository only. Never quote a benchmark figure from memory.
 
 ## Default benchmarks
 

@@ -181,7 +181,8 @@ def build_report(args: Mapping[str, str], *, snapshot_dir: Path | None = None) -
             **report_payload(report),
         },
     )
-    # The rendered report already leads with the headline sentence.
+    # The rendered report leads with the headline sentence when there were
+    # runs, and says so when there were none.
     return "\n".join([render_markdown(report), "", f"Raw data: {snapshot}"])
 
 

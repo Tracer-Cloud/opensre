@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.agent_harness.spi.handoff import AskUserQuestion, parse_ask_user_answers
+from core.agent_harness.spi.handoff import AskUserQuestion, parse_ask_user_answers, question_key
 from core.agent_harness.spi.session_state import (
     PendingUserChoice,
     session_terminal,
@@ -141,11 +141,6 @@ def _parse_bool(value: object, *, default: bool = False) -> bool:
     return default
 
 
-def _normalize_title(title: str) -> str:
-    """Identity for matching a question to an answer in this turn's message."""
-    return " ".join(title.split()).casefold()
-
-
 def _parse_questions(raw: object) -> tuple[list[AskUserQuestion] | None, str | None]:
     """Return ``(questions, error)``. Absent/empty ``raw`` yields ``([], None)``."""
     if raw is None:
@@ -166,7 +161,7 @@ def _parse_questions(raw: object) -> tuple[list[AskUserQuestion] | None, str | N
             return None, f"questions[{index}].label is required"
         if not title:
             return None, f"questions[{index}].title is required"
-        title_key = _normalize_title(title)
+        title_key = question_key(title)
         if title_key in seen_titles:
             return None, (
                 f"questions[{index}].title is already used; each question needs its own title"
@@ -191,18 +186,18 @@ def _parse_questions(raw: object) -> tuple[list[AskUserQuestion] | None, str | N
 
 def _answered_this_turn(ctx: ActionToolScope, title: str) -> str | None:
     """The answer the user gave to ``title`` in this turn's message, if any."""
-    wanted = _normalize_title(title)
+    wanted = question_key(title)
     if not wanted:
         return None
     for asked, answer in parse_ask_user_answers(getattr(ctx, "turn_user_message", "") or ""):
-        if _normalize_title(asked) == wanted:
+        if question_key(asked) == wanted:
             return answer
     return None
 
 
 def _answered_earlier(ctx: ActionToolScope, title: str) -> bool:
     """True when this session already settled ``title`` in an earlier turn."""
-    wanted = _normalize_title(title)
+    wanted = question_key(title)
     settled = getattr(ctx.session, "questions_already_answered", None) or set()
     return bool(wanted) and wanted in settled
 

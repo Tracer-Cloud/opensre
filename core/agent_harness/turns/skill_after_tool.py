@@ -14,7 +14,7 @@ from core.agent_harness.prompts.skills.loader import (
     SkillAfterToolHook,
     list_action_skills,
 )
-from core.agent_harness.session.pending_choice import PendingUserChoice
+from core.agent_harness.session.pending_choice import PendingUserChoice, question_key
 from core.agent_harness.session.terminal_access import session_terminal, set_auto_command
 from core.tool.execution import (
     ToolExecutionHooks,
@@ -42,6 +42,14 @@ def _hook_key(skill: ActionSkill, hook: SkillAfterToolHook) -> str:
 def _already_fired(session: Any, key: str) -> bool:
     fired = getattr(session, "skill_hooks_fired", None)
     return isinstance(fired, set) and key in fired
+
+
+def _already_answered(session: Any, hook: SkillAfterToolHook) -> bool:
+    """True when the session already holds the user's answer to this hook's question."""
+    settled = getattr(session, "questions_already_answered", None)
+    if not isinstance(settled, set):
+        return False
+    return question_key(str(hook.call.args.get("title") or "")) in settled
 
 
 def _mark_fired(session: Any, key: str) -> None:
@@ -110,7 +118,7 @@ def with_skill_after_tool(
             if hook.after != name:
                 continue
             key = _hook_key(skill, hook)
-            if _already_fired(session, key):
+            if _already_fired(session, key) or _already_answered(session, hook):
                 continue
             if not _run_hook(session, hook, result):
                 continue
