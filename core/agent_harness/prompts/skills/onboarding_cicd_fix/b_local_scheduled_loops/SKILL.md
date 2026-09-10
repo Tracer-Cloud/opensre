@@ -11,7 +11,7 @@ getting_started: Set up an agent that improves CI/CD reliability over time
 demo_order: 2
 metadata:
   owner: Vincent
-  last_changed_by: Vincent
+  last_changed_by: Yauhen
   last_changed_at: 2026-09-09
   usecases:
     - First-experience demo: schedule a weekday CI/CD reliability agent for one repo
@@ -28,6 +28,14 @@ tools:
   - ask_user_choice
 references:
   - common/ask_once.md
+after_tool:
+  - after: scan_local_git_workspace
+    tool: ask_user_choice
+    args:
+      title: Which repository should the agent watch?
+    options_from: local_git_scan_repos
+    options_extra:
+      - Use the open-source example repository (Tracer-Cloud/opensre)
 ---
 
 # CI/CD reliability agent
@@ -51,8 +59,7 @@ Track progress with the `update_plan` tool, not with headers or prose:
 - On entry, before the first workflow tool call, call `update_plan` with the
   steps below verbatim, the first step `in_progress`, and a one-line
   `explanation` (this is not a diagnosis; no hypothesis table):
-  `Scan this machine` / `Pick the repository` / `Pick when it runs` /
-  `Schedule the loop`.
+  `Scan this machine` / `Pick the repository` / `Schedule the loop`.
 - When the request already names the repository, omit the first two steps
   from the plan instead of renumbering.
 - After a step's tool results, call `update_plan` marking it `completed` and
@@ -71,30 +78,15 @@ what was found, using `summary` from the result.
 
 ### 2. Pick the repository
 
-From the scan result, candidates are repositories with a `github` name and
-`has_workflows` true, ordered by `commits`. Then call `ask_user_choice`
-with title `Which repository should the agent watch?` and options, in this
-order:
+The menu opens by itself after the scan: it is declared in this skill's
+frontmatter and the host runs it. Do not call `ask_user_choice` for this
+question, and do not write your own version of it. End the turn and wait; the
+answer arrives as the next user message.
 
-- up to three candidates as `<owner/repo> (<commits> commits, CI configured)`
-- `Use the open-source example repository (Tracer-Cloud/opensre)`
-
-If there are no candidates, offer only the example repository and say why.
-Wait for the answer.
-
-### 3. Pick when it runs
-
-Call `ask_user_choice` with title `When should it run?` and options:
-
-- `Weekdays at 08:00 (recommended)`
-- `Every day at 08:00`
-
-Wait for the answer.
-
-### 4. Schedule the loop
+### 3. Schedule the loop
 
 Call `schedule_ci_reliability_loop(owner="<owner>", repo="<repo>",
-include_report=true)` for weekdays, or pass `weekdays=false` when they
-chose every day. Output `response_text` verbatim and stop. When a same-day
-report exists it comes first, then the schedule card; otherwise the card
-alone.
+include_report=true)`. The loop runs weekdays at 08:00 local time; the card
+says so and tells the user how to change it, so do not ask about the cadence.
+Output `response_text` verbatim and stop. When a same-day report exists it
+comes first, then the schedule card; otherwise the card alone.
