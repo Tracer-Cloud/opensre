@@ -16,6 +16,7 @@ from infrastructure.scheduling.scheduler.storage.run_store import (
     complete_run,
     delete_runs,
     get_latest_finished_run,
+    get_latest_run_for_fire_time,
     get_latest_targeted_run,
     get_recoverable_runs,
     get_runs,
@@ -222,6 +223,20 @@ class TestClaimStore:
     def test_get_runs_empty(self, db_path: Path) -> None:
         runs = get_runs("nonexistent", db_path=db_path)
         assert runs == []
+
+    def test_get_latest_run_for_fire_time_uses_latest_attempt(self, db_path: Path) -> None:
+        first = _claimed(db_path, "task1", "2026-01-01T09:00")
+        _expire_claim(db_path, "task1", "2026-01-01T09:00")
+        second = _claimed(db_path, "task1", "2026-01-01T09:00")
+        assert second.attempt == 2
+        assert complete_run(second, status=TaskStatus.SUCCESS, db_path=db_path)
+
+        run = get_latest_run_for_fire_time("task1", "2026-01-01T09:00", db_path=db_path)
+
+        assert run is not None
+        assert run.attempt == 2
+        assert run.status is TaskStatus.SUCCESS
+        assert first.attempt == 1
 
     def test_get_latest_finished_run_ignores_newer_in_flight_starts(self, db_path: Path) -> None:
         # Arrange: one finished delivery, then six newer RUNNING claims. A

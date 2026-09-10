@@ -355,6 +355,21 @@ def get_runs(task_id: str, limit: int = 20, db_path: Path | None = None) -> list
         return [_row_to_task_run(row) for row in cursor.fetchall()]
 
 
+def get_latest_run_for_fire_time(
+    task_id: str, fire_time: str, db_path: Path | None = None
+) -> TaskRun | None:
+    """Return the newest attempt recorded for one task fire time."""
+    with database.connection(db_path) as conn:
+        cursor = conn.execute(
+            f"SELECT {_RUN_COLUMNS} "
+            "FROM task_runs WHERE task_id = ? AND fire_time = ? "
+            "ORDER BY attempt DESC LIMIT 1",
+            (task_id, fire_time),
+        )
+        row = cursor.fetchone()
+        return _row_to_task_run(row) if row is not None else None
+
+
 def get_latest_finished_run(task_id: str, db_path: Path | None = None) -> TaskRun | None:
     """Return the most recently completed run for ``task_id``, if any.
 
@@ -430,6 +445,7 @@ __all__ = [
     "RecoverableRun",
     "ExecutionClaim",
     "get_recoverable_runs",
+    "get_latest_run_for_fire_time",
     "get_latest_finished_run",
     "get_latest_targeted_run",
     "get_runs",

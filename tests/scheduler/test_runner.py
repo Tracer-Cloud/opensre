@@ -13,6 +13,7 @@ from infrastructure.scheduling.scheduler.runner import (
     _compute_fire_time,
     _make_trigger,
     _queue_scheduled_run,
+    _record_task_success_after_full_delivery,
     _register_jobs,
     _scheduled_job,
     compute_next_run,
@@ -299,6 +300,60 @@ class TestComputeFireTime:
             _scheduled_job("task-1", real_runners())
 
 
+class TestTaskCompletion:
+    @pytest.mark.parametrize(
+        ("status", "targets", "expected"),
+        [
+            (TaskStatus.SUCCESS, (), True),
+            (
+                TaskStatus.SUCCESS,
+                (DeliveryOutcome(provider=Provider.SLACK, chat_id="C1", ok=True),),
+                True,
+            ),
+            (
+                TaskStatus.SUCCESS,
+                (
+                    DeliveryOutcome(provider=Provider.SLACK, chat_id="C1", ok=True),
+                    DeliveryOutcome(
+                        provider=Provider.TELEGRAM,
+                        chat_id="-100",
+                        ok=False,
+                        error="unavailable",
+                    ),
+                ),
+                False,
+            ),
+            (TaskStatus.FAILED, (), False),
+        ],
+    )
+    def test_finalizes_only_after_full_delivery(
+        self,
+        status: TaskStatus,
+        targets: tuple[DeliveryOutcome, ...],
+        expected: bool,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        run = TaskRun(
+            task_id="task-1",
+            fire_time="2026-01-01T09:00Z",
+            status=status,
+            targets=targets,
+        )
+        completed: list[str] = []
+        monkeypatch.setattr(
+            "infrastructure.scheduling.scheduler.runner.get_latest_run_for_fire_time",
+            lambda _task_id, _fire_time: run,
+        )
+        monkeypatch.setattr(
+            "infrastructure.scheduling.scheduler.runner.record_task_success",
+            completed.append,
+        )
+
+        _record_task_success_after_full_delivery(run.task_id, run.fire_time)
+
+        assert completed == ([run.task_id] if expected else [])
+
+
 class TestComputeNextRun:
     def test_returns_next_utc_fire_time(self) -> None:
         from datetime import UTC, datetime
@@ -546,20 +601,20 @@ class TestRunTaskNow:
 
         with (
             patch("infrastructure.scheduling.scheduler.runner.execute_task") as mock_exec,
-            patch("infrastructure.scheduling.scheduler.runner.get_runs") as mock_runs,
+            patch(
+                "infrastructure.scheduling.scheduler.runner.get_latest_run_for_fire_time"
+            ) as get_run,
             patch(
                 "infrastructure.scheduling.scheduler.runner.record_task_success"
             ) as record_success,
         ):
             mock_exec.return_value = True
-            mock_runs.side_effect = lambda _task_id: [
-                TaskRun(
-                    task_id=task.id,
-                    fire_time=mock_exec.call_args.args[1],
-                    status=TaskStatus.SUCCESS,
-                    targets=targets,
-                )
-            ]
+            get_run.side_effect = lambda _task_id, fire_time: TaskRun(
+                task_id=task.id,
+                fire_time=fire_time,
+                status=TaskStatus.SUCCESS,
+                targets=targets,
+            )
             result = run_task_now("run_now_test", real_runners())
 
         assert result is True

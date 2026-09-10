@@ -34,8 +34,8 @@ from infrastructure.scheduling.scheduler.runners import SchedulerRunners
 from infrastructure.scheduling.scheduler.storage import (
     complete_run,
     default_task_store_path,
+    get_latest_run_for_fire_time,
     get_recoverable_runs,
-    get_runs,
     get_task,
     list_tasks,
     record_task_success,
@@ -181,7 +181,7 @@ def _scheduled_job(
     result = execute_task(task, fire_time, runners)
 
     if result:
-        record_task_success(task.id)
+        _record_task_success_after_full_delivery(task.id, fire_time)
 
 
 def _recover_runs(
@@ -201,7 +201,7 @@ def _recover_runs(
             continue
         result = execute_task(task, run.fire_time, runners)
         if result:
-            record_task_success(task.id)
+            _record_task_success_after_full_delivery(task.id, run.fire_time)
         logger.info(
             "Recovered task %s fire_time=%s result=%s",
             run.task_id,
@@ -499,10 +499,19 @@ def run_task_now(task_id: str, runners: SchedulerRunners, *, only_failed: bool =
     fire_time = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
     result = execute_task(task, fire_time, runners, target_filter=target_filter)
     if result:
-        run = next((run for run in get_runs(task.id) if run.fire_time == fire_time), None)
-        if run is not None and all(outcome.ok for outcome in run.targets):
-            record_task_success(task.id)
+        _record_task_success_after_full_delivery(task.id, fire_time)
     return result
+
+
+def _record_task_success_after_full_delivery(task_id: str, fire_time: str) -> None:
+    """Finalize a task only when its persisted run completed every target."""
+    run = get_latest_run_for_fire_time(task_id, fire_time)
+    if (
+        run is not None
+        and run.status is TaskStatus.SUCCESS
+        and all(outcome.ok for outcome in run.targets)
+    ):
+        record_task_success(task_id)
 
 
 def failed_retry_scope(task_id: str) -> frozenset[tuple[Provider, str]] | None:
