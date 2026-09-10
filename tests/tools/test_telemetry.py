@@ -1194,6 +1194,9 @@ _TOOLS_WITHOUT_DELIBERATE_CATCH: frozenset[str] = frozenset(
         "slack_add_reaction",
         "slack_join_channel",
         "slack_list_team_members",
+        # History reads have no deliberate catch; unexpected storage failures
+        # escape to the global tool wrapper.
+        "slack_proactive_message_history",
         "slack_read_list",
         "slack_read_messages",
         "slack_reply_message",

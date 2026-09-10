@@ -8,7 +8,7 @@ from typing import Any, Protocol
 from config.principal import StorageScope
 
 
-class ProactiveContextReader(Protocol):
+class ProactiveThreadHistory(Protocol):
     def __call__(
         self,
         *,
@@ -41,4 +41,4 @@ class ProactiveMessageScheduler(Protocol):
         """Queue review of records appended after ``start_record_id`` without blocking."""
 
 
-__all__ = ["ProactiveContextReader", "ProactiveDelivery", "ProactiveMessageScheduler"]
+__all__ = ["ProactiveDelivery", "ProactiveMessageScheduler", "ProactiveThreadHistory"]

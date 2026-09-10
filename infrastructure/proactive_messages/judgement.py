@@ -12,11 +12,14 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from core.agent_harness import ProactiveMessagePolicy, load_master_judgement
+from core.agent_harness.prompts.proactive_messages import (
+    ProactiveMessagePolicy,
+    load_master_judgement,
+)
 from core.llm.factory import LLMRole, get_llm
 from infrastructure.proactive_messages.contracts import (
-    ProactiveContextReader,
     ProactiveDelivery,
+    ProactiveThreadHistory,
 )
 from infrastructure.proactive_messages.models import (
     ProactiveInteraction,
@@ -53,7 +56,7 @@ class ProactiveJudgementRunner:
     def __init__(
         self,
         *,
-        context_reader: ProactiveContextReader,
+        context_reader: ProactiveThreadHistory,
         delivery: ProactiveDelivery,
         ledger: DecisionLedger | None = None,
         cursor: JudgementCursor | None = None,

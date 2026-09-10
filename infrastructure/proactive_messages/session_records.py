@@ -7,7 +7,7 @@ import json
 from pathlib import Path
 from typing import Any
 
-from core.agent_harness import session_path
+from core.agent_harness.session.persistence.paths import session_path
 from infrastructure.proactive_messages.models import ProactiveInteraction, ProactiveTrigger
 
 _MAX_INTERACTION_MESSAGE_CHARS = 24_000

@@ -284,6 +284,13 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         "Show history persistence settings, redaction status, and the local threat model.",
         "User asks about privacy, history encryption, or data retention in the shell",
     ),
+    "/proactive": _mcp(
+        "Inspect proactive Slack policy status, send a marked delivery test, or manually "
+        "evaluate a persisted interaction. Subcommands: policies, status, send-test, trigger.",
+        "User explicitly asks to inspect or manually trigger proactive Slack policies",
+        "User asks to send a clearly marked proactive delivery test",
+        anti_examples=("User asks for a normal one-off Slack message without policy evaluation",),
+    ),
     "/quit": _mcp(
         "Alias for /exit — leave the interactive shell.",
         "User asks to quit the REPL",

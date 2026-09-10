@@ -11,13 +11,13 @@ import click
 
 from config.principal import Actor, Principal, StorageScope
 from config.scope_context import bound_storage_scope
-from core.agent_harness import load_master_judgement
+from core.agent_harness.prompts.proactive_messages import load_master_judgement
 from infrastructure.analytics.usage_context import UsageSurface, bound_usage_context
 from infrastructure.proactive_messages import (
     DecisionLedger,
-    ProactiveContextReader,
     ProactiveDelivery,
     ProactiveJudgementRunner,
+    ProactiveThreadHistory,
     ProactiveTrigger,
     decision_ledger_path,
     judgement_cursor_path,
@@ -198,7 +198,7 @@ def _resolve_slack_target(channel_id: str) -> tuple[SlackBotTarget, str]:
     return target, resolved_channel
 
 
-def _context_reader(target: SlackBotTarget) -> ProactiveContextReader:
+def _context_reader(target: SlackBotTarget) -> ProactiveThreadHistory:
     def _read(*, channel_id: str, thread_ts: str, limit: int) -> dict[str, Any]:
         messages, _error = fetch_channel_messages(
             target,

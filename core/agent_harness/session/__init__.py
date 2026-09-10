@@ -25,7 +25,6 @@ from core.agent_harness.session.persistence.contracts import (
     SessionStore,
 )
 from core.agent_harness.session.persistence.jsonl_repo import JsonlSessionRepo
-from core.agent_harness.session.persistence.paths import session_path
 from core.agent_harness.session.session_core import SessionCore
 
 # Production singletons. Both backends are stateless, so sharing one instance
@@ -62,5 +61,4 @@ __all__ = [
     "SessionStore",
     "default_session_repo",
     "default_session_store",
-    "session_path",
 ]

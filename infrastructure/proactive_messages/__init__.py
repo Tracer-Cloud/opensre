@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from infrastructure.proactive_messages.contracts import (
-    ProactiveContextReader,
     ProactiveDelivery,
     ProactiveMessageScheduler,
+    ProactiveThreadHistory,
 )
 from infrastructure.proactive_messages.judgement import (
     ProactiveJudgementOutcome,
@@ -30,13 +30,13 @@ from infrastructure.proactive_messages.storage import (
 __all__ = [
     "DecisionLedger",
     "JudgementCursor",
-    "ProactiveContextReader",
     "ProactiveDelivery",
     "ProactiveInteraction",
     "ProactiveJudgementOutcome",
     "ProactiveJudgementRunner",
     "ProactiveMessageDecision",
     "ProactiveMessageScheduler",
+    "ProactiveThreadHistory",
     "ProactiveMessageService",
     "ProactiveTrigger",
     "decision_ledger_path",
