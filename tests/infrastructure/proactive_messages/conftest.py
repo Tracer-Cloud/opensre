@@ -9,7 +9,7 @@ import pytest
 from config.constants import paths
 from config.principal import Actor, Principal, StorageScope
 from config.scope_context import bound_storage_scope
-from core.agent_harness.session.persistence.paths import session_path
+from core.agent_harness import session_path
 from infrastructure.proactive_messages import ProactiveTrigger
 
 

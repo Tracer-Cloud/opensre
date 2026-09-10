@@ -12,10 +12,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from core.agent_harness.prompts.proactive_messages import (
-    ProactiveMessagePolicy,
-    load_master_judgement,
-)
+from core.agent_harness import ProactiveMessagePolicy, load_master_judgement
 from core.llm.factory import LLMRole, get_llm
 from infrastructure.proactive_messages.contracts import (
     ProactiveDelivery,

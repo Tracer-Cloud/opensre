@@ -6,7 +6,7 @@ import json
 
 from config.principal import StorageScope
 from config.scope_context import bound_storage_scope
-from core.agent_harness.session.persistence.paths import session_path
+from core.agent_harness import session_path
 from infrastructure.proactive_messages import latest_completed_interaction_boundary
 from tests.infrastructure.proactive_messages.conftest import write_interaction
 

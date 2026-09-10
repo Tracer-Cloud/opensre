@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from core.agent_harness.prompts.proactive_messages import load_master_judgement
+from core.agent_harness import load_master_judgement
 
 
 def test_master_judgement_is_event_driven_and_bounded() -> None:

@@ -11,7 +11,7 @@ import click
 
 from config.principal import Actor, Principal, StorageScope
 from config.scope_context import bound_storage_scope
-from core.agent_harness.prompts.proactive_messages import load_master_judgement
+from core.agent_harness import load_master_judgement
 from infrastructure.analytics.usage_context import UsageSurface, bound_usage_context
 from infrastructure.proactive_messages import (
     DecisionLedger,
