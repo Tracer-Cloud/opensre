@@ -378,7 +378,7 @@ def find_outages(runs: Sequence[WorkflowRun]) -> list[Outage]:
     outages: list[Outage] = []
     open_since: datetime | None = None
     open_url = ""
-    open_workflows: list[str] = []
+    open_workflows: dict[str, None] = {}  # insertion-ordered set of red workflow names
     for commit_runs in commits:
         failing = sorted((run for run in commit_runs if run.failed), key=lambda r: r.completed_at)
         if failing:
@@ -386,13 +386,12 @@ def find_outages(runs: Sequence[WorkflowRun]) -> list[Outage]:
                 open_since = failing[0].completed_at
                 open_url = failing[0].url
             for run in failing:
-                if run.workflow not in open_workflows:
-                    open_workflows.append(run.workflow)
+                open_workflows.setdefault(run.workflow)
         elif open_since is not None:
             green_at = max(max(run.completed_at for run in commit_runs), open_since)
             outages.append(Outage(tuple(open_workflows), open_since, green_at, open_url))
             open_since = None
-            open_workflows = []
+            open_workflows = {}
     if open_since is not None:
         outages.append(Outage(tuple(open_workflows), open_since, None, open_url))
     return outages
