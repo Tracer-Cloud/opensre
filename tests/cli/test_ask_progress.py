@@ -19,7 +19,8 @@ def test_tool_progress_names_the_active_tool_without_its_input() -> None:
 
 
 def test_tool_progress_ignores_non_tool_or_unnamed_events() -> None:
-    assert status_for_tool_event("tool_end", {"name": "grafana_query"}) is None
+    assert status_for_tool_event("tool_end", {"name": "grafana_query"}) == "Analyzing results…"
+    assert status_for_tool_event("message_update", {}) is None
     assert status_for_tool_event("tool_start", {}) is None
 
 
@@ -69,5 +70,9 @@ def test_progress_updates_the_visible_status_when_a_tool_starts(monkeypatch) -> 
     monkeypatch.setattr(progress, "Progress", _Progress)
     reporter = progress.AskProgress()
     reporter("tool_start", {"name": "grafana_query"})
+    reporter("tool_end", {"name": "grafana_query"})
 
-    assert updates == [("ask", "Running grafana query…")]
+    assert updates == [
+        ("ask", "Running grafana query…"),
+        ("ask", "Analyzing results…"),
+    ]

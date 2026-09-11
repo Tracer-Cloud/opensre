@@ -13,10 +13,13 @@ from core.agent_harness.ports import ToolEventObserver
 from infrastructure.safety.terminal_output import strip_terminal_controls
 
 _INITIAL_STATUS = "Investigating…"
+_ANALYZING_STATUS = "Analyzing results…"
 
 
 def status_for_tool_event(kind: str, data: dict[str, Any]) -> str | None:
-    """Return safe status copy for a tool-start event, if it names a tool."""
+    """Return safe status copy for a tool lifecycle event."""
+    if kind == "tool_end":
+        return _ANALYZING_STATUS
     if kind != "tool_start":
         return None
     tool_name = " ".join(strip_terminal_controls(str(data.get("name") or "")).split())
