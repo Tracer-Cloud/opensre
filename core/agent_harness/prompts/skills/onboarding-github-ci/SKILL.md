@@ -20,7 +20,7 @@ metadata:
   version: "2.0"
   dependencies:
     - core/agent_harness/prompts/skills/onboarding-github-ci/a-analyzing-github-ci-performance/SKILL.md
-    - core/agent_harness/prompts/skills/onboarding-github-ci/b-scheduling-github-ci-reports/SKILL.md
+    - core/agent_harness/prompts/skills/onboarding-github-ci/b-scheduling-github-ci-fixes/SKILL.md
     - core/agent_harness/prompts/skills/onboarding-github-ci/c-delegating-github-ci-fixes/SKILL.md
     - core/agent_harness/prompts/skills/onboarding-github-ci/d-connecting-slack/SKILL.md
 # The host runs this on entry (startup, /demo, skill_view) before any model step.
@@ -62,8 +62,8 @@ with the matching name, then follow its returned instructions in the same turn:
 
 - Option A: `analyzing-github-ci-performance` —
   [analyze CI performance](a-analyzing-github-ci-performance/SKILL.md).
-- Option B: `scheduling-github-ci-reports` —
-  [schedule recurring reports](b-scheduling-github-ci-reports/SKILL.md).
+- Option B: `scheduling-github-ci-fixes` —
+  [schedule recurring reports](b-scheduling-github-ci-fixes/SKILL.md).
 - Option C: `delegating-github-ci-fixes` —
   [delegate to the managed service](c-delegating-github-ci-fixes/SKILL.md).
 - Option D: `connecting-slack` — [connect Slack](d-connecting-slack/SKILL.md).

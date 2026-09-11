@@ -1,5 +1,5 @@
 ---
-name: scheduling-github-ci-reports
+name: scheduling-github-ci-fixes
 description: >-
   Schedules a recurring CI/CD reliability report for one repository: scan local
   checkouts, pick the repo, analyze GitHub Actions now, then

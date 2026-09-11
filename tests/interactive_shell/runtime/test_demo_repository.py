@@ -18,7 +18,7 @@ def test_each_repository_demo_declares_the_question_the_shell_asks() -> None:
 
     # Assert: the two repository demos name their question; the others need none.
     assert questions["analyzing-github-ci-performance"] == "Which repository should I analyze?"
-    assert questions["scheduling-github-ci-reports"] == "Which repository should the agent watch?"
+    assert questions["scheduling-github-ci-fixes"] == "Which repository should the agent watch?"
     assert questions["connecting-slack"] is None
     assert questions["delegating-github-ci-fixes"] is None
 

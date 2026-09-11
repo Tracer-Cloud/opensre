@@ -37,7 +37,7 @@ def test_master_menu_matches_four_unique_children_and_preserves_specialists() ->
     children = getting_started_skills()
     assert [s.name for s in children] == [
         "analyzing-github-ci-performance",
-        "scheduling-github-ci-reports",
+        "scheduling-github-ci-fixes",
         "delegating-github-ci-fixes",
         "connecting-slack",
     ]
@@ -80,7 +80,7 @@ def test_master_menu_matches_four_unique_children_and_preserves_specialists() ->
     assert "Compare these numbers" not in body
     assert "Output its `headline`" not in body
     assert "same-day snapshot" not in body
-    reliability = loader.load_skill_body("scheduling-github-ci-reports")
+    reliability = loader.load_skill_body("scheduling-github-ci-fixes")
     assert "analyze_github_ci_reliability" in reliability
     assert "compact=true" in reliability
     assert "include_report=true" not in reliability
@@ -107,7 +107,7 @@ def test_multi_step_skills_track_progress_with_update_plan_not_step_headers() ->
     loader.clear_skills_caches()
     multi_step = (
         "analyzing-github-ci-performance",
-        "scheduling-github-ci-reports",
+        "scheduling-github-ci-fixes",
         "connecting-slack",
         "delivering-morning-briefings",
     )
@@ -225,7 +225,7 @@ def test_references_append_sibling_markdown_and_ignore_paths_outside_the_tree(
 def test_onboarding_children_load_shared_rules_once() -> None:
     loader.clear_skills_caches()
     analytics = loader.load_skill_body("analyzing-github-ci-performance")
-    reliability = loader.load_skill_body("scheduling-github-ci-reports")
+    reliability = loader.load_skill_body("scheduling-github-ci-fixes")
     analytics_card = next(
         s for s in loader.list_action_skills() if s.name == "analyzing-github-ci-performance"
     ).path.read_text(encoding="utf-8")

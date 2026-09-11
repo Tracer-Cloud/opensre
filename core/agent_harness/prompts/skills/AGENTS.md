@@ -102,7 +102,9 @@ once, following these rules, and treat a rename as a breaking change.
 5. **Disambiguate siblings by verb, not by qualifier.** Two skills over the
    same object must differ in what they do: `reporting-github-ci-failures`
    (what is red now) vs `analyzing-github-ci-performance` (trend over a
-   period) vs `scheduling-github-ci-reports` (the same trend, recurring).
+   period); `scheduling-github-ci-fixes` (a recurring local repair loop) vs
+   `delegating-github-ci-fixes` (the same repairs, run by the managed
+   service).
    If you need a "Not for X, use Y" sentence in the description, first check
    whether a better verb pair removes the need.
 6. **Directory name equals `name`** (kebab-case) for a dedicated skill
@@ -149,7 +151,7 @@ Current collection:
 | `reporting-github-ci-failures` | workflow | `skills/` | — |
 | `onboarding-github-ci` | workflow (master menu) | `skills/onboarding-github-ci/` | — |
 | `analyzing-github-ci-performance` | workflow (demo A) | `skills/onboarding-github-ci/a-…/` | closed set |
-| `scheduling-github-ci-reports` | workflow (demo B) | `skills/onboarding-github-ci/b-…/` | closed set |
+| `scheduling-github-ci-fixes` | workflow (demo B) | `skills/onboarding-github-ci/b-…/` | closed set |
 | `delegating-github-ci-fixes` | workflow (demo C, placeholder) | `skills/onboarding-github-ci/c-…/` | — |
 | `connecting-slack` | workflow (demo D) | `skills/onboarding-github-ci/d-…/` | `cli_exec`, `slash_invoke` |
 | `operating-github-cli` | tool usage | `integrations/github/tools/github_cli/` | `github_cli` |
