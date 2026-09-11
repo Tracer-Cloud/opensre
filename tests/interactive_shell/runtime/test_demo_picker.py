@@ -56,6 +56,47 @@ def _take_prompt(session: Session) -> str:
     return session.terminal.pop_pending_prompt_default()
 
 
+@pytest.mark.parametrize("selection", [SKIP_DEMO_OPTION, None], ids=["skip", "escape"])
+def test_demo_request_after_abandoning_startup_reopens_the_menu(
+    monkeypatch: pytest.MonkeyPatch, selection: str | None
+) -> None:
+    _offerable(monkeypatch)
+    session = Session()
+    session.resolved_integrations_cache = {}
+    session.skills_already_prompted.add("another-skill")
+    session.questions_already_answered.add("another question?")
+    console = Console(file=io.StringIO(), highlight=False)
+    llm = FakeActionLLM([tool_response("skill_view", {"name": ONBOARDING_SKILL_NAME})])
+
+    def pick(**_kwargs: Any) -> str | None:
+        return selection
+
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", pick)
+    monkeypatch.setattr(choice_prompt, "capture_onboarding_choice", lambda *_a, **_k: None)
+    assert demo_picker.offer_demo(session, console)
+    session.terminal.exclusive_stdin_active = True
+    run_action_tool_turn(
+        _take_prompt(session), session, console, is_tty=True, llm_factory=lambda: llm
+    )
+    session.terminal.exclusive_stdin_active = False
+    assert llm.invocations == 0
+    assert session.active_skill is None
+    assert session.pending_user_choice is None
+    assert not session.terminal.pending_prompt_default
+
+    run_action_tool_turn(
+        "can you do a demo", session, console, is_tty=True, llm_factory=lambda: llm
+    )
+
+    pending = session.pending_user_choice
+    assert pending is not None, "A later demo request must reopen the abandoned startup menu"
+    assert pending.title == _TITLE
+    assert _take_prompt(session) == "/choose"
+    assert llm.invocations == 1
+    assert session.questions_already_answered == {"another question?"}
+    assert session.skills_already_prompted == {"another-skill", ONBOARDING_SKILL_NAME}
+
+
 @pytest.fixture
 def onboarding_outcomes(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, bool | None]]:
     outcomes: list[tuple[str, bool | None]] = []

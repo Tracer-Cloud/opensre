@@ -8,7 +8,7 @@ description: >-
   setup, and CI-fix requests should load their specialist skill directly.
 metadata:
   owner: Vincent
-  last_changed_by: Vincent
+  last_changed_by: Jan
   last_changed_at: 2026-09-11
   usecases:
     - Interactive-shell startup and /demo
@@ -44,17 +44,27 @@ pre_execute:
 # CI/CD onboarding
 
 This master skill owns the onboarding question. Its menu is declared in
-`pre_execute` and opens when the skill is entered; if the current message
+`pre_execute`; the entry result reports whether it opened. If the current message
 already answers it, continue directly to the selected child. Never ask the
 onboarding question twice for one request.
 
 ## Ask User
 
-The menu opens on entry, without you. Do not call `ask_user_choice` yourself
-and do not narrate before it; end the turn and wait for the answer. The menu has no free-text row: the last option opens the plain shell. If the entry result reports that the menu is
-unavailable, show the `pre_execute` options as a numbered list and wait for a
-reply. The last option, skipping the demo, is handled by the shell and never
-reaches you.
+Read the `pre_execute` results before deciding what to do:
+
+- `menu: queued`: end the turn and wait for the selection. The host owns the
+  menu; do not call `ask_user_choice` again or repeat its options as text.
+- `menu: suppressed`: no new menu opened. Continue the current request using
+  the existing answer. If the user explicitly requests the demo menu again,
+  call `slash_invoke` with `/demo`; a greeting does not request reopening.
+- `menu: unavailable`: show the `pre_execute` options as a numbered list and
+  wait for a reply.
+- A hook error without a menu status: explain that the picker could not open
+  and show the options as a numbered list.
+
+Only a queued menu justifies telling the user to select from an open picker.
+The menu has no free-text row. Its last option opens the plain shell; the
+shell handles Skip and Escape without sending an answer to the model.
 
 ## Follow the selected child
 

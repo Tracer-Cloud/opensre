@@ -157,7 +157,8 @@ def test_skill_view_without_a_session_still_returns_the_body() -> None:
     assert result["pre_execute"] == []  # No scope to run hooks against; nothing is queued.
 
 
-def test_the_model_cannot_reopen_a_menu_the_session_already_answered() -> None:
+@pytest.mark.parametrize("still_active", [True, False], ids=["active", "left"])
+def test_the_model_cannot_reopen_a_menu_the_session_already_answered(still_active: bool) -> None:
     """A greeting after a demo used to route back here and ask the same question.
 
     The managed-service branch ends immediately, so the next plain message
@@ -168,15 +169,27 @@ def test_the_model_cannot_reopen_a_menu_the_session_already_answered() -> None:
     session = Session()
     first = enter_skill(ONBOARDING_SKILL_NAME, _scope(session))
     assert first["pre_execute"]
+    pending = session.pending_user_choice
+    assert pending is not None
+    session.questions_already_answered.add(pending.title.casefold())
     session.pending_user_choice = None  # the user answered it
+    session.terminal.pending_prompt_default = None
+    if not still_active:
+        session.active_skill = None
 
     # Act: the model routes back to the same skill later in the session.
     again = execute_skill_view_tool({"name": ONBOARDING_SKILL_NAME}, _scope(session))
 
     # Assert: the body still loads, but no second menu is queued.
     assert again["ok"] is True
-    assert again["pre_execute"] == []
+    hook = again["pre_execute"][0]
+    assert hook["tool"] == "ask_user_choice"
+    assert hook["menu"] == "suppressed"
+    assert hook["ok"] is False
+    assert "No new menu was opened" in again["content"]
+    assert MENU_QUEUED_INSTRUCTION not in again["content"]
     assert session.pending_user_choice is None
+    assert session.terminal.pending_prompt_default is None
 
 
 def test_model_reentry_of_the_active_skill_is_side_effect_free(hooked_skills: None) -> None:
@@ -200,7 +213,7 @@ def test_model_reentry_of_the_active_skill_is_side_effect_free(hooked_skills: No
     # Assert: the body comes back, but nothing about the session moved.
     assert again["ok"] is True
     assert again["already_active"] is True
-    assert again["pre_execute"] == []
+    assert again["pre_execute"][0]["menu"] == "suppressed"
     assert again["content"].startswith("Follow the answer.")
     assert session.skill_hooks_fired == {"menu-skill:after:some_tool"}
     assert session.active_skill_tools == ("shell_run", "extra_granted_tool")

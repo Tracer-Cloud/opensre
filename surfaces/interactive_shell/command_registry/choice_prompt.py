@@ -65,6 +65,8 @@ def _leave_menu(session: Session, console: Console, note: str) -> None:
     """Close the menu with no answer for the model and leave the skill."""
     console.print(f"[{ui_theme.DIM}]{note}[/]")
     session.terminal.awaiting_handoff_answer = False
+    if session.active_skill is not None:
+        session.skills_already_prompted.discard(session.active_skill)
     session.active_skill = None
     session.active_skill_tools = ()
     session.skill_hooks_fired = set()
@@ -126,7 +128,6 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
     if picked_one is None:
         _leave_menu(session, console, _CANCELLED)
         return True
-    _remember_answered(session, items[0].title)
     if picked_one == SKIP_DEMO_OPTION:
         # A shell decision, not an answer for the model: the demo is over.
         _leave_menu(session, console, _DEMO_SKIPPED)
@@ -136,6 +137,7 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
     if command:
         # A mapped option, or a slash command typed into the custom row, is a
         # command the shell runs, not an answer for the model.
+        _remember_answered(session, items[0].title)
         console.print(f"[{ui_theme.DIM}]Running {escape(command)}.[/]")
         session.terminal.awaiting_handoff_answer = False
         session.terminal.set_auto_command(command)
@@ -148,7 +150,7 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
         if repository is None:
             _leave_menu(session, console, _CANCELLED)
             return True
-        _remember_answered(session, repository_title)
+        _remember_answered(session, items[0].title, repository_title)
         answered = (
             items[0],
             AskUserQuestion(label="", title=repository_title, options=(repository,)),
@@ -158,6 +160,7 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
         )
         session.terminal.awaiting_handoff_answer = True
         return True
+    _remember_answered(session, items[0].title)
     render_choice_selection(console, items[0].title, picked_one)
     # The answer travels with its question, as the batched wizard's does: a bare
     # label such as "owner/repo (757 commits, CI configured)" reads to the

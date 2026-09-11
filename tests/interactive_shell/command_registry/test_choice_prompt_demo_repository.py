@@ -37,6 +37,7 @@ def _arrange(
 ) -> tuple[Session, list[str]]:
     session = Session()
     session.active_skill = ONBOARDING_SKILL_NAME
+    session.skills_already_prompted.add(ONBOARDING_SKILL_NAME)
     session.pending_user_choice = PendingUserChoice(
         title=_DEMO_QUESTION, options=(_DEMO, SKIP_DEMO_OPTION), custom_answer=False
     )
@@ -94,6 +95,8 @@ def test_escaping_the_repository_menu_cancels_instead_of_letting_the_model_guess
     assert session.terminal.pending_prompt_default in (None, "")
     assert session.terminal.awaiting_handoff_answer is False
     assert session.active_skill is None
+    assert ONBOARDING_SKILL_NAME not in session.skills_already_prompted
+    assert _DEMO_QUESTION.lower() not in session.questions_already_answered
     assert "cancelled" in buffer.getvalue().lower()
 
 
