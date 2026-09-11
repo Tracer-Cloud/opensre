@@ -38,7 +38,7 @@ def _shell_argv(command: str) -> list[str]:
         return [windows_shell, "/d", "/s", "/c", command]
     posix_shell = os.environ.get("SHELL")
     if posix_shell:
-        return [posix_shell, "-lc", command]
+        return [posix_shell, "-c", command]
     return ["/bin/sh", "-c", command]
 
 

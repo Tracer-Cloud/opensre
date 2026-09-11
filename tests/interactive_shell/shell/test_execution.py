@@ -47,6 +47,19 @@ def test_shell_argv_uses_non_login_posix_fallback(monkeypatch: pytest.MonkeyPatc
     assert shell_execution._shell_argv("printf ok") == ["/bin/sh", "-c", "printf ok"]
 
 
+def test_shell_argv_uses_configured_posix_shell_without_login_profile(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(shell_execution.os, "name", "posix")
+    monkeypatch.setenv("SHELL", "/bin/example-shell")
+
+    assert shell_execution._shell_argv("printf ok") == [
+        "/bin/example-shell",
+        "-c",
+        "printf ok",
+    ]
+
+
 def test_execute_shell_command_reports_timeout() -> None:
     started = time.monotonic()
 

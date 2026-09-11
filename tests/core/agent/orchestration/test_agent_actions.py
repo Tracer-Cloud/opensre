@@ -211,7 +211,7 @@ def _expected_shell_argv(command: str) -> list[str]:
         return [shell, "/d", "/s", "/c", command]
     shell = shell_execution.os.environ.get("SHELL")
     if shell:
-        return [shell, "-lc", command]
+        return [shell, "-c", command]
     return ["/bin/sh", "-c", command]
 
 
