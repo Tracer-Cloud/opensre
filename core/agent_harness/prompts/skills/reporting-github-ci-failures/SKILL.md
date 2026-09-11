@@ -4,11 +4,11 @@ description: >-
   Read-only GitHub CI health report of the checks failing right now for one
   repository, optionally narrowed to a branch or pull request. Not for CI/CD
   performance, reliability KPIs, failure rates, or downtime over a period
-  (use cicd-analytics-demo).
+  (use analyzing-github-ci-performance).
 metadata:
   owner: Ceren
-  last_changed_by: Vincent
-  last_changed_at: 2026-09-09
+  last_changed_by: Jan
+  last_changed_at: 2026-09-11
   usecases:
     - Report the checks failing right now for one repository, branch, or pull request
     - Unattended recurring CI health report delivered to the shell inbox or a chat channel

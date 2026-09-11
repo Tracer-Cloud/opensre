@@ -89,7 +89,7 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
     console = Console(file=buffer, highlight=False)
     llm = FakeActionLLM(
         [
-            tool_response("skill_view", {"name": "cicd-analytics-demo"}),
+            tool_response("skill_view", {"name": "analyzing-github-ci-performance"}),
             tool_response("scan_local_git_workspace"),
         ]
     )
@@ -166,7 +166,7 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
 
     run_action_tool_turn(answer, session, console, is_tty=True, llm_factory=lambda: llm)
     assert len(scans) == 1
-    assert session.active_skill == "cicd-analytics-demo"
+    assert session.active_skill == "analyzing-github-ci-performance"
     # The repository was answered in the shell; a scan the model runs anyway
     # does not reopen that question, so the turn runs on to its end.
     assert session.pending_user_choice is None
@@ -225,7 +225,7 @@ def test_onboarding_outcomes_keep_stable_ids_and_exclude_child_menus(
         )
         choice_prompt._cmd_choose(session, console, [])
 
-    session.active_skill = "cicd-analytics-demo"
+    session.active_skill = "analyzing-github-ci-performance"
     session.pending_user_choice = PendingUserChoice(title="Repository?", options=("acme/one",))
     answer = "acme/one"
     choice_prompt._cmd_choose(session, console, [])
@@ -344,7 +344,7 @@ def test_startup_without_a_menu_hook_does_not_fall_back_to_a_model_turn(
 
 def test_demo_skills_keep_their_tool_contracts_after_moving() -> None:
     by_name = {skill.name: skill for skill in list_action_skills()}
-    assert by_name["cicd-analytics-demo"].tools == (
+    assert by_name["analyzing-github-ci-performance"].tools == (
         "scan_local_git_workspace",
         "analyze_github_ci_reliability",
         "schedule_ci_reliability_loop",
@@ -352,10 +352,10 @@ def test_demo_skills_keep_their_tool_contracts_after_moving() -> None:
         "slash_invoke",
         "ask_user_choice",
     )
-    assert by_name["cicd-reliability-agent"].tools == (
+    assert by_name["scheduling-github-ci-fixes"].tools == (
         "scan_local_git_workspace",
         "analyze_github_ci_reliability",
         "schedule_ci_reliability_loop",
         "ask_user_choice",
     )
-    assert by_name["slack-handoff"].tools == ("cli_exec", "slash_invoke")
+    assert by_name["connecting-slack"].tools == ("cli_exec", "slash_invoke")

@@ -1,5 +1,5 @@
 ---
-name: onboarding-cicd-fix
+name: onboarding-github-ci
 description: >-
   Master onboarding skill: asks which of four CI/CD demos to run, then loads
   and follows the selected child skill. Use on interactive-shell startup,
@@ -8,8 +8,8 @@ description: >-
   setup, and CI-fix requests should load their specialist skill directly.
 metadata:
   owner: Vincent
-  last_changed_by: Vincent
-  last_changed_at: 2026-09-09
+  last_changed_by: Jan
+  last_changed_at: 2026-09-11
   usecases:
     - Interactive-shell startup and /demo
     - Show the available onboarding paths and follow the selected child skill
@@ -19,10 +19,10 @@ metadata:
   type: onboarding
   version: "2.0"
   dependencies:
-    - core/agent_harness/prompts/skills/onboarding_cicd_fix/a_local_analysis/SKILL.md
-    - core/agent_harness/prompts/skills/onboarding_cicd_fix/b_local_scheduled_loops/SKILL.md
-    - core/agent_harness/prompts/skills/onboarding_cicd_fix/c_remote_managed_service/SKILL.md
-    - core/agent_harness/prompts/skills/onboarding_cicd_fix/d_remote_slack/SKILL.md
+    - core/agent_harness/prompts/skills/onboarding-github-ci/a-analyzing-github-ci-performance/SKILL.md
+    - core/agent_harness/prompts/skills/onboarding-github-ci/b-scheduling-github-ci-fixes/SKILL.md
+    - core/agent_harness/prompts/skills/onboarding-github-ci/c-delegating-github-ci-fixes/SKILL.md
+    - core/agent_harness/prompts/skills/onboarding-github-ci/d-connecting-slack/SKILL.md
 # The host runs this on entry (startup, /demo, skill_view) before any model step.
 pre_execute:
   - tool: ask_user_choice
@@ -60,10 +60,13 @@ reaches you.
 The next message carries the question and the user's answer. Call `skill_view`
 with the matching name, then follow its returned instructions in the same turn:
 
-- Option A: `cicd-analytics-demo` — [local analysis](a_local_analysis/SKILL.md).
-- Option B: `cicd-reliability-agent` — [scheduled loops](b_local_scheduled_loops/SKILL.md).
-- Option C: `remote-managed-service` — [managed service](c_remote_managed_service/SKILL.md).
-- Option D: `slack-handoff` — [Slack handoff](d_remote_slack/SKILL.md).
+- Option A: `analyzing-github-ci-performance` —
+  [analyze CI performance](a-analyzing-github-ci-performance/SKILL.md).
+- Option B: `scheduling-github-ci-fixes` —
+  [schedule recurring reports](b-scheduling-github-ci-fixes/SKILL.md).
+- Option C: `delegating-github-ci-fixes` —
+  [delegate to the managed service](c-delegating-github-ci-fixes/SKILL.md).
+- Option D: `connecting-slack` — [connect Slack](d-connecting-slack/SKILL.md).
 
 Do not perform the child workflow from this summary; load its full skill first.
 The managed-service child explains that it is unavailable and ends the flow.

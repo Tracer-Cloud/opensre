@@ -34,7 +34,7 @@ kernel  ←  memory, runtime_facts, skills, rules, grounding, system_prompt
 ## Skill body formatting
 
 Use ordinary Markdown, following
-[`skills/onboarding_cicd_fix/SKILL.md`](skills/onboarding_cicd_fix/SKILL.md):
+[`skills/onboarding-github-ci/SKILL.md`](skills/onboarding-github-ci/SKILL.md):
 
 - Start with a `#` title and a short statement of purpose.
 - Use descriptive `##` sections and `###` workflow steps where order matters.
@@ -45,7 +45,7 @@ Use ordinary Markdown, following
   boundaries, and required output formats when changing presentation.
 - A static menu a skill always opens on entry belongs in `pre_execute`
   frontmatter (`tool: ask_user_choice` + `args`), not in prose the model must
-  replay; the host runs it before any model step (see `onboarding_cicd_fix`).
+  replay; the host runs it before any model step (see `onboarding-github-ci`).
 - A mid-flow menu the model must not skip belongs in `after_tool` (same call
   shape, plus `after:` the trigger tool). The host opens it after that tool
   succeeds; later tools in the batch are blocked once a menu is queued.

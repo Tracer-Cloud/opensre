@@ -5,7 +5,13 @@ from __future__ import annotations
 import logging
 from types import MappingProxyType
 
-from config.constants.skills import ONBOARDING_SKILL_NAME
+from config.constants.skills import (
+    ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME,
+    CONNECTING_SLACK_SKILL_NAME,
+    DELEGATING_GITHUB_CI_FIXES_SKILL_NAME,
+    ONBOARDING_SKILL_NAME,
+    SCHEDULING_GITHUB_CI_FIXES_SKILL_NAME,
+)
 from core.agent_harness.spi.grounding import getting_started_skills
 from infrastructure.analytics.capture import (
     capture_onboarding_demo_selected,
@@ -14,12 +20,13 @@ from infrastructure.analytics.capture import (
 
 logger = logging.getLogger(__name__)
 
-# Preserve the identifiers used by the original startup picker.
+# Telemetry option ids are stable across skill renames (dashboards key on them).
 _OPTION_BY_SKILL = MappingProxyType(
     {
-        "cicd-analytics-demo": "ci_analytics",
-        "cicd-reliability-agent": "ci_agent",
-        "slack-handoff": "slack",
+        ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME: "ci_analytics",
+        SCHEDULING_GITHUB_CI_FIXES_SKILL_NAME: "ci_agent",
+        DELEGATING_GITHUB_CI_FIXES_SKILL_NAME: "remote_managed_service",
+        CONNECTING_SLACK_SKILL_NAME: "slack",
     }
 )
 

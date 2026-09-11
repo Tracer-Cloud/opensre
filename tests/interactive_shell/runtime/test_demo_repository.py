@@ -17,10 +17,10 @@ def test_each_repository_demo_declares_the_question_the_shell_asks() -> None:
     questions = {name: repository_question(skill) for name, skill in by_name.items()}
 
     # Assert: the two repository demos name their question; the others need none.
-    assert questions["cicd-analytics-demo"] == "Which repository should I analyze?"
-    assert questions["cicd-reliability-agent"] == "Which repository should the agent watch?"
-    assert questions["slack-handoff"] is None
-    assert questions["remote-managed-service"] is None
+    assert questions["analyzing-github-ci-performance"] == "Which repository should I analyze?"
+    assert questions["scheduling-github-ci-fixes"] == "Which repository should the agent watch?"
+    assert questions["connecting-slack"] is None
+    assert questions["delegating-github-ci-fixes"] is None
 
 
 def test_the_demo_answer_maps_to_its_skill_by_the_exact_menu_row() -> None:
@@ -32,5 +32,5 @@ def test_the_demo_answer_maps_to_its_skill_by_the_exact_menu_row() -> None:
     unmatched = demo_skill_for("Explore a repo")
 
     # Assert
-    assert matched is not None and matched.name == "cicd-analytics-demo"
+    assert matched is not None and matched.name == "analyzing-github-ci-performance"
     assert unmatched is None

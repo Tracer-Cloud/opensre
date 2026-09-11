@@ -1,5 +1,5 @@
 ---
-name: cicd-analytics-demo
+name: analyzing-github-ci-performance
 description: >-
   CI/CD performance and reliability analytics for one repository over the
   last 30 days: executions, PR failure rate, CI-caused vs source failures,
@@ -7,14 +7,14 @@ description: >-
   analyze_github_ci_reliability; also the first-experience demo that scans the
   machine and picks a repository first. Use for "analyze <repo> CI/CD
   performance", "how reliable is our CI", "what does flaky CI cost us". Not for
-  listing currently failing checks (github-ci-health). Multi-step; load before
+  listing currently failing checks (reporting-github-ci-failures). Multi-step; load before
   acting.
 getting_started: Explore a repo and analyze its CI/CD performance (recommended)
 demo_order: 1
 metadata:
   owner: Vincent
-  last_changed_by: Yauhen
-  last_changed_at: 2026-09-10
+  last_changed_by: Jan
+  last_changed_at: 2026-09-11
   usecases:
     - First-experience demo: scan the machine, pick a repository, analyze its CI/CD
     - CI/CD reliability KPIs for one repository over the last 30 days
@@ -86,7 +86,7 @@ Slack setup.
 
 - **Metric definitions**: [references/metrics.md](references/metrics.md).
   Load it only when the user asks what a figure means or which metric to
-  fix first, with `skill_view(name="cicd-analytics-demo", reference="metrics")`;
+  fix first, with `skill_view(name="analyzing-github-ci-performance", reference="metrics")`;
   answer from it and the tool's numbers. Do not load it during steps 1-4.
 - **Benchmark table**: [references/benchmarks.md](references/benchmarks.md).
   Load it only when the user asks what a compared figure means. The analyze
