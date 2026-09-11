@@ -205,6 +205,58 @@ crashes. A crash after an external provider accepts a message but before the
 completion is recorded can still result in a duplicate on reclaim; preventing
 that case requires provider-specific idempotency support.
 
+## Capacity and overload
+
+Each admitted cron tick is first written as a durable `pending` row in
+`scheduler.db`. It is not silently dropped because workers are busy. The
+default scheduler concurrency remains **2**; a scheduled agent turn also needs
+a permit from the shared process turn gate, so the effective agent-turn
+concurrency can be lower.
+
+The current scheduler bounds active workers, but its executor can still retain
+more submitted callbacks in memory while those workers are busy. A large burst
+therefore remains recoverable from SQLite, but is not yet a bounded in-memory
+queue. Use the baseline below to size an installation rather than raising the
+default to absorb a burst. A later scheduler change will move overflow to the
+durable pending store and reserve recovery control work from user execution.
+
+| Boundary | Owns | Does not own |
+| --- | --- | --- |
+| Task store | Task definitions and enabled state | Execution history |
+| Run store | Durable admissions, claims, leases, recovery candidates, and completion fencing | Worker scheduling |
+| Scheduler runner | Cron submission, recovery sweep, and task lookup | LLM or provider delivery |
+| Scheduler executor | The currently submitted worker callbacks | Durable recovery state |
+| Shared turn gate | Process-wide concurrent agent turns | Scheduler admission or persistence |
+
+The capacity baseline records these terms consistently:
+
+- **Durable pending count** and **oldest pending age**: `pending` rows and the
+  elapsed time since their durable admission. The benchmark reads this directly
+  until `opensre cron status` exposes it.
+- **In-memory callbacks**: callbacks submitted to the current worker executor
+  that have not completed. This is the current overload signal, not a durable
+  queue limit.
+- **Throughput and drain time**: successful fake deliveries per second and the
+  elapsed time to finish admitted work.
+- **Recovery query latency and plan**: time and SQLite plan used to find
+  pending or expired work. Completed history must not expand the candidate
+  scan.
+- **SQLite lock failures** and **RSS**: lock errors plus current and peak
+  process resident memory sampled by the benchmark host.
+
+Run the deterministic baseline before changing
+`OPENSRE_SCHEDULER_MAX_CONCURRENT_RUNS`:
+
+```bash
+uv run python -m tests.benchmarks.scheduler.capacity_benchmark
+```
+
+It makes no LLM, provider, or network calls. The checked-in JSON report at
+`docs/benchmarks/scheduler-capacity-baseline.json` records the exact workload,
+host metadata, SQLite version, and observed values. Restart recovery uses the
+production shape: one recovery callback iterates its durable candidates
+serially.
+
 ## Credential Resolution
 
 Credentials are resolved lazily at delivery time in this priority order:
