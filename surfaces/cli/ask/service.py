@@ -22,8 +22,8 @@ from core.agent_harness import (
     TurnResult,
 )
 from core.agent_harness.ports import ToolEventObserver
-from core.agent_harness.session_goal import SessionGoal, SessionGoalReason, SessionGoalStatus
 from core.agent_harness.spi.cancel import ensure_turn_cancel
+from core.agent_harness.spi.session_goal import SessionGoal, SessionGoalReason, SessionGoalStatus
 from core.tool import ToolExecutionHooks
 from infrastructure.errors import OpenSREError
 from surfaces.cli.ask.approval import ApprovalTracker, build_approval_hooks

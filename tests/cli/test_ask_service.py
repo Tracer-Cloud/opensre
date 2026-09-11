@@ -6,7 +6,7 @@ import threading
 
 import pytest
 
-from core.agent_harness.session_goal import SessionGoal, SessionGoalReason, SessionGoalStatus
+from core.agent_harness.spi.session_goal import SessionGoal, SessionGoalReason, SessionGoalStatus
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
 from core.domain.types.tools import ToolSurface
 from core.llm.types import ToolCall
