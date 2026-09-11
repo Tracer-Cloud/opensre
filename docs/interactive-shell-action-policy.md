@@ -167,18 +167,21 @@ runs on the developer's own machine with their own privileges.
 What changed:
 
 - `shell_policy.py` (classification, allowlists, `classify_command`,
-  `evaluate_policy`, `PolicyDecision`) was deleted. The pure parsing helpers it
-  also contained moved to `tools/shell/parsing.py` (`parse_shell_command`,
-  `argv_for_repl_builtin_detection`, `ParsedShellCommand`), alongside the shell
-  execution policy in `tools/shell/policy.py`.
-- `tools.shell.policy.evaluate_shell_from_parsed` now returns `allow` for every
+  `evaluate_policy`, `PolicyDecision`) was deleted. Input normalization now
+  lives in `tools/interactive_shell/shell/parsing.py`, alongside the shell
+  execution policy in `tools/interactive_shell/shell/policy.py`.
+- `evaluate_shell_from_parsed` now returns `allow` for every
   command — read-only, mutating, `restricted` (`sudo`, `systemctl`, `kill`,
   `dd`, …), shell operators (`| && ; > <`), and command substitution
-  (`` ` ``/`$(...)`). Commands that need a shell run through one automatically;
-  the `!` prefix is still honored but no longer required to escape the old
-  operator block.
+  (`` ` ``/`$(...)`). Every nonempty command runs through the host shell, so
+  shell grammar is not duplicated with operator-detection heuristics. The `!`
+  prefix is still honored but is optional.
 - The **only** remaining non-execution outcome is genuinely empty input (a bare
   `!` or whitespace), which is rejected as input validation, not as a guardrail.
+
+Each `shell_run` call starts a new shell in the task workspace. A directory
+change therefore applies only within the same command (`cd path && command`);
+start a new task to continue work from another persistent workspace.
 
 The `ask`/confirmation machinery is retained and used by **`/auto`** (Off/Low/Med)
 plus `trust_mode`. It is split across two layers: the pure decision lives in

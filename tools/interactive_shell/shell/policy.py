@@ -10,7 +10,6 @@ They reuse the shared policy contracts
 
 from __future__ import annotations
 
-import config.constants.platform as _platform
 from tools.interactive_shell.shared import (
     ExecutionPolicyResult,
     ToolExecutionMode,
@@ -62,7 +61,7 @@ def plan_shell_execution(parsed: ParsedShellCommand) -> ToolExecutionPlan:
 
 def evaluate_shell_command(command: str) -> ExecutionPolicyResult:
     """Map shell policy + passthrough rules into allow/ask/deny."""
-    parsed = parse_shell_command(command, is_windows=_platform.IS_WINDOWS)
+    parsed = parse_shell_command(command)
     return evaluate_shell_from_parsed(parsed)
 
 

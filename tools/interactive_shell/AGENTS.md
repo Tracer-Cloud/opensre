@@ -13,8 +13,8 @@ tools listed in `core/agent_harness/tools/action_tools.py`:
   `slash_invoke`, `code_implement`, `session_goal_set`, `session_goal_complete`,
   `llm_set_provider`,
   `task_cancel`, and friends; see `action_names.py` for the closed set).
-- `shell/` — shell command parsing, execution policy, and the
-  `run_shell_command`/`run_cd`/`run_pwd` runner behind `actions/shell.py`.
+- `shell/` — shell command normalization, execution policy, and the
+  `run_shell_command` runner behind `actions/shell.py`.
 - `implementation/` — the `/implement` (Claude Code) launcher.
 - `contracts` — imported by `command_registry.slash_catalog` during early import
   wiring; see the `__init__.py` docstring for why tool submodules must be
