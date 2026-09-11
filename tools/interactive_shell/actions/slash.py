@@ -42,6 +42,7 @@ _INTERACTIVE_PICKER_SUBCOMMANDS: frozenset[tuple[str, str]] = frozenset(
         ("/auth", "logout"),
         ("/integrations", "setup"),
         ("/integrations", "remove"),
+        ("/loops", "show"),
         ("/mcp", "connect"),
         ("/mcp", "disconnect"),
     }
@@ -70,7 +71,9 @@ def _slash_drives_interactive_picker(
         return True
     if not slash_args:
         return name in _INTERACTIVE_PICKER_MENUS
-    return (name, slash_args[0].lower()) in _INTERACTIVE_PICKER_SUBCOMMANDS
+    return (name, slash_args[0].lower()) in _INTERACTIVE_PICKER_SUBCOMMANDS and (
+        name != "/loops" or len(slash_args) == 1
+    )
 
 
 # Cap the failure excerpt fed back to the model: enough for a usage/typo

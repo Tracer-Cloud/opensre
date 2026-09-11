@@ -13,7 +13,13 @@ from typing import Any
 from uuid import uuid4
 
 import infrastructure.scheduling.scheduler.storage.database as database
-from infrastructure.scheduling.scheduler.types import DeliveryOutcome, Provider, TaskRun, TaskStatus
+from infrastructure.scheduling.scheduler.types import (
+    DeliveryOutcome,
+    Provider,
+    TaskReport,
+    TaskRun,
+    TaskStatus,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -26,7 +32,7 @@ _RECOVERABLE_RUN_SCAN_LIMIT = 100
 _CLAIM_LEASE_SECONDS = 30 * 60
 _RUN_COLUMNS = (
     "task_id, fire_time, started_at, finished_at, status, posted_message_id, "
-    "error, provider, targets, attempt"
+    "error, provider, targets, attempt, id, report, report_summary"
 )
 
 
@@ -299,6 +305,27 @@ def complete_run(
         return completed
 
 
+def record_run_report(claim: ExecutionClaim, report: str, db_path: Path | None = None) -> bool:
+    """Retain a built report before delivery, only while this attempt owns its lease."""
+    with database.transaction(db_path, immediate=True) as conn:
+        cursor = conn.execute(
+            "UPDATE task_runs SET report = ?, report_summary = ? "
+            "WHERE task_id = ? AND fire_time = ? AND attempt = ? "
+            "AND owner_token = ? AND status = ? AND lease_expires_at >= ?",
+            (
+                report,
+                report.summary if isinstance(report, TaskReport) else "",
+                claim.task_id,
+                claim.fire_time,
+                claim.attempt,
+                claim.owner_token,
+                TaskStatus.RUNNING.value,
+                datetime.now(UTC).isoformat(),
+            ),
+        )
+        return cursor.rowcount == 1
+
+
 def _encode_targets(targets: Sequence[DeliveryOutcome]) -> str:
     """Serialize per-destination outcomes for the ``targets`` column."""
     if not targets:
@@ -331,6 +358,9 @@ def _row_to_task_run(row: tuple[Any, ...]) -> TaskRun:
         provider=row[7] or "",
         targets=_decode_targets(row[8]),
         attempt=int(row[9] or 1),
+        run_id=int(row[10]),
+        report=row[11],
+        report_summary=row[12] or "",
     )
 
 
@@ -353,6 +383,50 @@ def get_runs(task_id: str, limit: int = 20, db_path: Path | None = None) -> list
             (task_id, limit),
         )
         return [_row_to_task_run(row) for row in cursor.fetchall()]
+
+
+def get_latest_runs(task_ids: Collection[str], db_path: Path | None = None) -> dict[str, TaskRun]:
+    """Read the latest attempt for each requested task in one snapshot."""
+    if not task_ids:
+        return {}
+    with database.connection(db_path) as conn:
+        rows = conn.execute(
+            f"SELECT {_RUN_COLUMNS} FROM task_runs WHERE id IN ("
+            "SELECT (SELECT id FROM task_runs WHERE task_id = requested.value "
+            "ORDER BY started_at DESC, id DESC LIMIT 1) FROM json_each(?) AS requested)",
+            (json.dumps(list(task_ids)),),
+        ).fetchall()
+        runs = [_row_to_task_run(row) for row in rows]
+        return {run.task_id: run for run in runs}
+
+
+def get_group_runs(
+    task_ids: Collection[str], *, limit: int = 20, db_path: Path | None = None
+) -> list[TaskRun]:
+    """Return recent attempts across a loop's tasks, newest first."""
+    if not task_ids or limit <= 0:
+        return []
+    with database.connection(db_path) as conn:
+        rows = conn.execute(
+            f"SELECT {_RUN_COLUMNS} FROM task_runs "
+            "WHERE task_id IN (SELECT value FROM json_each(?)) "
+            "ORDER BY started_at DESC, id DESC LIMIT ?",
+            (json.dumps(list(task_ids)), limit),
+        ).fetchall()
+        return [_row_to_task_run(row) for row in rows]
+
+
+def get_group_run(
+    task_ids: Collection[str], run_id: int, *, db_path: Path | None = None
+) -> TaskRun | None:
+    """Resolve a stable run ID only within the requested loop's tasks."""
+    with database.connection(db_path) as conn:
+        row = conn.execute(
+            f"SELECT {_RUN_COLUMNS} FROM task_runs "
+            "WHERE id = ? AND task_id IN (SELECT value FROM json_each(?))",
+            (run_id, json.dumps(list(task_ids))),
+        ).fetchone()
+        return _row_to_task_run(row) if row is not None else None
 
 
 def get_latest_run_for_fire_time(
@@ -449,6 +523,10 @@ __all__ = [
     "get_latest_finished_run",
     "get_latest_targeted_run",
     "get_runs",
+    "get_group_run",
+    "get_group_runs",
+    "get_latest_runs",
+    "record_run_report",
     "renew_claims",
     "try_claim",
     "try_queue_run",

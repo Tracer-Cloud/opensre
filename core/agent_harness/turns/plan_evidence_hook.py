@@ -33,7 +33,7 @@ def with_plan_evidence(
     ) -> ToolExecutionPatch | None:
         patch = base_after(request, result) if base_after is not None else None
         if not result.is_error:
-            record_plan_evidence(session, request.tool_call.name)
+            record_plan_evidence(session, request.tool_call.name, request.arguments)
         return patch
 
     return ToolExecutionHooks(

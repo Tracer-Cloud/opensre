@@ -22,6 +22,7 @@ from infrastructure.scheduling.scheduler.runners import SchedulerRunners
 from infrastructure.scheduling.scheduler.storage import (
     ExecutionClaim,
     complete_run,
+    record_run_report,
     try_claim,
 )
 from infrastructure.scheduling.scheduler.tasks import build_message
@@ -127,6 +128,9 @@ def _execute_claimed_task(
             task.id,
             fire_time,
         )
+        return False
+
+    if not record_run_report(claim, message):
         return False
 
     # Quiet ticks (e.g. uptime watch with no transitions) skip delivery.

@@ -258,6 +258,19 @@ def test_ask_user_answer_completes_only_the_step_that_was_waiting() -> None:
     assert plan_evidence_available(session, prior=waiting, turn_user_message=answered) is True
 
 
+def test_loading_a_skill_body_is_bookkeeping_but_reading_its_reference_is_work() -> None:
+    """A skill step whose only tool is ``skill_view(reference=…)`` must be completable."""
+    session = Session()
+    mark_plan_written(session)
+    record_plan_evidence(session, "skill_view", {"name": "scheduling-github-ci-fixes"})
+    record_plan_evidence(session, "skill_view", {"name": "x", "reference": "  "})
+    assert plan_evidence_available(session, prior=None, turn_user_message="") is False
+    record_plan_evidence(
+        session, "skill_view", {"name": "scheduling-github-ci-fixes", "reference": "runtime"}
+    )
+    assert plan_evidence_available(session, prior=None, turn_user_message="") is True
+
+
 def test_update_plan_tool_reports_reset_steps_in_its_instruction() -> None:
     session = Session()
     ctx = ActionToolScope(

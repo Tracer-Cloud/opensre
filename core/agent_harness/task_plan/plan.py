@@ -16,14 +16,27 @@ from infrastructure.safety.terminal_output import strip_terminal_controls
 
 
 class PlanStepStatus(StrEnum):
-    """Allowed ``update_plan`` step statuses."""
+    """Allowed ``update_plan`` step statuses.
+
+    ``BLOCKED`` is terminal like ``COMPLETED`` but records that the step's
+    work was **not** done: a missing capability, permission, or fact stops
+    it, and the blocker is named in the plan ``explanation``. It never counts
+    as progress and is never promoted back to ``in_progress`` by the host.
+    """
 
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
+    BLOCKED = "blocked"
 
 
 _ALLOWED_STATUSES: frozenset[str] = frozenset(PlanStepStatus)
+_STATUS_ERROR = "status must be pending, in_progress, completed, or blocked"
+_BLOCKED_NEEDS_EXPLANATION = "a blocked step needs its blocker named in explanation"
+#: Statuses that leave no work to do: the plan is settled once every step has one.
+TERMINAL_STATUSES: frozenset[PlanStepStatus] = frozenset(
+    {PlanStepStatus.COMPLETED, PlanStepStatus.BLOCKED}
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,8 +87,21 @@ class TaskPlan:
         return self.steps[-1]
 
     @property
+    def blocked_count(self) -> int:
+        return sum(1 for item in self.steps if item.status is PlanStepStatus.BLOCKED)
+
+    @property
     def all_completed(self) -> bool:
         return bool(self.steps) and self.completed_count == self.total
+
+    @property
+    def is_settled(self) -> bool:
+        """True when no step is pending or in progress (every step completed or blocked).
+
+        A settled plan needs no further work this turn; it is *complete* only
+        when :attr:`all_completed` also holds.
+        """
+        return bool(self.steps) and all(item.status in TERMINAL_STATUSES for item in self.steps)
 
     @property
     def all_pending(self) -> bool:
@@ -108,7 +134,7 @@ def parse_task_plan(args: dict[str, Any]) -> tuple[TaskPlan | None, str | None]:
         if not step_text:
             return None, "each plan item needs a non-empty step"
         if status_raw not in _ALLOWED_STATUSES:
-            return None, "status must be pending, in_progress, or completed"
+            return None, _STATUS_ERROR
         status = PlanStepStatus(status_raw)
         if status is PlanStepStatus.IN_PROGRESS:
             in_progress += 1
@@ -118,6 +144,8 @@ def parse_task_plan(args: dict[str, Any]) -> tuple[TaskPlan | None, str | None]:
     last = steps[-1]
     if last.status is PlanStepStatus.COMPLETED and in_progress:
         return None, "cannot complete the final step while another step is in_progress"
+    if not explanation and any(item.status is PlanStepStatus.BLOCKED for item in steps):
+        return None, _BLOCKED_NEEDS_EXPLANATION
     return TaskPlan(steps=tuple(steps), explanation=explanation), None
 
 
@@ -128,6 +156,7 @@ def task_plan_to_payload(plan: TaskPlan) -> dict[str, Any]:
         "current": plan.current_index,
         "total": plan.total,
         "completed": plan.completed_count,
+        "blocked": plan.blocked_count,
     }
     if plan.explanation:
         payload["explanation"] = plan.explanation
@@ -149,6 +178,7 @@ def task_plan_from_payload(payload: Any) -> TaskPlan | None:
 __all__ = [
     "PlanStep",
     "PlanStepStatus",
+    "TERMINAL_STATUSES",
     "TaskPlan",
     "parse_task_plan",
     "task_plan_from_payload",

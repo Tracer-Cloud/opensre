@@ -30,8 +30,13 @@ _PLAN_ITEM_SCHEMA = {
             min_length=1,
         ),
         "status": string_property(
-            description="One of: pending, in_progress, completed.",
-            enum=("pending", "in_progress", "completed"),
+            description=(
+                "One of: pending, in_progress, completed, blocked. Use blocked "
+                "for a step this runtime or the current facts prevent; it is "
+                "terminal, never counts as done, and needs its blocker named "
+                "in explanation."
+            ),
+            enum=("pending", "in_progress", "completed", "blocked"),
         ),
     },
     "required": ["step", "status"],
@@ -73,9 +78,14 @@ def execute_update_plan_tool(args: dict[str, Any], ctx: ActionToolScope) -> dict
         payload["instruction"] += (
             " Execution is authorized: the first step is in_progress — run it now."
         )
-    elif not plan.all_completed:
+    elif not plan.is_settled:
         payload["instruction"] += (
             " Continue the in_progress step now — do not end the turn while pending steps remain."
+        )
+    if plan.blocked_count:
+        payload["instruction"] += (
+            " Blocked steps stay blocked — their work did not happen. Do not run tools"
+            " to earn a completed mark for them; name each blocker in the reply."
         )
     if demoted:
         names = "; ".join(demoted)
@@ -83,6 +93,8 @@ def execute_update_plan_tool(args: dict[str, Any], ctx: ActionToolScope) -> dict
             f" Reset to pending — marked completed before any tool ran for them: {names}."
             " A step is completed only after its work returned while it was in_progress:"
             " set it in_progress, run the work, then mark it completed."
+            " update_plan, session_goal_*, and loading a skill body do not count as work;"
+            " reading a skill reference does."
         )
     return payload
 
@@ -106,8 +118,10 @@ update_plan_tool = RegisteredTool(
     name=ActionToolName.UPDATE_PLAN,
     description=(
         "Create or revise the live execution plan for this workload, and mark "
-        "steps pending, in_progress, or completed. Call this BEFORE executing "
+        "steps pending, in_progress, completed, or blocked. Call this BEFORE executing "
         "any multi-step workload. Include verification before declaring the task complete. "
+        "Mark a step blocked (with the blocker in explanation) when the runtime cannot "
+        "perform it; never mark undone work completed. "
         "At most one step may be in_progress. Not for durable human todos "
         "(use work_task_*) and not for /goal keep-going."
     ),

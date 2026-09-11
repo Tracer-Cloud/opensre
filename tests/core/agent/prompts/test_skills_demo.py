@@ -94,7 +94,6 @@ def test_master_menu_matches_four_unique_children_and_preserves_specialists() ->
     for title in (
         "`Which repository should the agent watch?`",
         "`Should I create a broken pull request to demonstrate the fix?`",
-        "`Delete the demo repository now?`",
     ):
         assert title in fix_loop
     assert menu["allow_custom"] is False

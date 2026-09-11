@@ -107,7 +107,29 @@ def test_parse_rejects_an_unknown_status() -> None:
         {"plan": [{"step": "do it", "status": "done"}, {"step": "verify", "status": "pending"}]}
     )
     assert plan is None
-    assert "pending, in_progress, or completed" in (error or "")
+    assert "pending, in_progress, completed, or blocked" in (error or "")
+
+
+def test_blocked_step_needs_a_named_blocker_and_settles_without_completing() -> None:
+    """A blocked step is terminal but never counts as done: no 3/3, no ✓."""
+    unexplained, error = parse_task_plan({"plan": _items("completed", "blocked", "completed")})
+    assert unexplained is None
+    assert "blocker" in (error or "")
+
+    plan, error = parse_task_plan(
+        {
+            "plan": _items("completed", "blocked", "completed"),
+            "explanation": "Trace blocked: no deploy history for this window.",
+        }
+    )
+    assert error is None and plan is not None
+    assert plan.is_settled and not plan.all_completed
+    assert plan.completed_count == 2 and plan.blocked_count == 1
+    assert task_plan_to_payload(plan)["blocked"] == 1
+    assert task_plan_from_payload(task_plan_to_payload(plan)) == plan
+    text = format_task_plan_plain(plan)
+    assert text.startswith("Plan · 2/3 · 1 blocked")
+    assert "⊘ Trace 502s to the last deploy" in text
 
 
 def test_parse_rejects_completing_the_final_step_while_another_runs() -> None:

@@ -152,10 +152,22 @@ def test_task_plan_blocks_conclusion_helpers() -> None:
             ]
         }
     )
-    assert incomplete is not None and done is not None
+    # Blocked steps are terminal: the gate must not force fake work to close them.
+    settled, _ = parse_task_plan(
+        {
+            "plan": [
+                {"step": "Discover", "status": "completed"},
+                {"step": "Query", "status": "blocked"},
+                {"step": "Verify", "status": "blocked"},
+            ],
+            "explanation": "Query blocked: the runtime has no metrics source.",
+        }
+    )
+    assert incomplete is not None and done is not None and settled is not None
     assert task_plan_blocks_conclusion(task_plan=incomplete, plan_only=False) is True
     assert task_plan_blocks_conclusion(task_plan=incomplete, plan_only=True) is False
     assert task_plan_blocks_conclusion(task_plan=done, plan_only=False) is False
+    assert task_plan_blocks_conclusion(task_plan=settled, plan_only=False) is False
     assert task_plan_blocks_conclusion(task_plan=None, plan_only=False) is False
 
 

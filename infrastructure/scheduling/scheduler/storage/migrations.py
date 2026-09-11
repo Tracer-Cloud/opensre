@@ -26,6 +26,8 @@ _TASK_RUNS_SCHEMA = """
         owner_token TEXT NOT NULL DEFAULT '',
         lease_expires_at TEXT NOT NULL DEFAULT '',
         target_filter TEXT NOT NULL DEFAULT '[]',
+        report TEXT,
+        report_summary TEXT NOT NULL DEFAULT '',
         UNIQUE(task_id, fire_time, attempt)
     )
 """
@@ -92,7 +94,7 @@ def _add_missing_columns(conn: sqlite3.Connection) -> None:
 def apply_migrations(conn: sqlite3.Connection) -> None:
     """Create or migrate the task-runs schema under one SQLite write lock."""
     columns = _table_columns(conn)
-    if {"attempt", "targets", "target_filter"} <= columns:
+    if {"attempt", "targets", "target_filter", "report", "report_summary"} <= columns:
         return
 
     conn.execute("BEGIN IMMEDIATE")
@@ -109,6 +111,14 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
             conn.execute(
                 "ALTER TABLE task_runs ADD COLUMN target_filter TEXT NOT NULL DEFAULT '[]'"
             )
+        if "report" not in _table_columns(conn):
+            conn.execute("ALTER TABLE task_runs ADD COLUMN report TEXT")
+        if "report_summary" not in _table_columns(conn):
+            conn.execute("ALTER TABLE task_runs ADD COLUMN report_summary TEXT NOT NULL DEFAULT ''")
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS task_runs_recent "
+            "ON task_runs (task_id, started_at DESC, id DESC)"
+        )
         conn.commit()
     except Exception:
         conn.rollback()

@@ -7,6 +7,7 @@ previous write; otherwise the model is reporting intent as progress.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
@@ -17,7 +18,25 @@ from core.agent_harness.task_plan.plan import PlanStepStatus, TaskPlan
 PLAN_BOOKKEEPING_TOOLS: frozenset[str] = frozenset(
     {"update_plan", "skill_view", "session_goal_set", "session_goal_complete"}
 )
+_SKILL_VIEW_TOOL = "skill_view"
+_SKILL_REFERENCE_ARG = "reference"
 _EVIDENCE_ATTR = "task_plan_evidence"
+
+
+def is_plan_bookkeeping_call(tool_name: str, arguments: Mapping[str, Any] | None = None) -> bool:
+    """True when this call records or loads instructions rather than doing step work.
+
+    Loading a skill body (``skill_view(name=…)``) is bookkeeping. Loading one of
+    its ``references`` (``skill_view(name=…, reference=…)``) is the step's work:
+    a capability gate or benchmark table the workflow tells the model to read,
+    with nothing else to show for that step.
+    """
+    name = tool_name.strip()
+    if name not in PLAN_BOOKKEEPING_TOOLS:
+        return False
+    if name != _SKILL_VIEW_TOOL or not arguments:
+        return True
+    return not str(arguments.get(_SKILL_REFERENCE_ARG, "") or "").strip()
 
 
 @dataclass
@@ -43,9 +62,11 @@ def reset_plan_evidence(session: Any) -> None:
     setattr(session, _EVIDENCE_ATTR, PlanEvidence())
 
 
-def record_plan_evidence(session: Any, tool_name: str) -> None:
-    """Count one successful tool return; bookkeeping tools are ignored."""
-    if tool_name.strip() in PLAN_BOOKKEEPING_TOOLS:
+def record_plan_evidence(
+    session: Any, tool_name: str, arguments: Mapping[str, Any] | None = None
+) -> None:
+    """Count one successful tool return; bookkeeping calls are ignored."""
+    if is_plan_bookkeeping_call(tool_name, arguments):
         return
     _evidence(session).tool_returns += 1
 
@@ -80,6 +101,7 @@ def plan_evidence_available(
 __all__ = [
     "PLAN_BOOKKEEPING_TOOLS",
     "PlanEvidence",
+    "is_plan_bookkeeping_call",
     "mark_plan_written",
     "plan_evidence_available",
     "record_plan_evidence",

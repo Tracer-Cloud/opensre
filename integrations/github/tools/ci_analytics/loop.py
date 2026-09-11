@@ -21,7 +21,7 @@ from infrastructure.scheduling.scheduler.loops import (
     loop_time_label,
 )
 from infrastructure.scheduling.scheduler.storage import list_tasks, update_task
-from infrastructure.scheduling.scheduler.types import Provider, TaskKind
+from infrastructure.scheduling.scheduler.types import Provider, TaskKind, TaskReport
 from integrations.github.tools.ci_analytics.snapshots import (
     SNAPSHOT_DIRNAME,
     report_to_dict,
@@ -181,9 +181,14 @@ def build_report(args: Mapping[str, str], *, snapshot_dir: Path | None = None) -
             **report_payload(report),
         },
     )
-    # The rendered report leads with the headline sentence when there were
-    # runs, and says so when there were none.
-    return "\n".join([render_markdown(report), "", f"Raw data: {snapshot}"])
+    summary = (
+        headline(report)
+        if report.executions
+        else "No completed workflow runs were found in this window."
+    )
+    return TaskReport(
+        "\n".join([render_markdown(report), "", f"Raw data: {snapshot}"]), summary=summary
+    )
 
 
 def loop_card(scheduled: ScheduledLoop) -> LoopCard:

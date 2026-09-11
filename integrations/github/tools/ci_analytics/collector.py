@@ -8,6 +8,7 @@ from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
+from http import HTTPStatus
 from typing import Any
 from urllib.parse import quote
 
@@ -29,6 +30,11 @@ _MAX_RERUN_WORKERS = 8
 _MAX_ATTEMPT_LOOKUPS = 500
 _DEFAULT_BRANCH_EVENTS = ("push", "schedule", "workflow_dispatch")
 _PR_EVENT = "pull_request"
+_PULLS_DISABLED_NOTICE = (
+    "Coverage notice: pull requests are disabled on this repository, so merged pull "
+    "requests could not be read; blocked time and merged-PR failure counts are not "
+    "available and the report is built from the workflow runs alone."
+)
 
 
 @dataclass(frozen=True)
@@ -241,20 +247,30 @@ def _merged_prs(
 
     Closed PRs come newest-updated first, so paging stops as soon as a page
     ends before the window; only a window busier than the page cap is flagged.
+
+    The repository itself was already read, so a 404 here is GitHub's answer
+    for a repository with pull requests disabled (mirrors, import-only trees):
+    the run-based metrics still hold and the missing PR view is reported.
     """
     merged: list[MergedPullRequest] = []
     for page in range(1, _MAX_PR_PAGES + 1):
-        payload = client.request(
-            "GET",
-            f"{root}/pulls",
-            params={
-                "state": "closed",
-                "sort": "updated",
-                "direction": "desc",
-                "per_page": _PER_PAGE,
-                "page": page,
-            },
-        )
+        try:
+            payload = client.request(
+                "GET",
+                f"{root}/pulls",
+                params={
+                    "state": "closed",
+                    "sort": "updated",
+                    "direction": "desc",
+                    "per_page": _PER_PAGE,
+                    "page": page,
+                },
+            )
+        except GitHubApiError as exc:
+            if exc.status_code != HTTPStatus.NOT_FOUND:
+                raise
+            notices.append(_PULLS_DISABLED_NOTICE)
+            return ()
         rows = (
             [row for row in payload if isinstance(row, dict)] if isinstance(payload, list) else []
         )

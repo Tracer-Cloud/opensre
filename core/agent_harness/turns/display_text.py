@@ -47,7 +47,9 @@ def already_on_screen(tool_call: ToolCall, tool_result: Any) -> bool:
 
 
 _EXPAND_MARKER_RE = re.compile(r"^… \d+ more, Ctrl\+O to view$")
-_PLAN_SNAPSHOT_RE = re.compile(r"Plan\s*[·.]\s*\d+\s*/\s*\d+(?:\s*[✓●○][^✓●○\n]*)*")
+_PLAN_SNAPSHOT_RE = re.compile(
+    r"Plan\s*[·.]\s*\d+\s*/\s*\d+(?:\s*[·.]\s*\d+\s*blocked)?(?:\s*[✓●○⊘][^✓●○⊘\n]*)*"
+)
 
 
 def _content_to_text(content: Any) -> str:

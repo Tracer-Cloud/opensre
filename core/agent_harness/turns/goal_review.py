@@ -155,7 +155,9 @@ _PLAN_INCOMPLETE_NUDGE = (
     "The live task plan still has unfinished steps. Keep working the "
     "in_progress step (call tools), or call ask_user_choice if a fact is "
     "missing — do not pause and idle. Mark steps completed with update_plan "
-    "as you finish them; end the turn only when every plan step is completed."
+    "as you finish them. A step this runtime cannot perform is marked blocked "
+    "with its blocker in explanation, never completed. End the turn only when "
+    "every plan step is completed or blocked."
 )
 
 
@@ -179,21 +181,22 @@ def task_plan_blocks_conclusion(
 ) -> bool:
     """True when a live execution plan still requires work this turn.
 
-    Plan-only (user asked not to run yet) never blocks. A fully completed plan
-    never blocks. Otherwise the agent must keep going — stopping with ``●`` on
-    a mid-plan step leaves the shell idle while the overlay still shows work.
+    Plan-only (user asked not to run yet) never blocks. A settled plan — every
+    step completed or blocked — never blocks: a blocked step has nothing left
+    to run. Otherwise the agent must keep going — stopping with ``●`` on a
+    mid-plan step leaves the shell idle while the overlay still shows work.
     """
     if plan_only or task_plan is None:
         return False
     steps = getattr(task_plan, "steps", None)
     if not steps:
         return False
-    all_completed = getattr(task_plan, "all_completed", None)
-    if callable(all_completed):
-        return not bool(all_completed())
-    if isinstance(all_completed, bool):
-        return not all_completed
-    return any(getattr(item, "status", None) != "completed" for item in steps)
+    settled = getattr(task_plan, "is_settled", None)
+    if callable(settled):
+        return not bool(settled())
+    if isinstance(settled, bool):
+        return not settled
+    return any(getattr(item, "status", None) not in {"completed", "blocked"} for item in steps)
 
 
 @dataclass

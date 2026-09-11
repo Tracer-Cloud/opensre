@@ -209,6 +209,158 @@ def test_update_plan_does_not_accept_a_plan_born_complete_before_any_work() -> N
     assert all(step.status is not PlanStepStatus.COMPLETED for step in session.task_plan.steps)
 
 
+def test_update_plan_blocked_steps_settle_the_plan_without_evidence_or_completion() -> None:
+    """Regression: work a runtime cannot do must not need fake tool runs to close.
+
+    Observed live: a skill's capability gate failed after only ``skill_view``
+    (bookkeeping, no evidence), the host kept nudging while steps were pending,
+    and the model ran unrelated ``/loops`` commands to earn ``completed`` marks
+    for work that never happened — ending on ``Plan complete · 9/9``.
+    """
+    # Arrange: the gate step is in progress; nothing but bookkeeping ran.
+    session = Session()
+    ctx = _ctx(session=session)
+    opened: list[dict[str, Any]] = [
+        {"step": "Verify runtime support for scheduled repairs", "status": "in_progress"},
+        {"step": "Confirm repair authorization", "status": "pending"},
+        {"step": "Create the repair loop", "status": "pending"},
+        {"step": "Report the outcome", "status": "pending"},
+    ]
+    assert execute_update_plan_tool({"plan": opened}, ctx)["ok"] is True
+
+    # Act 1: the gate finds blockers. Finding them is the gate's outcome, so
+    # it closes without a tool return; dependent steps are blocked, not done.
+    explanation = "Unattended turns are read-only; no per-PR deadline storage."
+    gated: list[dict[str, Any]] = [
+        {"step": "Verify runtime support for scheduled repairs", "status": "completed"},
+        {"step": "Confirm repair authorization", "status": "blocked"},
+        {"step": "Create the repair loop", "status": "blocked"},
+        {"step": "Report the outcome", "status": "in_progress"},
+    ]
+    gate_result = execute_update_plan_tool({"plan": gated, "explanation": explanation}, ctx)
+    assert gate_result["ok"] is True
+    assert session.task_plan is not None
+    assert session.task_plan.steps[0].status is PlanStepStatus.COMPLETED
+    assert "Reset to pending" not in gate_result["instruction"]
+    assert "Blocked steps stay blocked" in gate_result["instruction"]
+
+    # Act 2: the text-only report closes the plan.
+    reported = [*gated[:-1], {"step": "Report the outcome", "status": "completed"}]
+    result = execute_update_plan_tool({"plan": reported, "explanation": explanation}, ctx)
+
+    # Assert: the plan is settled (no nudge to continue), blocked steps stay
+    # blocked, and no header claims 4/4.
+    assert result["ok"] is True
+    plan = session.task_plan
+    assert plan is not None
+    assert plan.is_settled and not plan.all_completed
+    assert [step.status for step in plan.steps] == [
+        PlanStepStatus.COMPLETED,
+        PlanStepStatus.BLOCKED,
+        PlanStepStatus.BLOCKED,
+        PlanStepStatus.COMPLETED,
+    ]
+    assert "Plan · 2/4 · 2 blocked" in result["summary"]
+    assert "Continue the in_progress step now" not in result["instruction"]
+    breakdown = take_completed_plan_breakdown(session)
+    assert breakdown.startswith("Plan ended · 2/4 completed · 2 blocked")
+    assert "Plan complete" not in breakdown
+
+
+def test_update_plan_gate_read_from_a_skill_reference_earns_the_gate_step() -> None:
+    """Regression: the one-write capability gate a skill prescribes must land.
+
+    Observed live: after ``skill_view(reference="runtime")`` the model wrote a
+    fresh nine-step plan with step 1 completed, 2–8 blocked, and 9 in_progress.
+    The reference read counted as bookkeeping, step 1 was reset to pending, the
+    overlay read ``Plan · 9/9`` over zero completed steps, and the model looped
+    in_progress → re-read → completed → reset three times before giving up and
+    marking the verified step blocked.
+    """
+    # Arrange: the previous skill's settled plan is still stored; this turn only
+    # loaded the new skill body and its runtime reference.
+    session = Session()
+    ctx = _ctx(session=session)
+    handoff: list[dict[str, Any]] = [
+        {"step": "Deliver the reliability report", "status": "completed"},
+        {"step": "Offer repair, Slack, or finish options", "status": "blocked"},
+    ]
+    assert execute_update_plan_tool({"plan": handoff, "explanation": "menu blocked"}, ctx)["ok"]
+    record_plan_evidence(session, "skill_view", {"name": "scheduling-github-ci-fixes"})
+    record_plan_evidence(
+        session, "skill_view", {"name": "scheduling-github-ci-fixes", "reference": "runtime"}
+    )
+
+    # Act: the gate write the skill asks for, in one call.
+    steps = [
+        "Verify runtime support for scheduled repairs",
+        "Discover candidate repositories",
+        "Select repository",
+        "Confirm repair authorization",
+        "Offer the demo",
+        "Run the demo",
+        "Create the repair loop",
+        "Verify a scheduled execution",
+        "Display setup outcome",
+    ]
+    gated = [{"step": step, "status": "blocked"} for step in steps]
+    gated[0]["status"] = "completed"
+    gated[-1]["status"] = "in_progress"
+    result = execute_update_plan_tool(
+        {"plan": gated, "explanation": "Unattended turns are read-only."}, ctx
+    )
+
+    # Assert: the reference read is the gate step's work, so it stays completed,
+    # and the live header counts completed work rather than the focused index.
+    assert result["ok"] is True
+    assert "Reset to pending" not in result["instruction"]
+    assert session.task_plan is not None
+    assert session.task_plan.steps[0].status is PlanStepStatus.COMPLETED
+    assert session.task_plan.steps[-1].status is PlanStepStatus.IN_PROGRESS
+    assert result["summary"].startswith("Plan · 1/9 · 7 blocked")
+    assert "Plan · 9/9" not in result["summary"]
+
+
+def test_update_plan_blocking_steps_does_not_bulk_tick_pending_work() -> None:
+    """The blocked-write exemption closes only the step that was in progress."""
+    session = Session()
+    ctx = _ctx(session=session)
+    opened: list[dict[str, Any]] = [
+        {"step": "Verify runtime support", "status": "in_progress"},
+        {"step": "Select the repository", "status": "pending"},
+        {"step": "Create the repair loop", "status": "pending"},
+    ]
+    assert execute_update_plan_tool({"plan": opened}, ctx)["ok"] is True
+    overreach: list[dict[str, Any]] = [
+        {"step": "Verify runtime support", "status": "completed"},
+        {"step": "Select the repository", "status": "completed"},
+        {"step": "Create the repair loop", "status": "blocked"},
+    ]
+    result = execute_update_plan_tool(
+        {"plan": overreach, "explanation": "Loop blocked: unattended turns are read-only."}, ctx
+    )
+    assert result["ok"] is True
+    assert session.task_plan is not None
+    assert [step.status for step in session.task_plan.steps] == [
+        PlanStepStatus.COMPLETED,
+        PlanStepStatus.IN_PROGRESS,
+        PlanStepStatus.BLOCKED,
+    ]
+    assert "Select the repository" in result["instruction"]
+
+
+def test_update_plan_rejects_blocked_steps_without_a_named_blocker() -> None:
+    session = Session()
+    blocked: list[dict[str, Any]] = [
+        {"step": "Verify runtime support", "status": "completed"},
+        {"step": "Create the repair loop", "status": "blocked"},
+    ]
+    result = execute_update_plan_tool({"plan": blocked}, _ctx(session=session))
+    assert result["ok"] is False
+    assert "blocker" in result["error"]
+    assert session.task_plan is None
+
+
 def test_update_plan_normal_create_carries_only_the_base_instruction() -> None:
     # A plain create (no plan_only, no Ask User answers on the turn) must not
     # emit the plan-only or execution-authorized suffixes; incomplete plans get

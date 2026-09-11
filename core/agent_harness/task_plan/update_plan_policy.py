@@ -34,30 +34,42 @@ def demote_unevidenced_completions(
     being worked. Any other new completion (from ``in_progress``, a new or
     renamed step, or a plan written after the work) needs ``evidence``: a
     non-bookkeeping tool returned since the previous write. Reset steps are
-    returned so the tool result can name them. One exemption: a write that
-    completes every step may close the step that was ``in_progress`` on the
-    stored plan without evidence — a text-only final step has no tool to show
-    for itself. It never covers a plan with no stored prior or a step that was
-    still ``pending``, so a checklist cannot be born or bulk-ticked complete.
+    returned so the tool result can name them. Two exemptions close the step
+    that was ``in_progress`` on the stored plan without evidence: a write that
+    settles every step (completed or blocked) — a text-only final step has no
+    tool to show for itself — and a write that newly marks steps ``blocked``:
+    finding the blocker *is* that step's outcome (a capability gate read
+    through bookkeeping tools has nothing else to show). Neither covers a plan
+    with no stored prior or a step that was still ``pending``, so a checklist
+    cannot be born or bulk-ticked complete. ``blocked`` is not a completion
+    and is never demoted: it records work that did not happen, with the
+    blocker named in the explanation ``parse_task_plan`` requires.
     """
     if not plan.steps:
         return plan, ()
-    closing = plan.all_completed
     same_shape = prior is not None and prior.total == plan.total
+
+    def _before(index: int, step: str) -> PlanStepStatus | None:
+        if prior is None:
+            return None
+        return _prior_status(prior, index, step, same_shape=same_shape)
+
+    closing = plan.is_settled
+    newly_blocked = any(
+        item.status is PlanStepStatus.BLOCKED
+        and _before(index, item.step) is not PlanStepStatus.BLOCKED
+        for index, item in enumerate(plan.steps)
+    )
     demoted: list[str] = []
     steps: list[PlanStep] = []
     for index, item in enumerate(plan.steps):
         if item.status is not PlanStepStatus.COMPLETED:
             steps.append(item)
             continue
-        before = (
-            _prior_status(prior, index, item.step, same_shape=same_shape)
-            if prior is not None
-            else None
-        )
+        before = _before(index, item.step)
         earned = (
             before is PlanStepStatus.COMPLETED
-            or (before is PlanStepStatus.IN_PROGRESS and closing)
+            or (before is PlanStepStatus.IN_PROGRESS and (closing or newly_blocked))
             or (before is not PlanStepStatus.PENDING and evidence)
         )
         if earned:

@@ -119,6 +119,17 @@ class DeliveryOutcome(BaseModel):
         return f"{self.provider.value}:{self.chat_id}" if self.chat_id else self.provider.value
 
 
+class TaskReport(str):
+    """Report text with a concise finding, usable by existing string-based delivery adapters."""
+
+    summary: str
+
+    def __new__(cls, body: str, *, summary: str) -> TaskReport:
+        report = super().__new__(cls, body)
+        report.summary = summary
+        return report
+
+
 class TaskRun(BaseModel):
     """A single execution record for a scheduled task."""
 
@@ -132,6 +143,10 @@ class TaskRun(BaseModel):
     provider: str = ""
     targets: tuple[DeliveryOutcome, ...] = ()
     attempt: int = 1
+    run_id: int | None = None
+    # None means no report was retained; an empty string is a known quiet run.
+    report: str | None = None
+    report_summary: str = ""
 
 
 __all__ = [
@@ -141,5 +156,6 @@ __all__ = [
     "ScheduledTask",
     "TaskKind",
     "TaskRun",
+    "TaskReport",
     "TaskStatus",
 ]

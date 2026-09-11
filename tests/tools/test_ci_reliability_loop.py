@@ -11,7 +11,7 @@ import pytest
 from config.constants import OPENSRE_OPERATIONS_LOG_PATH_ENV
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_PROMPT_PARAM
 from infrastructure.scheduling.scheduler.storage import list_tasks
-from infrastructure.scheduling.scheduler.types import Provider, TaskKind
+from infrastructure.scheduling.scheduler.types import Provider, TaskKind, TaskReport
 from integrations.github.tools.ci_analytics import loop as ci_loop
 from integrations.github.tools.ci_analytics import loop_tool
 
@@ -305,6 +305,8 @@ def test_build_report_renders_the_analytics_and_keeps_a_json_snapshot(
     )
 
     # Assert: header and a traceable snapshot on disk.
+    assert isinstance(report, TaskReport)
+    assert report.summary == "No completed workflow runs were found in this window."
     assert "CI/CD reliability for acme/app, last 7 days" in report
     assert "Raw data: " in report
     snapshot = Path(report.rsplit("Raw data: ", 1)[1].strip())

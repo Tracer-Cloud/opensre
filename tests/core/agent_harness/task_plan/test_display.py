@@ -75,6 +75,22 @@ def test_promote_first_pending_step_preserves_explanation() -> None:
     assert promoted.steps[0].status is PlanStepStatus.IN_PROGRESS
 
 
+def test_ensure_active_step_never_promotes_a_blocked_step() -> None:
+    plan, error = parse_task_plan(
+        {
+            "plan": [
+                {"step": "Confirm source", "status": "completed"},
+                {"step": "Query latency", "status": "blocked"},
+                {"step": "Verify", "status": "blocked"},
+            ],
+            "explanation": "Query blocked: no metrics source is connected.",
+        }
+    )
+    assert error is None and plan is not None
+    assert ensure_active_step(plan) is plan
+    assert promote_first_pending_step(plan) is plan
+
+
 def test_ensure_active_step_promotes_after_completed_gap() -> None:
     plan, error = parse_task_plan(
         {

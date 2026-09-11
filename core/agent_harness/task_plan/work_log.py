@@ -82,7 +82,7 @@ def sync_task_plan_work_for_plan(session: Any, plan: TaskPlan) -> None:
                 if isinstance(lines, list):
                     resized[index] = [str(line) for line in lines]
         session.task_plan_work = resized
-    if not plan.all_completed:
+    if not plan.is_settled:
         session.task_plan_breakdown_emitted = False
 
 
@@ -131,12 +131,18 @@ def format_task_plan_breakdown(
     """Plain-text post-execution checklist with work lines under each step.
 
     Empty steps still appear (so the user sees the full plan). Steps that
-    gathered work list each line under a ``↳`` marker.
+    gathered work list each line under a ``↳`` marker. A plan settled with
+    blocked steps is headed ``Plan ended``, never ``Plan complete``.
     """
     work = work_by_step or []
     header = format_plan_header(plan)
     if plan.all_completed:
         header = f"Plan complete · {plan.total}/{plan.total}"
+    elif plan.is_settled:
+        header = (
+            f"Plan ended · {plan.completed_count}/{plan.total} completed"
+            f" · {plan.blocked_count} blocked"
+        )
     lines = [header]
     for index, item in enumerate(plan.steps):
         mark = PLAN_STATUS_GLYPH[item.status]
@@ -147,14 +153,14 @@ def format_task_plan_breakdown(
 
 
 def take_completed_plan_breakdown(session: Any) -> str:
-    """Return the one-shot breakdown when the plan is complete; else ``\"\"``.
+    """Return the one-shot breakdown when the plan is settled; else ``\"\"``.
 
-    Marks the breakdown as emitted so a later caller in the same workload does
-    not reprint it. A new checklist identity resets that latch via
-    :func:`sync_task_plan_work_for_plan`.
+    Settled means every step is completed or blocked. Marks the breakdown as
+    emitted so a later caller in the same workload does not reprint it. A new
+    checklist identity resets that latch via :func:`sync_task_plan_work_for_plan`.
     """
     plan = getattr(session, "task_plan", None)
-    if plan is None or not plan.steps or not plan.all_completed:
+    if plan is None or not plan.steps or not plan.is_settled:
         return ""
     if getattr(session, "task_plan_breakdown_emitted", False):
         return ""
