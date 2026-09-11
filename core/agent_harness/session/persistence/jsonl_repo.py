@@ -8,7 +8,11 @@ from pathlib import Path
 from typing import Any
 
 import core.agent_harness.session.persistence.paths as storage_paths
-from core.agent_harness.session.persistence.contracts import CHAT_KINDS, RestoreContextKey
+from config.constants.session_store import WORKING_DIRECTORY_STATE_CUSTOM_TYPE
+from core.agent_harness.session.persistence.contracts import (
+    CHAT_KINDS,
+    RestoreContextKey,
+)
 from core.agent_harness.session.persistence.wal_recovery import dangling_tool_intents
 from core.state.transcript_window import SESSION_SUMMARY_PREFIX
 
@@ -90,6 +94,10 @@ class JsonlSessionRepo:
                 RestoreContextKey.SESSION_GOAL_STATE: goal_state,
                 RestoreContextKey.TASK_PLAN_STATE: plan_state,
                 RestoreContextKey.HISTORY: history,
+                RestoreContextKey.WORKING_DIRECTORY: _working_directory_for_branch(
+                    header,
+                    branch,
+                ),
                 "turn_details": turn_details,
                 "has_snapshot": False,
                 # WAL sidecars are off-branch, so scan the full entry list:
@@ -235,6 +243,20 @@ def _history_for_branch(branch: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 }
             )
     return history
+
+
+def _working_directory_for_branch(
+    header: dict[str, Any],
+    branch: list[dict[str, Any]],
+) -> str | None:
+    value = header.get("cwd")
+    for record in branch:
+        if (
+            record.get("type") == "custom_message"
+            and record.get("custom_type") == WORKING_DIRECTORY_STATE_CUSTOM_TYPE
+        ):
+            value = record.get("content")
+    return value if isinstance(value, str) and value.strip() else None
 
 
 def _turn_details_for_branch(branch: list[dict[str, Any]]) -> list[dict[str, Any]]:

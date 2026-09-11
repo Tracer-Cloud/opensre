@@ -17,6 +17,7 @@ from surfaces.interactive_shell.runtime import Session, TaskKind, TaskRecord
 from surfaces.interactive_shell.telemetry import PromptRecorder
 from surfaces.interactive_shell.ui import DIM, ERROR, HIGHLIGHT
 from surfaces.shared.error_handling.exception_reporting import report_exception
+from tools.interactive_shell.working_directory import session_working_directory
 
 from .task_streaming import (
     _MAX_COMMAND_OUTPUT_CHARS,
@@ -102,6 +103,7 @@ def start_background_cli_task(
                 text=True,
                 encoding="utf-8",
                 errors="replace",
+                cwd=session_working_directory(session),
                 start_new_session=True,
                 env=subprocess_env,
             )
@@ -113,6 +115,7 @@ def start_background_cli_task(
                 stdout=slave_fd,
                 stderr=slave_fd,
                 close_fds=True,
+                cwd=session_working_directory(session),
                 start_new_session=True,
                 env=subprocess_env,
             )

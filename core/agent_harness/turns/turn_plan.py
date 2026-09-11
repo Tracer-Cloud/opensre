@@ -15,6 +15,7 @@ here so there is one source.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 
@@ -24,6 +25,11 @@ from core.agent_harness.session.integration_resolution import (
     resolve_and_cache_integrations,
 )
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
+from core.tool.execution import (
+    ToolExecutionHooks,
+    ToolExecutionRequest,
+    ToolExecutionResult,
+)
 from infrastructure.harness_providers import enrich_resolved_with_repo_scopes
 
 _MAX_KNOWN_REPOSITORIES_PER_VENDOR = 20
@@ -46,24 +52,16 @@ class TurnPlan:
         return self.snapshot.resolved_integrations
 
 
-def build_turn_plan(snapshot: TurnSnapshot, session: SessionState) -> TurnPlan:
-    """Assemble the turn plan: resolve integrations once, then compose the snapshot.
-
-    Resolution runs only when the snapshot has not already been populated (a
-    runtime-request source can pre-fill it), so the plan is the single place that
-    decides what this turn knows about connected integrations.
-
-    An empty result (``{}`` — no integrations configured) is a valid resolved
-    view; downstream phases read it from the plan rather than re-checking, so the
-    resolve-once contract holds even in that case (``resolve_and_cache`` also
-    caches, so a repeat call would be a no-op regardless).
-
-    Metadata-only maps (underscore keys such as ``_gateway_chat_id``) are not a
-    resolved view — they must still trigger a real resolve.
-    """
-    if not has_resolved_integrations(snapshot.resolved_integrations):
-        snapshot = replace(snapshot, resolved_integrations=resolve_and_cache_integrations(session))
-
+def _enrich_repository_scopes(
+    *,
+    resolved: dict[str, Any],
+    session: SessionState,
+    message: str,
+    conversation_messages: Sequence[tuple[str, str]] | None,
+    cwd: str | None,
+    cached_scopes: dict[str, tuple[str, ...]],
+) -> dict[str, Any]:
+    """Enrich one resolved-integration view and update session scope caches."""
     repository_keys: dict[tuple[str, tuple[str, ...]], str] = {}
 
     def _set_active_scope(vendor: str, scope: tuple[str, ...] | None) -> None:
@@ -88,23 +86,107 @@ def build_turn_plan(snapshot: TurnSnapshot, session: SessionState) -> TurnPlan:
             name: dict(scopes) for name, scopes in session.known_vcs_repo_scopes.items()
         }
         known = known_by_vendor.setdefault(vendor, {})
-        # Re-inserting moves a reused repository to the recent end without
-        # creating a duplicate. Bound the collection for long-running gateways.
         known.pop(repository, None)
         known[repository] = scope
         while len(known) > _MAX_KNOWN_REPOSITORIES_PER_VENDOR:
             known.pop(next(iter(known)))
         session.known_vcs_repo_scopes = known_by_vendor
 
-    enriched = enrich_resolved_with_repo_scopes(
-        resolved=snapshot.resolved_integrations,
-        message=snapshot.text,
-        conversation_messages=snapshot.conversation_messages,
+    return enrich_resolved_with_repo_scopes(
+        resolved=resolved,
+        message=message,
+        conversation_messages=conversation_messages,
         env=None,
-        cwd=snapshot.working_directory,
-        cached_scopes=session.vcs_repo_scopes,
+        cwd=cwd,
+        cached_scopes=cached_scopes,
         set_cached_scope=_set_active_scope,
         remember_scope=_remember_scope,
+    )
+
+
+def refresh_repository_scopes_after_directory_change(
+    *,
+    resolved: dict[str, Any],
+    session: SessionState,
+    message: str,
+    cwd: str,
+) -> dict[str, Any]:
+    """Rebuild repository scope after an explicit workspace change.
+
+    The new workspace replaces stale conversation/cache inference unless the
+    current request explicitly names a repository. Metadata keys carried by
+    the turn are preserved alongside the session's unscoped integration view.
+    """
+    metadata = {key: value for key, value in resolved.items() if key.startswith("_")}
+    base = {**resolve_and_cache_integrations(session), **metadata}
+    session.vcs_repo_scopes = {}
+    session.active_vcs_repositories = {}
+    return _enrich_repository_scopes(
+        resolved=base,
+        session=session,
+        message=message,
+        conversation_messages=None,
+        cwd=cwd,
+        cached_scopes={},
+    )
+
+
+def working_directory_scope_refresh_hooks(
+    *,
+    session: SessionState,
+    message: str,
+) -> ToolExecutionHooks:
+    """Refresh the running tool-execution view after a directory change."""
+
+    def after(
+        request: ToolExecutionRequest,
+        result: ToolExecutionResult,
+    ) -> None:
+        if request.tool_call.name != "set_working_directory" or result.is_error:
+            return
+        details = result.details
+        if not isinstance(details, dict) or details.get("ok") is not True:
+            return
+        cwd = details.get("working_directory")
+        if not isinstance(cwd, str) or not cwd:
+            return
+        refreshed = refresh_repository_scopes_after_directory_change(
+            resolved=request.resolved_integrations,
+            session=session,
+            message=message,
+            cwd=cwd,
+        )
+        request.resolved_integrations.clear()
+        request.resolved_integrations.update(refreshed)
+
+    return ToolExecutionHooks(after_tool_call=after)
+
+
+def build_turn_plan(snapshot: TurnSnapshot, session: SessionState) -> TurnPlan:
+    """Assemble the turn plan: resolve integrations once, then compose the snapshot.
+
+    Resolution runs only when the snapshot has not already been populated (a
+    runtime-request source can pre-fill it), so the plan is the single place that
+    decides what this turn knows about connected integrations.
+
+    An empty result (``{}`` — no integrations configured) is a valid resolved
+    view; downstream phases read it from the plan rather than re-checking, so the
+    resolve-once contract holds even in that case (``resolve_and_cache`` also
+    caches, so a repeat call would be a no-op regardless).
+
+    Metadata-only maps (underscore keys such as ``_gateway_chat_id``) are not a
+    resolved view — they must still trigger a real resolve.
+    """
+    if not has_resolved_integrations(snapshot.resolved_integrations):
+        snapshot = replace(snapshot, resolved_integrations=resolve_and_cache_integrations(session))
+
+    enriched = _enrich_repository_scopes(
+        resolved=snapshot.resolved_integrations,
+        session=session,
+        message=snapshot.text,
+        conversation_messages=snapshot.conversation_messages,
+        cwd=snapshot.working_directory,
+        cached_scopes=session.vcs_repo_scopes,
     )
     snapshot = replace(
         snapshot,
@@ -117,4 +199,9 @@ def build_turn_plan(snapshot: TurnSnapshot, session: SessionState) -> TurnPlan:
     return TurnPlan(snapshot=snapshot)
 
 
-__all__ = ["TurnPlan", "build_turn_plan"]
+__all__ = [
+    "TurnPlan",
+    "build_turn_plan",
+    "refresh_repository_scopes_after_directory_change",
+    "working_directory_scope_refresh_hooks",
+]

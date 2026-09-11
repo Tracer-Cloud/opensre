@@ -14,6 +14,7 @@ SELF_RECORDING_ACTION_TOOL_NAMES: frozenset[str] = frozenset(
         "code_implement",
         "llm_set_provider",
         "shell_run",
+        "set_working_directory",
         "slash_invoke",
         "task_cancel",
     }

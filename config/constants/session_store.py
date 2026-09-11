@@ -1,4 +1,4 @@
-"""Session-store environment variable names."""
+"""Session-store constants."""
 
 from __future__ import annotations
 
@@ -7,5 +7,6 @@ from __future__ import annotations
 # without corrupting it. Off by default: a single-task deployment cannot hit the
 # hazard and should not pay the per-write lock cost. Turn on when running N tasks.
 OPENSRE_SESSION_FILE_LOCK_ENV = "OPENSRE_SESSION_FILE_LOCK"
+WORKING_DIRECTORY_STATE_CUSTOM_TYPE = "working_directory_state"
 
-__all__ = ["OPENSRE_SESSION_FILE_LOCK_ENV"]
+__all__ = ["OPENSRE_SESSION_FILE_LOCK_ENV", "WORKING_DIRECTORY_STATE_CUSTOM_TYPE"]

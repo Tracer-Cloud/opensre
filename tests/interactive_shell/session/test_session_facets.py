@@ -24,7 +24,7 @@ from surfaces.interactive_shell.session.session import Session
 # (task_plan_work, task_plan_work_step_texts, task_plan_breakdown_emitted),
 # and the two 'do not ask twice' sets (questions_already_answered,
 # skills_already_prompted).
-_CORE_FIELD_COUNT = 34
+_CORE_FIELD_COUNT = 35
 _FACET_FIELDS = ("alerts", "terminal")
 
 

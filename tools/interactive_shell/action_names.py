@@ -20,6 +20,7 @@ class ToolKind(StrEnum):
     IMPLEMENTATION = "implementation"
     LLM_PROVIDER = "llm_provider"
     SESSION_GOAL = "session_goal"
+    WORKING_DIRECTORY = "working_directory"
 
 
 class ActionToolName(StrEnum):
@@ -38,6 +39,7 @@ class ActionToolName(StrEnum):
     SESSION_GOAL_COMPLETE = "session_goal_complete"
     SESSION_GOAL_SET = "session_goal_set"
     SHELL_RUN = "shell_run"
+    SET_WORKING_DIRECTORY = "set_working_directory"
     SKILL_VIEW = "skill_view"
     SLASH_INVOKE = "slash_invoke"
     TASK_CANCEL = "task_cancel"
@@ -52,6 +54,7 @@ TOOL_KIND_TO_NAME: dict[ToolKind, ActionToolName] = {
     ToolKind.IMPLEMENTATION: ActionToolName.CODE_IMPLEMENT,
     ToolKind.LLM_PROVIDER: ActionToolName.LLM_SET_PROVIDER,
     ToolKind.SESSION_GOAL: ActionToolName.SESSION_GOAL_SET,
+    ToolKind.WORKING_DIRECTORY: ActionToolName.SET_WORKING_DIRECTORY,
 }
 
 __all__ = ["ActionToolName", "TOOL_KIND_TO_NAME", "ToolKind"]

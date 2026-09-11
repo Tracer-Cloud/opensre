@@ -30,6 +30,7 @@ from tools.interactive_shell.subprocess import (
     SubprocessPresenter,
     terminate_child_process,
 )
+from tools.interactive_shell.working_directory import session_working_directory
 
 _DIM_STYLE = "dim"
 _ERROR_STYLE = "error"
@@ -207,7 +208,7 @@ def run_claude_code_implementation(request: str, presenter: SubprocessPresenter)
         invocation = adapter.build(
             prompt=prompt,
             model=os.environ.get("CLAUDE_CODE_MODEL"),
-            workspace=str(Path.cwd()),
+            workspace=session_working_directory(session),
         )
     except Exception as exc:
         presenter.report_exception(exc, context="surfaces.interactive_shell.claude_code.build")

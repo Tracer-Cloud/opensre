@@ -73,6 +73,7 @@ _SIMPLE_TOOL_LABELS: dict[str, tuple[str, str]] = {
     ActionToolName.CLI_EXEC: ("opensre", "payload"),
     ActionToolName.CODE_IMPLEMENT: ("implementation", "task"),
     ActionToolName.SHELL_RUN: ("Execute", "command"),
+    ActionToolName.SET_WORKING_DIRECTORY: ("Working directory", "path"),
 }
 
 #: Tools that must not appear in the post-execution plan work log (plan/UI plumbing).

@@ -53,6 +53,7 @@ _CORE_FIELDS = (
     "agent",
     "grounding",
     "runtime_metadata",
+    "working_directory",
 )
 
 

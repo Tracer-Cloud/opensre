@@ -13,6 +13,7 @@ import pytest
 from core.agent_harness.session import (
     JsonlSessionRepo,
     JsonlSessionStore,
+    SessionManager,
 )
 from core.agent_harness.session.persistence.paths import sessions_dir as _sessions_dir
 from surfaces.interactive_shell.session import (
@@ -107,6 +108,65 @@ def test_open_session_creates_file_with_session_start(tmp_path: Path) -> None:
     assert records[0]["type"] == "session"
     assert records[0]["version"] == 2
     assert records[0]["id"] == session.session_id
+
+
+def test_working_directory_round_trips_through_session_resume(tmp_path: Path) -> None:
+    target = tmp_path / "repository"
+    target.mkdir()
+    session = Session(store=SessionStore, working_directory=str(tmp_path))
+
+    with _patch_dir(tmp_path):
+        SessionStore.open_session(session)
+        SessionStore.append_turn(session, "chat", "work in the repository")
+        session.set_working_directory(str(target.resolve()))
+        loaded = SessionStore.load_session(session.session_id)
+
+    assert loaded is not None
+    restored = Session(working_directory=str(tmp_path))
+    SessionManager(store=SessionStore, repo=SessionStore).restore_context(restored, loaded)
+    assert restored.working_directory == str(target.resolve())
+
+
+def test_working_directory_restore_follows_selected_session_branch(tmp_path: Path) -> None:
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
+    session = Session(store=SessionStore, working_directory=str(tmp_path))
+
+    with _patch_dir(tmp_path):
+        SessionStore.open_session(session)
+        session.set_working_directory(str(first.resolve()))
+        first_entry_id = _read_lines(tmp_path / f"{session.session_id}.jsonl")[-1]["id"]
+        session.set_working_directory(str(second.resolve()))
+        at_first = SessionStore.load_session(f"{session.session_id}:{first_entry_id}")
+        at_tip = SessionStore.load_session(session.session_id)
+
+    assert at_first is not None
+    assert at_first["working_directory"] == str(first.resolve())
+    assert at_tip is not None
+    assert at_tip["working_directory"] == str(second.resolve())
+
+
+def test_resume_keeps_launch_directory_when_persisted_directory_is_gone(
+    tmp_path: Path,
+) -> None:
+    missing = tmp_path / "deleted"
+    fallback = tmp_path / "fallback"
+    fallback.mkdir()
+    session = Session(store=SessionStore, working_directory=str(tmp_path))
+
+    with _patch_dir(tmp_path):
+        SessionStore.open_session(session)
+        missing.mkdir()
+        session.set_working_directory(str(missing.resolve()))
+        loaded = SessionStore.load_session(session.session_id)
+        missing.rmdir()
+
+    assert loaded is not None
+    restored = Session(working_directory=str(fallback))
+    SessionManager(store=SessionStore, repo=SessionStore).restore_context(restored, loaded)
+    assert restored.working_directory == str(fallback)
 
 
 def test_open_session_uses_session_id_as_filename(tmp_path: Path) -> None:

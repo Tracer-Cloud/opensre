@@ -269,6 +269,7 @@ class TurnSnapshot:
             tool_resources=dict(getattr(runtime_input, "tool_resources", {}) or {}),
             max_iterations=int(getattr(runtime_input, "max_iterations", 1)),
             model=getattr(runtime_input, "model", None),
+            working_directory=getattr(session, "working_directory", None),
             last_observation=last_observation,
             recovery_note=recovery_note,
             task_plan=_read_task_plan(session),

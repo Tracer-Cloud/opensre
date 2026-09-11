@@ -97,6 +97,13 @@ def _fallback_descriptors() -> tuple[ToolDescriptor, ...]:
             "tools.interactive_shell.actions.shell",
         ),
         ToolDescriptor(
+            "set_working_directory",
+            (ToolSurface.ACTION,),
+            "interactive_shell",
+            None,
+            "tools.interactive_shell.actions.shell",
+        ),
+        ToolDescriptor(
             "propose_scheduled_delivery",
             (ToolSurface.ACTION,),
             "interactive_shell",

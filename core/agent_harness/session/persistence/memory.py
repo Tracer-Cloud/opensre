@@ -6,6 +6,7 @@ import uuid
 from datetime import UTC, datetime
 from typing import Any
 
+from config.constants.session_store import WORKING_DIRECTORY_STATE_CUSTOM_TYPE
 from core.agent_harness.session.persistence.contracts import SessionPersistenceSource
 
 
@@ -29,7 +30,7 @@ class InMemorySessionStore:
                 "version": 2,
                 "id": session.session_id,
                 "created_at": datetime.fromtimestamp(session.started_at, tz=UTC).isoformat(),
-                "cwd": "",
+                "cwd": session.working_directory,
             }
         ]
 
@@ -38,6 +39,17 @@ class InMemorySessionStore:
             session.session_id,
             "custom_message",
             {"custom_type": "turn_stub", "kind": kind, "text": text, "display": False},
+        )
+
+    def append_working_directory(self, session_id: str, working_directory: str) -> None:
+        self._append(
+            session_id,
+            "custom_message",
+            {
+                "custom_type": WORKING_DIRECTORY_STATE_CUSTOM_TYPE,
+                "content": working_directory,
+                "display": False,
+            },
         )
 
     def append_turn_detail(

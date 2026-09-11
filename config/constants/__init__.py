@@ -935,6 +935,9 @@ if TYPE_CHECKING:
     from config.constants.session_store import (
         OPENSRE_SESSION_FILE_LOCK_ENV as OPENSRE_SESSION_FILE_LOCK_ENV,
     )
+    from config.constants.session_store import (
+        WORKING_DIRECTORY_STATE_CUSTOM_TYPE as WORKING_DIRECTORY_STATE_CUSTOM_TYPE,
+    )
     from config.constants.signoz import (
         SIGNOZ_API_KEY_ENV as SIGNOZ_API_KEY_ENV,
     )

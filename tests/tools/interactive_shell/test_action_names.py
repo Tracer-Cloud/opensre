@@ -14,6 +14,7 @@ def test_tool_kind_members_are_stable() -> None:
         "implementation",
         "llm_provider",
         "session_goal",
+        "working_directory",
     ]
 
 
@@ -36,6 +37,7 @@ def test_tool_kind_to_name_mapping_values() -> None:
         ToolKind.IMPLEMENTATION: "code_implement",
         ToolKind.LLM_PROVIDER: "llm_set_provider",
         ToolKind.SESSION_GOAL: "session_goal_set",
+        ToolKind.WORKING_DIRECTORY: "set_working_directory",
     }
 
 
@@ -57,6 +59,7 @@ def test_action_tool_name_members_are_stable() -> None:
         "session_goal_complete",
         "session_goal_set",
         "shell_run",
+        "set_working_directory",
         "skill_view",
         "slash_invoke",
         "task_cancel",

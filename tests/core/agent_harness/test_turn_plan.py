@@ -2,13 +2,23 @@
 
 from __future__ import annotations
 
+import subprocess
 from dataclasses import replace
+from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
+import core.agent_harness.turns.turn_plan as turn_plan_module
 from core.agent_harness.session.pending_choice import AskUserQuestion, format_ask_user_answers
-from core.agent_harness.turns.turn_plan import TurnPlan, build_turn_plan
+from core.agent_harness.turns.turn_plan import (
+    TurnPlan,
+    build_turn_plan,
+    refresh_repository_scopes_after_directory_change,
+    working_directory_scope_refresh_hooks,
+)
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
+from core.tool.execution import ToolExecutionResult
 from surfaces.interactive_shell.session import Session
 
 
@@ -219,3 +229,78 @@ def test_repo_scope_uses_workspace_only_without_explicit_or_sticky_scope(
     assert plan.resolved_integrations["github"]["owner"] == "Tracer-Cloud"
     assert plan.resolved_integrations["github"]["repo"] == "opensre"
     assert session.vcs_repo_scopes["github"][:2] == ("Tracer-Cloud", "opensre")
+
+
+def test_directory_change_refreshes_same_turn_repository_scope(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("GITHUB_REPOSITORY", raising=False)
+    repo_a = tmp_path / "repo-a"
+    repo_b = tmp_path / "repo-b"
+    for path, remote in (
+        (repo_a, "https://github.com/example/repo-a.git"),
+        (repo_b, "https://github.com/example/repo-b.git"),
+    ):
+        path.mkdir()
+        subprocess.run(["git", "init", "-q", str(path)], check=True)
+        subprocess.run(
+            ["git", "-C", str(path), "remote", "add", "origin", remote],
+            check=True,
+        )
+
+    session = Session(working_directory=str(repo_a))
+    session.resolved_integrations_cache = {"github": {"connection_verified": True}}
+    initial = build_turn_plan(
+        TurnSnapshot.from_session("check this repository", session, surface="interactive_shell"),
+        session,
+    )
+    assert initial.resolved_integrations["github"]["repo"] == "repo-a"
+
+    refreshed = refresh_repository_scopes_after_directory_change(
+        resolved=initial.resolved_integrations,
+        session=session,
+        message="change directory and check this repository",
+        cwd=str(repo_b),
+    )
+
+    assert refreshed["github"]["owner"] == "example"
+    assert refreshed["github"]["repo"] == "repo-b"
+    assert session.active_vcs_repositories == {"github": "example/repo-b"}
+
+
+def test_directory_change_hook_updates_running_execution_view(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = Session()
+    running = {"github": {"configured": True, "repo": "repo-a"}}
+
+    def _refresh(**kwargs: object) -> dict[str, object]:
+        assert kwargs["resolved"] is running
+        assert kwargs["cwd"] == "/workspace/repo-b"
+        return {"github": {"configured": True, "repo": "repo-b"}}
+
+    monkeypatch.setattr(
+        turn_plan_module,
+        "refresh_repository_scopes_after_directory_change",
+        _refresh,
+    )
+    hooks = working_directory_scope_refresh_hooks(
+        session=session,
+        message="change directory and inspect this repository",
+    )
+    request = SimpleNamespace(
+        tool_call=SimpleNamespace(name="set_working_directory"),
+        resolved_integrations=running,
+    )
+    assert hooks.after_tool_call is not None
+
+    hooks.after_tool_call(
+        request,
+        ToolExecutionResult(
+            content="ok",
+            details={"ok": True, "working_directory": "/workspace/repo-b"},
+        ),
+    )
+
+    assert running["github"]["repo"] == "repo-b"

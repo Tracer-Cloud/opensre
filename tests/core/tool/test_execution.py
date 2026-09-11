@@ -445,6 +445,43 @@ def test_non_parallel_safe_registered_tool_serializes_mixed_batch(
     ]
 
 
+def test_sequential_batch_uses_integration_scope_refreshed_by_prior_tool() -> None:
+    resolved = {"github": {"owner": "old-owner"}}
+
+    def refresh(value: str, context: AgentToolContext) -> dict[str, str]:
+        context.resolved_integrations["github"] = {"owner": value}
+        return {"value": value}
+
+    def read_scope(owner: str, value: str) -> dict[str, str]:
+        return {"owner": owner, "value": value}
+
+    refresh_tool = RegisteredTool(
+        name="refresh_scope",
+        description="refresh integration scope",
+        input_schema=_schema(["value"]),
+        source="knowledge",
+        run=refresh,
+        accepts_runtime_context=True,
+        parallel_safe=False,
+    )
+    scoped_tool = RegisteredTool(
+        name="read_scope",
+        description="read integration scope",
+        input_schema=_schema(["value"]),
+        source="github",
+        run=read_scope,
+        extract_params=lambda sources: {"owner": sources["github"]["owner"]},
+    )
+
+    results = execute_tool_calls(
+        [_call("refresh_scope", "new-owner"), _call("read_scope", "observed")],
+        [refresh_tool, scoped_tool],
+        resolved,
+    )
+
+    assert results[1].details == {"owner": "new-owner", "value": "observed"}
+
+
 def test_agent_tool_sequential_execution_mode_serializes_mixed_batch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

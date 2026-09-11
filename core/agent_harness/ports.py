@@ -72,6 +72,7 @@ class SessionState(Protocol):
     # --- turn-context snapshot fields ---
     cli_agent_messages: list[tuple[str, str]]
     configured_integrations_known: bool
+    working_directory: str
 
     # Read-only here; ``Session`` stores a tuple. A property matches
     # covariantly, so any concrete ``Sequence[str]`` implementation satisfies it.
@@ -94,6 +95,9 @@ class SessionState(Protocol):
 
     def record(self, kind: str, text: str, *, ok: bool = True) -> None:
         """Append a record of an executed action/turn to the session log."""
+
+    def set_working_directory(self, working_directory: str) -> None:
+        """Persist and apply the default directory for local session tools."""
 
 
 @runtime_checkable

@@ -17,7 +17,6 @@ class ShellExecutionResult:
     """Normalized command execution output."""
 
     command: str
-    argv: list[str] | None
     stdout: str
     stderr: str
     exit_code: int | None
@@ -37,8 +36,12 @@ def _shell_argv(command: str) -> list[str]:
     if os.name == "nt":
         shell = os.environ.get("COMSPEC") or "cmd.exe"
         return [shell, "/d", "/s", "/c", command]
-    shell = os.environ.get("SHELL") or "/bin/sh"
-    return [shell, "-lc", command]
+    configured_shell = os.environ.get("SHELL")
+    if configured_shell:
+        return [configured_shell, "-lc", command]
+    # /bin/sh is a compatibility fallback, not necessarily the user's login
+    # shell. Do not source a potentially bash/zsh-specific login profile in it.
+    return ["/bin/sh", "-c", command]
 
 
 def _drain_pipe(pipe: IO[str] | None, buffer: list[str]) -> None:
@@ -58,18 +61,15 @@ def _drain_pipe(pipe: IO[str] | None, buffer: list[str]) -> None:
 def _cancelled_result(
     *,
     command: str,
-    argv: list[str] | None,
-    use_shell: bool,
 ) -> ShellExecutionResult:
     return ShellExecutionResult(
         command=command,
-        argv=argv,
         stdout="",
         stderr="",
         exit_code=None,
         timed_out=False,
         truncated=False,
-        executed_with_shell=use_shell,
+        executed_with_shell=True,
         cancelled=True,
     )
 
@@ -77,8 +77,7 @@ def _cancelled_result(
 def execute_shell_command(
     *,
     command: str,
-    argv: list[str] | None,
-    use_shell: bool,
+    cwd: str,
     timeout_seconds: int,
     max_output_chars: int,
     cancel_event: threading.Event | None = None,
@@ -91,14 +90,9 @@ def execute_shell_command(
     """
     watch_cancel = cancel_event if cancel_event is not None else threading.Event()
     if watch_cancel.is_set():
-        return _cancelled_result(command=command, argv=argv, use_shell=use_shell)
+        return _cancelled_result(command=command)
 
-    if use_shell:
-        exec_argv = _shell_argv(command)
-    else:
-        if argv is None:
-            raise ValueError("argv is required for shell=False execution.")
-        exec_argv = argv
+    exec_argv = _shell_argv(command)
 
     proc = subprocess.Popen(
         exec_argv,
@@ -107,6 +101,7 @@ def execute_shell_command(
         text=True,
         encoding="utf-8",
         errors="replace",
+        cwd=cwd,
         start_new_session=True,
     )
     out_buf: list[str] = []
@@ -136,13 +131,12 @@ def execute_shell_command(
     )
     return ShellExecutionResult(
         command=command,
-        argv=argv,
         stdout=stdout,
         stderr=stderr,
         exit_code=watch.exit_code,
         timed_out=watch.timed_out,
         truncated=truncated_stdout or truncated_stderr,
-        executed_with_shell=use_shell,
+        executed_with_shell=True,
         cancelled=watch.cancelled,
     )
 

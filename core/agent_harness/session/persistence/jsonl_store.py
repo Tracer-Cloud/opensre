@@ -16,9 +16,15 @@ from typing import Any
 
 from filelock import FileLock, Timeout
 
-from config.constants.session_store import OPENSRE_SESSION_FILE_LOCK_ENV
+from config.constants.session_store import (
+    OPENSRE_SESSION_FILE_LOCK_ENV,
+    WORKING_DIRECTORY_STATE_CUSTOM_TYPE,
+)
 from config.version import get_opensre_version
-from core.agent_harness.session.persistence.contracts import CHAT_KINDS, SessionPersistenceSource
+from core.agent_harness.session.persistence.contracts import (
+    CHAT_KINDS,
+    SessionPersistenceSource,
+)
 from core.agent_harness.session.persistence.paths import session_path
 from infrastructure.observability.operations_log import record_operation
 
@@ -154,7 +160,7 @@ class JsonlSessionStore:
                     "version": 2,
                     "id": session.session_id,
                     "created_at": datetime.fromtimestamp(session.started_at, tz=UTC).isoformat(),
-                    "cwd": str(Path.cwd()),
+                    "cwd": getattr(session, "working_directory", str(Path.cwd())),
                     "opensre_version": get_opensre_version(),
                 }
                 with path.open("w", encoding="utf-8") as fh:
@@ -173,6 +179,18 @@ class JsonlSessionStore:
                 "text": text,
                 "display": False,
             },
+        )
+
+    def append_working_directory(self, session_id: str, working_directory: str) -> None:
+        self._append_entry(
+            session_id,
+            "custom_message",
+            {
+                "custom_type": WORKING_DIRECTORY_STATE_CUSTOM_TYPE,
+                "content": working_directory,
+                "display": False,
+            },
+            durable=True,
         )
 
     def append_turn_detail(

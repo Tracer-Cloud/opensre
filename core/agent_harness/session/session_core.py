@@ -12,6 +12,7 @@ from __future__ import annotations
 import time
 import uuid
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from core.agent_harness.session.history_entry import build_history_entry
@@ -108,6 +109,13 @@ class SessionCore:
 
     runtime_metadata: dict[str, Any] = field(default_factory=dict)
     """Read-only process facts (version, build, env) exposed to prompts and sandboxed tools."""
+
+    working_directory: str = field(default_factory=lambda: str(Path.cwd()))
+    """Default directory for local subprocess tools in this session.
+
+    Kept as explicit session state instead of changing the process-wide current
+    directory, which would race with concurrent sessions and background work.
+    """
 
     reasoning_effort: ReasoningEffortChoice | None = None
     """Session-scoped reasoning effort preference for REPL-driven LLM calls."""
@@ -261,6 +269,11 @@ class SessionCore:
         self._shed_stale_response_text()
 
         self.store.append_turn(self, kind, text)
+
+    def set_working_directory(self, working_directory: str) -> None:
+        """Persist and apply the default directory for local session tools."""
+        self.store.append_working_directory(self.session_id, working_directory)
+        self.working_directory = working_directory
 
     def _shed_stale_response_text(self) -> None:
         """Drop the response body from the entry just aged out of the window.

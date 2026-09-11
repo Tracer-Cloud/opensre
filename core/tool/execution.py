@@ -241,7 +241,6 @@ def execute_tool_calls(
     hooks = hooks or ToolExecutionHooks()
     if hooks.before_tool_batch is not None:
         hooks.before_tool_batch(tool_calls)
-    tool_sources = availability_view(resolved_integrations)
     tool_map = {t.name: t for t in tools}
     runtime_resources = dict(tool_resources or {})
 
@@ -250,7 +249,9 @@ def execute_tool_calls(
             return _execute_one_tool_call(
                 tc,
                 tool_map=tool_map,
-                tool_sources=tool_sources,
+                # A prior sequential action may have refreshed this live view
+                # (for example after changing the session workspace).
+                tool_sources=availability_view(resolved_integrations),
                 resolved_integrations=resolved_integrations,
                 runtime_resources=runtime_resources,
                 hooks=hooks,

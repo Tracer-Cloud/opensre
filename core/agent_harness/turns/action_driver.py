@@ -64,13 +64,20 @@ from core.agent_harness.turns.goal_review import (
 )
 from core.agent_harness.turns.skill_after_tool import with_skill_after_tool
 from core.agent_harness.turns.skill_scope import scope_tools_to_active_skill
-from core.agent_harness.turns.turn_plan import TurnPlan
+from core.agent_harness.turns.turn_plan import (
+    TurnPlan,
+    working_directory_scope_refresh_hooks,
+)
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
 from core.agent_harness.turns.wal_recorder import with_wal_recording
 from core.events import runtime_event_callback_from_observer
 from core.llm.types import AgentLLMResponse, SchemaDescribedTool, ToolCall
-from core.tool.execution import ToolExecutionHooks, public_tool_input
+from core.tool.execution import (
+    ToolExecutionHooks,
+    compose_tool_execution_hooks,
+    public_tool_input,
+)
 from core.tool_framework.tags import SUMMARIZE_OBSERVATION_TAG
 from infrastructure.analytics.react_turn import run_react_agent_with_telemetry
 from infrastructure.observability.trace.prompts import persist_turn_system_prompt
@@ -977,7 +984,19 @@ def _run_action_turn(
             resolved_integrations=resolved_integrations,
             llm_factory=args.llm_factory,
             tool_hooks=with_menu_turn_end(
-                with_skill_after_tool(with_duplicate_action_call_guard(args.tool_hooks), session),
+                with_skill_after_tool(
+                    with_duplicate_action_call_guard(
+                        compose_tool_execution_hooks(
+                            args.tool_hooks,
+                            working_directory_scope_refresh_hooks(
+                                session=session,
+                                message=message,
+                            ),
+                        ),
+                        working_directory=lambda: session.working_directory,
+                    ),
+                    session,
+                ),
                 session,
             ),
             tool_resources=tool_resources,

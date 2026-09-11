@@ -9,8 +9,8 @@ parity. Tests and callers import canonical names from
 ``tools.interactive_shell.cli`` rather than underscore aliases here.
 
 Shell command execution lives in ``tools.interactive_shell.shell`` (parsing,
-policy, ``execute_shell_command``, and the ``run_shell_command`` / ``run_cd`` /
-``run_pwd`` runner); it is intentionally not re-exported here. Claude Code
+policy, ``execute_shell_command``, and the ``run_shell_command`` runner); it is
+intentionally not re-exported here. Claude Code
 implementation execution lives in ``tools.interactive_shell.implementation.claude_code_executor``
 (``run_claude_code_implementation``); it is not re-exported here. Shared stdlib
 subprocess primitives live in ``tools.interactive_shell.subprocess``; Rich
@@ -29,7 +29,7 @@ inside the submodules.
 from __future__ import annotations
 
 # Stdlib singletons — imported so that monkeypatch paths resolve correctly in tests:
-# ``"…subprocess_runner.os.chdir"``, ``"…subprocess_runner.subprocess.Popen"``,
+# ``"…subprocess_runner.os.openpty"``, ``"…subprocess_runner.subprocess.Popen"``,
 # ``"…subprocess_runner.threading.Thread"``, ``"…subprocess_runner.time.sleep"``,
 # ``"…subprocess_runner.Path.cwd"``.
 import os

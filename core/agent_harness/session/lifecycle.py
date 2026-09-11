@@ -33,6 +33,7 @@ from __future__ import annotations
 import contextlib
 import logging
 from datetime import datetime
+from pathlib import Path
 from typing import Any, TypeVar
 
 from core.agent_harness.session.persistence.contracts import (
@@ -288,6 +289,12 @@ class SessionManager:
         history = data.get(RestoreContextKey.HISTORY)
         if isinstance(history, list):
             session.history = [dict(item) for item in history if isinstance(item, dict)]
+        working_directory = data.get(RestoreContextKey.WORKING_DIRECTORY)
+        if isinstance(working_directory, str) and working_directory.strip():
+            with contextlib.suppress(OSError, RuntimeError):
+                restored_directory = Path(working_directory).expanduser().resolve(strict=True)
+                if restored_directory.is_dir():
+                    session.working_directory = str(restored_directory)
         return session
 
     def close(

@@ -2,14 +2,38 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
+import tools.interactive_shell.cli as opensre_cli
 from tools.interactive_shell.cli import (
     OpensreCommandClass,
     OpensreExecutionMode,
+    build_opensre_cli_argv,
     build_opensre_execution_plan,
     classify_opensre_command,
 )
+
+
+def test_cli_argv_absolutizes_relative_reused_entrypoint(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(opensre_cli.sys, "argv", ["./.venv/bin/opensre"])
+
+    argv = build_opensre_cli_argv(["health"])
+
+    assert argv == [str((tmp_path / ".venv/bin/opensre").resolve()), "health"]
+
+
+def test_cli_argv_preserves_bare_entrypoint_for_path_lookup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(opensre_cli.sys, "argv", ["opensre"])
+
+    assert build_opensre_cli_argv(["health"]) == ["opensre", "health"]
 
 
 @pytest.mark.parametrize(

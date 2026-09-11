@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shlex
 import subprocess
 import sys
@@ -19,6 +20,7 @@ from tools.interactive_shell.subprocess import (
     SHELL_COMMAND_TIMEOUT_SECONDS,
     SubprocessPresenter,
 )
+from tools.interactive_shell.working_directory import session_working_directory
 
 # Rich style token names passed to presenter.print_command_output (resolved in surface).
 _ERROR_STYLE = "error"
@@ -115,6 +117,8 @@ def _current_opensre_entrypoint() -> str | None:
         return None
     if Path(argv0).name.lower() not in ("opensre", "opensre.exe"):
         return None
+    if os.sep in argv0 or (os.altsep is not None and os.altsep in argv0):
+        return str(Path(argv0).resolve())
     return argv0
 
 
@@ -249,6 +253,7 @@ def to_tool_execution_plan(plan: OpensreExecutionPlan) -> ToolExecutionPlan:
 def run_foreground_cli(
     argv_list: list[str],
     *,
+    cwd: str | None = None,
     timeout_seconds: int = SHELL_COMMAND_TIMEOUT_SECONDS,
 ) -> ForegroundCliResult:
     try:
@@ -258,6 +263,7 @@ def run_foreground_cli(
             text=True,
             encoding="utf-8",
             errors="replace",
+            cwd=cwd,
             timeout=timeout_seconds,
             check=False,
         )
@@ -287,7 +293,11 @@ def run_foreground_cli(
     )
 
 
-def spawn_streaming_cli(argv_list: list[str]) -> subprocess.Popen[str]:
+def spawn_streaming_cli(
+    argv_list: list[str],
+    *,
+    cwd: str | None = None,
+) -> subprocess.Popen[str]:
     return subprocess.Popen(
         argv_list,
         stdout=subprocess.PIPE,
@@ -295,6 +305,7 @@ def spawn_streaming_cli(argv_list: list[str]) -> subprocess.Popen[str]:
         text=True,
         encoding="utf-8",
         errors="replace",
+        cwd=cwd,
     )
 
 
@@ -314,7 +325,11 @@ def _run_foreground_via_presenter(
     display_command: str,
 ) -> None:
     presenter.print_bold_command(display_command)
-    result = run_foreground_cli(argv_list, timeout_seconds=SHELL_COMMAND_TIMEOUT_SECONDS)
+    result = run_foreground_cli(
+        argv_list,
+        cwd=session_working_directory(presenter.session),
+        timeout_seconds=SHELL_COMMAND_TIMEOUT_SECONDS,
+    )
     if result.start_failed:
         if result.start_error:
             presenter.report_exception(
@@ -346,7 +361,10 @@ def _run_streaming_via_presenter(
 ) -> None:
     presenter.print_bold_command(display_command)
     try:
-        proc = spawn_streaming_cli(argv_list)
+        proc = spawn_streaming_cli(
+            argv_list,
+            cwd=session_working_directory(presenter.session),
+        )
     except Exception as exc:  # noqa: BLE001
         presenter.report_exception(
             exc,

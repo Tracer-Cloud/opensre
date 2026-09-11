@@ -375,6 +375,7 @@ EXPORTS: dict[str, str] = {
     "SERVICENOW_USERNAME_ENV": "servicenow",
     # session_store
     "OPENSRE_SESSION_FILE_LOCK_ENV": "session_store",
+    "WORKING_DIRECTORY_STATE_CUSTOM_TYPE": "session_store",
     # signoz
     "SIGNOZ_API_KEY_ENV": "signoz",
     "SIGNOZ_URL_ENV": "signoz",

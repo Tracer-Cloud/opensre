@@ -9,6 +9,7 @@ decides whether two calls count as identical.
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from core.agent_harness.turns.action_dedup import with_duplicate_action_call_guard
@@ -25,7 +26,7 @@ def _request(name: str, payload: dict[str, Any]) -> Any:
 
 
 def _label(payload: dict[str, Any]) -> str:
-    return str(payload.get("command", payload.get("payload", "")))
+    return str(payload.get("command", payload.get("payload", payload.get("path", ""))))
 
 
 def _drive(batches: list[list[_Call]]) -> list[str]:
@@ -104,3 +105,56 @@ def test_identical_cli_exec_twice_in_one_batch_runs_once() -> None:
     executed = _drive([[first, second]])
 
     assert executed == ["integrations verify --dry-run"]
+
+
+def test_replayed_absolute_working_directory_change_is_suppressed() -> None:
+    change: _Call = ("set_working_directory", {"path": "/workspace/child"}, True)
+
+    executed = _drive([[change], [change]])
+
+    assert executed == ["/workspace/child"]
+
+
+def test_relative_working_directory_fingerprint_uses_live_base(tmp_path: Path) -> None:
+    current = [tmp_path]
+    hooks = with_duplicate_action_call_guard(
+        working_directory=lambda: str(current[0]),
+    )
+    payload = {"path": "child"}
+
+    hooks.before_tool_batch([ToolCall(id="first", name="set_working_directory", input=payload)])
+    first = _request("set_working_directory", payload)
+    assert hooks.before_tool_call(first) is None
+    current[0] /= "child"
+    hooks.after_tool_call(first, ToolExecutionResult(content="out"))
+
+    hooks.before_tool_batch([ToolCall(id="second", name="set_working_directory", input=payload)])
+    second = _request("set_working_directory", payload)
+
+    assert hooks.before_tool_call(second) is None
+
+
+def test_failed_working_directory_change_may_retry() -> None:
+    change = {"path": "/workspace/missing"}
+    hooks = with_duplicate_action_call_guard()
+
+    hooks.before_tool_batch([ToolCall(id="first", name="set_working_directory", input=change)])
+    first = _request("set_working_directory", change)
+    assert hooks.before_tool_call(first) is None
+    hooks.after_tool_call(
+        first,
+        ToolExecutionResult(content="unchanged", details={"ok": False}),
+    )
+
+    hooks.before_tool_batch([ToolCall(id="second", name="set_working_directory", input=change)])
+    second = _request("set_working_directory", change)
+
+    assert hooks.before_tool_call(second) is None
+
+
+def test_relative_working_directory_changes_remain_ordered_inside_one_batch() -> None:
+    change: _Call = ("set_working_directory", {"path": "child"}, True)
+
+    executed = _drive([[change, change]])
+
+    assert executed == ["child", "child"]

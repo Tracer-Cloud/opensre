@@ -1186,6 +1186,9 @@ _TOOLS_WITHOUT_DELIBERATE_CATCH: frozenset[str] = frozenset(
         "search_github_code",
         "search_github_issues",
         "search_sentry_issues",
+        # set_working_directory catches only expected filesystem validation
+        # failures; unexpected exceptions escape to the global wrapper.
+        "set_working_directory",
         "shell_run",
         "skill_view",
         "session_goal_complete",

@@ -7,12 +7,13 @@ import io
 import subprocess
 import tempfile
 import threading
-from pathlib import Path, PurePosixPath
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 from rich.console import Console
 
+import surfaces.interactive_shell.runtime.subprocess_runner as subprocess_runner
 from infrastructure.scheduling.task_types import TaskKind, TaskStatus
 from infrastructure.terminal.theme import GLYPH_ERROR, GLYPH_SUCCESS
 from integrations.llm_cli.base import CLIInvocation, CLIProbe
@@ -36,15 +37,16 @@ from tools.interactive_shell.implementation.claude_code_executor import (
 from tools.interactive_shell.shell.execution import (
     ShellExecutionResult,
 )
-from tools.interactive_shell.shell.runner import (
-    run_cd_command,
-    run_pwd_command,
-    run_shell_command,
-)
+from tools.interactive_shell.shell.runner import run_shell_command
 
 _BACKGROUND_TASK_POPEN = "surfaces.interactive_shell.runtime.subprocess_runner.subprocess.Popen"
 _CLI_POPEN = "tools.interactive_shell.cli.subprocess.Popen"
 _CLI_RUN = "tools.interactive_shell.cli.subprocess.run"
+
+
+def test_subprocess_runner_exports_every_declared_name() -> None:
+    missing = [name for name in subprocess_runner.__all__ if not hasattr(subprocess_runner, name)]
+    assert missing == []
 
 
 def _presenter(
@@ -121,105 +123,39 @@ def test_read_task_output_returns_empty_for_closed_buffer() -> None:
     assert read_task_output(buf, limit=100) == ""
 
 
-def test_run_pwd_command_prints_cwd(monkeypatch: pytest.MonkeyPatch) -> None:
-    def _fake_cwd(_: type[Path]) -> PurePosixPath:
-        return PurePosixPath("/shown/pwd")
-
-    monkeypatch.setattr(Path, "cwd", classmethod(_fake_cwd))
-
-    session = Session()
-    buf = io.StringIO()
-    console = Console(file=buf, force_terminal=False)
-
-    run_pwd_command("pwd", _presenter(session, console))
-    assert "/shown/pwd" in buf.getvalue()
-    assert session.history[-1]["type"] == "shell"
-
-
-def test_run_pwd_command_rejects_multiple_tokens() -> None:
-    session = Session()
-    buf = io.StringIO()
-    console = Console(file=buf, force_terminal=False)
-
-    run_pwd_command("pwd extra", _presenter(session, console))
-    assert "too many arguments" in buf.getvalue().lower()
-    assert session.history[-1]["ok"] is False
-
-
-def test_run_cd_command_chdirs_to_target(monkeypatch: pytest.MonkeyPatch) -> None:
-    directories: list[Path] = []
-
-    def _chdir(target: Path) -> None:
-        directories.append(target)
-
-    monkeypatch.setattr(
-        "tools.interactive_shell.shell.runner.os.chdir",
-        _chdir,
-    )
-
-    session = Session()
-    buf = io.StringIO()
-    console = Console(file=buf, force_terminal=False)
-
-    run_cd_command("cd /tmp/example", _presenter(session, console))
-    assert directories == [Path("/tmp/example")]
-    assert session.history[-1]["type"] == "shell"
-
-
-def test_run_shell_command_quiet_cd_hides_cwd(
+def test_run_shell_command_uses_session_directory_without_interpreting_cd(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
-    monkeypatch.setattr(
-        "tools.interactive_shell.shell.runner.os.chdir",
-        lambda _target: None,
-    )
-    monkeypatch.setattr(
-        "tools.interactive_shell.shell.runner.Path.cwd",
-        classmethod(lambda _cls: Path("/tmp/example")),
-    )
+    execute_calls: list[dict[str, object]] = []
 
-    session = Session()
-    buf = io.StringIO()
-    console = Console(file=buf, force_terminal=False)
-
-    result = run_shell_command("cd /tmp/example", _presenter(session, console), quiet=True)
-
-    # The dim command line shows what ran; the new cwd stays hidden.
-    assert buf.getvalue().strip() == "$ cd /tmp/example"
-    assert result["ok"] is True
-    assert result["response_text"] == "/tmp/example"
-
-
-def test_run_cd_command_reports_chdir_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured_errors: list[BaseException] = []
-
-    def _chdir(_target: Path) -> None:
-        raise OSError("permission denied")
+    def _fake_execute(**kwargs: object) -> ShellExecutionResult:
+        execute_calls.append(kwargs)
+        return ShellExecutionResult(
+            command="cd /tmp&&pwd",
+            stdout="/tmp\n",
+            stderr="",
+            exit_code=0,
+            timed_out=False,
+            truncated=False,
+            executed_with_shell=True,
+        )
 
     monkeypatch.setattr(
-        "tools.interactive_shell.shell.runner.os.chdir",
-        _chdir,
-    )
-    monkeypatch.setattr(
-        "surfaces.shared.error_handling.exception_reporting.capture_exception",
-        lambda exc, **_kwargs: captured_errors.append(exc),
+        "tools.interactive_shell.shell.execution.execute_shell_command",
+        _fake_execute,
     )
 
     session = Session()
-    buf = io.StringIO()
-    console = Console(file=buf, force_terminal=False)
+    session.working_directory = str(tmp_path)
+    console = Console(file=io.StringIO(), force_terminal=False)
 
-    run_cd_command("cd /root/blocked", _presenter(session, console))
+    result = run_shell_command("cd /tmp&&pwd", _presenter(session, console))
 
-    assert "cd failed" in buf.getvalue()
-    assert len(captured_errors) == 1
-    assert isinstance(captured_errors[0], OSError)
-    assert session.history[-1] == {
-        "type": "shell",
-        "text": "cd /root/blocked",
-        "ok": False,
-        "response_text": "cd failed: permission denied",
-    }
+    assert execute_calls[0]["command"] == "cd /tmp&&pwd"
+    assert execute_calls[0]["cwd"] == str(tmp_path)
+    assert session.working_directory == str(tmp_path)
+    assert result["stdout"] == "/tmp"
 
 
 def test_run_shell_command_records_when_input_is_empty() -> None:
@@ -247,6 +183,7 @@ def test_run_shell_command_records_when_input_is_empty() -> None:
 
 def test_run_claude_code_implementation_starts_tracked_task(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     popen_calls: list[tuple[list[str], dict[str, object]]] = []
     stdin_seen: list[str | None] = []
@@ -318,6 +255,7 @@ def test_run_claude_code_implementation_starts_tracked_task(
     )
 
     session = Session()
+    session.working_directory = str(tmp_path)
     session.agent.messages.append(
         ("assistant", "Process auto-discovery should scan local agent processes.")
     )
@@ -339,7 +277,7 @@ def test_run_claude_code_implementation_starts_tracked_task(
         "--permission-mode",
         "acceptEdits",
     ]
-    assert kwargs["cwd"]
+    assert kwargs["cwd"] == str(tmp_path)
     assert stdin_seen and "Process auto-discovery" in stdin_seen[0]
     assert session.history[-1] == {"type": "implementation", "text": "implement", "ok": True}
     task = session.task_registry.list_recent(1)[0]
@@ -371,13 +309,12 @@ def test_run_shell_command_outputless_success_omits_marker(
     def _fake_execute(**_kwargs: object) -> ShellExecutionResult:
         return ShellExecutionResult(
             command="true",
-            argv=["true"],
             stdout="",
             stderr="",
             exit_code=0,
             timed_out=False,
             truncated=False,
-            executed_with_shell=False,
+            executed_with_shell=True,
         )
 
     monkeypatch.setattr(
@@ -402,13 +339,12 @@ def test_run_shell_command_quiet_prints_a_dim_command_line_and_no_stdout(
     def _fake_execute(**_kwargs: object) -> ShellExecutionResult:
         return ShellExecutionResult(
             command="echo hi",
-            argv=["echo", "hi"],
             stdout="hi\n",
             stderr="",
             exit_code=0,
             timed_out=False,
             truncated=False,
-            executed_with_shell=False,
+            executed_with_shell=True,
         )
 
     monkeypatch.setattr(
@@ -442,13 +378,12 @@ def test_run_shell_command_quiet_outputless_success_prints_only_the_command_line
     def _fake_execute(**_kwargs: object) -> ShellExecutionResult:
         return ShellExecutionResult(
             command="touch file",
-            argv=["touch", "file"],
             stdout="",
             stderr="",
             exit_code=0,
             timed_out=False,
             truncated=False,
-            executed_with_shell=False,
+            executed_with_shell=True,
         )
 
     monkeypatch.setattr(
@@ -480,13 +415,12 @@ def test_run_shell_command_success_records_stdout_without_stderr_noise(
     def _fake_execute(**_kwargs: object) -> ShellExecutionResult:
         return ShellExecutionResult(
             command="curl wttr.in/Hawaii?format=3",
-            argv=["curl", "wttr.in/Hawaii?format=3"],
             stdout="Hawaii: +25C\n",
             stderr="curl progress\n",
             exit_code=0,
             timed_out=False,
             truncated=False,
-            executed_with_shell=False,
+            executed_with_shell=True,
         )
 
     monkeypatch.setattr(
@@ -516,13 +450,12 @@ def test_run_shell_command_failure_prints_exit_line(monkeypatch: pytest.MonkeyPa
     def _fake_execute(**_kwargs: object) -> ShellExecutionResult:
         return ShellExecutionResult(
             command="false",
-            argv=["false"],
             stdout="",
             stderr="",
             exit_code=7,
             timed_out=False,
             truncated=False,
-            executed_with_shell=False,
+            executed_with_shell=True,
         )
 
     monkeypatch.setattr(
@@ -554,13 +487,12 @@ def test_run_shell_command_reports_cancelled(monkeypatch: pytest.MonkeyPatch) ->
         seen.update(kwargs)
         return ShellExecutionResult(
             command="sleep 30",
-            argv=["sleep", "30"],
             stdout="",
             stderr="",
             exit_code=-15,
             timed_out=False,
             truncated=False,
-            executed_with_shell=False,
+            executed_with_shell=True,
             cancelled=True,
         )
 
@@ -695,6 +627,7 @@ def test_run_opensre_agents_scan_register_explains_confirmation(
 
 def test_run_opensre_agents_watch_runs_in_foreground(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     popen_kwargs: list[dict[str, object]] = []
 
@@ -715,6 +648,7 @@ def test_run_opensre_agents_watch_runs_in_foreground(
     )
 
     session = Session()
+    session.working_directory = str(tmp_path)
     buf = io.StringIO()
     console = Console(file=buf, force_terminal=False)
 
@@ -736,6 +670,7 @@ def test_run_opensre_agents_watch_runs_in_foreground(
     assert "started" not in out
     assert "timeout" not in popen_kwargs[0]
     assert popen_kwargs[0]["stderr"] is subprocess.STDOUT
+    assert popen_kwargs[0]["cwd"] == str(tmp_path)
     assert session.task_registry.list_recent() == []
     assert session.history[-1] == {
         "type": "cli_command",
@@ -746,6 +681,7 @@ def test_run_opensre_agents_watch_runs_in_foreground(
 
 def test_start_background_cli_task_uses_pty_for_live_terminal_output(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     popen_kwargs: list[dict[str, object]] = []
     closed_fds: list[int] = []
@@ -796,6 +732,7 @@ def test_start_background_cli_task_uses_pty_for_live_terminal_output(
     )
 
     session = Session()
+    session.working_directory = str(tmp_path)
     buf = _TtyBuffer()
     console = Console(file=buf, force_terminal=True)
 
@@ -813,6 +750,7 @@ def test_start_background_cli_task_uses_pty_for_live_terminal_output(
     assert popen_kwargs[0]["stdout"] == 11
     assert popen_kwargs[0]["stderr"] == 11
     assert "text" not in popen_kwargs[0]
+    assert popen_kwargs[0]["cwd"] == str(tmp_path)
     assert "live progress" in buf.getvalue()
     assert 10 in closed_fds
     assert 11 in closed_fds
@@ -1394,6 +1332,7 @@ def test_run_opensre_cli_command_refuses_integrations_setup_with_helpful_message
 
 def test_run_opensre_cli_command_runs_integrations_list_in_foreground(
     monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
 ) -> None:
     """``integrations list`` is read-only: it runs foreground so the action turn
     observes the result, and is not caught by the interactive-wizard block (only
@@ -1405,7 +1344,10 @@ def test_run_opensre_cli_command_runs_integrations_list_in_foreground(
     def _fake_start_background_cli_task(*, argv_list: list[str], **_kw: object) -> None:
         start_calls.append(argv_list)
 
-    def _fake_run(command: list[str], **_kwargs: object) -> subprocess.CompletedProcess[str]:
+    run_kwargs: list[dict[str, object]] = []
+
+    def _fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        run_kwargs.append(kwargs)
         return subprocess.CompletedProcess(
             args=command,
             returncode=0,
@@ -1423,6 +1365,7 @@ def test_run_opensre_cli_command_runs_integrations_list_in_foreground(
     )
 
     session = Session()
+    session.working_directory = str(tmp_path)
     buf = io.StringIO()
     console = Console(file=buf, force_terminal=False)
 
@@ -1444,6 +1387,7 @@ def test_run_opensre_cli_command_runs_integrations_list_in_foreground(
     # Read-only integrations runs foreground, not as a background task, so the
     # turn observes pass/fail instead of ending on a task id.
     assert start_calls == []
+    assert run_kwargs[0]["cwd"] == str(tmp_path)
 
 
 def test_start_background_cli_task_echoes_command_markup_literally(

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from core.agent_harness.ports import (
@@ -31,6 +32,7 @@ class InMemorySessionState:
     cli_agent_messages: list[tuple[str, str]] = field(default_factory=list)
     configured_integrations: list[str] = field(default_factory=list)
     configured_integrations_known: bool = False
+    working_directory: str = field(default_factory=lambda: str(Path.cwd()))
     pending_schedule_offer: PendingScheduleOffer | None = None
     reasoning_effort: Any | None = None
     history: list[dict[str, Any]] = field(default_factory=list)
@@ -63,6 +65,10 @@ class InMemorySessionState:
             slash_outcome=slash_outcome,
         )
         self.history.append(entry)
+
+    def set_working_directory(self, working_directory: str) -> None:
+        """Apply the default directory for this in-memory session."""
+        self.working_directory = working_directory
 
 
 @dataclass

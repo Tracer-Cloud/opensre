@@ -31,6 +31,7 @@ class RestoreContextKey(StrEnum):
     SESSION_GOAL_STATE = "session_goal_state"
     TASK_PLAN_STATE = "task_plan_state"
     HISTORY = "history"
+    WORKING_DIRECTORY = "working_directory"
 
 
 # Turn kinds that represent user-initiated chat messages. Session.record()
@@ -44,6 +45,7 @@ class SessionPersistenceSource(Protocol):
 
     session_id: str
     started_at: float
+    working_directory: str
     agent: MutableAgentState
     accumulated_context: dict[str, Any]
 
@@ -121,6 +123,9 @@ class SessionStore(Protocol):
         after_tokens: int | None = None,
     ) -> str:
         raise NotImplementedError
+
+    def append_working_directory(self, session_id: str, working_directory: str) -> None:
+        """Persist the session's current working directory on its active branch."""
 
     def flush(self, session: SessionPersistenceSource) -> None:
         raise NotImplementedError
