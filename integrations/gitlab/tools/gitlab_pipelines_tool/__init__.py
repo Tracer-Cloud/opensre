@@ -39,9 +39,9 @@ def _map_list_gitlab_pipelines(
 
 
 def _list_gitlab_pipelines_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
-    gl = sources["gitlab"]
+    gl = sources.get("gitlab", {})
     return {
-        "project_id": gl["project_id"],
+        "project_id": gl.get("project_id"),
         "updated_after": gl.get("updated_after", ""),
         "ref": gl.get("ref_name", "main"),
         "status": "failed",
@@ -78,6 +78,7 @@ def _list_gitlab_pipelines_available(sources: dict[str, dict]) -> bool:
         "required": ["project_id"],
     },
     is_available=_list_gitlab_pipelines_available,
+    is_advertised=_gitlab_available,
     extract_params=_list_gitlab_pipelines_extract_params,
     evidence_mapper=_map_list_gitlab_pipelines,
 )

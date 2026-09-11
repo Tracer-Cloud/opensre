@@ -13,6 +13,7 @@ from core.tool_framework.utils import tool_unavailable
 from integrations.github.client import GitHubApiError, GitHubRestClient, resolve_github_token
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
+    github_credentials_available,
     github_creds,
     github_source_available,
 )
@@ -168,6 +169,7 @@ def _map_summarize_github_pr_status(
         "required": ["owner", "repo"],
     },
     is_available=_github_available,
+    is_advertised=github_credentials_available,
     extract_params=_github_extract_params,
     injected_params=GITHUB_INJECTED_PARAMS,
 )
@@ -308,6 +310,7 @@ def _count_prs(prs: list[dict[str, Any]]) -> dict[str, int]:
         "required": ["owner", "repo"],
     },
     is_available=_github_available,
+    is_advertised=github_credentials_available,
     extract_params=_github_extract_params,
     injected_params=GITHUB_INJECTED_PARAMS,
 )
@@ -432,6 +435,7 @@ _ISSUE_MUTATION_OPERATIONS = {"create", "update", "close"}
         "required": ["owner", "repo"],
     },
     is_available=_github_available,
+    is_advertised=github_credentials_available,
     extract_params=_github_extract_params,
     injected_params=GITHUB_INJECTED_PARAMS,
     evidence_mapper=_map_list_github_security_alerts,
@@ -504,6 +508,7 @@ def list_github_security_alerts(
         "required": ["owner", "repo", "operation", "slack_text"],
     },
     is_available=_github_available,
+    is_advertised=github_credentials_available,
     extract_params=_github_extract_params,
     injected_params=GITHUB_INJECTED_PARAMS,
 )
@@ -703,6 +708,7 @@ def _marker_exists_on_issue(
         "required": ["owner", "repo", "proposal"],
     },
     is_available=_github_available,
+    is_advertised=github_credentials_available,
     extract_params=_github_extract_params,
     injected_params=GITHUB_INJECTED_PARAMS,
 )

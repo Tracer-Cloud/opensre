@@ -185,6 +185,37 @@ def test_public_input_schema_is_cached_and_isolated_from_source() -> None:
     assert "token" not in second["properties"]
 
 
+def test_advertisement_can_outlive_current_scope_availability() -> None:
+    rt = RegisteredTool(
+        name="repository_tool",
+        description="Repository-scoped tool",
+        input_schema={"type": "object", "properties": {}},
+        source="github",
+        run=lambda: {},
+        is_available=lambda sources: bool(sources.get("github", {}).get("repo")),
+        is_advertised=lambda sources: bool(sources.get("github", {}).get("connection_verified")),
+    )
+
+    sources = {"github": {"connection_verified": True}}
+
+    assert rt.is_available(sources) is False
+    assert rt.should_advertise(sources) is True
+
+
+def test_advertisement_defaults_to_current_availability() -> None:
+    rt = RegisteredTool(
+        name="ordinary_tool",
+        description="Ordinary tool",
+        input_schema={"type": "object", "properties": {}},
+        source="github",
+        run=lambda: {},
+        is_available=lambda sources: bool(sources.get("github")),
+    )
+
+    assert rt.should_advertise({}) is False
+    assert rt.should_advertise({"github": {"connection_verified": True}}) is True
+
+
 # ---------------------------------------------------------------------------
 # validate_public_input
 # ---------------------------------------------------------------------------

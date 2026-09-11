@@ -131,7 +131,7 @@ def _summarize_commit(raw: dict[str, Any]) -> dict[str, Any]:
 
 
 def _extract_params(sources: dict[str, dict]) -> dict[str, Any]:
-    gh = sources["github"]
+    gh = sources.get("github", {})
     # ``_meta`` carries investigation-level context shared across tools
     # (today: incident_window). Tools that don't care about it ignore the
     # key. See the investigation agent tool context for where this is set.
@@ -142,8 +142,8 @@ def _extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     meta = raw_meta if isinstance(raw_meta, dict) else {}
     incident_window = meta.get("incident_window")
     return {
-        "owner": gh["owner"],
-        "repo": gh["repo"],
+        "owner": gh.get("owner"),
+        "repo": gh.get("repo"),
         "branch": gh.get("branch") or gh.get("default_branch") or "main",
         "shared_incident_window": incident_window if isinstance(incident_window, dict) else None,
         **github_creds(gh),
@@ -221,6 +221,7 @@ def _map_get_git_deploy_timeline(
         "required": ["owner", "repo"],
     },
     is_available=_is_available,
+    is_advertised=github_source_available,
     extract_params=_extract_params,
     injected_params=GITHUB_INJECTED_PARAMS,
     evidence_mapper=_map_get_git_deploy_timeline,

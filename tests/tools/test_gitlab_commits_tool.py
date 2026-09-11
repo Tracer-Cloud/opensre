@@ -77,6 +77,14 @@ def test_extract_params_defaults_ref_name_to_main() -> None:
     assert params["ref_name"] == "main"
 
 
+def test_extract_params_allows_model_supplied_project() -> None:
+    rt = list_gitlab_commits.__opensre_registered_tool__
+
+    params = rt.extract_params({"gitlab": {"connection_verified": True}})
+
+    assert params["project_id"] is None
+
+
 def test_schema_does_not_expose_gitlab_credentials_as_model_inputs() -> None:
     rt = list_gitlab_commits.__opensre_registered_tool__
 

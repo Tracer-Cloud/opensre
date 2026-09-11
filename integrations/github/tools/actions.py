@@ -618,10 +618,10 @@ def _github_actions_is_available(sources: dict[str, dict]) -> bool:
 
 def _github_actions_repo_params(sources: dict[str, dict]) -> dict[str, Any]:
     """Extract repo parameters for GitHub Actions tools."""
-    github = sources["github"]
+    github = sources.get("github", {})
     params: dict[str, Any] = {
-        "owner": github["owner"],
-        "repo": github["repo"],
+        "owner": github.get("owner"),
+        "repo": github.get("repo"),
         **github_creds(github),
     }
     return params
@@ -715,6 +715,7 @@ def _map_list_github_actions_workflow_runs(
         "required": ["owner", "repo"],
     },
     is_available=_github_actions_is_available,
+    is_advertised=github_source_available,
     extract_params=_github_actions_repo_params,
     injected_params=GITHUB_INJECTED_PARAMS,
     evidence_mapper=_map_list_github_actions_workflow_runs,
@@ -867,6 +868,7 @@ def _map_list_github_actions_active_runs(
         "required": ["owner", "repo"],
     },
     is_available=_github_actions_is_available,
+    is_advertised=github_source_available,
     extract_params=_github_actions_repo_params,
     injected_params=GITHUB_INJECTED_PARAMS,
     evidence_mapper=_map_list_github_actions_active_runs,
@@ -996,6 +998,7 @@ def _map_list_github_actions_run_jobs(
         "required": ["owner", "repo", "run_id"],
     },
     is_available=_github_actions_is_available,
+    is_advertised=github_source_available,
     extract_params=_github_actions_run_params,
     injected_params=GITHUB_INJECTED_PARAMS,
     evidence_mapper=_map_list_github_actions_run_jobs,
@@ -1134,6 +1137,7 @@ def _map_get_github_actions_step_log(
         "required": ["owner", "repo", "run_id", "job_id"],
     },
     is_available=_github_actions_is_available,
+    is_advertised=github_source_available,
     extract_params=_github_actions_run_params,
     injected_params=GITHUB_INJECTED_PARAMS,
     evidence_mapper=_map_get_github_actions_step_log,

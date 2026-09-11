@@ -39,9 +39,9 @@ def _map_get_gitlab_file_contents(
 
 
 def _get_gitlab_file_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
-    gl = sources["gitlab"]
+    gl = sources.get("gitlab", {})
     return {
-        "project_id": gl["project_id"],
+        "project_id": gl.get("project_id"),
         "file_path": gl.get("file_path", ""),
         "ref": gl.get("ref_name", "main"),
         **_gl_creds(gl),
@@ -74,6 +74,7 @@ def _get_gitlab_file_available(sources: dict[str, dict]) -> bool:
         "required": ["project_id", "file_path"],
     },
     is_available=_get_gitlab_file_available,
+    is_advertised=_gitlab_available,
     extract_params=_get_gitlab_file_extract_params,
     evidence_mapper=_map_get_gitlab_file_contents,
 )

@@ -44,6 +44,7 @@ def tool(
     injected_params: tuple[str, ...] | None = None,
     retrieval_controls: RetrievalControls | None = None,
     is_available: Callable[[dict[str, dict]], bool] | None = None,
+    is_advertised: Callable[[dict[str, dict]], bool] | None = None,
     extract_params: Callable[[dict[str, dict]], dict[str, Any]] | None = None,
     tags: tuple[str, ...] | None = None,
     requires_approval: bool | None = None,
@@ -80,6 +81,7 @@ def tool[F: Callable[..., Any]](
     injected_params: tuple[str, ...] | None = None,
     retrieval_controls: RetrievalControls | None = None,
     is_available: Callable[[dict[str, dict]], bool] | None = None,
+    is_advertised: Callable[[dict[str, dict]], bool] | None = None,
     extract_params: Callable[[dict[str, dict]], dict[str, Any]] | None = None,
     tags: tuple[str, ...] | None = None,
     requires_approval: bool | None = None,
@@ -116,6 +118,7 @@ def tool[F: Callable[..., Any]](
     injected_params: tuple[str, ...] | None = None,
     retrieval_controls: RetrievalControls | None = None,
     is_available: Callable[[dict[str, dict]], bool] | None = None,
+    is_advertised: Callable[[dict[str, dict]], bool] | None = None,
     extract_params: Callable[[dict[str, dict]], dict[str, Any]] | None = None,
     tags: tuple[str, ...] | None = None,
     requires_approval: bool | None = None,
@@ -151,6 +154,7 @@ def tool[F: Callable[..., Any]](
     injected_params: tuple[str, ...] | None = None,
     retrieval_controls: RetrievalControls | None = None,
     is_available: Callable[[dict[str, dict]], bool] | None = None,
+    is_advertised: Callable[[dict[str, dict]], bool] | None = None,
     extract_params: Callable[[dict[str, dict]], dict[str, Any]] | None = None,
     tags: tuple[str, ...] | None = None,
     requires_approval: bool | None = None,
@@ -190,6 +194,7 @@ def tool[F: Callable[..., Any]](
                 bool(injected_params),
                 retrieval_controls is not None,
                 is_available is not None,
+                is_advertised is not None,
                 extract_params is not None,
                 bool(tags),
                 requires_approval is not None,
@@ -212,6 +217,7 @@ def tool[F: Callable[..., Any]](
                 or parallel_safe is not None
                 or accepts_runtime_context is not None
                 or evidence_mapper is not None
+                or is_advertised is not None
             ):
                 setattr(
                     target,
@@ -227,6 +233,7 @@ def tool[F: Callable[..., Any]](
                         parallel_safe=parallel_safe,
                         accepts_runtime_context=accepts_runtime_context,
                         evidence_mapper=evidence_mapper,
+                        is_advertised=is_advertised,
                     ),
                 )
             return target
@@ -258,6 +265,7 @@ def tool[F: Callable[..., Any]](
                     injected_params=injected_params,
                     retrieval_controls=retrieval_controls,
                     is_available=is_available,
+                    is_advertised=is_advertised,
                     extract_params=extract_params,
                     tags=tags,
                     requires_approval=requires_approval,

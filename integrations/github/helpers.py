@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from integrations.github.client import resolve_github_token
 from integrations.github.mcp import (
     DEFAULT_GITHUB_MCP_MODE,
     GitHubMCPConfig,
@@ -46,6 +47,16 @@ def github_source_available(sources: dict[str, dict]) -> bool:
     ``github`` entry or a falsy/missing ``connection_verified`` returns False.
     """
     return bool(sources.get("github", {}).get("connection_verified"))
+
+
+def github_credentials_available(sources: dict[str, dict]) -> bool:
+    """Return True when a verified source or fallback REST token is available."""
+    gh = sources.get("github", {})
+    return bool(
+        github_source_available(sources)
+        or github_creds(gh).get("github_token")
+        or resolve_github_token(None)
+    )
 
 
 def github_creds(gh: dict) -> dict[str, Any]:

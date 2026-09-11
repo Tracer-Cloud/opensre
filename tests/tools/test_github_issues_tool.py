@@ -31,6 +31,15 @@ def test_extract_params_maps_fields() -> None:
     assert params["repo"] == "my-repo"
 
 
+def test_extract_params_allows_model_supplied_scope() -> None:
+    rt = search_github_issues.__opensre_registered_tool__
+
+    params = rt.extract_params({"github": {"connection_verified": True}})
+
+    assert params["owner"] is None
+    assert params["repo"] is None
+
+
 def test_run_returns_unavailable_when_no_config() -> None:
     with patch("integrations.github.helpers.github_mcp_config_from_env", return_value=None):
         result = search_github_issues(owner="org", repo="repo", query="crash")

@@ -31,11 +31,11 @@ def _file_from_resource_text(content: list[dict[str, Any]]) -> dict[str, Any] | 
 
 
 def _get_github_file_contents_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
-    gh = sources["github"]
+    gh = sources.get("github", {})
     return {
-        "owner": gh["owner"],
-        "repo": gh["repo"],
-        "path": gh["path"],
+        "owner": gh.get("owner"),
+        "repo": gh.get("repo"),
+        "path": gh.get("path", ""),
         "ref": gh.get("ref", ""),
         "sha": gh.get("sha", ""),
         **github_creds(gh),
@@ -89,6 +89,7 @@ def _map_get_github_file_contents(
         "required": ["owner", "repo", "path"],
     },
     is_available=_get_github_file_contents_available,
+    is_advertised=github_source_available,
     extract_params=_get_github_file_contents_extract_params,
     injected_params=GITHUB_INJECTED_PARAMS,
     evidence_mapper=_map_get_github_file_contents,

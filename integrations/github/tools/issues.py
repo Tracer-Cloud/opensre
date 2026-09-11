@@ -22,10 +22,10 @@ from integrations.github.mcp import (
 
 
 def _search_github_issues_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
-    gh = sources["github"]
+    gh = sources.get("github", {})
     return {
-        "owner": gh["owner"],
-        "repo": gh["repo"],
+        "owner": gh.get("owner"),
+        "repo": gh.get("repo"),
         "query": gh.get("query") or "crash OR error OR exception",
         "state": gh.get("state", "open"),
         **github_creds(gh),
@@ -78,6 +78,7 @@ def _map_search_github_issues(
         "required": ["owner", "repo", "query"],
     },
     is_available=_search_github_issues_available,
+    is_advertised=github_source_available,
     extract_params=_search_github_issues_extract_params,
     injected_params=GITHUB_INJECTED_PARAMS,
 )

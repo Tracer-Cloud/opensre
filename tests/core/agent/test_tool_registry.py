@@ -213,6 +213,26 @@ def test_rocketchat_send_message_hidden_when_rocketchat_is_not_configured() -> N
     assert "rocketchat_send_message" not in names
 
 
+def test_repository_tools_are_advertised_before_a_workspace_scope_is_known() -> None:
+    session = Session()
+    session.configured_integrations = ("github", "gitlab")
+    session.configured_integrations_known = True
+
+    names = {
+        spec["name"]
+        for spec in _tool_specs(
+            session,
+            resolved_integrations={
+                "github": {"connection_verified": True, "github_token": "github-token"},
+                "gitlab": {"connection_verified": True, "auth_token": "gitlab-token"},
+            },
+        )
+    }
+
+    assert "search_github_issues" in names
+    assert "list_gitlab_commits" in names
+
+
 def test_llm_set_provider_offered_by_default() -> None:
     """With no capability constraints (the production default), the planner is
     still offered the provider-switch tool."""

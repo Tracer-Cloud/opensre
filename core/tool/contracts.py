@@ -256,9 +256,10 @@ class BaseTool(ABC):
       ``telemetry.invoke_tool`` so exceptions are always captured and
       converted to a structured ``{"error": ..., "exception_type": ...}``
       dict rather than propagating to the agent loop.
-    * Override ``is_available`` and ``extract_params`` when the tool
-      requires specific data-source checks or needs to pull kwargs from the
-      resolved-integration sources dict.
+    * Override ``is_available`` and ``extract_params`` when the tool requires
+      specific data-source checks or needs to pull kwargs from the resolved
+      integration sources. Override ``is_advertised`` only when the schema can
+      be useful before all runtime scope defaults are known.
     * Do **not** declare ``run`` with positional arguments — the call site
       always uses keyword arguments: ``tool_instance.run(**kwargs)``.
     """
@@ -362,6 +363,14 @@ class BaseTool(ABC):
         """
         return True
 
+    def is_advertised(self, sources: dict[str, dict]) -> bool:
+        """Return True when the agent should receive this tool's schema.
+
+        Override when a tool can accept model-supplied scope that is not yet
+        present in ``sources``. By default advertisement follows availability.
+        """
+        return self.is_available(sources)
+
     def extract_params(self, _sources: dict[str, dict]) -> dict[str, Any]:
         """Extract the kwargs to pass to ``run()`` from the available sources.
 
@@ -415,6 +424,10 @@ class RegisteredTool:
     )
     is_available: Callable[[dict[str, dict]], bool] = field(
         default=_always_available,
+        repr=False,
+    )
+    is_advertised: Callable[[dict[str, dict]], bool] | None = field(
+        default=None,
         repr=False,
     )
     extract_params: Callable[[dict[str, dict]], dict[str, Any]] = field(
@@ -474,8 +487,15 @@ class RegisteredTool:
             raise TypeError("run must be callable")
         if not callable(self.is_available):
             raise TypeError("is_available must be callable")
+        if self.is_advertised is not None and not callable(self.is_advertised):
+            raise TypeError("is_advertised must be callable")
         if not callable(self.extract_params):
             raise TypeError("extract_params must be callable")
+
+    def should_advertise(self, sources: dict[str, dict]) -> bool:
+        """Return whether this tool's schema belongs in the agent request."""
+        predicate = self.is_advertised or self.is_available
+        return predicate(sources)
 
     @property
     def inputs(self) -> dict[str, str]:
@@ -560,6 +580,7 @@ class RegisteredTool:
         parallel_safe: bool | None = None,
         accepts_runtime_context: bool | None = None,
         evidence_mapper: EvidenceMapper | None = None,
+        is_advertised: Callable[[dict[str, dict]], bool] | None = None,
     ) -> RegisteredTool:
         metadata = tool.metadata()
         input_model = cast(type[BaseModel] | None, getattr(tool, "input_model", None))
@@ -600,6 +621,7 @@ class RegisteredTool:
                 else getattr(tool.__class__, "evidence_mapper", None)
             ),
             is_available=tool.is_available,
+            is_advertised=is_advertised or tool.is_advertised,
             extract_params=tool.extract_params,
             tags=resolved_tags,
             requires_approval=bool(
@@ -653,6 +675,7 @@ class RegisteredTool:
         injected_params: tuple[str, ...] | None = None,
         retrieval_controls: RetrievalControls | None = None,
         is_available: Callable[[dict[str, dict]], bool] | None = None,
+        is_advertised: Callable[[dict[str, dict]], bool] | None = None,
         extract_params: Callable[[dict[str, dict]], dict[str, Any]] | None = None,
         tags: tuple[str, ...] | None = None,
         requires_approval: bool | None = None,
@@ -694,6 +717,7 @@ class RegisteredTool:
             retrieval_controls=retrieval_controls or RetrievalControls(),
             run=func,
             is_available=is_available or _always_available,
+            is_advertised=is_advertised,
             extract_params=extract_params or _extract_no_params,
             tags=tags or (),
             requires_approval=bool(requires_approval),

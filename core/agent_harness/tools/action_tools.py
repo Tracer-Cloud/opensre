@@ -60,12 +60,12 @@ def get_action_tools_from_integrations_view(
     tools: list[RegisteredTool] = []
     for candidate in _registered_single_turn_tools().values():
         try:
-            if not candidate.is_available(sources):
+            if not candidate.should_advertise(sources):
                 continue
         except Exception as exc:
             safe_sources = redact_sensitive(sources)
             raise RuntimeError(
-                f"{candidate.name} availability check failed for sources {safe_sources!r}: {exc}"
+                f"{candidate.name} advertisement check failed for sources {safe_sources!r}: {exc}"
             ) from exc
         tools.append(candidate)
     return tools

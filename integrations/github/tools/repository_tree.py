@@ -19,10 +19,10 @@ from integrations.github.mcp import call_github_mcp_tool
 
 
 def _get_github_repository_tree_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
-    gh = sources["github"]
+    gh = sources.get("github", {})
     return {
-        "owner": gh["owner"],
-        "repo": gh["repo"],
+        "owner": gh.get("owner"),
+        "repo": gh.get("repo"),
         "path_filter": gh.get("path", ""),
         "tree_sha": gh.get("sha") or gh.get("ref", ""),
         "recursive": True,
@@ -76,6 +76,7 @@ def _map_get_github_repository_tree(
         "required": ["owner", "repo"],
     },
     is_available=_get_github_repository_tree_available,
+    is_advertised=github_source_available,
     extract_params=_get_github_repository_tree_extract_params,
     injected_params=GITHUB_INJECTED_PARAMS,
     evidence_mapper=_map_get_github_repository_tree,

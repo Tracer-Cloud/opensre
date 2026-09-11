@@ -71,9 +71,9 @@ def _resolve_config(gitlab_url: str | None, gitlab_token: str | None) -> GitlabC
 
 
 def _list_gitlab_commits_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
-    gl = sources["gitlab"]
+    gl = sources.get("gitlab", {})
     return {
-        "project_id": gl["project_id"],
+        "project_id": gl.get("project_id"),
         "since": gl.get("since", ""),
         "ref_name": gl.get("ref_name", "main"),
         "per_page": 10,
@@ -125,6 +125,7 @@ def _map_list_gitlab_commits(
         "required": ["project_id"],
     },
     is_available=_list_gitlab_commits_available,
+    is_advertised=_gitlab_available,
     extract_params=_list_gitlab_commits_extract_params,
     evidence_mapper=_map_list_gitlab_commits,
 )

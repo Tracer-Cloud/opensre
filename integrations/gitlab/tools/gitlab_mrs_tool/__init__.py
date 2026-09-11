@@ -39,9 +39,9 @@ def _map_list_gitlab_mrs(
 
 
 def _list_gitlab_mrs_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
-    gl = sources["gitlab"]
+    gl = sources.get("gitlab", {})
     return {
-        "project_id": gl["project_id"],
+        "project_id": gl.get("project_id"),
         "updated_after": gl.get("updated_after", ""),
         "target_branch": gl.get("target_branch", "main"),
         "per_page": 10,
@@ -76,6 +76,7 @@ def _list_gitlab_mrs_available(sources: dict[str, dict]) -> bool:
         "required": ["project_id"],
     },
     is_available=_list_gitlab_mrs_available,
+    is_advertised=_gitlab_available,
     extract_params=_list_gitlab_mrs_extract_params,
     evidence_mapper=_map_list_gitlab_mrs,
 )

@@ -12,6 +12,7 @@ from core.tool_framework.utils import tool_unavailable
 from integrations.github.client import GitHubApiError, GitHubRestClient, resolve_github_token
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
+    github_credentials_available,
     github_creds,
     github_source_available,
 )
@@ -103,6 +104,7 @@ def _map_get_github_repository(
         "required": ["owner", "repo"],
     },
     is_available=_github_repository_available,
+    is_advertised=github_credentials_available,
     extract_params=_github_repository_extract_params,
     injected_params=GITHUB_INJECTED_PARAMS,
     evidence_mapper=_map_get_github_repository,

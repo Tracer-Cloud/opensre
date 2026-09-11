@@ -33,10 +33,10 @@ def _unwrap_exception_message(exc: BaseException) -> str:
 
 
 def _list_github_commits_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
-    gh = sources["github"]
+    gh = sources.get("github", {})
     return {
-        "owner": gh["owner"],
-        "repo": gh["repo"],
+        "owner": gh.get("owner"),
+        "repo": gh.get("repo"),
         "path": gh.get("path", ""),
         "sha": gh.get("sha") or gh.get("ref", ""),
         "per_page": 10,
@@ -90,6 +90,7 @@ def _map_list_github_commits(
         "required": ["owner", "repo"],
     },
     is_available=_list_github_commits_available,
+    is_advertised=github_source_available,
     extract_params=_list_github_commits_extract_params,
     injected_params=GITHUB_INJECTED_PARAMS,
     evidence_mapper=_map_list_github_commits,
