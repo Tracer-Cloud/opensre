@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import io
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
 from rich.console import Console
 
 from core.agent_harness.ports import LlmFactory
-from core.llm.types import AgentLLMResponse, ToolCall
+from core.llm.types import AgentLLMResponse, SchemaDescribedTool, ToolCall
 
 
 @dataclass
@@ -19,7 +20,7 @@ class FakeActionLLM:
     tool_schema_names: list[str] = field(default_factory=list)
     model_id: str | None = None
 
-    def tool_schemas(self, tools: list[Any]) -> list[dict[str, Any]]:
+    def tool_schemas(self, tools: Sequence[SchemaDescribedTool]) -> list[dict[str, Any]]:
         self.tool_schema_names = [str(tool.name) for tool in tools]
         return [{"name": tool.name} for tool in tools]
 

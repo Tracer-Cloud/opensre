@@ -161,6 +161,7 @@ jobs:
             pytest_paths: >-
               tests/tools
               tests/core
+              core/agent_harness/prompts/skills
               tests/infrastructure
               tests/filestorage
               tests/utils
@@ -177,6 +178,7 @@ jobs:
             pytest_paths: >-
               tests/tools
               tests/core
+              core/agent_harness/prompts/skills
               tests/infrastructure
               tests/filestorage
               tests/utils
@@ -193,6 +195,7 @@ jobs:
             pytest_paths: >-
               tests/tools
               tests/core
+              core/agent_harness/prompts/skills
               tests/infrastructure
               tests/filestorage
               tests/utils
@@ -209,6 +212,7 @@ jobs:
             pytest_paths: >-
               tests/tools
               tests/core
+              core/agent_harness/prompts/skills
               tests/infrastructure
               tests/filestorage
               tests/utils
@@ -225,6 +229,7 @@ jobs:
             pytest_paths: >-
               tests/tools
               tests/core
+              core/agent_harness/prompts/skills
               tests/infrastructure
               tests/filestorage
               tests/utils
@@ -241,6 +246,7 @@ jobs:
             pytest_paths: >-
               tests/tools
               tests/core
+              core/agent_harness/prompts/skills
               tests/infrastructure
               tests/filestorage
               tests/utils

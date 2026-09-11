@@ -16,6 +16,15 @@ The skill has a narrow, concrete purpose.
 SKILL.md describes when the skill should activate.
 Tool, shell, network, file, environment, and MCP capabilities are declared when used.
 
+## Colocated workflow tests
+
+Major skills that orchestrate a multi-step workflow must keep an end-to-end
+`test_*.py` beside their `SKILL.md`. Exercise the real agent loop with the
+shipped skill, checking tool-call order, arguments, and user-choice pauses.
+Script model responses and external tool I/O for offline CI; keep skill loading
+and host hooks real. Include the skill directory in default pytest discovery
+and a CI shard, and run its test when changing the workflow.
+
 
 ## Skill metadata ownership and change date
 

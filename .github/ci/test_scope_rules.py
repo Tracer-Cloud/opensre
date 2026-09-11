@@ -48,6 +48,14 @@ RULES: tuple[PathRule, ...] = (
     # Shared core (always escalate)
     PathRule("core/domain/", (), always_escalate=True),
     PathRule("core/agent_harness/session/", ("tests/core/agent_harness/session/",)),
+    PathRule(
+        "core/agent_harness/prompts/skills/",
+        (
+            "core/agent_harness/prompts/skills/",
+            "tests/core/agent_harness/prompts/",
+            "tests/core/agent/prompts/",
+        ),
+    ),
     PathRule("core/", ("tests/core/",)),
     PathRule("utils/", (), always_escalate=True),
     # Specific sub-packages before their parent
