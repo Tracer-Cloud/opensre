@@ -44,17 +44,8 @@ _disable_sentry()
 _mark_tests_for_analytics()
 
 
-@pytest.fixture(autouse=True)
-def _harness_providers_per_test() -> Iterator[None]:
-    """Wire harness ports before each test; reset after to avoid session leakage."""
-    from bootstrap.adapters import install_cli_auth_checker
-    from infrastructure.harness_providers import reset_harness_providers
-    from surfaces.shared.terminal.output.boundary import install_harness_providers
-
-    install_harness_providers()
-    install_cli_auth_checker()
-    yield
-    reset_harness_providers()
+# Harness provider wiring lives in ``tests/harness_providers_plugin.py`` (loaded
+# via ``pytest.ini``) so colocated skill tests outside ``tests/`` get it too.
 
 
 @pytest.fixture(autouse=True)

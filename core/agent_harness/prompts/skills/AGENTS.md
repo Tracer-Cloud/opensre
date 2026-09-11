@@ -92,6 +92,14 @@ Script model responses and external tool I/O for offline CI; keep skill loading
 and host hooks real. Include the skill directory in default pytest discovery
 and a CI shard, and run its test when changing the workflow.
 
+These files sit inside `core/`, so the layer contracts apply to them: never
+import `tools`, `integrations`, `surfaces`, or `bootstrap`. Resolve real action
+tools (`ask_user_choice`, `skill_view`) through
+`core.agent_harness.tools.action_tools.get_action_tool`; the registry behind it
+is installed around every test by `tests/harness_providers_plugin.py`
+(loaded from `pytest.ini`), not by `tests/conftest.py`, which does not reach
+this tree.
+
 
 ## Skill metadata ownership and change date
 

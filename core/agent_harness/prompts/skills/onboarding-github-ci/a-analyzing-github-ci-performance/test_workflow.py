@@ -16,6 +16,7 @@ from config.constants.skills import (
 from core.agent_harness.ports import TurnBinding
 from core.agent_harness.prompts.skills.loader import list_action_skills, load_skill_body
 from core.agent_harness.session.pending_choice import PendingUserChoice, format_ask_user_answers
+from core.agent_harness.tools.action_tools import get_action_tool
 from core.agent_harness.tools.tool_provider import DefaultToolProvider
 from core.agent_harness.turns.headless_adapters import (
     BufferOutputSink,
@@ -30,8 +31,6 @@ from tests.core.agent.orchestration.action_execution_test_harness import (
     no_tool_response,
     tool_response,
 )
-from tools.interactive_shell.actions.ask_choice import ask_user_choice_tool
-from tools.interactive_shell.actions.skill_view import skill_view_tool
 
 _REPOSITORY_QUESTION = "Which repository should I analyze?"
 _NEXT_QUESTION = "What would you like to do next?"
@@ -63,6 +62,18 @@ class _Ports:
 
     def tty_interactive(self) -> bool:
         return True
+
+
+def _real_action_tool(name: str) -> RegisteredTool:
+    """The registered action tool, resolved through the harness provider port.
+
+    ``core/agent_harness`` must not import ``tools.*`` (layer contracts), so the
+    menu and skill-handoff tools come from the provider that
+    ``tests/harness_providers_plugin.py`` installs around every test.
+    """
+    tool = get_action_tool(name)
+    assert tool is not None, f"action tool {name!r} is not registered"
+    return tool
 
 
 def _batch(*responses: AgentLLMResponse) -> AgentLLMResponse:
@@ -138,19 +149,19 @@ def test_local_analysis_waits_for_choices_before_analyzing_and_handing_off(
         "schedule_ci_reliability_loop",
         {"success": True, "response_text": "Scheduled the weekday CI reliability report."},
     )
+    ask_user_choice = _real_action_tool("ask_user_choice")
+    skill_view = _real_action_tool("skill_view")
     analyze_args = {"owner": "acme", "repo": "widget", "days": 30}
     analyze_call = tool_response(analyze.name, analyze_args)
     repository_menu = tool_response(
-        ask_user_choice_tool.name,
+        ask_user_choice.name,
         {"title": _REPOSITORY_QUESTION, "options": ["acme/widget", "Tracer-Cloud/opensre"]},
     )
     next_menu = tool_response(
-        ask_user_choice_tool.name,
+        ask_user_choice.name,
         {"title": _NEXT_QUESTION, "options": [_SCHEDULE_LOOPS, "Slack setup", "Finish"]},
     )
-    handoff_call = tool_response(
-        skill_view_tool.name, {"name": SCHEDULING_GITHUB_CI_FIXES_SKILL_NAME}
-    )
+    handoff_call = tool_response(skill_view.name, {"name": SCHEDULING_GITHUB_CI_FIXES_SKILL_NAME})
 
     class SkillLLM(FakeActionLLM):
         def invoke(
@@ -180,7 +191,7 @@ def test_local_analysis_waits_for_choices_before_analyzing_and_handing_off(
     provider = DefaultToolProvider(
         session,
         output,
-        precomputed_action_tools=[scan, analyze, schedule, ask_user_choice_tool, skill_view_tool],
+        precomputed_action_tools=[scan, analyze, schedule, ask_user_choice, skill_view],
         slash_ports_factory=_Ports,
     )
     agent = InMemoryHeadlessBuild(session=session, output=output).agent(
