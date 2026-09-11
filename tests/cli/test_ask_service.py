@@ -6,6 +6,7 @@ import threading
 
 import pytest
 
+from core.agent_harness.session_goal import SessionGoal, SessionGoalReason, SessionGoalStatus
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
 from core.domain.types.tools import ToolSurface
 from core.llm.types import ToolCall
@@ -95,7 +96,7 @@ class _FakeAgentSession:
     def bound_session(self) -> _FakeSession:
         return type(self).session
 
-    def chat_until_goal(self, _prompt: str) -> object:
+    def chat_until_goal(self, _prompt: str, **_kwargs: object) -> object:
         raise RuntimeError("turn failed")
 
 
@@ -202,6 +203,33 @@ def test_ask_output_sink_uses_the_latest_rendered_event() -> None:
     assert output.rendered_response == "The final model request failed."
 
 
+def test_ask_output_sink_clears_an_earlier_goal_response_before_the_next_turn() -> None:
+    """A silent final goal turn must not reuse its predecessor's response."""
+    output = service._AskOutputSink()
+    output.stream(label="OpenSRE", chunks=iter(["Investigation update."]))
+    goal = SessionGoal(
+        condition="investigate the alert",
+        status=SessionGoalStatus.ACTIVE,
+    ).with_reason(SessionGoalReason.working_session_turn(2, 3))
+
+    service._clear_prior_goal_response(output, goal)
+
+    assert output.rendered_response == ""
+
+
+def test_ask_output_sink_keeps_a_final_goal_response() -> None:
+    output = service._AskOutputSink()
+    final_goal = SessionGoal(
+        condition="investigate the alert",
+        status=SessionGoalStatus.ACHIEVED,
+    )
+    output.stream(label="OpenSRE", chunks=iter(["Final investigation summary."]))
+
+    service._clear_prior_goal_response(output, final_goal)
+
+    assert output.rendered_response == "Final investigation summary."
+
+
 def test_ask_log_scope_suppresses_unrendered_fallback_warnings(monkeypatch) -> None:
     """Internal tool warnings must not bypass the one-shot answer renderer."""
 
@@ -280,7 +308,7 @@ def test_agent_turn_binds_hooks_and_restricts_capabilities_via_start(monkeypatch
         def bound_session(self) -> _FakeSession:
             return session
 
-        def chat_until_goal(self, prompt: str) -> _GoalRun:
+        def chat_until_goal(self, prompt: str, **_kwargs: object) -> _GoalRun:
             # chat_until_goal, not chat: ask must run the session-goal loop so a
             # multi-step turn completes instead of stopping after the first.
             recorded["prompt"] = prompt
@@ -303,6 +331,42 @@ def test_agent_turn_binds_hooks_and_restricts_capabilities_via_start(monkeypatch
     assert manager.closed == [(session, False)]
 
 
+def test_agent_turn_discards_a_previous_goal_response_before_a_silent_final_turn(
+    monkeypatch,
+) -> None:
+    manager = _FakeSessionManager()
+    session = _FakeSession()
+
+    class _GoalAgentSession:
+        @classmethod
+        def start(cls, _config: object, **_kwargs: object) -> _GoalAgentSession:
+            return cls()
+
+        @property
+        def bound_session(self) -> _FakeSession:
+            return session
+
+        def chat_until_goal(self, _prompt: str, **kwargs: object) -> _GoalRun:
+            on_progress = kwargs["on_progress"]
+            assert callable(on_progress)
+            progress = SessionGoal(
+                condition="investigate the alert",
+                status=SessionGoalStatus.ACTIVE,
+            ).with_reason(SessionGoalReason.working_session_turn(2, 3))
+            on_progress(progress)
+            return _GoalRun(_turn("raw turn history"))
+
+    output = service._AskOutputSink()
+    output.stream(label="OpenSRE", chunks=iter(["Investigation update."]))
+    monkeypatch.setattr(service, "SessionManager", lambda: manager)
+    monkeypatch.setattr(service, "AgentSession", _GoalAgentSession)
+
+    service._run_agent_turn("hello", ToolExecutionHooks(), output=output)
+
+    assert output.rendered_response == ""
+    assert manager.closed == [(session, False)]
+
+
 def test_agent_turn_passes_tool_events_to_the_default_agent_build(monkeypatch) -> None:
     manager = _FakeSessionManager()
     session = _FakeSession()
@@ -318,7 +382,7 @@ def test_agent_turn_passes_tool_events_to_the_default_agent_build(monkeypatch) -
         def bound_session(self) -> _FakeSession:
             return session
 
-        def chat_until_goal(self, _prompt: str) -> _GoalRun:
+        def chat_until_goal(self, _prompt: str, **_kwargs: object) -> _GoalRun:
             return _GoalRun(_turn())
 
     def observer(_kind: str, _data: dict[str, object]) -> None:

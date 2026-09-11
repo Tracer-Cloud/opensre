@@ -22,6 +22,7 @@ from core.agent_harness import (
     TurnResult,
 )
 from core.agent_harness.ports import ToolEventObserver
+from core.agent_harness.session_goal import SessionGoal, SessionGoalReason, SessionGoalStatus
 from core.agent_harness.spi.cancel import ensure_turn_cancel
 from core.tool import ToolExecutionHooks
 from infrastructure.errors import OpenSREError
@@ -129,6 +130,10 @@ class _AskOutputSink:
         """Mark that the real agent turn drove this sink."""
         self._completed_turn = True
 
+    def clear_rendered_event(self) -> None:
+        """Discard a prior outer turn's response before the next one starts."""
+        self._rendered_event = ""
+
     @property
     def rendered_response(self) -> str:
         """Return only the response or error the interactive terminal would render."""
@@ -167,6 +172,12 @@ def _restrict_ask_capabilities(session: SessionCore) -> None:
         session.available_capabilities[capability] = ()
 
 
+def _clear_prior_goal_response(output: _AskOutputSink, goal: SessionGoal) -> None:
+    """Prevent an earlier goal turn from standing in for a silent final turn."""
+    if goal.status == SessionGoalStatus.ACTIVE and SessionGoalReason.is_working(goal.last_reason):
+        output.clear_rendered_event()
+
+
 def _run_agent_turn(
     prompt: str,
     hooks: ToolExecutionHooks,
@@ -200,7 +211,10 @@ def _run_agent_turn(
             session = agent_session.bound_session
             # chat_until_goal, not chat: the agent can attach a session goal,
             # which must run to completion rather than stop after one turn.
-            result = agent_session.chat_until_goal(prompt).last_result
+            result = agent_session.chat_until_goal(
+                prompt,
+                on_progress=lambda goal: _clear_prior_goal_response(output, goal),
+            ).last_result
             output.mark_turn_complete()
             return result
     finally:
