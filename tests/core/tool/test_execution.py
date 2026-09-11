@@ -467,14 +467,30 @@ def test_sequential_batch_uses_integration_scope_refreshed_by_prior_tool() -> No
     scoped_tool = RegisteredTool(
         name="read_scope",
         description="read integration scope",
-        input_schema=_schema(["value"]),
+        input_schema={
+            "type": "object",
+            "properties": {
+                "owner": {"type": "string"},
+                "value": {"type": "string"},
+            },
+            "required": ["owner", "value"],
+            "additionalProperties": False,
+        },
         source="github",
         run=read_scope,
         extract_params=lambda sources: {"owner": sources["github"]["owner"]},
+        context_params=("owner",),
     )
 
     results = execute_tool_calls(
-        [_call("refresh_scope", "new-owner"), _call("read_scope", "observed")],
+        [
+            _call("refresh_scope", "new-owner"),
+            ToolCall(
+                id="read-scope-1",
+                name="read_scope",
+                input={"owner": "old-owner", "value": "observed"},
+            ),
+        ],
         [refresh_tool, scoped_tool],
         resolved,
     )

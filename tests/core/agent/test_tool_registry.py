@@ -25,7 +25,7 @@ def _action_tools(
     session: Session,
     *,
     resolved_integrations: dict[str, dict[str, str]] | None = None,
-) -> list[object]:
+) -> list[RegisteredTool]:
     ctx = ActionToolScope(session=session, console=Console(force_terminal=False))
     return get_action_tools_from_integrations_view(ctx, resolved_integrations=resolved_integrations)
 
@@ -218,9 +218,9 @@ def test_repository_tools_are_advertised_before_a_workspace_scope_is_known() -> 
     session.configured_integrations = ("github", "gitlab")
     session.configured_integrations_known = True
 
-    names = {
-        spec["name"]
-        for spec in _tool_specs(
+    tools = {
+        tool.name: tool
+        for tool in _action_tools(
             session,
             resolved_integrations={
                 "github": {"connection_verified": True, "github_token": "github-token"},
@@ -229,8 +229,8 @@ def test_repository_tools_are_advertised_before_a_workspace_scope_is_known() -> 
         )
     }
 
-    assert "search_github_issues" in names
-    assert "list_gitlab_commits" in names
+    assert tools["search_github_issues"].context_params == ("owner", "repo")
+    assert tools["list_gitlab_commits"].context_params == ("project_id",)
 
 
 def test_llm_set_provider_offered_by_default() -> None:

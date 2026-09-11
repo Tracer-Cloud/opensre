@@ -12,6 +12,7 @@ from integrations.gitlab import (
     get_gitlab_mrs,
 )
 from integrations.gitlab.tools.gitlab_commits_tool import (
+    _GITLAB_REPOSITORY_CONTEXT_PARAMS,
     _gitlab_available,
     _gitlab_count_label,
     _gl_creds,
@@ -78,6 +79,7 @@ def _list_gitlab_mrs_available(sources: dict[str, dict]) -> bool:
     is_available=_list_gitlab_mrs_available,
     is_advertised=_gitlab_available,
     extract_params=_list_gitlab_mrs_extract_params,
+    context_params=_GITLAB_REPOSITORY_CONTEXT_PARAMS,
     evidence_mapper=_map_list_gitlab_mrs,
 )
 def list_gitlab_mrs(

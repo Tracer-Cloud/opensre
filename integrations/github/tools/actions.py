@@ -16,6 +16,7 @@ from integrations.github.client import GitHubApiError, GitHubRestClient
 from integrations.github.envelope import normalize_github_tool_result
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
+    GITHUB_REPOSITORY_CONTEXT_PARAMS,
     github_creds,
     github_source_available,
     resolve_github_mcp_config,
@@ -718,6 +719,7 @@ def _map_list_github_actions_workflow_runs(
     is_advertised=github_source_available,
     extract_params=_github_actions_repo_params,
     injected_params=GITHUB_INJECTED_PARAMS,
+    context_params=GITHUB_REPOSITORY_CONTEXT_PARAMS,
     evidence_mapper=_map_list_github_actions_workflow_runs,
 )
 def list_github_actions_workflow_runs(
@@ -871,6 +873,7 @@ def _map_list_github_actions_active_runs(
     is_advertised=github_source_available,
     extract_params=_github_actions_repo_params,
     injected_params=GITHUB_INJECTED_PARAMS,
+    context_params=GITHUB_REPOSITORY_CONTEXT_PARAMS,
     evidence_mapper=_map_list_github_actions_active_runs,
 )
 def list_github_actions_active_runs(
@@ -1001,6 +1004,7 @@ def _map_list_github_actions_run_jobs(
     is_advertised=github_source_available,
     extract_params=_github_actions_run_params,
     injected_params=GITHUB_INJECTED_PARAMS,
+    context_params=GITHUB_REPOSITORY_CONTEXT_PARAMS,
     evidence_mapper=_map_list_github_actions_run_jobs,
 )
 def list_github_actions_run_jobs(
@@ -1140,6 +1144,7 @@ def _map_get_github_actions_step_log(
     is_advertised=github_source_available,
     extract_params=_github_actions_run_params,
     injected_params=GITHUB_INJECTED_PARAMS,
+    context_params=GITHUB_REPOSITORY_CONTEXT_PARAMS,
     evidence_mapper=_map_get_github_actions_step_log,
 )
 def get_github_actions_step_log(

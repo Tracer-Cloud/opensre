@@ -11,6 +11,7 @@ from core.tool_framework.utils import code_host_unavailable_payload
 from integrations.github.envelope import normalize_github_tool_result
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
+    GITHUB_REPOSITORY_CONTEXT_PARAMS,
     github_creds,
     github_source_available,
     resolve_github_mcp_config,
@@ -92,6 +93,7 @@ def _map_get_github_file_contents(
     is_advertised=github_source_available,
     extract_params=_get_github_file_contents_extract_params,
     injected_params=GITHUB_INJECTED_PARAMS,
+    context_params=GITHUB_REPOSITORY_CONTEXT_PARAMS,
     evidence_mapper=_map_get_github_file_contents,
 )
 def get_github_file_contents(

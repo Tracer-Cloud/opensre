@@ -42,6 +42,7 @@ def tool(
     output_model: type[BaseModel] | None = None,
     evidence_mapper: EvidenceMapper | None = None,
     injected_params: tuple[str, ...] | None = None,
+    context_params: tuple[str, ...] | None = None,
     retrieval_controls: RetrievalControls | None = None,
     is_available: Callable[[dict[str, dict]], bool] | None = None,
     is_advertised: Callable[[dict[str, dict]], bool] | None = None,
@@ -79,6 +80,7 @@ def tool[F: Callable[..., Any]](
     output_model: type[BaseModel] | None = None,
     evidence_mapper: EvidenceMapper | None = None,
     injected_params: tuple[str, ...] | None = None,
+    context_params: tuple[str, ...] | None = None,
     retrieval_controls: RetrievalControls | None = None,
     is_available: Callable[[dict[str, dict]], bool] | None = None,
     is_advertised: Callable[[dict[str, dict]], bool] | None = None,
@@ -116,6 +118,7 @@ def tool[F: Callable[..., Any]](
     output_model: type[BaseModel] | None = None,
     evidence_mapper: EvidenceMapper | None = None,
     injected_params: tuple[str, ...] | None = None,
+    context_params: tuple[str, ...] | None = None,
     retrieval_controls: RetrievalControls | None = None,
     is_available: Callable[[dict[str, dict]], bool] | None = None,
     is_advertised: Callable[[dict[str, dict]], bool] | None = None,
@@ -152,6 +155,7 @@ def tool[F: Callable[..., Any]](
     output_model: type[BaseModel] | None = None,
     evidence_mapper: EvidenceMapper | None = None,
     injected_params: tuple[str, ...] | None = None,
+    context_params: tuple[str, ...] | None = None,
     retrieval_controls: RetrievalControls | None = None,
     is_available: Callable[[dict[str, dict]], bool] | None = None,
     is_advertised: Callable[[dict[str, dict]], bool] | None = None,
@@ -192,6 +196,7 @@ def tool[F: Callable[..., Any]](
                 output_model is not None,
                 evidence_mapper is not None,
                 bool(injected_params),
+                bool(context_params),
                 retrieval_controls is not None,
                 is_available is not None,
                 is_advertised is not None,
@@ -218,6 +223,7 @@ def tool[F: Callable[..., Any]](
                 or accepts_runtime_context is not None
                 or evidence_mapper is not None
                 or is_advertised is not None
+                or context_params is not None
             ):
                 setattr(
                     target,
@@ -234,6 +240,7 @@ def tool[F: Callable[..., Any]](
                         accepts_runtime_context=accepts_runtime_context,
                         evidence_mapper=evidence_mapper,
                         is_advertised=is_advertised,
+                        context_params=context_params,
                     ),
                 )
             return target
@@ -263,6 +270,7 @@ def tool[F: Callable[..., Any]](
                     output_model=output_model,
                     evidence_mapper=evidence_mapper,
                     injected_params=injected_params,
+                    context_params=context_params,
                     retrieval_controls=retrieval_controls,
                     is_available=is_available,
                     is_advertised=is_advertised,

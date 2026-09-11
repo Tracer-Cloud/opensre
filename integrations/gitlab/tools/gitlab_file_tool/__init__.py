@@ -13,6 +13,7 @@ from integrations.gitlab import (
     get_gitlab_file,
 )
 from integrations.gitlab.tools.gitlab_commits_tool import (
+    _GITLAB_REPOSITORY_CONTEXT_PARAMS,
     _gitlab_available,
     _gl_creds,
     _resolve_config,
@@ -76,6 +77,7 @@ def _get_gitlab_file_available(sources: dict[str, dict]) -> bool:
     is_available=_get_gitlab_file_available,
     is_advertised=_gitlab_available,
     extract_params=_get_gitlab_file_extract_params,
+    context_params=_GITLAB_REPOSITORY_CONTEXT_PARAMS,
     evidence_mapper=_map_get_gitlab_file_contents,
 )
 def get_gitlab_file_contents(

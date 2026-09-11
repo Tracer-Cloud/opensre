@@ -15,6 +15,8 @@ from integrations.gitlab import (
     gitlab_config_from_env,
 )
 
+_GITLAB_REPOSITORY_CONTEXT_PARAMS = ("project_id",)
+
 
 #: Every GitLab list tool (commits/pipelines/MRs) sends ``per_page`` straight
 #: to the GitLab API as its own page-size param and returns the raw page with
@@ -127,6 +129,7 @@ def _map_list_gitlab_commits(
     is_available=_list_gitlab_commits_available,
     is_advertised=_gitlab_available,
     extract_params=_list_gitlab_commits_extract_params,
+    context_params=_GITLAB_REPOSITORY_CONTEXT_PARAMS,
     evidence_mapper=_map_list_gitlab_commits,
 )
 def list_gitlab_commits(

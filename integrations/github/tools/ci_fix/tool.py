@@ -11,6 +11,7 @@ from core.tool_framework import tool
 from integrations.github.client import resolve_github_token
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
+    GITHUB_REPOSITORY_CONTEXT_PARAMS,
     github_creds,
     github_source_available,
 )
@@ -131,6 +132,7 @@ def _confirm_fn(context: Any) -> Any:
     is_available=_github_ci_fix_available,
     extract_params=_github_ci_fix_extract_params,
     injected_params=GITHUB_INJECTED_PARAMS,
+    context_params=GITHUB_REPOSITORY_CONTEXT_PARAMS,
 )
 def fix_github_pr_ci(
     owner: str | None = None,

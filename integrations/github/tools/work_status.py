@@ -13,6 +13,7 @@ from core.tool_framework.utils import tool_unavailable
 from integrations.github.client import GitHubApiError, GitHubRestClient, resolve_github_token
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
+    GITHUB_REPOSITORY_CONTEXT_PARAMS,
     github_credentials_available,
     github_creds,
     github_source_available,
@@ -172,6 +173,7 @@ def _map_summarize_github_pr_status(
     is_advertised=github_credentials_available,
     extract_params=_github_extract_params,
     injected_params=GITHUB_INJECTED_PARAMS,
+    context_params=GITHUB_REPOSITORY_CONTEXT_PARAMS,
 )
 def list_github_work_items(
     owner: str,
@@ -313,6 +315,7 @@ def _count_prs(prs: list[dict[str, Any]]) -> dict[str, int]:
     is_advertised=github_credentials_available,
     extract_params=_github_extract_params,
     injected_params=GITHUB_INJECTED_PARAMS,
+    context_params=GITHUB_REPOSITORY_CONTEXT_PARAMS,
 )
 def summarize_github_pr_status(
     owner: str,
@@ -438,6 +441,7 @@ _ISSUE_MUTATION_OPERATIONS = {"create", "update", "close"}
     is_advertised=github_credentials_available,
     extract_params=_github_extract_params,
     injected_params=GITHUB_INJECTED_PARAMS,
+    context_params=GITHUB_REPOSITORY_CONTEXT_PARAMS,
     evidence_mapper=_map_list_github_security_alerts,
 )
 def list_github_security_alerts(
@@ -511,6 +515,7 @@ def list_github_security_alerts(
     is_advertised=github_credentials_available,
     extract_params=_github_extract_params,
     injected_params=GITHUB_INJECTED_PARAMS,
+    context_params=GITHUB_REPOSITORY_CONTEXT_PARAMS,
 )
 def propose_github_issue_mutation_from_slack(
     owner: str,
@@ -711,6 +716,7 @@ def _marker_exists_on_issue(
     is_advertised=github_credentials_available,
     extract_params=_github_extract_params,
     injected_params=GITHUB_INJECTED_PARAMS,
+    context_params=GITHUB_REPOSITORY_CONTEXT_PARAMS,
 )
 def execute_github_issue_mutation(
     owner: str,

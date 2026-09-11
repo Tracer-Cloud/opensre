@@ -155,6 +155,23 @@ def test_public_input_schema_empty_injected_unchanged() -> None:
     assert rt.public_input_schema == rt.input_schema
 
 
+def test_public_input_schema_keeps_authoritative_context_params() -> None:
+    rt = RegisteredTool(
+        name="scoped_tool",
+        description="Tool with a runtime repository default",
+        input_schema={
+            "type": "object",
+            "properties": {"owner": {"type": "string"}},
+            "required": ["owner"],
+        },
+        source="github",
+        run=lambda owner: {"owner": owner},
+        context_params=("owner",),
+    )
+
+    assert rt.public_input_schema == rt.input_schema
+
+
 def test_public_input_schema_is_cached_and_isolated_from_source() -> None:
     def run(query: str, token: str) -> dict[str, Any]:
         return {}

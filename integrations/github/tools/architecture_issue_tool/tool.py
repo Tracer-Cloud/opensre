@@ -8,6 +8,7 @@ from core.agent_harness.tools import action_context_from_agent_context
 from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel
 from core.tool_framework import tool
+from integrations.github.helpers import GITHUB_REPOSITORY_CONTEXT_PARAMS
 from integrations.github.tools.architecture_issue_tool.repo_workspace import (
     WorkspaceError,
     architecture_workspace_dir,
@@ -107,6 +108,7 @@ def _session_id_from_runtime(context: Any, explicit: str = "") -> str:
     is_available=_github_clone_available,
     extract_params=_github_extract_params,
     injected_params=GITHUB_CLI_INJECTED_PARAMS,
+    context_params=GITHUB_REPOSITORY_CONTEXT_PARAMS,
 )
 def architecture_clone_repo(
     owner: str,

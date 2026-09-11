@@ -11,6 +11,7 @@ from core.tool_framework.utils import tool_unavailable
 from integrations.github.envelope import normalize_github_tool_result
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
+    GITHUB_REPOSITORY_CONTEXT_PARAMS,
     github_creds,
     github_source_available,
     resolve_github_mcp_config,
@@ -93,6 +94,7 @@ def _map_list_github_commits(
     is_advertised=github_source_available,
     extract_params=_list_github_commits_extract_params,
     injected_params=GITHUB_INJECTED_PARAMS,
+    context_params=GITHUB_REPOSITORY_CONTEXT_PARAMS,
     evidence_mapper=_map_list_github_commits,
 )
 def list_github_commits(

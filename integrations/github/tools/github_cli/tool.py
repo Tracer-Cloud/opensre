@@ -16,6 +16,8 @@ from integrations.github.tools.github_cli.credentials import (
 from integrations.github.tools.github_cli.runner import run_gh
 from integrations.github.tools.github_cli.summary import attach_summary
 
+_REPOSITORY_CONTEXT_PARAMS = ("repo",)
+
 _ARGS_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {
@@ -106,6 +108,7 @@ def _normalize_args(args: list[str] | None) -> list[str]:
     is_available=_github_cli_available,
     extract_params=_github_cli_extract_params,
     injected_params=GITHUB_CLI_INJECTED_PARAMS,
+    context_params=_REPOSITORY_CONTEXT_PARAMS,
 )
 def github_cli(
     args: list[str],

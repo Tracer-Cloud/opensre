@@ -11,6 +11,7 @@ from core.tool_framework import tool
 from integrations.github.client import resolve_github_token
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
+    GITHUB_REPOSITORY_CONTEXT_PARAMS,
     github_credentials_available,
     github_creds,
     github_source_available,
@@ -75,6 +76,7 @@ def _map_generate_work_status_report(
     is_advertised=github_credentials_available,
     extract_params=_report_extract_params,
     injected_params=GITHUB_INJECTED_PARAMS,
+    context_params=GITHUB_REPOSITORY_CONTEXT_PARAMS,
     evidence_mapper=_map_generate_work_status_report,
 )
 def generate_work_status_report(

@@ -225,6 +225,7 @@ class ToolMetadata(StrictConfigModel):
     outputs: dict[str, str] = Field(default_factory=dict)
     output_schema: dict[str, Any] | None = None
     injected_params: list[str] = Field(default_factory=list)
+    context_params: list[str] = Field(default_factory=list)
     retrieval_controls: RetrievalControls = Field(
         default_factory=RetrievalControls,
         description="Declares which structured retrieval controls this tool supports",
@@ -283,6 +284,8 @@ class BaseTool(ABC):
     #: Optional per-tool output→evidence mapper; assign a module-level function.
     evidence_mapper: ClassVar[EvidenceMapper | None] = None
     injected_params: ClassVar[Sequence[str]] = ()
+    #: Public parameters whose non-empty runtime context values are authoritative.
+    context_params: ClassVar[Sequence[str]] = ()
     retrieval_controls: ClassVar[RetrievalControls] = (
         RetrievalControls()
     )  # Declares supported controls
@@ -312,6 +315,7 @@ class BaseTool(ABC):
         cls.outputs = metadata.outputs
         cls.output_schema = metadata.output_schema
         cls.injected_params = tuple(metadata.injected_params)
+        cls.context_params = tuple(metadata.context_params)
         cls.retrieval_controls = metadata.retrieval_controls
         registry = cls.registry_metadata()
         cls.surfaces = registry.surfaces
@@ -338,6 +342,7 @@ class BaseTool(ABC):
                 "outputs": dict(getattr(cls, "outputs", {})),
                 "output_schema": getattr(cls, "output_schema", None),
                 "injected_params": list(getattr(cls, "injected_params", [])),
+                "context_params": list(getattr(cls, "context_params", [])),
                 "retrieval_controls": getattr(cls, "retrieval_controls", RetrievalControls()),
             }
         )
@@ -419,6 +424,8 @@ class RegisteredTool:
     output_schema: dict[str, Any] | None = None
     evidence_mapper: EvidenceMapper | None = field(default=None, repr=False)
     injected_params: tuple[str, ...] = ()
+    #: Public parameters whose non-empty ``extract_params`` values beat model input.
+    context_params: tuple[str, ...] = ()
     retrieval_controls: RetrievalControls = field(
         default_factory=RetrievalControls,
     )
@@ -462,6 +469,7 @@ class RegisteredTool:
                 "outputs": self.outputs,
                 "output_schema": self.output_schema,
                 "injected_params": list(self.injected_params),
+                "context_params": list(self.context_params),
                 "retrieval_controls": self.retrieval_controls,
             }
         )
@@ -480,6 +488,7 @@ class RegisteredTool:
         self.outputs = metadata.outputs
         self.output_schema = metadata.output_schema
         self.injected_params = tuple(metadata.injected_params)
+        self.context_params = tuple(metadata.context_params)
         self.retrieval_controls = metadata.retrieval_controls
         self.surfaces = _normalize_surfaces(self.surfaces)
 
@@ -581,6 +590,7 @@ class RegisteredTool:
         accepts_runtime_context: bool | None = None,
         evidence_mapper: EvidenceMapper | None = None,
         is_advertised: Callable[[dict[str, dict]], bool] | None = None,
+        context_params: tuple[str, ...] | None = None,
     ) -> RegisteredTool:
         metadata = tool.metadata()
         input_model = cast(type[BaseModel] | None, getattr(tool, "input_model", None))
@@ -612,6 +622,11 @@ class RegisteredTool:
             outputs=metadata.outputs,
             output_schema=resolved_output_schema,
             injected_params=tuple(metadata.injected_params),
+            context_params=(
+                tuple(context_params)
+                if context_params is not None
+                else tuple(metadata.context_params)
+            ),
             retrieval_controls=retrieval_controls or metadata.retrieval_controls,
             surfaces=resolved_surfaces,
             run=tool.run,  # type: ignore[attr-defined]
@@ -673,6 +688,7 @@ class RegisteredTool:
         output_model: type[BaseModel] | None = None,
         evidence_mapper: EvidenceMapper | None = None,
         injected_params: tuple[str, ...] | None = None,
+        context_params: tuple[str, ...] | None = None,
         retrieval_controls: RetrievalControls | None = None,
         is_available: Callable[[dict[str, dict]], bool] | None = None,
         is_advertised: Callable[[dict[str, dict]], bool] | None = None,
@@ -714,6 +730,7 @@ class RegisteredTool:
             output_schema=resolved_output_schema,
             evidence_mapper=evidence_mapper,
             injected_params=tuple(injected_params or ()),
+            context_params=tuple(context_params or ()),
             retrieval_controls=retrieval_controls or RetrievalControls(),
             run=func,
             is_available=is_available or _always_available,

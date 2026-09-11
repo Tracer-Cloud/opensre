@@ -12,6 +12,7 @@ from core.tool_framework.utils import tool_unavailable
 from integrations.github.client import GitHubApiError, GitHubRestClient, resolve_github_token
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
+    GITHUB_REPOSITORY_CONTEXT_PARAMS,
     github_credentials_available,
     github_creds,
     github_source_available,
@@ -72,6 +73,7 @@ def _community_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     is_advertised=github_credentials_available,
     extract_params=_community_extract_params,
     injected_params=GITHUB_INJECTED_PARAMS,
+    context_params=GITHUB_REPOSITORY_CONTEXT_PARAMS,
 )
 def summarize_community_followups(
     owner: str = "",

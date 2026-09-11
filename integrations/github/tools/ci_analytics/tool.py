@@ -19,6 +19,7 @@ from core.tool_framework.utils import tool_unavailable
 from integrations.github.client import GitHubApiError, resolve_github_token
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
+    GITHUB_REPOSITORY_CONTEXT_PARAMS,
     github_creds,
     github_source_available,
 )
@@ -359,6 +360,7 @@ def _result(
     is_available=_available,
     extract_params=_extract_params,
     injected_params=GITHUB_INJECTED_PARAMS,
+    context_params=GITHUB_REPOSITORY_CONTEXT_PARAMS,
     evidence_mapper=_map_evidence,
 )
 def analyze_github_ci_reliability(

@@ -10,6 +10,8 @@ Exports:
 
 - ``GITHUB_INJECTED_PARAMS``: kwargs ``extract_params`` may inject that must
   win over model-supplied values at call time.
+- ``GITHUB_REPOSITORY_CONTEXT_PARAMS``: public repository identifiers whose
+  refreshed runtime values must win over stale model-supplied scope.
 - ``github_source_available``: predicate on the integration store entry.
 - ``github_creds``: maps classified integration fields to tool kwargs.
 - ``resolve_github_mcp_config``: merges env defaults with explicit overrides.
@@ -35,6 +37,7 @@ GITHUB_INJECTED_PARAMS: tuple[str, ...] = (
     "github_command",
     "github_args",
 )
+GITHUB_REPOSITORY_CONTEXT_PARAMS: tuple[str, ...] = ("owner", "repo")
 
 
 def github_source_available(sources: dict[str, dict]) -> bool:

@@ -447,9 +447,11 @@ def _invoke_runtime_tool(
 
     injected = tool.extract_params(tool_sources)
     kwargs = {**injected, **tc.input}
-    # Vendor-agnostic: each tool declares which extract_params keys must win
-    # over model input (secrets / connection fields). See ``injected_params``.
-    protected = frozenset(getattr(tool, "injected_params", ()) or ())
+    # Vendor-agnostic: hidden injected values and public authoritative context
+    # values must win over potentially stale model input when present.
+    protected = frozenset(
+        (*getattr(tool, "injected_params", ()), *getattr(tool, "context_params", ()))
+    )
     for key, value in injected.items():
         if key in protected and value not in (None, "", []):
             kwargs[key] = value
