@@ -10,27 +10,41 @@ import pytest
 from infrastructure.process.termination import terminate_process_tree
 
 
-def test_terminate_process_tree_stops_descendants_before_root(
+def test_terminate_process_tree_freezes_root_and_collects_late_descendants(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     events: list[str] = []
 
-    def _process(name: str) -> SimpleNamespace:
+    def _no_children(*, recursive: bool) -> list[SimpleNamespace]:
+        assert recursive
+        return []
+
+    def _process(pid: int, name: str) -> SimpleNamespace:
         return SimpleNamespace(
+            pid=pid,
+            children=_no_children,
+            suspend=lambda: events.append(f"suspend:{name}"),
             terminate=lambda: events.append(f"terminate:{name}"),
             kill=lambda: events.append(f"kill:{name}"),
         )
 
-    child = _process("child")
-    grandchild = _process("grandchild")
-    root = _process("root")
+    child = _process(124, "child")
+    grandchild = _process(125, "grandchild")
+    late_child = _process(126, "late-child")
+    root = _process(123, "root")
+    scans = 0
 
     def _children(*, recursive: bool) -> list[SimpleNamespace]:
+        nonlocal scans
         assert recursive
-        return [child, grandchild]
+        scans += 1
+        events.append(f"scan:{scans}")
+        if scans == 1:
+            return [child, grandchild]
+        return [child, grandchild, late_child]
 
     root.children = _children
-    wait_results = iter([([child, grandchild], [root]), ([root], [])])
+    wait_results = iter([([child, grandchild, late_child], [root]), ([root], [])])
     monkeypatch.setattr(psutil, "Process", lambda _pid: root)
 
     def _wait_procs(
@@ -45,6 +59,14 @@ def test_terminate_process_tree_stops_descendants_before_root(
     terminate_process_tree(123, grace_seconds=10, force_wait_seconds=5)
 
     assert events == [
+        "suspend:root",
+        "scan:1",
+        "suspend:child",
+        "suspend:grandchild",
+        "scan:2",
+        "suspend:late-child",
+        "scan:3",
+        "terminate:late-child",
         "terminate:grandchild",
         "terminate:child",
         "terminate:root",

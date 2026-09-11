@@ -5,6 +5,43 @@ from __future__ import annotations
 import contextlib
 from typing import Any
 
+_MAX_TREE_SCAN_PASSES = 8
+
+
+def _suspend_or_terminate(process: Any, *, psutil: Any) -> bool:
+    """Stop a process from spawning; return whether termination was used."""
+    try:
+        process.suspend()
+    except (psutil.Error, OSError):
+        try:
+            process.terminate()
+        except (psutil.Error, OSError):
+            return False
+        return True
+    return False
+
+
+def _freeze_descendants(root: Any, *, psutil: Any) -> list[Any]:
+    """Stop newly discovered descendants across bounded scans of the tree."""
+    descendants: dict[int, Any] = {}
+    for _ in range(_MAX_TREE_SCAN_PASSES):
+        discovered: list[Any] = []
+        for parent in (root, *descendants.values()):
+            try:
+                children = parent.children(recursive=True)
+            except (psutil.Error, OSError):
+                continue
+            for child in children:
+                if child.pid == root.pid or child.pid in descendants:
+                    continue
+                descendants[child.pid] = child
+                discovered.append(child)
+        if not discovered:
+            break
+        for process in discovered:
+            _suspend_or_terminate(process, psutil=psutil)
+    return list(descendants.values())
+
 
 def terminate_process_tree(
     pid: int,
@@ -12,20 +49,28 @@ def terminate_process_tree(
     grace_seconds: float,
     force_wait_seconds: float,
 ) -> None:
-    """Terminate a process and its descendants through psutil."""
+    """Freeze and terminate a process tree through psutil."""
     import psutil
 
     if pid <= 0:
         return
     try:
         root = psutil.Process(pid)
-        processes: list[Any] = [*reversed(root.children(recursive=True)), root]
     except (psutil.Error, OSError):
         return
 
-    for process in processes:
+    # Freeze the root before inspecting descendants so it cannot add children
+    # outside the snapshot. If suspension is unavailable, terminate it first.
+    root_terminated = _suspend_or_terminate(root, psutil=psutil)
+
+    descendants = _freeze_descendants(root, psutil=psutil)
+    processes: list[Any] = [*reversed(descendants), root]
+    for process in reversed(descendants):
         with contextlib.suppress(psutil.Error, OSError):
             process.terminate()
+    if not root_terminated:
+        with contextlib.suppress(psutil.Error, OSError):
+            root.terminate()
 
     alive = processes
     with contextlib.suppress(psutil.Error, OSError):
