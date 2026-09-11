@@ -257,18 +257,18 @@ def test_two_windows_written_in_the_same_second_do_not_overwrite(tmp_path: Path)
 
 
 def test_a_benchmark_repository_is_not_compared_with_itself() -> None:
-    """Analyzing apache/airflow put an airflow column beside the airflow column."""
+    """Analyzing a benchmark repository put its column beside its own column."""
     # Arrange
     from integrations.github.tools.ci_analytics.render import comparison_markdown, peer_benchmarks
 
-    report = _report(owner="apache", repo="airflow")
+    report = _report(owner="langchain-ai", repo="langchain")
 
     # Act
     markdown = comparison_markdown(report, peer_benchmarks(report))
 
     # Assert: the analyzed repository appears once, as the first column.
-    assert markdown.count("apache/airflow") == 1
-    assert "fastapi/fastapi" in markdown
+    assert markdown.count("langchain-ai/langchain") == 1
+    assert "anomalyco/opencode" in markdown
 
 
 def test_repositories_whose_names_join_the_same_way_do_not_share_a_snapshot(

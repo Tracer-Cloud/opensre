@@ -294,8 +294,8 @@ def _result(
         "blocked by unreliable CI on merged PRs, and default-branch red time. "
         "Read-only. Every analysis reads GitHub Actions and needs a token; a "
         "saved snapshot is written for the scheduled loop, never used to answer "
-        "here. Every report also carries a comparison with apache/airflow and "
-        "fastapi/fastapi from figures shipped with the product, so a first run "
+        "here. Every report also carries a comparison with langchain-ai/langchain "
+        "and anomalyco/opencode from figures shipped with the product, so a first run "
         "compares as well as a later one. It cannot be turned off, so never "
         "offer to skip it. The report is painted on screen — do not restate "
         "its figures."
@@ -322,7 +322,7 @@ def _result(
         "headline": "One sentence naming the biggest cost (already painted; do not repeat)",
         "key_results": "The takeaway rows, red time first, even when the shell painted the report",
         "response_text": "The rendered report, or a one-line summary when the shell painted it",
-        "benchmarks": "Airflow and FastAPI rows from figures shipped with the product",
+        "benchmarks": "LangChain and opencode rows from figures shipped with the product",
     },
     surfaces=(ToolSurface.CHAT, ToolSurface.ACTION),
     side_effect_level=SideEffectLevel.READ_ONLY,

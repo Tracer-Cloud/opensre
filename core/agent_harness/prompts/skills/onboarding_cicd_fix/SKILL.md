@@ -9,9 +9,10 @@ description: >-
 metadata:
   owner: Vincent
   last_changed_by: Vincent
-  last_changed_at: 2026-09-09
+  last_changed_at: 2026-09-11
   usecases:
     - Interactive-shell startup and /demo
+    - When users want to see an onboarding flow
     - Show the available onboarding paths and follow the selected child skill
     - Answer capability and getting-started questions with an interactive demo
   requires:
