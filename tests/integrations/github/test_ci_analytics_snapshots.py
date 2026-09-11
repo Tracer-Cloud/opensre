@@ -259,16 +259,18 @@ def test_two_windows_written_in_the_same_second_do_not_overwrite(tmp_path: Path)
 def test_a_benchmark_repository_is_not_compared_with_itself() -> None:
     """Analyzing a benchmark repository put its column beside its own column."""
     # Arrange
+    from integrations.github.tools.ci_analytics.benchmarks import BENCHMARKS
     from integrations.github.tools.ci_analytics.render import comparison_markdown, peer_benchmarks
 
-    report = _report(owner="langchain-ai", repo="langchain")
+    analyzed, *others = BENCHMARKS
+    report = _report(owner=analyzed.owner, repo=analyzed.repo)
 
     # Act
     markdown = comparison_markdown(report, peer_benchmarks(report))
 
     # Assert: the analyzed repository appears once, as the first column.
-    assert markdown.count("langchain-ai/langchain") == 1
-    assert "anomalyco/opencode" in markdown
+    assert markdown.count(analyzed.label) == 1
+    assert all(other.label in markdown for other in others)
 
 
 def test_repositories_whose_names_join_the_same_way_do_not_share_a_snapshot(

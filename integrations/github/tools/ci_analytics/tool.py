@@ -322,7 +322,10 @@ def _result(
         "headline": "One sentence naming the biggest cost (already painted; do not repeat)",
         "key_results": "The takeaway rows, red time first, even when the shell painted the report",
         "response_text": "The rendered report, or a one-line summary when the shell painted it",
-        "benchmarks": "LangChain and opencode rows from figures shipped with the product",
+        "benchmarks": (
+            "langchain-ai/langchain and anomalyco/opencode rows from figures shipped "
+            "with the product"
+        ),
     },
     surfaces=(ToolSurface.CHAT, ToolSurface.ACTION),
     side_effect_level=SideEffectLevel.READ_ONLY,
