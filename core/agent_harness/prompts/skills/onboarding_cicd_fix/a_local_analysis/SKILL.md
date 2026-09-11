@@ -56,9 +56,6 @@ offer a CICD fix scheduled loop or Slack agent setup.
 
 ## Workflow
 
-Omit discovery steps when the repository is known. Initialize the plan
-once, resume it after menu replies, and mark completed steps.
-
 1. **Choose a repository.** Use the repository named by the user.
    Otherwise call `scan_local_git_workspace()` and give one sentence
    using its `summary`. The host opens the repository menu.
@@ -88,20 +85,19 @@ The answer arrives in the next user message; the host owns these questions.
 
 Track progress with the `update_plan` tool, not with headers or prose:
 
-- On entry, before the first workflow tool call, call `update_plan` with the
-  steps below verbatim, the first step `in_progress`, and a one-line
-  `explanation` (this is not a diagnosis; no hypothesis table):
-  `Scan this machine` / `Pick the repository` / `Analyze CI/CD reliability` /
-  `Offer what to do next`.
-- When the request or an Ask User answer already names the repository, the plan is only
-  `Analyze CI/CD reliability` / `Offer what to do next` — omit the skipped
-  steps instead of renumbering.
-- After a step's tool results, call `update_plan` marking it `completed` and
-  the next step `in_progress`, in the same response as the next step's tool
-  calls. When the host queues a menu after a step's tool result, mark the
-  step in that same response and end the turn.
-- Do not narrate the plan or repeat step names in prose; the shell renders
-  the checklist.
+```
+CI/CD Reliability Progress:
+- [ ] Step 1: Find local repositories and summarize recent activity
+- [ ] Step 2: Select the repository for a 30-day reliability analysis
+- [ ] Step 3: Collect default-branch runs, PR runs, and merged pull requests
+- [ ] Step 4: Examine rerun attempts and classify CI-caused, source, and unresolved failures
+- [ ] Step 5: Calculate execution counts, PR failure rates, and normal workflow durations
+- [ ] Step 6: Measure default-branch breakages, downtime, and recovery time
+- [ ] Step 7: Estimate developer working time blocked by CI on merged pull requests
+- [ ] Step 8: Display the reliability report and comparison with supplied benchmarks
+- [ ] Step 9: Check the report’s scope and identify any data coverage limitations
+- [ ] Step 10: Choose whether to schedule reports, set up Slack, or finish
+```
 
 ## Workflow
 
@@ -128,35 +124,22 @@ cost sentence first, then key results and the comparison against shipped
 `langchain-ai/langchain` and `anomalyco/opencode` figures. Do not output
 `headline`, and do not call the tool again for benchmarks.
 
-### 4. Offer what to do next
+### Follow-up actions
 
-The host opens `What would you like to do next?` after the analysis with
-these options:
+**Recurring report:** Call
+`schedule_ci_reliability_loop(owner="<owner>", repo="<repo>")`,
+omitting `include_report`. Return its `response_text` verbatim and finish.
+This schedules weekday reports covering seven days.
+`/loops service install` keeps them running when the shell is closed.
 
-- `Set up an agent that improves CI/CD reliability over time`
-- `Connect OpenSRE to Slack and hand off DevOps chores for your team`
-- `Exit demo`
+**Slack setup:** Call `cli_exec` with `integrations verify slack`.
+If unconfigured, queue `/integrations setup slack` through `slash_invoke`
+and end the turn so the terminal wizard can run.
+If connected, confirm that and explain that the user can mention OpenSRE
+in a channel or DM it to hand off a chore.
+Do not send Slack messages.
 
-Wait for the answer, then follow the selected option. The first option
-schedules a weekday 7-day version of this report to the shell inbox, not a
-CI code fix.
-
-**Recurring check:** Call
-`schedule_ci_reliability_loop(owner="<owner>", repo="<repo>")` for the
-analyzed repository, output its `response_text` verbatim, and stop. The
-report was already shown in step 3, so do not pass `include_report`.
-Each later tick is the same analytics report, not a CI code fix. `/loops service
-install` keeps it running when no shell is open. Do not call
-`fix_github_pr_ci` from this skill.
-
-**Slack setup:** Call `cli_exec` with payload `integrations verify slack`.
-If Slack is not configured, call `slash_invoke` with
-`/integrations setup slack` and stop; that wizard needs a full terminal.
-If Slack is already connected, say so. Then explain in two sentences how to
-hand off a chore from Slack: mention OpenSRE in a channel or DM it.
-Never post, reply, or send anything to Slack in this demo.
-
-**Exit demo:** Reply with one line and stop.
+**Exit:** Acknowledge in one line and finish.
 
 ## Workflow rules
 
