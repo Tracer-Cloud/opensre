@@ -737,6 +737,36 @@ def test_one_failing_check_makes_the_branch_red_and_attribution_names_it() -> No
     assert workflow_red_hours(runs, outages, now=now) == {2: pytest.approx(4 * 24 + 10 / 60)}
 
 
+def test_a_stale_failure_is_not_blamed_for_a_later_unrelated_outage() -> None:
+    # Arrange: A fails on c1 and never runs again; c2 (A skipped) recovers the
+    # branch; B alone breaks it again on c3.
+    now = _T0 + timedelta(hours=10)
+    runs = [
+        _run(1, workflow="A", workflow_id=1, event="push", sha="c1", conclusion="failure"),
+        _run(2, workflow="B", workflow_id=2, event="push", sha="c1"),
+        _run(3, workflow="B", workflow_id=2, event="push", sha="c2", start_minutes=60),
+        _run(
+            4,
+            workflow="B",
+            workflow_id=2,
+            event="push",
+            sha="c3",
+            conclusion="failure",
+            start_minutes=300,
+        ),
+    ]
+
+    # Act
+    outages = find_outages(runs)
+
+    # Assert: A carries only the first hour; B's ongoing outage is its own.
+    assert [(o.workflows, o.ongoing) for o in outages] == [(("A",), False), (("B",), True)]
+    assert workflow_red_hours(runs, outages, now=now) == {
+        1: pytest.approx(1.0),
+        2: pytest.approx(290 / 60),
+    }
+
+
 def test_a_cancelled_only_commit_decides_nothing() -> None:
     # Arrange: c1 fails; c2's only run was cancelled (superseded by a later push).
     now = _T0 + timedelta(hours=10)

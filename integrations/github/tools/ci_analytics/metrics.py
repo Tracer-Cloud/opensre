@@ -406,7 +406,10 @@ def workflow_red_hours(
     A workflow's own red spans (failure completion to its next success, or
     ``now`` while unrecovered) are clipped to the branch outages, so a share
     never exceeds the branch figure and a workflow that kept the branch red
-    is credited for the whole period even when it skipped some commits.
+    is credited for the whole period even when it skipped some commits. An
+    outage counts toward a workflow only when one of its failing runs
+    completed during that outage: a stale failure whose workflow never ran
+    again is not blamed for a later outage another workflow caused.
     """
     branch_spans = _union_spans([(o.started_at, o.ended_at or now) for o in outages])
     if not branch_spans:
@@ -418,18 +421,25 @@ def workflow_red_hours(
     shares: dict[int | str, float] = {}
     for key, workflow_runs in by_workflow.items():
         spans: list[tuple[datetime, datetime]] = []
+        failures: list[datetime] = []
         open_since: datetime | None = None
         for run in sorted(workflow_runs, key=lambda r: r.completed_at):
-            if run.failed and open_since is None:
-                open_since = run.completed_at
+            if run.failed:
+                failures.append(run.completed_at)
+                if open_since is None:
+                    open_since = run.completed_at
             elif run.succeeded and open_since is not None:
                 spans.append((open_since, run.completed_at))
                 open_since = None
         if open_since is not None:
             spans.append((open_since, now))
-        clipped = _intersect_hours(spans, branch_spans)
-        if clipped > 0:
-            shares[key] = clipped
+        total = 0.0
+        for branch_span in branch_spans:
+            start, end = branch_span
+            if any(start <= failed_at <= end for failed_at in failures):
+                total += _intersect_hours(spans, [branch_span])
+        if total > 0:
+            shares[key] = total
     return shares
 
 
