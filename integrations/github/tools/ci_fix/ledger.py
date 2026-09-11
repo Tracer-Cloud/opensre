@@ -91,9 +91,24 @@ class CiFixCounter:
             except Exception:
                 logger.debug("CI fix count listener failed", exc_info=True)
 
+    def reset(self) -> None:
+        """Discard cached identities and listeners without modifying the ledger."""
+        with self._lock:
+            self._identities.clear()
+            self._listeners.clear()
+            self._known = False
+
 
 _counters: dict[Path, CiFixCounter] = {}
 _counters_lock = RLock()
+
+
+def reset_ci_fix_counters() -> None:
+    """Clear process caches and subscriptions when no repairs are in flight."""
+    with _counters_lock:
+        for counter in _counters.values():
+            counter.reset()
+        _counters.clear()
 
 
 def get_ci_fix_counter() -> CiFixCounter:
@@ -146,4 +161,10 @@ def _repair_identity(output: Mapping[str, object]) -> str | None:
     return hashlib.sha256(json.dumps(parts, separators=(",", ":")).encode()).hexdigest()
 
 
-__all__ = ["CiFixCounter", "count_ci_fixes", "get_ci_fix_counter", "record_ci_fix_outcome"]
+__all__ = [
+    "CiFixCounter",
+    "count_ci_fixes",
+    "get_ci_fix_counter",
+    "record_ci_fix_outcome",
+    "reset_ci_fix_counters",
+]
