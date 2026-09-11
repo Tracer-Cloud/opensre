@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import signal
 import threading
 
@@ -136,6 +137,95 @@ def test_run_ask_forwards_a_tool_event_observer(monkeypatch) -> None:
 
     assert outcome.status is AskStatus.SUCCESS
     assert recorded["tool_event_observer"] is observer
+
+
+def test_run_ask_returns_the_rendered_answer_not_raw_tool_history(monkeypatch) -> None:
+    """One-shot output must not dump command evidence retained by the harness."""
+
+    def run_turn(_prompt: str, _hooks: ToolExecutionHooks, **kwargs: object) -> TurnResult:
+        output = kwargs["output"]
+        assert isinstance(output, service._AskOutputSink)
+        output.stream(label="OpenSRE", chunks=iter(["The repository is an SRE agent framework."]))
+        output.mark_turn_complete()
+        return _turn("git remote -v\nREADME contents\nThe repository is an SRE agent framework.")
+
+    monkeypatch.setattr(service, "_run_agent_turn", run_turn)
+
+    outcome = service.run_ask("what is this repo doing?", allowed_tools=(), bypass_approvals=False)
+
+    assert outcome.status is AskStatus.SUCCESS
+    assert outcome.response == "The repository is an SRE agent framework."
+    assert "git remote" not in outcome.response
+
+
+def test_run_ask_preserves_a_rendered_agent_error(monkeypatch) -> None:
+    """Suppressing raw tool history must not hide an actionable agent error."""
+
+    def run_turn(_prompt: str, _hooks: ToolExecutionHooks, **kwargs: object) -> TurnResult:
+        output = kwargs["output"]
+        assert isinstance(output, service._AskOutputSink)
+        output.render_error("The configured model is unavailable.")
+        output.mark_turn_complete()
+        return TurnResult(
+            final_intent="agent_completed",
+            action_result=ToolCallingTurnResult(
+                planned_count=0,
+                executed_count=0,
+                executed_success_count=0,
+                has_unhandled_clause=True,
+                handled=False,
+                response_text="raw internal diagnostic",
+                accounting_status="not_run",
+            ),
+            assistant_response_text="raw internal diagnostic",
+        )
+
+    monkeypatch.setattr(service, "_run_agent_turn", run_turn)
+
+    outcome = service.run_ask("why is checkout slow?", allowed_tools=(), bypass_approvals=False)
+
+    assert outcome.status is AskStatus.ERROR
+    assert outcome.response == "The configured model is unavailable."
+    assert "raw internal diagnostic" not in outcome.response
+
+
+def test_ask_log_scope_suppresses_unrendered_fallback_warnings(monkeypatch) -> None:
+    """Internal tool warnings must not bypass the one-shot answer renderer."""
+
+    class _CaptureHandler(logging.Handler):
+        def __init__(self) -> None:
+            super().__init__()
+            self.messages: list[str] = []
+
+        def emit(self, record: logging.LogRecord) -> None:
+            self.messages.append(record.getMessage())
+
+    root = logging.getLogger()
+    original_handlers = list(root.handlers)
+    original_level = root.level
+    logger = logging.getLogger("tests.cli.ask.fallback_warning")
+    original_logger_handlers = list(logger.handlers)
+    original_logger_propagate = logger.propagate
+    original_logger_level = logger.level
+    capture = _CaptureHandler()
+    for handler in original_handlers:
+        root.removeHandler(handler)
+    logger.handlers.clear()
+    logger.propagate = True
+    logger.setLevel(logging.WARNING)
+    root.setLevel(logging.WARNING)
+    monkeypatch.setattr(logging, "lastResort", capture)
+    try:
+        with service._ask_log_scope():
+            logger.warning("subprocess error: exit 1")
+        assert capture.messages == []
+    finally:
+        root.setLevel(original_level)
+        for handler in original_handlers:
+            root.addHandler(handler)
+        logger.handlers[:] = original_logger_handlers
+        logger.propagate = original_logger_propagate
+        logger.setLevel(original_logger_level)
 
 
 def test_agent_turn_closes_ephemeral_session_after_failure(monkeypatch) -> None:

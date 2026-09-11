@@ -18,8 +18,9 @@ opensre ask "why did checkout latency increase today?"
 When both output streams are attached to a terminal, `ask` starts with a
 `Thinking…` spinner with elapsed time. It switches to the active diagnostic
 tool (or a neutral tool count for a batch) when tools are invoked. The final
-answer remains on standard output. Piped and `--json` runs do not emit progress,
-so their output remains machine-readable.
+answer remains on standard output without echoing raw tool transcripts. Piped
+and `--json` runs do not emit progress, so their output remains
+machine-readable.
 
 Pass `-` as the prompt to read all of standard input:
 
