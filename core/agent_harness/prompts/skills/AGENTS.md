@@ -83,6 +83,16 @@ Rules:
   the skipped plan items satisfied rather than delete them.
 - Tool-usage cards describe one call, not a flow, and do not carry a plan.
 
+## Colocated workflow tests
+
+Major skills that orchestrate a multi-step workflow must keep an end-to-end
+`test_*.py` beside their `SKILL.md`. Exercise the real agent loop with the
+shipped skill, checking tool-call order, arguments, and user-choice pauses.
+Script model responses and external tool I/O for offline CI; keep skill loading
+and host hooks real. Include the skill directory in default pytest discovery
+and a CI shard, and run its test when changing the workflow.
+
+
 ## Skill metadata ownership and change date
 
 Every `SKILL.md` frontmatter `metadata` block records who owns the skill, who

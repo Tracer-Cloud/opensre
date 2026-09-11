@@ -59,7 +59,7 @@ jobs:
       - name: Report pytest timing snapshot health
         if: steps.changes.outputs.source == 'true' || github.event_name == 'push'
         run: |
-          uv run python -m tests.ci_sharding report --label=tools-runtime tests/tools tests/core tests/infrastructure tests/filestorage tests/utils tests/masking --ignore=tests/core/agent --ignore=tests/core/tool/test_contracts.py --ignore=tests/tools/test_registry_index.py --ignore=tests/tools/selection
+          uv run python -m tests.ci_sharding report --label=tools-runtime tests/tools tests/core core/agent_harness/prompts/skills tests/infrastructure tests/filestorage tests/utils tests/masking --ignore=tests/core/agent --ignore=tests/core/tool/test_contracts.py --ignore=tests/tools/test_registry_index.py --ignore=tests/tools/selection
           uv run python -m tests.ci_sharding report --label=cli-runtime tests/cli tests/interactive_shell tests/surfaces tests/core/agent tests/fleet_monitoring tests/analytics tests/sandbox --ignore=tests/cli/test_smoke.py
           uv run python -m tests.ci_sharding report --label=integrations-and-misc tests/integrations tests/bootstrap tests/benchmarks tests/shared tests/config tests/github_ci tests/quality tests/packaging tests/scheduler gateway/tests
 
@@ -161,6 +161,7 @@ jobs:
             pytest_paths: >-
               tests/tools
               tests/core
+              core/agent_harness/prompts/skills
               tests/infrastructure
               tests/filestorage
               tests/utils
@@ -177,6 +178,7 @@ jobs:
             pytest_paths: >-
               tests/tools
               tests/core
+              core/agent_harness/prompts/skills
               tests/infrastructure
               tests/filestorage
               tests/utils
@@ -193,6 +195,7 @@ jobs:
             pytest_paths: >-
               tests/tools
               tests/core
+              core/agent_harness/prompts/skills
               tests/infrastructure
               tests/filestorage
               tests/utils
@@ -209,6 +212,7 @@ jobs:
             pytest_paths: >-
               tests/tools
               tests/core
+              core/agent_harness/prompts/skills
               tests/infrastructure
               tests/filestorage
               tests/utils
@@ -225,6 +229,7 @@ jobs:
             pytest_paths: >-
               tests/tools
               tests/core
+              core/agent_harness/prompts/skills
               tests/infrastructure
               tests/filestorage
               tests/utils
@@ -241,6 +246,7 @@ jobs:
             pytest_paths: >-
               tests/tools
               tests/core
+              core/agent_harness/prompts/skills
               tests/infrastructure
               tests/filestorage
               tests/utils
