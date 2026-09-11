@@ -471,10 +471,12 @@ def _segment_is_read_only(segment: str) -> bool:
 
 
 def _has_dangerous_shell_construct(text: str) -> bool:
-    """True if the command carries a substitution or subshell that can expand to
-    or run a command. Allow-list of characters: fail closed on ``$`` / backtick
-    (expansion, even inside double quotes) and on an unquoted ``(`` / ``)``
-    (subshell). Quoted parentheses (regex groups) and ordinary args pass."""
+    """True when shell evaluation can replace or execute command arguments.
+
+    Fail closed on substitutions, subshells, and unquoted glob characters. A
+    glob can expand a filename such as ``-oresult`` into an executable option.
+    Quoted or escaped patterns remain literal arguments.
+    """
     quote: str | None = None
     index = 0
     length = len(text)
@@ -492,8 +494,8 @@ def _has_dangerous_shell_construct(text: str) -> bool:
             continue
         if char in ("'", '"'):
             quote = char
-        elif char in "$`()":
-            return True  # substitution or subshell outside any quoting
+        elif char in "$`()" or char in "*?[":
+            return True
         index += 1
     return False
 

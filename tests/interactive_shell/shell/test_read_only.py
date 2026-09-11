@@ -140,6 +140,14 @@ def test_mutating_shell_still_asks_when_gated() -> None:
     assert apply_plan_only_gate(result, plan_only_active=True).verdict == "ask"
 
 
+def test_unquoted_glob_bypasses_neither_auto_nor_plan_only_gates() -> None:
+    result = evaluate_shell_command("sort *")
+
+    assert result.shell_classification == "unrestricted"
+    assert apply_auto_level(result, AutoLevel.LOW).verdict == "ask"
+    assert apply_plan_only_gate(result, plan_only_active=True).verdict == "ask"
+
+
 @pytest.mark.parametrize(
     ("command", "classification"),
     [("date", "unrestricted"), ("date 09-12-2026", "unrestricted"), ("date /t", "read_only")],
