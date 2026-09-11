@@ -85,7 +85,8 @@ def key_results(report: CiAnalyticsReport) -> list[tuple[str, str]]:
         (
             f"{_plain(report.default_branch)} branch red",
             f"{_hours(report.red_hours)} of {report.window_days} days ({red_share:.1%}), "
-            f"{len(report.outages)} {_plural(len(report.outages), 'breakage')}",
+            f"{len(report.outages)} {_plural(len(report.outages), 'breakage')}"
+            f"{_red_breakdown(report)}",
         )
     ]
     if report.mean_recovery_hours is not None:
@@ -117,6 +118,20 @@ def key_results(report: CiAnalyticsReport) -> list[tuple[str, str]]:
             ("Slowest normal run", f"{_plain(slowest.workflow)}, {slowest.normal_minutes:.0f}m")
         )
     return results
+
+
+def _red_breakdown(report: CiAnalyticsReport) -> str:
+    """Which workflows the red time belongs to, when more than one is responsible.
+
+    A single red check on the latest commit turns the whole branch red on
+    GitHub, so without this suffix a non-blocking scan reads as a broken build.
+    """
+    responsible = sorted(
+        (w for w in report.workflows if w.red_hours > 0), key=lambda w: -w.red_hours
+    )
+    if len(responsible) < 2:
+        return ""
+    return "; " + ", ".join(f"{_plain(w.workflow)} {_hours(w.red_hours)}" for w in responsible)
 
 
 def key_results_payload(report: CiAnalyticsReport) -> list[dict[str, str]]:
@@ -427,7 +442,7 @@ def _outage(outage: Outage, *, now: datetime) -> str:
     when = outage.started_at.strftime("%Y-%m-%d %H:%M UTC")
     state = "ongoing" if outage.ongoing else "recovered"
     return (
-        f"{_plain(outage.workflow)}, {span} from {when} ({state}) {outage.first_failure_url}"
+        f"{_plain(outage.label)}, {span} from {when} ({state}) {outage.first_failure_url}"
     ).strip()
 
 

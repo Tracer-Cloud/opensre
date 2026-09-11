@@ -4,8 +4,10 @@ The report's figures, in priority order, with the payload field to quote.
 Answer "what does this mean" and "what should we fix first" from this list
 and the tool's numbers; never recompute or re-derive a figure.
 
-1. **Red time on main** (`red_hours`, `outages`): hours the default branch had
-   at least one red workflow. Top-line health.
+1. **Red time on main** (`red_hours`, `outages`): hours the default branch's
+   latest commit had a failing check — the same state GitHub shows on the
+   branch. Top-line health; `workflows[].red_hours` names which workflow
+   carried the red time.
 2. **Mean time to recovery** (`mean_recovery_hours`): average length of a red
    period until green. Two repos with equal red time can recover very
    differently.

@@ -172,7 +172,7 @@ def _sample_report(*, window_days: int, now: datetime) -> Any:
         branch_runs=20,
         branch_failures=2,
         red_hours=36.4,
-        outages=(Outage(workflow="CI", started_at=now, ended_at=None, first_failure_url="u"),),
+        outages=(Outage(workflows=("CI",), started_at=now, ended_at=None, first_failure_url="u"),),
         mean_recovery_hours=1.0,
         workflows=(WorkflowSummary("CI", 100, 8, 3, 12.0),),
         coverage_notices=(),

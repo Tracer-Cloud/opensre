@@ -13,8 +13,8 @@ getting_started: Explore a repo and analyze its CI/CD performance (recommended)
 demo_order: 1
 metadata:
   owner: Vincent
-  last_changed_by: Yauhen
-  last_changed_at: 2026-09-10
+  last_changed_by: Vincent
+  last_changed_at: 2026-09-11
   usecases:
     - First-experience demo: scan the machine, pick a repository, analyze its CI/CD
     - CI/CD reliability KPIs for one repository over the last 30 days

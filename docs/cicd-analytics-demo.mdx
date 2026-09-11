@@ -58,7 +58,7 @@ Typing a request such as `analyze owner/repo CI/CD performance for the last
 | Developer downtime from unreliable CI | The working-hours part of the wait below, attributed to each PR's author, with the heaviest-hit developers in hours per week |
 | Wall-clock wait on merged PRs | Per merged PR: how much later its commits went green than they would have had CI run normally. For each commit with a CI reliability failure, the expected green time is the first queued run plus the slowest workflow's normal duration; the actual green time is when its last workflow passed |
 | Normal duration | Per workflow, the median duration of first-attempt passing runs |
-| Default-branch red time | Hours during which at least one push-triggered workflow on the default branch stayed red, overlaps counted once, with mean time to recovery |
+| Default-branch red time | Hours during which the latest commit on the default branch had a failing push-triggered check, with mean time to recovery; the red time is attributed per workflow so one failing scan is not mistaken for a broken build |
 
 Only PRs that were merged count toward blocked time, so the number reflects
 delays that sat on the path to a real merge. Workflows that fail and recover in

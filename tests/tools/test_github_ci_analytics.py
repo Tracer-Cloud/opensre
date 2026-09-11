@@ -19,6 +19,7 @@ from integrations.github.tools.ci_analytics.metrics import (
     find_outages,
     normal_minutes,
     union_hours,
+    workflow_red_hours,
 )
 from integrations.github.tools.ci_analytics.models import (
     FailureKind,
@@ -590,27 +591,166 @@ def test_normal_minutes_uses_median_of_first_attempt_passes_only() -> None:
     assert normal_minutes(runs) == {"CI": 10.0}
 
 
-def test_outages_span_failure_to_next_success_and_overlaps_count_once() -> None:
-    # Arrange: two workflows red over overlapping periods, one never recovers.
+def test_outages_span_first_red_commit_to_next_fully_green_commit() -> None:
+    # Arrange: c1 red (CI fails), c2 still red (Lint fails), c3 fully green,
+    # c4 red again and never recovered.
     now = _T0 + timedelta(hours=10)
     runs = [
-        _run(1, workflow="CI", event="push", conclusion="failure", start_minutes=0),
-        _run(2, workflow="CI", event="push", conclusion="success", start_minutes=110),
-        _run(3, workflow="Lint", event="push", conclusion="failure", start_minutes=60),
-        _run(4, workflow="Lint", event="push", conclusion="success", start_minutes=170),
-        _run(5, workflow="Release", event="push", conclusion="failure", start_minutes=300),
+        _run(1, workflow="CI", workflow_id=1, event="push", sha="c1", conclusion="failure"),
+        _run(2, workflow="Lint", workflow_id=2, event="push", sha="c1", conclusion="success"),
+        _run(
+            3,
+            workflow="CI",
+            workflow_id=1,
+            event="push",
+            sha="c2",
+            conclusion="success",
+            start_minutes=60,
+        ),
+        _run(
+            4,
+            workflow="Lint",
+            workflow_id=2,
+            event="push",
+            sha="c2",
+            conclusion="failure",
+            start_minutes=60,
+        ),
+        _run(
+            5,
+            workflow="CI",
+            workflow_id=1,
+            event="push",
+            sha="c3",
+            conclusion="success",
+            start_minutes=120,
+        ),
+        _run(
+            6,
+            workflow="Lint",
+            workflow_id=2,
+            event="push",
+            sha="c3",
+            conclusion="success",
+            start_minutes=130,
+        ),
+        _run(
+            7,
+            workflow="Release",
+            workflow_id=3,
+            event="push",
+            sha="c4",
+            conclusion="failure",
+            start_minutes=300,
+        ),
     ]
 
     # Act
     outages = find_outages(runs)
 
-    # Assert: CI red 0:10→2:00, Lint red 1:10→3:00, Release red from 5:10 and ongoing.
-    assert [(o.workflow, o.ongoing) for o in outages] == [
-        ("CI", False),
-        ("Lint", False),
-        ("Release", True),
+    # Assert: one outage from CI's failure (0:10) to c3's last completion (2:20),
+    # naming both red workflows; c4 opens an ongoing one at 5:10.
+    assert [(o.workflows, o.ongoing) for o in outages] == [
+        (("CI", "Lint"), False),
+        (("Release",), True),
     ]
-    assert union_hours(outages, now=now) == pytest.approx((170 + 290) / 60)
+    assert union_hours(outages, now=now) == pytest.approx((130 + 290) / 60)
+
+
+def test_a_workflow_that_skips_the_next_commit_cannot_keep_the_branch_red() -> None:
+    # Arrange: Docs fails on c1; c2 triggers only CI (path filter) and passes.
+    now = _T0 + timedelta(hours=10)
+    runs = [
+        _run(1, workflow="Docs", workflow_id=2, event="push", sha="c1", conclusion="failure"),
+        _run(2, workflow="CI", workflow_id=1, event="push", sha="c1", conclusion="success"),
+        _run(
+            3,
+            workflow="CI",
+            workflow_id=1,
+            event="push",
+            sha="c2",
+            conclusion="success",
+            start_minutes=60,
+        ),
+    ]
+
+    # Act
+    outages = find_outages(runs)
+
+    # Assert: GitHub shows c2 green, so the branch recovered at c2's completion
+    # even though Docs never ran again; the red hour is attributed to Docs alone.
+    assert [(o.workflows, o.started_at, o.ended_at) for o in outages] == [
+        (("Docs",), _T0 + timedelta(minutes=10), _T0 + timedelta(minutes=70)),
+    ]
+    assert workflow_red_hours(runs, outages, now=now) == {2: pytest.approx(1.0)}
+
+
+def test_one_failing_check_makes_the_branch_red_and_attribution_names_it() -> None:
+    # Arrange: four daily commits each pass CI but fail Security, then a green one.
+    day = 24 * 60
+    runs = []
+    for index, sha in enumerate(("c1", "c2", "c3", "c4")):
+        base = index * day
+        runs.append(
+            _run(
+                index * 10 + 1,
+                workflow="CI",
+                workflow_id=1,
+                event="push",
+                sha=sha,
+                start_minutes=base,
+            )
+        )
+        runs.append(
+            _run(
+                index * 10 + 2,
+                workflow="Security",
+                workflow_id=2,
+                event="push",
+                sha=sha,
+                conclusion="failure",
+                start_minutes=base,
+            )
+        )
+    runs.append(
+        _run(51, workflow="CI", workflow_id=1, event="push", sha="c5", start_minutes=4 * day)
+    )
+    runs.append(
+        _run(
+            52,
+            workflow="Security",
+            workflow_id=2,
+            event="push",
+            sha="c5",
+            start_minutes=4 * day,
+            duration_minutes=20,
+        )
+    )
+    now = _T0 + timedelta(days=5)
+
+    # Act
+    outages = find_outages(runs)
+
+    # Assert: one four-day outage carried entirely by Security; CI gets no share.
+    assert [(o.workflows, o.ongoing) for o in outages] == [(("Security",), False)]
+    assert union_hours(outages, now=now) == pytest.approx(4 * 24 + 10 / 60)
+    assert workflow_red_hours(runs, outages, now=now) == {2: pytest.approx(4 * 24 + 10 / 60)}
+
+
+def test_a_cancelled_only_commit_decides_nothing() -> None:
+    # Arrange: c1 fails; c2's only run was cancelled (superseded by a later push).
+    now = _T0 + timedelta(hours=10)
+    runs = [
+        _run(1, event="push", sha="c1", conclusion="failure"),
+        _run(2, event="push", sha="c2", conclusion="cancelled", start_minutes=60),
+    ]
+
+    # Act
+    outages = find_outages(runs)
+
+    # Assert: the cancelled commit neither closes nor extends; the outage is ongoing.
+    assert [(o.workflows, o.ongoing) for o in outages] == [(("CI",), True)]
+    assert union_hours(outages, now=now) == pytest.approx(590 / 60)
 
 
 def test_parse_run_reads_live_payload_shape_and_drops_incomplete_rows() -> None:
@@ -710,6 +850,7 @@ def test_same_display_name_does_not_share_duration_or_outage() -> None:
             workflow_id=1,
             event="push",
             branch="main",
+            sha="c1",
             conclusion="success",
             duration_minutes=8,
         ),
@@ -718,6 +859,7 @@ def test_same_display_name_does_not_share_duration_or_outage() -> None:
             workflow_id=2,
             event="push",
             branch="main",
+            sha="c1",
             conclusion="success",
             duration_minutes=40,
         ),
@@ -726,6 +868,7 @@ def test_same_display_name_does_not_share_duration_or_outage() -> None:
             workflow_id=1,
             event="push",
             branch="main",
+            sha="c2",
             conclusion="failure",
             start_minutes=60,
         ),
@@ -734,6 +877,7 @@ def test_same_display_name_does_not_share_duration_or_outage() -> None:
             workflow_id=2,
             event="push",
             branch="main",
+            sha="c2",
             conclusion="success",
             start_minutes=80,
             duration_minutes=40,
@@ -744,6 +888,8 @@ def test_same_display_name_does_not_share_duration_or_outage() -> None:
     outages = find_outages(runs)
     assert len(outages) == 1
     assert outages[0].ongoing is True
+    # The red time belongs to workflow id 1 only, despite the shared display name.
+    assert set(workflow_red_hours(runs, outages, now=_T0 + timedelta(hours=10))) == {1}
 
 
 def test_collect_runs_keeps_the_timestamp_cutoff_and_proves_earlier_failures() -> None:
@@ -1079,6 +1225,104 @@ def test_render_shows_the_kpi_block_and_classification() -> None:
     assert "- Per developer (1): 40m in 30 days" in text
     assert "Σ" not in text and "÷" not in text
     assert "| CI | 3 | 1 | 1 | 10m |" in text
+
+
+def test_key_results_name_the_workflows_that_carried_the_red_time() -> None:
+    """One red scan turns the whole branch red on GitHub; the row must say which check."""
+    from integrations.github.tools.ci_analytics.render import key_results
+
+    day = 24 * 60
+    branch_runs = [
+        _run(1, workflow="CI", workflow_id=1, event="push", branch="main", sha="c1"),
+        _run(
+            2,
+            workflow="Security",
+            workflow_id=2,
+            event="push",
+            branch="main",
+            sha="c1",
+            conclusion="failure",
+        ),
+        _run(
+            3,
+            workflow="CI",
+            workflow_id=1,
+            event="push",
+            branch="main",
+            sha="c2",
+            conclusion="failure",
+            start_minutes=120,
+        ),
+        _run(
+            4,
+            workflow="Security",
+            workflow_id=2,
+            event="push",
+            branch="main",
+            sha="c2",
+            conclusion="failure",
+            start_minutes=120,
+        ),
+        _run(
+            5,
+            workflow="CI",
+            workflow_id=1,
+            event="push",
+            branch="main",
+            sha="c3",
+            start_minutes=day,
+        ),
+        _run(
+            6,
+            workflow="Security",
+            workflow_id=2,
+            event="push",
+            branch="main",
+            sha="c3",
+            start_minutes=day,
+        ),
+    ]
+    report = compute_report(
+        owner="o",
+        repo="r",
+        default_branch="main",
+        window_days=30,
+        branch_runs=branch_runs,
+        pr_runs=[],
+        merged_prs=(),
+        now=_T0 + timedelta(days=2),
+    )
+
+    label, value = key_results(report)[0]
+
+    assert label == "main branch red"
+    assert "1 breakage" in value
+    # Security was red the whole period, CI only part of it, heaviest first.
+    assert value.endswith("; Security 24.0h, CI 22.0h")
+
+
+def test_key_results_omit_the_attribution_when_one_workflow_explains_it() -> None:
+    from integrations.github.tools.ci_analytics.render import key_results
+
+    branch_runs = [
+        _run(1, event="push", branch="main", sha="c1", conclusion="failure"),
+        _run(2, event="push", branch="main", sha="c2", start_minutes=60),
+    ]
+    report = compute_report(
+        owner="o",
+        repo="r",
+        default_branch="main",
+        window_days=30,
+        branch_runs=branch_runs,
+        pr_runs=[],
+        merged_prs=(),
+        now=_T0 + timedelta(days=1),
+    )
+
+    _label, value = key_results(report)[0]
+
+    assert "1 breakage" in value
+    assert ";" not in value
 
 
 def test_tool_names_the_setup_command_when_no_token_is_available() -> None:

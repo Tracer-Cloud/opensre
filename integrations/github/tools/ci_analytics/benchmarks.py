@@ -14,7 +14,7 @@ from datetime import date
 from types import MappingProxyType
 
 WINDOW_DAYS = 30
-MEASURED_ON = date(2026, 9, 9)
+MEASURED_ON = date(2026, 9, 11)
 
 
 @dataclass(frozen=True)
@@ -36,11 +36,11 @@ BENCHMARKS: tuple[Benchmark, ...] = (
         repo="airflow",
         figures=MappingProxyType(
             {
-                "Red time on main": "3.4%",
-                "Mean time to green": "6.1h",
-                "CI-caused failure rate": "4.3%",
+                "Red time on main": "0.1%",
+                "Mean time to green": "16m",
+                "CI-caused failure rate": "4.2%",
                 "Slowest normal run": "105m",
-                "PR failure rate": "25.4%",
+                "PR failure rate": "26.3%",
             }
         ),
     ),
@@ -53,7 +53,7 @@ BENCHMARKS: tuple[Benchmark, ...] = (
                 "Mean time to green": "n/a",
                 "CI-caused failure rate": "0.0%",
                 "Slowest normal run": "5m",
-                "PR failure rate": "19.1%",
+                "PR failure rate": "19.5%",
             }
         ),
     ),

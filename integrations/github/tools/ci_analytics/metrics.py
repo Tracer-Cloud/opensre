@@ -51,6 +51,7 @@ def compute_report(
     push_runs = [run for run in counted_branch if run.event == PUSH_EVENT]
     outages = find_outages(push_runs)
     closed = [o for o in outages if not o.ongoing]
+    red_shares = workflow_red_hours(push_runs, outages, now=now)
     delays = pull_request_delays(
         counted_pr, classified, normal_minutes=normal, merged_prs=merged, working_hours=hours
     )
@@ -76,7 +77,7 @@ def compute_report(
         mean_recovery_hours=(
             sum(o.duration_hours(now=now) for o in closed) / len(closed) if closed else None
         ),
-        workflows=tuple(summarize_workflows(all_runs, classified, normal)),
+        workflows=tuple(summarize_workflows(all_runs, classified, normal, red_hours=red_shares)),
         coverage_notices=tuple(coverage_notices),
         pr_delays=tuple(delays),
     )
@@ -359,25 +360,92 @@ def classify_failures(
 
 
 def find_outages(runs: Sequence[WorkflowRun]) -> list[Outage]:
-    """Red periods per workflow: from a failure's completion to the next success's completion."""
+    """Red periods of the branch: a commit with a failing check opens one, the next fully
+    green commit closes it.
+
+    GitHub shows a branch red when its latest commit carries a failing check,
+    so outages follow commits, not per-workflow timelines: a workflow that
+    never runs again (path filter, rename, deletion) cannot keep the branch
+    red once a later commit is fully green. A commit whose counted runs all
+    passed closes the outage at its last completion; a commit with no counted
+    runs (every run cancelled) decides nothing.
+    """
+    counted = [run for run in runs if run.failed or run.succeeded]
+    by_commit: dict[str, list[WorkflowRun]] = defaultdict(list)
+    for run in counted:
+        by_commit[run.head_sha].append(run)
+    commits = sorted(by_commit.values(), key=lambda commit: min(r.created_at for r in commit))
+    outages: list[Outage] = []
+    open_since: datetime | None = None
+    open_url = ""
+    open_workflows: list[str] = []
+    for commit_runs in commits:
+        failing = sorted((run for run in commit_runs if run.failed), key=lambda r: r.completed_at)
+        if failing:
+            if open_since is None:
+                open_since = failing[0].completed_at
+                open_url = failing[0].url
+            for run in failing:
+                if run.workflow not in open_workflows:
+                    open_workflows.append(run.workflow)
+        elif open_since is not None:
+            green_at = max(max(run.completed_at for run in commit_runs), open_since)
+            outages.append(Outage(tuple(open_workflows), open_since, green_at, open_url))
+            open_since = None
+            open_workflows = []
+    if open_since is not None:
+        outages.append(Outage(tuple(open_workflows), open_since, None, open_url))
+    return outages
+
+
+def workflow_red_hours(
+    runs: Sequence[WorkflowRun], outages: Sequence[Outage], *, now: datetime
+) -> dict[int | str, float]:
+    """Each workflow's share of the branch's red time, keyed like ``normal_minutes``.
+
+    A workflow's own red spans (failure completion to its next success, or
+    ``now`` while unrecovered) are clipped to the branch outages, so a share
+    never exceeds the branch figure and a workflow that kept the branch red
+    is credited for the whole period even when it skipped some commits.
+    """
+    branch_spans = _union_spans([(o.started_at, o.ended_at or now) for o in outages])
+    if not branch_spans:
+        return {}
     by_workflow: dict[int | str, list[WorkflowRun]] = defaultdict(list)
     for run in runs:
-        by_workflow[_workflow_key(run)].append(run)
-    outages: list[Outage] = []
-    for workflow_runs in by_workflow.values():
-        open_since: WorkflowRun | None = None
-        name = workflow_runs[0].workflow
+        if run.failed or run.succeeded:
+            by_workflow[_workflow_key(run)].append(run)
+    shares: dict[int | str, float] = {}
+    for key, workflow_runs in by_workflow.items():
+        spans: list[tuple[datetime, datetime]] = []
+        open_since: datetime | None = None
         for run in sorted(workflow_runs, key=lambda r: r.completed_at):
             if run.failed and open_since is None:
-                open_since = run
+                open_since = run.completed_at
             elif run.succeeded and open_since is not None:
-                outages.append(
-                    Outage(name, open_since.completed_at, run.completed_at, open_since.url)
-                )
+                spans.append((open_since, run.completed_at))
                 open_since = None
         if open_since is not None:
-            outages.append(Outage(name, open_since.completed_at, None, open_since.url))
-    return sorted(outages, key=lambda o: o.started_at)
+            spans.append((open_since, now))
+        clipped = _intersect_hours(spans, branch_spans)
+        if clipped > 0:
+            shares[key] = clipped
+    return shares
+
+
+def _intersect_hours(
+    spans: Sequence[tuple[datetime, datetime]],
+    branch_spans: Sequence[tuple[datetime, datetime]],
+) -> float:
+    """Total hours of overlap between ``spans`` and the branch outage intervals."""
+    total = 0.0
+    for start, end in spans:
+        for branch_start, branch_end in branch_spans:
+            lo = max(start, branch_start)
+            hi = min(end, branch_end)
+            if hi > lo:
+                total += (hi - lo).total_seconds()
+    return total / 3600
 
 
 def union_hours(outages: Sequence[Outage], *, now: datetime) -> float:
@@ -401,8 +469,11 @@ def summarize_workflows(
     runs: Sequence[WorkflowRun],
     classified: Sequence[ClassifiedFailure],
     normal: dict[int | str, float],
+    *,
+    red_hours: dict[int | str, float] | None = None,
 ) -> list[WorkflowSummary]:
     """Per-workflow counts, worst first; workflows that never failed are omitted."""
+    shares = red_hours or {}
     run_counts: dict[int | str, int] = defaultdict(int)
     failure_counts: dict[int | str, int] = defaultdict(int)
     names: dict[int | str, str] = {}
@@ -423,6 +494,7 @@ def summarize_workflows(
             failures=failures,
             reliability_failures=reliability_counts[key],
             normal_minutes=normal.get(key),
+            red_hours=shares.get(key, 0.0),
         )
         for key, failures in failure_counts.items()
     ]
@@ -449,4 +521,5 @@ __all__ = [
     "normal_minutes",
     "summarize_workflows",
     "union_hours",
+    "workflow_red_hours",
 ]

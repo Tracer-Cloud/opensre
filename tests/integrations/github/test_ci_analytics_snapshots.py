@@ -76,7 +76,7 @@ def _report(*, owner: str = "apache", repo: str = "airflow", red_hours: float = 
         branch_runs=20,
         branch_failures=2,
         red_hours=red_hours,
-        outages=(Outage(workflow="CI", started_at=now, ended_at=None, first_failure_url="u"),),
+        outages=(Outage(workflows=("CI",), started_at=now, ended_at=None, first_failure_url="u"),),
         mean_recovery_hours=6.1,
         workflows=(WorkflowSummary("CI", 100, 8, 3, 12.0),),
         coverage_notices=("partial",),
@@ -176,6 +176,38 @@ def test_the_schedule_card_report_comes_from_todays_saved_figures(
     assert generated_at
     assert "**Key results**" in text
     assert "Next:" not in text
+
+
+def test_a_snapshot_from_an_older_report_shape_is_treated_as_absent(
+    tmp_path: Path, monkeypatch
+) -> None:
+    """A same-day snapshot written before a report-shape change must not crash the card."""
+    # Arrange: today's snapshot carries the pre-rename outage shape (`workflow`, singular).
+    from integrations.github.tools.ci_analytics import tool as tool_module
+    from integrations.github.tools.ci_analytics.snapshots import report_to_dict
+
+    report = _report()
+    saved = report_to_dict(report)
+    saved["outages"] = [
+        {"workflow": "CI", "started_at": report.generated_at.isoformat(), "ended_at": None}
+    ]
+    now = datetime.now(UTC)
+    write_snapshot(
+        tmp_path,
+        report.owner,
+        report.repo,
+        now - timedelta(minutes=5),
+        {
+            "generated_at": (now - timedelta(minutes=5)).isoformat(),
+            "window_days": 30,
+            "headline": "h",
+            "report": saved,
+        },
+    )
+    monkeypatch.setattr(tool_module, "snapshot_root", lambda _root=None: tmp_path)
+
+    # Act / Assert: the card shows no report instead of raising.
+    assert tool_module.report_text_from_snapshot("apache", "airflow") == ("", "")
 
 
 def test_a_saved_snapshot_never_answers_a_live_analysis(tmp_path: Path, monkeypatch) -> None:

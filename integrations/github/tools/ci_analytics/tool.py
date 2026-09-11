@@ -171,6 +171,7 @@ def report_payload(report: CiAnalyticsReport) -> dict[str, Any]:
                 "failures": s.failures,
                 "reliability_failures": s.reliability_failures,
                 "normal_minutes": s.normal_minutes,
+                "red_hours": round(s.red_hours, 2),
             }
             for s in report.workflows
         ],
@@ -198,7 +199,11 @@ def report_text_from_snapshot(
     saved = snapshot.get("report")
     if not isinstance(saved, dict):
         return "", ""
-    report = report_from_dict(saved)
+    try:
+        report = report_from_dict(saved)
+    except TypeError:
+        # A snapshot written before a report-shape change; treat it as absent.
+        return "", ""
     text = render_markdown(report, compact=True)
     if include_benchmarks:
         # This report sits above the schedule card, so the next step is already taken.
@@ -313,7 +318,7 @@ def _result(
         "reliability_failures": "Failures that passed later on the identical commit",
         "blocked_minutes": "Wall-clock minutes merged PRs waited past their expected green time",
         "blocked_working_minutes": "The part of that wait inside working hours: developer downtime",
-        "red_hours": "Hours the default branch had at least one red workflow",
+        "red_hours": "Hours the default branch's latest commit had a failing check",
         "headline": "One sentence naming the biggest cost (already painted; do not repeat)",
         "key_results": "The takeaway rows, red time first, even when the shell painted the report",
         "response_text": "The rendered report, or a one-line summary when the shell painted it",
