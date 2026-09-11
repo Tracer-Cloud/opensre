@@ -387,10 +387,10 @@ def test_tool_uses_the_loops_seven_day_snapshot_when_no_thirty_day_one_exists(
     )
 
 
-def test_analyze_markdown_keeps_the_details_beside_the_comparison(
+def test_analyze_keeps_the_details_beside_the_comparison(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Arrange: a caller with no console gets markdown; the live read is stubbed.
+    # Arrange: a caller with no console gets the same figures; the live read is stubbed.
     from datetime import UTC, datetime
 
     from integrations.github.tools.ci_analytics import tool as tool_module
@@ -409,11 +409,12 @@ def test_analyze_markdown_keeps_the_details_beside_the_comparison(
         owner="acme", repo="app", days=30, context=None
     )
 
-    # Assert: benchmarks add a section; they do not remove the analysis details.
-    text = result["response_text"]
-    assert "Key results" in text
-    assert "Compared with" in text
-    assert "Workflow" in text or "Failure classification" in text
+    # Assert: benchmarks add a payload; they do not remove the analysis details.
+    assert result["benchmarks"]
+    assert result["key_results"]
+    assert result["comparison_figures"]
+    assert result["workflows"]
+    assert "reliability_failures" in result
 
 
 def test_the_card_says_how_to_run_the_loop_at_another_time(

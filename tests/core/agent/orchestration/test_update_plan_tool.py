@@ -91,6 +91,12 @@ def test_update_plan_preserves_report_and_followup_after_verification() -> None:
     assert session.task_plan is not None
     assert [step.step for step in session.task_plan.steps] == labels
 
+    # More work lands, the menu step becomes active, then the whole checklist
+    # closes: the active last step may close without a tool of its own.
+    items[4]["status"] = "completed"
+    items[5]["status"] = "in_progress"
+    result = execute_update_plan_tool({"plan": items}, _ctx(session=_worked(session)))
+    assert result["ok"] is True
     completed = [{"step": label, "status": "completed"} for label in labels]
     result = execute_update_plan_tool({"plan": completed}, _ctx(session=session))
     assert result["ok"] is True
@@ -165,8 +171,9 @@ def test_update_plan_tool_name_is_the_action_enum() -> None:
 
 
 def test_update_plan_marks_a_fully_completed_plan_as_terminal() -> None:
-    # Arrange / Act: every step completed (the verification step last).
-    session = Session()
+    # Arrange / Act: every step completed (the verification step last), written
+    # after the work ran this turn.
+    session = _worked(Session())
     done: list[dict[str, Any]] = [
         {"step": "Capture 502 samples from checkout", "status": "completed"},
         {"step": "Trace 502s to the last deploy", "status": "completed"},
@@ -183,6 +190,23 @@ def test_update_plan_marks_a_fully_completed_plan_as_terminal() -> None:
     # A terminal plan is neither plan-only nor a freshly authorized execution.
     assert "Plan-only" not in result["instruction"]
     assert "Execution is authorized" not in result["instruction"]
+
+
+def test_update_plan_does_not_accept_a_plan_born_complete_before_any_work() -> None:
+    # Arrange / Act: the same fully completed plan, but no tool has run this turn.
+    session = Session()
+    done: list[dict[str, Any]] = [
+        {"step": "Capture 502 samples from checkout", "status": "completed"},
+        {"step": "Trace 502s to the last deploy", "status": "completed"},
+        {"step": "Confirm checkout returns 2xx", "status": "completed"},
+    ]
+    result = execute_update_plan_tool({"plan": done}, _ctx(session=session))
+
+    # Assert: the write lands, but every unearned tick is reopened.
+    assert result["ok"] is True
+    assert session.task_plan is not None
+    assert session.task_plan.all_completed is False
+    assert all(step.status is not PlanStepStatus.COMPLETED for step in session.task_plan.steps)
 
 
 def test_update_plan_normal_create_carries_only_the_base_instruction() -> None:
