@@ -10,6 +10,7 @@ from types import SimpleNamespace
 import pytest
 
 import core.agent_harness.turns.turn_plan as turn_plan_module
+from config.constants import WORKSPACE_REPO_ENV_KEYS
 from core.agent_harness.session.pending_choice import AskUserQuestion, format_ask_user_answers
 from core.agent_harness.turns.turn_plan import (
     TurnPlan,
@@ -235,7 +236,8 @@ def test_directory_change_refreshes_same_turn_repository_scope(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    monkeypatch.delenv("GITHUB_REPOSITORY", raising=False)
+    for key in WORKSPACE_REPO_ENV_KEYS:
+        monkeypatch.setenv(key, "ambient/repo-a")
     repo_a = tmp_path / "repo-a"
     repo_b = tmp_path / "repo-b"
     for path, remote in (
@@ -255,6 +257,7 @@ def test_directory_change_refreshes_same_turn_repository_scope(
         TurnSnapshot.from_session("check this repository", session, surface="interactive_shell"),
         session,
     )
+    assert initial.resolved_integrations["github"]["owner"] == "ambient"
     assert initial.resolved_integrations["github"]["repo"] == "repo-a"
 
     refreshed = refresh_repository_scopes_after_directory_change(

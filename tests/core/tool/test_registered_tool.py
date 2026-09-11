@@ -155,7 +155,7 @@ def test_public_input_schema_empty_injected_unchanged() -> None:
     assert rt.public_input_schema == rt.input_schema
 
 
-def test_public_input_schema_keeps_authoritative_context_params() -> None:
+def test_public_input_schema_keeps_runtime_context_params() -> None:
     rt = RegisteredTool(
         name="scoped_tool",
         description="Tool with a runtime repository default",

@@ -60,6 +60,7 @@ def _enrich_repository_scopes(
     conversation_messages: Sequence[tuple[str, str]] | None,
     cwd: str | None,
     cached_scopes: dict[str, tuple[str, ...]],
+    prefer_cwd_over_environment: bool = False,
 ) -> dict[str, Any]:
     """Enrich one resolved-integration view and update session scope caches."""
     repository_keys: dict[tuple[str, tuple[str, ...]], str] = {}
@@ -99,6 +100,7 @@ def _enrich_repository_scopes(
         env=None,
         cwd=cwd,
         cached_scopes=cached_scopes,
+        prefer_cwd_over_environment=prefer_cwd_over_environment,
         set_cached_scope=_set_active_scope,
         remember_scope=_remember_scope,
     )
@@ -128,6 +130,7 @@ def refresh_repository_scopes_after_directory_change(
         conversation_messages=None,
         cwd=cwd,
         cached_scopes={},
+        prefer_cwd_over_environment=True,
     )
 
 

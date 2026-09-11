@@ -424,7 +424,7 @@ class RegisteredTool:
     output_schema: dict[str, Any] | None = None
     evidence_mapper: EvidenceMapper | None = field(default=None, repr=False)
     injected_params: tuple[str, ...] = ()
-    #: Public parameters whose non-empty ``extract_params`` values beat model input.
+    #: Public defaults refreshed when model input still matches the prior context.
     context_params: tuple[str, ...] = ()
     retrieval_controls: RetrievalControls = field(
         default_factory=RetrievalControls,

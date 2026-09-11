@@ -243,6 +243,7 @@ def execute_tool_calls(
         hooks.before_tool_batch(tool_calls)
     tool_map = {t.name: t for t in tools}
     runtime_resources = dict(tool_resources or {})
+    initial_tool_sources = availability_view(resolved_integrations)
 
     def _call(tc: ToolCall) -> ToolExecutionResult:
         with tool_span(tc.name, tool_call_id=tc.id) as span_attrs:
@@ -252,6 +253,7 @@ def execute_tool_calls(
                 # A prior sequential action may have refreshed this live view
                 # (for example after changing the session workspace).
                 tool_sources=availability_view(resolved_integrations),
+                initial_tool_sources=initial_tool_sources,
                 resolved_integrations=resolved_integrations,
                 runtime_resources=runtime_resources,
                 hooks=hooks,
@@ -341,6 +343,7 @@ def _execute_one_tool_call(
     *,
     tool_map: dict[str, RuntimeTool],
     tool_sources: dict[str, Any],
+    initial_tool_sources: dict[str, Any],
     resolved_integrations: dict[str, Any],
     runtime_resources: dict[str, Any],
     hooks: ToolExecutionHooks,
@@ -390,6 +393,7 @@ def _execute_one_tool_call(
             tc,
             request=request,
             tool_sources=tool_sources,
+            initial_tool_sources=initial_tool_sources,
             resolved_integrations=resolved_integrations,
             runtime_resources=runtime_resources,
             hooks=hooks,
@@ -432,6 +436,7 @@ def _invoke_runtime_tool(
     *,
     request: ToolExecutionRequest,
     tool_sources: dict[str, Any],
+    initial_tool_sources: dict[str, Any],
     resolved_integrations: dict[str, Any],
     runtime_resources: dict[str, Any],
     hooks: ToolExecutionHooks,
@@ -447,14 +452,30 @@ def _invoke_runtime_tool(
 
     injected = tool.extract_params(tool_sources)
     kwargs = {**injected, **tc.input}
-    # Vendor-agnostic: hidden injected values and public authoritative context
-    # values must win over potentially stale model input when present.
-    protected = frozenset(
-        (*getattr(tool, "injected_params", ()), *getattr(tool, "context_params", ()))
-    )
+    # Hidden values always come from runtime integration state, never the model.
+    protected = frozenset(getattr(tool, "injected_params", ()))
     for key, value in injected.items():
         if key in protected and value not in (None, "", []):
             kwargs[key] = value
+
+    # Public context fields are defaults rather than secrets. Preserve an
+    # explicitly different target, but replace values copied from the batch's
+    # original context when an earlier sequential action refreshed that scope.
+    context_params = tuple(getattr(tool, "context_params", ()))
+    model_context = {
+        key: tc.input[key]
+        for key in context_params
+        if key in tc.input and tc.input[key] not in (None, "", [])
+    }
+    initial_context = tool.extract_params(initial_tool_sources) if context_params else {}
+    uses_initial_context = bool(model_context) and all(
+        initial_context.get(key) == value for key, value in model_context.items()
+    )
+    if not model_context or uses_initial_context:
+        for key in context_params:
+            value = injected.get(key)
+            if value not in (None, "", []):
+                kwargs[key] = value
     if getattr(tool, "accepts_runtime_context", False):
         context = AgentToolContext(
             resolved_integrations=resolved_integrations,

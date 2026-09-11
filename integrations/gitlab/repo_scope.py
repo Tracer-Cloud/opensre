@@ -140,6 +140,7 @@ def infer_gitlab_repo_scope(
     env: Mapping[str, str] | None = None,
     cwd: str | Path | None = None,
     cached: tuple[str, str, str] | None = None,
+    prefer_cwd_over_environment: bool = False,
 ) -> GitlabRepoScope | None:
     """Resolve GitLab scope from message, history, cache, environment, or git."""
     env_map = env if env is not None else os.environ
@@ -157,6 +158,11 @@ def infer_gitlab_repo_scope(
 
     if cached:
         return GitlabRepoScope(*cached)
+
+    if prefer_cwd_over_environment:
+        cwd_scope = detect_git_remote_repo_scope(cwd, allowed_hosts=allowed_hosts)
+        if cwd_scope is not None:
+            return cwd_scope
 
     project = _clean_project_path(str(env_map.get("GITLAB_PROJECT_ID", "")))
     if project:
@@ -211,6 +217,7 @@ class _GitlabVcsRepoScopeProvider:
         env: Mapping[str, str] | None,
         cwd: str | Path | None,
         cached: tuple[str, ...] | None,
+        prefer_cwd_over_environment: bool = False,
     ) -> tuple[str, ...] | None:
         cached_scope = GitlabRepoScope(*cached) if cached else None
         scope = infer_gitlab_repo_scope(
@@ -219,6 +226,7 @@ class _GitlabVcsRepoScopeProvider:
             env=env,
             cwd=cwd,
             cached=cached_scope,
+            prefer_cwd_over_environment=prefer_cwd_over_environment,
         )
         return tuple(scope) if scope else None
 

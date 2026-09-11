@@ -130,9 +130,14 @@ def _infer_workspace_repo_scope(
     *,
     env: Mapping[str, str] | None,
     cwd: str | Path | None,
+    prefer_cwd_over_environment: bool = False,
 ) -> tuple[str, str] | None:
     """Resolve only the process workspace repository, not prompt-provided scope."""
     env_map = env if env is not None else os.environ
+    if prefer_cwd_over_environment:
+        cwd_scope = detect_git_remote_repo_scope(cwd)
+        if cwd_scope is not None:
+            return cwd_scope
     for key in WORKSPACE_REPO_ENV_KEYS:
         source = workspace_public_repository_source({"workspace_repo": str(env_map.get(key, ""))})
         github = source.get("github", {})
@@ -180,6 +185,7 @@ class _GithubVcsRepoScopeProvider:
         env: Mapping[str, str] | None,
         cwd: str | Path | None,
         cached: tuple[str, ...] | None,
+        prefer_cwd_over_environment: bool = False,
     ) -> tuple[str, ...] | None:
         from_message = parse_github_repository_reference(message)
         if from_message:
@@ -191,7 +197,11 @@ class _GithubVcsRepoScopeProvider:
                     return from_history
         if cached:
             return cached
-        workspace_scope = _infer_workspace_repo_scope(env=env, cwd=cwd)
+        workspace_scope = _infer_workspace_repo_scope(
+            env=env,
+            cwd=cwd,
+            prefer_cwd_over_environment=prefer_cwd_over_environment,
+        )
         if workspace_scope is None:
             return None
         return (*workspace_scope, _PUBLIC_WORKSPACE_SCOPE_MARKER)

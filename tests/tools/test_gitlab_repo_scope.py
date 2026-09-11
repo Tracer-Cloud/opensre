@@ -89,6 +89,22 @@ def test_infer_gitlab_repo_scope_uses_environment() -> None:
     assert scope == ("group/project", "release", "docs/runbook.md")
 
 
+def test_infer_gitlab_repo_scope_can_prefer_working_directory() -> None:
+    with patch("integrations.gitlab.repo_scope.detect_git_remote_repo_scope") as detect:
+        detect.return_value = ("cwd/project", "", "")
+
+        scope = infer_gitlab_repo_scope(
+            message="read the current project",
+            conversation_messages=[],
+            env={"GITLAB_PROJECT_ID": "ambient/project"},
+            cwd="/workspace/cwd-project",
+            prefer_cwd_over_environment=True,
+        )
+
+    assert scope == ("cwd/project", "", "")
+    detect.assert_called_once_with("/workspace/cwd-project", allowed_hosts=frozenset())
+
+
 def test_infer_gitlab_repo_scope_recognizes_configured_self_hosted_host() -> None:
     """A self-hosted host that lacks the ``gitlab`` substring is trusted when it
     matches the configured ``GITLAB_BASE_URL`` host."""

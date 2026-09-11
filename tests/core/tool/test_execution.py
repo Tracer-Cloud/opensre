@@ -498,6 +498,59 @@ def test_sequential_batch_uses_integration_scope_refreshed_by_prior_tool() -> No
     assert results[1].details == {"owner": "new-owner", "value": "observed"}
 
 
+def test_sequential_batch_preserves_explicit_context_after_scope_refresh() -> None:
+    resolved = {"github": {"owner": "old-owner"}}
+
+    def refresh(value: str, context: AgentToolContext) -> dict[str, str]:
+        context.resolved_integrations["github"] = {"owner": value}
+        return {"value": value}
+
+    def read_scope(owner: str, value: str) -> dict[str, str]:
+        return {"owner": owner, "value": value}
+
+    refresh_tool = RegisteredTool(
+        name="refresh_scope",
+        description="refresh integration scope",
+        input_schema=_schema(["value"]),
+        source="knowledge",
+        run=refresh,
+        accepts_runtime_context=True,
+        parallel_safe=False,
+    )
+    scoped_tool = RegisteredTool(
+        name="read_scope",
+        description="read integration scope",
+        input_schema={
+            "type": "object",
+            "properties": {
+                "owner": {"type": "string"},
+                "value": {"type": "string"},
+            },
+            "required": ["owner", "value"],
+            "additionalProperties": False,
+        },
+        source="github",
+        run=read_scope,
+        extract_params=lambda sources: {"owner": sources["github"]["owner"]},
+        context_params=("owner",),
+    )
+
+    results = execute_tool_calls(
+        [
+            _call("refresh_scope", "new-owner"),
+            ToolCall(
+                id="read-scope-1",
+                name="read_scope",
+                input={"owner": "explicit-owner", "value": "observed"},
+            ),
+        ],
+        [refresh_tool, scoped_tool],
+        resolved,
+    )
+
+    assert results[1].details == {"owner": "explicit-owner", "value": "observed"}
+
+
 def test_agent_tool_sequential_execution_mode_serializes_mixed_batch(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

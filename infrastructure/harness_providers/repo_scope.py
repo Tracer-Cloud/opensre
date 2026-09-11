@@ -32,9 +32,9 @@ class VcsRepoScopeProvider(Protocol):
         env: Mapping[str, str] | None,
         cwd: str | Path | None,
         cached: tuple[str, ...] | None,
+        prefer_cwd_over_environment: bool = False,
     ) -> tuple[str, ...] | None:
-        """Resolve this vendor's repo scope from message/history/env/git/cache."""
-        raise NotImplementedError
+        """Resolve scope, optionally preferring the cwd over ambient repo identity."""
 
     def apply(self, resolved: dict[str, Any], scope: tuple[str, ...]) -> dict[str, Any]:
         """Return a copy of *resolved* enriched with this vendor's scope."""
@@ -71,6 +71,7 @@ def enrich_resolved_with_repo_scopes(
     env: Mapping[str, str] | None,
     cwd: str | Path | None,
     cached_scopes: Mapping[str, tuple[str, ...]],
+    prefer_cwd_over_environment: bool = False,
     set_cached_scope: Callable[[str, tuple[str, ...] | None], None] | None = None,
     remember_scope: Callable[[str, str, tuple[str, ...]], None] | None = None,
 ) -> dict[str, Any]:
@@ -98,6 +99,7 @@ def enrich_resolved_with_repo_scopes(
             env=env,
             cwd=cwd,
             cached=cached_scopes.get(provider.vendor),
+            prefer_cwd_over_environment=prefer_cwd_over_environment,
         )
         if not scope:
             continue
