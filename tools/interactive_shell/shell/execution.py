@@ -35,8 +35,9 @@ def _truncate_output(text: str, *, max_chars: int) -> tuple[str, bool]:
 def _shell_argv(command: str) -> list[str]:
     if os.name == "nt":
         windows_shell = os.environ.get("COMSPEC") or "cmd.exe"
-        # /d suppresses registry AutoRun commands before the approved command.
-        return [windows_shell, "/d", "/s", "/c", command]
+        # /d suppresses registry AutoRun commands before the approved command;
+        # /v:off prevents inherited delayed !VAR! expansion from changing it.
+        return [windows_shell, "/d", "/v:off", "/s", "/c", command]
     # Do not use the interactive $SHELL: its startup hooks can run before the
     # command that policy classified. /bin/sh -c is non-interactive and stable.
     return ["/bin/sh", "-c", command]

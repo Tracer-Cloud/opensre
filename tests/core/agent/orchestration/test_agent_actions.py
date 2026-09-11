@@ -768,7 +768,7 @@ def test_execute_cli_actions_preserves_windows_shell_syntax(monkeypatch: object)
     assert action_turn.run_action_tool_turn(f"run `{command}`", session, console).handled
     assert calls == [
         (
-            [r"C:\Windows\System32\cmd.exe", "/d", "/s", "/c", command],
+            [r"C:\Windows\System32\cmd.exe", "/d", "/v:off", "/s", "/c", command],
             _EXPECTED_POPEN_KWARGS,
         )
     ]
