@@ -406,13 +406,22 @@ def workflow_red_hours(
     A workflow's own red spans (failure completion to its next success, or
     ``now`` while unrecovered) are clipped to the branch outages, so a share
     never exceeds the branch figure and a workflow that kept the branch red
-    is credited for the whole period even when it skipped some commits. An
+    is credited for the whole period even when it skipped some commits.     An
     outage counts toward a workflow only when one of its failing runs
     completed during that outage: a stale failure whose workflow never ran
-    again is not blamed for a later outage another workflow caused.
+    again is not blamed for a later outage another workflow caused. Outages
+    are kept separate — clipped to be disjoint rather than unioned — so two
+    that touch or overlap never let one workflow's failure authorize the
+    other's time, and overlapping time is counted once.
     """
-    branch_spans = _union_spans([(o.started_at, o.ended_at or now) for o in outages])
-    if not branch_spans:
+    windows: list[tuple[datetime, datetime, datetime]] = []
+    cursor: datetime | None = None
+    for outage in sorted(outages, key=lambda o: o.started_at):
+        end = outage.ended_at or now
+        clipped_start = outage.started_at if cursor is None else max(outage.started_at, cursor)
+        windows.append((outage.started_at, clipped_start, end))
+        cursor = end if cursor is None else max(cursor, end)
+    if not windows:
         return {}
     by_workflow: dict[int | str, list[WorkflowRun]] = defaultdict(list)
     for run in runs:
@@ -434,10 +443,11 @@ def workflow_red_hours(
         if open_since is not None:
             spans.append((open_since, now))
         total = 0.0
-        for branch_span in branch_spans:
-            start, end = branch_span
-            if any(start <= failed_at <= end for failed_at in failures):
-                total += _intersect_hours(spans, [branch_span])
+        for membership_start, clipped_start, end in windows:
+            if clipped_start >= end:
+                continue
+            if any(membership_start <= failed_at <= end for failed_at in failures):
+                total += _intersect_hours(spans, [(clipped_start, end)])
         if total > 0:
             shares[key] = total
     return shares

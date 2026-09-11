@@ -24,6 +24,7 @@ from integrations.github.tools.ci_analytics.metrics import (
 from integrations.github.tools.ci_analytics.models import (
     FailureKind,
     MergedPullRequest,
+    Outage,
     WorkflowRun,
 )
 from integrations.github.tools.ci_analytics.render import render_markdown
@@ -764,6 +765,44 @@ def test_a_stale_failure_is_not_blamed_for_a_later_unrelated_outage() -> None:
     assert workflow_red_hours(runs, outages, now=now) == {
         1: pytest.approx(1.0),
         2: pytest.approx(290 / 60),
+    }
+
+
+def test_touching_outages_do_not_share_their_workflows_red_time() -> None:
+    # Arrange: A's outage ends exactly when B's begins (completion-time skew can
+    # even make them overlap); a union would let A's failure claim B's period.
+    now = _T0 + timedelta(hours=10)
+    runs = [
+        _run(1, workflow="A", workflow_id=1, event="push", sha="c1", conclusion="failure"),
+        _run(
+            2,
+            workflow="B",
+            workflow_id=2,
+            event="push",
+            sha="c3",
+            conclusion="failure",
+            start_minutes=60,
+        ),
+    ]
+    outages = [
+        Outage(
+            workflows=("A",),
+            started_at=_T0 + timedelta(minutes=10),
+            ended_at=_T0 + timedelta(minutes=70),
+            first_failure_url="u",
+        ),
+        Outage(
+            workflows=("B",),
+            started_at=_T0 + timedelta(minutes=70),
+            ended_at=_T0 + timedelta(minutes=130),
+            first_failure_url="u",
+        ),
+    ]
+
+    # Act / Assert: each workflow keeps exactly its own hour.
+    assert workflow_red_hours(runs, outages, now=now) == {
+        1: pytest.approx(1.0),
+        2: pytest.approx(1.0),
     }
 
 
