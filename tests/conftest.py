@@ -58,6 +58,24 @@ def _harness_providers_per_test() -> Iterator[None]:
 
 
 @pytest.fixture(autouse=True)
+def _isolate_session_trace_store() -> Iterator[None]:
+    """Restore the process-global session trace store after every test.
+
+    ``create_repl_runtime`` installs a JSONL-backed store for the shell and never
+    removes it; under xdist that leaked store made later tests on the same worker
+    emit ``trace_span`` sidecars into session files they were asserting on.
+    """
+    from infrastructure.observability.trace.spans import (
+        get_session_trace_store,
+        set_session_trace_store,
+    )
+
+    previous = get_session_trace_store()
+    yield
+    set_session_trace_store(previous)
+
+
+@pytest.fixture(autouse=True)
 def _restore_os_environ():
     """Snapshot and restore ``os.environ`` around every test.
 
