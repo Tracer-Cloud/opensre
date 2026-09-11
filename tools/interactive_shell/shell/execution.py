@@ -34,11 +34,11 @@ def _truncate_output(text: str, *, max_chars: int) -> tuple[str, bool]:
 
 def _shell_argv(command: str) -> list[str]:
     if os.name == "nt":
-        shell = os.environ.get("COMSPEC") or "cmd.exe"
-        return [shell, "/d", "/s", "/c", command]
-    shell = os.environ.get("SHELL")
-    if shell:
-        return [shell, "-lc", command]
+        windows_shell = os.environ.get("COMSPEC") or "cmd.exe"
+        return [windows_shell, "/d", "/s", "/c", command]
+    posix_shell = os.environ.get("SHELL")
+    if posix_shell:
+        return [posix_shell, "-lc", command]
     return ["/bin/sh", "-c", command]
 
 
