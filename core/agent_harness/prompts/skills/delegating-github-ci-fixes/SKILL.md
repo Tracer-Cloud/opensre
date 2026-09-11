@@ -3,18 +3,16 @@ name: delegating-github-ci-fixes
 description: >-
   Delegates CI/CD fixes to the hosted OpenSRE managed service. Not yet
   available; when loaded, say the option is coming soon and exit the flow.
-getting_started: Run CI/CD improvements with a managed service (coming soon)
-demo_order: 3
 metadata:
   owner: Vincent
   last_changed_by: Jan
-  last_changed_at: 2026-09-11
+  last_changed_at: 2026-09-12
   usecases:
-    - Reserved slot for the remote managed-service onboarding demo
+    - Explain managed-service availability when explicitly requested
   requires:
     - Nothing; this skill only reports that the option is not available yet
   type: onboarding
-  version: "0.1"
+  version: "0.2"
 ---
 # Remote managed service (not yet available)
 

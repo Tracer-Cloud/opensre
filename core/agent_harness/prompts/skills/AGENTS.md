@@ -82,6 +82,11 @@ Rules:
   named in the request) say so in the step body and tell the agent to mark
   the skipped plan items satisfied rather than delete them.
 - Tool-usage cards describe one call, not a flow, and do not carry a plan.
+- `onboarding-github-ci` is a router: its Plan section lists selection and
+  handoff, while the selected child owns the live plan. The host can open the
+  entry picker before any model step, and skill loading is bookkeeping rather
+  than evidence of completed work. The router therefore does not call
+  `update_plan`; it immediately follows the successfully loaded child.
 
 ## Colocated workflow tests
 
@@ -236,8 +241,8 @@ Current collection:
 | `onboarding-github-ci` | workflow (master menu) | `skills/onboarding-github-ci/` | — |
 | `analyzing-github-ci-performance` | workflow (demo A) | `skills/onboarding-github-ci/a-…/` | closed set |
 | `scheduling-github-ci-fixes` | workflow (demo B) | `skills/onboarding-github-ci/b-…/` | closed set |
-| `delegating-github-ci-fixes` | workflow (demo C, placeholder) | `skills/onboarding-github-ci/c-…/` | — |
-| `connecting-slack` | workflow (demo D) | `skills/onboarding-github-ci/d-…/` | `cli_exec`, `slash_invoke` |
+| `delegating-github-ci-fixes` | workflow (availability only) | `skills/delegating-github-ci-fixes/` | — |
+| `connecting-slack` | workflow (demo C) | `skills/onboarding-github-ci/c-…/` | `cli_exec`, `slash_invoke` |
 | `operating-github-cli` | tool usage | `integrations/github/tools/github_cli/` | `github_cli` |
 | `operating-github-ci-fixer` | tool usage | `integrations/github/tools/ci_fix/` | `fix_github_pr_ci` |
 | `operating-github-security-fixer` | tool usage | `integrations/github/tools/security_fix/` | `fix_github_security_alert` |

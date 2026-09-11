@@ -176,6 +176,9 @@ class SessionCore:
     restored either.
     """
 
+    skill_question_keys: dict[str, set[str]] = field(default_factory=dict)
+    """Queued question keys by owning skill, for explicit workflow restarts."""
+
     skills_already_prompted: set[str] = field(default_factory=set)
     """Skills whose ``pre_execute`` menu this session has already opened.
 
@@ -432,6 +435,7 @@ class SessionCore:
         self.gather_unreachable_tools.clear()
         self.gather_unreachable_sources.clear()
         self.questions_already_answered.clear()
+        self.skill_question_keys.clear()
         self.skills_already_prompted.clear()
         if rotate_identity:
             # Rotate session identity so the new post-reset session gets its own ID and file.

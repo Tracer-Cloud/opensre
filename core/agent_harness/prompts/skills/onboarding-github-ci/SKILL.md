@@ -1,41 +1,39 @@
 ---
 name: onboarding-github-ci
 description: >-
-  Master onboarding skill: asks which of four CI/CD demos to run, then loads
-  and follows the selected child skill. Use on interactive-shell startup,
-  for a demo or getting-started request, or for capability questions such as
-  "what can you do?". Direct repository analysis, recurring-loop setup, Slack
-  setup, and CI-fix requests should load their specialist skill directly.
+  Routes interactive-shell startup, /demo, and explicit onboarding requests
+  through a demo picker to the selected child skill. Answer capability
+  questions first and offer /demo. Load the specialist directly when the
+  user names a demo or requests repository analysis, recurring CI fixes,
+  Slack setup, managed-service availability, or a one-off CI fix.
 metadata:
   owner: Vincent
-  last_changed_by: Vincent
-  last_changed_at: 2026-09-11
+  last_changed_by: Jan
+  last_changed_at: 2026-09-12
   usecases:
     - Interactive-shell startup and /demo
-    - When users want to see an onboarding flow
-    - Show the available onboarding paths and follow the selected child skill
-    - Answer capability and getting-started questions with an interactive demo
+    - Select an onboarding path and begin its child workflow
+    - Restart onboarding when the user explicitly requests a fresh demo
   requires:
-    - Interactive terminal for the Ask User menu
+    - Interactive terminal for guided demo selection
   type: onboarding
-  version: "2.0"
+  version: "2.1"
   dependencies:
     - core/agent_harness/prompts/skills/onboarding-github-ci/a-analyzing-github-ci-performance/SKILL.md
     - core/agent_harness/prompts/skills/onboarding-github-ci/b-scheduling-github-ci-fixes/SKILL.md
-    - core/agent_harness/prompts/skills/onboarding-github-ci/c-delegating-github-ci-fixes/SKILL.md
-    - core/agent_harness/prompts/skills/onboarding-github-ci/d-connecting-slack/SKILL.md
-# The host runs this on entry (startup, /demo, skill_view) before any model step.
+    - core/agent_harness/prompts/skills/onboarding-github-ci/c-connecting-slack/SKILL.md
+    - core/agent_harness/prompts/skills/delegating-github-ci-fixes/SKILL.md
+# The host opens this menu before the model runs.
 pre_execute:
   - tool: ask_user_choice
     args:
       title: Which demo would you like me to run?
       note: >-
         Choose a demo using your own repositories or connect your team through
-        Slack. The managed-service option is coming soon.
+        Slack.
       options:
         - Explore a repo and analyze its CI/CD performance (recommended)
         - Set up an agent that improves CI/CD reliability over time
-        - Run CI/CD improvements with a managed service (coming soon)
         - Connect OpenSRE to Slack and hand off DevOps chores for your team
         - Skip the demo and open the shell
       allow_custom: false
@@ -43,45 +41,74 @@ pre_execute:
 
 # CI/CD onboarding
 
-This master skill owns the onboarding question. Its menu is declared in
-`pre_execute`; the entry result reports whether it opened. If the current message
-already answers it, continue directly to the selected child. Never ask the
-onboarding question twice for one request.
+Resolve the user's demo choice and hand execution to its child skill.
+The child owns the work, its prerequisites, authorization, and follow-up.
 
-## Ask User
+## Plan
 
-Read the `pre_execute` results before deciding what to do:
+The selected child owns the live plan and its `update_plan` calls. This
+router's two steps below track selection and handoff only; leave the live
+plan to the child. The host may pause for its entry menu before any model
+step can run.
 
-- `menu: queued`: end the turn and wait for the selection. The host owns the
-  menu; do not call `ask_user_choice` again or repeat its options as text.
-- `menu: suppressed`: no new menu opened. Continue the current request using
-  the existing answer. If the user explicitly requests the demo menu again,
-  call `slash_invoke` with `/demo`; a greeting does not request reopening.
-- `menu: unavailable`: show the `pre_execute` options as a numbered list and
-  wait for a reply.
-- A hook error without a menu status: explain that the picker could not open
-  and show the options as a numbered list.
+- [ ] Step 1. Resolve the demo selection from the request or the host's ask_user_choice menu.
+- [ ] Step 2. Load the selected child's instructions with skill_view.
 
-Only a queued menu justifies telling the user to select from an open picker.
-The menu has no free-text row. Its last option opens the plain shell; the
-shell handles Skip and Escape without sending an answer to the model.
+## Workflow
 
-## Follow the selected child
+### 1. Resolve selection
 
-The next message carries the question and the user's answer. Call `skill_view`
-with the matching name, then follow its returned instructions in the same turn:
+Use an explicit demo choice in the current request or the answer to the
+onboarding question. Carry the original request, including any repository,
+constraints, and existing approvals, into the handoff. The child determines
+its own prerequisites; analysis still follows its scan and repository picker.
 
-- Option A: `analyzing-github-ci-performance` —
-  [analyze CI performance](a-analyzing-github-ci-performance/SKILL.md).
-- Option B: `scheduling-github-ci-fixes` —
-  [schedule the CI fix loop](b-scheduling-github-ci-fixes/SKILL.md).
-- Option C: `delegating-github-ci-fixes` —
-  [delegate to the managed service](c-delegating-github-ci-fixes/SKILL.md).
-- Option D: `connecting-slack` — [connect Slack](d-connecting-slack/SKILL.md).
+When selection is unresolved, read the `pre_execute` result:
 
-Do not perform the child workflow from this summary; load its full skill first.
-The managed-service child explains that it is unavailable and ends the flow.
-For a custom answer, treat that text as the user's request and act on it using
-the appropriate tools or skill. Do not reopen this menu or force a demo choice.
-After a child asks its own question, continue that child rather than returning
-to this master menu. Escape cancels onboarding; wait for a fresh user request.
+- `menu: queued`: end the turn and wait for the answer. The host has opened
+  the picker; neither another tool call nor a text copy of its options is needed.
+- `menu: suppressed`: continue from an applicable existing answer. A greeting
+  is an ordinary conversation turn. For an explicit request to reopen the
+  demo menu, call `slash_invoke` with `/demo` and wait for its new selection.
+- `menu: unavailable`, a hook error, or no menu result: explain that guided
+  selection is unavailable in this session, invite a direct task request,
+  and end onboarding. There is no replacement text menu.
+
+An ambiguous CI request needs one focused clarification about the desired
+outcome before selecting a child. Use `ask_user_choice` when available and
+end the turn; otherwise follow the unavailable-picker behavior above.
+Handle unrelated requests as the user's new task.
+
+Skip and Escape end onboarding in the shell without an answer for the model.
+An explicit `/demo` starts a fresh run: carry inputs from the new request,
+and perform the selected workflow again rather than crediting earlier results
+as completed work.
+
+Complete when the user's intended child is unambiguous. Opening a menu is
+a pause, not a selection; cancellation and unavailable selection end this
+flow without a handoff.
+
+### 2. Load the child
+
+Call `skill_view` with the name matching the selected path:
+
+| Path | Skill |
+| --- | --- |
+| A. Analyze CI performance | [`analyzing-github-ci-performance`](a-analyzing-github-ci-performance/SKILL.md) |
+| B. Set up ongoing CI fixes | [`scheduling-github-ci-fixes`](b-scheduling-github-ci-fixes/SKILL.md) |
+| C. Connect Slack | [`connecting-slack`](c-connecting-slack/SKILL.md) |
+| Managed service, direct requests only | [`delegating-github-ci-fixes`](../delegating-github-ci-fixes/SKILL.md) |
+
+If loading fails, report that the selected demo could not load, retain the
+choice, and stop. Leave handoff incomplete; a new user request can retry it.
+The child's description is insufficient to execute its workflow.
+
+Complete when `skill_view` successfully returns the selected child's full
+instructions. A hook error inside a successfully loaded child belongs to
+that child's workflow.
+
+Immediately follow the child's first unmet step in the same turn, continuing
+until its own pause or completion condition. The child starts its live plan
+and handles any missing authorization, preserving approvals already given.
+Resume that child on its answers; loading it is not a reason to end execution
+or return to this menu.

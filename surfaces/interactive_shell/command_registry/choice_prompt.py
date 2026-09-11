@@ -43,6 +43,7 @@ from surfaces.shared.terminal.components.choice_menu import (
 
 _CANCELLED = "Selection cancelled — type a reply instead."
 _DEMO_SKIPPED = "Demo skipped — type a request, or /demo to come back to it."
+_DEMO_UNAVAILABLE = "Guided demo selection is unavailable here — request a task directly."
 
 
 def _remember_answered(session: Session, *titles: str) -> None:
@@ -81,6 +82,9 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
         return True
 
     if not repl_tty_interactive():
+        if session.active_skill == ONBOARDING_SKILL_NAME:
+            _leave_menu(session, console, _DEMO_UNAVAILABLE)
+            return True
         for question in pending.items():
             print_valid_choice_list(
                 console,

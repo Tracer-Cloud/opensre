@@ -1,4 +1,4 @@
-"""The master skill owns the menu and refers to four independently loadable children."""
+"""The master skill routes three demos and keeps specialists independently loadable."""
 
 from __future__ import annotations
 
@@ -32,20 +32,18 @@ def test_child_directories_are_letter_prefixed_skill_names() -> None:
         assert suffix == skill.name, directory
 
 
-def test_master_menu_matches_four_unique_children_and_preserves_specialists() -> None:
+def test_master_menu_matches_selectable_children_and_preserves_specialists() -> None:
     loader.clear_skills_caches()
     children = getting_started_skills()
     assert [s.name for s in children] == [
         "analyzing-github-ci-performance",
         "scheduling-github-ci-fixes",
-        "delegating-github-ci-fixes",
         "connecting-slack",
     ]
-    assert [s.demo_order for s in children] == [1, 2, 3, 4]
+    assert [s.demo_order for s in children] == [1, 2, 3]
     assert GETTING_STARTED_OPTIONS == (
         "Explore a repo and analyze its CI/CD performance (recommended)",
         "Set up an agent that improves CI/CD reliability over time",
-        "Run CI/CD improvements with a managed service (coming soon)",
         "Connect OpenSRE to Slack and hand off DevOps chores for your team",
     )
     master = loader.load_skill_body(ONBOARDING_SKILL_NAME)
@@ -100,6 +98,9 @@ def test_master_menu_matches_four_unique_children_and_preserves_specialists() ->
     assert menu["allow_custom"] is False
     assert GETTING_STARTED_CUSTOM not in master
     assert "not implemented yet" in loader.load_skill_body("delegating-github-ci-fixes")
+    managed = next(s for s in loader.list_action_skills() if s.name == "delegating-github-ci-fixes")
+    assert managed.getting_started is None
+    assert managed.demo_order is None
     discovered = [
         loader._load_action_skill(path) for path in loader._iter_skill_paths(loader.skills_dir())
     ]
@@ -131,7 +132,7 @@ def test_multi_step_skills_track_progress_with_update_plan_not_step_headers() ->
         assert "### [" not in loader.load_skill_body(name), name
 
 
-def test_capability_and_demo_prompts_load_master_instead_of_defining_another_menu() -> None:
+def test_capability_answers_and_direct_requests_do_not_require_onboarding() -> None:
     snapshot = TurnSnapshot(
         text="What can you do?",
         conversation_messages=(),
@@ -143,6 +144,12 @@ def test_capability_and_demo_prompts_load_master_instead_of_defining_another_men
     )
     prompt = " ".join(build_action_system_prompt(snapshot).split())
     assert f'call skill_view(name="{ONBOARDING_SKILL_NAME}")' in prompt
+    assert "answer first and offer /demo" in prompt
+    assert "An onboarding router delegates the live plan to its child" in prompt
+    assert "For an ambiguous CI request, clarify the desired outcome once" in prompt
+    assert "load that specialist directly and carry the original request forward" in prompt
+    assert "an explicit demo or onboarding request that needs path selection" in prompt
+    assert "stop onboarding without a replacement text menu" in prompt
     assert "Do not ask a separate onboarding question before loading it" in prompt
     assert "are NOT a skill_view match" not in prompt
     assert "Which demo would you like me to run?" not in load_getting_started_block()

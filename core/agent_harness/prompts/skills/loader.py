@@ -463,7 +463,7 @@ def load_skills_index() -> str:
         "Before answering, check this catalog for an action-shaped match",
         '(including "set up", "install", "onboard me", "demo", "audit", or "fix").',
         'For capability questions ("what can you do", "how can you help"),',
-        "follow the getting-started instruction to load the master skill.",
+        "follow the getting-started instruction to answer first and offer /demo.",
         "When the user request matches a skill below, call skill_view(name) in",
         "this turn. Read its result before creating or revising its plan or",
         "calling its workflow tools. Request dependent update_plan calls in a",
