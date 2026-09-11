@@ -169,12 +169,12 @@ def render_note_block(console: Console, text: str) -> None:
 
 
 def _transcript_label_style() -> str:
-    """Bold accent for the assistant and working-state labels."""
+    """Bold accent for the assistant marker and working-state labels."""
     return ui_theme.reply_marker_style()
 
 
 def render_reply_block(console: Console, text: str, *, lead: bool = True) -> None:
-    """Render a whole assistant reply inside the labeled transcript gutter."""
+    """Render a whole assistant reply inside the marked transcript gutter."""
     visible = text
     if not visible.strip():
         return
@@ -193,7 +193,7 @@ def render_reply_block(console: Console, text: str, *, lead: bool = True) -> Non
 
 
 def render_response_header(console: Console, label: str) -> None:
-    """Print the label that opens every assistant response.
+    """Print the marker that opens every assistant response.
 
     Shared with ``action_turn.run_action_tool_turn`` so the planned-actions path
     and the streaming response path use the exact same prefix.

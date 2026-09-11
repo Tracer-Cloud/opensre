@@ -131,8 +131,8 @@ def test_shimmer_text_ansi_paints_a_traveling_metallic_wave() -> None:
     assert " tools" in spaced or "tools" in re.sub(r"\x1b\[[0-9;]*m", "", spaced)
 
 
-def test_transcript_label_follows_the_active_theme_highlight() -> None:
-    """The bold transcript label follows each palette's highlight colour."""
+def test_transcript_marker_follows_the_active_theme_highlight() -> None:
+    """The bold transcript marker follows each palette's highlight colour."""
     from infrastructure.terminal import theme as ui_theme
 
     for name in ("blue", "purple", "green", "mono"):
@@ -160,9 +160,9 @@ def test_reply_block_paints_accent_label_and_themed_body() -> None:
     with console.capture() as capture:
         render_reply_block(console, "Hey! How can I help?")
     output = capture.get()
-    assert "OpenSRE" in output
+    assert "●" in output
     assert _transcript_label_style() == f"bold {get_theme('blue').HIGHLIGHT}"
-    # Label follows the active theme's HIGHLIGHT (whatever the palette sets).
+    # Marker follows the active theme's HIGHLIGHT (whatever the palette sets).
     highlight = get_theme("blue").HIGHLIGHT.lstrip("#")
     r, g, b = (int(highlight[i : i + 2], 16) for i in (0, 2, 4))
     assert f"38;2;{r};{g};{b}m" in output

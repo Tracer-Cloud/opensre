@@ -19,7 +19,7 @@ Token reference
   BG         terminal background, never used as foreground
   INPUT_SURFACE  composer/menu plate — visibly lifted vs BG (input box fill)
   BOLD_SKILL fixed green skill-activation label
-  reply label   assistant and working-state lead-in via
+  reply marker  assistant circle and working-state lead-in via
                 :func:`reply_marker_style` (not WARNING; must stay vivid)
 
 Usage

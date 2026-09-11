@@ -134,7 +134,7 @@ def stream_to_console_state(
     defer_want_me_to_closer: bool = False,
 ) -> StreamRenderResult:
     """Like :func:`stream_to_console` but returns render/defer metadata."""
-    del label  # the transcript paints the stable OpenSRE label
+    del label  # the transcript paints the stable assistant marker
     if not console.is_terminal:
         text = "".join(chunks)
         if suppress_if_starts_with is not None and text.lstrip().startswith(
@@ -237,7 +237,7 @@ def stream_to_console_state(
             # for the next standalone block. This matters most after lists,
             # whose renderer adds no trailing blank line.
             console.print()
-        # The first paragraph carries the ``OpenSRE`` label in the gutter; every
+        # The first paragraph carries the assistant marker in the gutter; every
         # paragraph hangs in the same indented body column. Explicit TEXT so
         # body never falls through to terminal white and washes the marker out.
         with console.use_theme(ui_theme.MARKDOWN_THEME):
@@ -428,7 +428,7 @@ def stream_to_console_state(
 
 def publish_full_response(console: Console, text: str, *, label: str = "assistant") -> None:
     """Render a complete assistant answer (non-TTY deferred gather path)."""
-    del label  # the transcript paints the stable OpenSRE label
+    del label  # the transcript paints the stable assistant marker
     body = (text or "").strip()
     if not body:
         return

@@ -170,7 +170,7 @@ def test_skill_view_renders_single_activation_line() -> None:
         },
     )
 
-    assert buffer.getvalue() == "\nLoaded   Skill · install-code-review\n"
+    assert buffer.getvalue() == "\nSkill activated install-code-review\n"
 
 
 def test_two_skills_in_one_batch_each_get_their_own_line() -> None:
@@ -191,8 +191,8 @@ def test_two_skills_in_one_batch_each_get_their_own_line() -> None:
         )
 
     assert buffer.getvalue() == (
-        "\nLoaded   Skill · reporting-github-ci-failures\n"
-        "\nLoaded   Skill · github-ci-fix-onboarding\n"
+        "\nSkill activated reporting-github-ci-failures\n"
+        "\nSkill activated github-ci-fix-onboarding\n"
     )
 
 
@@ -204,8 +204,8 @@ def test_skill_view_renders_bold_green_activation_label() -> None:
 
     heading = console.print.call_args_list[1].args[0]
     assert isinstance(heading, Text)
-    assert heading.plain == "Loaded   Skill · install-code-review"
-    assert len(heading.spans) == 3
+    assert heading.plain == "Skill activated install-code-review"
+    assert len(heading.spans) == 2
     assert str(heading.spans[0].style) == BOLD_SKILL
     assert str(heading.spans[1].style) == str(TEXT)
 
@@ -576,7 +576,7 @@ def test_skill_block_renders_live_not_buffered() -> None:
     )
 
     out = buffer.getvalue()
-    assert "\nLoaded   Skill · install-code-review\n" in out
+    assert "\nSkill activated install-code-review\n" in out
     assert "\n\n\n" not in out
     # The github call is buffered for the grouped log, not printed inline yet.
     assert any(e.kind == "GitHub CLI" for e in observer.session.terminal.action_log_entries)

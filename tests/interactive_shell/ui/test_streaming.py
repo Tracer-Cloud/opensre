@@ -78,7 +78,7 @@ def test_prose_reply_keeps_the_inline_label() -> None:
 
     publish_full_response(console, "Root disk is 44% full.")
 
-    assert "OpenSRE  Root disk is 44% full." in buf.getvalue()
+    assert "● Root disk is 44% full." in buf.getvalue()
 
 
 def _tty_console() -> tuple[Console, io.StringIO]:
@@ -113,7 +113,7 @@ class TestNonTtyFallback:
         output = buf.getvalue()
         assert result == "Hello, world"
         # The inline label + text reach piped output so captured logs are useful.
-        assert "OpenSRE" in output
+        assert "●" in output
         assert "Hello, world" in output
         # No spinner / Live cursor-movement artifacts in non-TTY captures.
         assert "thinking" not in output
@@ -144,7 +144,7 @@ class TestNonTtyFallback:
         assert result == '{"actions":[]}'
         output = buf.getvalue()
         # No assistant label for suppressed responses.
-        assert "OpenSRE" not in output
+        assert "●" not in output
         assert '{"actions"' not in output
 
 
@@ -186,7 +186,7 @@ class TestTtyParagraphRender:
         output = _strip_ansi(buf.getvalue())
         assert result == "Run **opensre setup** to start."
         # The assistant label is pinned beside the rendered paragraph.
-        assert "OpenSRE" in output
+        assert "●" in output
         # End-of-stream force-flush rendered Markdown — ``**`` stripped.
         assert "**opensre" not in output
         assert "opensre setup" in output
@@ -228,12 +228,7 @@ class TestTtyParagraphRender:
         stream_to_console(console, label="OpenSRE", chunks=_yield_chunks([text]))
 
         visible = "\n".join(line.rstrip() for line in _strip_ansi(buf.getvalue()).splitlines())
-        assert (
-            "OpenSRE  Ready:\n\n"
-            "          • first\n"
-            "          • second\n\n"
-            "         Blocked pending a choice."
-        ) in visible
+        assert ("● Ready:\n\n   • first\n   • second\n\n  Blocked pending a choice.") in visible
 
     def test_reply_hangs_indented_under_the_label(self) -> None:
         """A wrapped reply hangs in the gutter: line one carries the label,
@@ -244,9 +239,9 @@ class TestTtyParagraphRender:
         stream_to_console(console, label="assistant", chunks=_yield_chunks([text]))
 
         lines = [line for line in _strip_ansi(buf.getvalue()).splitlines() if line.strip()]
-        assert lines[0].startswith("OpenSRE  ")
+        assert lines[0].startswith("● ")
         assert len(lines) > 1  # the reply actually wrapped
-        assert all(line.startswith(" " * 9) for line in lines[1:])
+        assert all(line.startswith(" " * 2) for line in lines[1:])
 
     def test_paragraph_break_across_chunk_boundary_flushes(self) -> None:
         """The cross-chunk seam — chunk N ends with ``\\n``, chunk N+1
@@ -647,7 +642,7 @@ class TestTtyParagraphRender:
         assert result == ""
         # The label is inline on the first paragraph, so an empty stream prints
         # no label at all — and no spinner residue at finalize.
-        assert "OpenSRE" not in _strip_ansi(buf.getvalue())
+        assert "●" not in _strip_ansi(buf.getvalue())
 
 
 class TestMidStreamError:
@@ -757,16 +752,16 @@ class TestTimingFooter:
 
 
 class TestRenderResponseHeader:
-    """``render_response_header`` is the assistant label shared with
+    """``render_response_header`` is the assistant marker shared with
     ``action_turn.run_action_tool_turn`` — three call sites collapsed
     to one helper, so we lock in the visible output here.
     """
 
-    def test_emits_product_label_without_internal_role(self) -> None:
+    def test_emits_marker_without_internal_role(self) -> None:
         console, buf = _tty_console()
         render_response_header(console, "assistant")
         output = _strip_ansi(buf.getvalue())
-        assert "OpenSRE" in output
+        assert "●" in output
         assert "assistant" not in output
 
     def test_role_label_is_accepted_but_not_painted(self) -> None:
@@ -775,7 +770,7 @@ class TestRenderResponseHeader:
         console, buf = _tty_console()
         render_response_header(console, "answer")
         assert "answer" not in _strip_ansi(buf.getvalue())
-        assert "OpenSRE" in _strip_ansi(buf.getvalue())
+        assert "●" in _strip_ansi(buf.getvalue())
 
 
 class TestFormatTokenCountShort:
@@ -1078,7 +1073,7 @@ class TestSuppressionPeek:
         assert result == '{"actions":[]}'
         # No assistant label, no markdown, no live-region artifacts.
         output = _strip_ansi(buf.getvalue())
-        assert "OpenSRE" not in output
+        assert "●" not in output
         assert '{"actions"' not in output
 
     def test_renders_normally_when_first_char_does_not_match(self) -> None:
@@ -1092,7 +1087,7 @@ class TestSuppressionPeek:
 
         assert result == "Hello, world"
         output = _strip_ansi(buf.getvalue())
-        assert "OpenSRE" in output
+        assert "●" in output
         assert "Hello, world" in output
 
     def test_skips_leading_whitespace_before_deciding(self) -> None:
@@ -1107,7 +1102,7 @@ class TestSuppressionPeek:
 
         assert result == '  \n{"action":"slash"}'
         output = _strip_ansi(buf.getvalue())
-        assert "OpenSRE" not in output
+        assert "●" not in output
 
 
 class TestRenderMarkdownBlock:

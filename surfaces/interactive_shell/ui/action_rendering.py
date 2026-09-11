@@ -582,8 +582,7 @@ class ActionRenderObserver:
         # through Rich markup.
         line = Text()
         if activated:
-            line.append(transcript_prefix(TranscriptRole.SKILL_LOADED), style=BOLD_SKILL)
-            line.append("Skill · ", style=str(TEXT))
+            line.append("Skill activated ", style=BOLD_SKILL)
         else:
             line.append(transcript_prefix(TranscriptRole.ERROR), style=str(ERROR))
             line.append("Could not load skill · ", style=str(TEXT))

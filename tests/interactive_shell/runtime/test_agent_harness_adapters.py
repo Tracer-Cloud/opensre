@@ -88,7 +88,7 @@ def test_response_header_opens_without_a_leading_blank() -> None:
     # Act
     ShellOutputSink(console).render_response_header("assistant")  # type: ignore[arg-type]
 
-    # Assert: label on the first painted line — no spacer row above.
+    # Assert: marker on the first painted line — no spacer row above.
     assert console.lines
-    assert "OpenSRE" in console.lines[0]
+    assert "●" in console.lines[0]
     assert console.lines[0] != ""
