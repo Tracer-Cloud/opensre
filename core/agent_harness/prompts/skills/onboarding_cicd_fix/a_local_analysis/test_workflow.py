@@ -6,6 +6,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+import pytest
+
+from config.constants import OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV, OPENSRE_MEMORY_DIR_ENV
 from core.agent_harness.ports import TurnBinding
 from core.agent_harness.prompts.skills.loader import list_action_skills, load_skill_body
 from core.agent_harness.session.pending_choice import PendingUserChoice, format_ask_user_answers
@@ -64,7 +67,11 @@ def _answer(session: _Session, *, title: str, option: str) -> str:
     return format_ask_user_answers(pending.items(), (option,))
 
 
-def test_local_analysis_waits_for_choices_before_analyzing_and_scheduling() -> None:
+def test_local_analysis_waits_for_choices_before_analyzing_and_scheduling(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    monkeypatch.setenv(OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV, "1")
+    monkeypatch.setenv(OPENSRE_MEMORY_DIR_ENV, str(tmp_path / "memory"))
     skill = next(
         skill
         for skill in list_action_skills()
