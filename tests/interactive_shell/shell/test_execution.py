@@ -47,17 +47,30 @@ def test_shell_argv_uses_non_login_posix_fallback(monkeypatch: pytest.MonkeyPatc
     assert shell_execution._shell_argv("printf ok") == ["/bin/sh", "-c", "printf ok"]
 
 
-def test_shell_argv_uses_configured_posix_shell_without_login_profile(
+def test_shell_argv_does_not_load_configured_interactive_shell(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(shell_execution.os, "name", "posix")
-    monkeypatch.setenv("SHELL", "/bin/example-shell")
+    monkeypatch.setenv("SHELL", "/bin/bash")
 
-    assert shell_execution._shell_argv("printf ok") == [
-        "/bin/example-shell",
-        "-c",
-        "printf ok",
-    ]
+    assert shell_execution._shell_argv("printf ok") == ["/bin/sh", "-c", "printf ok"]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Bash startup hook is POSIX-specific")
+def test_execute_shell_command_does_not_source_bash_env(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    marker = tmp_path / "startup-hook-ran"
+    hook = tmp_path / "bash-env"
+    hook.write_text(f"touch {shlex.quote(str(marker))}\n")
+    monkeypatch.setenv("SHELL", "/bin/bash")
+    monkeypatch.setenv("BASH_ENV", str(hook))
+
+    result = _execute("pwd")
+
+    assert result.exit_code == 0
+    assert not marker.exists()
 
 
 def test_execute_shell_command_reports_timeout() -> None:

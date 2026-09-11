@@ -209,9 +209,6 @@ def _expected_shell_argv(command: str) -> list[str]:
     if shell_execution.os.name == "nt":
         shell = shell_execution.os.environ.get("COMSPEC") or "cmd.exe"
         return [shell, "/d", "/s", "/c", command]
-    shell = shell_execution.os.environ.get("SHELL")
-    if shell:
-        return [shell, "-c", command]
     return ["/bin/sh", "-c", command]
 
 
