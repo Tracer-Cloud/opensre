@@ -32,28 +32,28 @@ class Benchmark:
 
 BENCHMARKS: tuple[Benchmark, ...] = (
     Benchmark(
-        owner="apache",
-        repo="airflow",
+        owner="langchain-ai",
+        repo="langchain",
         figures=MappingProxyType(
             {
-                "Red time on main": "0.1%",
-                "Mean time to green": "16m",
-                "CI-caused failure rate": "4.2%",
-                "Slowest normal run": "105m",
-                "PR failure rate": "26.3%",
+                "Red time on main": "7.5%",
+                "Mean time to green": "9.0h",
+                "CI-caused failure rate": "1.9%",
+                "Slowest normal run": "4m",
+                "PR failure rate": "11.5%",
             }
         ),
     ),
     Benchmark(
-        owner="fastapi",
-        repo="fastapi",
+        owner="anomalyco",
+        repo="opencode",
         figures=MappingProxyType(
             {
-                "Red time on main": "0.0%",
-                "Mean time to green": "n/a",
-                "CI-caused failure rate": "0.0%",
-                "Slowest normal run": "5m",
-                "PR failure rate": "19.5%",
+                "Red time on main": "31.6%",
+                "Mean time to green": "4.3h",
+                "CI-caused failure rate": "1.6%",
+                "Slowest normal run": "20m",
+                "PR failure rate": "54.6%",
             }
         ),
     ),
