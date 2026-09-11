@@ -291,6 +291,12 @@ _FIND_MUTATING_PRIMARIES: frozenset[str] = frozenset(
 
 _HEREDOC_RE = re.compile(r"<<-?\s*(?:'[^'\n]+'|\"[^\"\n]+\"|[^\s\\|;&<>]+)")
 _ENV_ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+# ``cmd.exe`` expands paired environment variables plus batch-style positional
+# parameters. An unmatched percent sign is literal and must not be over-gated.
+_CMD_PERCENT_EXPANSION_RE = re.compile(
+    r"%(?:[^%\r\n]+%|[0-9*]|~[fdpnxsatz$]*[0-9])",
+    re.IGNORECASE,
+)
 # Redirects that do not write a file: stderr/stdout to /dev/null, or fd dups.
 _SAFE_REDIRECTS = (
     "2>/dev/null",
@@ -309,6 +315,14 @@ def _has_file_write_redirect(text: str) -> bool:
     return ">" in scrubbed
 
 
+def _shell_lexing_rules() -> tuple[bool, tuple[str, ...], str]:
+    """Return the host shell's quote characters and escape character."""
+    is_windows = os.name == "nt"
+    if is_windows:
+        return True, ('"',), "^"
+    return False, ("'", '"'), "\\"
+
+
 def _split_on_operators(text: str) -> list[str] | None:
     """Split into pipeline/sequence segments at unquoted ``| ; & && ||``.
 
@@ -317,22 +331,27 @@ def _split_on_operators(text: str) -> list[str] | None:
     segments: list[str] = []
     current: list[str] = []
     quote: str | None = None
+    is_windows, quote_characters, escape_character = _shell_lexing_rules()
     index = 0
     length = len(text)
     while index < length:
         char = text[index]
         if quote is not None:
             current.append(char)
+            if char == escape_character and index + 1 < length and not is_windows and quote == '"':
+                current.append(text[index + 1])
+                index += 2
+                continue
             if char == quote:
                 quote = None
             index += 1
             continue
-        if char in ("'", '"'):
+        if char in quote_characters:
             quote = char
             current.append(char)
             index += 1
             continue
-        if char == "\\" and index + 1 < length:
+        if char == escape_character and index + 1 < length:
             current.append(char)
             current.append(text[index + 1])
             index += 2
@@ -477,9 +496,10 @@ def _has_dangerous_shell_construct(text: str) -> bool:
     glob can expand a filename such as ``-oresult`` into an executable option.
     Quoted or escaped glob patterns remain literal arguments.
     """
+    is_windows, quote_characters, escape_character = _shell_lexing_rules()
     # cmd.exe expands %NAME% even inside quotes, and the expanded value may
     # introduce operators or flag-shaped arguments after policy classification.
-    if os.name == "nt" and "%" in text:
+    if is_windows and _CMD_PERCENT_EXPANSION_RE.search(text):
         return True
 
     quote: str | None = None
@@ -487,17 +507,21 @@ def _has_dangerous_shell_construct(text: str) -> bool:
     length = len(text)
     while index < length:
         char = text[index]
-        if char == "\\" and index + 1 < length:
+        if (
+            char == escape_character
+            and index + 1 < length
+            and (quote is None or (not is_windows and quote == '"'))
+        ):
             index += 2
             continue
         if quote is not None:
             if char == quote:
                 quote = None
-            elif quote == '"' and char in "$`":
+            elif not is_windows and quote == '"' and char in "$`":
                 return True  # $ and backtick still expand inside double quotes
             index += 1
             continue
-        if char in ("'", '"'):
+        if char in quote_characters:
             quote = char
         elif char in "$`()" or char in "*?[":
             return True

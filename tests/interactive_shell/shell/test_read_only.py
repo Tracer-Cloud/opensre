@@ -160,6 +160,34 @@ def test_windows_percent_expansion_bypasses_neither_auto_nor_plan_only_gates(
     assert apply_plan_only_gate(result, plan_only_active=True).verdict == "ask"
 
 
+def test_windows_literal_percent_remains_read_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(shell_read_only.os, "name", "nt")
+
+    assert is_read_only_shell_command("echo 80%") is True
+
+
+@pytest.mark.parametrize("command", ["echo 'safe & del victim'", r"echo safe \& del victim"])
+def test_windows_posix_quoting_cannot_hide_a_mutating_segment(
+    monkeypatch: pytest.MonkeyPatch,
+    command: str,
+) -> None:
+    monkeypatch.setattr(shell_read_only.os, "name", "nt")
+
+    result = evaluate_shell_command(command)
+
+    assert result.shell_classification == "unrestricted"
+    assert apply_auto_level(result, AutoLevel.LOW).verdict == "ask"
+    assert apply_plan_only_gate(result, plan_only_active=True).verdict == "ask"
+
+
+def test_windows_caret_escaped_operator_remains_read_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(shell_read_only.os, "name", "nt")
+
+    assert is_read_only_shell_command("echo safe ^& del victim") is True
+
+
 @pytest.mark.parametrize(
     ("command", "classification"),
     [("date", "unrestricted"), ("date 09-12-2026", "unrestricted"), ("date /t", "read_only")],
