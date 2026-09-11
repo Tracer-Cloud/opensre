@@ -21,6 +21,7 @@ from core.agent_harness import (
     SessionManager,
     TurnResult,
 )
+from core.agent_harness.ports import ToolEventObserver
 from core.agent_harness.spi.cancel import ensure_turn_cancel
 from core.tool import ToolExecutionHooks
 from infrastructure.errors import OpenSREError
@@ -150,7 +151,12 @@ def _restrict_ask_capabilities(session: SessionCore) -> None:
         session.available_capabilities[capability] = ()
 
 
-def _run_agent_turn(prompt: str, hooks: ToolExecutionHooks) -> TurnResult:
+def _run_agent_turn(
+    prompt: str,
+    hooks: ToolExecutionHooks,
+    *,
+    tool_event_observer: ToolEventObserver | None = None,
+) -> TurnResult:
     manager = SessionManager()
     output = _AskOutputSink()
     cancel_event = ensure_turn_cancel(output)
@@ -172,6 +178,7 @@ def _run_agent_turn(prompt: str, hooks: ToolExecutionHooks) -> TurnResult:
                 console=console,
                 is_tty=False,
                 tool_hooks=hooks,
+                tool_event_observer=tool_event_observer,
             )
             session = agent_session.bound_session
             # chat_until_goal, not chat: the agent can attach a session goal,
@@ -244,6 +251,7 @@ def run_ask(
     *,
     allowed_tools: tuple[str, ...],
     bypass_approvals: bool,
+    tool_event_observer: ToolEventObserver | None = None,
 ) -> AskOutcome:
     """Execute one ask turn with invocation-scoped approval authority."""
     tracker = ApprovalTracker()
@@ -253,7 +261,7 @@ def run_ask(
         tracker=tracker,
     )
     try:
-        result = _run_agent_turn(prompt, hooks)
+        result = _run_agent_turn(prompt, hooks, tool_event_observer=tool_event_observer)
     except AskSignal as exc:
         return cancelled_outcome(exc.signum)
     except OpenSREError as exc:

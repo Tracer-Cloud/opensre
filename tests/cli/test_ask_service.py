@@ -106,13 +106,36 @@ class _GoalRun:
 
 
 def test_run_ask_returns_success(monkeypatch) -> None:
-    monkeypatch.setattr(service, "_run_agent_turn", lambda _prompt, _hooks: _turn())
+    monkeypatch.setattr(service, "_run_agent_turn", lambda _prompt, _hooks, **_kwargs: _turn())
 
     outcome = service.run_ask("prompt", allowed_tools=(), bypass_approvals=False)
 
     assert outcome.status is AskStatus.SUCCESS
     assert outcome.response == "answer"
     assert outcome.exit_code is AskExitCode.SUCCESS
+
+
+def test_run_ask_forwards_a_tool_event_observer(monkeypatch) -> None:
+    recorded: dict[str, object] = {}
+
+    def observer(_kind: str, _data: dict[str, object]) -> None:
+        """Observe agent tool lifecycle events."""
+
+    def run_turn(_prompt: str, _hooks: ToolExecutionHooks, **kwargs: object) -> TurnResult:
+        recorded.update(kwargs)
+        return _turn()
+
+    monkeypatch.setattr(service, "_run_agent_turn", run_turn)
+
+    outcome = service.run_ask(
+        "prompt",
+        allowed_tools=(),
+        bypass_approvals=False,
+        tool_event_observer=observer,
+    )
+
+    assert outcome.status is AskStatus.SUCCESS
+    assert recorded["tool_event_observer"] is observer
 
 
 def test_agent_turn_closes_ephemeral_session_after_failure(monkeypatch) -> None:
@@ -177,8 +200,38 @@ def test_agent_turn_binds_hooks_and_restricts_capabilities_via_start(monkeypatch
     assert manager.closed == [(session, False)]
 
 
+def test_agent_turn_passes_tool_events_to_the_default_agent_build(monkeypatch) -> None:
+    manager = _FakeSessionManager()
+    session = _FakeSession()
+    recorded: dict[str, object] = {}
+
+    class _RecordingAgentSession:
+        @classmethod
+        def start(cls, _config: object, **kwargs: object) -> _RecordingAgentSession:
+            recorded.update(kwargs)
+            return cls()
+
+        @property
+        def bound_session(self) -> _FakeSession:
+            return session
+
+        def chat_until_goal(self, _prompt: str) -> _GoalRun:
+            return _GoalRun(_turn())
+
+    def observer(_kind: str, _data: dict[str, object]) -> None:
+        """Observe agent tool lifecycle events."""
+
+    monkeypatch.setattr(service, "SessionManager", lambda: manager)
+    monkeypatch.setattr(service, "AgentSession", _RecordingAgentSession)
+
+    service._run_agent_turn("hello", ToolExecutionHooks(), tool_event_observer=observer)
+
+    assert recorded["tool_event_observer"] is observer
+    assert manager.closed == [(session, False)]
+
+
 def test_run_ask_reports_denial_before_agent_failure(monkeypatch) -> None:
-    def deny_then_fail(_prompt: str, hooks) -> TurnResult:
+    def deny_then_fail(_prompt: str, hooks, **_kwargs: object) -> TurnResult:
         assert hooks.before_tool_call is not None
         decision = hooks.before_tool_call(_risky_request())
         assert decision is not None and decision.blocked
@@ -200,7 +253,7 @@ def test_run_ask_reports_denial_before_agent_failure(monkeypatch) -> None:
 def test_chat_only_tool_denial_suggests_valid_authorized_rerun(monkeypatch) -> None:
     request = _chat_only_request()
 
-    def run_tool(_prompt: str, hooks: ToolExecutionHooks) -> TurnResult:
+    def run_tool(_prompt: str, hooks: ToolExecutionHooks, **_kwargs: object) -> TurnResult:
         assert hooks.before_tool_call is not None
         decision = hooks.before_tool_call(request)
         assert decision is not None
@@ -235,7 +288,7 @@ def test_run_ask_maps_hosted_credit_exhaustion_to_nonzero_upgrade_error(
 
     upgrade_url = "https://app.opensre.test/usage"
 
-    def exhaust_credits(_prompt: str, _hooks: ToolExecutionHooks) -> TurnResult:
+    def exhaust_credits(_prompt: str, _hooks: ToolExecutionHooks, **_kwargs: object) -> TurnResult:
         raise OpenSRECreditsExhaustedError(
             "OpenSRE hosted credits are exhausted.",
             upgrade_url=upgrade_url,
@@ -256,14 +309,14 @@ def test_run_ask_maps_incomplete_and_cancelled_turns(monkeypatch) -> None:
     monkeypatch.setattr(
         service,
         "_run_agent_turn",
-        lambda _prompt, _hooks: _turn(""),
+        lambda _prompt, _hooks, **_kwargs: _turn(""),
     )
     incomplete = service.run_ask("prompt", allowed_tools=(), bypass_approvals=False)
 
     monkeypatch.setattr(
         service,
         "_run_agent_turn",
-        lambda _prompt, _hooks: _turn("stopped", cancelled=True),
+        lambda _prompt, _hooks, **_kwargs: _turn("stopped", cancelled=True),
     )
     cancelled = service.run_ask("prompt", allowed_tools=(), bypass_approvals=False)
 
@@ -278,7 +331,7 @@ def test_run_ask_maps_incomplete_and_cancelled_turns(monkeypatch) -> None:
     [(signal.SIGINT, AskExitCode.SIGINT), (signal.SIGTERM, AskExitCode.SIGTERM)],
 )
 def test_run_ask_maps_signals(monkeypatch, signum: int, exit_code: AskExitCode) -> None:
-    def raise_signal(_prompt: str, _hooks) -> TurnResult:
+    def raise_signal(_prompt: str, _hooks, **_kwargs: object) -> TurnResult:
         raise AskSignal(signum)
 
     monkeypatch.setattr(service, "_run_agent_turn", raise_signal)

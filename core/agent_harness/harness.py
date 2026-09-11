@@ -35,6 +35,7 @@ if TYPE_CHECKING:
     from core.agent_harness.ports import (
         OutputSink,
         PromptContextProvider,
+        ToolEventObserver,
         ToolProvider,
         TurnBinding,
     )
@@ -145,6 +146,7 @@ class AgentSession:
         surface: str | None = None,
         is_tty: bool | None = None,
         tool_hooks: ToolExecutionHooks | None = None,
+        tool_event_observer: ToolEventObserver | None = None,
         unattended: bool = False,
     ) -> AgentSession:
         """Return a session that is ready to :meth:`chat`.
@@ -169,8 +171,9 @@ class AgentSession:
         are the :class:`~core.agent_harness.turns.headless_build.DefaultHeadlessBuild`
         fields; ``tools`` the port its ``agent()`` takes;
         ``is_tty`` and ``tool_hooks`` (the turn's approval hooks) are bound on
-        the first turn. A host that needs more (its own sink, prompts, error
-        reporter, an action ``llm_factory``) builds through
+        the first turn. ``tool_event_observer`` receives action-tool lifecycle
+        events from the default tool provider. A host that needs more (its own
+        sink, prompts, error reporter, an action ``llm_factory``) builds through
         :class:`DefaultHeadlessBuild` itself and calls :meth:`attach_agent`.
         """
         from core.agent_harness.turns.headless_adapters import BufferOutputSink
@@ -190,6 +193,7 @@ class AgentSession:
             surface=surface,
             is_tty=is_tty,
             tool_hooks=tool_hooks,
+            tool_event_observer=tool_event_observer,
             unattended=unattended,
         )
         return agent_session
@@ -333,6 +337,7 @@ class AgentSession:
         surface: str | None = None,
         is_tty: bool | None = None,
         tool_hooks: ToolExecutionHooks | None = None,
+        tool_event_observer: ToolEventObserver | None = None,
         unattended: bool = False,
     ) -> None:
         """Attach the agent built on the default port family (one construction recipe).
@@ -350,6 +355,7 @@ class AgentSession:
             console=console,
             logger=logger,
             surface=surface,
+            tool_event_observer=tool_event_observer,
             unattended=unattended,
         ).agent(tools=tools, prompts=prompts)
         agent.bind_turn(TurnBinding(is_tty=is_tty, tool_hooks=tool_hooks))

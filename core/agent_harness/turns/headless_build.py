@@ -116,6 +116,8 @@ class DefaultHeadlessBuild:
     error_reporter: ErrorReporter | None = None
     #: Restrict unattended ticks to NONE / READ_ONLY tools.
     unattended: bool = False
+    #: Optional surface callback for action-tool lifecycle events.
+    tool_event_observer: ToolEventObserver | None = None
 
     @cached_property
     def _console(self) -> Any:
@@ -144,9 +146,21 @@ class DefaultHeadlessBuild:
         ``shell_run`` can execute. A host that wants a different presenter
         passes its own :class:`DefaultToolProvider`.
         """
+        observer = self.tool_event_observer
+        observer_factory: Callable[[str], ToolEventObserver] | None
+        if observer is None:
+            observer_factory = None
+        else:
+
+            def _observer_factory(_message: str) -> ToolEventObserver:
+                return observer
+
+            observer_factory = _observer_factory
+
         return DefaultToolProvider(
             self.session,
             self._console,
+            observer_factory=observer_factory,
             tool_action_logger=self._logger,
             subprocess_presenter_factory=resolve_subprocess_presenter(),
             unattended=self.unattended,

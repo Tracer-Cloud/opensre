@@ -13,6 +13,13 @@ It uses the LLM provider from `opensre onboard` and any tools configured with
 opensre ask "why did checkout latency increase today?"
 ```
 
+## Live activity
+
+When both output streams are attached to a terminal, `ask` shows an ephemeral
+status spinner with elapsed time and names each diagnostic tool as it starts.
+The final answer remains on standard output. Piped and `--json` runs do not
+emit progress, so their output remains machine-readable.
+
 Pass `-` as the prompt to read all of standard input:
 
 ```bash
