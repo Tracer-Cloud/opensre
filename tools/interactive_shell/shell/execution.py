@@ -37,7 +37,10 @@ def _shell_argv(command: str) -> list[str]:
         windows_shell = os.environ.get("COMSPEC") or "cmd.exe"
         # /d suppresses registry AutoRun commands before the approved command;
         # /v:off prevents inherited delayed !VAR! expansion from changing it.
-        return [windows_shell, "/d", "/v:off", "/s", "/c", command]
+        # Keep the tool contract's platform-neutral ``pwd`` diagnostic working:
+        # bare ``cd`` is cmd.exe's current-directory display form.
+        shell_command = "cd" if command.strip().lower() == "pwd" else command
+        return [windows_shell, "/d", "/v:off", "/s", "/c", shell_command]
     # Do not use the interactive $SHELL: its startup hooks can run before the
     # command that policy classified. /bin/sh -c is non-interactive and stable.
     return ["/bin/sh", "-c", command]

@@ -72,6 +72,22 @@ def test_shell_argv_disables_windows_startup_and_delayed_expansion(
     ]
 
 
+def test_shell_argv_keeps_pwd_diagnostic_portable_on_windows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(shell_execution.os, "name", "nt")
+    monkeypatch.setenv("COMSPEC", r"C:\Windows\System32\cmd.exe")
+
+    assert shell_execution._shell_argv("pwd") == [
+        r"C:\Windows\System32\cmd.exe",
+        "/d",
+        "/v:off",
+        "/s",
+        "/c",
+        "cd",
+    ]
+
+
 @pytest.mark.skipif(os.name == "nt", reason="Bash startup hook is POSIX-specific")
 def test_execute_shell_command_does_not_source_bash_env(
     monkeypatch: pytest.MonkeyPatch,

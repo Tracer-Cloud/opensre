@@ -208,7 +208,8 @@ def _force_watch_timeout(proc: object, **_kwargs: object) -> SubprocessWatchResu
 def _expected_shell_argv(command: str) -> list[str]:
     if shell_execution.os.name == "nt":
         shell = shell_execution.os.environ.get("COMSPEC") or "cmd.exe"
-        return [shell, "/d", "/s", "/c", command]
+        shell_command = "cd" if command.strip().lower() == "pwd" else command
+        return [shell, "/d", "/v:off", "/s", "/c", shell_command]
     return ["/bin/sh", "-c", command]
 
 
