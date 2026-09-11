@@ -76,19 +76,20 @@ def test_finalize_satisfies_the_host_contract_while_staying_silent() -> None:
     assert isinstance(sink, TurnOutput)
 
 
-def test_response_header_opens_without_a_leading_blank() -> None:
-    """The sink does not add a blank before the assistant label.
-
-    ``_show_response`` used to own that spacer in the shared turn engine.
-    Chat sinks never wanted it, so the shell surface owns its spacing too.
-    """
-    # Arrange
+def test_response_header_waits_for_the_following_terminal_renderer() -> None:
+    """The body or error row owns the terminal marker, so no empty row appears."""
     console = _RecordingConsole()
 
-    # Act
     ShellOutputSink(console).render_response_header("assistant")  # type: ignore[arg-type]
 
-    # Assert: marker on the first painted line — no spacer row above.
-    assert console.lines
-    assert "●" in console.lines[0]
-    assert console.lines[0] != ""
+    assert console.lines == []
+
+
+def test_error_after_response_header_emits_only_the_labeled_error() -> None:
+    console = _RecordingConsole()
+    sink = ShellOutputSink(console)  # type: ignore[arg-type]
+
+    sink.render_response_header("assistant")
+    sink.render_error("tool call failed")
+
+    assert console.lines == ["Error    tool call failed"]

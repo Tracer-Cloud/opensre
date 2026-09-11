@@ -38,6 +38,16 @@ def transcript_prefix(role: TranscriptRole) -> str:
     return role.value.ljust(_gutter_width(role))
 
 
+def compact_transcript_prefix(role: TranscriptRole) -> str:
+    """Return a marker with one trailing cell for constrained rows."""
+    return f"{role.value} "
+
+
+def transcript_continuation(role: TranscriptRole) -> str:
+    """Return whitespace aligned with the start of a role's body text."""
+    return " " * _gutter_width(role)
+
+
 def transcript_label(role: TranscriptRole, *, style: str) -> Text:
     """Build a styled label cell aligned to the shared transcript gutter."""
     return Text(transcript_prefix(role), style=style)
@@ -67,6 +77,8 @@ def transcript_gutter(
 
 __all__ = [
     "TranscriptRole",
+    "compact_transcript_prefix",
+    "transcript_continuation",
     "transcript_gutter",
     "transcript_label",
     "transcript_line",

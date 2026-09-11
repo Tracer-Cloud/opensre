@@ -26,7 +26,6 @@ from surfaces.interactive_shell.ui.streaming import (
     StreamRenderResult,
     finish_deferred_closer,
     publish_full_response,
-    render_response_header,
     stream_to_console,
     stream_to_console_state,
 )
@@ -75,8 +74,8 @@ class ShellOutputSink:
         self._console.print(message, markup=False)
 
     def render_response_header(self, label: str) -> None:
-        # No leading blank: the caller owns spacing between the user and reply.
-        render_response_header(self._console, label)
+        """Leave terminal headers to the following reply or error renderer."""
+        _ = label
 
     def render_plan_breakdown(self, breakdown: str) -> None:
         """Theme the post-execution checklist: primary steps, dim work notes."""

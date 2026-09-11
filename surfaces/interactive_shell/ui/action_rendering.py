@@ -38,6 +38,7 @@ from surfaces.interactive_shell.ui.action_log import flush_action_log
 from surfaces.interactive_shell.ui.streaming import render_note_block
 from surfaces.interactive_shell.ui.transcript import (
     TranscriptRole,
+    transcript_continuation,
     transcript_line,
     transcript_prefix,
 )
@@ -540,8 +541,9 @@ class ActionRenderObserver:
             concise = ""
             detail = transcript_line(TranscriptRole.TOOL, label)
             if content:
-                # Unfold the dotted argument strip into one indented line each.
-                detail += "\n" + "\n".join(f"    {part}" for part in content.split(" · "))
+                # Unfold the dotted argument strip beneath the labeled body column.
+                indent = transcript_continuation(TranscriptRole.TOOL)
+                detail += "\n" + "\n".join(f"{indent}{part}" for part in content.split(" · "))
         self.session.terminal.push_action_log(
             ActionLogEntry(call_id=_tool_event_id(data), kind=label, concise=concise, detail=detail)
         )
@@ -562,7 +564,8 @@ class ActionRenderObserver:
         if not preview:
             return
         rows = preview.splitlines() or [preview]
-        result = "\n".join([f"  ↳ {rows[0]}", *(f"    {row}" for row in rows[1:])])
+        indent = transcript_continuation(TranscriptRole.TOOL)
+        result = "\n".join([f"{indent}↳ {rows[0]}", *(f"{indent}  {row}" for row in rows[1:])])
         self.session.terminal.append_action_result(_tool_event_id(data), result)
         self.session.terminal.inline_tool_results = True
 

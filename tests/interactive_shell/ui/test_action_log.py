@@ -49,7 +49,9 @@ def test_no_inline_dotted_arguments_on_a_single_call() -> None:
         "1",
         "list github actions workflow runs",
         "",
-        "Tool     list github actions workflow runs\n    owner: Tracer-Cloud\n    per_page: 100",
+        "Tool     list github actions workflow runs\n"
+        "         owner: Tracer-Cloud\n"
+        "         per_page: 100",
     )
     buffer = io.StringIO()
 
@@ -113,7 +115,7 @@ def test_non_tty_inlines_the_detail() -> None:
         "1",
         "GitHub CLI",
         "gh pr list",
-        "Tool     GitHub CLI · gh pr list\n  ↳ 4 open PRs",
+        "Tool     GitHub CLI · gh pr list\n         ↳ 4 open PRs",
     )
     buffer = io.StringIO()
 
@@ -237,6 +239,7 @@ def test_a_window_too_narrow_for_any_box_prints_plain_rows(monkeypatch) -> None:
     plain = [Text.from_ansi(line).plain for line in buffer.getvalue().splitlines() if line.strip()]
     assert not any(row[0] in "╭│╰" for row in plain)
     assert len(plain) == 2 and all(len(row) <= 13 for row in plain), plain
+    assert all(row.startswith("Tool GitHub") for row in plain), plain
 
 
 def test_a_tool_that_painted_its_own_output_leaves_no_row() -> None:
