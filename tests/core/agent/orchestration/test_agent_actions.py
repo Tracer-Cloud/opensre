@@ -4,16 +4,14 @@ from __future__ import annotations
 
 import io
 import subprocess
-from pathlib import Path, PurePosixPath
+from types import SimpleNamespace
 
 import pytest
 from rich.console import Console
 
-import config.constants.platform as platform_module
 import surfaces.interactive_shell.runtime.action_turn as action_turn
 import surfaces.interactive_shell.runtime.llm_provider_adapter as llm_provider_adapter
 import surfaces.interactive_shell.runtime.slash_adapter as slash_adapter
-import surfaces.interactive_shell.runtime.subprocess_runner as subprocess_runner
 import tests.shared.harness_turn_driver as harness_turn_driver
 import tools.interactive_shell.shell.execution as shell_execution
 from core.llm.types import AgentLLMResponse, ToolCall
@@ -211,8 +209,10 @@ def _expected_shell_argv(command: str) -> list[str]:
     if shell_execution.os.name == "nt":
         shell = shell_execution.os.environ.get("COMSPEC") or "cmd.exe"
         return [shell, "/d", "/s", "/c", command]
-    shell = shell_execution.os.environ.get("SHELL") or "/bin/sh"
-    return [shell, "-lc", command]
+    shell = shell_execution.os.environ.get("SHELL")
+    if shell:
+        return [shell, "-lc", command]
+    return ["/bin/sh", "-c", command]
 
 
 class _MessageMappedActionLLM(FakeActionLLM):
@@ -741,109 +741,41 @@ def test_execute_cli_actions_falls_through_for_chat() -> None:
 
 
 def test_execute_cli_actions_runs_shell_command(monkeypatch: object) -> None:
-    def _fake_cwd(_: type[Path]) -> PurePosixPath:
-        return PurePosixPath("/tmp/project")
-
-    def _fail_run(*_args: object, **_kwargs: object) -> None:  # pragma: no cover
-        raise AssertionError("subprocess.run should not be used for pwd")
-
-    monkeypatch.setattr(subprocess_runner.Path, "cwd", classmethod(_fake_cwd))
-    monkeypatch.setattr(shell_execution.subprocess, "run", _fail_run)
+    calls = _install_fake_popen(monkeypatch, stdout="/tmp/project\n")
 
     session = Session()
     console, buf = _capture()
 
     assert action_turn.run_action_tool_turn("run `pwd`", session, console).handled is True
     assert session.history == [
-        {"type": "shell", "text": "pwd", "ok": True},
+        {"type": "shell", "text": "pwd", "ok": True, "response_text": "/tmp/project"},
     ]
+    assert calls == [(_expected_shell_argv("pwd"), _EXPECTED_POPEN_KWARGS)]
     output = buf.getvalue()
     assert "$ pwd" in output
     assert "/tmp/project" in output
 
 
-def test_execute_cli_actions_cd_preserves_windows_paths(monkeypatch: object) -> None:
-    changed_directories: list[Path] = []
-
-    def _fake_chdir(target: Path) -> None:
-        changed_directories.append(target)
-
-    monkeypatch.setattr(platform_module, "IS_WINDOWS", True)
-    monkeypatch.setattr(subprocess_runner.os, "chdir", _fake_chdir)
-
-    session = Session()
-    console, _ = _capture()
-
-    message = r"run `cd C:\Users\Alice`"
-    assert action_turn.run_action_tool_turn(message, session, console).handled is True
-    assert changed_directories == [Path(r"C:\Users\Alice")]
-    assert session.history == [
-        {"type": "shell", "text": r"cd C:\Users\Alice", "ok": True},
-    ]
-
-
-def test_execute_cli_actions_cd_dispatches_case_insensitively(monkeypatch: object) -> None:
-    changed_directories: list[Path] = []
-
-    def _fake_chdir(target: Path) -> None:
-        changed_directories.append(target)
-
-    def _fail_run(*_args: object, **_kwargs: object) -> None:  # pragma: no cover
-        raise AssertionError("subprocess.run should not be used for CD")
-
-    monkeypatch.setattr(platform_module, "IS_WINDOWS", True)
-    monkeypatch.setattr(subprocess_runner.os, "chdir", _fake_chdir)
-    monkeypatch.setattr(shell_execution.subprocess, "run", _fail_run)
+def test_execute_cli_actions_preserves_windows_shell_syntax(monkeypatch: object) -> None:
+    windows_shell = SimpleNamespace(
+        name="nt",
+        environ={"COMSPEC": r"C:\Windows\System32\cmd.exe"},
+    )
+    monkeypatch.setattr(shell_execution, "os", windows_shell)
+    calls = _install_fake_popen(monkeypatch)
+    command = r"CD C:\Users\Alice"
 
     session = Session()
     console, _ = _capture()
 
-    message = r"run `CD C:\Users\Alice`"
-    assert action_turn.run_action_tool_turn(message, session, console).handled is True
-    assert changed_directories == [Path(r"C:\Users\Alice")]
-    assert session.history == [
-        {"type": "shell", "text": r"CD C:\Users\Alice", "ok": True},
+    assert action_turn.run_action_tool_turn(f"run `{command}`", session, console).handled
+    assert calls == [
+        (
+            [r"C:\Windows\System32\cmd.exe", "/d", "/s", "/c", command],
+            _EXPECTED_POPEN_KWARGS,
+        )
     ]
-
-
-def test_execute_cli_actions_cd_handles_trailing_backslash_on_windows(monkeypatch: object) -> None:
-    changed_directories: list[Path] = []
-
-    def _fake_chdir(target: Path) -> None:
-        changed_directories.append(target)
-
-    monkeypatch.setattr(platform_module, "IS_WINDOWS", True)
-    monkeypatch.setattr(subprocess_runner.os, "chdir", _fake_chdir)
-
-    session = Session()
-    console, _ = _capture()
-
-    message = r"run `cd C:\`"
-    assert action_turn.run_action_tool_turn(message, session, console).handled is True
-    assert changed_directories == [Path("C:\\")]
-    assert session.history == [
-        {"type": "shell", "text": "cd C:\\", "ok": True},
-    ]
-
-
-def test_execute_cli_actions_cd_strips_quotes_on_windows(monkeypatch: object) -> None:
-    changed_directories: list[Path] = []
-
-    def _fake_chdir(target: Path) -> None:
-        changed_directories.append(target)
-
-    monkeypatch.setattr(platform_module, "IS_WINDOWS", True)
-    monkeypatch.setattr(subprocess_runner.os, "chdir", _fake_chdir)
-
-    session = Session()
-    console, _ = _capture()
-
-    message = r'run `cd "C:\Users\Alice"`'
-    assert action_turn.run_action_tool_turn(message, session, console).handled is True
-    assert changed_directories == [Path(r"C:\Users\Alice")]
-    assert session.history == [
-        {"type": "shell", "text": r'cd "C:\Users\Alice"', "ok": True},
-    ]
+    assert session.history == [{"type": "shell", "text": command, "ok": True}]
 
 
 def test_execute_cli_actions_records_shell_failure(monkeypatch: object) -> None:
@@ -853,7 +785,7 @@ def test_execute_cli_actions_records_shell_failure(monkeypatch: object) -> None:
     console, buf = _capture()
 
     assert action_turn.run_action_tool_turn("execute false", session, console).handled is True
-    assert calls == [(["false"], _EXPECTED_POPEN_KWARGS)]
+    assert calls == [(_expected_shell_argv("false"), _EXPECTED_POPEN_KWARGS)]
     assert session.history[-1] == {
         "type": "shell",
         "text": "false",
@@ -907,47 +839,37 @@ def test_execute_cli_actions_runs_passthrough_with_shell_true(monkeypatch: objec
     assert "ok" in output
 
 
-def test_execute_cli_actions_dispatches_bang_cd_through_builtin(monkeypatch: object) -> None:
-    dirs: list[Path] = []
-
-    def _fake_chdir(target: Path) -> None:
-        dirs.append(target)
-
-    def _boom(*_args: object, **_kwargs: object) -> None:  # pragma: no cover
-        raise AssertionError("subprocess.run should not be used for !cd builtin execution")
-
-    monkeypatch.setattr(subprocess_runner.os, "chdir", _fake_chdir)
-    monkeypatch.setattr(shell_execution.subprocess, "run", _boom)
+def test_execute_cli_actions_runs_bang_cd_in_child_shell(monkeypatch: object) -> None:
+    calls = _install_fake_popen(monkeypatch)
 
     session = Session()
     console, buf = _capture()
 
     message = "run `!cd /tmp`"
     assert action_turn.run_action_tool_turn(message, session, console).handled is True
-    assert dirs == [Path("/tmp")]
-    assert session.history[-1] == {"type": "shell", "text": "cd /tmp", "ok": True}
+    assert calls == [(_expected_shell_argv("cd /tmp"), _EXPECTED_POPEN_KWARGS)]
+    assert session.history[-1] == {"type": "shell", "text": "!cd /tmp", "ok": True}
     captured = buf.getvalue()
-    assert "explicit shell passthrough enabled" not in captured
+    assert "explicit shell passthrough enabled" in captured
 
 
-def test_execute_cli_actions_dispatches_bang_pwd_through_builtin(monkeypatch: object) -> None:
-    def _fake_cwd(_: type[Path]) -> PurePosixPath:
-        return PurePosixPath("/shown")
-
-    def _boom(*_args: object, **_kwargs: object) -> None:  # pragma: no cover
-        raise AssertionError("subprocess.run should not be used for !pwd builtin execution")
-
-    monkeypatch.setattr(subprocess_runner.Path, "cwd", classmethod(_fake_cwd))
-    monkeypatch.setattr(shell_execution.subprocess, "run", _boom)
+def test_execute_cli_actions_runs_bang_pwd_in_child_shell(monkeypatch: object) -> None:
+    calls = _install_fake_popen(monkeypatch, stdout="/shown\n")
 
     session = Session()
     console, buf = _capture()
 
     assert action_turn.run_action_tool_turn("run `!pwd`", session, console).handled is True
-    assert session.history[-1] == {"type": "shell", "text": "pwd", "ok": True}
+    assert calls == [(_expected_shell_argv("pwd"), _EXPECTED_POPEN_KWARGS)]
+    assert session.history[-1] == {
+        "type": "shell",
+        "text": "!pwd",
+        "ok": True,
+        "response_text": "/shown",
+    }
     captured = buf.getvalue()
     assert "/shown" in captured
-    assert "explicit shell passthrough enabled" not in captured
+    assert "explicit shell passthrough enabled" in captured
 
 
 def test_execute_cli_actions_handles_path_with_spaces_run_phrase() -> None:
@@ -974,11 +896,8 @@ def test_execute_cli_actions_backtick_shell_preserves_space_path_token(monkeypat
         ).handled
         is True
     )
-    # On Windows, shlex with posix=False preserves quotes for tokens with spaces.
-    # Both Windows and Posix parsers correctly strip outer quotes from tokens
-    # following the policy.py _strip_outer_quotes logic.
-    expected_path = "/tmp/file with spaces.txt"
-    assert calls[0][0] == ["cat", expected_path]
+    command = 'cat "/tmp/file with spaces.txt"'
+    assert calls[0][0] == _expected_shell_argv(command)
 
 
 def test_execute_cli_actions_counts_planned_and_executed(monkeypatch: object) -> None:
