@@ -54,29 +54,39 @@ def test_execute_shell_command_reports_timeout() -> None:
 
 
 @pytest.mark.skipif(os.name == "nt", reason="process-group cancel is POSIX")
-def test_execute_shell_command_stops_on_cancel_and_reaps_grandchild() -> None:
+def test_execute_shell_command_stops_on_cancel_and_reaps_grandchild(
+    tmp_path: Path,
+) -> None:
     """ESC must stop shell_run immediately and kill nested OpenSRE-style children.
 
     The CI-agent onboarding skill used to ``shell_run`` ``uv run opensre
     integrations setup github``. That second process ignored the parent ESC
     and kept running until the laptop ran out of memory.
     """
+    pid_file = tmp_path / "grandchild.pid"
     script = (
         "import subprocess, sys, time\n"
+        "from pathlib import Path\n"
         "child = subprocess.Popen("
         "[sys.executable, '-c', 'import time; time.sleep(60)']"
         ")\n"
-        "print(f'GRAND:{child.pid}', flush=True)\n"
+        f"marker = Path({str(pid_file)!r})\n"
+        "temporary_marker = marker.with_suffix('.tmp')\n"
+        "temporary_marker.write_text(str(child.pid))\n"
+        "temporary_marker.replace(marker)\n"
         "time.sleep(60)\n"
     )
     cancel = threading.Event()
+    cancel_requested_at: list[float] = []
 
     def _request_cancel() -> None:
-        time.sleep(0.3)
+        deadline = time.monotonic() + 5
+        while not pid_file.exists() and time.monotonic() < deadline:
+            time.sleep(0.01)
+        cancel_requested_at.append(time.monotonic())
         cancel.set()
 
     threading.Thread(target=_request_cancel, daemon=True).start()
-    started = time.monotonic()
     result = execute_shell_command(
         command=shlex.join([sys.executable, "-c", script]),
         cwd=str(Path.cwd()),
@@ -84,12 +94,11 @@ def test_execute_shell_command_stops_on_cancel_and_reaps_grandchild() -> None:
         max_output_chars=10_000,
         cancel_event=cancel,
     )
-    elapsed = time.monotonic() - started
+    finished_at = time.monotonic()
     assert result.cancelled is True
     assert result.timed_out is False
-    assert elapsed < 4
-    assert "GRAND:" in result.stdout
-    grand_pid = int(result.stdout.strip().split("GRAND:", 1)[1].split()[0])
+    assert finished_at - cancel_requested_at[0] < 4
+    grand_pid = int(pid_file.read_text())
     _assert_pid_gone(grand_pid)
 
 
