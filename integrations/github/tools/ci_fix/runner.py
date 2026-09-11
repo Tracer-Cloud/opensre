@@ -162,6 +162,7 @@ def _base_output(ctx: CiFixContext | None = None) -> dict[str, Any]:
         "error_kind": None,
         "owner": ctx.owner if ctx else "",
         "repo": ctx.repo if ctx else "",
+        "source_head_sha": ctx.head_sha if ctx else "",
         "target_type": ctx.target_kind if ctx else "",
         "target_branch": ((ctx.target_branch or ctx.base_branch or ctx.head_branch) if ctx else ""),
         "pr_number": ctx.number if ctx else None,

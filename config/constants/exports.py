@@ -85,6 +85,10 @@ EXPORTS: dict[str, str] = {
     "BUZZ_PATH_ENV": "buzz",
     "BUZZ_PRIVATE_KEY_ENV": "buzz",
     "BUZZ_RELAY_URL_ENV": "buzz",
+    # ci_fixes
+    "CI_FIX_COUNT_LABEL": "ci_fixes",
+    "CI_FIX_LEDGER_LOCK_TIMEOUT_SECONDS": "ci_fixes",
+    "CI_FIX_LEDGER_PATH_ENV": "ci_fixes",
     # clerk
     "CLERK_ISSUER_ENV": "clerk",
     "CLERK_JWKS_URL_ENV": "clerk",
@@ -269,6 +273,7 @@ EXPORTS: dict[str, str] = {
     "ORGS_DIR_NAME": "paths",
     "USERS_DIR_NAME": "paths",
     "UnsafePathSegmentError": "paths",
+    "ci_fix_ledger_path": "paths",
     "ensure_opensre_tmp_dir": "paths",
     "get_memory_dir": "paths",
     "get_store_path": "paths",

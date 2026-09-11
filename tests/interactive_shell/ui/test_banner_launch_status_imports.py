@@ -15,7 +15,7 @@ def test_load_launch_status_does_not_import_skill_harness() -> None:
         "heavy = [n for n in sys.modules if n == 'prompt_toolkit' "
         "or n.startswith('core.agent_harness.prompts.skills.loader') "
         "or n.startswith('core.agent_harness.spi')]; "
-        "print('STATUS', status.skill_count, status.integration_count); "
+        "print('STATUS', status.skill_count, status.ci_fix_count); "
         "print('HEAVY', ','.join(sorted(heavy)[:12]) or 'none')"
     )
     result = subprocess.run(

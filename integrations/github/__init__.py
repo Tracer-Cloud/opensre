@@ -12,6 +12,7 @@ import importlib
 from typing import TYPE_CHECKING
 
 from integrations.github.client import GitHubApiError, GitHubRestClient, resolve_github_token
+from integrations.github.tools.ci_fix.ledger import count_ci_fixes, get_ci_fix_counter
 
 #: Public name -> the submodule that defines it, imported on first access.
 _LAZY_EXPORTS: dict[str, str] = {
@@ -125,8 +126,10 @@ __all__ = [
     "authorize_github_via_device_flow",
     "build_github_mcp_config",
     "ci_report_headline",
+    "count_ci_fixes",
     "disconnect_personal_github",
     "format_github_mcp_validation_cli_report",
+    "get_ci_fix_counter",
     "github_creds",
     "github_integration_is_configured",
     "local_timezone",

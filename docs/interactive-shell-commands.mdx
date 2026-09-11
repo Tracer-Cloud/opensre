@@ -47,6 +47,13 @@ service, and Slack setup. Escape skips onboarding; "Or type your own answer..."
 lets you submit a different request. Type `/demo` to start again.
 See [CI/CD analytics demo](/cicd-analytics-demo).
 
+The banner and prompt show **CI/CD fixes**: distinct GitHub repairs whose pushed
+checks passed, including merge-conflict repairs. A repair can count before it is
+merged; check the target branch before assuming it is green. Fixes in this shell
+update the prompt immediately. Use `/clear` to pick up fixes saved by another
+OpenSRE process in the same deployment. Zero also covers an unavailable count;
+the total is best-effort and can decrease after restarting if a save failed.
+
 ## Quick reference
 
 ### Help and exit

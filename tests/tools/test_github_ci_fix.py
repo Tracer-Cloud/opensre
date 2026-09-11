@@ -510,6 +510,7 @@ def test_run_ci_fix_success_pushes_existing_pr_branch(
     )
 
     assert result["success"] is True
+    assert result["source_head_sha"] == _CTX.head_sha
     assert result["branch_name"] == "feat/fix-ci"
     assert result["changed_files"] == ["app.py"]
     assert result["checks_state"] == "passed"
@@ -644,6 +645,7 @@ def test_run_ci_fix_branch_target_uses_worktree_and_branch_verification(
 
     assert result["success"] is True
     assert result["branch_name"] == "opensre/ci-fix-main-ea14998-12345678"
+    assert result["source_head_sha"] == _BRANCH_CTX.head_sha
     assert result["target_type"] == CI_TARGET_BRANCH
     assert result["checks_state"] == "passed"
     assert "separate git worktree" in prompts[0]
