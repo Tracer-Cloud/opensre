@@ -16,8 +16,9 @@ def test_each_repository_demo_declares_the_question_the_shell_asks() -> None:
     # Act
     questions = {name: repository_question(skill) for name, skill in by_name.items()}
 
-    # Assert: the two repository demos name their question; the others need none.
-    assert questions["cicd-analytics-demo"] == "Which repository should I analyze?"
+    # Assert: the reliability agent names its question; the analytics demo leaves
+    # repository selection to the model's own turn; the others need none.
+    assert questions["cicd-analytics-demo"] is None
     assert questions["cicd-reliability-agent"] == "Which repository should the agent watch?"
     assert questions["slack-handoff"] is None
     assert questions["remote-managed-service"] is None

@@ -62,6 +62,7 @@ from core.agent_harness.turns.goal_review import (
     tap_executed_tool_names,
     task_plan_blocks_conclusion,
 )
+from core.agent_harness.turns.plan_evidence_hook import with_plan_evidence
 from core.agent_harness.turns.skill_after_tool import with_skill_after_tool
 from core.agent_harness.turns.skill_scope import scope_tools_to_active_skill
 from core.agent_harness.turns.turn_plan import TurnPlan
@@ -984,7 +985,10 @@ def _run_action_turn(
             resolved_integrations=resolved_integrations,
             llm_factory=args.llm_factory,
             tool_hooks=with_menu_turn_end(
-                with_skill_after_tool(with_duplicate_action_call_guard(args.tool_hooks), session),
+                with_skill_after_tool(
+                    with_plan_evidence(with_duplicate_action_call_guard(args.tool_hooks), session),
+                    session,
+                ),
                 session,
             ),
             tool_resources=tool_resources,

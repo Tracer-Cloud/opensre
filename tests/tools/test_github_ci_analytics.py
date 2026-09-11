@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-import contextlib
 import io
+import re
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any
@@ -1296,6 +1296,104 @@ def test_render_shows_the_kpi_block_and_classification() -> None:
     assert "| CI | 3 | 1 | 1 | 10m |" in text
 
 
+def test_a_report_with_no_blocked_time_says_so_in_words() -> None:
+    """``0m of working time across 0 developers`` read like a broken calculation.
+
+    The same repository's one open breakage also printed the same line and
+    link twice, once as the longest breakage and once as still red.
+    """
+    # Arrange: main has been red since its only push; PR failures never recovered.
+    report = compute_report(
+        owner="o",
+        repo="r",
+        default_branch="main",
+        window_days=30,
+        branch_runs=[_run(9, event="push", branch="main", conclusion="failure")],
+        pr_runs=[_run(1, branch="A", sha="s", conclusion="failure")],
+        merged_prs=_merged("A"),
+        now=_T0 + timedelta(days=1),
+    )
+
+    # Act
+    text = render_markdown(report)
+
+    # Assert
+    assert "Developer Blocked Time, estimated bottom-up: none" in text
+    assert "across 0 developers" not in text
+    assert text.count("Still red now") == 1
+    assert "Longest breakage" not in text
+    assert text.count(report.outages[0].first_failure_url) == 1
+
+
+def test_large_counts_and_tiny_rates_stay_readable() -> None:
+    """3118 read as a code; one CI-caused failure out of thousands showed as 0.0%."""
+    # Arrange
+    from integrations.github.tools.ci_analytics.render import comparison_figures, key_results
+
+    pr_runs = [_run(1, branch="A", sha="s", conclusion="failure", start_minutes=0)] + [
+        _run(2, branch="A", sha="s", conclusion="success", start_minutes=40)
+    ]
+    pr_runs += [
+        _run(100 + i, branch=f"B{i}", sha=f"b{i}", conclusion="failure") for i in range(3000)
+    ]
+    report = compute_report(
+        owner="o",
+        repo="r",
+        default_branch="main",
+        window_days=30,
+        branch_runs=[_run(9, event="push", branch="main")],
+        pr_runs=pr_runs,
+        merged_prs=_merged("A"),
+        now=_T0 + timedelta(days=1),
+    )
+
+    # Act
+    text = render_markdown(report)
+    rows = dict(key_results(report))
+
+    # Assert
+    assert "PR-triggered failed workflows: **3,001**" in text
+    assert (
+        rows["CI-caused failures"]
+        == "1 of 3,001 failed PR runs (<0.1%); <0.1% of all 3,002 PR runs"
+    )
+    assert comparison_figures(report)["CI-caused failure rate"] == "<0.1%"
+
+
+def test_the_comparison_names_its_window_and_the_analyzed_repositorys_own_figures() -> None:
+    """A 7-day loop report sat beside 30-day benchmarks with nothing saying so.
+
+    The analyzed column also showed the rate alone, so a reader had to scroll
+    back for the hours and the workflow the rate came from.
+    """
+    # Arrange
+    from integrations.github.tools.ci_analytics.benchmarks import MEASURED_ON
+    from integrations.github.tools.ci_analytics.render import comparison_markdown, peer_benchmarks
+
+    report = compute_report(
+        owner="o",
+        repo="r",
+        default_branch="main",
+        window_days=7,
+        branch_runs=[
+            _run(9, event="push", branch="main", sha="c1", conclusion="failure"),
+            _run(10, event="push", branch="main", sha="c2", start_minutes=120),
+        ],
+        pr_runs=[_run(1, conclusion="failure")],
+        merged_prs=_merged("A"),
+        now=_T0 + timedelta(days=1),
+    )
+
+    # Act
+    text = comparison_markdown(report, peer_benchmarks(report))
+
+    # Assert
+    assert "| Red time on main | 2.0h (1.2%) |" in text
+    assert "| Slowest normal run | 10m (CI) |" in text
+    assert f"measured {MEASURED_ON.isoformat()}" in text
+    assert "The o/r column covers 7 days." in text
+
+
 def test_key_results_name_the_workflows_that_carried_the_red_time() -> None:
     """One red scan turns the whole branch red on GitHub; the row must say which check."""
     from integrations.github.tools.ci_analytics.render import key_results
@@ -1448,9 +1546,8 @@ def test_tool_renders_report_from_collected_runs() -> None:
     assert "Coverage notice: sample" in result["response_text"]
 
 
-def test_tool_shows_progress_lines_around_the_painted_report() -> None:
-    import io
-
+def test_tool_prints_progress_lines_but_never_the_report() -> None:
+    """The shell console gets progress only; the report travels in the result."""
     from rich.console import Console
 
     from core.agent_harness.tools.tool_context import (
@@ -1485,9 +1582,18 @@ def test_tool_shows_progress_lines_around_the_painted_report() -> None:
     # A bracket in the repository name must print literally, never parse as markup.
     assert "Reading GitHub Actions history for o/r[1], last 7 days" in output
     assert "Read 2 runs in" in output
-    assert "CI/CD reliability for o/r[1], last 7 days" in output
-    assert result["rendered_in_shell"] is True
-    assert "executions" not in result
+    assert "CI/CD reliability" not in output
+    assert "Compared with" not in output
+    assert "rendered_in_shell" not in result
+    # The report and every figure travel with the result on every surface, so
+    # the model presents from it and never reruns the analysis for one field.
+    assert "CI/CD reliability for o/r\\[1\\], last 7 days" in result["response_text"]
+    assert "Compared with" in result["response_text"]
+    assert "Compared with" in result["comparison_text"]
+    assert result["executions"] == 2
+    assert result["developers_affected"] == 0
+    assert result["mean_recovery_hours"] is None
+    assert result["comparison_figures"]["PR failure rate"] == "100.0%"
     assert result["key_results"]
 
 
@@ -1506,10 +1612,6 @@ def test_a_pipe_in_a_workflow_name_does_not_shift_the_rendered_row() -> None:
     moving ``Deploy`` into the Runs column and dropping the failure count.
     """
     # Arrange
-    from rich.console import Console
-
-    from integrations.github.tools.ci_analytics.render import render_report
-
     report = compute_report(
         owner="o",
         repo="r",
@@ -1520,60 +1622,14 @@ def test_a_pipe_in_a_workflow_name_does_not_shift_the_rendered_row() -> None:
         merged_prs=_merged("A"),
         now=_T0 + timedelta(days=1),
     )
-    buf = io.StringIO()
-    console = Console(file=buf, force_terminal=False, width=100)
 
     # Act
-    render_report(console, report)
+    row = next(line for line in render_markdown(report).splitlines() if "Build \\| Deploy" in line)
 
-    # Assert: the name survives whole and its counts stay in their columns.
-    row = next(line for line in buf.getvalue().splitlines() if "Build | Deploy" in line)
-    assert row.split("│")[1].strip() == "1"
-
-
-def test_the_painted_report_follows_a_theme_change() -> None:
-    """The painter reads the theme when it paints, not when the module loads."""
-    # Arrange
-    import infrastructure.terminal.theme as ui_theme
-    from integrations.github.tools.ci_analytics.render import render_report
-
-    themes: list[Any] = []
-
-    class _Console:
-        is_terminal = True
-
-        def use_theme(self, theme: Any) -> contextlib.AbstractContextManager[None]:
-            themes.append(theme)
-            return contextlib.nullcontext()
-
-        def print(self, *_args: Any, **_kwargs: Any) -> None:
-            return None
-
-    report = compute_report(
-        owner="o",
-        repo="r",
-        default_branch="main",
-        window_days=30,
-        branch_runs=[_run(9, event="push", branch="main")],
-        pr_runs=[_run(1, conclusion="failure")],
-        merged_prs=_merged("A"),
-        now=_T0 + timedelta(days=1),
-    )
-
-    # Act: paint, switch theme, paint again.
-    original = ui_theme.get_active_theme().name
-    try:
-        ui_theme.set_active_theme("blue")
-        render_report(_Console(), report)
-        ui_theme.set_active_theme("green")
-        expected = ui_theme.MARKDOWN_THEME
-        render_report(_Console(), report)
-    finally:
-        ui_theme.set_active_theme(original)
-
-    # Assert: the second paint used the theme built for the new palette.
-    assert themes[1] is expected
-    assert themes[0] is not themes[1]
+    # Assert: the pipe is escaped, so the unescaped cell borders keep the count in Runs.
+    cells = re.split(r"(?<!\\)\|", row)
+    assert cells[1].strip() == "Build \\| Deploy"
+    assert cells[2].strip() == "1"
 
 
 def test_the_comparison_is_not_a_choice_the_model_can_forget() -> None:
@@ -1592,40 +1648,6 @@ def test_the_comparison_is_not_a_choice_the_model_can_forget() -> None:
     properties = registered.public_input_schema["properties"]
     assert "include_benchmarks" not in properties
     assert "compact" in properties
-
-
-def test_the_comparison_starts_on_its_own_line() -> None:
-    """A markdown leading newline is dropped, gluing the heading to a bullet."""
-    # Arrange
-    from rich.console import Console
-
-    from integrations.github.tools.ci_analytics.render import (
-        peer_benchmarks,
-        render_comparison,
-        render_report,
-    )
-
-    report = compute_report(
-        owner="o",
-        repo="r",
-        default_branch="main",
-        window_days=30,
-        branch_runs=[_run(9, event="push", branch="main")],
-        pr_runs=[_run(1, conclusion="failure")],
-        merged_prs=_merged("A"),
-        now=_T0 + timedelta(days=1),
-    )
-    buf = io.StringIO()
-    console = Console(file=buf, force_terminal=False, width=100)
-
-    # Act
-    render_report(console, report, compact=True)
-    render_comparison(console, report, peer_benchmarks(report))
-
-    # Assert: a blank line separates the report from the comparison heading.
-    lines = buf.getvalue().splitlines()
-    heading = next(i for i, line in enumerate(lines) if "Compared with" in line)
-    assert not lines[heading - 1].strip()
 
 
 def test_the_description_tells_the_model_the_comparison_cannot_be_skipped() -> None:

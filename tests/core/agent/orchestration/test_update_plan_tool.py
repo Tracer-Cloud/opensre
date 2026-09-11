@@ -7,6 +7,7 @@ from typing import Any
 
 from rich.console import Console
 
+from core.agent_harness.task_plan.evidence import record_plan_evidence
 from core.agent_harness.task_plan.plan import (
     PlanStepStatus,
     parse_task_plan,
@@ -29,6 +30,12 @@ def _ctx(session: Session | None = None) -> ActionToolScope:
     )
 
 
+def _worked(session: Session) -> Session:
+    """A tool returned this turn, so a plan may carry completed steps."""
+    record_plan_evidence(session, "shell_run")
+    return session
+
+
 _PLAN: list[dict[str, Any]] = [
     {"step": "Capture 502 samples from checkout", "status": "completed"},
     {"step": "Trace 502s to the last deploy", "status": "in_progress"},
@@ -47,7 +54,7 @@ def test_update_plan_tool_is_action_surface_read_only() -> None:
 
 
 def test_update_plan_stores_the_checklist_on_the_session() -> None:
-    session = Session()
+    session = _worked(Session())
     result = execute_update_plan_tool({"plan": _PLAN}, _ctx(session=session))
 
     assert result["ok"] is True
@@ -59,7 +66,7 @@ def test_update_plan_stores_the_checklist_on_the_session() -> None:
 
 
 def test_update_plan_preserves_report_and_followup_after_verification() -> None:
-    session = Session()
+    session = _worked(Session())
     labels = [
         "Scan local repositories",
         "Select a repository",
@@ -126,7 +133,9 @@ def test_update_plan_stores_explanation_and_revises_in_place() -> None:
     assert session.task_plan.total == 2
     assert session.task_plan.explanation == "first diagnosis"
 
-    # Act: a second call revises to three advanced steps and a new diagnosis.
+    # Act: after more work, a second call revises to three advanced steps and a
+    # new diagnosis.
+    _worked(session)
     revised = [
         {"step": "Capture 502 samples from checkout", "status": "completed"},
         {"step": "Trace 502s to the last deploy", "status": "completed"},
@@ -180,7 +189,7 @@ def test_update_plan_normal_create_carries_only_the_base_instruction() -> None:
     # A plain create (no plan_only, no Ask User answers on the turn) must not
     # emit the plan-only or execution-authorized suffixes; incomplete plans get
     # a continue nudge so the model does not idle with pending steps.
-    session = Session()
+    session = _worked(Session())
     result = execute_update_plan_tool({"plan": _PLAN}, _ctx(session=session))
 
     assert result["ok"] is True
@@ -192,7 +201,7 @@ def test_update_plan_normal_create_carries_only_the_base_instruction() -> None:
 
 def test_update_plan_promotes_next_pending_when_model_leaves_a_gap() -> None:
     """Completed + pending with no in_progress must not idle as Plan · 2/3 ○ ○."""
-    session = Session()
+    session = _worked(Session())
     gapped: list[dict[str, Any]] = [
         {"step": "Confirm checkout latency telemetry source", "status": "completed"},
         {"step": "Query recent checkout latency", "status": "pending"},
@@ -213,7 +222,7 @@ def test_update_plan_promotes_next_pending_when_model_leaves_a_gap() -> None:
 def test_update_plan_result_payload_is_a_reparseable_durable_record() -> None:
     # The tool result doubles as the durable CURRENT PLAN record: it must parse
     # back into an equivalent plan when older messages drop from context.
-    session = Session()
+    session = _worked(Session())
     result = execute_update_plan_tool({"plan": _PLAN}, _ctx(session=session))
 
     restored = task_plan_from_payload(result)

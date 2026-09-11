@@ -5,7 +5,7 @@ description: >-
   repository over the last 30 days, including failure rates and developer
   waiting time. Use for historical
   CI performance questions or the first-experience repository demo.
-  For currently failing checks, use github-ci-health.
+  For currently failing checks, use reporting-github-ci-failures.
 getting_started: Explore a repo and analyze its CI/CD performance (recommended)
 demo_order: 1
 metadata:
@@ -16,12 +16,12 @@ metadata:
     - First-experience demo: scan the machine, pick a repository, analyze its CI/CD
     - CI/CD reliability KPIs for one repository over the last 30 days
     - Developer time blocked by unreliable CI, estimated bottom-up per merged PR
-    - Scheduling the weekday CI reliability report to this shell
+    - Handing off to the weekday report loop (cicd-reliability-agent) or Slack setup after the report
   requires:
     - GitHub token usable by OpenSRE with read access to the repository's Actions history
-    - A local git checkout for the workspace scan (optional; a named repository also works)
+    - A local git checkout for the workspace scan (the example repository works without one)
   type: analytics
-  version: "1.11"
+  version: "1.13"
 
 ---
 
@@ -39,7 +39,7 @@ CI/CD Reliability Progress plan using the five numbered workflow headings below 
 - [ ] Step 1. Scan local repositories with scan_local_git_workspace.
 - [ ] Step 2. Select a repository using ask_user_choice.
 - [ ] Step 3. Collect and compute the 30-day metrics with analyze_github_ci_reliability.
-- [ ] Step 4. Display a metrics table as mark down text
+- [ ] Step 4. Display a metrics table as Markdown text
 - [ ] Step 5. Use ask_user_choice to offer scheduling, Slack setup, or finish.
 
 ## Workflow
@@ -48,19 +48,22 @@ CI/CD Reliability Progress plan using the five numbered workflow headings below 
 
 Call `scan_local_git_workspace()` with no arguments.
 
-Complete when the scan returns repository candidates, including an empty
-result; the example repository remains available in step 2.
+Complete when `scan_local_git_workspace` has returned in this turn, even
+with an empty result; the example repository remains available in step 2.
 
 ### 2. Pick the repository
 
 Call `ask_user_choice` with the title `Which repository should I analyze?`.
 Offer up to 5 scanned repositories that have GitHub Actions workflows
-as `<owner/repo>`, then `Tracer-Cloud/opensre` as an example option. 
+as `<owner/repo>`, then `Tracer-Cloud/opensre` as an example option.
+Offer the picker even when only one repository was found; a single scan
+result is not a selection.
 
-End the turn after the user has provided an answer to the `ask_user_choice` tool and the answer arrives as the next user message.
+End the turn after calling `ask_user_choice`; the answer arrives as the
+next user message.
 
-Complete when the answer identifies the repository. Resume at step 3 with
-that repository.
+Complete when the user's answer to `ask_user_choice` has arrived as a
+message. Resume at step 3 with that repository.
 
 ### 3. Collect and compute the metrics
 
@@ -78,19 +81,25 @@ Metric definitions live in [Metrics](references/metrics.md)
 (`skill_view(name="cicd-analytics-demo", reference="metrics")`); read it only
 when the user asks how a figure is defined.
 
-Complete when the tool returns success with key results, or a named blocker.
+Complete when `analyze_github_ci_reliability` has returned in this turn,
+either with `key_results` or with a named blocker.
 
-### 4. Display a metrics table as mark down text
+### 4. Display a metrics table as Markdown text
 
 Read [Benchmarks](references/benchmarks.md) via
 `skill_view(name="cicd-analytics-demo", reference="benchmarks")` now for
 the comparison values and their interpretation limits. Check each table
 cell against a calculation result or this reference.
 
-Prepare the report below for delivery. 
+If a cell has no source in the step 3 result or this reference, return to
+step 3: reread `coverage_notices` for the named gap, and if the analysis did
+not return success, run it again once. A cell still without a source is
+`n/a` with the gap stated under the table; never estimate it.
+
+Prepare the report below for delivery.
 
 #### Report format
-After calculating the metrics, respond directly with the report as a Markdown table. Writing that response delivers the report. Do not substitute a plan update or next-step menu for it.
+After calculating the metrics, respond directly with the report as a Markdown table. Writing that response delivers the report.
 
 Identify the repository, default branch, UTC window, and coverage. Render
 this table as text, replacing every placeholder with a calculated value or a
@@ -116,6 +125,9 @@ What insights stand out:
 - CI-caused failures account for x.x% of all PR runs, roughly x.x-x.x× higher than the comparison repositories.
 ```
 
+Complete when `skill_view` has returned the benchmarks reference in this
+turn and the assistant reply contains the table.
+
 ### 5. Offer the next step
 
 Call `ask_user_choice` with the title
@@ -125,13 +137,15 @@ Call `ask_user_choice` with the title
 - Slack setup
 - Finish
 
-Complete when the menu is offered with the report. The user's answer
-arrives in the next turn; follow only the selected branch:
+Complete when the `ask_user_choice` call for this menu has returned in
+this turn. The user's answer arrives in the next turn. Each branch except
+`Finish` is owned by a sibling skill: load it with `skill_view` and follow
+its plan; do not reimplement its steps here.
 
-- **Schedule local loops:** revise the plan with
-  `Schedule the weekday report` / `Confirm the schedule`. Use the generic
-  `/loops add` command through `slash_invoke` with
-  `--channel interactive_shell`.
-- **Slack setup:** load `slack-handoff` with `skill_view` and follow its
-  plan.
+- **Schedule local loops:** call `skill_view(name="cicd-reliability-agent")`
+  and follow that skill. The repository is already chosen and analyzed in
+  this session, so its plan omits the scan and repository-pick steps and
+  its analyze step reuses today's saved report.
+- **Slack setup:** call `skill_view(name="slack-handoff")` and follow that
+  skill.
 - **Finish:** acknowledge in one line and conclude.

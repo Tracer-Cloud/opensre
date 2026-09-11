@@ -52,17 +52,19 @@ def test_master_menu_matches_four_unique_children_and_preserves_specialists() ->
         assert skill.path.parent.parent.name == "onboarding_cicd_fix"
         assert loader.load_skill_body(skill.name)
     analytics = next(s for s in children if s.name == "cicd-analytics-demo")
-    assert [hook.after for hook in analytics.after_tool] == [
-        "scan_local_git_workspace",
-        "analyze_github_ci_reliability",
-    ]
-    next_options = analytics.after_tool[1].call.args["options"]
-    assert tuple(next_options) == (
-        "Set up an agent that improves CI/CD reliability over time",
-        "Connect OpenSRE to Slack and hand off DevOps chores for your team",
-        "Exit demo",
-    )
+    # The analytics card runs its menus from the plan the model follows, not
+    # from host hooks, and keeps the full tool catalog.
+    assert analytics.after_tool == ()
+    assert analytics.pre_execute == ()
+    assert analytics.tools == ()
     body = loader.load_skill_body("cicd-analytics-demo")
+    assert "`Which repository should I analyze?`" in body
+    assert "`What would you like to do next?`" in body
+    for option in ("- Schedule local loops", "- Slack setup", "- Finish"):
+        assert option in body
+    # Each next-step branch hands off to its sibling skill instead of inlining it.
+    assert 'skill_view(name="cicd-reliability-agent")' in body
+    assert 'skill_view(name="slack-handoff")' in body
     # The comparison is the tool's job, not a flag the model can forget.
     assert "include_benchmarks" not in body
     assert "compact=true" in body
@@ -213,16 +215,20 @@ def test_references_append_sibling_markdown_and_ignore_paths_outside_the_tree(
 
 def test_onboarding_children_load_shared_rules_once() -> None:
     loader.clear_skills_caches()
-    analytics = loader.load_skill_body("cicd-analytics-demo")
+    by_name = {s.name: s for s in loader.list_action_skills()}
     reliability = loader.load_skill_body("cicd-reliability-agent")
-    analytics_card = next(
-        s for s in loader.list_action_skills() if s.name == "cicd-analytics-demo"
-    ).path.read_text(encoding="utf-8")
-    assert "Every number in the reply comes from a tool result" in analytics
-    assert "Ask each question once." in analytics
-    assert "Ask each question once." in reliability
-    assert analytics.count("Every number in the reply comes from a tool result") == 1
-    assert "Every number in the reply comes from a tool result" not in analytics_card
+    analytics = loader.load_skill_body("cicd-analytics-demo")
+    analytics_card = by_name["cicd-analytics-demo"].path.read_text(encoding="utf-8")
+    # Shared rules resolve from the skills-tree ``common/`` folder and are
+    # appended exactly once, never copied into the card body.
+    assert by_name["cicd-reliability-agent"].references == ("common/ask_once.md",)
+    assert reliability.count("Ask each question once.") == 1
+    assert "Ask each question once." not in by_name["cicd-reliability-agent"].path.read_text(
+        encoding="utf-8"
+    )
+    # The analytics card lists no shared rules; its plan carries its own wording.
+    assert by_name["cicd-analytics-demo"].references == ()
+    assert "SHARED RULES from" not in analytics
     assert "## Progress updates" not in analytics_card
 
 

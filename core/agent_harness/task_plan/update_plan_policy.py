@@ -6,7 +6,63 @@ from typing import Any
 
 from core.agent_harness.session.pending_choice import parse_ask_user_answers
 from core.agent_harness.task_plan.display import ensure_active_step, promote_first_pending_step
-from core.agent_harness.task_plan.plan import TaskPlan
+from core.agent_harness.task_plan.plan import PlanStep, PlanStepStatus, TaskPlan
+
+
+def _prior_status(
+    prior: TaskPlan, index: int, step: str, *, same_shape: bool
+) -> PlanStepStatus | None:
+    """Status ``step`` held in ``prior``: matched by text, else by position when the shape kept."""
+    by_text = next((item.status for item in prior.steps if item.step == step), None)
+    if by_text is not None:
+        return by_text
+    if same_shape:
+        return prior.steps[index].status
+    return None
+
+
+def demote_unevidenced_completions(
+    plan: TaskPlan,
+    *,
+    prior: TaskPlan | None,
+    evidence: bool,
+) -> tuple[TaskPlan, tuple[str, ...]]:
+    """Reset ``completed`` steps this write cannot have earned.
+
+    A step already ``completed`` on the stored plan stays. A step jumping from
+    ``pending`` straight to ``completed`` is reset regardless — it was never
+    being worked. Any other new completion (from ``in_progress``, a new or
+    renamed step, or a plan written after the work) needs ``evidence``: a
+    non-bookkeeping tool returned since the previous write. Reset steps are
+    returned so the tool result can name them. A write that completes every
+    step is left alone: closing the checklist after the work is not a false
+    tick, and a text-only final step has no tool to show for itself.
+    """
+    if not plan.steps or plan.all_completed:
+        return plan, ()
+    same_shape = prior is not None and prior.total == plan.total
+    demoted: list[str] = []
+    steps: list[PlanStep] = []
+    for index, item in enumerate(plan.steps):
+        if item.status is not PlanStepStatus.COMPLETED:
+            steps.append(item)
+            continue
+        before = (
+            _prior_status(prior, index, item.step, same_shape=same_shape)
+            if prior is not None
+            else None
+        )
+        earned = before is PlanStepStatus.COMPLETED or (
+            before is not PlanStepStatus.PENDING and evidence
+        )
+        if earned:
+            steps.append(item)
+            continue
+        demoted.append(item.step)
+        steps.append(PlanStep(step=item.step, status=PlanStepStatus.PENDING))
+    if not demoted:
+        return plan, ()
+    return TaskPlan(steps=tuple(steps), explanation=plan.explanation), tuple(demoted)
 
 
 def apply_update_plan_host_policy(
@@ -78,4 +134,5 @@ def apply_update_plan_session(
 __all__ = [
     "apply_update_plan_host_policy",
     "apply_update_plan_session",
+    "demote_unevidenced_completions",
 ]

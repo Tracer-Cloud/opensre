@@ -40,7 +40,6 @@ _LAZY_EXPORTS: dict[str, str] = {
     "Analysis": "integrations.github.tools.ci_analytics.analysis",
     "analyze_repository": "integrations.github.tools.ci_analytics.analysis",
     "ci_report_headline": "integrations.github.tools.ci_analytics.render",
-    "render_ci_report": "integrations.github.tools.ci_analytics.render",
     "DEFAULT_LOOP_TIME": "integrations.github.tools.ci_analytics.loop",
     "LoopCard": "integrations.github.tools.ci_analytics.loop",
     "ScheduledLoop": "integrations.github.tools.ci_analytics.loop",
@@ -101,7 +100,7 @@ if TYPE_CHECKING:
         report_looks_complete,
         schedule_ci_reliability_loop,
     )
-    from integrations.github.tools.ci_analytics.render import ci_report_headline, render_ci_report
+    from integrations.github.tools.ci_analytics.render import ci_report_headline
 
 
 __all__ = [
@@ -134,7 +133,6 @@ __all__ = [
     "loop_card",
     "open_pull_request",
     "print_github_mcp_validation_report",
-    "render_ci_report",
     "report_looks_complete",
     "resolve_github_token",
     "resolve_repo_scope",

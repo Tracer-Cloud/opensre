@@ -67,9 +67,10 @@ def test_stop_trace_records_rejection_then_question_bypass_and_saved_answer(
     traced_session: tuple[Session, Path],
 ) -> None:
     session, path = traced_session
+    # No tool runs before the write, so no step may already be completed.
     plan = [
-        {"step": "Collect evidence", "status": "completed"},
-        {"step": "Display report", "status": "in_progress"},
+        {"step": "Collect evidence", "status": "in_progress"},
+        {"step": "Display report", "status": "pending"},
         {"step": "Offer next action", "status": "pending"},
     ]
     closing = "The report is ready. Would you like to schedule a check?"

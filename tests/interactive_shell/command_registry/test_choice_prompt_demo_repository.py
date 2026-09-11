@@ -22,8 +22,10 @@ from surfaces.interactive_shell.command_registry import choice_prompt
 from surfaces.interactive_shell.session import Session
 
 _DEMO_QUESTION = "Which demo would you like me to run?"
-_DEMO = "Explore a repo and analyze its CI/CD performance (recommended)"
-_REPOSITORY_QUESTION = "Which repository should I analyze?"
+# The reliability agent is the demo that still declares its repository menu as an
+# ``after_tool`` hook; the analytics demo leaves that question to the model's turn.
+_DEMO = "Set up an agent that improves CI/CD reliability over time"
+_REPOSITORY_QUESTION = "Which repository should the agent watch?"
 
 
 def _pick_demo(**_kwargs: Any) -> str:
@@ -56,7 +58,7 @@ def _arrange(
 def test_the_repository_is_asked_in_the_shell_and_travels_with_the_demo_answer(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    # Arrange: the onboarding menu is pending; the picker returns the analytics demo.
+    # Arrange: the onboarding menu is pending; the picker returns the reliability agent demo.
     session, asked = _arrange(monkeypatch, repository="acme/app")
     console = Console(file=io.StringIO(), force_terminal=False, width=100)
 
@@ -74,7 +76,7 @@ def test_the_repository_is_asked_in_the_shell_and_travels_with_the_demo_answer(
         questions, (_DEMO, "acme/app")
     )
     assert session.terminal.awaiting_handoff_answer is True
-    assert "which repository should i analyze?" in session.questions_already_answered
+    assert _REPOSITORY_QUESTION.lower() in session.questions_already_answered
 
 
 def test_escaping_the_repository_menu_cancels_instead_of_letting_the_model_guess(

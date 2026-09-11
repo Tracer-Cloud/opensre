@@ -11,6 +11,11 @@ from core.agent_harness.task_plan.display import (
     is_plan_diagnosis_prose,
     promote_first_pending_step,
 )
+from core.agent_harness.task_plan.evidence import (
+    mark_plan_written,
+    plan_evidence_available,
+    record_plan_evidence,
+)
 from core.agent_harness.task_plan.plan import (
     PlanStep,
     PlanStepStatus,
@@ -26,6 +31,7 @@ from core.agent_harness.task_plan.progress import (
 from core.agent_harness.task_plan.update_plan_policy import (
     apply_update_plan_host_policy,
     apply_update_plan_session,
+    demote_unevidenced_completions,
 )
 from core.agent_harness.task_plan.work_log import (
     record_task_plan_work,
@@ -39,12 +45,16 @@ __all__ = [
     "TaskPlan",
     "apply_update_plan_host_policy",
     "apply_update_plan_session",
+    "demote_unevidenced_completions",
     "ensure_active_step",
     "format_plan_header",
     "format_task_plan_plain",
     "is_plan_diagnosis_prose",
+    "mark_plan_written",
     "parse_task_plan",
+    "plan_evidence_available",
     "promote_first_pending_step",
+    "record_plan_evidence",
     "record_task_plan_work",
     "take_completed_plan_breakdown",
     "task_plan_to_payload",

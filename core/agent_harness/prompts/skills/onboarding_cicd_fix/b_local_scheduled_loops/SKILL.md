@@ -12,8 +12,8 @@ getting_started: Set up an agent that improves CI/CD reliability over time
 demo_order: 2
 metadata:
   owner: Vincent
-  last_changed_by: Yauhen
-  last_changed_at: 2026-09-10
+  last_changed_by: Vincent
+  last_changed_at: 2026-09-11
   usecases:
     - First-experience demo: analyze once, then schedule a weekday CI reliability report
     - Watch CI reliability over time after a live first report
@@ -55,8 +55,9 @@ report for weekday mornings in this shell's inbox.
   stop. Do not schedule a loop whose first report never appeared.
 - Decision points use `ask_user_choice` with the exact option texts below.
   End the turn after calling it; the answer arrives as the next user message.
-- The analyze tool paints the report; do not restate its figures. Then output
-  `schedule_ci_reliability_loop`'s `response_text` exactly and stop.
+- The analyze tool prints nothing; output its `response_text` exactly, once,
+  and do not restate its figures. Then output `schedule_ci_reliability_loop`'s
+  `response_text` exactly and stop.
 
 ## Plan
 
@@ -95,8 +96,8 @@ answer arrives as the next user message.
 Call
 `analyze_github_ci_reliability(owner="<owner>", repo="<repo>", compact=true)`
 for the chosen repository. A saved report from today is reused; otherwise
-this reads GitHub (a token is required). The tool paints the report. Do
-not restate figures.
+this reads GitHub (a token is required). The tool prints nothing: output
+its `response_text` exactly, once. Do not restate figures.
 
 ### 4. Schedule the loop
 

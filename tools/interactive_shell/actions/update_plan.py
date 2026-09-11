@@ -6,10 +6,14 @@ from typing import Any
 
 from core.agent_harness.spi.handoff import parse_ask_user_answers
 from core.agent_harness.spi.task_plan import (
+    TaskPlan,
     apply_update_plan_host_policy,
     apply_update_plan_session,
+    demote_unevidenced_completions,
     format_task_plan_plain,
+    mark_plan_written,
     parse_task_plan,
+    plan_evidence_available,
     task_plan_to_payload,
 )
 from core.agent_harness.tools import ActionToolScope, execute_with_action_context
@@ -40,6 +44,14 @@ def execute_update_plan_tool(args: dict[str, Any], ctx: ActionToolScope) -> dict
     if error is not None or plan is None:
         return {"ok": False, "error": error or "invalid plan"}
     turn_text = getattr(ctx, "turn_user_message", "") or ""
+    prior = getattr(ctx.session, "task_plan", None)
+    if not isinstance(prior, TaskPlan):
+        prior = None
+    plan, demoted = demote_unevidenced_completions(
+        plan,
+        prior=prior,
+        evidence=plan_evidence_available(ctx.session, prior=prior, turn_user_message=turn_text),
+    )
     plan, plan_only_requested = apply_update_plan_host_policy(
         plan,
         plan_only_requested=bool(args.get("plan_only")),
@@ -47,6 +59,7 @@ def execute_update_plan_tool(args: dict[str, Any], ctx: ActionToolScope) -> dict
         session=ctx.session,
     )
     apply_update_plan_session(ctx.session, plan, plan_only=plan_only_requested)
+    mark_plan_written(ctx.session)
     payload = task_plan_to_payload(plan)
     payload["ok"] = True
     payload["summary"] = format_task_plan_plain(plan)
@@ -63,6 +76,13 @@ def execute_update_plan_tool(args: dict[str, Any], ctx: ActionToolScope) -> dict
     elif not plan.all_completed:
         payload["instruction"] += (
             " Continue the in_progress step now — do not end the turn while pending steps remain."
+        )
+    if demoted:
+        names = "; ".join(demoted)
+        payload["instruction"] += (
+            f" Reset to pending — marked completed before any tool ran for them: {names}."
+            " A step is completed only after its work returned while it was in_progress:"
+            " set it in_progress, run the work, then mark it completed."
         )
     return payload
 
