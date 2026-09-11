@@ -179,6 +179,35 @@ def test_the_model_cannot_reopen_a_menu_the_session_already_answered() -> None:
     assert session.pending_user_choice is None
 
 
+def test_model_reentry_of_the_active_skill_is_side_effect_free(hooked_skills: None) -> None:
+    """A redundant second ``skill_view`` must not re-arm hooks or rescope tools.
+
+    Resetting ``skill_hooks_fired`` on re-entry would let an ``after_tool``
+    menu the session already showed fire again.
+    """
+    # Arrange: the model entered the skill and an after_tool hook already fired.
+    session = Session()
+    first = execute_skill_view_tool({"name": "menu-skill"}, _scope(session))
+    assert first["ok"] is True
+    session.pending_user_choice = None  # the user answered the entry menu
+    session.terminal.pending_prompt_default = None
+    session.skill_hooks_fired = {"menu-skill:after:some_tool"}
+    session.active_skill_tools = ("shell_run", "extra_granted_tool")
+
+    # Act: the model re-loads the same skill mid-flow.
+    again = execute_skill_view_tool({"name": "menu-skill"}, _scope(session))
+
+    # Assert: the body comes back, but nothing about the session moved.
+    assert again["ok"] is True
+    assert again["already_active"] is True
+    assert again["pre_execute"] == []
+    assert again["content"].startswith("Follow the answer.")
+    assert session.skill_hooks_fired == {"menu-skill:after:some_tool"}
+    assert session.active_skill_tools == ("shell_run", "extra_granted_tool")
+    assert session.pending_user_choice is None
+    assert session.terminal.pending_prompt_default is None
+
+
 def test_the_host_may_reopen_the_menu_on_request() -> None:
     """``/demo`` and startup ask for the menu deliberately."""
     # Arrange

@@ -113,6 +113,12 @@ def _tool_event_id(data: dict[str, Any]) -> str:
     return str(data.get("id") or data.get("tool_call_id") or "").strip()
 
 
+def _skill_view_reference(data: dict[str, Any]) -> str:
+    """The ``reference`` arg of a ``skill_view`` event, or empty for a skill entry."""
+    args = data.get("input")
+    return str(args.get("reference", "")).strip() if isinstance(args, dict) else ""
+
+
 def _is_internal_choice_command(name: str, data: dict[str, Any]) -> bool:
     """True for the private slash turn that opens the choice picker."""
     if name != ActionToolName.SLASH_INVOKE:
@@ -347,6 +353,13 @@ def tool_call_display(tool_name: str, args: dict[str, Any]) -> tuple[str, str]:
         raw_args = args.get("args")
         parsed_args = [str(item).strip() for item in raw_args] if isinstance(raw_args, list) else []
         label, content = "command", " ".join([command, *parsed_args]).strip()
+    elif tool_name == ActionToolName.SKILL_VIEW:
+        skill_name = str(args.get("name", "")).strip()
+        reference = str(args.get("reference", "")).strip()
+        if reference:
+            label, content = "Skill reference", f"references/{reference}.md · {skill_name}"
+        else:
+            label, content = "Skill", skill_name
     else:
         simple = _SIMPLE_TOOL_LABELS.get(tool_name)
         if simple is not None:
@@ -404,8 +417,10 @@ class ActionRenderObserver:
                 )
             return
         if kind == "tool_end":
-            name = str(data.get("name", "")).strip()
-            if name == ActionToolName.SKILL_VIEW:
+            # Discriminate by how the start registered the call: skill entries
+            # sit in ``_pending_skill_calls`` (activation line); reference
+            # loads registered nothing and stay silent.
+            if _tool_event_id(data) in self._pending_skill_calls:
                 self._render_skill_end(data)
             elif _tool_event_id(data) in self._pending_result_tools:
                 self._render_tool_result(data)
@@ -428,7 +443,12 @@ class ActionRenderObserver:
             return
         self._set_spinner_phase(SpinnerState.INVOKING_TOOLS_PHASE)
         if name == ActionToolName.SKILL_VIEW:
-            self._render_skill_start(data)
+            # ``reference=`` loads one bundled file without re-entering the
+            # skill. It is prompt plumbing, not a user-visible action: no
+            # transcript row (the spinner status row still names it while it
+            # runs). Only a real entry earns the "Skill activated" line.
+            if not _skill_view_reference(data):
+                self._render_skill_start(data)
         elif name == ActionToolName.UPDATE_PLAN:
             pass  # no transcript preview; the plan shows in the pinned bottom overlay
         elif _is_internal_choice_command(name, data):
@@ -520,7 +540,7 @@ class ActionRenderObserver:
         args = data.get("input")
         raw_name = str(args.get("name", "")).strip() if isinstance(args, dict) else ""
         slug = strip_terminal_controls(raw_name.replace("_", "-").lower()) or "skill"
-        self._pending_skill_calls[str(data.get("id") or "")] = slug
+        self._pending_skill_calls[_tool_event_id(data)] = slug
 
     def _render_tool_invocation(self, name: str, data: dict[str, Any]) -> None:
         """Buffer the running tool for the grouped action log — no inline args.
@@ -576,10 +596,14 @@ class ActionRenderObserver:
         (another call, a note, or the final reply) adds its own — do not add a
         trailing one here or the gap doubles.
         """
-        slug = self._pending_skill_calls.pop(str(data.get("id") or ""), None)
+        slug = self._pending_skill_calls.pop(_tool_event_id(data), None)
         if slug is None:
             return
         output = data.get("output")
+        if isinstance(output, dict) and output.get("already_active"):
+            # The activation line is already in the transcript from the first
+            # entry; a redundant re-entry must not repeat it.
+            return
         activated = isinstance(output, dict) and bool(output.get("ok"))
         # ``Text`` renders the (model-supplied) skill name literally — never
         # through Rich markup.

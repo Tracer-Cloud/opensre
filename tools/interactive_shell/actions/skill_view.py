@@ -70,9 +70,10 @@ skill_view_tool = RegisteredTool(
         "an indexed skill, BEFORE emitting that skill's tool sequence. Do not "
         "invent workflow steps from the one-line index description alone. A "
         "skill may open its own menu on load; the result then tells you to end "
-        "the turn. Pass reference to load one of the skill's linked reference "
-        "files (named in its body as references/<name>.md) without re-entering "
-        "the skill."
+        "the turn. A skill that is already active does not need to be loaded "
+        "again; its body is in your context. Pass reference to load one of the "
+        "skill's linked reference files (named in its body as "
+        "references/<name>.md) without re-entering the skill."
     ),
     input_schema=object_schema(
         properties={

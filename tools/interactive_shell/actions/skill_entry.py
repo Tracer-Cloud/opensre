@@ -111,8 +111,21 @@ def enter_skill(name: str, ctx: Any, *, from_model: bool = False) -> dict[str, A
             "error": f"unknown skill {name!r}",
             "available": available,
         }
-    # The flow is now inside this skill: the next answer turn offers only its tools.
     session = getattr(ctx, "session", None)
+    if from_model and session is not None and getattr(session, "active_skill", None) == skill.name:
+        # A redundant re-entry must be side-effect free: resetting
+        # ``skill_hooks_fired`` would re-arm ``after_tool`` menus the session
+        # already showed. Return the body anyway so a model that lost it to
+        # transcript compaction is not stranded.
+        return {
+            "ok": True,
+            "name": skill.name,
+            "already_active": True,
+            "summary": f"the {skill.name} skill is already active",
+            "content": body,
+            "pre_execute": [],
+        }
+    # The flow is now inside this skill: the next answer turn offers only its tools.
     if session is not None:
         session.active_skill = skill.name
         session.active_skill_tools = tuple(skill.tools)

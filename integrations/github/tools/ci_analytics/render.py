@@ -186,10 +186,8 @@ def render_comparison(
 def comparison_markdown(
     user: CiAnalyticsReport,
     benchmarks: Sequence[Benchmark] | None = None,
-    *,
-    next_step: bool = True,
 ) -> str:
-    """Markdown form of :func:`render_comparison`; ``next_step`` adds the closing recommendation."""
+    """Markdown form of :func:`render_comparison`."""
     if benchmarks is None:
         benchmarks = peer_benchmarks(user)
     if not benchmarks:

@@ -459,6 +459,78 @@ def test_skill_view_tool_end_without_start_prints_nothing() -> None:
     assert buffer.getvalue() == ""
 
 
+def test_skill_view_reference_load_is_silent() -> None:
+    """``skill_view(reference=…)`` loads a file without re-entering the skill.
+
+    It is prompt plumbing: no "Skill activated" line (the bug: every successful
+    ``skill_view`` printed one) and no buffered "Skill reference" action-log
+    panel either.
+    """
+    observer, buffer = _skill_observer()
+
+    observer(
+        "tool_start",
+        {
+            "id": "t1",
+            "name": "skill_view",
+            "input": {"name": "cicd-analytics-demo", "reference": "metrics"},
+        },
+    )
+    observer(
+        "tool_end",
+        {
+            "id": "t1",
+            "name": "skill_view",
+            "input": {"name": "cicd-analytics-demo", "reference": "metrics"},
+            "output": {
+                "ok": True,
+                "name": "cicd-analytics-demo",
+                "reference": "metrics",
+                "summary": "loaded the metrics reference of cicd-analytics-demo",
+                "content": "<reference body>",
+            },
+        },
+    )
+
+    assert buffer.getvalue() == ""
+    assert observer.session.terminal.action_log_entries == []
+
+    observer("agent_end", {})
+    out = buffer.getvalue()
+    assert out == ""
+    assert "Skill activated" not in out
+    assert "Skill reference" not in out
+    assert "<reference body>" not in out
+
+
+def test_skill_view_already_active_reentry_prints_nothing() -> None:
+    """A redundant re-entry must not repeat the activation line."""
+    observer, buffer = _skill_observer()
+
+    observer(
+        "tool_start",
+        {"id": "t1", "name": "skill_view", "input": {"name": "cicd-analytics-demo"}},
+    )
+    observer(
+        "tool_end",
+        {
+            "id": "t1",
+            "name": "skill_view",
+            "input": {"name": "cicd-analytics-demo"},
+            "output": {
+                "ok": True,
+                "name": "cicd-analytics-demo",
+                "already_active": True,
+                "summary": "the cicd-analytics-demo skill is already active",
+                "content": "<body>",
+            },
+        },
+    )
+    observer("agent_end", {})
+
+    assert "Skill activated" not in buffer.getvalue()
+
+
 def test_llm_start_sets_thinking_phase_without_verb_rotation() -> None:
     """``llm_start`` labels the status row Thinking…; phase labels are the UX."""
     from surfaces.interactive_shell.runtime.core.state import SpinnerState

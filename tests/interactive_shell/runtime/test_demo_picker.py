@@ -18,7 +18,6 @@ from core.agent_harness.prompts.action.assemble import build_action_system_promp
 from core.agent_harness.prompts.getting_started import GETTING_STARTED_OPTIONS
 from core.agent_harness.prompts.skills import list_action_skills
 from core.agent_harness.session.pending_choice import (
-    AskUserQuestion,
     PendingUserChoice,
     format_ask_user_answers,
 )
@@ -35,6 +34,7 @@ from tools.system.workspace_git_scan.scan import WorkspaceSnapshot
 _TITLE = "Which demo would you like me to run?"
 _REPOSITORY_TITLE = "Which repository should I analyze?"
 _REPOSITORY = "acme/one"
+_REPOSITORY_OPTIONS = (_REPOSITORY, "Tracer-Cloud/opensre")
 _NOTE = (
     "Choose a demo using your own repositories or connect your team through Slack. "
     "The managed-service option is coming soon."
@@ -49,12 +49,6 @@ def _offerable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(slash_adapter, "repl_tty_interactive", lambda: True)
     # A repository demo asks for the repository in the shell; no scan in tests.
     monkeypatch.setattr(choice_prompt, "choose_demo_repository", lambda _c, _q: _REPOSITORY)
-
-
-def _demo_with_repository(pending: PendingUserChoice, answer: str) -> str:
-    """The message the model receives: the demo pick, then the repository the shell asked for."""
-    repository = AskUserQuestion(label="", title=_REPOSITORY_TITLE, options=(_REPOSITORY,))
-    return format_ask_user_answers((*pending.items(), repository), (answer, _REPOSITORY))
 
 
 def _take_prompt(session: Session) -> str:
@@ -91,6 +85,10 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
         [
             tool_response("skill_view", {"name": "cicd-analytics-demo"}),
             tool_response("scan_local_git_workspace"),
+            tool_response(
+                "ask_user_choice",
+                {"title": _REPOSITORY_TITLE, "options": list(_REPOSITORY_OPTIONS)},
+            ),
         ]
     )
     scans: list[str] = []
@@ -134,12 +132,12 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
     )
     session.terminal.exclusive_stdin_active = False
     assert llm.invocations == 0  # Nothing before the pick used the model.
-    # The shell asked the repository in the same turn; the card with both
-    # answers is painted when the answer is echoed. Nothing else: no work-turn
-    # marker, no skill tree.
-    assert asked == [_REPOSITORY_TITLE]
+    # The analytics skill leaves repository selection to the model's next turn.
+    assert asked == []
     painted = buffer.getvalue()
-    for chrome in ("Ask User", "/goal", "Skill ", "activated", "skill_view", "[1]"):
+    assert _TITLE in painted
+    assert _REPOSITORY_TITLE not in painted
+    for chrome in ("/goal", "Skill ", "activated", "skill_view", "[1]"):
         assert chrome not in painted, painted
     assert len(picker_calls) == 1
     assert callable(picker_calls[0].pop("on_custom_answer"))
@@ -157,7 +155,7 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
     }
     assert session.active_skill == ONBOARDING_SKILL_NAME
     answer = _take_prompt(session)
-    assert answer == _demo_with_repository(pending, GETTING_STARTED_OPTIONS[0])
+    assert answer == format_ask_user_answers(pending.items(), (GETTING_STARTED_OPTIONS[0],))
     envelope = build_action_system_prompt_envelope(
         TurnSnapshot.from_session(answer, session, surface="interactive_shell")
     )
@@ -167,11 +165,12 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
     run_action_tool_turn(answer, session, console, is_tty=True, llm_factory=lambda: llm)
     assert len(scans) == 1
     assert session.active_skill == "cicd-analytics-demo"
-    # The repository was answered in the shell; a scan the model runs anyway
-    # does not reopen that question, so the turn runs on to its end.
-    assert session.pending_user_choice is None
+    assert session.pending_user_choice is not None, buffer.getvalue()
+    assert session.pending_user_choice.title == _REPOSITORY_TITLE
+    assert session.pending_user_choice.options == _REPOSITORY_OPTIONS
     assert llm.invocations == 3
-    assert "analyze_github_ci_reliability" in session.active_skill_tools
+    # Raw-data analysis retains the full catalog for model-selected collection.
+    assert session.active_skill_tools == ()
     assert onboarding_outcomes == [("ci_analytics", False)]
 
 
@@ -253,7 +252,7 @@ def test_onboarding_telemetry_failure_does_not_lose_the_answer(
     monkeypatch.setattr(onboarding_telemetry, "capture_onboarding_demo_selected", fail_capture)
     monkeypatch.setattr(choice_prompt, "repl_choose_one", lambda **_kw: answer)
     choice_prompt._cmd_choose(session, Console(file=io.StringIO()), [])
-    assert _take_prompt(session) == _demo_with_repository(pending, answer)
+    assert _take_prompt(session) == format_ask_user_answers(pending.items(), (answer,))
     assert session.active_skill == ONBOARDING_SKILL_NAME
 
 
@@ -281,7 +280,7 @@ def test_typed_option_label_keeps_its_custom_source_through_the_picker(
     monkeypatch.setattr(choice_menu, "leave_inline_menu", lambda: None)
     monkeypatch.setattr(cpr_stdin, "drain_stale_cpr_bytes", lambda: None)
     choice_prompt._cmd_choose(session, Console(file=io.StringIO()), [])
-    assert _take_prompt(session) == _demo_with_repository(pending, answer)
+    assert _take_prompt(session) == format_ask_user_answers(pending.items(), (answer,))
     assert onboarding_outcomes == [("custom", True) if typed else ("ci_analytics", False)]
 
 
@@ -342,16 +341,9 @@ def test_startup_without_a_menu_hook_does_not_fall_back_to_a_model_turn(
     assert session.active_skill is None
 
 
-def test_demo_skills_keep_their_tool_contracts_after_moving() -> None:
+def test_demo_skills_expose_their_intended_tool_scopes() -> None:
     by_name = {skill.name: skill for skill in list_action_skills()}
-    assert by_name["cicd-analytics-demo"].tools == (
-        "scan_local_git_workspace",
-        "analyze_github_ci_reliability",
-        "schedule_ci_reliability_loop",
-        "cli_exec",
-        "slash_invoke",
-        "ask_user_choice",
-    )
+    assert by_name["cicd-analytics-demo"].tools == ()
     assert by_name["cicd-reliability-agent"].tools == (
         "scan_local_git_workspace",
         "analyze_github_ci_reliability",
