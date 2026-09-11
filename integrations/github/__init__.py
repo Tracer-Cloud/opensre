@@ -12,10 +12,11 @@ import importlib
 from typing import TYPE_CHECKING
 
 from integrations.github.client import GitHubApiError, GitHubRestClient, resolve_github_token
-from integrations.github.tools.ci_fix.ledger import count_ci_fixes, get_ci_fix_counter
 
 #: Public name -> the submodule that defines it, imported on first access.
 _LAZY_EXPORTS: dict[str, str] = {
+    "count_ci_fixes": "integrations.github.tools.ci_fix.ledger",
+    "get_ci_fix_counter": "integrations.github.tools.ci_fix.ledger",
     "github_creds": "integrations.github.helpers",
     "saved_github_username": "integrations.github.identity",
     "GitHubLoginResult": "integrations.github.login",
@@ -102,6 +103,7 @@ if TYPE_CHECKING:
         schedule_ci_reliability_loop,
     )
     from integrations.github.tools.ci_analytics.render import ci_report_headline
+    from integrations.github.tools.ci_fix.ledger import count_ci_fixes, get_ci_fix_counter
 
 
 __all__ = [

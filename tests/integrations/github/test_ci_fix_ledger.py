@@ -29,6 +29,18 @@ def _outcome(**changes: object) -> dict[str, object]:
     }
 
 
+def test_public_api_uses_the_same_process_counter(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import integrations.github as github
+
+    monkeypatch.setenv(CI_FIX_LEDGER_PATH_ENV, str(tmp_path / "ci_fixes.json"))
+    counter = github.get_ci_fix_counter()
+    assert counter is ledger.get_ci_fix_counter()
+    counter.record("a" * 64)
+    assert github.count_ci_fixes() == 1
+
+
 def test_only_verified_identifiable_repairs_count(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -55,6 +67,26 @@ def test_only_verified_identifiable_repairs_count(
     assert len(data["fixes"]) == len(set(data["fixes"])) == 5
     assert all(len(identity) == 64 for identity in data["fixes"])
     assert "Example" not in path.read_text()
+
+
+def test_reset_releases_cached_counts_and_listeners(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv(CI_FIX_LEDGER_PATH_ENV, str(tmp_path / "ci_fixes.json"))
+    counter = ledger.get_ci_fix_counter()
+    observed: list[int] = []
+    stop = counter.subscribe(lambda: observed.append(counter.count()))
+    counter.record("a" * 64)
+    ledger.reset_ci_fix_counters()
+
+    replacement = ledger.get_ci_fix_counter()
+    assert replacement is not counter
+    assert replacement.count() == 1
+    assert counter.count() == 0
+    counter.reload()
+    replacement.record("b" * 64)
+    assert observed == [1]
+    stop()
 
 
 def test_failed_save_updates_memory_before_io_and_reconciles_without_duplicates(
