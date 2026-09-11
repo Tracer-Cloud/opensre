@@ -475,8 +475,13 @@ def _has_dangerous_shell_construct(text: str) -> bool:
 
     Fail closed on substitutions, subshells, and unquoted glob characters. A
     glob can expand a filename such as ``-oresult`` into an executable option.
-    Quoted or escaped patterns remain literal arguments.
+    Quoted or escaped glob patterns remain literal arguments.
     """
+    # cmd.exe expands %NAME% even inside quotes, and the expanded value may
+    # introduce operators or flag-shaped arguments after policy classification.
+    if os.name == "nt" and "%" in text:
+        return True
+
     quote: str | None = None
     index = 0
     length = len(text)
