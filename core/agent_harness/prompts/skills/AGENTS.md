@@ -101,7 +101,8 @@ once, following these rules, and treat a rename as a breaking change.
    their status ("coming soon", "remote", "placeholder").
 5. **Disambiguate siblings by verb, not by qualifier.** Two skills over the
    same object must differ in what they do: `reporting-github-ci-failures`
-   (what is red now) vs `analyzing-cicd-reliability` (trend over a period).
+   (what is red now) vs `analyzing-github-ci-performance` (trend over a
+   period) vs `scheduling-github-ci-reports` (the same trend, recurring).
    If you need a "Not for X, use Y" sentence in the description, first check
    whether a better verb pair removes the need.
 6. **Directory name equals `name`** (kebab-case) for a dedicated skill
@@ -109,7 +110,13 @@ once, following these rules, and treat a rename as a breaking change.
    inside a Python tool package (`integrations/github/tools/github_cli/`)
    keeps the package's snake_case directory; only its frontmatter `name`
    follows this convention. The sibling report template is
-   `<directory>_report.md`.
+   `<directory>_report.md`. A child of a nested tree (the onboarding demos)
+   is `<letter>-<name>/`, where the single lowercase letter is the menu
+   position (`a` ⇔ `demo_order: 1`) and everything after the first hyphen
+   equals `name`: `onboarding-github-ci/a-analyzing-github-ci-performance/`.
+   The letter orders siblings on disk and in the skills index; `demo_order`
+   orders the menu, and `tests/core/agent/prompts/test_skills_demo.py` fails
+   when the two disagree or the suffix drifts from `name`.
 7. **Scheduler and telemetry keys are not skill names.** Starter-loop slugs,
    telemetry event names, and task-store params may reference a skill but
    must not be derived from its `name`, so a rename does not break stored
@@ -140,6 +147,11 @@ Current collection:
 | `fixing-github-security-alerts` | workflow | `skills/` | — |
 | `investigating-incidents-with-runbooks` | workflow | `skills/` | — |
 | `reporting-github-ci-failures` | workflow | `skills/` | — |
+| `onboarding-github-ci` | workflow (master menu) | `skills/onboarding-github-ci/` | — |
+| `analyzing-github-ci-performance` | workflow (demo A) | `skills/onboarding-github-ci/a-…/` | closed set |
+| `scheduling-github-ci-reports` | workflow (demo B) | `skills/onboarding-github-ci/b-…/` | closed set |
+| `delegating-github-ci-fixes` | workflow (demo C, placeholder) | `skills/onboarding-github-ci/c-…/` | — |
+| `connecting-slack` | workflow (demo D) | `skills/onboarding-github-ci/d-…/` | `cli_exec`, `slash_invoke` |
 | `operating-github-cli` | tool usage | `integrations/github/tools/github_cli/` | `github_cli` |
 | `operating-github-ci-fixer` | tool usage | `integrations/github/tools/ci_fix/` | `fix_github_pr_ci` |
 | `operating-github-security-fixer` | tool usage | `integrations/github/tools/security_fix/` | `fix_github_security_alert` |
@@ -149,9 +161,9 @@ Current collection:
 | `summarizing-sentry-issues` | tool usage | `integrations/sentry/tools/skills/…` | Sentry issue and uptime tools |
 | `querying-yandex-cloud` | tool usage | `integrations/yandex_cloud/tools/` | `find_yc_api`, `execute_yc_operation` |
 
-The `onboarding_cicd_fix/` tree (`onboarding-cicd-fix`, `cicd-analytics-demo`,
-`cicd-reliability-agent`, `remote-managed-service`, `slack-handoff`) predates
-this convention and is migrated separately.
+The onboarding tree's pre-convention slugs (`onboarding-cicd-fix`,
+`cicd-analytics-demo`, `cicd-reliability-agent`, `remote-managed-service`,
+`slack-handoff`) live on only in `LEGACY_SKILL_NAMES`; do not reuse them.
 
 
 ## Implementation of Feedback Loops:

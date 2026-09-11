@@ -22,7 +22,7 @@ class _Terminal:
         self.pending_prompt_default = command
 
 
-def _session(*, skill: str | None = "cicd-analytics-demo") -> SimpleNamespace:
+def _session(*, skill: str | None = "analyzing-github-ci-performance") -> SimpleNamespace:
     return SimpleNamespace(
         active_skill=skill,
         pending_user_choice=None,
@@ -44,7 +44,7 @@ def _request(name: str) -> ToolExecutionRequest:
 
 def _skill_with_hooks() -> ActionSkill:
     return ActionSkill(
-        name="cicd-analytics-demo",
+        name="analyzing-github-ci-performance",
         description="demo",
         path=Path("."),
         after_tool=(

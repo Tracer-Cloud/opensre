@@ -23,7 +23,7 @@ def test_skip_option_opens_the_plain_shell_without_a_model_turn(
 ) -> None:
     # Arrange: the onboarding menu is pending and the picker returns the skip row.
     session = Session()
-    session.active_skill = "onboarding-cicd-fix"
+    session.active_skill = "onboarding-github-ci"
     session.pending_user_choice = PendingUserChoice(
         title="Which demo would you like me to run?",
         options=("Explore a repo", SKIP_DEMO_OPTION),

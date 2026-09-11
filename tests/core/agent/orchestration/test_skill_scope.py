@@ -14,7 +14,9 @@ def _tool(name: str) -> Any:
 
 def _session(tools: tuple[str, ...]) -> Any:
     return type(
-        "Session", (), {"active_skill": "cicd-analytics-demo", "active_skill_tools": tools}
+        "Session",
+        (),
+        {"active_skill": "analyzing-github-ci-performance", "active_skill_tools": tools},
     )()
 
 
@@ -48,7 +50,7 @@ def test_answer_turn_inside_a_skill_drops_tools_the_skill_did_not_declare() -> N
         "ask_user_choice",
         "update_plan",
     ]
-    assert session.active_skill == "cicd-analytics-demo"
+    assert session.active_skill == "analyzing-github-ci-performance"
 
 
 def test_a_genuine_user_turn_clears_the_scope_and_keeps_every_tool() -> None:
@@ -88,7 +90,7 @@ def test_a_slash_command_between_a_menu_and_its_answer_keeps_the_skill() -> None
 
     # Arrange
     session = SimpleNamespace(
-        active_skill="cicd-analytics-demo",
+        active_skill="analyzing-github-ci-performance",
         active_skill_tools=("analyze_github_ci_reliability",),
         pending_user_choice=None,
         skill_hooks_fired=set(),
@@ -103,5 +105,5 @@ def test_a_slash_command_between_a_menu_and_its_answer_keeps_the_skill() -> None
 
     # Assert: full tool list for the slash turn, skill untouched.
     assert [tool.name for tool in offered] == ["analyze_github_ci_reliability", "shell_run"]
-    assert session.active_skill == "cicd-analytics-demo"
+    assert session.active_skill == "analyzing-github-ci-performance"
     assert session.active_skill_tools == ("analyze_github_ci_reliability",)

@@ -27,11 +27,11 @@ _REQUIRED_ACTION_SKILL_NAMES = frozenset(
     {
         # Nested onboarding tree: the router plus one child prove that frozen
         # builds bundle and discover skills/<package>/<child>/SKILL.md.
-        "cicd-analytics-demo",
+        "analyzing-github-ci-performance",
         "fixing-github-ci",
         "fixing-github-security-alerts",
         "delivering-morning-briefings",
-        "onboarding-cicd-fix",
+        "onboarding-github-ci",
     }
 )
 _REQUIRED_INTEGRATION_VERIFIER_NAMES = frozenset({"datadog", "grafana", "x_mcp"})
