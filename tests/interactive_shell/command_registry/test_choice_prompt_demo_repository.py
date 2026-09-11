@@ -22,14 +22,18 @@ from surfaces.interactive_shell.command_registry import choice_prompt
 from surfaces.interactive_shell.session import Session
 
 _DEMO_QUESTION = "Which demo would you like me to run?"
-# The reliability agent is the demo that still declares its repository menu as an
-# ``after_tool`` hook; the analytics demo leaves that question to the model's turn.
+# The bundled demos now ask for the repository from their own plan, so the
+# host-side question is exercised through a demo that declares one.
 _DEMO = "Set up an agent that improves CI/CD reliability over time"
 _REPOSITORY_QUESTION = "Which repository should the agent watch?"
 
 
 def _pick_demo(**_kwargs: Any) -> str:
     return _DEMO
+
+
+def _declared_question(skill: Any) -> str | None:
+    return _REPOSITORY_QUESTION if skill.getting_started == _DEMO else None
 
 
 def _arrange(
@@ -41,6 +45,7 @@ def _arrange(
     session.pending_user_choice = PendingUserChoice(
         title=_DEMO_QUESTION, options=(_DEMO, SKIP_DEMO_OPTION), custom_answer=False
     )
+    monkeypatch.setattr(choice_prompt, "repository_question", _declared_question)
     monkeypatch.setattr(choice_prompt, "repl_tty_interactive", lambda: True)
     monkeypatch.setattr(choice_prompt, "repl_choose_one", _pick_demo)
     monkeypatch.setattr(choice_prompt, "clear_live_prompt_paint", lambda _session: None)

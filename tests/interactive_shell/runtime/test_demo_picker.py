@@ -384,11 +384,8 @@ def test_startup_without_a_menu_hook_does_not_fall_back_to_a_model_turn(
 
 def test_demo_skills_expose_their_intended_tool_scopes() -> None:
     by_name = {skill.name: skill for skill in list_action_skills()}
+    # The two repository demos keep the full catalog: the fix loop reaches
+    # shell_run, github_cli, fix_github_pr_ci, and slash_invoke in one flow.
     assert by_name["analyzing-github-ci-performance"].tools == ()
-    assert by_name["scheduling-github-ci-fixes"].tools == (
-        "scan_local_git_workspace",
-        "analyze_github_ci_reliability",
-        "schedule_ci_reliability_loop",
-        "ask_user_choice",
-    )
+    assert by_name["scheduling-github-ci-fixes"].tools == ()
     assert by_name["connecting-slack"].tools == ("cli_exec", "slash_invoke")

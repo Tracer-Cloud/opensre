@@ -83,13 +83,20 @@ def test_master_menu_matches_four_unique_children_and_preserves_specialists() ->
     assert "Compare these numbers" not in body
     assert "Output its `headline`" not in body
     assert "same-day snapshot" not in body
-    reliability = loader.load_skill_body("scheduling-github-ci-fixes")
-    assert "analyze_github_ci_reliability" in reliability
-    assert "compact=" not in reliability
-    # The analyze tool returns figures only; the skill writes the report from them.
-    assert "output its `response_text`" not in reliability
-    assert "include_report=true" not in reliability
-    assert "same-day snapshot" not in reliability
+    fix_loop = loader.load_skill_body("scheduling-github-ci-fixes")
+    # The fix loop repairs red pull requests; it is not the analytics report
+    # loop, so it never reaches for the analytics or report-scheduling tools.
+    assert "fix_github_pr_ci" in fix_loop
+    assert "summarize_github_pr_status" in fix_loop
+    assert "analyze_github_ci_reliability" not in fix_loop
+    assert "schedule_ci_reliability_loop" not in fix_loop
+    # Its menus are the model's own ask_user_choice calls, with fixed titles.
+    for title in (
+        "`Which repository should the agent watch?`",
+        "`Should I create a broken pull request to demonstrate the fix?`",
+        "`Delete the demo repository now?`",
+    ):
+        assert title in fix_loop
     assert menu["allow_custom"] is False
     assert GETTING_STARTED_CUSTOM not in master
     assert "not implemented yet" in loader.load_skill_body("delegating-github-ci-fixes")

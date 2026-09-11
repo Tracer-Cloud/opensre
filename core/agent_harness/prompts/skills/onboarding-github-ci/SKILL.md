@@ -8,7 +8,7 @@ description: >-
   setup, and CI-fix requests should load their specialist skill directly.
 metadata:
   owner: Vincent
-  last_changed_by: Jan
+  last_changed_by: Vincent
   last_changed_at: 2026-09-11
   usecases:
     - Interactive-shell startup and /demo
@@ -74,7 +74,7 @@ with the matching name, then follow its returned instructions in the same turn:
 - Option A: `analyzing-github-ci-performance` —
   [analyze CI performance](a-analyzing-github-ci-performance/SKILL.md).
 - Option B: `scheduling-github-ci-fixes` —
-  [schedule recurring reports](b-scheduling-github-ci-fixes/SKILL.md).
+  [schedule the CI fix loop](b-scheduling-github-ci-fixes/SKILL.md).
 - Option C: `delegating-github-ci-fixes` —
   [delegate to the managed service](c-delegating-github-ci-fixes/SKILL.md).
 - Option D: `connecting-slack` — [connect Slack](d-connecting-slack/SKILL.md).
