@@ -13,6 +13,7 @@ agents let inspection commands through while still gating mutations.
 
 from __future__ import annotations
 
+import os
 import re
 import shlex
 
@@ -403,8 +404,11 @@ def _date_is_read_only(rest: list[str]) -> bool:
     """``date`` is read-only only for display forms.
 
     ``date -s`` / ``--set`` and the legacy positional ``MMDDhhmm[[CC]YY][.ss]``
-    form set the clock. A leading ``+`` starts an output format string only.
+    form set the clock on POSIX. Under ``cmd.exe``, bare ``date`` prompts for a
+    new date and only ``date /t`` is display-only.
     """
+    if os.name == "nt":
+        return len(rest) == 1 and rest[0].lower() == "/t"
     if any(_token_is_write_flag(tok, _DATE_WRITE_FLAGS) for tok in rest):
         return False
     return not any(not tok.startswith(("-", "+")) for tok in rest)

@@ -6,6 +6,7 @@ import pytest
 
 from config.constants.repl_autonomy import AutoLevel
 from tools.interactive_shell.shared import apply_auto_level, apply_plan_only_gate
+from tools.interactive_shell.shell import read_only as shell_read_only
 from tools.interactive_shell.shell.policy import evaluate_shell_command
 from tools.interactive_shell.shell.read_only import is_read_only_shell_command
 
@@ -137,6 +138,25 @@ def test_mutating_shell_still_asks_when_gated() -> None:
     assert result.shell_classification == "unrestricted"
     assert apply_auto_level(result, AutoLevel.MED).verdict == "ask"
     assert apply_plan_only_gate(result, plan_only_active=True).verdict == "ask"
+
+
+@pytest.mark.parametrize(
+    ("command", "classification"),
+    [("date", "unrestricted"), ("date 09-12-2026", "unrestricted"), ("date /t", "read_only")],
+)
+def test_windows_date_only_auto_runs_the_display_form(
+    monkeypatch: pytest.MonkeyPatch,
+    command: str,
+    classification: str,
+) -> None:
+    monkeypatch.setattr(shell_read_only.os, "name", "nt")
+
+    result = evaluate_shell_command(command)
+
+    assert result.shell_classification == classification
+    expected_verdict = "allow" if classification == "read_only" else "ask"
+    assert apply_auto_level(result, AutoLevel.LOW).verdict == expected_verdict
+    assert apply_plan_only_gate(result, plan_only_active=True).verdict == expected_verdict
 
 
 @pytest.mark.parametrize(
