@@ -151,7 +151,7 @@ def _load_skill(observer: ActionRenderObserver, call_id: str, name: str) -> None
 
 
 def test_skill_view_renders_single_activation_line() -> None:
-    """Loading a skill shows one ``Skill activated <name>`` line, nothing underneath."""
+    """Loading a skill shows one labeled status line, nothing underneath."""
     observer, buffer = _skill_observer()
 
     observer(
@@ -170,7 +170,7 @@ def test_skill_view_renders_single_activation_line() -> None:
         },
     )
 
-    assert buffer.getvalue() == "\nSkill activated install-code-review\n"
+    assert buffer.getvalue() == "\nLoaded   Skill · install-code-review\n"
 
 
 def test_two_skills_in_one_batch_each_get_their_own_line() -> None:
@@ -191,8 +191,8 @@ def test_two_skills_in_one_batch_each_get_their_own_line() -> None:
         )
 
     assert buffer.getvalue() == (
-        "\nSkill activated reporting-github-ci-failures\n"
-        "\nSkill activated github-ci-fix-onboarding\n"
+        "\nLoaded   Skill · reporting-github-ci-failures\n"
+        "\nLoaded   Skill · github-ci-fix-onboarding\n"
     )
 
 
@@ -204,8 +204,8 @@ def test_skill_view_renders_bold_green_activation_label() -> None:
 
     heading = console.print.call_args_list[1].args[0]
     assert isinstance(heading, Text)
-    assert heading.plain == "Skill activated install-code-review"
-    assert len(heading.spans) == 2
+    assert heading.plain == "Loaded   Skill · install-code-review"
+    assert len(heading.spans) == 3
     assert str(heading.spans[0].style) == BOLD_SKILL
     assert str(heading.spans[1].style) == str(TEXT)
 
@@ -420,7 +420,7 @@ def test_skill_view_failure_renders_failure_child() -> None:
         },
     )
 
-    assert buffer.getvalue() == "\nSkill failed to load no-such-skill\n"
+    assert buffer.getvalue() == "\nError    Could not load skill · no-such-skill\n"
 
 
 def test_skill_view_tool_end_without_start_prints_nothing() -> None:
@@ -492,7 +492,7 @@ def test_non_skill_tool_end_prints_nothing() -> None:
 
 
 def test_generic_tool_end_nests_the_result_under_the_call() -> None:
-    """Droid / Claude Code / Cursor attach the result to the call as a ``↳`` child."""
+    """Attach a concise result to its tool call as a ``↳`` child."""
     observer, buffer = _observer_with_buffer()
 
     observer(
@@ -576,7 +576,7 @@ def test_skill_block_renders_live_not_buffered() -> None:
     )
 
     out = buffer.getvalue()
-    assert "\nSkill activated install-code-review\n" in out
+    assert "\nLoaded   Skill · install-code-review\n" in out
     assert "\n\n\n" not in out
     # The github call is buffered for the grouped log, not printed inline yet.
     assert any(e.kind == "GitHub CLI" for e in observer.session.terminal.action_log_entries)

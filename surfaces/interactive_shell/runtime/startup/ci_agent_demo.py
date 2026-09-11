@@ -33,7 +33,8 @@ from integrations.github import (
     schedule_ci_reliability_loop,
 )
 from surfaces.interactive_shell.runtime.loop_scheduler import reload_loop_scheduler, run_loop_now
-from surfaces.interactive_shell.ui.streaming.renderer import render_note_block, reply_gutter
+from surfaces.interactive_shell.ui.streaming.renderer import render_note_block
+from surfaces.interactive_shell.ui.transcript import transcript_gutter
 from surfaces.shared.terminal.components.choice_menu import (
     repl_choose_one,
 )
@@ -104,14 +105,14 @@ def scan_and_show(console: Console | None) -> WorkspaceSnapshot:
         # same gutter, so the demo does not read as a different program.
         console.print()
         render_note_block(console, _SNAPSHOT_LEAD)
-        console.print(reply_gutter(snapshot_renderable(snapshot), lead=False))
+        console.print(transcript_gutter(snapshot_renderable(snapshot), lead=False))
         console.print()
     return snapshot
 
 
 def _warn(console: Console | None, text: str) -> None:
     if console is not None:
-        console.print(reply_gutter(Text(text, style=str(WARNING)), lead=False))
+        console.print(transcript_gutter(Text(text, style=str(WARNING)), lead=False))
 
 
 def start_ci_agent_demo(
@@ -150,7 +151,7 @@ def start_ci_agent_demo(
         console.print()
         render_note_block(console, card.headline)
         bullets = "\n".join(f"- {detail}" for detail in card.details)
-        console.print(reply_gutter(ReplyMarkdown(bullets), lead=False))
+        console.print(transcript_gutter(ReplyMarkdown(bullets), lead=False))
         console.print()
     _record(OPTION_CI_AGENT)
     _run_first_pass(console, scheduled.task_id, owner=owner, repo=repo)
@@ -195,7 +196,7 @@ def _run_first_pass(console: Console | None, task_id: str, *, owner: str, repo: 
     if console is not None:
         console.print()
         render_note_block(console, "The first report, as it will land in /loops messages:")
-        console.print(reply_gutter(ReplyMarkdown(report), lead=False))
+        console.print(transcript_gutter(ReplyMarkdown(report), lead=False))
         console.print()
 
 
@@ -228,7 +229,7 @@ def _install_service(console: Console | None) -> None:
         return
     if console is not None:
         render_note_block(console, _SERVICE_INSTALLED)
-        console.print(reply_gutter(Text(f"Log: {state.log_path}"), lead=False))
+        console.print(transcript_gutter(Text(f"Log: {state.log_path}"), lead=False))
         console.print()
 
 

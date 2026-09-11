@@ -11,11 +11,14 @@ from typing import TYPE_CHECKING
 
 from rich.console import Console
 from rich.markup import escape
+from rich.text import Text
 
 from core.agent_harness import OutputSink
 from core.agent_harness.spi.defaults import DefaultErrorReporter
 from core.llm.shared.llm_retry import CREDIT_EXHAUSTED_MARKER
-from surfaces.interactive_shell.ui import DIM
+from infrastructure.safety.terminal_output import strip_terminal_controls
+from surfaces.interactive_shell.ui import DIM, ERROR, TEXT
+from surfaces.interactive_shell.ui.transcript import TranscriptRole, transcript_prefix
 
 if TYPE_CHECKING:
     from surfaces.interactive_shell.session import Session
@@ -72,7 +75,7 @@ class ShellOutputSink:
         self._console.print(message, markup=False)
 
     def render_response_header(self, label: str) -> None:
-        # No leading blank — Droid-dense turn stacking (user row → Ω reply).
+        # No leading blank: the caller owns spacing between the user and reply.
         render_response_header(self._console, label)
 
     def render_plan_breakdown(self, breakdown: str) -> None:
@@ -82,7 +85,11 @@ class ShellOutputSink:
         render_plan_breakdown(self._console, breakdown)
 
     def render_error(self, message: str) -> None:
-        self._console.print(f"[yellow]{escape(message)}[/]")
+        safe_message = strip_terminal_controls(message, keep_whitespace=True)
+        line = Text()
+        line.append(transcript_prefix(TranscriptRole.ERROR), style=str(ERROR))
+        line.append(" ".join(safe_message.split()), style=str(TEXT))
+        self._console.print(line)
         # On a credit/billing wall, add the in-tool recovery hint.
         if CREDIT_EXHAUSTED_MARKER in message:
             self._console.print("[dim]Run /model to switch to another provider.[/]")

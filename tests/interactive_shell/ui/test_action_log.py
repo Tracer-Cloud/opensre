@@ -24,8 +24,8 @@ def _push(session: Session, call_id: str, kind: str, concise: str, detail: str) 
 
 def test_consecutive_same_kind_calls_group_into_one_bordered_section() -> None:
     session = Session()
-    _push(session, "1", "GitHub CLI", "gh repo view", "⏺ GitHub CLI · gh repo view")
-    _push(session, "2", "GitHub CLI", "gh pr list", "⏺ GitHub CLI · gh pr list")
+    _push(session, "1", "GitHub CLI", "gh repo view", "Tool     GitHub CLI · gh repo view")
+    _push(session, "2", "GitHub CLI", "gh pr list", "Tool     GitHub CLI · gh pr list")
     buffer = io.StringIO()
 
     flush_action_log(_tty(buffer), session)
@@ -49,7 +49,7 @@ def test_no_inline_dotted_arguments_on_a_single_call() -> None:
         "1",
         "list github actions workflow runs",
         "",
-        "⏺ list github actions workflow runs\n    owner: Tracer-Cloud\n    per_page: 100",
+        "Tool     list github actions workflow runs\n    owner: Tracer-Cloud\n    per_page: 100",
     )
     buffer = io.StringIO()
 
@@ -66,7 +66,7 @@ def test_a_long_collapsed_command_is_clipped_only_at_render_width() -> None:
         ",".join(f"field{index}" for index in range(40))
     )
     session = Session()
-    _push(session, "1", "GitHub CLI", command, f"⏺ GitHub CLI · {command}")
+    _push(session, "1", "GitHub CLI", command, f"Tool     GitHub CLI · {command}")
     buffer = io.StringIO()
     console = Console(
         file=buffer, force_terminal=True, highlight=False, color_system="truecolor", width=80
@@ -82,7 +82,7 @@ def test_a_long_collapsed_command_is_clipped_only_at_render_width() -> None:
 
 def test_a_lone_call_is_a_dim_line_not_a_one_row_box() -> None:
     session = Session()
-    _push(session, "1", "GitHub CLI", "gh pr list", "⏺ GitHub CLI · gh pr list")
+    _push(session, "1", "GitHub CLI", "gh pr list", "Tool     GitHub CLI · gh pr list")
     buffer = io.StringIO()
 
     flush_action_log(_tty(buffer), session)
@@ -108,7 +108,13 @@ def test_two_different_lone_kinds_render_as_two_dim_lines_no_box() -> None:
 
 def test_non_tty_inlines_the_detail() -> None:
     session = Session()
-    _push(session, "1", "GitHub CLI", "gh pr list", "⏺ GitHub CLI · gh pr list\n  ↳ 4 open PRs")
+    _push(
+        session,
+        "1",
+        "GitHub CLI",
+        "gh pr list",
+        "Tool     GitHub CLI · gh pr list\n  ↳ 4 open PRs",
+    )
     buffer = io.StringIO()
 
     flush_action_log(Console(file=buffer, force_terminal=False, highlight=False), session)
@@ -169,8 +175,8 @@ def test_a_tty_flush_is_one_buffered_write_of_every_row(monkeypatch) -> None:  #
     assert len(writes) == 1
     rendered = [str(row) for row in writes[0].renderables]  # type: ignore[attr-defined]
     assert rendered[0] == ""
-    assert rendered[1] == "⏺ summarize github pr status"
-    assert rendered[2] == "⏺ propose scheduled delivery"
+    assert rendered[1] == "Tool     summarize github pr status"
+    assert rendered[2] == "Tool     propose scheduled delivery"
 
 
 def test_box_rows_fit_the_render_width_so_none_wraps() -> None:

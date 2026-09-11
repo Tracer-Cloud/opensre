@@ -36,16 +36,17 @@ from surfaces.interactive_shell.runtime.core.state import SpinnerState
 from surfaces.interactive_shell.session.terminal_session import ActionLogEntry
 from surfaces.interactive_shell.ui.action_log import flush_action_log
 from surfaces.interactive_shell.ui.streaming import render_note_block
+from surfaces.interactive_shell.ui.transcript import (
+    TranscriptRole,
+    transcript_line,
+    transcript_prefix,
+)
 from surfaces.shared.terminal.output.console_state import get_turn_spinner
 from tools.interactive_shell.action_names import ActionToolName
 from tools.interactive_shell.shell.display import format_shell_command_for_display
 
 # Tool labels whose payload is a runnable command.
 _COMMAND_TOOL_LABELS: frozenset[str] = frozenset({"Execute", "GitHub CLI", "opensre"})
-
-# Leads every tool-call line so a call reads apart from the ``Ω`` reply and the
-# ``[n] ❯`` user row — the call → result → reply hierarchy Claude Code / Droid use.
-_TOOL_CALL_MARKER = "⏺"
 
 # Tools whose preview is just ``(label, single-arg)``. The display content is the
 # stripped string value of that single argument. Anything that needs to combine
@@ -368,8 +369,8 @@ class ActionRenderObserver:
 
     Self-recording tools (``slash_invoke``, ``shell_run``, etc.) append their own
     history row; chat turns are recorded later by turn accounting when the
-    assistant runs. ``skill_view`` gets a dedicated live event: one
-    ``Skill activated <name>`` (or ``failed to load``) line on ``tool_end``.
+    assistant runs. ``skill_view`` gets a dedicated live event: a labeled skill
+    status line painted on ``tool_end``.
     """
 
     def __init__(self, *, session: Session, console: Console, message: str) -> None:
@@ -468,7 +469,7 @@ class ActionRenderObserver:
         Stacked by tool-call id: the ReAct loop emits every ``tool_start``
         before executing the batch, so a single slot would show the last
         tool and clear on the first ``tool_end``. Scrollback keeps the
-        settled ``⏺`` copy. Only relabels an already-running spinner
+        settled transcript copy. Only relabels an already-running spinner
         (see ``_set_spinner_phase``).
         """
         spinner = get_turn_spinner()
@@ -508,9 +509,8 @@ class ActionRenderObserver:
         if is_plan_diagnosis_prose(content):
             return
         self.console.print()
-        # Intermediate narration is a working note: recessed body + dim ``·`` in
-        # the same gutter column as ``Ω``, so it reads apart from the user row
-        # and the bright final reply without floating as unmarked prose.
+        # Intermediate narration is a labeled working note, visually secondary
+        # to the final reply without floating as unmarked prose.
         # ``render_note_block`` sanitizes model text at ``_build_markdown_block``.
         render_note_block(self.console, content)
 
@@ -532,10 +532,13 @@ class ActionRenderObserver:
         label, content = tool_call_display(name, args if isinstance(args, dict) else {})
         if label in _COMMAND_TOOL_LABELS:
             concise = _collapsed_line(content) if content else ""
-            detail = f"{_TOOL_CALL_MARKER} {label} · {content}" if content else f"{label}"
+            detail = transcript_line(
+                TranscriptRole.TOOL,
+                f"{label} · {content}" if content else label,
+            )
         else:
             concise = ""
-            detail = f"{_TOOL_CALL_MARKER} {label}"
+            detail = transcript_line(TranscriptRole.TOOL, label)
             if content:
                 # Unfold the dotted argument strip into one indented line each.
                 detail += "\n" + "\n".join(f"    {part}" for part in content.split(" · "))
@@ -564,10 +567,10 @@ class ActionRenderObserver:
         self.session.terminal.inline_tool_results = True
 
     def _render_skill_end(self, data: dict[str, Any]) -> None:
-        """Print one ``Skill activated <name>`` line once the skill has loaded.
+        """Print one labeled status line once the skill load finishes.
 
         Opens with its own blank line like every other block; the next block
-        (another call, a note, or the ``Ω`` reply) adds its own — do not add a
+        (another call, a note, or the final reply) adds its own — do not add a
         trailing one here or the gap doubles.
         """
         slug = self._pending_skill_calls.pop(str(data.get("id") or ""), None)
@@ -579,9 +582,11 @@ class ActionRenderObserver:
         # through Rich markup.
         line = Text()
         if activated:
-            line.append("Skill activated ", style=BOLD_SKILL)
+            line.append(transcript_prefix(TranscriptRole.SKILL_LOADED), style=BOLD_SKILL)
+            line.append("Skill · ", style=str(TEXT))
         else:
-            line.append("Skill failed to load ", style=ERROR)
+            line.append(transcript_prefix(TranscriptRole.ERROR), style=str(ERROR))
+            line.append("Could not load skill · ", style=str(TEXT))
         line.append(slug, style=str(TEXT))
         self.console.print()
         self.console.print(line)

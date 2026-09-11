@@ -118,7 +118,7 @@ def render_prompt_region(session: Session, state: ReplState, spinner: SpinnerSta
                 idle_hint=prompt_rendering.resolve_idle_hint_ansi(session),
             )
         )
-    # Tools already paint a ``⏺`` line into scrollback; the live tool name is
+    # Tools already paint a labeled row into scrollback; the live tool name is
     # folded into the spinner status row (same line as ``Invoking tools…``).
     # Auto stays on the page while busy (DIM) so permission chrome does not
     # vanish for the length of the turn.

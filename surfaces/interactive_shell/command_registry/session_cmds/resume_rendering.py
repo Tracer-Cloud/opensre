@@ -34,9 +34,7 @@ def render_resumed_session_history(
     messages: list[tuple[str, str]],
 ) -> None:
     """Render prior session activity in REPL turn order, including slash commands."""
-    from infrastructure.terminal.markdown import ReplyMarkdown
-    from infrastructure.terminal.theme import MARKDOWN_THEME
-    from surfaces.interactive_shell.ui.streaming import render_response_header
+    from surfaces.interactive_shell.ui.streaming.renderer import render_reply_block
 
     if not history and not messages:
         return
@@ -67,9 +65,7 @@ def render_resumed_session_history(
                 queued = assistant_by_user.get(text)
                 response = queued.popleft() if queued else ""
             if response:
-                render_response_header(console, "assistant")
-                with console.use_theme(MARKDOWN_THEME):
-                    console.print(ReplyMarkdown(response, code_theme="ansi_dark"))
+                render_reply_block(console, response)
         console.print(f"[{DIM}]─────────────────────────────────────────────────────────[/]")
         return
 
@@ -79,9 +75,7 @@ def render_resumed_session_history(
             console.print(f"[bold {HIGHLIGHT}]❯[/] {escape(text)}")
             has_pending_user = True
         elif role == "assistant" and has_pending_user:
-            render_response_header(console, "assistant")
-            with console.use_theme(MARKDOWN_THEME):
-                console.print(ReplyMarkdown(text, code_theme="ansi_dark"))
+            render_reply_block(console, text)
             has_pending_user = False
     console.print(f"[{DIM}]─────────────────────────────────────────────────────────[/]")
 

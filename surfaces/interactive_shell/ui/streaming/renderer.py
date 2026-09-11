@@ -7,16 +7,18 @@ import sys
 from typing import TYPE_CHECKING
 
 from rich.console import Console
-from rich.table import Table
 from rich.text import Text
 
 import infrastructure.terminal.theme as ui_theme
 from core.agent_harness.spi.prompt_chrome import normalize_three_tier_spacing
 from infrastructure.safety.terminal_output import strip_terminal_controls
 from infrastructure.text import looks_like_data_blob
+from surfaces.interactive_shell.ui.transcript import (
+    TranscriptRole,
+    transcript_gutter,
+)
 
 if TYPE_CHECKING:
-    from rich.console import RenderableType
     from rich.markdown import Markdown
 
 STREAM_LABEL_ASSISTANT = "assistant"
@@ -34,8 +36,7 @@ def _escape_markdown_dunder_filenames(text: str) -> str:
 
 
 # The model sometimes pastes a tool's raw result (JSON, listings) into its reply
-# instead of answering in prose. Collapse such a block to a compact marker so the
-# reply reads like Claude Code / Droid, regardless of which model echoed it.
+# instead of answering in prose. Collapse such a block to a compact marker.
 _DUMP_TRUNCATED_MARKER = "output truncated"
 _DUMP_MIN_CHARS = 200
 _DUMP_MIN_JSON_KEYS = 3
@@ -137,14 +138,9 @@ def render_markdown_block(console: Console, text: str) -> None:
         console.print(_build_markdown_block(visible))
 
 
-_REPLY_MARKER = "Ω"
-# Quiet lead for mid-turn narration — same 2-cell gutter as ``Ω `` / ``⏺ ``
-# (Droid: one marker column, body text shares a left edge).
-_NOTE_MARKER = "·"
-_GUTTER_WIDTH = 2
 # Reply rows stop short of the last column: a row padded to the full terminal
 # width followed by a newline leaves a blank line and a shifted continuation
-# in Terminal.app. Cursor keeps a similar right margin.
+# in Terminal.app.
 _RIGHT_MARGIN = 2
 _MIN_REPLY_WIDTH = 20
 
@@ -155,83 +151,55 @@ def reply_width(console: Console) -> int:
 
 
 def render_note_block(console: Console, text: str) -> None:
-    """Render intermediate agent narration in the agent marker gutter.
-
-    Droid puts a warm accent on every agent line. Notes use a dimmer ``·`` in
-    that same column as ``Ω`` / Thinking so the left edge stays straight; bold
-    spans (action words) stay bold within the recessed body.
-    """
+    """Render intermediate narration with an explicit working-state label."""
     visible = text
     if not visible.strip():
         return
     with console.use_theme(ui_theme.MARKDOWN_THEME):
         console.print(
-            reply_gutter(
+            transcript_gutter(
                 _build_markdown_block(visible),
                 lead=True,
-                marker=_NOTE_MARKER,
-                # Warm accent like Droid's agent marker — not ghost DIM, or notes
-                # vanish next to Thinking / plan chrome.
-                marker_style=ui_theme.reply_marker_style(),
+                role=TranscriptRole.WORKING,
+                label_style=_transcript_label_style(),
             ),
             style=str(ui_theme.SECONDARY),
             width=reply_width(console),
         )
 
 
-def _reply_marker_style() -> str:
-    """Bold warm accent for the ``Ω`` reply marker — same weight as ``⏺`` / Thinking."""
+def _transcript_label_style() -> str:
+    """Bold accent for the assistant and working-state labels."""
     return ui_theme.reply_marker_style()
 
 
-def reply_gutter(
-    body: RenderableType,
-    *,
-    lead: bool,
-    marker: str = _REPLY_MARKER,
-    marker_style: str | None = None,
-) -> Table:
-    """Lay a reply renderable in a two-column gutter.
-
-    The first paragraph carries the lead marker in the gutter; every other row
-    (wrapped lines and following paragraphs) sits in the same indented body
-    column, so the whole reply reads as one block hanging under the marker.
-    """
-    grid = Table.grid(padding=0)
-    grid.add_column(width=_GUTTER_WIDTH, no_wrap=True)
-    grid.add_column(overflow="fold")
-    style = marker_style if marker_style is not None else _reply_marker_style()
-    pad = " " * (_GUTTER_WIDTH - 1)
-    lead_cell = Text(f"{marker}{pad}", style=style) if lead else Text(" " * _GUTTER_WIDTH)
-    grid.add_row(lead_cell, body)
-    return grid
-
-
 def render_reply_block(console: Console, text: str, *, lead: bool = True) -> None:
-    """Render a whole assistant reply inside the ``Ω`` hanging-indent gutter."""
+    """Render a whole assistant reply inside the labeled transcript gutter."""
     visible = text
     if not visible.strip():
         return
     with console.use_theme(ui_theme.MARKDOWN_THEME):
         # Explicit TEXT on the row so plain paragraphs never fall through to the
-        # terminal default white (which washed out the warm marker in dogfood).
+        # terminal default white, which would flatten the label/body hierarchy.
         console.print(
-            reply_gutter(_build_markdown_block(visible), lead=lead),
+            transcript_gutter(
+                _build_markdown_block(visible),
+                lead=lead,
+                label_style=_transcript_label_style(),
+            ),
             style=str(ui_theme.TEXT),
             width=reply_width(console),
         )
 
 
 def render_response_header(console: Console, label: str) -> None:
-    """Print the ``Ω`` row marker that opens every assistant response.
+    """Print the label that opens every assistant response.
 
-    A single omega is opensre's uniquely identifiable agent marker. Shared
-    with ``action_turn.run_action_tool_turn`` so the planned-actions path and the
-    streaming response path use the exact same prefix.
+    Shared with ``action_turn.run_action_tool_turn`` so the planned-actions path
+    and the streaming response path use the exact same prefix.
 
     ``label`` is accepted for port compatibility (callers still pass
-    ``answer`` / ``assistant``) but is not painted — a dim role word under the
-    marker read as school-project chrome next to Droid's silent replies.
+    ``answer`` / ``assistant``) but is not painted.
     """
     del label
-    console.print(f"[{_reply_marker_style()}]{_REPLY_MARKER}[/]")
+    console.print(Text(TranscriptRole.ASSISTANT.value, style=_transcript_label_style()))

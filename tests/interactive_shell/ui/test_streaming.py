@@ -28,8 +28,7 @@ def _strip_ansi(text: str) -> str:
 
 
 def test_render_note_block_is_recessed_and_indented_but_keeps_bold() -> None:
-    # Droid rhythm: warm ``·`` in the shared agent column, recessed body, bold
-    # action words still bold.
+    # A visible working-state label leads the recessed body; action words stay bold.
     from infrastructure.terminal import theme as ui_theme
 
     ui_theme.set_active_theme("amber")
@@ -51,15 +50,14 @@ def test_render_note_block_is_recessed_and_indented_but_keeps_bold() -> None:
     assert "38;2;" in raw or "38;5;" in raw
     assert re.search(r"\x1b\[[0-9;]*1[;m]", raw)  # bold action word survives
     first_line = _strip_ansi(raw).splitlines()[0]
-    assert first_line.startswith("· ")  # warm · in the shared agent marker column
+    assert first_line.startswith("Working  ")
     assert "load the workflow" in first_line
 
 
 def test_table_reply_renders_as_a_table_not_flattened_pipes() -> None:
     # A reply that leads with a Markdown table must render as an aligned table. The
-    # inline ``Ω `` marker fused onto the header row breaks CommonMark block parsing
-    # and flattens the table to one line of raw pipes, so the marker goes on its own
-    # line before a leading block.
+    # transcript label stays in its own column so it cannot become part of the
+    # CommonMark source and flatten the table to a line of raw pipes.
     buf = io.StringIO()
     console = Console(file=buf, force_terminal=False, width=60, highlight=False)
 
@@ -73,14 +71,14 @@ def test_table_reply_renders_as_a_table_not_flattened_pipes() -> None:
     assert "━" in out and "│" in out  # rendered as a table with header rule and column rules
 
 
-def test_prose_reply_keeps_the_inline_marker() -> None:
-    # Prose still carries the marker inline on the first line.
+def test_prose_reply_keeps_the_inline_label() -> None:
+    # Prose carries the assistant label inline on the first line.
     buf = io.StringIO()
     console = Console(file=buf, force_terminal=False, width=60, highlight=False)
 
     publish_full_response(console, "Root disk is 44% full.")
 
-    assert "Ω Root disk is 44% full." in buf.getvalue()
+    assert "OpenSRE  Root disk is 44% full." in buf.getvalue()
 
 
 def _tty_console() -> tuple[Console, io.StringIO]:
@@ -114,9 +112,8 @@ class TestNonTtyFallback:
 
         output = buf.getvalue()
         assert result == "Hello, world"
-        # The inline ``Ω`` marker + text reach piped output so captured logs
-        # are useful (the standalone label header was removed).
-        assert "Ω" in output
+        # The inline label + text reach piped output so captured logs are useful.
+        assert "OpenSRE" in output
         assert "Hello, world" in output
         # No spinner / Live cursor-movement artifacts in non-TTY captures.
         assert "thinking" not in output
@@ -146,8 +143,8 @@ class TestNonTtyFallback:
 
         assert result == '{"actions":[]}'
         output = buf.getvalue()
-        # No bullet header for suppressed responses.
-        assert "Ω" not in output
+        # No assistant label for suppressed responses.
+        assert "OpenSRE" not in output
         assert '{"actions"' not in output
 
 
@@ -188,8 +185,8 @@ class TestTtyParagraphRender:
 
         output = _strip_ansi(buf.getvalue())
         assert result == "Run **opensre setup** to start."
-        # Bullet row marker pinned above the rendered paragraph.
-        assert "Ω" in output
+        # The assistant label is pinned beside the rendered paragraph.
+        assert "OpenSRE" in output
         # End-of-stream force-flush rendered Markdown — ``**`` stripped.
         assert "**opensre" not in output
         assert "opensre setup" in output
@@ -222,7 +219,7 @@ class TestTtyParagraphRender:
     def test_preserves_blank_line_between_list_and_following_paragraph(self) -> None:
         """One blank line between a list and the next paragraph — no double gap.
 
-        The whole reply hangs in the ``Ω`` gutter, so the list and the following
+        The whole reply hangs in the labeled gutter, so the list and the following
         paragraph sit in the indented body column.
         """
         console, buf = _tty_console()
@@ -231,10 +228,15 @@ class TestTtyParagraphRender:
         stream_to_console(console, label="OpenSRE", chunks=_yield_chunks([text]))
 
         visible = "\n".join(line.rstrip() for line in _strip_ansi(buf.getvalue()).splitlines())
-        assert "Ω Ready:\n\n   • first\n   • second\n\n  Blocked pending a choice." in visible
+        assert (
+            "OpenSRE  Ready:\n\n"
+            "          • first\n"
+            "          • second\n\n"
+            "         Blocked pending a choice."
+        ) in visible
 
-    def test_reply_hangs_indented_under_the_marker(self) -> None:
-        """A wrapped reply hangs in the Ω gutter: line one carries the marker,
+    def test_reply_hangs_indented_under_the_label(self) -> None:
+        """A wrapped reply hangs in the gutter: line one carries the label,
         every continuation line aligns in the indented body column."""
         console, buf = _tty_console()
         text = "A fairly long assistant reply that has to wrap across several lines. " * 3
@@ -242,9 +244,9 @@ class TestTtyParagraphRender:
         stream_to_console(console, label="assistant", chunks=_yield_chunks([text]))
 
         lines = [line for line in _strip_ansi(buf.getvalue()).splitlines() if line.strip()]
-        assert lines[0].startswith("Ω ")  # marker leads the first line
+        assert lines[0].startswith("OpenSRE  ")
         assert len(lines) > 1  # the reply actually wrapped
-        assert all(line.startswith("  ") for line in lines[1:])  # hang-indent at col 2
+        assert all(line.startswith(" " * 9) for line in lines[1:])
 
     def test_paragraph_break_across_chunk_boundary_flushes(self) -> None:
         """The cross-chunk seam — chunk N ends with ``\\n``, chunk N+1
@@ -643,9 +645,9 @@ class TestTtyParagraphRender:
         )
 
         assert result == ""
-        # The marker is inline on the first paragraph, so an empty stream prints
-        # no marker at all — and no spinner residue at finalize.
-        assert "Ω" not in _strip_ansi(buf.getvalue())
+        # The label is inline on the first paragraph, so an empty stream prints
+        # no label at all — and no spinner residue at finalize.
+        assert "OpenSRE" not in _strip_ansi(buf.getvalue())
 
 
 class TestMidStreamError:
@@ -755,16 +757,16 @@ class TestTimingFooter:
 
 
 class TestRenderResponseHeader:
-    """``render_response_header`` is the bullet-row marker shared with
+    """``render_response_header`` is the assistant label shared with
     ``action_turn.run_action_tool_turn`` — three call sites collapsed
     to one helper, so we lock in the visible output here.
     """
 
-    def test_emits_bullet_glyph_without_role_label(self) -> None:
+    def test_emits_product_label_without_internal_role(self) -> None:
         console, buf = _tty_console()
         render_response_header(console, "assistant")
         output = _strip_ansi(buf.getvalue())
-        assert "Ω" in output
+        assert "OpenSRE" in output
         assert "assistant" not in output
 
     def test_role_label_is_accepted_but_not_painted(self) -> None:
@@ -773,7 +775,7 @@ class TestRenderResponseHeader:
         console, buf = _tty_console()
         render_response_header(console, "answer")
         assert "answer" not in _strip_ansi(buf.getvalue())
-        assert "Ω" in _strip_ansi(buf.getvalue())
+        assert "OpenSRE" in _strip_ansi(buf.getvalue())
 
 
 class TestFormatTokenCountShort:
@@ -1074,9 +1076,9 @@ class TestSuppressionPeek:
         )
 
         assert result == '{"actions":[]}'
-        # No bullet header, no markdown, no live-region artifacts.
+        # No assistant label, no markdown, no live-region artifacts.
         output = _strip_ansi(buf.getvalue())
-        assert "Ω" not in output
+        assert "OpenSRE" not in output
         assert '{"actions"' not in output
 
     def test_renders_normally_when_first_char_does_not_match(self) -> None:
@@ -1090,7 +1092,7 @@ class TestSuppressionPeek:
 
         assert result == "Hello, world"
         output = _strip_ansi(buf.getvalue())
-        assert "Ω" in output
+        assert "OpenSRE" in output
         assert "Hello, world" in output
 
     def test_skips_leading_whitespace_before_deciding(self) -> None:
@@ -1105,7 +1107,7 @@ class TestSuppressionPeek:
 
         assert result == '  \n{"action":"slash"}'
         output = _strip_ansi(buf.getvalue())
-        assert "Ω" not in output
+        assert "OpenSRE" not in output
 
 
 class TestRenderMarkdownBlock:

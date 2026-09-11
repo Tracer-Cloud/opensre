@@ -37,7 +37,7 @@ def ready_hint_ansi() -> str:
     reserved = prompt_text_width(lead)
     if reserved >= width:
         visible = clip_prompt_text(f"{lead}{hint}", width)
-        # Soft grey lead — warm accent is reserved for Ω / ⏺ / spinner glyph.
+        # Soft grey lead; the warm accent is reserved for active transcript chrome.
         if visible.startswith("Ready"):
             rest = visible[len("Ready") :]
             return (
@@ -351,7 +351,7 @@ class SpinnerState:
         return ui_theme.reply_marker_hex()
 
     def _phase_accent_ansi(self) -> str:
-        """Spinner glyph: Factory-warm orange (same family as ``Ω`` / ``⏺``)."""
+        """Paint the spinner glyph with the transcript accent."""
         return ui_theme.BOLD_REPLY_MARKER_ANSI
 
     def inline_spinner_ansi(self) -> str:

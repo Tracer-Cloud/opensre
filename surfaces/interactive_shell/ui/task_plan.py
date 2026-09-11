@@ -139,12 +139,11 @@ def _collapsed_window(plan: TaskPlan) -> tuple[int, int]:
 
 
 def task_plan_overlay_ansi(plan: TaskPlan, *, expanded: bool = False) -> str:
-    """ANSI plan overlay pinned above the prompt (Droid checklist rhythm).
+    """Render the ANSI plan overlay pinned above the prompt.
 
     Header flush left; steps indented two spaces under it (``✓`` / ``●`` /
-    ``○``). Same left edge as note ``·`` / Thinking glyphs in column 0; step
-    glyphs sit under note body text. A short plan (or ``expanded``) shows every
-    step; a longer one collapses to a window around the current step.
+    ``○``). A short plan (or ``expanded``) shows every step; a longer one
+    collapses to a window around the current step.
     """
     width = prompt_line_width()
     header = _overlay_line(format_plan_header(plan), ui_theme.SECONDARY_ANSI, width)
