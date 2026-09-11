@@ -1543,7 +1543,7 @@ def test_tool_renders_report_from_collected_runs() -> None:
         "Waiting on CI cost 1 developer 40m of working time in the last 7 days, "
         "up to 40m a week for the worst hit."
     )
-    assert "Coverage notice: sample" in result["response_text"]
+    assert result["coverage_notices"] == ["Coverage notice: sample"]
 
 
 def test_tool_prints_progress_lines_but_never_the_report() -> None:
@@ -1585,16 +1585,48 @@ def test_tool_prints_progress_lines_but_never_the_report() -> None:
     assert "CI/CD reliability" not in output
     assert "Compared with" not in output
     assert "rendered_in_shell" not in result
-    # The report and every figure travel with the result on every surface, so
-    # the model presents from it and never reruns the analysis for one field.
-    assert "CI/CD reliability for o/r\\[1\\], last 7 days" in result["response_text"]
-    assert "Compared with" in result["response_text"]
-    assert "Compared with" in result["comparison_text"]
+    # Every figure travels with the result on every surface, so the model
+    # writes the report from it and never reruns the analysis for one field.
     assert result["executions"] == 2
     assert result["developers_affected"] == 0
     assert result["mean_recovery_hours"] is None
     assert result["comparison_figures"]["PR failure rate"] == "100.0%"
     assert result["key_results"]
+    assert [item["owner"] + "/" + item["repo"] for item in result["benchmarks"]] == [
+        "langchain-ai/langchain",
+        "anomalyco/opencode",
+    ]
+
+
+def test_tool_returns_figures_and_no_rendered_report() -> None:
+    """The skill template is the report; a tool-rendered copy printed it twice.
+
+    With the turn ending on ``ask_user_choice`` the harness falls back to a
+    tool's ``response_text`` as the closing reply, so a markdown report in the
+    result landed under the model's own table.
+    """
+    collected = CollectedRuns(
+        default_branch="main",
+        branch_runs=[_run(9, event="push", branch="main")],
+        pr_runs=[_run(1, branch="A", sha="s", conclusion="failure", start_minutes=0)],
+        merged_prs=(),
+        coverage_notices=[],
+    )
+
+    with (
+        patch("integrations.github.tools.ci_analytics.tool.resolve_github_token", return_value="t"),
+        patch(
+            "integrations.github.tools.ci_analytics.analysis.collect_runs", return_value=collected
+        ),
+    ):
+        result = analyze_github_ci_reliability(owner="o", repo="r", days=7)
+
+    assert result["success"] is True
+    assert "response_text" not in result
+    assert "comparison_text" not in result
+    assert not any(
+        isinstance(value, str) and value.lstrip().startswith("|") for value in result.values()
+    )
 
 
 class TestAnalyzeGithubCiReliabilityContract(BaseToolContract):
@@ -1633,10 +1665,11 @@ def test_a_pipe_in_a_workflow_name_does_not_shift_the_rendered_row() -> None:
 
 
 def test_the_comparison_is_not_a_choice_the_model_can_forget() -> None:
-    """The model chooses brevity, never whether to compare.
+    """The model never chooses whether to compare, and there is no report shape to pick.
 
     A flag advertising "Default false" led the demo to call the tool with
     benchmarks off, so the comparison table Vincent asked for was missing.
+    ``compact`` only shaped the markdown the tool no longer renders.
     """
     # Arrange / Act
     from tools.registry import get_registered_tool
@@ -1647,7 +1680,7 @@ def test_the_comparison_is_not_a_choice_the_model_can_forget() -> None:
     assert registered is not None
     properties = registered.public_input_schema["properties"]
     assert "include_benchmarks" not in properties
-    assert "compact" in properties
+    assert "compact" not in properties
 
 
 def test_the_description_tells_the_model_the_comparison_cannot_be_skipped() -> None:

@@ -121,33 +121,24 @@ def test_the_comparison_needs_no_saved_peer_figures(tmp_path: Path, monkeypatch)
     result = cast(Any, tool_module.analyze_github_ci_reliability)(owner="acme", repo="app", days=30)
 
     # Assert
-    text = result["response_text"]
-    for benchmark in BENCHMARKS:
-        assert benchmark.label in text
+    peers = {f"{item['owner']}/{item['repo']}": item["figures"] for item in result["benchmarks"]}
+    assert peers == {benchmark.label: dict(benchmark.figures) for benchmark in BENCHMARKS}
     assert result["benchmarks_measured_on"] == MEASURED_ON.isoformat()
 
 
-def test_the_report_leads_with_what_unreliable_ci_cost(tmp_path: Path, monkeypatch) -> None:
-    """Key results opened on red hours; a reader had to turn that into a cost themselves."""
+def test_the_report_leads_with_what_unreliable_ci_cost() -> None:
+    """Key results opened on red hours; a reader had to turn that into a cost themselves.
+
+    The scheduled loop delivers this rendering unattended; the interactive
+    tool returns figures only.
+    """
     # Arrange
-    from typing import Any, cast
-
-    from integrations.github.tools.ci_analytics import tool as tool_module
-
-    monkeypatch.setattr(tool_module, "snapshot_root", lambda _root=None: tmp_path)
-    monkeypatch.setattr(tool_module, "resolve_github_token", lambda _t=None: "tok")
+    from integrations.github.tools.ci_analytics.render import render_markdown
 
     blocked = dataclasses.replace(_report(owner="acme", repo="app"), blocked_working_minutes=90.0)
 
-    def _analyze(_owner: str, _repo: str, **_kwargs: Any) -> Any:
-        return type("A", (), {"report": blocked, "runs_read": 3})()
-
-    monkeypatch.setattr(tool_module, "analyze_repository", _analyze)
-
     # Act
-    text = cast(Any, tool_module.analyze_github_ci_reliability)(owner="acme", repo="app", days=30)[
-        "response_text"
-    ]
+    text = render_markdown(blocked)
 
     # Assert: the cost sentence sits above Key results and is not repeated as a row.
     assert text.index("Waiting on CI cost") < text.index("**Key results**")

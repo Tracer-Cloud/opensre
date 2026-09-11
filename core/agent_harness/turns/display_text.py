@@ -37,6 +37,15 @@ def host_rendered(tool_call: ToolCall, tool_result: Any) -> bool:
     return isinstance(details, dict) and details.get("rendered_in_shell") is True
 
 
+def already_on_screen(tool_call: ToolCall, tool_result: Any) -> bool:
+    """True when nothing from this result should be added to the transcript.
+
+    A host-rendered result is already visible; a failed one is not, because the
+    painter stopped before it drew, so its error text still has to surface.
+    """
+    return host_rendered(tool_call, tool_result) and not getattr(tool_result, "is_error", False)
+
+
 _EXPAND_MARKER_RE = re.compile(r"^… \d+ more, Ctrl\+O to view$")
 _PLAN_SNAPSHOT_RE = re.compile(r"Plan\s*[·.]\s*\d+\s*/\s*\d+(?:\s*[✓●○][^✓●○\n]*)*")
 
@@ -120,7 +129,7 @@ def _visible_stdout(stdout: str) -> str:
 
 def format_generic_tool_payload(tool_call: ToolCall, tool_result: Any) -> str:
     """Build a user-visible summary for one non-self-recording tool result."""
-    if host_rendered(tool_call, tool_result) and not getattr(tool_result, "is_error", False):
+    if already_on_screen(tool_call, tool_result):
         return ""
     preferred_response = preferred_tool_response_text(tool_result)
     if preferred_response:
@@ -195,6 +204,7 @@ def preferred_tool_response_text(tool_result: Any) -> str:
 
 __all__ = [
     "DISPLAY_OUTPUT_MAX_CHARS",
+    "already_on_screen",
     "host_rendered",
     "DISPLAY_OUTPUT_MAX_LINES",
     "cap_for_display",

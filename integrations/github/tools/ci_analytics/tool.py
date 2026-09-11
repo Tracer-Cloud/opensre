@@ -53,12 +53,6 @@ _MIN_WINDOW_DAYS = 1
 _MAX_WINDOW_DAYS = 90
 
 
-def _flag(value: Any) -> bool:
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes"}
-    return bool(value)
-
-
 def _available(sources: dict[str, dict]) -> bool:
     gh = sources.get("github", {})
     return bool(
@@ -83,8 +77,8 @@ def _extract_params(sources: dict[str, dict]) -> dict[str, Any]:
 def _console(context: Any) -> Any:
     """The terminal for progress lines while GitHub is read, or None when there is none.
 
-    Only progress is printed there; the report itself always travels in the
-    result. A headless run (scheduled loop, gateway) carries a capture console
+    Only progress is printed there; the figures always travel in the result.
+    A headless run (scheduled loop, gateway) carries a capture console
     and gets no progress lines.
     """
     if context is None:
@@ -213,33 +207,25 @@ def report_text_from_snapshot(
     return text.strip(), str(snapshot.get("generated_at", ""))
 
 
-def _attach_benchmarks(result: dict[str, Any], report: CiAnalyticsReport) -> dict[str, Any]:
-    """Add the comparison against the benchmark figures shipped with the product."""
+def _benchmarks_payload(report: CiAnalyticsReport) -> dict[str, Any]:
+    """The peer columns of the comparison: benchmark figures shipped with the product."""
     peers = peer_benchmarks(report)
-    result["benchmarks"] = [
-        {"owner": item.owner, "repo": item.repo, "figures": dict(item.figures)} for item in peers
-    ]
-    result["benchmarks_measured_on"] = MEASURED_ON.isoformat()
-    compare = comparison_markdown(report, peers)
-    result["comparison_text"] = compare
-    result["response_text"] = f"{result['response_text']}\n\n{compare}"
-    return result
+    return {
+        "benchmarks": [
+            {"owner": item.owner, "repo": item.repo, "figures": dict(item.figures)}
+            for item in peers
+        ],
+        "benchmarks_measured_on": MEASURED_ON.isoformat(),
+    }
 
 
-def _result(
-    report: CiAnalyticsReport,
-    owner: str,
-    repo: str,
-    window: int,
-    *,
-    include_benchmarks: bool = True,
-    compact: bool = False,
-) -> dict[str, Any]:
-    """The tool's return for ``report``: the markdown report plus every figure.
+def _result(report: CiAnalyticsReport, owner: str, repo: str, window: int) -> dict[str, Any]:
+    """The tool's return for ``report``: every figure as data, no rendered report.
 
-    Nothing is printed; the caller presents ``response_text``. ``compact``
-    drops the counts appendix from the markdown, never a figure from the
-    payload, so the model never reruns the analysis for one missing field.
+    Presentation belongs to the caller (the skill's report template); the
+    tool ships the labelled values it needs — ``headline``, ``key_results``,
+    ``comparison_figures`` for the repository's own column, ``benchmarks``
+    for the peer columns — beside the raw counts.
     """
     summary = (
         f"{owner}/{repo}: {report.executions} runs in {window} days, "
@@ -248,8 +234,7 @@ def _result(
         f"{format_minutes(report.blocked_working_minutes)} of developer downtime "
         f"({format_minutes(report.blocked_minutes)} wall clock) on merged PRs."
     )
-    takeaways = key_results_payload(report)
-    result = {
+    return {
         "source": _SOURCE,
         "success": True,
         "owner": owner,
@@ -258,14 +243,11 @@ def _result(
         "window_days": window,
         "summary": summary,
         "headline": headline(report),
-        "key_results": takeaways,
+        "key_results": key_results_payload(report),
         "comparison_figures": comparison_figures(report),
         **report_payload(report),
-        "response_text": render_markdown(report, compact=compact),
+        **_benchmarks_payload(report),
     }
-    if include_benchmarks:
-        return _attach_benchmarks(result, report)
-    return result
 
 
 @tool(
@@ -279,12 +261,13 @@ def _result(
         "blocked by unreliable CI on merged PRs, and default-branch red time. "
         "Read-only. Every analysis reads GitHub Actions and needs a token; a "
         "saved snapshot is written for the scheduled loop, never used to answer "
-        "here. Every report also carries a comparison with langchain-ai/langchain "
-        "and anomalyco/opencode from figures shipped with the product, so a first run "
-        "compares as well as a later one. It cannot be turned off, so never "
-        "offer to skip it. Nothing is printed: present the report from "
-        "response_text and the figures in the result; never rerun the analysis "
-        "to fetch one."
+        "here. Every result also carries the comparison figures for "
+        "langchain-ai/langchain and anomalyco/opencode shipped with the product, so "
+        "a first run compares as well as a later one. It cannot be turned off, so "
+        "never offer to skip it. The tool computes and prints nothing: it returns "
+        "figures only (headline, key_results, comparison_figures, benchmarks, raw "
+        "counts), and the caller writes the report from them; never rerun the "
+        "analysis to fetch one figure."
     ),
     use_cases=[
         "Analyze a repository's CI/CD performance and reliability",
@@ -308,14 +291,13 @@ def _result(
         "headline": "One sentence naming the biggest cost",
         "key_results": "The takeaway rows, red time first",
         "comparison_figures": "The analyzed repository's column of the comparison table, by metric",
-        "comparison_text": "The comparison table as markdown",
         "developers_affected": "Developers whose merged PRs waited inside working hours",
         "mean_recovery_hours": "Mean time back to green on the default branch; null when never",
-        "response_text": "The report as markdown, comparison table included",
         "benchmarks": (
-            "langchain-ai/langchain and anomalyco/opencode rows from figures shipped "
-            "with the product"
+            "The peer columns of the comparison table: langchain-ai/langchain and "
+            "anomalyco/opencode figures shipped with the product, by metric"
         ),
+        "coverage_notices": "Gaps in the analyzed history the report must name",
     },
     surfaces=(ToolSurface.CHAT, ToolSurface.ACTION),
     side_effect_level=SideEffectLevel.READ_ONLY,
@@ -342,14 +324,6 @@ def _result(
                 "type": "string",
                 "description": "Local checkout used to detect owner/repo when not given.",
             },
-            "compact": {
-                "type": "boolean",
-                "description": (
-                    "Key results and the comparison only, without the counts appendix "
-                    "(executions, failure classification, blocked time, workflows). "
-                    "Use for a first-look report. Default false."
-                ),
-            },
             "github_token": {"type": "string"},
         },
         "additionalProperties": False,
@@ -364,23 +338,20 @@ def analyze_github_ci_reliability(
     repo: str | None = None,
     days: int | None = None,
     workspace: str | None = None,
-    compact: bool = False,
     github_token: str | None = None,
     context: Any = None,
     **_kwargs: Any,
 ) -> dict[str, Any]:
     """Compute CI reliability KPIs for one repository window and return them as data.
 
-    The result carries the report as markdown (``response_text``) and every
-    figure; nothing is printed except progress lines while GitHub is read in
-    the interactive shell. The markdown ends with one comparison table against
-    the benchmark figures shipped with the product, so a first run compares as
-    well as a hundredth. Every analysis reads GitHub: a saved snapshot is
-    written for the scheduled loop, never used to answer here. The comparison
-    is not the model's choice to make; ``compact`` drops the counts appendix.
+    The result carries every figure and no rendered report; nothing is printed
+    except progress lines while GitHub is read in the interactive shell. The
+    comparison figures shipped with the product always ride along, so a first
+    run compares as well as a hundredth and the comparison is not the model's
+    choice to make. Every analysis reads GitHub: a saved snapshot is written
+    for the scheduled loop, never used to answer here.
     """
     window = min(max(int(days or _DEFAULT_WINDOW_DAYS), _MIN_WINDOW_DAYS), _MAX_WINDOW_DAYS)
-    brief = _flag(compact)
     repo_owner = (owner or "").strip()
     repo_name = (repo or "").strip().removesuffix(".git")
     if not repo_owner or not repo_name:
@@ -455,7 +426,7 @@ def analyze_github_ci_reliability(
             f"  [dim]Read {analysis.runs_read} runs in {time.monotonic() - started:.0f}s.[/dim]"
         )
         console.print()
-    return _result(report, repo_owner, repo_name, window, compact=brief)
+    return _result(report, repo_owner, repo_name, window)
 
 
 __all__ = ["report_text_from_snapshot", "TOOL_NAME", "analyze_github_ci_reliability"]

@@ -65,15 +65,18 @@ def test_master_menu_matches_four_unique_children_and_preserves_specialists() ->
     # Each next-step branch hands off to its sibling skill instead of inlining it.
     assert 'skill_view(name="cicd-reliability-agent")' in body
     assert 'skill_view(name="slack-handoff")' in body
-    # The comparison is the tool's job, not a flag the model can forget.
+    # The comparison is the tool's job, not a flag the model can forget; the
+    # report shape is the skill's, so no flag on the tool picks one either.
     assert "include_benchmarks" not in body
-    assert "compact=true" in body
+    assert "compact=" not in body
     assert "Compare these numbers" not in body
     assert "Output its `headline`" not in body
     assert "same-day snapshot" not in body
     reliability = loader.load_skill_body("cicd-reliability-agent")
     assert "analyze_github_ci_reliability" in reliability
-    assert "compact=true" in reliability
+    assert "compact=" not in reliability
+    # The analyze tool returns figures only; the skill writes the report from them.
+    assert "output its `response_text`" not in reliability
     assert "include_report=true" not in reliability
     assert "same-day snapshot" not in reliability
     assert menu["allow_custom"] is False

@@ -21,7 +21,7 @@ metadata:
     - GitHub token usable by OpenSRE with read access to the repository's Actions history
     - A local git checkout for the workspace scan (the example repository works without one)
   type: analytics
-  version: "1.13"
+  version: "1.14"
 
 ---
 
@@ -67,11 +67,14 @@ message. Resume at step 3 with that repository.
 
 ### 3. Collect and compute the metrics
 
-Call `analyze_github_ci_reliability(owner="<owner>", repo="<repo>", days=30, compact=true)`.
+Call `analyze_github_ci_reliability(owner="<owner>", repo="<repo>", days=30)`.
 It reads the whole window of Actions history (default-branch runs, PR runs,
 rerun attempts, merged PRs), computes every metric in the report, and returns
-`key_results`, `coverage_notices`, and `benchmarks`. Do not paginate the REST
-API or run `execute_python_code` yourself.
+figures only: `headline`, `key_results`, `comparison_figures` (the repository's
+column of the comparison table), `benchmarks` (the peer columns),
+`coverage_notices`, and the raw counts. It renders nothing; the report below
+is yours to write. Do not paginate the REST API or run `execute_python_code`
+yourself.
 
 If the tool reports a missing token, tell the user to run
 `opensre integrations setup github` and carry that blocker into step 4 as a

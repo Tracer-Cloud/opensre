@@ -49,6 +49,7 @@ from core.agent_harness.turns.action_dedup import (
 from core.agent_harness.turns.action_menu_end import with_menu_turn_end
 from core.agent_harness.turns.conversation_recording import record_conversation_turn
 from core.agent_harness.turns.display_text import (
+    already_on_screen,
     cap_for_display,
     format_generic_tool_payload,
     host_rendered,
@@ -218,9 +219,16 @@ def _stash_collapsed_tool_output(session: SessionState, text: str | None) -> Non
 
 
 def _preferred_tool_response_texts(result: Any) -> str:
+    """Reply text of tools whose output is not on screen yet.
+
+    A painted result (``rendered_in_shell``) is skipped like everywhere else in
+    the transcript; otherwise its one-line summary reappears as the closing
+    under the table it summarizes.
+    """
     texts = [
         preferred_tool_response_text(tool_result)
-        for _tool_call, tool_result in _generic_tool_results(result)
+        for tool_call, tool_result in _generic_tool_results(result)
+        if not already_on_screen(tool_call, tool_result)
     ]
     return "\n\n".join(text for text in texts if text)
 

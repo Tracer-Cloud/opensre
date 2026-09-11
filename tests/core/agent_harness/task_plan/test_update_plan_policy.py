@@ -220,6 +220,28 @@ def test_finishing_the_whole_checklist_in_one_write_is_not_demoted() -> None:
     assert plan.all_completed
 
 
+def test_a_checklist_cannot_be_born_or_bulk_ticked_complete_without_evidence() -> None:
+    """The all-completed exemption covers only the stored plan's active step.
+
+    A brand-new plan submitted fully completed before any tool ran, and a write
+    that completes every step while some were still pending, are demoted like
+    any other unevidenced tick; only the in_progress step closes for free.
+    """
+    fresh, demoted = demote_unevidenced_completions(
+        _plan("completed", "completed"), prior=None, evidence=False
+    )
+    assert demoted == ("Step 1", "Step 2")
+    assert _statuses(fresh) == ("pending", "pending")
+
+    bulk, demoted = demote_unevidenced_completions(
+        _plan("completed", "completed", "completed"),
+        prior=_plan("completed", "in_progress", "pending"),
+        evidence=False,
+    )
+    assert demoted == ("Step 3",)
+    assert _statuses(bulk) == ("completed", "completed", "pending")
+
+
 def test_ask_user_answer_completes_only_the_step_that_was_waiting() -> None:
     """An answer is evidence for the in_progress step of a stored plan, not for a new plan."""
     session = Session()

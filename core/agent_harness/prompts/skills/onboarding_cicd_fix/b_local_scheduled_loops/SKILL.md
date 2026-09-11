@@ -22,7 +22,7 @@ metadata:
     - GitHub token usable by OpenSRE with read access to the repository's Actions history
     - A local git checkout for the workspace scan (optional; a named repository also works)
   type: report
-  version: "1.2"
+  version: "1.3"
 tools:
   - scan_local_git_workspace
   - analyze_github_ci_reliability
@@ -55,9 +55,9 @@ report for weekday mornings in this shell's inbox.
   stop. Do not schedule a loop whose first report never appeared.
 - Decision points use `ask_user_choice` with the exact option texts below.
   End the turn after calling it; the answer arrives as the next user message.
-- The analyze tool prints nothing; output its `response_text` exactly, once,
-  and do not restate its figures. Then output `schedule_ci_reliability_loop`'s
-  `response_text` exactly and stop.
+- The analyze tool prints nothing and returns figures only; write the report
+  from them once (step 3) and do not restate its figures afterwards. Then
+  output `schedule_ci_reliability_loop`'s `response_text` exactly and stop.
 
 ## Plan
 
@@ -93,11 +93,16 @@ answer arrives as the next user message.
 
 ### 3. Analyze CI/CD reliability
 
-Call
-`analyze_github_ci_reliability(owner="<owner>", repo="<repo>", compact=true)`
-for the chosen repository. A saved report from today is reused; otherwise
-this reads GitHub (a token is required). The tool prints nothing: output
-its `response_text` exactly, once. Do not restate figures.
+Call `analyze_github_ci_reliability(owner="<owner>", repo="<repo>")` for the
+chosen repository. It reads GitHub (a token is required) and returns figures
+only: `headline`, `key_results`, `comparison_figures` (the repository's column
+of the comparison table), `benchmarks` (the peer columns), and
+`coverage_notices`. Write the report once, as Markdown: the `headline`
+sentence, one bullet per `key_results` row, then a table with one `Metric`
+column, the repository's column from `comparison_figures`, and one column per
+`benchmarks` entry. Every cell comes from those fields; a metric without one
+is `n/a`, and each coverage notice is stated under the table. Do not restate
+the figures afterwards.
 
 ### 4. Schedule the loop
 

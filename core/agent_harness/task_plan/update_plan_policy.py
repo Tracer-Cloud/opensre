@@ -34,12 +34,15 @@ def demote_unevidenced_completions(
     being worked. Any other new completion (from ``in_progress``, a new or
     renamed step, or a plan written after the work) needs ``evidence``: a
     non-bookkeeping tool returned since the previous write. Reset steps are
-    returned so the tool result can name them. A write that completes every
-    step is left alone: closing the checklist after the work is not a false
-    tick, and a text-only final step has no tool to show for itself.
+    returned so the tool result can name them. One exemption: a write that
+    completes every step may close the step that was ``in_progress`` on the
+    stored plan without evidence — a text-only final step has no tool to show
+    for itself. It never covers a plan with no stored prior or a step that was
+    still ``pending``, so a checklist cannot be born or bulk-ticked complete.
     """
-    if not plan.steps or plan.all_completed:
+    if not plan.steps:
         return plan, ()
+    closing = plan.all_completed
     same_shape = prior is not None and prior.total == plan.total
     demoted: list[str] = []
     steps: list[PlanStep] = []
@@ -52,8 +55,10 @@ def demote_unevidenced_completions(
             if prior is not None
             else None
         )
-        earned = before is PlanStepStatus.COMPLETED or (
-            before is not PlanStepStatus.PENDING and evidence
+        earned = (
+            before is PlanStepStatus.COMPLETED
+            or (before is PlanStepStatus.IN_PROGRESS and closing)
+            or (before is not PlanStepStatus.PENDING and evidence)
         )
         if earned:
             steps.append(item)
