@@ -90,7 +90,7 @@ class _SlowFailingAdapter:
 
     def deliver(self, _task: ScheduledTask, _message: str) -> tuple[bool, str, str]:
         self.calls += 1
-        threading.Event().wait(0.25)
+        threading.Event().wait(_AFTER_ORIGINAL_LEASE_SECONDS)
         return False, "temporary delivery failure", ""
 
 
@@ -246,12 +246,15 @@ class TestExecutor:
     ) -> None:
         from infrastructure.scheduling.scheduler.claim_lease import ClaimLeaseRenewer
 
-        monkeypatch.setattr(run_store, "_CLAIM_LEASE_SECONDS", 0.2)
+        # The first delivery attempt must start inside the lease even on a
+        # loaded xdist shard (0.2s expired before the first attempt on CI);
+        # the adapter then outlives the lease so retries meet lost ownership.
+        monkeypatch.setattr(run_store, "_CLAIM_LEASE_SECONDS", _TEST_CLAIM_LEASE_SECONDS)
 
         def unavailable(_claims: Any) -> Any:
             raise sqlite3.OperationalError("database unavailable")
 
-        renewer = ClaimLeaseRenewer(renew=unavailable, renewal_interval_seconds=0.01)
+        renewer = ClaimLeaseRenewer(renew=unavailable, renewal_interval_seconds=0.05)
         monkeypatch.setattr(scheduler_executor, "default_claim_lease_renewer", renewer)
         adapter = _SlowFailingAdapter()
         _install_bundle({Provider.SLACK: adapter, Provider.TELEGRAM: adapter})
