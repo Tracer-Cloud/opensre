@@ -21,110 +21,88 @@ metadata:
     - GitHub token usable by OpenSRE with read access to the repository's Actions history
     - A local git checkout for the workspace scan (optional; a named repository also works)
   type: analytics
-  version: "1.9"
+  version: "1.11"
 
 ---
 
 # CI/CD analytics
 
-Produce a CI/CD reliability report for one repository from raw GitHub Actions records: the metrics table under "Required report" plus an estimate of CI waiting time on merged pull requests. Use a 30-day window unless the request specifies another period.
+Produce a CI/CD reliability report for one repository from raw GitHub
+Actions records, including an estimate of CI waiting time on merged pull
+requests. Use a 30-day window unless the request specifies another period.
 
 ## Plan
 
 After reading this skill, use `update_plan` to create or revise the live
-CI/CD Reliability Progress plan with the six phases below in order. Keep
-reporting and follow-up as separate steps. Mark already-satisfied phases
-`completed` and update statuses as work proceeds.
+CI/CD Reliability Progress plan using the five numbered workflow headings below as its steps. 
 
 - [ ] Step 1. Scan local repositories with scan_local_git_workspace.
 - [ ] Step 2. Select a repository using ask_user_choice.
-- [ ] Step 3. Read the metric and benchmark references; collect complete 30-day workflow, rerun, and merged-PR history.
-- [ ] Step 4. Calculate all required metrics and validate coverage, denominators, and consistency.
-- [ ] Step 5. Display the metrics table, benchmark comparison, developer-impact estimates, and limitations.
-- [ ] Step 6. After displaying the report, use ask_user_choice to offer scheduling, Slack setup, or finish.
+- [ ] Step 3. Collect and compute the 30-day metrics with analyze_github_ci_reliability.
+- [ ] Step 4. Display a metrics table as mark down text
+- [ ] Step 5. Use ask_user_choice to offer scheduling, Slack setup, or finish.
 
 ## Workflow
 
 ### 1. Scan this machine
 
-When the request or an Ask User answer already names the repository, skip
-to step 3. Otherwise call `scan_local_git_workspace()` with no arguments.
+Call `scan_local_git_workspace()` with no arguments.
+
+Complete when the scan returns repository candidates, including an empty
+result; the example repository remains available in step 2.
 
 ### 2. Pick the repository
 
 Call `ask_user_choice` with the title `Which repository should I analyze?`.
-Offer up to three scanned repositories that have GitHub Actions workflows
-as `<owner/repo>`, then `Tracer-Cloud/opensre` as the example. End the turn;
-the answer arrives as the next user message.
+Offer up to 5 scanned repositories that have GitHub Actions workflows
+as `<owner/repo>`, then `Tracer-Cloud/opensre` as an example option. 
 
-### 3. Collect the repository's Actions history
+End the turn after the user has provided an answer to the `ask_user_choice` tool and the answer arrives as the next user message.
 
-Read both references before collecting:
+Complete when the answer identifies the repository. Resume at step 3 with
+that repository.
 
-- [Metrics](references/metrics.md): populations, formulas, and validation,
-  via `skill_view(name="cicd-analytics-demo", reference="metrics")`.
-- [Benchmarks](references/benchmarks.md): the comparison values and their
-  limits, via `skill_view(name="cicd-analytics-demo", reference="benchmarks")`.
+### 3. Collect and compute the metrics
 
-Resolve the default branch with `get_github_repository` and fix the UTC
-window. Collect with `execute_python_code`: `allow_network` on, the token
-read from `os.environ["GITHUB_TOKEN"]` inside the script, never printed.
-Collect what `metrics.md` defines: default-branch runs, PR runs, prior
-attempts, merged PR identities and authors, and boundary history. Paginate
-the REST API to exhaustion and split queries that hit API caps.
-`list_github_actions_workflow_runs(head_sha=...)` and its
-`history_fully_fetched` flag describe one commit, not the window; do not
-use that tool's page as the window population.
+Call `analyze_github_ci_reliability(owner="<owner>", repo="<repo>", days=30, compact=true)`.
+It reads the whole window of Actions history (default-branch runs, PR runs,
+rerun attempts, merged PRs), computes every metric in the report, and returns
+`key_results`, `coverage_notices`, and `benchmarks`. Do not paginate the REST
+API or run `execute_python_code` yourself.
 
-Records never pass through the model. Each `execute_python_code` call is a
-fresh process with a 60-second cap, so the script saves what it fetched as
-JSON under `Path(tempfile.gettempdir()) / "opensre"` (the sandbox's only
-writable directory, e.g. `cicd-<owner>-<repo>.json`) and prints only
-counts, the page range covered, and the file path. A later call loads and
-extends that file; split by population or page range when one call would
-run long. Never put fetched records in `inputs` or repeat them in the tool
-call: a call whose arguments exceed the output budget arrives as `{}` and
-fails with `missing required args: code`. Keep run IDs, workflow IDs, PR
-and head-repository identities, SHAs, timestamps, conclusions, and evidence
-URLs in the saved file for calculation.
+If the tool reports a missing token, tell the user to run
+`opensre integrations setup github` and carry that blocker into step 4 as a
+coverage gap.
 
-### 4. Calculate the metrics and check the invariants
+Metric definitions live in [Metrics](references/metrics.md)
+(`skill_view(name="cicd-analytics-demo", reference="metrics")`); read it only
+when the user asks how a figure is defined.
 
-Load the saved file in `execute_python_code`, compute every metric in
-`metrics.md`, and assert its validation invariants in the same code. Print
-one compact JSON object under 2 KB: each metric with numerator,
-denominator, and unit; coverage gaps; assumptions; the evidence links the
-report cites. Rerun with a shorter output when a response is truncated
-rather than using a partial value. Trace representative failures and waits
-to their source records; correct collection or calculation errors and rerun
-the affected step.
+Complete when the tool returns success with key results, or a named blocker.
 
-### 5. Present the checked report 
+### 4. Display a metrics table as mark down text
 
-Check each table cell against a calculation result or the benchmark
-reference. Then, in one response: write the required report as the message
-text, mark this step `completed`.
+Read [Benchmarks](references/benchmarks.md) via
+`skill_view(name="cicd-analytics-demo", reference="benchmarks")` now for
+the comparison values and their interpretation limits. Check each table
+cell against a calculation result or this reference.
 
-### 6. Offer the next step
-Call `ask_user_choice` with the title `What would you like to do next?` and these options:
+Prepare the report below for delivery. 
 
-- **Schedule local loops:** revise the plan with
-  `Schedule the weekday report` / `Confirm the schedule`. Use the generic
-  `/loops add` command through `slash_invoke` with
-  `--channel interactive_shell`
-- **Slack setup:** load `slack-handoff` with `skill_view` and follow its
-  plan.
-- **Finish:** acknowledge in one line and conclude.
-
-The menu ends the turn. A reply without the menu ends the turn with no
-follow-up, and a report written in an earlier response is discarded, so
-the report and the menu always travel in the same response.
-
-## Required report
+#### Report format
+After calculating the metrics, respond directly with the report as a Markdown table. Writing that response delivers the report. Do not substitute a plan update or next-step menu for it.
 
 Identify the repository, default branch, UTC window, and coverage. Render
-this table, replacing every placeholder with a calculated value or a
+this table as text, replacing every placeholder with a calculated value or a
 benchmark from the reference:
+
+```
+Developer impact: 
+- xx developer-hours spent waiting on CI across xx developers.
+- Most affected developer: up to xx h/week waiting on CI.
+- xx% of PR runs failed, creating substantial retry and investigation overhead.
+
+Compared with langchain-ai/langchain and anomalyco/opencode:
 
 | Metric | <owner/repo> | langchain-ai/langchain | anomalyco/opencode |
 |---|---:|---:|---:|
@@ -134,13 +112,26 @@ benchmark from the reference:
 | Slowest normal run | <minutes and workflow> | <benchmark> | <benchmark> |
 | PR failure rate | <% of PR workflow runs> | <benchmark> | <benchmark> |
 
-Below the table: execution and failure counts, failure classifications,
-breakage count, affected merged PRs and authors, estimated working hours
-waiting for CI with its working-hours assumption, and run or PR links for
-significant findings. Caption the benchmark date and window.
+What insights stand out: 
+- CI-caused failures account for x.x% of all PR runs, roughly x.x-x.x× higher than the comparison repositories.
+```
 
-Keep every row. Use `N/A — <reason>` when a measure has no applicable
-population and `Unavailable — <missing evidence>` when collection cannot
-supply it. When a blocker prevents measuring an in-scope metric, label the
-report partial and name the blocker. For missing GitHub credentials, give
-`opensre integrations setup github`.
+### 5. Offer the next step
+
+Call `ask_user_choice` with the title
+`What would you like to do next?` and these options:
+
+- Schedule local loops
+- Slack setup
+- Finish
+
+Complete when the menu is offered with the report. The user's answer
+arrives in the next turn; follow only the selected branch:
+
+- **Schedule local loops:** revise the plan with
+  `Schedule the weekday report` / `Confirm the schedule`. Use the generic
+  `/loops add` command through `slash_invoke` with
+  `--channel interactive_shell`.
+- **Slack setup:** load `slack-handoff` with `skill_view` and follow its
+  plan.
+- **Finish:** acknowledge in one line and conclude.

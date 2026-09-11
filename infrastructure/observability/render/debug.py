@@ -18,7 +18,7 @@ from collections.abc import Callable
 DebugPrinter = Callable[[str], None]
 
 
-def _verbose_env_set() -> bool:
+def verbose_output_enabled() -> bool:
     """True iff ``TRACER_VERBOSE`` indicates the user wants debug output.
 
     Kept narrow on purpose: the legacy helper also consulted the
@@ -31,7 +31,7 @@ def _verbose_env_set() -> bool:
 
 
 def _default_debug_printer(message: str) -> None:
-    if not _verbose_env_set():
+    if not verbose_output_enabled():
         return
     print(f"DEBUG: {message}", file=sys.stderr)
 

@@ -52,6 +52,7 @@ from core.tool.execution import (
     public_tool_input,
 )
 from infrastructure.observability.operations_log import record_operation
+from infrastructure.observability.trace.decisions import record_decision
 from infrastructure.observability.trace.redaction import redact_sensitive
 from infrastructure.observability.trace.spans import (
     llm_span,
@@ -452,8 +453,24 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
         self, response: Any, assistant_message: Any, iteration: int
     ) -> _IterationResult:
         """Accept a no-tool reply, or nudge and continue when the host rejects it."""
+        record_decision(
+            "model_conclusion",
+            attributes={
+                "final_text": response.content or "",
+                "iteration": iteration,
+                "run_id": self._operation_run_id,
+            },
+        )
         follow_up = self._host._pop_follow_up_message()
         if follow_up is not None:
+            record_decision(
+                "conclusion",
+                attributes={
+                    "accepted": False,
+                    "reason": "queued_follow_up",
+                    "iteration": iteration,
+                },
+            )
             self._messages.append(UserRuntimeMessage(content=follow_up))
             self._host._emit_runtime(
                 TurnEndEvent(
@@ -705,6 +722,16 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
 
     def _finalize(self) -> AgentRunResult:
         """Build the run result, emit the end-of-run event, and return the result."""
+        record_decision(
+            "agent_finished",
+            attributes={
+                "final_text": self._final_text,
+                "stop_reason": self._stop_reason,
+                "cancelled": self._cancelled,
+                "hit_iteration_cap": self._hit_cap,
+                "run_id": self._operation_run_id,
+            },
+        )
         run_result = AgentRunResult(
             messages=self._messages,
             final_text=self._final_text,

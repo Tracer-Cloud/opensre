@@ -160,6 +160,30 @@ Each session records:
 
 Sessions are stored as files under `~/.opensre/sessions/`. Each file is plain text and human-readable.
 
+## Inspecting a turn's decisions
+
+Local session traces record the model's original closing, the reason a stop was
+accepted or rejected, the plan and pending questions, and the displayed and saved
+answers separately. These diagnostic records stay out of resumed conversation
+context. Known credential patterns are redacted; ordinary conversation text is retained.
+
+Run `/sessions` to find the session ID, then use `jq` in your terminal. Replace
+`3f8a1c2d` with the ID prefix shown for your session:
+
+```bash
+jq 'select(.type == "trace_span" and .span_kind == "decision")' \
+  ~/.opensre/sessions/3f8a1c2d*.jsonl
+```
+
+Look for `goal_review` and `conclusion` to understand stopping, `agent_finished`
+for the original closing, `response_composition` for display filtering, and
+`response_displayed` / `assistant_persisted` for the two outputs. Rejected closing
+attempts appear as `model_conclusion` records. The records include the prompt turn
+ID when available; `assistant_persisted.message_id` identifies the saved message.
+
+These records are added on new runs; older traces cannot recover text that was
+never recorded.
+
 ---
 
 ## Privacy and what is not saved

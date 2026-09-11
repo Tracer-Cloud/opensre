@@ -67,12 +67,14 @@ from core.agent_harness.turns.skill_scope import scope_tools_to_active_skill
 from core.agent_harness.turns.turn_plan import TurnPlan
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
+from core.agent_harness.turns.turn_trace import turn_trace_state
 from core.agent_harness.turns.wal_recorder import with_wal_recording
 from core.events import runtime_event_callback_from_observer
 from core.llm.types import AgentLLMResponse, SchemaDescribedTool, ToolCall
 from core.tool.execution import ToolExecutionHooks, public_tool_input
 from core.tool_framework.tags import SUMMARIZE_OBSERVATION_TAG
 from infrastructure.analytics.react_turn import run_react_agent_with_telemetry
+from infrastructure.observability.trace.decisions import record_decision
 from infrastructure.observability.trace.prompts import persist_turn_system_prompt
 from infrastructure.observability.trace.spans import component_span
 from infrastructure.text import is_data_blob
@@ -220,13 +222,6 @@ def _preferred_tool_response_texts(result: Any) -> str:
         for _tool_call, tool_result in _generic_tool_results(result)
     ]
     return "\n\n".join(text for text in texts if text)
-
-
-def _has_preferred_tool_response_text(result: Any) -> bool:
-    return any(
-        bool(preferred_tool_response_text(tool_result))
-        for _tool_call, tool_result in _generic_tool_results(result)
-    )
 
 
 def _painted_results_only(result: Any) -> bool:
@@ -571,6 +566,7 @@ def _build_action_agent(
                 task_plan=getattr(session, "task_plan", None),
                 plan_only=bool(getattr(session, "plan_only_until_authorized", False)),
             ),
+            trace_context=lambda: turn_trace_state(session),
         )
 
     # WAL first, observer second: the tool intent must be on disk before
@@ -725,7 +721,6 @@ def _compose_response(
     waiting_for_choice = getattr(session, "pending_user_choice", None) is not None
     generic_text = _response_text_from_generic_results(result)
     hint = _pop_turn_outcome_hint(session)
-    prefer_tool_response_text = _has_preferred_tool_response_text(result)
     terminal = getattr(session, "terminal", None)
     pending_choice_response = getattr(terminal, "pending_choice_response", None)
     selected_choice = (
@@ -741,23 +736,25 @@ def _compose_response(
     # or a chain); a closing question, which seeks direction instead of restating
     # output; and any quiet ``shell_run``, which withheld live stdout so the
     # closing *is* the turn's display.
-    suppress_final = (
-        (waiting_for_choice and _is_redundant_choice_invitation(result, final_text))
-        or _is_choice_acknowledgement(final_text, selected_choice)
-        or prefer_tool_response_text
-        or (
-            _painted_results_only(result)
-            and _restates_painted_figures(result, final_text)
-            and not _asks_the_user(final_text)
-        )
-        or (
-            _self_recording_tools_only(result)
-            and not _grounded_output_tools_only(result)
-            and not _asks_the_user(final_text)
-            and not _has_quiet_shell_run(result)
-        )
-    )
-    final_text_chunk = "" if suppress_final else final_text
+    suppression_reason = None
+    if waiting_for_choice and _is_redundant_choice_invitation(result, final_text):
+        suppression_reason = "redundant_choice_invitation"
+    elif _is_choice_acknowledgement(final_text, selected_choice):
+        suppression_reason = "choice_acknowledgement"
+    elif (
+        _painted_results_only(result)
+        and _restates_painted_figures(result, final_text)
+        and not _asks_the_user(final_text)
+    ):
+        suppression_reason = "painted_figures_recap"
+    elif (
+        _self_recording_tools_only(result)
+        and not _grounded_output_tools_only(result)
+        and not _asks_the_user(final_text)
+        and not _has_quiet_shell_run(result)
+    ):
+        suppression_reason = "self_recording_tools"
+    final_text_chunk = "" if suppression_reason else final_text
     # The model sometimes restates the plan (or every historical snapshot) in its
     # reply; the pinned overlay already shows it, so strip snapshots from display.
     display_final = strip_plan_snapshots(final_text_chunk)
@@ -778,10 +775,8 @@ def _compose_response(
     if already_inline and terminal is not None:
         terminal.inline_tool_results = False
         display_generic = ""
-    if prefer_tool_response_text and not display_final and not display_generic:
-        # A tool that ships its own reply text (a schedule card, a report
-        # summary) is the closing when the model's is dropped for it; otherwise
-        # the turn ends with nothing visible after the call list.
+    if not final_text and not display_generic:
+        # Tool reply text is a fallback only when the model has no closing.
         display_final = _preferred_tool_response_texts(result)
     is_json = looks_like_json(generic_text)
     body, markers = split_output_truncation_markers(display_generic)
@@ -814,6 +809,18 @@ def _compose_response(
     ]
     use_final_text = bool(final_text_chunk)
     response_text = "\n".join(response_chunks)
+    record_decision(
+        "response_composition",
+        attributes={
+            "final_text": final_text,
+            "suppression_reason": suppression_reason,
+            "display_text": "\n".join(display_chunks),
+            "response_text": response_text,
+            "inline_tool_results": already_inline,
+            "plan_snapshots_removed": display_final != final_text_chunk and bool(final_text_chunk),
+        },
+        context=lambda: turn_trace_state(session),
+    )
     return response_text, display_chunks, use_final_text
 
 
@@ -1064,6 +1071,13 @@ def _run_action_turn(
             display_chunks=display_chunks,
         )
         _show_completed_plan_breakdown(args.output, session)
+    record_decision(
+        "response_displayed",
+        attributes={
+            "display_text": "" if cancelled else "\n".join(display_chunks),
+            "cancelled": cancelled,
+        },
+    )
 
     log.debug(
         "action_turn done planned=%s executed=%s handled=%s cancelled=%s",

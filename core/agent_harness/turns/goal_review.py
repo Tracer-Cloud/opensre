@@ -41,6 +41,7 @@ from core.agent_harness.turns.gather_discovery_budget import (
 )
 from core.events import RuntimeEvent, RuntimeEventCallback, ToolExecutionEndEvent
 from core.llm.types import AgentLLMClient
+from infrastructure.observability.trace.decisions import record_decision
 
 # One rejection is enough to catch a stopped-short turn; the follow-up work is
 # then accepted as-is. More reviews only amplify the damage when the reviewer
@@ -216,32 +217,33 @@ class _LLMGoalReviewer:
     # review budget (the overlay still shows unfinished work).
     plan_incomplete: Callable[[], bool] | None = None
     reviews_remaining: int = field(default=_MAX_GOAL_REVIEWS)
+    trace_context: Callable[[], dict[str, Any]] | None = None
 
     def __call__(self, observation: GoalObservation) -> bool:
         final_text = (observation.final_text or "").strip()
         # No tools ran: the conclusion is a direct answer (or a refusal), not a
         # stopped-short action chain — the case this reviewer exists for.
         if observation.evidence_count == 0:
-            return True
+            return self._decision(observation, True, "no_tool_evidence")
         if self.skip_on_question and final_text.endswith("?"):
-            return True
+            return self._decision(observation, True, "closing_question")
         names = self.executed_tool_names
         if self.executed_tool_calls:
             names = [name for name, _ in self.executed_tool_calls]
         if any(name in self.skip_tool_names for name in names):
-            return True
+            return self._decision(observation, True, "unreviewable_tool")
         if (
             self.plan_incomplete is not None
             and plan_worked_this_turn(names)
             and self.plan_incomplete()
         ):
-            return False
+            return self._decision(observation, False, "plan_incomplete")
         if self.reject_discovery_only and _gather_ran_only_discovery(self.executed_tool_calls):
-            return False
+            return self._decision(observation, False, "discovery_only")
         if not react_goal_llm_review_enabled():
-            return True
+            return self._decision(observation, True, "llm_review_disabled")
         if self.reviews_remaining <= 0:
-            return True
+            return self._decision(observation, True, "review_budget_exhausted")
         self.reviews_remaining -= 1
         # Fail open on transport/parse errors — a broken reviewer must not
         # force extra ReAct iterations.
@@ -251,8 +253,28 @@ class _LLMGoalReviewer:
             system=self.system_prompt,
         )
         if verdict is None:
-            return True
-        return verdict != "NOT_REACHED"
+            return self._decision(observation, True, "llm_review_unavailable")
+        return self._decision(
+            observation,
+            verdict != "NOT_REACHED",
+            "llm_goal_not_reached" if verdict == "NOT_REACHED" else "llm_goal_reached",
+        )
+
+    def _decision(self, observation: GoalObservation, accepted: bool, reason: str) -> bool:
+        record_decision(
+            "goal_review",
+            attributes={
+                "accepted": accepted,
+                "reason": reason,
+                "final_text": observation.final_text,
+                "iteration": observation.iteration,
+                "max_iterations": observation.max_iterations,
+                "evidence_count": observation.evidence_count,
+                "executed_tools": self.executed_tool_names,
+            },
+            context=self.trace_context,
+        )
+        return accepted
 
     def _review_message(self, observation: GoalObservation) -> str:
         final_text = (observation.final_text or "").strip() or "(empty)"
@@ -279,6 +301,7 @@ def build_goal_reviewer(
     executed_tool_names: list[str],
     *,
     plan_incomplete: Callable[[], bool] | None = None,
+    trace_context: Callable[[], dict[str, Any]] | None = None,
 ) -> Goal:
     """Build a reviewed :class:`Goal` for one action turn over ``user_goal``.
 
@@ -295,6 +318,7 @@ def build_goal_reviewer(
         user_goal=user_goal,
         executed_tool_names=executed_tool_names,
         plan_incomplete=plan_incomplete,
+        trace_context=trace_context,
     )
 
     def _nudge(_observation: GoalObservation) -> str:

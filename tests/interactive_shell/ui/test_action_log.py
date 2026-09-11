@@ -4,12 +4,19 @@ from __future__ import annotations
 
 import io
 
+import pytest
 from rich.console import Console
 from rich.text import Text
 
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.session.terminal_session import ActionLogEntry
 from surfaces.interactive_shell.ui.action_log import flush_action_log
+
+
+@pytest.fixture(autouse=True)
+def _verbose_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The grouped rows only render with verbose on; the default TTY hides them."""
+    monkeypatch.setenv("TRACER_VERBOSE", "1")
 
 
 def _tty(buffer: io.StringIO) -> Console:
@@ -20,6 +27,35 @@ def _push(session: Session, call_id: str, kind: str, concise: str, detail: str) 
     session.terminal.push_action_log(
         ActionLogEntry(call_id=call_id, kind=kind, concise=concise, detail=detail)
     )
+
+
+def test_a_tty_hides_the_action_log_by_default_but_keeps_ctrl_o(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("TRACER_VERBOSE", raising=False)
+    session = Session()
+    _push(
+        session,
+        "1",
+        "get github repository",
+        "",
+        "Tool     get github repository\n         owner: o",
+    )
+    _push(
+        session,
+        "2",
+        "get github repository",
+        "",
+        "Tool     get github repository\n         owner: p",
+    )
+    buffer = io.StringIO()
+
+    flush_action_log(_tty(buffer), session)
+
+    assert buffer.getvalue() == ""  # no box, no rows, no Ctrl+O hint
+    assert session.terminal.has_action_log() is False  # buffer drained
+    expanded = session.terminal.next_collapsed_output_for_expand()
+    assert "owner: o" in expanded and "owner: p" in expanded  # detail still behind Ctrl+O
 
 
 def test_consecutive_same_kind_calls_group_into_one_bordered_section() -> None:

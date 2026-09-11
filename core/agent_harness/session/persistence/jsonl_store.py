@@ -21,6 +21,7 @@ from config.version import get_opensre_version
 from core.agent_harness.session.persistence.contracts import CHAT_KINDS, SessionPersistenceSource
 from core.agent_harness.session.persistence.paths import session_path
 from infrastructure.observability.operations_log import record_operation
+from infrastructure.observability.trace.decisions import record_decision
 
 logger = logging.getLogger(__name__)
 
@@ -218,7 +219,7 @@ class JsonlSessionStore:
         metadata: dict[str, Any] | None = None,
         parent_id: str | None = None,
     ) -> str:
-        return self._append_entry(
+        entry_id = self._append_entry(
             session_id,
             "message",
             {
@@ -228,6 +229,13 @@ class JsonlSessionStore:
             },
             parent_id=parent_id,
         )
+        if entry_id and role == "assistant":
+            record_decision(
+                "assistant_persisted",
+                attributes={"message_id": entry_id, "text": content},
+                session_id=session_id,
+            )
+        return entry_id
 
     def append_tool_call(
         self,
