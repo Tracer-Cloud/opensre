@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import signal
 import threading
-from collections.abc import Iterable, Iterator
-from contextlib import contextmanager
+from collections.abc import Iterable
 from dataclasses import dataclass
 from enum import IntEnum, StrEnum
 from io import StringIO
-from types import FrameType
 from typing import Any
 
 from rich.console import Console
@@ -26,6 +24,7 @@ from core.agent_harness.spi.cancel import ensure_turn_cancel
 from core.tool import ToolExecutionHooks
 from infrastructure.errors import OpenSREError
 from surfaces.cli.ask.approval import ApprovalTracker, build_approval_hooks
+from surfaces.cli.ask.signals import AskSignal, ask_signal_scope
 
 #: Capabilities the one-shot ``ask`` agent must not reach — it answers or runs a
 #: bounded action, not slash commands or task cancellation.
@@ -77,14 +76,6 @@ class AskOutcome:
         }
 
 
-class AskSignal(BaseException):
-    """Signal raised inside the command so session cleanup can finish."""
-
-    def __init__(self, signum: int) -> None:
-        super().__init__(signum)
-        self.signum = signum
-
-
 class _CancellableConsole:
     def __init__(self, cancel_event: threading.Event) -> None:
         self._cancel_event = cancel_event
@@ -123,26 +114,6 @@ class _AskOutputSink:
 
     def finish_streamed_response(self, answer: str) -> None:
         _ = answer
-
-
-@contextmanager
-def ask_signal_scope(cancel_event: threading.Event | None = None) -> Iterator[None]:
-    """Map process termination signals to ``AskSignal`` within one CLI scope."""
-    event = cancel_event or threading.Event()
-    previous: dict[signal.Signals, Any] = {}
-
-    def handle(signum: int, _frame: FrameType | None) -> None:
-        event.set()
-        raise AskSignal(signum)
-
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        previous[sig] = signal.getsignal(sig)
-        signal.signal(sig, handle)
-    try:
-        yield
-    finally:
-        for sig, handler in previous.items():
-            signal.signal(sig, handler)
 
 
 def _restrict_ask_capabilities(session: SessionCore) -> None:
