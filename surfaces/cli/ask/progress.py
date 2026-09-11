@@ -16,16 +16,31 @@ _INITIAL_STATUS = "Investigating…"
 _ANALYZING_STATUS = "Analyzing results…"
 
 
+def _status_for_tool_start(data: dict[str, Any]) -> str | None:
+    """Describe a requested tool batch without overstating execution order."""
+    tool_call_count = data.get("tool_call_count")
+    if (
+        isinstance(tool_call_count, int)
+        and not isinstance(tool_call_count, bool)
+        and tool_call_count > 1
+    ):
+        if data.get("tool_call_index") != 0:
+            return None
+        return f"Running {tool_call_count} tools…"
+
+    tool_name = " ".join(strip_terminal_controls(str(data.get("name") or "")).split())
+    if not tool_name:
+        return None
+    return f"Running {tool_name.replace('_', ' ')}…"
+
+
 def status_for_tool_event(kind: str, data: dict[str, Any]) -> str | None:
     """Return safe status copy for a tool lifecycle event."""
     if kind == "tool_end":
         return _ANALYZING_STATUS
     if kind != "tool_start":
         return None
-    tool_name = " ".join(strip_terminal_controls(str(data.get("name") or "")).split())
-    if not tool_name:
-        return None
-    return f"Running {tool_name.replace('_', ' ')}…"
+    return _status_for_tool_start(data)
 
 
 class AskProgress:

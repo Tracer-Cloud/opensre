@@ -24,6 +24,14 @@ def test_tool_progress_ignores_non_tool_or_unnamed_events() -> None:
     assert status_for_tool_event("tool_start", {}) is None
 
 
+def test_tool_progress_uses_a_neutral_label_for_batched_tool_starts() -> None:
+    first_start = {"name": "grafana_query", "tool_call_count": 2, "tool_call_index": 0}
+    second_start = {"name": "logs_search", "tool_call_count": 2, "tool_call_index": 1}
+
+    assert status_for_tool_event("tool_start", first_start) == "Running 2 tools…"
+    assert status_for_tool_event("tool_start", second_start) is None
+
+
 def test_progress_scope_starts_before_the_agent_turn_and_stops_afterward(monkeypatch) -> None:
     events: list[str] = []
 
