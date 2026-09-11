@@ -161,30 +161,13 @@ def test_release_workflow_does_not_run_on_pull_requests() -> None:
     assert "opensre_pr_" not in workflow
 
 
-def test_release_workflow_publishes_python_distributions_to_pypi() -> None:
-    workflow = yaml.load(_RELEASE_WORKFLOW.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
-    publish_job = workflow["jobs"]["publish-python-dist"]
+def test_release_workflow_does_not_publish_python_distributions_to_pypi() -> None:
+    raw = _RELEASE_WORKFLOW.read_text(encoding="utf-8")
+    workflow = yaml.load(raw, Loader=yaml.BaseLoader)
 
-    assert publish_job["needs"] == ["build-python-dist", "publish-release"]
-    assert publish_job["environment"] == {
-        "name": "pypi",
-        "url": "https://pypi.org/p/opensre",
-    }
-    assert publish_job["permissions"] == {"id-token": "write"}
-
-    download_step, publish_step = publish_job["steps"]
-    assert download_step["uses"] == (
-        "actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c"
-    )
-    assert download_step["with"] == {
-        "name": "release-python-dist",
-        "path": "dist",
-    }
-    assert publish_step["uses"] == (
-        "pypa/gh-action-pypi-publish@dc37677b2e1c63e2034f94d8a5b11f265b73ba33"
-    )
-    assert publish_step["with"]["skip-existing"] == "true"
-    assert "password" not in publish_step.get("with", {})
+    assert "publish-python-dist" not in workflow["jobs"]
+    assert "# publish-python-dist:" in raw
+    assert "#       uses: pypa/gh-action-pypi-publish@" in raw
 
 
 def test_infrastructure_data_excludes_the_cloudflare_worker() -> None:
