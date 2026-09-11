@@ -110,7 +110,7 @@ repository-wide test result.
 The required automated pull-request execution gate has a p90 target of 90
 seconds. Static checks, cached typechecking, duration-balanced pytest shards,
 and interactive-shell checks run concurrently. Automated and
-human review completion, including Greptile and Codex, remains a separate merge
+human review completion, including Greptile and Codex when available, remains a separate merge
 requirement and is not part of that execution-time SLO.
 
 Pull requests run the complete test selection without coverage instrumentation;
@@ -131,7 +131,7 @@ revert and must not be reported as successful delivery.
 Opening a pull request does not end the validation cycle. Follow it through until
 the repository's merge requirements are satisfied: required GitHub checks are
 green, actionable human or automated review feedback (including Greptile and
-Codex) is
+Codex when available) is
 addressed, and resolved conversations are closed out.
 
 Agents: the always-on rule lives in [AGENTS.md — CI failures and tests](AGENTS.md).
@@ -148,11 +148,10 @@ finding, reply with the rationale and resolve the thread without changing code.
 After each completed PR update, once commits are pushed, the PR description is
 current, and addressed threads are resolved, trigger the required automated
 reviews. Follow [CONTRIBUTING.md](CONTRIBUTING.md#greptile-code-review) to
-request Greptile; repeat until it reports 5/5 with no unresolved comments. Also
-request a Codex review with `@codex review` and wait for its review of the
-current head commit to complete. Address and resolve every actionable Codex
-thread, then request another review of the updated head. Do not re-trigger
-either reviewer while its review is already running.
+request Greptile; repeat until it reports 5/5 with no unresolved comments. If
+Codex review is available for the repository, request it with `@codex review`
+and address its actionable feedback. Do not re-trigger either reviewer while
+its review is already running.
 
 Use relevant built-in capabilities or locally installed skills, when available,
 for PR monitoring, CI diagnosis, and review remediation rather than duplicating
