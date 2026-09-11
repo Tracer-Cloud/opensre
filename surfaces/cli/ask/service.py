@@ -95,8 +95,7 @@ class _AskOutputSink:
     """Discard intermediate rendering while retaining the terminal-visible answer."""
 
     def __init__(self) -> None:
-        self._rendered_responses: list[str] = []
-        self._rendered_errors: list[str] = []
+        self._rendered_event = ""
         self._completed_turn = False
 
     def print(self, message: str = "") -> None:
@@ -107,7 +106,7 @@ class _AskOutputSink:
 
     def render_error(self, message: str) -> None:
         if message.strip():
-            self._rendered_errors.append(message)
+            self._rendered_event = message
 
     def stream(
         self,
@@ -120,7 +119,7 @@ class _AskOutputSink:
         _ = (label, suppress_if_starts_with, defer_want_me_to_closer)
         response = "".join(str(chunk) for chunk in chunks)
         if response.strip():
-            self._rendered_responses.append(response)
+            self._rendered_event = response
         return response
 
     def finish_streamed_response(self, answer: str) -> None:
@@ -133,8 +132,7 @@ class _AskOutputSink:
     @property
     def rendered_response(self) -> str:
         """Return only the response or error the interactive terminal would render."""
-        rendered = self._rendered_responses or self._rendered_errors
-        return "\n\n".join(rendered).strip()
+        return self._rendered_event.strip()
 
     @property
     def completed_turn(self) -> bool:
@@ -351,7 +349,7 @@ def run_ask(
     if not _successful_turn(result, response):
         return AskOutcome(
             status=AskStatus.ERROR,
-            response=response,
+            response="",
             error=AskError(message=response or "The agent did not complete the request."),
             exit_code=AskExitCode.ERROR,
         )

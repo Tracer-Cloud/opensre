@@ -185,8 +185,21 @@ def test_run_ask_preserves_a_rendered_agent_error(monkeypatch) -> None:
     outcome = service.run_ask("why is checkout slow?", allowed_tools=(), bypass_approvals=False)
 
     assert outcome.status is AskStatus.ERROR
-    assert outcome.response == "The configured model is unavailable."
-    assert "raw internal diagnostic" not in outcome.response
+    assert outcome.response == ""
+    assert outcome.error is not None
+    assert outcome.error.message == "The configured model is unavailable."
+
+
+def test_ask_output_sink_uses_the_latest_rendered_event() -> None:
+    """A multi-turn goal exposes only its final response or error."""
+    output = service._AskOutputSink()
+
+    output.stream(label="OpenSRE", chunks=iter(["First investigation update."]))
+    output.stream(label="OpenSRE", chunks=iter(["Final investigation summary."]))
+    assert output.rendered_response == "Final investigation summary."
+
+    output.render_error("The final model request failed.")
+    assert output.rendered_response == "The final model request failed."
 
 
 def test_ask_log_scope_suppresses_unrendered_fallback_warnings(monkeypatch) -> None:
