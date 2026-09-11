@@ -36,7 +36,7 @@ To create a new skill:
    (`after:`, plus `options_from:` / `options_extra:` when the labels come
    from that tool's result). The host opens it; do not also call the menu.
 8. Section order below is the house style (see fixing-github-ci for a
-   single-tool skill, onboarding-cicd-fix for a multi-step one). Keep the
+   single-tool skill, onboarding-github-ci for a multi-step one). Keep the
    whole body tight — it is loaded into the planner's context on demand.
 -->
 ---
@@ -101,8 +101,8 @@ Steps, in order:
      checklist as a pinned overlay and re-injects it every turn as the
      CURRENT PLAN block, so it survives ask_user_choice turn boundaries where
      prose headers vanish. Never ask for hand-emitted "### [n/N]" step
-     headers. See onboarding_cicd_fix/a_local_analysis (cicd-analytics-demo)
-     for a filled-in example:
+     headers. See onboarding-github-ci/a-analyzing-github-ci-performance for a
+     filled-in example:
 
 Plan (multi-step skills):
 - On entry, before the first workflow tool call, call update_plan with the

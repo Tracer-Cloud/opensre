@@ -1,5 +1,5 @@
 ---
-name: cicd-analytics-demo
+name: analyzing-github-ci-performance
 description: >-
   Computes a CI/CD metrics table from raw GitHub Actions records for one
   repository over the last 30 days, including failure rates and developer
@@ -16,7 +16,7 @@ metadata:
     - First-experience demo: scan the machine, pick a repository, analyze its CI/CD
     - CI/CD reliability KPIs for one repository over the last 30 days
     - Developer time blocked by unreliable CI, estimated bottom-up per merged PR
-    - Handing off to the weekday report loop (cicd-reliability-agent) or Slack setup after the report
+    - Handing off to the weekday report loop (scheduling-github-ci-fixes) or Slack setup after the report
   requires:
     - GitHub token usable by OpenSRE with read access to the repository's Actions history
     - A local git checkout for the workspace scan (the example repository works without one)
@@ -81,7 +81,7 @@ If the tool reports a missing token, tell the user to run
 coverage gap.
 
 Metric definitions live in [Metrics](references/metrics.md)
-(`skill_view(name="cicd-analytics-demo", reference="metrics")`); read it only
+(`skill_view(name="analyzing-github-ci-performance", reference="metrics")`); read it only
 when the user asks how a figure is defined.
 
 Complete when `analyze_github_ci_reliability` has returned in this turn,
@@ -90,7 +90,7 @@ either with `key_results` or with a named blocker.
 ### 4. Display a metrics table as Markdown text
 
 Read [Benchmarks](references/benchmarks.md) via
-`skill_view(name="cicd-analytics-demo", reference="benchmarks")` now for
+`skill_view(name="analyzing-github-ci-performance", reference="benchmarks")` now for
 the comparison values and their interpretation limits. Check each table
 cell against a calculation result or this reference.
 
@@ -145,10 +145,10 @@ this turn. The user's answer arrives in the next turn. Each branch except
 `Finish` is owned by a sibling skill: load it with `skill_view` and follow
 its plan; do not reimplement its steps here.
 
-- **Schedule local loops:** call `skill_view(name="cicd-reliability-agent")`
+- **Schedule local loops:** call `skill_view(name="scheduling-github-ci-fixes")`
   and follow that skill. The repository is already chosen and analyzed in
   this session, so its plan omits the scan and repository-pick steps and
   its analyze step reuses today's saved report.
-- **Slack setup:** call `skill_view(name="slack-handoff")` and follow that
+- **Slack setup:** call `skill_view(name="connecting-slack")` and follow that
   skill.
 - **Finish:** acknowledge in one line and conclude.

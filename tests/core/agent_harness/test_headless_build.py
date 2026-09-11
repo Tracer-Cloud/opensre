@@ -147,6 +147,25 @@ def test_default_headless_build_takes_the_hosts_tool_provider_and_forwards_the_l
     assert isinstance(bare._tools, DefaultToolProvider)  # noqa: SLF001
 
 
+def test_default_headless_build_forwards_tool_events_to_the_default_provider() -> None:
+    from core.agent_harness.tools.tool_provider import DefaultToolProvider
+
+    session = SessionCore(store=InMemorySessionStore())
+
+    def observer(_kind: str, _data: dict[str, object]) -> None:
+        """Observe default-provider tool events."""
+
+    tools = DefaultHeadlessBuild(
+        session=session,
+        output=BufferOutputSink(),
+        tool_event_observer=observer,
+    ).tools()
+
+    assert isinstance(tools, DefaultToolProvider)
+    assert tools._observer_factory is not None  # noqa: SLF001
+    assert tools._observer_factory("investigate") is observer  # noqa: SLF001
+
+
 def test_a_stage_override_replaces_the_agent_stage() -> None:
     calls: list[str] = []
 

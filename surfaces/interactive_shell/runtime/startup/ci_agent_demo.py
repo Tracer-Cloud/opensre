@@ -12,6 +12,7 @@ from rich.markup import escape
 from rich.text import Text
 
 from config.constants.paths import OPENSRE_HOME_DIR
+from config.constants.skills import CONNECTING_SLACK_SKILL_NAME
 from core.agent_harness.spi.grounding import (
     GETTING_STARTED_CUSTOM,
     getting_started_skills,
@@ -202,7 +203,9 @@ def _run_first_pass(console: Console | None, task_id: str, *, owner: str, repo: 
 
 def _offer_after_loop(session: Session, console: Console | None) -> bool:
     """Offer the background service and the Slack demo; ``True`` when a prompt was queued."""
-    slack = next(skill for skill in getting_started_skills() if skill.name == "slack-handoff")
+    slack = next(
+        skill for skill in getting_started_skills() if skill.name == CONNECTING_SLACK_SKILL_NAME
+    )
     choices = [(_NEXT_SLACK, slack.getting_started or slack.name), (_NEXT_EXIT, _NEXT_EXIT_LABEL)]
     service = background_service_state()
     if service.supported and not service.installed:

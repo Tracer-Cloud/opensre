@@ -149,7 +149,7 @@ def _iter_skill_paths(directory: Path) -> list[Path]:
     """Return skill recipe paths in stable order (packages, nested packages, flat files).
 
     A package directory may nest one level of child skill packages (e.g.
-    ``onboarding_cicd_fix/a_local_analysis/SKILL.md``); each child follows its
+    ``onboarding-github-ci/a-analyzing-github-ci-performance/SKILL.md``); each child follows its
     parent so related skills stay adjacent in the index.
     """
     paths: list[Path] = []

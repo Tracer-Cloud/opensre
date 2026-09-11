@@ -1,5 +1,5 @@
 ---
-name: slack-handoff
+name: connecting-slack
 description: >-
   Connect OpenSRE to Slack and show how to hand off DevOps chores from a
   channel mention or a DM. Verifies with cli_exec; if Slack is missing, queues
@@ -11,8 +11,8 @@ getting_started: Connect OpenSRE to Slack and hand off DevOps chores for your te
 demo_order: 4
 metadata:
   owner: Vincent
-  last_changed_by: Vincent
-  last_changed_at: 2026-09-09
+  last_changed_by: Jan
+  last_changed_at: 2026-09-11
   usecases:
     - First-experience demo: connect OpenSRE to Slack and show the handoff path
     - Verify Slack is configured, then run the Slack setup wizard if it is missing

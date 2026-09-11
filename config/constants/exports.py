@@ -8,6 +8,10 @@ from config.package_exports import bind_package_exports
 # those modules; ``__getattr__`` loads one leaf the first time a name is used.
 EXPORTS: dict[str, str] = {
     "ONBOARDING_SKILL_NAME": "skills",
+    "ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME": "skills",
+    "SCHEDULING_GITHUB_CI_FIXES_SKILL_NAME": "skills",
+    "DELEGATING_GITHUB_CI_FIXES_SKILL_NAME": "skills",
+    "CONNECTING_SLACK_SKILL_NAME": "skills",
     # account
     "OPENSRE_ACCOUNT_FILENAME": "account",
     "OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS": "account",

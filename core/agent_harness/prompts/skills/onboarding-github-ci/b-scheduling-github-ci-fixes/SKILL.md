@@ -1,11 +1,11 @@
 ---
-name: cicd-reliability-agent
+name: scheduling-github-ci-fixes
 description: >-
   Schedules a recurring CI/CD reliability report for one repository: scan local
   checkouts, pick the repo, analyze GitHub Actions now, then
   schedule_ci_reliability_loop (weekday 08:00 local by default, inbox only).
   Use for the startup demo option "Set up an agent that improves CI/CD reliability over time".
-  Not a one-shot analysis without a schedule (cicd-analytics-demo) and not a
+  Not a one-shot analysis without a schedule (analyzing-github-ci-performance) and not a
   current-failing-checks read (github-ci-health). Multi-step; load before
   acting.
 getting_started: Set up an agent that improves CI/CD reliability over time

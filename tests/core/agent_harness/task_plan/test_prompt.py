@@ -273,7 +273,7 @@ def test_skill_answer_turn_omits_the_generic_answered_guidance() -> None:
         configured_integrations=(),
         configured_integrations_known=True,
         reasoning_effort=None,
-        active_skill="cicd-analytics-demo",
+        active_skill="analyzing-github-ci-performance",
     )
 
     # Act

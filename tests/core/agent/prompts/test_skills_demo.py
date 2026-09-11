@@ -21,14 +21,25 @@ from core.agent_harness.session.pending_choice import AskUserQuestion, format_as
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
 
 
+def test_child_directories_are_letter_prefixed_skill_names() -> None:
+    """``<letter>-<name>/`` keeps disk order, menu order, and ``name`` from drifting apart."""
+    loader.clear_skills_caches()
+    for skill in getting_started_skills():
+        directory = skill.path.parent.name
+        letter, _, suffix = directory.partition("-")
+        assert len(letter) == 1 and letter.islower(), directory
+        assert skill.demo_order == ord(letter) - ord("a") + 1, directory
+        assert suffix == skill.name, directory
+
+
 def test_master_menu_matches_four_unique_children_and_preserves_specialists() -> None:
     loader.clear_skills_caches()
     children = getting_started_skills()
     assert [s.name for s in children] == [
-        "cicd-analytics-demo",
-        "cicd-reliability-agent",
-        "remote-managed-service",
-        "slack-handoff",
+        "analyzing-github-ci-performance",
+        "scheduling-github-ci-fixes",
+        "delegating-github-ci-fixes",
+        "connecting-slack",
     ]
     assert [s.demo_order for s in children] == [1, 2, 3, 4]
     assert GETTING_STARTED_OPTIONS == (
@@ -49,22 +60,22 @@ def test_master_menu_matches_four_unique_children_and_preserves_specialists() ->
     assert "Call `ask_user_choice`" not in master
     for skill in children:
         assert f"`{skill.name}`" in master
-        assert skill.path.parent.parent.name == "onboarding_cicd_fix"
+        assert skill.path.parent.parent.name == ONBOARDING_SKILL_NAME
         assert loader.load_skill_body(skill.name)
-    analytics = next(s for s in children if s.name == "cicd-analytics-demo")
+    analytics = next(s for s in children if s.name == "analyzing-github-ci-performance")
     # The analytics card runs its menus from the plan the model follows, not
     # from host hooks, and keeps the full tool catalog.
     assert analytics.after_tool == ()
     assert analytics.pre_execute == ()
     assert analytics.tools == ()
-    body = loader.load_skill_body("cicd-analytics-demo")
+    body = loader.load_skill_body("analyzing-github-ci-performance")
     assert "`Which repository should I analyze?`" in body
     assert "`What would you like to do next?`" in body
     for option in ("- Schedule local loops", "- Slack setup", "- Finish"):
         assert option in body
     # Each next-step branch hands off to its sibling skill instead of inlining it.
-    assert 'skill_view(name="cicd-reliability-agent")' in body
-    assert 'skill_view(name="slack-handoff")' in body
+    assert 'skill_view(name="scheduling-github-ci-fixes")' in body
+    assert 'skill_view(name="connecting-slack")' in body
     # The comparison is the tool's job, not a flag the model can forget; the
     # report shape is the skill's, so no flag on the tool picks one either.
     assert "include_benchmarks" not in body
@@ -72,7 +83,7 @@ def test_master_menu_matches_four_unique_children_and_preserves_specialists() ->
     assert "Compare these numbers" not in body
     assert "Output its `headline`" not in body
     assert "same-day snapshot" not in body
-    reliability = loader.load_skill_body("cicd-reliability-agent")
+    reliability = loader.load_skill_body("scheduling-github-ci-fixes")
     assert "analyze_github_ci_reliability" in reliability
     assert "compact=" not in reliability
     # The analyze tool returns figures only; the skill writes the report from them.
@@ -81,7 +92,7 @@ def test_master_menu_matches_four_unique_children_and_preserves_specialists() ->
     assert "same-day snapshot" not in reliability
     assert menu["allow_custom"] is False
     assert GETTING_STARTED_CUSTOM not in master
-    assert "not implemented yet" in loader.load_skill_body("remote-managed-service")
+    assert "not implemented yet" in loader.load_skill_body("delegating-github-ci-fixes")
     discovered = [
         loader._load_action_skill(path) for path in loader._iter_skill_paths(loader.skills_dir())
     ]
@@ -100,16 +111,16 @@ def test_multi_step_skills_track_progress_with_update_plan_not_step_headers() ->
     """
     loader.clear_skills_caches()
     multi_step = (
-        "cicd-analytics-demo",
-        "cicd-reliability-agent",
-        "slack-handoff",
+        "analyzing-github-ci-performance",
+        "scheduling-github-ci-fixes",
+        "connecting-slack",
         "delivering-morning-briefings",
     )
     for name in multi_step:
         body = loader.load_skill_body(name)
         assert "update_plan" in body, name
         assert "### [" not in body, name
-    for name in (ONBOARDING_SKILL_NAME, "remote-managed-service"):
+    for name in (ONBOARDING_SKILL_NAME, "delegating-github-ci-fixes"):
         assert "### [" not in loader.load_skill_body(name), name
 
 
@@ -141,11 +152,11 @@ def test_answer_keeps_skill_in_ephemeral_context_after_history_is_lost() -> None
         configured_integrations=(),
         configured_integrations_known=True,
         reasoning_effort=None,
-        active_skill="cicd-analytics-demo",
+        active_skill="analyzing-github-ci-performance",
     )
     answer = build_action_system_prompt_envelope(snapshot)
     fresh = build_action_system_prompt_envelope(replace(snapshot, text="Explain this deployment"))
-    body = loader.load_skill_body("cicd-analytics-demo")
+    body = loader.load_skill_body("analyzing-github-ci-performance")
     assert body in answer.render_ephemeral()
     assert body not in fresh.render()
     assert answer.render_cached() == fresh.render_cached()
@@ -219,18 +230,18 @@ def test_references_append_sibling_markdown_and_ignore_paths_outside_the_tree(
 def test_onboarding_children_load_shared_rules_once() -> None:
     loader.clear_skills_caches()
     by_name = {s.name: s for s in loader.list_action_skills()}
-    reliability = loader.load_skill_body("cicd-reliability-agent")
-    analytics = loader.load_skill_body("cicd-analytics-demo")
-    analytics_card = by_name["cicd-analytics-demo"].path.read_text(encoding="utf-8")
+    reliability = loader.load_skill_body("scheduling-github-ci-fixes")
+    analytics = loader.load_skill_body("analyzing-github-ci-performance")
+    analytics_card = by_name["analyzing-github-ci-performance"].path.read_text(encoding="utf-8")
     # Shared rules resolve from the skills-tree ``common/`` folder and are
     # appended exactly once, never copied into the card body.
-    assert by_name["cicd-reliability-agent"].references == ("common/ask_once.md",)
+    assert by_name["scheduling-github-ci-fixes"].references == ("common/ask_once.md",)
     assert reliability.count("Ask each question once.") == 1
-    assert "Ask each question once." not in by_name["cicd-reliability-agent"].path.read_text(
+    assert "Ask each question once." not in by_name["scheduling-github-ci-fixes"].path.read_text(
         encoding="utf-8"
     )
     # The analytics card lists no shared rules; its plan carries its own wording.
-    assert by_name["cicd-analytics-demo"].references == ()
+    assert by_name["analyzing-github-ci-performance"].references == ()
     assert "SHARED RULES from" not in analytics
     assert "## Progress updates" not in analytics_card
 

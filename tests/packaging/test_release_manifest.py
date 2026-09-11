@@ -68,9 +68,9 @@ def test_required_skill_data_covers_action_and_tool_guidance() -> None:
     assert (
         "core/agent_harness/prompts/skills/reporting-github-ci-failures/SKILL.md" in relative_paths
     )
-    assert "core/agent_harness/prompts/skills/onboarding_cicd_fix/SKILL.md" in relative_paths
+    assert "core/agent_harness/prompts/skills/onboarding-github-ci/SKILL.md" in relative_paths
     assert (
-        "core/agent_harness/prompts/skills/onboarding_cicd_fix/a_local_analysis/SKILL.md"
+        "core/agent_harness/prompts/skills/onboarding-github-ci/a-analyzing-github-ci-performance/SKILL.md"
         in relative_paths
     )
     assert "integrations/github/tools/workflow/SKILL.md" in relative_paths

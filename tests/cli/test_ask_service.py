@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import logging
 import signal
 import threading
 
 import pytest
 
+from core.agent_harness.spi.session_goal import SessionGoal, SessionGoalReason, SessionGoalStatus
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
 from core.domain.types.tools import ToolSurface
 from core.llm.types import ToolCall
@@ -94,7 +96,7 @@ class _FakeAgentSession:
     def bound_session(self) -> _FakeSession:
         return type(self).session
 
-    def chat_until_goal(self, _prompt: str) -> object:
+    def chat_until_goal(self, _prompt: str, **_kwargs: object) -> object:
         raise RuntimeError("turn failed")
 
 
@@ -106,13 +108,165 @@ class _GoalRun:
 
 
 def test_run_ask_returns_success(monkeypatch) -> None:
-    monkeypatch.setattr(service, "_run_agent_turn", lambda _prompt, _hooks: _turn())
+    monkeypatch.setattr(service, "_run_agent_turn", lambda _prompt, _hooks, **_kwargs: _turn())
 
     outcome = service.run_ask("prompt", allowed_tools=(), bypass_approvals=False)
 
     assert outcome.status is AskStatus.SUCCESS
     assert outcome.response == "answer"
     assert outcome.exit_code is AskExitCode.SUCCESS
+
+
+def test_run_ask_forwards_a_tool_event_observer(monkeypatch) -> None:
+    recorded: dict[str, object] = {}
+
+    def observer(_kind: str, _data: dict[str, object]) -> None:
+        """Observe agent tool lifecycle events."""
+
+    def run_turn(_prompt: str, _hooks: ToolExecutionHooks, **kwargs: object) -> TurnResult:
+        recorded.update(kwargs)
+        return _turn()
+
+    monkeypatch.setattr(service, "_run_agent_turn", run_turn)
+
+    outcome = service.run_ask(
+        "prompt",
+        allowed_tools=(),
+        bypass_approvals=False,
+        tool_event_observer=observer,
+    )
+
+    assert outcome.status is AskStatus.SUCCESS
+    assert recorded["tool_event_observer"] is observer
+
+
+def test_run_ask_returns_the_rendered_answer_not_raw_tool_history(monkeypatch) -> None:
+    """One-shot output must not dump command evidence retained by the harness."""
+
+    def run_turn(_prompt: str, _hooks: ToolExecutionHooks, **kwargs: object) -> TurnResult:
+        output = kwargs["output"]
+        assert isinstance(output, service._AskOutputSink)
+        output.stream(label="OpenSRE", chunks=iter(["The repository is an SRE agent framework."]))
+        output.mark_turn_complete()
+        return _turn("git remote -v\nREADME contents\nThe repository is an SRE agent framework.")
+
+    monkeypatch.setattr(service, "_run_agent_turn", run_turn)
+
+    outcome = service.run_ask("what is this repo doing?", allowed_tools=(), bypass_approvals=False)
+
+    assert outcome.status is AskStatus.SUCCESS
+    assert outcome.response == "The repository is an SRE agent framework."
+    assert "git remote" not in outcome.response
+
+
+def test_run_ask_preserves_a_rendered_agent_error(monkeypatch) -> None:
+    """Suppressing raw tool history must not hide an actionable agent error."""
+
+    def run_turn(_prompt: str, _hooks: ToolExecutionHooks, **kwargs: object) -> TurnResult:
+        output = kwargs["output"]
+        assert isinstance(output, service._AskOutputSink)
+        output.render_error("The configured model is unavailable.")
+        output.mark_turn_complete()
+        return TurnResult(
+            final_intent="agent_completed",
+            action_result=ToolCallingTurnResult(
+                planned_count=0,
+                executed_count=0,
+                executed_success_count=0,
+                has_unhandled_clause=True,
+                handled=False,
+                response_text="raw internal diagnostic",
+                accounting_status="not_run",
+            ),
+            assistant_response_text="raw internal diagnostic",
+        )
+
+    monkeypatch.setattr(service, "_run_agent_turn", run_turn)
+
+    outcome = service.run_ask("why is checkout slow?", allowed_tools=(), bypass_approvals=False)
+
+    assert outcome.status is AskStatus.ERROR
+    assert outcome.response == ""
+    assert outcome.error is not None
+    assert outcome.error.message == "The configured model is unavailable."
+
+
+def test_ask_output_sink_uses_the_latest_rendered_event() -> None:
+    """A multi-turn goal exposes only its final response or error."""
+    output = service._AskOutputSink()
+
+    output.stream(label="OpenSRE", chunks=iter(["First investigation update."]))
+    output.stream(label="OpenSRE", chunks=iter(["Final investigation summary."]))
+    assert output.rendered_response == "Final investigation summary."
+
+    output.render_error("The final model request failed.")
+    assert output.rendered_response == "The final model request failed."
+
+
+def test_ask_output_sink_clears_an_earlier_goal_response_before_the_next_turn() -> None:
+    """A silent final goal turn must not reuse its predecessor's response."""
+    output = service._AskOutputSink()
+    output.stream(label="OpenSRE", chunks=iter(["Investigation update."]))
+    goal = SessionGoal(
+        condition="investigate the alert",
+        status=SessionGoalStatus.ACTIVE,
+    ).with_reason(SessionGoalReason.working_session_turn(2, 3))
+
+    service._clear_prior_goal_response(output, goal)
+
+    assert output.rendered_response == ""
+
+
+def test_ask_output_sink_keeps_a_final_goal_response() -> None:
+    output = service._AskOutputSink()
+    final_goal = SessionGoal(
+        condition="investigate the alert",
+        status=SessionGoalStatus.ACHIEVED,
+    )
+    output.stream(label="OpenSRE", chunks=iter(["Final investigation summary."]))
+
+    service._clear_prior_goal_response(output, final_goal)
+
+    assert output.rendered_response == "Final investigation summary."
+
+
+def test_ask_log_scope_suppresses_unrendered_fallback_warnings(monkeypatch) -> None:
+    """Internal tool warnings must not bypass the one-shot answer renderer."""
+
+    class _CaptureHandler(logging.Handler):
+        def __init__(self) -> None:
+            super().__init__()
+            self.messages: list[str] = []
+
+        def emit(self, record: logging.LogRecord) -> None:
+            self.messages.append(record.getMessage())
+
+    root = logging.getLogger()
+    original_handlers = list(root.handlers)
+    original_level = root.level
+    logger = logging.getLogger("tests.cli.ask.fallback_warning")
+    original_logger_handlers = list(logger.handlers)
+    original_logger_propagate = logger.propagate
+    original_logger_level = logger.level
+    capture = _CaptureHandler()
+    for handler in original_handlers:
+        root.removeHandler(handler)
+    logger.handlers.clear()
+    logger.propagate = True
+    logger.setLevel(logging.WARNING)
+    root.setLevel(logging.WARNING)
+    monkeypatch.setattr(logging, "lastResort", capture)
+    try:
+        with service._ask_log_scope():
+            logger.warning("subprocess error: exit 1")
+        assert capture.messages == []
+    finally:
+        root.setLevel(original_level)
+        for handler in original_handlers:
+            root.addHandler(handler)
+        logger.handlers[:] = original_logger_handlers
+        logger.propagate = original_logger_propagate
+        logger.setLevel(original_logger_level)
 
 
 def test_agent_turn_closes_ephemeral_session_after_failure(monkeypatch) -> None:
@@ -154,7 +308,7 @@ def test_agent_turn_binds_hooks_and_restricts_capabilities_via_start(monkeypatch
         def bound_session(self) -> _FakeSession:
             return session
 
-        def chat_until_goal(self, prompt: str) -> _GoalRun:
+        def chat_until_goal(self, prompt: str, **_kwargs: object) -> _GoalRun:
             # chat_until_goal, not chat: ask must run the session-goal loop so a
             # multi-step turn completes instead of stopping after the first.
             recorded["prompt"] = prompt
@@ -177,8 +331,74 @@ def test_agent_turn_binds_hooks_and_restricts_capabilities_via_start(monkeypatch
     assert manager.closed == [(session, False)]
 
 
+def test_agent_turn_discards_a_previous_goal_response_before_a_silent_final_turn(
+    monkeypatch,
+) -> None:
+    manager = _FakeSessionManager()
+    session = _FakeSession()
+
+    class _GoalAgentSession:
+        @classmethod
+        def start(cls, _config: object, **_kwargs: object) -> _GoalAgentSession:
+            return cls()
+
+        @property
+        def bound_session(self) -> _FakeSession:
+            return session
+
+        def chat_until_goal(self, _prompt: str, **kwargs: object) -> _GoalRun:
+            on_progress = kwargs["on_progress"]
+            assert callable(on_progress)
+            progress = SessionGoal(
+                condition="investigate the alert",
+                status=SessionGoalStatus.ACTIVE,
+            ).with_reason(SessionGoalReason.working_session_turn(2, 3))
+            on_progress(progress)
+            return _GoalRun(_turn("raw turn history"))
+
+    output = service._AskOutputSink()
+    output.stream(label="OpenSRE", chunks=iter(["Investigation update."]))
+    monkeypatch.setattr(service, "SessionManager", lambda: manager)
+    monkeypatch.setattr(service, "AgentSession", _GoalAgentSession)
+
+    service._run_agent_turn("hello", ToolExecutionHooks(), output=output)
+
+    assert output.rendered_response == ""
+    assert manager.closed == [(session, False)]
+
+
+def test_agent_turn_passes_tool_events_to_the_default_agent_build(monkeypatch) -> None:
+    manager = _FakeSessionManager()
+    session = _FakeSession()
+    recorded: dict[str, object] = {}
+
+    class _RecordingAgentSession:
+        @classmethod
+        def start(cls, _config: object, **kwargs: object) -> _RecordingAgentSession:
+            recorded.update(kwargs)
+            return cls()
+
+        @property
+        def bound_session(self) -> _FakeSession:
+            return session
+
+        def chat_until_goal(self, _prompt: str, **_kwargs: object) -> _GoalRun:
+            return _GoalRun(_turn())
+
+    def observer(_kind: str, _data: dict[str, object]) -> None:
+        """Observe agent tool lifecycle events."""
+
+    monkeypatch.setattr(service, "SessionManager", lambda: manager)
+    monkeypatch.setattr(service, "AgentSession", _RecordingAgentSession)
+
+    service._run_agent_turn("hello", ToolExecutionHooks(), tool_event_observer=observer)
+
+    assert recorded["tool_event_observer"] is observer
+    assert manager.closed == [(session, False)]
+
+
 def test_run_ask_reports_denial_before_agent_failure(monkeypatch) -> None:
-    def deny_then_fail(_prompt: str, hooks) -> TurnResult:
+    def deny_then_fail(_prompt: str, hooks, **_kwargs: object) -> TurnResult:
         assert hooks.before_tool_call is not None
         decision = hooks.before_tool_call(_risky_request())
         assert decision is not None and decision.blocked
@@ -200,7 +420,7 @@ def test_run_ask_reports_denial_before_agent_failure(monkeypatch) -> None:
 def test_chat_only_tool_denial_suggests_valid_authorized_rerun(monkeypatch) -> None:
     request = _chat_only_request()
 
-    def run_tool(_prompt: str, hooks: ToolExecutionHooks) -> TurnResult:
+    def run_tool(_prompt: str, hooks: ToolExecutionHooks, **_kwargs: object) -> TurnResult:
         assert hooks.before_tool_call is not None
         decision = hooks.before_tool_call(request)
         assert decision is not None
@@ -235,7 +455,7 @@ def test_run_ask_maps_hosted_credit_exhaustion_to_nonzero_upgrade_error(
 
     upgrade_url = "https://app.opensre.test/usage"
 
-    def exhaust_credits(_prompt: str, _hooks: ToolExecutionHooks) -> TurnResult:
+    def exhaust_credits(_prompt: str, _hooks: ToolExecutionHooks, **_kwargs: object) -> TurnResult:
         raise OpenSRECreditsExhaustedError(
             "OpenSRE hosted credits are exhausted.",
             upgrade_url=upgrade_url,
@@ -256,14 +476,14 @@ def test_run_ask_maps_incomplete_and_cancelled_turns(monkeypatch) -> None:
     monkeypatch.setattr(
         service,
         "_run_agent_turn",
-        lambda _prompt, _hooks: _turn(""),
+        lambda _prompt, _hooks, **_kwargs: _turn(""),
     )
     incomplete = service.run_ask("prompt", allowed_tools=(), bypass_approvals=False)
 
     monkeypatch.setattr(
         service,
         "_run_agent_turn",
-        lambda _prompt, _hooks: _turn("stopped", cancelled=True),
+        lambda _prompt, _hooks, **_kwargs: _turn("stopped", cancelled=True),
     )
     cancelled = service.run_ask("prompt", allowed_tools=(), bypass_approvals=False)
 
@@ -278,7 +498,7 @@ def test_run_ask_maps_incomplete_and_cancelled_turns(monkeypatch) -> None:
     [(signal.SIGINT, AskExitCode.SIGINT), (signal.SIGTERM, AskExitCode.SIGTERM)],
 )
 def test_run_ask_maps_signals(monkeypatch, signum: int, exit_code: AskExitCode) -> None:
-    def raise_signal(_prompt: str, _hooks) -> TurnResult:
+    def raise_signal(_prompt: str, _hooks, **_kwargs: object) -> TurnResult:
         raise AskSignal(signum)
 
     monkeypatch.setattr(service, "_run_agent_turn", raise_signal)
