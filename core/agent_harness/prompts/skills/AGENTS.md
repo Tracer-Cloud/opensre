@@ -98,7 +98,10 @@ tools (`ask_user_choice`, `skill_view`) through
 `core.agent_harness.tools.action_tools.get_action_tool`; the registry behind it
 is installed around every test by `tests/harness_providers_plugin.py`
 (loaded from `pytest.ini`), not by `tests/conftest.py`, which does not reach
-this tree.
+this tree. `tests/colocated_skill_tests_plugin.py` imports this package before
+collection: pytest's importlib mode otherwise re-executes it while importing a
+test from a hyphenated skill directory, leaving two copies of every
+`core.agent_harness.prompts.*` module in the process.
 
 
 ## Skill metadata ownership and change date
