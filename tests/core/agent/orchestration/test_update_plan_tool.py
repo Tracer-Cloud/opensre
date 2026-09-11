@@ -12,6 +12,7 @@ from core.agent_harness.task_plan.plan import (
     parse_task_plan,
     task_plan_from_payload,
 )
+from core.agent_harness.task_plan.work_log import take_completed_plan_breakdown
 from core.agent_harness.tools.tool_context import ActionToolScope
 from surfaces.interactive_shell.session import Session
 from tools.interactive_shell.actions.update_plan import (
@@ -55,7 +56,40 @@ def test_update_plan_stores_the_checklist_on_the_session() -> None:
     assert session.task_plan is not None
     assert session.task_plan.current_index == 2
     assert "Plan · 2/3" in result["summary"]
-    assert "(verify)" in result["summary"]
+
+
+def test_update_plan_preserves_report_and_followup_after_verification() -> None:
+    session = Session()
+    labels = [
+        "Scan local repositories",
+        "Select a repository",
+        "Collect history and references",
+        "Calculate metrics and verify coverage",
+        "Display the report",
+        "Offer the next step",
+    ]
+    items = [
+        {"step": label, "status": "completed" if index < 4 else "pending"}
+        for index, label in enumerate(labels)
+    ]
+    items[4]["status"] = "in_progress"
+    result = execute_update_plan_tool({"plan": items}, _ctx(session=session))
+
+    assert result["ok"] is True
+    assert result["plan"] == items
+    assert result["summary"].splitlines()[-2:] == [
+        "  ● Display the report",
+        "  ○ Offer the next step",
+    ]
+    assert session.task_plan is not None
+    assert [step.step for step in session.task_plan.steps] == labels
+
+    completed = [{"step": label, "status": "completed"} for label in labels]
+    result = execute_update_plan_tool({"plan": completed}, _ctx(session=session))
+    assert result["ok"] is True
+    breakdown = take_completed_plan_breakdown(session)
+    assert breakdown.startswith("Plan complete · 6/6")
+    assert breakdown.splitlines()[-1] == "  ✓ Offer the next step"
 
 
 def test_update_plan_rejects_two_in_progress_steps() -> None:

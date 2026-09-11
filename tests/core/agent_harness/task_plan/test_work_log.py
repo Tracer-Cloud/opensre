@@ -75,7 +75,6 @@ def test_format_breakdown_lists_work_under_steps() -> None:
     assert text.startswith("Plan complete · 4/4")
     assert "↳ call posthog tool" in text
     assert "↳ sentry_issues tool call" in text
-    assert "(verify)" in text
 
 
 def test_format_breakdown_groups_same_kind_work_into_a_count() -> None:

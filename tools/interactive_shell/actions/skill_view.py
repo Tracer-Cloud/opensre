@@ -67,8 +67,8 @@ skill_view_tool = RegisteredTool(
     description=(
         "Load the full body of one action-agent skill by name from the "
         "SKILLS INDEX. Call this in the same turn when the user request matches "
-        "an indexed skill, BEFORE emitting that skill's tool sequence. Do not "
-        "invent workflow steps from the one-line index description alone. A "
+        "an indexed skill, then read the returned instructions before planning "
+        "or executing its workflow. A "
         "skill may open its own menu on load; the result then tells you to end "
         "the turn. A skill that is already active does not need to be loaded "
         "again; its body is in your context. Pass reference to load one of the "

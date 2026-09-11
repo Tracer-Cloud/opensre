@@ -87,7 +87,7 @@ update_plan_tool = RegisteredTool(
     description=(
         "Create or revise the live execution plan for this workload, and mark "
         "steps pending, in_progress, or completed. Call this BEFORE executing "
-        "any multi-step workload. The last step must be a verification check. "
+        "any multi-step workload. Include verification before declaring the task complete. "
         "At most one step may be in_progress. Not for durable human todos "
         "(use work_task_*) and not for /goal keep-going."
     ),
@@ -116,10 +116,7 @@ update_plan_tool = RegisteredTool(
             ),
             "plan": {
                 "type": "array",
-                "description": (
-                    "Ordered steps. Last item is always the verification check. "
-                    "At most one status may be in_progress."
-                ),
+                "description": "Ordered steps. At most one status may be in_progress.",
                 "items": _PLAN_ITEM_SCHEMA,
                 "minItems": 2,
             },

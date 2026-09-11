@@ -63,7 +63,7 @@ class TaskPlan:
     def focused_step(self) -> PlanStep:
         """The step the live overlay should show: in-progress, else first pending.
 
-        When every step is completed, returns the last step (verification).
+        When every step is completed, returns the last step.
         """
         for item in self.steps:
             if item.status is PlanStepStatus.IN_PROGRESS:
@@ -97,7 +97,7 @@ def parse_task_plan(args: dict[str, Any]) -> tuple[TaskPlan | None, str | None]:
     )
     raw_plan = args.get("plan")
     if not isinstance(raw_plan, list) or len(raw_plan) < 2:
-        return None, "plan must list at least two steps (last step verifies)"
+        return None, "plan must list at least two steps"
     steps: list[PlanStep] = []
     in_progress = 0
     for item in raw_plan:
@@ -117,7 +117,7 @@ def parse_task_plan(args: dict[str, Any]) -> tuple[TaskPlan | None, str | None]:
         return None, "at most one step can be in_progress at a time"
     last = steps[-1]
     if last.status is PlanStepStatus.COMPLETED and in_progress:
-        return None, "cannot complete the verification step while another step is in_progress"
+        return None, "cannot complete the final step while another step is in_progress"
     return TaskPlan(steps=tuple(steps), explanation=explanation), None
 
 

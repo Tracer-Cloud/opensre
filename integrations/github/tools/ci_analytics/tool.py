@@ -206,8 +206,7 @@ def report_text_from_snapshot(
         return "", ""
     text = render_markdown(report, compact=True)
     if include_benchmarks:
-        # This report sits above the schedule card, so the next step is already taken.
-        compare = comparison_markdown(report, peer_benchmarks(report), next_step=False)
+        compare = comparison_markdown(report, peer_benchmarks(report))
         text = f"{text}\n\n{compare}"
     return text.strip(), str(snapshot.get("generated_at", ""))
 

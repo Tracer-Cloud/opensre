@@ -138,11 +138,9 @@ def format_task_plan_breakdown(
     if plan.all_completed:
         header = f"Plan complete · {plan.total}/{plan.total}"
     lines = [header]
-    last_index = plan.total - 1
     for index, item in enumerate(plan.steps):
         mark = PLAN_STATUS_GLYPH[item.status]
-        suffix = "  (verify)" if index == last_index else ""
-        lines.append(f"  {mark} {item.step}{suffix}")
+        lines.append(f"  {mark} {item.step}")
         step_work = work[index] if index < len(work) else []
         lines.extend(_grouped_work_lines(step_work))
     return "\n".join(lines)

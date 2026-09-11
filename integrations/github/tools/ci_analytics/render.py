@@ -10,14 +10,7 @@ from rich.padding import Padding
 
 import infrastructure.terminal.theme as ui_theme
 from infrastructure.terminal.markdown import ReplyMarkdown
-from integrations.github.tools.ci_analytics.benchmarks import (
-    BENCHMARKS,
-    MEASURED_ON,
-    Benchmark,
-)
-from integrations.github.tools.ci_analytics.benchmarks import (
-    WINDOW_DAYS as BENCHMARK_WINDOW_DAYS,
-)
+from integrations.github.tools.ci_analytics.benchmarks import BENCHMARKS, Benchmark
 from integrations.github.tools.ci_analytics.models import (
     CiAnalyticsReport,
     FailureKind,
@@ -203,30 +196,7 @@ def comparison_markdown(
         for metric in figures[0]
     ]
     peers_label = " and ".join(labels[1:])
-    return "\n".join(
-        [
-            f"Compared with {peers_label}:",
-            "",
-            header,
-            align,
-            *rows,
-            "",
-            f"- {_benchmark_note()}",
-            *([f"- {_NEXT_STEP}"] if next_step else []),
-        ]
-    )
-
-
-def _benchmark_note() -> str:
-    """Name what the benchmark columns are, so they are never read as live figures."""
-    return (
-        f"Benchmark columns were measured with this tool over "
-        f"{BENCHMARK_WINDOW_DAYS} days on {MEASURED_ON:%d %b %Y}."
-    )
-
-
-#: Painted under the table so the next menu is not the first time the cost is named.
-_NEXT_STEP = "Next: schedule this report for weekday mornings, or hand it to your team in Slack."
+    return "\n".join([f"Compared with {peers_label}:", "", header, align, *rows])
 
 
 def _details_markdown(report: CiAnalyticsReport) -> list[str]:

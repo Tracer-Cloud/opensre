@@ -25,11 +25,9 @@ def format_plan_header(plan: TaskPlan) -> str:
 def format_task_plan_plain(plan: TaskPlan) -> str:
     """Checklist with ``Plan · n/m`` header and ✓ / ● / ○ step marks."""
     lines = [format_plan_header(plan)]
-    last_index = plan.total - 1
-    for index, item in enumerate(plan.steps):
+    for item in plan.steps:
         mark = PLAN_STATUS_GLYPH[item.status]
-        suffix = "  (verify)" if index == last_index else ""
-        lines.append(f"  {mark} {item.step}{suffix}")
+        lines.append(f"  {mark} {item.step}")
     return "\n".join(lines)
 
 

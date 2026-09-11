@@ -124,7 +124,6 @@ def test_the_comparison_needs_no_saved_peer_figures(tmp_path: Path, monkeypatch)
     text = result["response_text"]
     for benchmark in BENCHMARKS:
         assert benchmark.label in text
-    assert f"{MEASURED_ON:%d %b %Y}" in text
     assert result["benchmarks_measured_on"] == MEASURED_ON.isoformat()
 
 

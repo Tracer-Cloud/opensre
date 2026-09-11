@@ -465,8 +465,9 @@ def load_skills_index() -> str:
         'For capability questions ("what can you do", "how can you help"),',
         "follow the getting-started instruction to load the master skill.",
         "When the user request matches a skill below, call skill_view(name) in",
-        "THIS turn BEFORE emitting that skill's tool sequence. Do not invent",
-        "steps from the one-line description alone.",
+        "this turn. Read its result before creating or revising its plan or",
+        "calling its workflow tools. Request dependent update_plan calls in a",
+        "later tool-call batch, after reading the skill's full instructions.",
         "",
     ]
     lines.extend(_index_line(skill) for skill in skills)
