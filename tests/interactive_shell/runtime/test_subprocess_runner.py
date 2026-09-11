@@ -190,6 +190,45 @@ def test_run_shell_command_quiet_cd_hides_cwd(
     assert result["response_text"] == "/tmp/example"
 
 
+def test_run_shell_command_does_not_hijack_compound_cd(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    chdir_calls: list[Path] = []
+    execute_calls: list[dict[str, object]] = []
+
+    def _chdir(path: Path) -> None:
+        chdir_calls.append(path)
+
+    def _fake_execute(**kwargs: object) -> ShellExecutionResult:
+        execute_calls.append(kwargs)
+        return ShellExecutionResult(
+            command="cd /tmp&&pwd",
+            argv=None,
+            stdout="/tmp\n",
+            stderr="",
+            exit_code=0,
+            timed_out=False,
+            truncated=False,
+            executed_with_shell=True,
+        )
+
+    monkeypatch.setattr("tools.interactive_shell.shell.runner.os.chdir", _chdir)
+    monkeypatch.setattr(
+        "tools.interactive_shell.shell.execution.execute_shell_command",
+        _fake_execute,
+    )
+
+    session = Session()
+    console = Console(file=io.StringIO(), force_terminal=False)
+
+    result = run_shell_command("cd /tmp&&pwd", _presenter(session, console))
+
+    assert chdir_calls == []
+    assert execute_calls[0]["command"] == "cd /tmp&&pwd"
+    assert execute_calls[0]["use_shell"] is True
+    assert result["stdout"] == "/tmp"
+
+
 def test_run_cd_command_reports_chdir_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     captured_errors: list[BaseException] = []
 

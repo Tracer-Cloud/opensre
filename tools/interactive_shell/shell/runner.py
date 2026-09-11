@@ -66,7 +66,7 @@ def run_shell_command(
     cancel_event: threading.Event | None = None,
 ) -> dict[str, Any]:
     session = presenter.session
-    parsed = parse_shell_command(command, is_windows=_platform.IS_WINDOWS)
+    parsed = parse_shell_command(command)
     plan = plan_shell_execution(parsed)
     display_command = format_shell_command_for_display(command)
     if not presenter.execution_allowed(

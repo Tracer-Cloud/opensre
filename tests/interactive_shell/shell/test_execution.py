@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import os
+import shlex
 import sys
 import threading
 import time
+from pathlib import Path
 
 import pytest
 
@@ -101,7 +103,7 @@ def test_execute_quoted_heredoc_through_shell() -> None:
     command = """python3 - <<'PY'
 print("hello-heredoc")
 PY"""
-    parsed = parse_shell_command(command, is_windows=False)
+    parsed = parse_shell_command(command)
     assert parsed.use_shell is True
 
     result = execute_shell_command(
@@ -115,3 +117,23 @@ PY"""
     assert result.timed_out is False
     assert result.exit_code == 0
     assert "hello-heredoc" in result.stdout
+
+
+@pytest.mark.skipif(os.name == "nt", reason="uses POSIX shell syntax")
+def test_execute_compact_shell_script_with_operator_and_redirect(tmp_path: Path) -> None:
+    output_file = tmp_path / "second.txt"
+    command = f"printf one&&printf two>{shlex.quote(str(output_file))}"
+    parsed = parse_shell_command(command)
+
+    result = execute_shell_command(
+        command=parsed.command,
+        argv=parsed.argv,
+        use_shell=parsed.use_shell,
+        timeout_seconds=10,
+        max_output_chars=10_000,
+    )
+
+    assert result.exit_code == 0
+    assert result.executed_with_shell is True
+    assert result.stdout == "one"
+    assert output_file.read_text() == "two"

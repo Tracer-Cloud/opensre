@@ -853,7 +853,7 @@ def test_execute_cli_actions_records_shell_failure(monkeypatch: object) -> None:
     console, buf = _capture()
 
     assert action_turn.run_action_tool_turn("execute false", session, console).handled is True
-    assert calls == [(["false"], _EXPECTED_POPEN_KWARGS)]
+    assert calls == [(_expected_shell_argv("false"), _EXPECTED_POPEN_KWARGS)]
     assert session.history[-1] == {
         "type": "shell",
         "text": "false",
@@ -962,7 +962,7 @@ def test_execute_cli_actions_handles_path_with_spaces_run_phrase() -> None:
     assert "/tmp/file with spaces.txt" in output
 
 
-def test_execute_cli_actions_backtick_shell_preserves_space_path_token(monkeypatch: object) -> None:
+def test_execute_cli_actions_runs_space_path_through_host_shell(monkeypatch: object) -> None:
     calls = _install_fake_popen(monkeypatch, stdout="done\n")
 
     session = Session()
@@ -974,11 +974,7 @@ def test_execute_cli_actions_backtick_shell_preserves_space_path_token(monkeypat
         ).handled
         is True
     )
-    # On Windows, shlex with posix=False preserves quotes for tokens with spaces.
-    # Both Windows and Posix parsers correctly strip outer quotes from tokens
-    # following the policy.py _strip_outer_quotes logic.
-    expected_path = "/tmp/file with spaces.txt"
-    assert calls[0][0] == ["cat", expected_path]
+    assert calls[0][0] == _expected_shell_argv('cat "/tmp/file with spaces.txt"')
 
 
 def test_execute_cli_actions_counts_planned_and_executed(monkeypatch: object) -> None:

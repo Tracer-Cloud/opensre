@@ -54,7 +54,9 @@ def run_shell(*, command: str, context: Any, quiet: bool = False) -> dict[str, A
 shell_run_tool = RegisteredTool(
     name="shell_run",
     description=(
-        "Run a local shell command on this machine. Use for read-only inspection, "
+        "Run a local host-shell command on this machine. The command is evaluated as "
+        "shell syntax, including quoting, expansions, redirects, and command operators. "
+        "Use for read-only inspection, "
         "controlled operational steps, and user-requested local workflows — including "
         "creating files or scripts and executing multi-step sequences, one shell_run call "
         "per step when a step consumes the previous step's output. When the user asks for "
@@ -72,7 +74,7 @@ shell_run_tool = RegisteredTool(
         properties={
             "command": string_property(
                 description=(
-                    "Exact shell command to execute — a diagnostic (for example: `ls`, "
+                    "Exact host-shell command to execute — a diagnostic (for example: `ls`, "
                     "`pwd`, `git status`, `uv run python -m pytest ...`) or one step of a "
                     "local workflow the user asked for (writing a file or script, running "
                     "it, updating state a later step reads). Run a user-requested command "

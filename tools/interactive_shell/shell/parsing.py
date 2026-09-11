@@ -9,14 +9,15 @@ omitted to keep developer velocity high. See
 ``docs/interactive-shell-action-policy.md`` for the rationale.
 
 This module's only job is to turn command text into a shape the runner can
-execute:
+execute. A ``shell_run`` command is host-shell source, so every non-empty
+command runs through the configured shell. This gives the action tool ordinary
+shell semantics for quoting, expansions, redirection, and operators without
+trying to reproduce shell parsing with partial regular expressions.
 
-* explicit ``!`` passthrough → run the remainder through a shell,
-* commands using shell operators / substitution / heredocs → run through a shell,
-* anything that fails to tokenize → hand the raw string to a shell,
-* everything else → split into ``argv`` and run without a shell (which also lets
-  the runner detect the ``cd`` / ``pwd`` REPL builtins so the working directory
-  persists across turns).
+The REPL still handles a standalone ``cd`` or ``pwd`` itself so a directory
+change persists across turns. That detection uses shell-aware tokenization only
+to decide whether the input is one simple builtin; it never chooses how a
+general command executes.
 
 The only non-execution outcome is a ``parse_error`` for genuinely empty input
 (e.g. a bare ``!``). That is input validation, not a safety guardrail.
@@ -24,27 +25,21 @@ The only non-execution outcome is a ``parse_error`` for genuinely empty input
 
 from __future__ import annotations
 
-import re
 import shlex
 from dataclasses import dataclass
 
 _EXPLICIT_SHELL_PREFIX = "!"
-_SHELL_OPERATOR_RE = re.compile(r"(^|\s)(\|\||&&|[|;<>]|>>|<<|2>)(\s|$)")
-_INLINE_SUBSHELL_RE = re.compile(r"`|\$\(")
-# Heredoc starts such as ``<<'PY'`` or ``<<EOF`` — ``<<`` alone is already covered
-# by ``_SHELL_OPERATOR_RE`` only when followed by whitespace; quoted/unquoted
-# delimiters need an explicit match so ``python3 - <<'PY'`` is not tokenized.
-_HEREDOC_START_RE = re.compile(r"(^|\s)<<-?\s*(?:'[^'\n]+'|\"[^\"\n]+\"|[^\s\\|;&<>]+)")
+_POSIX_SHELL_SYNTAX = frozenset(";&|<>(){}$`#\n\r*?[")
+_WINDOWS_SHELL_SYNTAX = frozenset("&|<>()%!\n\r")
 
 
 @dataclass(frozen=True)
 class ParsedShellCommand:
     """Structured command parsing result.
 
-    ``use_shell`` is True when the command must run through a real shell (explicit
-    ``!`` passthrough, shell operators / substitution, or input that could not be
-    tokenized). ``passthrough`` records only the explicit ``!`` prefix so the
-    runner can surface the "shell passthrough" hint for it.
+    ``use_shell`` is True for every non-empty command: ``shell_run.command`` is
+    host-shell source. ``passthrough`` records only the explicit ``!`` prefix so
+    the runner can surface the "shell passthrough" hint for it.
     """
 
     command: str
@@ -54,17 +49,63 @@ class ParsedShellCommand:
     parse_error: str | None = None
 
 
-def _split_argv(command: str, *, is_windows: bool) -> list[str] | None:
+def _strip_outer_quotes(value: str) -> str:
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
+        return value[1:-1]
+    return value
+
+
+def _split_builtin_argv(command: str, *, is_windows: bool) -> list[str] | None:
+    """Tokenize one potential REPL builtin without losing quoted punctuation."""
     try:
-        return shlex.split(command, posix=not is_windows)
+        lexer = shlex.shlex(
+            command,
+            posix=not is_windows,
+            punctuation_chars=True,
+        )
+        lexer.whitespace_split = True
+        argv = list(lexer)
     except ValueError:
-        try:
-            return shlex.split(command, posix=False)
-        except ValueError:
-            return None
+        return None
+
+    if is_windows:
+        argv = [_strip_outer_quotes(token) for token in argv]
+    return argv
 
 
-def parse_shell_command(command: str, *, is_windows: bool) -> ParsedShellCommand:
+def _contains_shell_syntax(command: str, *, is_windows: bool) -> bool:
+    """Return whether ``command`` has unquoted syntax a REPL builtin cannot own."""
+    syntax = _WINDOWS_SHELL_SYNTAX if is_windows else _POSIX_SHELL_SYNTAX
+    quote: str | None = None
+    escaped = False
+
+    for character in command:
+        if escaped:
+            escaped = False
+            continue
+        if quote == "'":
+            if character == "'":
+                quote = None
+            continue
+        if quote == '"':
+            if character == '"':
+                quote = None
+            elif character in {"$", "`"}:
+                return True
+            elif character == "\\":
+                escaped = True
+            continue
+        if character == '"' or (character == "'" and not is_windows):
+            quote = character
+        elif (character == "\\" and not is_windows) or (character == "^" and is_windows):
+            escaped = True
+        elif character in syntax:
+            return True
+
+    return quote is not None
+
+
+def parse_shell_command(command: str) -> ParsedShellCommand:
     """Parse command text into an executable shape (no safety policy applied)."""
     stripped = command.strip()
 
@@ -85,31 +126,7 @@ def parse_shell_command(command: str, *, is_windows: bool) -> ParsedShellCommand
             use_shell=True,
         )
 
-    if (
-        _SHELL_OPERATOR_RE.search(stripped) is not None
-        or _INLINE_SUBSHELL_RE.search(stripped) is not None
-        or _HEREDOC_START_RE.search(stripped) is not None
-    ):
-        # Operators / substitution need a real shell; alpha mode runs them.
-        return ParsedShellCommand(
-            command=stripped,
-            argv=None,
-            passthrough=False,
-            use_shell=True,
-        )
-
-    argv = _split_argv(stripped, is_windows=is_windows)
-    if argv is None:
-        # Could not tokenize (e.g. unbalanced quotes). Hand the raw string to the
-        # shell instead of blocking it.
-        return ParsedShellCommand(
-            command=stripped,
-            argv=None,
-            passthrough=False,
-            use_shell=True,
-        )
-
-    if not argv:
+    if not stripped:
         return ParsedShellCommand(
             command=stripped,
             argv=None,
@@ -118,38 +135,28 @@ def parse_shell_command(command: str, *, is_windows: bool) -> ParsedShellCommand
             parse_error="empty command.",
         )
 
-    if is_windows:
-
-        def _strip_outer_quotes(value: str) -> str:
-            if len(value) >= 2 and value[0] == value[-1] and value[0] in {"'", '"'}:
-                return value[1:-1]
-            return value
-
-        argv = [_strip_outer_quotes(token) for token in argv]
-
     return ParsedShellCommand(
         command=stripped,
-        argv=argv,
+        argv=None,
         passthrough=False,
-        use_shell=False,
+        use_shell=True,
     )
 
 
 def argv_for_repl_builtin_detection(
     *, parsed: ParsedShellCommand, is_windows: bool
 ) -> list[str] | None:
-    """Argv tokens for detecting ``cd`` / ``pwd`` REPL builtins.
-
-    Only the plain ``argv`` path and explicit ``!`` passthrough opt into builtin
-    detection. Operator / substitution commands run wholesale through the shell,
-    so they intentionally return ``None`` here (a leading ``cd`` in
-    ``cd /tmp && ls`` must not be hijacked by the builtin handler).
-    """
-    if parsed.argv is not None:
-        return parsed.argv
-    if not parsed.passthrough or not parsed.command.strip():
+    """Return argv when the command is one standalone ``cd`` or ``pwd`` builtin."""
+    if not parsed.command.strip() or _contains_shell_syntax(
+        parsed.command,
+        is_windows=is_windows,
+    ):
         return None
-    return _split_argv(parsed.command.strip(), is_windows=is_windows)
+
+    argv = _split_builtin_argv(parsed.command.strip(), is_windows=is_windows)
+    if argv is None or not argv or argv[0].lower() not in {"cd", "pwd"}:
+        return None
+    return argv
 
 
 __all__ = [
