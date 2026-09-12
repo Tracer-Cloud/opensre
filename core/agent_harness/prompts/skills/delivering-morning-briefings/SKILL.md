@@ -13,7 +13,7 @@ metadata:
   requires:
   - Outbound network access to the weather and news sources.
   - For recurring delivery, a configured destination such as the shell inbox, Slack, or Telegram.
-  version: '1.1'
+  version: '1.2'
 recurring: true
 ---
 

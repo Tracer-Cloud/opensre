@@ -18,7 +18,7 @@ metadata:
   - Permission to add the OpenSRE bot to the target Slack workspace.
   - The cli_exec and slash_invoke tools.
   - When Slack setup is needed, an interactive terminal for /integrations setup slack.
-  version: '1.1'
+  version: '1.2'
 ---
 
 # Slack handoff

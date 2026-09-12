@@ -18,7 +18,7 @@ metadata:
     - A saved GitHub connection with repository write access and an authenticated coding agent.
     - macOS or Linux with permission to run the local background scheduler service.
     - For initial demo provisioning, permission to create a private repository and its workflow.
-  version: "6.0"
+  version: "6.1"
 includes:
   - common/ask_once.md
 ---
