@@ -318,7 +318,11 @@ def test_agent_turn_binds_hooks_and_restricts_capabilities_via_start(monkeypatch
     monkeypatch.setattr(service, "AgentSession", _RecordingAgentSession)
 
     # Act
-    result = service._run_agent_turn("hello", hooks)
+    pasted_alert = (
+        "ALERT checkout-api p99 latency above 2s after deploy checkout-v184; "
+        "investigate with connected evidence"
+    )
+    result = service._run_agent_turn(pasted_alert, hooks)
 
     # Assert: hooks bound, forbidden capability zeroed (unrelated kept), one-shot
     # dispatched, ephemeral session closed without memory extraction.
@@ -326,7 +330,7 @@ def test_agent_turn_binds_hooks_and_restricts_capabilities_via_start(monkeypatch
     assert recorded["is_tty"] is False
     assert session.available_capabilities["slash_commands"] == ()
     assert session.available_capabilities["shell"] == ("keep",)
-    assert recorded["prompt"] == "hello"
+    assert recorded["prompt"] == pasted_alert
     assert result.primary_response_text == "answer"
     assert manager.closed == [(session, False)]
 
