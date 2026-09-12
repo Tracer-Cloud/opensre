@@ -54,7 +54,7 @@ def test_master_menu_matches_three_unique_children_and_preserves_specialists() -
     assert [call.tool for call in master_skill.pre_execute] == ["ask_user_choice"]
     menu = master_skill.pre_execute[0].args
     assert menu["title"] == "Which demo would you like me to run?"
-    assert menu["note"]
+    assert "note" not in menu
     assert tuple(menu["options"]) == (*GETTING_STARTED_OPTIONS, SKIP_DEMO_OPTION)
     assert "Call `ask_user_choice`" not in master
     for skill in children:

@@ -34,7 +34,7 @@ _TITLE = "Which demo would you like me to run?"
 _REPOSITORY_TITLE = "Which repository should I analyze?"
 _REPOSITORY = "acme/one"
 _REPOSITORY_OPTIONS = (_REPOSITORY, "Tracer-Cloud/opensre")
-_NOTE = "Choose a workflow using your repositories or connect your team through Slack."
+_NOTE = ""
 
 
 def _offerable(monkeypatch: pytest.MonkeyPatch) -> None:

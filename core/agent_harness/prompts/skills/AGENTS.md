@@ -35,8 +35,9 @@ Every `metadata` block requires `owner`, `last_changed_by`, `last_changed_at`,
 `version`, `usecases`, and `requires`. `usecases` and `requires` are nonempty
 lists of nonempty strings. CI fails when prerequisites are missing, empty, or
 malformed. Quote entries containing a colon followed by a space so YAML does
-not turn them into mappings. Write `version` as a nonempty quoted string and
-`last_changed_at` as an unquoted ISO date no later than today.
+not turn them into mappings. Write `version` as a quoted `MAJOR.MINOR` string
+(`"2.1"`; increment rules below) and `last_changed_at` as an unquoted ISO date
+no later than today.
 
 - `usecases` names the intended user and the concrete workflow, with one entry
   per distinct scenario.
@@ -165,10 +166,10 @@ is installed around every test by `tests/harness_providers_plugin.py`
 this tree.
 
 
-## Skill metadata ownership and change date
+## Skill metadata ownership, change date, and version
 
 Every `SKILL.md` frontmatter `metadata` block records who owns the skill, who
-touched it last, and when:
+touched it last, when, and which revision of the card this is:
 
 - `owner` — the person who created the skill. Use their name, never a team
   label such as `Tracer Team`. Set it once at creation and do not change it
@@ -178,18 +179,29 @@ touched it last, and when:
 - `last_changed_at` — the calendar date of that change as an unquoted ISO
   date (`YYYY-MM-DD`). No times, no timezones, no "today" — a reader must be
   able to tell how stale the card is without opening `git log`.
+- `version` — a quoted `MAJOR.MINOR` string. Every edit adds one to the
+  number behind the dot: `"2.1"` → `"2.2"` → … → `"2.9"` → `"2.10"` → `"2.15"`.
+  The minor part is a counter, not a decimal, so `"2.10"` follows `"2.9"` and
+  it never resets on its own. The number before the dot does not move for
+  routine work — wording, step reordering, new checks, a bigger report. Bump
+  it (and reset the minor part to `.0`) only when the card breaks something
+  outside itself: a rename, a changed or removed `pre_execute` question, or a
+  removed workflow step that a persisted schedule or colocated test depends
+  on. A history like `1.2 → 2.0 → 3.0 → 4.0 → 5.0` for ordinary edits is
+  wrong; it should read `1.2 → 1.3 → 1.4 → 1.5 → 1.6`.
 
-`last_changed_by` and `last_changed_at` move together. Whoever edits a skill
-(body or frontmatter) must update both lines in the same change; a skill edit
-that leaves either one behind is incomplete. Do not backfill the date from
-memory when you are not the one who made the change — take it from
-`git log -1 --format=%ad --date=short -- <SKILL.md>`.
+`last_changed_by`, `last_changed_at`, and `version` move together. Whoever
+edits a skill (body or frontmatter) must update all three lines in the same
+change; a skill edit that leaves any of them behind is incomplete. Do not
+backfill the date from memory when you are not the one who made the change —
+take it from `git log -1 --format=%ad --date=short -- <SKILL.md>`.
 
 ```yaml
 metadata:
   owner: Vincent
   last_changed_by: Jan
   last_changed_at: 2026-09-09
+  version: "2.2"
 ```
 
 `tests/core/agent_harness/prompts/test_skill_metadata.py` fails a card whose

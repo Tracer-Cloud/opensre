@@ -19,14 +19,14 @@ metadata:
     - GitHub write access to the watched repository and an authenticated coding agent
     - A matching local checkout available to the existing scheduler host
     - For the demo, a GitHub token that can create and delete a private repository
-  version: "5.0"
+  version: "5.1"
 includes:
   - common/ask_once.md
 ---
 
 # Onboarding for Scheduled CI fixes
 
-Monitor one repository every and automatically edit, test, and
+Monitor one repository on a schedule and automatically edit, test, and
 push fixes to one failing PR branch per tick. A green PR does not stop
 monitoring.
 
@@ -58,7 +58,7 @@ one real repair as fast as possible in well under five minutes.
 ## Plan
 
 After reading this skill, use `update_plan` to create the live plan from the
-ten numbered workflow headings below. Mark steps the request already
+eleven numbered workflow headings below. Mark steps the request already
 satisfies `completed` (a named repository skips Step 1; an existing failing
 PR skips Steps 4 and 8) and move each step to `completed` when its
 completion condition is met.
@@ -72,8 +72,8 @@ completion condition is met.
 - [ ] Step 7. Run the first tick with `/cron run <id>` and read its report.
 - [ ] Step 8. Verify the repair with one `pr view` call.
 - [ ] Step 9. Save evidence, remove the demo loop and resources, verify with `/cron list`.
-- [ ] Step 10. Respond with the outcome report
-- [ ] Step 11. Follow-up with ask_user_choice.
+- [ ] Step 10. Respond with the outcome report as Markdown.
+- [ ] Step 11. After the report is shown, offer the follow-up with ask_user_choice.
 
 ## Workflow
 
@@ -95,7 +95,7 @@ One batch of two calls:
 - `slash_invoke` `{"command": "/cron", "args": ["list"]}` — confirms the
   scheduler answers.
 
-Complete when GitHub identity, capability, and the scheduler are
+Complete when GitHub identity, token scopes, and the scheduler are
 confirmed.
 
 ### Step 3. Select the failure scenario
@@ -217,18 +217,21 @@ For an existing repository the loop stays; only record its id.
 
 Complete when the loop is gone and remaining resources are documented.
 
-### Step 10. Report  
+### Step 10. Report
 
 Respond with the report as Markdown, linking the PR inline: PR, failed
 run id, loop id, fix commit, final check result, cleanup status, evidence
-path. 
+path.
 
 Claim success only when detection, scheduled repair, passing checks,
 and (for the demo) loop removal are all evidenced.
 
+Complete when the report has been shown to the user as Markdown text.
+
 ### Step 11. Offer the follow-up question
+
 After the report is shown, one `ask_user_choice`: "Set up monitoring for a
 real repository" / "No thanks". Remote continuous monitoring is a separate
 task with its own scope; it is not a condition of completion.
 
-Complete when the report has been delivered and the menu has been offered.
+Complete when the menu has been offered.

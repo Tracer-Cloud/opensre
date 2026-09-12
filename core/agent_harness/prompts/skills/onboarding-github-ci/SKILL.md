@@ -14,12 +14,11 @@ metadata:
   requires:
   - An interactive terminal for the entry picker, or a conversational surface for its text fallback.
   - At least one available onboarding child skill.
-  version: '2.0'
+  version: '2.1'
 pre_execute:
 - tool: ask_user_choice
   args:
     title: Which demo would you like me to run?
-    note: Choose a workflow using your repositories or connect your team through Slack.
     allow_custom: false
 ---
 

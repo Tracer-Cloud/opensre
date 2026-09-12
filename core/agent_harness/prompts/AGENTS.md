@@ -61,16 +61,20 @@ Every `SKILL.md` frontmatter `metadata` block records two people:
 - `last_changed_by` — the name of the person who most recently changed the
   skill.
 - `last_changed_at` — the ISO date (`YYYY-MM-DD`) of that change.
+- `version` — a quoted `MAJOR.MINOR` string; each edit adds one behind the
+  dot (`"2.1"` → `"2.2"` → … → `"2.15"`). The major part moves only for a
+  breaking change to the card's contract.
 
-`last_changed_by` and `last_changed_at` move together: whoever edits a skill
-(body or frontmatter) must update both lines in the same change; a skill edit
-that leaves either behind is incomplete.
+`last_changed_by`, `last_changed_at`, and `version` move together: whoever
+edits a skill (body or frontmatter) must update all three lines in the same
+change; a skill edit that leaves any behind is incomplete.
 
 ```yaml
 metadata:
   owner: Vincent
   last_changed_by: Jan
   last_changed_at: 2026-09-09
+  version: "2.2"
 ```
 
 Full rules: [`skills/AGENTS.md`](skills/AGENTS.md).

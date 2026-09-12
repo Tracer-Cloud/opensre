@@ -143,8 +143,7 @@ def test_skill_card_spells_out_the_loop_call_and_direct_tick_prompt() -> None:
     assert "Do not run the tests locally" in body
     # Plan writes and independent read-only calls are batched.
     assert "`update_plan` never travels alone" in body
-    # Demo resources are gated on deletion capability before anything is created.
-    assert "delete_repo" in body and "Do not create anything before" in body
+    # Demo resources are removed after the evidence is saved.
     assert '["repo", "delete"' in body
     assert "confirms `Mode: agent`" in body
     assert skill_reference_names(SCHEDULING_GITHUB_CI_FIXES_SKILL_NAME) == ()
@@ -154,7 +153,7 @@ def test_plan_checklist_matches_workflow_headings() -> None:
     body = load_skill_body(SCHEDULING_GITHUB_CI_FIXES_SKILL_NAME)
     plan_numbers = [int(match) for match in _PLAN_LINE.findall(body)]
     heading_numbers = [int(match) for match in _WORKFLOW_HEADING.findall(body)]
-    assert plan_numbers == list(range(1, 11))
+    assert plan_numbers == list(range(1, 12))
     assert heading_numbers == plan_numbers
     assert all("Complete when" in section for section in body.split("### Step ")[1:])
 
