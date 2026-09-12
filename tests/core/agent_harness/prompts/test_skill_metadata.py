@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -58,7 +58,9 @@ def test_every_skill_card_has_the_metadata_block(card: Path) -> None:
         f"{card.parent.name}: metadata.last_changed_at must be an unquoted ISO date "
         f"(YYYY-MM-DD), got {changed_at!r}"
     )
-    assert changed_at <= date.today(), (
+    # Editors can already be on tomorrow's UTC date, as far ahead as UTC+14.
+    latest_calendar_date = (datetime.now(UTC) + timedelta(hours=14)).date()
+    assert changed_at <= latest_calendar_date, (
         f"{card.parent.name}: metadata.last_changed_at {changed_at} is in the future"
     )
 

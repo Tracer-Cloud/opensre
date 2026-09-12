@@ -119,7 +119,15 @@ def test_print_repl_renderable_keeps_truecolor_and_crlf(monkeypatch: pytest.Monk
 
     fake = _FakeStdout()
     monkeypatch.setattr("surfaces.shared.terminal.components.rendering.sys.stdout", fake)
-    console = Console(file=fake, force_terminal=True, highlight=False, color_system="truecolor")
+    # ``no_color=False`` pins the decision Rich would otherwise take from the
+    # developer's ``NO_COLOR`` env; the buffered path must inherit it.
+    console = Console(
+        file=fake,
+        force_terminal=True,
+        highlight=False,
+        color_system="truecolor",
+        no_color=False,
+    )
     monkeypatch.setattr(console, "file", fake)
 
     # Rich memoizes a style's ANSI codes at its first render and shares Style

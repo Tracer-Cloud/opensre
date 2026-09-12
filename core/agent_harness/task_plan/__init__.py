@@ -11,6 +11,7 @@ Leaves:
 
 from __future__ import annotations
 
+from core.agent_harness.task_plan.discard import discard_task_plan
 from core.agent_harness.task_plan.plan import (
     PlanStep,
     PlanStepStatus,
@@ -30,6 +31,7 @@ __all__ = [
     "PlanStep",
     "PlanStepStatus",
     "TaskPlan",
+    "discard_task_plan",
     "format_plan_header",
     "format_task_plan_plain",
     "parse_task_plan",

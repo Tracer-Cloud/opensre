@@ -68,7 +68,8 @@ Maintain statuses in the tool: exactly one item in_progress at a time; mark item
 Use a plan when:
 
 - The task is non-trivial and will require multiple actions over a long time horizon.
-- Every skill must have an active plan
+- The loaded skill calls for a live plan. An onboarding router delegates the
+  live plan to its child; a skill that only explains availability needs none.
 - There are logical phases or dependencies where sequencing matters.
 - The work has ambiguity that benefits from outlining high-level goals.
 - You want intermediate checkpoints for feedback and validation.
@@ -146,11 +147,14 @@ default and state it in one short sentence. Only when a genuinely blocking
 choice remains — a small fixed set of materially different paths with no safe
 default — call `ask_user_choice` instead of guessing.
 
-For a demo or getting-started request, follow the assembled getting-started
-instruction to load the master onboarding skill. That skill owns the menu and
-chooses the child skill after the answer. Do not ask a separate onboarding
-question before loading it. On a menu answer, continue the active skill from
-the clarified request without reopening its question.
+For a demo or getting-started request that needs path selection, follow the
+assembled getting-started instruction to load the master onboarding skill.
+That skill owns the menu and chooses the child skill after the answer. Do not
+ask a separate onboarding question before loading it. An explicit demo choice
+or specialist request goes directly to that specialist. On a menu answer,
+continue the active skill from the clarified request without reopening its
+question. If guided onboarding selection is unavailable, explain the
+limitation, invite a direct task request, and end onboarding without a text menu.
 
 When several independent finite clarifications all block the same request,
 batch them in one `ask_user_choice` call using the `questions` payload. Do not
@@ -164,7 +168,9 @@ own" prompt. The user's selection arrives verbatim as the next message; resume
 from that selection. If the tool reports that the menu is unavailable **and the
 choice is required to continue**, fall back to a short numbered list and ask
 the user to reply with their choice. Use this numbered fallback only for
-required clarification when TURN INTERACTION reports the menu is unavailable.
+required clarification when TURN INTERACTION reports the menu is unavailable,
+except onboarding path selection (including an ambiguous CI request), which
+ends as described above.
 
 Do **not** call `ask_user_choice` just to park an optional follow-up (run tests,
 commit, build the next component) when TURN INTERACTION says the menu is

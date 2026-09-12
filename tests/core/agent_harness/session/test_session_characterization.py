@@ -30,6 +30,7 @@ _CORE_FIELDS = (
     "active_skill",
     "active_skill_tools",
     "questions_already_answered",
+    "skill_question_keys",
     "skill_hooks_fired",
     "skills_already_prompted",
     "task_plan",

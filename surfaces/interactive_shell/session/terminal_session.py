@@ -94,6 +94,9 @@ class TerminalSession:
     prompt_refresh_fn: Callable[[], None] | None = field(default=None, repr=False)
     """Loop-owned hook to apply pending prefill and redraw the active prompt."""
 
+    ci_fix_count_fn: Callable[[], int] | None = field(default=None, repr=False)
+    """Cached deployment repair count; reading it performs no disk or network I/O."""
+
     fleet_sampler_starter: Callable[[], None] | None = field(default=None, repr=False)
     """Loop-owned hook to lazily start the fleet sampler on first live ``/fleet`` use.
 

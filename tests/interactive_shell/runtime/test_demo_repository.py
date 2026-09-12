@@ -39,7 +39,6 @@ def test_bundled_demos_leave_the_repository_question_to_the_model() -> None:
     assert questions == {
         "analyzing-github-ci-performance": None,
         "scheduling-github-ci-fixes": None,
-        "delegating-github-ci-fixes": None,
         "connecting-slack": None,
     }
 

@@ -206,6 +206,15 @@ if TYPE_CHECKING:
     from config.constants.buzz import (
         BUZZ_RELAY_URL_ENV as BUZZ_RELAY_URL_ENV,
     )
+    from config.constants.ci_fixes import (
+        CI_FIX_COUNT_LABEL as CI_FIX_COUNT_LABEL,
+    )
+    from config.constants.ci_fixes import (
+        CI_FIX_LEDGER_LOCK_TIMEOUT_SECONDS as CI_FIX_LEDGER_LOCK_TIMEOUT_SECONDS,
+    )
+    from config.constants.ci_fixes import (
+        CI_FIX_LEDGER_PATH_ENV as CI_FIX_LEDGER_PATH_ENV,
+    )
     from config.constants.clerk import (
         CLERK_ISSUER_ENV as CLERK_ISSUER_ENV,
     )
@@ -662,6 +671,7 @@ if TYPE_CHECKING:
     from config.constants.paths import (
         UnsafePathSegmentError as UnsafePathSegmentError,
     )
+    from config.constants.paths import ci_fix_ledger_path as ci_fix_ledger_path
     from config.constants.paths import (
         ensure_opensre_tmp_dir as ensure_opensre_tmp_dir,
     )

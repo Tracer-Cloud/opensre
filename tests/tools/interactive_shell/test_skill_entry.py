@@ -278,10 +278,12 @@ def test_a_fresh_session_forgets_what_was_answered() -> None:
     session = Session()
     enter_skill(ONBOARDING_SKILL_NAME, _scope(session))
     session.questions_already_answered.add("which demo would you like me to run? (esc to skip)")
+    assert session.skill_question_keys
 
     # Act
     session.clear()
 
     # Assert
     assert session.questions_already_answered == set()
+    assert session.skill_question_keys == {}
     assert session.skills_already_prompted == set()
