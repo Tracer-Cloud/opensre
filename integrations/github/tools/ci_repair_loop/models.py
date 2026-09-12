@@ -35,6 +35,7 @@ class RepairRun(BaseModel):
     branch: str = ""
     repository_id: int = 0
     created_repository: bool = False
+    registered: bool = False
     initial_sha: str = ""
     fixed_sha: str = ""
     failed_run_url: str = ""

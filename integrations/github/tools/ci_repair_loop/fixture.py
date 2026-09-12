@@ -12,6 +12,10 @@ from integrations.github.tools.ci_repair_loop.models import RepairRun
 from integrations.github.tools.ci_repair_loop.storage import RepairStore
 
 
+class DemoRepositoryMismatch(ValueError):
+    """The selected repository does not contain the owned, compatible demo baseline."""
+
+
 def baseline_files(base_branch: str) -> dict[str, str]:
     """The marker and small healthy fixture that a reusable repository must contain."""
     return {
@@ -71,7 +75,9 @@ def validate_baseline(client: GitHubRestClient, run: RepairRun) -> str:
             for name, content in baseline_files(run.base_branch).items()
         )
     ):
-        raise ValueError("The fixed repository name belongs to an unrecognized or modified demo.")
+        raise DemoRepositoryMismatch(
+            "The fixed repository name belongs to an unrecognized or modified demo."
+        )
     return sha
 
 
