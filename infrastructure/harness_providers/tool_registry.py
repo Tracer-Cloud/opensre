@@ -8,6 +8,7 @@ sources after boot.
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
@@ -36,6 +37,7 @@ class ToolSources:
     """The tool registry, installed once at boot."""
 
     registry: ToolRegistry = _EMPTY_REGISTRY
+    skill_tools: Callable[[str], tuple[RegisteredTool, ...]] | None = None
 
     def install(self) -> None:
         """Bind these as the process-wide tool sources."""
@@ -56,6 +58,13 @@ def resolve_surface_tool_map(surface: ToolSurface) -> dict[str, RegisteredTool]:
     return _installed.registry.tool_map_for_surface(surface) if _installed is not None else {}
 
 
+def resolve_skill_tools(name: str) -> tuple[RegisteredTool, ...]:
+    """Resolve bundled helpers without adding them to the global tool catalog."""
+    if _installed is None or _installed.skill_tools is None:
+        return ()
+    return _installed.skill_tools(name)
+
+
 def reset() -> None:
     """Clear the installed tool sources (tests)."""
     global _installed
@@ -66,4 +75,5 @@ __all__ = [
     "ToolSources",
     "resolve_surface_tool_map",
     "resolve_surface_tools",
+    "resolve_skill_tools",
 ]

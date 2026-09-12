@@ -13,13 +13,14 @@ metadata:
   last_changed_by: Jan
   last_changed_at: 2026-09-12
   usecases:
-    - For maintainers configuring ongoing repair of failing pull requests in one repository.
-    - For users demonstrating a scheduled repair in a disposable private repository.
+    - For configuring ongoing repair of failing pull requests in one repository.
+    - For demonstrating a scheduled repair in a disposable private repository.
   requires:
     - GitHub write access to the watched repository and an authenticated coding agent
-    - A matching local checkout available to the existing scheduler host
+    - Git installed on the scheduler host; repair checkouts are created automatically
     - For the demo, a GitHub token that can create a private repository and an example PR
-  version: "5.1"
+  version: "5.3"
+script_tools: references/script-tools.md
 includes:
   - common/ask_once.md
 ---
@@ -53,6 +54,9 @@ one real repair as fast as possible in well under five minutes.
 - `update_plan` never travels alone: batch it with the next real tool call.
   Read-only verification calls that do not depend on each other go in one
   batch too.
+- `seed_demo_repository` and `write_demo_evidence` are available while this
+  skill is active. Call them directly; they return structured results and
+  keep command output out of the transcript.
 
 ## Plan
 
@@ -116,12 +120,10 @@ that subtracts — with one test that runs in seconds.
    "--private", "--add-readme", "--description", "Temporary OpenSRE
    scheduled CI repair demo"]`. No owner prefix: creating under the
    authenticated user keeps admin rights for deletion.
-2. One `shell_run` script that clones into a temp directory, writes
-   `.github/workflows/test.yml` (checkout, `actions/setup-python@v5`,
-   `python -m unittest -v` on `push` and `pull_request`), `calculator.py`,
-   `test_calculator.py`, and `AGENTS.md` ("Run `python -m unittest -v`"),
-   commits and pushes `main`, then creates `demo/failing-ci` with the
-   subtraction bug, commits, and pushes it.
+2. `seed_demo_repository(repo="<owner>/<repo>")` creates the fixed calculator
+   demo and pushes the failing branch. Record its `workspace` and `head_sha`.
+   On failure, inspect the returned stage and saved progress before retrying
+   the same call. Stop if it reports unexpected local or remote changes.
 3. `github_cli` `["pr", "create", "--base", "main", "--head",
    "demo/failing-ci", "--title", "Demo: repair failing calculator CI",
    "--body", "…"]` with `repo` set to the new repository.
@@ -148,16 +150,19 @@ One `slash_invoke` call. Record the `Task <id> created.` id from its output.
   "--cron", "*/2 * * * *",
   "--provider", "interactive_shell",
   "--mode", "agent",
+  "--owner", "<owner>", "--repo", "<repo>",
   "--prompt", "<tick prompt>"]}
 ```
 
 Demo loop: same call with `"--cron", "* * * * *"` and the name
-`CI repair demo: <owner>/<repo>#<n>`.
+`CI repair demo: <owner>/<repo>#<n>`. Add `"--pr", "<n>"` when a
+single PR is selected. The saved repository target is independent of the
+scheduler host's current directory; omit `workspace` to use a managed checkout.
 
 Tick prompt for one PR (demo, or a user-selected PR):
 
 > Call `fix_github_pr_ci(owner="<owner>", repo="<repo>", pr_number=<n>)`
-> exactly once. If it reports no failing checks, reply `green` and stop. Do
+> exactly once. If it reports no failing checks, reply `no repair needed` and stop. Do
 > not touch any other repository or pull request. Reply with the failed run
 > id, the fix commit, and the final check state.
 
@@ -167,7 +172,7 @@ Tick prompt for a whole repository:
 > state="open", include_checks=true)`. Take the first PR in the returned list
 > with a failing check and call `fix_github_pr_ci(owner="<owner>",
 > repo="<repo>", pr_number=<that number>)` exactly once; a refusal consumes
-> this tick's attempt. If no PR is failing, reply `green` and stop. Reply
+> this tick's attempt. If no PR is failing, report that no repair was needed. Reply
 > with the PR link, the fix commit, and the final check state.
 
 Complete when the output confirms `Mode: agent` and the task id is recorded.
@@ -182,7 +187,13 @@ run output did not include the status.
 
 Skip this step when Step 3 found no failing PR.
 
-Complete when the tick reports a fix commit, or a refusal with its reason.
+Read the work outcome separately from delivery: a delivered report can describe
+a blocked or failed repair. If delivery failed after work completed, retry with
+`/cron run <id> --failed-only`; this resends the retained report.
+
+Complete when the tick reports a verified fix commit, a no-op, or a refusal
+with its reason. Failed or blocked work ends this step too: record the reason
+and continue to verification and cleanup.
 
 ### Step 8. Verify the repair
 
@@ -200,11 +211,14 @@ Complete when the head commit's checks pass; otherwise record the blocker.
 
 In this order, no verification calls in between:
 
-1. One `shell_run` that writes the evidence file
-   `~/.opensre/demo-results/ci-repair-demo-<date>-<random>.md` (repository,
-   PR link, failed run id, loop id, fix commit, passing run id) and removes
-   the temp checkout.
-2. `slash_invoke` `{"command": "/cron", "args": ["remove", "<id>"]}`. The
+1. `write_demo_evidence(repo, pr_number, loop_id, outcome, failed_run_id,
+   fix_commit, passing_run_id, blocker)` saves evidence under
+   `~/.opensre/demo-results/` and removes the owned temp checkout. Omit
+   unavailable IDs for failed or blocked demos. Record the returned evidence
+   path and `checkout_removed` status. If saving fails before cleanup, the
+   helper retains the checkout. Continue to loop removal after any failure.
+2. Always call `slash_invoke` `{"command": "/cron", "args": ["remove", "<id>"]}`,
+   including after an evidence-tool failure. The
    demo repository is never deleted; report that the repository remains.
 3. `slash_invoke` `{"command": "/cron", "args": ["list"]}` as the single
    verification.

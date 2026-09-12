@@ -15,17 +15,18 @@ This is mutating. OpenSRE asks before checking out or creating a worktree, editi
 
 ## Prerequisites
 
-- Local checkout of the same repository as the PR (`origin` must match)
+- Git installed on the machine running OpenSRE
 - `gh` on `PATH` for checks and logs
 - GitHub token with repo write access plus workflow/check read access (`GITHUB_TOKEN` / `GH_TOKEN`)
 - A coding-agent backend available (`CODING_AGENT=auto` by default)
 
 ## Setup
 
-There is no dedicated `integrations setup` target for this tool. Configure GitHub access and the coding workspace:
+There is no dedicated `integrations setup` target for this tool. Configure GitHub access. A named repository or PR URL uses an isolated checkout.
+For requests about your current checkout, you can set the coding workspace:
 
 ```bash
-export CODING_WORKSPACE=/path/to/repo  # optional; defaults to cwd
+export CODING_WORKSPACE=/path/to/repo  # optional, for current-checkout requests
 export GITHUB_TOKEN=... # repo write access plus workflow/check read access
 # optional:
 # export CODING_AGENT=auto   # pi | claude-code | codex | cursor
@@ -69,7 +70,7 @@ fix the CI on main
 
 1. OpenSRE reads PR metadata or the latest failing Actions run on the target branch.
 2. It fetches compact log excerpts for failing Actions jobs.
-3. It verifies the local checkout's `origin` matches the target repository.
+3. It creates an isolated checkout for a named repository, or verifies that your explicitly selected checkout matches.
 4. It refuses fork PRs because it only pushes to branches in the same repository.
 5. After approval, it checks out the PR head branch or creates a temporary linked git worktree for a branch target such as `main`.
 6. If GitHub reports the PR as conflicted with its base branch, it merges the base branch into the PR branch first. Conflicts go to the coding agent, lockfiles are regenerated rather than hand-merged, and the merge is committed only when no conflict remains.
@@ -90,8 +91,12 @@ There is no dedicated `integrations verify` target. Confirm readiness by:
 
 1. `opensre integrations verify github` (or a valid `GITHUB_TOKEN` / `GH_TOKEN`)
 2. `gh` available on `PATH`
-3. Local checkout `origin` matches the PR repository
+3. If supplying a checkout explicitly, its `origin` matches the PR repository
 4. A coding agent CLI is installed/logged in if auto mode needs one
+
+If a worker stops after pushing, retry the repair to resume verification of
+the recorded commit. A concurrent update to the PR stops verification of the
+older commit.
 
 ## Troubleshooting
 

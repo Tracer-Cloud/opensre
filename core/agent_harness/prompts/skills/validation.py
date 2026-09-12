@@ -112,6 +112,7 @@ class SkillCard(_StrictModel):
     demo_order: Annotated[int, Field(gt=0)] | None = None
     includes: list[_Text] = Field(default_factory=list)
     pre_execute: list[SkillEntryCall] = Field(default_factory=list, max_length=1)
+    script_tools: Annotated[str, Field(pattern=r"^references/[a-z0-9_-]+\.md$")] | None = None
 
     @model_validator(mode="after")
     def validate_demo(self) -> Self:

@@ -6,7 +6,9 @@ import uuid
 from datetime import UTC, datetime
 from enum import StrEnum
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, computed_field, model_validator
+
+from infrastructure.scheduling.scheduler.outcomes import WorkOutcome, WorkStatus
 
 
 class TaskKind(StrEnum):
@@ -120,13 +122,25 @@ class DeliveryOutcome(BaseModel):
 
 
 class TaskReport(str):
-    """Report text with a concise finding, usable by existing string-based delivery adapters."""
+    """Typed work result whose text is directly consumable by delivery adapters."""
 
     summary: str
+    outcome: WorkOutcome
 
-    def __new__(cls, body: str, *, summary: str) -> TaskReport:
+    def __new__(
+        cls,
+        body: str,
+        *,
+        summary: str = "",
+        work_status: WorkStatus | str = WorkStatus.SUCCEEDED,
+        error_kind: str = "",
+        outcome: WorkOutcome | None = None,
+    ) -> TaskReport:
         report = super().__new__(cls, body)
         report.summary = summary
+        report.outcome = outcome or WorkOutcome(
+            status=WorkStatus(work_status), error_kind=error_kind
+        )
         return report
 
 
@@ -147,6 +161,32 @@ class TaskRun(BaseModel):
     # None means no report was retained; an empty string is a known quiet run.
     report: str | None = None
     report_summary: str = ""
+    work_outcome: WorkOutcome = Field(default_factory=WorkOutcome)
+
+    @property
+    def work_status(self) -> WorkStatus:
+        return self.work_outcome.status
+
+    @property
+    def work_error_kind(self) -> str:
+        return self.work_outcome.error_kind
+
+    @computed_field  # type: ignore[prop-decorator]
+    @property
+    def delivery_status(self) -> DeliveryStatus | None:
+        """Classify delivery separately from the work that produced the report."""
+        if not self.targets:
+            return None
+        delivered = sum(target.ok for target in self.targets)
+        if delivered == len(self.targets):
+            return DeliveryStatus.SUCCESS
+        return DeliveryStatus.PARTIAL if delivered else DeliveryStatus.FAILED
+
+    def retained_report(self) -> TaskReport | None:
+        """Restore the exact result for delivery-only retry or crash recovery."""
+        if self.report is None:
+            return None
+        return TaskReport(self.report, summary=self.report_summary, outcome=self.work_outcome)
 
 
 __all__ = [

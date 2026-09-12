@@ -13,6 +13,7 @@ from typing import Any
 from uuid import uuid4
 
 import infrastructure.scheduling.scheduler.storage.database as database
+from infrastructure.scheduling.scheduler.outcomes import WorkOutcome
 from infrastructure.scheduling.scheduler.types import (
     DeliveryOutcome,
     Provider,
@@ -32,7 +33,7 @@ _RECOVERABLE_RUN_SCAN_LIMIT = 100
 _CLAIM_LEASE_SECONDS = 30 * 60
 _RUN_COLUMNS = (
     "task_id, fire_time, started_at, finished_at, status, posted_message_id, "
-    "error, provider, targets, attempt, id, report, report_summary"
+    "error, provider, targets, attempt, id, report, report_summary, work_outcome"
 )
 
 
@@ -46,6 +47,7 @@ class ExecutionClaim:
     owner_token: str
     lease_expires_at: datetime
     target_filter: frozenset[tuple[Provider, str]] | None = None
+    report: TaskReport | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,6 +76,7 @@ def try_claim(
     db_path: Path | None = None,
     *,
     target_filter: frozenset[tuple[Provider, str]] | None = None,
+    replay_report: TaskReport | None = None,
 ) -> ExecutionClaim | None:
     """Start pending/new work or reclaim an expired tick, excluding live runs of this task."""
     try:
@@ -91,12 +94,19 @@ def try_claim(
             ):
                 return None
             row = conn.execute(
-                "SELECT attempt, status, lease_expires_at, target_filter FROM task_runs "
+                "SELECT attempt, status, lease_expires_at, target_filter, report, "
+                "report_summary, work_outcome FROM task_runs "
                 "WHERE task_id = ? AND fire_time = ? ORDER BY attempt DESC LIMIT 1",
                 (task_id, fire_time),
             ).fetchone()
 
             if row is not None:
+                if row[4] is not None:
+                    replay_report = TaskReport(
+                        row[4],
+                        summary=row[5] or "",
+                        outcome=WorkOutcome.model_validate_json(row[6] or "{}"),
+                    )
                 attempt = int(row[0])
                 status = TaskStatus(row[1])
                 lease = _parse_datetime(row[2])
@@ -130,11 +140,13 @@ def try_claim(
             conn.execute(
                 "INSERT INTO task_runs "
                 "(task_id, fire_time, attempt, started_at, status, owner_token, "
-                "lease_expires_at, target_filter) VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
+                "lease_expires_at, target_filter, report, report_summary, work_outcome) "
+                "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(task_id, fire_time, attempt) DO UPDATE SET "
                 "status = excluded.status, started_at = excluded.started_at, "
                 "owner_token = excluded.owner_token, lease_expires_at = excluded.lease_expires_at, "
-                "target_filter = excluded.target_filter",
+                "target_filter = excluded.target_filter, report = excluded.report, "
+                "report_summary = excluded.report_summary, work_outcome = excluded.work_outcome",
                 (
                     task_id,
                     fire_time,
@@ -144,6 +156,9 @@ def try_claim(
                     owner_token,
                     lease_text,
                     json.dumps(sorted(target_filter) if target_filter is not None else None),
+                    str(replay_report) if replay_report is not None else None,
+                    replay_report.summary if replay_report is not None else "",
+                    replay_report.outcome.model_dump_json() if replay_report is not None else "{}",
                 ),
             )
             return ExecutionClaim(
@@ -153,6 +168,7 @@ def try_claim(
                 owner_token,
                 now + timedelta(seconds=_CLAIM_LEASE_SECONDS),
                 target_filter,
+                replay_report,
             )
     except sqlite3.IntegrityError:
         return None
@@ -309,12 +325,15 @@ def record_run_report(claim: ExecutionClaim, report: str, db_path: Path | None =
     """Retain a built report before delivery, only while this attempt owns its lease."""
     with database.transaction(db_path, immediate=True) as conn:
         cursor = conn.execute(
-            "UPDATE task_runs SET report = ?, report_summary = ? "
+            "UPDATE task_runs SET report = ?, report_summary = ?, work_outcome = ? "
             "WHERE task_id = ? AND fire_time = ? AND attempt = ? "
             "AND owner_token = ? AND status = ? AND lease_expires_at >= ?",
             (
                 report,
                 report.summary if isinstance(report, TaskReport) else "",
+                (
+                    report if isinstance(report, TaskReport) else TaskReport(report)
+                ).outcome.model_dump_json(),
                 claim.task_id,
                 claim.fire_time,
                 claim.attempt,
@@ -361,7 +380,19 @@ def _row_to_task_run(row: tuple[Any, ...]) -> TaskRun:
         run_id=int(row[10]),
         report=row[11],
         report_summary=row[12] or "",
+        work_outcome=WorkOutcome.model_validate_json(row[13] or "{}"),
     )
+
+
+def get_claim_run(claim: ExecutionClaim, db_path: Path | None = None) -> TaskRun | None:
+    """Read the specific attempt owned by a caller, including a reclaimed attempt."""
+    with database.connection(db_path) as conn:
+        row = conn.execute(
+            f"SELECT {_RUN_COLUMNS} FROM task_runs WHERE task_id = ? AND fire_time = ? "
+            "AND attempt = ?",
+            (claim.task_id, claim.fire_time, claim.attempt),
+        ).fetchone()
+    return _row_to_task_run(row) if row is not None else None
 
 
 def _parse_datetime(value: Any) -> datetime | None:

@@ -20,10 +20,11 @@ from dataclasses import dataclass
 
 from infrastructure.process.turn_capacity import TurnGate, queued_turn_slot
 from infrastructure.scheduling.scheduler.agent_runner import AgentPayload, AgentRunner
+from infrastructure.scheduling.scheduler.types import TaskReport
 
 
 def _gated_agent(runner: AgentRunner, gate: TurnGate) -> AgentRunner:
-    def run(payload: AgentPayload) -> str:
+    def run(payload: AgentPayload) -> TaskReport:
         with queued_turn_slot(gate):
             return runner(payload)
 

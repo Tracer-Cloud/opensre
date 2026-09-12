@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from core.agent_harness.spi.grounding import list_action_skills
 from core.agent_harness.spi.handoff import parse_ask_user_answers
 from core.agent_harness.spi.task_plan import (
     TaskPlan,
@@ -64,6 +65,13 @@ def execute_update_plan_tool(args: dict[str, Any], ctx: ActionToolScope) -> dict
         session=ctx.session,
     )
     apply_update_plan_session(ctx.session, plan, plan_only=plan_only_requested)
+    active_skill = getattr(ctx.session, "active_skill", None)
+    if (
+        plan.is_settled
+        and active_skill
+        and any(skill.name == active_skill and skill.script_tools for skill in list_action_skills())
+    ):
+        ctx.session.active_skill = None
     mark_plan_written(ctx.session)
     payload = task_plan_to_payload(plan)
     payload["ok"] = True

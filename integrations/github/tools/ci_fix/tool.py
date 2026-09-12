@@ -14,6 +14,7 @@ from integrations.github.helpers import (
     github_creds,
     github_source_available,
 )
+from integrations.github.repair_outcomes import attach_repair_outcome
 from integrations.github.tools.ci_fix.ledger import record_ci_fix_outcome
 from integrations.github.tools.ci_fix.runner import run_ci_fix
 
@@ -48,7 +49,7 @@ _INPUT_SCHEMA: dict[str, Any] = {
         },
         "workspace": {
             "type": "string",
-            "description": "Absolute path to the local checkout to edit. Defaults to CODING_WORKSPACE or cwd.",
+            "description": "Explicit checkout to edit; its origin must match. Omit for an isolated checkout of the target repository.",
         },
         "model": {
             "type": "string",
@@ -158,7 +159,9 @@ def fix_github_pr_ci(
         confirm_fn=_confirm_fn(context),
     )
     record_ci_fix_outcome(output)
-    return output
+    return attach_repair_outcome(
+        output, operation=f"ci:{owner}/{repo}:{pr_url or pr_number or branch}"
+    )
 
 
 __all__ = ["fix_github_pr_ci"]

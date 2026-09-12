@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -48,3 +49,29 @@ def test_transaction_commits_success_and_rolls_back_failure(tmp_path: Path) -> N
         rows = conn.execute("SELECT value FROM entries").fetchall()
 
     assert rows == [("committed",)]
+
+
+def test_connection_retries_a_busy_wal_transition(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    connect = sqlite3.connect
+
+    class InitiallyBusy(sqlite3.Connection):
+        attempted_wal = False
+
+        def execute(self, sql: str, parameters: object = (), /) -> sqlite3.Cursor:
+            if sql == "PRAGMA journal_mode=WAL" and not self.attempted_wal:
+                self.attempted_wal = True
+                error = sqlite3.OperationalError("database is locked")
+                error.sqlite_errorcode = sqlite3.SQLITE_BUSY
+                raise error
+            return super().execute(sql, parameters)
+
+    def connect_busy(*args: object, **kwargs: object) -> sqlite3.Connection:
+        return connect(*args, **kwargs, factory=InitiallyBusy)
+
+    monkeypatch.setattr(sqlite3, "connect", connect_busy)
+    with sqlite_connection(
+        tmp_path / "state.db", timeout_seconds=1, busy_timeout_ms=1000, wal=True
+    ) as conn:
+        assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "wal"

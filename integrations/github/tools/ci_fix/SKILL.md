@@ -17,6 +17,8 @@ Rules:
 - Pass `branch` (e.g. `branch="main"`) when the user asks to fix a branch's
   failing CI itself; never combine it with a PR selector. Merged or closed PRs
   are refused — use `branch` for failures already on the base branch.
+- Omit `workspace` for a named repository or PR URL; the tool creates an
+  isolated checkout. Pass a path only to edit that specific matching checkout.
 - If no repo is named, omit `owner` and `repo`; the tool uses the current
   checkout's GitHub origin.
 - The tool inspects failing GitHub Actions checks, fixes the local checkout or a

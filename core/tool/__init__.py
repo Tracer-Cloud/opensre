@@ -18,6 +18,7 @@ from core.tool.execution import (
     availability_view,
     report_run_error,
 )
+from core.tool.live_catalog import LiveToolCatalog
 from core.tool.registry import ToolRegistry, normalize_surfaces
 
 __all__ = [
@@ -26,6 +27,7 @@ __all__ = [
     "BaseTool",
     "BeforeToolCallResult",
     "EvidenceType",
+    "LiveToolCatalog",
     "RegisteredTool",
     "RuntimeTool",
     "SideEffectLevel",

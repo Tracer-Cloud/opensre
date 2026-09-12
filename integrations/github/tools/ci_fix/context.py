@@ -151,6 +151,7 @@ def gather_ci_fix_context(
     pr_url: str | None = None,
     workspace: str | None = None,
     github_token: str | None = None,
+    allow_clean: bool = False,
     sleep: Callable[[float], None] = time.sleep,
 ) -> CiFixContext:
     """Resolve PR metadata, merge state, failing checks, and log snippets.
@@ -221,7 +222,7 @@ def gather_ci_fix_context(
         for item in rollup
         if _is_failing_check(item)
     )
-    if not checks and merge_state != MERGE_STATE_DIRTY:
+    if not checks and merge_state != MERGE_STATE_DIRTY and not allow_clean:
         raise GitHubCiFixError(
             ERR_NO_FAILING_CHECKS,
             f"No failing CI checks found on {repo_full_name}#{resolved_number}; no push was made.",
@@ -289,6 +290,7 @@ def gather_branch_ci_fix_context(
     repo: str | None = None,
     workspace: str | None = None,
     github_token: str | None = None,
+    allow_clean: bool = False,
 ) -> CiFixContext:
     """Resolve a branch's failing workflow runs and log snippets (no PR involved)."""
     branch_name = _normalize_branch(branch)
@@ -348,7 +350,7 @@ def gather_branch_ci_fix_context(
         for run in runs
         if _is_failing_check(run)
     )
-    if not checks:
+    if not checks and not allow_clean:
         raise GitHubCiFixError(
             ERR_NO_FAILING_CHECKS,
             (

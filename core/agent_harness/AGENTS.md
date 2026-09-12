@@ -73,8 +73,10 @@ Checklist progress uses the `session_goal_complete` tool, not reply tags.
 
 Workflow cards are validated before discovery. Invalid cards are excluded with
 diagnostics, while CI checks the unfiltered catalog and fails on every invalid
-card. Workflow skills retain the available tool catalog; only entry menus use
-host hooks. A new user request clears active skill context, while menu answers
+card. Workflow skills retain the available tool catalog and may add declared
+local script tools while active. The per-run catalog refreshes after skill
+changes; execution rechecks the active session. Settling the plan retires its
+helpers. A new user request clears active skill context, while menu answers
 and slash commands retain it. Full contract: `prompts/skills/AGENTS.md`.
 
 Self-contained scheduled agent ticks set `SessionCore.skill_discovery_enabled`

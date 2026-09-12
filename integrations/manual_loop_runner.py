@@ -8,6 +8,7 @@ import logging
 from collections.abc import Callable, Mapping
 
 from core.agent_harness import AgentSession, SessionCore
+from core.tool import ToolExecutionHooks
 from infrastructure.scheduling.scheduler.agent_runner import AgentPayload
 from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_MODE_AGENT,
@@ -15,6 +16,8 @@ from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_REPORT_ARGS_PARAM,
     LOOP_REPORT_PARAM,
 )
+from infrastructure.scheduling.scheduler.types import TaskReport
+from integrations.scheduled_outcomes import ScheduledOutcomes
 
 logger = logging.getLogger(__name__)
 
@@ -57,7 +60,13 @@ def build_manual_loop_prompt(payload: AgentPayload) -> str:
 
     name = str(payload.get("name") or payload.get("task_name") or "manual loop").strip()
     if str(payload.get(LOOP_MODE_PARAM) or "").strip() == LOOP_MODE_AGENT:
-        return f"{_AGENT_LOOP_INSTRUCTIONS}\nLoop name: {name}\n\nTask:\n{prompt}"
+        scope = {
+            key: payload[key]
+            for key in ("owner", "repo", "pr_number", "branch")
+            if payload.get(key)
+        }
+        binding = f"\nStored repository target: {json.dumps(scope)}\n" if scope else ""
+        return f"{_AGENT_LOOP_INSTRUCTIONS}\nLoop name: {name}{binding}\n\nTask:\n{prompt}"
     return f"{_MANUAL_LOOP_INSTRUCTIONS}\nLoop name: {name}\n\nReport request:\n{prompt}"
 
 
@@ -85,23 +94,26 @@ def _prepare_agent_session(session: SessionCore) -> None:
     session.skill_discovery_enabled = False
 
 
-def run_manual_prompt_loop(payload: AgentPayload) -> str:
+def run_manual_prompt_loop(payload: AgentPayload) -> TaskReport:
     """Run the deterministic report builder or one model turn in the stored mode."""
     builder = report_builder(payload)
     if builder is not None:
-        return builder(_report_args(payload))
+        built = builder(_report_args(payload))
+        return built if isinstance(built, TaskReport) else TaskReport(built)
     message = build_manual_loop_prompt(payload)
     agent_mode = str(payload.get(LOOP_MODE_PARAM) or "").strip() == LOOP_MODE_AGENT
+    outcomes = ScheduledOutcomes()
     result = AgentSession.run_headless_turn(
         message,
         prepare_session=_prepare_agent_session if agent_mode else None,
         logger=logger,
         is_tty=False,
+        tool_hooks=ToolExecutionHooks(after_tool_call=outcomes.observe),
     )
     report = result.primary_response_text
     if not result.answered or not report:
         raise RuntimeError("Manual loop failed: the reasoning client did not produce a report.")
-    return report
+    return outcomes.report(result, agent_mode=agent_mode)
 
 
 __all__ = [

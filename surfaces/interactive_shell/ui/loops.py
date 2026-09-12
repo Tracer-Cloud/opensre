@@ -68,6 +68,12 @@ def _next_run(loop: LoopSummary, now: datetime, local_timezone: tzinfo | None) -
 
 
 def _status(run: TaskRun) -> tuple[str, str]:
+    if run.work_outcome.completed and run.targets and any(not target.ok for target in run.targets):
+        return "Delivery issue", WARNING
+    if run.work_status.value in {"blocked", "incomplete"}:
+        return run.work_status.value.capitalize(), WARNING
+    if run.work_status.value == "failed":
+        return "Work failed", ERROR
     if run.status is TaskStatus.SUCCESS:
         if run.error or any(not target.ok for target in run.targets):
             return "Delivery issue", WARNING
@@ -172,6 +178,11 @@ def render_loop_details(
     else:
         status, style = _status(selected)
         console.print(Text(f"Run {selected.run_id} · {status}", style=style))
+        console.print(Text(f"Work: {selected.work_status.value}"))
+        if selected.work_error_kind:
+            console.print(Text(selected.work_error_kind, style=ERROR))
+        delivery = selected.delivery_status
+        console.print(Text(f"Delivery: {delivery.value if delivery is not None else 'none'}"))
         console.print(Text(f"Started: {_exact_time(selected.started_at)}", style=DIM))
         if selected.finished_at:
             console.print(Text(f"Finished: {_exact_time(selected.finished_at)}", style=DIM))

@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import patch
 
+import pytest
+
 from core.llm.types import ToolCall
 from core.tool.contracts import RegisteredTool
 from core.tool.execution import (
@@ -117,7 +119,10 @@ def test_list_github_work_items_classifies_taken_and_up_for_grabs() -> None:
     assert [item["work_status"] for item in result["items"]] == ["taken", "up_for_grabs"]
 
 
-def test_summarize_github_pr_status_uses_detail_mergeability_not_list_nulls() -> None:
+@pytest.mark.parametrize("total_checks", [1, 2])
+def test_summarize_github_pr_status_uses_detail_mergeability_not_list_nulls(
+    total_checks: int,
+) -> None:
     list_pr = {
         "number": 10,
         "title": "Ready PR",
@@ -136,7 +141,8 @@ def test_summarize_github_pr_status_uses_detail_mergeability_not_list_nulls() ->
             return detail_pr
         if path == "/repos/o/r/commits/abc/check-runs":
             return {
-                "check_runs": [{"name": "test", "conclusion": "success", "status": "completed"}]
+                "total_count": total_checks,
+                "check_runs": [{"name": "test", "conclusion": "success", "status": "completed"}],
             }
         raise AssertionError((method, path))
 
@@ -148,6 +154,10 @@ def test_summarize_github_pr_status_uses_detail_mergeability_not_list_nulls() ->
 
     assert result["counts"]["mergeable"] == 1
     assert result["pull_requests"][0]["mergeability"] == "mergeable"
+    if total_checks == 1:
+        assert result["work_outcome"]["status"] == "noop"
+    else:
+        assert "work_outcome" not in result
 
 
 def test_summarize_github_pr_status_reports_unknown_mergeability() -> None:

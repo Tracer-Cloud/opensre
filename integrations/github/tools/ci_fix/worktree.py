@@ -10,7 +10,7 @@ from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 
-from integrations.git import BRANCH_FAILED, GitCommandError, ensure_git_repo
+from integrations.git import BRANCH_FAILED, GitCommandError, ensure_git_repo, fetch_remote_branch
 from integrations.github.tools.ci_fix.context import CiFixContext
 from integrations.github.tools.ci_fix.errors import GitHubCiFixError
 
@@ -34,14 +34,16 @@ def build_branch_name(ctx: CiFixContext) -> str:
     return f"{_BRANCH_PREFIX}-{branch}-{suffix}-{unique}"
 
 
-def create_branch_worktree(workspace: str, ctx: CiFixContext) -> BranchWorktree:
+def create_branch_worktree(
+    workspace: str, ctx: CiFixContext, *, token: str | None = None
+) -> BranchWorktree:
     """Create a linked worktree on a fresh repair branch based on the target branch."""
     target_branch = ctx.target_branch or ctx.base_branch
     branch_name = build_branch_name(ctx)
     path = _worktree_path(workspace, target_branch)
     try:
         ensure_git_repo(workspace)
-        _fetch_target_branch(workspace, target_branch)
+        fetch_remote_branch(workspace, target_branch, token=token)
         result = subprocess.run(
             [
                 "git",
@@ -101,22 +103,6 @@ def cleanup_branch_worktree(workspace: str, worktree: BranchWorktree) -> None:
             text=True,
             timeout=_GIT_TIMEOUT_SEC,
             check=False,
-        )
-
-
-def _fetch_target_branch(workspace: str, branch: str) -> None:
-    result = subprocess.run(
-        ["git", "fetch", "origin", f"{branch}:refs/remotes/origin/{branch}"],
-        cwd=workspace,
-        capture_output=True,
-        text=True,
-        timeout=_GIT_TIMEOUT_SEC,
-        check=False,
-    )
-    if result.returncode != 0:
-        raise GitCommandError(
-            BRANCH_FAILED,
-            f"Could not fetch branch '{branch}' before creating a CI fix worktree: {result.stderr.strip()}",
         )
 
 

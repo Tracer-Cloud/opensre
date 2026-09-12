@@ -149,7 +149,7 @@ def test_skill_card_spells_out_the_loop_call_and_direct_tick_prompt() -> None:
     assert '["repo", "delete"' not in body
     assert "report that the repository remains" in body
     assert "confirms `Mode: agent`" in body
-    assert skill_reference_names(SCHEDULING_GITHUB_CI_FIXES_SKILL_NAME) == ()
+    assert skill_reference_names(SCHEDULING_GITHUB_CI_FIXES_SKILL_NAME) == ("script-tools",)
 
 
 def test_plan_checklist_matches_workflow_headings() -> None:

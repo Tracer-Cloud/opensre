@@ -2,11 +2,14 @@
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 from dataclasses import replace
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock, patch
+
+import pytest
 
 from core.agent_harness.tools.tool_context import (
     ACTION_TOOL_CONTEXT_RESOURCE_KEY,
@@ -119,6 +122,17 @@ _BRANCH_CTX = CiFixContext(
     target_kind=CI_TARGET_BRANCH,
     target_branch="main",
 )
+
+
+@pytest.fixture(autouse=True)
+def _isolate_repair_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "integrations.github.tools.ci_fix.storage.database.database_path",
+        lambda: tmp_path / "repairs.db",
+    )
+    monkeypatch.setattr(
+        "integrations.github.tools.ci_fix.runner.ensure_head_revision", lambda *_a: None
+    )
 
 
 def _registered(tool: Any) -> RegisteredTool:
@@ -269,7 +283,7 @@ def test_create_branch_worktree_uses_linked_git_worktree(tmp_path: Path) -> None
 
     assert result.branch_name.startswith("opensre/ci-fix-main-ea14998-123456")
     assert Path(result.path).parent == tmp_path
-    assert commands[0] == ["git", "fetch", "origin", "main:refs/remotes/origin/main"]
+    assert commands[0] == ["git", "fetch", "origin", "refs/heads/main:refs/remotes/origin/main"]
     assert commands[1][:5] == ["git", "worktree", "add", "-b", result.branch_name]
     assert commands[1][-1] == "origin/main"
 
@@ -343,6 +357,9 @@ def test_push_ci_fix_returns_exact_committed_head_sha() -> None:
             "integrations.github.tools.ci_fix.ship.head_sha",
             return_value="0123456789abcdef",
         ) as head_sha,
+        patch(
+            "integrations.github.tools.ci_fix.ship.remote_branch_sha", return_value=_CTX.head_sha
+        ),
         patch("integrations.github.tools.ci_fix.ship.push_branch"),
     ):
         result = push_ci_fix(
@@ -481,7 +498,10 @@ def test_run_fix_without_coding_agent_names_branch_target() -> None:
 @patch("integrations.github.tools.ci_fix.runner.pre_coding_changes", return_value={})
 @patch("integrations.github.tools.ci_fix.runner.checkout_target_branch")
 @patch("integrations.github.tools.ci_fix.runner.ensure_push_ready")
-@patch("integrations.github.tools.ci_fix.runner.ensure_workspace_ready")
+@patch(
+    "integrations.github.tools.ci_fix.runner.repair_workspace",
+    side_effect=lambda *_a, **kw: nullcontext(kw.get("workspace") or "/workspace"),
+)
 @patch("integrations.github.tools.ci_fix.runner.gather_ci_fix_context", return_value=_CTX)
 def test_run_ci_fix_success_pushes_existing_pr_branch(
     _gather: MagicMock,
@@ -555,7 +575,10 @@ def test_run_ci_fix_success_pushes_existing_pr_branch(
 @patch("integrations.github.tools.ci_fix.runner.pre_coding_changes", return_value={})
 @patch("integrations.github.tools.ci_fix.runner.checkout_target_branch")
 @patch("integrations.github.tools.ci_fix.runner.ensure_push_ready")
-@patch("integrations.github.tools.ci_fix.runner.ensure_workspace_ready")
+@patch(
+    "integrations.github.tools.ci_fix.runner.repair_workspace",
+    side_effect=lambda *_a, **kw: nullcontext(kw.get("workspace") or "/workspace"),
+)
 @patch("integrations.github.tools.ci_fix.runner.gather_ci_fix_context", return_value=_CTX)
 def test_run_ci_fix_reports_failed_post_push_checks_without_prompting_again(
     _gather: MagicMock,
@@ -610,7 +633,10 @@ def test_run_ci_fix_reports_failed_post_push_checks_without_prompting_again(
     ),
 )
 @patch("integrations.github.tools.ci_fix.runner.ensure_push_ready")
-@patch("integrations.github.tools.ci_fix.runner.ensure_workspace_ready")
+@patch(
+    "integrations.github.tools.ci_fix.runner.repair_workspace",
+    side_effect=lambda *_a, **kw: nullcontext(kw.get("workspace") or "/workspace"),
+)
 @patch(
     "integrations.github.tools.ci_fix.runner.gather_branch_ci_fix_context",
     return_value=_BRANCH_CTX,
@@ -649,7 +675,7 @@ def test_run_ci_fix_branch_target_uses_worktree_and_branch_verification(
     assert result["target_type"] == CI_TARGET_BRANCH
     assert result["checks_state"] == "passed"
     assert "separate git worktree" in prompts[0]
-    mock_worktree.assert_called_once_with("/workspace", _BRANCH_CTX)
+    mock_worktree.assert_called_once_with("/workspace", _BRANCH_CTX, token="tok")
     mock_run_fix.assert_called_once()
     assert mock_run_fix.call_args.args[1] == "/workspace/.opensre-ci-fix-main-12345678"
     mock_push.assert_called_once()
@@ -699,7 +725,8 @@ def test_tool_passes_shell_confirmation_function() -> None:
     ) as runner:
         result = fix_github_pr_ci(context=agent_context)
 
-    assert result == {"success": True}
+    assert result["success"] is True
+    assert result["work_outcome"]["status"] == "succeeded"
     assert runner.call_args.kwargs["confirm_fn"] is confirm
 
 
@@ -889,6 +916,10 @@ def test_push_ci_fix_branch_mode_pushes_repair_branch_without_protected_opt_in()
         ),
         patch("integrations.github.tools.ci_fix.ship.commit_paths") as commit,
         patch("integrations.github.tools.ci_fix.ship.head_sha", return_value="new-sha"),
+        patch(
+            "integrations.github.tools.ci_fix.ship.remote_branch_sha",
+            return_value=_BRANCH_CTX.head_sha,
+        ),
         patch("integrations.github.tools.ci_fix.ship.push_branch") as push,
     ):
         result = push_ci_fix(
@@ -973,7 +1004,10 @@ def test_gather_ci_fix_context_rereads_merge_state_while_github_computes_it() ->
 @patch("integrations.github.tools.ci_fix.runner.pre_coding_changes", return_value={})
 @patch("integrations.github.tools.ci_fix.runner.checkout_target_branch")
 @patch("integrations.github.tools.ci_fix.runner.ensure_push_ready")
-@patch("integrations.github.tools.ci_fix.runner.ensure_workspace_ready")
+@patch(
+    "integrations.github.tools.ci_fix.runner.repair_workspace",
+    side_effect=lambda *_a, **kw: nullcontext(kw.get("workspace") or "/workspace"),
+)
 @patch(
     "integrations.github.tools.ci_fix.runner.gather_ci_fix_context",
     return_value=replace(_CTX, merge_state="DIRTY"),
@@ -1039,7 +1073,10 @@ def test_run_ci_fix_merges_base_before_fixing_a_conflicted_pr(
 @patch("integrations.github.tools.ci_fix.runner.pre_coding_changes", return_value={})
 @patch("integrations.github.tools.ci_fix.runner.checkout_target_branch")
 @patch("integrations.github.tools.ci_fix.runner.ensure_push_ready")
-@patch("integrations.github.tools.ci_fix.runner.ensure_workspace_ready")
+@patch(
+    "integrations.github.tools.ci_fix.runner.repair_workspace",
+    side_effect=lambda *_a, **kw: nullcontext(kw.get("workspace") or "/workspace"),
+)
 @patch(
     "integrations.github.tools.ci_fix.runner.gather_ci_fix_context",
     return_value=replace(_CTX, merge_state="DIRTY", failing_checks=(), task=""),
@@ -1074,7 +1111,10 @@ def test_run_ci_fix_pushes_a_merge_only_repair_without_running_the_fix_agent(
 @patch("integrations.github.tools.ci_fix.runner.pre_coding_changes", return_value={})
 @patch("integrations.github.tools.ci_fix.runner.checkout_target_branch")
 @patch("integrations.github.tools.ci_fix.runner.ensure_push_ready")
-@patch("integrations.github.tools.ci_fix.runner.ensure_workspace_ready")
+@patch(
+    "integrations.github.tools.ci_fix.runner.repair_workspace",
+    side_effect=lambda *_a, **kw: nullcontext(kw.get("workspace") or "/workspace"),
+)
 @patch(
     "integrations.github.tools.ci_fix.runner.gather_ci_fix_context",
     return_value=replace(_CTX, merge_state="DIRTY"),

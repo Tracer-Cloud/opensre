@@ -696,10 +696,12 @@ def test_scope_migration_preserves_claims_and_refuses_unknown_delivery(db_path: 
     claim = _claimed(db_path, "task", "tick")
     with sqlite3.connect(db_path) as conn:
         conn.execute("ALTER TABLE task_runs DROP COLUMN target_filter")
+        conn.execute("ALTER TABLE task_runs DROP COLUMN work_outcome")
     _expire_claim(db_path, "task", "tick")
     with ThreadPoolExecutor(max_workers=4) as pool:
         results = list(pool.map(lambda _: get_runs("task", db_path=db_path), range(4)))
     assert all(len(runs) == 1 for runs in results)
+    assert all(runs[0].work_status == "unknown" for runs in results)
     reclaimed = try_claim("task", "tick", db_path=db_path)
     assert reclaimed is not None
     assert reclaimed.target_filter == frozenset()
@@ -717,10 +719,11 @@ def test_malformed_scope_cannot_widen_recovery(db_path: Path, raw: str) -> None:
     assert reclaimed.target_filter == frozenset()
 
 
-def test_delivery_scope_migration_rolls_back_on_failure(db_path: Path) -> None:
+@pytest.mark.parametrize("column", ["target_filter", "work_outcome"])
+def test_delivery_scope_migration_rolls_back_on_failure(db_path: Path, column: str) -> None:
     class FailScopeMigration(sqlite3.Connection):
         def execute(self, sql: str, parameters: object = (), /) -> sqlite3.Cursor:
-            if sql.startswith("ALTER TABLE task_runs ADD COLUMN target_filter"):
+            if sql.startswith(f"ALTER TABLE task_runs ADD COLUMN {column}"):
                 raise sqlite3.OperationalError("injected migration failure")
             return super().execute(sql, parameters)
 
@@ -728,6 +731,7 @@ def test_delivery_scope_migration_rolls_back_on_failure(db_path: Path) -> None:
     with sqlite3.connect(db_path) as conn:
         conn.execute("ALTER TABLE task_runs DROP COLUMN target_filter")
         conn.execute("ALTER TABLE task_runs DROP COLUMN targets")
+        conn.execute("ALTER TABLE task_runs DROP COLUMN work_outcome")
     conn = sqlite3.connect(db_path, factory=FailScopeMigration)
     try:
         with pytest.raises(sqlite3.OperationalError, match="injected migration failure"):
@@ -735,6 +739,7 @@ def test_delivery_scope_migration_rolls_back_on_failure(db_path: Path) -> None:
         columns = {row[1] for row in conn.execute("PRAGMA table_info(task_runs)")}
         assert "targets" not in columns
         assert "target_filter" not in columns
+        assert "work_outcome" not in columns
         assert conn.execute("SELECT COUNT(*) FROM task_runs").fetchone()[0] == 1
     finally:
         conn.close()

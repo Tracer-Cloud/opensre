@@ -458,7 +458,7 @@ class TestExecutor:
         assert len(adapters[Provider.SLACK].calls) == 1
         with (
             patch(
-                "infrastructure.scheduling.scheduler.executor.build_message",
+                "infrastructure.scheduling.scheduler.executor._deliver_all",
                 side_effect=KeyboardInterrupt,
             ),
             pytest.raises(KeyboardInterrupt),

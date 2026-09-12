@@ -33,6 +33,9 @@ Rules:
   commands, or ask a broad follow-up question.
 - Set `open_pr=true` only when the user asks to open, raise, create, or ship a
   pull request.
+- With `open_pr=true` and a named repository, omit `workspace` for an isolated
+  checkout. Local-only fixes use the configured workspace; an explicit checkout
+  must match the target repository.
 - The tool runs one alert per call. Do not loop over multiple alerts unless the
   user explicitly asks to continue after the first result.
 - Report the result from `summary`, `changed_files`, `branch_name`, and `pr_url`.

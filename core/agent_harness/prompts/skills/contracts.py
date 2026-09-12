@@ -7,6 +7,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
+from core.agent_harness.prompts.skills.script_tools import SkillScriptTool
+
 
 @dataclass(frozen=True)
 class SkillToolCall:
@@ -28,6 +30,7 @@ class ActionSkill:
     demo_order: int | None = None
     pre_execute: tuple[SkillToolCall, ...] = ()
     includes: tuple[str, ...] = ()
+    script_tools: tuple[SkillScriptTool, ...] = ()
 
 
 @dataclass(frozen=True)

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable
+from contextlib import ExitStack
 from dataclasses import replace
 from typing import Any, Final
 
@@ -14,9 +15,9 @@ from integrations.coding_agent import (
     run_coding_task,
     verify_coding_agent,
 )
-from integrations.git import GitCommandError, changed_paths, ensure_git_repo, file_fingerprints
+from integrations.git import GitCommandError, changed_paths, ensure_head_revision, file_fingerprints
 from integrations.github.client import resolve_github_token
-from integrations.github.repo_scope import detect_git_remote_repo_scope
+from integrations.github.repair_workspace import repair_workspace
 from integrations.github.tools.ci_fix.base_merge import BaseMergeResult, merge_base_into_head
 from integrations.github.tools.ci_fix.context import (
     CI_TARGET_BRANCH,
@@ -33,12 +34,13 @@ from integrations.github.tools.ci_fix.errors import (
     ERR_GITHUB_TOKEN,
     ERR_INVALID_INPUT,
     ERR_MERGE_CONFLICT,
-    ERR_REPO_MISMATCH,
-    ERR_REPO_SCOPE,
+    ERR_NO_FAILING_CHECKS,
     ERR_TIMEOUT,
     GitHubCiFixError,
 )
+from integrations.github.tools.ci_fix.resume import resumed_push
 from integrations.github.tools.ci_fix.ship import PushResult, checkout_target_branch, push_ci_fix
+from integrations.github.tools.ci_fix.storage.attempts import record_verification, repair_key
 from integrations.github.tools.ci_fix.verification import (
     DEFAULT_CHECK_WAIT_SECONDS,
     CheckState,
@@ -54,34 +56,6 @@ from integrations.github.tools.ci_fix.worktree import (
 
 SOURCE: Final = "github"
 _YES = {"y", "yes"}
-
-
-def resolve_workspace(workspace: str | None) -> str:
-    """Resolve the workspace once for the full run."""
-    return workspace or coding_workspace()
-
-
-def ensure_workspace_ready(workspace: str, owner: str, repo: str) -> None:
-    """Require a git checkout whose origin matches the target repository."""
-    try:
-        ensure_git_repo(workspace)
-    except GitCommandError as exc:
-        raise GitHubCiFixError(exc.kind, exc.message) from exc
-    detected = detect_git_remote_repo_scope(workspace)
-    if detected is None:
-        raise GitHubCiFixError(
-            ERR_REPO_SCOPE,
-            "Could not determine the GitHub owner/repo from the workspace's origin remote; no push was made.",
-        )
-    detected_owner, detected_repo = detected
-    if (detected_owner.lower(), detected_repo.lower()) != (owner.lower(), repo.lower()):
-        raise GitHubCiFixError(
-            ERR_REPO_MISMATCH,
-            (
-                f"Workspace origin is {detected_owner}/{detected_repo}, "
-                f"but the CI fix targets {owner}/{repo}; no push was made."
-            ),
-        )
 
 
 def ensure_push_ready(github_token: str | None = None) -> None:
@@ -230,6 +204,7 @@ def with_push_output(
     result = {
         **output,
         "branch_name": push.branch_name,
+        "fix_head_sha": push.head_sha,
         "changed_files": push.changed_files,
         "checks_state": verification.state.value,
         "check_names": list(verification.check_names),
@@ -368,48 +343,75 @@ def run_ci_fix(
     github_token: str | None = None,
     confirm_fn: Callable[[str], str] | None = None,
 ) -> dict[str, Any]:
-    ws = resolve_workspace(workspace)
-    branch_name = (branch or "").strip()
-    ctx: CiFixContext | None = None
-    worktree: BranchWorktree | None = None
-    run_workspace = ws
-    try:
-        if branch_name and (pr_number is not None or pr_url):
-            raise GitHubCiFixError(
-                ERR_INVALID_INPUT,
-                "Pass either a PR selector or a branch, not both; no push was made.",
+    with ExitStack() as workspaces:
+        ws = workspace or coding_workspace()
+        branch_name = (branch or "").strip()
+        ctx: CiFixContext | None = None
+        worktree: BranchWorktree | None = None
+        run_workspace = ws
+        try:
+            if branch_name and (pr_number is not None or pr_url):
+                raise GitHubCiFixError(
+                    ERR_INVALID_INPUT,
+                    "Pass either a PR selector or a branch, not both; no push was made.",
+                )
+            if branch_name:
+                ctx = gather_branch_ci_fix_context(
+                    branch=branch_name,
+                    owner=owner,
+                    repo=repo,
+                    workspace=ws,
+                    github_token=github_token,
+                    allow_clean=True,
+                )
+            else:
+                ctx = gather_ci_fix_context(
+                    owner=owner,
+                    repo=repo,
+                    pr_number=pr_number,
+                    pr_url=pr_url,
+                    workspace=ws,
+                    github_token=github_token,
+                    allow_clean=True,
+                )
+            ws = str(
+                workspaces.enter_context(
+                    repair_workspace(
+                        ctx.owner,
+                        ctx.repo,
+                        workspace=workspace if (owner and repo) or pr_url else ws,
+                        token=resolve_github_token(github_token),
+                        target=ctx.head_branch,
+                    )
+                )
             )
-        if branch_name:
-            ctx = gather_branch_ci_fix_context(
-                branch=branch_name,
-                owner=owner,
-                repo=repo,
-                workspace=ws,
-                github_token=github_token,
-            )
-        else:
-            ctx = gather_ci_fix_context(
-                owner=owner,
-                repo=repo,
-                pr_number=pr_number,
-                pr_url=pr_url,
-                workspace=ws,
-                github_token=github_token,
-            )
-        ensure_workspace_ready(ws, ctx.owner, ctx.repo)
-        ensure_push_ready(github_token=github_token)
-        require_confirmation(confirm_fn, _confirmation_prompt(ctx))
-        if ctx.is_branch_target:
-            worktree = create_branch_worktree(ws, ctx)
-            run_workspace = worktree.path
-            ctx = replace(ctx, head_branch=worktree.branch_name)
-        else:
-            checkout_target_branch(ws, ctx)
-    except GitHubCiFixError as exc:
-        return error_output(exc.kind, exc.message, ctx)
+            recovered = resumed_push(ctx, ws, github_token=resolve_github_token(github_token))
+            if recovered is not None:
+                restored, push = recovered
+                output = to_output(
+                    restored, CodingResult(success=True, summary="Resumed repair verification")
+                )
+                return _verify_repair(restored, output, push, github_token)
+            if not ctx.failing_checks and not ctx.needs_base_merge:
+                return error_output(
+                    ERR_NO_FAILING_CHECKS, "No failing checks; no repair was needed.", ctx
+                )
+            ensure_push_ready(github_token=github_token)
+            require_confirmation(confirm_fn, _confirmation_prompt(ctx))
+            if ctx.is_branch_target:
+                worktree = create_branch_worktree(ws, ctx, token=resolve_github_token(github_token))
+                run_workspace = worktree.path
+                workspaces.callback(cleanup_branch_worktree, ws, worktree)
+                ensure_head_revision(run_workspace, ctx.head_sha)
+                ctx = replace(ctx, head_branch=worktree.branch_name)
+            else:
+                checkout_target_branch(ws, ctx, token=resolve_github_token(github_token))
+                ensure_head_revision(ws, ctx.head_sha)
+                run_workspace = ws
+        except (GitHubCiFixError, GitCommandError) as exc:
+            return error_output(exc.kind, exc.message, ctx)
 
-    output = _base_output(ctx)
-    try:
+        output = _base_output(ctx)
         try:
             merge: BaseMergeResult | None = None
             if ctx.needs_base_merge:
@@ -418,6 +420,7 @@ def run_ci_fix(
                     ctx,
                     baseline=pre_coding_changes(run_workspace),
                     resolve_conflicts=resolve_merge_conflicts(ctx, run_workspace, model),
+                    token=resolve_github_token(github_token),
                 )
                 output = with_merge_output(output, merge)
             baseline = pre_coding_changes(run_workspace)
@@ -436,26 +439,37 @@ def run_ci_fix(
             )
         except GitHubCiFixError as exc:
             return push_error_output(output, exc)
-        try:
-            wait_for_checks = wait_for_branch_checks if ctx.is_branch_target else wait_for_pr_checks
-            verification = wait_for_checks(
-                ctx,
-                github_token=github_token,
-                expected_head_sha=push.head_sha,
-            )
-        except GitHubCiFixError as exc:
-            return {
-                **push_error_output(output, exc),
-                "branch_name": push.branch_name,
-                "changed_files": push.changed_files,
-                "response_text": (
-                    f"Pushed a CI fix to {push.branch_name}, but could not verify the new checks."
-                ),
-            }
-        return with_push_output(output, push, verification)
-    finally:
-        if worktree is not None:
-            cleanup_branch_worktree(ws, worktree)
+        return _verify_repair(ctx, output, push, github_token)
+
+
+def _verify_repair(
+    ctx: CiFixContext, output: dict[str, Any], push: PushResult, github_token: str | None
+) -> dict[str, Any]:
+    try:
+        wait_for_checks = wait_for_branch_checks if ctx.is_branch_target else wait_for_pr_checks
+        verification = wait_for_checks(
+            ctx,
+            github_token=github_token,
+            expected_head_sha=push.head_sha,
+        )
+    except GitHubCiFixError as exc:
+        return {
+            **push_error_output(output, exc),
+            "branch_name": push.branch_name,
+            "fix_head_sha": push.head_sha,
+            "changed_files": push.changed_files,
+            "response_text": (
+                f"Pushed a CI fix to {push.branch_name}, but could not verify the new checks."
+            ),
+        }
+    record_verification(
+        repair_key(
+            ctx.owner, ctx.repo, str(ctx.number) if not ctx.is_branch_target else ctx.target_branch
+        ),
+        push.head_sha,
+        verification.state.value,
+    )
+    return with_push_output(output, push, verification)
 
 
 def _fix_result(
@@ -471,12 +485,10 @@ def _fix_result(
 __all__ = [
     "SOURCE",
     "ensure_push_ready",
-    "ensure_workspace_ready",
     "error_output",
     "pre_coding_changes",
     "require_confirmation",
     "resolve_merge_conflicts",
-    "resolve_workspace",
     "run_ci_fix",
     "run_fix",
     "with_merge_output",
