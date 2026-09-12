@@ -273,7 +273,16 @@ def replace_task(
         raw = _load_for_write(path)
         stored_task, changed = _merge_task_into(raw, task)
         for entry in raw:
-            if entry.get("id") in retired and entry.get("id") != stored_task.id:
+            entry_id = entry.get("id")
+            if entry_id == stored_task.id:
+                # Reusing a schedule retired earlier matches the disabled row.
+                # Returning it as the replacement without reviving it reports a
+                # reminder that never fires.
+                if not entry.get("enabled", True):
+                    entry["enabled"] = True
+                    stored_task = ScheduledTask.model_validate(entry)
+                    changed = True
+            elif entry_id in retired:
                 entry["enabled"] = False
                 changed = True
         if not changed:

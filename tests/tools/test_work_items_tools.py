@@ -343,6 +343,27 @@ def test_reschedule_never_leaves_two_live_reminders(
     assert [task.id for task in list_tasks() if task.enabled] == [second.id]
 
 
+def test_rescheduling_back_to_an_earlier_time_revives_the_task(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Moving a reminder T1 -> T2 -> T1 matches the row retired on the first
+    # move. Returning it as the replacement without reviving it reported a
+    # scheduled reminder that would never fire.
+    from infrastructure.scheduling.scheduler.storage.task_store import list_tasks
+
+    _isolate_work_item_stores(tmp_path, monkeypatch)
+    targets = [WorkItemChannelTarget(provider="slack", chat_id="C1")]
+    early = make_work_item(title="Rotate key", remind_at="2030-09-12T09:00:00Z")
+    later = dataclasses.replace(early, remind_at="2030-09-12T10:00:00Z")
+
+    schedule_item_reminder(early, targets=targets, timezone="UTC")
+    schedule_item_reminder(later, targets=targets, timezone="UTC")
+    revived = schedule_item_reminder(early, targets=targets, timezone="UTC")
+
+    assert revived is not None
+    assert [task.id for task in list_tasks() if task.enabled] == [revived.id]
+
+
 def test_failed_replacement_keeps_the_existing_reminder(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
