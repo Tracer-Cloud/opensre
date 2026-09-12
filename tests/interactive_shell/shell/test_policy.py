@@ -13,10 +13,11 @@ from tools.interactive_shell.shared import apply_auto_level, apply_plan_only_gat
 from tools.interactive_shell.shell.policy import evaluate_shell_command
 
 
-def test_read_only_shell_is_allow() -> None:
+def test_shell_is_allow_before_confirmation_gate() -> None:
     r = evaluate_shell_command("pwd")
     assert r.verdict == "allow"
     assert r.tool_type == "shell"
+    assert r.shell_classification == "unrestricted"
 
 
 def test_restricted_shell_is_allow() -> None:

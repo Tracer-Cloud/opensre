@@ -209,7 +209,7 @@ class TestDispatchSlash:
         dispatch_slash("/auto med", session, console)
         assert session.terminal.auto_level == "med"
         assert "Auto (Med)" in buf.getvalue()
-        assert "allow reversible commands" in buf.getvalue()
+        assert "approve shell and mutating tools" in buf.getvalue()
 
     def test_auto_bare_shows_default_and_levels(self) -> None:
         session = Session()
