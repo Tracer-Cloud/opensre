@@ -31,7 +31,6 @@ def test_skill_view_unknown_name_lists_available() -> None:
 
 class _SessionStub:
     active_skill: str | None = None
-    active_skill_tools: tuple[str, ...] = ()
 
 
 class _CtxStub:

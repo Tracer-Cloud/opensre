@@ -49,9 +49,7 @@ class _Terminal:
 @dataclass
 class _Session(InMemorySessionState):
     active_skill: str | None = None
-    active_skill_tools: tuple[str, ...] = ()
     pending_user_choice: PendingUserChoice | None = None
-    skill_hooks_fired: set[str] = field(default_factory=set)
     skills_already_prompted: set[str] = field(default_factory=set)
     questions_already_answered: set[str] = field(default_factory=set)
     terminal: _Terminal = field(default_factory=_Terminal)
@@ -110,7 +108,6 @@ def test_local_analysis_waits_for_choices_before_analyzing_and_handing_off(
     assert skill.name == ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME
     session = _Session(
         active_skill=skill.name,
-        active_skill_tools=skill.tools,
         configured_integrations_known=True,
         resolved_integrations_cache={},
     )

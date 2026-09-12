@@ -128,9 +128,9 @@ def wait_for_pr_checks(
         else:
             workflows_complete, workflow_signature = False, ()
         external_checks_registered = required_external_checks.issubset(set(last_names))
-        registration_complete = (
-            expected_head_seen_at is not None
-            and now - expected_head_seen_at >= max(0, registration_seconds)
+        registration_complete = expected_head_seen_at is not None and (
+            now - expected_head_seen_at >= max(0, registration_seconds)
+            or _known_checks_registered(ctx, last_names)
         )
         if (
             head_sha == expected_head_sha
@@ -202,8 +202,9 @@ def wait_for_branch_checks(
         if runs and first_seen_at is None:
             first_seen_at = now
         # Give late workflows time to register after the first run appears.
-        registration_complete = first_seen_at is not None and now - first_seen_at >= max(
-            0, registration_seconds
+        registration_complete = first_seen_at is not None and (
+            now - first_seen_at >= max(0, registration_seconds)
+            or _known_checks_registered(ctx, last_names)
         )
         all_completed = bool(runs) and all(
             str(run.get("status") or "").strip().lower() == _WORKFLOW_RUN_COMPLETED for run in runs
@@ -335,6 +336,18 @@ def _commit_check_state(
         if str(status.get("state") or "").strip().upper() in _STATUS_FAILED_STATES
     )
     return all_terminal, tuple(dict.fromkeys(failing))
+
+
+def _known_checks_registered(ctx: CiFixContext, observed: tuple[str, ...]) -> bool:
+    """True when every check seen on the original head has reappeared on the fix commit.
+
+    Ends the registration grace early: a late check the grace exists to catch is
+    one that has not registered yet, so once all previously known names are
+    present there is nothing left to wait for. An empty known set never
+    short-circuits.
+    """
+    known = set(ctx.known_check_names)
+    return bool(known) and known.issubset(observed)
 
 
 def _run_name(run: dict[str, Any]) -> str:

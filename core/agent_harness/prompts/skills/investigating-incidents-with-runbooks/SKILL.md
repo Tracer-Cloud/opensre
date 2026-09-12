@@ -1,20 +1,19 @@
 ---
 name: investigating-incidents-with-runbooks
 description: >-
-  Investigate an incident with organization-owned runbook guidance, loaded by
-  URL or exact alert identity. Multi-step; load before acting.
+  Investigate an incident with organization-owned runbook guidance, loaded by URL or exact alert identity.
+  Multi-step; load before acting.
 metadata:
   owner: Anwesh
-  last_changed_by: Vincent
-  last_changed_at: 2026-09-09
+  last_changed_by: Jan
+  last_changed_at: 2026-09-12
   usecases:
-    - Investigating an incident using an organization-owned runbook
-    - Triaging an alert against configured runbook guidance and live evidence
+  - For on-call engineers investigating an incident with an organization-owned runbook.
+  - For responders matching an alert to trusted runbook guidance and checking live evidence.
   requires:
-    - Read access to a configured trusted runbook source
-    - Diagnostic tools for the affected service
-  type: audit
-  version: "1.0"
+  - Read access to a configured trusted runbook source.
+  - The load_runbook_guidance tool and diagnostic tools for the affected service.
+  version: '1.0'
 ---
 ══════════════════════════════════════════════════════════
 RUNBOOK-GUIDED INVESTIGATION SKILL — interactive-shell action agent:

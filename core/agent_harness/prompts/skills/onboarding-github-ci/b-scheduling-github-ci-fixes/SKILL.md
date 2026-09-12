@@ -1,5 +1,5 @@
 ---
-name: onboarding-scheduling-github-ci-fixes
+name: scheduling-github-ci-fixes
 description: >-
   Sets up ongoing local monitoring of one repository's open pull requests,
   automatically editing, testing, and pushing fixes for failing GitHub Actions
@@ -13,115 +13,227 @@ metadata:
   last_changed_by: Jan
   last_changed_at: 2026-09-12
   usecases:
-    - Keep repairing failing pull requests across one repository over time
-    - Demonstrate a scheduled repair in a private repository, then clean it up
+    - For maintainers configuring ongoing repair of failing pull requests in one repository.
+    - For users demonstrating a scheduled repair in a disposable private repository.
   requires:
     - GitHub write access to the watched repository and an authenticated coding agent
     - A matching local checkout available to the existing scheduler host
-    - For the demo, permission to create and delete a private repository and its workflow
-  type: repair
-  version: "4.0"
-references:
+    - For the demo, a GitHub token that can create and delete a private repository
+  version: "5.0"
+includes:
   - common/ask_once.md
-  - core/agent_harness/prompts/skills/fixing-github-ci
 ---
 
 # Onboarding for Scheduled CI fixes
 
 Monitor one repository every **2 minutes** and automatically edit, test, and
-push fixes to one failing PR branch per tick. 
-
-A green PR does not stop monitoring.
+push fixes to one failing PR branch per tick. A green PR does not stop
+monitoring.
 
 The optional private demo uses the same repair policy every **minute**; its
 result is saved before its temporary resources are deleted.
 
 ## Goal
-The objective of this skill is to get users to setup a scheduled loop that monitors a CICD pipeline and get a fast time to value by showcasing an example fix fast. 
+
+Get the user to a running scheduled loop that repairs a failing PR, and show
+one real repair as fast as possible. Every tool call costs a model round trip:
+the whole demo should finish in well under five minutes, so use the exact
+calls below, never explore the OpenSRE source tree, and never re-fetch a fact
+you already hold.
+
+## Runtime facts
+
+- The loop is a scheduler task: `slash_invoke` with `command: "/cron"`. Cron
+  granularity is one minute; there is no 20-second polling.
+- Scheduled ticks run headless with the full tool catalog. The tick prompt
+  must name the tool call directly; `fix_github_pr_ci` itself reports when a
+  PR has no failing checks, so the tick needs no separate status read.
+- `fix_github_pr_ci` clones, repairs, pushes, and waits for the new checks
+  before it returns. A tick therefore takes a few minutes; `/cron run <id>`
+  blocks for that long and returns the tick's report. Do not poll while it
+  runs.
+- `github_cli` passes `repo` as `-R` only to commands that accept it. `gh repo
+  …` takes the repository positionally: `["repo", "create", "<name>", …]`.
+- `update_plan` never travels alone: batch it with the next real tool call.
+  Read-only verification calls that do not depend on each other go in one
+  batch too.
 
 ## Plan
 
-Demonstrate that a scheduled local worker can detect a failing GitHub PR,
-invoke `fixing-github-ci`, and verify the resulting fix.
+After reading this skill, use `update_plan` to create the live plan from the
+ten numbered workflow headings below. Mark steps the request already
+satisfies `completed` (a named repository skips Step 1; an existing failing
+PR skips Steps 4 and 8) and move each step to `completed` when its
+completion condition is met.
 
-Track progress with `update_plan`: 
+- [ ] Step 1. Select the repository, or the private demo, with ask_user_choice.
+- [ ] Step 2. Check prerequisites in one batch: GitHub identity and scopes, scheduler.
+- [ ] Step 3. Select the failing PR, or confirm the authorized demo scope.
+- [ ] Step 4. Create the demo repository, failing branch, and PR (demo only).
+- [ ] Step 5. Confirm GitHub reports the failure with list_github_actions_workflow_runs.
+- [ ] Step 6. Start the loop with the `/cron add` call and record its task id.
+- [ ] Step 7. Run the first tick with `/cron run <id>` and read its report.
+- [ ] Step 8. Verify the repair with one `pr view` call.
+- [ ] Step 9. Save evidence, remove the demo loop and resources, verify with `/cron list`.
+- [ ] Step 10. Respond with the outcome report, then offer the follow-up with ask_user_choice.
 
-- [ ] Step 0. Run pre-requisite checks 
-  - Verifying GitHub access
-  - Local scheduler
+## Workflow
 
+### Step 1. Select the repository
 
-- [ ] Step 1. Select the repository.
-  - Use the repository already specified by the user.
-  - If none is specified, ask the user to select one or choose a private
-    demo repository.
-  - Complete when the repository and permitted demo scope are established.
+Use the repository already named by the user. Otherwise ask once with
+`ask_user_choice`: "Private disposable demo repository" first (recommended),
+then the repositories the user has configured. Choosing the demo authorizes
+creating and deleting one private repository, its branch, PR, and loop.
 
-- [ ] Step 2. Check prerequisites.
-  - Verify repository access, GitHub authentication, availability of
-    `fixing-github-ci`, and a local scheduler capable of invoking it.
-  - Read the repository's contribution and CI requirements.
-  - If a prerequisite is unavailable, report the blocker before creating
-    demo resources.
-  - Complete when the required capabilities are verified.
+Complete when the repository, or the demo scope, is established.
 
-- [ ] Step 3. Select the failure scenario.
-  - Use a user-selected failing PR, or briefly inspect open PRs for a
-    suitable CI failure.
-  - If none is suitable, offer to create a private demo repository or an
-    isolated demo PR containing a reproducible test failure.
-  - Complete when an existing PR is selected or demo creation is authorized.
+### Step 2. Check prerequisites
 
-- [ ] Step 4. Start the local demo loop.
-  - Scope the loop to the selected repository and PR or reserved demo branch.
-  - Poll every 20 seconds for responsive demo feedback.
-  - Default to a 30-minute expiry and at most three repair attempts to bound
-    unattended runtime and repeated changes.
-  - Allow only one active repair per PR. Record handled runs so polling
-    cannot repeatedly dispatch the same failure.
-  - Record the loop ID and verify that the worker starts.
-  - Complete when the scoped loop is running and its expiry is configured.
-  - If creating an example PR fix:
-    - The PR example needs to be simple, understandable and relatable (foo-bar for instance, and not obscure cython)
-    - Create a simple github actions test that executes very quickly
+One batch of two calls:
 
-- [ ] Step 5. Establish and verify the failure.
-  - For an existing failing PR, record its failed run, check, and commit.
-  - For an authorized demo, create the isolated failure, open the PR, and
-    wait for the intended test to fail.
-  - Complete when GitHub reports the expected failure on the selected PR.
+- `github_cli` `["api", "user", "--include"]` — confirms authentication and
+  prints the token's `X-Oauth-Scopes` header.
+- `slash_invoke` `{"command": "/cron", "args": ["list"]}` — confirms the
+  scheduler answers.
 
-- [ ] Step 6. Verify detection and repair execution.
-  - Confirm that worker logs identify the selected PR and failed run.
-  - Confirm that the worker invoked `fixing-github-ci` and began diagnosis.
-  - Let the worker perform the repair so the demo tests scheduled execution.
-  - Complete when the failure is linked to an identifiable repair execution.
+For the demo, the token must be able to delete the repository it creates:
+`delete_repo` in the scopes header (classic token) or an absent header
+(fine-grained token or app). If a classic token lacks `delete_repo`, say so
+and ask once whether to proceed knowing the repository will need manual
+deletion. Do not create anything before this is settled.
 
-- [ ] Step 7. Verify the repair.
-  - Record the fix commit and inspect the resulting checks.
-  - Require the original failure to be resolved and the latest PR commit
-    to satisfy the repository's required CI checks.
-  - Verify that the fix addresses the cause and preserves the intended test.
-  - If verification fails, allow another repair within the configured limits.
-  - Complete when verification passes; otherwise record the blocker or limit.
+Complete when GitHub identity, deletion capability, and the scheduler are
+confirmed.
 
-- [ ] Step 8. Clean up.
-  - Run cleanup after success, failure, timeout, or cancellation.
-  - Stop further dispatches, stop or finish active work within the demo
-    limits, and delete the demo loop. Verify it is no longer running.
-  - Preserve evidence needed to explain the outcome.
-  - Identify created demo resources and ask for confirmation before deleting
-    branches unless that cleanup was already authorized.
-  - Complete when the loop is removed and remaining resources are documented.
+### Step 3. Select the failure scenario
 
-- [ ] Step 9. Report the outcome.
-  - Report success, failure, or incomplete verification.
-  - Include the PR, original failed run, worker execution, fix commit,
-    final CI results, and cleanup status.
-  - Claim demo success only when detection, scheduled repair, passing
-    verification, and loop removal are all evidenced.
+- Existing repository: `summarize_github_pr_status(owner, repo, state="open",
+  include_checks=true)`; pick the user's PR, or the first PR with a failing
+  check. If none is failing, the loop still starts in Step 6 and Step 7 is
+  skipped.
+- Demo: the scope was authorized in Step 1; nothing to fetch.
 
-- [ ] Step 10. Offer an optional follow-up.
-  - Offer remote continuous CI monitoring if relevant to the user's goal.
-  - Treat remote setup as a separate task requiring its own scope and
-    authorization. It is not a condition of demo completion.
+Complete when a PR is selected or the demo is authorized.
+
+### Step 4. Create the demo failure (demo only)
+
+Exactly three calls, in order. Keep the example relatable — a `calculator.add`
+that subtracts — with one test that runs in seconds.
+
+1. `github_cli` `["repo", "create", "opensre-ci-repair-demo-<random>",
+   "--private", "--add-readme", "--description", "Temporary OpenSRE
+   scheduled CI repair demo"]`. No owner prefix: creating under the
+   authenticated user keeps admin rights for deletion.
+2. One `shell_run` script that clones into a temp directory, writes
+   `.github/workflows/test.yml` (checkout, `actions/setup-python@v5`,
+   `python -m unittest -v` on `push` and `pull_request`), `calculator.py`,
+   `test_calculator.py`, and `AGENTS.md` ("Run `python -m unittest -v`"),
+   commits and pushes `main`, then creates `demo/failing-ci` with the
+   subtraction bug, commits, and pushes it.
+3. `github_cli` `["pr", "create", "--base", "main", "--head",
+   "demo/failing-ci", "--title", "Demo: repair failing calculator CI",
+   "--body", "…"]` with `repo` set to the new repository.
+
+Complete when the PR URL is known.
+
+### Step 5. Confirm the failure
+
+`list_github_actions_workflow_runs(owner, repo, branch=<head branch>)`. If
+the run is still queued or in progress, wait 20 seconds with one
+`shell_run` `sleep 20` and call it again; do not use any other status tool.
+Record the failed run id and head commit.
+
+Complete when GitHub reports a failed run on the PR head.
+
+### Step 6. Start the loop
+
+One `slash_invoke` call. Record the `Task <id> created.` id from its output.
+
+```json
+{"command": "/cron", "args": ["add",
+  "--name", "CI repair: <owner>/<repo>",
+  "--kind", "manual_loop",
+  "--cron", "*/2 * * * *",
+  "--provider", "interactive_shell",
+  "--mode", "agent",
+  "--prompt", "<tick prompt>"]}
+```
+
+Demo loop: same call with `"--cron", "* * * * *"` and the name
+`CI repair demo: <owner>/<repo>#<n>`.
+
+Tick prompt for one PR (demo, or a user-selected PR):
+
+> Call `fix_github_pr_ci(owner="<owner>", repo="<repo>", pr_number=<n>)`
+> exactly once. If it reports no failing checks, reply `green` and stop. Do
+> not touch any other repository or pull request. Reply with the failed run
+> id, the fix commit, and the final check state.
+
+Tick prompt for a whole repository:
+
+> Call `summarize_github_pr_status(owner="<owner>", repo="<repo>",
+> state="open", include_checks=true)`. Take the first PR in the returned list
+> with a failing check and call `fix_github_pr_ci(owner="<owner>",
+> repo="<repo>", pr_number=<that number>)` exactly once; a refusal consumes
+> this tick's attempt. If no PR is failing, reply `green` and stop. Reply
+> with the PR link, the fix commit, and the final check state.
+
+Complete when the output confirms `Mode: agent` and the task id is recorded.
+
+### Step 7. Run the first tick
+
+`slash_invoke` `{"command": "/cron", "args": ["run", "<id>"]}`. It blocks
+until the repair finishes and prints the tick's report; that report is the
+detection and repair evidence. Follow with one
+`{"command": "/cron", "args": ["logs", "<id>", "--limit", "1"]}` only if the
+run output did not include the status.
+
+Skip this step when Step 3 found no failing PR.
+
+Complete when the tick reports a fix commit, or a refusal with its reason.
+
+### Step 8. Verify the repair
+
+One call: `github_cli` `["pr", "view", "<n>", "--json",
+"headRefOid,commits,statusCheckRollup"]`. The head must be a new commit by
+the fix, every rollup entry `SUCCESS`, and the test file untouched in the fix
+commit's file list. Do not run the tests locally, do not fetch the same
+state through a second tool, and do not clone the repository again.
+
+If a check is still running, wait 20 seconds once and repeat the same call.
+
+Complete when the head commit's checks pass; otherwise record the blocker.
+
+### Step 9. Clean up (demo only)
+
+In this order, no verification calls in between:
+
+1. One `shell_run` that writes the evidence file
+   `~/.opensre/demo-results/ci-repair-demo-<date>-<random>.md` (repository,
+   PR link, failed run id, loop id, fix commit, passing run id) and removes
+   the temp checkout.
+2. `slash_invoke` `{"command": "/cron", "args": ["remove", "<id>"]}`.
+3. `github_cli` `["repo", "delete", "<login>/<name>", "--yes"]`. If GitHub
+   refuses, delete the branch instead with
+   `["api", "-X", "DELETE", "repos/<login>/<name>/git/refs/heads/demo/failing-ci"]`
+   and report that the repository remains.
+4. `slash_invoke` `{"command": "/cron", "args": ["list"]}` as the single
+   verification.
+
+For an existing repository the loop stays; only record its id.
+
+Complete when the loop is gone and remaining resources are documented.
+
+### Step 10. Report and offer the follow-up
+
+First respond with the report as Markdown, linking the PR inline: PR, failed
+run id, loop id, fix commit, final check result, cleanup status, evidence
+path. Claim success only when detection, scheduled repair, passing checks,
+and (for the demo) loop removal are all evidenced.
+
+After the report is shown, one `ask_user_choice`: "Set up monitoring for a
+real repository" / "No thanks". Remote continuous monitoring is a separate
+task with its own scope; it is not a condition of completion.
+
+Complete when the report has been delivered and the menu has been offered.

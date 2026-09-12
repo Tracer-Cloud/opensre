@@ -1,24 +1,22 @@
 ---
 name: reporting-github-ci-failures
 description: >-
-  Read-only GitHub CI health report of the checks failing right now for one
-  repository, optionally narrowed to a branch or pull request. Not for CI/CD
-  performance, reliability KPIs, failure rates, or downtime over a period
-  (use analyzing-github-ci-performance).
+  Read-only GitHub CI health report of the checks failing right now for one repository, optionally narrowed
+  to a branch or pull request. Not for CI/CD performance, reliability KPIs, failure rates, or downtime
+  over a period (use analyzing-github-ci-performance).
 metadata:
   owner: Ceren
   last_changed_by: Jan
-  last_changed_at: 2026-09-11
+  last_changed_at: 2026-09-12
   usecases:
-    - Report the checks failing right now for one repository, branch, or pull request
-    - Unattended recurring CI health report delivered to the shell inbox or a chat channel
-    - Hand off a failing check to the interactive repair flow
+  - For maintainers checking which CI checks are failing now in one repository, branch, or PR.
+  - For teams receiving recurring CI failure reports at a chosen destination.
   requires:
-    - GitHub token usable by OpenSRE with read access to the repository
-    - Configured repository owner and name (a schedule must supply both)
-  type: report
-  version: "1.1"
-recurring: unattended
+  - GitHub authentication with read access to the target repository.
+  - Explicit repository owner and name for scheduled execution.
+  - For recurring delivery, a configured scheduler and destination.
+  version: '1.1'
+recurring: true
 ---
 
 # GitHub CI health

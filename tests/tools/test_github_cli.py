@@ -47,6 +47,21 @@ def test_build_gh_argv_skips_repo_flag_for_api() -> None:
     ) == ["gh", "api", "repos/acme/widgets/pulls/1/comments"]
 
 
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["repo", "create", "acme/demo-repo", "--private"],
+        ["repo", "list", "--limit", "1", "--json", "nameWithOwner"],
+        ["repo", "delete", "acme/demo-repo", "--yes"],
+        ["org", "list"],
+        ["gist", "list"],
+    ],
+)
+def test_build_gh_argv_skips_repo_flag_for_commands_without_it(args: list[str]) -> None:
+    """``gh repo``/``org``/``gist`` reject ``-R``; the default repo must not be injected."""
+    assert build_gh_argv(args=args, repo="acme/widgets") == ["gh", *args]
+
+
 def test_build_gh_argv_skips_repo_flag_for_api_after_global_flags() -> None:
     assert build_gh_argv(
         args=["--hostname", "github.com", "api", "user"],

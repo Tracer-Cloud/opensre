@@ -13,6 +13,7 @@ from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Any
 
+from core.agent_harness import normalize_skill_name
 from core.agent_harness.spi.grounding import ActionSkill, list_action_skills, load_skill_body
 from core.agent_harness.spi.handoff import question_key
 from core.agent_harness.tools import ActionToolScope, ToolExecutor
@@ -45,7 +46,7 @@ _MENU_SUPPRESSED_INSTRUCTION = (
 
 
 def _skill_by_name(name: str) -> ActionSkill | None:
-    slug = name.strip().lower().replace("_", "-")
+    slug = normalize_skill_name(name)
     return next((skill for skill in list_action_skills() if skill.name == slug), None)
 
 
@@ -123,12 +124,9 @@ def enter_skill(name: str, ctx: Any, *, from_model: bool = False) -> dict[str, A
     already_active = (
         from_model and session is not None and getattr(session, "active_skill", None) == skill.name
     )
-    # The flow is now inside this skill: the next answer turn offers only its tools.
-    # Re-entry preserves the tool scope and fired hooks so after_tool menus stay disarmed.
+    # Re-entry retains the active skill and does not reopen an answered menu.
     if session is not None and not already_active:
         session.active_skill = skill.name
-        session.active_skill_tools = tuple(skill.tools)
-        session.skill_hooks_fired = set()
     if skill.pre_execute and not from_model:
         _forget_hook_questions(session, skill)
     hooks: list[dict[str, Any]] = []

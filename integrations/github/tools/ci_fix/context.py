@@ -106,6 +106,10 @@ class CiFixContext:
     target_kind: str = CI_TARGET_PR
     target_branch: str = ""
     merge_state: str = ""
+    # Every check (passing, failing, or skipped) seen on the original head. Post-push
+    # verification may stop waiting for late registrations once all of them have
+    # reappeared on the fix commit; empty keeps the full registration grace.
+    known_check_names: tuple[str, ...] = ()
 
     @property
     def needs_base_merge(self) -> bool:
@@ -241,6 +245,7 @@ def gather_ci_fix_context(
         target_kind=CI_TARGET_PR,
         target_branch=head_branch,
         merge_state=merge_state,
+        known_check_names=tuple(_check_name(item) for item in rollup),
     )
     return replace(ctx, task=_build_task(ctx) if checks else "")
 
@@ -366,6 +371,7 @@ def gather_branch_ci_fix_context(
         task="",
         target_kind=CI_TARGET_BRANCH,
         target_branch=branch_name,
+        known_check_names=tuple(_check_name(run) for run in runs),
     )
     return replace(ctx, task=_build_task(ctx))
 

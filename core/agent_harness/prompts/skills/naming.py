@@ -17,8 +17,10 @@ LEGACY_SKILL_NAMES: Mapping[str, str] = MappingProxyType(
         "onboarding-cicd-fix": "onboarding-github-ci",
         "cicd-analytics-demo": "analyzing-github-ci-performance",
         "cicd-reliability-agent": "scheduling-github-ci-fixes",
-        "remote-managed-service": "delegating-github-ci-fixes",
         "slack-handoff": "connecting-slack",
+        "onboarding-analyzing-github-ci-performance": "analyzing-github-ci-performance",
+        "onboarding-scheduling-github-ci-fixes": "scheduling-github-ci-fixes",
+        "onboarding-connecting-slack": "connecting-slack",
     }
 )
 

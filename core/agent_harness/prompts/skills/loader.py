@@ -1,52 +1,33 @@
-"""Action-agent skills: thin index in the harness, fat bodies on demand.
-
-Skills are markdown files that teach the action planner how to map a
-recognisable request onto a concrete tool sequence.
-
-Layout (either form is supported):
-
-- Package: ``skills/<name>/SKILL.md`` (preferred) or ``skills/<name>/<name>.md``,
-  with an optional sibling ``<name>_report.md`` report template.
-- Flat: ``skills/<name>.md`` with optional ``skills/<name>_report.md``.
-
-Optional YAML frontmatter (``name``, ``description``, optional ``recurring``,
-optional ``getting_started`` + ``demo_order``, optional ``pre_execute``,
-optional ``references``) feeds the compact index. ``getting_started`` is the
-verbatim first-visit demo menu label this skill owns; ``demo_order`` is its
-1-based row (A=1). ``pre_execute`` lists static tool calls (``{tool, args}``)
-the host runs when the skill is entered, before any model step; the loader
-keeps them as data and the entry point decides which tools are allowed.
-``after_tool`` lists the same kind of call, run by the host after a named
-tool succeeds while the skill is active (so a mid-flow menu cannot be
-skipped). ``references`` lists sibling markdown files appended after the
-body (resolved from the skill folder, its parent package, or the skills
-tree; paths that leave the tree are ignored). Without frontmatter, the name
-is derived from the path and the description from the first ``WHEN TO USE``
-/ subtitle lines.
-
-The harness prompt carries only :func:`load_skills_index` (~hundreds of
-chars). Full bodies load through the ``skill_view`` tool via
-:func:`load_skill_body`.
-"""
+"""Discover validated workflow cards and load their bodies and local includes."""
 
 from __future__ import annotations
 
+import logging
 import re
-from collections.abc import Mapping
-from dataclasses import dataclass
+from collections import Counter
 from functools import lru_cache
 from pathlib import Path
 from types import MappingProxyType
-from typing import Any
 
-import yaml
+from pydantic import ValidationError
 
+from config.constants.skills import ONBOARDING_SKILL_NAME
+from core.agent_harness.prompts.skills.contracts import ActionSkill, SkillCatalog, SkillToolCall
+from core.agent_harness.prompts.skills.demo_menu import (
+    demo_handoffs,
+    demo_skills,
+    populate_demo_menu,
+)
 from core.agent_harness.prompts.skills.naming import normalize_skill_name
+from core.agent_harness.prompts.skills.validation import (
+    SkillCard,
+    SkillCardError,
+    parse_frontmatter,
+)
 
 __all__ = (
     "ActionSkill",
     "SKILLS_HEADER",
-    "SkillAfterToolHook",
     "SkillToolCall",
     "getting_started_skills",
     "list_action_skills",
@@ -56,6 +37,8 @@ __all__ = (
     "load_skills_index",
     "skill_reference_names",
     "skills_dir",
+    "read_skill_catalog",
+    "validate_skill_file",
 )
 
 SKILLS_HEADER = f"{'=' * 40} SKILLS INDEX {'=' * 40}"
@@ -66,58 +49,10 @@ _REFERENCES_DIRNAME = "references"
 _REPO_SKILLS_PREFIX = "core/agent_harness/prompts/skills"
 _REPORT_TEMPLATE_HEADER = "REPORT TEMPLATE from `{repo_path}` (fill exactly; keep all headings):"
 _REFERENCE_HEADER = "SHARED RULES from `{repo_path}`:"
-_SKILL_NAME_RE = re.compile(r"^[a-z0-9]+(?:-[a-z0-9]+)*$")
 _REFERENCE_NAME_RE = re.compile(r"^[a-z0-9]+(?:[-_][a-z0-9]+)*$")
-_BANNER_RE = re.compile(r"^[=\-─]{8,}\s*$")
 
 
-@dataclass(frozen=True)
-class SkillToolCall:
-    """One static tool call a skill declares in ``pre_execute`` or ``after_tool``."""
-
-    tool: str
-    args: Mapping[str, Any]
-    """Read-only tool input, shaped exactly like the tool's ``input_schema``."""
-
-
-@dataclass(frozen=True)
-class SkillAfterToolHook:
-    """Host-run tool call after a named tool succeeds inside this skill."""
-
-    after: str
-    call: SkillToolCall
-    options_from: str | None = None
-    """Named builder that fills ``ask_user_choice`` options from the trigger result."""
-
-    options_extra: tuple[str, ...] = ()
-    """Labels appended after any built options (for example a fallback repository)."""
-
-
-@dataclass(frozen=True)
-class ActionSkill:
-    """One discoverable action-agent skill (index metadata + path)."""
-
-    name: str
-    description: str
-    path: Path
-    recurring: str | None = None
-    tools: tuple[str, ...] = ()
-    """Tool names the skill's flow uses; an answer turn inside the skill offers only these."""
-
-    getting_started: str | None = None
-    """Verbatim first-visit demo label this skill owns; ``None`` when it is not a demo row."""
-
-    demo_order: int | None = None
-    """1-based demo menu order when ``getting_started`` is set (A=1)."""
-
-    pre_execute: tuple[SkillToolCall, ...] = ()
-    """Static tool calls run on skill entry (boot, ``/demo``, ``skill_view``) before the model."""
-
-    references: tuple[str, ...] = ()
-    """Sibling markdown paths appended after the body; unresolved or out-of-tree entries are skipped."""
-
-    after_tool: tuple[SkillAfterToolHook, ...] = ()
-    """Host-run calls after a named tool succeeds; each hook fires once per skill activation."""
+logger = logging.getLogger(__name__)
 
 
 def skills_dir() -> Path:
@@ -165,7 +100,12 @@ def _iter_skill_paths(directory: Path) -> list[Path]:
             nested_file = _package_skill_path(nested)
             if nested_file is not None:
                 paths.append(nested_file)
-    paths.extend(sorted(directory.glob("*.md")))
+    paths.extend(
+        path
+        for path in sorted(directory.glob("*.md"))
+        if path.name not in {"AGENTS.md", "README.md"}
+        and not path.name.endswith(_REPORT_TEMPLATE_SUFFIX)
+    )
     return paths
 
 
@@ -187,128 +127,6 @@ def _report_template_path(skill_path: Path) -> Path:
     return skill_path.with_name(f"{skill_path.stem}{_REPORT_TEMPLATE_SUFFIX}")
 
 
-def _name_from_path(skill_path: Path) -> str:
-    if skill_path.name == _PACKAGE_SKILL_FILENAME:
-        stem = skill_path.parent.name
-    else:
-        stem = skill_path.stem
-    return stem.replace("_", "-").lower()
-
-
-def _parse_frontmatter(raw: str) -> tuple[dict[str, Any], str]:
-    normalized = raw.replace("\r\n", "\n").replace("\r", "\n")
-    if not normalized.startswith("---"):
-        return {}, normalized.strip()
-    end_index = normalized.find("\n---", 3)
-    if end_index == -1:
-        return {}, normalized.strip()
-    yaml_content = normalized[4:end_index]
-    body = normalized[end_index + 4 :].strip()
-    try:
-        loaded = yaml.safe_load(yaml_content) or {}
-    except yaml.YAMLError:
-        return {}, normalized.strip()
-    if not isinstance(loaded, dict):
-        return {}, body
-    return loaded, body
-
-
-def _string_field(value: Any) -> str:
-    return value.strip() if isinstance(value, str) else ""
-
-
-def _string_list_field(value: Any) -> tuple[str, ...]:
-    if not isinstance(value, list):
-        return ()
-    return tuple(item.strip() for item in value if isinstance(item, str) and item.strip())
-
-
-def _optional_int_field(value: Any) -> int | None:
-    if isinstance(value, bool) or not isinstance(value, int):
-        return None
-    return value
-
-
-def _skill_tool_call(item: Mapping[str, Any]) -> SkillToolCall | None:
-    tool = _string_field(item.get("tool"))
-    args = item.get("args")
-    if not tool or not isinstance(args, dict):
-        return None
-    return SkillToolCall(tool=tool, args=MappingProxyType(dict(args)))
-
-
-def _pre_execute_field(value: Any) -> tuple[SkillToolCall, ...]:
-    """Parse ``pre_execute`` entries; malformed items are dropped like other bad frontmatter."""
-    if not isinstance(value, list):
-        return ()
-    calls: list[SkillToolCall] = []
-    for item in value:
-        if not isinstance(item, dict):
-            continue
-        call = _skill_tool_call(item)
-        if call is not None:
-            calls.append(call)
-    return tuple(calls)
-
-
-def _after_tool_field(value: Any) -> tuple[SkillAfterToolHook, ...]:
-    """Parse ``after_tool`` entries; malformed items are dropped like other bad frontmatter."""
-    if not isinstance(value, list):
-        return ()
-    hooks: list[SkillAfterToolHook] = []
-    for item in value:
-        if not isinstance(item, dict):
-            continue
-        after = _string_field(item.get("after"))
-        call = _skill_tool_call(item)
-        if not after or call is None:
-            continue
-        hooks.append(
-            SkillAfterToolHook(
-                after=after,
-                call=call,
-                options_from=_string_field(item.get("options_from")) or None,
-                options_extra=_string_list_field(item.get("options_extra")),
-            )
-        )
-    return tuple(hooks)
-
-
-def _derive_description(body: str) -> str:
-    """Best-effort one-liner when frontmatter has no description."""
-    lines = [ln.strip() for ln in body.splitlines()]
-    # Skip banner / title lines, then prefer WHEN TO USE bullets.
-    in_when = False
-    for line in lines:
-        if not line or _BANNER_RE.match(line):
-            continue
-        upper = line.upper()
-        if upper.startswith("WHEN TO USE"):
-            in_when = True
-            continue
-        if in_when:
-            if line.startswith("-"):
-                text = line.lstrip("- ").strip()
-                if text:
-                    return text[:240]
-            if line.startswith("Do NOT") or upper.startswith("HARD RULE"):
-                break
-            continue
-        if line.endswith(":") and "SKILL" in upper:
-            continue
-        if upper.startswith("RECOGNIZE ") or upper.startswith("STEPS"):
-            return line[:240]
-        if "SKILL" in upper and len(line) < 120:
-            # Subtitle under the banner, e.g. "weather + daily news briefing"
-            cleaned = re.sub(r"^.*SKILL[^—\-]*[—\-]\s*", "", line, count=1).strip()
-            return (cleaned or line)[:240]
-    # Fallback: first non-empty non-banner line.
-    for line in lines:
-        if line and not _BANNER_RE.match(line):
-            return line[:240]
-    return "Action-agent skill"
-
-
 def _path_is_under(path: Path, root: Path) -> bool:
     """Return True when ``path`` is ``root`` or a file inside it."""
     try:
@@ -318,9 +136,9 @@ def _path_is_under(path: Path, root: Path) -> bool:
     return True
 
 
-def _resolve_skill_reference(skill_path: Path, ref: str) -> Path | None:
-    """Resolve one ``references:`` entry to a markdown file under the skills tree."""
-    name = _string_field(ref)
+def _resolve_skill_include(skill_path: Path, ref: str) -> Path | None:
+    """Resolve one ``includes:`` entry to a markdown file under the skills tree."""
+    name = ref.strip()
     if not name:
         return None
     relative = Path(name)
@@ -351,13 +169,13 @@ def _resolve_skill_reference(skill_path: Path, ref: str) -> Path | None:
     return None
 
 
-def _skill_body_with_references(skill_path: Path, body: str, references: tuple[str, ...]) -> str:
-    if not body or not references:
+def _skill_body_with_includes(skill_path: Path, body: str, includes: tuple[str, ...]) -> str:
+    if not body or not includes:
         return body
     chunks: list[str] = []
     appended: set[Path] = set()
-    for ref in references:
-        path = _resolve_skill_reference(skill_path, ref)
+    for ref in includes:
+        path = _resolve_skill_include(skill_path, ref)
         if path is None or path in appended:
             continue
         try:
@@ -387,65 +205,77 @@ def _skill_body_with_optional_template(skill_path: Path, body: str) -> str:
     return "".join((body, "\n\n", header, "\n\n", template))
 
 
-def _load_action_skill(skill_path: Path) -> ActionSkill | None:
-    try:
-        raw = skill_path.read_text(encoding="utf-8")
-    except OSError:
-        return None
-    frontmatter, body = _parse_frontmatter(raw)
-    if not body.strip():
-        return None
-    name = _string_field(frontmatter.get("name")) or _name_from_path(skill_path)
-    if not _SKILL_NAME_RE.match(name):
-        name = _name_from_path(skill_path)
-    description = _string_field(frontmatter.get("description")) or _derive_description(body)
-    recurring = _string_field(frontmatter.get("recurring")) or None
-    getting_started = _string_field(frontmatter.get("getting_started")) or None
+def validate_skill_file(skill_path: Path) -> ActionSkill:
+    """Validate one raw card, including the local files it includes."""
+    raw = skill_path.read_text(encoding="utf-8")
+    frontmatter, _body = parse_frontmatter(raw)
+    card = SkillCard.model_validate(frontmatter)
+    for ref in card.includes:
+        if _resolve_skill_include(skill_path, ref) is None:
+            raise SkillCardError(f"includes: cannot resolve in-tree Markdown file {ref!r}")
     return ActionSkill(
-        name=name,
-        description=description,
+        name=card.name,
+        description=card.description,
         path=skill_path,
-        recurring=recurring,
-        tools=_string_list_field(frontmatter.get("tools")),
-        getting_started=getting_started,
-        demo_order=_optional_int_field(frontmatter.get("demo_order")),
-        pre_execute=_pre_execute_field(frontmatter.get("pre_execute")),
-        references=_string_list_field(frontmatter.get("references")),
-        after_tool=_after_tool_field(frontmatter.get("after_tool")),
+        recurring=card.recurring,
+        getting_started=card.getting_started,
+        demo_order=card.demo_order,
+        pre_execute=tuple(
+            SkillToolCall(call.tool, MappingProxyType(call.args)) for call in card.pre_execute
+        ),
+        includes=tuple(card.includes),
     )
+
+
+def read_skill_catalog() -> SkillCatalog:
+    """Validate every discovered card; retain diagnostics for CI and runtime reporting."""
+    directory = skills_dir()
+    if not directory.is_dir():
+        return SkillCatalog((), ())
+    skills: list[ActionSkill] = []
+    diagnostics: list[str] = []
+    for path in _iter_skill_paths(directory):
+        try:
+            skills.append(validate_skill_file(path))
+        except (OSError, UnicodeError, SkillCardError, ValidationError) as exc:
+            diagnostics.append(f"{path}: {exc}")
+    names = Counter(skill.name for skill in skills)
+    labels = Counter(skill.getting_started for skill in skills if skill.getting_started)
+    orders = Counter(skill.demo_order for skill in skills if skill.getting_started)
+    valid: list[ActionSkill] = []
+    for skill in skills:
+        conflicts: list[str] = []
+        if names[skill.name] > 1:
+            conflicts.append(f"duplicate name {skill.name!r}")
+        if skill.getting_started:
+            if labels[skill.getting_started] > 1:
+                conflicts.append("duplicate getting_started label")
+            if orders[skill.demo_order] > 1:
+                conflicts.append(f"duplicate demo_order {skill.demo_order}")
+        if conflicts:
+            diagnostics.append(f"{skill.path}: {', '.join(conflicts)}")
+        else:
+            valid.append(skill)
+    populated = populate_demo_menu(tuple(valid))
+    return SkillCatalog(populated.skills, (*diagnostics, *populated.diagnostics))
 
 
 @lru_cache(maxsize=1)
 def list_action_skills() -> tuple[ActionSkill, ...]:
-    """Return discovered action skills in stable path order."""
-    directory = skills_dir()
-    if not directory.is_dir():
-        return ()
-    skills: list[ActionSkill] = []
-    seen_names: set[str] = set()
-    for path in _iter_skill_paths(directory):
-        skill = _load_action_skill(path)
-        if skill is None or skill.name in seen_names:
-            continue
-        seen_names.add(skill.name)
-        skills.append(skill)
-    return tuple(skills)
-
-
-def _demo_sort_key(skill: ActionSkill) -> tuple[int, str]:
-    order = skill.demo_order if skill.demo_order is not None else 10**9
-    return (order, skill.name)
+    """Return valid skills; report and exclude broken cards without preventing startup."""
+    catalog = read_skill_catalog()
+    for diagnostic in catalog.diagnostics:
+        logger.warning("Skipping invalid skill: %s", diagnostic)
+    return catalog.skills
 
 
 def getting_started_skills() -> tuple[ActionSkill, ...]:
-    """Skills that own a demo option, in menu order."""
-    owned = [skill for skill in list_action_skills() if skill.getting_started]
-    owned.sort(key=_demo_sort_key)
-    return tuple(owned)
+    """Return the current selectable demos in menu order."""
+    return demo_skills(list_action_skills())
 
 
 def _index_line(skill: ActionSkill) -> str:
-    recurring = f" [recurring: {skill.recurring}]" if skill.recurring else ""
+    recurring = " [recurring]" if skill.recurring else ""
     return f"- {skill.name} — {skill.description}{recurring}"
 
 
@@ -484,24 +314,30 @@ def load_skills_block() -> str:
 
 
 def load_skill_body(name: str) -> str:
-    """Return one skill's full body (+ references + report template), or ``\"\"`` if unknown."""
+    """Return one skill's body with includes and report template, or ``\"\"`` if unknown."""
     needle = normalize_skill_name(name)
     if not needle:
         return ""
     for skill in list_action_skills():
         if skill.name == needle:
-            raw = skill.path.read_text(encoding="utf-8")
-            frontmatter, body = _parse_frontmatter(raw)
-            refs = _string_list_field(frontmatter.get("references"))
-            body = _skill_body_with_references(skill.path, body, refs)
-            return _skill_body_with_optional_template(skill.path, body)
+            try:
+                current = validate_skill_file(skill.path)
+                _frontmatter, body = parse_frontmatter(skill.path.read_text(encoding="utf-8"))
+            except (OSError, UnicodeError, SkillCardError, ValidationError) as exc:
+                logger.warning("Skipping invalid skill %s: %s", skill.path, exc)
+                return ""
+            body = _skill_body_with_includes(skill.path, body, current.includes)
+            body = _skill_body_with_optional_template(skill.path, body)
+            if skill.name == ONBOARDING_SKILL_NAME:
+                body += demo_handoffs(list_action_skills())
+            return body
     return ""
 
 
 def skill_reference_names(name: str) -> tuple[str, ...]:
     """Return the stems of a skill's on-demand ``references/*.md`` files.
 
-    Distinct from ``ActionSkill.references`` (frontmatter paths inlined into the
+    Distinct from ``ActionSkill.includes`` (frontmatter paths inlined into the
     body): these files stay out of the body and load via :func:`load_skill_reference`.
     """
     needle = normalize_skill_name(name)

@@ -1,28 +1,24 @@
 ---
-name: onboarding-analyzing-github-ci-performance
+name: analyzing-github-ci-performance
 description: >-
-  Computes a CI/CD metrics table from raw GitHub Actions records for one
-  repository over the last 30 days, including failure rates and developer
-  waiting time. Use for historical
-  CI performance questions or the first-experience repository demo.
-  For currently failing checks, use reporting-github-ci-failures.
+  Computes a CI/CD metrics table from raw GitHub Actions records for one repository over the last 30 days,
+  including failure rates and developer waiting time. Use for historical CI performance questions or the
+  first-experience repository demo. For currently failing checks, use reporting-github-ci-failures.
 getting_started: Explore a repo and analyze its CI/CD performance (recommended)
 demo_order: 1
 metadata:
   owner: Vincent
-  last_changed_by: Vincent
-  last_changed_at: 2026-09-11
+  last_changed_by: Jan
+  last_changed_at: 2026-09-12
   usecases:
-    - First-experience demo: scan the machine, pick a repository, analyze its CI/CD
-    - CI/CD reliability KPIs for one repository over the last 30 days
-    - Developer time blocked by unreliable CI, estimated bottom-up per merged PR
-    - Handing off to the weekday report loop (scheduling-github-ci-fixes) or Slack setup after the report
+  - For repository maintainers analyzing CI reliability over the previous 30 days.
+  - For engineering teams assessing estimated developer waiting time and failure patterns.
+  - For new users selecting a local or example repository for a CI performance demonstration.
   requires:
-    - GitHub token usable by OpenSRE with read access to the repository's Actions history
-    - A local git checkout for the workspace scan (the example repository works without one)
-  type: analytics
-  version: "1.14"
-
+  - GitHub authentication with read access to the repository's Actions history.
+  - The analyze_github_ci_reliability and scan_local_git_workspace tools.
+  - For local discovery, a local Git checkout; the example repository does not require one.
+  version: '1.14'
 ---
 
 # CI/CD analytics

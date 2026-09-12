@@ -163,12 +163,6 @@ class SessionCore:
     active_skill: str | None = None
     """Skill loaded by ``skill_view`` in the current flow; cleared on a genuine user turn."""
 
-    active_skill_tools: tuple[str, ...] = ()
-    """The active skill's declared tools; an answer turn inside the flow offers only these."""
-
-    skill_hooks_fired: set[str] = field(default_factory=set)
-    """``after_tool`` hook keys already queued for this skill activation."""
-
     questions_already_answered: set[str] = field(default_factory=set)
     """Menu questions this session has answered, normalized for comparison.
 

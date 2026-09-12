@@ -62,8 +62,6 @@ def offer_demo(session: Session, console: Console | None = None, *, force: bool 
             result.get("error", "pre_execute queued no menu"),
         )
         session.active_skill = None
-        session.active_skill_tools = ()
-        session.skill_hooks_fired = set()
         return False
     try:
         capture_onboarding_demo_prompted()

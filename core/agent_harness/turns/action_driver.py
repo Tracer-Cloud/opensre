@@ -64,8 +64,7 @@ from core.agent_harness.turns.goal_review import (
     task_plan_blocks_conclusion,
 )
 from core.agent_harness.turns.plan_evidence_hook import with_plan_evidence
-from core.agent_harness.turns.skill_after_tool import with_skill_after_tool
-from core.agent_harness.turns.skill_scope import scope_tools_to_active_skill
+from core.agent_harness.turns.skill_activation import prepare_active_skill
 from core.agent_harness.turns.turn_plan import TurnPlan
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
@@ -960,15 +959,12 @@ def _run_action_turn(
     resolved_integrations = _turn_resolved_integrations(session, turn_plan)
     history_start = len(session.history)
 
-    agent_tools = scope_tools_to_active_skill(
-        args.tools.action_tools(
-            confirm_fn=args.confirm_fn,
-            is_tty=args.is_tty,
-            resolved_integrations=resolved_integrations,
-            turn_user_message=message,
-        ),
-        session,
-        message,
+    prepare_active_skill(session, message)
+    agent_tools = args.tools.action_tools(
+        confirm_fn=args.confirm_fn,
+        is_tty=args.is_tty,
+        resolved_integrations=resolved_integrations,
+        turn_user_message=message,
     )
     tool_resources_provider = getattr(args.tools, "tool_resources", None)
     tool_resources = tool_resources_provider() if callable(tool_resources_provider) else {}
@@ -993,10 +989,7 @@ def _run_action_turn(
             resolved_integrations=resolved_integrations,
             llm_factory=args.llm_factory,
             tool_hooks=with_menu_turn_end(
-                with_skill_after_tool(
-                    with_plan_evidence(with_duplicate_action_call_guard(args.tool_hooks), session),
-                    session,
-                ),
+                with_plan_evidence(with_duplicate_action_call_guard(args.tool_hooks), session),
                 session,
             ),
             tool_resources=tool_resources,

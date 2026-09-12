@@ -1,81 +1,199 @@
-"""Every skill card carries the same metadata block, so people and docs can rely on it."""
+"""CI validates raw cards even when runtime discovery excludes them."""
 
 from __future__ import annotations
 
-from datetime import date
+from collections.abc import Iterator
 from pathlib import Path
+from typing import Any
 
 import pytest
+import yaml
 
-from core.agent_harness.prompts.skills.loader import (
-    _parse_frontmatter,
-    _resolve_skill_reference,
-    skills_dir,
+from config.constants.skills import ONBOARDING_SKILL_NAME, SKIP_DEMO_OPTION
+from core.agent_harness.prompts.skills import loader
+from tests.utils.skill_cards import skill_card
+
+
+@pytest.fixture
+def catalog_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[Path]:
+    monkeypatch.setattr(loader, "skills_dir", lambda: tmp_path)
+    loader.clear_skills_caches()
+    yield tmp_path
+    loader.clear_skills_caches()
+
+
+def test_all_bundled_cards_pass_the_production_validator() -> None:
+    catalog = loader.read_skill_catalog()
+    assert catalog.diagnostics == ()
+    assert len(catalog.skills) == len(list(loader.skills_dir().rglob("SKILL.md")))
+
+
+def test_broken_card_does_not_prevent_valid_discovery(
+    catalog_root: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    (catalog_root / "valid.md").write_text(skill_card("valid"))
+    (catalog_root / "broken.md").write_text("---\nname: [broken\n---\nBody.")
+    (catalog_root / "AGENTS.md").write_text("# Contributor instructions")
+    assert [skill.name for skill in loader.list_action_skills()] == ["valid"]
+    assert "broken.md" in caplog.text
+    assert "AGENTS.md" not in caplog.text
+    assert loader.load_skill_body("agents") == ""
+    assert loader.read_skill_catalog().diagnostics
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        skill_card("broken").replace("2026-01-01", "2026-99-99").encode(),
+        b"\xff",
+    ],
 )
+def test_invalid_date_or_encoding_does_not_abort_discovery(
+    catalog_root: Path, invalid: bytes
+) -> None:
+    (catalog_root / "valid.md").write_text(skill_card("valid"))
+    (catalog_root / "broken.md").write_bytes(invalid)
+    catalog = loader.read_skill_catalog()
+    assert [skill.name for skill in catalog.skills] == ["valid"]
+    assert len(catalog.diagnostics) == 1
+    assert "broken.md" in catalog.diagnostics[0]
 
-_REQUIRED = (
-    "owner",
-    "last_changed_by",
-    "last_changed_at",
-    "usecases",
-    "requires",
-    "type",
-    "version",
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("requires", None),
+        ("requires", []),
+        ("requires", [" "]),
+        ("usecases", [{"First-experience demo": "setup"}]),
+        ("last_changed_at", "2026-01-01"),
+        ("version", 1),
+        ("type", "repair"),
+    ],
 )
-_TYPES = {"onboarding", "analytics", "report", "repair", "audit"}
-# ``owner`` names the person who created the skill; team labels hide that.
-_TEAM_LABEL = "team"
+def test_metadata_is_required_and_strict(catalog_root: Path, field: str, value: Any) -> None:
+    metadata = yaml.safe_load(skill_card("invalid").split("---")[1])["metadata"]
+    if value is None:
+        del metadata[field]
+    else:
+        metadata[field] = value
+    (catalog_root / "invalid.md").write_text(skill_card("invalid", metadata=metadata))
+    catalog = loader.read_skill_catalog()
+    assert catalog.skills == ()
+    assert any(field in diagnostic for diagnostic in catalog.diagnostics)
 
 
-def _skill_cards() -> list[Path]:
-    return sorted(Path(skills_dir()).rglob("SKILL.md"))
+@pytest.mark.parametrize(
+    "fields",
+    [
+        {"recurring": "true"},
+        {"after_tool": []},
+        {"demo_order": 1},
+        {"getting_started": "Demo", "demo_order": True},
+        {"getting_started": SKIP_DEMO_OPTION, "demo_order": 1},
+        {"pre_execute": [{"tool": "shell_run", "args": {"command": "echo hello"}}]},
+        {"pre_execute": [{"tool": "ask_user_choice", "args": {"title": "Pick", "options": "a,b"}}]},
+    ],
+)
+def test_runtime_fields_reject_unsupported_or_mistyped_values(
+    catalog_root: Path, fields: dict[str, Any]
+) -> None:
+    (catalog_root / "invalid.md").write_text(skill_card("invalid", **fields))
+    catalog = loader.read_skill_catalog()
+    assert catalog.skills == ()
+    assert catalog.diagnostics
 
 
-@pytest.mark.parametrize("card", _skill_cards(), ids=lambda path: path.parent.name)
-def test_every_skill_card_has_the_metadata_block(card: Path) -> None:
-    # Arrange
-    frontmatter, _body = _parse_frontmatter(card.read_text(encoding="utf-8"))
+def test_duplicate_skill_names_are_all_excluded(catalog_root: Path) -> None:
+    for filename in ("first.md", "second.md"):
+        (catalog_root / filename).write_text(skill_card("duplicate"))
+    (catalog_root / "valid.md").write_text(skill_card("valid"))
+    catalog = loader.read_skill_catalog()
+    assert [skill.name for skill in catalog.skills] == ["valid"]
+    assert len(catalog.diagnostics) == 2
+    assert all("duplicate name" in diagnostic for diagnostic in catalog.diagnostics)
 
-    # Act
-    metadata = frontmatter.get("metadata")
 
-    # Assert: the block exists, every key is filled, and the type is a known kind.
-    assert isinstance(metadata, dict), f"{card.parent.name}: missing metadata block"
-    for key in _REQUIRED:
-        assert metadata.get(key), f"{card.parent.name}: metadata.{key} is empty"
-    assert isinstance(metadata["usecases"], list) and len(metadata["usecases"]) >= 1
-    assert isinstance(metadata["requires"], list) and len(metadata["requires"]) >= 1
-    assert metadata["type"] in _TYPES, f"{card.parent.name}: unknown type {metadata['type']!r}"
-    for key in ("owner", "last_changed_by"):
-        value = metadata[key]
-        assert isinstance(value, str), f"{card.parent.name}: metadata.{key} must be a name"
-        assert _TEAM_LABEL not in value.lower(), (
-            f"{card.parent.name}: metadata.{key} must name a person, not a team ({value!r})"
+@pytest.mark.parametrize("child_count", [0, 8])
+def test_unrenderable_generated_menu_excludes_only_the_master(
+    catalog_root: Path, child_count: int
+) -> None:
+    (catalog_root / "master.md").write_text(
+        skill_card(
+            ONBOARDING_SKILL_NAME,
+            pre_execute=[{"tool": "ask_user_choice", "args": {"title": "Pick a workflow"}}],
         )
-    # Unquoted ``YYYY-MM-DD`` parses as a date; a quoted or malformed value is a string.
-    changed_at = metadata["last_changed_at"]
-    assert isinstance(changed_at, date), (
-        f"{card.parent.name}: metadata.last_changed_at must be an unquoted ISO date "
-        f"(YYYY-MM-DD), got {changed_at!r}"
     )
-    assert changed_at <= date.today(), (
-        f"{card.parent.name}: metadata.last_changed_at {changed_at} is in the future"
-    )
+    for index in range(child_count):
+        (catalog_root / f"child-{index}.md").write_text(
+            skill_card(f"child-{index}", getting_started=f"Demo {index}", demo_order=index + 1)
+        )
+    catalog = loader.read_skill_catalog()
+    assert len(catalog.skills) == child_count
+    assert all(skill.name != ONBOARDING_SKILL_NAME for skill in catalog.skills)
+    assert len(catalog.diagnostics) == 1
+    assert "generated demo menu" in catalog.diagnostics[0]
 
 
-def test_declared_references_resolve_inside_the_skills_tree() -> None:
-    missing: list[str] = []
-    for card in _skill_cards():
-        frontmatter, _body = _parse_frontmatter(card.read_text(encoding="utf-8"))
-        references = frontmatter.get("references")
-        if not references:
-            continue
-        assert isinstance(references, list), f"{card.parent.name}: references must be a list"
-        for ref in references:
-            if not isinstance(ref, str) or not ref.strip():
-                missing.append(f"{card.parent.name}: empty reference")
-                continue
-            resolved = _resolve_skill_reference(card, ref)
-            if resolved is None or not resolved.is_file():
-                missing.append(f"{card.parent.name}: {ref!r}")
-    assert missing == []
+@pytest.mark.parametrize(
+    "args",
+    [
+        {"title": "Pick", "options": ["same", " same "]},
+        {
+            "questions": [
+                {"label": "First", "title": "Pick", "options": ["one", "two"]},
+                {"label": "Second", "title": "pick", "options": ["one", "two"]},
+            ]
+        },
+    ],
+)
+def test_ambiguous_entry_menus_fail_validation(catalog_root: Path, args: dict[str, Any]) -> None:
+    (catalog_root / "invalid.md").write_text(
+        skill_card("invalid", pre_execute=[{"tool": "ask_user_choice", "args": args}])
+    )
+    catalog = loader.read_skill_catalog()
+    assert catalog.skills == ()
+    assert "distinct" in catalog.diagnostics[0]
+
+
+def test_multiple_entry_menus_cannot_overwrite_pending_questions(catalog_root: Path) -> None:
+    (catalog_root / "invalid.md").write_text(
+        skill_card(
+            "invalid",
+            pre_execute=[
+                {"tool": "ask_user_choice", "args": {"title": title, "options": ["one", "two"]}}
+                for title in ("First?", "Second?")
+            ],
+        )
+    )
+    catalog = loader.read_skill_catalog()
+    assert catalog.skills == ()
+    assert "pre_execute" in catalog.diagnostics[0]
+
+
+def test_duplicate_yaml_keys_are_not_silently_overwritten(catalog_root: Path) -> None:
+    raw = skill_card("invalid").replace("name: invalid", "name: invalid\nname: replacement")
+    (catalog_root / "invalid.md").write_text(raw)
+    catalog = loader.read_skill_catalog()
+    assert catalog.skills == ()
+    assert "duplicate YAML key" in catalog.diagnostics[0]
+
+
+def test_include_symlink_cannot_escape_the_skills_tree(catalog_root: Path) -> None:
+    outside = catalog_root.parent / "outside.md"
+    outside.write_text("Do not disclose this file.")
+    (catalog_root / "escape.md").symlink_to(outside)
+    card = catalog_root / "package/SKILL.md"
+    card.parent.mkdir()
+    card.write_text(skill_card("invalid", includes=["escape.md"]))
+    catalog = loader.read_skill_catalog()
+    assert not any(skill.name == "invalid" for skill in catalog.skills)
+    assert any("includes:" in diagnostic for diagnostic in catalog.diagnostics)
+    assert "Do not disclose" not in loader.load_skills_index()
+
+
+def test_missing_include_excludes_the_card(catalog_root: Path) -> None:
+    (catalog_root / "invalid.md").write_text(skill_card("invalid", includes=["missing.md"]))
+    catalog = loader.read_skill_catalog()
+    assert catalog.skills == ()
+    assert "missing.md" in catalog.diagnostics[0]

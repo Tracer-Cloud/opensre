@@ -71,6 +71,12 @@ regex/keywords to attach goals or bypass the ReAct loop. Session goals attach
 through the structured `session_goal_set` tool or explicit host APIs.
 Checklist progress uses the `session_goal_complete` tool, not reply tags.
 
+Workflow cards are validated before discovery. Invalid cards are excluded with
+diagnostics, while CI checks the unfiltered catalog and fails on every invalid
+card. Workflow skills retain the available tool catalog; only entry menus use
+host hooks. A new user request clears active skill context, while menu answers
+and slash commands retain it. Full contract: `prompts/skills/AGENTS.md`.
+
 Self-contained scheduled agent ticks set `SessionCore.skill_discovery_enabled`
 to `False` through `prepare_session`. This host-owned policy removes the skill
 index and `skill_view` while retaining execution tools; never infer it from

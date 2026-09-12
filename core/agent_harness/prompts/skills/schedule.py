@@ -48,7 +48,7 @@ def find_action_skill(name: str) -> ActionSkill | None:
 def is_recurring_skill(name: str) -> bool:
     """True when ``name`` names a skill explicitly marked recurring."""
     skill = find_action_skill(name)
-    return bool(skill is not None and (skill.recurring or "").strip())
+    return bool(skill is not None and skill.recurring)
 
 
 def _hash_body(body: str) -> str:
@@ -64,7 +64,7 @@ def pin_recurring_skill(name: str) -> tuple[str, str]:
     """Return ``(skill_name, revision)`` or raise if the skill cannot be scheduled."""
     skill = find_action_skill(name)
     slug = normalize_skill_name(name)
-    if skill is None or not (skill.recurring or "").strip():
+    if skill is None or not skill.recurring:
         raise RuntimeError(f"Skill {slug!r} is unknown or not marked recurring.")
     return skill.name, skill_revision(skill)
 
@@ -75,7 +75,7 @@ def resolve_scheduled_skill(name: str, pinned_revision: str) -> ScheduledSkillRe
     slug = normalize_skill_name(name)
     if skill is None:
         raise RuntimeError(f"Scheduled skill {slug!r} is not installed.")
-    if not (skill.recurring or "").strip():
+    if not skill.recurring:
         raise RuntimeError(
             f"Scheduled skill {skill.name!r} is not marked recurring and cannot run unattended."
         )

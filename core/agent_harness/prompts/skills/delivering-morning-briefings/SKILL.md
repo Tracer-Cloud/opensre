@@ -1,21 +1,20 @@
 ---
 name: delivering-morning-briefings
 description: >-
-  Weather + news morning briefing: fetch live weather and headlines, compose
-  a plain-text briefing, deliver it. Multi-step; load before acting.
+  Weather + news morning briefing: fetch live weather and headlines, compose a plain-text briefing, deliver
+  it. Multi-step; load before acting.
 metadata:
   owner: Gust
-  last_changed_by: Vincent
-  last_changed_at: 2026-09-09
+  last_changed_by: Jan
+  last_changed_at: 2026-09-12
   usecases:
-    - Weather and headlines morning briefing on demand
-    - Recurring weekday briefing delivered to the shell inbox or a chat channel
+  - For users who want an on-demand weather and news briefing.
+  - For users who want a weekday briefing delivered to their chosen destination.
   requires:
-    - Outbound network access for the weather and news fetches
-    - A delivery channel for the recurring offer (shell inbox, Slack, or Telegram)
-  type: report
-  version: "1.1"
-recurring: weekdays 08:00
+  - Outbound network access to the weather and news sources.
+  - For recurring delivery, a configured destination such as the shell inbox, Slack, or Telegram.
+  version: '1.1'
+recurring: true
 ---
 
 # Morning report

@@ -43,6 +43,25 @@ _DENIED_SUBCOMMANDS: dict[str, frozenset[str]] = {
     "workflow": frozenset({"run", "enable", "disable"}),
 }
 
+# Top-level ``gh`` commands that do not define ``-R/--repo``: ``gh api`` takes the
+# repo in the endpoint path; ``gh repo``/``gh org``/``gh gist``/``gh project`` and
+# friends take it positionally or via ``--owner``. Injecting ``-R`` in front of
+# them fails with ``unknown shorthand flag: 'R'`` before gh runs anything.
+_REPO_FLAG_FREE_COMMANDS = frozenset(
+    {
+        "alias",
+        "api",
+        "completion",
+        "gist",
+        "help",
+        "org",
+        "project",
+        "repo",
+        "status",
+        "version",
+    }
+)
+
 # Global flags that consume a following value (after the ``gh`` binary).
 # Note: ``-h`` is ``--help`` (boolean), not a short form of ``--hostname``.
 _VALUE_FLAGS = frozenset(
@@ -107,12 +126,16 @@ def denied_gh_command(args: list[str] | tuple[str, ...]) -> str | None:
 
 
 def build_gh_argv(*, args: list[str], repo: str | None = None) -> list[str]:
-    """Build full argv for ``gh`` including optional ``-R owner/name``."""
+    """Build full argv for ``gh`` including optional ``-R owner/name``.
+
+    The flag is skipped for commands that do not accept it (see
+    ``_REPO_FLAG_FREE_COMMANDS``); such commands take the repository positionally.
+    """
     argv = ["gh"]
     cleaned_repo = (repo or "").strip()
     positionals = positional_gh_tokens(args)
     command = positionals[0].lower() if positionals else None
-    if cleaned_repo and command != "api":
+    if cleaned_repo and command not in _REPO_FLAG_FREE_COMMANDS:
         argv.extend(["-R", cleaned_repo])
     argv.extend(str(a) for a in args)
     return argv

@@ -25,7 +25,7 @@ def test_morning_report_is_recurring() -> None:
 
 def test_non_recurring_skill_is_not_schedulable() -> None:
     for skill in list_action_skills():
-        if not (skill.recurring or "").strip():
+        if not skill.recurring:
             assert is_recurring_skill(skill.name) is False
             with pytest.raises(RuntimeError, match="not marked recurring"):
                 pin_recurring_skill(skill.name)

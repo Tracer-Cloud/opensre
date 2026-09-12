@@ -1,4 +1,4 @@
-"""The master skill owns the menu and refers to four independently loadable children."""
+"""The master skill owns the menu and refers to three independently loadable children."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from core.agent_harness.prompts.getting_started import (
 )
 from core.agent_harness.session.pending_choice import AskUserQuestion, format_ask_user_answers
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
+from tests.utils.skill_cards import skill_card
 
 
 def test_child_directories_are_letter_prefixed_skill_names() -> None:
@@ -32,20 +33,18 @@ def test_child_directories_are_letter_prefixed_skill_names() -> None:
         assert suffix == skill.name, directory
 
 
-def test_master_menu_matches_four_unique_children_and_preserves_specialists() -> None:
+def test_master_menu_matches_three_unique_children_and_preserves_specialists() -> None:
     loader.clear_skills_caches()
     children = getting_started_skills()
     assert [s.name for s in children] == [
         "analyzing-github-ci-performance",
         "scheduling-github-ci-fixes",
-        "delegating-github-ci-fixes",
         "connecting-slack",
     ]
-    assert [s.demo_order for s in children] == [1, 2, 3, 4]
+    assert [s.demo_order for s in children] == [1, 2, 3]
     assert GETTING_STARTED_OPTIONS == (
         "Explore a repo and analyze its CI/CD performance (recommended)",
         "Set up an agent that improves CI/CD reliability over time",
-        "Run CI/CD improvements with a managed service (coming soon)",
         "Connect OpenSRE to Slack and hand off DevOps chores for your team",
     )
     master = loader.load_skill_body(ONBOARDING_SKILL_NAME)
@@ -59,15 +58,13 @@ def test_master_menu_matches_four_unique_children_and_preserves_specialists() ->
     assert tuple(menu["options"]) == (*GETTING_STARTED_OPTIONS, SKIP_DEMO_OPTION)
     assert "Call `ask_user_choice`" not in master
     for skill in children:
-        assert f"`{skill.name}`" in master
+        assert f'skill_view(name="{skill.name}")' in master
         assert skill.path.parent.parent.name == ONBOARDING_SKILL_NAME
         assert loader.load_skill_body(skill.name)
     analytics = next(s for s in children if s.name == "analyzing-github-ci-performance")
     # The analytics card runs its menus from the plan the model follows, not
     # from host hooks, and keeps the full tool catalog.
-    assert analytics.after_tool == ()
     assert analytics.pre_execute == ()
-    assert analytics.tools == ()
     body = loader.load_skill_body("analyzing-github-ci-performance")
     assert "`Which repository should I analyze?`" in body
     assert "`What would you like to do next?`" in body
@@ -90,17 +87,13 @@ def test_master_menu_matches_four_unique_children_and_preserves_specialists() ->
     assert "summarize_github_pr_status" in fix_loop
     assert "analyze_github_ci_reliability" not in fix_loop
     assert "schedule_ci_reliability_loop" not in fix_loop
-    # Its menus are the model's own ask_user_choice calls, with fixed titles.
-    for title in (
-        "`Which repository should the agent watch?`",
-        "`Should I create a broken pull request to demonstrate the fix?`",
-    ):
-        assert title in fix_loop
+    # Repository selection remains part of the child workflow.
+    assert "ask_user_choice" in fix_loop
     assert menu["allow_custom"] is False
     assert GETTING_STARTED_CUSTOM not in master
-    assert "not implemented yet" in loader.load_skill_body("delegating-github-ci-fixes")
+    assert loader.load_skill_body("delegating-github-ci-fixes") == ""
     discovered = [
-        loader._load_action_skill(path) for path in loader._iter_skill_paths(loader.skills_dir())
+        loader.validate_skill_file(path) for path in loader._iter_skill_paths(loader.skills_dir())
     ]
     names = [skill.name for skill in discovered if skill is not None]
     assert len(names) == len(set(names))
@@ -126,7 +119,7 @@ def test_multi_step_skills_track_progress_with_update_plan_not_step_headers() ->
         body = loader.load_skill_body(name)
         assert "update_plan" in body, name
         assert "### [" not in body, name
-    for name in (ONBOARDING_SKILL_NAME, "delegating-github-ci-fixes"):
+    for name in (ONBOARDING_SKILL_NAME,):
         assert "### [" not in loader.load_skill_body(name), name
 
 
@@ -182,7 +175,7 @@ def test_loader_discovers_nested_and_legacy_packages_without_hidden_directories(
     ]:
         path = tmp_path / relative
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(f"---\nname: {name}\ndescription: {name} recipe\n---\nBody of {name}.")
+        path.write_text(skill_card(name, f"Body of {name}."))
     monkeypatch.setattr(loader, "skills_dir", lambda: tmp_path)
     loader.clear_skills_caches()
     try:
@@ -198,37 +191,21 @@ def test_loader_discovers_nested_and_legacy_packages_without_hidden_directories(
         loader.clear_skills_caches()
 
 
-def test_references_append_sibling_markdown_and_ignore_paths_outside_the_tree(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
+def test_includes_append_shared_markdown_once(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     (tmp_path / "common").mkdir()
-    (tmp_path / "common" / "rule.md").write_text("# Shared\n\nDo it once.")
-    outside = tmp_path.parent / "outside.md"
-    outside.write_text("SECRET")
-    skill_dir = tmp_path / "demo"
-    skill_dir.mkdir()
-    (skill_dir / "SKILL.md").write_text(
-        "---\n"
-        "name: demo\n"
-        "description: demo recipe\n"
-        "references:\n"
-        "  - common/rule.md\n"
-        "  - ../outside.md\n"
-        "  - missing.md\n"
-        "---\n"
-        "Body of demo."
+    (tmp_path / "common/rule.md").write_text("# Shared\n\nDo it once.")
+    (tmp_path / "demo.md").write_text(
+        skill_card("demo", "Body of demo.", includes=["common/rule.md", "common/rule.md"])
     )
     monkeypatch.setattr(loader, "skills_dir", lambda: tmp_path)
     loader.clear_skills_caches()
     try:
         body = loader.load_skill_body("demo")
-        skill = next(s for s in loader.list_action_skills() if s.name == "demo")
-        assert skill.references == ("common/rule.md", "../outside.md", "missing.md")
         assert body.startswith("Body of demo.")
-        assert "Do it once." in body
+        assert body.count("Do it once.") == 1
         assert "SHARED RULES from" in body
-        assert "SECRET" not in body
     finally:
         loader.clear_skills_caches()
 
@@ -241,79 +218,12 @@ def test_onboarding_children_load_shared_rules_once() -> None:
     analytics_card = by_name["analyzing-github-ci-performance"].path.read_text(encoding="utf-8")
     # Shared rules resolve from the skills-tree ``common/`` folder and are
     # appended exactly once, never copied into the card body.
-    assert by_name["scheduling-github-ci-fixes"].references == ("common/ask_once.md",)
+    assert by_name["scheduling-github-ci-fixes"].includes == ("common/ask_once.md",)
     assert reliability.count("Ask each question once.") == 1
     assert "Ask each question once." not in by_name["scheduling-github-ci-fixes"].path.read_text(
         encoding="utf-8"
     )
     # The analytics card lists no shared rules; its plan carries its own wording.
-    assert by_name["analyzing-github-ci-performance"].references == ()
+    assert by_name["analyzing-github-ci-performance"].includes == ()
     assert "SHARED RULES from" not in analytics
     assert "## Progress updates" not in analytics_card
-
-
-def test_pre_execute_keeps_well_formed_calls_and_drops_the_rest(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    (tmp_path / "hooked.md").write_text(
-        "---\n"
-        "name: hooked\n"
-        "description: hooked recipe\n"
-        "pre_execute:\n"
-        "  - tool: ask_user_choice\n"
-        "    args: {title: Pick, options: [a, b]}\n"
-        "  - tool: shell_run\n"
-        "  - not a mapping\n"
-        "  - args: {title: no tool}\n"
-        "---\n"
-        "Body."
-    )
-    (tmp_path / "scalar.md").write_text(
-        "---\nname: scalar\ndescription: scalar recipe\npre_execute: ask_user_choice\n---\nBody."
-    )
-    monkeypatch.setattr(loader, "skills_dir", lambda: tmp_path)
-    loader.clear_skills_caches()
-    try:
-        by_name = {skill.name: skill for skill in loader.list_action_skills()}
-        assert [(c.tool, dict(c.args)) for c in by_name["hooked"].pre_execute] == [
-            ("ask_user_choice", {"title": "Pick", "options": ["a", "b"]})
-        ]
-        assert by_name["scalar"].pre_execute == ()
-    finally:
-        loader.clear_skills_caches()
-
-
-def test_after_tool_keeps_well_formed_hooks_and_drops_the_rest(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    (tmp_path / "hooked.md").write_text(
-        "---\n"
-        "name: hooked\n"
-        "description: hooked recipe\n"
-        "after_tool:\n"
-        "  - after: scan_local_git_workspace\n"
-        "    tool: ask_user_choice\n"
-        "    args: {title: Pick, options: [a, b]}\n"
-        "    options_from: local_git_scan_repos\n"
-        "    options_extra: [example]\n"
-        "  - after: analyze_github_ci_reliability\n"
-        "  - tool: ask_user_choice\n"
-        "    args: {title: no trigger}\n"
-        "---\n"
-        "Body."
-    )
-    monkeypatch.setattr(loader, "skills_dir", lambda: tmp_path)
-    loader.clear_skills_caches()
-    try:
-        skill = next(item for item in loader.list_action_skills() if item.name == "hooked")
-        assert len(skill.after_tool) == 1
-        hook = skill.after_tool[0]
-        assert hook.after == "scan_local_git_workspace"
-        assert hook.call.tool == "ask_user_choice"
-        assert dict(hook.call.args) == {"title": "Pick", "options": ["a", "b"]}
-        assert hook.options_from == "local_git_scan_repos"
-        assert hook.options_extra == ("example",)
-    finally:
-        loader.clear_skills_caches()

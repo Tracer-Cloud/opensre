@@ -46,11 +46,10 @@ Use ordinary Markdown, following
 - A static menu a skill always opens on entry belongs in `pre_execute`
   frontmatter (`tool: ask_user_choice` + `args`), not in prose the model must
   replay; the host runs it before any model step (see `onboarding-github-ci`).
-- A mid-flow menu the model must not skip belongs in `after_tool` (same call
-  shape, plus `after:` the trigger tool). The host opens it after that tool
-  succeeds; later tools in the batch are blocked once a menu is queued.
+- Describe mid-flow menus in the numbered workflow; the model calls
+  `ask_user_choice` after completing the preceding step.
 - Rules shared by sibling skills belong in a markdown file listed under
-  `references:` (resolved inside the skills tree), not copied into each body.
+  `includes:` (resolved inside the skills tree), not copied into each body.
 
 ## Skill metadata ownership
 
