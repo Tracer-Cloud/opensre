@@ -5,8 +5,8 @@ description: >-
   fix_github_security_alert
 metadata:
   owner: Vaibhav
-  last_changed_by: Vincent
-  last_changed_at: 2026-09-09
+  last_changed_by: Jan
+  last_changed_at: 2026-09-12
   usecases:
     - Remediate Dependabot, CodeQL, and code-quality alerts and raise a pull request
     - Fix the findings behind a security alert URL or a security and quality page URL
