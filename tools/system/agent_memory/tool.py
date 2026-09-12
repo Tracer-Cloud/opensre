@@ -17,7 +17,7 @@ from core.domain.memory import (
     save_memory,
     search_memories,
 )
-from core.domain.types.tools import ToolSurface
+from core.domain.types.tools import ToolRole, ToolSurface
 from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from tools.system.agent_memory._evidence import map_memory_recall
@@ -64,7 +64,7 @@ def _memory_available(sources: dict[str, dict[str, Any]]) -> bool:
     tags=("safe", "fast", "no-credentials"),
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
-    parallel_safe=False,
+    role=ToolRole.BOOKKEEPING,
     is_available=_memory_available,
     input_schema={
         "type": "object",
@@ -119,7 +119,6 @@ def memory_remember(name: str, type: str, description: str, content: str) -> dic
     tags=("safe", "fast", "no-credentials"),
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
-    parallel_safe=False,
     is_available=_memory_available,
     input_schema={
         "type": "object",

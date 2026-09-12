@@ -93,15 +93,28 @@ condition. Split distinct actions into separate numbered steps.
 
 Execute steps and their tool calls sequentially. Finish the current action,
 including delivering any user-facing output, before starting the next.
-Do not batch or parallelize actions, or couple separate steps with wording
-such as "alongside", "at the same time", or "in the same response".
+Do not couple separate steps with wording such as "alongside", "at the same
+time", or "in the same response".
 
-Bookkeeping is not an action. `update_plan` rides in the same tool batch as
-the next real call, never as a stand-alone model turn, and independent
-read-only checks inside one step (identity plus scheduler, for example) go in
-one batch. A live run of `scheduling-github-ci-fixes` spent nine solo
-`update_plan` turns (~90 s) on plan writes alone; cards should say which
-calls share a batch rather than leave the model to serialize everything.
+The runtime enforces this per model response (`core.tool.execution`): a
+response may carry **one** tool call whose role is `ACTION`; a response with
+two or more executes none of them and returns the same error for each. Two
+roles relax that rule, and every tool declares its role on its contract
+(`ToolRole`, replacing the old `parallel_safe` flag):
+
+- `BOOKKEEPING` (`update_plan`, `memory_remember`, `session_goal_complete`)
+  may accompany the one action. Cards should say so — "mark the step
+  `in_progress` in the same response as its tool call" — rather than leave
+  the model to spend a solo turn on each plan write. A live run of
+  `scheduling-github-ci-fixes` once spent nine solo `update_plan` turns
+  (~90 s) on plan writes alone.
+- `TURN_ENDING` (`ask_user_choice`) hands the turn to the user and must be
+  the **only** call in its response; not even bookkeeping rides with it.
+  Mark plan steps before the menu response, not in it.
+
+Independent read-only checks inside one step (identity plus scheduler, for
+example) are therefore separate responses, or one shell command that runs
+both.
 
 Report delivery and asking what to do next are separate actions: first
 respond with the report as Markdown text; only after it has been shown may

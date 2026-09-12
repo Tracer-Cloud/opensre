@@ -126,7 +126,6 @@ def _confirm_fn(context: Any) -> Any:
         "Checks out the PR branch or creates a branch-fix worktree, edits files, "
         "commits, pushes the repair branch, and waits for the resulting checks."
     ),
-    parallel_safe=False,
     accepts_runtime_context=True,
     input_schema=_INPUT_SCHEMA,
     is_available=_github_ci_fix_available,

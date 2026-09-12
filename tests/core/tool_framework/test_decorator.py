@@ -6,6 +6,7 @@ from typing import Any
 
 import pytest
 
+from core.domain.types.tools import ToolRole
 from core.tool.contracts import REGISTERED_TOOL_ATTR, BaseTool, RegisteredTool
 from core.tool_framework.tool_decorator import tool
 
@@ -150,11 +151,11 @@ def test_tool_attaches_registered_tool_when_requires_approval_overridden() -> No
     assert registered.approval_reason == "needs review"
 
 
-def test_tool_attaches_registered_tool_when_parallel_safe_overridden() -> None:
+def test_tool_attaches_registered_tool_when_role_overridden() -> None:
     instance = _ABaseTool()
-    tool(instance, parallel_safe=False)
+    tool(instance, role=ToolRole.BOOKKEEPING)
     registered = getattr(instance, REGISTERED_TOOL_ATTR)
-    assert registered.parallel_safe is False
+    assert registered.role is ToolRole.BOOKKEEPING
 
 
 def test_tool_attaches_evidence_mapper_to_base_tool() -> None:

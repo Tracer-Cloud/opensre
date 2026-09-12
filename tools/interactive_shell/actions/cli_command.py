@@ -53,7 +53,6 @@ cli_exec_tool = RegisteredTool(
     source="interactive_shell",
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
-    parallel_safe=False,
     accepts_runtime_context=True,
     run=run_cli_command,
     is_available=lambda sources: capability_available_from_sources(sources, "cli_commands"),

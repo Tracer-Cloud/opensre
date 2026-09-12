@@ -1,4 +1,4 @@
-"""Scheduled-repair workflow: exact loop call, direct tick prompt, batched plan writes.
+"""Scheduled-repair workflow: exact loop call, direct tick prompt, one action per response.
 
 Observed live (2026-09-12): a demo took 646 s over 56 model iterations. The
 model spent ~60 s grepping the OpenSRE source tree to discover ``/cron add``,
@@ -7,7 +7,8 @@ through three tools, and the tick prompt described "invoke the
 fixing-github-ci workflow" instead of naming ``fix_github_pr_ci``. This suite
 pins the corrected card: the ``/cron add`` call is spelled out for both
 cadences, the tick prompt names the tool call, plan writes ride along with
-the next action, and nothing is created before the repository question.
+the next action but never with a menu, and nothing is created before the
+repository question.
 """
 
 from __future__ import annotations
@@ -111,7 +112,6 @@ def _recording_tool(name: str, calls: list[tuple[str, dict[str, Any]]]) -> Regis
         source="interactive_shell",
         run=_run,
         side_effect_level=SideEffectLevel.MUTATING,
-        parallel_safe=False,
     )
 
 
@@ -157,18 +157,22 @@ def test_repository_question_carries_the_plan_and_blocks_creation_until_answered
     calls: list[tuple[str, dict[str, Any]]] = []
     plan = [{"step": step, "status": "pending"} for step in steps]
     plan[0]["status"] = "in_progress"
+    repository_menu = tool_response(
+        "ask_user_choice",
+        {"title": _REPOSITORY_QUESTION, "options": [_DEMO_OPTION, "acme/widget"]},
+    )
     llm = FakeActionLLM(
         [
-            # Plan write and the repository question in one batch, as the card
-            # requires; the eager repo creation behind the menu must be blocked.
+            # Plan write, the repository question and eager repo creation in one
+            # response: the menu must stand alone, so the runtime runs none of
+            # it and the model re-issues the plan write and then the menu.
             _batch(
                 tool_response("update_plan", {"plan": plan}),
-                tool_response(
-                    "ask_user_choice",
-                    {"title": _REPOSITORY_QUESTION, "options": [_DEMO_OPTION, "acme/widget"]},
-                ),
+                repository_menu,
                 tool_response("github_cli", {"args": ["repo", "create", "demo", "--private"]}),
             ),
+            tool_response("update_plan", {"plan": plan}),
+            repository_menu,
         ]
     )
     output = BufferOutputSink()
@@ -193,7 +197,7 @@ def test_repository_question_carries_the_plan_and_blocks_creation_until_answered
     agent.handle(_MASTER_ANSWER, TurnBinding(is_tty=True))
 
     # Nothing was scheduled, created, or run before the repository question,
-    # and the plan landed in the same batch as the question.
+    # and the plan landed in the response before the question.
     assert calls == []
     pending = session.pending_user_choice
     assert pending is not None and pending.title == _REPOSITORY_QUESTION
@@ -203,6 +207,6 @@ def test_repository_question_carries_the_plan_and_blocks_creation_until_answered
     assert [step.step for step in task_plan.steps] == steps
     assert task_plan.steps[0].status is PlanStepStatus.IN_PROGRESS
     assert all(step.status is PlanStepStatus.PENDING for step in task_plan.steps[1:])
-    assert llm.invocations == 1
+    assert llm.invocations == 3
     assert not llm.responses
     assert session.active_skill == skill.name

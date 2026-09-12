@@ -17,7 +17,7 @@ from core.agent_harness.spi.task_plan import (
     task_plan_to_payload,
 )
 from core.agent_harness.tools import ActionToolScope, execute_with_action_context
-from core.domain.types.tools import ToolSurface
+from core.domain.types.tools import ToolRole, ToolSurface
 from core.tool import RegisteredTool, SideEffectLevel
 from core.tool_framework.utils import object_schema, string_property
 from tools.interactive_shell.action_names import ActionToolName
@@ -168,7 +168,7 @@ update_plan_tool = RegisteredTool(
     ),
     source="interactive_shell",
     surfaces=(ToolSurface.ACTION,),
-    parallel_safe=False,
+    role=ToolRole.BOOKKEEPING,
     accepts_runtime_context=True,
     run=run_update_plan,
     tags=("safe", "fast", "no-credentials"),

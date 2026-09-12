@@ -32,8 +32,10 @@ the persistent repository name, fixture, deadline, cancellation, and cleanup.
 ## Plan
 
 Use `update_plan` to create the live plan from these five workflow steps.
-Mark an already-selected scope completed. Batch bookkeeping with the next
-action, and keep report delivery and follow-up as separate steps.
+Mark an already-selected scope completed. Send `update_plan` in the same
+response as the next tool call, except before `ask_user_choice`, which must
+be the only call in its response. Keep report delivery and follow-up as
+separate steps.
 
 - [ ] Step 1. Select the reusable demo or a specific PR with ask_user_choice.
 - [ ] Step 2. Register or reuse the bounded run with schedule_ci_repair_loop.

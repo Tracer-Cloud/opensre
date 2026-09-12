@@ -1,4 +1,4 @@
-"""Offline workflow E2E: real turns and menu queueing, scripted model and tool I/O."""
+"""Offline workflow E2E: real turns, one action per response, scripted model and tool I/O."""
 
 from __future__ import annotations
 
@@ -124,7 +124,6 @@ def test_local_analysis_waits_for_choices_before_analyzing_and_handing_off(
             input_schema={"type": "object", "properties": {}},
             source="interactive_shell",
             run=run,
-            parallel_safe=False,
         )
 
     scan = tool(
@@ -176,10 +175,15 @@ def test_local_analysis_waits_for_choices_before_analyzing_and_handing_off(
 
     llm = SkillLLM(
         [
-            # Deliberately attempt the next action in the same batch: each
-            # queued menu must stop it until its answer arrives.
+            # Deliberately cram the scan, the menu and the next action into one
+            # response: the runtime executes none of it and the model must
+            # re-issue one call at a time, with each menu ending its turn.
             _batch(tool_response(scan.name), repository_menu, analyze_call),
+            tool_response(scan.name),
+            repository_menu,
             _batch(analyze_call, next_menu, handoff_call),
+            analyze_call,
+            next_menu,
             handoff_call,
             no_tool_response("Following the scheduling skill."),
         ]
@@ -204,14 +208,15 @@ def test_local_analysis_waits_for_choices_before_analyzing_and_handing_off(
         binding,
     )
 
+    # The rejected batch ran nothing; the scan ran once on re-issue.
     assert calls == [(scan.name, {})]
-    assert llm.invocations == 1
+    assert llm.invocations == 3
     repository_answer = _answer(session, title=_REPOSITORY_QUESTION, option="acme/widget")
 
     agent.handle(repository_answer, binding)
 
     assert calls == [(scan.name, {}), (analyze.name, analyze_args)]
-    assert llm.invocations == 2
+    assert llm.invocations == 6
     assert session.active_skill == skill.name
     next_answer = _answer(session, title=_NEXT_QUESTION, option=_SCHEDULE_LOOPS)
 
@@ -222,6 +227,6 @@ def test_local_analysis_waits_for_choices_before_analyzing_and_handing_off(
     assert calls == [(scan.name, {}), (analyze.name, analyze_args)]
     assert session.active_skill == SCHEDULING_GITHUB_CI_FIXES_SKILL_NAME
     assert session.pending_user_choice is None
-    assert llm.invocations == 4
+    assert llm.invocations == 8
     assert not llm.responses
     assert "Following the scheduling skill." in result.primary_response_text

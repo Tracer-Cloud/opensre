@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 from pydantic import ValidationError
 
+from core.domain.types.tools import ToolRole
 from core.tool.registry import (
     BaseToolRegistryMetadata,
     normalize_surfaces,
@@ -16,7 +17,7 @@ def test_registry_metadata_defaults() -> None:
     meta = BaseToolRegistryMetadata.model_validate({})
     assert meta.surfaces == ("chat",)
     assert meta.tags == ()
-    assert meta.parallel_safe is True
+    assert meta.role is ToolRole.ACTION
 
 
 def test_registry_metadata_normalizes_surfaces() -> None:

@@ -276,7 +276,6 @@ slash_invoke_tool = RegisteredTool(
     source="interactive_shell",
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
-    parallel_safe=False,
     accepts_runtime_context=True,
     run=run_slash,
     is_available=lambda sources: capability_available_from_sources(sources, "slash_commands"),

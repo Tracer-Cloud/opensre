@@ -13,7 +13,7 @@ from typing import Any, Protocol, cast, runtime_checkable
 from pydantic import Field, field_validator
 
 from config.strict_config import StrictConfigModel
-from core.domain.types.tools import ToolSurface
+from core.domain.types.tools import ToolRole, ToolSurface
 
 _DEFAULT_SURFACES: tuple[ToolSurface, ...] = (ToolSurface.CHAT,)
 _VALID_SURFACES = frozenset(ToolSurface)
@@ -55,7 +55,7 @@ class BaseToolRegistryMetadata(StrictConfigModel):
 
     surfaces: tuple[ToolSurface, ...] = Field(default=_DEFAULT_SURFACES)
     tags: tuple[str, ...] = ()
-    parallel_safe: bool = True
+    role: ToolRole = ToolRole.ACTION
 
     @field_validator("surfaces", mode="before")
     @classmethod

@@ -8,6 +8,7 @@ from core.tool.contracts import (
     RegisteredTool,
     RuntimeTool,
     SideEffectLevel,
+    ToolRole,
     ToolSurface,
 )
 from core.tool.execution import (
@@ -33,6 +34,7 @@ __all__ = [
     "ToolExecutionRequest",
     "ToolExecutionResult",
     "ToolRegistry",
+    "ToolRole",
     "ToolSurface",
     "availability_view",
     "normalize_surfaces",

@@ -289,6 +289,8 @@ def test_anthropic_invoke_marks_system_and_last_tool_for_prompt_cache(
     assert api_tools[1]["cache_control"] == {"type": "ephemeral"}
     # Caller-owned tool dicts must not be mutated.
     assert "cache_control" not in tools[1]
+    # One action per response: the model is asked for a single tool call.
+    assert captured["tool_choice"] == {"type": "auto", "disable_parallel_tool_use": True}
 
 
 def test_openai_agent_client_invoke_strips_internal_message_markers(
@@ -659,7 +661,7 @@ def test_openai_agent_client_invoke_raw_content_preserves_extra_fields(
     assert first_tc.get("thought_signature") == "abc123"
 
 
-def test_openai_agent_client_enables_parallel_tool_calls_for_openai(
+def test_openai_agent_client_disables_parallel_tool_calls_for_openai(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _install_fake_openai(monkeypatch)
@@ -683,7 +685,7 @@ def test_openai_agent_client_enables_parallel_tool_calls_for_openai(
     )
 
     assert captured["tool_choice"] == "auto"
-    assert captured["parallel_tool_calls"] is True
+    assert captured["parallel_tool_calls"] is False
 
 
 def test_openai_gpt_5_6_agent_uses_responses_api_and_replays_reasoning(
@@ -765,6 +767,7 @@ def test_openai_gpt_5_6_agent_uses_responses_api_and_replays_reasoning(
     assert first.tool_calls[0].input == {"service": "api"}
     assert second.content == "done"
     assert captured[0]["max_output_tokens"] == 4096
+    assert captured[0]["parallel_tool_calls"] is False
     assert captured[0]["reasoning"] == {"effort": "high"}
     assert captured[0]["tools"] == [
         {
@@ -1351,7 +1354,6 @@ def test_cli_backed_agent_client_accepts_plain_text_as_final_answer() -> None:
 
 
 def test_cli_backed_agent_client_parses_tool_json() -> None:
-
     from core.llm.transports.sdk.agent_clients import CLIBackedAgentClient
 
     class _FakeCLI:

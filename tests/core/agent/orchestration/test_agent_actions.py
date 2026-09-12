@@ -123,15 +123,19 @@ def _message_from_agent_prompt(messages: list[dict[str, object]]) -> str:
     part an over-budget turn drops first. Read between the delimiters rather
     than assuming the envelope spans the string.
     """
-    raw = str(messages[-1].get("content", "")) if messages else ""
     prefix = "USER MESSAGE (literal): <<<"
     suffix = ">>>"
-    start = raw.find(prefix)
-    if start == -1:
-        return raw
-    body_at = start + len(prefix)
-    end = raw.find(suffix, body_at)
-    return raw[body_at:end] if end != -1 else raw
+    # Later iterations of one turn end with tool results; the user message is
+    # the last one carrying the literal envelope.
+    for message in reversed(messages):
+        raw = str(message.get("content", ""))
+        start = raw.find(prefix)
+        if start == -1:
+            continue
+        body_at = start + len(prefix)
+        end = raw.find(suffix, body_at)
+        return raw[body_at:end] if end != -1 else raw
+    return str(messages[-1].get("content", "")) if messages else ""
 
 
 # ``execute_shell_command`` drives ``subprocess.Popen`` (not ``run``) so ESC can
@@ -216,8 +220,11 @@ def _expected_shell_argv(command: str) -> list[str]:
 
 
 class _MessageMappedActionLLM(FakeActionLLM):
+    """Issue the planned actions for a message one per response, as the runtime requires."""
+
     def __init__(self) -> None:
         super().__init__([])
+        self._issued: dict[str, int] = {}
 
     def invoke(
         self,
@@ -229,7 +236,9 @@ class _MessageMappedActionLLM(FakeActionLLM):
         self.invocations += 1
         message = _message_from_agent_prompt(messages)
         actions, _has_unhandled = _FAKE_PLANS.get(message, ([], False))
-        return _response_from_actions(list(actions))
+        index = self._issued.get(message, 0)
+        self._issued[message] = index + 1
+        return _response_from_actions(list(actions[index : index + 1]))
 
 
 # Deterministic phrase -> (planned actions, has_unhandled_clause) mapping used by the
@@ -368,9 +377,9 @@ def test_execute_cli_actions_skips_remaining_actions_when_cancelled(
 ) -> None:
     """Multi-action plan: if the user pressed Esc / typed ``/cancel``
     between actions, the per-dispatch cancel event is set on the
-    ``StreamingConsole``. The action loop checks ``cancel_requested``
-    at the top of each iteration and breaks, so the remaining actions
-    in the plan are NOT dispatched.
+    ``StreamingConsole``. Each action is its own model response, and the
+    loop checks ``cancel_requested`` before taking the next step, so the
+    remaining actions in the plan are NOT dispatched.
 
     Pre-fix, the loop ran every action regardless of cancel state, so
     cancelling a "do A then B" plan still ran B even after the user
@@ -430,7 +439,6 @@ def test_execute_cli_actions_skips_remaining_actions_when_cancelled(
     output = buf.getvalue()
     assert "ran /health" in output
     assert "ran /integrations list" not in output
-    assert "remaining actions cancelled" in output
 
 
 def test_execute_cli_actions_falls_through_for_local_llama_request(monkeypatch: object) -> None:

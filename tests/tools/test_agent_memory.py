@@ -8,6 +8,7 @@ from typing import Any
 import pytest
 
 from config.constants import OPENSRE_MEMORY_DIR_ENV, OPENSRE_MEMORY_DISABLED_ENV
+from core.domain.types.tools import ToolRole
 from core.tool_framework.tool_decorator import REGISTERED_TOOL_ATTR
 from tests.tools.conftest import BaseToolContract
 from tools.system.agent_memory import memory_forget, memory_recall, memory_remember
@@ -54,10 +55,10 @@ class TestMetadata:
     def test_surfaces_and_side_effects(self) -> None:
         assert _registered(memory_remember).surfaces == ("action",)
         assert _registered(memory_remember).side_effect_level == "mutating"
-        assert _registered(memory_remember).parallel_safe is False
+        assert _registered(memory_remember).role is ToolRole.BOOKKEEPING
         assert _registered(memory_forget).surfaces == ("action",)
         assert _registered(memory_forget).side_effect_level == "mutating"
-        assert _registered(memory_forget).parallel_safe is False
+        assert _registered(memory_forget).role is ToolRole.ACTION
         assert _registered(memory_recall).surfaces == ("action",)
         assert _registered(memory_recall).side_effect_level == "read_only"
 

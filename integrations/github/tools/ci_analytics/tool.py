@@ -301,7 +301,6 @@ def _result(report: CiAnalyticsReport, owner: str, repo: str, window: int) -> di
     },
     surfaces=(ToolSurface.CHAT, ToolSurface.ACTION),
     side_effect_level=SideEffectLevel.READ_ONLY,
-    parallel_safe=False,
     accepts_runtime_context=True,
     input_schema={
         "type": "object",

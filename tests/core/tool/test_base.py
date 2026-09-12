@@ -8,6 +8,7 @@ import pytest
 from pydantic import ValidationError
 
 import core.tool.contracts as tool_contracts
+from core.domain.types.tools import ToolRole
 from core.tool_framework.tool_decorator import tool
 
 # ---------------------------------------------------------------------------
@@ -90,7 +91,7 @@ def test_registry_metadata_classmethod_returns_defaults() -> None:
     registry = _MinimalTool.registry_metadata()
     assert registry.surfaces == ("chat",)
     assert registry.tags == ()
-    assert registry.parallel_safe is True
+    assert registry.role is ToolRole.ACTION
 
 
 def test_init_subclass_normalizes_registry_metadata() -> None:
@@ -101,14 +102,14 @@ def test_init_subclass_normalizes_registry_metadata() -> None:
         source = "grafana"
         surfaces = ("chat", "action")
         tags = ("metrics", " fast ", "metrics")
-        parallel_safe = False
+        role = ToolRole.BOOKKEEPING
 
         def run(self) -> dict[str, Any]:
             return {}
 
     assert _RegistryTool.surfaces == ("chat", "action")
     assert _RegistryTool.tags == ("metrics", "fast")
-    assert _RegistryTool.parallel_safe is False
+    assert _RegistryTool.role is ToolRole.BOOKKEEPING
 
 
 def test_init_subclass_rejects_invalid_surfaces() -> None:
@@ -135,7 +136,7 @@ def test_from_base_tool_reads_registry_metadata_from_class() -> None:
         source = "grafana"
         surfaces = ("action", "chat")
         tags = ("safe",)
-        parallel_safe = False
+        role = ToolRole.TURN_ENDING
 
         def run(self) -> dict[str, Any]:
             return {}
@@ -143,7 +144,7 @@ def test_from_base_tool_reads_registry_metadata_from_class() -> None:
     registered = tool_contracts.RegisteredTool.from_base_tool(_ChatTool())
     assert registered.surfaces == ("action", "chat")
     assert registered.tags == ("safe",)
-    assert registered.parallel_safe is False
+    assert registered.role is ToolRole.TURN_ENDING
 
 
 # ---------------------------------------------------------------------------

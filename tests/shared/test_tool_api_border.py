@@ -81,4 +81,4 @@ def test_the_contract_api_survives_being_imported_second() -> None:
 
     # Assert
     assert proc.returncode == 0, proc.stderr.strip()[-400:]
-    assert proc.stdout.strip() == "16"
+    assert proc.stdout.strip() == "17"

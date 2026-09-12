@@ -9,7 +9,7 @@ from pydantic import BaseModel
 
 from core.domain.types.evidence import EvidenceMapper, EvidenceSource
 from core.domain.types.retrieval import RetrievalControls
-from core.domain.types.tools import ToolSurface
+from core.domain.types.tools import ToolRole, ToolSurface
 from core.tool.contracts import (
     REGISTERED_TOOL_ATTR,
     BaseTool,
@@ -49,7 +49,7 @@ def tool(
     requires_approval: bool | None = None,
     approval_reason: str | None = None,
     approval_expiry_seconds: int | None = None,
-    parallel_safe: bool | None = None,
+    role: ToolRole | None = None,
     accepts_runtime_context: bool | None = None,
 ) -> BaseTool:
     pass
@@ -85,7 +85,7 @@ def tool[F: Callable[..., Any]](
     requires_approval: bool | None = None,
     approval_reason: str | None = None,
     approval_expiry_seconds: int | None = None,
-    parallel_safe: bool | None = None,
+    role: ToolRole | None = None,
     accepts_runtime_context: bool | None = None,
 ) -> F:
     pass
@@ -121,7 +121,7 @@ def tool[F: Callable[..., Any]](
     requires_approval: bool | None = None,
     approval_reason: str | None = None,
     approval_expiry_seconds: int | None = None,
-    parallel_safe: bool | None = None,
+    role: ToolRole | None = None,
     accepts_runtime_context: bool | None = None,
 ) -> Callable[[F], F]:
     pass
@@ -156,7 +156,7 @@ def tool[F: Callable[..., Any]](
     requires_approval: bool | None = None,
     approval_reason: str | None = None,
     approval_expiry_seconds: int | None = None,
-    parallel_safe: bool | None = None,
+    role: ToolRole | None = None,
     accepts_runtime_context: bool | None = None,
 ) -> Any:
     """Register a lightweight function tool or annotate an existing BaseTool.
@@ -195,7 +195,7 @@ def tool[F: Callable[..., Any]](
                 requires_approval is not None,
                 approval_reason is not None,
                 approval_expiry_seconds is not None,
-                parallel_safe is not None,
+                role is not None,
                 accepts_runtime_context is not None,
             ]
         )
@@ -209,7 +209,7 @@ def tool[F: Callable[..., Any]](
                 or requires_approval is not None
                 or approval_reason is not None
                 or approval_expiry_seconds is not None
-                or parallel_safe is not None
+                or role is not None
                 or accepts_runtime_context is not None
                 or evidence_mapper is not None
             ):
@@ -224,7 +224,7 @@ def tool[F: Callable[..., Any]](
                         requires_approval=requires_approval,
                         approval_reason=approval_reason,
                         approval_expiry_seconds=approval_expiry_seconds,
-                        parallel_safe=parallel_safe,
+                        role=role,
                         accepts_runtime_context=accepts_runtime_context,
                         evidence_mapper=evidence_mapper,
                     ),
@@ -263,7 +263,7 @@ def tool[F: Callable[..., Any]](
                     requires_approval=requires_approval,
                     approval_reason=approval_reason,
                     approval_expiry_seconds=approval_expiry_seconds,
-                    parallel_safe=parallel_safe,
+                    role=role,
                     accepts_runtime_context=accepts_runtime_context,
                 ),
             )

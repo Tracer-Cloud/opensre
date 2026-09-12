@@ -133,7 +133,6 @@ fix_sentry_issue_start_tool = RegisteredTool(
     source="interactive_shell",
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
-    parallel_safe=False,
     accepts_runtime_context=True,
     is_available=lambda _sources: is_issue_fix_enabled(),
     run=run_sentry_fix,
