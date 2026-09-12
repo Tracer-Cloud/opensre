@@ -20,6 +20,8 @@ brew install tracer-cloud/tap/opensre
 
 You usually don't need `sudo`. If `opensre` isn't found after install, open a new terminal or add the bin directory the installer printed (often `~/.local/bin`) to your PATH.
 
+The prebuilt Linux binary needs **glibc 2.35+** (Ubuntu 22.04+, Debian 12+, Fedora 36+, or similarly current releases). On an older distribution (e.g. Ubuntu 20.04), the installer detects this and stops before downloading — clone the repo and run it from source with `uv` instead (see [SETUP.md](https://github.com/Tracer-Cloud/opensre/blob/main/SETUP.md)).
+
 In a normal interactive terminal, install may start onboard for you. To skip that:
 
 ```bash

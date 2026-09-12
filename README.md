@@ -98,6 +98,8 @@ curl -fsSL https://install.opensre.com | bash
 
 The macOS/Linux installer does not require sudo. If no writable bin directory is already on `PATH`, it installs to `~/.local/bin` and prints the shell command to apply the PATH update.
 
+The Linux binary requires **glibc 2.35+** (Ubuntu 22.04+, Debian 12+, Fedora 36+, or similarly current distributions). On an older system (e.g. Ubuntu 20.04), the installer stops with a clear error instead of downloading a binary that won't start — build and run from source instead (see [Quick setup](SETUP.md#quick-setup-all-platforms)).
+
 Equivalent explicit main-channel form:
 
 ```bash
