@@ -46,6 +46,11 @@ invoke `fixing-github-ci`, and verify the resulting fix.
 
 Track progress with `update_plan`: 
 
+- [ ] Step 0. Run pre-requisite checks 
+  - Verifying GitHub access
+  - Local scheduler
+
+
 - [ ] Step 1. Select the repository.
   - Use the repository already specified by the user.
   - If none is specified, ask the user to select one or choose a private
@@ -76,6 +81,9 @@ Track progress with `update_plan`:
     cannot repeatedly dispatch the same failure.
   - Record the loop ID and verify that the worker starts.
   - Complete when the scoped loop is running and its expiry is configured.
+  - If creating an example PR fix:
+    - The PR example needs to be simple, understandable and relatable (foo-bar for instance, and not obscure cython)
+    - Create a simple github actions test that executes very quickly
 
 - [ ] Step 5. Establish and verify the failure.
   - For an existing failing PR, record its failed run, check, and commit.
