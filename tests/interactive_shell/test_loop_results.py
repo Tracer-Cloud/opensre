@@ -50,6 +50,9 @@ def _loop() -> LoopSummary:
 def test_compact_table_limits_rows_and_prioritizes_findings(
     width: int, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    # Rich renders "dumb" terminals at a fixed 80 columns regardless of the
+    # explicit console width, which breaks the geometry assertions below.
+    monkeypatch.setenv("TERM", "xterm")
     monkeypatch.setenv("COLUMNS", str(width))
     output = io.StringIO()
     console = Console(file=output, width=width, color_system=None)

@@ -30,7 +30,7 @@ Monitor one repository on a schedule and automatically edit, test, and
 push fixes to one failing PR branch per tick. A green PR does not stop
 monitoring.
 
-The optional private demo uses the same repair policy every **minute**
+The optional private demo uses the same repair policy every **minute**.
 
 ## Goal
 
@@ -204,8 +204,8 @@ In this order, no verification calls in between:
    `~/.opensre/demo-results/ci-repair-demo-<date>-<random>.md` (repository,
    PR link, failed run id, loop id, fix commit, passing run id) and removes
    the temp checkout.
-2. `slash_invoke` `{"command": "/cron", "args": ["remove", "<id>"]}`.
-   and report that the repository remains.
+2. `slash_invoke` `{"command": "/cron", "args": ["remove", "<id>"]}`. The
+   demo repository is never deleted; report that the repository remains.
 3. `slash_invoke` `{"command": "/cron", "args": ["list"]}` as the single
    verification.
 
