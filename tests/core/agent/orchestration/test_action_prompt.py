@@ -269,7 +269,7 @@ def test_skill_matches_take_priority_over_generic_docs_answer() -> None:
 
     assert "Skill matches outrank a generic docs/how-to answer" in index
     assert '"onboard me"' in index
-    assert "hand execution to its child skill" in body
+    assert "owns the onboarding question" in body
     # Skills index still rides the assembled prompt after the markdown base.
     assert SKILLS_HEADER in prompt
     assert ONBOARDING_SKILL_NAME in prompt

@@ -186,8 +186,8 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
     envelope = build_action_system_prompt_envelope(
         TurnSnapshot.from_session(answer, session, surface="interactive_shell")
     )
-    assert "### 2. Load the child" in envelope.render_ephemeral()
-    assert "### 2. Load the child" not in envelope.render_cached()
+    assert "## Follow the selected child" in envelope.render_ephemeral()
+    assert "## Follow the selected child" not in envelope.render_cached()
 
     run_action_tool_turn(answer, session, console, is_tty=True, llm_factory=lambda: llm)
     assert len(scans) == 1
