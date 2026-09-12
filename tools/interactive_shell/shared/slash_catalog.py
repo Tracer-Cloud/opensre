@@ -235,7 +235,8 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         "Subcommands: list, active, all, add, run <id>, stop <id>, start <id>, delete <id>, "
         "show [name-or-id] [--run <run-id>], next <id>, messages, service [install|remove]. "
         "Use show to read full reports, run history, and loop configuration. "
-        "Use add with --prompt, --time or --cron, optional --channel, and --run-now. "
+        "Use add with --prompt, --time or --cron, optional --channel, --run-now, and "
+        "--mode agent when the tick must act with tools (edit, push) instead of only reporting. "
         "service installs, removes, or shows the background scheduler service that keeps "
         "loops running when no shell is open.",
         "User asks to list active loops or recurring scheduled loops",

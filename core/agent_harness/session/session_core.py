@@ -157,6 +157,9 @@ class SessionCore:
     """Ask-User clarification rounds asked this workload; caps repeated batches.
     Reset on a genuine user turn."""
 
+    skill_discovery_enabled: bool = True
+    """Host-owned policy for the skill index and skill_view; never restored from history."""
+
     active_skill: str | None = None
     """Skill loaded by ``skill_view`` in the current flow; cleared on a genuine user turn."""
 

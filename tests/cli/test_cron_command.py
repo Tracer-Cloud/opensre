@@ -121,10 +121,14 @@ def test_cron_add_rejects_prompt_for_non_manual_loop() -> None:
     assert "--prompt is only valid" in result.output
 
 
+@pytest.mark.parametrize("mode", [None, "report", "agent"])
 def test_cron_add_persists_manual_loop_prompt(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str | None
 ) -> None:
-    from infrastructure.scheduling.scheduler.loop_constants import LOOP_PROMPT_PARAM
+    from infrastructure.scheduling.scheduler.loop_constants import (
+        LOOP_MODE_PARAM,
+        LOOP_PROMPT_PARAM,
+    )
     from infrastructure.scheduling.scheduler.storage import task_store as scheduler_store
     from infrastructure.scheduling.scheduler.storage.task_store import list_tasks
 
@@ -143,11 +147,36 @@ def test_cron_add_persists_manual_loop_prompt(
             "interactive_shell",
             "--prompt",
             "  Check open incidents.  ",
-        ],
+        ]
+        + (["--mode", mode] if mode is not None else []),
     )
 
     assert result.exit_code == 0, result.output
-    assert list_tasks(store)[0].params == {LOOP_PROMPT_PARAM: "Check open incidents."}
+    expected = {LOOP_PROMPT_PARAM: "Check open incidents."}
+    if mode == "agent":
+        expected[LOOP_MODE_PARAM] = mode
+    assert list_tasks(store)[0].params == expected
+
+
+@pytest.mark.parametrize("mode", ["report", "agent"])
+def test_cron_add_rejects_mode_for_non_manual_loop(mode: str) -> None:
+    result = CliRunner().invoke(
+        cron_command,
+        [
+            "add",
+            "--kind",
+            "github_pr_sweep",
+            "--cron",
+            "*/2 * * * *",
+            "--provider",
+            "interactive_shell",
+            "--mode",
+            mode,
+        ],
+    )
+
+    assert result.exit_code != 0
+    assert "--mode is only valid with --kind manual_loop" in result.output
 
 
 def test_cron_add_rejects_non_positive_window() -> None:

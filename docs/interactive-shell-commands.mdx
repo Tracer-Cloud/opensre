@@ -941,6 +941,7 @@ Scheduled report delivery. See [Cron](/cron).
 /loops show &lt;name-or-id&gt;
 /loops show &lt;name-or-id&gt; --run &lt;run-id&gt;
 /loops add --name "Morning ops" --time 08:30 --prompt "Check open incidents and summarize production risk" --run-now
+/loops add --name "CI fix agent" --cron "*/2 * * * *" --mode agent --prompt "Repair failing PR checks with fix_github_pr_ci"
 /loops run &lt;loop_id&gt;
 /loops stop &lt;loop_id&gt;
 /loops start &lt;loop_id&gt;
@@ -949,7 +950,9 @@ Scheduled report delivery. See [Cron](/cron).
 /loops messages
 ```
 
-List recurring loops from the scheduler store, create manual prompt loops, run a loop once immediately, stop or restart a loop, delete a loop, and debug the next fire time. Onboarding creates draft examples such as a weekday morning report; active loops run through the cron scheduler when the gateway or `opensre cron start` is running.
+List recurring loops from the scheduler store, create manual prompt loops, run a loop once immediately, stop or restart a loop, delete a loop, and debug the next fire time. By default a loop tick only produces a report; add `--mode agent` when the tick should act with tools (for example edit and push CI fixes). Onboarding creates draft examples such as a weekday morning report; active loops run through the cron scheduler when the gateway or `opensre cron start` is running.
+
+Agent-mode prompts must contain the complete task and name the tools to use; each tick starts a fresh session without loading workflow skills. For the CLI equivalent, use `opensre cron add --kind manual_loop --mode agent` with your prompt and schedule. Existing loops retain their stored mode; check `/loops show <id>` before reusing one.
 
 The list shows each loop's latest finding and run status, plus its next scheduled time in your local timezone. Failed and quiet runs replace the previous result in the table.
 

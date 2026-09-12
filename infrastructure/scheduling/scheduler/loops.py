@@ -23,6 +23,10 @@ from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_DESCRIPTION_PARAM,
     LOOP_GROUP_ID_PARAM,
     LOOP_MIGRATION_NOTICE_PARAM,
+    LOOP_MODE_AGENT,
+    LOOP_MODE_PARAM,
+    LOOP_MODE_REPORT,
+    LOOP_MODES,
     LOOP_PROMPT_PARAM,
     LOOP_REPORT_ARGS_PARAM,
     LOOP_REPORT_PARAM,
@@ -108,6 +112,7 @@ class LoopSummary:
     last_run: str | None
     next_run: str | None
     schedule_error: str = ""
+    mode: str = LOOP_MODE_REPORT
 
     @property
     def status(self) -> str:
@@ -313,18 +318,24 @@ def create_manual_loop(
     store_path: Path | None = None,
     report: str = "",
     report_args: Mapping[str, str] | None = None,
+    mode: str = LOOP_MODE_REPORT,
 ) -> ManualLoop:
     """Create an active recurring prompt loop.
 
     ``report`` names a deterministic report builder the runner uses instead
     of a model turn; ``prompt`` then documents the loop and is the fallback
-    when the builder is not installed.
+    when the builder is not installed. ``mode`` selects the tick framing:
+    ``report`` produces a report body only, ``agent`` lets the tick act with
+    the tools the prompt names.
     """
     loop_prompt = prompt.strip()
     if not loop_prompt:
         raise ValueError("prompt is required")
     if window_hours < 1:
         raise ValueError("window_hours must be at least 1")
+    loop_mode = mode.strip() or LOOP_MODE_REPORT
+    if loop_mode not in LOOP_MODES:
+        raise ValueError(f"mode must be one of {', '.join(LOOP_MODES)}")
 
     cron_expr = " ".join(cron.split())
     if not cron_expr:
@@ -349,6 +360,8 @@ def create_manual_loop(
     time_label = loop_time_label(cron_expr)
     if time_label:
         params[LOOP_TIME_PARAM] = time_label
+    if loop_mode == LOOP_MODE_AGENT:
+        params[LOOP_MODE_PARAM] = loop_mode
     if report.strip():
         params[LOOP_REPORT_PARAM] = report.strip()
         params[LOOP_REPORT_ARGS_PARAM] = json.dumps(dict(report_args or {}), sort_keys=True)
@@ -645,6 +658,7 @@ def _summarize_group(
         last_run=max(last_runs) if last_runs else None,
         next_run=min(next_runs) if next_runs else representative.next_run,
         schedule_error="; ".join(schedule_errors),
+        mode=representative.params.get(LOOP_MODE_PARAM, "").strip() or LOOP_MODE_REPORT,
     )
 
 

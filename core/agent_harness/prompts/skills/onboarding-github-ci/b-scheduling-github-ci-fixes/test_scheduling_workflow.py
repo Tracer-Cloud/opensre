@@ -1,15 +1,18 @@
-"""Scheduled-repair workflow: the runtime reference is read before any question.
+"""Scheduled-repair workflow: concise card, agent-mode loops, and question order.
 
-Observed live (2026-09-12): the skill asked for repair authorization and
-offered the demo before loading the runtime reference, then ran ``/loops``
-commands to earn ``completed`` marks for steps it had not done. This suite
-pins the corrected order — reference, discovery, repository question — and
-that the reference read itself earns the verification step on the plan.
+Observed live (2026-09-12): scheduled ticks created without ``--mode agent``
+were framed as read-only report turns and never called ``fix_github_pr_ci``,
+while the card's 9+15-step plan produced narration, per-step record writes,
+and repeated ``/loops show`` polls. This suite pins the corrected card: the
+runtime facts are inline (no separate reference read), loops are created with
+``--mode agent``, PR links are inline, and the first model actions are
+discovery then the repository question.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field, replace
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -19,9 +22,11 @@ from config.constants import OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV, OPENSRE_ME
 from config.constants.skills import SCHEDULING_GITHUB_CI_FIXES_SKILL_NAME
 from core.agent_harness.ports import TurnBinding
 from core.agent_harness.prompts.skills.loader import (
+    _parse_frontmatter,
     list_action_skills,
     load_skill_body,
     load_skill_reference,
+    skill_reference_names,
 )
 from core.agent_harness.session.pending_choice import (
     AskUserQuestion,
@@ -48,19 +53,14 @@ _MASTER_QUESTION = "Which demo would you like me to run?"
 _SELECTED_DEMO = "Set up an agent that improves CI/CD reliability over time"
 _REPOSITORY_QUESTION = "Which repository should the agent watch?"
 _STEPS = (
-    "Verify runtime support for scheduled repairs",
-    "Discover candidate repositories",
-    "Select the repository",
-    "Confirm repair authorization",
+    "Pick the repository",
     "Offer the optional private demo",
-    "Run the demo workflow",
+    "Run the demo through its reference",
     "Create or reuse the ongoing loop",
-    "Verify a scheduled execution",
-    "Display the outcome",
+    "Verify a scheduled tick",
+    "Reply with the outcome",
 )
-_GATE_INDEX = 0
-_DISCOVER_INDEX = 1
-_SELECT_INDEX = 2
+_PICK_INDEX = 0
 _REAL_LOOP_CRON = "*/2 * * * *"
 _DEMO_LOOP_CRON = "* * * * *"
 
@@ -132,29 +132,37 @@ def _recording_tool(
     )
 
 
-def test_skill_card_verifies_runtime_first_and_schedules_through_prompt_loops() -> None:
+def test_skill_card_is_inline_agent_mode_and_links_pull_requests() -> None:
+    frontmatter, _ = _parse_frontmatter(
+        Path(__file__).with_name("SKILL.md").read_text(encoding="utf-8")
+    )
+    assert frontmatter["references"] == ["common/ask_once.md"]
+    assert frontmatter["metadata"]["last_changed_at"] == date(2026, 9, 12)
     body = load_skill_body(SCHEDULING_GITHUB_CI_FIXES_SKILL_NAME)
-    gate = body.index("Step 1. Verify runtime support")
-    assert gate < body.index("Confirm repair authorization using ask_user_choice")
-    assert gate < body.index("Offer the optional private demo using ask_user_choice")
-    # The card no longer declares the runtime unsupported: it names the one
-    # entrypoint that runs repairs and the cadence the scheduler accepts.
+    # Runtime facts are inline; loops are agent-mode prompt loops.
     assert "does not support" not in body
-    assert "steps 2–8 `blocked`" not in body
     assert '"--cron", "*/2 * * * *"' in body
+    assert '"--mode", "agent"' in body
     assert '"--prompt"' in body and "fix_github_pr_ci" in body
-    assert "15-second" not in body and "15 seconds" not in body
+    # Pull requests are linked inline in tick replies and the final report.
+    assert "pull/" in body
+    # Conciseness contract: no narration, bounded polling, short final reply.
+    assert "No prose between tool calls" in body
+    assert "first PR in the returned list" in body
+    assert "exactly once" in body and "a refusal consumes this tick's attempt" in body
+    assert "confirms `Mode: agent`" in body
 
-    runtime = load_skill_reference(SCHEDULING_GITHUB_CI_FIXES_SKILL_NAME, "runtime")
-    assert "lacks the capabilities" not in runtime
-    assert _REAL_LOOP_CRON in runtime and _DEMO_LOOP_CRON in runtime
-    assert "read-only" in runtime  # skill loops stay read-only; repairs go through --prompt
+    # The runtime reference is gone: its facts live in the body now.
+    assert skill_reference_names(SCHEDULING_GITHUB_CI_FIXES_SKILL_NAME) == ("demo",)
+    assert load_skill_reference(SCHEDULING_GITHUB_CI_FIXES_SKILL_NAME, "runtime") == ""
+
     demo = load_skill_reference(SCHEDULING_GITHUB_CI_FIXES_SKILL_NAME, "demo")
     assert f'"--cron", "{_DEMO_LOOP_CRON}"' in demo
-    assert "15-second" not in demo
+    assert '"--mode", "agent"' in demo
+    assert _REAL_LOOP_CRON not in demo
 
 
-def test_reference_is_read_before_discovery_and_no_question_precedes_it(
+def test_discovery_runs_before_the_repository_question_with_no_extra_reads(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     monkeypatch.setenv(OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV, "1")
@@ -187,19 +195,8 @@ def test_reference_is_read_before_discovery_and_no_question_precedes_it(
     llm = FakeActionLLM(
         [
             tool_response(view.name, {"name": skill.name}),
-            _plan_write(_plan({_GATE_INDEX: "in_progress"})),
-            tool_response(view.name, {"name": skill.name, "reference": "runtime"}),
-            _plan_write(_plan({_GATE_INDEX: "completed", _DISCOVER_INDEX: "in_progress"})),
+            _plan_write(_plan({_PICK_INDEX: "in_progress"})),
             tool_response(scan.name, {}),
-            _plan_write(
-                _plan(
-                    {
-                        _GATE_INDEX: "completed",
-                        _DISCOVER_INDEX: "completed",
-                        _SELECT_INDEX: "in_progress",
-                    }
-                )
-            ),
             tool_response(
                 "ask_user_choice",
                 {"title": _REPOSITORY_QUESTION, "options": ["acme/widget", "acme/gadget"]},
@@ -235,27 +232,22 @@ def test_reference_is_read_before_discovery_and_no_question_precedes_it(
         TurnBinding(is_tty=True),
     )
 
-    # Order: skill body, runtime reference, discovery — and only then the
-    # repository question. Nothing was scheduled or created on the way.
+    # Order: skill body, discovery, then the repository question. No runtime
+    # reference read, and nothing was scheduled or created on the way.
     assert calls == [
         (view.name, {"name": skill.name, "reference": ""}),
-        (view.name, {"name": skill.name, "reference": "runtime"}),
         (scan.name, {}),
     ]
     pending = session.pending_user_choice
     assert pending is not None and pending.title == _REPOSITORY_QUESTION
     assert session.terminal.pending_prompt_default == "/choose"
 
-    # The reference read is the verification step's work: it stays completed
-    # instead of being reset, and the plan waits on the selection step.
+    # The repository question belongs to the pick step: it stays in progress
+    # while every later step waits.
     plan = session.task_plan
     assert plan is not None
-    assert [step.status for step in plan.steps[: _SELECT_INDEX + 1]] == [
-        PlanStepStatus.COMPLETED,
-        PlanStepStatus.COMPLETED,
-        PlanStepStatus.IN_PROGRESS,
-    ]
-    assert all(step.status is PlanStepStatus.PENDING for step in plan.steps[_SELECT_INDEX + 1 :])
-    assert llm.invocations == 7
+    assert plan.steps[_PICK_INDEX].status is PlanStepStatus.IN_PROGRESS
+    assert all(step.status is PlanStepStatus.PENDING for step in plan.steps[_PICK_INDEX + 1 :])
+    assert llm.invocations == 4
     assert not llm.responses
     assert session.active_skill == skill.name

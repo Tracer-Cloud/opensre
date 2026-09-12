@@ -150,6 +150,8 @@ class DefaultToolProvider:
                 else self._resolved_integrations()
             )
             tools = get_action_tools_from_integrations_view(ctx, resolved_integrations=resolved)
+        if not getattr(self._session, "skill_discovery_enabled", True):
+            tools = [tool for tool in tools if tool.name != "skill_view"]
         if self._unattended:
             return [tool for tool in tools if tool_allowed_for_unattended_run(tool)]
         return tools

@@ -13,7 +13,12 @@ from rich.table import Table
 
 from core.agent_harness import pin_recurring_skill, validate_skill_inputs
 from infrastructure.scheduling.scheduler.credentials import requires_explicit_chat_id
-from infrastructure.scheduling.scheduler.loop_constants import LOOP_PROMPT_PARAM
+from infrastructure.scheduling.scheduler.loop_constants import (
+    LOOP_MODE_AGENT,
+    LOOP_MODE_PARAM,
+    LOOP_MODES,
+    LOOP_PROMPT_PARAM,
+)
 from infrastructure.scheduling.scheduler.types import Provider, TaskKind, TaskRun, TaskStatus
 from infrastructure.terminal.theme import GLYPH_ERROR, GLYPH_SUCCESS
 from surfaces.cli.commands.scheduling import validate_cron_and_timezone
@@ -114,6 +119,12 @@ def cron_command() -> None:
     help="Instruction to execute on each manual_loop run.",
 )
 @click.option(
+    "--mode",
+    type=click.Choice(LOOP_MODES),
+    default=None,
+    help="Manual-loop behavior: report (default) or agent, which executes the supplied task.",
+)
+@click.option(
     "--skill",
     "skill_name",
     type=str,
@@ -139,6 +150,7 @@ def cron_add(
     chat_id: str,
     window_hours: int,
     prompt: str,
+    mode: str | None,
     skill_name: str,
     owner: str,
     repo: str,
@@ -154,6 +166,8 @@ def cron_add(
     _validate_chat_id_for_provider(provider, chat_id)
 
     task_kind = TaskKind(kind)
+    if mode is not None and task_kind != TaskKind.MANUAL_LOOP:
+        raise click.ClickException("--mode is only valid with --kind manual_loop.")
     normalized_prompt = prompt.strip()
     if task_kind == TaskKind.MANUAL_LOOP:
         if not normalized_prompt:
@@ -180,6 +194,8 @@ def cron_add(
         pr_number=pr_number,
     )
     task_params = {LOOP_PROMPT_PARAM: normalized_prompt} if normalized_prompt else {}
+    if mode == LOOP_MODE_AGENT:
+        task_params[LOOP_MODE_PARAM] = mode
 
     task = ScheduledTask(
         name=name.strip(),

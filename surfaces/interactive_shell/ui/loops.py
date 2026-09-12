@@ -10,6 +10,7 @@ from rich.console import Console
 from rich.markdown import Markdown
 from rich.text import Text
 
+from infrastructure.scheduling.scheduler.loop_constants import LOOP_MODE_REPORT
 from infrastructure.scheduling.scheduler.loops import LoopSummary
 from infrastructure.scheduling.scheduler.types import TaskRun, TaskStatus
 from infrastructure.terminal.theme import BOLD_BRAND, DIM, ERROR, HIGHLIGHT, WARNING
@@ -203,6 +204,7 @@ def render_loop_details(
         ("Schedule", f"{loop.cron} ({loop.timezone})"),
         ("Next run", _exact_time(loop.next_run) if loop.enabled else "Paused"),
         ("Channels", ", ".join(channel.replace("_", " ") for channel in loop.channels)),
+        ("Mode", loop.mode if loop.mode != LOOP_MODE_REPORT else ""),
         ("Prompt", loop.prompt),
         ("Schedule error", loop.schedule_error),
     )

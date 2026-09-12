@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 import infrastructure.scheduling.scheduler.tasks as tasks_mod
-from infrastructure.scheduling.scheduler.loop_constants import LOOP_PROMPT_PARAM
+from infrastructure.scheduling.scheduler.loop_constants import LOOP_MODE_PARAM, LOOP_PROMPT_PARAM
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
 from tests.scheduler._bundle import runners_with_agent
 
@@ -20,7 +20,10 @@ class TestMessageBuilders:
             kind=TaskKind.MANUAL_LOOP,
             cron="0 8 * * *",
             provider=Provider.INTERACTIVE_SHELL,
-            params={LOOP_PROMPT_PARAM: "Check incidents and summarize risk."},
+            params={
+                LOOP_PROMPT_PARAM: "Check incidents and summarize risk.",
+                LOOP_MODE_PARAM: "agent",
+            },
         )
         captured: dict[str, object] = {}
 
@@ -34,6 +37,7 @@ class TestMessageBuilders:
         assert captured["source"] == "scheduled_manual_loop"
         assert captured["loop_prompt"] == "Check incidents and summarize risk."
         assert captured["name"] == "Morning ops"
+        assert captured[LOOP_MODE_PARAM] == "agent"
 
     def test_manual_loop_strips_credentials(self) -> None:
         """Verify credential keys are not forwarded to the agent runner."""

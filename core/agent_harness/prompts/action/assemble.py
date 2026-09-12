@@ -120,7 +120,13 @@ def build_action_system_prompt_envelope(turn_snapshot: TurnSnapshot) -> PromptEn
             suffix="\n\n",
         )
     )
-    skills_index = "\n\n".join(filter(None, (load_skills_index(), load_getting_started_block())))
+    skills_index = (
+        "\n\n".join(filter(None, (load_skills_index(), load_getting_started_block())))
+        if turn_snapshot.skill_discovery_enabled
+        else "The host supplies a complete task for this turn. Execute that task with its "
+        "named tools. Workflow discovery is disabled; do not load skill_view or substitute "
+        "an onboarding or report-only workflow."
+    )
     blocks.extend(
         _optional_block(
             id=PromptBlockId.ACTION_SKILLS,

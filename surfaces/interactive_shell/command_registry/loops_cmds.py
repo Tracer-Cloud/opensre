@@ -40,7 +40,7 @@ _USAGE = (
     "/loops",
     "/loops active",
     "/loops show [NAME_OR_ID] [--run RUN]",
-    "/loops add --name NAME --time HH:MM --prompt PROMPT [--run-now]",
+    "/loops add --name NAME --time HH:MM --prompt PROMPT [--mode report|agent] [--run-now]",
     "/loops run LOOP_ID",
     "/loops stop LOOP_ID",
     "/loops start LOOP_ID",
@@ -64,6 +64,7 @@ class _AddLoopArgs:
     telegram_chat_id: str = ""
     slack_chat_id: str = ""
     window_hours: int = 24
+    mode: str = ""
 
 
 def _channel_label(channel: str) -> str:
@@ -86,7 +87,8 @@ def _loops_usage_error() -> str:
         f"[{ERROR}]usage:[/] "
         "/loops [list|active|all|show|add|run|stop|start|delete|next|messages|service]\n"
         f'[{DIM}]example:[/] /loops add --name "Morning ops" --time 08:30 '
-        '--prompt "Check open incidents and summarize risk" --run-now'
+        '--prompt "Check open incidents and summarize risk" --run-now\n'
+        f"[{DIM}]add --mode agent lets the tick act with tools instead of only reporting[/]"
     )
 
 
@@ -137,6 +139,8 @@ def _parse_add_args(args: list[str]) -> tuple[_AddLoopArgs | None, str]:
                     parsed.window_hours = int(value)
                 except ValueError:
                     return None, "--window must be an integer"
+        elif flag == "--mode":
+            parsed.mode, index, error = _take_flag_value(args, index, flag)
         elif flag == "--weekdays":
             parsed.weekdays = True
             error = ""
@@ -262,6 +266,7 @@ def _cmd_loops_add(session: Session, console: Console, args: list[str]) -> bool:
             telegram_chat_id=parsed.telegram_chat_id,
             slack_chat_id=parsed.slack_chat_id,
             window_hours=parsed.window_hours,
+            mode=parsed.mode,
         )
     except ValueError as exc:
         console.print(f"[{ERROR}]could not add loop:[/] {escape(str(exc))}")

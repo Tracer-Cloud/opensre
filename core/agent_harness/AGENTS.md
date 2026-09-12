@@ -71,6 +71,11 @@ regex/keywords to attach goals or bypass the ReAct loop. Session goals attach
 through the structured `session_goal_set` tool or explicit host APIs.
 Checklist progress uses the `session_goal_complete` tool, not reply tags.
 
+Self-contained scheduled agent ticks set `SessionCore.skill_discovery_enabled`
+to `False` through `prepare_session`. This host-owned policy removes the skill
+index and `skill_view` while retaining execution tools; never infer it from
+prompt text or restore it from conversation history.
+
 Do **not** duplicate the default port stack outside `DefaultHeadlessBuild`.
 Expand `AgentBuildConfig` through `resolve_agent_ports` — do not re-copy the
 `build_tools` / `build_prompts` branch in each host. Gateway
