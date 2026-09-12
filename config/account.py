@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import tempfile
@@ -9,10 +10,12 @@ from collections.abc import Mapping
 from contextlib import suppress
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from time import monotonic
 from urllib.parse import urlsplit, urlunsplit
 
 from filelock import FileLock
 
+from config.account_validation import AccountValidationState, validate_account_session
 from config.constants.account import (
     OPENSRE_ACCOUNT_FILENAME,
     OPENSRE_ACCOUNT_LLM_BASE_PATH,
@@ -31,6 +34,7 @@ from config.secrets.store import (
 
 _VERSION = 1
 _LOCK_TIMEOUT_SECONDS = 10.0
+_ACCOUNT_ROUTE_VALIDATION_TTL_SECONDS = 60.0
 
 
 @dataclass(frozen=True)
@@ -53,6 +57,18 @@ class AccountLLMRoute:
 
     base_url: str
     model: str
+
+
+@dataclass(frozen=True)
+class _AccountRouteCacheEntry:
+    """Short-lived result of validating the hosted LLM route."""
+
+    key: tuple[AccountRecord, bytes]
+    checked_at: float
+    route: AccountLLMRoute | None
+
+
+_account_route_cache: _AccountRouteCacheEntry | None = None
 
 
 def normalize_account_app_url(value: str | None = None) -> str:
@@ -142,12 +158,18 @@ def _parse_record(value: object) -> AccountRecord | None:
     )
 
 
+def _clear_account_route_validation_cache() -> None:
+    global _account_route_cache
+    _account_route_cache = None
+
+
 def save_account_record(record: AccountRecord) -> None:
     """Atomically persist non-secret account metadata with mode ``0600``."""
     path = account_metadata_path()
     _ensure_parent(path)
     with FileLock(str(_lock_path(path)), timeout=_LOCK_TIMEOUT_SECONDS):
         _write_record(path, record)
+    _clear_account_route_validation_cache()
 
 
 def load_account_record() -> AccountRecord | None:
@@ -168,10 +190,10 @@ def load_account_record() -> AccountRecord | None:
 def delete_account_record() -> None:
     """Delete the local non-secret account record when present."""
     path = account_metadata_path()
-    if not path.exists():
-        return
-    with FileLock(str(_lock_path(path)), timeout=_LOCK_TIMEOUT_SECONDS):
-        path.unlink(missing_ok=True)
+    if path.exists():
+        with FileLock(str(_lock_path(path)), timeout=_LOCK_TIMEOUT_SECONDS):
+            path.unlink(missing_ok=True)
+    _clear_account_route_validation_cache()
 
 
 def resolve_account_token() -> str:
@@ -187,22 +209,60 @@ def stored_account_token() -> str:
 def save_account_token(value: str) -> None:
     """Persist the OpenSRE account bearer token in owner-only credential storage."""
     save_secret(OPENSRE_ACCOUNT_TOKEN_ENV, value)
+    _clear_account_route_validation_cache()
 
 
 def delete_account_token() -> None:
     """Delete the locally persisted OpenSRE account bearer token."""
     delete_secret(OPENSRE_ACCOUNT_TOKEN_ENV)
+    _clear_account_route_validation_cache()
+
+
+def _validated_account_llm_route(record: AccountRecord, token: str) -> AccountLLMRoute | None:
+    try:
+        app_url = normalize_account_app_url(record.app_url)
+    except ValueError:
+        return None
+
+    validation = validate_account_session(
+        app_url=app_url,
+        token=token,
+        expected_user_id=record.user_id,
+        expected_organization_id=record.organization_id,
+    )
+    if validation.state is not AccountValidationState.ACTIVE or validation.llm_model is None:
+        return None
+    return AccountLLMRoute(
+        base_url=f"{app_url}{OPENSRE_ACCOUNT_LLM_BASE_PATH}",
+        model=validation.llm_model,
+    )
 
 
 def account_llm_route() -> AccountLLMRoute | None:
-    """Return the hosted OpenAI route only when account metadata and token exist."""
+    """Return the hosted route only while the stored account session validates."""
     record = load_account_record()
-    if record is None or record.llm_provider != "openai" or not resolve_account_token():
+    token = resolve_account_token()
+    if record is None or record.llm_provider != "openai" or not token:
         return None
-    return AccountLLMRoute(
-        base_url=f"{record.app_url.rstrip('/')}{OPENSRE_ACCOUNT_LLM_BASE_PATH}",
-        model=record.llm_model,
+
+    token_fingerprint = hashlib.sha256(token.encode("utf-8")).digest()
+    key = (record, token_fingerprint)
+    now = monotonic()
+    cached = _account_route_cache
+    if (
+        cached is not None
+        and cached.key == key
+        and now - cached.checked_at < _ACCOUNT_ROUTE_VALIDATION_TTL_SECONDS
+    ):
+        return cached.route
+
+    route = _validated_account_llm_route(record, token)
+    globals()["_account_route_cache"] = _AccountRouteCacheEntry(
+        key=key,
+        checked_at=now,
+        route=route,
     )
+    return route
 
 
 __all__ = [
