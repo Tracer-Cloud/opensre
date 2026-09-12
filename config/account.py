@@ -10,6 +10,7 @@ from collections.abc import Mapping
 from contextlib import suppress
 from dataclasses import asdict, dataclass
 from pathlib import Path
+from threading import Lock
 from time import monotonic
 from urllib.parse import urlsplit, urlunsplit
 
@@ -69,6 +70,7 @@ class _AccountRouteCacheEntry:
 
 
 _account_route_cache: _AccountRouteCacheEntry | None = None
+_account_route_validation_lock = Lock()
 
 
 def normalize_account_app_url(value: str | None = None) -> str:
@@ -160,7 +162,8 @@ def _parse_record(value: object) -> AccountRecord | None:
 
 def _clear_account_route_validation_cache() -> None:
     global _account_route_cache
-    _account_route_cache = None
+    with _account_route_validation_lock:
+        _account_route_cache = None
 
 
 def save_account_record(record: AccountRecord) -> None:
@@ -238,6 +241,23 @@ def _validated_account_llm_route(record: AccountRecord, token: str) -> AccountLL
     )
 
 
+def _account_route_key(record: AccountRecord, token: str) -> tuple[AccountRecord, bytes]:
+    return (record, hashlib.sha256(token.encode("utf-8")).digest())
+
+
+def _cached_account_route(
+    key: tuple[AccountRecord, bytes], now: float
+) -> _AccountRouteCacheEntry | None:
+    cached = _account_route_cache
+    if (
+        cached is not None
+        and cached.key == key
+        and now - cached.checked_at < _ACCOUNT_ROUTE_VALIDATION_TTL_SECONDS
+    ):
+        return cached
+    return None
+
+
 def account_llm_route() -> AccountLLMRoute | None:
     """Return the hosted route only while the stored account session validates."""
     global _account_route_cache
@@ -247,24 +267,30 @@ def account_llm_route() -> AccountLLMRoute | None:
     if record is None or record.llm_provider != "openai" or not token:
         return None
 
-    token_fingerprint = hashlib.sha256(token.encode("utf-8")).digest()
-    key = (record, token_fingerprint)
-    now = monotonic()
-    cached = _account_route_cache
-    if (
-        cached is not None
-        and cached.key == key
-        and now - cached.checked_at < _ACCOUNT_ROUTE_VALIDATION_TTL_SECONDS
-    ):
+    key = _account_route_key(record, token)
+    if (cached := _cached_account_route(key, monotonic())) is not None:
         return cached.route
 
-    route = _validated_account_llm_route(record, token)
-    _account_route_cache = _AccountRouteCacheEntry(
-        key=key,
-        checked_at=now,
-        route=route,
-    )
-    return route
+    with _account_route_validation_lock:
+        # Re-read account state after waiting for another validation or a local
+        # account mutation, then double-check the cache before issuing HTTP.
+        record = load_account_record()
+        token = resolve_account_token()
+        if record is None or record.llm_provider != "openai" or not token:
+            return None
+
+        key = _account_route_key(record, token)
+        now = monotonic()
+        if (cached := _cached_account_route(key, now)) is not None:
+            return cached.route
+
+        route = _validated_account_llm_route(record, token)
+        _account_route_cache = _AccountRouteCacheEntry(
+            key=key,
+            checked_at=now,
+            route=route,
+        )
+        return route
 
 
 __all__ = [
