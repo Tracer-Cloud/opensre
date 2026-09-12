@@ -7,6 +7,7 @@ import json
 import logging
 from collections.abc import Callable, Mapping
 
+from config.constants.ci_repair import CI_REPAIR_REPORT_BUILDER
 from core.agent_harness import AgentSession, SessionCore
 from infrastructure.scheduling.scheduler.agent_runner import AgentPayload
 from infrastructure.scheduling.scheduler.loop_constants import (
@@ -21,6 +22,7 @@ logger = logging.getLogger(__name__)
 #: Report builder name -> "module:function" producing the report text from string args.
 REPORT_BUILDERS: dict[str, str] = {
     "github_ci_reliability": "integrations.github.tools.ci_analytics.loop:build_report",
+    CI_REPAIR_REPORT_BUILDER: "integrations.github.tools.ci_repair_loop.supervisor:build_report",
 }
 
 _MANUAL_LOOP_INSTRUCTIONS = """Scheduled report loop.

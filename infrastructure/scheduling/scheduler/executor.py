@@ -22,14 +22,17 @@ from infrastructure.scheduling.scheduler.runners import SchedulerRunners
 from infrastructure.scheduling.scheduler.storage import (
     ExecutionClaim,
     complete_run,
+    get_task,
     record_run_report,
     try_claim,
+    update_task,
 )
 from infrastructure.scheduling.scheduler.tasks import build_message
 from infrastructure.scheduling.scheduler.types import (
     DeliveryStatus,
     ScheduledTask,
     TaskKind,
+    TaskReport,
     TaskStatus,
 )
 
@@ -132,6 +135,11 @@ def _execute_claimed_task(
 
     if not record_run_report(claim, message):
         return False
+    if isinstance(message, TaskReport) and message.stop_schedule:
+        current = get_task(task.id)
+        if current is not None and current.enabled:
+            current.enabled = False
+            update_task(current)
 
     # Quiet ticks (e.g. uptime watch with no transitions) skip delivery.
     if not message.strip():

@@ -1128,3 +1128,41 @@ def test_with_push_output_reports_pushed_head_github_will_not_check() -> None:
         "Pushed a CI fix to feat/fix-ci, but GitHub will not start PR checks because the "
         "branch still conflicts with main."
     )
+
+
+def test_demo_guard_blocks_already_committed_test_edits(tmp_path, monkeypatch) -> None:
+    import subprocess
+
+    import integrations.github.tools.ci_fix.runner as runner
+    from integrations.git import head_sha
+
+    def git(*args: str) -> None:
+        subprocess.run(["git", *args], cwd=tmp_path, check=True, capture_output=True)
+
+    git("init", "-b", "feat/fix-ci")
+    git("config", "user.name", "Demo test")
+    git("config", "user.email", "demo@example.com")
+    (tmp_path / "test_calculator.py").write_text("assert False\n")
+    (tmp_path / "calculator.py").write_text("def add(a,b): return a-b\n")
+    git("add", ".")
+    git("commit", "-m", "fixture")
+    ctx = replace(_CTX, head_sha=head_sha(str(tmp_path)))
+    monkeypatch.setattr(runner, "gather_ci_fix_context", lambda **_kw: ctx)
+    monkeypatch.setattr(runner, "ensure_workspace_ready", lambda *_args: None)
+    monkeypatch.setattr(runner, "ensure_push_ready", lambda **_kw: None)
+
+    def cheating_fix(*_args: Any) -> CodingResult:
+        (tmp_path / "test_calculator.py").write_text("assert True\n")
+        git("add", ".")
+        git("commit", "-m", "weaken test")
+        return CodingResult(success=True, summary="green")
+
+    monkeypatch.setattr(runner, "run_fix", cheating_fix)
+
+    def unexpected_push(**_kwargs: Any) -> None:
+        raise AssertionError("Unauthorized test edit reached the push stage")
+
+    monkeypatch.setattr(runner, "push_ci_fix", unexpected_push)
+    output = runner.run_ci_fix(workspace=str(tmp_path), allowed_paths=frozenset({"calculator.py"}))
+    assert not output["success"] and output["error_kind"] == ERR_INVALID_INPUT
+    assert "outside its authorized scope" in output["response_text"]

@@ -1,0 +1,17 @@
+"""Limits and storage names for bounded GitHub CI repair loops."""
+
+CI_REPAIR_SECONDS = 600
+CI_REPAIR_FINISH_RESERVE_SECONDS = 15
+CI_REPAIR_POLL_SECONDS = 1.0
+CI_REPAIR_DIRECTORY = "ci-repair"
+CI_REPAIR_REPORT_BUILDER = "github_ci_repair"
+CI_REPAIR_CRON = "* * * * *"
+
+__all__ = [
+    "CI_REPAIR_CRON",
+    "CI_REPAIR_DIRECTORY",
+    "CI_REPAIR_FINISH_RESERVE_SECONDS",
+    "CI_REPAIR_POLL_SECONDS",
+    "CI_REPAIR_REPORT_BUILDER",
+    "CI_REPAIR_SECONDS",
+]

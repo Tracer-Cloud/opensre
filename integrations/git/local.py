@@ -118,6 +118,25 @@ def is_git_repo(workspace: str) -> bool:
     return result.returncode == 0 and result.stdout.strip() == "true"
 
 
+def clone_repository(url: str, workspace: str, *, token: str) -> None:
+    """Clone an HTTPS repository with credentials confined to the child's environment."""
+    parsed = urlsplit(url)
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+        raise GitCommandError(NOT_A_GIT_REPO, "Cloning requires an HTTPS repository URL.")
+    env = _token_auth_env(token, f"https://{parsed.netloc}/")
+    env["GIT_TERMINAL_PROMPT"] = "0"
+    result = _run_git(
+        os.path.dirname(workspace),
+        "clone",
+        "--",
+        url,
+        workspace,
+        env=env,
+    )
+    if result.returncode != 0:
+        raise GitCommandError(NOT_A_GIT_REPO, "Could not clone the selected repository.")
+
+
 def ensure_git_repo(workspace: str) -> None:
     if not is_git_repo(workspace):
         raise GitCommandError(NOT_A_GIT_REPO, f"{workspace} is not a git repository.")
@@ -210,6 +229,16 @@ def changed_paths(workspace: str) -> list[str]:
             if record[0] == "R" and orig:
                 paths.append(orig)
     return paths
+
+
+def committed_paths_since(workspace: str, revision: str) -> list[str]:
+    """Return committed paths changed since a trusted revision, including rename sources."""
+    result = _run_git(
+        workspace, "diff", "--name-only", "--no-renames", "-z", revision, "HEAD", "--"
+    )
+    if result.returncode != 0:
+        raise GitCommandError(NOT_A_GIT_REPO, "Could not verify the repair's committed changes.")
+    return [path for path in result.stdout.split("\0") if path]
 
 
 def file_fingerprints(workspace: str, paths: Sequence[str]) -> dict[str, str]:

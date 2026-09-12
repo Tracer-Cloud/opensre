@@ -123,10 +123,12 @@ class TaskReport(str):
     """Report text with a concise finding, usable by existing string-based delivery adapters."""
 
     summary: str
+    stop_schedule: bool
 
-    def __new__(cls, body: str, *, summary: str) -> TaskReport:
+    def __new__(cls, body: str, *, summary: str, stop_schedule: bool = False) -> TaskReport:
         report = super().__new__(cls, body)
         report.summary = summary
+        report.stop_schedule = stop_schedule
         return report
 
 

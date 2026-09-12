@@ -14,7 +14,14 @@ from integrations.coding_agent import (
     run_coding_task,
     verify_coding_agent,
 )
-from integrations.git import GitCommandError, changed_paths, ensure_git_repo, file_fingerprints
+from integrations.git import (
+    GitCommandError,
+    changed_paths,
+    committed_paths_since,
+    ensure_git_repo,
+    file_fingerprints,
+    head_sha,
+)
 from integrations.github.client import resolve_github_token
 from integrations.github.repo_scope import detect_git_remote_repo_scope
 from integrations.github.tools.ci_fix.base_merge import BaseMergeResult, merge_base_into_head
@@ -231,6 +238,7 @@ def with_push_output(
         **output,
         "branch_name": push.branch_name,
         "changed_files": push.changed_files,
+        "pushed_head_sha": push.head_sha,
         "checks_state": verification.state.value,
         "check_names": list(verification.check_names),
     }
@@ -367,6 +375,7 @@ def run_ci_fix(
     model: str | None = None,
     github_token: str | None = None,
     confirm_fn: Callable[[str], str] | None = None,
+    allowed_paths: frozenset[str] | None = None,
 ) -> dict[str, Any]:
     ws = resolve_workspace(workspace)
     branch_name = (branch or "").strip()
@@ -426,13 +435,27 @@ def run_ci_fix(
             if not result.success:
                 return output
 
+            committed = False
+            if allowed_paths is not None:
+                try:
+                    changed = set(changed_paths(run_workspace))
+                    changed.update(committed_paths_since(run_workspace, ctx.head_sha))
+                    committed = head_sha(run_workspace) != ctx.head_sha
+                except GitCommandError as exc:
+                    raise GitHubCiFixError(exc.kind, exc.message) from exc
+                if not changed.issubset(allowed_paths):
+                    raise GitHubCiFixError(
+                        ERR_INVALID_INPUT,
+                        "The repair changed files outside its authorized scope; no push was made.",
+                    )
+
             push = push_ci_fix(
                 ctx=ctx,
                 result=result,
                 workspace=run_workspace,
                 baseline=baseline,
                 github_token=github_token,
-                already_committed=merge is not None,
+                already_committed=merge is not None or committed,
             )
         except GitHubCiFixError as exc:
             return push_error_output(output, exc)

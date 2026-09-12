@@ -14,7 +14,7 @@ metadata:
   requires:
   - An interactive terminal for the entry picker, or a conversational surface for its text fallback.
   - At least one available onboarding child skill.
-  version: '2.1'
+  version: '2.2'
 pre_execute:
 - tool: ask_user_choice
   args:
@@ -60,6 +60,5 @@ the appropriate tools or skill. Do not reopen this menu or force a demo choice.
 After a child asks its own question, continue that child rather than returning
 to this master menu. Escape cancels onboarding; wait for a fresh user request.
 
-An explicit `/demo` starts a fresh run: carry inputs from the new request,
-and perform the selected workflow again rather than crediting earlier results
-as completed work.
+An explicit `/demo` starts the selected workflow with the new request. Let its
+tool resolve an existing active run; completed results do not count as a new run.

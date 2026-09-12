@@ -69,6 +69,12 @@ def test_build_gh_argv_skips_repo_flag_for_api_after_global_flags() -> None:
     ) == ["gh", "--hostname", "github.com", "api", "user"]
 
 
+@pytest.mark.parametrize("subcommand", ["deploy-key", "autolink"])
+def test_repository_scoped_repo_subcommands_keep_explicit_target(subcommand: str) -> None:
+    args = ["repo", subcommand, "delete", "123"]
+    assert build_gh_argv(args=args, repo="acme/target") == ["gh", "-R", "acme/target", *args]
+
+
 def test_run_gh_blocks_auth_token_before_spawn() -> None:
     with (
         patch("integrations.github.tools.github_cli.runner.resolve_github_token") as resolve_mock,

@@ -18,7 +18,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
-from config.constants.paths import OPENSRE_HOME_DIR
+from config.constants.paths import OPENSRE_HOME_DIR, OPENSRE_HOME_ENV
 
 SERVICE_LABEL = "com.opensre.scheduler"
 _LOGS_DIRNAME = "logs"
@@ -39,6 +39,7 @@ class BackgroundServiceState:
     unit_path: Path | None
     log_path: Path | None
     detail: str = ""
+    running: bool = False
 
     @property
     def summary(self) -> str:
@@ -177,6 +178,80 @@ def _unsupported(name: str) -> BackgroundServiceState:
     )
 
 
+def check_background_service(
+    *,
+    home: Path | None = None,
+    system: str = "",
+    run: Runner = _run,
+) -> BackgroundServiceState:
+    """Check OS liveness rather than interpreting a saved unit as a running daemon."""
+    state = background_service_state(home=home, system=system)
+    if not state.supported or not state.installed:
+        return state
+    if state.platform == "Darwin":
+        result = run(["launchctl", "print", f"gui/{os.getuid()}/{SERVICE_LABEL}"])
+        alive = result.returncode == 0 and "state = running" in result.stdout
+    else:
+        result = run(["systemctl", "--user", "is-active", f"{SERVICE_LABEL}.service"])
+        alive = result.returncode == 0 and result.stdout.strip() == "active"
+    return BackgroundServiceState(
+        state.platform,
+        state.supported,
+        state.installed,
+        state.unit_path,
+        state.log_path,
+        running=alive,
+    )
+
+
+def ensure_background_service(
+    *,
+    home: Path | None = None,
+    system: str = "",
+    run: Runner = _run,
+    deadline: float | None = None,
+) -> BackgroundServiceState:
+    """Start this installation's scheduler and require an OS-confirmed live process."""
+    original_run = run
+
+    def bounded_run(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
+        remaining = deadline - time.time() if deadline is not None else _COMMAND_TIMEOUT_SECONDS
+        if remaining <= 0:
+            raise RuntimeError("The background scheduler setup deadline expired.")
+        if original_run is _run:
+            return subprocess.run(
+                list(command),
+                capture_output=True,
+                text=True,
+                timeout=min(_COMMAND_TIMEOUT_SECONDS, remaining),
+                check=False,
+            )
+        return original_run(command)
+
+    run = bounded_run
+    state = check_background_service(home=home, system=system, run=run)
+    if not state.supported:
+        raise RuntimeError(state.summary)
+    command = [sys.executable, "-m", "surfaces.entrypoint", "cron", "start", "--service"]
+    matches = False
+    if state.unit_path is not None:
+        if state.platform == "Darwin":
+            definition = plistlib.loads(state.unit_path.read_bytes())
+            matches = definition.get("ProgramArguments") == command and definition.get(
+                "EnvironmentVariables", {}
+            ).get(OPENSRE_HOME_ENV) == str(OPENSRE_HOME_DIR)
+        else:
+            matches = state.unit_path.read_text() == _systemd_definition(command, _log_path())
+    if not state.running or not matches:
+        install_background_service(home=home, system=system, run=run, command=command)
+    for _attempt in range(10):
+        state = check_background_service(home=home, system=system, run=run)
+        if state.running:
+            return state
+        time.sleep(0.5)
+    raise RuntimeError("The background scheduler did not become healthy; check its service log.")
+
+
 def _wait_until_unloaded(
     run: Runner, query: Sequence[str], *, sleep: Callable[[float], None]
 ) -> bool:
@@ -216,7 +291,10 @@ def _launchd_definition(argv: Sequence[str], log_path: Path) -> dict[str, object
         "RunAtLoad": True,
         "KeepAlive": True,
         "ProcessType": "Background",
-        "EnvironmentVariables": {"PATH": os.environ.get("PATH", "/usr/bin:/bin")},
+        "EnvironmentVariables": {
+            "PATH": os.environ.get("PATH", "/usr/bin:/bin"),
+            OPENSRE_HOME_ENV: str(OPENSRE_HOME_DIR),
+        },
         "StandardOutPath": str(log_path),
         "StandardErrorPath": str(log_path),
     }
@@ -230,6 +308,7 @@ def _systemd_definition(argv: Sequence[str], log_path: Path) -> str:
         "After=network-online.target\n\n"
         "[Service]\n"
         f"ExecStart={exec_start}\n"
+        f"Environment={_systemd_quote(f'{OPENSRE_HOME_ENV}={OPENSRE_HOME_DIR}')}\n"
         "Restart=always\n"
         "RestartSec=10\n"
         f"StandardOutput=append:{log_path}\n"
@@ -247,6 +326,8 @@ __all__ = [
     "SERVICE_LABEL",
     "BackgroundServiceState",
     "background_service_state",
+    "check_background_service",
+    "ensure_background_service",
     "install_background_service",
     "remove_background_service",
     "scheduler_command",

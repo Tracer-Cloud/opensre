@@ -215,6 +215,14 @@ if TYPE_CHECKING:
     from config.constants.ci_fixes import (
         CI_FIX_LEDGER_PATH_ENV as CI_FIX_LEDGER_PATH_ENV,
     )
+    from config.constants.ci_repair import CI_REPAIR_CRON as CI_REPAIR_CRON
+    from config.constants.ci_repair import CI_REPAIR_DIRECTORY as CI_REPAIR_DIRECTORY
+    from config.constants.ci_repair import (
+        CI_REPAIR_FINISH_RESERVE_SECONDS as CI_REPAIR_FINISH_RESERVE_SECONDS,
+    )
+    from config.constants.ci_repair import CI_REPAIR_POLL_SECONDS as CI_REPAIR_POLL_SECONDS
+    from config.constants.ci_repair import CI_REPAIR_REPORT_BUILDER as CI_REPAIR_REPORT_BUILDER
+    from config.constants.ci_repair import CI_REPAIR_SECONDS as CI_REPAIR_SECONDS
     from config.constants.clerk import (
         CLERK_ISSUER_ENV as CLERK_ISSUER_ENV,
     )
@@ -344,6 +352,7 @@ if TYPE_CHECKING:
     from config.constants.github import (
         GITHUB_API_BASE_URL as GITHUB_API_BASE_URL,
     )
+    from config.constants.github import GITHUB_CI_DEMO_REPOSITORY as GITHUB_CI_DEMO_REPOSITORY
     from config.constants.github import (
         GITHUB_CLI_REQUIRED_SCOPES as GITHUB_CLI_REQUIRED_SCOPES,
     )
