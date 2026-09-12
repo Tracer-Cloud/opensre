@@ -8,7 +8,7 @@ import logging
 import os
 import tempfile
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -222,22 +222,63 @@ def add_task(task: ScheduledTask, store_path: Path | None = None) -> ScheduledTa
     lock = FileLock(_lock_path(path))
     with lock:
         raw = _load_for_write(path)
-        wanted = _schedule_identity(task.model_dump(mode="json"))
-        existing_index = next(
-            (index for index, entry in enumerate(raw) if _schedule_identity(entry) == wanted),
-            None,
-        )
-        if existing_index is not None:
-            existing = raw[existing_index]
-            if existing.get("skill_revision", "") == task.skill_revision:
-                return ScheduledTask.model_validate(existing)
-            existing["skill_revision"] = task.skill_revision
-            stored_task = ScheduledTask.model_validate(existing)
-        else:
-            raw.append(task.model_dump(mode="json"))
-            stored_task = task
+        stored_task, changed = _merge_task_into(raw, task)
+        if not changed:
+            return stored_task
         _save_raw(path, raw)
     # A new task or pinned revision changed the schedule: wake the scheduler to resync.
+    reload_signal.request_scheduler_reload()
+    return stored_task
+
+
+def _merge_task_into(
+    raw: list[dict[str, object]], task: ScheduledTask
+) -> tuple[ScheduledTask, bool]:
+    """Append *task* to *raw*, or fold it into the matching schedule already there.
+
+    The flag reports whether *raw* changed, so callers can skip a pointless write.
+    """
+    wanted = _schedule_identity(task.model_dump(mode="json"))
+    existing_index = next(
+        (index for index, entry in enumerate(raw) if _schedule_identity(entry) == wanted),
+        None,
+    )
+    if existing_index is None:
+        raw.append(task.model_dump(mode="json"))
+        return task, True
+    existing = raw[existing_index]
+    if existing.get("skill_revision", "") == task.skill_revision:
+        return ScheduledTask.model_validate(existing), False
+    existing["skill_revision"] = task.skill_revision
+    return ScheduledTask.model_validate(existing), True
+
+
+def replace_task(
+    task: ScheduledTask,
+    *,
+    disable_task_ids: Sequence[str] = (),
+    store_path: Path | None = None,
+) -> ScheduledTask:
+    """Persist *task* and disable *disable_task_ids* in one store write.
+
+    Rescheduling is two changes that have to land together. Adding first can
+    leave both schedules enabled if the process dies before the old one is
+    disabled; disabling first can leave no schedule at all if the add fails.
+    One locked read-modify-write, committed by the same atomic rename every
+    other store write uses, has neither window.
+    """
+    path = store_path or default_task_store_path()
+    retired = {task_id for task_id in disable_task_ids if task_id}
+    with FileLock(_lock_path(path)):
+        raw = _load_for_write(path)
+        stored_task, changed = _merge_task_into(raw, task)
+        for entry in raw:
+            if entry.get("id") in retired and entry.get("id") != stored_task.id:
+                entry["enabled"] = False
+                changed = True
+        if not changed:
+            return stored_task
+        _save_raw(path, raw)
     reload_signal.request_scheduler_reload()
     return stored_task
 

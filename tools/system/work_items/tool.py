@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from core.domain.types.tools import ToolSurface
@@ -29,6 +30,7 @@ from tools.system.work_items._evidence import map_work_task_list, map_work_task_
 from tools.system.work_items.delivery import delivery_targets, invalid_delivery_targets
 from tools.system.work_items.reminders import (
     disable_existing_item_reminders,
+    existing_reminder_timezone,
     schedule_item_reminder,
 )
 from tools.system.work_items.results import (
@@ -55,6 +57,9 @@ from tools.system.work_items.validation import (
 
 def _work_items_available(_sources: dict[str, dict[str, Any]]) -> bool:
     return True
+
+
+logger = logging.getLogger(__name__)
 
 
 @tool(
@@ -274,6 +279,18 @@ def work_task_complete(selectors: list[str]) -> dict[str, Any]:
     return complete_result(complete_work_items(normalized))
 
 
+def _reminder_timezone(item_id: str, remind_at: str, timezone: str) -> str:
+    """Zone to schedule a reminder in, keeping the original on a channel-only edit.
+
+    A work item stores its reminder time but not the zone it was read in, so
+    falling back to the argument default when the caller did not restate the
+    time would move a naive 09:00 reminder to 09:00 UTC.
+    """
+    if remind_at:
+        return timezone or "UTC"
+    return existing_reminder_timezone(item_id) or timezone or "UTC"
+
+
 @tool(
     name="work_task_update",
     display_name="Update task",
@@ -437,11 +454,21 @@ def work_task_update(
                 provider="", chat_id="", item=result.item, context=context
             )
             if reminder_targets:
-                scheduled = schedule_item_reminder(
-                    result.item,
-                    targets=reminder_targets,
-                    timezone=timezone or "UTC",
-                )
+                try:
+                    scheduled = schedule_item_reminder(
+                        result.item,
+                        targets=reminder_targets,
+                        timezone=_reminder_timezone(result.item.id, remind_at, timezone),
+                    )
+                except Exception:
+                    # The item is already committed. Say the schedule did not
+                    # follow rather than raising, so the drift is visible.
+                    logger.exception("work item %s reminder reschedule failed", result.item.id)
+                    return {
+                        "error": "reminder_reschedule_failed",
+                        "detail": "the task was updated but its reminder schedule was not",
+                        "task": item_summary(result.item),
+                    }
         else:
             # The reminder is gone; leaving its one-shot task enabled would fire
             # a delivery for a reminder the item no longer has.
