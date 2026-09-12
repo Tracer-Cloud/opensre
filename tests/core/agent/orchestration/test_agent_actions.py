@@ -766,6 +766,11 @@ def test_execute_cli_actions_preserves_windows_shell_syntax(monkeypatch: object)
         environ={"COMSPEC": r"C:\Windows\System32\cmd.exe"},
     )
     monkeypatch.setattr(shell_execution, "os", windows_shell)
+    monkeypatch.setattr(
+        shell_execution,
+        "_windows_command_shell",
+        lambda: r"C:\Windows\System32\cmd.exe",
+    )
     calls = _install_fake_popen(monkeypatch)
     command = r"CD C:\Users\Alice"
 
