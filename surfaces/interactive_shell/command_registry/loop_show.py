@@ -58,7 +58,8 @@ def show_loop(session: Session, console: Console, args: list[str]) -> bool:
             console.print(Text(f"Run {run_id} was not found for this loop.", style=ERROR))
             return True
         runs = restore_legacy_reports([selected, *runs])
-        selected, runs = runs[0], runs[1:]
+        selected = runs[0]
+        runs = [run for run in runs[1:] if run.run_id != selected.run_id]
     else:
         runs = restore_legacy_reports(runs)
         selected = runs[0] if runs else None
