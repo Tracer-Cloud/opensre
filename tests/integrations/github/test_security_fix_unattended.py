@@ -3,16 +3,18 @@
 from __future__ import annotations
 
 import subprocess
+import threading
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 
 from integrations.coding_agent import CodingResult
-from integrations.github.client import GitHubRestClient
+from integrations.github.client import GitHubApiError, GitHubRestClient
 from integrations.github.pull_requests import PullRequest
-from integrations.github.tools.security_fix import unattended
+from integrations.github.tools.security_fix import claim, unattended
 from integrations.github.tools.security_fix.context import (
     SecurityAlertContext,
     gather_security_alert_context,
@@ -38,6 +40,11 @@ _CTX = SecurityAlertContext(
 )
 
 
+@pytest.fixture(autouse=True)
+def _isolate_repository_claims(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setattr(claim, "OPENSRE_HOME_DIR", tmp_path / "opensre-home")
+
+
 class _FakeGitHubClient:
     def __init__(self, pulls: list[dict[str, Any]]) -> None:
         self.pulls = pulls
@@ -61,8 +68,25 @@ def _dependabot_alert(number: int, severity: str) -> dict[str, Any]:
 def test_open_fix_alert_keys_reads_only_opensre_fix_branches() -> None:
     client = _FakeGitHubClient(
         [
-            {"head": {"ref": "opensre/github-security-fix-dependabot-12-abc123"}},
-            {"head": {"ref": "opensre/github-security-fix-code_quality-7-deadbeef"}},
+            {
+                "head": {
+                    "ref": "opensre/github-security-fix-dependabot-12-abc123",
+                    "repo": {"full_name": "acme/app"},
+                }
+            },
+            {
+                "head": {
+                    "ref": "opensre/github-security-fix-code_quality-7-deadbeef",
+                    "repo": {"full_name": "ACME/APP"},
+                }
+            },
+            {
+                "head": {
+                    "ref": "opensre/github-security-fix-dependabot-99-abc123",
+                    "repo": {"full_name": "attacker/app"},
+                }
+            },
+            {"head": {"ref": "opensre/github-security-fix-dependabot-98-abc123", "repo": None}},
             {"head": {"ref": "opensre/ci-fix-main-abc-def"}},
             {"head": {"ref": "feature/unrelated"}},
             {"head": None},
@@ -74,6 +98,18 @@ def test_open_fix_alert_keys_reads_only_opensre_fix_branches() -> None:
     assert keys == frozenset({("dependabot", 12), ("code_quality", 7)})
     assert client.paths == ["/repos/acme/app/pulls"]
     assert parse_fix_branch_name("opensre/github-security-fix-dependabot-12") is None
+
+
+def test_open_fix_alert_keys_rejects_a_potentially_truncated_listing() -> None:
+    response = MagicMock()
+    response.__enter__.return_value = response
+    response.read.return_value = b'[{"head":{"ref":"feature/unrelated"}}]'
+    response.headers = {"Link": '<https://api.github.com/repos/acme/app/pulls?page=3>; rel="next"'}
+    with (
+        patch("integrations.github.client.request.urlopen", return_value=response),
+        pytest.raises(GitHubApiError, match="pagination limit"),
+    ):
+        open_fix_alert_keys(GitHubRestClient("tok"), owner="acme", repo="app")
 
 
 def test_auto_selection_skips_findings_with_an_open_fix_pr() -> None:
@@ -163,7 +199,14 @@ def test_unattended_fix_ships_from_a_linked_worktree_and_leaves_the_checkout_alo
             workspace=str(clone),
             github_token="tok",
             client=_FakeGitHubClient(
-                [{"head": {"ref": "opensre/github-security-fix-dependabot-3-000000"}}]
+                [
+                    {
+                        "head": {
+                            "ref": "opensre/github-security-fix-dependabot-3-000000",
+                            "repo": {"full_name": "acme/app"},
+                        }
+                    }
+                ]
             ),  # type: ignore[arg-type]
         )
 
@@ -222,3 +265,75 @@ def test_unattended_fix_removes_the_worktree_when_no_patch_is_produced(tmp_path:
     assert _worktree_dirs(clone) == []
     assert _git(clone, "branch", "--list", "opensre/*") == ""
     assert _git(clone, "status", "--porcelain") == ""
+
+
+def test_failed_branch_creation_preserves_preexisting_local_commits(tmp_path: Path) -> None:
+    _origin, clone = _seed_repository(tmp_path)
+    branch = unattended.build_branch_name(str(clone), _CTX)
+    _git(clone, "checkout", "-q", "-b", branch)
+    (clone / "saved.txt").write_text("unsent work\n", encoding="utf-8")
+    _git(clone, "add", "saved.txt")
+    _git(clone, "commit", "-q", "-m", "preserve this")
+    original_head = _git(clone, "rev-parse", branch)
+    _git(clone, "checkout", "-q", "main")
+
+    with (
+        patch.object(unattended, "ensure_workspace_ready"),
+        patch.object(unattended, "verify_coding_agent", return_value=(True, "")),
+        patch.object(unattended, "gather_security_alert_context", return_value=_CTX),
+        patch.object(unattended, "run_fix") as fix,
+    ):
+        result = run_unattended_security_fix(
+            owner="acme",
+            repo="app",
+            workspace=str(clone),
+            github_token="tok",
+            client=_FakeGitHubClient([]),  # type: ignore[arg-type]
+        )
+
+    assert result["success"] is False
+    fix.assert_not_called()
+    assert _git(clone, "rev-parse", branch) == original_head
+    assert _worktree_dirs(clone) == []
+
+
+def test_concurrent_ticks_for_one_repository_do_not_select_twice(tmp_path: Path) -> None:
+    entered = threading.Event()
+    release = threading.Event()
+
+    def fix(_ctx: SecurityAlertContext, _workspace: str, _token: str | None) -> dict[str, Any]:
+        entered.set()
+        assert release.wait(30), "test did not release the active fix"
+        return {"success": True}
+
+    def run(workspace: str) -> dict[str, Any]:
+        return run_unattended_security_fix(
+            owner="acme",
+            repo="app",
+            workspace=workspace,
+            github_token="tok",
+            client=_FakeGitHubClient([]),  # type: ignore[arg-type]
+        )
+
+    with (
+        patch.object(unattended, "ensure_workspace_ready"),
+        patch.object(unattended, "ensure_ship_ready"),
+        patch.object(unattended, "verify_coding_agent", return_value=(True, "")),
+        patch.object(unattended, "gather_security_alert_context", return_value=_CTX) as gather,
+        patch.object(unattended, "_fix_in_linked_worktree", side_effect=fix),
+        ThreadPoolExecutor(max_workers=2) as pool,
+    ):
+        first = pool.submit(run, str(tmp_path / "checkout-one"))
+        try:
+            assert entered.wait(30), "first tick did not enter the fix"
+            second = pool.submit(run, str(tmp_path / "checkout-two"))
+            result = second.result(timeout=5)
+            assert result["success"] is False
+            assert result["error_kind"] == "fix_in_progress"
+            assert gather.call_count == 1
+        finally:
+            release.set()
+        assert first.result(timeout=5)["success"] is True
+
+    with claim.claim_repository("ACME", "APP") as acquired:
+        assert acquired

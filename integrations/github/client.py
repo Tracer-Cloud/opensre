@@ -149,6 +149,7 @@ class GitHubRestClient:
         api_version: str = "2022-11-28",
         max_pages: int = _DEFAULT_PAGINATE_MAX_PAGES,
         collection_key: str = "items",
+        require_complete: bool = False,
     ) -> list[dict[str, Any]]:
         """Follow Link-header pagination, stopping after ``max_pages`` pages.
 
@@ -157,7 +158,8 @@ class GitHubRestClient:
         Silently returns whatever was collected so far once the cap is hit,
         rather than raising -- callers on a bounded listing never reach the
         cap; callers on an unbounded one get a usable partial result instead
-        of an effectively hung tool call.
+        of an effectively hung tool call. ``require_complete`` raises instead
+        when a next page remains, for callers that must not act on partial data.
         """
         if not self._token and not self._allow_unauthenticated_read:
             raise GitHubApiError(
@@ -204,6 +206,10 @@ class GitHubRestClient:
                 if isinstance(raw_items, list):
                     items.extend(item for item in raw_items if isinstance(item, dict))
             url = _next_link(headers)
+        if require_complete and url:
+            raise GitHubApiError(
+                "GitHub pagination limit reached before the listing was complete.", path=path
+            )
         return items
 
     def _url(self, path: str, *, params: dict[str, Any] | None = None) -> str:

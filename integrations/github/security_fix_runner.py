@@ -8,6 +8,7 @@ result and the channel.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from infrastructure.scheduling.scheduler.agent_runner import AgentPayload
@@ -15,11 +16,17 @@ from integrations.github.client import GitHubRestClient
 from integrations.github.tools.security_fix.errors import (
     ERR_ALERT_NOT_FOUND,
     ERR_FIX_ALREADY_OPEN,
+    ERR_FIX_IN_PROGRESS,
 )
 from integrations.github.tools.security_fix.unattended import run_unattended_security_fix
 
 SECURITY_FIX_SKILL_NAME = "fixing-github-security-alerts"
-_NOTHING_TO_FIX_KINDS = frozenset({ERR_ALERT_NOT_FOUND, ERR_FIX_ALREADY_OPEN})
+_QUIET_DETAILS = {
+    ERR_ALERT_NOT_FOUND: "No open supported finding was found.",
+    ERR_FIX_ALREADY_OPEN: "Every supported finding already has an open fix pull request.",
+    ERR_FIX_IN_PROGRESS: "Another security fix is active for this repository.",
+}
+logger = logging.getLogger(__name__)
 
 
 def _required_text(payload: AgentPayload, key: str) -> str:
@@ -40,7 +47,7 @@ def _finding_label(result: dict[str, Any]) -> str:
 def render_security_fix_report(owner: str, repo: str, result: dict[str, Any]) -> str:
     """Render one tick's outcome as the delivered report body."""
     heading = f"GitHub security fix — {owner}/{repo}"
-    error_kind = result.get("error_kind")
+    error_kind = str(result.get("error_kind") or "")
     if result.get("success") and result.get("pr_url"):
         lines = [
             heading,
@@ -54,9 +61,11 @@ def render_security_fix_report(owner: str, repo: str, result: dict[str, Any]) ->
             lines.append("Changed files: " + ", ".join(changed))
         lines.append("Review the pull request before merging.")
         return "\n".join(lines)
-    detail = " ".join(str(result.get("error") or "").split()) or "No automatic fix was produced."
-    if error_kind in _NOTHING_TO_FIX_KINDS:
+    detail = _QUIET_DETAILS.get(error_kind)
+    if detail is not None:
         return "\n".join((heading, f"Nothing to fix this run: {detail}"))
+    logger.error("Scheduled security fix for %s/%s failed: %s", owner, repo, result.get("error"))
+    detail = "Automatic remediation failed. Check the local logs for details."
     label = _finding_label(result)
     alert_url = str(result.get("alert_url") or "").strip()
     target = f"{label} ({alert_url})" if alert_url else label

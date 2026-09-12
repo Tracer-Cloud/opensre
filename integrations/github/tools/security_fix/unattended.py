@@ -10,9 +10,11 @@ open are skipped so a 30-minute cadence never opens the same fix twice.
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 from urllib.parse import quote
 
+from infrastructure.observability.errors.sentry import capture_exception
 from integrations.coding_agent import verify_coding_agent
 from integrations.git import (
     GitCommandError,
@@ -24,11 +26,13 @@ from integrations.git import (
     remove_worktree,
 )
 from integrations.github.client import GitHubApiError, GitHubRestClient, resolve_github_token
+from integrations.github.tools.security_fix.claim import claim_repository
 from integrations.github.tools.security_fix.context import (
     SecurityAlertContext,
     gather_security_alert_context,
 )
 from integrations.github.tools.security_fix.errors import (
+    ERR_FIX_IN_PROGRESS,
     ERR_GITHUB_UNAVAILABLE,
     ERR_PR_FAILED,
     GitHubSecurityFixError,
@@ -48,6 +52,8 @@ from integrations.github.tools.security_fix.ship import build_branch_name, parse
 
 _WORKTREE_PREFIX = ".opensre-security-fix"
 _MAX_OPEN_PR_PAGES = 2
+_OPEN_PR_PAGE_SIZE = 100
+logger = logging.getLogger(__name__)
 
 
 def open_fix_alert_keys(
@@ -56,13 +62,22 @@ def open_fix_alert_keys(
     """Return ``(alert_type, number)`` for findings whose OpenSRE fix PR is still open."""
     pulls = client.paginate(
         f"/repos/{quote(owner, safe='')}/{quote(repo, safe='')}/pulls",
-        params={"state": "open", "per_page": 100},
+        params={"state": "open", "per_page": _OPEN_PR_PAGE_SIZE},
         max_pages=_MAX_OPEN_PR_PAGES,
+        require_complete=True,
     )
     keys: set[tuple[str, int]] = set()
+    repository = f"{owner}/{repo}".casefold()
     for pull in pulls:
         head = pull.get("head")
-        ref = str(head.get("ref") or "") if isinstance(head, dict) else ""
+        if not isinstance(head, dict):
+            continue
+        head_repo = head.get("repo")
+        if not isinstance(head_repo, dict):
+            continue
+        if str(head_repo.get("full_name") or "").casefold() != repository:
+            continue
+        ref = str(head.get("ref") or "")
         parsed = parse_fix_branch_name(ref)
         if parsed is not None:
             keys.add(parsed)
@@ -82,6 +97,30 @@ def run_unattended_security_fix(
 
     Returns the same result shape as :func:`~integrations.github.tools.security_fix.runner.run_security_fix`.
     """
+    with claim_repository(owner, repo) as acquired:
+        if not acquired:
+            return error_output(
+                ERR_FIX_IN_PROGRESS, "Another security fix is active for this repository."
+            )
+        return _run_claimed_security_fix(
+            owner=owner,
+            repo=repo,
+            alert_type=alert_type,
+            workspace=workspace,
+            github_token=github_token,
+            client=client,
+        )
+
+
+def _run_claimed_security_fix(
+    *,
+    owner: str,
+    repo: str,
+    alert_type: str,
+    workspace: str | None,
+    github_token: str | None,
+    client: GitHubRestClient | None,
+) -> dict[str, Any]:
     ws = resolve_workspace(workspace)
     token = resolve_github_token(github_token) or None
     ctx: SecurityAlertContext | None = None
@@ -101,9 +140,11 @@ def run_unattended_security_fix(
             exclude=in_flight,
         )
     except GitHubApiError as exc:
+        logger.exception("Could not list open security-fix pull requests for %s/%s", owner, repo)
+        capture_exception(exc)
         return error_output(
             ERR_GITHUB_UNAVAILABLE,
-            f"Could not list open pull requests for {owner}/{repo}: {exc}",
+            f"Could not list open pull requests for {owner}/{repo}; check the local logs.",
         )
     except GitHubSecurityFixError as exc:
         return error_output(exc.kind, exc.message, ctx)
@@ -130,8 +171,9 @@ def _fix_in_linked_worktree(
 
     branch = ""
     try:
-        branch = build_branch_name(path, ctx)
-        create_branch(path, branch, base_default=base)
+        candidate = build_branch_name(path, ctx)
+        create_branch(path, candidate, base_default=base)
+        branch = candidate
         result = run_fix(ctx, path, None)
         output = to_output(ctx, result)
         if not result.success:

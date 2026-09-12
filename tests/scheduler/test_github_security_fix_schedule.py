@@ -201,19 +201,20 @@ def test_security_fix_report_explains_quiet_and_failed_ticks() -> None:
     )
     assert quiet == (
         "GitHub security fix — acme/app\n"
-        "Nothing to fix this run: Every open supported finding in acme/app already has an "
-        "OpenSRE fix pull request open; no new PR was created."
+        "Nothing to fix this run: Every supported finding already has an open fix pull request."
     )
 
     failed = render_security_fix_report(
         "acme",
         "app",
-        _shipped(success=False, pr_url=None, error_kind=ERR_EXECUTION, error="agent\n gave up"),
+        _shipped(
+            success=False, pr_url=None, error_kind=ERR_EXECUTION, error="private provider detail"
+        ),
     )
     assert failed == (
         "GitHub security fix — acme/app\n"
         "No pull request opened for dependabot finding #12 "
-        "(https://github.com/acme/app/security/dependabot/12): agent gave up"
+        "(https://github.com/acme/app/security/dependabot/12): Automatic remediation failed. Check the local logs for details."
     )
 
 
