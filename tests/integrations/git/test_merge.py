@@ -153,3 +153,28 @@ def test_merge_ref_raises_on_non_conflict_failure(tmp_path: Path) -> None:
         merge_ref(str(work), "origin/does-not-exist", message="Merge")
     assert excinfo.value.kind == MERGE_FAILED
     assert merge_in_progress(str(work)) is False
+
+
+def test_fetch_uses_explicit_token_without_putting_it_in_argv(monkeypatch) -> None:
+    import subprocess
+
+    from integrations.git import merge
+
+    monkeypatch.delenv("GIT_CONFIG_COUNT", raising=False)
+    calls = []
+
+    def run(workspace, *args, **kwargs):
+        calls.append((workspace, args, kwargs))
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(merge, "_run_git", run)
+    monkeypatch.setattr(
+        merge, "_remote_https_base", lambda *_args: "https://github.com/", raising=False
+    )
+    fetch_remote_branch("/checkout", "demo/repair", token="private-demo-token")
+    _, args, kwargs = calls[-1]
+    assert args == ("fetch", "origin", "demo/repair:refs/remotes/origin/demo/repair")
+    assert "private-demo-token" not in repr(args)
+    env = kwargs["env"]
+    assert env["GIT_CONFIG_KEY_0"] == "http.https://github.com/.extraheader"
+    assert env["GIT_CONFIG_VALUE_0"].startswith("Authorization: Basic ")

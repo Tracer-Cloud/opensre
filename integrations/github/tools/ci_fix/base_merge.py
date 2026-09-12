@@ -63,6 +63,7 @@ def merge_base_into_head(
     *,
     baseline: Mapping[str, str],
     resolve_conflicts: Callable[[str], CodingResult],
+    github_token: str | None = None,
 ) -> BaseMergeResult:
     """Merge ``origin/<base>`` into the checked-out PR head, resolving conflicts via the coding agent.
 
@@ -72,7 +73,7 @@ def merge_base_into_head(
     """
     base_ref = f"origin/{ctx.base_branch}"
     try:
-        fetch_remote_branch(workspace, ctx.base_branch)
+        fetch_remote_branch(workspace, ctx.base_branch, token=github_token)
         if merge_ref(workspace, base_ref, message=_merge_message(ctx)):
             return BaseMergeResult(base_branch=ctx.base_branch, commit_sha=head_sha(workspace))
         conflicts = describe_conflicts(workspace, ours=ctx.head_branch, theirs=ctx.base_branch)

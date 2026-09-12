@@ -7,7 +7,12 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from integrations.git.errors import COMMIT_FAILED, MERGE_FAILED, GitCommandError
-from integrations.git.local import _run_git, _with_opensre_coauthor
+from integrations.git.local import (
+    _remote_https_base,
+    _run_git,
+    _token_auth_env,
+    _with_opensre_coauthor,
+)
 
 # ``git ls-files -u`` stage numbers: 1 = merge base, 2 = ours (HEAD), 3 = theirs.
 _STAGE_OURS = "2"
@@ -23,9 +28,15 @@ class ConflictedPath:
     description: str
 
 
-def fetch_remote_branch(workspace: str, branch: str, *, remote: str = "origin") -> None:
+def fetch_remote_branch(
+    workspace: str, branch: str, *, remote: str = "origin", token: str | None = None
+) -> None:
     """Update ``refs/remotes/<remote>/<branch>`` without touching local branches."""
-    result = _run_git(workspace, "fetch", remote, f"{branch}:refs/remotes/{remote}/{branch}")
+    base = _remote_https_base(workspace, remote) if token else ""
+    env = _token_auth_env(token, base) if token and base else None
+    result = _run_git(
+        workspace, "fetch", remote, f"{branch}:refs/remotes/{remote}/{branch}", env=env
+    )
     if result.returncode != 0:
         raise GitCommandError(
             MERGE_FAILED,

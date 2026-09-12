@@ -413,7 +413,7 @@ def run_ci_fix(
             run_workspace = worktree.path
             ctx = replace(ctx, head_branch=worktree.branch_name)
         else:
-            checkout_target_branch(ws, ctx)
+            checkout_target_branch(ws, ctx, github_token=github_token)
     except GitHubCiFixError as exc:
         return error_output(exc.kind, exc.message, ctx)
 
@@ -426,6 +426,7 @@ def run_ci_fix(
                     run_workspace,
                     ctx,
                     baseline=pre_coding_changes(run_workspace),
+                    github_token=github_token,
                     resolve_conflicts=resolve_merge_conflicts(ctx, run_workspace, model),
                 )
                 output = with_merge_output(output, merge)

@@ -16,10 +16,12 @@ from infrastructure.process.tree import start_watchdog
 from integrations.coding_agent import verify_coding_agent
 from integrations.git import clone_repository
 from integrations.github.client import GitHubApiError, GitHubRestClient
+from integrations.github.tools.ci_fix.context import CiFixContext
 from integrations.github.tools.ci_fix.errors import GitHubCiFixError
 from integrations.github.tools.ci_fix.gh import run_gh_json
 from integrations.github.tools.ci_fix.ledger import record_ci_fix_outcome
 from integrations.github.tools.ci_fix.runner import run_ci_fix
+from integrations.github.tools.ci_fix.verification import CheckState, wait_for_pr_checks
 from integrations.github.tools.ci_repair_loop.credentials import configured_token
 from integrations.github.tools.ci_repair_loop.fixture import (
     cleanup_demo,
@@ -51,6 +53,46 @@ def _run_link(rows: list[dict[str, Any]], *, failed: bool) -> str:
     return ""
 
 
+def _verify_green(run: RepairRun, pr: dict[str, Any], token: str) -> bool:
+    """Require the normal registration and settlement windows even when no edit is needed."""
+    sha = str(pr["headRefOid"])
+    ctx = CiFixContext(
+        owner=run.owner,
+        repo=run.repo,
+        number=run.pr_number,
+        title="",
+        url=run.pr_url,
+        base_branch="",
+        head_branch="",
+        head_sha=sha,
+        skipped_check_names=(),
+        failing_checks=(),
+        task="Verify the selected PR head.",
+    )
+    result = wait_for_pr_checks(ctx, github_token=token, expected_head_sha=sha)
+    if result.state is CheckState.FAILED:
+        return False
+    if result.state is CheckState.PASSED:
+        current = _read_pr(run, token)
+        if current.get("state") != "OPEN" or current.get("headRefOid") != sha:
+            run.status, run.reason = (
+                RepairStatus.CANCELLED,
+                "The selected PR changed during verification.",
+            )
+        else:
+            run.status, run.reason = (
+                RepairStatus.SUCCEEDED,
+                "The selected PR is already green; no repair was made.",
+            )
+            run.passed_run_url = _run_link(current.get("statusCheckRollup") or [], failed=False)
+    else:
+        run.status = (
+            RepairStatus.TIMED_OUT if result.state is CheckState.TIMED_OUT else RepairStatus.FAILED
+        )
+        run.reason = f"The selected PR could not be verified: {result.state.value}."
+    return True
+
+
 def _repair(run: RepairRun, store: RepairStore, token: str) -> None:
     while time.time() < run.deadline - CI_REPAIR_FINISH_RESERVE_SECONDS:
         pr = _read_pr(run, token)
@@ -72,11 +114,8 @@ def _repair(run: RepairRun, store: RepairStore, token: str) -> None:
                     str(row.get("conclusion") or row.get("state") or "").upper() == "SUCCESS"
                     for row in rows
                 )
+                and _verify_green(run, pr, token)
             ):
-                run.status, run.reason = (
-                    RepairStatus.SUCCEEDED,
-                    "The selected PR is already green; no repair was made.",
-                )
                 return
             time.sleep(2)
             continue

@@ -466,3 +466,34 @@ def test_real_cron_tick_saves_terminal_report_before_stopping_schedule(
         assert get_task(run.id) is not None
     finally:
         scheduler.shutdown(wait=True)
+
+
+def test_existing_green_pr_still_waits_for_late_checks(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from integrations.github.tools.ci_fix.verification import CheckState, CheckVerification
+    from integrations.github.tools.ci_repair_loop import worker
+
+    run = _run(pr_number=1).model_copy(update={"demo": False})
+    states = iter(
+        [
+            {
+                "state": "OPEN",
+                "headRefOid": "green-head",
+                "statusCheckRollup": [{"conclusion": "SUCCESS"}],
+            },
+            {"state": "CLOSED"},
+        ]
+    )
+    monkeypatch.setattr(worker, "_read_pr", lambda *_args: next(states))
+    checked = []
+
+    def verify(ctx: Any, **kwargs: Any) -> CheckVerification:
+        checked.append(kwargs["expected_head_sha"])
+        return CheckVerification(state=CheckState.FAILED, check_names=("late security",))
+
+    monkeypatch.setattr(worker, "wait_for_pr_checks", verify, raising=False)
+    monkeypatch.setattr(worker.time, "sleep", lambda _seconds: None)
+    worker._repair(run, RepairStore(tmp_path), "test-token")
+    assert checked == ["green-head"]
+    assert run.status is RepairStatus.CANCELLED

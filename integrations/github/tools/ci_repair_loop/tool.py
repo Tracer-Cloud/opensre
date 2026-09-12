@@ -6,7 +6,7 @@ import time
 from typing import Any
 
 from core.domain.types.tools import ToolSurface
-from core.tool import SideEffectLevel
+from core.tool import SideEffectLevel, report_run_error
 from core.tool_framework import tool
 from integrations.github.client import GitHubApiError
 from integrations.github.helpers import (
@@ -41,6 +41,10 @@ def _result(run: RepairRun, store: RepairStore) -> dict[str, Any]:
     name="schedule_ci_repair_loop",
     source="github",
     display_name="Schedule bounded CI repair",
+    use_cases=[
+        "Run the scheduled CI repair onboarding demo",
+        "Repair one selected PR in the background",
+    ],
     description=(
         "Schedule repair of one GitHub PR, or demo=true for a tiny CI repair demonstration "
         "in a fixed reusable private repository. Starts and checks the local background "
@@ -88,8 +92,8 @@ def schedule_ci_repair_loop(
     **_kwargs: Any,
 ) -> dict[str, Any]:
     """Authorize exactly one bounded repair scope and return its durable identity."""
-    store = RepairStore()
     try:
+        store = RepairStore()
         run, reused, next_run = schedule_repair(
             demo=demo,
             owner=owner,
@@ -99,6 +103,13 @@ def schedule_ci_repair_loop(
             store=store,
         )
     except (ValueError, RuntimeError, OSError, GitHubApiError) as exc:
+        report_run_error(
+            exc,
+            tool_name="schedule_ci_repair_loop",
+            source="github",
+            component=__name__,
+            method="schedule_repair",
+        )
         return {
             "ok": False,
             "error": f"Could not schedule CI repair: {type(exc).__name__}.",
@@ -111,6 +122,10 @@ def schedule_ci_repair_loop(
     name="get_ci_repair_loop",
     source="github",
     display_name="Inspect CI repair",
+    use_cases=[
+        "Observe an active CI repair run",
+        "Retrieve a completed repair report and its evidence links",
+    ],
     description="Read the linked summary of a CI repair run. Optionally wait up to sixty seconds for completion; never starts another repair.",
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.READ_ONLY,
@@ -135,13 +150,20 @@ def schedule_ci_repair_loop(
 )
 def get_ci_repair_loop(task_id: str, wait_seconds: int = 0, **_kwargs: Any) -> dict[str, Any]:
     """Retrieve the same report while the shell is open or after returning later."""
-    store = RepairStore()
     until = time.monotonic() + min(60, max(0, wait_seconds))
     try:
+        store = RepairStore()
         while True:
             run = store.get(task_id)
             if run.terminal or time.monotonic() >= until:
                 return _result(run, store)
             time.sleep(min(1, max(0, until - time.monotonic())))
-    except (ValueError, OSError) as exc:
+    except (ValueError, OSError, RuntimeError) as exc:
+        report_run_error(
+            exc,
+            tool_name="get_ci_repair_loop",
+            source="github",
+            component=__name__,
+            method="RepairStore.get",
+        )
         return {"ok": False, "error": str(exc)}
