@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "opensre"
-version = "0.1"
+version = "0.2.0.dev2+proactive"
 description = "Open-source SRE agent for automated incident investigation and root cause analysis. Automatically analyzes alerts from Slack, Grafana, Datadog, and other tooling."
 readme = "README.md"
 requires-python = ">=3.12"
@@ -161,7 +161,11 @@ include = [
 ]
 
 [tool.setuptools.package-data]
-"core.agent_harness.prompts" = ["opensre_system_prompt.md", "skills/**/*.md"]
+"core.agent_harness.prompts" = [
+  "opensre_system_prompt.md",
+  "proactive_messages/*.md",
+  "skills/**/*.md",
+]
 "integrations" = ["**/SKILL.md", "yandex_cloud/api_index.json"]
 "tools" = ["**/SKILL.md"]
 

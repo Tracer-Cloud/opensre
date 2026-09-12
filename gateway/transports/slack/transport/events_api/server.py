@@ -28,6 +28,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from config.constants.gateway import DEFAULT_STOP_TIMEOUT_SECONDS
 from gateway.core.lifecycle.errors import GatewayTransportFailedError
 from gateway.core.middleware.approvals import ApprovalBroker
+from gateway.core.process.shutdown_budget import ShutdownBudget
 from gateway.core.storage.events.repository import HandledSlackEventRepository
 from gateway.transports.slack.delivery.approvals import handle_block_actions_payload
 from gateway.transports.slack.delivery.feedback import record_feedback_payload
@@ -79,6 +80,7 @@ class SlackHttpServerHandle:
     gate: ListenerGate
     bound_host: str
     bound_port: int
+    background_stop: Callable[[float], bool] | None = None
 
     @property
     def bound_address(self) -> str:
@@ -92,9 +94,13 @@ class SlackHttpServerHandle:
         """
         self.gate.accepting = False  # refuse first; the thread may outlive the join
         self.server.should_exit = True
-        self.thread.join(timeout=timeout)
+        budget = ShutdownBudget(timeout)
+        self.thread.join(timeout=budget.remaining)
         self.workers.shutdown(wait=False, cancel_futures=True)
-        return not self.thread.is_alive()
+        background_stopped = (
+            self.background_stop(budget.remaining) if self.background_stop is not None else True
+        )
+        return not self.thread.is_alive() and background_stopped
 
 
 def build_slack_http_app(
@@ -205,6 +211,7 @@ def serve_slack_http_in_thread(
     workers: ThreadPoolExecutor,
     gate: ListenerGate,
     startup_timeout: float = 10.0,
+    background_stop: Callable[[float], bool] | None = None,
 ) -> SlackHttpServerHandle:
     """Start uvicorn on ``app`` and wait until it is bound."""
     server = uvicorn.Server(uvicorn.Config(app, host=host, port=port, log_config=None))
@@ -216,7 +223,13 @@ def serve_slack_http_in_thread(
         if server.started and server.servers:
             bound = server.servers[0].sockets[0].getsockname()
             return SlackHttpServerHandle(
-                server, thread, workers, gate, str(bound[0]), int(bound[1])
+                server,
+                thread,
+                workers,
+                gate,
+                str(bound[0]),
+                int(bound[1]),
+                background_stop,
             )
         if not thread.is_alive():
             break
@@ -238,6 +251,8 @@ def serve_slack_http_in_thread(
             _FAILED_START_JOIN_SECONDS,
         )
     workers.shutdown(wait=False, cancel_futures=True)
+    if background_stop is not None:
+        background_stop(0.0)
     # GatewayTransportFailedError, not RuntimeError: start_transports catches
     # this and records Slack unavailable instead of aborting the gateway.
     raise GatewayTransportFailedError(f"Slack HTTP listener on {host}:{port} failed to start")

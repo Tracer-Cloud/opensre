@@ -149,6 +149,7 @@ Teammate tools (bot token) plus webhook blast. Credentials resolve inside the to
 | `slack_send_message` | Post to the webhook's fixed channel | `SLACK_WEBHOOK_URL` | No |
 | `slack_reply_message` | Post to any channel/thread (`C…` or `#name`) | bot token, `chat:write` | No |
 | `slack_read_messages` | Read channel history or a thread (`thread_ts`) | bot token, history + list scopes | No |
+| `slack_proactive_message_history` | Read your send/suppress judgement ledger | None | No |
 | `slack_search_messages` | Workspace message search | **user** token (`SLACK_ACCESS_TOKEN`), `search:read` | No |
 | `slack_list_team_members` | List workspace members | bot token, `users:read` | No |
 | `slack_join_channel` | Join a public channel | bot token, `channels:join` | Yes |
@@ -226,6 +227,16 @@ opensre gateway status
 Built-in chat commands: `/new` (fresh session), `/help`, `/pair <code>`.
 
 While a turn runs, the gateway adds an 👀 (`eyes`) reaction on the inbound message, then swaps to ✅ (`white_check_mark`) when the reply is finalized.
+
+After a completed Slack turn is persisted, OpenSRE reviews that interaction in
+the background against `MASTER_JUDGEMENT.md`. It may read up to 20 messages from
+the originating thread, then either posts one evidence-backed follow-up to that
+same thread or remains silent. It does not poll Slack or choose another channel.
+
+Ask “show my recent proactive-message decisions” to retrieve the durable
+send/suppress ledger, including delivery status and the Slack message timestamp.
+The ledger and judgement cursor live under your scoped OpenSRE user context in
+`proactive_messages/`.
 
 If Slack is not configured the daemon still runs the other components and `opensre gateway status` shows `slack: not configured`.
 

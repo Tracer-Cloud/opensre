@@ -88,6 +88,11 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
         "surfaces.cli.commands.cron:cron_command",
     ),
     CommandSpec(
+        "proactive",
+        "Manage and manually trigger proactive Slack message policies.",
+        "surfaces.cli.commands.proactive:proactive_command",
+    ),
+    CommandSpec(
         "sentry",
         "Sentry-specific automation and digests.",
         "surfaces.cli.commands.sentry_digest:sentry_command",
