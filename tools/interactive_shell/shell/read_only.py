@@ -492,6 +492,7 @@ def _segment_is_read_only(segment: str) -> bool:
 def _has_unquoted_brace_expansion(text: str) -> bool:
     """Return whether POSIX shell syntax can expand an unquoted brace expression."""
     quote: str | None = None
+    openings: list[int] = []
     index = 0
     while index < len(text):
         char = text[index]
@@ -506,10 +507,11 @@ def _has_unquoted_brace_expansion(text: str) -> bool:
         if char in ("'", '"'):
             quote = char
         elif char == "{":
-            closing = text.find("}", index + 1)
-            if closing != -1 and (
-                "," in text[index + 1 : closing] or ".." in text[index + 1 : closing]
-            ):
+            openings.append(index)
+        elif char == "}" and openings:
+            opening = openings.pop()
+            contents = text[opening + 1 : index]
+            if "," in contents or ".." in contents:
                 return True
         index += 1
     return False

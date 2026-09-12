@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import psutil
 import pytest
 
+from infrastructure.process import termination as termination_module
 from infrastructure.process.termination import terminate_process_tree
 
 
@@ -119,3 +120,60 @@ def test_terminate_process_tree_scans_until_descendants_stop_appearing(
     assert "suspend:late-9" in events
     assert "scan:10" in events
     assert events.index("terminate:late-9") < events.index("terminate:root")
+
+
+def test_terminate_process_tree_forces_a_bounded_unfreezable_tree(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    events: list[str] = []
+
+    def _unfreezable_process(pid: int, name: str) -> SimpleNamespace:
+        def _deny_stop() -> None:
+            raise psutil.AccessDenied(pid=pid)
+
+        def _no_children(*, recursive: bool) -> list[SimpleNamespace]:
+            assert recursive
+            return []
+
+        return SimpleNamespace(
+            pid=pid,
+            children=_no_children,
+            suspend=_deny_stop,
+            terminate=_deny_stop,
+            kill=lambda: events.append(f"kill:{name}"),
+        )
+
+    child = _unfreezable_process(124, "child")
+    late_child = _unfreezable_process(125, "late-child")
+    root = SimpleNamespace(
+        pid=123,
+        suspend=lambda: events.append("suspend:root"),
+        terminate=lambda: events.append("terminate:root"),
+        kill=lambda: events.append("kill:root"),
+    )
+    scans = 0
+
+    def _children(*, recursive: bool) -> list[SimpleNamespace]:
+        nonlocal scans
+        assert recursive
+        scans += 1
+        return [child] if scans == 1 else [child, late_child]
+
+    root.children = _children
+    monotonic_values = iter((0.0, 0.0, 0.5, 1.0))
+    monkeypatch.setattr(termination_module, "monotonic", lambda: next(monotonic_values))
+    monkeypatch.setattr(psutil, "Process", lambda _pid: root)
+
+    def _wait_procs(
+        processes: list[SimpleNamespace], *, timeout: float
+    ) -> tuple[list[SimpleNamespace], list[SimpleNamespace]]:
+        assert timeout == 5
+        assert root in processes
+        return processes, []
+
+    monkeypatch.setattr(psutil, "wait_procs", _wait_procs)
+
+    terminate_process_tree(123, grace_seconds=10, force_wait_seconds=5)
+
+    assert scans == 2
+    assert events == ["suspend:root", "kill:late-child", "kill:child", "kill:root"]

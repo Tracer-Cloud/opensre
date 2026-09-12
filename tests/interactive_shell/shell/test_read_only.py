@@ -148,8 +148,14 @@ def test_unquoted_glob_bypasses_neither_auto_nor_plan_only_gates() -> None:
     assert apply_plan_only_gate(result, plan_only_active=True).verdict == "ask"
 
 
-def test_unquoted_brace_expansion_bypasses_neither_auto_nor_plan_only_gates() -> None:
-    result = evaluate_shell_command("sort {-ovictim,input}")
+@pytest.mark.parametrize(
+    "command",
+    ["sort {-ovictim,input}", "sort {foo{bar},-ovictim} input"],
+)
+def test_unquoted_brace_expansion_bypasses_neither_auto_nor_plan_only_gates(
+    command: str,
+) -> None:
+    result = evaluate_shell_command(command)
 
     assert result.shell_classification == "unrestricted"
     assert apply_auto_level(result, AutoLevel.LOW).verdict == "ask"
