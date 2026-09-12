@@ -47,6 +47,11 @@ opensre cron add --kind recurring_skill --skill reporting-github-ci-failures \
   --tz Europe/London --provider slack --owner Tracer-Cloud --repo opensre \
   --branch main
 
+# Every 30 minutes: fix one open security or quality finding and open a PR → Slack
+opensre cron add --kind recurring_skill --skill fixing-github-security-alerts \
+  --cron "*/30 * * * *" --provider slack --owner Tracer-Cloud --repo opensre \
+  --workspace /srv/checkouts/opensre
+
 # Morning-report skill with its previewed city → local inbox
 opensre cron add --kind recurring_skill --skill delivering-morning-briefings \
   --cron "0 8 * * 1-5" --tz Asia/Kolkata \
@@ -84,10 +89,11 @@ Create a new scheduled delivery task.
 | `--window` | No | Lookback window in hours (default: `24`) |
 | `--prompt` | Cond. | Instruction to execute on every run; required for `manual_loop` and rejected for other kinds |
 | `--skill` | Cond. | Required with `--kind recurring_skill`; names the revision-pinned skill to execute |
-| `--owner` | Cond. | GitHub repository owner; required for the `reporting-github-ci-failures` recurring skill |
-| `--repo` | Cond. | GitHub repository name; required for the `reporting-github-ci-failures` recurring skill |
+| `--owner` | Cond. | GitHub repository owner; required for the `reporting-github-ci-failures` and `fixing-github-security-alerts` recurring skills |
+| `--repo` | Cond. | GitHub repository name; required for the `reporting-github-ci-failures` and `fixing-github-security-alerts` recurring skills |
 | `--branch` | No | Branch filter for `reporting-github-ci-failures`; cannot be combined with `--pr` |
 | `--pr` | No | Pull-request filter for `reporting-github-ci-failures`; cannot be combined with `--branch` |
+| `--workspace` | No | Local checkout for `fixing-github-security-alerts`; defaults to `CODING_WORKSPACE`, then the scheduler's working directory |
 | `--city` | No | City for `delivering-morning-briefings`; omitted to use its default-location behavior |
 
 ### `opensre cron list`
@@ -223,7 +229,7 @@ from your existing integration configuration.
 | Kind | Behavior |
 |------|----------|
 | `manual_loop` | Runs a stored prompt as one headless agent turn and delivers the answer. This is what `/loops` creates. |
-| `recurring_skill` | Runs a named, revision-pinned recurring skill. `delivering-morning-briefings` preserves its optional city; `reporting-github-ci-failures` requires repository scope and can be narrowed to a branch or PR. |
+| `recurring_skill` | Runs a named, revision-pinned recurring skill. `delivering-morning-briefings` preserves its optional city; `reporting-github-ci-failures` requires repository scope and can be narrowed to a branch or PR; `fixing-github-security-alerts` requires repository scope, fixes one open finding per tick from a fresh linked worktree of the checkout, and opens a PR (see [GitHub security fix](/github-security-fix#scheduled-sweeps)). |
 | `github_pr_sweep` | Headless GitHub PR standup (mergeable / stale / conflicted). Requires GitHub configured; posts via the chosen provider. |
 | `posthog_metric_report` | Headless PostHog metric report over the configured window. Requires PostHog configured. |
 | `work_item_reminder` | Reminder for a single work item at its `--remind-at` time. Created by `opensre work add --remind-at …`. |

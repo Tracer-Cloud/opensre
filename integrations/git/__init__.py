@@ -45,6 +45,11 @@ from integrations.git.merge import (
     stage_paths,
     unmerged_paths,
 )
+from integrations.git.worktree import (
+    add_detached_worktree,
+    linked_worktree_path,
+    remove_worktree,
+)
 from integrations.git.worktree_capture import WorktreeChanges, capture_worktree_changes
 
 __all__ = [
@@ -59,6 +64,7 @@ __all__ = [
     "GitCommandError",
     "WorktreeChanges",
     "abort_merge",
+    "add_detached_worktree",
     "assert_not_protected",
     "capture_worktree_changes",
     "changed_paths",
@@ -75,10 +81,12 @@ __all__ = [
     "head_sha",
     "is_ancestor",
     "is_git_repo",
+    "linked_worktree_path",
     "merge_in_progress",
     "merge_ref",
     "paths_with_conflict_markers",
     "push_branch",
+    "remove_worktree",
     "short_head",
     "stage_paths",
     "unmerged_paths",

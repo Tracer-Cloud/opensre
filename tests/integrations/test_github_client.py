@@ -112,7 +112,10 @@ def test_paginate_follows_link_header(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("integrations.github.client.request.urlopen", fake_urlopen)
     client = GitHubRestClient(github_token="tok")
 
-    assert client.paginate("/repos/o/r/issues") == [{"number": 1}, {"number": 2}]
+    assert client.paginate("/repos/o/r/issues", max_pages=2, require_complete=True) == [
+        {"number": 1},
+        {"number": 2},
+    ]
     assert len(calls) == 2
 
 
@@ -139,7 +142,10 @@ def test_paginate_supports_wrapped_collections(monkeypatch: pytest.MonkeyPatch) 
     assert len(calls) == 2
 
 
-def test_paginate_stops_at_max_pages(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("require_complete", [False, True])
+def test_paginate_stops_at_max_pages(
+    monkeypatch: pytest.MonkeyPatch, require_complete: bool
+) -> None:
     """Regression: paginate() followed every Link-header page with no cap, so
     an endpoint that returns the whole repository's history (e.g.
     /issues/comments, not scoped to one issue) could run to thousands of
@@ -159,10 +165,13 @@ def test_paginate_stops_at_max_pages(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("integrations.github.client.request.urlopen", fake_urlopen)
     client = GitHubRestClient(github_token="tok")
 
-    items = client.paginate("/repos/o/r/issues/comments", max_pages=3)
-
+    if require_complete:
+        with pytest.raises(GitHubApiError, match="pagination limit"):
+            client.paginate("/repos/o/r/issues/comments", max_pages=3, require_complete=True)
+    else:
+        items = client.paginate("/repos/o/r/issues/comments", max_pages=3)
+        assert len(items) == 3
     assert len(calls) == 3
-    assert len(items) == 3
 
 
 def test_http_error_preserves_status_and_rate_limit_headers(

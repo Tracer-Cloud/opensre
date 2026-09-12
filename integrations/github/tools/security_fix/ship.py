@@ -38,6 +38,9 @@ from integrations.github.tools.security_fix.errors import (
 )
 
 _BRANCH_PREFIX = "opensre/github-security-fix"
+_FIX_BRANCH_RE = re.compile(
+    rf"^{re.escape(_BRANCH_PREFIX)}-(?P<alert_type>[a-z_]+)-(?P<number>\d+)-[^/]+$"
+)
 _SUBJECT_MAX = 72
 _MARKDOWN_HEADING_RE = re.compile(r"^#{1,6}\s*")
 _SUBJECT_SKIP_LABELS = frozenset(
@@ -62,6 +65,14 @@ def build_branch_name(workspace: str, ctx: SecurityAlertContext) -> str:
     """Namespaced branch name for this fix."""
     suffix = short_head(workspace) or "wip"
     return f"{_BRANCH_PREFIX}-{_slug(ctx.alert_type)}-{_slug(ctx.number)}-{suffix}"
+
+
+def parse_fix_branch_name(branch: str) -> tuple[str, int] | None:
+    """Return ``(alert_type, number)`` from a :func:`build_branch_name` branch, else ``None``."""
+    match = _FIX_BRANCH_RE.match(branch.strip())
+    if match is None:
+        return None
+    return match.group("alert_type"), int(match.group("number"))
 
 
 def _commit_message(ctx: SecurityAlertContext, summary: str) -> str:
@@ -173,4 +184,4 @@ def ship_security_fix(
     return ShipResult(branch_name=branch, pr=pr)
 
 
-__all__ = ["ShipResult", "build_branch_name", "ship_security_fix"]
+__all__ = ["ShipResult", "build_branch_name", "parse_fix_branch_name", "ship_security_fix"]

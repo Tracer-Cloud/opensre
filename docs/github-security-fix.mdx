@@ -8,7 +8,7 @@ description: "Use OpenSRE to remediate Dependabot, code-scanning, and Code Quali
 OpenSRE can turn one GitHub security or quality finding into a local fix and, when approved, a pull request. It supports Dependabot alerts, code-scanning/CodeQL alerts, and GitHub Code Quality standard findings.
 
 <Warning>
-This is mutating. OpenSRE asks before editing files, then asks again before committing, pushing, and opening a PR.
+This is mutating. OpenSRE asks before editing files, then asks again before committing, pushing, and opening a PR. A [scheduled sweep](#scheduled-sweeps) runs without those prompts and opens a PR on its own.
 </Warning>
 
 ## Prerequisites
@@ -83,6 +83,26 @@ OpenSRE asks before editing files, then asks again before committing, pushing, a
 5. If PR shipping is requested and approved, OpenSRE commits only the files the fix run changed, pushes an `opensre/github-security-fix-*` branch, and opens a PR into the default branch.
 
 Secret-scanning alerts are not auto-fixed. Revoke or rotate the secret first, then plan repository cleanup separately.
+
+### Scheduled sweeps
+
+Schedule the `fixing-github-security-alerts` skill to open one fix PR per tick without anyone at the keyboard:
+
+```bash
+opensre cron add --kind recurring_skill --skill fixing-github-security-alerts \
+  --cron "*/30 * * * *" --provider slack --owner Tracer-Cloud --repo opensre \
+  --workspace /srv/checkouts/opensre
+```
+
+`--owner` and `--repo` are required. `--workspace` is the local checkout whose `origin` is that repository; without it, `CODING_WORKSPACE` and then the scheduler's working directory are used. In the interactive shell, ask for it in words ("fix one security finding every 30 minutes and open a PR") and confirm the offer.
+
+Each tick:
+
+- Skips findings that already have an open `opensre/github-security-fix-*` PR, so a finding is never fixed twice while its PR is open. When every open finding already has a PR, the run reports "Nothing to fix this run".
+- Fetches the default branch and works in a fresh linked worktree next to the checkout — your checkout, its branch, and its uncommitted work are never touched — then removes that worktree.
+- Commits, pushes, and opens the PR without confirmation prompts. Nothing is merged; review the PR as usual.
+
+The delivered report names the finding, the PR URL, and the changed files, or one line saying why no PR was opened. The scheduler needs a GitHub token with the write access listed under Credentials and, for findings without a built-in fixer, a logged-in coding agent CLI on the scheduler host.
 
 ## Verify
 

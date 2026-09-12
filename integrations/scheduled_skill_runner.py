@@ -27,12 +27,24 @@ or change any external system.
 """
 
 
+# Skills whose prefetcher renders the complete final report. Returning it
+# directly preserves every detail instead of sending it through the action
+# agent's intentionally short message preview, and keeps the tick deterministic.
+_DETERMINISTIC_REPORT_SKILLS = frozenset(
+    {"reporting-github-ci-failures", "fixing-github-security-alerts"}
+)
+
+
 def _prefetched_context(skill_name: str, inputs: dict[str, str]) -> str:
     """Fetch integration-owned context without reversing core dependency direction."""
     if skill_name == "reporting-github-ci-failures":
         from integrations.github.ci_health_runner import run_github_ci_health
 
         return run_github_ci_health(inputs)
+    if skill_name == "fixing-github-security-alerts":
+        from integrations.github.security_fix_runner import run_github_security_fix
+
+        return run_github_security_fix(inputs)
     if skill_name == "delivering-morning-briefings":
         from integrations.morning_report import format_fetched_briefing_inputs
 
@@ -58,10 +70,7 @@ def run_scheduled_recurring_skill(payload: AgentPayload) -> str:
         rendered = "\n".join(f"- {key}: {value}" for key, value in sorted(inputs.items()))
         input_block = f"\nValidated inputs:\n{rendered}\n"
     fetch_block = _prefetched_context(resolved.name, inputs)
-    if resolved.name == "reporting-github-ci-failures":
-        # The prefetcher renders the complete final report. Returning it
-        # directly preserves every scoped failure instead of sending it
-        # through the action agent's intentionally short message preview.
+    if resolved.name in _DETERMINISTIC_REPORT_SKILLS:
         return fetch_block
     fetch_section = f"\n{fetch_block}\n" if fetch_block else ""
     message = (

@@ -68,6 +68,70 @@ def test_pending_github_ci_health_offer_preserves_repository_scope() -> None:
     )
 
 
+def test_pending_security_fix_offer_preserves_workspace_and_names_the_cadence() -> None:
+    offer = PendingScheduleOffer(
+        kind="recurring_skill",
+        skill_name="fixing-github-security-alerts",
+        skill_inputs={"owner": "Tracer-Cloud", "repo": "opensre", "workspace": "/srv/checkouts/x"},
+        cron="*/30 * * * *",
+        timezone="UTC",
+        provider="slack",
+    )
+
+    assert offer.to_slash_command() == (
+        "/cron add --kind recurring_skill --cron '*/30 * * * *' --tz UTC --provider slack "
+        "--skill fixing-github-security-alerts --owner Tracer-Cloud --repo opensre "
+        "--workspace /srv/checkouts/x"
+    )
+    assert offer.want_me_to_body() == (
+        "schedule this as a recurring fixing-github-security-alerts every 30 minutes to slack"
+    )
+
+
+def test_propose_security_fix_offer_rejects_ci_health_only_scope() -> None:
+    session = InMemorySessionState()
+    ctx = ActionToolScope(session=session, console=object())
+
+    rejected = execute_propose_scheduled_delivery_tool(
+        {
+            "kind": "recurring_skill",
+            "skill_name": "fixing-github-security-alerts",
+            "cron": "*/30 * * * *",
+            "provider": "interactive_shell",
+            "owner": "Tracer-Cloud",
+            "repo": "opensre",
+            "branch": "main",
+        },
+        ctx,
+    )
+    assert rejected == {
+        "ok": False,
+        "error": "branch is only valid for reporting-github-ci-failures.",
+    }
+    assert session.pending_schedule_offer is None
+
+    result = execute_propose_scheduled_delivery_tool(
+        {
+            "kind": "recurring_skill",
+            "skill_name": "fixing-github-security-alerts",
+            "cron": "*/30 * * * *",
+            "provider": "interactive_shell",
+            "owner": "Tracer-Cloud",
+            "repo": "opensre",
+            "workspace": "/srv/checkouts/opensre",
+        },
+        ctx,
+    )
+    assert result["ok"] is True
+    assert session.pending_schedule_offer is not None
+    assert session.pending_schedule_offer.skill_inputs == {
+        "owner": "Tracer-Cloud",
+        "repo": "opensre",
+        "workspace": "/srv/checkouts/opensre",
+    }
+    assert "--workspace /srv/checkouts/opensre" in result["slash_preview"]
+
+
 def test_propose_github_ci_health_offer_requires_and_preserves_scope() -> None:
     session = InMemorySessionState()
     ctx = ActionToolScope(session=session, console=object())

@@ -5,17 +5,20 @@ description: >-
   fix_github_security_alert
 metadata:
   owner: Vaibhav
-  last_changed_by: Vincent
-  last_changed_at: 2026-09-09
+  last_changed_by: Jan
+  last_changed_at: 2026-09-12
   usecases:
     - Remediate Dependabot, CodeQL, and code-quality alerts and raise a pull request
     - Fix the findings behind a security alert URL or a security and quality page URL
+    - Recurring unattended sweep that opens one security fix pull request per tick
   requires:
     - GitHub account with write access to the target repository
     - GitHub token usable by OpenSRE with security-events read access
     - Installed and authenticated coding agent
+    - Local checkout whose origin matches the target repository (a schedule must supply it or CODING_WORKSPACE)
   type: repair
-  version: "1.0"
+  version: "1.1"
+recurring: unattended
 ---
 
 # GitHub security and quality fix
@@ -78,6 +81,41 @@ Use other workflows for these requests:
 - After the tool returns, reply briefly from the result: finding type/number,
   changed files, and PR URL if present. If `error_kind` is set, explain the
   required next step from `error`.
+
+## Scheduled runs
+
+The skill can run unattended on a schedule, for example every 30 minutes. Each
+tick fixes at most one open supported finding of exactly one configured
+repository and opens a pull request for it. The schedule must supply `owner`
+and `repo`; it may supply `workspace`, the local checkout whose origin is that
+repository (otherwise `CODING_WORKSPACE`, then the scheduler's working
+directory, is used).
+
+The scheduled runner does not issue tool calls and asks no confirmation. It
+invokes `run_github_security_fix`, which:
+
+- skips findings that already have an open `opensre/github-security-fix-*`
+  pull request, so the same finding is never fixed twice while its PR is open;
+- works in a fresh linked worktree of the checkout based on the freshly fetched
+  default branch, never in the checkout itself, and removes that worktree
+  afterwards;
+- commits only the files the fix changed to a new
+  `opensre/github-security-fix-*` branch, pushes it, opens the PR, and reports
+  the PR URL — or reports in one line why no PR was opened.
+
+Nothing is merged. Secret-scanning alerts are never selected.
+
+When offering this sweep as a recurring task interactively, use kind
+`recurring_skill` and skill name `fixing-github-security-alerts`, pass the exact
+`owner` and `repo`, and pass `workspace` when the user named a checkout, to
+`propose_scheduled_delivery`. Use cron `*/30 * * * *` for "every 30 minutes".
+The equivalent command is:
+
+```text
+opensre cron add --kind recurring_skill --skill fixing-github-security-alerts \
+  --cron "*/30 * * * *" --provider slack --owner Tracer-Cloud --repo opensre \
+  --workspace /srv/checkouts/opensre
+```
 
 ## Examples
 
