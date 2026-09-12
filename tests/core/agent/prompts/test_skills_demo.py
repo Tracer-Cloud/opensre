@@ -83,8 +83,8 @@ def test_master_menu_matches_three_unique_children_and_preserves_specialists() -
     fix_loop = loader.load_skill_body("scheduling-github-ci-fixes")
     # The fix loop repairs red pull requests; it is not the analytics report
     # loop, so it never reaches for the analytics or report-scheduling tools.
-    assert "fix_github_pr_ci" in fix_loop
-    assert "summarize_github_pr_status" in fix_loop
+    assert "schedule_ci_repair_loop" in fix_loop
+    assert "get_ci_repair_loop" in fix_loop
     assert "analyze_github_ci_reliability" not in fix_loop
     assert "schedule_ci_reliability_loop" not in fix_loop
     # Repository selection remains part of the child workflow.
