@@ -1,116 +1,52 @@
-"""Tests for interactive-shell command parsing.
-
-Alpha mode removed the shell-command safety policy (allowlist / restricted /
-mutating classification and the deny floor). Parsing now only decides *how* a
-command runs — via ``argv`` or through a shell — and never blocks a command for
-safety. The only non-execution outcome is empty input.
-"""
+"""Tests for interactive-shell command normalization."""
 
 from __future__ import annotations
 
-from tools.interactive_shell.shell.parsing import (
-    argv_for_repl_builtin_detection,
-    parse_shell_command,
-)
+from tools.interactive_shell.shell.parsing import parse_shell_command
 
 
 def test_parse_shell_command_detects_passthrough_prefix() -> None:
-    parsed = parse_shell_command("!echo hello", is_windows=False)
+    parsed = parse_shell_command("!echo hello")
 
     assert parsed.passthrough is True
-    assert parsed.use_shell is True
     assert parsed.command == "echo hello"
-    assert parsed.argv is None
     assert parsed.parse_error is None
 
 
-def test_plain_command_uses_argv_without_shell() -> None:
-    parsed = parse_shell_command("rm -rf /tmp/x", is_windows=False)
+def test_plain_command_is_preserved_for_the_host_shell() -> None:
+    parsed = parse_shell_command("  printf '%s' 'hello world'  ")
 
+    assert parsed.command == "printf '%s' 'hello world'"
     assert parsed.passthrough is False
-    assert parsed.use_shell is False
-    assert parsed.argv == ["rm", "-rf", "/tmp/x"]
     assert parsed.parse_error is None
 
 
-def test_restricted_command_is_no_longer_blocked() -> None:
-    """``sudo`` and friends used to be a hard deny; alpha mode just runs them."""
-    parsed = parse_shell_command("sudo systemctl restart nginx", is_windows=False)
+def test_compact_shell_operators_are_preserved_without_parsing() -> None:
+    command = "cat README.md;echo done&&printf ok>result.txt"
 
-    assert parsed.use_shell is False
-    assert parsed.argv == ["sudo", "systemctl", "restart", "nginx"]
+    parsed = parse_shell_command(command)
+
+    assert parsed.command == command
     assert parsed.parse_error is None
 
 
-def test_operators_run_through_shell_without_block() -> None:
-    parsed = parse_shell_command("ls | wc -l", is_windows=False)
+def test_shell_metacharacters_inside_quotes_are_preserved() -> None:
+    command = "printf '%s' 'one;two&&three>four'"
 
-    assert parsed.use_shell is True
-    assert parsed.passthrough is False
-    assert parsed.argv is None
-    assert parsed.parse_error is None
+    parsed = parse_shell_command(command)
 
-
-def test_command_substitution_runs_through_shell() -> None:
-    parsed = parse_shell_command("echo $(date)", is_windows=False)
-
-    assert parsed.use_shell is True
-    assert parsed.parse_error is None
-
-
-def test_quoted_heredoc_runs_through_shell() -> None:
-    command = """python3 - <<'PY'
-print("hello-heredoc")
-PY"""
-    parsed = parse_shell_command(command, is_windows=False)
-
-    assert parsed.use_shell is True
-    assert parsed.argv is None
-    assert parsed.command == command.strip()
-    assert parsed.parse_error is None
-
-
-def test_unquoted_heredoc_runs_through_shell() -> None:
-    command = """cat <<EOF
-line one
-EOF"""
-    parsed = parse_shell_command(command, is_windows=False)
-
-    assert parsed.use_shell is True
-    assert parsed.argv is None
-
-
-def test_unbalanced_quotes_fall_back_to_shell() -> None:
-    parsed = parse_shell_command('echo "unterminated', is_windows=False)
-
-    assert parsed.use_shell is True
+    assert parsed.command == command
     assert parsed.parse_error is None
 
 
 def test_empty_passthrough_is_parse_error() -> None:
-    parsed = parse_shell_command("!", is_windows=False)
+    parsed = parse_shell_command("!")
 
-    assert parsed.parse_error is not None
+    assert parsed.parse_error == "missing command after passthrough prefix (!)."
     assert parsed.passthrough is True
 
 
 def test_empty_command_is_parse_error() -> None:
-    parsed = parse_shell_command("   ", is_windows=False)
+    parsed = parse_shell_command("   ")
 
     assert parsed.parse_error == "empty command."
-
-
-def test_argv_for_repl_builtin_detection_splits_passthrough_for_cd() -> None:
-    parsed = parse_shell_command("!cd /tmp", is_windows=False)
-    assert argv_for_repl_builtin_detection(parsed=parsed, is_windows=False) == ["cd", "/tmp"]
-
-
-def test_argv_for_repl_builtin_detection_returns_plain_argv() -> None:
-    parsed = parse_shell_command("pwd", is_windows=False)
-    assert argv_for_repl_builtin_detection(parsed=parsed, is_windows=False) == ["pwd"]
-
-
-def test_argv_for_repl_builtin_detection_skips_operator_command() -> None:
-    """A leading ``cd`` in an operator command must not be hijacked as a builtin."""
-    parsed = parse_shell_command("cd /tmp && ls", is_windows=False)
-    assert argv_for_repl_builtin_detection(parsed=parsed, is_windows=False) is None

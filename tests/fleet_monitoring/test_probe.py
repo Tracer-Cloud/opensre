@@ -31,6 +31,7 @@ _PROBE_MODULE = _REPO_ROOT / "tools" / "system" / "fleet_monitoring" / "probe.py
 _PSUTIL_SANCTIONED = (
     _PROBE_MODULE,
     _REPO_ROOT / "config" / "runtime_metadata" / "probes.py",
+    _REPO_ROOT / "infrastructure" / "process" / "termination.py",
 )
 _SOURCE_ROOTS = (
     "cli",

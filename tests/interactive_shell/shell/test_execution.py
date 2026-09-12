@@ -3,16 +3,30 @@
 from __future__ import annotations
 
 import os
+import shlex
 import sys
 import threading
 import time
+from pathlib import Path
 
 import pytest
 
-from tools.interactive_shell.shell.execution import (
-    execute_shell_command,
-)
-from tools.interactive_shell.shell.parsing import parse_shell_command
+from config.constants.terminal_host import BASH_EXPORTED_FUNCTION_ENV_PREFIX
+from tools.interactive_shell.shell import execution as shell_execution
+from tools.interactive_shell.shell.execution import execute_shell_command
+
+
+def _execute(
+    command: str,
+    *,
+    cancel_event: threading.Event | None = None,
+) -> shell_execution.ShellExecutionResult:
+    return execute_shell_command(
+        command=command,
+        timeout_seconds=8,
+        max_output_chars=10_000,
+        cancel_event=cancel_event,
+    )
 
 
 def _assert_pid_gone(pid: int, *, timeout_seconds: float = 2.0) -> None:
@@ -27,90 +41,184 @@ def _assert_pid_gone(pid: int, *, timeout_seconds: float = 2.0) -> None:
     pytest.fail(f"process {pid} still alive after cancel")
 
 
-def test_execute_shell_command_reports_timeout_argv_mode() -> None:
+def test_shell_argv_uses_non_login_posix_fallback(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(shell_execution.os, "name", "posix")
+    monkeypatch.delenv("SHELL", raising=False)
+
+    assert shell_execution._shell_argv("printf ok") == ["/bin/sh", "-c", "printf ok"]
+
+
+def test_shell_argv_does_not_load_configured_interactive_shell(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(shell_execution.os, "name", "posix")
+    monkeypatch.setenv("SHELL", "/bin/bash")
+
+    assert shell_execution._shell_argv("printf ok") == ["/bin/sh", "-c", "printf ok"]
+
+
+def test_shell_argv_disables_windows_startup_and_delayed_expansion(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(shell_execution.os, "name", "nt")
+    monkeypatch.setenv("COMSPEC", r"C:\attacker\cmd.exe")
+    monkeypatch.setattr(
+        shell_execution,
+        "_windows_command_shell",
+        lambda: r"C:\Windows\System32\cmd.exe",
+    )
+
+    assert shell_execution._shell_argv("echo ok") == [
+        r"C:\Windows\System32\cmd.exe",
+        "/d",
+        "/v:off",
+        "/s",
+        "/c",
+        "echo ok",
+    ]
+
+
+def test_shell_argv_keeps_pwd_diagnostic_portable_on_windows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(shell_execution.os, "name", "nt")
+    monkeypatch.setenv("COMSPEC", r"C:\attacker\cmd.exe")
+    monkeypatch.setattr(
+        shell_execution,
+        "_windows_command_shell",
+        lambda: r"C:\Windows\System32\cmd.exe",
+    )
+
+    assert shell_execution._shell_argv("pwd") == [
+        r"C:\Windows\System32\cmd.exe",
+        "/d",
+        "/v:off",
+        "/s",
+        "/c",
+        "cd",
+    ]
+
+
+def test_shell_environment_removes_exported_bash_functions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    function_name = f"{BASH_EXPORTED_FUNCTION_ENV_PREFIX}ls%%"
+    monkeypatch.setenv(function_name, "() { touch /tmp/should-not-run; }")
+    monkeypatch.setenv("OPENSRE_TEST_SENTINEL", "kept")
+
+    child_env = shell_execution._shell_environment()
+
+    assert function_name not in child_env
+    assert child_env["OPENSRE_TEST_SENTINEL"] == "kept"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Bash startup hook is POSIX-specific")
+def test_execute_shell_command_does_not_source_bash_env(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    marker = tmp_path / "startup-hook-ran"
+    hook = tmp_path / "bash-env"
+    hook.write_text(f"touch {shlex.quote(str(marker))}\n")
+    monkeypatch.setenv("SHELL", "/bin/bash")
+    monkeypatch.setenv("BASH_ENV", str(hook))
+
+    result = _execute("pwd")
+
+    assert result.exit_code == 0
+    assert not marker.exists()
+
+
+def test_execute_shell_command_reports_timeout() -> None:
     started = time.monotonic()
+
     result = execute_shell_command(
         command="sleep 30",
-        argv=["sleep", "30"],
-        use_shell=False,
         timeout_seconds=1,
         max_output_chars=10_000,
     )
-    assert result.timed_out is True
-    assert result.cancelled is False
-    assert time.monotonic() - started < 5
 
-
-def test_execute_shell_command_reports_timeout_shell_mode() -> None:
-    started = time.monotonic()
-    result = execute_shell_command(
-        command="sleep 30",
-        argv=None,
-        use_shell=True,
-        timeout_seconds=1,
-        max_output_chars=10_000,
-    )
     assert result.timed_out is True
     assert result.cancelled is False
     assert result.executed_with_shell is True
     assert time.monotonic() - started < 5
 
 
-@pytest.mark.skipif(os.name == "nt", reason="process-group cancel is POSIX")
-def test_execute_shell_command_stops_on_cancel_and_reaps_grandchild() -> None:
-    """ESC must stop shell_run immediately and kill nested OpenSRE-style children.
+@pytest.mark.skipif(os.name == "nt", reason="POSIX shell syntax")
+def test_execute_compact_shell_operators(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.delenv("SHELL", raising=False)
+    output_path = tmp_path / "result.txt"
+    command = f"printf one&&printf two>{shlex.quote(str(output_path))}"
 
-    The CI-agent onboarding skill used to ``shell_run`` ``uv run opensre
-    integrations setup github``. That second process ignored the parent ESC
-    and kept running until the laptop ran out of memory.
-    """
+    result = _execute(command)
+
+    assert result.exit_code == 0
+    assert result.stdout == "one"
+    assert output_path.read_text() == "two"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX shell syntax")
+def test_shell_working_directory_does_not_persist_between_calls(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    monkeypatch.delenv("SHELL", raising=False)
+
+    changed = _execute(f"cd {shlex.quote(str(tmp_path))} && pwd")
+    unchanged = _execute("pwd")
+
+    assert changed.exit_code == 0
+    assert changed.stdout.strip() == str(tmp_path)
+    assert unchanged.exit_code == 0
+    assert unchanged.stdout.strip() == str(Path.cwd())
+
+
+@pytest.mark.skipif(os.name == "nt", reason="process-group cancel is POSIX")
+def test_execute_shell_command_stops_on_cancel_and_reaps_grandchild(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """ESC must stop the shell and all nested OpenSRE-style children."""
+    monkeypatch.delenv("SHELL", raising=False)
+    marker = tmp_path / "grandchild.pid"
+    pending_marker = tmp_path / "grandchild.pid.pending"
     script = (
-        "import subprocess, sys, time\n"
+        "import os, pathlib, subprocess, sys, time\n"
         "child = subprocess.Popen("
         "[sys.executable, '-c', 'import time; time.sleep(60)']"
         ")\n"
-        "print(f'GRAND:{child.pid}', flush=True)\n"
+        f"pending = pathlib.Path({str(pending_marker)!r})\n"
+        "pending.write_text(str(child.pid))\n"
+        f"os.replace(pending, pathlib.Path({str(marker)!r}))\n"
         "time.sleep(60)\n"
     )
     cancel = threading.Event()
 
-    def _request_cancel() -> None:
-        time.sleep(0.3)
+    def _request_cancel_after_child_starts() -> None:
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline and not marker.exists():
+            time.sleep(0.01)
         cancel.set()
 
-    threading.Thread(target=_request_cancel, daemon=True).start()
+    threading.Thread(target=_request_cancel_after_child_starts, daemon=True).start()
     started = time.monotonic()
-    result = execute_shell_command(
-        command="nested-sleep",
-        argv=[sys.executable, "-c", script],
-        use_shell=False,
-        timeout_seconds=8,
-        max_output_chars=10_000,
-        cancel_event=cancel,
-    )
+    result = _execute(shlex.join([sys.executable, "-c", script]), cancel_event=cancel)
     elapsed = time.monotonic() - started
+
     assert result.cancelled is True
     assert result.timed_out is False
     assert elapsed < 4
-    assert "GRAND:" in result.stdout
-    grand_pid = int(result.stdout.strip().split("GRAND:", 1)[1].split()[0])
+    grand_pid = int(marker.read_text())
     _assert_pid_gone(grand_pid)
 
 
-def test_execute_quoted_heredoc_through_shell() -> None:
+def test_execute_quoted_heredoc_through_shell(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("SHELL", raising=False)
     command = """python3 - <<'PY'
 print("hello-heredoc")
 PY"""
-    parsed = parse_shell_command(command, is_windows=False)
-    assert parsed.use_shell is True
 
-    result = execute_shell_command(
-        command=parsed.command,
-        argv=parsed.argv,
-        use_shell=parsed.use_shell,
-        timeout_seconds=10,
-        max_output_chars=10_000,
-    )
+    result = _execute(command)
 
     assert result.timed_out is False
     assert result.exit_code == 0

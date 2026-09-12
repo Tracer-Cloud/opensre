@@ -13,6 +13,7 @@ agents let inspection commands through while still gating mutations.
 
 from __future__ import annotations
 
+import os
 import re
 import shlex
 
@@ -290,6 +291,12 @@ _FIND_MUTATING_PRIMARIES: frozenset[str] = frozenset(
 
 _HEREDOC_RE = re.compile(r"<<-?\s*(?:'[^'\n]+'|\"[^\"\n]+\"|[^\s\\|;&<>]+)")
 _ENV_ASSIGN_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*=")
+# ``cmd.exe`` expands paired environment variables plus batch-style positional
+# parameters. An unmatched percent sign is literal and must not be over-gated.
+_CMD_PERCENT_EXPANSION_RE = re.compile(
+    r"%(?:[^%\r\n]+%|[0-9*]|~[fdpnxsatz$]*[0-9])",
+    re.IGNORECASE,
+)
 # Redirects that do not write a file: stderr/stdout to /dev/null, or fd dups.
 _SAFE_REDIRECTS = (
     "2>/dev/null",
@@ -308,6 +315,14 @@ def _has_file_write_redirect(text: str) -> bool:
     return ">" in scrubbed
 
 
+def _shell_lexing_rules() -> tuple[bool, tuple[str, ...], str]:
+    """Return the host shell's quote characters and escape character."""
+    is_windows = os.name == "nt"
+    if is_windows:
+        return True, ('"',), "^"
+    return False, ("'", '"'), "\\"
+
+
 def _split_on_operators(text: str) -> list[str] | None:
     """Split into pipeline/sequence segments at unquoted ``| ; & && ||``.
 
@@ -316,22 +331,27 @@ def _split_on_operators(text: str) -> list[str] | None:
     segments: list[str] = []
     current: list[str] = []
     quote: str | None = None
+    is_windows, quote_characters, escape_character = _shell_lexing_rules()
     index = 0
     length = len(text)
     while index < length:
         char = text[index]
         if quote is not None:
             current.append(char)
+            if char == escape_character and index + 1 < length and not is_windows and quote == '"':
+                current.append(text[index + 1])
+                index += 2
+                continue
             if char == quote:
                 quote = None
             index += 1
             continue
-        if char in ("'", '"'):
+        if char in quote_characters:
             quote = char
             current.append(char)
             index += 1
             continue
-        if char == "\\" and index + 1 < length:
+        if char == escape_character and index + 1 < length:
             current.append(char)
             current.append(text[index + 1])
             index += 2
@@ -403,8 +423,11 @@ def _date_is_read_only(rest: list[str]) -> bool:
     """``date`` is read-only only for display forms.
 
     ``date -s`` / ``--set`` and the legacy positional ``MMDDhhmm[[CC]YY][.ss]``
-    form set the clock. A leading ``+`` starts an output format string only.
+    form set the clock on POSIX. Under ``cmd.exe``, bare ``date`` prompts for a
+    new date and only ``date /t`` is display-only.
     """
+    if os.name == "nt":
+        return len(rest) == 1 and rest[0].lower() == "/t"
     if any(_token_is_write_flag(tok, _DATE_WRITE_FLAGS) for tok in rest):
         return False
     return not any(not tok.startswith(("-", "+")) for tok in rest)
@@ -466,30 +489,80 @@ def _segment_is_read_only(segment: str) -> bool:
     return False
 
 
-def _has_dangerous_shell_construct(text: str) -> bool:
-    """True if the command carries a substitution or subshell that can expand to
-    or run a command. Allow-list of characters: fail closed on ``$`` / backtick
-    (expansion, even inside double quotes) and on an unquoted ``(`` / ``)``
-    (subshell). Quoted parentheses (regex groups) and ordinary args pass."""
+def _has_unquoted_brace_expansion(text: str) -> bool:
+    """Return whether POSIX shell syntax can expand an unquoted brace expression."""
     quote: str | None = None
+    openings: list[int] = []
     index = 0
-    length = len(text)
-    while index < length:
+    while index < len(text):
         char = text[index]
-        if char == "\\" and index + 1 < length:
+        if char == "\\" and index + 1 < len(text) and quote != "'":
             index += 2
             continue
         if quote is not None:
             if char == quote:
                 quote = None
-            elif quote == '"' and char in "$`":
-                return True  # $ and backtick still expand inside double quotes
             index += 1
             continue
         if char in ("'", '"'):
             quote = char
-        elif char in "$`()":
-            return True  # substitution or subshell outside any quoting
+        elif char == "{":
+            openings.append(index)
+        elif char == "}" and openings:
+            opening = openings.pop()
+            contents = text[opening + 1 : index]
+            if "," in contents or ".." in contents:
+                return True
+        index += 1
+    return False
+
+
+def _has_dangerous_shell_construct(text: str) -> bool:
+    """True when shell evaluation can replace or execute command arguments.
+
+    Fail closed on substitutions, subshells, and unquoted glob or brace
+    expansion. A glob or brace expansion can produce an executable option
+    after the policy has classified the literal input. Quoted or escaped
+    patterns remain literal arguments.
+    """
+    is_windows, quote_characters, escape_character = _shell_lexing_rules()
+    # Both POSIX shells and cmd.exe remove an escaped physical newline before
+    # interpreting the command. ``shlex`` deliberately retains it, so parsing
+    # the source as-is would authorize different argv than the shell executes.
+    # Treat every continuation as dynamic rather than trying to normalize a
+    # second shell grammar in the approval path.
+    if f"{escape_character}\n" in text or f"{escape_character}\r\n" in text:
+        return True
+    # cmd.exe expands %NAME% even inside quotes, and the expanded value may
+    # introduce operators or flag-shaped arguments after policy classification.
+    if is_windows and _CMD_PERCENT_EXPANSION_RE.search(text):
+        return True
+    if not is_windows and _has_unquoted_brace_expansion(text):
+        return True
+
+    quote: str | None = None
+    index = 0
+    length = len(text)
+    while index < length:
+        char = text[index]
+        if (
+            char == escape_character
+            and index + 1 < length
+            and (quote is None or (not is_windows and quote == '"'))
+        ):
+            index += 2
+            continue
+        if quote is not None:
+            if char == quote:
+                quote = None
+            elif not is_windows and quote == '"' and char in "$`":
+                return True  # $ and backtick still expand inside double quotes
+            index += 1
+            continue
+        if char in quote_characters:
+            quote = char
+        elif char in "$`()" or char in "*?[":
+            return True
         index += 1
     return False
 

@@ -153,39 +153,30 @@ If write/mutating actions are introduced later, gate them with the
 execution-stage confirmation policy (`tools/interactive_shell/shared/execution_policy.py`), **not**
 an action-selection denial.
 
-### Removal of the shell-command safety policy (alpha)
+### Shell commands during alpha
 
 Addendum — Jun 27, 2026.
 
-**Decision:** while OpenSRE is in **alpha**, the interactive REPL runs **every**
-shell command with **no guardrails**. The shell-command safety policy — the
-read-only / mutating / restricted classification, the command allowlist, and the
-hard `deny` floor — has been removed. This is a deliberate trade-off: alpha
-prioritizes developer velocity over command sandboxing, and the REPL already
-runs on the developer's own machine with their own privileges.
+**Behavior:** while OpenSRE is in **alpha**, the interactive REPL accepts every
+nonempty shell command. There is no command allowlist or hard deny floor. This
+is a deliberate trade-off: alpha prioritizes developer velocity over command
+sandboxing, and commands run on the developer's machine with their privileges.
 
-What changed:
-
-- `shell_policy.py` (classification, allowlists, `classify_command`,
-  `evaluate_policy`, `PolicyDecision`) was deleted. The pure parsing helpers it
-  also contained moved to `tools/shell/parsing.py` (`parse_shell_command`,
-  `argv_for_repl_builtin_detection`, `ParsedShellCommand`), alongside the shell
-  execution policy in `tools/shell/policy.py`.
-- `tools.shell.policy.evaluate_shell_from_parsed` now returns `allow` for every
-  command — read-only, mutating, `restricted` (`sudo`, `systemctl`, `kill`,
-  `dd`, …), shell operators (`| && ; > <`), and command substitution
-  (`` ` ``/`$(...)`). Commands that need a shell run through one automatically;
-  the `!` prefix is still honored but no longer required to escape the old
-  operator block.
+- Read-only and mutating commands, shell operators (`| && ; > <`), command
+  substitution (`` ` ``/`$(...)`), redirects, and heredocs are all supported.
+  Compact forms such as `cat README.md;echo done` work without spaces around
+  the operator. The optional `!` prefix is still accepted.
 - The **only** remaining non-execution outcome is genuinely empty input (a bare
   `!` or whitespace), which is rejected as input validation, not as a guardrail.
 
-The `ask`/confirmation machinery is retained and used by **`/auto`** (Off/Low/Med)
-plus `trust_mode`. It is split across two layers: the pure decision lives in
-`tools/interactive_shell/shared/execution_policy.py` (`resolve_confirmation`,
-`apply_auto_level`), and the terminal interaction (`execution_allowed` — console
-output, the approval prompt, analytics) lives in
-`surfaces/interactive_shell/ui/execution_confirm.py`.
+Each command starts a new shell in the task workspace. A directory change
+therefore applies only within the same command (`cd path && command`); start a
+new task to continue work from another persistent workspace. On POSIX, commands
+use non-interactive `/bin/sh` syntax rather than loading the configured
+interactive shell, its aliases, or its startup files.
+
+The existing confirmation flow remains available to **`/auto`** (Off/Low/Med)
+and `/trust`; read-only commands continue without confirmation.
 
 ### `/auto` autonomy (tool-type confirmations)
 

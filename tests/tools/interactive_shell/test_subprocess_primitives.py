@@ -8,9 +8,12 @@ import sys
 import tempfile
 import threading
 import time
+from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
+import tools.interactive_shell.subprocess as subprocess_tools
 from tools.interactive_shell.subprocess import (
     read_diag,
     subprocess_env_with_width,
@@ -45,6 +48,48 @@ def test_terminate_child_process_noop_when_exited() -> None:
     proc = subprocess.Popen(["true"])
     proc.wait()
     terminate_child_process(proc)
+
+
+def test_terminate_child_process_uses_tree_termination_on_windows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    terminate_process_tree = MagicMock()
+    proc = MagicMock(pid=123)
+    proc.poll.side_effect = [None, 0, 0]
+    monkeypatch.setattr(subprocess_tools, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(
+        subprocess_tools,
+        "terminate_process_tree",
+        terminate_process_tree,
+    )
+
+    terminate_child_process(proc)
+
+    terminate_process_tree.assert_called_once_with(
+        123,
+        grace_seconds=subprocess_tools.SIGTERM_GRACE_SECONDS,
+        force_wait_seconds=5,
+    )
+    proc.kill.assert_not_called()
+
+
+def test_terminate_child_process_does_not_resolve_exited_windows_pid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    terminate_process_tree = MagicMock()
+    proc = MagicMock(pid=123)
+    proc.poll.return_value = 0
+    monkeypatch.setattr(subprocess_tools, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(
+        subprocess_tools,
+        "terminate_process_tree",
+        terminate_process_tree,
+    )
+
+    terminate_child_process(proc)
+
+    terminate_process_tree.assert_not_called()
+    proc.kill.assert_not_called()
 
 
 @pytest.mark.skipif(os.name == "nt", reason="process-group cancel is POSIX")

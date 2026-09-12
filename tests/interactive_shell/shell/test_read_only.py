@@ -6,6 +6,7 @@ import pytest
 
 from config.constants.repl_autonomy import AutoLevel
 from tools.interactive_shell.shared import apply_auto_level, apply_plan_only_gate
+from tools.interactive_shell.shell import read_only as shell_read_only
 from tools.interactive_shell.shell.policy import evaluate_shell_command
 from tools.interactive_shell.shell.read_only import is_read_only_shell_command
 
@@ -137,6 +138,99 @@ def test_mutating_shell_still_asks_when_gated() -> None:
     assert result.shell_classification == "unrestricted"
     assert apply_auto_level(result, AutoLevel.MED).verdict == "ask"
     assert apply_plan_only_gate(result, plan_only_active=True).verdict == "ask"
+
+
+def test_unquoted_glob_bypasses_neither_auto_nor_plan_only_gates() -> None:
+    result = evaluate_shell_command("sort *")
+
+    assert result.shell_classification == "unrestricted"
+    assert apply_auto_level(result, AutoLevel.LOW).verdict == "ask"
+    assert apply_plan_only_gate(result, plan_only_active=True).verdict == "ask"
+
+
+@pytest.mark.parametrize(
+    "command",
+    ["sort {-ovictim,input}", "sort {foo{bar},-ovictim} input"],
+)
+def test_unquoted_brace_expansion_bypasses_neither_auto_nor_plan_only_gates(
+    command: str,
+) -> None:
+    result = evaluate_shell_command(command)
+
+    assert result.shell_classification == "unrestricted"
+    assert apply_auto_level(result, AutoLevel.LOW).verdict == "ask"
+    assert apply_plan_only_gate(result, plan_only_active=True).verdict == "ask"
+
+
+def test_posix_line_continuation_bypasses_neither_auto_nor_plan_only_gates() -> None:
+    result = evaluate_shell_command("sort -\\\no victim input")
+
+    assert result.shell_classification == "unrestricted"
+    assert apply_auto_level(result, AutoLevel.LOW).verdict == "ask"
+    assert apply_plan_only_gate(result, plan_only_active=True).verdict == "ask"
+
+
+def test_non_expanding_git_reflog_braces_remain_read_only() -> None:
+    assert is_read_only_shell_command("git reflog HEAD@{1}") is True
+
+
+def test_windows_percent_expansion_bypasses_neither_auto_nor_plan_only_gates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(shell_read_only.os, "name", "nt")
+
+    result = evaluate_shell_command('echo "%PAYLOAD%"')
+
+    assert result.shell_classification == "unrestricted"
+    assert apply_auto_level(result, AutoLevel.LOW).verdict == "ask"
+    assert apply_plan_only_gate(result, plan_only_active=True).verdict == "ask"
+
+
+def test_windows_literal_percent_remains_read_only(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(shell_read_only.os, "name", "nt")
+
+    assert is_read_only_shell_command("echo 80%") is True
+
+
+@pytest.mark.parametrize("command", ["echo 'safe & del victim'", r"echo safe \& del victim"])
+def test_windows_posix_quoting_cannot_hide_a_mutating_segment(
+    monkeypatch: pytest.MonkeyPatch,
+    command: str,
+) -> None:
+    monkeypatch.setattr(shell_read_only.os, "name", "nt")
+
+    result = evaluate_shell_command(command)
+
+    assert result.shell_classification == "unrestricted"
+    assert apply_auto_level(result, AutoLevel.LOW).verdict == "ask"
+    assert apply_plan_only_gate(result, plan_only_active=True).verdict == "ask"
+
+
+def test_windows_caret_escaped_operator_remains_read_only(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(shell_read_only.os, "name", "nt")
+
+    assert is_read_only_shell_command("echo safe ^& del victim") is True
+
+
+@pytest.mark.parametrize(
+    ("command", "classification"),
+    [("date", "unrestricted"), ("date 09-12-2026", "unrestricted"), ("date /t", "read_only")],
+)
+def test_windows_date_only_auto_runs_the_display_form(
+    monkeypatch: pytest.MonkeyPatch,
+    command: str,
+    classification: str,
+) -> None:
+    monkeypatch.setattr(shell_read_only.os, "name", "nt")
+
+    result = evaluate_shell_command(command)
+
+    assert result.shell_classification == classification
+    expected_verdict = "allow" if classification == "read_only" else "ask"
+    assert apply_auto_level(result, AutoLevel.LOW).verdict == expected_verdict
+    assert apply_plan_only_gate(result, plan_only_active=True).verdict == expected_verdict
 
 
 @pytest.mark.parametrize(
