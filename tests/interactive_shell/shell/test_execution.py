@@ -11,6 +11,7 @@ from pathlib import Path
 
 import pytest
 
+from config.constants.terminal_host import BASH_EXPORTED_FUNCTION_ENV_PREFIX
 from tools.interactive_shell.shell import execution as shell_execution
 from tools.interactive_shell.shell.execution import execute_shell_command
 
@@ -86,6 +87,19 @@ def test_shell_argv_keeps_pwd_diagnostic_portable_on_windows(
         "/c",
         "cd",
     ]
+
+
+def test_shell_environment_removes_exported_bash_functions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    function_name = f"{BASH_EXPORTED_FUNCTION_ENV_PREFIX}ls%%"
+    monkeypatch.setenv(function_name, "() { touch /tmp/should-not-run; }")
+    monkeypatch.setenv("OPENSRE_TEST_SENTINEL", "kept")
+
+    child_env = shell_execution._shell_environment()
+
+    assert function_name not in child_env
+    assert child_env["OPENSRE_TEST_SENTINEL"] == "kept"
 
 
 @pytest.mark.skipif(os.name == "nt", reason="Bash startup hook is POSIX-specific")

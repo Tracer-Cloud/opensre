@@ -1039,7 +1039,13 @@ if TYPE_CHECKING:
         APPLE_TERMINAL_PROGRAM as APPLE_TERMINAL_PROGRAM,
     )
     from config.constants.terminal_host import (
+        BASH_EXPORTED_FUNCTION_ENV_PREFIX as BASH_EXPORTED_FUNCTION_ENV_PREFIX,
+    )
+    from config.constants.terminal_host import (
         TERM_PROGRAM_ENV as TERM_PROGRAM_ENV,
+    )
+    from config.constants.terminal_host import (
+        WINDOWS_COMMAND_SHELL_ENV as WINDOWS_COMMAND_SHELL_ENV,
     )
     from config.constants.tooling import (
         DEFAULT_APPROVAL_EXPIRY_SECONDS as DEFAULT_APPROVAL_EXPIRY_SECONDS,

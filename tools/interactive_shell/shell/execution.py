@@ -9,6 +9,10 @@ import threading
 from dataclasses import dataclass
 from typing import IO
 
+from config.constants.terminal_host import (
+    BASH_EXPORTED_FUNCTION_ENV_PREFIX,
+    WINDOWS_COMMAND_SHELL_ENV,
+)
 from tools.interactive_shell.subprocess import watch_subprocess_until_exit
 
 
@@ -34,7 +38,7 @@ def _truncate_output(text: str, *, max_chars: int) -> tuple[str, bool]:
 
 def _shell_argv(command: str) -> list[str]:
     if os.name == "nt":
-        windows_shell = os.environ.get("COMSPEC") or "cmd.exe"
+        windows_shell = os.environ.get(WINDOWS_COMMAND_SHELL_ENV) or "cmd.exe"
         # /d suppresses registry AutoRun commands before the approved command;
         # /v:off prevents inherited delayed !VAR! expansion from changing it.
         # Keep the tool contract's platform-neutral ``pwd`` diagnostic working:
@@ -44,6 +48,15 @@ def _shell_argv(command: str) -> list[str]:
     # Do not use the interactive $SHELL: its startup hooks can run before the
     # command that policy classified. /bin/sh -c is non-interactive and stable.
     return ["/bin/sh", "-c", command]
+
+
+def _shell_environment() -> dict[str, str]:
+    """Copy the environment without Bash functions that can replace commands."""
+    return {
+        name: value
+        for name, value in os.environ.items()
+        if not name.startswith(BASH_EXPORTED_FUNCTION_ENV_PREFIX)
+    }
 
 
 def _drain_pipe(pipe: IO[str] | None, buffer: list[str]) -> None:
@@ -103,6 +116,7 @@ def execute_shell_command(
         encoding="utf-8",
         errors="replace",
         start_new_session=True,
+        env=_shell_environment(),
     )
     out_buf: list[str] = []
     err_buf: list[str] = []

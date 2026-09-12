@@ -14,6 +14,7 @@ import surfaces.interactive_shell.runtime.llm_provider_adapter as llm_provider_a
 import surfaces.interactive_shell.runtime.slash_adapter as slash_adapter
 import tests.shared.harness_turn_driver as harness_turn_driver
 import tools.interactive_shell.shell.execution as shell_execution
+from config.constants.terminal_host import BASH_EXPORTED_FUNCTION_ENV_PREFIX
 from core.llm.types import AgentLLMResponse, ToolCall
 from surfaces.interactive_shell.session import Session
 from tests.core.agent._planned_action import (
@@ -185,6 +186,11 @@ def _install_fake_popen(
     calls: list[tuple[list[str], dict[str, object]]] = []
 
     def _fake_popen(command: list[str], **kwargs: object) -> _FakeProcess:
+        child_env = kwargs.pop("env")
+        assert isinstance(child_env, dict)
+        assert not any(
+            str(name).startswith(BASH_EXPORTED_FUNCTION_ENV_PREFIX) for name in child_env
+        )
         calls.append((command, kwargs))
         return _FakeProcess(stdout=stdout, stderr=stderr, returncode=returncode, hang=hang)
 
