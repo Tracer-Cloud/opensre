@@ -8,6 +8,7 @@ from http import HTTPStatus
 import httpx
 import pytest
 
+from config import account_validation
 from config.account import AccountRecord
 from surfaces.shared import account_session
 from surfaces.shared.account_session import AccountSessionState
@@ -63,7 +64,7 @@ def test_webapp_validation_activates_account_and_hosted_model(
     monkeypatch.setattr(account_session, "load_account_record", _record)
     monkeypatch.setattr(account_session, "resolve_account_token", lambda: "token")
     monkeypatch.setattr(
-        account_session.httpx,
+        account_validation.httpx,
         "get",
         lambda *_args, **_kwargs: httpx.Response(
             HTTPStatus.OK,
@@ -86,7 +87,7 @@ def test_webapp_model_change_updates_the_route_before_shell_start(
     monkeypatch.setattr(account_session, "resolve_account_token", lambda: "token")
     monkeypatch.setattr(account_session, "save_account_record", saved.append)
     monkeypatch.setattr(
-        account_session.httpx,
+        account_validation.httpx,
         "get",
         lambda *_args, **_kwargs: httpx.Response(
             HTTPStatus.OK,
@@ -110,7 +111,7 @@ def test_webapp_identity_mismatch_never_authenticates(
     monkeypatch.setattr(account_session, "load_account_record", _record)
     monkeypatch.setattr(account_session, "resolve_account_token", lambda: "token")
     monkeypatch.setattr(
-        account_session.httpx,
+        account_validation.httpx,
         "get",
         lambda *_args, **_kwargs: httpx.Response(HTTPStatus.OK, json=payload),
     )
@@ -134,7 +135,7 @@ def test_invalid_stored_app_url_fails_before_sending_the_token(
     def _unexpected_request(*_args: object, **_kwargs: object) -> httpx.Response:
         raise AssertionError("invalid account URL must not receive the bearer token")
 
-    monkeypatch.setattr(account_session.httpx, "get", _unexpected_request)
+    monkeypatch.setattr(account_validation.httpx, "get", _unexpected_request)
 
     status = account_session.account_status()
 
@@ -148,7 +149,7 @@ def test_revoked_or_unreachable_session_fails_closed(
     monkeypatch.setattr(account_session, "load_account_record", _record)
     monkeypatch.setattr(account_session, "resolve_account_token", lambda: "token")
     monkeypatch.setattr(
-        account_session.httpx,
+        account_validation.httpx,
         "get",
         lambda *_args, **_kwargs: httpx.Response(HTTPStatus.UNAUTHORIZED),
     )
@@ -157,7 +158,7 @@ def test_revoked_or_unreachable_session_fails_closed(
     def _unreachable(*_args: object, **_kwargs: object) -> httpx.Response:
         raise httpx.ConnectError("offline")
 
-    monkeypatch.setattr(account_session.httpx, "get", _unreachable)
+    monkeypatch.setattr(account_validation.httpx, "get", _unreachable)
     status = account_session.account_status()
     assert status.state is AccountSessionState.UNAVAILABLE
     assert status.authenticated is False
