@@ -234,6 +234,11 @@ not `opensre cron add`. See [Sentry](/sentry#morning-digest-scheduled).
 
 ## Persistence
 
+Tasks created before v0.1.2026.9.4 with an investigation task kind require an
+explicit store migration. Back up the JSON store and follow the
+[scheduler migration table](/migration-investigation-to-chat-v0-1-2026-9-4#scheduler-store-migration)
+before starting the scheduler.
+
 - **Task definitions** are stored in `~/.opensre/scheduler_tasks.json` (JSON + filelock)
 - **Execution history** is stored in `~/.opensre/scheduler.db` (SQLite with WAL mode)
 - **Interactive-shell loop messages** are stored in `~/.opensre/scheduler_loop_messages.jsonl`

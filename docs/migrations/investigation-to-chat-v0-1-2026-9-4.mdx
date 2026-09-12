@@ -1,0 +1,263 @@
+---
+title: "Investigation to chat migration (v0.1.2026.9.4)"
+slug: "migration-investigation-to-chat-v0-1-2026-9-4"
+description: "Migrate CLI scripts, Python hosts, HTTP clients, and scheduler stores after the structured investigation product was removed."
+---
+
+OpenSRE v0.1.2026.9.4 removed the structured investigation/RCA product. The
+single-agent chat core remains, and it can still inspect connected systems when
+you ask an operational question, but it does not reproduce the old pipeline's
+typed report, polling, artifact, or delivery contracts.
+
+Use this guide when upgrading from v0.1.2026.9.3 or earlier.
+
+<Warning>
+  This is a compatibility break, not a command rename. Do not parse a chat
+  answer as though it were an `InvestigationResult`.
+</Warning>
+
+## Choose the replacement surface
+
+| Need | Current surface | Contract |
+| --- | --- | --- |
+| Investigate one incident interactively | Ask in the `opensre` shell | A conversational answer in the current session |
+| Run one non-interactive turn | `opensre ask "..."` or pipe a prompt to `opensre ask -` | Text, or the `opensre --json ask` envelope |
+| Embed the agent in Python | `AgentSession.chat()` | `TurnResult`; inspect `answered`, `cancelled`, and `primary_response_text` |
+| Repeat a free-form prompt | Scheduler kind `manual_loop` or `/loops` | One headless chat turn per schedule |
+| Repeat a supported packaged workflow | Scheduler kind `recurring_skill` | A named, revision-pinned skill with validated inputs |
+| Receive an external alert | `POST /alerts` | Queue acknowledgement only; the interactive shell drains the inbox when its listener is enabled |
+| Start and poll a remote investigation over HTTP | **No replacement** | There is no general HTTP chat/investigation endpoint |
+| Produce a typed RCA, score, tool-call list, or report artifact | **No replacement** | Consume conversational text or build that schema in your own host |
+
+These surfaces are deliberately different:
+
+- **Natural-language chat investigation** is an immediate user turn. The agent
+  chooses relevant tools and answers in the conversation; there is no fixed RCA
+  stage sequence or report schema.
+- **`manual_loop`** stores your prompt and runs it as one unattended chat turn.
+  Use it when the instruction itself defines the recurring job.
+- **`recurring_skill`** runs a supported skill whose body is revision-pinned.
+  Use it when you need a repeatable packaged workflow such as
+  `github-ci-health` or `morning-report`, including its required inputs.
+- **HTTP alert intake** only places an alert in the process-wide inbox. It does
+  not run an investigation, return an answer, create an ID, or persist an RCA.
+
+## CLI and shell mapping
+
+| Before v0.1.2026.9.4 | Now | Compatibility note |
+| --- | --- | --- |
+| `opensre investigate -i alert.json` | `{ printf 'Triage this alert and explain the likely cause:\n'; cat alert.json; } \| opensre ask -` | Free-form response; no structured report fields |
+| `opensre investigate --input-json "$ALERT_JSON"` | `printf 'Triage this alert:\n%s\n' "$ALERT_JSON" \| opensre ask -` | The payload is prompt context, not a typed alert input |
+| `opensre investigate --interactive` | Start `opensre`, then paste the alert with an instruction | Conversational session |
+| `opensre investigate -o rca.json ...` | `opensre --json ask "..." > result.json` | New JSON envelope shown below |
+| `opensre investigate --print-template ...` | **No replacement** | Built-in investigation templates were removed |
+| `opensre investigate --evaluate ...` | **No replacement** | The scoring-rubric judge was removed |
+| `opensre investigate --service ...` | Ask the shell to inspect the service using its configured integration tools | No dedicated remote-ops or RCA contract |
+| `/investigate` | Describe the incident directly in the shell | Natural-language chat turn |
+| `/rca` | Ask for a root-cause analysis in the current conversation | No archived RCA browser or typed record |
+| `/last` | Ask a follow-up in the same session, or use `/resume` for a saved session | No last-investigation object |
+| `/save` | Redirect `opensre ask` output, or save/copy the response in your host | No RCA Markdown/JSON exporter |
+| `/background` | **No background-turn replacement**; use `/loops` for recurrence and `/tasks` only to inspect runtime jobs | No background RCA records or completion notifications |
+
+### JSON return contract
+
+The old CLI, synchronous HTTP endpoint, and investigation API returned an
+investigation object like this:
+
+```json
+{
+  "report": "...",
+  "problem_md": "...",
+  "root_cause": "...",
+  "is_noise": false,
+  "validity_score": 0.91,
+  "tool_calls": []
+}
+```
+
+`opensre --json ask` now returns a process outcome:
+
+```json
+{
+  "status": "success",
+  "response": "...",
+  "denied_tools": [],
+  "error": null
+}
+```
+
+`status` can also be `approval_denied`, `error`, or `cancelled`. When present,
+`error` contains `message` and `suggestion`. There are no `report`,
+`root_cause`, `is_noise`, `validity_score`, or `tool_calls` fields.
+
+## Python migration
+
+The old API returned a typed `InvestigationResult`:
+
+```python
+from core.agent_harness import AgentSession, InvestigationResult
+
+result: InvestigationResult = AgentSession().investigate(
+    alert_payload,
+    runner=your_investigation_runner,
+)
+print(result.report)
+print(result.root_cause)
+```
+
+There is no typed investigation replacement. Pass the alert as chat context and
+handle `TurnResult`:
+
+```python
+import json
+
+from bootstrap.process import EMBEDDED_PROFILE, configure_process
+from core.agent_harness import AgentSession
+
+configure_process(EMBEDDED_PROFILE)
+session = AgentSession.start()
+result = session.chat(
+    "Triage this alert and explain the likely cause:\n"
+    + json.dumps(alert_payload)
+)
+
+action_ok = (
+    result.action_result.handled
+    and not result.action_result.has_unhandled_clause
+    and result.action_result.accounting_status == "completed"
+)
+if result.cancelled or not (result.answered or action_ok):
+    raise RuntimeError(result.primary_response_text or "turn failed")
+
+print(result.primary_response_text)
+```
+
+`TurnResult` exposes `final_intent`, `action_result`,
+`assistant_response_text`, `answered`, `cancelled`, and
+`primary_response_text`. It does not expose structured RCA fields. If your host
+requires a stable domain schema, define and validate that schema after the chat
+turn in your application; OpenSRE no longer supplies one.
+
+## HTTP migration
+
+The following routes and capabilities have no HTTP replacement:
+
+- `POST /investigate` (synchronous report)
+- `POST /api/investigations` (asynchronous enqueue and investigation ID)
+- `GET /api/investigations/<id>` (status polling and result lookup)
+- `POST /api/investigations/<id>/cancel`
+- local/S3 report artifacts and report URLs
+- Clerk-organization-scoped investigation records
+
+`POST /alerts` remains an intake endpoint:
+
+```bash
+curl -X POST "https://<host>/alerts" \
+  -H "Authorization: Bearer $OPENSRE_ALERT_LISTENER_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"text":"CPU above 90% on checkout-db","source":"grafana"}'
+```
+
+It returns an acknowledgement such as:
+
+```json
+{"queued": true, "queue_depth": 1}
+```
+
+Run the interactive shell with its alert listener enabled to drain the inbox.
+The gateway web process exposes the same intake route but does not consume its
+queued alerts. Do not wait for an investigation ID or poll
+`/api/investigations`; neither exists. If an HTTP caller needs the answer in its
+response, embed `AgentSession.chat()` in your own authenticated service and
+define that service's lifecycle, storage, cancellation, and response schema.
+
+## Scheduler-store migration
+
+Task definitions remain in `~/.opensre/scheduler_tasks.json`, but old
+investigation kinds are not renamed automatically. The loader skips each row
+whose `kind` is no longer recognized, so an old task can disappear from
+`opensre cron list` while its JSON row remains on disk.
+
+Stop every gateway and `opensre cron start` process before editing the store,
+then make a backup:
+
+```bash
+cp ~/.opensre/scheduler_tasks.json \
+  ~/.opensre/scheduler_tasks.pre-v0.1.2026.9.4.json
+```
+
+| Old kind | Migration |
+| --- | --- |
+| `daily_summary` | Change to `manual_loop` and set `params.loop_prompt` to the exact daily-summary instruction you want |
+| `weekly_audit` | Change to `manual_loop` and set `params.loop_prompt` to the exact weekly-audit instruction you want |
+| `custom_investigation` | Change to `manual_loop` only when `params.loop_prompt` is non-empty; otherwise recreate it with `opensre cron add --kind manual_loop --prompt ...` |
+| `incident_window_replay` | **No replacement**; remove or disable the row |
+| `synthetic_run` | **No replacement**; the synthetic investigation product was removed |
+| `sentry_morning_digest`, `sentry_uptime_watch`, `github_pr_sweep`, `posthog_metric_report`, `work_item_reminder`, `work_item_checkin` | Still recognized; no kind change |
+
+For example, a migrated task has this shape:
+
+```json
+{
+  "id": "existing-id",
+  "name": "Morning reliability summary",
+  "kind": "manual_loop",
+  "cron": "0 9 * * 1-5",
+  "timezone": "Asia/Kolkata",
+  "provider": "slack",
+  "chat_id": "C0123ABCD",
+  "window_hours": 24,
+  "enabled": true,
+  "params": {
+    "loop_prompt": "Summarize alerts, error spikes, and production risk from the last 24 hours."
+  }
+}
+```
+
+Restart one scheduler, confirm the rows with `opensre cron list`, and test each
+migrated task with `opensre cron run <task_id>`. The old
+`~/.opensre/scheduler.db` run history may remain on disk, but it does not make a
+skipped task executable.
+
+Session JSONL and long-term memory created before the upgrade remain readable.
+Investigation-only persistence is not migrated: background records under
+`~/.opensre/background/investigations.json`, HTTP investigation records,
+`~/.opensre/investigations/<id>/report.json`, and S3 report artifacts have no
+current reader or import path. Back them up before uninstalling or cleaning the
+OpenSRE home directory.
+
+## Removed integrations and delivery paths
+
+Most data-source and chat integrations stayed available to the chat agent, but
+the following product-specific capabilities did not:
+
+- **Notion** was removed as an integration, including setup, verification, and
+  creation of investigation report pages. There is no replacement.
+- **Hermes investigation mode** and its session-evidence bridge were removed;
+  the remaining Hermes product integration was removed separately in the same
+  release line.
+- **OpenClaw investigation/report delivery** was removed; OpenClaw itself was
+  removed separately in the same release line.
+- **Discord `/investigate`** was removed. Discord chat remains a conversation
+  surface where configured.
+- **Grafana log-sink report publishing** was removed. Grafana remains available
+  as an evidence source for chat turns.
+- Automatic foreground report fan-out was removed for **Slack, Discord,
+  Telegram, Rocket.Chat, Buzz, Twilio SMS, WhatsApp, OpenClaw, and Grafana**.
+- Investigation-triggered **GitLab merge-request write-back** was removed.
+- Background RCA completion delivery was removed for **email/SMTP, Telegram,
+  Rocket.Chat, and Buzz**.
+- Automatic local report rendering/editor output, stored report URLs, and
+  report artifacts were removed.
+
+Messaging providers that still appear in [Scheduled Deliveries](/cron) can
+deliver current scheduled loop or skill output. That does not restore the old
+investigation report renderer or its delivery contract.
+
+## Related current documentation
+
+- [Headless CLI](/headless-cli)
+- [Python API](/python-api)
+- [HTTP API](/api)
+- [Scheduled Deliveries](/cron)
+- [Interactive shell commands](/interactive-shell-commands)

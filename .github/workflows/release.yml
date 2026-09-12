@@ -636,6 +636,10 @@ jobs:
             printf '### PowerShell (Windows)\n\n%spowershell\n$env:OPENSRE_INSTALL_CHANNEL="release"; $env:OPENSRE_VERSION="%s"; irm https://install.opensre.com | iex\n%s\n\n' "$CB" "${TAG_NAME#v}" "$CB"
             printf '### Python\n\n%sbash\npipx install opensre\n%s\n\n' "$CB" "$CB"
           } > RELEASE_NOTES.md
+          {
+            printf '## Upgrade notes\n\n'
+            printf 'Upgrading from v0.1.2026.9.3 or earlier? Read the [investigation-to-chat migration guide](https://www.opensre.com/docs/migration-investigation-to-chat-v0-1-2026-9-4) before changing CLI scripts, Python hosts, HTTP clients, or scheduled tasks.\n\n'
+          } >> RELEASE_NOTES.md
           cat GENERATED_CHANGELOG.md >> RELEASE_NOTES.md
 
       - name: Create GitHub release
@@ -814,6 +818,7 @@ jobs:
           {
             printf '## Main build\n\nRolling binary build from `main`.\n\n'
             printf -- '- Version: `%s`\n- Commit: `%s`\n- Built: %s\n\n' "$VERSION_NAME" "$short_sha" "$built_at"
+            printf '### Upgrade note\n\nUpgrading from v0.1.2026.9.3 or earlier? Read the [investigation-to-chat migration guide](https://www.opensre.com/docs/migration-investigation-to-chat-v0-1-2026-9-4).\n\n'
             printf '### Install\n\nmacOS / Linux:\n\n%sbash\ncurl -fsSL https://install.opensre.com | bash\n%s\n\n' "$CB" "$CB"
             printf 'Equivalent explicit main channel:\n\n%sbash\ncurl -fsSL https://install.opensre.com | bash -s -- --main\n%s\n\n' "$CB" "$CB"
             printf 'Windows:\n\n%spowershell\nirm https://install.opensre.com | iex\n%s\n' "$CB" "$CB"
