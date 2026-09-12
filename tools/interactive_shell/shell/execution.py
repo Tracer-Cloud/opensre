@@ -11,7 +11,6 @@ from typing import IO
 
 from config.constants.terminal_host import (
     BASH_EXPORTED_FUNCTION_ENV_PREFIX,
-    WINDOWS_COMMAND_SHELL_ENV,
 )
 from tools.interactive_shell.subprocess import watch_subprocess_until_exit
 
@@ -38,7 +37,7 @@ def _truncate_output(text: str, *, max_chars: int) -> tuple[str, bool]:
 
 def _shell_argv(command: str) -> list[str]:
     if os.name == "nt":
-        windows_shell = os.environ.get(WINDOWS_COMMAND_SHELL_ENV) or "cmd.exe"
+        windows_shell = _windows_command_shell()
         # /d suppresses registry AutoRun commands before the approved command;
         # /v:off prevents inherited delayed !VAR! expansion from changing it.
         # Keep the tool contract's platform-neutral ``pwd`` diagnostic working:
@@ -48,6 +47,18 @@ def _shell_argv(command: str) -> list[str]:
     # Do not use the interactive $SHELL: its startup hooks can run before the
     # command that policy classified. /bin/sh -c is non-interactive and stable.
     return ["/bin/sh", "-c", command]
+
+
+def _windows_command_shell() -> str:
+    """Return cmd.exe from Windows' system directory, not inherited COMSPEC."""
+    import ctypes
+
+    buffer = ctypes.create_unicode_buffer(32_768)
+    kernel32 = ctypes.__dict__["windll"].kernel32
+    length = kernel32.GetSystemDirectoryW(buffer, len(buffer))
+    if length == 0 or length >= len(buffer):
+        raise OSError("Unable to locate the Windows system directory")
+    return os.path.join(buffer.value, "cmd.exe")
 
 
 def _shell_environment() -> dict[str, str]:

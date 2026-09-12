@@ -145,6 +145,7 @@ def test_terminate_process_tree_forces_a_bounded_unfreezable_tree(
 
     child = _unfreezable_process(124, "child")
     late_child = _unfreezable_process(125, "late-child")
+    final_child = _unfreezable_process(126, "final-child")
     root = SimpleNamespace(
         pid=123,
         suspend=lambda: events.append("suspend:root"),
@@ -157,7 +158,11 @@ def test_terminate_process_tree_forces_a_bounded_unfreezable_tree(
         nonlocal scans
         assert recursive
         scans += 1
-        return [child] if scans == 1 else [child, late_child]
+        if scans == 1:
+            return [child]
+        if scans == 2:
+            return [child, late_child]
+        return [child, late_child, final_child]
 
     root.children = _children
     monotonic_values = iter((0.0, 0.0, 0.5, 1.0))
@@ -175,5 +180,13 @@ def test_terminate_process_tree_forces_a_bounded_unfreezable_tree(
 
     terminate_process_tree(123, grace_seconds=10, force_wait_seconds=5)
 
-    assert scans == 2
-    assert events == ["suspend:root", "kill:late-child", "kill:child", "kill:root"]
+    assert scans == 3
+    assert events == [
+        "suspend:root",
+        "kill:child",
+        "kill:late-child",
+        "kill:late-child",
+        "kill:child",
+        "kill:final-child",
+        "kill:root",
+    ]

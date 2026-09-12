@@ -526,6 +526,13 @@ def _has_dangerous_shell_construct(text: str) -> bool:
     patterns remain literal arguments.
     """
     is_windows, quote_characters, escape_character = _shell_lexing_rules()
+    # Both POSIX shells and cmd.exe remove an escaped physical newline before
+    # interpreting the command. ``shlex`` deliberately retains it, so parsing
+    # the source as-is would authorize different argv than the shell executes.
+    # Treat every continuation as dynamic rather than trying to normalize a
+    # second shell grammar in the approval path.
+    if f"{escape_character}\n" in text or f"{escape_character}\r\n" in text:
+        return True
     # cmd.exe expands %NAME% even inside quotes, and the expanded value may
     # introduce operators or flag-shaped arguments after policy classification.
     if is_windows and _CMD_PERCENT_EXPANSION_RE.search(text):

@@ -61,7 +61,12 @@ def test_shell_argv_disables_windows_startup_and_delayed_expansion(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(shell_execution.os, "name", "nt")
-    monkeypatch.setenv("COMSPEC", r"C:\Windows\System32\cmd.exe")
+    monkeypatch.setenv("COMSPEC", r"C:\attacker\cmd.exe")
+    monkeypatch.setattr(
+        shell_execution,
+        "_windows_command_shell",
+        lambda: r"C:\Windows\System32\cmd.exe",
+    )
 
     assert shell_execution._shell_argv("echo ok") == [
         r"C:\Windows\System32\cmd.exe",
@@ -77,7 +82,12 @@ def test_shell_argv_keeps_pwd_diagnostic_portable_on_windows(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(shell_execution.os, "name", "nt")
-    monkeypatch.setenv("COMSPEC", r"C:\Windows\System32\cmd.exe")
+    monkeypatch.setenv("COMSPEC", r"C:\attacker\cmd.exe")
+    monkeypatch.setattr(
+        shell_execution,
+        "_windows_command_shell",
+        lambda: r"C:\Windows\System32\cmd.exe",
+    )
 
     assert shell_execution._shell_argv("pwd") == [
         r"C:\Windows\System32\cmd.exe",
