@@ -13,8 +13,12 @@ from core.agent_harness.session.pending_choice import (
     PendingUserChoice,
     format_ask_user_answers,
 )
+from core.agent_harness.task_plan import PlanStep, PlanStepStatus, TaskPlan
+from surfaces.interactive_shell.runtime.core.state import ReplState, SpinnerState
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui.ask_user import CUSTOM_OPTION
+from surfaces.interactive_shell.ui.input_prompt.rendering import resolve_prompt_placeholder
+from surfaces.interactive_shell.ui.terminal_ui import render_prompt_region
 
 _CHOICE = PendingUserChoice(
     title="How should I handle the uncommitted changes?",
@@ -80,6 +84,64 @@ def test_cancelled_menu_leaves_prompt_free(monkeypatch: pytest.MonkeyPatch) -> N
     assert session.terminal.pending_prompt_default is None
     assert session.terminal.pending_prompt_autosubmit is False
     assert "cancelled" in buf.getvalue().lower()
+
+
+@pytest.mark.parametrize("plan_only", [False, True])
+def test_cancelling_a_skill_menu_drops_the_skill_plan(
+    monkeypatch: pytest.MonkeyPatch, plan_only: bool
+) -> None:
+    session = Session()
+    plain_placeholder = resolve_prompt_placeholder(session)
+    session.pending_user_choice = _CHOICE
+    session.active_skill = "scheduling-github-ci-fixes"
+    session.skills_already_prompted.add(session.active_skill)
+    session.task_plan = TaskPlan(
+        steps=(
+            PlanStep(
+                "Inspect CI failures",
+                PlanStepStatus.PENDING if plan_only else PlanStepStatus.IN_PROGRESS,
+            ),
+            PlanStep("Schedule CI fixes", PlanStepStatus.PENDING),
+        )
+    )
+    session.plan_only_until_authorized = plan_only
+    state, spinner = ReplState(), SpinnerState()
+    assert "Plan" in render_prompt_region(session, state, spinner).value
+    assert resolve_prompt_placeholder(session) != plain_placeholder
+    console, _buf = _console()
+    monkeypatch.setattr(choice_prompt, "repl_tty_interactive", lambda: True)
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", lambda **_kw: None)
+
+    assert _handler(session, console) is True
+
+    assert session.active_skill is None
+    assert "scheduling-github-ci-fixes" not in session.skills_already_prompted
+    assert session.task_plan is None
+    assert session.plan_only_until_authorized is False
+    assert "Plan" not in render_prompt_region(session, state, spinner).value
+    assert resolve_prompt_placeholder(session) == plain_placeholder
+
+
+def test_cancelling_a_menu_without_a_skill_keeps_the_plan(monkeypatch: pytest.MonkeyPatch) -> None:
+    session = Session()
+    session.pending_user_choice = _CHOICE
+    plan = TaskPlan(
+        steps=(
+            PlanStep("Inspect CI failures", PlanStepStatus.IN_PROGRESS),
+            PlanStep("Schedule CI fixes", PlanStepStatus.PENDING),
+        )
+    )
+    session.task_plan = plan
+    session.plan_only_until_authorized = True
+    console, _buf = _console()
+    monkeypatch.setattr(choice_prompt, "repl_tty_interactive", lambda: True)
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", lambda **_kw: None)
+
+    assert _handler(session, console) is True
+
+    assert session.active_skill is None
+    assert session.task_plan is plan
+    assert session.plan_only_until_authorized is True
 
 
 def test_no_pending_choice_prints_notice() -> None:

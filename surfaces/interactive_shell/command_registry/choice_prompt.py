@@ -20,6 +20,7 @@ from core.agent_harness.spi.handoff import (
     format_ask_user_answers,
     question_key,
 )
+from core.agent_harness.spi.task_plan import discard_task_plan
 from infrastructure.terminal import theme as ui_theme
 from infrastructure.terminal.notify import NotifyEvent, play_notification
 from surfaces.interactive_shell.command_registry.types import SlashCommand
@@ -68,6 +69,7 @@ def _leave_menu(session: Session, console: Console, note: str) -> None:
     session.terminal.awaiting_handoff_answer = False
     if session.active_skill is not None:
         session.skills_already_prompted.discard(session.active_skill)
+        discard_task_plan(session)
     session.active_skill = None
     session.active_skill_tools = ()
     session.skill_hooks_fired = set()

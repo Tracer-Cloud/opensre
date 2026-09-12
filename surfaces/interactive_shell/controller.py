@@ -12,6 +12,7 @@ from prompt_toolkit import PromptSession
 from rich.console import Console
 
 from config.repl_config import ReplConfig
+from core.agent_harness.spi.task_plan import discard_task_plan
 from core.domain.alerts import inbox as _alert_inbox
 from surfaces.interactive_shell.runtime.background.workers import BackgroundTaskPool
 from surfaces.interactive_shell.runtime.ci_fix_status import bind_ci_fix_status
@@ -291,7 +292,7 @@ class InteractiveShellController:
                         and plan.all_completed
                         and not self.state.is_dispatch_running()
                     ):
-                        self.session.task_plan = None
+                        discard_task_plan(self.session)
                 # Only exclusive-stdin commands hold the next prompt. A ``/goal``
                 # work turn keeps it open: the prompt row is where the spinner,
                 # the live tool name and the Auto line are painted, so
