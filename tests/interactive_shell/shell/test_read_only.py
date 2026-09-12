@@ -148,6 +148,18 @@ def test_unquoted_glob_bypasses_neither_auto_nor_plan_only_gates() -> None:
     assert apply_plan_only_gate(result, plan_only_active=True).verdict == "ask"
 
 
+def test_unquoted_brace_expansion_bypasses_neither_auto_nor_plan_only_gates() -> None:
+    result = evaluate_shell_command("sort {-ovictim,input}")
+
+    assert result.shell_classification == "unrestricted"
+    assert apply_auto_level(result, AutoLevel.LOW).verdict == "ask"
+    assert apply_plan_only_gate(result, plan_only_active=True).verdict == "ask"
+
+
+def test_non_expanding_git_reflog_braces_remain_read_only() -> None:
+    assert is_read_only_shell_command("git reflog HEAD@{1}") is True
+
+
 def test_windows_percent_expansion_bypasses_neither_auto_nor_plan_only_gates(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

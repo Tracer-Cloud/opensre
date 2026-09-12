@@ -489,17 +489,46 @@ def _segment_is_read_only(segment: str) -> bool:
     return False
 
 
+def _has_unquoted_brace_expansion(text: str) -> bool:
+    """Return whether POSIX shell syntax can expand an unquoted brace expression."""
+    quote: str | None = None
+    index = 0
+    while index < len(text):
+        char = text[index]
+        if char == "\\" and index + 1 < len(text) and quote != "'":
+            index += 2
+            continue
+        if quote is not None:
+            if char == quote:
+                quote = None
+            index += 1
+            continue
+        if char in ("'", '"'):
+            quote = char
+        elif char == "{":
+            closing = text.find("}", index + 1)
+            if closing != -1 and (
+                "," in text[index + 1 : closing] or ".." in text[index + 1 : closing]
+            ):
+                return True
+        index += 1
+    return False
+
+
 def _has_dangerous_shell_construct(text: str) -> bool:
     """True when shell evaluation can replace or execute command arguments.
 
-    Fail closed on substitutions, subshells, and unquoted glob characters. A
-    glob can expand a filename such as ``-oresult`` into an executable option.
-    Quoted or escaped glob patterns remain literal arguments.
+    Fail closed on substitutions, subshells, and unquoted glob or brace
+    expansion. A glob or brace expansion can produce an executable option
+    after the policy has classified the literal input. Quoted or escaped
+    patterns remain literal arguments.
     """
     is_windows, quote_characters, escape_character = _shell_lexing_rules()
     # cmd.exe expands %NAME% even inside quotes, and the expanded value may
     # introduce operators or flag-shaped arguments after policy classification.
     if is_windows and _CMD_PERCENT_EXPANSION_RE.search(text):
+        return True
+    if not is_windows and _has_unquoted_brace_expansion(text):
         return True
 
     quote: str | None = None

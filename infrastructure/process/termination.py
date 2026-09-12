@@ -5,8 +5,6 @@ from __future__ import annotations
 import contextlib
 from typing import Any
 
-_MAX_TREE_SCAN_PASSES = 8
-
 
 def _suspend_or_terminate(process: Any, *, psutil: Any) -> bool:
     """Stop a process from spawning; return whether termination was used."""
@@ -22,9 +20,9 @@ def _suspend_or_terminate(process: Any, *, psutil: Any) -> bool:
 
 
 def _freeze_descendants(root: Any, *, psutil: Any) -> list[Any]:
-    """Stop newly discovered descendants across bounded scans of the tree."""
+    """Stop descendants until a scan finds no process that can still spawn."""
     descendants: dict[int, Any] = {}
-    for _ in range(_MAX_TREE_SCAN_PASSES):
+    while True:
         discovered: list[Any] = []
         for parent in (root, *descendants.values()):
             try:
