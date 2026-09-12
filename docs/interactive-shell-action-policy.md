@@ -178,8 +178,10 @@ interactive shell, its aliases, or its startup files.
 The existing confirmation flow remains available to **`/auto`** (Off/Low/Med)
 and `/trust`. At those stricter `/auto` levels, every shell command asks for
 approval, including commands that appear read-only. Plan-only also asks before
-running a shell command. The shell interprets expansions after the approval
-decision, so OpenSRE does not exempt shell text based on a partial parser.
+running a shell command; its confirmation distinguishes allowing just that
+command from authorizing the rest of the plan. The shell interprets expansions
+after the approval decision, so OpenSRE does not exempt shell text based on a
+partial parser.
 
 ### `/auto` autonomy (tool-type confirmations)
 
