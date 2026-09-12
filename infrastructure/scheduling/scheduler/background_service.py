@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from config.constants.paths import OPENSRE_HOME_DIR, OPENSRE_HOME_ENV
+from infrastructure.process.entrypoint import opensre_command
 
 SERVICE_LABEL = "com.opensre.scheduler"
 _LOGS_DIRNAME = "logs"
@@ -232,7 +233,7 @@ def ensure_background_service(
     state = check_background_service(home=home, system=system, run=run)
     if not state.supported:
         raise RuntimeError(state.summary)
-    command = [sys.executable, "-m", "surfaces.entrypoint", "cron", "start", "--service"]
+    command = opensre_command("cron", "start", "--service")
     matches = False
     if state.unit_path is not None:
         if state.platform == "Darwin":

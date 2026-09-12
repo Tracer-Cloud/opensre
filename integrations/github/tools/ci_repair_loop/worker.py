@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 import logging
 import shutil
-import sys
 import time
 from http import HTTPStatus
 from pathlib import Path
@@ -26,7 +25,7 @@ from integrations.github.tools.ci_fix.verification import (
     check_failed,
     wait_for_pr_checks,
 )
-from integrations.github.tools.ci_repair_loop.credentials import configured_token
+from integrations.github.tools.ci_repair_loop.credentials import account_id, configured_token
 from integrations.github.tools.ci_repair_loop.fixture import (
     DemoRepositoryMismatch,
     cleanup_demo,
@@ -170,7 +169,7 @@ def execute_repair(run: RepairRun, store: RepairStore) -> None:
     token = configured_token()
     client = GitHubRestClient(token)
     user = object_response(client.request("GET", "user"))
-    if str(user.get("login", "")).casefold() != run.actor.casefold():
+    if not run.actor_id or account_id(user) != run.actor_id:
         raise ValueError("The background GitHub account changed; repair stopped.")
     if run.demo:
         prepare_demo(client, run, store)
@@ -190,10 +189,11 @@ def execute_repair(run: RepairRun, store: RepairStore) -> None:
         run.status = RepairStatus.SUCCEEDED
 
 
-def main() -> None:
+def run_ci_repair_worker(store_directory: Path, run_id: str) -> None:
+    """Run a persisted repair in the supervised child process."""
     logging.basicConfig(level=logging.INFO)
-    store = RepairStore(Path(sys.argv[1]))
-    run = store.get(sys.argv[2])
+    store = RepairStore(store_directory)
+    run = store.get(run_id)
     work_deadline = run.deadline - CI_REPAIR_FINISH_RESERVE_SECONDS
     watchdog = start_watchdog(work_deadline)
     try:
@@ -234,7 +234,3 @@ def main() -> None:
         store.save(run)
     finally:
         watchdog.set()
-
-
-if __name__ == "__main__":
-    main()

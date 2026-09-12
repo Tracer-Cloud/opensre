@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import subprocess
-import sys
 import time
 from collections.abc import Mapping
 
 from filelock import FileLock, Timeout
 
-from config.constants.ci_repair import CI_REPAIR_FINISH_RESERVE_SECONDS, CI_REPAIR_POLL_SECONDS
+from config.constants.ci_repair import (
+    CI_REPAIR_FINISH_RESERVE_SECONDS,
+    CI_REPAIR_POLL_SECONDS,
+    CI_REPAIR_WORKER_COMMAND,
+)
+from infrastructure.process.entrypoint import opensre_command
 from infrastructure.process.tree import stop_worker
 from infrastructure.scheduling.scheduler.storage import get_task
 from infrastructure.scheduling.scheduler.types import TaskReport
@@ -59,13 +63,7 @@ def _supervise(store: RepairStore, run: RepairRun) -> str:
         return finish_run(store, run)
     directory = store.directory(run.id)
     directory.mkdir(parents=True, exist_ok=True)
-    command = [
-        sys.executable,
-        "-m",
-        "integrations.github.tools.ci_repair_loop.worker",
-        str(store.root),
-        run.id,
-    ]
+    command = opensre_command(CI_REPAIR_WORKER_COMMAND, str(store.root), run.id)
     with (directory / "worker.log").open("a", encoding="utf-8") as log:
         process = subprocess.Popen(command, stdout=log, stderr=log, start_new_session=True)
         stopped: RepairStatus | None = None

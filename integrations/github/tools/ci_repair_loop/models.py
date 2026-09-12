@@ -23,6 +23,8 @@ class RepairRun(BaseModel):
     owner: str
     repo: str
     actor: str
+    # Legacy records remain readable locally but cannot authorize an account.
+    actor_id: int = Field(default=0, ge=0, strict=True)
     demo: bool
     started_at: float
     deadline: float
@@ -50,9 +52,9 @@ class RepairRun(BaseModel):
         return self.status not in {RepairStatus.QUEUED, RepairStatus.RUNNING}
 
     @property
-    def identity(self) -> tuple[str, str, str, int]:
+    def identity(self) -> tuple[int, str, str, int]:
         return (
-            self.actor.casefold(),
+            self.actor_id,
             self.owner.casefold(),
             self.repo.casefold(),
             (0 if self.demo else self.pr_number),

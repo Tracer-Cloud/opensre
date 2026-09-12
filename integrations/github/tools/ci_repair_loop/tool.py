@@ -14,7 +14,7 @@ from integrations.github.helpers import (
     github_creds,
     github_source_available,
 )
-from integrations.github.tools.ci_repair_loop.credentials import configured_token
+from integrations.github.tools.ci_repair_loop.credentials import account_id, configured_token
 from integrations.github.tools.ci_repair_loop.fixture import object_response
 from integrations.github.tools.ci_repair_loop.models import RepairRun
 from integrations.github.tools.ci_repair_loop.report import render_report
@@ -162,10 +162,10 @@ def get_ci_repair_loop(
         store = RepairStore()
         token = configured_token(github_token)
         user = object_response(GitHubRestClient(token).request("GET", "user"))
-        actor = str(user.get("login") or "").casefold()
+        actor_id = account_id(user)
         while True:
             run = store.get(task_id)
-            if not actor or run.actor.casefold() != actor:
+            if not run.actor_id or run.actor_id != actor_id:
                 return {"ok": False, "error": "This repair belongs to a different GitHub account."}
             if run.terminal or time.monotonic() >= until:
                 return _result(run, store)

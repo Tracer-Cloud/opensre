@@ -25,7 +25,7 @@ from infrastructure.scheduling.scheduler.runner import compute_next_run
 from infrastructure.scheduling.scheduler.storage import add_task, get_task
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
 from integrations.github.client import GitHubRestClient
-from integrations.github.tools.ci_repair_loop.credentials import configured_token
+from integrations.github.tools.ci_repair_loop.credentials import account_id, configured_token
 from integrations.github.tools.ci_repair_loop.fixture import object_response
 from integrations.github.tools.ci_repair_loop.models import RepairRun, RepairStatus
 from integrations.github.tools.ci_repair_loop.storage import RepairStore
@@ -53,6 +53,7 @@ def schedule_repair(
     started = time.time()
     token = configured_token(github_token)
     user = object_response(GitHubRestClient(token).request("GET", "user"))
+    actor_id = account_id(user)
     actor = _component(str(user.get("login") or ""))
     owner = _component(owner.strip() or actor)
     if demo:
@@ -72,6 +73,7 @@ def schedule_repair(
                 owner=owner,
                 repo=repo,
                 actor=actor,
+                actor_id=actor_id,
                 demo=demo,
                 started_at=started,
                 deadline=started + CI_REPAIR_SECONDS,

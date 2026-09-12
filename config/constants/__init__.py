@@ -223,6 +223,7 @@ if TYPE_CHECKING:
     from config.constants.ci_repair import CI_REPAIR_POLL_SECONDS as CI_REPAIR_POLL_SECONDS
     from config.constants.ci_repair import CI_REPAIR_REPORT_BUILDER as CI_REPAIR_REPORT_BUILDER
     from config.constants.ci_repair import CI_REPAIR_SECONDS as CI_REPAIR_SECONDS
+    from config.constants.ci_repair import CI_REPAIR_WORKER_COMMAND as CI_REPAIR_WORKER_COMMAND
     from config.constants.clerk import (
         CLERK_ISSUER_ENV as CLERK_ISSUER_ENV,
     )

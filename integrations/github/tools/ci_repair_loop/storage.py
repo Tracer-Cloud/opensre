@@ -54,7 +54,7 @@ class RepairStore:
             runs = self._read()
             for run in runs.values():
                 if run.identity[1:] == candidate.identity[1:] and not run.terminal:
-                    if run.actor.casefold() != candidate.actor.casefold():
+                    if not run.actor_id or run.actor_id != candidate.actor_id:
                         raise ValueError(
                             "Another GitHub account already has an active repair for this target."
                         )
