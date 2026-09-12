@@ -148,7 +148,7 @@ def wait_for_pr_checks(
                     failing = tuple(
                         _check_name(check)
                         for check in checks
-                        if _check_failed(check, expected_skips=expected_skips)
+                        if check_failed(check, expected_skips=expected_skips)
                     )
                     return CheckVerification(
                         state=CheckState.FAILED if failing else CheckState.PASSED,
@@ -410,7 +410,8 @@ def _check_signature(checks: list[dict[str, Any]]) -> tuple[str, ...]:
     return tuple(sorted(signatures))
 
 
-def _check_failed(check: dict[str, Any], *, expected_skips: set[str]) -> bool:
+def check_failed(check: dict[str, Any], *, expected_skips: set[str]) -> bool:
+    """Classify a GitHub check or commit status, allowing only explicitly expected skips."""
     conclusion = str(check.get("conclusion") or "").strip().upper()
     state = str(check.get("state") or "").strip().upper()
     if conclusion == _SKIPPED_CONCLUSION:
@@ -433,6 +434,7 @@ def _check_is_terminal(check: dict[str, Any]) -> bool:
 __all__ = [
     "CheckState",
     "CheckVerification",
+    "check_failed",
     "DEFAULT_CHECK_WAIT_SECONDS",
     "DEFAULT_HEAD_PROPAGATION_SECONDS",
     "DEFAULT_POLL_INTERVAL_SECONDS",

@@ -63,6 +63,15 @@ class RepairStore:
             self._write(runs)
             return candidate, False
 
+    def mark_registered(self, run_id: str) -> RepairRun:
+        """Publish registration without overwriting a worker that has already started."""
+        with self.lock:
+            runs = self._read()
+            run = runs[run_id]
+            run.registered = True
+            self._write(runs)
+            return run
+
     def get(self, run_id: str) -> RepairRun:
         self.directory(run_id)
         with self.lock:

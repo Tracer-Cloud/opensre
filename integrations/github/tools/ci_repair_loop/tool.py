@@ -8,12 +8,14 @@ from typing import Any
 from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel, report_run_error
 from core.tool_framework import tool
-from integrations.github.client import GitHubApiError
+from integrations.github.client import GitHubApiError, GitHubRestClient
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
     github_creds,
     github_source_available,
 )
+from integrations.github.tools.ci_repair_loop.credentials import configured_token
+from integrations.github.tools.ci_repair_loop.fixture import object_response
 from integrations.github.tools.ci_repair_loop.models import RepairRun
 from integrations.github.tools.ci_repair_loop.report import render_report
 from integrations.github.tools.ci_repair_loop.schedule import schedule_repair
@@ -130,6 +132,9 @@ def schedule_ci_repair_loop(
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.READ_ONLY,
     parallel_safe=True,
+    is_available=github_source_available,
+    extract_params=_credentials,
+    injected_params=GITHUB_INJECTED_PARAMS,
     input_schema={
         "type": "object",
         "properties": {
@@ -148,17 +153,24 @@ def schedule_ci_repair_loop(
         "additionalProperties": False,
     },
 )
-def get_ci_repair_loop(task_id: str, wait_seconds: int = 0, **_kwargs: Any) -> dict[str, Any]:
+def get_ci_repair_loop(
+    task_id: str, wait_seconds: int = 0, github_token: str | None = None, **_kwargs: Any
+) -> dict[str, Any]:
     """Retrieve the same report while the shell is open or after returning later."""
     until = time.monotonic() + min(60, max(0, wait_seconds))
     try:
         store = RepairStore()
+        token = configured_token(github_token)
+        user = object_response(GitHubRestClient(token).request("GET", "user"))
+        actor = str(user.get("login") or "").casefold()
         while True:
             run = store.get(task_id)
+            if not actor or run.actor.casefold() != actor:
+                return {"ok": False, "error": "This repair belongs to a different GitHub account."}
             if run.terminal or time.monotonic() >= until:
                 return _result(run, store)
             time.sleep(min(1, max(0, until - time.monotonic())))
-    except (ValueError, OSError, RuntimeError) as exc:
+    except (ValueError, OSError, RuntimeError, GitHubApiError) as exc:
         report_run_error(
             exc,
             tool_name="get_ci_repair_loop",
@@ -166,4 +178,7 @@ def get_ci_repair_loop(task_id: str, wait_seconds: int = 0, **_kwargs: Any) -> d
             component=__name__,
             method="RepairStore.get",
         )
-        return {"ok": False, "error": str(exc)}
+        return {
+            "ok": False,
+            "error": "Could not read the repair report; check your GitHub connection and run id.",
+        }
