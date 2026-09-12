@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 import subprocess
 import sys
 import time
@@ -13,6 +14,7 @@ from typing import Any
 
 import psutil
 import pytest
+from filelock import FileLock
 
 from config.constants.ci_repair import CI_REPAIR_FINISH_RESERVE_SECONDS
 from config.constants.github import GITHUB_CI_DEMO_REPOSITORY
@@ -73,6 +75,28 @@ def test_corrupt_or_future_storage_is_preserved(tmp_path: Path) -> None:
     with pytest.raises(ValueError, match="version"):
         store.reserve(_run())
     assert store.path.read_text() == original
+
+
+def test_expired_legacy_run_releases_scope_only_after_its_supervisor_stops(tmp_path: Path) -> None:
+    store = RepairStore(tmp_path)
+    legacy = _run().model_dump()
+    legacy.pop("actor_id")
+    legacy["deadline"] = time.time() - 1
+    store.path.write_text(json.dumps({"version": 1, "runs": {legacy["id"]: legacy}}))
+    candidate = _run("b" * 12).model_copy(update={"actor_id": 456})
+    with FileLock(str(store.directory(str(legacy["id"]))) + ".execution.lock"):
+        with pytest.raises(ValueError, match="stopping"):
+            store.reserve(candidate)
+        assert store.get(str(legacy["id"])).status is RepairStatus.QUEUED
+    fresh, reused = RepairStore(tmp_path).reserve(candidate)
+    assert not reused and fresh.id == candidate.id and fresh.actor_id == 456
+    previous = store.get(str(legacy["id"]))
+    assert previous.status is RepairStatus.TIMED_OUT and previous.actor_id == 0
+    assert previous.deadline == legacy["deadline"] and previous.finished_at is not None
+    resumed, reused = RepairStore(tmp_path).reserve(
+        _run("c" * 12).model_copy(update={"actor_id": 456})
+    )
+    assert reused and resumed.id == fresh.id and resumed.deadline == fresh.deadline
 
 
 def _git_sha(content: str) -> str:

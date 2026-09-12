@@ -6,13 +6,14 @@ import json
 import os
 import re
 import tempfile
+import time
 from pathlib import Path
 
-from filelock import FileLock
+from filelock import FileLock, Timeout
 
 from config.constants.ci_repair import CI_REPAIR_DIRECTORY
 from config.constants.paths import OPENSRE_HOME_DIR
-from integrations.github.tools.ci_repair_loop.models import RepairRun
+from integrations.github.tools.ci_repair_loop.models import RepairRun, RepairStatus
 
 
 class RepairStore:
@@ -54,7 +55,14 @@ class RepairStore:
             runs = self._read()
             for run in runs.values():
                 if run.identity[1:] == candidate.identity[1:] and not run.terminal:
-                    if not run.actor_id or run.actor_id != candidate.actor_id:
+                    if run.deadline <= time.time():
+                        self._expire(run, runs)
+                        continue
+                    if not run.actor_id:
+                        raise ValueError(
+                            "A legacy repair is still active; retry after its original deadline."
+                        )
+                    if run.actor_id != candidate.actor_id:
                         raise ValueError(
                             "Another GitHub account already has an active repair for this target."
                         )
@@ -62,6 +70,17 @@ class RepairStore:
             runs[candidate.id] = candidate
             self._write(runs)
             return candidate, False
+
+    def _expire(self, run: RepairRun, runs: dict[str, RepairRun]) -> None:
+        """Release expired scope only when its supervisor no longer owns execution."""
+        try:
+            with FileLock(str(self.directory(run.id)) + ".execution.lock", timeout=0):
+                run.status = RepairStatus.TIMED_OUT
+                run.finished_at = time.time()
+                run.reason = "The previous repair reached its time budget."
+                self._write(runs)
+        except Timeout as exc:
+            raise ValueError("The previous repair is stopping; try again shortly.") from exc
 
     def mark_registered(self, run_id: str) -> RepairRun:
         """Publish registration without overwriting a worker that has already started."""
