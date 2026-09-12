@@ -17,6 +17,7 @@ from core.domain.work_items import (
     list_work_items,
     make_work_item,
     prioritize_work_items,
+    resolve_work_item_datetime,
     resolve_work_item_selector,
     update_work_item,
     work_items_path,
@@ -169,6 +170,18 @@ def work_task_add(
                 "a gateway chat with an active channel"
             ),
         }
+    if remind_at:
+        try:
+            if resolve_work_item_datetime(remind_at, timezone.strip() or "UTC") is None:
+                return {
+                    "error": "invalid_remind_at",
+                    "detail": "remind_at does not exist in the specified timezone",
+                }
+        except ValueError:
+            return {
+                "error": "invalid_timezone",
+                "detail": "timezone must be a valid IANA timezone",
+            }
     item = add_work_item(
         title=title,
         priority=parsed_priority,
@@ -361,6 +374,18 @@ def work_task_update(
         error = validate_datetime_arg(value, field=field_name)
         if error is not None:
             return error
+    if remind_at:
+        try:
+            if resolve_work_item_datetime(remind_at, timezone.strip() or "UTC") is None:
+                return {
+                    "error": "invalid_remind_at",
+                    "detail": "remind_at does not exist in the specified timezone",
+                }
+        except ValueError:
+            return {
+                "error": "invalid_timezone",
+                "detail": "timezone must be a valid IANA timezone",
+            }
     explicit_targets = delivery_targets(
         provider=channel_provider,
         chat_id=channel_id,

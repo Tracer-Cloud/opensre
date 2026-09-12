@@ -89,10 +89,11 @@ def test_the_next_run_is_shown_in_the_schedule_timezone(store_path: Path) -> Non
 
     # Act
     schedule_line = ci_loop.loop_card(scheduled).details[0]
+    next_run = schedule_line.split("next ", 1)[1]
 
     # Assert
-    assert "T" not in schedule_line.split("next ")[1]
-    assert schedule_line.endswith("08:00")
+    assert len(next_run.split()) == 4
+    assert next_run.endswith("08:00")
 
 
 def test_unparseable_time_raises_before_anything_is_stored(store_path: Path) -> None:

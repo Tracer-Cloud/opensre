@@ -1,6 +1,6 @@
 """APScheduler-backed blocking runner for scheduled tasks.
 
-Loads all enabled tasks from the store, creates CronTrigger jobs, and
+Loads all enabled tasks from the store, creates APScheduler jobs, and
 blocks until SIGINT/SIGTERM. Fire times for dedup are passed directly from the
 APScheduler executor to each callback (UTC, minute precision), not recovered
 from listener timing or wall-clock time inside the callback.
@@ -20,6 +20,7 @@ from config.constants.turn_concurrency import (
     DEFAULT_SCHEDULED_RUN_CONCURRENCY,
     OPENSRE_SCHEDULER_MAX_CONCURRENT_RUNS_ENV,
 )
+from config.constants.work_items import WORK_ITEM_REMINDER_RUN_AT_PARAM
 from infrastructure.scheduling.scheduler.executor import execute_task
 from infrastructure.scheduling.scheduler.operation_log import (
     record_scheduler_execution_operation,
@@ -43,7 +44,7 @@ from infrastructure.scheduling.scheduler.storage import (
     try_queue_run,
     update_task,
 )
-from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskStatus
+from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind, TaskStatus
 
 logger = logging.getLogger(__name__)
 TaskFilter = Callable[[ScheduledTask], bool]
@@ -53,10 +54,27 @@ _RECOVERY_INTERVAL_SECONDS = 60
 
 
 def _make_trigger(task: ScheduledTask) -> Any:
-    """Build an APScheduler CronTrigger from a task's cron expression and timezone.
+    """Build an APScheduler trigger from a task's schedule and timezone.
 
     Raises ValueError if the cron expression or timezone is invalid.
     """
+    if task.kind is TaskKind.WORK_ITEM_REMINDER:
+        run_at = task.params.get(WORK_ITEM_REMINDER_RUN_AT_PARAM, "").strip()
+        if run_at:
+            from apscheduler.triggers.date import DateTrigger
+
+            try:
+                run_date = datetime.fromisoformat(run_at)
+            except ValueError as exc:
+                raise ValueError(
+                    f"Invalid work-item reminder run_at for task {task.id}: {run_at!r}"
+                ) from exc
+            if run_date.tzinfo is None:
+                raise ValueError(
+                    f"Invalid work-item reminder run_at for task {task.id}: timezone missing"
+                )
+            return DateTrigger(run_date=run_date)
+
     from apscheduler.triggers.cron import CronTrigger
 
     parts = task.cron.split()
@@ -82,7 +100,7 @@ def _next_run_from_trigger(trigger: Any, now: datetime | None = None) -> str | N
 
 
 def compute_next_run(task: ScheduledTask, now: datetime | None = None) -> str | None:
-    """Return the task's next UTC cron fire time, or raise for invalid schedules."""
+    """Return the task's next UTC fire time, or raise for an invalid schedule."""
     return _next_run_from_trigger(_make_trigger(task), now)
 
 

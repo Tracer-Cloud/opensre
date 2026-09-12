@@ -8,6 +8,8 @@ from pathlib import Path
 
 import pytest
 
+from config.constants.work_items import WORK_ITEM_REMINDER_RUN_AT_PARAM
+from core.domain.work_items import add_work_item
 from infrastructure.scheduling.scheduler.storage.run_store import get_runs, try_claim
 from infrastructure.scheduling.scheduler.storage.task_store import (
     _quarantine_unreadable,
@@ -472,6 +474,58 @@ class TestStoreSurvivesTornWrites:
 
 
 class TestLegacyTaskMigration:
+    def test_unreadable_work_item_store_does_not_abort_task_loading(
+        self, store_path: Path, tmp_path: Path
+    ) -> None:
+        work_items_store = tmp_path / "work_items.json"
+        work_items_store.write_text("{not-json", encoding="utf-8")
+        legacy_task = ScheduledTask(
+            kind=TaskKind.WORK_ITEM_REMINDER,
+            cron="0 9 12 9 *",
+            timezone="UTC",
+            provider=Provider.SLACK,
+            params={
+                "work_item_id": "item-1",
+                "store_path": str(work_items_store),
+            },
+        )
+        add_task(legacy_task, store_path)
+
+        loaded = get_task(legacy_task.id, store_path)
+
+        assert loaded is not None
+        assert WORK_ITEM_REMINDER_RUN_AT_PARAM not in loaded.params
+
+    def test_legacy_work_item_reminder_is_migrated_to_an_absolute_run_at(
+        self, store_path: Path, tmp_path: Path
+    ) -> None:
+        work_items_store = tmp_path / "work_items.json"
+        item = add_work_item(
+            title="Check clusters",
+            remind_at="2027-09-12T09:00",
+            store_path=work_items_store,
+        )
+        legacy_task = ScheduledTask(
+            kind=TaskKind.WORK_ITEM_REMINDER,
+            cron="0 9 12 9 *",
+            timezone="Asia/Kolkata",
+            provider=Provider.SLACK,
+            params={
+                "work_item_id": item.id,
+                "store_path": str(work_items_store),
+                "disable_after_success": "true",
+            },
+        )
+        add_task(legacy_task, store_path)
+
+        migrated = get_task(legacy_task.id, store_path)
+
+        assert migrated is not None
+        assert migrated.params[WORK_ITEM_REMINDER_RUN_AT_PARAM] == "2027-09-12T09:00:00+05:30"
+        persisted = store_path.read_text(encoding="utf-8")
+        assert get_task(legacy_task.id, store_path) is not None
+        assert store_path.read_text(encoding="utf-8") == persisted
+
     @staticmethod
     def _copy_fixture(store_path: Path) -> None:
         fixture = Path(__file__).parents[1] / "fixtures" / "scheduler" / "pre_5981_tasks.json"

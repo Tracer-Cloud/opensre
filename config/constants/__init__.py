@@ -1132,6 +1132,9 @@ if TYPE_CHECKING:
     from config.constants.work_items import (
         OPENSRE_WORK_ITEMS_DIR_ENV as OPENSRE_WORK_ITEMS_DIR_ENV,
     )
+    from config.constants.work_items import (
+        WORK_ITEM_REMINDER_RUN_AT_PARAM as WORK_ITEM_REMINDER_RUN_AT_PARAM,
+    )
     from config.constants.x_mcp import (
         X_MCP_AUTH_TOKEN_ENV as X_MCP_AUTH_TOKEN_ENV,
     )

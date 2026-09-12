@@ -369,6 +369,24 @@ class TestComputeNextRun:
 
         assert result == "2026-08-05T08:00:00+00:00"
 
+    def test_work_item_reminder_uses_exact_year(self) -> None:
+        from datetime import UTC, datetime
+
+        task = ScheduledTask(
+            kind=TaskKind.WORK_ITEM_REMINDER,
+            cron="",
+            timezone="UTC",
+            provider=Provider.SLACK,
+            params={
+                "work_item_id": "item-1",
+                "run_at": "2027-09-12T09:00:00+00:00",
+            },
+        )
+
+        result = compute_next_run(task, datetime(2026, 1, 1, tzinfo=UTC))
+
+        assert result == "2027-09-12T09:00:00+00:00"
+
 
 class TestRegisterJobs:
     def test_real_scheduler_registers_and_passes_fire_time(
