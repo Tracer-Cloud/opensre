@@ -18,7 +18,7 @@ metadata:
   requires:
     - GitHub write access to the watched repository and an authenticated coding agent
     - A matching local checkout available to the existing scheduler host
-    - For the demo, a GitHub token that can create and delete a private repository
+    - For the demo, a GitHub token that can create a private repository and an example PR
   version: "5.1"
 includes:
   - common/ask_once.md
@@ -30,8 +30,7 @@ Monitor one repository on a schedule and automatically edit, test, and
 push fixes to one failing PR branch per tick. A green PR does not stop
 monitoring.
 
-The optional private demo uses the same repair policy every **minute**; its
-result is saved before its temporary resources are deleted.
+The optional private demo uses the same repair policy every **minute**
 
 ## Goal
 
@@ -206,11 +205,8 @@ In this order, no verification calls in between:
    PR link, failed run id, loop id, fix commit, passing run id) and removes
    the temp checkout.
 2. `slash_invoke` `{"command": "/cron", "args": ["remove", "<id>"]}`.
-3. `github_cli` `["repo", "delete", "<login>/<name>", "--yes"]`. If GitHub
-   refuses, delete the branch instead with
-   `["api", "-X", "DELETE", "repos/<login>/<name>/git/refs/heads/demo/failing-ci"]`
    and report that the repository remains.
-4. `slash_invoke` `{"command": "/cron", "args": ["list"]}` as the single
+3. `slash_invoke` `{"command": "/cron", "args": ["list"]}` as the single
    verification.
 
 For an existing repository the loop stays; only record its id.
