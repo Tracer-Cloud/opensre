@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -90,8 +91,10 @@ def test_the_next_run_is_shown_in_the_schedule_timezone(store_path: Path) -> Non
     # Act
     schedule_line = ci_loop.loop_card(scheduled).details[0]
 
-    # Assert
-    assert "T" not in schedule_line.split("next ")[1]
+    # Assert: a human ``Tue 15 Sep 08:00``, not a ``2026-09-15T13:00`` UTC stamp.
+    # (Checking for the letter ``T`` alone fails whenever the weekday is Tue/Thu.)
+    next_run = schedule_line.split("next ")[1]
+    assert not re.search(r"\d{4}-\d{2}-\d{2}T", next_run), next_run
     assert schedule_line.endswith("08:00")
 
 
