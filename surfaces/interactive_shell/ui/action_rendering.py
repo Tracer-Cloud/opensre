@@ -519,11 +519,10 @@ class ActionRenderObserver:
         Skills instruct the agent to emit phase headers (``### [n/N] ...``)
         before each tool group; without live rendering that narration is
         dropped. The loop's final no-tool-call answer (``has_tool_calls``
-        false) and the text beside a turn-ending menu call (``closing_reply``)
-        are skipped — the turn driver already streams both as the closing
-        reply, so printing them here would duplicate them.
+        false) is skipped — the turn driver already streams it as the
+        closing reply, so printing it here would duplicate it.
         """
-        if not data.get("has_tool_calls") or data.get("closing_reply"):
+        if not data.get("has_tool_calls"):
             return
         content = str(data.get("content", "")).strip()
         if not content:

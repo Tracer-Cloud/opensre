@@ -145,6 +145,9 @@ def test_a_menu_answered_this_turn_is_not_asked_again_through_the_real_turn() ->
     # question this turn's message already answered.
     assert (result.executed_count, result.executed_success_count) == (1, 0)
     assert session.pending_user_choice is None
+    # The text beside the refused menu is held back for the hand-over; once
+    # that does not happen it must still reach the user instead of vanishing.
+    assert "One question before scheduling." in _console_text(harness)
 
 
 def test_a_painted_tool_result_is_not_restated_in_the_closing() -> None:

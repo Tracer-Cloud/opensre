@@ -122,18 +122,6 @@ def test_message_update_final_answer_is_not_rendered() -> None:
     assert buffer.getvalue() == ""
 
 
-def test_message_update_beside_a_menu_call_is_left_to_the_closing_reply() -> None:
-    """The report written beside ``ask_user_choice`` is the reply, not a working note."""
-    observer, buffer = _observer_with_buffer()
-
-    observer(
-        "message_update",
-        {"content": "| Metric | value |", "has_tool_calls": True, "closing_reply": True},
-    )
-
-    assert buffer.getvalue() == ""
-
-
 def test_message_update_with_blank_content_prints_nothing() -> None:
     observer, buffer = _observer_with_buffer()
 

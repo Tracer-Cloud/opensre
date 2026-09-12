@@ -323,22 +323,17 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
         assistant_message = self._msg_formatter.to_assistant_runtime_message(response)
         self._host._emit_runtime(MessageStartEvent(message=assistant_message, iteration=iteration))
         closing_reply = self._hands_turn_to_user(response)
-        if response.content:
+        if response.content and not closing_reply:
             # ``has_tool_calls`` lets renderers distinguish intermediate
             # commentary preceding this iteration's tool calls (render live)
             # from the final no-tool-call answer (streamed as final_text).
-            # ``closing_reply`` marks text beside a turn-ending tool: it is the
-            # reply the host shows once the turn ends, not live commentary.
-            self._host._emit_runtime(
-                MessageUpdateEvent(
-                    message=assistant_message,
-                    delta=response.content,
-                    iteration=iteration,
-                    data={
-                        "has_tool_calls": response.has_tool_calls,
-                        "closing_reply": closing_reply,
-                    },
-                )
+            # Text beside a turn-ending tool is held back: ``_observe`` makes
+            # it the reply once the hand-over happens, or emits it here late.
+            self._emit_message_update(
+                assistant_message,
+                response.content,
+                iteration,
+                has_tool_calls=response.has_tool_calls,
             )
         self._messages.append(assistant_message)
 
@@ -349,6 +344,19 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
     def _hands_turn_to_user(self, response: Any) -> bool:
         """True when this response calls a tool that ends the turn on the user's side."""
         return any(tc.name in self._turn_ending_tool_names for tc in response.tool_calls)
+
+    def _emit_message_update(
+        self, assistant_message: Any, content: str, iteration: int, *, has_tool_calls: bool
+    ) -> None:
+        """Emit the model's text for this iteration; ``has_tool_calls`` marks commentary."""
+        self._host._emit_runtime(
+            MessageUpdateEvent(
+                message=assistant_message,
+                delta=content,
+                iteration=iteration,
+                data={"has_tool_calls": has_tool_calls},
+            )
+        )
 
     def _think(
         self,
@@ -613,6 +621,7 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
                 },
             )
         )
+        reply_text = str(response.content or "").strip()
         if terminated_tool_count:
             self._terminated_by_tool = True
             self._hit_cap = False
@@ -620,7 +629,7 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
             if closing_reply:
                 # The text beside the turn-ending call is the reply the user
                 # reads before the hand-over (a report before its menu).
-                self._final_text = str(response.content or "").strip()
+                self._final_text = reply_text
             return _IterationResult(
                 should_stop=True,
                 outcome="tool_terminated",
@@ -628,6 +637,11 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
                 tool_error_count=tool_error_count,
                 terminated_tool_count=terminated_tool_count,
             )
+        if closing_reply and reply_text:
+            # The hand-over did not happen (menu refused, blocked, or
+            # unavailable), so the held-back text is ordinary commentary now;
+            # emitting it late keeps a report from vanishing with its menu.
+            self._emit_message_update(assistant_message, reply_text, iteration, has_tool_calls=True)
         fingerprint = _observation_fingerprint(response.tool_calls, results)
         if fingerprint in self._seen_observations:
             self._stagnant_iterations += 1
