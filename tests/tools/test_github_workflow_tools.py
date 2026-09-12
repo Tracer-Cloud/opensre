@@ -58,6 +58,33 @@ class TestExecuteGitHubIssueMutationContract(BaseToolContract):
         return _registered_tool(execute_github_issue_mutation)
 
 
+def test_pr_discovery_accepts_explicit_repo_without_configured_default() -> None:
+    tool: RegisteredTool = _registered_tool(summarize_github_pr_status)
+    sources = {"github": {"connection_verified": True, "github_token": "tok"}}
+
+    with (
+        patch("integrations.github.tools.work_status.resolve_github_token", return_value=""),
+        patch.object(GitHubRestClient, "paginate", return_value=[]) as paginate,
+    ):
+        assert tool.is_available(sources)
+        assert not tool.is_available({})
+        result = execute_tool_calls(
+            [
+                ToolCall(
+                    id="discover",
+                    name=tool.name,
+                    input={"owner": "o", "repo": "r", "state": "open"},
+                )
+            ],
+            [tool],
+            sources,
+        )[0]
+
+    assert result.is_error is False
+    assert result.details["available"] is True
+    assert paginate.call_args.args[0] == "/repos/o/r/pulls"
+
+
 def test_list_github_work_items_classifies_taken_and_up_for_grabs() -> None:
     issues = [
         {

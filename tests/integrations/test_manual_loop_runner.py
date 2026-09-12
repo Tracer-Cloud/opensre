@@ -103,7 +103,13 @@ def test_loop_mode_reaches_system_prompt_and_tool_catalog(
     session = SessionCore()
     session.configured_integrations_known = True
     systems: list[str] = []
+    user_messages: list[str] = []
     repaired: list[bool] = []
+    task = (
+        'Call summarize_github_pr_status(owner="o", repo="r", include_checks=true). '
+        "Select the first failing PR and call fix_github_pr_ci with its pr_number "
+        'and workspace="/tmp/ci-workspace" exactly once. Return response_text and stop.'
+    )
 
     class RecordingLLM(FakeActionLLM):
         def invoke(
@@ -114,6 +120,11 @@ def test_loop_mode_reaches_system_prompt_and_tool_catalog(
             tools: list[dict[str, Any]] | None = None,
         ) -> AgentLLMResponse:
             systems.append(system or "")
+            user_messages.extend(
+                str(message.get("content", ""))
+                for message in messages
+                if message.get("role") == "user"
+            )
             return super().invoke(messages, system=system, tools=tools)
 
     def repair() -> dict[str, str]:
@@ -148,12 +159,11 @@ def test_loop_mode_reaches_system_prompt_and_tool_catalog(
     )
     monkeypatch.setattr("core.agent_harness.turns.headless_build.default_llm_factory", lambda: llm)
 
-    result = manual_loop_runner.run_manual_prompt_loop(
-        {"loop_prompt": "Repair failing checks with fix_github_pr_ci", LOOP_MODE_PARAM: mode}
-    )
+    result = manual_loop_runner.run_manual_prompt_loop({"loop_prompt": task, LOOP_MODE_PARAM: mode})
 
     assert result == "Repair attempted for #42"
     assert systems
+    assert task in user_messages[0]
     skill_rule = "When the user request matches a skill below, call skill_view(name)"
     if mode == LOOP_MODE_AGENT:
         assert all(skill_rule not in system for system in systems)

@@ -37,12 +37,7 @@ _TERMINAL_CHECK_CONCLUSIONS = _FAILED_CHECK_CONCLUSIONS | {"success", "skipped",
 
 
 def _github_available(sources: dict[str, dict]) -> bool:
-    gh = sources.get("github", {})
-    return bool(
-        (github_source_available(sources) or resolve_github_token(None))
-        and gh.get("owner")
-        and gh.get("repo")
-    )
+    return bool(github_source_available(sources) or resolve_github_token(None))
 
 
 def _github_extract_params(sources: dict[str, dict]) -> dict[str, Any]:

@@ -1,5 +1,5 @@
 ---
-name: delegating-github-ci-fixes
+name: onboarding-delegating-github-ci-fixes
 description: >-
   Delegates CI/CD fixes to the hosted OpenSRE managed service. Not yet
   available; when loaded, say the option is coming soon and exit the flow.

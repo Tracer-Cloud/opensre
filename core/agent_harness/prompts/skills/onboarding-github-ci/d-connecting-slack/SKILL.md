@@ -1,5 +1,5 @@
 ---
-name: connecting-slack
+name: onboarding-connecting-slack
 description: >-
   Connect OpenSRE to Slack and show how to hand off DevOps chores from a
   channel mention or a DM. Verifies with cli_exec; if Slack is missing, queues

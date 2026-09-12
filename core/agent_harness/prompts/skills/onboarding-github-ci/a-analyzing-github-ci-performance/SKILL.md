@@ -1,5 +1,5 @@
 ---
-name: analyzing-github-ci-performance
+name: onboarding-analyzing-github-ci-performance
 description: >-
   Computes a CI/CD metrics table from raw GitHub Actions records for one
   repository over the last 30 days, including failure rates and developer

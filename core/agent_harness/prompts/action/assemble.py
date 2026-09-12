@@ -34,7 +34,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_MAX_TEXT_LEN = 512
 _USER_TEMPLATE = "USER MESSAGE (literal): <<<{text}>>>"
 
 
@@ -399,9 +398,9 @@ def build_action_user_message(text: str, *, prefix: str = "") -> str:
 
 
 def sanitize_action_text(text: str) -> str:
+    """Remove control characters and envelope delimiters; budgeting owns truncation."""
     sanitised = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
-    sanitised = re.sub(r"<{3,}|>{3,}", " ", sanitised)
-    return sanitised[:_MAX_TEXT_LEN]
+    return re.sub(r"<{3,}|>{3,}", " ", sanitised)
 
 
 __all__ = [
