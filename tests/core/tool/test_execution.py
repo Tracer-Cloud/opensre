@@ -421,12 +421,32 @@ def test_turn_ending_tool_must_be_alone_even_beside_bookkeeping() -> None:
         _tool("menu", role=ToolRole.TURN_ENDING, execute=execute),
     ]
 
-    results = execute_tool_calls([_call("plan"), _call("menu")], tools, {})
+    results = execute_tool_calls(
+        [_call("plan"), _call("menu")], tools, {}, response_text="Pick one."
+    )
 
     assert ran == []
     assert all(result.is_error for result in results)
     assert "menu" in str(results[0].content)
     assert "only" in str(results[0].content)
+
+
+def test_turn_ending_tool_without_reply_text_is_refused() -> None:
+    ran: list[str] = []
+
+    def execute(_args: dict[str, Any], _ctx: AgentToolContext) -> dict[str, Any]:
+        ran.append("ran")
+        return {"ok": True}
+
+    tools = [_tool("menu", role=ToolRole.TURN_ENDING, execute=execute)]
+
+    refused = execute_tool_calls([_call("menu")], tools, {}, response_text="  \n")
+    accepted = execute_tool_calls([_call("menu")], tools, {}, response_text="Here is the report.")
+
+    assert ran == ["ran"]
+    assert refused[0].is_error and refused[0].metadata["batch_rejected"] is True
+    assert "Write the reply first" in str(refused[0].content)
+    assert not accepted[0].is_error
 
 
 def test_registered_tool_role_and_unknown_tool_count_as_actions() -> None:

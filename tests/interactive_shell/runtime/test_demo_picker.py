@@ -123,6 +123,7 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
             tool_response(
                 "ask_user_choice",
                 {"title": _REPOSITORY_TITLE, "options": list(_REPOSITORY_OPTIONS)},
+                content="Which repository should I look at?",
             ),
         ]
     )
@@ -215,6 +216,7 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
             tool_response(
                 "ask_user_choice",
                 {"title": _REPOSITORY_TITLE, "options": list(_REPOSITORY_OPTIONS)},
+                content="Which repository should I look at?",
             ),
         ]
     )

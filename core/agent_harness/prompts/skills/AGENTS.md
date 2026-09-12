@@ -116,10 +116,12 @@ Independent read-only checks inside one step (identity plus scheduler, for
 example) are therefore separate responses, or one shell command that runs
 both.
 
-Report delivery and asking what to do next are separate actions: first
-respond with the report as Markdown text; only after it has been shown may
-the next step open a menu. Saying "the report is ready" or updating the plan
-does not deliver the report.
+A menu ends the turn, so the reply the user reads before it must be the
+message text of the same response: a report step followed by an
+`ask_user_choice` step is one response whose text is the report and whose
+only tool call is the menu. The runtime refuses a turn-ending call with no
+text. Saying "the report is ready" or updating the plan does not deliver
+the report.
 
 ## Default recommended plan
 

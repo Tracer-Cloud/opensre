@@ -35,6 +35,7 @@ from tests.core.agent.orchestration.action_execution_test_harness import (
 _REPOSITORY_QUESTION = "Which repository should I analyze?"
 _NEXT_QUESTION = "What would you like to do next?"
 _SCHEDULE_LOOPS = "Schedule local loops"
+_REPORT = "| Metric | acme/widget |\n|---|---:|\n| PR failure rate | 12% |"
 
 
 @dataclass
@@ -149,14 +150,19 @@ def test_local_analysis_waits_for_choices_before_analyzing_and_handing_off(
     skill_view = _real_action_tool("skill_view")
     analyze_args = {"owner": "acme", "repo": "widget", "days": 30}
     analyze_call = tool_response(analyze.name, analyze_args)
+    repository_menu_args = {
+        "title": _REPOSITORY_QUESTION,
+        "options": ["acme/widget", "Tracer-Cloud/opensre"],
+    }
     repository_menu = tool_response(
-        ask_user_choice.name,
-        {"title": _REPOSITORY_QUESTION, "options": ["acme/widget", "Tracer-Cloud/opensre"]},
+        ask_user_choice.name, repository_menu_args, content="Found one repository with CI."
     )
-    next_menu = tool_response(
-        ask_user_choice.name,
-        {"title": _NEXT_QUESTION, "options": [_SCHEDULE_LOOPS, "Slack setup", "Finish"]},
-    )
+    next_menu_args = {
+        "title": _NEXT_QUESTION,
+        "options": [_SCHEDULE_LOOPS, "Slack setup", "Finish"],
+    }
+    # The step 4 report is the text of the response that opens the step 5 menu.
+    next_menu = tool_response(ask_user_choice.name, next_menu_args, content=_REPORT)
     handoff_call = tool_response(skill_view.name, {"name": SCHEDULING_GITHUB_CI_FIXES_SKILL_NAME})
 
     class SkillLLM(FakeActionLLM):
@@ -183,6 +189,8 @@ def test_local_analysis_waits_for_choices_before_analyzing_and_handing_off(
             repository_menu,
             _batch(analyze_call, next_menu, handoff_call),
             analyze_call,
+            # A menu with no report text is refused; the report must come first.
+            tool_response(ask_user_choice.name, next_menu_args),
             next_menu,
             handoff_call,
             no_tool_response("Following the scheduling skill."),
@@ -213,11 +221,14 @@ def test_local_analysis_waits_for_choices_before_analyzing_and_handing_off(
     assert llm.invocations == 3
     repository_answer = _answer(session, title=_REPOSITORY_QUESTION, option="acme/widget")
 
-    agent.handle(repository_answer, binding)
+    report_turn = agent.handle(repository_answer, binding)
 
     assert calls == [(scan.name, {}), (analyze.name, analyze_args)]
-    assert llm.invocations == 6
+    assert llm.invocations == 7
     assert session.active_skill == skill.name
+    # The report beside the menu call is the turn's reply, shown once and kept.
+    assert _REPORT in report_turn.primary_response_text
+    assert "".join(output.streamed).count(_REPORT) == 1
     next_answer = _answer(session, title=_NEXT_QUESTION, option=_SCHEDULE_LOOPS)
 
     result = agent.handle(next_answer, binding)
@@ -227,6 +238,6 @@ def test_local_analysis_waits_for_choices_before_analyzing_and_handing_off(
     assert calls == [(scan.name, {}), (analyze.name, analyze_args)]
     assert session.active_skill == SCHEDULING_GITHUB_CI_FIXES_SKILL_NAME
     assert session.pending_user_choice is None
-    assert llm.invocations == 8
+    assert llm.invocations == 9
     assert not llm.responses
     assert "Following the scheduling skill." in result.primary_response_text

@@ -128,6 +128,7 @@ def test_a_menu_answered_this_turn_is_not_asked_again_through_the_real_turn() ->
                 tool_response(
                     "ask_user_choice",
                     {"title": title, "options": ["Weekdays at 08:00 (recommended)", "Every day"]},
+                    content="One question before scheduling.",
                 ),
                 no_tool_response("Scheduling it for weekdays."),
             ]

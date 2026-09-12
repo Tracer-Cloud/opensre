@@ -229,18 +229,21 @@ def execute_tool_calls(
     *,
     hooks: ToolExecutionHooks | None = None,
     tool_resources: dict[str, Any] | None = None,
+    response_text: str = "",
 ) -> list[ToolExecutionResult]:
     """Execute provider-requested tools sequentially and return structured results.
 
     A response may carry one ``ACTION`` (or one ``TURN_ENDING`` call alone), plus
-    any ``BOOKKEEPING`` calls next to the action. A response that breaks that
-    rule executes nothing: every call gets the same error so the model
-    re-issues a single action. Permitted calls run in provider order.
+    any ``BOOKKEEPING`` calls next to the action. A ``TURN_ENDING`` call must be
+    accompanied by ``response_text``, the reply the user sees before the turn
+    hands over. A response that breaks either rule executes nothing: every
+    call gets the same error so the model re-issues a single action.
+    Permitted calls run in provider order.
     """
 
     hooks = hooks or ToolExecutionHooks()
     tool_map = {t.name: t for t in tools}
-    violation = response_batch_violation(tool_calls, tool_map)
+    violation = response_batch_violation(tool_calls, tool_map, response_text=response_text)
     if violation is not None:
         logger.debug("tool_batch rejected calls=%s", [tc.name for tc in tool_calls])
         return [
@@ -273,21 +276,31 @@ def tool_role(tool: RuntimeTool | None) -> ToolRole:
     """Return the declared role; an unknown tool counts as an action so it still errors alone."""
     if tool is None:
         return ToolRole.ACTION
-    return tool.role
+    role = getattr(tool, "role", ToolRole.ACTION)
+    return role if isinstance(role, ToolRole) else ToolRole.ACTION
 
 
 def response_batch_violation(
     tool_calls: Sequence[ToolCall],
     tool_map: Mapping[str, RuntimeTool],
+    *,
+    response_text: str = "",
 ) -> str | None:
     """Explain why one response's tool calls break the one-action rule, or ``None``."""
-    if len(tool_calls) <= 1:
-        return None
     roles = [tool_role(tool_map.get(tc.name)) for tc in tool_calls]
-    requested = ", ".join(tc.name for tc in tool_calls)
     turn_ending = [
         tc.name for tc, role in zip(tool_calls, roles, strict=True) if role is ToolRole.TURN_ENDING
     ]
+    if turn_ending and not response_text.strip():
+        return (
+            f"Nothing ran: {turn_ending[0]} ends the turn, so the reply the user should read "
+            "must be the message text of this same response, and it was empty. Write the "
+            "reply first (the report or result you owe, or one sentence on what you are "
+            f"about to ask), then call {turn_ending[0]} in that same response."
+        )
+    if len(tool_calls) <= 1:
+        return None
+    requested = ", ".join(tc.name for tc in tool_calls)
     if turn_ending:
         return (
             f"Nothing ran: {turn_ending[0]} hands the turn to the user and must be the only "

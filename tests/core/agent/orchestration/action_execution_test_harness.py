@@ -72,9 +72,12 @@ class ActionExecutionHarness:
         return lambda: self.llm
 
 
-def tool_response(name: str, args: dict[str, Any] | None = None) -> AgentLLMResponse:
+def tool_response(
+    name: str, args: dict[str, Any] | None = None, *, content: str = ""
+) -> AgentLLMResponse:
+    """One tool call; ``content`` is the reply text beside it (required for a menu)."""
     return AgentLLMResponse(
-        content="",
+        content=content,
         tool_calls=[ToolCall(id=f"call_{name}", name=name, input=dict(args or {}))],
         raw_content=None,
     )

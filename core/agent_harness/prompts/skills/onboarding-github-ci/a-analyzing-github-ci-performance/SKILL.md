@@ -18,7 +18,7 @@ metadata:
   - GitHub authentication with read access to the repository's Actions history.
   - The analyze_github_ci_reliability and scan_local_git_workspace tools.
   - For local discovery, a local Git checkout; the example repository does not require one.
-  version: '1.14'
+  version: '1.15'
 ---
 
 # CI/CD analytics
@@ -98,7 +98,11 @@ not return success, run it again once. A cell still without a source is
 Prepare the report below for delivery.
 
 #### Report format
-After calculating the metrics, respond directly with the report as a Markdown table. Writing that response delivers the report.
+The report is the message text of the response that calls the step 5
+`ask_user_choice`: write the Markdown table first, then the menu call in
+that same response. The shell shows the table as your reply and opens the
+menu beneath it. A menu call with no report text is refused, and a plan
+update or a "the report is ready" sentence does not deliver the report.
 
 Identify the repository, default branch, UTC window, and coverage. Render
 this table as text, replacing every placeholder with a calculated value or a
@@ -125,19 +129,19 @@ What insights stand out:
 ```
 
 Complete when `skill_view` has returned the benchmarks reference in this
-turn and the assistant reply contains the table.
+turn and the table is the message text of the step 5 response.
 
 ### 5. Offer the next step
 
-Call `ask_user_choice` with the title
-`What would you like to do next?` and these options:
+In the response whose text is the step 4 report, call `ask_user_choice`
+with the title `What would you like to do next?` and these options:
 
 - Schedule local loops
 - Slack setup
 - Finish
 
-Complete when the `ask_user_choice` call for this menu has returned in
-this turn. The user's answer arrives in the next turn. Each branch except
+Complete when that `ask_user_choice` call has returned in this turn. The
+user's answer arrives in the next turn. Each branch except
 `Finish` is owned by a sibling skill: load it with `skill_view` and follow
 its plan; do not reimplement its steps here.
 

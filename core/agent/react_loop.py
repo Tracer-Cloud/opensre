@@ -26,6 +26,7 @@ from core.context_budget import (
     estimate_message_tokens,
     system_and_tools_overhead,
 )
+from core.domain.types.tools import ToolRole
 from core.events import (
     AgentEndEvent,
     AgentStartEvent,
@@ -50,6 +51,7 @@ from core.tool.execution import (
     ToolExecutionResult,
     execute_tool_calls,
     public_tool_input,
+    tool_role,
 )
 from infrastructure.observability.operations_log import record_operation
 from infrastructure.observability.trace.decisions import record_decision
@@ -167,6 +169,9 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
         self._msg_formatter = MessageMapper(self._llm)
         self._runtime_tools = list(host._filter_tools(run_input.tools))
         self._tool_schemas = self._llm.tool_schemas(self._runtime_tools)
+        self._turn_ending_tool_names = frozenset(
+            tool.name for tool in self._runtime_tools if tool_role(tool) is ToolRole.TURN_ENDING
+        )
         self._ceiling = context_budget_ceiling_for_model(getattr(self._llm, "_model", None))
         # System prompt and tool schemas are fixed for the run; serialize once.
         self._fixed_overhead_tokens = system_and_tools_overhead(self._system, self._tool_schemas)
@@ -317,23 +322,33 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
         response = self._think(iteration)
         assistant_message = self._msg_formatter.to_assistant_runtime_message(response)
         self._host._emit_runtime(MessageStartEvent(message=assistant_message, iteration=iteration))
+        closing_reply = self._hands_turn_to_user(response)
         if response.content:
             # ``has_tool_calls`` lets renderers distinguish intermediate
             # commentary preceding this iteration's tool calls (render live)
             # from the final no-tool-call answer (streamed as final_text).
+            # ``closing_reply`` marks text beside a turn-ending tool: it is the
+            # reply the host shows once the turn ends, not live commentary.
             self._host._emit_runtime(
                 MessageUpdateEvent(
                     message=assistant_message,
                     delta=response.content,
                     iteration=iteration,
-                    data={"has_tool_calls": response.has_tool_calls},
+                    data={
+                        "has_tool_calls": response.has_tool_calls,
+                        "closing_reply": closing_reply,
+                    },
                 )
             )
         self._messages.append(assistant_message)
 
         if not response.has_tool_calls:
             return self._handle_conclusion(response, assistant_message, iteration)
-        return self._observe(response, assistant_message, iteration)
+        return self._observe(response, assistant_message, iteration, closing_reply=closing_reply)
+
+    def _hands_turn_to_user(self, response: Any) -> bool:
+        """True when this response calls a tool that ends the turn on the user's side."""
+        return any(tc.name in self._turn_ending_tool_names for tc in response.tool_calls)
 
     def _think(
         self,
@@ -512,7 +527,14 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
         self._stop_reason = "no_tools_needed" if not self._executed else "completed"
         return _IterationResult(should_stop=True, outcome=self._stop_reason)
 
-    def _observe(self, response: Any, assistant_message: Any, iteration: int) -> _IterationResult:
+    def _observe(
+        self,
+        response: Any,
+        assistant_message: Any,
+        iteration: int,
+        *,
+        closing_reply: bool = False,
+    ) -> _IterationResult:
         """Execute the requested tools, record results, and emit events."""
         requested_tool_count = len(response.tool_calls)
         for index, tc in enumerate(response.tool_calls):
@@ -549,6 +571,7 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
             self._resolved,
             hooks=hooks,
             tool_resources=self._tool_resources,
+            response_text=str(response.content or ""),
         )
         provider_results = [result.provider_content() for result in results]
         tool_result_message = self._msg_formatter.to_tool_result_runtime_message(
@@ -594,6 +617,10 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
             self._terminated_by_tool = True
             self._hit_cap = False
             self._stop_reason = "tool_terminated"
+            if closing_reply:
+                # The text beside the turn-ending call is the reply the user
+                # reads before the hand-over (a report before its menu).
+                self._final_text = str(response.content or "").strip()
             return _IterationResult(
                 should_stop=True,
                 outcome="tool_terminated",

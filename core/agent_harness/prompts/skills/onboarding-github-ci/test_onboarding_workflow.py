@@ -121,6 +121,7 @@ def test_onboarding_waits_for_selection_then_runs_the_child_in_the_answer_turn(
                     "title": "Which repository should I analyze?",
                     "options": ["acme/one", "Tracer-Cloud/opensre"],
                 },
+                content="Found one repository with workflows.",
             ),
         ]
     )

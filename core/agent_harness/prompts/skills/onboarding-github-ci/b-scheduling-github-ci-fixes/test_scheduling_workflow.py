@@ -160,6 +160,7 @@ def test_repository_question_carries_the_plan_and_blocks_creation_until_answered
     repository_menu = tool_response(
         "ask_user_choice",
         {"title": _REPOSITORY_QUESTION, "options": [_DEMO_OPTION, "acme/widget"]},
+        content="Which repository should the scheduled repair target?",
     )
     llm = FakeActionLLM(
         [

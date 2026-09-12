@@ -45,11 +45,12 @@ _FALLBACK_INSTRUCTION = (
     "numbered question — finish with one sentence of instructions."
 )
 _QUEUED_INSTRUCTION = (
-    "The selection menu opens after this turn ends. End the turn now without a "
-    "user-facing sentence; do NOT repeat the options as text or ask the user to "
-    "type a number. The user's selection arrives as the next user message as the "
-    "question followed by the chosen option label, verbatim. After selection, "
-    "continue the original work and do not merely repeat or acknowledge the label."
+    "The selection menu opens after this turn ends, below the text you wrote in "
+    "this response; that text is your reply to the user. Do NOT repeat the "
+    "options as text or ask the user to type a number. The user's selection "
+    "arrives as the next user message as the question followed by the chosen "
+    "option label, verbatim. After selection, continue the original work and do "
+    "not merely repeat or acknowledge the label."
 )
 _QUEUED_BATCH_INSTRUCTION = (
     "The Ask User menu opens after this turn ends. Before it, say in one or two "
@@ -344,10 +345,12 @@ ask_user_choice_tool = RegisteredTool(
         "job, pass ALL of them in questions (label, title, options) in ONE "
         "call, then end the turn — do not drip questions and do not call "
         "update_plan until the answers arrive. A single decision uses title "
-        "and options. Precede the call with one short sentence telling the "
-        "user what you are about to ask and that they can type their own "
-        "answer if none fit. The menu opens after the turn ends; answers "
-        "arrive verbatim as the next user message. If the result says the "
+        "and options. This call must be the only tool call in its response, "
+        "and the message text of that response is your reply: the report or "
+        "result you owe, or one short sentence on what you are about to ask "
+        "(and that a custom answer is allowed). A menu call with no text is "
+        "refused. The menu opens after the turn ends, below that reply; "
+        "answers arrive verbatim as the next user message. If the result says the "
         "menu is unavailable, follow the active skill's recovery instructions; "
         "otherwise fall back to a numbered list."
     ),
