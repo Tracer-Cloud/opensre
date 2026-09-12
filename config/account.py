@@ -240,6 +240,8 @@ def _validated_account_llm_route(record: AccountRecord, token: str) -> AccountLL
 
 def account_llm_route() -> AccountLLMRoute | None:
     """Return the hosted route only while the stored account session validates."""
+    global _account_route_cache
+
     record = load_account_record()
     token = resolve_account_token()
     if record is None or record.llm_provider != "openai" or not token:
@@ -257,7 +259,7 @@ def account_llm_route() -> AccountLLMRoute | None:
         return cached.route
 
     route = _validated_account_llm_route(record, token)
-    globals()["_account_route_cache"] = _AccountRouteCacheEntry(
+    _account_route_cache = _AccountRouteCacheEntry(
         key=key,
         checked_at=now,
         route=route,
