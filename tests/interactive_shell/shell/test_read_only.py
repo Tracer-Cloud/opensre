@@ -124,13 +124,12 @@ def test_mutating_commands_are_not_read_only(command: str) -> None:
     assert is_read_only_shell_command(command) is False
 
 
-def test_read_only_shell_runs_without_approval_at_every_level_and_under_plan_only() -> None:
+def test_read_only_classification_does_not_bypass_approval() -> None:
     result = evaluate_shell_command("find . -iname x | head")
     assert result.shell_classification == "read_only"
-    # Neither the /auto gate nor the plan-only gate promotes it to ask.
-    assert apply_auto_level(result, AutoLevel.MED).verdict == "allow"
-    assert apply_auto_level(result, AutoLevel.LOW).verdict == "allow"
-    assert apply_plan_only_gate(result, plan_only_active=True).verdict == "allow"
+    assert apply_auto_level(result, AutoLevel.MED).verdict == "ask"
+    assert apply_auto_level(result, AutoLevel.LOW).verdict == "ask"
+    assert apply_plan_only_gate(result, plan_only_active=True).verdict == "ask"
 
 
 def test_mutating_shell_still_asks_when_gated() -> None:
@@ -228,9 +227,8 @@ def test_windows_date_only_auto_runs_the_display_form(
     result = evaluate_shell_command(command)
 
     assert result.shell_classification == classification
-    expected_verdict = "allow" if classification == "read_only" else "ask"
-    assert apply_auto_level(result, AutoLevel.LOW).verdict == expected_verdict
-    assert apply_plan_only_gate(result, plan_only_active=True).verdict == expected_verdict
+    assert apply_auto_level(result, AutoLevel.LOW).verdict == "ask"
+    assert apply_plan_only_gate(result, plan_only_active=True).verdict == "ask"
 
 
 @pytest.mark.parametrize(
