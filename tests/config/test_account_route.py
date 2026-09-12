@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier, Lock, local
 
 import pytest
 
@@ -48,7 +50,7 @@ def test_stale_hosted_route_falls_back_until_validation_cache_expires(
         calls += 1
         return next(validations)
 
-    times: Iterator[float] = iter((100.0, 130.0, 161.0))
+    times: Iterator[float] = iter((100.0, 100.0, 130.0, 161.0, 161.0))
     monkeypatch.setattr(account, "load_account_record", _record)
     monkeypatch.setattr(account, "resolve_account_token", lambda: "token")
     monkeypatch.setattr(account, "validate_account_session", _validate)
@@ -62,6 +64,47 @@ def test_stale_hosted_route_falls_back_until_validation_cache_expires(
         model="gpt-5.5",
     )
     assert calls == 2
+
+
+def test_concurrent_cache_misses_share_one_validation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    workers = 4
+    outer_lookup_barrier = Barrier(workers)
+    thread_state = local()
+    calls = 0
+    calls_lock = Lock()
+    original_cache_lookup = account._cached_account_route
+
+    def _synchronized_cache_lookup(
+        key: tuple[AccountRecord, bytes], now: float
+    ) -> account._AccountRouteCacheEntry | None:
+        if not getattr(thread_state, "outer_lookup_complete", False):
+            thread_state.outer_lookup_complete = True
+            cached = original_cache_lookup(key, now)
+            assert cached is None
+            outer_lookup_barrier.wait(timeout=2)
+            return cached
+        return original_cache_lookup(key, now)
+
+    def _validate(**_kwargs: object) -> AccountValidation:
+        nonlocal calls
+        with calls_lock:
+            calls += 1
+        return AccountValidation(AccountValidationState.UNAVAILABLE, "offline")
+
+    monkeypatch.setattr(account, "load_account_record", _record)
+    monkeypatch.setattr(account, "resolve_account_token", lambda: "token")
+    monkeypatch.setattr(account, "validate_account_session", _validate)
+    monkeypatch.setattr(account, "monotonic", lambda: 100.0)
+    monkeypatch.setattr(account, "_cached_account_route", _synchronized_cache_lookup)
+    monkeypatch.setattr(account, "_account_route_cache", None)
+
+    with ThreadPoolExecutor(max_workers=workers) as executor:
+        results = list(executor.map(lambda _index: account.account_llm_route(), range(workers)))
+
+    assert results == [None] * workers
+    assert calls == 1
 
 
 def test_account_route_cache_does_not_retain_raw_token(
