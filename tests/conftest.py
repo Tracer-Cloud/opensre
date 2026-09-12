@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+import sys
 from collections.abc import Iterator
 
 import pytest
@@ -144,6 +145,22 @@ def _isolate_opensre_home_files(request, monkeypatch, tmp_path) -> None:
     # secret would otherwise land it in the developer's
     # ~/.opensre/credentials.json.
     monkeypatch.setattr(paths, "OPENSRE_HOME_DIR", tmp_path / "opensre-home")
+
+
+@pytest.fixture(autouse=True)
+def _isolate_ci_fix_counters() -> Iterator[None]:
+    """Release counter caches and listeners without importing unused GitHub modules."""
+
+    def reset() -> None:
+        ledger = sys.modules.get("integrations.github.tools.ci_fix.ledger")
+        if ledger is not None:
+            ledger.reset_ci_fix_counters()
+
+    reset()
+    try:
+        yield
+    finally:
+        reset()
 
 
 @pytest.fixture(autouse=True)

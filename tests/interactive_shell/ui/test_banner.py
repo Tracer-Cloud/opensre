@@ -23,7 +23,7 @@ def _rgb(hex_color: str) -> str:
 def _fixed_status() -> LaunchStatus:
     return LaunchStatus(
         skill_count=21,
-        integration_count=2,
+        ci_fix_count=2,
     )
 
 
@@ -56,7 +56,7 @@ def test_launch_banner_is_borderless_centered_hero(monkeypatch: object) -> None:
     assert "OpenSRE" in output or "██████" in output  # wordmark or compact title
     assert "v0.1.2026.9.2+main.abc1234" in output  # full build version
     assert "Skills (21) ✓" in output
-    assert "Integrations (2) ✓" in output
+    assert "CI/CD fixes (2) ✓" in output
     # Welcome title + product description (same copy as the sign-in screen),
     # in place of the old TIP line.
     assert "Welcome to OpenSRE CLI" in output
@@ -206,7 +206,7 @@ def test_status_marks_empty_or_unavailable_capabilities(monkeypatch: object) -> 
         "load_launch_status",
         lambda: LaunchStatus(
             skill_count=0,
-            integration_count=0,
+            ci_fix_count=0,
         ),
     )
     console = Console(record=True, force_terminal=False, highlight=False, width=120)
@@ -215,45 +215,29 @@ def test_status_marks_empty_or_unavailable_capabilities(monkeypatch: object) -> 
 
     output = console.export_text(styles=False)
     assert "Skills (0) ✗" in output
-    assert "Integrations (0) ✗" in output
+    assert "CI/CD fixes (0)" in output
+    assert "✗" not in output.split("CI/CD fixes (0)", 1)[1]
 
 
-def test_integration_count_includes_all_configured(monkeypatch: object) -> None:
-    # Every configured integration counts (not just MCP ones).
-    monkeypatch.setattr(
-        "integrations.catalog.configured_integration_services",
-        lambda: ["datadog", "github"],
-    )
+def test_banner_reads_ledger_and_unavailable_probes_are_zero(
+    monkeypatch: object, tmp_path: Path
+) -> None:
+    import json
 
-    assert banner_state_module._count_configured_integrations() == 2
+    from config.constants import CI_FIX_LEDGER_PATH_ENV
 
+    ledger = tmp_path / "ci_fixes.json"
+    ledger.write_text(json.dumps({"version": 1, "fixes": ["a" * 64, "b" * 64]}))
+    monkeypatch.setenv(CI_FIX_LEDGER_PATH_ENV, str(ledger))
+    assert banner_state_module.load_launch_status().ci_fix_count == 2
 
-def test_status_probes_survive_loader_failures(monkeypatch: object) -> None:
-    import builtins
-
-    real_import = builtins.__import__
-
-    def _fail_startup_probes(name: str, *args: object, **kwargs: object) -> object:
-        if name in {
-            "integrations.catalog",
-        }:
-            raise ImportError("simulated startup probe failure")
-        return real_import(name, *args, **kwargs)
-
-    monkeypatch.setattr(builtins, "__import__", _fail_startup_probes)
-    monkeypatch.setattr(
-        banner_state_module,
-        "_BUNDLED_SKILLS_DIR",
-        Path("/nonexistent/skills-dir"),
-    )
-    monkeypatch.setattr(
-        banner_state_module,
-        "_integrations_store_file",
-        lambda: Path("/nonexistent/integrations.json"),
-    )
-
-    assert banner_state_module._count_loaded_skills() == 0
-    assert banner_state_module._count_configured_integrations() == 0
+    broken = tmp_path / "broken.json"
+    broken.write_text("{broken")
+    monkeypatch.setenv(CI_FIX_LEDGER_PATH_ENV, str(broken))
+    monkeypatch.setattr(banner_state_module, "_BUNDLED_SKILLS_DIR", tmp_path / "missing-skills")
+    assert banner_state_module.load_launch_status() == LaunchStatus(skill_count=0, ci_fix_count=0)
+    monkeypatch.setenv(CI_FIX_LEDGER_PATH_ENV, str(tmp_path / "missing.json"))
+    assert banner_state_module.load_launch_status().ci_fix_count == 0
 
 
 def test_banner_shows_the_full_build_version(monkeypatch: object) -> None:

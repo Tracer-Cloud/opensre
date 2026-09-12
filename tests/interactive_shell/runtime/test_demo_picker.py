@@ -135,7 +135,7 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
 
     def pick(**kwargs: Any) -> str:
         picker_calls.append(kwargs)
-        return GETTING_STARTED_OPTIONS[0]
+        return _REPOSITORY if kwargs["title"] == _REPOSITORY_TITLE else GETTING_STARTED_OPTIONS[0]
 
     monkeypatch.setattr(scan_tool, "scan_workspace", scan)
     monkeypatch.setattr(choice_prompt, "repl_choose_one", pick)
@@ -186,8 +186,8 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
     envelope = build_action_system_prompt_envelope(
         TurnSnapshot.from_session(answer, session, surface="interactive_shell")
     )
-    assert "## Follow the selected child" in envelope.render_ephemeral()
-    assert "## Follow the selected child" not in envelope.render_cached()
+    assert "### 2. Load the child" in envelope.render_ephemeral()
+    assert "### 2. Load the child" not in envelope.render_cached()
 
     run_action_tool_turn(answer, session, console, is_tty=True, llm_factory=lambda: llm)
     assert len(scans) == 1
@@ -198,6 +198,33 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
     assert llm.invocations == 3
     # Raw-data analysis retains the full catalog for model-selected collection.
     assert onboarding_outcomes == [("ci_analytics", False)]
+
+    # An explicit new demo may ask the child's repository question again,
+    # while unrelated answered questions remain settled.
+    choice_prompt._cmd_choose(session, console, [])
+    _take_prompt(session)
+    session.questions_already_answered.add("deploy to production?")
+    assert demo_picker.offer_demo(session, console, force=True)
+    _take_prompt(session)
+    choice_prompt._cmd_choose(session, console, [])
+    replay_answer = _take_prompt(session)
+    replay_llm = FakeActionLLM(
+        [
+            tool_response("skill_view", {"name": "analyzing-github-ci-performance"}),
+            tool_response("scan_local_git_workspace"),
+            tool_response(
+                "ask_user_choice",
+                {"title": _REPOSITORY_TITLE, "options": list(_REPOSITORY_OPTIONS)},
+            ),
+        ]
+    )
+    run_action_tool_turn(
+        replay_answer, session, console, is_tty=True, llm_factory=lambda: replay_llm
+    )
+    assert len(scans) == 2
+    assert session.pending_user_choice is not None
+    assert session.pending_user_choice.title == _REPOSITORY_TITLE
+    assert "deploy to production?" in session.questions_already_answered
 
 
 @pytest.mark.parametrize("answer", [None, "Inspect the deployment logs", "/help"])
@@ -333,14 +360,14 @@ def test_startup_and_demo_respect_tty_and_pending_input(monkeypatch: pytest.Monk
 def test_model_load_of_the_master_skill_opens_the_menu_and_ends_the_turn(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Mid-session "what can you do?" needs one model step, not a second one for the menu."""
+    """An explicit demo request loads the skill and lets its hook open the menu."""
     _offerable(monkeypatch)
     session = Session()
     session.resolved_integrations_cache = {}
     console = Console(file=io.StringIO(), highlight=False)
     llm = FakeActionLLM([tool_response("skill_view", {"name": ONBOARDING_SKILL_NAME})])
 
-    run_action_tool_turn("What can you do?", session, console, is_tty=True, llm_factory=lambda: llm)
+    run_action_tool_turn("Show me a demo", session, console, is_tty=True, llm_factory=lambda: llm)
 
     assert llm.invocations == 1
     assert session.active_skill == ONBOARDING_SKILL_NAME
@@ -363,3 +390,24 @@ def test_startup_without_a_menu_hook_does_not_fall_back_to_a_model_turn(
     assert not demo_picker.offer_demo(session, force=True)
     assert session.terminal.pending_prompt_default is None
     assert session.active_skill is None
+
+
+def test_onboarding_losing_its_terminal_ends_without_a_text_menu(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _offerable(monkeypatch)
+    session = Session()
+    output = io.StringIO()
+    console = Console(file=output)
+    assert demo_picker.offer_demo(session, console)
+    _take_prompt(session)
+    monkeypatch.setattr(choice_prompt, "repl_tty_interactive", lambda: False)
+
+    choice_prompt._cmd_choose(session, console, [])
+
+    assert "request a task directly" in output.getvalue()
+    assert all(option not in output.getvalue() for option in GETTING_STARTED_OPTIONS)
+    assert session.active_skill is None
+    assert session.pending_user_choice is None
+    assert not session.terminal.awaiting_handoff_answer
+    assert not session.terminal.pending_prompt_default

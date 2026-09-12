@@ -60,3 +60,7 @@ For a custom answer, treat that text as the user's request and act on it using
 the appropriate tools or skill. Do not reopen this menu or force a demo choice.
 After a child asks its own question, continue that child rather than returning
 to this master menu. Escape cancels onboarding; wait for a fresh user request.
+
+An explicit `/demo` starts a fresh run: carry inputs from the new request,
+and perform the selected workflow again rather than crediting earlier results
+as completed work.

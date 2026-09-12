@@ -19,7 +19,9 @@ def active_skill_block(name: str | None, message: str) -> str:
         f"ACTIVE SKILL: {name}\n"
         "The user is answering this skill's question. Continue from the answer "
         "with the skill's branch for it; do not reopen the question, restart "
-        "completed steps, or replay earlier steps because a plan still lists "
-        "them. The skill decides the next tool call; update the plan to match.\n\n"
+        "steps completed in this run, or replay them because a plan still lists "
+        "them. An explicit /demo starts a fresh run; results from earlier runs "
+        "do not complete its steps. The skill decides the next tool call and "
+        "whether it owns the live plan.\n\n"
         f"{body[:_MAX_SKILL_CHARS]}"
     )

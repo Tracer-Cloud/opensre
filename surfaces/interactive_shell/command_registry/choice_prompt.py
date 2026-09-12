@@ -14,11 +14,12 @@ from __future__ import annotations
 from rich.console import Console
 from rich.markup import escape
 
-from config.constants.skills import SKIP_DEMO_OPTION
+from config.constants.skills import ONBOARDING_SKILL_NAME, SKIP_DEMO_OPTION
 from core.agent_harness.spi.handoff import (
     format_ask_user_answers,
     question_key,
 )
+from core.agent_harness.spi.task_plan import discard_task_plan
 from infrastructure.terminal import theme as ui_theme
 from infrastructure.terminal.notify import NotifyEvent, play_notification
 from surfaces.interactive_shell.command_registry.types import SlashCommand
@@ -37,6 +38,7 @@ from surfaces.shared.terminal.components.choice_menu import (
 
 _CANCELLED = "Selection cancelled — type a reply instead."
 _DEMO_SKIPPED = "Demo skipped — type a request, or /demo to come back to it."
+_DEMO_UNAVAILABLE = "Guided demo selection is unavailable here — request a task directly."
 
 
 def _remember_answered(session: Session, *titles: str) -> None:
@@ -53,6 +55,7 @@ def _leave_menu(session: Session, console: Console, note: str) -> None:
     session.terminal.awaiting_handoff_answer = False
     if session.active_skill is not None:
         session.skills_already_prompted.discard(session.active_skill)
+        discard_task_plan(session)
     session.active_skill = None
 
 
@@ -65,6 +68,9 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
         return True
 
     if not repl_tty_interactive():
+        if session.active_skill == ONBOARDING_SKILL_NAME:
+            _leave_menu(session, console, _DEMO_UNAVAILABLE)
+            return True
         for question in pending.items():
             print_valid_choice_list(
                 console,

@@ -26,7 +26,7 @@ includes:
 
 # Onboarding for Scheduled CI fixes
 
-Monitor one repository every **2 minutes** and automatically edit, test, and
+Monitor one repository every and automatically edit, test, and
 push fixes to one failing PR branch per tick. A green PR does not stop
 monitoring.
 
@@ -36,10 +36,7 @@ result is saved before its temporary resources are deleted.
 ## Goal
 
 Get the user to a running scheduled loop that repairs a failing PR, and show
-one real repair as fast as possible. Every tool call costs a model round trip:
-the whole demo should finish in well under five minutes, so use the exact
-calls below, never explore the OpenSRE source tree, and never re-fetch a fact
-you already hold.
+one real repair as fast as possible in well under five minutes.
 
 ## Runtime facts
 
@@ -75,7 +72,8 @@ completion condition is met.
 - [ ] Step 7. Run the first tick with `/cron run <id>` and read its report.
 - [ ] Step 8. Verify the repair with one `pr view` call.
 - [ ] Step 9. Save evidence, remove the demo loop and resources, verify with `/cron list`.
-- [ ] Step 10. Respond with the outcome report, then offer the follow-up with ask_user_choice.
+- [ ] Step 10. Respond with the outcome report
+- [ ] Step 11. Follow-up with ask_user_choice.
 
 ## Workflow
 
@@ -97,13 +95,7 @@ One batch of two calls:
 - `slash_invoke` `{"command": "/cron", "args": ["list"]}` — confirms the
   scheduler answers.
 
-For the demo, the token must be able to delete the repository it creates:
-`delete_repo` in the scopes header (classic token) or an absent header
-(fine-grained token or app). If a classic token lacks `delete_repo`, say so
-and ask once whether to proceed knowing the repository will need manual
-deletion. Do not create anything before this is settled.
-
-Complete when GitHub identity, deletion capability, and the scheduler are
+Complete when GitHub identity, capability, and the scheduler are
 confirmed.
 
 ### Step 3. Select the failure scenario
@@ -225,13 +217,16 @@ For an existing repository the loop stays; only record its id.
 
 Complete when the loop is gone and remaining resources are documented.
 
-### Step 10. Report and offer the follow-up
+### Step 10. Report  
 
-First respond with the report as Markdown, linking the PR inline: PR, failed
+Respond with the report as Markdown, linking the PR inline: PR, failed
 run id, loop id, fix commit, final check result, cleanup status, evidence
-path. Claim success only when detection, scheduled repair, passing checks,
+path. 
+
+Claim success only when detection, scheduled repair, passing checks,
 and (for the demo) loop removal are all evidenced.
 
+### Step 11. Offer the follow-up question
 After the report is shown, one `ask_user_choice`: "Set up monitoring for a
 real repository" / "No thanks". Remote continuous monitoring is a separate
 task with its own scope; it is not a condition of completion.

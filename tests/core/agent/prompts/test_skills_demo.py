@@ -123,7 +123,7 @@ def test_multi_step_skills_track_progress_with_update_plan_not_step_headers() ->
         assert "### [" not in loader.load_skill_body(name), name
 
 
-def test_capability_and_demo_prompts_load_master_instead_of_defining_another_menu() -> None:
+def test_capability_answers_and_direct_requests_do_not_require_onboarding() -> None:
     snapshot = TurnSnapshot(
         text="What can you do?",
         conversation_messages=(),
@@ -135,6 +135,12 @@ def test_capability_and_demo_prompts_load_master_instead_of_defining_another_men
     )
     prompt = " ".join(build_action_system_prompt(snapshot).split())
     assert f'call skill_view(name="{ONBOARDING_SKILL_NAME}")' in prompt
+    assert "answer first and offer /demo" in prompt
+    assert "An onboarding router delegates the live plan to its child" in prompt
+    assert "For an ambiguous CI request, clarify the desired outcome once" in prompt
+    assert "load that specialist directly and carry the original request forward" in prompt
+    assert "an explicit demo or onboarding request that needs path selection" in prompt
+    assert "stop onboarding without a replacement text menu" in prompt
     assert "Do not ask a separate onboarding question before loading it" in prompt
     assert "are NOT a skill_view match" not in prompt
     assert "Which demo would you like me to run?" not in load_getting_started_block()

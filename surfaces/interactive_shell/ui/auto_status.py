@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from surfaces.interactive_shell.session import Session
 
 
-def auto_status_ansi(session: Session, *, quiet: bool = False) -> str:
+def auto_status_ansi(session: Session, *, quiet: bool = False, max_width: int | None = None) -> str:
     """``Auto (High) · Allow all`` — idle gold, DIM while Thinking owns the accent.
 
     Permission copy stays visible at every level, including High (the default).
@@ -20,7 +20,7 @@ def auto_status_ansi(session: Session, *, quiet: bool = False) -> str:
     """
     level = getattr(session.terminal, "auto_level", DEFAULT_AUTO_LEVEL)
     left = format_auto_status_bar(level)
-    width = prompt_line_width()
+    width = prompt_line_width() if max_width is None else max_width
     clipped = clip_prompt_text(left, width)
     title_end = clipped.find(" · ")
     title = clipped if title_end < 0 else clipped[:title_end]

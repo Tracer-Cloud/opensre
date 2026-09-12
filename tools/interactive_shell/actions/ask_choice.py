@@ -38,7 +38,8 @@ _CHOOSE_COMMAND = "/choose"
 _DEFAULT_HEADER = "Ask User"
 
 _FALLBACK_INSTRUCTION = (
-    "No interactive selection menu is available on this surface. If the choice "
+    "No interactive selection menu is available on this surface. Follow the "
+    "active skill's unavailable-menu instructions first. Otherwise, if the choice "
     "is required for work to continue, present a short numbered list and ask "
     "the user to reply. If this was only an optional follow-up, do NOT park a "
     "numbered question — finish with one sentence of instructions."
@@ -291,6 +292,10 @@ def execute_ask_user_choice_tool(args: dict[str, Any], ctx: ActionToolScope) -> 
         return {"ok": True, "menu": "unavailable", "instruction": _FALLBACK_INSTRUCTION}
 
     ctx.session.pending_user_choice = pending
+    skill = getattr(ctx.session, "active_skill", None)
+    by_skill = getattr(ctx.session, "skill_question_keys", None)
+    if skill and isinstance(by_skill, dict):
+        by_skill.setdefault(skill, set()).update(question_key(q.title) for q in pending.items())
     if questions:
         ctx.session.ask_user_rounds = getattr(ctx.session, "ask_user_rounds", 0) + 1
     set_auto_command(ctx.session, _CHOOSE_COMMAND)
@@ -343,7 +348,8 @@ ask_user_choice_tool = RegisteredTool(
         "user what you are about to ask and that they can type their own "
         "answer if none fit. The menu opens after the turn ends; answers "
         "arrive verbatim as the next user message. If the result says the "
-        "menu is unavailable, fall back to a numbered list."
+        "menu is unavailable, follow the active skill's recovery instructions; "
+        "otherwise fall back to a numbered list."
     ),
     use_cases=[
         (

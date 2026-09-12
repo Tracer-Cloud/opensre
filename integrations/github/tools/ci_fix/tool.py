@@ -14,6 +14,7 @@ from integrations.github.helpers import (
     github_creds,
     github_source_available,
 )
+from integrations.github.tools.ci_fix.ledger import record_ci_fix_outcome
 from integrations.github.tools.ci_fix.runner import run_ci_fix
 
 _INPUT_SCHEMA: dict[str, Any] = {
@@ -145,7 +146,7 @@ def fix_github_pr_ci(
     **_kwargs: Any,
 ) -> dict[str, Any]:
     """Run the GitHub CI remediation flow for a PR or an explicit branch target."""
-    return run_ci_fix(
+    output = run_ci_fix(
         owner=owner,
         repo=repo,
         pr_number=pr_number,
@@ -156,6 +157,8 @@ def fix_github_pr_ci(
         github_token=github_token,
         confirm_fn=_confirm_fn(context),
     )
+    record_ci_fix_outcome(output)
+    return output
 
 
 __all__ = ["fix_github_pr_ci"]

@@ -18,14 +18,21 @@ GETTING_STARTED_MENU: tuple[str, ...] = (*GETTING_STARTED_OPTIONS, GETTING_START
 
 
 def load_getting_started_block() -> str:
-    """Route capability and demo requests to the master skill that owns the menu."""
+    """Separate capability answers, direct specialist requests, and guided onboarding."""
     return (
         "When the user asks what you can do, what you're capable of, how you can "
-        "help, what tools you have, or for a demo / getting-started suggestion: "
+        "help, or what tools you have, answer from the available capabilities and "
+        "offer /demo. When the user names a demo or requests a specialist's work, "
+        "load that specialist directly and carry the original request forward. "
+        "For an ambiguous CI request, clarify the desired outcome once. "
+        "For an explicit demo or onboarding request that needs path selection, "
         f'call skill_view(name="{ONBOARDING_SKILL_NAME}") and follow that master skill. '
         "It owns the Ask User menu and the references to child skills. "
         "Do not invent a separate getting-started menu. When an answer arrives, "
-        "continue the active skill instead of reopening onboarding."
+        "continue the active skill instead of reopening onboarding. "
+        "If the picker for onboarding or an ambiguous CI request is unavailable, "
+        "explain the limitation, invite a "
+        "direct task request, and stop onboarding without a replacement text menu."
     )
 
 

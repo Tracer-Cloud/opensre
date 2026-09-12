@@ -11,6 +11,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from config.constants.skills import ONBOARDING_SKILL_NAME
+from core.agent_harness.spi.grounding import getting_started_skills
 from core.agent_harness.tools import ActionToolScope
 from infrastructure.analytics.capture import capture_onboarding_demo_prompted
 from infrastructure.analytics.source import is_test_run
@@ -63,6 +64,11 @@ def offer_demo(session: Session, console: Console | None = None, *, force: bool 
         )
         session.active_skill = None
         return False
+    # A new demo may ask its children's questions again, while unrelated
+    # decisions and their authorization remain part of this session.
+    for skill in getting_started_skills():
+        previous = session.skill_question_keys.pop(skill.name, ())
+        session.questions_already_answered.difference_update(previous)
     try:
         capture_onboarding_demo_prompted()
     except Exception:

@@ -29,6 +29,7 @@ _CORE_FIELDS = (
     "skill_discovery_enabled",
     "active_skill",
     "questions_already_answered",
+    "skill_question_keys",
     "skills_already_prompted",
     "task_plan",
     "task_plan_work",
