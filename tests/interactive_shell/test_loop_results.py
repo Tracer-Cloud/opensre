@@ -177,6 +177,12 @@ def test_commands_show_latest_failure_and_allow_opening_the_earlier_full_report(
     assert (
         "Provider unavailable" not in text
     )  # Selected run's details, not another attempt's error.
+    # The opened attempt is recent enough to be in the history query; it must
+    # not be listed again under its own report.
+    recent = text[text.index("Recent runs") : text.index("Configuration")]
+    assert f" {prior_id} │" not in recent
+    assert f" {get_runs(task.id)[0].run_id} │" in recent
+    assert f"Run {prior_id} " in text
 
 
 @pytest.mark.usefixtures("loop_stores")
