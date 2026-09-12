@@ -118,8 +118,16 @@ def schedule_ci_repair_loop(
     input_schema={
         "type": "object",
         "properties": {
-            "task_id": {"type": "string"},
-            "wait_seconds": {"type": "integer", "minimum": 0, "maximum": 60},
+            "task_id": {
+                "type": "string",
+                "description": "Run id returned by schedule_ci_repair_loop.",
+            },
+            "wait_seconds": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 60,
+                "description": "Seconds to wait for a terminal result; default zero.",
+            },
         },
         "required": ["task_id"],
         "additionalProperties": False,

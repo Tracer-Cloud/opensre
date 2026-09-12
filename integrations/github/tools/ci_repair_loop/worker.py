@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from config.constants.ci_repair import CI_REPAIR_FINISH_RESERVE_SECONDS
+from infrastructure.process.tree import start_watchdog
 from integrations.coding_agent import verify_coding_agent
 from integrations.git import clone_repository
 from integrations.github.client import GitHubApiError, GitHubRestClient
@@ -26,7 +27,6 @@ from integrations.github.tools.ci_repair_loop.fixture import (
     prepare_demo,
 )
 from integrations.github.tools.ci_repair_loop.models import RepairRun, RepairStatus
-from integrations.github.tools.ci_repair_loop.process_tree import start_watchdog
 from integrations.github.tools.ci_repair_loop.storage import RepairStore
 
 logger = logging.getLogger(__name__)

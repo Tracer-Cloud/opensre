@@ -10,10 +10,10 @@ from collections.abc import Mapping
 from filelock import FileLock, Timeout
 
 from config.constants.ci_repair import CI_REPAIR_FINISH_RESERVE_SECONDS, CI_REPAIR_POLL_SECONDS
+from infrastructure.process.tree import stop_worker
 from infrastructure.scheduling.scheduler.storage import get_task
 from infrastructure.scheduling.scheduler.types import TaskReport
 from integrations.github.tools.ci_repair_loop.models import RepairRun, RepairStatus
-from integrations.github.tools.ci_repair_loop.process_tree import stop_worker
 from integrations.github.tools.ci_repair_loop.report import render_report
 from integrations.github.tools.ci_repair_loop.storage import RepairStore
 

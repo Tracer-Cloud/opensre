@@ -9,7 +9,7 @@ import time
 import psutil
 
 
-def kill_descendants(process: psutil.Process) -> None:
+def _kill_descendants(process: psutil.Process) -> None:
     """Kill descendants even when a coding CLI has created a separate POSIX session."""
     try:
         children = process.children(recursive=True)
@@ -33,7 +33,7 @@ def stop_worker(pid: int) -> None:
     try:
         process = psutil.Process(pid)
         process.suspend()
-        kill_descendants(process)
+        _kill_descendants(process)
         process.kill()
     except psutil.NoSuchProcess:
         return
@@ -47,8 +47,8 @@ def start_watchdog(deadline: float) -> threading.Event:
     def watch() -> None:
         while not stop.wait(0.25):
             if os.getppid() != parent or time.time() >= deadline:
-                kill_descendants(psutil.Process())
+                _kill_descendants(psutil.Process())
                 os._exit(1)
 
-    threading.Thread(target=watch, daemon=True, name="ci-repair-deadline").start()
+    threading.Thread(target=watch, daemon=True, name="worker-deadline").start()
     return stop
