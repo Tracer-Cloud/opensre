@@ -24,10 +24,6 @@ from core.agent_harness.prompts.skills.schedule import (
     validate_skill_inputs,
 )
 from core.agent_harness.session import SessionCore, SessionManager
-from core.agent_harness.session.skill_inputs import (
-    skill_input_flags,
-    validate_recurring_skill_inputs,
-)
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
 
 __all__ = [
@@ -43,7 +39,5 @@ __all__ = [
     "normalize_skill_name",
     "pin_recurring_skill",
     "resolve_scheduled_skill",
-    "skill_input_flags",
-    "validate_recurring_skill_inputs",
     "validate_skill_inputs",
 ]
