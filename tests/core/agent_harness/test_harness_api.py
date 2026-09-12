@@ -37,6 +37,8 @@ ROOT_API = frozenset(
         "normalize_skill_name",
         "pin_recurring_skill",
         "resolve_scheduled_skill",
+        "skill_input_flags",
+        "validate_recurring_skill_inputs",
         "validate_skill_inputs",
     }
 )
