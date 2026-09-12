@@ -6,16 +6,13 @@ import hashlib
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-from core.agent_harness.prompts.skills.loader import (
-    ActionSkill,
-    list_action_skills,
-    load_skill_body,
-)
-from core.agent_harness.prompts.skills.naming import normalize_skill_name
+from core.agent_harness.prompts.skills.catalog.contracts import ActionSkill
+from core.agent_harness.prompts.skills.catalog.naming import normalize_skill_name
+from core.agent_harness.prompts.skills.catalog.registry import find_action_skill
+from core.agent_harness.prompts.skills.content.body import load_skill_body
 
 __all__ = (
     "ScheduledSkillResolution",
-    "find_action_skill",
     "is_recurring_skill",
     "pin_recurring_skill",
     "resolve_scheduled_skill",
@@ -35,14 +32,6 @@ class ScheduledSkillResolution:
     @property
     def name(self) -> str:
         return self.skill.name
-
-
-def find_action_skill(name: str) -> ActionSkill | None:
-    """Return the discovered skill for ``name``, or ``None`` if unknown."""
-    needle = normalize_skill_name(name)
-    if not needle:
-        return None
-    return next((skill for skill in list_action_skills() if skill.name == needle), None)
 
 
 def is_recurring_skill(name: str) -> bool:

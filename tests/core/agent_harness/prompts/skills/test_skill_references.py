@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from core.agent_harness.prompts.skills.loader import (
+from core.agent_harness.prompts.skills import (
     load_skill_reference,
     skill_reference_names,
 )

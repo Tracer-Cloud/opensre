@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from core.agent_harness.prompts.skills.loader import (
+from core.agent_harness.prompts.skills import (
     clear_skills_caches,
     list_action_skills,
     load_skill_body,
 )
-from core.agent_harness.prompts.skills.schedule import (
+from core.agent_harness.prompts.skills.scheduling import (
     find_action_skill,
     is_recurring_skill,
     pin_recurring_skill,

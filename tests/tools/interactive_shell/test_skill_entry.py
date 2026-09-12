@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 from rich.console import Console
 
-import core.agent_harness.prompts.skills.loader as loader
+import core.agent_harness.prompts.skills as skills
 from config.constants.skills import ONBOARDING_SKILL_NAME
 from core.agent_harness.tools import ActionToolScope
 from surfaces.interactive_shell.session import Session
@@ -55,10 +55,12 @@ def hooked_skills(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[N
         (tmp_path / f"{name}.md").write_text(
             skill_card(name, "Follow the answer.", pre_execute=[{"tool": tool, "args": args}])
         )
-    monkeypatch.setattr(loader, "skills_dir", lambda: tmp_path)
-    loader.clear_skills_caches()
+    monkeypatch.setattr(
+        "core.agent_harness.prompts.skills.content.files.skills_dir", lambda: tmp_path
+    )
+    skills.clear_skills_caches()
     yield
-    loader.clear_skills_caches()
+    skills.clear_skills_caches()
 
 
 def test_entry_activates_the_skill_and_queues_its_menu_through_the_real_tool(
@@ -90,7 +92,7 @@ def test_invalid_entry_hooks_exclude_the_card(hooked_skills: None, name: str) ->
     assert session.active_skill is None
     assert session.pending_user_choice is None
     assert session.terminal.pending_prompt_default is None
-    assert any(name in diagnostic for diagnostic in loader.read_skill_catalog().diagnostics)
+    assert any(name in diagnostic for diagnostic in skills.read_skill_catalog().diagnostics)
 
 
 def test_unavailable_menu_leaves_the_model_to_ask_in_text(hooked_skills: None) -> None:
@@ -251,8 +253,10 @@ def test_demo_menu_and_handoffs_follow_current_child_metadata(
     (tmp_path / "second.md").write_text(
         skill_card("second", getting_started="Second demo", demo_order=2)
     )
-    monkeypatch.setattr(loader, "skills_dir", lambda: tmp_path)
-    loader.clear_skills_caches()
+    monkeypatch.setattr(
+        "core.agent_harness.prompts.skills.content.files.skills_dir", lambda: tmp_path
+    )
+    skills.clear_skills_caches()
     try:
         initial = Session()
         enter_skill(ONBOARDING_SKILL_NAME, _scope(initial))
@@ -260,7 +264,7 @@ def test_demo_menu_and_handoffs_follow_current_child_metadata(
         assert initial.pending_user_choice.options[:2] == ("Original label", "Second demo")
 
         first.write_text(skill_card("first", getting_started="Renamed demo", demo_order=3))
-        loader.clear_skills_caches()
+        skills.clear_skills_caches()
         refreshed = Session()
         result = enter_skill(ONBOARDING_SKILL_NAME, _scope(refreshed))
 
@@ -269,4 +273,4 @@ def test_demo_menu_and_handoffs_follow_current_child_metadata(
         assert '"Renamed demo": call `skill_view(name="first")`' in result["content"]
         assert "Original label" not in result["content"]
     finally:
-        loader.clear_skills_caches()
+        skills.clear_skills_caches()

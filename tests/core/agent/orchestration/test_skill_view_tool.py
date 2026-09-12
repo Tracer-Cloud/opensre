@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from core.agent_harness.prompts.skills.loader import load_skill_body
+from core.agent_harness.prompts.skills import load_skill_body
 from tools.interactive_shell.actions.skill_view import (
     execute_skill_view_tool,
     skill_view_tool,

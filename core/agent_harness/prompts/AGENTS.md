@@ -9,7 +9,7 @@
 | `action/` | Tool-calling agent prompt assembly and policies |
 | `memory/` | Conversation window + prior-investigation recall |
 | `runtime_facts/` | Runtime-metadata fact lines for prompts |
-| `skills/` | Progressive skill index + markdown bodies (`loader.py` + `*.md`) |
+| `skills/` | Progressive skill index + markdown bodies (`catalog/` + `content/` + workflow Markdown) |
 | `rules.py` | Shared rule fragments (leaf) |
 | `system_prompt.py` + `opensre_system_prompt.md` | Loader and adjacent Markdown for the shared system base |
 

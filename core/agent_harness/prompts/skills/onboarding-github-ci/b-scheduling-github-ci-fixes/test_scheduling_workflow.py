@@ -23,12 +23,12 @@ import pytest
 from config.constants import OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV, OPENSRE_MEMORY_DIR_ENV
 from config.constants.skills import SCHEDULING_GITHUB_CI_FIXES_SKILL_NAME
 from core.agent_harness.ports import TurnBinding
-from core.agent_harness.prompts.skills.loader import (
+from core.agent_harness.prompts.skills import (
     list_action_skills,
     load_skill_body,
+    parse_frontmatter,
     skill_reference_names,
 )
-from core.agent_harness.prompts.skills.validation import parse_frontmatter
 from core.agent_harness.session.pending_choice import PendingUserChoice
 from core.agent_harness.task_plan.plan import PlanStepStatus, TaskPlan
 from core.agent_harness.tools.action_tools import get_action_tool

@@ -8,8 +8,12 @@ from types import MappingProxyType
 from pydantic import ValidationError
 
 from config.constants.skills import ONBOARDING_SKILL_NAME, SKIP_DEMO_OPTION
-from core.agent_harness.prompts.skills.contracts import ActionSkill, SkillCatalog, SkillToolCall
-from core.agent_harness.prompts.skills.validation import SkillEntryCall
+from core.agent_harness.prompts.skills.catalog.contracts import (
+    ActionSkill,
+    SkillCatalog,
+    SkillToolCall,
+)
+from core.agent_harness.prompts.skills.catalog.schema import SkillEntryCall
 
 
 def demo_skills(skills: tuple[ActionSkill, ...]) -> tuple[ActionSkill, ...]:

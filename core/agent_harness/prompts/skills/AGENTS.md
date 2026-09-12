@@ -1,5 +1,17 @@
 # Skill release and authoring contract
 
+## Runtime modules
+
+Keep the skills root as a public import facade and the home of workflow assets.
+Catalog discovery, schema validation, names, and menus belong in `catalog/`;
+Markdown resolution, body/reference loading, and index rendering belong in
+`content/`; recurring revision pins belong in `scheduling/`. Consumers outside
+this package import its public facade or the `scheduling` facade.
+
+When moving a resource reader, preserve the skills root used for discovery and
+include containment. Clear both catalog and index caches through
+`clear_skills_caches()` when tests replace bundled resources.
+
 ## Design references
 
 Claude skill design:
@@ -15,7 +27,7 @@ NVIDIA skill-card guidance:
 
 ## Main workflow frontmatter
 
-`validation.py` defines the runtime schema. CI reads every raw card through
+`catalog/schema.py` defines the runtime schema. CI reads every raw card through
 `read_skill_catalog()` and fails on any diagnostic; it must not validate only
 the filtered runtime catalog. Runtime discovery logs invalid cards and excludes
 them so one broken card does not prevent startup. Contributor files and report
@@ -239,7 +251,7 @@ cards the same `name`.
 
 ## Naming conventions
 
-The `name` field is the skill's identity: `loader.py` rejects duplicates, the
+The `name` field is the skill's identity: `catalog/registry.py` rejects duplicates, the
 scheduler pins on it, and users type it (`opensre cron add --skill …`). Pick it
 once, following these rules, and treat a rename as a breaking change.
 
@@ -281,7 +293,7 @@ once, following these rules, and treat a rename as a breaking change.
    tasks or dashboards. Read skill names from one constant where product
    code branches on them.
 8. **Renaming a skill adds its old slug to `LEGACY_SKILL_NAMES`** in
-   `skills/naming.py`. Persisted recurring schedules store the `name` they
+   `skills/catalog/naming.py`. Persisted recurring schedules store the `name` they
    were confirmed with; the map lets `find_action_skill` and `skill_view`
    resolve the old slug, and the scheduler re-pins such a task to the new
    name on its next tick. A tool-usage card beside a tool also needs its

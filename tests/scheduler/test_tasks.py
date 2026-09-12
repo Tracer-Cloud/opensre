@@ -205,7 +205,7 @@ class TestMessageBuilders:
 
 class TestRecurringSkillBuilders:
     def test_recurring_skill_uses_agent_runner(self) -> None:
-        from core.agent_harness.prompts.skills.schedule import find_action_skill, skill_revision
+        from core.agent_harness.prompts.skills.scheduling import find_action_skill, skill_revision
 
         skill = find_action_skill("delivering-morning-briefings")
         assert skill is not None
@@ -232,7 +232,7 @@ class TestRecurringSkillBuilders:
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
         """A schedule stored before the gerund rename keeps running under the new name."""
-        from core.agent_harness.prompts.skills.schedule import find_action_skill, skill_revision
+        from core.agent_harness.prompts.skills.scheduling import find_action_skill, skill_revision
         from infrastructure.scheduling.scheduler.storage.task_store import add_task, list_tasks
 
         store_path = tmp_path / "tasks.json"

@@ -960,7 +960,18 @@ if TYPE_CHECKING:
     from config.constants.signoz import (
         SIGNOZ_URL_ENV as SIGNOZ_URL_ENV,
     )
-    from config.constants.skills import ONBOARDING_SKILL_NAME as ONBOARDING_SKILL_NAME
+    from config.constants.skills import (
+        ONBOARDING_SKILL_NAME as ONBOARDING_SKILL_NAME,
+    )
+    from config.constants.skills import (
+        SKILL_FILENAME as SKILL_FILENAME,
+    )
+    from config.constants.skills import (
+        SKILL_REPORT_SUFFIX as SKILL_REPORT_SUFFIX,
+    )
+    from config.constants.skills import (
+        SKILLS_HEADER as SKILLS_HEADER,
+    )
     from config.constants.slack import (
         SLACK_ACCESS_TOKEN_ENV as SLACK_ACCESS_TOKEN_ENV,
     )

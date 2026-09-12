@@ -14,7 +14,7 @@ from config.constants.skills import (
     SCHEDULING_GITHUB_CI_FIXES_SKILL_NAME,
 )
 from core.agent_harness.ports import TurnBinding
-from core.agent_harness.prompts.skills.loader import list_action_skills, load_skill_body
+from core.agent_harness.prompts.skills import list_action_skills, load_skill_body
 from core.agent_harness.session.pending_choice import PendingUserChoice, format_ask_user_answers
 from core.agent_harness.tools.action_tools import get_action_tool
 from core.agent_harness.tools.tool_provider import DefaultToolProvider
