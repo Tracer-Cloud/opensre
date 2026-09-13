@@ -1,22 +1,9 @@
-"""Authenticated clone and revision checks for isolated repair checkouts."""
+"""Authenticated remote reads and revision checks for isolated repair checkouts."""
 
 from urllib.parse import urlsplit
 
 from integrations.git.errors import BRANCH_FAILED, GitCommandError
 from integrations.git.local import _run_git, _token_auth_env
-
-
-def clone_repository(url: str, destination: str, *, token: str | None = None) -> None:
-    """Clone without embedding credentials in the URL or persisted git configuration."""
-    parsed = urlsplit(url)
-    env = (
-        _token_auth_env(token, f"https://{parsed.netloc}/")
-        if token and parsed.scheme == "https"
-        else None
-    )
-    result = _run_git(destination, "clone", "--", url, ".", env=env, timeout=120)
-    if result.returncode:
-        raise GitCommandError(BRANCH_FAILED, "Could not clone the repair repository.")
 
 
 def origin_url(workspace: str) -> str:

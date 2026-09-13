@@ -1,12 +1,12 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 import pytest
 
 from core.agent import Agent
+from core.domain.types.tools import ToolRole
 from core.llm.types import AgentLLMResponse, ToolCall
 from core.provider import ProviderHooks, ProviderRequest
 from core.tool.contracts import AgentTool, AgentToolContext, RegisteredTool
@@ -16,10 +16,10 @@ from core.tool.execution import (
     ToolExecutionPatch,
     ToolExecutionRequest,
     ToolExecutionResult,
-    _requires_sequential_execution,
     compose_tool_execution_hooks,
     execute_tool_calls,
     execute_tools,
+    response_batch_violation,
 )
 
 
@@ -36,8 +36,7 @@ def _tool(
     name: str = "echo",
     *,
     execute: Any | None = None,
-    execution_mode: str | None = None,
-    parallel_safe: bool = True,
+    role: ToolRole = ToolRole.ACTION,
     source: str = "agent",
 ) -> AgentTool:
     return AgentTool(
@@ -45,8 +44,7 @@ def _tool(
         description="test tool",
         input_schema=_schema(["value"]),
         execute=execute or (lambda args, _ctx: {"value": args["value"]}),
-        execution_mode=execution_mode,  # type: ignore[arg-type]
-        parallel_safe=parallel_safe,
+        role=role,
         source=source,
     )
 
@@ -373,134 +371,79 @@ def test_injected_github_credentials_are_not_overridden_by_llm_args() -> None:
     }
 
 
-def test_parallel_batch_preserves_provider_order() -> None:
+def test_bookkeeping_may_accompany_one_action_in_provider_order() -> None:
     tools = [
-        _tool("first", execute=lambda _args, _ctx: {"order": 1}),
-        _tool("second", execute=lambda _args, _ctx: {"order": 2}),
+        _tool("plan", role=ToolRole.BOOKKEEPING, execute=lambda _args, _ctx: {"order": 1}),
+        _tool("work", execute=lambda _args, _ctx: {"order": 2}),
+        _tool("memory", role=ToolRole.BOOKKEEPING, execute=lambda _args, _ctx: {"order": 3}),
     ]
-    calls = [_call("second", "x"), _call("first", "x")]
+    calls = [_call("plan", "x"), _call("work", "x"), _call("memory", "x")]
 
     results = execute_tool_calls(calls, tools, {})
 
-    assert [result.details for result in results] == [{"order": 2}, {"order": 1}]
+    assert [result.details for result in results] == [{"order": 1}, {"order": 2}, {"order": 3}]
+    assert not any(result.is_error for result in results)
 
 
-def _registered_echo(name: str, *, parallel_safe: bool = True) -> RegisteredTool:
-    return RegisteredTool(
-        name=name,
+def test_two_actions_in_one_response_execute_nothing() -> None:
+    ran: list[str] = []
+
+    def record(name: str) -> Any:
+        def execute(_args: dict[str, Any], _ctx: AgentToolContext) -> dict[str, Any]:
+            ran.append(name)
+            return {"ok": True}
+
+        return execute
+
+    tools = [_tool("first", execute=record("first")), _tool("second", execute=record("second"))]
+    batch_seen: list[int] = []
+    hooks = ToolExecutionHooks(before_tool_batch=lambda calls: batch_seen.append(len(calls)))
+
+    results = execute_tool_calls([_call("first"), _call("second")], tools, {}, hooks=hooks)
+
+    assert ran == []
+    assert batch_seen == []
+    assert [result.is_error for result in results] == [True, True]
+    assert len({result.content for result in results}) == 1
+    assert "one action per response" in str(results[0].content)
+    assert "first, second" in str(results[0].content)
+
+
+def test_turn_ending_tool_must_be_alone_even_beside_bookkeeping() -> None:
+    ran: list[str] = []
+
+    def execute(_args: dict[str, Any], _ctx: AgentToolContext) -> dict[str, Any]:
+        ran.append("ran")
+        return {"ok": True}
+
+    tools = [
+        _tool("plan", role=ToolRole.BOOKKEEPING, execute=execute),
+        _tool("menu", role=ToolRole.TURN_ENDING, execute=execute),
+    ]
+
+    results = execute_tool_calls([_call("plan"), _call("menu")], tools, {})
+
+    assert ran == []
+    assert all(result.is_error for result in results)
+    assert "menu" in str(results[0].content)
+    assert "only" in str(results[0].content)
+
+
+def test_registered_tool_role_and_unknown_tool_count_as_actions() -> None:
+    registered = RegisteredTool(
+        name="registered_plan",
         description="test registered tool",
         input_schema=_schema(["value"]),
         source="knowledge",
         run=lambda value: {"value": value},
-        parallel_safe=parallel_safe,
+        role=ToolRole.BOOKKEEPING,
     )
+    tool_map = {"registered_plan": registered, "work": _tool("work")}
 
-
-def _record_pool_constructions(monkeypatch: pytest.MonkeyPatch) -> list[int]:
-    constructions: list[int] = []
-
-    class _RecordingPool(ThreadPoolExecutor):
-        def __init__(self, *args: Any, **kwargs: Any) -> None:
-            constructions.append(1)
-            super().__init__(*args, **kwargs)
-
-    monkeypatch.setattr("core.tool.execution.ThreadPoolExecutor", _RecordingPool)
-    return constructions
-
-
-def test_all_parallel_safe_batch_goes_through_thread_pool(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # Control for the serialization tests below: proves the recording patch
-    # observes pool construction, so their `constructions == []` assertions
-    # cannot pass vacuously.
-    constructions = _record_pool_constructions(monkeypatch)
-    tools = [_tool("first"), _tool("second")]
-    calls = [_call("first", "a"), _call("second", "b")]
-
-    results = execute_tool_calls(calls, tools, {})
-
-    assert constructions == [1]
-    assert [result.details for result in results] == [{"value": "a"}, {"value": "b"}]
-
-
-def test_non_parallel_safe_registered_tool_serializes_mixed_batch(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    constructions = _record_pool_constructions(monkeypatch)
-    tools = [
-        _tool("safe_one"),
-        _tool("safe_two"),
-        _registered_echo("stateful", parallel_safe=False),
-    ]
-    calls = [_call("safe_one", "a"), _call("stateful", "b"), _call("safe_two", "c")]
-
-    results = execute_tool_calls(calls, tools, {})
-
-    assert constructions == []
-    assert [result.details for result in results] == [
-        {"value": "a"},
-        {"value": "b"},
-        {"value": "c"},
-    ]
-
-
-def test_agent_tool_sequential_execution_mode_serializes_mixed_batch(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    constructions = _record_pool_constructions(monkeypatch)
-    tools = [_tool("safe"), _tool("stateful", execution_mode="sequential")]
-    calls = [_call("safe", "a"), _call("stateful", "b")]
-
-    results = execute_tool_calls(calls, tools, {})
-
-    assert constructions == []
-    assert [result.details for result in results] == [{"value": "a"}, {"value": "b"}]
-
-
-def test_agent_tool_parallel_safe_false_serializes_via_execution_mode_fallback(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # No explicit execution_mode: effective_execution_mode must fall back to
-    # parallel_safe and still force the whole batch sequential.
-    constructions = _record_pool_constructions(monkeypatch)
-    tools = [_tool("safe"), _tool("stateful", parallel_safe=False)]
-    calls = [_call("safe", "a"), _call("stateful", "b")]
-
-    results = execute_tool_calls(calls, tools, {})
-
-    assert constructions == []
-    assert [result.details for result in results] == [{"value": "a"}, {"value": "b"}]
-
-
-def test_requires_sequential_execution_forces_serial_for_stateful_tools() -> None:
-    tools = [
-        _tool("safe"),
-        _tool("sequential_agent", execution_mode="sequential"),
-        _tool("unsafe_agent", parallel_safe=False),
-        _registered_echo("unsafe_registered", parallel_safe=False),
-    ]
-    tool_map = {t.name: t for t in tools}
-
-    # One sequential tool anywhere in the batch forces the whole batch.
-    assert _requires_sequential_execution([_call("safe"), _call("sequential_agent")], tool_map)
-    assert _requires_sequential_execution([_call("safe"), _call("unsafe_agent")], tool_map)
-    assert _requires_sequential_execution([_call("safe"), _call("unsafe_registered")], tool_map)
-
-
-def test_requires_sequential_execution_allows_parallel_otherwise() -> None:
-    tools = [
-        _tool("safe"),
-        # Explicit execution_mode="parallel" overrides parallel_safe=False.
-        _tool("override", execution_mode="parallel", parallel_safe=False),
-        _registered_echo("safe_registered"),
-    ]
-    tool_map = {t.name: t for t in tools}
-
-    assert not _requires_sequential_execution([], tool_map)
-    assert not _requires_sequential_execution([_call("safe"), _call("safe_registered")], tool_map)
-    assert not _requires_sequential_execution([_call("unknown_tool")], tool_map)
-    assert not _requires_sequential_execution([_call("safe"), _call("override")], tool_map)
+    assert response_batch_violation([_call("registered_plan"), _call("work")], tool_map) is None
+    assert response_batch_violation([_call("unknown_tool")], tool_map) is None
+    assert response_batch_violation([_call("unknown_tool"), _call("work")], tool_map) is not None
+    assert response_batch_violation([], tool_map) is None
 
 
 class _FakeLLM:

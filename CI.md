@@ -14,96 +14,79 @@ the scoped checks below unless another applicable instruction or the user
 explicitly requires them.
 -->
 
-## 0) Docs / process-only shortcut
+## 0) Setup and automatic push validation
 
-If your diff is **only** documentation or contributor-process files, you may
-skip the code-quality and test commands below.
+Run `make install` after cloning. It installs locked development dependencies
+and a blocking pre-push hook for this checkout. For an existing environment,
+run `make install-hooks`. Installation preserves existing hooks and keeps
+linked worktrees independent.
 
-Examples of files that qualify:
+The hook validates the **committed revisions being pushed** in temporary Git
+worktrees with their locked dependencies. An uncommitted fix cannot make a
+broken commit pass. Existing push hooks run first and receive Git's original
+arguments and ref updates.
 
-- `AGENTS.md`
-- `CI.md`
-- `CONTRIBUTING.md`
-- `README.md`
-- `docs/**/*.md`
-- `docs/**/*.mdx`
-- `docs/docs.json`
+## 1) Mandatory local validation
 
-You may use the shortcut only when **all** changed files are non-runtime and
-non-executable. If the diff touches application code, tests, build tooling,
-dependency manifests, CI workflows, scripts, or anything with runtime impact,
-run the normal harness.
-
-For docs/process-only changes, the minimum required local check is:
+Before committing, run:
 
 ```bash
-git status --short
+make pre-push
 ```
 
-If you are unsure whether the shortcut applies, do **not** use it — run the
-standard checks below.
+This checks the working tree, including untracked files. It runs lint,
+formatting, types, strict import boundaries, integration/tool registries,
+repository-wide contracts, and tests selected from the diff. Independent
+checks run concurrently and all failures are reported in one run.
 
-## 1) Mandatory baseline checks (every code change that is not docs/process-only)
+Normal checks target **60 seconds**. Dependency preparation is separate;
+cold caches and broad changes can take longer. Required checks finish even
+when the target is exceeded. Failure blocks the push.
 
-Run all of these first:
+Inspect the selection without running it:
 
-1. Clean working tree
+```bash
+make pre-push ARGS=--dry-run
+```
 
-   ```bash
-   git status --short
-   ```
+The default comparison uses the remote default branch, falling back to
+`origin/main`. Without a remote base, all tracked files are considered.
+Override it when needed:
 
-   - No accidental untracked files
-   - Never commit `.env` or secrets
+```bash
+make pre-push ARGS='--base origin/release'
+```
 
-2. Lint
+A missing explicit base is an error. Fetch that branch and retry. Unknown
+source paths or stale test targets also block validation: update the mapping
+in [`.github/ci/test_scope_rules.py`](.github/ci/test_scope_rules.py).
 
-   ```bash
-   make lint
-   ```
+Documentation-only diffs skip code checks. Runtime prompts, scripts,
+workflows, and dependency changes do not qualify for that shortcut.
 
-3. Format check
+## 2) Focused tests and complete CI
 
-   ```bash
-   make format-check
-   ```
+Use `make test-scope` to run only the affected tests during development. It
+uses the same mapping as the push gate and never falls back to a full coverage
+run. Package-specific validation required by contributor guides still applies.
 
-   If it fails:
+GitHub Actions uses the same quality check definitions as the local gate and
+runs the complete test matrix. The local gate does not replace repository-wide
+CI, Linux/Windows checks, CodeQL, packaging, or release validation. List the
+focused tests you ran in the PR description.
 
-   ```bash
-   make format && make format-check
-   ```
+## 3) Emergency override
 
-4. Typecheck
+For an intentional emergency bypass, supply a reason for that push only:
 
-   ```bash
-   make typecheck
-   ```
+```bash
+git -c opensre.prePushOverride='incident reference and reason' push
+```
 
-## 2) Mandatory test harness (scope by touched modules)
-
-Pick a focused test command for the modules you changed — do **not** default to
-the full unit suite.
-
-Map changed paths to targets using the `PathRule` entries in
-[`.github/ci/test_scope_rules.py`](.github/ci/test_scope_rules.py):
-
-- Rules with `always_escalate=True` identify high-blast-radius changes. Run the
-  focused package and contract tests affected by the change.
-- All other rules list a `test_targets` tuple — run those with
-  `uv run python -m pytest <targets>`
-- Changed files under `tests/` with no app rule run as-is
-
-Use a focused `-k` filter when you only need a subset of a package.
-
-## 3) Full suite runs in CI
-
-The focused suite from section 2 is the required local test gate. Do not run
-`make test-cov` as part of the normal local pre-push workflow; pull-request CI
-runs the repository test suite in parallel shards.
-
-List the focused tests you ran in the PR description. CI is the authoritative
-repository-wide test result.
+The hook prints the override and appends the reason, timestamp, and pushed
+revisions to `pre-push-overrides.jsonl` inside this checkout's Git directory.
+Existing user hooks still run. This bypass does not waive remote CI or merge
+requirements. Do not set the override permanently in Git configuration.
 
 ## 4) Pull-request latency and post-merge validation
 

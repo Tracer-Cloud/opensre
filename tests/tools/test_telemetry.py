@@ -119,6 +119,22 @@ class ToolFailureCase:
     expected_source: str
 
 
+def _ci_repair_case(tool_name: str) -> ToolFailureCase:
+    def patch(mp: pytest.MonkeyPatch) -> None:
+        from integrations.github.tools.ci_repair_loop import tool as mod
+
+        mp.setattr(mod, "RepairStore", MagicMock(side_effect=RuntimeError("storage unavailable")))
+
+    def invoke() -> dict[str, Any]:
+        from integrations.github.tools.ci_repair_loop import tool as mod
+
+        if tool_name == "schedule_ci_repair_loop":
+            return mod.schedule_ci_repair_loop(demo=True)
+        return mod.get_ci_repair_loop(task_id="a" * 12)
+
+    return ToolFailureCase(tool_name, patch, invoke, tool_name, "github")
+
+
 def _azure_case() -> ToolFailureCase:
     def patch(mp: pytest.MonkeyPatch) -> None:
         from integrations.azure.tools import azure_monitor_logs_tool as mod
@@ -727,6 +743,8 @@ def _runbook_guidance_case() -> ToolFailureCase:
 
 _TOOL_FAILURE_CASES: list[ToolFailureCase] = [
     _azure_case(),
+    _ci_repair_case("schedule_ci_repair_loop"),
+    _ci_repair_case("get_ci_repair_loop"),
     _openobserve_case(),
     _snowflake_case(),
     _cloudwatch_logs_case(),
@@ -926,6 +944,8 @@ _MIGRATED_TOOL_NAMES: frozenset[str] = frozenset(
         "get_github_repository",
         "get_github_star_history",
         "analyze_github_ci_reliability",
+        "schedule_ci_repair_loop",
+        "get_ci_repair_loop",
         # EKS — enumerated in #1463
         "list_eks_clusters",
         "describe_eks_cluster",

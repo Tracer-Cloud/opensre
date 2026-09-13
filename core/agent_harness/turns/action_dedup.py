@@ -67,10 +67,9 @@ def with_duplicate_action_call_guard(
     """Block replaying guarded action calls already covered by the success snapshot.
 
     Suppress ``slash_invoke`` / ``shell_run`` / ``cli_exec`` when the call's
-    fingerprint is in ``last_fully_succeeded_batch`` *or* already succeeded
-    earlier in the current provider batch (same-batch duplicates). Guarded
-    tools are sequential, so ``batch_succeeded`` is visible to the next
-    ``before()`` in the batch.
+    fingerprint is in ``last_fully_succeeded_batch``. Two guarded calls in one
+    response never reach this hook: the executor rejects a response with more
+    than one action before any hook runs.
 
     Snapshot updates at the next batch boundary:
 
@@ -123,13 +122,11 @@ def with_duplicate_action_call_guard(
 
     def before(request: ToolExecutionRequest) -> BeforeToolCallResult | None:
         name = request.tool_call.name
-        # Membership across the prior success snapshot *and* earlier successes
-        # in this batch. Interleaved A -> B -> A still runs, because a fully
-        # successful {B} replaces the snapshot. Same-batch duplicates (two
-        # identical cli_exec in one provider response) hit batch_succeeded.
+        # Interleaved A -> B -> A still runs, because a fully successful {B}
+        # replaces the snapshot.
         if name in _DEDUPE_ACTION_TOOL_NAMES:
             key = _action_call_fingerprint(name, public_tool_input(request.arguments))
-            if key in last_fully_succeeded_batch or key in batch_succeeded:
+            if key in last_fully_succeeded_batch:
                 return BeforeToolCallResult(
                     blocked=True,
                     reason=(

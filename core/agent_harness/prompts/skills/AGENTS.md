@@ -1,5 +1,17 @@
 # Skill release and authoring contract
 
+## Runtime modules
+
+Keep the skills root as a public import facade and the home of workflow assets.
+Catalog discovery, schema validation, names, and menus belong in `catalog/`;
+Markdown resolution, body/reference loading, and index rendering belong in
+`content/`; recurring revision pins belong in `scheduling/`. Consumers outside
+this package import its public facade or the `scheduling` facade.
+
+When moving a resource reader, preserve the skills root used for discovery and
+include containment. Clear both catalog and index caches through
+`clear_skills_caches()` when tests replace bundled resources.
+
 ## Design references
 
 Claude skill design:
@@ -15,7 +27,7 @@ NVIDIA skill-card guidance:
 
 ## Main workflow frontmatter
 
-`validation.py` defines the runtime schema. CI reads every raw card through
+`catalog/schema.py` defines the runtime schema. CI reads every raw card through
 `read_skill_catalog()` and fails on any diagnostic; it must not validate only
 the filtered runtime catalog. Runtime discovery logs invalid cards and excludes
 them so one broken card does not prevent startup. Contributor files and report
@@ -98,15 +110,28 @@ condition. Split distinct actions into separate numbered steps.
 
 Execute steps and their tool calls sequentially. Finish the current action,
 including delivering any user-facing output, before starting the next.
-Do not batch or parallelize actions, or couple separate steps with wording
-such as "alongside", "at the same time", or "in the same response".
+Do not couple separate steps with wording such as "alongside", "at the same
+time", or "in the same response".
 
-Bookkeeping is not an action. `update_plan` rides in the same tool batch as
-the next real call, never as a stand-alone model turn, and independent
-read-only checks inside one step (identity plus scheduler, for example) go in
-one batch. A live run of `scheduling-github-ci-fixes` spent nine solo
-`update_plan` turns (~90 s) on plan writes alone; cards should say which
-calls share a batch rather than leave the model to serialize everything.
+The runtime enforces this per model response (`core.tool.execution`): a
+response may carry **one** tool call whose role is `ACTION`; a response with
+two or more executes none of them and returns the same error for each. Two
+roles relax that rule, and every tool declares its role on its contract
+(`ToolRole`, replacing the old `parallel_safe` flag):
+
+- `BOOKKEEPING` (`update_plan`, `memory_remember`, `session_goal_complete`)
+  may accompany the one action. Cards should say so — "mark the step
+  `in_progress` in the same response as its tool call" — rather than leave
+  the model to spend a solo turn on each plan write. A live run of
+  `scheduling-github-ci-fixes` once spent nine solo `update_plan` turns
+  (~90 s) on plan writes alone.
+- `TURN_ENDING` (`ask_user_choice`) hands the turn to the user and must be
+  the **only** call in its response; not even bookkeeping rides with it.
+  Mark plan steps before the menu response, not in it.
+
+Independent read-only checks inside one step (identity plus scheduler, for
+example) are therefore separate responses, or one shell command that runs
+both.
 
 Report delivery and asking what to do next are separate actions: first
 respond with the report as Markdown text; only after it has been shown may
@@ -256,7 +281,7 @@ cards the same `name`.
 
 ## Naming conventions
 
-The `name` field is the skill's identity: `loader.py` rejects duplicates, the
+The `name` field is the skill's identity: `catalog/registry.py` rejects duplicates, the
 scheduler pins on it, and users type it (`opensre cron add --skill …`). Pick it
 once, following these rules, and treat a rename as a breaking change.
 
@@ -298,7 +323,7 @@ once, following these rules, and treat a rename as a breaking change.
    tasks or dashboards. Read skill names from one constant where product
    code branches on them.
 8. **Renaming a skill adds its old slug to `LEGACY_SKILL_NAMES`** in
-   `skills/naming.py`. Persisted recurring schedules store the `name` they
+   `skills/catalog/naming.py`. Persisted recurring schedules store the `name` they
    were confirmed with; the map lets `find_action_skill` and `skill_view`
    resolve the old slug, and the scheduler re-pins such a task to the new
    name on its next tick. A tool-usage card beside a tool also needs its

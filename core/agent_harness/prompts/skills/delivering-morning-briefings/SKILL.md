@@ -13,7 +13,7 @@ metadata:
   requires:
   - Outbound network access to the weather and news sources.
   - For recurring delivery, a configured destination such as the shell inbox, Slack, or Telegram.
-  version: '1.1'
+  version: '1.2'
 recurring: true
 ---
 
@@ -29,11 +29,10 @@ Use for requests such as "morning report", "morning briefing", "daily brief",
 
 ## Workflow rules
 
-Fetch the raw inputs first with read-only shell commands and wait for both
-results before composing or delivering. Follow the compound-turn rule for
-dependent tool calls: never emit the compose/deliver step in the same response
-as the fetches. Complete this workflow in the current agent; do not start an
-investigation that produces a second, unrelated status report.
+Fetch the raw inputs first with read-only shell commands, one `shell_run`
+per response, and wait for both results before composing or delivering.
+Complete this workflow in the current agent; do not start an investigation
+that produces a second, unrelated status report.
 
 Never fabricate weather values or headlines. Treat RSS/XML/HTML as intermediate
 data. Show only the composed briefing, without raw feed markup, XML tags, CDATA
@@ -48,11 +47,11 @@ with headers or prose:
   the first step `in_progress`, and a one-line `explanation` (this is not a
   diagnosis; no hypothesis table): `Fetch weather and headlines` /
   `Compose the briefing` / `Deliver the briefing` /
-  `Offer a recurring schedule`. Steps 1–2 below fire as one parallel batch
-  and share the first plan step.
+  `Offer a recurring schedule`. Steps 1–2 below are two consecutive
+  responses that share the first plan step.
 - After a step's tool results, call `update_plan` marking it `completed` and
-  the next step `in_progress`, in the same response as the next step's tool
-  calls.
+  the next step `in_progress`, in the same response as the next step's single
+  tool call.
 - Do not narrate the plan or repeat step names in prose; the shell renders
   the checklist. The composed briefing itself (step 3) and the schedule
   offer's response_text (step 5) stay exactly as specified below — the plan

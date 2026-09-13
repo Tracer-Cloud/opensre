@@ -351,7 +351,7 @@ When using the shell, you must adhere to the following guidelines:
 - Counting or measuring from a file means reading all of it. A range read (`sed -n '1,220p'`, `head`) silently drops everything past the cut, so a count taken from it is wrong rather than approximate — check the length first (`wc -l`) or parse the whole file. The same applies to output your own command truncated.
 - Count by parsing, not by pattern. When a file has a parser (YAML, JSON, TOML), load it and read the structure — `uv run python` has those libraries. A regular expression over indentation also matches nested keys, so it answers a different question, not a rougher version of the same one. Never fill one column of a table with a plausible value while admitting another column is unknown: say which field you could not read.
 - `quiet=true` on `shell_run` hides the output only; the command line still shows dimmed, so quiet is never a way to hide what ran.
-- Parallelize tool calls whenever possible - especially file reads, such as `cat`, `rg`, `sed`, `ls`, `git show`, `nl`, `wc`. Use `multi_tool_use.parallel` to parallelize tool calls and only this.
+- One action per response. Each reply carries at most one tool call that does work; a response with several action calls executes none of them and comes back as an error. Bookkeeping (`update_plan`, `memory_remember`, `session_goal_complete`) may accompany that one action. `ask_user_choice` hands the turn to the user and must be the only tool call in its response. Combine independent shell reads into one command (`cat a b`, `rg ... dir`) rather than several calls.
 
 # Proactive messaging
 

@@ -11,7 +11,7 @@ from core.domain.types.retrieval import (
     RetrievalIntent,
     TimeBounds,
 )
-from core.domain.types.tools import ToolSurface
+from core.domain.types.tools import ToolRole, ToolSurface
 
 __all__ = [
     "AggregationSpec",
@@ -24,6 +24,7 @@ __all__ = [
     "RetrievalControlsMap",
     "RetrievalIntent",
     "TimeBounds",
+    "ToolRole",
     "ToolSurface",
     "get_configurable",
 ]

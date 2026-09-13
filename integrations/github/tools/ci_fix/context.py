@@ -106,9 +106,8 @@ class CiFixContext:
     target_kind: str = CI_TARGET_PR
     target_branch: str = ""
     merge_state: str = ""
-    # Every check (passing, failing, or skipped) seen on the original head. Post-push
-    # verification may stop waiting for late registrations once all of them have
-    # reappeared on the fix commit; empty keeps the full registration grace.
+    # Check inventory from the original head, for diagnostics only. New checks
+    # still receive the full registration and settlement windows.
     known_check_names: tuple[str, ...] = ()
 
     @property

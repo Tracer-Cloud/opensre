@@ -16,7 +16,14 @@ from integrations.coding_agent import (
     run_coding_task,
     verify_coding_agent,
 )
-from integrations.git import GitCommandError, changed_paths, ensure_head_revision, file_fingerprints
+from integrations.git import (
+    GitCommandError,
+    changed_paths,
+    committed_paths_since,
+    ensure_head_revision,
+    file_fingerprints,
+    head_sha,
+)
 from integrations.github.client import resolve_github_token
 from integrations.github.repair_workspace import repair_workspace
 from integrations.github.tools.ci_fix.base_merge import (
@@ -351,6 +358,7 @@ def run_ci_fix(
     model: str | None = None,
     github_token: str | None = None,
     confirm_fn: Callable[[str], str] | None = None,
+    allowed_paths: frozenset[str] | None = None,
 ) -> dict[str, Any]:
     with ExitStack() as workspaces:
         ws = workspace or coding_workspace()
@@ -432,13 +440,30 @@ def run_ci_fix(
             if not result.success:
                 return output
 
+            committed = False
+            if allowed_paths is not None:
+                # Only the repair's own edits are scoped; a base merge brings in
+                # whatever the base changed.
+                since = merge.commit_sha if merge is not None else ctx.head_sha
+                try:
+                    changed = set(changed_paths(run_workspace))
+                    changed.update(committed_paths_since(run_workspace, since))
+                    committed = head_sha(run_workspace) != ctx.head_sha
+                except GitCommandError as exc:
+                    raise GitHubCiFixError(exc.kind, exc.message) from exc
+                if not changed.issubset(allowed_paths):
+                    raise GitHubCiFixError(
+                        ERR_INVALID_INPUT,
+                        "The repair changed files outside its authorized scope; no push was made.",
+                    )
+
             push = push_ci_fix(
                 ctx=ctx,
                 result=result,
                 workspace=run_workspace,
                 baseline=baseline,
                 github_token=github_token,
-                already_committed=merge is not None,
+                already_committed=merge is not None or committed,
             )
         except GitHubCiFixError as exc:
             return push_error_output(output, exc)

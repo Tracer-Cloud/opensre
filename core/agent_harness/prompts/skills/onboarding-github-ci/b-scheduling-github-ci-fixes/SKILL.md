@@ -11,7 +11,7 @@ demo_order: 2
 metadata:
   owner: Vincent
   last_changed_by: Jan
-  last_changed_at: 2026-09-12
+  last_changed_at: 2026-09-13
   usecases:
     - For configuring ongoing repair of failing pull requests in one repository.
     - For demonstrating a scheduled repair in a disposable private repository.
@@ -19,7 +19,7 @@ metadata:
     - GitHub write access to the watched repository and an authenticated coding agent
     - Git installed on the scheduler host; repair checkouts are created automatically
     - For the demo, a GitHub token that can create a private repository and an example PR
-  version: "5.3"
+  version: "6.2"
 script_tools: references/script-tools.md
 includes:
   - common/ask_once.md
@@ -51,9 +51,9 @@ one real repair as fast as possible in well under five minutes.
   runs.
 - `github_cli` passes `repo` as `-R` only to commands that accept it. `gh repo
   …` takes the repository positionally: `["repo", "create", "<name>", …]`.
-- `update_plan` never travels alone: batch it with the next real tool call.
-  Read-only verification calls that do not depend on each other go in one
-  batch too.
+- One action per response: send `update_plan` in the same response as the
+  next tool call, except before `ask_user_choice`, which must be the only call
+  in its response. Separate read-only checks are separate responses.
 - `seed_demo_repository` and `write_demo_evidence` are available while this
   skill is active. Call them directly; they return structured results and
   keep command output out of the transcript.
@@ -67,7 +67,7 @@ PR skips Steps 4 and 8) and move each step to `completed` when its
 completion condition is met.
 
 - [ ] Step 1. Select the repository, or the private demo, with ask_user_choice.
-- [ ] Step 2. Check prerequisites in one batch: GitHub identity and scopes, scheduler.
+- [ ] Step 2. Check prerequisites: GitHub identity and scopes, then the scheduler.
 - [ ] Step 3. Select the failing PR, or confirm the authorized demo scope.
 - [ ] Step 4. Create the demo repository, failing branch, and PR (demo only).
 - [ ] Step 5. Confirm GitHub reports the failure with list_github_actions_workflow_runs.
@@ -91,7 +91,7 @@ Complete when the repository, or the demo scope, is established.
 
 ### Step 2. Check prerequisites
 
-One batch of two calls:
+Two calls, one per response:
 
 - `github_cli` `["api", "user", "--include"]` — confirms authentication and
   prints the token's `X-Oauth-Scopes` header.

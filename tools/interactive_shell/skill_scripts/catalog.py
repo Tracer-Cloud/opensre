@@ -45,7 +45,6 @@ def registered_skill_tools(name: str) -> tuple[RegisteredTool, ...]:
                 run=_executor(name, declaration.name, path),
                 surfaces=(ToolSurface.ACTION,),
                 side_effect_level=SideEffectLevel.MUTATING,
-                parallel_safe=False,
                 accepts_runtime_context=True,
             )
         )

@@ -18,7 +18,7 @@ metadata:
   - Permission to add the OpenSRE bot to the target Slack workspace.
   - The cli_exec and slash_invoke tools.
   - When Slack setup is needed, an interactive terminal for /integrations setup slack.
-  version: '1.1'
+  version: '1.2'
 ---
 
 # Slack handoff
@@ -44,8 +44,8 @@ Track progress with the `update_plan` tool, not with headers or prose:
   `explanation` (this is not a diagnosis; no hypothesis table):
   `Check Slack` / `Set up if needed` / `Explain the hand-off`.
 - After a step's tool results, call `update_plan` marking it `completed` and
-  the next step `in_progress`, in the same response as the next step's tool
-  calls. When Slack is already connected, mark `Set up if needed` completed
+  the next step `in_progress`, in the same response as the next step's single
+  tool call. When Slack is already connected, mark `Set up if needed` completed
   without new tool calls instead of dropping it mid-run.
 - Do not narrate the plan or repeat step names in prose; the shell renders
   the checklist.

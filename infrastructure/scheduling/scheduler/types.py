@@ -126,6 +126,7 @@ class TaskReport(str):
 
     summary: str
     outcome: WorkOutcome
+    stop_schedule: bool
 
     def __new__(
         cls,
@@ -135,12 +136,14 @@ class TaskReport(str):
         work_status: WorkStatus | str = WorkStatus.SUCCEEDED,
         error_kind: str = "",
         outcome: WorkOutcome | None = None,
+        stop_schedule: bool = False,
     ) -> TaskReport:
         report = super().__new__(cls, body)
         report.summary = summary
         report.outcome = outcome or WorkOutcome(
             status=WorkStatus(work_status), error_kind=error_kind
         )
+        report.stop_schedule = stop_schedule
         return report
 
 

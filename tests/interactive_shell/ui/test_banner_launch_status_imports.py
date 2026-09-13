@@ -15,7 +15,7 @@ def test_load_launch_status_does_not_import_skill_harness() -> None:
         "from surfaces.shared.terminal.banner.banner_state import load_launch_status; "
         "status = load_launch_status(); "
         "heavy = [n for n in sys.modules if n == 'prompt_toolkit' "
-        "or n.startswith('core.agent_harness.prompts.skills.loader') "
+        "or n.startswith('core.agent_harness.prompts.skills') "
         "or n.startswith('core.agent_harness.spi')]; "
         "print('STATUS', status.skill_count, status.ci_fix_count); "
         "print('HEAVY', ','.join(sorted(heavy)[:12]) or 'none')"

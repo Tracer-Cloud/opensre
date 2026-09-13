@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
-from core.agent_harness.prompts.skills.script_tools import SkillScriptTool
+from core.agent_harness.prompts.skills.catalog.script_tools import SkillScriptTool
 
 
 @dataclass(frozen=True)

@@ -7,7 +7,7 @@ from typing import Annotated, Any, Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from core.agent_harness.prompts.skills.validation import parse_frontmatter
+from core.agent_harness.prompts.skills.catalog.schema import parse_frontmatter
 
 
 class SkillScriptTool(BaseModel):

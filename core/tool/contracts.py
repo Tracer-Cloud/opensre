@@ -19,7 +19,7 @@ from config.constants.tooling import DEFAULT_APPROVAL_EXPIRY_SECONDS
 from config.strict_config import StrictConfigModel
 from core.domain.types.evidence import EvidenceMapper, EvidenceSource
 from core.domain.types.retrieval import RetrievalControls
-from core.domain.types.tools import ToolSurface
+from core.domain.types.tools import ToolRole, ToolSurface
 from core.tool.registry import BaseToolRegistryMetadata, normalize_surfaces
 from infrastructure.observability.errors.boundary import report_exception
 
@@ -287,7 +287,7 @@ class BaseTool(ABC):
     )  # Declares supported controls
     surfaces: ClassVar[tuple[ToolSurface | str, ...]] = (ToolSurface.CHAT,)
     tags: ClassVar[Sequence[str]] = ()
-    parallel_safe: ClassVar[bool] = True
+    role: ClassVar[ToolRole] = ToolRole.ACTION
     requires_approval: ClassVar[bool] = False  # Whether this tool needs approval from messaging
     approval_reason: ClassVar[str] = ""  # Human-readable reason for requiring approval
     approval_expiry_seconds: ClassVar[int] = DEFAULT_APPROVAL_EXPIRY_SECONDS
@@ -315,7 +315,7 @@ class BaseTool(ABC):
         registry = cls.registry_metadata()
         cls.surfaces = registry.surfaces
         cls.tags = registry.tags
-        cls.parallel_safe = registry.parallel_safe
+        cls.role = registry.role
 
     @classmethod
     def metadata(cls) -> ToolMetadata:
@@ -348,7 +348,7 @@ class BaseTool(ABC):
             {
                 "surfaces": getattr(cls, "surfaces", ("chat",)),
                 "tags": tuple(getattr(cls, "tags", ())),
-                "parallel_safe": getattr(cls, "parallel_safe", True),
+                "role": getattr(cls, "role", ToolRole.ACTION),
             }
         )
 
@@ -425,7 +425,7 @@ class RegisteredTool:
     requires_approval: bool = False
     approval_reason: str = ""
     approval_expiry_seconds: int = DEFAULT_APPROVAL_EXPIRY_SECONDS
-    parallel_safe: bool = True
+    role: ToolRole = ToolRole.ACTION
     accepts_runtime_context: bool = False
     origin_module: str = ""
     origin_name: str = ""
@@ -557,7 +557,7 @@ class RegisteredTool:
         requires_approval: bool | None = None,
         approval_reason: str | None = None,
         approval_expiry_seconds: int | None = None,
-        parallel_safe: bool | None = None,
+        role: ToolRole | None = None,
         accepts_runtime_context: bool | None = None,
         evidence_mapper: EvidenceMapper | None = None,
     ) -> RegisteredTool:
@@ -615,9 +615,7 @@ class RegisteredTool:
                 if approval_expiry_seconds is not None
                 else tool.__class__.approval_expiry_seconds
             ),
-            parallel_safe=bool(
-                parallel_safe if parallel_safe is not None else tool.__class__.parallel_safe
-            ),
+            role=role if role is not None else tool.__class__.role,
             accepts_runtime_context=bool(
                 accepts_runtime_context
                 if accepts_runtime_context is not None
@@ -658,7 +656,7 @@ class RegisteredTool:
         requires_approval: bool | None = None,
         approval_reason: str | None = None,
         approval_expiry_seconds: int | None = None,
-        parallel_safe: bool | None = None,
+        role: ToolRole | None = None,
         accepts_runtime_context: bool | None = None,
     ) -> RegisteredTool:
         if source is None:
@@ -703,7 +701,7 @@ class RegisteredTool:
                 if approval_expiry_seconds is not None
                 else DEFAULT_APPROVAL_EXPIRY_SECONDS
             ),
-            parallel_safe=True if parallel_safe is None else bool(parallel_safe),
+            role=ToolRole.ACTION if role is None else role,
             accepts_runtime_context=bool(accepts_runtime_context),
             origin_module=func.__module__,
             origin_name=func.__name__,
@@ -733,18 +731,6 @@ class AgentToolContext:
 AgentToolExecutor: TypeAlias = Callable[[dict[str, Any], AgentToolContext], Any]  # noqa: UP040
 
 
-class ToolParallelism(StrEnum):
-    """Whether a tool may run in parallel with others in the ReAct loop.
-
-    Distinct from ``tools.interactive_shell.shared.execution_policy.ToolExecutionMode``,
-    which tracks how a REPL action is launched (foreground/background/streaming),
-    not tool parallelism. Do not merge the two.
-    """
-
-    PARALLEL = "parallel"
-    SEQUENTIAL = "sequential"
-
-
 @dataclass(frozen=True)
 class AgentTool:
     """Tool contract executed directly by the shared agent runtime."""
@@ -754,18 +740,10 @@ class AgentTool:
     input_schema: dict[str, Any]
     execute: AgentToolExecutor
     source: str = "agent"
-    parallel_safe: bool = True
-    execution_mode: ToolParallelism | None = None
+    role: ToolRole = ToolRole.ACTION
     requires_approval: bool = False
     approval_reason: str = ""
     approval_expiry_seconds: int = DEFAULT_APPROVAL_EXPIRY_SECONDS
-
-    @property
-    def effective_execution_mode(self) -> ToolParallelism:
-        """Return the explicit execution policy, falling back to ``parallel_safe``."""
-        if self.execution_mode is not None:
-            return self.execution_mode
-        return ToolParallelism.PARALLEL if self.parallel_safe else ToolParallelism.SEQUENTIAL
 
     @property
     def public_input_schema(self) -> dict[str, Any]:
@@ -817,7 +795,7 @@ __all__ = [
     "RuntimeTool",
     "SideEffectLevel",
     "ToolMetadata",
-    "ToolParallelism",
+    "ToolRole",
     "infer_input_schema",
     "model_to_json_schema",
 ]

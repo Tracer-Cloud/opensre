@@ -15,6 +15,7 @@ from core.agent_harness.task_plan.plan import (
 )
 from core.agent_harness.task_plan.work_log import take_completed_plan_breakdown
 from core.agent_harness.tools.tool_context import ActionToolScope
+from core.domain.types.tools import ToolRole
 from surfaces.interactive_shell.session import Session
 from tools.interactive_shell.actions.update_plan import (
     execute_update_plan_tool,
@@ -47,7 +48,7 @@ def test_update_plan_tool_is_action_surface_read_only() -> None:
     assert update_plan_tool.name == "update_plan"
     assert "action" in update_plan_tool.surfaces
     assert update_plan_tool.side_effect_level == "read_only"
-    assert update_plan_tool.parallel_safe is False
+    assert update_plan_tool.role is ToolRole.BOOKKEEPING
     explanation = update_plan_tool.input_schema["properties"]["explanation"]["description"]
     assert "investigation" in explanation.lower()
     assert "do not invent causal hypotheses" in explanation.lower()

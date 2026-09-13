@@ -10,3 +10,8 @@ CONNECTING_SLACK_SKILL_NAME = "connecting-slack"
 
 # Master onboarding menu row the shell handles itself: no model turn, plain prompt.
 SKIP_DEMO_OPTION = "Skip the demo and open the shell"
+
+# Shared Markdown layout and compact prompt heading.
+SKILL_FILENAME = "SKILL.md"
+SKILL_REPORT_SUFFIX = "_report.md"
+SKILLS_HEADER = f"{'=' * 40} SKILLS INDEX {'=' * 40}"

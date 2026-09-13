@@ -24,7 +24,7 @@ from core.agent_harness.spi.session_state import (
     set_auto_command,
 )
 from core.agent_harness.tools import ActionToolScope, execute_with_action_context
-from core.domain.types.tools import ToolSurface
+from core.domain.types.tools import ToolRole, ToolSurface
 from core.tool import RegisteredTool, SideEffectLevel
 from core.tool_framework.utils import object_schema, string_array_property, string_property
 from infrastructure.safety.terminal_output import strip_terminal_controls
@@ -424,7 +424,7 @@ ask_user_choice_tool = RegisteredTool(
     ),
     source="interactive_shell",
     surfaces=(ToolSurface.ACTION,),
-    parallel_safe=False,
+    role=ToolRole.TURN_ENDING,
     accepts_runtime_context=True,
     run=run_ask_user_choice,
     tags=("safe", "fast", "no-credentials"),

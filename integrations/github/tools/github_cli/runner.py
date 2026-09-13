@@ -44,7 +44,7 @@ _DENIED_SUBCOMMANDS: dict[str, frozenset[str]] = {
 }
 
 # Top-level ``gh`` commands that do not define ``-R/--repo``: ``gh api`` takes the
-# repo in the endpoint path; ``gh repo``/``gh org``/``gh gist``/``gh project`` and
+# repo in the endpoint path; most ``gh repo``/``gh org``/``gh gist``/``gh project`` and
 # friends take it positionally or via ``--owner``. Injecting ``-R`` in front of
 # them fails with ``unknown shorthand flag: 'R'`` before gh runs anything.
 _REPO_FLAG_FREE_COMMANDS = frozenset(
@@ -135,7 +135,16 @@ def build_gh_argv(*, args: list[str], repo: str | None = None) -> list[str]:
     cleaned_repo = (repo or "").strip()
     positionals = positional_gh_tokens(args)
     command = positionals[0].lower() if positionals else None
-    if cleaned_repo and command not in _REPO_FLAG_FREE_COMMANDS:
+    scoped_repo_command = (
+        command == "repo"
+        and len(positionals) > 1
+        and positionals[1]
+        in {
+            "autolink",
+            "deploy-key",
+        }
+    )
+    if cleaned_repo and (command not in _REPO_FLAG_FREE_COMMANDS or scoped_repo_command):
         argv.extend(["-R", cleaned_repo])
     argv.extend(str(a) for a in args)
     return argv

@@ -1,4 +1,4 @@
-"""Scheduled-repair workflow: exact loop call, direct tick prompt, batched plan writes.
+"""Scheduled-repair workflow: exact loop call, direct tick prompt, one action per response.
 
 Observed live (2026-09-12): a demo took 646 s over 56 model iterations. The
 model spent ~60 s grepping the OpenSRE source tree to discover ``/cron add``,
@@ -23,12 +23,12 @@ import pytest
 from config.constants import OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV, OPENSRE_MEMORY_DIR_ENV
 from config.constants.skills import SCHEDULING_GITHUB_CI_FIXES_SKILL_NAME
 from core.agent_harness.ports import TurnBinding
-from core.agent_harness.prompts.skills.loader import (
+from core.agent_harness.prompts.skills import (
     list_action_skills,
     load_skill_body,
+    parse_frontmatter,
     skill_reference_names,
 )
-from core.agent_harness.prompts.skills.validation import parse_frontmatter
 from core.agent_harness.session.pending_choice import PendingUserChoice
 from core.agent_harness.task_plan.plan import PlanStepStatus, TaskPlan
 from core.agent_harness.tools.action_tools import get_action_tool
@@ -113,7 +113,6 @@ def _recording_tool(name: str, calls: list[tuple[str, dict[str, Any]]]) -> Regis
         source="interactive_shell",
         run=_run,
         side_effect_level=SideEffectLevel.MUTATING,
-        parallel_safe=False,
     )
 
 
@@ -121,7 +120,7 @@ def test_skill_card_spells_out_the_loop_call_and_direct_tick_prompt() -> None:
     frontmatter, _ = parse_frontmatter(_SKILL_PATH.read_text(encoding="utf-8"))
     assert frontmatter["name"] == SCHEDULING_GITHUB_CI_FIXES_SKILL_NAME
     assert frontmatter["includes"] == ["common/ask_once.md"]
-    assert frontmatter["metadata"]["last_changed_at"] == date(2026, 9, 12)
+    assert frontmatter["metadata"]["last_changed_at"] == date(2026, 9, 13)
     body = load_skill_body(SCHEDULING_GITHUB_CI_FIXES_SKILL_NAME)
     # Blockquoted tick prompts wrap across lines; compare phrases on one line.
     flat = " ".join(re.sub(r"\n> ?", " ", body).split())
@@ -141,8 +140,8 @@ def test_skill_card_spells_out_the_loop_call_and_direct_tick_prompt() -> None:
     assert '"args": ["run", "<id>"]' in body
     assert "headRefOid,commits,statusCheckRollup" in body
     assert "Do not run the tests locally" in body
-    # Plan writes and independent read-only calls are batched.
-    assert "`update_plan` never travels alone" in body
+    # Plan writes ride with the next action; the menu stands alone.
+    assert "except before `ask_user_choice`, which must be the only call" in body
     # The demo loop is removed after the evidence is saved; the repository is
     # kept, so the token never needs delete_repo scope.
     assert '"args": ["remove", "<id>"]' in body
@@ -178,18 +177,22 @@ def test_repository_question_carries_the_plan_and_blocks_creation_until_answered
     calls: list[tuple[str, dict[str, Any]]] = []
     plan = [{"step": step, "status": "pending"} for step in steps]
     plan[0]["status"] = "in_progress"
+    repository_menu = tool_response(
+        "ask_user_choice",
+        {"title": _REPOSITORY_QUESTION, "options": [_DEMO_OPTION, "acme/widget"]},
+    )
     llm = FakeActionLLM(
         [
-            # Plan write and the repository question in one batch, as the card
-            # requires; the eager repo creation behind the menu must be blocked.
+            # Plan write, the repository question and eager repo creation in one
+            # response: the menu must stand alone, so the runtime runs none of
+            # it and the model re-issues the plan write and then the menu.
             _batch(
                 tool_response("update_plan", {"plan": plan}),
-                tool_response(
-                    "ask_user_choice",
-                    {"title": _REPOSITORY_QUESTION, "options": [_DEMO_OPTION, "acme/widget"]},
-                ),
+                repository_menu,
                 tool_response("github_cli", {"args": ["repo", "create", "demo", "--private"]}),
             ),
+            tool_response("update_plan", {"plan": plan}),
+            repository_menu,
         ]
     )
     output = BufferOutputSink()
@@ -214,7 +217,7 @@ def test_repository_question_carries_the_plan_and_blocks_creation_until_answered
     agent.handle(_MASTER_ANSWER, TurnBinding(is_tty=True))
 
     # Nothing was scheduled, created, or run before the repository question,
-    # and the plan landed in the same batch as the question.
+    # and the plan landed in the response before the question.
     assert calls == []
     pending = session.pending_user_choice
     assert pending is not None and pending.title == _REPOSITORY_QUESTION
@@ -224,6 +227,6 @@ def test_repository_question_carries_the_plan_and_blocks_creation_until_answered
     assert [step.step for step in task_plan.steps] == steps
     assert task_plan.steps[0].status is PlanStepStatus.IN_PROGRESS
     assert all(step.status is PlanStepStatus.PENDING for step in task_plan.steps[1:])
-    assert llm.invocations == 1
+    assert llm.invocations == 3
     assert not llm.responses
     assert session.active_skill == skill.name

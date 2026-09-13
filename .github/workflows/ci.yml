@@ -63,31 +63,9 @@ jobs:
           uv run python -m tests.ci_sharding report --label=cli-runtime tests/cli tests/interactive_shell tests/surfaces tests/core/agent tests/fleet_monitoring tests/analytics tests/sandbox --ignore=tests/cli/test_smoke.py
           uv run python -m tests.ci_sharding report --label=integrations-and-misc tests/integrations tests/bootstrap tests/benchmarks tests/shared tests/config tests/github_ci tests/quality tests/packaging tests/scheduler gateway/tests
 
-      - name: Lint
+      - name: Shared static checks
         if: steps.changes.outputs.source == 'true' || github.event_name == 'push'
-        run: uv run python -m ruff check $PYTHON_SOURCE_PATHS tests/
-
-      - name: Format check
-        if: steps.changes.outputs.source == 'true' || github.event_name == 'push'
-        run: uv run python -m ruff format --check $PYTHON_SOURCE_PATHS tests/
-
-      - name: Verify integration registry (smoke)
-        if: steps.changes.outputs.source == 'true' || github.event_name == 'push'
-        run: make verify-integrations-smoke
-
-      - name: Verify tool registry index
-        if: steps.changes.outputs.source == 'true' || github.event_name == 'push'
-        run: uv run pytest -q tests/tools/test_registry_index.py
-
-      - name: Import graph
-        if: steps.changes.outputs.source == 'true' || github.event_name == 'push'
-        run: uv run python .github/ci/check_imports.py --strict
-
-      # Full layered contracts (.importlinter.strict), not the minimal default
-      # .importlinter config used by ``make check-imports``.
-      - name: Import boundaries
-        if: steps.changes.outputs.source == 'true' || github.event_name == 'push'
-        run: uv run lint-imports --config .importlinter.strict
+        run: uv run python .github/ci/run_checks.py --group static
 
   quality-typecheck:
     name: quality-typecheck
@@ -132,13 +110,9 @@ jobs:
         if: steps.changes.outputs.source == 'true' || github.event_name == 'push'
         run: uv sync --frozen --extra dev
 
-      - name: Typecheck
+      - name: Shared type checks
         if: steps.changes.outputs.source == 'true' || github.event_name == 'push'
-        run: uv run python -m mypy $PYTHON_SOURCE_PATHS
-
-      - name: Verify typed tool contracts
-        if: steps.changes.outputs.source == 'true' || github.event_name == 'push'
-        run: uv run pytest -q tests/core/tool/test_contracts.py
+        run: uv run python .github/ci/run_checks.py --group types
 
   test:
     name: test (${{ matrix.shard }})

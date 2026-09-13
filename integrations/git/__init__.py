@@ -8,7 +8,6 @@ with a stable ``kind`` that callers map onto their own error model.
 from __future__ import annotations
 
 from integrations.git.checkout import (
-    clone_repository,
     ensure_head_revision,
     fetch_local_branch,
     origin_push_urls,
@@ -29,7 +28,9 @@ from integrations.git.local import (
     assert_not_protected,
     changed_paths,
     checkout_branch,
+    clone_repository,
     commit_paths,
+    committed_paths_since,
     create_branch,
     current_branch,
     default_branch,
@@ -70,10 +71,11 @@ __all__ = [
     "assert_not_protected",
     "capture_worktree_changes",
     "changed_paths",
-    "clone_repository",
     "checkout_branch",
+    "clone_repository",
     "commit_merge",
     "commit_paths",
+    "committed_paths_since",
     "create_branch",
     "current_branch",
     "default_branch",

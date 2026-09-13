@@ -14,7 +14,7 @@ from config.constants.skills import (
     ONBOARDING_SKILL_NAME,
 )
 from core.agent_harness.ports import TurnBinding
-from core.agent_harness.prompts.skills.loader import list_action_skills, load_skill_body
+from core.agent_harness.prompts.skills import list_action_skills, load_skill_body
 from core.agent_harness.session.pending_choice import PendingUserChoice, format_ask_user_answers
 from core.agent_harness.tools.action_tools import get_action_tool
 from core.agent_harness.tools.tool_provider import DefaultToolProvider
@@ -83,10 +83,11 @@ def test_onboarding_waits_for_selection_then_runs_the_child_in_the_answer_turn(
         input_schema={"type": "object", "properties": {}},
         source="interactive_shell",
         run=scan,
-        parallel_safe=False,
     )
     load_parent = tool_response("skill_view", {"name": skill.name})
     premature_scan = tool_response(scan_tool.name)
+    # Invocations 1 (rejected batch) and 2 (lone skill_view) precede the load.
+    router_loaded_after = 2
 
     class SkillLLM(FakeActionLLM):
         def invoke(
@@ -96,7 +97,7 @@ def test_onboarding_waits_for_selection_then_runs_the_child_in_the_answer_turn(
             system: str | None = None,
             tools: list[dict[str, Any]] | None = None,
         ) -> AgentLLMResponse:
-            if self.invocations:
+            if self.invocations >= router_loaded_after:
                 assert any(
                     load_skill_body(skill.name) in str(m.get("content", "")) for m in messages
                 )
@@ -104,11 +105,14 @@ def test_onboarding_waits_for_selection_then_runs_the_child_in_the_answer_turn(
 
     llm = SkillLLM(
         [
+            # Two actions in one response run nothing; the router is loaded
+            # only once the model re-issues it alone.
             AgentLLMResponse(
                 content="",
                 tool_calls=[*load_parent.tool_calls, *premature_scan.tool_calls],
                 raw_content=None,
             ),
+            load_parent,
             tool_response("skill_view", {"name": ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME}),
             tool_response(scan_tool.name),
             tool_response(
@@ -145,7 +149,7 @@ def test_onboarding_waits_for_selection_then_runs_the_child_in_the_answer_turn(
     assert pending.title == skill.pre_execute[0].args["title"]
     assert session.active_skill == ONBOARDING_SKILL_NAME
     assert work == []
-    assert llm.invocations == 1
+    assert llm.invocations == 2
     session.pending_user_choice = None
     session.terminal.pending_prompt_default = None
     session.terminal.awaiting_handoff_answer = False
@@ -157,5 +161,5 @@ def test_onboarding_waits_for_selection_then_runs_the_child_in_the_answer_turn(
     assert work == ["scan"]
     assert session.pending_user_choice is not None
     assert session.pending_user_choice.title == "Which repository should I analyze?"
-    assert llm.invocations == 4
+    assert llm.invocations == 5
     assert not llm.responses

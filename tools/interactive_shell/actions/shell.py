@@ -98,7 +98,6 @@ shell_run_tool = RegisteredTool(
     source="interactive_shell",
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
-    parallel_safe=False,
     accepts_runtime_context=True,
     run=run_shell,
     is_available=lambda sources: capability_available_from_sources(sources, "shell_commands"),

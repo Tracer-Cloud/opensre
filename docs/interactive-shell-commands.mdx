@@ -1251,3 +1251,21 @@ Continue chatting, then optionally:
 - [Agents](/fleet) — fleet dashboard, bus, trace, budgets
 - [Cron](/cron) — `/cron` scheduled deliveries
 - [Sync to your own object store](/configuration/remote-sync) — `/remote-sync`
+
+## Scheduled CI repair demo
+
+Choose scheduled CI repair from `/demo` to try a tiny failure in the private
+`opensre-onboarding-ci-repair-demo` repository. OpenSRE creates that repository
+once and reuses it, with a fresh branch and PR for each completed demonstration.
+An existing unrelated repository with that name stops setup.
+
+The demo starts on the next scheduled minute and has a ten-minute total limit.
+It uses the macOS or Linux background scheduler so it can finish after you close
+the terminal. Configure GitHub and authenticate your coding agent before starting.
+The initial run also needs permission to create a private repository and workflow.
+
+- Read the complete outcome and evidence links with `/loops show <task-id>`.
+- Stop an active repair with `/loops stop <task-id>`.
+- Starting the demo again while it is active returns the same run and deadline.
+- Successful runs close the demo PR and remove its branch. Unsuccessful runs keep
+  the PR, branch, and diagnostics. The repository and stopped loop history remain.

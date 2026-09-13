@@ -405,7 +405,6 @@ _OUTPUT_SCHEMA: dict[str, Any] = {
     tags=("safe", "read-only", "runbook"),
     surfaces=(ToolSurface.CHAT,),
     side_effect_level=SideEffectLevel.READ_ONLY,
-    parallel_safe=True,
     accepts_runtime_context=True,
     is_available=_runbook_sources_available,
     input_schema={

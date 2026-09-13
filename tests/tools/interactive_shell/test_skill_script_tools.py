@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-import core.agent_harness.prompts.skills.loader as loader
+import core.agent_harness.prompts.skills as skills
 from core.agent_harness.ports import TurnBinding
 from core.agent_harness.tools import ActionToolScope
 from core.agent_harness.tools.tool_provider import DefaultToolProvider
@@ -79,7 +79,7 @@ def helper_skill(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[Pa
             }
         ],
     )
-    frontmatter, _ = loader.parse_frontmatter(definitions)
+    frontmatter, _ = skills.parse_frontmatter(definitions)
     import yaml
 
     (references / "script-tools.md").write_text(
@@ -88,11 +88,13 @@ def helper_skill(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[Pa
         + "---\nHelper tools.\n"
     )
     (tmp_path / "another-skill.md").write_text(skill_card("another-skill"))
-    monkeypatch.setattr(loader, "skills_dir", lambda: tmp_path)
-    loader.clear_skills_caches()
+    monkeypatch.setattr(
+        "core.agent_harness.prompts.skills.content.files.skills_dir", lambda: tmp_path
+    )
+    skills.clear_skills_caches()
     registered_skill_tools.cache_clear()
     yield helper
-    loader.clear_skills_caches()
+    skills.clear_skills_caches()
     registered_skill_tools.cache_clear()
 
 
@@ -237,7 +239,7 @@ def test_loader_rejects_script_escape(helper_skill: Path) -> None:
     helper_skill.unlink()
     external.write_text("raise RuntimeError('must not load')\n")
     helper_skill.symlink_to(external)
-    catalog = loader.read_skill_catalog()
+    catalog = skills.read_skill_catalog()
     assert "testing-helpers" not in {skill.name for skill in catalog.skills}
     assert any("linked script" in diagnostic for diagnostic in catalog.diagnostics)
 

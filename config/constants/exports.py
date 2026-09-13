@@ -7,7 +7,18 @@ from config.package_exports import bind_package_exports
 # Re-exported name -> leaf module. Importing this package must not load
 # those modules; ``__getattr__`` loads one leaf the first time a name is used.
 EXPORTS: dict[str, str] = {
+    "GITHUB_CI_DEMO_REPOSITORY": "github",
+    "CI_REPAIR_WORKER_COMMAND": "ci_repair",
+    "CI_REPAIR_SECONDS": "ci_repair",
+    "CI_REPAIR_FINISH_RESERVE_SECONDS": "ci_repair",
+    "CI_REPAIR_POLL_SECONDS": "ci_repair",
+    "CI_REPAIR_DIRECTORY": "ci_repair",
+    "CI_REPAIR_REPORT_BUILDER": "ci_repair",
+    "CI_REPAIR_CRON": "ci_repair",
     "ONBOARDING_SKILL_NAME": "skills",
+    "SKILL_FILENAME": "skills",
+    "SKILL_REPORT_SUFFIX": "skills",
+    "SKILLS_HEADER": "skills",
     "ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME": "skills",
     "SCHEDULING_GITHUB_CI_FIXES_SKILL_NAME": "skills",
     "CONNECTING_SLACK_SKILL_NAME": "skills",

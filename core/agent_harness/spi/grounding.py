@@ -8,7 +8,7 @@ from core.agent_harness.grounding.diagnostics import (
 )
 from core.agent_harness.grounding.models import CacheStats
 from core.agent_harness.prompts.getting_started import GETTING_STARTED_CUSTOM
-from core.agent_harness.prompts.skills.loader import (
+from core.agent_harness.prompts.skills import (
     ActionSkill,
     SkillToolCall,
     getting_started_skills,

@@ -27,10 +27,12 @@ _PROBE_MODULE = _REPO_ROOT / "tools" / "system" / "fleet_monitoring" / "probe.py
 # Modules sanctioned to import psutil. Each must wrap it behind plain-value
 # helpers so callers never touch psutil directly: probe.py for per-PID
 # snapshots, probes.py for system-wide disk/memory session facts
-# (config/ cannot import tools/, so it wraps psutil itself).
+# (config/ cannot import tools/, so it wraps psutil itself), and tree.py
+# for supervised child-process lifecycle without exposing psutil types.
 _PSUTIL_SANCTIONED = (
     _PROBE_MODULE,
     _REPO_ROOT / "config" / "runtime_metadata" / "probes.py",
+    _REPO_ROOT / "infrastructure" / "process" / "tree.py",
 )
 _SOURCE_ROOTS = (
     "cli",

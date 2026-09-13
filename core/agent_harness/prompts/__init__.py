@@ -43,7 +43,6 @@ from core.agent_harness.prompts.skills import (
     SKILLS_HEADER,
     list_action_skills,
     load_skill_body,
-    load_skills_block,
     load_skills_index,
     skills_dir,
 )
@@ -66,7 +65,6 @@ __all__ = [
     "connected_integrations_block",
     "list_action_skills",
     "load_skill_body",
-    "load_skills_block",
     "load_skills_index",
     "prior_action_facts_block",
     "recent_conversation_block",

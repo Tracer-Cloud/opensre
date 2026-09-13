@@ -130,7 +130,6 @@ def wait_for_pr_checks(
         external_checks_registered = required_external_checks.issubset(set(last_names))
         registration_complete = expected_head_seen_at is not None and (
             now - expected_head_seen_at >= max(0, registration_seconds)
-            or _known_checks_registered(ctx, last_names)
         )
         if (
             head_sha == expected_head_sha
@@ -149,7 +148,7 @@ def wait_for_pr_checks(
                     failing = tuple(
                         _check_name(check)
                         for check in checks
-                        if _check_failed(check, expected_skips=expected_skips)
+                        if check_failed(check, expected_skips=expected_skips)
                     )
                     return CheckVerification(
                         state=CheckState.FAILED if failing else CheckState.PASSED,
@@ -204,7 +203,6 @@ def wait_for_branch_checks(
         # Give late workflows time to register after the first run appears.
         registration_complete = first_seen_at is not None and (
             now - first_seen_at >= max(0, registration_seconds)
-            or _known_checks_registered(ctx, last_names)
         )
         all_completed = bool(runs) and all(
             str(run.get("status") or "").strip().lower() == _WORKFLOW_RUN_COMPLETED for run in runs
@@ -338,18 +336,6 @@ def _commit_check_state(
     return all_terminal, tuple(dict.fromkeys(failing))
 
 
-def _known_checks_registered(ctx: CiFixContext, observed: tuple[str, ...]) -> bool:
-    """True when every check seen on the original head has reappeared on the fix commit.
-
-    Ends the registration grace early: a late check the grace exists to catch is
-    one that has not registered yet, so once all previously known names are
-    present there is nothing left to wait for. An empty known set never
-    short-circuits.
-    """
-    known = set(ctx.known_check_names)
-    return bool(known) and known.issubset(observed)
-
-
 def _run_name(run: dict[str, Any]) -> str:
     return str(run.get("name") or "unnamed run")
 
@@ -424,7 +410,8 @@ def _check_signature(checks: list[dict[str, Any]]) -> tuple[str, ...]:
     return tuple(sorted(signatures))
 
 
-def _check_failed(check: dict[str, Any], *, expected_skips: set[str]) -> bool:
+def check_failed(check: dict[str, Any], *, expected_skips: set[str]) -> bool:
+    """Classify a GitHub check or commit status, allowing only explicitly expected skips."""
     conclusion = str(check.get("conclusion") or "").strip().upper()
     state = str(check.get("state") or "").strip().upper()
     if conclusion == _SKIPPED_CONCLUSION:
@@ -447,6 +434,7 @@ def _check_is_terminal(check: dict[str, Any]) -> bool:
 __all__ = [
     "CheckState",
     "CheckVerification",
+    "check_failed",
     "DEFAULT_CHECK_WAIT_SECONDS",
     "DEFAULT_HEAD_PROPAGATION_SECONDS",
     "DEFAULT_POLL_INTERVAL_SECONDS",
