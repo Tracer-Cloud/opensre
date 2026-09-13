@@ -718,7 +718,11 @@ Shows up to **50** recent tasks, newest first. Use the **id** column (short pref
 /work path
 ```
 
-Human todos, reminders, and follow-ups — separate from `/tasks` (runtime jobs). See [Work Management](/work-management).
+`/work add` creates durable human todos; it does not schedule reminder delivery.
+For reminders, use the destination-aware `opensre work add` command with
+`--remind-at` and `--target provider:chat-id`, or ask from a connected chat whose
+destination OpenSRE can reuse. These work items are separate from `/tasks`
+(runtime jobs). See [Work Management](/work-management).
 
 You can also ask naturally:
 

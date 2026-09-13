@@ -28,7 +28,25 @@ from surfaces.interactive_shell.ui import (
 )
 
 _STATUSES = frozenset({"open", "completed", "blocked", "deferred", "active", "all"})
-_OPTION_NAMES = frozenset({"--project", "--owner", "--priority", "--due", "--remind"})
+_OPTION_NAMES = frozenset({"--project", "--owner", "--priority", "--due"})
+_REMINDER_OPTIONS = frozenset({"--remind", "--remind-at"})
+_REMINDER_ERROR = (
+    f"[{ERROR}]/work add cannot schedule reminders because it has no delivery target.[/] "
+    "Use `opensre work add <title> --remind-at <datetime> "
+    "--target <provider>:<chat-id>`, or ask from a connected chat."
+)
+
+
+def _unsupported_reminder_error(args: Sequence[str]) -> str | None:
+    if any(arg.partition("=")[0] in _REMINDER_OPTIONS for arg in args):
+        return _REMINDER_ERROR
+    return None
+
+
+def _validate_work_args(args: list[str]) -> str | None:
+    if args and args[0].lower() == "add":
+        return _unsupported_reminder_error(args[1:])
+    return None
 
 
 def _split_options(args: list[str]) -> tuple[list[str], dict[str, str]]:
@@ -93,6 +111,11 @@ def _show_list(console: Console, args: list[str]) -> bool:
 
 
 def _add(console: Console, args: list[str]) -> bool:
+    reminder_error = _unsupported_reminder_error(args)
+    if reminder_error is not None:
+        console.print(reminder_error)
+        return True
+
     words, options = _split_options(args)
     title = " ".join(words).strip()
     if not title:
@@ -206,8 +229,13 @@ COMMANDS: list[SlashCommand] = [
             "/work next [project]",
             "/work path",
         ),
-        notes=("Use /tasks for OpenSRE runtime jobs; /work is for human todos and reminders.",),
+        notes=(
+            "Use /tasks for OpenSRE runtime jobs; /work is for durable human todos.",
+            "To schedule a reminder, use `opensre work add <title> --remind-at <datetime> "
+            "--target <provider>:<chat-id>`, or ask from a connected chat.",
+        ),
         first_arg_completions=_WORK_FIRST_ARGS,
+        validate_args=_validate_work_args,
     ),
 ]
 
