@@ -116,6 +116,8 @@ def _explicit_targets(task: ScheduledTask) -> tuple[DeliveryTarget, ...]:
     if not isinstance(parsed, list):
         return ()
 
+    slack_creds = resolve_slack_credentials(task.params)
+    slack_webhook = str(slack_creds.get("webhook_url") or "")
     targets: list[DeliveryTarget] = []
     for entry in parsed:
         if not isinstance(entry, dict):
@@ -128,6 +130,8 @@ def _explicit_targets(task: ScheduledTask) -> tuple[DeliveryTarget, ...]:
         except ValueError:
             continue
         chat_id = str(entry.get("chat_id", "")).strip()
+        if provider is Provider.SLACK and not chat_id:
+            chat_id = resolve_slack_delivery_chat_id(task, webhook_url=slack_webhook)
         targets.append(
             DeliveryTarget(
                 provider,

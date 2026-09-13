@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from core.domain.work_items import WorkItem, WorkItemChannelTarget, dedupe_channel_targets
 from core.tool import AgentToolContext
-from infrastructure.scheduling.scheduler.types import Provider
+from tools.system.work_items.slack_delivery import slack_target_error, validate_slack_target
 from tools.system.work_items.validation import validate_provider
 
 
@@ -57,14 +57,17 @@ def dedupe_targets(targets: list[WorkItemChannelTarget]) -> list[WorkItemChannel
 
 
 def invalid_delivery_targets(targets: list[WorkItemChannelTarget]) -> list[str]:
-    """Return errors for any delivery target with unsupported providers or missing chat IDs."""
+    """Return errors for unsupported or undeliverable target shapes."""
     invalid: list[str] = []
     for target in targets:
         parsed_provider = validate_provider(target.provider)
         if parsed_provider is None:
             invalid.append(f"{target.provider}: unsupported provider")
             continue
-        if parsed_provider is Provider.SLACK:
+        slack_valid = validate_slack_target(target)
+        if slack_valid is not None:
+            if not slack_valid:
+                invalid.append(slack_target_error(target))
             continue
         if not target.chat_id:
             invalid.append(f"{target.provider}: missing chat_id")
