@@ -164,6 +164,31 @@ def is_ancestor(workspace: str, ancestor: str, descendant: str) -> bool:
     return result.returncode == 0
 
 
+def merge_commit_edits(workspace: str, merge_sha: str) -> list[str]:
+    """Paths a merge commit changed relative to *both* parents.
+
+    A file only one side touched equals that parent's version, so the set is the
+    hand edits made while resolving the merge (conflict resolutions and anything
+    else the resolver changed).
+    """
+    edited: set[str] | None = None
+    for parent in ("^1", "^2"):
+        result = _run_git(
+            workspace,
+            "diff",
+            "--name-only",
+            "--no-renames",
+            "-z",
+            f"{merge_sha}{parent}",
+            merge_sha,
+        )
+        if result.returncode != 0:
+            raise GitCommandError(MERGE_FAILED, "Could not inspect the merge commit's edits.")
+        paths = {path for path in result.stdout.split("\0") if path}
+        edited = paths if edited is None else edited & paths
+    return sorted(edited or ())
+
+
 __all__ = [
     "ConflictedPath",
     "abort_merge",
@@ -172,6 +197,7 @@ __all__ = [
     "fetch_remote_branch",
     "head_sha",
     "is_ancestor",
+    "merge_commit_edits",
     "merge_in_progress",
     "merge_ref",
     "paths_with_conflict_markers",

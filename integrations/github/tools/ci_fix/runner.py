@@ -23,6 +23,7 @@ from integrations.git import (
     ensure_head_revision,
     file_fingerprints,
     head_sha,
+    merge_commit_edits,
 )
 from integrations.github.client import resolve_github_token
 from integrations.github.repair_workspace import repair_workspace
@@ -440,23 +441,7 @@ def run_ci_fix(
             if not result.success:
                 return output
 
-            committed = False
-            if allowed_paths is not None:
-                # Only the repair's own edits are scoped; a base merge brings in
-                # whatever the base changed.
-                since = merge.commit_sha if merge is not None else ctx.head_sha
-                try:
-                    changed = set(changed_paths(run_workspace))
-                    changed.update(committed_paths_since(run_workspace, since))
-                    committed = head_sha(run_workspace) != ctx.head_sha
-                except GitCommandError as exc:
-                    raise GitHubCiFixError(exc.kind, exc.message) from exc
-                if not changed.issubset(allowed_paths):
-                    raise GitHubCiFixError(
-                        ERR_INVALID_INPUT,
-                        "The repair changed files outside its authorized scope; no push was made.",
-                    )
-
+            committed = _enforce_scope(run_workspace, ctx, merge, allowed_paths)
             push = push_ci_fix(
                 ctx=ctx,
                 result=result,
@@ -471,8 +456,39 @@ def run_ci_fix(
         if verified.get("checks_state") != CheckState.CONFLICTED.value:
             return verified
         return _merge_after_conflicted_push(
-            ctx, output, push, verified, run_workspace, model, github_token
+            ctx, output, push, verified, run_workspace, model, github_token, allowed_paths
         )
+
+
+def _enforce_scope(
+    workspace: str,
+    ctx: CiFixContext,
+    merge: BaseMergeResult | None,
+    allowed_paths: frozenset[str] | None,
+) -> bool:
+    """Refuse a repair that touched files outside ``allowed_paths``; report whether it committed.
+
+    Scoped edits are the repair's own: the worktree, commits made after the
+    merge (or after the source head when nothing was merged), and the hand edits
+    inside the merge commit itself. The base's own changes are not counted.
+    """
+    if allowed_paths is None:
+        return False
+    since = merge.commit_sha if merge is not None else ctx.head_sha
+    try:
+        changed = set(changed_paths(workspace))
+        changed.update(committed_paths_since(workspace, since))
+        if merge is not None:
+            changed.update(merge_commit_edits(workspace, merge.commit_sha))
+        committed = head_sha(workspace) != ctx.head_sha
+    except GitCommandError as exc:
+        raise GitHubCiFixError(exc.kind, exc.message) from exc
+    if not changed.issubset(allowed_paths):
+        raise GitHubCiFixError(
+            ERR_INVALID_INPUT,
+            "The repair changed files outside its authorized scope; no push was made.",
+        )
+    return committed
 
 
 def _merge_base_if_behind(
@@ -511,6 +527,7 @@ def _merge_after_conflicted_push(
     workspace: str,
     model: str | None,
     github_token: str | None,
+    allowed_paths: frozenset[str] | None = None,
 ) -> dict[str, Any]:
     """Bring the base into a pushed head GitHub reports as conflicted, push, and re-verify.
 
@@ -524,6 +541,7 @@ def _merge_after_conflicted_push(
         if merge is None:
             return conflicted
         output = with_merge_output(output, merge)
+        _enforce_scope(workspace, ctx, merge, allowed_paths)
         merged = push_ci_fix(
             ctx=ctx,
             result=CodingResult(success=True, summary=merge.summary),

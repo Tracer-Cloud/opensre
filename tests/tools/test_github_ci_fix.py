@@ -1426,3 +1426,64 @@ def test_demo_guard_blocks_already_committed_test_edits(tmp_path, monkeypatch) -
     )
     assert not output["success"] and output["error_kind"] == ERR_INVALID_INPUT
     assert "outside its authorized scope" in output["response_text"]
+
+
+def test_demo_guard_sees_test_edits_hidden_inside_the_base_merge_commit(
+    tmp_path, monkeypatch
+) -> None:
+    """A resolver that weakens a test while merging the base must not slip past the scope."""
+    import subprocess
+
+    import integrations.github.tools.ci_fix.runner as runner
+    from integrations.git import head_sha
+    from integrations.github.tools.ci_fix.base_merge import BaseMergeResult
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", *args], cwd=tmp_path, check=True, capture_output=True, text=True
+        ).stdout.strip()
+
+    git("init", "-b", "main")
+    git("config", "user.name", "Demo test")
+    git("config", "user.email", "demo@example.com")
+    (tmp_path / "test_calculator.py").write_text("assert add(1, 1) == 2\n")
+    (tmp_path / "calculator.py").write_text("def add(a,b): return a-b\n")
+    (tmp_path / "README.md").write_text("demo\n")
+    git("add", ".")
+    git("commit", "-m", "fixture")
+    git("checkout", "-b", "feat/fix-ci")
+    (tmp_path / "calculator.py").write_text("def add(a,b): return a-b  # head\n")
+    git("commit", "-am", "head change")
+    source_head = head_sha(str(tmp_path))
+    git("checkout", "main")
+    (tmp_path / "calculator.py").write_text("def add(a,b): return a-b  # base\n")
+    (tmp_path / "README.md").write_text("demo (base)\n")
+    git("commit", "-am", "base change")
+    git("checkout", "feat/fix-ci")
+    # The merge conflicts in calculator.py; the resolver also weakens the test.
+    subprocess.run(["git", "merge", "main"], cwd=tmp_path, check=False, capture_output=True)
+    (tmp_path / "calculator.py").write_text("def add(a,b): return a+b\n")
+    (tmp_path / "test_calculator.py").write_text("assert True\n")
+    git("add", "calculator.py", "test_calculator.py")
+    git("commit", "--no-edit")
+    merge = BaseMergeResult("main", head_sha(str(tmp_path)), resolved_files=("calculator.py",))
+
+    ctx = replace(_CTX, head_sha=source_head)
+    monkeypatch.setattr(runner, "gather_ci_fix_context", lambda **_kw: ctx)
+    monkeypatch.setattr(runner, "repair_workspace", lambda *_a, **_kw: nullcontext(str(tmp_path)))
+    monkeypatch.setattr(runner, "checkout_target_branch", lambda *_a, **_kw: None)
+    monkeypatch.setattr(runner, "ensure_push_ready", lambda **_kw: None)
+    monkeypatch.setattr(runner, "_merge_base_if_behind", lambda *_a, **_kw: merge)
+    monkeypatch.setattr(
+        runner, "run_fix", lambda *_a: CodingResult(success=True, summary="merge fixed it")
+    )
+
+    def unexpected_push(**_kwargs: Any) -> None:
+        raise AssertionError("A merge commit with an unauthorized test edit reached the push")
+
+    monkeypatch.setattr(runner, "push_ci_fix", unexpected_push)
+    output = runner.run_ci_fix(
+        workspace=str(tmp_path), github_token="tok", allowed_paths=frozenset({"calculator.py"})
+    )
+    assert not output["success"] and output["error_kind"] == ERR_INVALID_INPUT
+    assert "outside its authorized scope" in output["response_text"]
