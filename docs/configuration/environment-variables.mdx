@@ -374,6 +374,35 @@ Want credentials only from the environment, never on disk? Set `OPENSRE_DISABLE_
 | `SENTRY_TRACES_SAMPLE_RATE` | `1.0` | Trace sampling rate for Sentry |
 | `SENTRY_ERROR_SAMPLE_RATE` | `1.0` | Error sampling rate for Sentry |
 
+### LLM tracing with Langfuse (optional)
+
+Every chat turn can be exported as a [Langfuse](https://langfuse.com) trace:
+one trace per turn, with the user message and the reply on the root, a
+`generation` per model call (model, prompt, response, token usage) and a
+`tool` per tool execution nested under the agent loop. Traces of the same
+session share a Langfuse `session_id`.
+
+Tracing is off unless **both** keys are set and the extra is installed:
+
+```bash
+uv sync --extra langfuse          # or: pip install 'opensre[langfuse]'
+export LANGFUSE_PUBLIC_KEY=pk-lf-...
+export LANGFUSE_SECRET_KEY=sk-lf-...
+```
+
+Without the keys — or without the package — the agent runs exactly as before;
+nothing is buffered or exported. Credential-shaped values (API keys, bearer
+tokens, `password`/`token` fields) are masked before a span leaves the process.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `LANGFUSE_PUBLIC_KEY` |  | Langfuse project public key (required to enable tracing) |
+| `LANGFUSE_SECRET_KEY` |  | Langfuse project secret key (required to enable tracing) |
+| `LANGFUSE_BASE_URL` | `https://cloud.langfuse.com` | Langfuse host; use `https://us.cloud.langfuse.com` for the US region or your self-hosted URL (`LANGFUSE_HOST` is accepted as a legacy alias) |
+| `LANGFUSE_SAMPLE_RATE` | `1.0` | Fraction of traces to export (read by the Langfuse SDK) |
+| `LANGFUSE_DEBUG` | `False` | Verbose Langfuse SDK logging (read by the Langfuse SDK) |
+| `OPENSRE_LANGFUSE_DISABLED` | `0` | Keep tracing off even when keys are present, e.g. on a machine that shares a `.env` with `langfuse-cli` |
+
 ## Paths & Directories
 
 | Variable | Default | Description |

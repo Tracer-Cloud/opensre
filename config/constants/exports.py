@@ -205,6 +205,13 @@ EXPORTS: dict[str, str] = {
     "KAFKA_SASL_PASSWORD_ENV": "kafka",
     "KAFKA_SASL_USERNAME_ENV": "kafka",
     "KAFKA_SECURITY_PROTOCOL_ENV": "kafka",
+    # langfuse
+    "LANGFUSE_BASE_URL_ENV": "langfuse",
+    "LANGFUSE_DEFAULT_BASE_URL": "langfuse",
+    "LANGFUSE_HOST_ENV": "langfuse",
+    "LANGFUSE_PUBLIC_KEY_ENV": "langfuse",
+    "LANGFUSE_SECRET_KEY_ENV": "langfuse",
+    "OPENSRE_LANGFUSE_DISABLED_ENV": "langfuse",
     # kubernetes
     "KUBECONFIG_CONTENT_ENV": "kubernetes",
     "KUBECONFIG_CONTEXT_ENV": "kubernetes",

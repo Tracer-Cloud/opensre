@@ -30,10 +30,14 @@ from core.agent_harness.turns.turn_results import (
     TurnResult,
 )
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
+from infrastructure.observability.trace.observations import TraceAttributes, observe_span
 
 log = logging.getLogger(__name__)
 
 _ITERATION_CAP_MESSAGE = "Agent stopped before producing a final answer (iteration limit reached)."
+
+#: Root observation of one chat turn; trace input/output derive from it.
+_TURN_OBSERVATION_NAME = "handle-turn"
 
 
 def stage_turn_error(session: Any, kind: str, message: str) -> None:
@@ -77,6 +81,17 @@ def _cancelled_turn_result(
     )
 
 
+def _turn_outcome_metadata(result: TurnResult) -> dict[str, Any]:
+    action = result.action_result
+    return {
+        "final_intent": result.final_intent,
+        "cancelled": action.cancelled,
+        "hit_iteration_cap": action.hit_iteration_cap,
+        "executed_count": action.executed_count,
+        "executed_success_count": action.executed_success_count,
+    }
+
+
 def run_turn(
     text: str,
     session: SessionState,
@@ -88,7 +103,46 @@ def run_turn(
     surface: str = "interactive_shell",
     output: OutputSink | None = None,
 ) -> TurnResult:
-    """Run one ReAct turn whose accepted conclusion is the user-facing answer."""
+    """Run one ReAct turn whose accepted conclusion is the user-facing answer.
+
+    One turn is one trace for the observation sink: the user text is the trace
+    input, the assistant reply the output, and ``session_id`` groups the turns
+    of a conversation.
+    """
+    trace = TraceAttributes(
+        session_id=getattr(session, "session_id", None),
+        tags=(surface,),
+        metadata={"surface": surface},
+    )
+    with observe_span(_TURN_OBSERVATION_NAME, input=text, trace=trace) as observation:
+        result = _run_turn(
+            text,
+            session,
+            execute_actions=execute_actions,
+            accounting=accounting,
+            confirm_fn=confirm_fn,
+            is_tty=is_tty,
+            surface=surface,
+            output=output,
+        )
+        observation.update(
+            output=result.primary_response_text or None,
+            metadata=_turn_outcome_metadata(result),
+        )
+        return result
+
+
+def _run_turn(
+    text: str,
+    session: SessionState,
+    *,
+    execute_actions: ExecuteActions,
+    accounting: TurnAccounting,
+    confirm_fn: ConfirmFn | None,
+    is_tty: bool | None,
+    surface: str,
+    output: OutputSink | None,
+) -> TurnResult:
     auto_compact_if_needed(session)
     prior_messages = getattr(session, "cli_agent_messages", None) or ()
     expanded = expand_affirmative_follow_up(

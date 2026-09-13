@@ -66,6 +66,37 @@ def test_goal_reviewer_rejects_while_task_plan_incomplete() -> None:
     assert "unfinished steps" in goal.nudge(_obs())
 
 
+def test_goal_reviewer_shows_a_plan_deferred_reply_before_nudging() -> None:
+    """A mid-plan report is a step's deliverable: paint it, then say it was shown.
+
+    Observed live: the CI analytics card asked for the report as a text-only
+    reply followed by a menu step; the plan gate rejected the reply and the
+    accepted conclusion was empty, so the report never reached the screen.
+    """
+    shown: list[str] = []
+    llm = _ScriptedLLM('{"verdict": "GOAL_REACHED"}')
+    goal = build_goal_reviewer(
+        llm,
+        "analyze CI reliability",
+        executed_tool_names=["update_plan", "analyze_github_ci_reliability"],
+        plan_incomplete=lambda: True,
+        on_plan_deferred_reply=shown.append,
+    )
+    assert goal.verify is not None and goal.nudge is not None
+
+    assert goal.verify(_obs(text="| Metric | repo |\n|---|---:|")) is False
+    nudge = goal.nudge(_obs(text="| Metric | repo |\n|---|---:|"))
+
+    assert shown == ["| Metric | repo |\n|---|---:|"]
+    assert nudge.startswith("Your last reply has been shown")
+    assert "unfinished steps" in nudge
+    # An empty conclusion has nothing to show and must not claim otherwise.
+    assert goal.nudge(_obs(text="   ")) == goal.nudge(_obs(text=""))
+    assert not goal.nudge(_obs(text="")).startswith("Your last reply")
+    assert shown == ["| Metric | repo |\n|---|---:|"]
+    assert llm.invokes == 0
+
+
 def test_goal_reviewer_lets_an_active_goal_redirect_over_a_stale_plan() -> None:
     """A leftover plan must not pull a redirected /goal turn back into it."""
     llm = _ScriptedLLM('{"verdict": "GOAL_REACHED"}')

@@ -159,6 +159,11 @@ _PLAN_INCOMPLETE_NUDGE = (
     "with its blocker in explanation, never completed. End the turn only when "
     "every plan step is completed or blocked."
 )
+# Prefix for the nudge when the deferred reply was painted for the user: the
+# model must not restate a report it can already see in its own transcript.
+_PLAN_DEFERRED_REPLY_SHOWN = (
+    "Your last reply has been shown to the user exactly as written; do not repeat it. "
+)
 
 
 _PLAN_TOOL_NAME = "update_plan"
@@ -304,6 +309,7 @@ def build_goal_reviewer(
     executed_tool_names: list[str],
     *,
     plan_incomplete: Callable[[], bool] | None = None,
+    on_plan_deferred_reply: Callable[[str], None] | None = None,
     trace_context: Callable[[], dict[str, Any]] | None = None,
 ) -> Goal:
     """Build a reviewed :class:`Goal` for one action turn over ``user_goal``.
@@ -315,6 +321,12 @@ def build_goal_reviewer(
     task plan still has unfinished steps, so the shell does not go idle with
     ``Plan · n/m`` and a mid-list ``●``. It applies only to a turn that
     worked the plan (see :func:`plan_worked_this_turn`).
+
+    ``on_plan_deferred_reply`` receives the non-empty reply text a plan
+    rejection defers. That reply is a step's deliverable (a report the plan
+    then follows with a menu), not a premature stop: without this hook it is
+    never painted, because only the accepted conclusion streams. The nudge then
+    tells the model the reply was shown so it does not restate it.
     """
     reviewer = _LLMGoalReviewer(
         llm=llm,
@@ -324,12 +336,16 @@ def build_goal_reviewer(
         trace_context=trace_context,
     )
 
-    def _nudge(_observation: GoalObservation) -> str:
+    def _nudge(observation: GoalObservation) -> str:
         if (
             plan_incomplete is not None
             and plan_worked_this_turn(executed_tool_names)
             and plan_incomplete()
         ):
+            deferred_reply = (observation.final_text or "").strip()
+            if deferred_reply and on_plan_deferred_reply is not None:
+                on_plan_deferred_reply(deferred_reply)
+                return _PLAN_DEFERRED_REPLY_SHOWN + _PLAN_INCOMPLETE_NUDGE
             return _PLAN_INCOMPLETE_NUDGE
         return (
             f"Goal not yet met: {user_goal}. "

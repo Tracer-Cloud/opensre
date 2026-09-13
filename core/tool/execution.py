@@ -14,6 +14,11 @@ from core.domain.types.tools import ToolRole
 from core.llm.types import ToolCall
 from core.tool.contracts import AgentTool, AgentToolContext, RuntimeTool
 from infrastructure.observability.errors.boundary import report_exception
+from infrastructure.observability.trace.observations import (
+    ObservationLevel,
+    is_observation_sink_active,
+    observe_tool,
+)
 from infrastructure.observability.trace.redaction import redact_sensitive
 from infrastructure.observability.trace.spans import mark_span_outcome, tool_span
 
@@ -254,18 +259,29 @@ def execute_tool_calls(
 
     results: list[ToolExecutionResult] = []
     for tc in tool_calls:
-        with tool_span(tc.name, tool_call_id=tc.id) as span_attrs:
-            results.append(
-                _execute_one_tool_call(
-                    tc,
-                    tool_map=tool_map,
-                    tool_sources=tool_sources,
-                    resolved_integrations=resolved_integrations,
-                    runtime_resources=runtime_resources,
-                    hooks=hooks,
-                    span_attrs=span_attrs,
-                )
+        with (
+            observe_tool(
+                tc.name,
+                input=public_tool_input(tc.input) if is_observation_sink_active() else None,
+                metadata={"tool_call_id": tc.id},
+            ) as observation,
+            tool_span(tc.name, tool_call_id=tc.id) as span_attrs,
+        ):
+            result = _execute_one_tool_call(
+                tc,
+                tool_map=tool_map,
+                tool_sources=tool_sources,
+                resolved_integrations=resolved_integrations,
+                runtime_resources=runtime_resources,
+                hooks=hooks,
+                span_attrs=span_attrs,
             )
+            observation.update(
+                output=result.compat_payload(),
+                level=ObservationLevel.ERROR if result.is_error else None,
+                metadata={"is_error": result.is_error, "terminate": result.terminate},
+            )
+            results.append(result)
     return results
 
 

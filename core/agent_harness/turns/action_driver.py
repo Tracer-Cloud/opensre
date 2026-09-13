@@ -16,8 +16,8 @@ import json
 import logging
 import re
 import shlex
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
 from typing import Any
 
 from core.agent import Agent
@@ -107,6 +107,24 @@ class ActionTurnPlan:
     user_message: str
     llm: Any
     max_iterations: int
+    # Replies the plan gate deferred and the sink already painted mid-turn.
+    # They join ``response_text`` for history but are never streamed again.
+    deferred_replies: list[str] = field(default_factory=list)
+
+
+def _deferred_reply_presenter(
+    output: OutputSink, deferred_replies: list[str]
+) -> Callable[[str], None]:
+    """Paint a plan-deferred reply now (same gutter as a final reply) and keep it."""
+
+    def present(text: str) -> None:
+        deferred_replies.append(text)
+        try:
+            output.stream(label="OpenSRE", chunks=iter([text]))
+        except Exception:  # noqa: BLE001 - presentation must never break the loop
+            log.debug("deferred reply render failed; ignoring", exc_info=True)
+
+    return present
 
 
 class _StaticToolCallLLM:
@@ -510,6 +528,7 @@ def _build_action_agent(
     tool_hooks: ToolExecutionHooks | None,
     tool_resources: dict[str, Any],
     observer: Any,
+    output: OutputSink,
 ) -> ActionTurnPlan:
     """Build the Agent for one action turn; return an ``ActionTurnPlan``.
 
@@ -528,6 +547,7 @@ def _build_action_agent(
     # so "did the agent reach the goal" is not a meaningful question there.
     goal: Goal | None = None
     executed_tool_names: list[str] = []
+    deferred_replies: list[str] = []
 
     if bang_command is not None:
         # Explicit `!` shell escape: dispatch the verbatim text as a shell_run call.
@@ -574,6 +594,7 @@ def _build_action_agent(
                 task_plan=getattr(session, "task_plan", None),
                 plan_only=bool(getattr(session, "plan_only_until_authorized", False)),
             ),
+            on_plan_deferred_reply=_deferred_reply_presenter(output, deferred_replies),
             trace_context=lambda: turn_trace_state(session),
         )
 
@@ -607,6 +628,7 @@ def _build_action_agent(
         user_message=user_message,
         llm=llm,
         max_iterations=_MAX_TOOL_CALLING_ITERATIONS,
+        deferred_replies=deferred_replies,
     )
 
 
@@ -714,6 +736,7 @@ def _compose_response(
     result: Any,
     session: SessionState,
     counts: _TurnCounts,
+    deferred_replies: Sequence[str] = (),
 ) -> tuple[str, list[str], bool]:
     """Build the turn's response text and what to show on screen.
 
@@ -721,7 +744,8 @@ def _compose_response(
     on purpose: self-recording tools (shell, slash) already printed their own
     output, so the console shows only the closing text, generic tool results and
     any hint. ``response_text`` keeps the history as well, because persistence
-    and non-TTY surfaces have nothing else to read.
+    and non-TTY surfaces have nothing else to read. ``deferred_replies`` were
+    painted mid-turn by the plan gate, so they join the history, not the screen.
 
     Consumes the session's pending outcome hint.
     """
@@ -809,6 +833,7 @@ def _compose_response(
         chunk
         for chunk in (
             _response_text_from_history_entries(counts.executed_entries),
+            *deferred_replies,
             final_text_chunk,
             generic_text,
             hint,
@@ -994,6 +1019,7 @@ def _run_action_turn(
             ),
             tool_resources=tool_resources,
             observer=observer,
+            output=args.output,
         )
         result = run_react_agent_with_telemetry(
             built.agent,
@@ -1048,10 +1074,15 @@ def _run_action_turn(
         )
 
     counts = _count_turn(result, session, history_start)
-    response_text, display_chunks, use_final_text = _compose_response(result, session, counts)
+    response_text, display_chunks, use_final_text = _compose_response(
+        result, session, counts, built.deferred_replies
+    )
     cancelled = tool_resources_cancel_requested(tool_resources) or bool(
         getattr(result, "cancelled", False)
     )
+    # A deferred reply already went through the sink, so the turn host must not
+    # finalize ``response_text`` a second time (it would repost the report).
+    response_streamed = bool((use_final_text or built.deferred_replies) and not cancelled)
     # Cancelled turns stop before the host records or finalizes the response.
     # Discovery tools that opt into ``summarize_observation`` (via tool tags)
     # return structured JSON users should not see raw. Stash only those results.
@@ -1103,7 +1134,7 @@ def _run_action_turn(
         False,
         False if cancelled else counts.handled,
         response_text="" if cancelled else response_text,
-        response_streamed=bool(use_final_text and not cancelled),
+        response_streamed=response_streamed,
         hit_iteration_cap=bool(result.hit_iteration_cap and not cancelled),
         cancelled=cancelled,
         input_tokens=int(getattr(result, "input_tokens", 0) or 0),

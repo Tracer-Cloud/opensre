@@ -9,7 +9,7 @@ demo_order: 1
 metadata:
   owner: Vincent
   last_changed_by: Jan
-  last_changed_at: 2026-09-12
+  last_changed_at: 2026-09-13
   usecases:
   - For repository maintainers analyzing CI reliability over the previous 30 days.
   - For engineering teams assessing estimated developer waiting time and failure patterns.
@@ -18,7 +18,7 @@ metadata:
   - GitHub authentication with read access to the repository's Actions history.
   - The analyze_github_ci_reliability and scan_local_git_workspace tools.
   - For local discovery, a local Git checkout; the example repository does not require one.
-  version: '1.14'
+  version: '1.15'
 ---
 
 # CI/CD analytics
@@ -30,13 +30,16 @@ requests. Use a 30-day window unless the request specifies another period.
 ## Plan
 
 After reading this skill, use `update_plan` to create or revise the live
-CI/CD Reliability Progress plan using the five numbered workflow headings below as its steps. 
+CI/CD Reliability Progress plan using the six numbered workflow headings
+below as its steps. Keep showing the table and offering the next step as
+separate plan items; update statuses as each step's completion condition is met.
 
 - [ ] Step 1. Scan local repositories with scan_local_git_workspace.
 - [ ] Step 2. Select a repository using ask_user_choice.
 - [ ] Step 3. Collect and compute the 30-day metrics with analyze_github_ci_reliability.
-- [ ] Step 4. Display a metrics table as Markdown text
-- [ ] Step 5. Use ask_user_choice to offer scheduling, Slack setup, or finish.
+- [ ] Step 4. Prepare the metrics table as Markdown text from the benchmarks reference.
+- [ ] Step 5. Show the metrics table as a text-only reply.
+- [ ] Step 6. Use ask_user_choice to offer scheduling, Slack setup, or finish.
 
 ## Workflow
 
@@ -83,7 +86,7 @@ when the user asks how a figure is defined.
 Complete when `analyze_github_ci_reliability` has returned in this turn,
 either with `key_results` or with a named blocker.
 
-### 4. Display a metrics table as Markdown text
+### 4. Prepare a metrics table as Markdown text
 
 Read [Benchmarks](references/benchmarks.md) via
 `skill_view(name="analyzing-github-ci-performance", reference="benchmarks")` now for
@@ -95,10 +98,9 @@ step 3: reread `coverage_notices` for the named gap, and if the analysis did
 not return success, run it again once. A cell still without a source is
 `n/a` with the gap stated under the table; never estimate it.
 
-Prepare the report below for delivery.
+Prepare the report below for delivery in step 5.
 
 #### Report format
-After calculating the metrics, respond directly with the report as a Markdown table. Writing that response delivers the report.
 
 Identify the repository, default branch, UTC window, and coverage. Render
 this table as text, replacing every placeholder with a calculated value or a
@@ -125,9 +127,17 @@ What insights stand out:
 ```
 
 Complete when `skill_view` has returned the benchmarks reference in this
-turn and the assistant reply contains the table.
+turn and every table cell has a source or is `n/a` with its gap stated.
 
-### 5. Offer the next step
+### 5. Show the metrics table
+
+Reply with the step 4 report as Markdown text and nothing else; call no
+tool in that message. The host paints that reply and then continues the
+plan with step 6 — do not repeat the report afterwards.
+
+Complete when the assistant reply containing the table has been shown.
+
+### 6. Offer the next step
 
 Call `ask_user_choice` with the title
 `What would you like to do next?` and these options:
