@@ -137,7 +137,7 @@ def _repair(run: RepairRun, store: RepairStore, token: str) -> None:
         diagnostic.write_text(json.dumps(output, indent=2), encoding="utf-8")
         record_ci_fix_outcome(output)
         if output.get("success") and output.get("checks_state") == "passed":
-            run.fixed_sha = str(output.get("pushed_head_sha") or "")
+            run.fixed_sha = str(output.get("fix_head_sha") or "")
             current = _read_pr(run, token)
             if not run.fixed_sha or current.get("headRefOid") != run.fixed_sha:
                 run.status, run.reason = (

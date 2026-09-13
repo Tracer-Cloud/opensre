@@ -12,7 +12,7 @@ from threading import RLock
 from filelock import Timeout
 
 from config.constants import ci_fix_ledger_path
-from integrations.github.tools.ci_fix.ledger_store import append_fix_ids, read_fix_ids
+from integrations.github.tools.ci_fix.storage.ledger import append_fix_ids, read_fix_ids
 
 logger = logging.getLogger(__name__)
 

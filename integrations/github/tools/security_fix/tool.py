@@ -14,6 +14,7 @@ from integrations.github.helpers import (
     github_creds,
     github_source_available,
 )
+from integrations.github.repair_outcomes import attach_repair_outcome
 from integrations.github.tools.security_fix.runner import run_security_fix
 
 _INPUT_SCHEMA: dict[str, Any] = {
@@ -48,7 +49,7 @@ _INPUT_SCHEMA: dict[str, Any] = {
         },
         "workspace": {
             "type": "string",
-            "description": "Absolute path to the local checkout to edit. Defaults to CODING_WORKSPACE or cwd.",
+            "description": "Explicit matching checkout. Shipped repairs use an isolated clone when omitted; local-only fixes use CODING_WORKSPACE or cwd.",
         },
         "model": {
             "type": "string",
@@ -149,7 +150,7 @@ def fix_github_security_alert(
     **_kwargs: Any,
 ) -> dict[str, Any]:
     """Run the GitHub security remediation flow."""
-    return run_security_fix(
+    output = run_security_fix(
         owner=owner,
         repo=repo,
         alert_type=alert_type,
@@ -160,6 +161,10 @@ def fix_github_security_alert(
         open_pr=open_pr,
         github_token=github_token,
         confirm_fn=_confirm_fn(context),
+    )
+
+    return attach_repair_outcome(
+        output, operation=f"security:{owner}/{repo}:{alert_url or alert_number or alert_type}"
     )
 
 

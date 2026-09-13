@@ -7,6 +7,13 @@ with a stable ``kind`` that callers map onto their own error model.
 
 from __future__ import annotations
 
+from integrations.git.checkout import (
+    ensure_head_revision,
+    fetch_local_branch,
+    origin_push_urls,
+    origin_url,
+    remote_branch_sha,
+)
 from integrations.git.errors import (
     BRANCH_FAILED,
     COMMIT_FAILED,
@@ -41,6 +48,7 @@ from integrations.git.merge import (
     fetch_remote_branch,
     head_sha,
     is_ancestor,
+    merge_commit_edits,
     merge_in_progress,
     merge_ref,
     paths_with_conflict_markers,
@@ -74,15 +82,21 @@ __all__ = [
     "default_branch",
     "describe_conflicts",
     "ensure_git_repo",
+    "ensure_head_revision",
     "fetch_remote_branch",
+    "fetch_local_branch",
     "file_fingerprints",
     "head_sha",
     "is_ancestor",
+    "merge_commit_edits",
     "is_git_repo",
     "merge_in_progress",
     "merge_ref",
+    "origin_url",
+    "origin_push_urls",
     "paths_with_conflict_markers",
     "push_branch",
+    "remote_branch_sha",
     "short_head",
     "stage_paths",
     "unmerged_paths",

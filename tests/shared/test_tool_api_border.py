@@ -68,7 +68,10 @@ def test_the_contract_api_survives_being_imported_second() -> None:
     ``TYPE_CHECKING`` — and this test is what says so out loud.
     """
     # Arrange: a fresh interpreter, importing the risky order first.
-    script = "import core.llm.types, core.tool; print(len(core.tool.__all__))"
+    script = (
+        "import core.llm.types, core.tool; "
+        "print(all(hasattr(core.tool, name) for name in core.tool.__all__))"
+    )
 
     # Act
     proc = subprocess.run(
@@ -81,4 +84,4 @@ def test_the_contract_api_survives_being_imported_second() -> None:
 
     # Assert
     assert proc.returncode == 0, proc.stderr.strip()[-400:]
-    assert proc.stdout.strip() == "17"
+    assert proc.stdout.strip() == "True"

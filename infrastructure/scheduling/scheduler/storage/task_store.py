@@ -17,11 +17,9 @@ from filelock import FileLock
 
 from config.constants import OPENSRE_HOME_DIR
 from infrastructure.scheduling.scheduler import reload_signal
-from infrastructure.scheduling.scheduler.storage.database import run_database_path
 from infrastructure.scheduling.scheduler.storage.legacy_task_migration import (
     migrate_legacy_task_entries,
 )
-from infrastructure.scheduling.scheduler.storage.run_store import delete_runs
 from infrastructure.scheduling.scheduler.types import ScheduledTask
 
 logger = logging.getLogger(__name__)
@@ -243,13 +241,7 @@ def add_task(task: ScheduledTask, store_path: Path | None = None) -> ScheduledTa
 
 
 def remove_task(task_id: str, store_path: Path | None = None) -> bool:
-    """Remove a task by ID and cascade-delete its run records.
-
-    Returns True if the task was found and removed from the JSON store.
-    Cascade deletion of ``TaskRun`` records in the SQLite claim store is
-    best-effort — a warning is logged on failure but the return value
-    reflects only the JSON-store result.
-    """
+    """Remove a schedule while retaining its execution history for diagnosis."""
     path = store_path or default_task_store_path()
     lock = FileLock(_lock_path(path))
     with lock:
@@ -262,21 +254,6 @@ def remove_task(task_id: str, store_path: Path | None = None) -> bool:
 
     # The schedule changed: wake any running scheduler so it stops firing this.
     reload_signal.request_scheduler_reload()
-
-    # Cascade: remove orphaned TaskRun records from the SQLite claim store.
-    # Derive the DB path from the same directory as the JSON store.
-    db_path = run_database_path(path.parent)
-    try:
-        deleted = delete_runs(task_id, db_path)
-        if deleted:
-            logger.info("Cascade-deleted %d run(s) for removed task %s", deleted, task_id)
-    except Exception:  # noqa: BLE001
-        logger.warning(
-            "Failed to cascade-delete runs for task %s (DB: %s); orphaned runs may remain",
-            task_id,
-            db_path,
-            exc_info=True,
-        )
 
     return True
 

@@ -23,6 +23,7 @@ from core.agent_harness.prompts.skills.catalog.schema import (
     SkillCardError,
     parse_frontmatter,
 )
+from core.agent_harness.prompts.skills.catalog.script_tools import load_script_tools
 from core.agent_harness.prompts.skills.content import files
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,10 @@ def validate_skill_file(skill_path: Path) -> ActionSkill:
     raw = skill_path.read_text(encoding="utf-8")
     frontmatter, _body = parse_frontmatter(raw)
     card = SkillCard.model_validate(frontmatter)
+    try:
+        script_tools = load_script_tools(skill_path, card.script_tools)
+    except ValueError as exc:
+        raise SkillCardError(str(exc)) from exc
     for ref in card.includes:
         if files.resolve_skill_include(skill_path, ref) is None:
             raise SkillCardError(f"includes: cannot resolve in-tree Markdown file {ref!r}")
@@ -47,6 +52,7 @@ def validate_skill_file(skill_path: Path) -> ActionSkill:
             SkillToolCall(call.tool, MappingProxyType(call.args)) for call in card.pre_execute
         ),
         includes=tuple(card.includes),
+        script_tools=script_tools,
     )
 
 

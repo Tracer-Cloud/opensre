@@ -15,17 +15,18 @@ This is mutating. OpenSRE asks before checking out or creating a worktree, editi
 
 ## Prerequisites
 
-- Local checkout of the same repository as the PR (`origin` must match)
+- Git installed on the machine running OpenSRE
 - `gh` on `PATH` for checks and logs
 - GitHub token with repo write access plus workflow/check read access (`GITHUB_TOKEN` / `GH_TOKEN`)
 - A coding-agent backend available (`CODING_AGENT=auto` by default)
 
 ## Setup
 
-There is no dedicated `integrations setup` target for this tool. Configure GitHub access and the coding workspace:
+There is no dedicated `integrations setup` target for this tool. Configure GitHub access. A named repository or PR URL uses an isolated checkout.
+For requests about your current checkout, you can set the coding workspace:
 
 ```bash
-export CODING_WORKSPACE=/path/to/repo  # optional; defaults to cwd
+export CODING_WORKSPACE=/path/to/repo  # optional, for current-checkout requests
 export GITHUB_TOKEN=... # repo write access plus workflow/check read access
 # optional:
 # export CODING_AGENT=auto   # pi | claude-code | codex | cursor
@@ -69,16 +70,17 @@ fix the CI on main
 
 1. OpenSRE reads PR metadata or the latest failing Actions run on the target branch.
 2. It fetches compact log excerpts for failing Actions jobs.
-3. It verifies the local checkout's `origin` matches the target repository.
+3. It creates an isolated checkout for a named repository, or verifies that your explicitly selected checkout matches.
 4. It refuses fork PRs because it only pushes to branches in the same repository.
 5. After approval, it checks out the PR head branch or creates a temporary linked git worktree for a branch target such as `main`.
-6. If GitHub reports the PR as conflicted with its base branch, it merges the base branch into the PR branch first. Conflicts go to the coding agent, lockfiles are regenerated rather than hand-merged, and the merge is committed only when no conflict remains.
+6. If the PR branch is behind its base branch (whether or not GitHub already reports a conflict), it merges the base branch into the PR branch first, so the fix is made on top of the current base and a failure already fixed there needs no further change. Conflicts go to the coding agent, lockfiles are regenerated rather than hand-merged, and the merge is committed only when no conflict remains.
 7. If files changed, it commits only the fix-run changes and pushes the PR branch or fresh repair branch.
 8. It verifies the exact pushed commit, allows one minute for its checks to register,
    waits for applicable workflows, and reports whether they passed, failed, were
    superseded by another push, or did not finish within 15 minutes. If GitHub
-   still reports the pushed commit as conflicted, it says so immediately instead
-   of waiting, because no checks will start.
+   reports the pushed commit as conflicted (the base moved during the repair),
+   it merges the base branch into the pushed branch once, pushes again, and
+   verifies that commit instead.
 
 If no checks are failing, OpenSRE says so and does not push. The one exception is a PR that conflicts with its base branch: GitHub never starts checks for it, so OpenSRE treats bringing the base branch in as the fix. It does **not** open a new PR. Merged or closed PRs are refused — if the failure already landed on the base branch, ask for the branch itself ("fix the CI on main").
 
@@ -90,8 +92,12 @@ There is no dedicated `integrations verify` target. Confirm readiness by:
 
 1. `opensre integrations verify github` (or a valid `GITHUB_TOKEN` / `GH_TOKEN`)
 2. `gh` available on `PATH`
-3. Local checkout `origin` matches the PR repository
+3. If supplying a checkout explicitly, its `origin` matches the PR repository
 4. A coding agent CLI is installed/logged in if auto mode needs one
+
+If a worker stops after pushing, retry the repair to resume verification of
+the recorded commit. A concurrent update to the PR stops verification of the
+older commit.
 
 ## Troubleshooting
 
@@ -99,7 +105,7 @@ There is no dedicated `integrations verify` target. Confirm readiness by:
 | --- | --- |
 | **Fork PR refused** | Only same-repository PR head branches are supported |
 | **No push when checks are green** | Expected — OpenSRE does not push when nothing is failing |
-| **"blocked on N file(s) a person must decide"** | The coding agent could not resolve those merge conflicts. The merge was aborted and nothing was pushed; resolve the listed files by hand, push, and run the fix again |
+| **"blocked on N file(s) a person must decide"** | The coding agent could not resolve those merge conflicts. The merge was aborted; resolve the listed files by hand, push, and run the fix again. If the message starts with "Pushed a CI fix", the fix commit is already on the branch and only the base merge is missing |
 | **Approval prompts** | Mutating path requires confirmation before checkout/edit/commit/push |
 | **gh / checks unavailable** | Install GitHub CLI and ensure the token can read Actions checks |
 

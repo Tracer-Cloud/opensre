@@ -51,6 +51,7 @@ from core.tool.execution import (
     execute_tool_calls,
     public_tool_input,
 )
+from core.tool.live_catalog import LiveToolCatalog
 from infrastructure.observability.operations_log import record_operation
 from infrastructure.observability.trace.decisions import record_decision
 from infrastructure.observability.trace.redaction import redact_sensitive
@@ -165,10 +166,15 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
         self._max_stagnant_iterations = run_input.max_stagnant_iterations
         self._messages = run_input.messages
         self._msg_formatter = MessageMapper(self._llm)
-        self._runtime_tools = list(host._filter_tools(run_input.tools))
+        self._live_catalog = LiveToolCatalog[RuntimeToolT].from_resources(self._tool_resources)
+        self._catalog_snapshot = self._live_catalog.snapshot() if self._live_catalog else None
+        initial_tools = (
+            list(self._catalog_snapshot) if self._catalog_snapshot is not None else run_input.tools
+        )
+        self._runtime_tools = list(host._filter_tools(initial_tools))
         self._tool_schemas = self._llm.tool_schemas(self._runtime_tools)
         self._ceiling = context_budget_ceiling_for_model(getattr(self._llm, "_model", None))
-        # System prompt and tool schemas are fixed for the run; serialize once.
+        # Recompute only when the host changes the available tools.
         self._fixed_overhead_tokens = system_and_tools_overhead(self._system, self._tool_schemas)
         self._executed: list[tuple[ToolCall, Any]] = []
         self._tool_results: list[tuple[ToolCall, ToolExecutionResult]] = []
@@ -248,8 +254,20 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
                         hit_iteration_cap=self._hit_cap,
                     )
 
+    def _refresh_tools(self) -> None:
+        if self._live_catalog is None:
+            return
+        snapshot = self._live_catalog.snapshot()
+        if snapshot is self._catalog_snapshot:
+            return
+        self._catalog_snapshot = snapshot
+        self._runtime_tools = list(self._host._filter_tools(list(snapshot)))
+        self._tool_schemas = self._llm.tool_schemas(self._runtime_tools)
+        self._fixed_overhead_tokens = system_and_tools_overhead(self._system, self._tool_schemas)
+
     def _run_iteration(self, iteration: int) -> _IterationResult:
         """Run one think -> observe step."""
+        self._refresh_tools()
         with loop_iteration_span(
             "react_iteration",
             iteration=iteration,

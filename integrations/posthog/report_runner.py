@@ -12,11 +12,13 @@ import logging
 
 from core.agent_harness import AgentSession, TurnResult
 from infrastructure.scheduling.scheduler.agent_runner import AgentPayload
+from infrastructure.scheduling.scheduler.types import TaskReport
 from integrations.posthog.report_prerequisites import (
     DEFAULT_POSTHOG_PERIOD,
     posthog_not_configured_hint,
     posthog_report_available,
 )
+from integrations.scheduled_outcomes import ScheduledOutcomes
 
 logger = logging.getLogger(__name__)
 
@@ -60,7 +62,7 @@ def _dispatch_headless_turn(message: str) -> TurnResult:
     )
 
 
-def run_posthog_report(payload: AgentPayload) -> str:
+def run_posthog_report(payload: AgentPayload) -> TaskReport:
     """Run one headless summarizing-posthog-analytics turn and return the assistant report."""
     message = build_report_prompt(payload)
     result = _dispatch_headless_turn(message)
@@ -78,7 +80,7 @@ def run_posthog_report(payload: AgentPayload) -> str:
         raise RuntimeError(
             "PostHog report failed: the reasoning client did not produce a response."
         )
-    return report
+    return ScheduledOutcomes().report(result, agent_mode=False)
 
 
 __all__ = ["build_report_prompt", "run_posthog_report"]

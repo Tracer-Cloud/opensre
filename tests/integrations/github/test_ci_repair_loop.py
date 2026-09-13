@@ -384,7 +384,7 @@ def test_worker_retries_then_cleans_only_the_verified_head(
         assert kwargs["allowed_paths"] == frozenset({"calculator.py"})
         if calls <= 4:
             return {"success": False, "error_kind": "checks_failed"}
-        return {"success": True, "checks_state": "passed", "pushed_head_sha": "fixed"}
+        return {"success": True, "checks_state": "passed", "fix_head_sha": "fixed"}
 
     def pr(_run: RepairRun, _token: str) -> dict[str, Any]:
         finished = calls == 5

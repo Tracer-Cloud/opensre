@@ -16,11 +16,12 @@ from core.agent_harness.ports import (
     ToolEventObserver,
 )
 from core.agent_harness.tools.action_tools import get_action_tools_from_integrations_view
+from core.agent_harness.tools.skill_tool_catalog import SkillToolCatalog
 from core.agent_harness.tools.tool_context import (
     ACTION_TOOL_CONTEXT_RESOURCE_KEY,
     ActionToolScope,
 )
-from core.tool import SideEffectLevel
+from core.tool import LiveToolCatalog, RegisteredTool, SideEffectLevel
 
 # Fail-closed: unattended ticks may only use tools that cannot mutate the
 # machine or an external system. Morning-report weather/news is pre-fetched
@@ -82,6 +83,7 @@ class DefaultToolProvider:
         self._slash_ports_factory = slash_ports_factory
         self._unattended = unattended
         self._tool_scope: ActionToolScope | None = None
+        self._live_catalog: LiveToolCatalog[RegisteredTool] | None = None
 
     def bind_session(self, session: Any) -> None:
         """Point this provider at a freshly resolved session (gateway reuse)."""
@@ -153,13 +155,18 @@ class DefaultToolProvider:
         if not getattr(self._session, "skill_discovery_enabled", True):
             tools = [tool for tool in tools if tool.name != "skill_view"]
         if self._unattended:
-            return [tool for tool in tools if tool_allowed_for_unattended_run(tool)]
-        return tools
+            tools = [tool for tool in tools if tool_allowed_for_unattended_run(tool)]
+        catalog = SkillToolCatalog(self._session, tools, enabled=not self._unattended)
+        self._live_catalog = LiveToolCatalog(catalog.snapshot)
+        return list(catalog.snapshot())
 
     def tool_resources(self) -> dict[str, Any]:
         if self._tool_scope is None:
             return {}
-        return {ACTION_TOOL_CONTEXT_RESOURCE_KEY: self._tool_scope}
+        resources = {ACTION_TOOL_CONTEXT_RESOURCE_KEY: self._tool_scope}
+        if self._live_catalog is not None:
+            self._live_catalog.bind(resources)
+        return resources
 
     def observer(self, *, message: str) -> ToolEventObserver:
         if self._observer_factory is not None:

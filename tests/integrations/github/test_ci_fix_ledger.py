@@ -13,7 +13,8 @@ import pytest
 from filelock import FileLock
 
 from config.constants import CI_FIX_LEDGER_PATH_ENV
-from integrations.github.tools.ci_fix import ledger, ledger_store
+from integrations.github.tools.ci_fix import ledger
+from integrations.github.tools.ci_fix.storage import ledger as ledger_store
 
 
 def _outcome(**changes: object) -> dict[str, object]:

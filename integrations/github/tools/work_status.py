@@ -16,6 +16,7 @@ from integrations.github.helpers import (
     github_creds,
     github_source_available,
 )
+from integrations.github.repair_outcomes import attach_ci_scan_outcome
 from integrations.github.tools.workflow import (
     GitHubIssueMutationProposal,
     PullRequestStatus,
@@ -316,6 +317,7 @@ def summarize_github_pr_status(
     **_kwargs: Any,
 ) -> dict[str, Any]:
     client = GitHubRestClient(github_token)
+    fully_inspected = state == "open" and include_checks
     try:
         raw_prs = client.paginate(
             f"/repos/{owner}/{repo}/pulls",
@@ -325,12 +327,15 @@ def summarize_github_pr_status(
         for list_pr in raw_prs:
             number = list_pr.get("number")
             if not isinstance(number, int):
+                fully_inspected = False
                 continue
             detail_pr = client.request("GET", f"/repos/{owner}/{repo}/pulls/{number}")
             if not isinstance(detail_pr, dict):
+                fully_inspected = False
                 detail_pr = list_pr
             sha = str((detail_pr.get("head") or {}).get("sha", ""))
             check_runs: list[dict[str, Any]] = []
+            complete_checks = False
             if include_checks and sha:
                 check_payload = client.request(
                     "GET",
@@ -343,12 +348,14 @@ def summarize_github_pr_status(
                     check_runs = [
                         run for run in check_payload["check_runs"] if isinstance(run, dict)
                     ]
+                    complete_checks = check_payload.get("total_count") == len(check_runs)
+            fully_inspected = fully_inspected and complete_checks
             prs.append(_normalize_pull_request(detail_pr, check_runs).to_dict())
     except GitHubApiError as exc:
         return tool_unavailable(
             "github", str(exc), pull_requests=[], counts=_count_prs([]), side_effects=[]
         )
-    return {
+    output = {
         "source": "github",
         "available": True,
         "owner": owner,
@@ -357,6 +364,7 @@ def summarize_github_pr_status(
         "counts": _count_prs(prs),
         "side_effects": [],
     }
+    return attach_ci_scan_outcome(output, fully_inspected=fully_inspected)
 
 
 def _normalize_security_alert(alert_type: str, item: dict[str, Any]) -> SecurityAlert:

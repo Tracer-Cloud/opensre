@@ -42,6 +42,7 @@ templates are not skill entries.
 | `pre_execute` | Optional single entry call with `tool: ask_user_choice` and validated `args`. Use its `questions` array for several decisions. |
 | `includes` | Optional local Markdown files appended as instructions, once per resolved file. |
 | `recurring` | Optional boolean, default `false`; enables the recurring-skill runner. Actual cron and timezone belong to the scheduled task. |
+| `script_tools` | Optional pointer to `references/script-tools.md` declaring skill-local helper tools. |
 
 Every `metadata` block requires `owner`, `last_changed_by`, `last_changed_at`,
 `version`, `usecases`, and `requires`. `usecases` and `requires` are nonempty
@@ -65,6 +66,22 @@ no later than today.
 `metadata.type`, `metadata.dependencies`, `metadata.prerequisite_for`, workflow
 `tools`, `after_tool`, and top-level `references` are unsupported. Tool-usage
 cards retain their separate schema and required `tools` field.
+
+Put script-tool definitions in `references/script-tools.md`. Keep only the
+one-line pointer `script_tools: references/script-tools.md` in `SKILL.md`
+frontmatter. The runtime loads and validates the definitions from that file.
+
+The reference's YAML frontmatter contains a `script_tools` list. Each entry has
+`name`, `script` (a sibling `scripts/<script>.py` filename), `description`, and
+an object `input_schema` with scalar parameters and `additionalProperties: false`.
+Script helpers receive one JSON object as their first command-line argument and
+emit one JSON object containing `ok`; nonzero exit is a failure. Keep helpers
+stdlib-only, capture subprocess output, and return diagnostics in the result.
+The host owns timeout, cancellation, and visible failure reporting. Helpers are
+mutating, sequential tools; they cannot shadow the normal tool catalog. Loading
+a skill changes the next request's tool list. Switching skills, settling its
+plan, or starting a new request removes its helpers. Execution checks the
+active session again, including for calls from an older tool snapshot.
 
 `includes` resolves files relative to the skill directory, its parent, or the
 skills root. The resolved file must stay inside the skills tree. Directories,

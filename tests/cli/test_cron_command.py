@@ -564,7 +564,9 @@ def _patch_cron_run_deps(
     )
     calls: list[dict[str, object]] = []
 
-    def _fake_run_task_now(tid: str, _runners: object, *, only_failed: bool = False) -> bool:
+    def _fake_run_task_now(
+        tid: str, _runners: object, *, only_failed: bool = False, on_result: object = None
+    ) -> bool:
         calls.append({"task_id": tid, "only_failed": only_failed})
         return True
 

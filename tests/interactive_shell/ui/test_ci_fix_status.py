@@ -49,7 +49,10 @@ def test_tool_completion_updates_prompt_from_memory_even_when_save_fails(
     monkeypatch.setattr(ledger, "append_fix_ids", fail_save)
     try:
         with ThreadPoolExecutor(max_workers=1) as executor:
-            assert executor.submit(ci_fix_tool.fix_github_pr_ci).result(timeout=10) is outcome
+            result = executor.submit(ci_fix_tool.fix_github_pr_ci).result(timeout=10)
+        # The tool returns the repair output with its work outcome attached, nothing else changed.
+        assert {key: result[key] for key in outcome} == outcome
+        assert result["work_outcome"]["status"] == "succeeded"
         rendered = render_prompt_region(session, ReplState(), SpinnerState())
         text = fragment_list_to_text(to_formatted_text(rendered))
         assert "CI/CD fixes (1) ✓" in text
