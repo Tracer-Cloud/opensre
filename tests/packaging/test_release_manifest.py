@@ -140,13 +140,32 @@ def test_release_smoke_asserts_onedir_contains_the_baked_index() -> None:
     assert "_package-smoke" in workflow
 
 
-def test_release_workflow_parallelizes_macos_onedir_resign() -> None:
+def test_release_workflow_parallelizes_macos_onedir_signing() -> None:
     """Nested lib signs are independent; main binary stays serial and last."""
     workflow = _RELEASE_WORKFLOW.read_text(encoding="utf-8")
 
-    assert 'xargs -0 -P "$JOBS" -n 1 codesign --force --sign -' in workflow
-    assert 'codesign --force --sign - "$APP_BIN"' in workflow
+    assert 'xargs -0 -P "$JOBS" -n 1 "${SIGN[@]}"' in workflow
+    assert '"${SIGN[@]}" "$APP_BIN"' in workflow
     assert 'if [ "$JOBS" -gt 4 ]; then' in workflow
+
+
+def test_release_workflow_signs_with_developer_id_and_notarizes_when_configured() -> None:
+    """With the certificate secrets the bundle is hardened-runtime signed and notarized;
+    without them it stays ad-hoc so forks and secret-less runs still build."""
+    workflow = _RELEASE_WORKFLOW.read_text(encoding="utf-8")
+    entitlements = _REPO_ROOT / "packaging" / "macos" / "opensre.entitlements"
+
+    assert entitlements.is_file()
+    assert 'echo "MACOS_SIGN_IDENTITY=-" >> "$GITHUB_ENV"' in workflow
+    assert (
+        "--options runtime --timestamp --entitlements packaging/macos/opensre.entitlements"
+        in workflow
+    )
+    assert "xcrun notarytool submit" in workflow
+    # Notarization runs before the archive is packaged so the asset carries the signed tree.
+    assert workflow.index("- name: Notarize macOS onedir") < workflow.index(
+        "- name: Package binary archive (Unix)"
+    )
 
 
 def test_release_workflow_does_not_run_on_pull_requests() -> None:
