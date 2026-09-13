@@ -16,6 +16,7 @@ from config.constants.skills import (
 from core.agent_harness.ports import TurnBinding
 from core.agent_harness.prompts.skills import list_action_skills, load_skill_body
 from core.agent_harness.session.pending_choice import PendingUserChoice, format_ask_user_answers
+from core.agent_harness.task_plan.plan import TaskPlan
 from core.agent_harness.tools.action_tools import get_action_tool
 from core.agent_harness.tools.tool_provider import DefaultToolProvider
 from core.agent_harness.turns.headless_adapters import (
@@ -35,6 +36,35 @@ from tests.core.agent.orchestration.action_execution_test_harness import (
 _REPOSITORY_QUESTION = "Which repository should I analyze?"
 _NEXT_QUESTION = "What would you like to do next?"
 _SCHEDULE_LOOPS = "Schedule local loops"
+_PREMATURE_STOP = "The analysis is done; the report is ready."
+_REPORT = (
+    "Developer impact:\n- 191 developer-hours spent waiting on CI across 12 developers.\n\n"
+    "| Metric | acme/widget | langchain-ai/langchain | anomalyco/opencode |\n"
+    "|---|---:|---:|---:|\n"
+    "| PR failure rate | 31% | 12% | 9% |"
+)
+_PLAN_STEPS = (
+    "Step 1. Scan local repositories with scan_local_git_workspace.",
+    "Step 2. Select a repository using ask_user_choice.",
+    "Step 3. Collect and compute the 30-day metrics with analyze_github_ci_reliability.",
+    "Step 4. Prepare a metrics table as Markdown text.",
+    "Step 5. Show the metrics table as Markdown text.",
+    "Step 6. Use ask_user_choice to offer scheduling, Slack setup, or finish.",
+)
+
+
+_DELIVERABLE_STEP = 5
+
+
+def _plan(*, completed: int, in_progress: int) -> list[dict[str, Any]]:
+    """Plan payload with the first ``completed`` steps done and one step active."""
+    plan: list[dict[str, Any]] = [{"step": step, "status": "pending"} for step in _PLAN_STEPS]
+    for item in plan[:completed]:
+        item["status"] = "completed"
+    plan[in_progress - 1]["status"] = "in_progress"
+    # The card flags the report step so the host shows that reply mid-plan.
+    plan[_DELIVERABLE_STEP - 1]["deliverable"] = True
+    return plan
 
 
 @dataclass
@@ -50,6 +80,7 @@ class _Terminal:
 class _Session(InMemorySessionState):
     active_skill: str | None = None
     pending_user_choice: PendingUserChoice | None = None
+    task_plan: TaskPlan | None = None
     skills_already_prompted: set[str] = field(default_factory=set)
     questions_already_answered: set[str] = field(default_factory=set)
     terminal: _Terminal = field(default_factory=_Terminal)
@@ -147,6 +178,7 @@ def test_local_analysis_waits_for_choices_before_analyzing_and_handing_off(
     )
     ask_user_choice = _real_action_tool("ask_user_choice")
     skill_view = _real_action_tool("skill_view")
+    update_plan = _real_action_tool("update_plan")
     analyze_args = {"owner": "acme", "repo": "widget", "days": 30}
     analyze_call = tool_response(analyze.name, analyze_args)
     repository_menu = tool_response(
@@ -158,6 +190,11 @@ def test_local_analysis_waits_for_choices_before_analyzing_and_handing_off(
         {"title": _NEXT_QUESTION, "options": [_SCHEDULE_LOOPS, "Slack setup", "Finish"]},
     )
     handoff_call = tool_response(skill_view.name, {"name": SCHEDULING_GITHUB_CI_FIXES_SKILL_NAME})
+    benchmarks_call = tool_response(
+        skill_view.name,
+        {"name": ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME, "reference": "benchmarks"},
+    )
+    received: list[list[dict[str, Any]]] = []
 
     class SkillLLM(FakeActionLLM):
         def invoke(
@@ -171,18 +208,44 @@ def test_local_analysis_waits_for_choices_before_analyzing_and_handing_off(
                 load_skill_body(skill.name) in str(message.get("content", ""))
                 for message in messages
             )
+            received.append(messages)
             return super().invoke(messages, system=system, tools=tools)
 
     llm = SkillLLM(
         [
             # Deliberately cram the scan, the menu and the next action into one
             # response: the runtime executes none of it and the model must
-            # re-issue one call at a time, with each menu ending its turn.
-            _batch(tool_response(scan.name), repository_menu, analyze_call),
-            tool_response(scan.name),
+            # re-issue one action at a time. Plan bookkeeping may ride with
+            # that action; each menu must stand alone and ends its turn.
+            _batch(
+                tool_response(update_plan.name, {"plan": _plan(completed=0, in_progress=1)}),
+                tool_response(scan.name),
+                repository_menu,
+                analyze_call,
+            ),
+            _batch(
+                tool_response(update_plan.name, {"plan": _plan(completed=0, in_progress=1)}),
+                tool_response(scan.name),
+            ),
             repository_menu,
-            _batch(analyze_call, next_menu, handoff_call),
-            analyze_call,
+            _batch(
+                tool_response(update_plan.name, {"plan": _plan(completed=2, in_progress=3)}),
+                analyze_call,
+            ),
+            # A premature stop while step 3 is still open: the plan gate rejects
+            # it and, with the deliverable step not yet next, keeps it off the
+            # screen.
+            no_tool_response(_PREMATURE_STOP),
+            _batch(
+                tool_response(update_plan.name, {"plan": _plan(completed=3, in_progress=4)}),
+                benchmarks_call,
+            ),
+            # Step 5 as the card writes it: the report is a text-only reply while
+            # the menu step is still open. The plan gate defers it; the flagged
+            # deliverable step is next, so the report reaches the user before
+            # the menu opens.
+            no_tool_response(_REPORT),
+            _batch(next_menu, handoff_call),
             next_menu,
             handoff_call,
             no_tool_response("Following the scheduling skill."),
@@ -192,7 +255,14 @@ def test_local_analysis_waits_for_choices_before_analyzing_and_handing_off(
     provider = DefaultToolProvider(
         session,
         output,
-        precomputed_action_tools=[scan, analyze, schedule, ask_user_choice, skill_view],
+        precomputed_action_tools=[
+            scan,
+            analyze,
+            schedule,
+            ask_user_choice,
+            skill_view,
+            update_plan,
+        ],
         slash_ports_factory=_Ports,
     )
     agent = InMemoryHeadlessBuild(session=session, output=output).agent(
@@ -211,13 +281,26 @@ def test_local_analysis_waits_for_choices_before_analyzing_and_handing_off(
     # The rejected batch ran nothing; the scan ran once on re-issue.
     assert calls == [(scan.name, {})]
     assert llm.invocations == 3
+    assert _REPORT not in output.streamed
     repository_answer = _answer(session, title=_REPOSITORY_QUESTION, option="acme/widget")
 
-    agent.handle(repository_answer, binding)
+    analysis = agent.handle(repository_answer, binding)
 
     assert calls == [(scan.name, {}), (analyze.name, analyze_args)]
-    assert llm.invocations == 6
+    assert llm.invocations == 9
     assert session.active_skill == skill.name
+    # The premature stop never reached the user and the model was not told it had.
+    assert _PREMATURE_STOP not in output.streamed
+    assert _PREMATURE_STOP not in analysis.primary_response_text
+    premature_nudge = str(received[5][-1].get("content", ""))
+    assert "unfinished steps" in premature_nudge
+    assert not premature_nudge.startswith("Your last reply has been shown")
+    # The report was painted exactly once, before the menu, and stays in the
+    # turn's history so the sibling skill can reuse it.
+    assert output.streamed.count(_REPORT) == 1
+    assert _REPORT in analysis.primary_response_text
+    nudge = str(received[7][-1].get("content", ""))
+    assert nudge.startswith("Your last reply has been shown")
     next_answer = _answer(session, title=_NEXT_QUESTION, option=_SCHEDULE_LOOPS)
 
     result = agent.handle(next_answer, binding)
@@ -227,6 +310,7 @@ def test_local_analysis_waits_for_choices_before_analyzing_and_handing_off(
     assert calls == [(scan.name, {}), (analyze.name, analyze_args)]
     assert session.active_skill == SCHEDULING_GITHUB_CI_FIXES_SKILL_NAME
     assert session.pending_user_choice is None
-    assert llm.invocations == 8
+    assert llm.invocations == 11
     assert not llm.responses
     assert "Following the scheduling skill." in result.primary_response_text
+    assert output.streamed.count(_REPORT) == 1

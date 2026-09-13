@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import Any
 
 from core.agent_harness.session.pending_choice import parse_ask_user_answers
@@ -76,7 +77,7 @@ def demote_unevidenced_completions(
             steps.append(item)
             continue
         demoted.append(item.step)
-        steps.append(PlanStep(step=item.step, status=PlanStepStatus.PENDING))
+        steps.append(replace(item, status=PlanStepStatus.PENDING))
     if not demoted:
         return plan, ()
     return TaskPlan(steps=tuple(steps), explanation=plan.explanation), tuple(demoted)

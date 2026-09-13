@@ -109,6 +109,15 @@ dev = [
     "boto3-stubs[essential]",
     "huggingface_hub>=0.26.0",
     "datasets>=3.0.0",
+    # Exercises the Langfuse trace adapter in CI; production installs opt in
+    # via the ``langfuse`` extra.
+    "langfuse>=4.15.2,<5",
+]
+# Optional LLM tracing backend. Activated only when LANGFUSE_PUBLIC_KEY and
+# LANGFUSE_SECRET_KEY are set; without the extra installed the runtime keeps
+# running with the noop observation sink.
+langfuse = [
+    "langfuse>=4.15.2,<5",
 ]
 release-dist = [
     "build>=1.2.0",

@@ -9,11 +9,15 @@ import pytest
 from config.constants.llm import OPENSRE_REACT_GOAL_LLM_REVIEW_ENV
 from core.agent.goals import GoalObservation
 from core.agent_harness.session.pending_choice import AskUserQuestion, format_ask_user_answers
-from core.agent_harness.turns.action_driver import _goal_review_user_request
+from core.agent_harness.turns.action_driver import (
+    _deferred_reply_presenter,
+    _goal_review_user_request,
+)
 from core.agent_harness.turns.goal_review import (
     build_gather_goal_reviewer,
     build_goal_reviewer,
 )
+from core.agent_harness.turns.headless_adapters import BufferOutputSink
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
 from core.llm.types import AgentLLMResponse
 
@@ -64,6 +68,87 @@ def test_goal_reviewer_rejects_while_task_plan_incomplete() -> None:
     assert llm.invokes == 0  # deterministic plan gate — no LLM spend
     assert goal.nudge is not None
     assert "unfinished steps" in goal.nudge(_obs())
+
+
+def test_goal_reviewer_shows_a_plan_deferred_reply_before_nudging() -> None:
+    """A mid-plan report is a step's deliverable: paint it, then say it was shown.
+
+    Observed live: the CI analytics card asked for the report as a text-only
+    reply followed by a menu step; the plan gate rejected the reply and the
+    accepted conclusion was empty, so the report never reached the screen.
+    """
+    shown: list[str] = []
+    awaits_reply = True
+    llm = _ScriptedLLM('{"verdict": "GOAL_REACHED"}')
+
+    def _present(text: str) -> bool:
+        shown.append(text)
+        return True
+
+    goal = build_goal_reviewer(
+        llm,
+        "analyze CI reliability",
+        executed_tool_names=["update_plan", "analyze_github_ci_reliability"],
+        plan_incomplete=lambda: True,
+        plan_awaits_reply=lambda: awaits_reply,
+        on_plan_deferred_reply=_present,
+    )
+    assert goal.verify is not None and goal.nudge is not None
+
+    assert goal.verify(_obs(text="| Metric | repo |\n|---|---:|")) is False
+    nudge = goal.nudge(_obs(text="| Metric | repo |\n|---|---:|"))
+
+    assert shown == ["| Metric | repo |\n|---|---:|"]
+    assert nudge.startswith("Your last reply has been shown")
+    assert "unfinished steps" in nudge
+    # An empty conclusion has nothing to show and must not claim otherwise.
+    assert goal.nudge(_obs(text="   ")) == goal.nudge(_obs(text=""))
+    assert not goal.nudge(_obs(text="")).startswith("Your last reply")
+    assert shown == ["| Metric | repo |\n|---|---:|"]
+    # Without the plan's explicit deliverable signal a rejected reply is a
+    # premature stop: it stays off the screen and the model is not told otherwise.
+    awaits_reply = False
+    nudge = goal.nudge(_obs(text="All done, the report is ready."))
+    assert shown == ["| Metric | repo |\n|---|---:|"]
+    assert not nudge.startswith("Your last reply has been shown")
+    assert "unfinished steps" in nudge
+    assert llm.invokes == 0
+
+
+def test_deferred_reply_presenter_records_only_replies_that_reached_the_sink() -> None:
+    """A failed stream must not mark the turn streamed, or the reply is lost."""
+    delivered: list[str] = []
+
+    class _BrokenSink(BufferOutputSink):
+        def stream(self, *_args: Any, **_kwargs: Any) -> None:
+            raise OSError("terminal went away")
+
+    working = BufferOutputSink()
+    assert _deferred_reply_presenter(working, delivered)("| Metric |") is True
+    assert delivered == ["| Metric |"]
+    assert working.streamed == ["| Metric |"]
+
+    assert _deferred_reply_presenter(_BrokenSink(), delivered)("| Lost |") is False
+    assert delivered == ["| Metric |"]
+
+
+def test_goal_reviewer_does_not_claim_a_reply_was_shown_when_presenting_failed() -> None:
+    """A presenter that could not paint the reply must not make the nudge say it did."""
+    llm = _ScriptedLLM('{"verdict": "GOAL_REACHED"}')
+    goal = build_goal_reviewer(
+        llm,
+        "analyze CI reliability",
+        executed_tool_names=["update_plan"],
+        plan_incomplete=lambda: True,
+        plan_awaits_reply=lambda: True,
+        on_plan_deferred_reply=lambda _text: False,
+    )
+    assert goal.nudge is not None
+
+    nudge = goal.nudge(_obs(text="| Metric | repo |"))
+
+    assert not nudge.startswith("Your last reply has been shown")
+    assert "unfinished steps" in nudge
 
 
 def test_goal_reviewer_lets_an_active_goal_redirect_over_a_stale_plan() -> None:

@@ -39,6 +39,15 @@ _PLAN_ITEM_SCHEMA = {
             ),
             enum=("pending", "in_progress", "completed", "blocked"),
         ),
+        "deliverable": {
+            "type": "boolean",
+            "description": (
+                "True when this step's work is a text-only assistant reply the user "
+                "must see (a report or table) while later steps remain. Without it a "
+                "text-only reply before the plan is settled is treated as a premature "
+                "stop and is not shown."
+            ),
+        },
     },
     "required": ["step", "status"],
     "additionalProperties": False,

@@ -159,6 +159,11 @@ _PLAN_INCOMPLETE_NUDGE = (
     "with its blocker in explanation, never completed. End the turn only when "
     "every plan step is completed or blocked."
 )
+# Prefix for the nudge when the deferred reply was painted for the user: the
+# model must not restate a report it can already see in its own transcript.
+_PLAN_DEFERRED_REPLY_SHOWN = (
+    "Your last reply has been shown to the user exactly as written; do not repeat it. "
+)
 
 
 _PLAN_TOOL_NAME = "update_plan"
@@ -197,6 +202,15 @@ def task_plan_blocks_conclusion(
     if isinstance(settled, bool):
         return not settled
     return any(getattr(item, "status", None) not in {"completed", "blocked"} for item in steps)
+
+
+def task_plan_awaits_reply(*, task_plan: Any | None) -> bool:
+    """True when the plan's current or next step is a ``deliverable`` text reply.
+
+    This is the explicit signal that lets a plan-rejected conclusion reach the
+    user; a plan without it keeps every rejected reply off the screen.
+    """
+    return task_plan is not None and getattr(task_plan, "awaits_reply", False) is True
 
 
 @dataclass
@@ -304,6 +318,8 @@ def build_goal_reviewer(
     executed_tool_names: list[str],
     *,
     plan_incomplete: Callable[[], bool] | None = None,
+    plan_awaits_reply: Callable[[], bool] | None = None,
+    on_plan_deferred_reply: Callable[[str], bool] | None = None,
     trace_context: Callable[[], dict[str, Any]] | None = None,
 ) -> Goal:
     """Build a reviewed :class:`Goal` for one action turn over ``user_goal``.
@@ -315,6 +331,13 @@ def build_goal_reviewer(
     task plan still has unfinished steps, so the shell does not go idle with
     ``Plan · n/m`` and a mid-list ``●``. It applies only to a turn that
     worked the plan (see :func:`plan_worked_this_turn`).
+
+    ``on_plan_deferred_reply`` receives the non-empty reply text a plan
+    rejection defers, but only while ``plan_awaits_reply`` says the plan's
+    current or next step is a ``deliverable`` (a report the plan then follows
+    with a menu). Any other rejected reply is a premature stop and stays off
+    the screen. The presenter returns whether the reply reached the user; only
+    then does the nudge tell the model it was shown so it does not restate it.
     """
     reviewer = _LLMGoalReviewer(
         llm=llm,
@@ -324,12 +347,21 @@ def build_goal_reviewer(
         trace_context=trace_context,
     )
 
-    def _nudge(_observation: GoalObservation) -> str:
+    def _nudge(observation: GoalObservation) -> str:
         if (
             plan_incomplete is not None
             and plan_worked_this_turn(executed_tool_names)
             and plan_incomplete()
         ):
+            deferred_reply = (observation.final_text or "").strip()
+            if (
+                deferred_reply
+                and on_plan_deferred_reply is not None
+                and plan_awaits_reply is not None
+                and plan_awaits_reply()
+                and on_plan_deferred_reply(deferred_reply)
+            ):
+                return _PLAN_DEFERRED_REPLY_SHOWN + _PLAN_INCOMPLETE_NUDGE
             return _PLAN_INCOMPLETE_NUDGE
         return (
             f"Goal not yet met: {user_goal}. "
