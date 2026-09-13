@@ -73,13 +73,14 @@ fix the CI on main
 3. It creates an isolated checkout for a named repository, or verifies that your explicitly selected checkout matches.
 4. It refuses fork PRs because it only pushes to branches in the same repository.
 5. After approval, it checks out the PR head branch or creates a temporary linked git worktree for a branch target such as `main`.
-6. If GitHub reports the PR as conflicted with its base branch, it merges the base branch into the PR branch first. Conflicts go to the coding agent, lockfiles are regenerated rather than hand-merged, and the merge is committed only when no conflict remains.
+6. If the PR branch is behind its base branch (whether or not GitHub already reports a conflict), it merges the base branch into the PR branch first, so the fix is made on top of the current base and a failure already fixed there needs no further change. Conflicts go to the coding agent, lockfiles are regenerated rather than hand-merged, and the merge is committed only when no conflict remains.
 7. If files changed, it commits only the fix-run changes and pushes the PR branch or fresh repair branch.
 8. It verifies the exact pushed commit, allows one minute for its checks to register,
    waits for applicable workflows, and reports whether they passed, failed, were
    superseded by another push, or did not finish within 15 minutes. If GitHub
-   still reports the pushed commit as conflicted, it says so immediately instead
-   of waiting, because no checks will start.
+   reports the pushed commit as conflicted (the base moved during the repair),
+   it merges the base branch into the pushed branch once, pushes again, and
+   verifies that commit instead.
 
 If no checks are failing, OpenSRE says so and does not push. The one exception is a PR that conflicts with its base branch: GitHub never starts checks for it, so OpenSRE treats bringing the base branch in as the fix. It does **not** open a new PR. Merged or closed PRs are refused — if the failure already landed on the base branch, ask for the branch itself ("fix the CI on main").
 
@@ -104,7 +105,7 @@ older commit.
 | --- | --- |
 | **Fork PR refused** | Only same-repository PR head branches are supported |
 | **No push when checks are green** | Expected — OpenSRE does not push when nothing is failing |
-| **"blocked on N file(s) a person must decide"** | The coding agent could not resolve those merge conflicts. The merge was aborted and nothing was pushed; resolve the listed files by hand, push, and run the fix again |
+| **"blocked on N file(s) a person must decide"** | The coding agent could not resolve those merge conflicts. The merge was aborted; resolve the listed files by hand, push, and run the fix again. If the message starts with "Pushed a CI fix", the fix commit is already on the branch and only the base merge is missing |
 | **Approval prompts** | Mutating path requires confirmation before checkout/edit/commit/push |
 | **gh / checks unavailable** | Install GitHub CLI and ensure the token can read Actions checks |
 

@@ -57,6 +57,20 @@ class BaseMergeResult:
         return f"merged {self.base_branch}, resolving conflicts in {', '.join(self.resolved_files)}"
 
 
+def base_has_new_commits(workspace: str, ctx: CiFixContext, *, token: str | None = None) -> bool:
+    """True when ``origin/<base>`` holds commits the checked-out PR head lacks.
+
+    Decided from git, not GitHub's merge state: a head that is merely behind
+    is where a fix to shared files (lockfiles, manifests) creates the conflict
+    GitHub only reports after the push.
+    """
+    try:
+        fetch_remote_branch(workspace, ctx.base_branch, token=token)
+        return not is_ancestor(workspace, f"origin/{ctx.base_branch}", "HEAD")
+    except GitCommandError as exc:
+        raise GitHubCiFixError(exc.kind, exc.message, branch_name=ctx.head_branch) from exc
+
+
 def merge_base_into_head(
     workspace: str,
     ctx: CiFixContext,
@@ -212,4 +226,4 @@ def _names(conflicts: list[ConflictedPath]) -> str:
     return ", ".join(c.path for c in conflicts)
 
 
-__all__ = ["BaseMergeResult", "merge_base_into_head"]
+__all__ = ["BaseMergeResult", "base_has_new_commits", "merge_base_into_head"]

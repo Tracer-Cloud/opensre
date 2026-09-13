@@ -6,7 +6,7 @@ description: >-
 metadata:
   owner: Vaibhav
   last_changed_by: Jan
-  last_changed_at: 2026-09-12
+  last_changed_at: 2026-09-13
   usecases:
   - For repository contributors repairing failed CI on a pull request.
   - For maintainers repairing a named branch through a linked local worktree.
@@ -15,7 +15,7 @@ metadata:
   - A local checkout whose origin matches the target repository.
   - An installed and authenticated coding agent.
   - The fix_github_pr_ci tool and its supported local execution environment.
-  version: '1.0'
+  version: '1.1'
 ---
 
 # GitHub CI fix
@@ -57,10 +57,11 @@ branch.
   failing-check log inspection, fix execution, branch safety, commit, and push.
 - The tool pushes to the existing PR head branch after approval. Do not ask the
   user whether to open a new PR.
-- A PR that conflicts with its base branch (GitHub shows it as not mergeable
-  and starts no checks) is handled by the tool: it merges the base branch into
-  the PR branch, resolves conflicts, regenerates lockfiles, pushes, and waits
-  for the checks. Never run `git merge`, `git rebase`, or conflict edits around
+- A PR that is behind its base branch, or conflicts with it (GitHub shows it
+  as not mergeable and starts no checks), is handled by the tool: it merges the
+  base branch into the PR branch, resolves conflicts, regenerates lockfiles,
+  pushes, and waits for the checks — also when the conflict only appears after
+  its own push. Never run `git merge`, `git rebase`, or conflict edits around
   it. If it reports blocked files, relay that one line and stop.
 - For branch targets such as `main`, the tool creates a separate linked git
   worktree, commits on a fresh `opensre/ci-fix-*` branch, and pushes that branch.

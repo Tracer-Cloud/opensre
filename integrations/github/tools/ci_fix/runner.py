@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Callable
 from contextlib import ExitStack
 from dataclasses import replace
@@ -18,10 +19,15 @@ from integrations.coding_agent import (
 from integrations.git import GitCommandError, changed_paths, ensure_head_revision, file_fingerprints
 from integrations.github.client import resolve_github_token
 from integrations.github.repair_workspace import repair_workspace
-from integrations.github.tools.ci_fix.base_merge import BaseMergeResult, merge_base_into_head
+from integrations.github.tools.ci_fix.base_merge import (
+    BaseMergeResult,
+    base_has_new_commits,
+    merge_base_into_head,
+)
 from integrations.github.tools.ci_fix.context import (
     CI_TARGET_BRANCH,
     CiFixContext,
+    build_fix_task,
     gather_branch_ci_fix_context,
     gather_ci_fix_context,
 )
@@ -56,6 +62,8 @@ from integrations.github.tools.ci_fix.worktree import (
 
 SOURCE: Final = "github"
 _YES = {"y", "yes"}
+# Merge errors assert "no push was made"; after a fix push that clause is false.
+_NO_PUSH_TAIL_RE = re.compile(r"(?: and)? [Nn]o push was made\.?")
 
 
 def ensure_push_ready(github_token: str | None = None) -> None:
@@ -326,8 +334,9 @@ def _confirmation_prompt(ctx: CiFixContext) -> str:
             "committing, and pushing to that branch? [y/N] "
         )
     return (
-        f"Fix failing CI for {ctx.target_label} by checking out "
-        f"{ctx.head_branch}, editing files, committing, and pushing to that branch? [y/N] "
+        f"Fix failing CI for {ctx.target_label} by checking out {ctx.head_branch}, "
+        f"merging {ctx.base_branch} into it if it is behind (resolving any conflicts), "
+        "editing files, committing, and pushing to that branch? [y/N] "
     )
 
 
@@ -413,16 +422,10 @@ def run_ci_fix(
 
         output = _base_output(ctx)
         try:
-            merge: BaseMergeResult | None = None
-            if ctx.needs_base_merge:
-                merge = merge_base_into_head(
-                    run_workspace,
-                    ctx,
-                    baseline=pre_coding_changes(run_workspace),
-                    resolve_conflicts=resolve_merge_conflicts(ctx, run_workspace, model),
-                    token=resolve_github_token(github_token),
-                )
+            merge = _merge_base_if_behind(ctx, run_workspace, model, github_token)
+            if merge is not None:
                 output = with_merge_output(output, merge)
+                ctx = _with_base_merged(ctx)
             baseline = pre_coding_changes(run_workspace)
             result = _fix_result(ctx, run_workspace, model, merge)
             output = to_output(ctx, result, merge)
@@ -439,7 +442,91 @@ def run_ci_fix(
             )
         except GitHubCiFixError as exc:
             return push_error_output(output, exc)
-        return _verify_repair(ctx, output, push, github_token)
+        verified = _verify_repair(ctx, output, push, github_token)
+        if verified.get("checks_state") != CheckState.CONFLICTED.value:
+            return verified
+        return _merge_after_conflicted_push(
+            ctx, output, push, verified, run_workspace, model, github_token
+        )
+
+
+def _merge_base_if_behind(
+    ctx: CiFixContext, workspace: str, model: str | None, github_token: str | None
+) -> BaseMergeResult | None:
+    """Merge the base into a PR head that lacks its commits; ``None`` when already up to date.
+
+    Runs whether or not GitHub already reports a conflict: fixing shared files
+    on a stale head is exactly what turns a merely behind PR into a conflicted
+    one, and the failure may already be fixed on the base.
+    """
+    token = resolve_github_token(github_token)
+    if ctx.is_branch_target or not base_has_new_commits(workspace, ctx, token=token):
+        return None
+    return merge_base_into_head(
+        workspace,
+        ctx,
+        baseline=pre_coding_changes(workspace),
+        resolve_conflicts=resolve_merge_conflicts(ctx, workspace, model),
+        token=token,
+    )
+
+
+def _with_base_merged(ctx: CiFixContext) -> CiFixContext:
+    """Retarget the coding task at the merged head so the agent knows the base is in."""
+    if not ctx.failing_checks:
+        return ctx
+    return replace(ctx, task=build_fix_task(ctx, base_merged=True))
+
+
+def _merge_after_conflicted_push(
+    ctx: CiFixContext,
+    output: dict[str, Any],
+    push: PushResult,
+    conflicted: dict[str, Any],
+    workspace: str,
+    model: str | None,
+    github_token: str | None,
+) -> dict[str, Any]:
+    """Bring the base into a pushed head GitHub reports as conflicted, push, and re-verify.
+
+    The base moved under the repair (or the fix itself collided with it), so
+    the pushed commit is the new source head. One recovery only: a second
+    conflict is reported, not retried.
+    """
+    ctx = replace(ctx, head_sha=push.head_sha)
+    try:
+        merge = _merge_base_if_behind(ctx, workspace, model, github_token)
+        if merge is None:
+            return conflicted
+        output = with_merge_output(output, merge)
+        merged = push_ci_fix(
+            ctx=ctx,
+            result=CodingResult(success=True, summary=merge.summary),
+            workspace=workspace,
+            baseline=pre_coding_changes(workspace),
+            github_token=github_token,
+            already_committed=True,
+        )
+    except GitHubCiFixError as exc:
+        base_branch = ctx.base_branch or "the base branch"
+        detail = _NO_PUSH_TAIL_RE.sub("", exc.message).rstrip(".")
+        message = (
+            f"Pushed a CI fix to {push.branch_name}, but it conflicts with {base_branch} "
+            f"and the merge could not be completed: {detail}. The fix commit stays pushed."
+        )
+        return {
+            **push_error_output(output, exc),
+            "branch_name": push.branch_name,
+            "fix_head_sha": push.head_sha,
+            "changed_files": push.changed_files,
+            "checks_state": CheckState.CONFLICTED.value,
+            "error": message,
+            "response_text": _single_line(message),
+        }
+    combined = replace(
+        merged, changed_files=list(dict.fromkeys((*push.changed_files, *merged.changed_files)))
+    )
+    return _verify_repair(ctx, output, combined, github_token)
 
 
 def _verify_repair(

@@ -248,7 +248,9 @@ def gather_ci_fix_context(
         merge_state=merge_state,
         known_check_names=tuple(_check_name(item) for item in rollup),
     )
-    return replace(ctx, task=_build_task(ctx) if checks else "")
+    return replace(
+        ctx, task=build_fix_task(ctx, base_merged=ctx.needs_base_merge) if checks else ""
+    )
 
 
 def _settled_merge_state(
@@ -375,7 +377,7 @@ def gather_branch_ci_fix_context(
         target_branch=branch_name,
         known_check_names=tuple(_check_name(run) for run in runs),
     )
-    return replace(ctx, task=_build_task(ctx))
+    return replace(ctx, task=build_fix_task(ctx, base_merged=False))
 
 
 def _failing_check_from_run(
@@ -477,7 +479,8 @@ def _log_excerpt(raw: str) -> str:
     return excerpt[-_MAX_LOG_CHARS:]
 
 
-def _build_task(ctx: CiFixContext) -> str:
+def build_fix_task(ctx: CiFixContext, *, base_merged: bool) -> str:
+    """Coding-agent task for the failing checks; ``base_merged`` notes the head now includes the base."""
     masker = MaskingRules(MaskingPolicy.from_env())
     if ctx.is_branch_target:
         branch = ctx.target_branch or ctx.base_branch or ctx.head_branch
@@ -503,10 +506,14 @@ def _build_task(ctx: CiFixContext) -> str:
             f"Head branch to edit and push: {ctx.head_branch}",
             f"Head SHA: {ctx.head_sha}",
         ]
-        if ctx.needs_base_merge:
-            lines.append(
-                f"{ctx.base_branch} has already been merged into the workspace; "
-                f"the checks below ran on the pre-merge head {ctx.head_sha}."
+        if base_merged:
+            lines.extend(
+                [
+                    f"{ctx.base_branch} has already been merged into the workspace; "
+                    f"the checks below ran on the pre-merge head {ctx.head_sha}.",
+                    "If that merge already resolves a failure, change nothing for it "
+                    "and say so in the summary; the merge alone is pushed.",
+                ]
             )
         lines.extend(["", "Failing checks and log excerpts:"])
     log_budget = _MAX_TASK_LOG_CHARS
@@ -598,6 +605,7 @@ __all__ = [
     "CiFixContext",
     "FailingCheck",
     "PullRequestRef",
+    "build_fix_task",
     "gather_branch_ci_fix_context",
     "gather_ci_fix_context",
     "parse_pr_url",
