@@ -462,6 +462,63 @@ if TYPE_CHECKING:
     from config.constants.incident_io import (
         INCIDENT_IO_BASE_URL_ENV as INCIDENT_IO_BASE_URL_ENV,
     )
+    from config.constants.installer import (
+        OPENSRE_AUTO_LAUNCH_ENV as OPENSRE_AUTO_LAUNCH_ENV,
+    )
+    from config.constants.installer import (
+        OPENSRE_INSTALL_CHANNEL_ENV as OPENSRE_INSTALL_CHANNEL_ENV,
+    )
+    from config.constants.installer import (
+        OPENSRE_INSTALL_DIR_ENV as OPENSRE_INSTALL_DIR_ENV,
+    )
+    from config.constants.installer import (
+        OPENSRE_INSTALL_REPLACE_EXISTING_BINARY_ENV as OPENSRE_INSTALL_REPLACE_EXISTING_BINARY_ENV,
+    )
+    from config.constants.installer import (
+        OPENSRE_UPDATE_EXECUTABLE_ENV as OPENSRE_UPDATE_EXECUTABLE_ENV,
+    )
+    from config.constants.installer import (
+        OPENSRE_UPDATE_PARENT_PID_ENV as OPENSRE_UPDATE_PARENT_PID_ENV,
+    )
+    from config.constants.installer import (
+        OPENSRE_UPDATE_PARENT_STARTED_ENV as OPENSRE_UPDATE_PARENT_STARTED_ENV,
+    )
+    from config.constants.installer import (
+        OPENSRE_VERSION_ENV as OPENSRE_VERSION_ENV,
+    )
+    from config.constants.installer import (
+        POWERSHELL_MODULE_PATH_ENV as POWERSHELL_MODULE_PATH_ENV,
+    )
+    from config.constants.installer import (
+        WINDOWS_APP_DIR_NAME as WINDOWS_APP_DIR_NAME,
+    )
+    from config.constants.installer import (
+        WINDOWS_BINARY_FILENAME as WINDOWS_BINARY_FILENAME,
+    )
+    from config.constants.installer import (
+        WINDOWS_CURRENT_POINTER_FILENAME as WINDOWS_CURRENT_POINTER_FILENAME,
+    )
+    from config.constants.installer import (
+        WINDOWS_INSTALL_LOCK_FILENAME as WINDOWS_INSTALL_LOCK_FILENAME,
+    )
+    from config.constants.installer import (
+        WINDOWS_LAUNCHER_FILENAME as WINDOWS_LAUNCHER_FILENAME,
+    )
+    from config.constants.installer import (
+        WINDOWS_LAUNCHER_MARKER as WINDOWS_LAUNCHER_MARKER,
+    )
+    from config.constants.installer import (
+        WINDOWS_LAYOUT_MARKER_FILENAME as WINDOWS_LAYOUT_MARKER_FILENAME,
+    )
+    from config.constants.installer import (
+        WINDOWS_LAYOUT_MARKER_TEXT as WINDOWS_LAYOUT_MARKER_TEXT,
+    )
+    from config.constants.installer import (
+        WINDOWS_MAX_COMMAND_PATH_LENGTH as WINDOWS_MAX_COMMAND_PATH_LENGTH,
+    )
+    from config.constants.installer import (
+        WINDOWS_VERSIONS_DIR_NAME as WINDOWS_VERSIONS_DIR_NAME,
+    )
     from config.constants.jenkins import (
         JENKINS_API_TOKEN_ENV as JENKINS_API_TOKEN_ENV,
     )

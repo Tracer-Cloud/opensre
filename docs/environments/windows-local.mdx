@@ -17,6 +17,24 @@ irm https://install.opensre.com | iex
 
 If a new window doesn't see `opensre`, close and reopen PowerShell so PATH updates apply.
 
+Run `install.ps1` from PowerShell, including when you normally use Git Bash.
+The bash installer stops on Windows because the Windows download contains the
+complete application directory.
+
+If an older release left `opensre.exe` directly in the install directory, the
+installer shows its exact path and asks before replacing it. The default answer
+is No, and declining leaves the existing file and directory unchanged. For an
+unattended replacement, opt in explicitly:
+
+```powershell
+$env:OPENSRE_INSTALL_REPLACE_EXISTING_BINARY = "1"
+try {
+  irm https://install.opensre.com | iex
+} finally {
+  Remove-Item Env:OPENSRE_INSTALL_REPLACE_EXISTING_BINARY -ErrorAction SilentlyContinue
+}
+```
+
 ### 2. Set things up
 
 ```powershell

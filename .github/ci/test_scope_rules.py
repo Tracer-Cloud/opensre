@@ -35,7 +35,11 @@ RULES: tuple[PathRule, ...] = (
     ),
     PathRule(
         "install.ps1",
-        ("tests/cli/test_install_matrix.py", "tests/cli/test_install_ps1_progress.py"),
+        (
+            "tests/cli/test_install_matrix.py",
+            "tests/cli/test_install_ps1_onedir.py",
+            "tests/cli/test_install_ps1_progress.py",
+        ),
     ),
     PathRule("docs/install.mdx", ("tests/cli/test_install_matrix.py",)),
     PathRule("docs/install-local.mdx", ("tests/cli/test_install_matrix.py",)),

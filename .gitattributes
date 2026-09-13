@@ -1,6 +1,9 @@
 # Normalize line endings for shell scripts so they stay LF on all platforms.
 *.sh text eol=lf
 
+# Keep the packaged Windows cleanup worker byte-identical across platforms.
+surfaces/cli/lifecycle/windows/*.ps1 text eol=lf
+
 # Mark vendored third-party code so GitHub's analysis tools skip it.
 # This suppresses false-positive code scanning alerts in code we don't own.
 tests/e2e/upstream_lambda/pipeline_code/**                  linguist-vendored=true

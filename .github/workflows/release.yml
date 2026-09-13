@@ -224,7 +224,7 @@ jobs:
             target: windows-x64
             binary_name: opensre.exe
             archive_ext: zip
-            pyinstaller_mode: onefile
+            pyinstaller_mode: onedir
           # windows-arm64 is currently excluded from the default release matrix:
           # cryptography does not publish win_arm64 wheels, so dependency install
           # falls back to a source build that requires an OpenSSL toolchain on the
@@ -471,15 +471,49 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $versionOutput = & ".\dist\${{ matrix.binary_name }}" --version 2>&1 | Out-String
+          $ErrorActionPreference = "Stop"
+          $bundlePath = ".\dist\opensre"
+          $binaryPath = Join-Path $bundlePath "${{ matrix.binary_name }}"
+          $internalPath = Join-Path $bundlePath "_internal"
+          $litellmDataPath = Join-Path $internalPath "litellm\model_prices_and_context_window_backup.json"
+          $bakedIndexPath = Join-Path $internalPath "tools\descriptor_index.json"
+          $cleanupWorkerPath = Join-Path $internalPath "surfaces\cli\lifecycle\windows\uninstall_cleanup.ps1"
+
+          if (-not (Test-Path -LiteralPath $binaryPath -PathType Leaf)) {
+            throw "Windows onedir binary was not found at '$binaryPath'."
+          }
+          if (-not (Test-Path -LiteralPath $internalPath -PathType Container)) {
+            throw "Windows onedir bundle is missing its _internal directory."
+          }
+          foreach ($requiredPath in @($litellmDataPath, $bakedIndexPath, $cleanupWorkerPath)) {
+            if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
+              throw "Windows onedir bundle is missing required runtime data at '$requiredPath'."
+            }
+          }
+
+          $versionOutput = & $binaryPath --version 2>&1 | Out-String
+          $versionStatus = $LASTEXITCODE
+          if ($versionStatus -ne 0) {
+            throw "Windows onedir binary --version exited with status $versionStatus."
+          }
           $versionText = $versionOutput.Trim()
           Write-Host $versionText
           $expectedVersion = $env:VERSION_NAME
           if ($versionText -notmatch [regex]::Escape($expectedVersion)) {
             throw "Binary version mismatch. Expected '$expectedVersion' but saw '$versionText'."
           }
-          & ".\dist\${{ matrix.binary_name }}" -h | Out-Null
-          & ".\dist\${{ matrix.binary_name }}" _package-smoke
+
+          & $binaryPath -h | Out-Null
+          $helpStatus = $LASTEXITCODE
+          if ($helpStatus -ne 0) {
+            throw "Windows onedir binary -h exited with status $helpStatus."
+          }
+
+          & $binaryPath _package-smoke
+          $packageSmokeStatus = $LASTEXITCODE
+          if ($packageSmokeStatus -ne 0) {
+            throw "Windows onedir binary _package-smoke exited with status $packageSmokeStatus."
+          }
 
       - name: Package binary archive (Unix)
         if: runner.os != 'Windows'
@@ -496,16 +530,94 @@ jobs:
 
       - name: Package binary archive (Windows)
         if: runner.os == 'Windows'
+        id: package_windows
         shell: pwsh
         run: |
+          $ErrorActionPreference = "Stop"
           if ($env:RELEASE_CHANNEL -eq "release") {
             $assetBaseName = "opensre_$($env:TAG_NAME.TrimStart('v'))_${{ matrix.target }}"
           } else {
             $assetBaseName = "opensre_main_${{ matrix.target }}"
           }
-          Compress-Archive -Path "dist\${{ matrix.binary_name }}" -DestinationPath "${assetBaseName}.zip"
+          Compress-Archive -LiteralPath "dist\opensre" -DestinationPath "${assetBaseName}.zip"
           $hash = (Get-FileHash -Algorithm SHA256 "${assetBaseName}.zip").Hash.ToLowerInvariant()
           Set-Content -Path "${assetBaseName}.zip.sha256" -Value "$hash  ${assetBaseName}.zip"
+          Add-Content -LiteralPath $env:GITHUB_OUTPUT -Value "asset_basename=$assetBaseName"
+
+      - name: Smoke test packaged archive (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $archivePath = Join-Path $PWD "${{ steps.package_windows.outputs.asset_basename }}.zip"
+          if (-not (Test-Path -LiteralPath $archivePath -PathType Leaf)) {
+            throw "Packaged Windows archive was not found at '$archivePath'."
+          }
+
+          $smokeRoot = Join-Path $env:RUNNER_TEMP ("opensre-archive-smoke-" + [guid]::NewGuid().ToString("N"))
+          New-Item -ItemType Directory -Path $smokeRoot | Out-Null
+          try {
+            Expand-Archive -LiteralPath $archivePath -DestinationPath $smokeRoot
+
+            $bundlePath = Join-Path $smokeRoot "opensre"
+            $binaryPath = Join-Path $bundlePath "${{ matrix.binary_name }}"
+            $internalPath = Join-Path $bundlePath "_internal"
+            $litellmDataPath = Join-Path $internalPath "litellm\model_prices_and_context_window_backup.json"
+            $bakedIndexPath = Join-Path $internalPath "tools\descriptor_index.json"
+            $cleanupWorkerPath = Join-Path $internalPath "surfaces\cli\lifecycle\windows\uninstall_cleanup.ps1"
+
+            if (-not (Test-Path -LiteralPath $binaryPath -PathType Leaf)) {
+              throw "Extracted Windows archive is missing '$binaryPath'."
+            }
+            if (-not (Test-Path -LiteralPath $internalPath -PathType Container)) {
+              throw "Extracted Windows archive is missing '$internalPath'."
+            }
+            foreach ($requiredPath in @($litellmDataPath, $bakedIndexPath, $cleanupWorkerPath)) {
+              if (-not (Test-Path -LiteralPath $requiredPath -PathType Leaf)) {
+                throw "Extracted Windows archive is missing required runtime data at '$requiredPath'."
+              }
+            }
+
+            $env:OPENSRE_HOME = Join-Path $smokeRoot "home"
+            $env:OPENSRE_IS_TEST = "1"
+            $env:OPENSRE_NO_TELEMETRY = "1"
+            $env:DO_NOT_TRACK = "1"
+            $env:GRAFANA_CONFIG_SKIP_ENV_FILE = "1"
+            Remove-Item Env:PYTHONHOME -ErrorAction SilentlyContinue
+            Remove-Item Env:PYTHONPATH -ErrorAction SilentlyContinue
+
+            Push-Location $smokeRoot
+            try {
+              $versionOutput = & $binaryPath --version 2>&1 | Out-String
+              $versionStatus = $LASTEXITCODE
+              if ($versionStatus -ne 0) {
+                throw "Extracted Windows binary --version exited with status $versionStatus."
+              }
+              $versionText = $versionOutput.Trim()
+              Write-Host $versionText
+              if ($versionText -notmatch [regex]::Escape($env:VERSION_NAME)) {
+                throw "Extracted binary version mismatch. Expected '$env:VERSION_NAME' but saw '$versionText'."
+              }
+
+              & $binaryPath -h | Out-Null
+              $helpStatus = $LASTEXITCODE
+              if ($helpStatus -ne 0) {
+                throw "Extracted Windows binary -h exited with status $helpStatus."
+              }
+
+              & $binaryPath _package-smoke
+              $packageSmokeStatus = $LASTEXITCODE
+              if ($packageSmokeStatus -ne 0) {
+                throw "Extracted Windows binary _package-smoke exited with status $packageSmokeStatus."
+              }
+            }
+            finally {
+              Pop-Location
+            }
+          }
+          finally {
+            Remove-Item -LiteralPath $smokeRoot -Recurse -Force -ErrorAction SilentlyContinue
+          }
 
       - name: Upload binary archive
         uses: actions/upload-artifact@v4
