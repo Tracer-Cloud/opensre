@@ -170,3 +170,34 @@ def test_final_evidence_update_failure_reports_actual_cleanup(
     assert result["ok"] is False and result["checkout_removed"] is True
     assert not Path(receipt["workspace"]).exists()
     assert Path(result["evidence"]).is_file()
+
+
+def test_a_killed_helper_releases_the_demo_lock(
+    demo_modules: tuple[ModuleType, ModuleType, ModuleType], tmp_path: Path
+) -> None:
+    state, _, _ = demo_modules
+    holder_script = (
+        "import sys, importlib; sys.path.insert(0, sys.argv[1]); "
+        "state = importlib.import_module('_demo_state'); "
+        "from pathlib import Path; state.results_directory = lambda: Path(sys.argv[3]); "
+        "import time\n"
+        "with state.demo_lock(sys.argv[2]):\n"
+        "    print('held', flush=True)\n"
+        "    time.sleep(60)\n"
+    )
+    holder = subprocess.Popen(
+        [sys.executable, "-c", holder_script, str(_SCRIPTS), _REPO, str(tmp_path / "results")],
+        stdout=subprocess.PIPE,
+        text=True,
+    )
+    try:
+        assert holder.stdout is not None and holder.stdout.readline().strip() == "held"
+        with pytest.raises(ValueError, match="holds the demo lock"), state.demo_lock(_REPO):
+            pass
+    finally:
+        holder.kill()
+        holder.wait(timeout=10)
+
+    # Death, not a graceful exit, freed the lock: no stale marker survives the holder.
+    with state.demo_lock(_REPO):
+        pass

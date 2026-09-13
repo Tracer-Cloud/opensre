@@ -9,7 +9,7 @@ import tempfile
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager, suppress
 from pathlib import Path
-from typing import Any
+from typing import IO, Any
 
 
 def results_directory() -> Path:
@@ -74,20 +74,36 @@ def owned_workspace(state: dict[str, Any]) -> Path:
     return workspace
 
 
+if sys.platform == "win32":
+    import msvcrt
+
+    def _lock_exclusive(handle: IO[str]) -> None:
+        msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+
+else:
+    import fcntl
+
+    def _lock_exclusive(handle: IO[str]) -> None:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
 @contextmanager
 def demo_lock(repo: str) -> Iterator[None]:
+    """Hold the per-demo lock for the helper's lifetime.
+
+    The lock is an OS file lock, so a helper that is killed mid-run releases it
+    with its file descriptor instead of leaving a stale marker behind.
+    """
     path = receipt_path(repo).with_suffix(".lock")
     path.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        path.mkdir()
-    except FileExistsError as exc:
-        raise ValueError(
-            "An attempt holds the demo lock; inspect its saved progress before retrying."
-        ) from exc
-    try:
+    with path.open("a", encoding="utf-8") as handle:
+        try:
+            _lock_exclusive(handle)
+        except OSError as exc:
+            raise ValueError(
+                "An attempt holds the demo lock; inspect its saved progress before retrying."
+            ) from exc
         yield
-    finally:
-        path.rmdir()
 
 
 def run_json(operation: Callable[..., dict[str, Any]]) -> None:
