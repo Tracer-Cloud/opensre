@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 from core.domain.types.tools import ToolSurface
@@ -27,7 +28,11 @@ from infrastructure.scheduling.scheduler.storage import add_task as add_schedule
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
 from tools.system.work_items._evidence import map_work_task_list, map_work_task_prioritize
 from tools.system.work_items.delivery import delivery_targets, invalid_delivery_targets
-from tools.system.work_items.reminders import schedule_item_reminder
+from tools.system.work_items.reminders import (
+    disable_existing_item_reminders,
+    existing_reminder_timezone,
+    schedule_item_reminder,
+)
 from tools.system.work_items.results import (
     added_result,
     complete_result,
@@ -52,6 +57,9 @@ from tools.system.work_items.validation import (
 
 def _work_items_available(_sources: dict[str, dict[str, Any]]) -> bool:
     return True
+
+
+logger = logging.getLogger(__name__)
 
 
 @tool(
@@ -271,13 +279,25 @@ def work_task_complete(selectors: list[str]) -> dict[str, Any]:
     return complete_result(complete_work_items(normalized))
 
 
+def _reminder_timezone(item_id: str, remind_at: str, timezone: str) -> str:
+    """Zone to schedule a reminder in, keeping the original on a channel-only edit.
+
+    A work item stores its reminder time but not the zone it was read in, so
+    falling back to the argument default when the caller did not restate the
+    time would move a naive 09:00 reminder to 09:00 UTC.
+    """
+    if remind_at:
+        return timezone or "UTC"
+    return existing_reminder_timezone(item_id) or timezone or "UTC"
+
+
 @tool(
     name="work_task_update",
     display_name="Update task",
     source="knowledge",
     description=(
         "Update a durable work item's status, priority, owner, project, due time, reminder time, "
-        "notes, or reminder channel."
+        "notes, or reminder channel, or remove its reminder entirely."
     ),
     tags=("safe", "fast", "no-credentials"),
     surfaces=(ToolSurface.ACTION,),
@@ -297,6 +317,10 @@ def work_task_complete(selectors: list[str]) -> dict[str, Any]:
             "project": {"type": "string"},
             "due_at": {"type": "string"},
             "remind_at": {"type": "string"},
+            "clear_remind_at": {
+                "type": "boolean",
+                "description": "Remove the reminder and cancel its scheduled delivery.",
+            },
             "notes": {"type": "string"},
             "channel_provider": {"type": "string"},
             "channel_id": {"type": "string"},
@@ -326,6 +350,7 @@ def work_task_update(
     project: str = "",
     due_at: str = "",
     remind_at: str = "",
+    clear_remind_at: bool = False,
     notes: str = "",
     channel_provider: str = "",
     channel_id: str = "",
@@ -334,6 +359,11 @@ def work_task_update(
     context: AgentToolContext | None = None,
 ) -> dict[str, Any]:
     changes: WorkItemUpdates = {}
+    if clear_remind_at and remind_at:
+        return {
+            "error": "conflicting_reminder_change",
+            "detail": "pass either remind_at or clear_remind_at, not both",
+        }
     if status:
         normalized_status = normalize_status_filter(status)
         if normalized_status in {"active", "invalid"} or normalized_status is None:
@@ -352,6 +382,10 @@ def work_task_update(
         changes["due_at"] = due_at
     if remind_at:
         changes["remind_at"] = remind_at
+    if clear_remind_at:
+        # An empty remind_at means "unchanged" everywhere else, so the intent to
+        # remove one has to be stated separately or the update is a no-op.
+        changes["remind_at"] = ""
     if notes:
         changes["notes"] = notes
     for field_name, value in (("due_at", due_at), ("remind_at", remind_at)):
@@ -371,29 +405,34 @@ def work_task_update(
         changes["channel"] = (
             explicit_targets[0].to_dict() if explicit_targets else WorkItemChannelTarget().to_dict()
         )
-    reminder_targets: list[WorkItemChannelTarget] = []
-    if remind_at:
+    # A destination change has to re-snapshot the schedule as well: the task
+    # carries its own copy of the targets, so an item moved to a new channel
+    # would otherwise keep delivering the reminder to the old one.
+    syncs_reminder = bool(remind_at or explicit_targets or clear_remind_at)
+    if syncs_reminder:
         existing = resolve_work_item_selector(selector)
         if existing.item is None:
             payload: dict[str, Any] = {"error": existing.error or "not_found"}
             if existing.candidates:
                 payload["candidates"] = [item_summary(item) for item in existing.candidates]
             return payload
-        reminder_targets = delivery_targets(
+        # Validated before the write so an undeliverable reminder cannot leave
+        # remind_at persisted behind an error response.
+        preview_targets = delivery_targets(
             provider=channel_provider,
             chat_id=channel_id,
             item=existing.item,
             channel_targets=channel_targets,
             context=context,
         )
-        invalid_reminder_targets = invalid_delivery_targets(reminder_targets)
+        invalid_reminder_targets = invalid_delivery_targets(preview_targets)
         if invalid_reminder_targets:
             return {
                 "error": "invalid_delivery_target",
                 "detail": "; ".join(invalid_reminder_targets),
                 "task": item_summary(existing.item),
             }
-        if not reminder_targets:
+        if remind_at and not preview_targets:
             return {
                 "error": "missing_delivery_target",
                 "detail": "remind_at needs at least one provider target",
@@ -406,12 +445,34 @@ def work_task_update(
             update_error_payload["candidates"] = [item_summary(item) for item in result.candidates]
         return update_error_payload
     scheduled = None
-    if remind_at:
-        scheduled = schedule_item_reminder(
-            result.item,
-            targets=reminder_targets,
-            timezone=timezone or "UTC",
-        )
+    # Reconcile against the stored item, not the arguments: it already holds the
+    # destination that just replaced the old one, whereas re-reading the
+    # arguments would merge the two and keep delivering to both.
+    if syncs_reminder:
+        if result.item.remind_at:
+            reminder_targets = delivery_targets(
+                provider="", chat_id="", item=result.item, context=context
+            )
+            if reminder_targets:
+                try:
+                    scheduled = schedule_item_reminder(
+                        result.item,
+                        targets=reminder_targets,
+                        timezone=_reminder_timezone(result.item.id, remind_at, timezone),
+                    )
+                except Exception:
+                    # The item is already committed. Say the schedule did not
+                    # follow rather than raising, so the drift is visible.
+                    logger.exception("work item %s reminder reschedule failed", result.item.id)
+                    return {
+                        "error": "reminder_reschedule_failed",
+                        "detail": "the task was updated but its reminder schedule was not",
+                        "task": item_summary(result.item),
+                    }
+        else:
+            # The reminder is gone; leaving its one-shot task enabled would fire
+            # a delivery for a reminder the item no longer has.
+            disable_existing_item_reminders(result.item.id)
     result_payload = update_result(result.item)
     if scheduled is not None:
         result_payload["scheduled_task_id"] = scheduled.id
