@@ -216,7 +216,9 @@ def update_work_item(
     *,
     changes: WorkItemUpdates,
     store_path: Path | None = None,
+    after_save: Callable[[WorkItem], None] | None = None,
 ) -> UpdateWorkItemResult:
+    """Update one item, rolling it back if ``after_save`` raises."""
     if not changes:
         return UpdateWorkItemResult(error="no_changes")
     path = store_path or work_items_path()
@@ -234,6 +236,12 @@ def update_work_item(
             return UpdateWorkItemResult(error=str(exc))
         saved = [updated if item.id == updated.id else item for item in items]
         _save_items_no_lock(path, saved)
+        if after_save is not None:
+            try:
+                after_save(updated)
+            except Exception:
+                _save_items_no_lock(path, items)
+                raise
         return UpdateWorkItemResult(item=updated)
 
 
