@@ -41,10 +41,17 @@ TERMINAL_STATUSES: frozenset[PlanStepStatus] = frozenset(
 
 @dataclass(frozen=True, slots=True)
 class PlanStep:
-    """One plan step with a 1-sentence outcome and a status."""
+    """One plan step with a 1-sentence outcome and a status.
+
+    ``deliverable`` marks a step whose work *is* a text-only assistant reply
+    (a report, a table): the host shows that reply even though later steps
+    remain. It is the structured signal that separates an intended mid-plan
+    deliverable from a premature stop the plan gate rejects.
+    """
 
     step: str
     status: PlanStepStatus
+    deliverable: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -110,6 +117,29 @@ class TaskPlan:
             item.status is PlanStepStatus.PENDING for item in self.steps
         )
 
+    @property
+    def awaits_reply(self) -> bool:
+        """True when the step in progress, or the pending step right after it, is a deliverable.
+
+        A deliverable further down the plan does not count: work before it is
+        still open, so a text-only reply now is a premature stop, not the report.
+        """
+        current: PlanStep | None = None
+        for item in self.steps:
+            if item.status is PlanStepStatus.IN_PROGRESS:
+                current = item
+                break
+        if current is None:
+            first_pending = next(
+                (item for item in self.steps if item.status is PlanStepStatus.PENDING), None
+            )
+            return first_pending is not None and first_pending.deliverable
+        if current.deliverable:
+            return True
+        after = self.steps[self.steps.index(current) + 1 :]
+        next_pending = next((item for item in after if item.status is PlanStepStatus.PENDING), None)
+        return next_pending is not None and next_pending.deliverable
+
 
 def parse_task_plan(args: dict[str, Any]) -> tuple[TaskPlan | None, str | None]:
     """Validate ``update_plan`` arguments. Returns ``(plan, error)``."""
@@ -138,7 +168,9 @@ def parse_task_plan(args: dict[str, Any]) -> tuple[TaskPlan | None, str | None]:
         status = PlanStepStatus(status_raw)
         if status is PlanStepStatus.IN_PROGRESS:
             in_progress += 1
-        steps.append(PlanStep(step=step_text, status=status))
+        steps.append(
+            PlanStep(step=step_text, status=status, deliverable=item.get("deliverable") is True)
+        )
     if in_progress > 1:
         return None, "at most one step can be in_progress at a time"
     last = steps[-1]
@@ -149,10 +181,17 @@ def parse_task_plan(args: dict[str, Any]) -> tuple[TaskPlan | None, str | None]:
     return TaskPlan(steps=tuple(steps), explanation=explanation), None
 
 
+def _step_payload(item: PlanStep) -> dict[str, Any]:
+    payload: dict[str, Any] = {"step": item.step, "status": str(item.status)}
+    if item.deliverable:
+        payload["deliverable"] = True
+    return payload
+
+
 def task_plan_to_payload(plan: TaskPlan) -> dict[str, Any]:
     """JSON-ready dict for persistence and tool results."""
     payload: dict[str, Any] = {
-        "plan": [{"step": item.step, "status": str(item.status)} for item in plan.steps],
+        "plan": [_step_payload(item) for item in plan.steps],
         "current": plan.current_index,
         "total": plan.total,
         "completed": plan.completed_count,

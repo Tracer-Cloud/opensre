@@ -136,7 +136,11 @@ both.
 Report delivery and asking what to do next are separate actions: first
 respond with the report as Markdown text; only after it has been shown may
 the next step open a menu. Saying "the report is ready" or updating the plan
-does not deliver the report.
+does not deliver the report. A report step that precedes further plan steps
+must carry `deliverable: true` in `update_plan` (tell the card's reader to
+set it); the host shows a text-only reply before the plan is settled only
+when the current or next step is flagged, and treats any other one as a
+premature stop.
 
 ## Default recommended plan
 

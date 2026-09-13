@@ -18,7 +18,7 @@ metadata:
   - GitHub authentication with read access to the repository's Actions history.
   - The analyze_github_ci_reliability and scan_local_git_workspace tools.
   - For local discovery, a local Git checkout; the example repository does not require one.
-  version: '1.15'
+  version: '1.16'
 ---
 
 # CI/CD analytics
@@ -33,6 +33,9 @@ After reading this skill, use `update_plan` to create or revise the live
 CI/CD Reliability Progress plan using the six numbered workflow headings
 below as its steps. Keep showing the table and offering the next step as
 separate plan items; update statuses as each step's completion condition is met.
+Mark step 5 with `deliverable: true` in every `update_plan` call: its work is
+the reply itself, and without that flag the host treats a text-only reply
+before the plan is settled as a premature stop and does not show it.
 
 - [ ] Step 1. Scan local repositories with scan_local_git_workspace.
 - [ ] Step 2. Select a repository using ask_user_choice.

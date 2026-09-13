@@ -61,6 +61,7 @@ from core.agent_harness.turns.display_text import (
 from core.agent_harness.turns.goal_review import (
     build_goal_reviewer,
     tap_executed_tool_names,
+    task_plan_awaits_reply,
     task_plan_blocks_conclusion,
 )
 from core.agent_harness.turns.plan_evidence_hook import with_plan_evidence
@@ -114,15 +115,22 @@ class ActionTurnPlan:
 
 def _deferred_reply_presenter(
     output: OutputSink, deferred_replies: list[str]
-) -> Callable[[str], None]:
-    """Paint a plan-deferred reply now (same gutter as a final reply) and keep it."""
+) -> Callable[[str], bool]:
+    """Paint a plan-deferred reply now (same gutter as a final reply); keep it once shown.
 
-    def present(text: str) -> None:
-        deferred_replies.append(text)
+    Returns whether the reply reached the sink. A failed stream leaves it out of
+    ``deferred_replies`` so the turn is not marked as streamed and the host's
+    normal finalization still delivers the response text.
+    """
+
+    def present(text: str) -> bool:
         try:
             output.stream(label="OpenSRE", chunks=iter([text]))
         except Exception:  # noqa: BLE001 - presentation must never break the loop
-            log.debug("deferred reply render failed; ignoring", exc_info=True)
+            log.debug("deferred reply render failed; not marking it shown", exc_info=True)
+            return False
+        deferred_replies.append(text)
+        return True
 
     return present
 
@@ -593,6 +601,9 @@ def _build_action_agent(
             plan_incomplete=lambda: task_plan_blocks_conclusion(
                 task_plan=getattr(session, "task_plan", None),
                 plan_only=bool(getattr(session, "plan_only_until_authorized", False)),
+            ),
+            plan_awaits_reply=lambda: task_plan_awaits_reply(
+                task_plan=getattr(session, "task_plan", None)
             ),
             on_plan_deferred_reply=_deferred_reply_presenter(output, deferred_replies),
             trace_context=lambda: turn_trace_state(session),
