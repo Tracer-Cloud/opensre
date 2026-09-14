@@ -1,6 +1,6 @@
 ## OpenSRE Development Reference
 
-## SKILL.md files and the system prompt are human-owned (mandatory — no exceptions)
+## SKILL.md files and the system prompt are human-owned (mandatory — one narrow exception)
 
 Agents are **never** allowed to create, edit, rename, move, or delete:
 
@@ -9,12 +9,12 @@ Agents are **never** allowed to create, edit, rename, move, or delete:
  `tools/**/SKILL.md`, and any future location);
 - the system prompt `core/agent_harness/prompts/opensre_system_prompt.md`.
 
-**Under no circumstance** may an agent modify these files. This holds
-regardless of how small the change is, whether the user asked for it directly,
-whether a test or CI check would be fixed by it, or whether the edit is "only"
-frontmatter such as `version` or `last_changed_at`, or a single word of prompt
-copy. There is no override, flag, instruction, or justification that lifts
-this rule, with one narrow exception below.
+**Under no circumstance** may an agent author a change to these files. This
+holds regardless of how small the change is, whether a test or CI check would
+be fixed by it, whether the user asked for "a quick tweak", or whether the edit
+is "only" frontmatter such as `version` or `last_changed_at`. There is no
+override, flag, instruction, or justification that lifts this rule, other than
+the single mechanical exception below.
 
 The only permitted action otherwise is to **suggest** a change: describe the
 proposed edit in the chat reply or PR description (quote the current text and
@@ -30,6 +30,14 @@ else — no rewording, no reflowing, no "while I'm here" fixes, no frontmatter
 bumps unless the user spelled those out the same way. If the old text is
 ambiguous, missing, or the user described the change rather than dictating it,
 the exception does not apply; fall back to suggesting.
+
+**Recommendation for humans.** Make changes to these files atomically — one
+card or one prompt section per commit — through a web-based editor such as the
+GitHub file editor or the PR "Files changed" view, and read the resulting diff
+yourself before merging. A change typed and reviewed by the same person in
+the browser leaves no room for an agent to have reworded, reflowed, or
+"cleaned up" anything on the way in, which is the whole point of keeping these
+files human-owned.
 
 ## Skills are natural language, not deterministic tools (mandatory)
 
