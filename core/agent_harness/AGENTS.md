@@ -60,8 +60,11 @@ complete a step that had no tool return while it was `in_progress`
 such a step completed. The second work tool of a turn with no open plan is
 refused (`task_plan/required.py`). A step newly marked `blocked` is resolved
 with the user, not skipped: the conclusion is rejected until `ask_user_choice`
-is queued (`task_plan/conclusion.py`, gate in `turns/goal_review.py`). Change
-the rule in the owning leaf, never by prompt text alone.
+is queued (`task_plan/conclusion.py`, gate in `turns/goal_review.py`). The
+onboarding menu's answer turn that only loaded the chosen demo skill is
+rejected once, with a nudge to write the plan and run its first step (same
+files). Change the rule in the
+owning leaf, never by prompt text alone.
 
 **Evidence kinds (open/closed):** vocabulary + per-kind policy live in
 `turns/evidence_kind.py` (`EvidenceKind` + `EvidenceKindPolicy`). Add a kind by

@@ -280,6 +280,9 @@ model:
   rejected until the model has asked the user how to resolve it
   (`core/agent_harness/task_plan/conclusion.py`), and the "Plan ended"
   breakdown is not printed while that question is queued.
+- The onboarding menu's answer turn that loads the chosen demo skill and
+  does nothing else is rejected once, with a nudge to write the plan and run
+  the first step; the first demo stalled that way live.
 - The second work tool of a turn is refused while no plan with open work is
   stored (`core/agent_harness/task_plan/required.py`). The refusal
   names the fix: write the plan, then run the tool again.

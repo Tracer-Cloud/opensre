@@ -20,6 +20,7 @@ from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
+from config.constants.skills import ONBOARDING_SKILL_NAME
 from core.agent import Agent
 from core.agent.cancel import tool_resources_cancel_requested
 from core.agent.goals import Goal
@@ -44,6 +45,7 @@ from core.agent_harness.session.terminal_access import execute_cli_onboard_on_mi
 from core.agent_harness.session_goal.review_input import collect_tool_evidence
 from core.agent_harness.task_plan.conclusion import (
     blocked_steps_await_the_user,
+    demo_pick_stalled_on_skill_load,
     task_plan_awaits_reply,
     task_plan_blocks_conclusion,
 )
@@ -597,6 +599,9 @@ def _build_action_agent(
         # shared list the event tap below fills, so it can stand down on
         # handoff/dispatch turns whose outcome is not reviewable at
         # conclusion time.
+        # The skill active as the turn starts: the onboarding master when the
+        # message answers its menu, so a child that loads and stops is caught.
+        starting_skill = getattr(session, "active_skill", None)
         goal = build_goal_reviewer(
             llm,
             _goal_review_user_request(message, turn_snapshot),
@@ -611,6 +616,11 @@ def _build_action_agent(
             on_plan_deferred_reply=_deferred_reply_presenter(output, deferred_replies),
             blocked_needs_user=lambda: blocked_steps_await_the_user(
                 session, user_answered=bool(parse_ask_user_answers(message))
+            ),
+            skill_load_only=lambda: demo_pick_stalled_on_skill_load(
+                session,
+                user_answered=bool(parse_ask_user_answers(message)),
+                from_onboarding_menu=starting_skill == ONBOARDING_SKILL_NAME,
             ),
             trace_context=lambda: turn_trace_state(session),
         )

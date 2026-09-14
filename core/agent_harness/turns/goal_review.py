@@ -167,6 +167,11 @@ _BLOCKED_NEEDS_USER_NUDGE = (
     "they unblock it, set that same step in_progress with update_plan — not a "
     "renamed or duplicated copy — and do the work."
 )
+_SKILL_LOAD_ONLY_NUDGE = (
+    "The user picked this demo, and this turn only loaded its skill. "
+    "Continue it now: write its plan with update_plan and run its first step, "
+    "or open the menu it prescribes. Do not end the turn on a skill load."
+)
 # Prefix for the nudge when the deferred reply was painted for the user: the
 # model must not restate a report it can already see in its own transcript.
 _PLAN_DEFERRED_REPLY_SHOWN = (
@@ -210,6 +215,9 @@ class _LLMGoalReviewer:
     # Blocked-step gate: a step newly blocked this turn ends the turn only
     # through a question to the user.
     blocked_needs_user: Callable[[], bool] | None = None
+    # Skill-load gate: an answer turn that only loaded a skill is rejected once.
+    skill_load_only: Callable[[], bool] | None = None
+    skill_load_rejections: int = 0
     reviews_remaining: int = field(default=_MAX_GOAL_REVIEWS)
     trace_context: Callable[[], dict[str, Any]] | None = None
 
@@ -238,6 +246,13 @@ class _LLMGoalReviewer:
             and self.blocked_needs_user()
         ):
             return self._decision(observation, False, "blocked_needs_user")
+        if (
+            self.skill_load_only is not None
+            and self.skill_load_rejections == 0
+            and self.skill_load_only()
+        ):
+            self.skill_load_rejections += 1
+            return self._decision(observation, False, "skill_loaded_only")
         if self.reject_discovery_only and _gather_ran_only_discovery(self.executed_tool_calls):
             return self._decision(observation, False, "discovery_only")
         if not react_goal_llm_review_enabled():
@@ -304,6 +319,7 @@ def build_goal_reviewer(
     plan_awaits_reply: Callable[[], bool] | None = None,
     on_plan_deferred_reply: Callable[[str], bool] | None = None,
     blocked_needs_user: Callable[[], bool] | None = None,
+    skill_load_only: Callable[[], bool] | None = None,
     trace_context: Callable[[], dict[str, Any]] | None = None,
 ) -> Goal:
     """Build a reviewed :class:`Goal` for one action turn over ``user_goal``.
@@ -325,6 +341,9 @@ def build_goal_reviewer(
 
     ``blocked_needs_user`` rejects a conclusion on a turn that newly marked a
     step ``blocked`` without asking the user how to resolve it.
+
+    ``skill_load_only`` rejects, once per turn, a conclusion on the demo
+    menu's answer turn that loaded the chosen skill and did nothing else.
     """
     reviewer = _LLMGoalReviewer(
         llm=llm,
@@ -332,10 +351,13 @@ def build_goal_reviewer(
         executed_tool_names=executed_tool_names,
         plan_incomplete=plan_incomplete,
         blocked_needs_user=blocked_needs_user,
+        skill_load_only=skill_load_only,
         trace_context=trace_context,
     )
 
     def _nudge(observation: GoalObservation) -> str:
+        if skill_load_only is not None and skill_load_only():
+            return _SKILL_LOAD_ONLY_NUDGE
         if (
             blocked_needs_user is not None
             and plan_worked_this_turn(executed_tool_names)

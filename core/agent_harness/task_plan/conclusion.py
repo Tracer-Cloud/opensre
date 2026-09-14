@@ -45,6 +45,26 @@ def blocked_steps_await_the_user(session: Any, *, user_answered: bool = False) -
     return getattr(session, "pending_user_choice", None) is None
 
 
+def demo_pick_stalled_on_skill_load(
+    session: Any, *, user_answered: bool, from_onboarding_menu: bool
+) -> bool:
+    """True when the onboarding menu's answer only loaded the chosen demo skill.
+
+    The answer to "Which demo would you like me to run?" is the go-ahead. A
+    turn that loads the chosen skill and then stops — no plan written, no
+    step run, no menu queued — has stalled; the first demo did exactly that
+    live. A hand-off between two workflow skills is not this: the next skill
+    starts on its own terms.
+    """
+    from core.agent_harness.task_plan.evidence import skill_loaded_without_work
+
+    if not (user_answered and from_onboarding_menu):
+        return False
+    if not skill_loaded_without_work(session):
+        return False
+    return getattr(session, "pending_user_choice", None) is None
+
+
 def task_plan_awaits_reply(*, task_plan: Any | None) -> bool:
     """True when the plan's current or next step is a ``deliverable`` text reply.
 
@@ -54,4 +74,9 @@ def task_plan_awaits_reply(*, task_plan: Any | None) -> bool:
     return task_plan is not None and getattr(task_plan, "awaits_reply", False) is True
 
 
-__all__ = ["blocked_steps_await_the_user", "task_plan_awaits_reply", "task_plan_blocks_conclusion"]
+__all__ = [
+    "blocked_steps_await_the_user",
+    "demo_pick_stalled_on_skill_load",
+    "task_plan_awaits_reply",
+    "task_plan_blocks_conclusion",
+]

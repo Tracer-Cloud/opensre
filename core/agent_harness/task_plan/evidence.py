@@ -77,6 +77,8 @@ class PlanEvidence:
     writes: int = 0
     blocked_this_turn: tuple[str, ...] = ()
     """Steps a write of this turn newly marked ``blocked``; the user is asked before the turn ends."""
+    skill_loads: int = 0
+    """Skill bodies loaded this turn; a turn that did nothing else has stalled."""
 
 
 def _evidence(session: Any) -> PlanEvidence:
@@ -109,6 +111,8 @@ def record_plan_evidence(
     if not result_counts_as_work(is_error=is_error, details=details):
         return
     if is_plan_bookkeeping_call(tool_name, arguments):
+        if tool_name.strip() == _SKILL_VIEW_TOOL:
+            _evidence(session).skill_loads += 1
         return
     state = _evidence(session)
     state.tool_returns += 1
@@ -126,6 +130,12 @@ def record_blocked_this_turn(session: Any, steps: tuple[str, ...]) -> None:
     if steps:
         state = _evidence(session)
         state.blocked_this_turn = tuple(dict.fromkeys((*state.blocked_this_turn, *steps)))
+
+
+def skill_loaded_without_work(session: Any) -> bool:
+    """True when this turn loaded a skill body and no other tool returned."""
+    state = _evidence(session)
+    return state.skill_loads > 0 and state.tool_returns == 0
 
 
 def blocked_this_turn(session: Any) -> tuple[str, ...]:
@@ -171,6 +181,7 @@ __all__ = [
     "record_blocked_this_turn",
     "record_plan_evidence",
     "reset_plan_evidence",
+    "skill_loaded_without_work",
     "result_counts_as_work",
     "work_returns_this_turn",
 ]

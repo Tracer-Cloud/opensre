@@ -368,3 +368,54 @@ def test_blocked_steps_await_the_user_until_a_question_is_queued() -> None:
     assert blocked_steps_await_the_user(session, user_answered=True) is False
     session.pending_user_choice = object()
     assert blocked_steps_await_the_user(session) is False
+
+
+def test_goal_reviewer_rejects_an_answer_turn_that_only_loaded_a_skill_once() -> None:
+    """Live: demo A was picked, the skill loaded, and the turn ended on "Next, I'll scan"."""
+    # Arrange: the gate says the turn stalled on a skill load.
+    llm = _ScriptedLLM('{"verdict": "GOAL_REACHED"}')
+    goal = build_goal_reviewer(
+        llm,
+        "run demo A",
+        executed_tool_names=["skill_view"],
+        skill_load_only=lambda: True,
+    )
+    assert goal.verify is not None and goal.nudge is not None
+
+    # Act / Assert: rejected once with the fix named, then accepted — one extra call at most.
+    assert goal.verify(_obs()) is False
+    assert "run its first step" in goal.nudge(_obs())
+    assert goal.verify(_obs()) is True
+    assert llm.invokes == 0
+
+
+def test_a_demo_pick_stalls_only_when_the_chosen_skill_was_loaded_and_nothing_else_done() -> None:
+    from types import SimpleNamespace
+
+    from core.agent_harness.task_plan.conclusion import demo_pick_stalled_on_skill_load
+    from core.agent_harness.task_plan.evidence import record_plan_evidence, reset_plan_evidence
+
+    # Arrange: a skill body was loaded this turn.
+    session = SimpleNamespace(pending_user_choice=None)
+    reset_plan_evidence(session)
+    record_plan_evidence(session, "skill_view", {"name": "analyzing-github-ci-performance"})
+
+    # Act / Assert: only the onboarding menu's answer stalls; a question or a
+    # hand-off between workflow skills does not.
+    assert demo_pick_stalled_on_skill_load(session, user_answered=True, from_onboarding_menu=True)
+    assert not demo_pick_stalled_on_skill_load(
+        session, user_answered=False, from_onboarding_menu=True
+    )
+    assert not demo_pick_stalled_on_skill_load(
+        session, user_answered=True, from_onboarding_menu=False
+    )
+    # A menu the skill queued, or any work, means the turn did something.
+    session.pending_user_choice = object()
+    assert not demo_pick_stalled_on_skill_load(
+        session, user_answered=True, from_onboarding_menu=True
+    )
+    session.pending_user_choice = None
+    record_plan_evidence(session, "scan_local_git_workspace", {})
+    assert not demo_pick_stalled_on_skill_load(
+        session, user_answered=True, from_onboarding_menu=True
+    )
