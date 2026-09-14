@@ -8,6 +8,7 @@ from dataclasses import dataclass
 
 from integrations.git.errors import COMMIT_FAILED, MERGE_FAILED, GitCommandError
 from integrations.git.local import (
+    _opensre_author_env,
     _remote_https_base,
     _run_git,
     _token_auth_env,
@@ -45,14 +46,21 @@ def fetch_remote_branch(
 
 
 def merge_ref(workspace: str, ref: str, *, message: str) -> bool:
-    """Merge *ref* into HEAD with a merge commit.
+    """Merge *ref* into HEAD with a merge commit authored by the OpenSRE Agent account.
 
     Returns True when the merge committed cleanly. Returns False when git
     stopped on content conflicts, leaving the merge in progress for the caller
     to resolve. Any other failure aborts the merge and raises.
     """
     result = _run_git(
-        workspace, "merge", "--no-ff", "--no-edit", "-m", _with_opensre_coauthor(message), ref
+        workspace,
+        "merge",
+        "--no-ff",
+        "--no-edit",
+        "-m",
+        _with_opensre_coauthor(message),
+        ref,
+        env=_opensre_author_env(),
     )
     if result.returncode == 0:
         return True
@@ -163,10 +171,13 @@ def _indexed(workspace: str, paths: Sequence[str]) -> set[str]:
 def commit_merge(workspace: str) -> str:
     """Conclude the in-progress merge with its prepared message; return the new HEAD.
 
+    The commit is authored and committed as the OpenSRE Agent account.
     ``--cleanup=strip`` drops the ``# Conflicts:`` comment block git adds to the
     prepared message, which a non-editor commit would otherwise keep verbatim.
     """
-    result = _run_git(workspace, "commit", "--no-edit", "--cleanup=strip")
+    result = _run_git(
+        workspace, "commit", "--no-edit", "--cleanup=strip", env=_opensre_author_env()
+    )
     if result.returncode != 0:
         raise GitCommandError(COMMIT_FAILED, f"git commit failed: {result.stderr.strip()}")
     return head_sha(workspace)

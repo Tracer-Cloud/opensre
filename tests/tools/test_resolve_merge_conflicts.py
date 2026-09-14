@@ -181,4 +181,5 @@ def test_without_a_merge_the_ref_is_merged_first_or_the_caller_is_told(tmp_path:
     assert merged["success"] is True
     assert merged["resolved_files"] == []
     assert merged["commit_sha"] == head_sha(str(work))
+    assert _git(work, "log", "-1", "--pretty=%an") == "OpenSRE Agent"
     assert (work / "notes.txt").read_text() == "main notes\n"

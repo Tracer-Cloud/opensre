@@ -19,7 +19,11 @@ import subprocess
 from collections.abc import Mapping, Sequence
 from urllib.parse import urlsplit
 
-from config.constants.git import OPENSRE_COMMIT_COAUTHOR_TRAILER
+from config.constants.git import (
+    OPENSRE_COMMIT_COAUTHOR_EMAIL,
+    OPENSRE_COMMIT_COAUTHOR_NAME,
+    OPENSRE_COMMIT_COAUTHOR_TRAILER,
+)
 from integrations.git.errors import (
     BRANCH_FAILED,
     COMMIT_FAILED,
@@ -49,6 +53,17 @@ def _with_opensre_coauthor(message: str) -> str:
     if not stripped:
         return trailer
     return f"{stripped}\n\n{trailer}"
+
+
+def _opensre_author_env(env: Mapping[str, str] | None = None) -> dict[str, str]:
+    """Environment that makes git record the OpenSRE Agent account as author and committer."""
+    identity = {
+        "GIT_AUTHOR_NAME": OPENSRE_COMMIT_COAUTHOR_NAME,
+        "GIT_AUTHOR_EMAIL": OPENSRE_COMMIT_COAUTHOR_EMAIL,
+        "GIT_COMMITTER_NAME": OPENSRE_COMMIT_COAUTHOR_NAME,
+        "GIT_COMMITTER_EMAIL": OPENSRE_COMMIT_COAUTHOR_EMAIL,
+    }
+    return {**(env if env is not None else os.environ), **identity}
 
 
 def _run_git(
