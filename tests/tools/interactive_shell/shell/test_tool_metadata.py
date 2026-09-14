@@ -11,4 +11,5 @@ def test_shell_tool_does_not_claim_a_new_task_changes_directory() -> None:
     assert "each call" in description.lower()
     assert "cd path && command" in description
     assert "approval gate confirms anything risky" not in description
-    assert "Auto High runs without confirmation" in description
+    assert "Auto High normally runs without confirmation" in description
+    assert "plan-only can still ask" in description

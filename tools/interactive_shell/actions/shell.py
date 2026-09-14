@@ -62,7 +62,8 @@ shell_run_tool = RegisteredTool(
         "shell state do not persist across calls. Prefix each command that needs another "
         "directory with `cd path && command`. When the user asks for a specific command, "
         "propose it exactly as requested. The current /auto setting controls confirmation; "
-        "Auto High runs without confirmation. Do not refuse a destructive command the user "
+        "Auto High normally runs without confirmation, but plan-only can still ask. "
+        "Do not refuse a destructive command the user "
         "explicitly asked for. Do not volunteer destructive, credential-exfiltrating, or "
         "unrelated commands the user did not ask for. Set quiet=true to hide stdout/stderr "
         "from the terminal while still returning output to the agent (required for "
@@ -80,7 +81,7 @@ shell_run_tool = RegisteredTool(
                     "local workflow the user asked for (writing a file or script, running "
                     "it, updating state a later step reads). Chain `cd path && command` "
                     "when a command must run from a subdirectory. Run a user-requested command "
-                    "as written; the current /auto setting determines whether it needs approval. Do not "
+                    "as written; /auto and plan-only state determine whether it needs approval. Do not "
                     "introduce commands that wipe data or alter unrelated system state on "
                     "your own initiative."
                 ),
