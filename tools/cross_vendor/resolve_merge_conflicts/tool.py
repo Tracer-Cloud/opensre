@@ -20,7 +20,13 @@ from core.agent_harness.tools import ActionToolScope, action_context_from_agent_
 from core.domain.types.tools import ToolSurface
 from core.tool import BaseTool, SideEffectLevel
 from integrations.git import merge_in_progress, unmerged_paths
-from tools.cross_vendor.resolve_merge_conflicts.runner import SOURCE, FileChoice, resolve_merge
+from tools.cross_vendor.resolve_merge_conflicts.runner import (
+    ALL_FILES_OPTIONS,
+    ALL_FILES_TITLE,
+    SOURCE,
+    FileChoice,
+    resolve_merge,
+)
 from tools.interactive_shell.shared import allow_tool
 
 _MERGE_PUSH_TOOL_TYPE = "merge_push"
@@ -45,7 +51,14 @@ def _ask(scope: ActionToolScope | None) -> Callable[[list[FileChoice]], bool] | 
     def ask(choices: list[FileChoice]) -> bool:
         if not choices:
             return False
-        if len(choices) == 1:
+        if len(choices) > 1 and not _all_files_answered(scope):
+            pending = PendingUserChoice(
+                title=ALL_FILES_TITLE,
+                options=ALL_FILES_OPTIONS,
+                note=f"{len(choices)} files: {', '.join(c.path.rsplit('/', 1)[-1] for c in choices)}",
+                custom_answer=False,
+            )
+        elif len(choices) == 1:
             only = choices[0]
             pending = PendingUserChoice(
                 title=only.title,
@@ -75,15 +88,31 @@ def _ask(scope: ActionToolScope | None) -> Callable[[list[FileChoice]], bool] | 
     return ask
 
 
-def _answered_decisions(scope: ActionToolScope | None, paths: list[str]) -> dict[str, str]:
-    """Decisions the user made in the menu, read from this turn's message by question title."""
+def _turn_answers(scope: ActionToolScope | None) -> dict[str, str]:
     if scope is None:
         return {}
-    answers = {
+    return {
         question_key(asked): answer
         for asked, answer in parse_ask_user_answers(getattr(scope, "turn_user_message", "") or "")
     }
+
+
+def _all_files_answered(scope: ActionToolScope | None) -> bool:
+    """True once the user chose "decide file by file" for this merge."""
+    answer = _turn_answers(scope).get(question_key(ALL_FILES_TITLE), "")
+    return answer.casefold().startswith("decide file by file")
+
+
+def _answered_decisions(scope: ActionToolScope | None, paths: list[str]) -> dict[str, str]:
+    """Decisions the user made in the menu, read from this turn's message by question title.
+
+    The all-files answer is returned under ``*``.
+    """
+    answers = _turn_answers(scope)
     decided: dict[str, str] = {}
+    for_all = answers.get(question_key(ALL_FILES_TITLE))
+    if for_all:
+        decided["*"] = for_all
     for path in paths:
         answer = answers.get(question_key(f"Resolve {path}"))
         if answer:

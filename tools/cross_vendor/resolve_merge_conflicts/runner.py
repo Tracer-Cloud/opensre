@@ -101,6 +101,15 @@ class FileChoice:
 # Shows the per-file menu; True when it was queued and the turn must end to await the answer.
 Ask = Callable[[list[FileChoice]], bool]
 
+ALL_FILES_TITLE: Final = "Resolve all conflicted files"
+ALL_FILES_OPTIONS: Final = (
+    "Combine all with the coding agent",
+    "Keep ours for all",
+    "Take theirs for all",
+    "Decide file by file",
+)
+DECIDE_EACH: Final = "each"
+
 AWAITING_INSTRUCTION: Final = (
     "The per-file menu opens after this turn ends. End the turn now without a user-facing "
     "sentence; do NOT repeat the options as text. The user's choices arrive as the next "
@@ -222,8 +231,11 @@ def _resolve(
         return _commit(ws, conflicts, baseline, summary=summary, finish=finish)
 
     shown = _paint(console, ws, conflicts, pending_label=PENDING)
+    open_paths = set(paths_with_conflict_markers(ws, conflicts.names)) | {
+        c.path for c in unresolved_conflicts(ws, conflicts)
+    }
     plan = _decision_plan(conflicts, decisions)
-    undecided = [path for path in conflicts.names if path not in plan]
+    undecided = [path for path in conflicts.names if path in open_paths and path not in plan]
     if undecided and ask is not None and ask(_choices(ws, conflicts, undecided)):
         raise ResolveMergeError(
             ERR_AWAITING_DECISIONS,
@@ -234,6 +246,11 @@ def _resolve(
         )
     for path in undecided:
         plan[path] = COMBINE
+    plan = {
+        path: choice
+        for path, choice in plan.items()
+        if path in open_paths or choice in (KEEP_OURS, TAKE_THEIRS)
+    }
     try:
         for path, choice in plan.items():
             if choice in (KEEP_OURS, TAKE_THEIRS):
@@ -263,6 +280,17 @@ def _resolve(
         remaining = _unresolved(ws, conflicts)
     except GitCommandError as exc:
         raise ResolveMergeError(exc.kind, exc.message, conflicts=conflicts) from exc
+    if remaining and result.success and ask is not None:
+        left_paths = [path for path, _why in remaining]
+        if ask(_choices(ws, conflicts, left_paths)):
+            raise ResolveMergeError(
+                ERR_AWAITING_DECISIONS,
+                f"The coding agent could not settle {', '.join(left_paths)}; waiting for the "
+                f"user's choice. The merge stays in progress in {ws}.",
+                unresolved=tuple(left_paths),
+                summary=result.summary,
+                rendered=_paint(console, ws, conflicts, pending_label=PENDING),
+            )
     if not result.success:
         left = tuple(path for path, _why in remaining) or conflicts.names
         raise ResolveMergeError(
@@ -288,12 +316,22 @@ def _resolve(
 
 
 def _decision_plan(conflicts: MergeConflicts, decisions: Mapping[str, str]) -> dict[str, str]:
-    """Normalize the given decisions to ``ours``/``theirs``/``combine``/free text per path."""
-    return {
+    """Normalize the given decisions to ``ours``/``theirs``/``combine``/free text per path.
+
+    A decision under ``*`` (the answer to the all-files question) applies to
+    every file that has no decision of its own; "decide file by file" leaves
+    them undecided so the per-file menu follows.
+    """
+    plan = {
         path: normalize_decision(raw)
         for path, raw in decisions.items()
         if path in conflicts.names and raw.strip()
     }
+    for_all = normalize_decision(decisions.get("*", ""))
+    if for_all and for_all != DECIDE_EACH:
+        for path in conflicts.names:
+            plan.setdefault(path, for_all)
+    return plan
 
 
 def normalize_decision(raw: str) -> str:
@@ -304,8 +342,10 @@ def normalize_decision(raw: str) -> str:
         return KEEP_OURS
     if lowered in (TAKE_THEIRS, "take", "main") or lowered.startswith("take theirs"):
         return TAKE_THEIRS
-    if lowered in (COMBINE, "agent", "both") or lowered.startswith("combine both"):
+    if lowered in (COMBINE, "agent", "both") or lowered.startswith("combine"):
         return COMBINE
+    if lowered.startswith("decide file by file"):
+        return DECIDE_EACH
     return text
 
 
