@@ -122,6 +122,19 @@ def test_markers_left_behind_keep_the_merge_open_and_name_the_file(tmp_path: Pat
     assert out["coding_agent_summary"] == "Could not decide which greeting to keep."
     assert out["merge_in_progress"] is True
     assert head_sha(str(work)) == before
+    assert out["questions"] == [
+        {
+            "file": "app.py",
+            "question": "How should app.py be resolved?",
+            "options": [
+                "Keep feature: greeting = 'hello, world'",
+                "Take main: greeting = 'hi'",
+                "Combine both sides (say how)",
+            ],
+            "hunks": [{"ours": ["greeting = 'hello, world'"], "theirs": ["greeting = 'hi'"]}],
+        }
+    ]
+    assert "ask_user_choice" in out["next_step"]
 
 
 def test_user_instructions_reach_the_coding_agent(tmp_path: Path) -> None:

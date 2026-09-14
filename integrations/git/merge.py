@@ -131,6 +131,37 @@ def describe_conflicts(workspace: str, *, ours: str, theirs: str) -> list[Confli
     return described
 
 
+def take_side(workspace: str, path: str, side: str) -> None:
+    """Resolve *path* by taking ``ours`` or ``theirs`` wholesale and staging it.
+
+    When the chosen side deleted the file, the resolution is the deletion.
+    """
+    if side not in ("ours", "theirs"):
+        raise GitCommandError(MERGE_FAILED, f"Unknown merge side {side!r} for {path}.")
+    present = _conflict_stages(workspace, path)
+    wanted = _STAGE_OURS if side == "ours" else _STAGE_THEIRS
+    if wanted not in present:
+        result = _run_git(workspace, "rm", "-q", "--", path)
+    else:
+        result = _run_git(workspace, "checkout", f"--{side}", "--", path)
+        if result.returncode == 0:
+            result = _run_git(workspace, "add", "--", path)
+    if result.returncode != 0:
+        raise GitCommandError(
+            MERGE_FAILED, f"Could not take {side} for {path}: {result.stderr.strip()}"
+        )
+
+
+def _conflict_stages(workspace: str, path: str) -> set[str]:
+    result = _run_git(workspace, "ls-files", "-u", "-z", "--", path)
+    stages: set[str] = set()
+    for record in result.stdout.split("\0"):
+        fields = record.partition("\t")[0].split()
+        if len(fields) >= 3:
+            stages.add(fields[2])
+    return stages
+
+
 def paths_with_conflict_markers(workspace: str, paths: Sequence[str]) -> list[str]:
     """Subset of *paths* whose working-tree content still holds conflict markers."""
     marked: list[str] = []
@@ -249,5 +280,6 @@ __all__ = [
     "merge_ref",
     "paths_with_conflict_markers",
     "stage_paths",
+    "take_side",
     "unmerged_paths",
 ]

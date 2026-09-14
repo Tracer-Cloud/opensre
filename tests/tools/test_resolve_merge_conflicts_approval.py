@@ -168,3 +168,25 @@ def test_green_checks_end_the_run_and_failed_checks_are_reported(tmp_path: Path)
     assert failed_output["error_kind"] == "checks_failed"
     assert failed_output["failing_checks"] == ["CI Gate"]
     assert "but checks failed: CI Gate" in failed_output["outcome"]
+
+
+def test_escape_before_the_commit_leaves_the_merge_open(tmp_path: Path) -> None:
+    # Arrange: the user presses ESC while the coding agent is still working.
+    work, _bare = _stopped_merge_with_origin(tmp_path)
+    before = head_sha(str(work))
+
+    # Act
+    with (
+        patch(_VERIFY, return_value=(True, "ready")),
+        patch(_RUN, side_effect=lambda *_a, **_k: _resolve_app(work)),
+    ):
+        out = resolve_merge(
+            str(work), ref=None, model=None, instructions=None, cancelled=lambda: True
+        )
+
+    # Assert
+    assert out["success"] is False
+    assert out["error_kind"] == "cancelled"
+    assert out["merge_in_progress"] is True
+    assert head_sha(str(work)) == before
+    assert "nothing was committed or pushed" in out["error"]

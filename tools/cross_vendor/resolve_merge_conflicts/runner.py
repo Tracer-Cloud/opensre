@@ -10,8 +10,8 @@ the merge is left in progress, so the user decides them; nothing is aborted.
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from dataclasses import dataclass
+from collections.abc import Callable, Mapping
+from dataclasses import dataclass, replace
 from typing import Any, Final
 
 from integrations.coding_agent import (
@@ -43,12 +43,15 @@ from integrations.git import (
     merge_ref,
     paths_with_conflict_markers,
     push_head_to_upstream,
+    take_side,
     unresolved_conflicts,
     upstream_branch,
 )
 from integrations.github import CHECKS_NOT_WATCHED, ChecksOutcome, watch_pull_request_checks
-from tools.cross_vendor.resolve_merge_conflicts.comparison import render_comparison
+from tools.cross_vendor.resolve_merge_conflicts.comparison import PENDING, render_comparison
 from tools.cross_vendor.resolve_merge_conflicts.errors import (
+    ERR_AWAITING_DECISIONS,
+    ERR_CANCELLED,
     ERR_CLI_UNAVAILABLE,
     ERR_CONFIRMATION_DENIED,
     ERR_CONFLICTS_REMAIN,
@@ -63,6 +66,47 @@ SOURCE: Final = "git"
 
 # Asked to allow one action; True means the shell's policy (or the user) approved it.
 Approve = Callable[[str], bool]
+# True once the user pressed ESC; checked before every step that changes the branch.
+Cancelled = Callable[[], bool]
+
+KEEP_OURS: Final = "ours"
+TAKE_THEIRS: Final = "theirs"
+COMBINE: Final = "combine"
+_SIDES_AND_COMBINE: Final = (KEEP_OURS, TAKE_THEIRS, COMBINE)
+
+
+@dataclass(frozen=True)
+class FileChoice:
+    """The question the tool asks for one conflicted file, with what each side holds."""
+
+    path: str
+    ours: str
+    theirs: str
+    ours_summary: str
+    theirs_summary: str
+
+    @property
+    def title(self) -> str:
+        return f"Resolve {self.path}"
+
+    @property
+    def options(self) -> tuple[str, str, str]:
+        return (
+            f"Keep ours ({self.ours}): {self.ours_summary}",
+            f"Take theirs ({self.theirs}): {self.theirs_summary}",
+            "Combine both with the coding agent",
+        )
+
+
+# Shows the per-file menu; True when it was queued and the turn must end to await the answer.
+Ask = Callable[[list[FileChoice]], bool]
+
+AWAITING_INSTRUCTION: Final = (
+    "The per-file menu opens after this turn ends. End the turn now without a user-facing "
+    "sentence; do NOT repeat the options as text. The user's choices arrive as the next "
+    "user message; then call resolve_merge_conflicts again with no arguments (the answers "
+    "are read automatically)."
+)
 
 
 def resolve_merge(
@@ -71,14 +115,19 @@ def resolve_merge(
     ref: str | None,
     model: str | None,
     instructions: str | None,
+    decisions: Mapping[str, str] | None = None,
     console: Any = None,
     approve: Approve | None = None,
     wait_for_checks: bool = True,
+    cancelled: Cancelled | None = None,
+    ask: Ask | None = None,
 ) -> dict[str, Any]:
     """Resolve the merge in *workspace*, then commit and push it once *approve* allows.
 
-    With a *console*, each conflict hunk is painted side by side (ours, theirs,
-    merged result) before approval is requested. Without *approve* (no shell
+    The conflicts are shown side by side first. *decisions* maps a conflicted
+    path to ``ours``, ``theirs``, ``combine`` or free text for the coding
+    agent; files without a decision are asked through *ask* when it can show a
+    menu, and otherwise go to the coding agent. Without *approve* (no shell
     policy to consult, as in an unattended run) the commit and push proceed.
     After the push, *wait_for_checks* waits for the pull request's checks.
     """
@@ -89,9 +138,12 @@ def resolve_merge(
             ref=ref,
             model=model,
             instructions=instructions,
+            decisions=decisions or {},
             console=console,
             approve=approve,
             wait_for_checks=wait_for_checks,
+            cancelled=cancelled,
+            ask=ask,
         )
     except ResolveMergeError as exc:
         rendered = _paint(console, ws, exc.conflicts)
@@ -103,6 +155,8 @@ def resolve_merge(
             unresolved=exc.unresolved,
             summary=exc.summary,
             rendered=rendered or exc.rendered,
+            questions=_questions(ws, exc.conflicts, exc.unresolved),
+            awaiting=exc.kind == ERR_AWAITING_DECISIONS,
         )
 
 
@@ -112,11 +166,19 @@ def _resolve(
     ref: str | None,
     model: str | None,
     instructions: str | None,
+    decisions: Mapping[str, str],
     console: Any,
     approve: Approve | None,
     wait_for_checks: bool,
+    cancelled: Cancelled | None,
+    ask: Ask | None,
 ) -> dict[str, Any]:
-    finish = _Finish(console=console, approve=approve, wait_for_checks=wait_for_checks)
+    finish = _Finish(
+        console=console,
+        approve=approve,
+        wait_for_checks=wait_for_checks,
+        cancelled=cancelled or _never,
+    )
     try:
         ensure_git_repo(ws)
         branch = current_branch(ws) or "HEAD"
@@ -146,9 +208,49 @@ def _resolve(
             if conflicts.paths
             else ""
         )
+        if instructions and not conflicts.paths:
+            summary = (
+                "Nothing was left to resolve, so the instructions were not applied; "
+                "to change how a file was resolved earlier, ask for that edit."
+            )
         return _commit(ws, conflicts, baseline, summary=summary, finish=finish)
 
-    result = _run_agent(conflicts, ws, model=model, merged_ref=theirs, instructions=instructions)
+    shown = _paint(console, ws, conflicts, pending_label=PENDING)
+    plan = _decision_plan(conflicts, decisions)
+    undecided = [path for path in conflicts.names if path not in plan]
+    if undecided and ask is not None and ask(_choices(ws, conflicts, undecided)):
+        raise ResolveMergeError(
+            ERR_AWAITING_DECISIONS,
+            f"Waiting for the user's choice on {len(undecided)} file(s): "
+            f"{', '.join(undecided)}. The merge stays in progress in {ws}.",
+            unresolved=tuple(undecided),
+            rendered=shown,
+        )
+    for path in undecided:
+        plan[path] = COMBINE
+    try:
+        for path, choice in plan.items():
+            if choice in (KEEP_OURS, TAKE_THEIRS):
+                take_side(ws, path, choice)
+    except GitCommandError as exc:
+        raise ResolveMergeError(exc.kind, exc.message, rendered=shown) from exc
+    to_agent = [path for path, choice in plan.items() if choice not in (KEEP_OURS, TAKE_THEIRS)]
+    notes = [
+        f"{path}: {choice}" for path, choice in plan.items() if choice not in _SIDES_AND_COMBINE
+    ]
+    if to_agent:
+        agent_conflicts = replace(
+            conflicts, paths=tuple(c for c in conflicts.paths if c.path in to_agent)
+        )
+        result = _run_agent(
+            agent_conflicts,
+            ws,
+            model=model,
+            merged_ref=theirs,
+            instructions="\n".join(part for part in (instructions or "", *notes) if part),
+        )
+    else:
+        result = CodingResult(success=True, summary=_choices_summary(plan))
     try:
         if not merge_in_progress(ws):
             return _merge_finished_by_agent(ws, conflicts, merging, result, finish=finish)
@@ -170,13 +272,57 @@ def _resolve(
             ERR_CONFLICTS_REMAIN,
             f"{len(remaining)} file(s) still need a person's decision: "
             f"{'; '.join(f'{path} ({why})' for path, why in remaining)}. "
-            f"The merge stays in progress in {ws}; decide those files with the user "
-            "and run the resolution again with their instructions.",
+            f"The merge stays in progress in {ws}; ask the user how to settle them "
+            "and run the resolution again with their decisions.",
             unresolved=tuple(path for path, _why in remaining),
             summary=result.summary,
             conflicts=conflicts,
         )
     return _commit(ws, conflicts, baseline, summary=result.summary, finish=finish)
+
+
+def _decision_plan(conflicts: MergeConflicts, decisions: Mapping[str, str]) -> dict[str, str]:
+    """Normalize the given decisions to ``ours``/``theirs``/``combine``/free text per path."""
+    return {
+        path: normalize_decision(raw)
+        for path, raw in decisions.items()
+        if path in conflicts.names and raw.strip()
+    }
+
+
+def normalize_decision(raw: str) -> str:
+    """Map a menu label or a word to a side; anything else is free text for the agent."""
+    text = raw.strip()
+    lowered = text.casefold()
+    if lowered in (KEEP_OURS, "keep", "mine") or lowered.startswith("keep ours"):
+        return KEEP_OURS
+    if lowered in (TAKE_THEIRS, "take", "main") or lowered.startswith("take theirs"):
+        return TAKE_THEIRS
+    if lowered in (COMBINE, "agent", "both") or lowered.startswith("combine both"):
+        return COMBINE
+    return text
+
+
+def _choices(ws: str, conflicts: MergeConflicts, paths: list[str]) -> list[FileChoice]:
+    comparisons = compare_hunks(ws, conflicts)
+    choices: list[FileChoice] = []
+    for path in paths:
+        hunks = [c for c in comparisons if c.path == path]
+        choices.append(
+            FileChoice(
+                path=path,
+                ours=conflicts.ours,
+                theirs=conflicts.theirs,
+                ours_summary=_hunk_summary([line for h in hunks for line in h.ours]),
+                theirs_summary=_hunk_summary([line for h in hunks for line in h.theirs]),
+            )
+        )
+    return choices
+
+
+def _choices_summary(plan: Mapping[str, str]) -> str:
+    words = {KEEP_OURS: "kept ours", TAKE_THEIRS: "took theirs"}
+    return "; ".join(f"{path}: {words.get(choice, choice)}" for path, choice in plan.items())
 
 
 def _run_agent(
@@ -240,6 +386,24 @@ class _Finish:
     console: Any
     approve: Approve | None
     wait_for_checks: bool
+    cancelled: Cancelled
+
+
+def _never() -> bool:
+    return False
+
+
+def _stop_if_cancelled(
+    finish: _Finish, ws: str, *, before: str, summary: str, rendered: bool
+) -> None:
+    if finish.cancelled():
+        raise ResolveMergeError(
+            ERR_CANCELLED,
+            f"Stopped before the {before}. The resolved files are in the working tree, "
+            f"unstaged; the merge stays in progress in {ws} and nothing was committed or pushed.",
+            summary=summary,
+            rendered=rendered,
+        )
 
 
 def _commit(
@@ -252,6 +416,7 @@ def _commit(
 ) -> dict[str, Any]:
     """Show the resolution, ask to commit and push, then do both and watch the checks."""
     rendered = _paint(finish.console, ws, conflicts)
+    _stop_if_cancelled(finish, ws, before="commit", summary=summary, rendered=rendered)
     target = _push_target(ws, conflicts.ours)
     action = (
         f"commit the merge of {conflicts.theirs} into {conflicts.ours}, push it to {target}"
@@ -265,6 +430,7 @@ def _commit(
             summary=summary,
             rendered=rendered,
         )
+    _stop_if_cancelled(finish, ws, before="commit", summary=summary, rendered=rendered)
     try:
         sha = conclude_merge(ws, conflicts, baseline=baseline)
     except GitCommandError as exc:
@@ -274,6 +440,19 @@ def _commit(
             summary=summary,
             rendered=rendered,
         ) from exc
+    if finish.cancelled():
+        return _output(
+            ws,
+            branch=conflicts.ours,
+            merged=conflicts.theirs,
+            commit_sha=sha,
+            resolved=conflicts.names,
+            resolutions=_resolutions(ws, sha, conflicts),
+            summary=summary,
+            rendered=rendered,
+            error_kind=ERR_CANCELLED,
+            error="Stopped before the push.",
+        )
     pushed_to, push_error, checks = _push_and_watch(ws, sha, finish)
     return _output(
         ws,
@@ -353,13 +532,61 @@ def _resolutions(ws: str, sha: str, conflicts: MergeConflicts) -> tuple[str, ...
     return tuple(str(r) for r in describe_resolutions(ws, sha, conflicts))
 
 
-def _paint(console: Any, ws: str, conflicts: MergeConflicts | None) -> bool:
+_HUNK_SUMMARY_CHARS = 90
+
+
+def _questions(
+    ws: str, conflicts: MergeConflicts | None, unresolved: tuple[str, ...]
+) -> list[dict[str, Any]]:
+    """One ready-to-ask question per unresolved file, showing what each side holds."""
+    if conflicts is None or not unresolved:
+        return []
+    questions: list[dict[str, Any]] = []
+    for path in unresolved:
+        hunks = [c for c in compare_hunks(ws, conflicts) if c.path == path and c.result is None]
+        if not hunks:
+            continue
+        ours = _hunk_summary([line for hunk in hunks for line in hunk.ours])
+        theirs = _hunk_summary([line for hunk in hunks for line in hunk.theirs])
+        questions.append(
+            {
+                "file": path,
+                "question": f"How should {path} be resolved?",
+                "options": [
+                    f"Keep {conflicts.ours}: {ours}",
+                    f"Take {conflicts.theirs}: {theirs}",
+                    "Combine both sides (say how)",
+                ],
+                "hunks": [{"ours": list(hunk.ours), "theirs": list(hunk.theirs)} for hunk in hunks],
+            }
+        )
+    return questions
+
+
+def _hunk_summary(lines: list[str]) -> str:
+    text = " | ".join(line.strip() for line in lines if line.strip()) or "(empty)"
+    if len(text) > _HUNK_SUMMARY_CHARS:
+        return text[: _HUNK_SUMMARY_CHARS - 1] + "…"
+    return text
+
+
+def _paint(
+    console: Any, ws: str, conflicts: MergeConflicts | None, *, pending_label: str | None = None
+) -> bool:
     """Draw the side-by-side hunk comparison when a terminal console is available."""
     if console is None or conflicts is None or not conflicts.paths:
         return False
-    render_comparison(
-        console, compare_hunks(ws, conflicts), ours=conflicts.ours, theirs=conflicts.theirs
-    )
+    comparisons = compare_hunks(ws, conflicts)
+    if pending_label is not None:
+        render_comparison(
+            console,
+            comparisons,
+            ours=conflicts.ours,
+            theirs=conflicts.theirs,
+            pending_label=pending_label,
+        )
+    else:
+        render_comparison(console, comparisons, ours=conflicts.ours, theirs=conflicts.theirs)
     return True
 
 
@@ -379,6 +606,8 @@ def _output(
     rendered: bool = False,
     pushed_to: str = "",
     checks: ChecksOutcome | None = None,
+    questions: list[dict[str, Any]] | None = None,
+    awaiting: bool = False,
 ) -> dict[str, Any]:
     committed = success and bool(commit_sha)
     return {
@@ -399,6 +628,7 @@ def _output(
             pushed_to=pushed_to,
             checks=checks,
             unresolved=unresolved,
+            awaiting=awaiting,
         ),
         "success": success,
         "error_kind": error_kind,
@@ -415,6 +645,9 @@ def _output(
         "failing_checks": list(checks.failing_checks) if checks else [],
         "resolved_files": list(resolved),
         "unresolved_files": list(unresolved),
+        "questions": [] if awaiting else (questions or []),
+        "menu": "queued" if awaiting else "",
+        "instruction": AWAITING_INSTRUCTION if awaiting else "",
         "coding_agent_summary": summary,
         "merge_in_progress": _merge_still_in_progress(ws),
         "rendered_in_shell": rendered,
@@ -462,8 +695,11 @@ def _next_step(
     pushed_to: str,
     checks: ChecksOutcome | None,
     unresolved: tuple[str, ...],
+    awaiting: bool = False,
 ) -> str:
     """What the user does now; the caller should suggest it."""
+    if awaiting:
+        return AWAITING_INSTRUCTION
     if committed and commit_sha and pushed_to:
         if checks is None or checks.state == CHECKS_NOT_WATCHED:
             return "Watch the pull request's checks on the pushed commit."
@@ -479,8 +715,8 @@ def _next_step(
         )
     if unresolved:
         return (
-            "Decide the unresolved files with the user (which side to keep, or how to combine "
-            "them) and run the resolution again with those instructions."
+            "Ask the user each entry of `questions` with ask_user_choice, exactly as given, "
+            "then run the resolution again with their answers in `instructions`."
         )
     return (
         "Review the resolved files; to finish, ask again to commit and push the merge, or say "

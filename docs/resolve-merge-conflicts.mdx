@@ -43,16 +43,21 @@ agent word for word.
 
 1. OpenSRE reads the unmerged paths of the merge in progress in the current
    directory. With no merge in progress, it merges the branch you named first.
-2. The coding agent edits the conflicted files. Lockfiles are regenerated from
-   the resolved manifest, never merged by hand.
-3. OpenSRE verifies that no conflict marker or unmerged path remains. If any
-   does, it reports those files and leaves the merge open for you.
-4. It prints one table per file: each conflict hunk with your side, their side,
-   and the merged result, so you can see what was decided before anything is
-   committed.
+2. It prints one table per conflicted file right away: each conflict hunk with
+   your side and their side, so you see what is disputed before anything runs.
+3. It asks you, per file, in the shell menu: keep ours, take theirs, combine
+   both with the coding agent, or type what you want. A decision you already
+   stated in your request ("take main's version of config.py") skips the menu
+   for that file. In an unattended run every file goes to the coding agent.
+4. Keep and take are applied by git. Only the files you chose to combine go
+   to the coding agent; lockfiles are regenerated from the resolved manifest,
+   never merged by hand. OpenSRE then verifies that no conflict marker or
+   unmerged path remains and prints the table again with the merged result.
 5. It asks to commit the merge and push the branch, following your `/auto`
    level, then does both. Unrelated changes you had in the working tree stay
-   uncommitted.
+   uncommitted. While a merge is in progress the shell refuses `git commit`,
+   `push`, `checkout`, `reset` and `merge` typed by the assistant, so the
+   merge only changes through this flow.
 6. When the branch has an open pull request on GitHub, it waits for that pull
    request's checks (up to 15 minutes) and reports whether they passed, which
    ones failed, or whether another commit replaced the merge. Pass

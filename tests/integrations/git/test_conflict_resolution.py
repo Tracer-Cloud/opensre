@@ -13,6 +13,7 @@ from integrations.git import (
     merge_head_name,
     merge_head_sha,
     merge_in_progress,
+    take_side,
     unresolved_conflicts,
 )
 
@@ -156,3 +157,19 @@ def test_merge_committed_by_resolver_requires_a_merge_of_both_tips_on_the_same_b
     # Assert
     assert abandoned is False
     assert committed is True
+
+
+def test_take_side_resolves_a_file_by_one_side_and_a_deleted_side_by_removing_it(
+    tmp_path: Path,
+) -> None:
+    # Arrange: shared.txt conflicts on content; doomed.txt was deleted on main.
+    work = _stopped_modify_delete_merge(tmp_path)
+    conflicts = merge_conflicts(str(work), ours="feature", theirs="main")
+
+    # Act
+    take_side(str(work), "doomed.txt", "theirs")
+
+    # Assert
+    assert unresolved_conflicts(str(work), conflicts) == []
+    assert not (work / "doomed.txt").exists()
+    assert _git(work, "diff", "--name-only", "--diff-filter=U") == ""

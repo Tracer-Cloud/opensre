@@ -12,10 +12,16 @@ from integrations.git import HunkComparison
 
 _MAX_LINES_PER_CELL = 30
 _UNRESOLVED = "(still conflicted)"
+PENDING = "(to decide)"
 
 
 def render_comparison(
-    console: Any, comparisons: Sequence[HunkComparison], *, ours: str, theirs: str
+    console: Any,
+    comparisons: Sequence[HunkComparison],
+    *,
+    ours: str,
+    theirs: str,
+    pending_label: str = _UNRESOLVED,
 ) -> None:
     """Print one three-column table per conflicted file, one row per hunk."""
     for path in _paths_in_order(comparisons):
@@ -38,7 +44,7 @@ def render_comparison(
                 _cell(hunk.theirs, style="blue"),
                 _cell(hunk.result, style="green")
                 if hunk.result is not None
-                else Text(_UNRESOLVED, style="yellow"),
+                else Text(pending_label, style="yellow"),
             )
         console.print(table)
 
@@ -79,4 +85,4 @@ def _clip(lines: Sequence[str]) -> list[str]:
     return [*lines[:_MAX_LINES_PER_CELL], f"… {hidden} more line{'s' if hidden != 1 else ''}"]
 
 
-__all__ = ["comparison_text", "render_comparison"]
+__all__ = ["PENDING", "comparison_text", "render_comparison"]

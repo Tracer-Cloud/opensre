@@ -16,6 +16,8 @@ ERR_EXECUTION = "execution_error"
 ERR_CONFLICTS_REMAIN = "conflicts_remain"
 ERR_MERGE_ABANDONED = "merge_abandoned"
 ERR_CONFIRMATION_DENIED = "confirmation_denied"
+ERR_CANCELLED = "cancelled"
+ERR_AWAITING_DECISIONS = "awaiting_decisions"
 
 
 class ResolveMergeError(Exception):

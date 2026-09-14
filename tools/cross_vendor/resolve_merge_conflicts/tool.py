@@ -6,16 +6,89 @@ scans this module, where the instance's class is defined.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable
 from typing import Any
 
+from core.agent_harness.spi.handoff import AskUserQuestion, parse_ask_user_answers, question_key
+from core.agent_harness.spi.session_state import (
+    PendingUserChoice,
+    session_terminal,
+    set_auto_command,
+)
 from core.agent_harness.tools import ActionToolScope, action_context_from_agent_context
 from core.domain.types.tools import ToolSurface
 from core.tool import BaseTool, SideEffectLevel
-from tools.cross_vendor.resolve_merge_conflicts.runner import SOURCE, resolve_merge
+from integrations.git import merge_in_progress, unmerged_paths
+from tools.cross_vendor.resolve_merge_conflicts.runner import SOURCE, FileChoice, resolve_merge
 from tools.interactive_shell.shared import allow_tool
 
 _MERGE_PUSH_TOOL_TYPE = "merge_push"
+_CHOOSE_COMMAND = "/choose"
+_MENU_HEADER = "Resolve merge conflicts"
+
+
+def _menu_available(scope: ActionToolScope | None) -> bool:
+    """True when the shell can open its selection menu after this turn."""
+    if scope is None or scope.is_tty is False or session_terminal(scope.session) is None:
+        return False
+    ports = getattr(scope, "slash_ports", None)
+    return ports is not None and bool(ports.tty_interactive())
+
+
+def _ask(scope: ActionToolScope | None) -> Callable[[list[FileChoice]], bool] | None:
+    """Queue the shell's per-file menu; the answers arrive with the next user message."""
+    if not _menu_available(scope):
+        return None
+    assert scope is not None
+
+    def ask(choices: list[FileChoice]) -> bool:
+        if not choices:
+            return False
+        if len(choices) == 1:
+            only = choices[0]
+            pending = PendingUserChoice(
+                title=only.title,
+                options=only.options,
+                note="Free text is passed to the coding agent.",
+            )
+        else:
+            pending = PendingUserChoice(
+                title=_MENU_HEADER,
+                options=choices[0].options,
+                questions=tuple(
+                    AskUserQuestion(
+                        label=choice.path.rsplit("/", 1)[-1],
+                        title=choice.title,
+                        options=choice.options,
+                    )
+                    for choice in choices
+                ),
+            )
+        scope.session.pending_user_choice = pending
+        set_auto_command(scope.session, _CHOOSE_COMMAND)
+        terminal = session_terminal(scope.session)
+        if terminal is not None:
+            terminal.awaiting_handoff_answer = True
+        return True
+
+    return ask
+
+
+def _answered_decisions(scope: ActionToolScope | None, paths: list[str]) -> dict[str, str]:
+    """Decisions the user made in the menu, read from this turn's message by question title."""
+    if scope is None:
+        return {}
+    answers = {
+        question_key(asked): answer
+        for asked, answer in parse_ask_user_answers(getattr(scope, "turn_user_message", "") or "")
+    }
+    decided: dict[str, str] = {}
+    for path in paths:
+        answer = answers.get(question_key(f"Resolve {path}"))
+        if answer:
+            decided[path] = answer
+    return decided
 
 
 def _action_scope(context: Any) -> ActionToolScope | None:
@@ -25,6 +98,14 @@ def _action_scope(context: Any) -> ActionToolScope | None:
         return action_context_from_agent_context(context)
     except RuntimeError:
         return None
+
+
+def _cancellation(scope: ActionToolScope | None) -> Callable[[], bool] | None:
+    """Report whether the user pressed ESC, so no commit or push happens after that."""
+    console = getattr(scope, "console", None)
+    if console is None:
+        return None
+    return lambda: bool(getattr(console, "cancel_requested", False))
 
 
 def _approval(scope: ActionToolScope | None) -> Callable[[str], bool] | None:
@@ -98,11 +179,22 @@ class ResolveMergeConflictsTool(BaseTool):
                 ),
                 "nullable": True,
             },
+            "decisions": {
+                "type": "object",
+                "description": (
+                    "Per conflicted file, what the user decided: 'ours' (keep the current "
+                    "branch), 'theirs' (take the merged branch), 'combine' (the coding agent "
+                    "merges both), or free text the agent must follow. Files not listed are "
+                    "asked in the shell menu; menu answers are read automatically."
+                ),
+                "additionalProperties": {"type": "string"},
+                "nullable": True,
+            },
             "instructions": {
                 "type": "string",
                 "description": (
-                    "The user's decisions for specific files or hunks, passed to the coding "
-                    "agent verbatim (for example 'keep our version of config.py')."
+                    "General guidance for the coding agent when it combines files "
+                    "(for example 'bump the skill version to 2.1')."
                 ),
                 "nullable": True,
             },
@@ -141,6 +233,10 @@ class ResolveMergeConflictsTool(BaseTool):
         "failing_checks": "Names of the checks that failed",
         "resolved_files": "Conflicted files the coding agent resolved",
         "unresolved_files": "Conflicted files still waiting for a decision",
+        "menu": "'queued' when the per-file menu will open after this turn; end the turn",
+        "instruction": "What to do when the menu is queued",
+        "questions": "One question per unresolved file, with its options (keep ours, take "
+        "theirs, combine) and the text of each side, for surfaces without a menu",
         "coding_agent_summary": "The coding agent's account of how it resolved each file, "
         "written before OpenSRE committed the merge",
         "merge_in_progress": "True when the merge is still open in the working tree",
@@ -158,6 +254,7 @@ class ResolveMergeConflictsTool(BaseTool):
         ref: str | None = None,
         instructions: str | None = None,
         model: str | None = None,
+        decisions: dict[str, str] | None = None,
         wait_for_checks: bool | None = True,
         context: Any = None,
     ) -> dict[str, Any]:
@@ -167,10 +264,22 @@ class ResolveMergeConflictsTool(BaseTool):
             ref=ref,
             model=model,
             instructions=instructions,
+            decisions={**(decisions or {}), **_answered_decisions(scope, _open_paths(workspace))},
             console=getattr(scope, "console", None),
             approve=_approval(scope),
             wait_for_checks=wait_for_checks is not False,
+            cancelled=_cancellation(scope),
+            ask=_ask(scope),
         )
+
+
+def _open_paths(workspace: str | None) -> list[str]:
+    """Conflicted paths of the merge in progress, to match menu answers against."""
+    ws = workspace or os.getcwd()
+    try:
+        return unmerged_paths(ws) if merge_in_progress(ws) else []
+    except Exception:  # noqa: BLE001 - not a repository or git missing: nothing to match
+        return []
 
 
 # Module-level instance so the tool registry auto-discovers it (see tools/registry.py).

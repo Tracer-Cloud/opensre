@@ -311,6 +311,10 @@ def conflict_resolution_task(
         "",
         f"Keep both the intent of {conflicts.ours} and every change from "
         f"{conflicts.theirs}; remove all conflict markers.",
+        "Resolve every hunk. Leave conflict markers only where the two sides make "
+        "contradictory decisions that a person must choose between, and name that "
+        "decision in your summary. Never leave markers on formatting, comments, "
+        f"versions, dates, or bookkeeping metadata: take the {conflicts.theirs} side there.",
     ]
     if lockfiles:
         lines.append(

@@ -76,6 +76,7 @@ from integrations.git.merge import (
     merge_ref,
     paths_with_conflict_markers,
     stage_paths,
+    take_side,
     unmerged_paths,
 )
 from integrations.git.worktree_capture import WorktreeChanges, capture_worktree_changes
@@ -140,6 +141,7 @@ __all__ = [
     "short_head",
     "stage_paths",
     "staged_paths",
+    "take_side",
     "unmerged_paths",
     "unresolved_conflicts",
     "unstage_paths",
