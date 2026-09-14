@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from collections.abc import Collection
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -111,8 +112,37 @@ def get_loop_messages(
     return messages
 
 
+def find_loop_reports(
+    message_keys: Collection[tuple[str, str]], *, inbox_path: Path | None = None
+) -> dict[tuple[str, str], str]:
+    """Find legacy reports by exact task and delivery IDs, without an inbox lookback limit."""
+    path = inbox_path or _default_inbox_path()
+    remaining = set(message_keys)
+    if not remaining or not path.exists():
+        return {}
+    reports: dict[tuple[str, str], str] = {}
+    with path.open(encoding="utf-8") as stream:
+        for line in stream:
+            try:
+                entry = json.loads(line)
+            except (json.JSONDecodeError, ValueError):
+                continue
+            if not isinstance(entry, dict):
+                continue
+            key = (entry.get("task_id"), entry.get("message_id"))
+            if not all(isinstance(value, str) for value in key):
+                continue
+            if key in remaining and isinstance(entry.get("message"), str):
+                reports[key] = entry["message"]
+                remaining.remove(key)
+                if not remaining:
+                    break
+    return reports
+
+
 __all__ = [
     "LocalLoopMessage",
     "get_loop_messages",
+    "find_loop_reports",
     "record_loop_message",
 ]

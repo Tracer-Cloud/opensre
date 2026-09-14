@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import signal
 import threading
 from collections.abc import Iterable, Iterator
@@ -9,7 +10,6 @@ from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import IntEnum, StrEnum
 from io import StringIO
-from types import FrameType
 from typing import Any
 
 from rich.console import Console
@@ -21,10 +21,13 @@ from core.agent_harness import (
     SessionManager,
     TurnResult,
 )
+from core.agent_harness.ports import ToolEventObserver
 from core.agent_harness.spi.cancel import ensure_turn_cancel
+from core.agent_harness.spi.session_goal import SessionGoal, SessionGoalReason, SessionGoalStatus
 from core.tool import ToolExecutionHooks
 from infrastructure.errors import OpenSREError
 from surfaces.cli.ask.approval import ApprovalTracker, build_approval_hooks
+from surfaces.cli.ask.signals import AskSignal, ask_signal_scope
 
 #: Capabilities the one-shot ``ask`` agent must not reach — it answers or runs a
 #: bounded action, not slash commands or task cancellation.
@@ -76,14 +79,6 @@ class AskOutcome:
         }
 
 
-class AskSignal(BaseException):
-    """Signal raised inside the command so session cleanup can finish."""
-
-    def __init__(self, signum: int) -> None:
-        super().__init__(signum)
-        self.signum = signum
-
-
 class _CancellableConsole:
     def __init__(self, cancel_event: threading.Event) -> None:
         self._cancel_event = cancel_event
@@ -98,7 +93,11 @@ class _CancellableConsole:
 
 
 class _AskOutputSink:
-    """Discard intermediate rendering while preserving streamed answer text."""
+    """Discard intermediate rendering while retaining the terminal-visible answer."""
+
+    def __init__(self) -> None:
+        self._rendered_event = ""
+        self._completed_turn = False
 
     def print(self, message: str = "") -> None:
         _ = message
@@ -107,7 +106,8 @@ class _AskOutputSink:
         _ = label
 
     def render_error(self, message: str) -> None:
-        _ = message
+        if message.strip():
+            self._rendered_event = message
 
     def stream(
         self,
@@ -118,30 +118,52 @@ class _AskOutputSink:
         defer_want_me_to_closer: bool = False,
     ) -> str:
         _ = (label, suppress_if_starts_with, defer_want_me_to_closer)
-        return "".join(str(chunk) for chunk in chunks)
+        response = "".join(str(chunk) for chunk in chunks)
+        if response.strip():
+            self._rendered_event = response
+        return response
 
     def finish_streamed_response(self, answer: str) -> None:
         _ = answer
 
+    def mark_turn_complete(self) -> None:
+        """Mark that the real agent turn drove this sink."""
+        self._completed_turn = True
+
+    def clear_rendered_event(self) -> None:
+        """Discard a prior outer turn's response before the next one starts."""
+        self._rendered_event = ""
+
+    @property
+    def rendered_response(self) -> str:
+        """Return only the response or error the interactive terminal would render."""
+        return self._rendered_event.strip()
+
+    @property
+    def completed_turn(self) -> bool:
+        """Whether this sink observed a completed real agent turn."""
+        return self._completed_turn
+
 
 @contextmanager
-def ask_signal_scope(cancel_event: threading.Event | None = None) -> Iterator[None]:
-    """Map process termination signals to ``AskSignal`` within one CLI scope."""
-    event = cancel_event or threading.Event()
-    previous: dict[signal.Signals, Any] = {}
+def _ask_log_scope() -> Iterator[None]:
+    """Keep unrendered internal warnings out of a normal one-shot response."""
+    root = logging.getLogger()
+    if root.handlers:
+        yield
+        return
 
-    def handle(signum: int, _frame: FrameType | None) -> None:
-        event.set()
-        raise AskSignal(signum)
-
-    for sig in (signal.SIGINT, signal.SIGTERM):
-        previous[sig] = signal.getsignal(sig)
-        signal.signal(sig, handle)
+    # A normal CLI process does not configure root logging. Without a handler,
+    # Python's ``lastResort`` handler writes warnings such as a failed shell
+    # probe directly to stderr, ahead of the answer renderer. The tool result
+    # remains in the agent context; the final response is the user-facing
+    # diagnostic. Do not override an embedding host's configured logging.
+    handler = logging.NullHandler()
+    root.addHandler(handler)
     try:
         yield
     finally:
-        for sig, handler in previous.items():
-            signal.signal(sig, handler)
+        root.removeHandler(handler)
 
 
 def _restrict_ask_capabilities(session: SessionCore) -> None:
@@ -150,14 +172,26 @@ def _restrict_ask_capabilities(session: SessionCore) -> None:
         session.available_capabilities[capability] = ()
 
 
-def _run_agent_turn(prompt: str, hooks: ToolExecutionHooks) -> TurnResult:
+def _clear_prior_goal_response(output: _AskOutputSink, goal: SessionGoal) -> None:
+    """Prevent an earlier goal turn from standing in for a silent final turn."""
+    if goal.status == SessionGoalStatus.ACTIVE and SessionGoalReason.is_working(goal.last_reason):
+        output.clear_rendered_event()
+
+
+def _run_agent_turn(
+    prompt: str,
+    hooks: ToolExecutionHooks,
+    *,
+    tool_event_observer: ToolEventObserver | None = None,
+    output: _AskOutputSink | None = None,
+) -> TurnResult:
     manager = SessionManager()
-    output = _AskOutputSink()
+    output = output or _AskOutputSink()
     cancel_event = ensure_turn_cancel(output)
     console = _CancellableConsole(cancel_event)
     session: SessionCore | None = None
     try:
-        with ask_signal_scope(cancel_event):
+        with ask_signal_scope(cancel_event), _ask_log_scope():
             agent_session = AgentSession.start(
                 SessionConfig(
                     load_env=True,
@@ -172,17 +206,23 @@ def _run_agent_turn(prompt: str, hooks: ToolExecutionHooks) -> TurnResult:
                 console=console,
                 is_tty=False,
                 tool_hooks=hooks,
+                tool_event_observer=tool_event_observer,
             )
             session = agent_session.bound_session
             # chat_until_goal, not chat: the agent can attach a session goal,
             # which must run to completion rather than stop after one turn.
-            return agent_session.chat_until_goal(prompt).last_result
+            result = agent_session.chat_until_goal(
+                prompt,
+                on_progress=lambda goal: _clear_prior_goal_response(output, goal),
+            ).last_result
+            output.mark_turn_complete()
+            return result
     finally:
         if session is not None:
             manager.close(session, extract_memory=False)
 
 
-def _successful_turn(result: TurnResult) -> bool:
+def _successful_turn(result: TurnResult, response: str) -> bool:
     action = result.action_result
     action_ok = (
         action.handled
@@ -191,10 +231,11 @@ def _successful_turn(result: TurnResult) -> bool:
         and action.accounting_status == "completed"
     )
     return bool(
-        (result.answered or action_ok)
+        action.accounting_status == "completed"
+        and (result.answered or action_ok)
         and not action.hit_iteration_cap
         and not result.cancelled
-        and result.primary_response_text
+        and response
     )
 
 
@@ -244,16 +285,23 @@ def run_ask(
     *,
     allowed_tools: tuple[str, ...],
     bypass_approvals: bool,
+    tool_event_observer: ToolEventObserver | None = None,
 ) -> AskOutcome:
     """Execute one ask turn with invocation-scoped approval authority."""
     tracker = ApprovalTracker()
+    output = _AskOutputSink()
     hooks = build_approval_hooks(
         allowed_tools=allowed_tools,
         bypass_approvals=bypass_approvals,
         tracker=tracker,
     )
     try:
-        result = _run_agent_turn(prompt, hooks)
+        result = _run_agent_turn(
+            prompt,
+            hooks,
+            tool_event_observer=tool_event_observer,
+            output=output,
+        )
     except AskSignal as exc:
         return cancelled_outcome(exc.signum)
     except OpenSREError as exc:
@@ -296,29 +344,32 @@ def run_ask(
             exit_code=AskExitCode.ERROR,
         )
 
+    # The shared turn result retains tool history for session persistence. A
+    # one-shot CLI must instead print the same concise response the terminal
+    # surface selected, never raw shell stdout/stderr or command transcripts.
+    response = output.rendered_response if output.completed_turn else result.primary_response_text
     denied = _approval_denied_outcome(
         tracker,
-        response=result.primary_response_text,
+        response=response,
     )
     if denied is not None:
         return denied
     if result.cancelled:
         return AskOutcome(
             status=AskStatus.CANCELLED,
-            response=result.primary_response_text or "Agent execution cancelled.",
+            response=response or "Agent execution cancelled.",
             exit_code=AskExitCode.SIGINT,
         )
-    if not _successful_turn(result):
-        response = result.primary_response_text
+    if not _successful_turn(result, response):
         return AskOutcome(
             status=AskStatus.ERROR,
-            response=response,
+            response="",
             error=AskError(message=response or "The agent did not complete the request."),
             exit_code=AskExitCode.ERROR,
         )
     return AskOutcome(
         status=AskStatus.SUCCESS,
-        response=result.primary_response_text,
+        response=response,
     )
 
 

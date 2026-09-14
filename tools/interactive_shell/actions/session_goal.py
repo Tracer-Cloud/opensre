@@ -11,7 +11,7 @@ from core.agent_harness.spi.session_goal import (
     session_goal_is_attached,
 )
 from core.agent_harness.tools import ActionToolScope, execute_with_action_context
-from core.domain.types.tools import ToolSurface
+from core.domain.types.tools import ToolRole, ToolSurface
 from core.tool import RegisteredTool, SideEffectLevel
 from core.tool_framework.utils import object_schema, string_array_property, string_property
 
@@ -139,7 +139,7 @@ session_goal_complete_tool = RegisteredTool(
     source="interactive_shell",
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
-    parallel_safe=False,
+    role=ToolRole.BOOKKEEPING,
     accepts_runtime_context=True,
     run=run_session_goal_complete,
 )
@@ -187,7 +187,6 @@ session_goal_tool = RegisteredTool(
     source="interactive_shell",
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
-    parallel_safe=False,
     accepts_runtime_context=True,
     run=run_session_goal,
 )

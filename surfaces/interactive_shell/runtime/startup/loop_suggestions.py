@@ -40,7 +40,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_MENU_TITLE = "No loops scheduled yet — pick one to set up (Esc to skip)"
+_MENU_TITLE = "No loops scheduled yet — pick one to set up"
 _MENU_EXPLAINER = (
     "Loops are scheduled check-ins that post a summary here each weekday. "
     "Picking one runs a first pass now, then offers the schedule — nothing is "

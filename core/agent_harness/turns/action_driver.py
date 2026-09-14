@@ -16,10 +16,11 @@ import json
 import logging
 import re
 import shlex
-from collections.abc import Sequence
-from dataclasses import dataclass
+from collections.abc import Callable, Sequence
+from dataclasses import dataclass, field
 from typing import Any
 
+from config.constants.skills import ONBOARDING_SKILL_NAME
 from core.agent import Agent
 from core.agent.cancel import tool_resources_cancel_requested
 from core.agent.goals import Goal
@@ -42,6 +43,12 @@ from core.agent_harness.session.integration_resolution import resolve_and_cache_
 from core.agent_harness.session.pending_choice import parse_ask_user_answers
 from core.agent_harness.session.terminal_access import execute_cli_onboard_on_missing_key
 from core.agent_harness.session_goal.review_input import collect_tool_evidence
+from core.agent_harness.task_plan.conclusion import (
+    blocked_steps_await_the_user,
+    demo_pick_stalled_on_skill_load,
+    task_plan_awaits_reply,
+    task_plan_blocks_conclusion,
+)
 from core.agent_harness.turns.action_dedup import (
     coerce_fingerprint_quiet,
     with_duplicate_action_call_guard,
@@ -49,6 +56,7 @@ from core.agent_harness.turns.action_dedup import (
 from core.agent_harness.turns.action_menu_end import with_menu_turn_end
 from core.agent_harness.turns.conversation_recording import record_conversation_turn
 from core.agent_harness.turns.display_text import (
+    already_on_screen,
     cap_for_display,
     format_generic_tool_payload,
     host_rendered,
@@ -60,19 +68,20 @@ from core.agent_harness.turns.display_text import (
 from core.agent_harness.turns.goal_review import (
     build_goal_reviewer,
     tap_executed_tool_names,
-    task_plan_blocks_conclusion,
 )
-from core.agent_harness.turns.skill_after_tool import with_skill_after_tool
-from core.agent_harness.turns.skill_scope import scope_tools_to_active_skill
+from core.agent_harness.turns.plan_hooks import with_task_plan_hooks
+from core.agent_harness.turns.skill_activation import prepare_active_skill
 from core.agent_harness.turns.turn_plan import TurnPlan
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
+from core.agent_harness.turns.turn_trace import turn_trace_state
 from core.agent_harness.turns.wal_recorder import with_wal_recording
 from core.events import runtime_event_callback_from_observer
 from core.llm.types import AgentLLMResponse, SchemaDescribedTool, ToolCall
 from core.tool.execution import ToolExecutionHooks, public_tool_input
 from core.tool_framework.tags import SUMMARIZE_OBSERVATION_TAG
 from infrastructure.analytics.react_turn import run_react_agent_with_telemetry
+from infrastructure.observability.trace.decisions import record_decision
 from infrastructure.observability.trace.prompts import persist_turn_system_prompt
 from infrastructure.observability.trace.spans import component_span
 from infrastructure.text import is_data_blob
@@ -104,6 +113,31 @@ class ActionTurnPlan:
     user_message: str
     llm: Any
     max_iterations: int
+    # Replies the plan gate deferred and the sink already painted mid-turn.
+    # They join ``response_text`` for history but are never streamed again.
+    deferred_replies: list[str] = field(default_factory=list)
+
+
+def _deferred_reply_presenter(
+    output: OutputSink, deferred_replies: list[str]
+) -> Callable[[str], bool]:
+    """Paint a plan-deferred reply now (same gutter as a final reply); keep it once shown.
+
+    Returns whether the reply reached the sink. A failed stream leaves it out of
+    ``deferred_replies`` so the turn is not marked as streamed and the host's
+    normal finalization still delivers the response text.
+    """
+
+    def present(text: str) -> bool:
+        try:
+            output.stream(label="OpenSRE", chunks=iter([text]))
+        except Exception:  # noqa: BLE001 - presentation must never break the loop
+            log.debug("deferred reply render failed; not marking it shown", exc_info=True)
+            return False
+        deferred_replies.append(text)
+        return True
+
+    return present
 
 
 class _StaticToolCallLLM:
@@ -215,18 +249,18 @@ def _stash_collapsed_tool_output(session: SessionState, text: str | None) -> Non
 
 
 def _preferred_tool_response_texts(result: Any) -> str:
+    """Reply text of tools whose output is not on screen yet.
+
+    A painted result (``rendered_in_shell``) is skipped like everywhere else in
+    the transcript; otherwise its one-line summary reappears as the closing
+    under the table it summarizes.
+    """
     texts = [
         preferred_tool_response_text(tool_result)
-        for _tool_call, tool_result in _generic_tool_results(result)
+        for tool_call, tool_result in _generic_tool_results(result)
+        if not already_on_screen(tool_call, tool_result)
     ]
     return "\n\n".join(text for text in texts if text)
-
-
-def _has_preferred_tool_response_text(result: Any) -> bool:
-    return any(
-        bool(preferred_tool_response_text(tool_result))
-        for _tool_call, tool_result in _generic_tool_results(result)
-    )
 
 
 def _painted_results_only(result: Any) -> bool:
@@ -507,6 +541,7 @@ def _build_action_agent(
     tool_hooks: ToolExecutionHooks | None,
     tool_resources: dict[str, Any],
     observer: Any,
+    output: OutputSink,
 ) -> ActionTurnPlan:
     """Build the Agent for one action turn; return an ``ActionTurnPlan``.
 
@@ -525,6 +560,7 @@ def _build_action_agent(
     # so "did the agent reach the goal" is not a meaningful question there.
     goal: Goal | None = None
     executed_tool_names: list[str] = []
+    deferred_replies: list[str] = []
 
     if bang_command is not None:
         # Explicit `!` shell escape: dispatch the verbatim text as a shell_run call.
@@ -563,6 +599,9 @@ def _build_action_agent(
         # shared list the event tap below fills, so it can stand down on
         # handoff/dispatch turns whose outcome is not reviewable at
         # conclusion time.
+        # The skill active as the turn starts: the onboarding master when the
+        # message answers its menu, so a child that loads and stops is caught.
+        starting_skill = getattr(session, "active_skill", None)
         goal = build_goal_reviewer(
             llm,
             _goal_review_user_request(message, turn_snapshot),
@@ -571,6 +610,19 @@ def _build_action_agent(
                 task_plan=getattr(session, "task_plan", None),
                 plan_only=bool(getattr(session, "plan_only_until_authorized", False)),
             ),
+            plan_awaits_reply=lambda: task_plan_awaits_reply(
+                task_plan=getattr(session, "task_plan", None)
+            ),
+            on_plan_deferred_reply=_deferred_reply_presenter(output, deferred_replies),
+            blocked_needs_user=lambda: blocked_steps_await_the_user(
+                session, user_answered=bool(parse_ask_user_answers(message))
+            ),
+            skill_load_only=lambda: demo_pick_stalled_on_skill_load(
+                session,
+                user_answered=bool(parse_ask_user_answers(message)),
+                from_onboarding_menu=starting_skill == ONBOARDING_SKILL_NAME,
+            ),
+            trace_context=lambda: turn_trace_state(session),
         )
 
     # WAL first, observer second: the tool intent must be on disk before
@@ -603,6 +655,7 @@ def _build_action_agent(
         user_message=user_message,
         llm=llm,
         max_iterations=_MAX_TOOL_CALLING_ITERATIONS,
+        deferred_replies=deferred_replies,
     )
 
 
@@ -710,6 +763,7 @@ def _compose_response(
     result: Any,
     session: SessionState,
     counts: _TurnCounts,
+    deferred_replies: Sequence[str] = (),
 ) -> tuple[str, list[str], bool]:
     """Build the turn's response text and what to show on screen.
 
@@ -717,7 +771,8 @@ def _compose_response(
     on purpose: self-recording tools (shell, slash) already printed their own
     output, so the console shows only the closing text, generic tool results and
     any hint. ``response_text`` keeps the history as well, because persistence
-    and non-TTY surfaces have nothing else to read.
+    and non-TTY surfaces have nothing else to read. ``deferred_replies`` were
+    painted mid-turn by the plan gate, so they join the history, not the screen.
 
     Consumes the session's pending outcome hint.
     """
@@ -725,7 +780,6 @@ def _compose_response(
     waiting_for_choice = getattr(session, "pending_user_choice", None) is not None
     generic_text = _response_text_from_generic_results(result)
     hint = _pop_turn_outcome_hint(session)
-    prefer_tool_response_text = _has_preferred_tool_response_text(result)
     terminal = getattr(session, "terminal", None)
     pending_choice_response = getattr(terminal, "pending_choice_response", None)
     selected_choice = (
@@ -741,23 +795,25 @@ def _compose_response(
     # or a chain); a closing question, which seeks direction instead of restating
     # output; and any quiet ``shell_run``, which withheld live stdout so the
     # closing *is* the turn's display.
-    suppress_final = (
-        (waiting_for_choice and _is_redundant_choice_invitation(result, final_text))
-        or _is_choice_acknowledgement(final_text, selected_choice)
-        or prefer_tool_response_text
-        or (
-            _painted_results_only(result)
-            and _restates_painted_figures(result, final_text)
-            and not _asks_the_user(final_text)
-        )
-        or (
-            _self_recording_tools_only(result)
-            and not _grounded_output_tools_only(result)
-            and not _asks_the_user(final_text)
-            and not _has_quiet_shell_run(result)
-        )
-    )
-    final_text_chunk = "" if suppress_final else final_text
+    suppression_reason = None
+    if waiting_for_choice and _is_redundant_choice_invitation(result, final_text):
+        suppression_reason = "redundant_choice_invitation"
+    elif _is_choice_acknowledgement(final_text, selected_choice):
+        suppression_reason = "choice_acknowledgement"
+    elif (
+        _painted_results_only(result)
+        and _restates_painted_figures(result, final_text)
+        and not _asks_the_user(final_text)
+    ):
+        suppression_reason = "painted_figures_recap"
+    elif (
+        _self_recording_tools_only(result)
+        and not _grounded_output_tools_only(result)
+        and not _asks_the_user(final_text)
+        and not _has_quiet_shell_run(result)
+    ):
+        suppression_reason = "self_recording_tools"
+    final_text_chunk = "" if suppression_reason else final_text
     # The model sometimes restates the plan (or every historical snapshot) in its
     # reply; the pinned overlay already shows it, so strip snapshots from display.
     display_final = strip_plan_snapshots(final_text_chunk)
@@ -778,10 +834,8 @@ def _compose_response(
     if already_inline and terminal is not None:
         terminal.inline_tool_results = False
         display_generic = ""
-    if prefer_tool_response_text and not display_final and not display_generic:
-        # A tool that ships its own reply text (a schedule card, a report
-        # summary) is the closing when the model's is dropped for it; otherwise
-        # the turn ends with nothing visible after the call list.
+    if not final_text and not display_generic:
+        # Tool reply text is a fallback only when the model has no closing.
         display_final = _preferred_tool_response_texts(result)
     is_json = looks_like_json(generic_text)
     body, markers = split_output_truncation_markers(display_generic)
@@ -806,6 +860,7 @@ def _compose_response(
         chunk
         for chunk in (
             _response_text_from_history_entries(counts.executed_entries),
+            *deferred_replies,
             final_text_chunk,
             generic_text,
             hint,
@@ -814,6 +869,18 @@ def _compose_response(
     ]
     use_final_text = bool(final_text_chunk)
     response_text = "\n".join(response_chunks)
+    record_decision(
+        "response_composition",
+        attributes={
+            "final_text": final_text,
+            "suppression_reason": suppression_reason,
+            "display_text": "\n".join(display_chunks),
+            "response_text": response_text,
+            "inline_tool_results": already_inline,
+            "plan_snapshots_removed": display_final != final_text_chunk and bool(final_text_chunk),
+        },
+        context=lambda: turn_trace_state(session),
+    )
     return response_text, display_chunks, use_final_text
 
 
@@ -895,9 +962,19 @@ def _end_silent_tool_turn(output: OutputSink) -> None:
 
 
 def _show_completed_plan_breakdown(output: OutputSink, session: SessionState) -> None:
-    """Print the one-shot per-step work breakdown when the plan is complete."""
+    """Print the one-shot per-step work breakdown when the plan is complete.
+
+    Not while a question to the user is queued or its answer is on its way:
+    a plan ending on blocked steps is still being resolved with them.
+    """
+    from core.agent_harness.session.terminal_access import session_terminal
     from core.agent_harness.task_plan.work_log import take_completed_plan_breakdown
 
+    if getattr(session, "pending_user_choice", None) is not None:
+        return
+    terminal = session_terminal(session)
+    if terminal is not None and getattr(terminal, "awaiting_handoff_answer", False):
+        return
     breakdown = take_completed_plan_breakdown(session)
     if not breakdown:
         return
@@ -944,15 +1021,12 @@ def _run_action_turn(
     resolved_integrations = _turn_resolved_integrations(session, turn_plan)
     history_start = len(session.history)
 
-    agent_tools = scope_tools_to_active_skill(
-        args.tools.action_tools(
-            confirm_fn=args.confirm_fn,
-            is_tty=args.is_tty,
-            resolved_integrations=resolved_integrations,
-            turn_user_message=message,
-        ),
-        session,
-        message,
+    prepare_active_skill(session, message)
+    agent_tools = args.tools.action_tools(
+        confirm_fn=args.confirm_fn,
+        is_tty=args.is_tty,
+        resolved_integrations=resolved_integrations,
+        turn_user_message=message,
     )
     tool_resources_provider = getattr(args.tools, "tool_resources", None)
     tool_resources = tool_resources_provider() if callable(tool_resources_provider) else {}
@@ -977,11 +1051,12 @@ def _run_action_turn(
             resolved_integrations=resolved_integrations,
             llm_factory=args.llm_factory,
             tool_hooks=with_menu_turn_end(
-                with_skill_after_tool(with_duplicate_action_call_guard(args.tool_hooks), session),
+                with_task_plan_hooks(with_duplicate_action_call_guard(args.tool_hooks), session),
                 session,
             ),
             tool_resources=tool_resources,
             observer=observer,
+            output=args.output,
         )
         result = run_react_agent_with_telemetry(
             built.agent,
@@ -1036,10 +1111,15 @@ def _run_action_turn(
         )
 
     counts = _count_turn(result, session, history_start)
-    response_text, display_chunks, use_final_text = _compose_response(result, session, counts)
+    response_text, display_chunks, use_final_text = _compose_response(
+        result, session, counts, built.deferred_replies
+    )
     cancelled = tool_resources_cancel_requested(tool_resources) or bool(
         getattr(result, "cancelled", False)
     )
+    # A deferred reply already went through the sink, so the turn host must not
+    # finalize ``response_text`` a second time (it would repost the report).
+    response_streamed = bool((use_final_text or built.deferred_replies) and not cancelled)
     # Cancelled turns stop before the host records or finalizes the response.
     # Discovery tools that opt into ``summarize_observation`` (via tool tags)
     # return structured JSON users should not see raw. Stash only those results.
@@ -1064,6 +1144,13 @@ def _run_action_turn(
             display_chunks=display_chunks,
         )
         _show_completed_plan_breakdown(args.output, session)
+    record_decision(
+        "response_displayed",
+        attributes={
+            "display_text": "" if cancelled else "\n".join(display_chunks),
+            "cancelled": cancelled,
+        },
+    )
 
     log.debug(
         "action_turn done planned=%s executed=%s handled=%s cancelled=%s",
@@ -1084,7 +1171,7 @@ def _run_action_turn(
         False,
         False if cancelled else counts.handled,
         response_text="" if cancelled else response_text,
-        response_streamed=bool(use_final_text and not cancelled),
+        response_streamed=response_streamed,
         hit_iteration_cap=bool(result.hit_iteration_cap and not cancelled),
         cancelled=cancelled,
         input_tokens=int(getattr(result, "input_tokens", 0) or 0),

@@ -5,15 +5,17 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 
 from prompt_toolkit import PromptSession
 from rich.console import Console
 
 from config.repl_config import ReplConfig
+from core.agent_harness.spi.task_plan import discard_task_plan
 from core.domain.alerts import inbox as _alert_inbox
 from surfaces.interactive_shell.runtime.background.workers import BackgroundTaskPool
+from surfaces.interactive_shell.runtime.ci_fix_status import bind_ci_fix_status
 from surfaces.interactive_shell.runtime.context import (
     ReplRuntime,
     create_repl_runtime,
@@ -208,6 +210,7 @@ class InteractiveShellController:
         )
         self.background: BackgroundTaskPool | None = None
         self.tasks: list[tuple[str, asyncio.Task[None]]] = []
+        self._ci_fix_status_cleanup: Callable[[], None] | None = None
 
     async def start_interactive_shell(self) -> None:
         with _alert_listener(self.config, self.service_console, existing=self.inbox) as inbox:
@@ -250,9 +253,10 @@ class InteractiveShellController:
         # Fleet sampler is lazy: /fleet triggers it on first live use.
         self.session.terminal.fleet_sampler_starter = self.background.ensure_fleet_sampler_started
         try:
-            start_loop_scheduler()
+            start_loop_scheduler(host_session=lambda: self.session.session_id)
         except Exception as exc:  # noqa: BLE001
             log.warning("Loop scheduler could not start: %s", exc)
+        self._ci_fix_status_cleanup = bind_ci_fix_status(self.session.terminal)
 
     async def _handle_input_action(self, action: InputAction) -> bool:
         match action:
@@ -285,10 +289,10 @@ class InteractiveShellController:
                     plan = self.session.task_plan
                     if (
                         plan is not None
-                        and plan.all_completed
+                        and plan.is_settled
                         and not self.state.is_dispatch_running()
                     ):
-                        self.session.task_plan = None
+                        discard_task_plan(self.session)
                 # Only exclusive-stdin commands hold the next prompt. A ``/goal``
                 # work turn keeps it open: the prompt row is where the spinner,
                 # the live tool name and the Auto line are painted, so
@@ -306,6 +310,9 @@ class InteractiveShellController:
         raise AssertionError(f"Unhandled input action: {action!r}")
 
     async def _shutdown_runtime(self) -> None:
+        if self._ci_fix_status_cleanup is not None:
+            self._ci_fix_status_cleanup()
+            self._ci_fix_status_cleanup = None
         self.state.request_exit()
         self.state.cancel_current_dispatch()
         await self.prompt.close()

@@ -26,11 +26,23 @@ _TASK_RUNS_SCHEMA = """
         owner_token TEXT NOT NULL DEFAULT '',
         lease_expires_at TEXT NOT NULL DEFAULT '',
         target_filter TEXT NOT NULL DEFAULT '[]',
+        report TEXT,
+        report_summary TEXT NOT NULL DEFAULT '',
+        work_outcome TEXT NOT NULL DEFAULT '{}',
         UNIQUE(task_id, fire_time, attempt)
     )
 """
 
-_REQUIRED_COLUMNS = frozenset({"attempt", "targets", "target_filter"})
+_REQUIRED_COLUMNS = frozenset(
+    {
+        "attempt",
+        "targets",
+        "target_filter",
+        "report",
+        "report_summary",
+        "work_outcome",
+    }
+)
 
 # Recovery only considers pending work and expired running attempts. Keeping the
 # indexes partial prevents completed history from growing either candidate set.
@@ -53,6 +65,16 @@ _RECOVERY_INDEX_NAMES = frozenset(
     }
 )
 
+# History lookups page one task's attempts newest-first regardless of status, so
+# this index covers the whole table rather than a recovery subset.
+_HISTORY_INDEX_STATEMENTS = (
+    "CREATE INDEX IF NOT EXISTS task_runs_recent ON task_runs (task_id, started_at DESC, id DESC)",
+)
+_HISTORY_INDEX_NAMES = frozenset({"task_runs_recent"})
+
+_INDEX_STATEMENTS = _RECOVERY_INDEX_STATEMENTS + _HISTORY_INDEX_STATEMENTS
+_INDEX_NAMES = _RECOVERY_INDEX_NAMES | _HISTORY_INDEX_NAMES
+
 
 def _table_columns(conn: sqlite3.Connection, table: str = "task_runs") -> set[str]:
     return {str(row[1]) for row in conn.execute(f"PRAGMA table_info({table})")}
@@ -67,8 +89,8 @@ def _index_names(conn: sqlite3.Connection, table: str = "task_runs") -> set[str]
 
 
 def _schema_is_current(conn: sqlite3.Connection) -> bool:
-    """Whether columns and recovery indexes already meet the current contract."""
-    return _table_columns(conn) >= _REQUIRED_COLUMNS and _index_names(conn) >= _RECOVERY_INDEX_NAMES
+    """Whether columns and indexes already meet the current contract."""
+    return _table_columns(conn) >= _REQUIRED_COLUMNS and _index_names(conn) >= _INDEX_NAMES
 
 
 def _migrate_legacy_claim_table(conn: sqlite3.Connection, legacy_columns: set[str]) -> None:
@@ -121,9 +143,9 @@ def _add_missing_columns(conn: sqlite3.Connection) -> None:
             return
 
 
-def _add_recovery_indexes(conn: sqlite3.Connection) -> None:
-    """Create the partial indexes used by recovery and live-owner lookups."""
-    for statement in _RECOVERY_INDEX_STATEMENTS:
+def _add_indexes(conn: sqlite3.Connection) -> None:
+    """Create the indexes used by recovery, live-owner, and history lookups."""
+    for statement in _INDEX_STATEMENTS:
         conn.execute(statement)
 
 
@@ -179,7 +201,13 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
             conn.execute(
                 "ALTER TABLE task_runs ADD COLUMN target_filter TEXT NOT NULL DEFAULT '[]'"
             )
-        _add_recovery_indexes(conn)
+        if "report" not in _table_columns(conn):
+            conn.execute("ALTER TABLE task_runs ADD COLUMN report TEXT")
+        if "report_summary" not in _table_columns(conn):
+            conn.execute("ALTER TABLE task_runs ADD COLUMN report_summary TEXT NOT NULL DEFAULT ''")
+        if "work_outcome" not in _table_columns(conn):
+            conn.execute("ALTER TABLE task_runs ADD COLUMN work_outcome TEXT NOT NULL DEFAULT '{}'")
+        _add_indexes(conn)
         conn.commit()
     except Exception:
         conn.rollback()

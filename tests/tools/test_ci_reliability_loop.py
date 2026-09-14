@@ -2,15 +2,17 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 from config.constants import OPENSRE_OPERATIONS_LOG_PATH_ENV
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_PROMPT_PARAM
 from infrastructure.scheduling.scheduler.storage import list_tasks
-from infrastructure.scheduling.scheduler.types import Provider, TaskKind
+from infrastructure.scheduling.scheduler.types import Provider, TaskKind, TaskReport
 from integrations.github.tools.ci_analytics import loop as ci_loop
 from integrations.github.tools.ci_analytics import loop_tool
 
@@ -54,7 +56,46 @@ def test_scheduling_the_same_repository_again_reuses_the_loop(store_path: Path) 
     assert second.reused is True
     assert second.task_id == first.task_id
     assert len(list_tasks(store_path)) == 1
-    assert ci_loop.loop_card(second)[0].startswith("Already scheduled")
+    assert ci_loop.loop_card(second).headline.startswith("Already scheduled")
+
+
+def test_the_card_is_a_bulleted_list_not_a_paragraph(store_path: Path) -> None:
+    """Markdown folds consecutive lines into one paragraph; the card must survive that.
+
+    Read as prose, the schedule, the inbox and the management commands ran
+    together into a block nobody finished reading.
+    """
+    # Arrange
+    scheduled = ci_loop.schedule_ci_reliability_loop(
+        "acme", "app", timezone="UTC", store_path=store_path
+    )
+
+    # Act
+    markdown = ci_loop.loop_card(scheduled).markdown()
+
+    # Assert: a bold headline, a blank line, then one bullet per fact.
+    headline, blank, *bullets = markdown.split("\n")
+    assert headline == "**Scheduled: CI reliability check · acme/app**"
+    assert blank == ""
+    assert all(line.startswith("- ") for line in bullets)
+    assert len(bullets) == 4
+
+
+def test_the_next_run_is_shown_in_the_schedule_timezone(store_path: Path) -> None:
+    """A raw UTC ISO stamp contradicted the local time the user had just picked."""
+    # Arrange: 08:00 in Chicago is not 08:00 UTC.
+    scheduled = ci_loop.schedule_ci_reliability_loop(
+        "acme", "app", timezone="America/Chicago", store_path=store_path
+    )
+
+    # Act
+    schedule_line = ci_loop.loop_card(scheduled).details[0]
+
+    # Assert: a human ``Tue 15 Sep 08:00``, not a ``2026-09-15T13:00`` UTC stamp.
+    # (Checking for the letter ``T`` alone fails whenever the weekday is Tue/Thu.)
+    next_run = schedule_line.split("next ")[1]
+    assert not re.search(r"\d{4}-\d{2}-\d{2}T", next_run), next_run
+    assert schedule_line.endswith("08:00")
 
 
 def test_unparseable_time_raises_before_anything_is_stored(store_path: Path) -> None:
@@ -111,18 +152,14 @@ def _scheduled_stub(owner: str, repo: str) -> ci_loop.ScheduledLoop:
     return ci_loop.ScheduledLoop(loop=loop, reused=False)
 
 
-def _write_report_snapshot(root: Path, *, window_days: int) -> datetime:
-    from datetime import UTC, datetime, timedelta
-
+def _sample_report(*, window_days: int, now: datetime) -> Any:
     from integrations.github.tools.ci_analytics.models import (
         CiAnalyticsReport,
         Outage,
         WorkflowSummary,
     )
-    from integrations.github.tools.ci_analytics.snapshots import report_to_dict, write_snapshot
 
-    now = datetime.now(UTC)
-    report = CiAnalyticsReport(
+    return CiAnalyticsReport(
         owner="acme",
         repo="app",
         default_branch="main",
@@ -138,12 +175,21 @@ def _write_report_snapshot(root: Path, *, window_days: int) -> datetime:
         branch_runs=20,
         branch_failures=2,
         red_hours=36.4,
-        outages=(Outage(workflow="CI", started_at=now, ended_at=None, first_failure_url="u"),),
+        outages=(Outage(workflows=("CI",), started_at=now, ended_at=None, first_failure_url="u"),),
         mean_recovery_hours=1.0,
         workflows=(WorkflowSummary("CI", 100, 8, 3, 12.0),),
         coverage_notices=(),
         working_hours_label="Mon-Fri 09:00-18:00 UTC",
     )
+
+
+def _write_report_snapshot(root: Path, *, window_days: int) -> datetime:
+    from datetime import UTC, datetime, timedelta
+
+    from integrations.github.tools.ci_analytics.snapshots import report_to_dict, write_snapshot
+
+    now = datetime.now(UTC)
+    report = _sample_report(window_days=window_days, now=now)
     write_snapshot(
         root,
         "acme",
@@ -261,7 +307,9 @@ def test_build_report_renders_the_analytics_and_keeps_a_json_snapshot(
         {"owner": "acme", "repo": "app", "days": "7"}, snapshot_dir=tmp_path
     )
 
-    # Assert: header, headline, and a traceable snapshot on disk.
+    # Assert: header and a traceable snapshot on disk.
+    assert isinstance(report, TaskReport)
+    assert report.summary == "No completed workflow runs were found in this window."
     assert "CI/CD reliability for acme/app, last 7 days" in report
     assert "Raw data: " in report
     snapshot = Path(report.rsplit("Raw data: ", 1)[1].strip())
@@ -306,7 +354,7 @@ def test_tool_never_reads_github_live_when_no_snapshot_exists(
     assert live_calls == []
     assert result["ok"] is True
     assert result["report_as_of"] == ""
-    assert result["response_text"].startswith("Scheduled:")
+    assert result["response_text"].startswith("**Scheduled:")
 
 
 def test_registered_tool_runs_the_scheduling_function() -> None:
@@ -344,25 +392,34 @@ def test_tool_uses_the_loops_seven_day_snapshot_when_no_thirty_day_one_exists(
     )
 
 
-def test_analyze_markdown_keeps_details_when_benchmarks_are_requested(
+def test_analyze_keeps_the_details_beside_the_comparison(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    # Arrange: a non-terminal caller asks for the report with benchmarks.
+    # Arrange: a caller with no console gets the same figures; the live read is stubbed.
+    from datetime import UTC, datetime
+
     from integrations.github.tools.ci_analytics import tool as tool_module
 
-    _write_report_snapshot(tmp_path, window_days=30)
+    report = _sample_report(window_days=30, now=datetime.now(UTC))
     monkeypatch.setattr(tool_module, "snapshot_root", lambda _root=None: tmp_path)
+    monkeypatch.setattr(tool_module, "resolve_github_token", lambda _t=None: "tok")
+
+    def _analyze(_owner: str, _repo: str, **_kwargs: Any) -> Any:
+        return type("A", (), {"report": report, "runs_read": 3})()
+
+    monkeypatch.setattr(tool_module, "analyze_repository", _analyze)
 
     # Act
     result = tool_module.analyze_github_ci_reliability(
         owner="acme", repo="app", days=30, context=None
     )
 
-    # Assert: benchmarks add a section; they do not remove the analysis details.
-    text = result["response_text"]
-    assert "Key results" in text
-    assert "Compared with" in text
-    assert "Workflow" in text or "Failure classification" in text
+    # Assert: benchmarks add a payload; they do not remove the analysis details.
+    assert result["benchmarks"]
+    assert result["key_results"]
+    assert result["comparison_figures"]
+    assert result["workflows"]
+    assert "reliability_failures" in result
 
 
 def test_the_card_says_how_to_run_the_loop_at_another_time(
@@ -382,5 +439,5 @@ def test_the_card_says_how_to_run_the_loop_at_another_time(
     result = loop_tool.schedule_ci_reliability_loop(owner="acme", repo="app")
 
     # Assert
-    assert "to run it at another time" in result["response_text"].lower()
+    assert "delete to reschedule" in result["response_text"].lower()
     assert "/loops delete task1" in result["response_text"]

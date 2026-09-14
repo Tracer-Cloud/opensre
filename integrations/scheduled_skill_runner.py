@@ -10,6 +10,8 @@ from core.agent_harness import (
     validate_skill_inputs,
 )
 from infrastructure.scheduling.scheduler.agent_runner import AgentPayload
+from infrastructure.scheduling.scheduler.types import TaskReport
+from integrations.scheduled_outcomes import ScheduledOutcomes
 
 logger = logging.getLogger(__name__)
 
@@ -40,7 +42,7 @@ def _prefetched_context(skill_name: str, inputs: dict[str, str]) -> str:
     return ""
 
 
-def run_scheduled_recurring_skill(payload: AgentPayload) -> str:
+def run_scheduled_recurring_skill(payload: AgentPayload) -> TaskReport:
     """Run one headless turn for a pinned recurring skill and return report text."""
     resolved = resolve_scheduled_skill(
         str(payload.get("skill_name") or ""),
@@ -62,7 +64,7 @@ def run_scheduled_recurring_skill(payload: AgentPayload) -> str:
         # The prefetcher renders the complete final report. Returning it
         # directly preserves every scoped failure instead of sending it
         # through the action agent's intentionally short message preview.
-        return fetch_block
+        return TaskReport(fetch_block)
     fetch_section = f"\n{fetch_block}\n" if fetch_block else ""
     message = (
         f"{_SCHEDULED_SKILL_INSTRUCTIONS}\n"
@@ -83,7 +85,7 @@ def run_scheduled_recurring_skill(payload: AgentPayload) -> str:
             f"Scheduled skill {resolved.name!r} failed: "
             "the reasoning client did not produce a report."
         )
-    return report
+    return ScheduledOutcomes().report(result, agent_mode=False)
 
 
 __all__ = ["run_scheduled_recurring_skill"]

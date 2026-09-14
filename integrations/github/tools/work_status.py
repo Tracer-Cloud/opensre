@@ -16,6 +16,7 @@ from integrations.github.helpers import (
     github_creds,
     github_source_available,
 )
+from integrations.github.repair_outcomes import attach_ci_scan_outcome
 from integrations.github.tools.workflow import (
     GitHubIssueMutationProposal,
     PullRequestStatus,
@@ -34,15 +35,12 @@ _FAILED_CHECK_CONCLUSIONS = {
     "startup_failure",
 }
 _TERMINAL_CHECK_CONCLUSIONS = _FAILED_CHECK_CONCLUSIONS | {"success", "skipped", "neutral"}
+_OWNER_PROPERTY: dict[str, str] = {"type": "string", "description": "Repository owner."}
+_REPO_PROPERTY: dict[str, str] = {"type": "string", "description": "Repository name."}
 
 
 def _github_available(sources: dict[str, dict]) -> bool:
-    gh = sources.get("github", {})
-    return bool(
-        (github_source_available(sources) or resolve_github_token(None))
-        and gh.get("owner")
-        and gh.get("repo")
-    )
+    return bool(github_source_available(sources) or resolve_github_token(None))
 
 
 def _github_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
@@ -157,8 +155,8 @@ def _map_summarize_github_pr_status(
     input_schema={
         "type": "object",
         "properties": {
-            "owner": {"type": "string"},
-            "repo": {"type": "string"},
+            "owner": _OWNER_PROPERTY,
+            "repo": _REPO_PROPERTY,
             "state": {"type": "string", "enum": ["open", "closed", "all"]},
             "labels": {"type": "string"},
             "include_prs": {"type": "boolean"},
@@ -298,8 +296,8 @@ def _count_prs(prs: list[dict[str, Any]]) -> dict[str, int]:
     input_schema={
         "type": "object",
         "properties": {
-            "owner": {"type": "string"},
-            "repo": {"type": "string"},
+            "owner": _OWNER_PROPERTY,
+            "repo": _REPO_PROPERTY,
             "state": {"type": "string", "enum": ["open", "closed", "all"]},
             "per_page": {"type": "integer"},
             "include_checks": {"type": "boolean"},
@@ -321,6 +319,7 @@ def summarize_github_pr_status(
     **_kwargs: Any,
 ) -> dict[str, Any]:
     client = GitHubRestClient(github_token)
+    fully_inspected = state == "open" and include_checks
     try:
         raw_prs = client.paginate(
             f"/repos/{owner}/{repo}/pulls",
@@ -330,12 +329,15 @@ def summarize_github_pr_status(
         for list_pr in raw_prs:
             number = list_pr.get("number")
             if not isinstance(number, int):
+                fully_inspected = False
                 continue
             detail_pr = client.request("GET", f"/repos/{owner}/{repo}/pulls/{number}")
             if not isinstance(detail_pr, dict):
+                fully_inspected = False
                 detail_pr = list_pr
             sha = str((detail_pr.get("head") or {}).get("sha", ""))
             check_runs: list[dict[str, Any]] = []
+            complete_checks = False
             if include_checks and sha:
                 check_payload = client.request(
                     "GET",
@@ -348,12 +350,14 @@ def summarize_github_pr_status(
                     check_runs = [
                         run for run in check_payload["check_runs"] if isinstance(run, dict)
                     ]
+                    complete_checks = check_payload.get("total_count") == len(check_runs)
+            fully_inspected = fully_inspected and complete_checks
             prs.append(_normalize_pull_request(detail_pr, check_runs).to_dict())
     except GitHubApiError as exc:
         return tool_unavailable(
             "github", str(exc), pull_requests=[], counts=_count_prs([]), side_effects=[]
         )
-    return {
+    output = {
         "source": "github",
         "available": True,
         "owner": owner,
@@ -362,6 +366,7 @@ def summarize_github_pr_status(
         "counts": _count_prs(prs),
         "side_effects": [],
     }
+    return attach_ci_scan_outcome(output, fully_inspected=fully_inspected)
 
 
 def _normalize_security_alert(alert_type: str, item: dict[str, Any]) -> SecurityAlert:
@@ -420,8 +425,8 @@ _ISSUE_MUTATION_OPERATIONS = {"create", "update", "close"}
     input_schema={
         "type": "object",
         "properties": {
-            "owner": {"type": "string"},
-            "repo": {"type": "string"},
+            "owner": _OWNER_PROPERTY,
+            "repo": _REPO_PROPERTY,
             "alert_type": {
                 "type": "string",
                 "enum": ["all", "dependabot", "secret_scanning", "code_scanning"],
@@ -491,11 +496,18 @@ def list_github_security_alerts(
     input_schema={
         "type": "object",
         "properties": {
-            "owner": {"type": "string"},
-            "repo": {"type": "string"},
-            "operation": {"type": "string", "enum": ["create", "update", "close"]},
+            "owner": _OWNER_PROPERTY,
+            "repo": _REPO_PROPERTY,
+            "operation": {
+                "type": "string",
+                "enum": ["create", "update", "close"],
+                "description": "Issue mutation to propose.",
+            },
             "issue_number": {"type": "integer"},
-            "slack_text": {"type": "string"},
+            "slack_text": {
+                "type": "string",
+                "description": "Slack message text the proposal is derived from.",
+            },
             "slack_url": {"type": "string"},
             "title": {"type": "string"},
             "labels": {"type": "array", "items": {"type": "string"}},
@@ -695,9 +707,14 @@ def _marker_exists_on_issue(
     input_schema={
         "type": "object",
         "properties": {
-            "owner": {"type": "string"},
-            "repo": {"type": "string"},
-            "proposal": {"type": "object"},
+            "owner": _OWNER_PROPERTY,
+            "repo": _REPO_PROPERTY,
+            "proposal": {
+                "type": "object",
+                "description": (
+                    "Proposal object returned by propose_github_issue_mutation_from_slack."
+                ),
+            },
             "github_token": {"type": "string"},
         },
         "required": ["owner", "repo", "proposal"],

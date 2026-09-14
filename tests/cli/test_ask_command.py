@@ -79,7 +79,50 @@ def test_ask_passes_prompt_and_invocation_authority(monkeypatch) -> None:
         "prompt": "check latency",
         "allowed_tools": ("grafana_query",),
         "bypass_approvals": False,
+        "tool_event_observer": None,
     }
+
+
+def test_ask_passes_a_live_observer_only_for_an_interactive_text_terminal(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+    enabled_values: list[bool] = []
+    observer = object()
+
+    @contextlib.contextmanager
+    def fake_progress_scope(*, enabled: bool):
+        enabled_values.append(enabled)
+        yield observer
+
+    def fake_run(prompt: str, **kwargs: object) -> AskOutcome:
+        captured.update(prompt=prompt, **kwargs)
+        return _success()
+
+    monkeypatch.setattr("surfaces.cli.ask.approval.unknown_allowed_tools", lambda _v: ())
+    monkeypatch.setattr("surfaces.cli.ask.progress.ask_progress_scope", fake_progress_scope)
+    monkeypatch.setattr("surfaces.cli.ask.service.run_ask", fake_run)
+    monkeypatch.setattr("surfaces.cli.commands.ask._show_live_progress", lambda: True)
+
+    result = CliRunner().invoke(ask_command, ["check latency"])
+
+    assert result.exit_code == 0
+    assert enabled_values == [True]
+    assert captured["tool_event_observer"] is observer
+
+
+def test_live_progress_is_disabled_for_json_or_redirected_output(monkeypatch) -> None:
+    from surfaces.cli.commands.ask import _show_live_progress
+
+    monkeypatch.setattr("sys.stdout.isatty", lambda: True)
+    monkeypatch.setattr("sys.stderr.isatty", lambda: True)
+    monkeypatch.setattr("surfaces.cli.commands.ask.is_json_output", lambda: False)
+    assert _show_live_progress() is True
+
+    monkeypatch.setattr("surfaces.cli.commands.ask.is_json_output", lambda: True)
+    assert _show_live_progress() is False
+
+    monkeypatch.setattr("surfaces.cli.commands.ask.is_json_output", lambda: False)
+    monkeypatch.setattr("sys.stdout.isatty", lambda: False)
+    assert _show_live_progress() is False
 
 
 def test_root_yes_does_not_bypass_ask_approvals(monkeypatch) -> None:

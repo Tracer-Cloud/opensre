@@ -29,7 +29,7 @@ def test_queued_menu_terminates_the_loop() -> None:
 
 
 def test_skill_load_terminates_only_when_its_hook_queued_a_menu() -> None:
-    """A skill's pre_execute menu ends the turn; a plain skill load does not."""
+    """A skill's entry menu ends the turn; a plain skill load does not."""
     queued = with_menu_turn_end(None, _session(pending=object()))
     plain = with_menu_turn_end(None, _session(pending=None))
 

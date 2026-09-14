@@ -19,7 +19,7 @@ from integrations.coding_agent.backend_exec import (
     run_agentic_cli,
     workspace_error,
 )
-from integrations.coding_agent.models import CodingResult
+from integrations.coding_agent.models import CodingResult, Progress
 from integrations.llm_cli.agent_exec import build_guarded_task_prompt
 from integrations.llm_cli.binary_resolver import (
     candidate_binary_names,
@@ -48,7 +48,15 @@ def _subprocess_env() -> dict[str, str]:
     return build_cli_subprocess_env(env)
 
 
-def run(task: str, *, workspace: str, model: str | None, timeout_sec: float) -> CodingResult:
+def run(
+    task: str,
+    *,
+    workspace: str,
+    model: str | None,
+    timeout_sec: float,
+    on_progress: Progress | None = None,
+) -> CodingResult:
+    _ = on_progress  # this backend does not stream its steps
     binary = _resolve_binary()
     if not binary:
         return failure(

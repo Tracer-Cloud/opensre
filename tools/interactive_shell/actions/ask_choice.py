@@ -17,14 +17,14 @@ from __future__ import annotations
 
 from typing import Any
 
-from core.agent_harness.spi.handoff import AskUserQuestion, parse_ask_user_answers
+from core.agent_harness.spi.handoff import AskUserQuestion, parse_ask_user_answers, question_key
 from core.agent_harness.spi.session_state import (
     PendingUserChoice,
     session_terminal,
     set_auto_command,
 )
 from core.agent_harness.tools import ActionToolScope, execute_with_action_context
-from core.domain.types.tools import ToolSurface
+from core.domain.types.tools import ToolRole, ToolSurface
 from core.tool import RegisteredTool, SideEffectLevel
 from core.tool_framework.utils import object_schema, string_array_property, string_property
 from infrastructure.safety.terminal_output import strip_terminal_controls
@@ -38,7 +38,8 @@ _CHOOSE_COMMAND = "/choose"
 _DEFAULT_HEADER = "Ask User"
 
 _FALLBACK_INSTRUCTION = (
-    "No interactive selection menu is available on this surface. If the choice "
+    "No interactive selection menu is available on this surface. Follow the "
+    "active skill's unavailable-menu instructions first. Otherwise, if the choice "
     "is required for work to continue, present a short numbered list and ask "
     "the user to reply. If this was only an optional follow-up, do NOT park a "
     "numbered question — finish with one sentence of instructions."
@@ -141,11 +142,6 @@ def _parse_bool(value: object, *, default: bool = False) -> bool:
     return default
 
 
-def _normalize_title(title: str) -> str:
-    """Identity for matching a question to an answer in this turn's message."""
-    return " ".join(title.split()).casefold()
-
-
 def _parse_questions(raw: object) -> tuple[list[AskUserQuestion] | None, str | None]:
     """Return ``(questions, error)``. Absent/empty ``raw`` yields ``([], None)``."""
     if raw is None:
@@ -166,7 +162,7 @@ def _parse_questions(raw: object) -> tuple[list[AskUserQuestion] | None, str | N
             return None, f"questions[{index}].label is required"
         if not title:
             return None, f"questions[{index}].title is required"
-        title_key = _normalize_title(title)
+        title_key = question_key(title)
         if title_key in seen_titles:
             return None, (
                 f"questions[{index}].title is already used; each question needs its own title"
@@ -191,18 +187,18 @@ def _parse_questions(raw: object) -> tuple[list[AskUserQuestion] | None, str | N
 
 def _answered_this_turn(ctx: ActionToolScope, title: str) -> str | None:
     """The answer the user gave to ``title`` in this turn's message, if any."""
-    wanted = _normalize_title(title)
+    wanted = question_key(title)
     if not wanted:
         return None
     for asked, answer in parse_ask_user_answers(getattr(ctx, "turn_user_message", "") or ""):
-        if _normalize_title(asked) == wanted:
+        if question_key(asked) == wanted:
             return answer
     return None
 
 
 def _answered_earlier(ctx: ActionToolScope, title: str) -> bool:
     """True when this session already settled ``title`` in an earlier turn."""
-    wanted = _normalize_title(title)
+    wanted = question_key(title)
     settled = getattr(ctx.session, "questions_already_answered", None) or set()
     return bool(wanted) and wanted in settled
 
@@ -296,6 +292,10 @@ def execute_ask_user_choice_tool(args: dict[str, Any], ctx: ActionToolScope) -> 
         return {"ok": True, "menu": "unavailable", "instruction": _FALLBACK_INSTRUCTION}
 
     ctx.session.pending_user_choice = pending
+    skill = getattr(ctx.session, "active_skill", None)
+    by_skill = getattr(ctx.session, "skill_question_keys", None)
+    if skill and isinstance(by_skill, dict):
+        by_skill.setdefault(skill, set()).update(question_key(q.title) for q in pending.items())
     if questions:
         ctx.session.ask_user_rounds = getattr(ctx.session, "ask_user_rounds", 0) + 1
     set_auto_command(ctx.session, _CHOOSE_COMMAND)
@@ -348,7 +348,8 @@ ask_user_choice_tool = RegisteredTool(
         "user what you are about to ask and that they can type their own "
         "answer if none fit. The menu opens after the turn ends; answers "
         "arrive verbatim as the next user message. If the result says the "
-        "menu is unavailable, fall back to a numbered list."
+        "menu is unavailable, follow the active skill's recovery instructions; "
+        "otherwise fall back to a numbered list."
     ),
     use_cases=[
         (
@@ -423,7 +424,7 @@ ask_user_choice_tool = RegisteredTool(
     ),
     source="interactive_shell",
     surfaces=(ToolSurface.ACTION,),
-    parallel_safe=False,
+    role=ToolRole.TURN_ENDING,
     accepts_runtime_context=True,
     run=run_ask_user_choice,
     tags=("safe", "fast", "no-credentials"),

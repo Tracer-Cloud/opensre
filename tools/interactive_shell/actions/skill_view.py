@@ -20,8 +20,8 @@ from tools.interactive_shell.actions.skill_entry import enter_skill
 def _view_skill_reference(name: str, reference: str) -> dict[str, Any]:
     """Load one bundled reference file without re-entering the skill.
 
-    Re-entering would re-run ``pre_execute`` menus and reset the active-skill
-    tool scope, so a reference load never goes through :func:`enter_skill`.
+    Re-entering would reopen the entry menu and reset the active-skill tool
+    scope, so a reference load never goes through :func:`enter_skill`.
     """
     content = load_skill_reference(name, reference)
     if not content:
@@ -67,19 +67,20 @@ skill_view_tool = RegisteredTool(
     description=(
         "Load the full body of one action-agent skill by name from the "
         "SKILLS INDEX. Call this in the same turn when the user request matches "
-        "an indexed skill, BEFORE emitting that skill's tool sequence. Do not "
-        "invent workflow steps from the one-line index description alone. A "
+        "an indexed skill, then read the returned instructions before planning "
+        "or executing its workflow. A "
         "skill may open its own menu on load; the result then tells you to end "
-        "the turn. Pass reference to load one of the skill's linked reference "
-        "files (named in its body as references/<name>.md) without re-entering "
-        "the skill."
+        "the turn. A skill that is already active does not need to be loaded "
+        "again; its body is in your context. Pass reference to load one of the "
+        "skill's linked reference files (named in its body as "
+        "references/<name>.md) without re-entering the skill."
     ),
     input_schema=object_schema(
         properties={
             "name": string_property(
                 description=(
                     "Skill name from the SKILLS INDEX (kebab-case), e.g. "
-                    "'delivering-morning-briefings' or 'fixing-github-ci'."
+                    "'delivering-morning-briefings' or 'repair-github-ci'."
                 ),
                 min_length=1,
             ),
@@ -95,7 +96,6 @@ skill_view_tool = RegisteredTool(
     ),
     source="interactive_shell",
     surfaces=(ToolSurface.ACTION,),
-    parallel_safe=True,
     accepts_runtime_context=True,
     run=run_skill_view,
     tags=("safe", "fast", "no-credentials"),

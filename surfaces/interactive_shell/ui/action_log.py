@@ -1,10 +1,10 @@
 """Grouped, collapsible tool-action log rendered above the closing reply.
 
-Tool calls are buffered per turn and flushed here as bordered sections, one per
-run of same-kind calls (all ``GitHub CLI`` calls together, etc.). Each section
-shows concise status lines — never the inline ``key: value ·`` arguments — and
-stashes the full call + result detail for Ctrl+O. The log reads as a secondary
-execution record beneath the reply, the way Cursor and Droid render tool chrome.
+Tool calls are buffered per turn and flushed here. By default a TTY shows
+nothing: the full call + result detail is stashed for Ctrl+O only. With
+``/verbose on`` (``TRACER_VERBOSE``) the calls render as bordered sections, one
+per run of same-kind calls (all ``GitHub CLI`` calls together, etc.), each
+showing concise status lines — never the inline ``key: value ·`` arguments.
 """
 
 from __future__ import annotations
@@ -14,9 +14,15 @@ from collections.abc import Iterator
 from rich.console import Console, Group
 from rich.text import Text
 
+from infrastructure.observability.render.debug import verbose_output_enabled
 from infrastructure.terminal.theme import DIM, SECONDARY
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.session.terminal_session import ActionLogEntry
+from surfaces.interactive_shell.ui.transcript import (
+    TranscriptRole,
+    compact_transcript_prefix,
+    transcript_prefix,
+)
 from surfaces.shared.terminal.components.rendering import print_repl_renderable, repl_output_width
 from surfaces.shared.terminal.prompt_layout import terminal_columns
 
@@ -26,11 +32,12 @@ _TL = "╭"
 _TR = "╮"
 _BL = "╰"
 _BR = "╯"
-_MARKER = "⏺"
 #: Never let the box exceed the terminal; keep a small right margin.
 _BOX_MARGIN = 2
 #: Floor so a short section still reads as a box, not a stub.
 _MIN_INNER = 12
+# Keep enough of the tool identity visible to distinguish narrow rows.
+_MIN_SINGLE_ROW_BODY_WIDTH = 7
 #: Only draw a box once this many same-kind calls run back to back; a lone call
 #: reads as a single dim line, not a one-row box.
 _MIN_GROUP_FOR_BOX = 2
@@ -39,8 +46,10 @@ _MIN_BOX_WIDTH = _MIN_INNER + 4
 
 
 def flush_action_log(console: Console, session: Session) -> None:
-    """Flush the turn's buffered tool calls as grouped sections; clear the buffer.
+    """Flush the turn's buffered tool calls; clear the buffer.
 
+    On a TTY the calls stay hidden unless verbose output is on: their detail is
+    stashed for Ctrl+O and nothing is printed. Verbose renders grouped sections.
     Off a TTY (gateway/logs) the full detail is printed inline so nothing is
     lost where Ctrl+O does not exist. A no-op when the turn recorded no calls.
 
@@ -57,6 +66,10 @@ def flush_action_log(console: Console, session: Session) -> None:
             console.print(Text(entry.detail or entry.kind, style=str(DIM)))
         return
 
+    if not verbose_output_enabled():
+        _stash_hidden(session, entries)
+        return
+
     # Rows are sized to the width the buffered writer renders at. Sizing them
     # to the terminal instead made every row one cell too wide there, so each
     # wrapped: blank lines between rows and the corners on their own lines.
@@ -68,6 +81,13 @@ def flush_action_log(console: Console, session: Session) -> None:
         else:
             rows.extend(_single_row(session, entry, width=width) for entry in group)
     print_repl_renderable(console, Group(*rows))
+
+
+def _stash_hidden(session: Session, entries: list[ActionLogEntry]) -> None:
+    """Keep the turn's call detail reachable via Ctrl+O without printing a row."""
+    detail = "\n\n".join(entry.detail for entry in entries if entry.detail)
+    if detail:
+        session.terminal.stash_collapsed_tool_output(detail)
 
 
 def _box_width(console: Console) -> int:
@@ -92,11 +112,17 @@ def _single_row(session: Session, entry: ActionLogEntry, *, width: int) -> Text:
     if entry.detail:
         session.terminal.stash_collapsed_tool_output(entry.detail)
     label = f"{entry.kind} · {entry.concise}" if entry.concise else entry.kind
-    line = f"{_MARKER} {label}"
     max_width = max(_MIN_INNER, width - _BOX_MARGIN)
+    prefix = transcript_prefix(TranscriptRole.TOOL)
+    if max_width - len(prefix) < _MIN_SINGLE_ROW_BODY_WIDTH:
+        prefix = compact_transcript_prefix(TranscriptRole.TOOL)
+    line = f"{prefix}{label}"
     if len(line) > max_width:
         line = line[: max_width - 1] + "…"
-    return Text(line, style=str(DIM))
+    row = Text()
+    row.append(line[: len(prefix)], style=str(SECONDARY))
+    row.append(line[len(prefix) :], style=str(DIM))
+    return row
 
 
 def _section_rows(session: Session, group: list[ActionLogEntry], *, width: int) -> list[Text]:

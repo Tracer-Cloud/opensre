@@ -91,6 +91,7 @@ def _ctx(
         ("/mcp", ["disconnect", "github"], "/mcp disconnect github"),
         ("/integrations", [], "/integrations"),
         ("/mcp", [], "/mcp"),
+        ("/loops", ["show"], "/loops show"),
     ],
 )
 def test_interactive_picker_command_is_deferred_to_exclusive_stdin(
@@ -249,6 +250,7 @@ def test_interleaved_slash_invoke_runs_each_time() -> None:
     [
         ("/integrations", ["list"]),
         ("/integrations", ["show", "github"]),
+        ("/loops", ["show", "abc123"]),
         ("/health", []),
     ],
 )

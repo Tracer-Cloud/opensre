@@ -180,12 +180,18 @@ class MergedPullRequest:
 
 @dataclass(frozen=True)
 class Outage:
-    """A period during which one workflow stayed red on the default branch."""
+    """A period during which the default branch's latest commit had a failing check."""
 
-    workflow: str
+    workflows: tuple[str, ...]
+    """Workflows that failed on the branch's latest commit during this period."""
+
     started_at: datetime
     ended_at: datetime | None
     first_failure_url: str
+
+    @property
+    def label(self) -> str:
+        return ", ".join(self.workflows)
 
     def duration_hours(self, *, now: datetime) -> float:
         end = self.ended_at or now
@@ -205,6 +211,8 @@ class WorkflowSummary:
     failures: int
     reliability_failures: int
     normal_minutes: float | None
+    red_hours: float = 0.0
+    """This workflow's share of the default branch's red time."""
 
 
 @dataclass(frozen=True)

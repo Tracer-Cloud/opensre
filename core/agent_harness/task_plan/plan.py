@@ -16,22 +16,88 @@ from infrastructure.safety.terminal_output import strip_terminal_controls
 
 
 class PlanStepStatus(StrEnum):
-    """Allowed ``update_plan`` step statuses."""
+    """Allowed ``update_plan`` step statuses.
+
+    ``BLOCKED`` is terminal like ``COMPLETED`` but records that the step's
+    work was **not** done: a missing capability, permission, or fact stops
+    it, and the blocker is named in the plan ``explanation``. It never counts
+    as progress and is never promoted back to ``in_progress`` by the host.
+    """
 
     PENDING = "pending"
     IN_PROGRESS = "in_progress"
     COMPLETED = "completed"
+    BLOCKED = "blocked"
 
 
 _ALLOWED_STATUSES: frozenset[str] = frozenset(PlanStepStatus)
+_STATUS_ERROR = "status must be pending, in_progress, completed, or blocked"
+PLAN_ITEM_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "step": {
+            "type": "string",
+            "description": "One short observable outcome (about 5–10 words).",
+            "minLength": 1,
+        },
+        "status": {
+            "type": "string",
+            "description": (
+                "One of: pending, in_progress, completed, blocked. Use blocked "
+                "for a step this runtime or the current facts prevent; it is "
+                "terminal, never counts as done, and needs its blocker named "
+                "in explanation."
+            ),
+            "enum": ["pending", "in_progress", "completed", "blocked"],
+        },
+        "deliverable": {
+            "type": "boolean",
+            "description": (
+                "True when this step's work is a text-only assistant reply the user "
+                "must see (a report or table) while later steps remain. Without it a "
+                "text-only reply before the plan is settled is treated as a premature "
+                "stop and is not shown."
+            ),
+        },
+        "verifies": {
+            "type": "boolean",
+            "description": (
+                "True for the step that checks the outcome of the earlier steps by "
+                "running something (a re-read, a re-run, a comparison). It is the only "
+                "step shown as (verify), it completes only after its own tool returned, "
+                "and a text-only last step closes only after it has run."
+            ),
+        },
+    },
+    "required": ["step", "status"],
+    "additionalProperties": False,
+}
+_BLOCKED_NEEDS_EXPLANATION = "a blocked step needs its blocker named in explanation"
+#: Statuses that leave no work to do: the plan is settled once every step has one.
+TERMINAL_STATUSES: frozenset[PlanStepStatus] = frozenset(
+    {PlanStepStatus.COMPLETED, PlanStepStatus.BLOCKED}
+)
 
 
 @dataclass(frozen=True, slots=True)
 class PlanStep:
-    """One plan step with a 1-sentence outcome and a status."""
+    """One plan step with a 1-sentence outcome and a status.
+
+    ``deliverable`` marks a step whose work *is* a text-only assistant reply
+    (a report, a table): the host shows that reply even though later steps
+    remain. It is the structured signal that separates an intended mid-plan
+    deliverable from a premature stop the plan gate rejects.
+
+    ``verifies`` marks the step that checks the outcome of the earlier ones by
+    running something. It is the only step shown as ``(verify)``, it never
+    completes without a tool return of its own, and a text-only closing step
+    completes for free only after one has.
+    """
 
     step: str
     status: PlanStepStatus
+    deliverable: bool = False
+    verifies: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -63,7 +129,7 @@ class TaskPlan:
     def focused_step(self) -> PlanStep:
         """The step the live overlay should show: in-progress, else first pending.
 
-        When every step is completed, returns the last step (verification).
+        When every step is completed, returns the last step.
         """
         for item in self.steps:
             if item.status is PlanStepStatus.IN_PROGRESS:
@@ -74,8 +140,26 @@ class TaskPlan:
         return self.steps[-1]
 
     @property
+    def blocked_count(self) -> int:
+        return sum(1 for item in self.steps if item.status is PlanStepStatus.BLOCKED)
+
+    @property
     def all_completed(self) -> bool:
         return bool(self.steps) and self.completed_count == self.total
+
+    @property
+    def is_settled(self) -> bool:
+        """True when no step is pending or in progress (every step completed or blocked).
+
+        A settled plan needs no further work this turn; it is *complete* only
+        when :attr:`all_completed` also holds.
+        """
+        return bool(self.steps) and all(item.status in TERMINAL_STATUSES for item in self.steps)
+
+    @property
+    def verified(self) -> bool:
+        """True when a step marked ``verifies`` has completed."""
+        return any(item.verifies and item.status is PlanStepStatus.COMPLETED for item in self.steps)
 
     @property
     def all_pending(self) -> bool:
@@ -83,6 +167,29 @@ class TaskPlan:
         return bool(self.steps) and all(
             item.status is PlanStepStatus.PENDING for item in self.steps
         )
+
+    @property
+    def awaits_reply(self) -> bool:
+        """True when the step in progress, or the pending step right after it, is a deliverable.
+
+        A deliverable further down the plan does not count: work before it is
+        still open, so a text-only reply now is a premature stop, not the report.
+        """
+        current: PlanStep | None = None
+        for item in self.steps:
+            if item.status is PlanStepStatus.IN_PROGRESS:
+                current = item
+                break
+        if current is None:
+            first_pending = next(
+                (item for item in self.steps if item.status is PlanStepStatus.PENDING), None
+            )
+            return first_pending is not None and first_pending.deliverable
+        if current.deliverable:
+            return True
+        after = self.steps[self.steps.index(current) + 1 :]
+        next_pending = next((item for item in after if item.status is PlanStepStatus.PENDING), None)
+        return next_pending is not None and next_pending.deliverable
 
 
 def parse_task_plan(args: dict[str, Any]) -> tuple[TaskPlan | None, str | None]:
@@ -97,7 +204,7 @@ def parse_task_plan(args: dict[str, Any]) -> tuple[TaskPlan | None, str | None]:
     )
     raw_plan = args.get("plan")
     if not isinstance(raw_plan, list) or len(raw_plan) < 2:
-        return None, "plan must list at least two steps (last step verifies)"
+        return None, "plan must list at least two steps"
     steps: list[PlanStep] = []
     in_progress = 0
     for item in raw_plan:
@@ -108,26 +215,45 @@ def parse_task_plan(args: dict[str, Any]) -> tuple[TaskPlan | None, str | None]:
         if not step_text:
             return None, "each plan item needs a non-empty step"
         if status_raw not in _ALLOWED_STATUSES:
-            return None, "status must be pending, in_progress, or completed"
+            return None, _STATUS_ERROR
         status = PlanStepStatus(status_raw)
         if status is PlanStepStatus.IN_PROGRESS:
             in_progress += 1
-        steps.append(PlanStep(step=step_text, status=status))
+        steps.append(
+            PlanStep(
+                step=step_text,
+                status=status,
+                deliverable=item.get("deliverable") is True,
+                verifies=item.get("verifies") is True,
+            )
+        )
     if in_progress > 1:
         return None, "at most one step can be in_progress at a time"
     last = steps[-1]
     if last.status is PlanStepStatus.COMPLETED and in_progress:
-        return None, "cannot complete the verification step while another step is in_progress"
+        return None, "cannot complete the final step while another step is in_progress"
+    if not explanation and any(item.status is PlanStepStatus.BLOCKED for item in steps):
+        return None, _BLOCKED_NEEDS_EXPLANATION
     return TaskPlan(steps=tuple(steps), explanation=explanation), None
+
+
+def _step_payload(item: PlanStep) -> dict[str, Any]:
+    payload: dict[str, Any] = {"step": item.step, "status": str(item.status)}
+    if item.deliverable:
+        payload["deliverable"] = True
+    if item.verifies:
+        payload["verifies"] = True
+    return payload
 
 
 def task_plan_to_payload(plan: TaskPlan) -> dict[str, Any]:
     """JSON-ready dict for persistence and tool results."""
     payload: dict[str, Any] = {
-        "plan": [{"step": item.step, "status": str(item.status)} for item in plan.steps],
+        "plan": [_step_payload(item) for item in plan.steps],
         "current": plan.current_index,
         "total": plan.total,
         "completed": plan.completed_count,
+        "blocked": plan.blocked_count,
     }
     if plan.explanation:
         payload["explanation"] = plan.explanation
@@ -147,8 +273,10 @@ def task_plan_from_payload(payload: Any) -> TaskPlan | None:
 
 
 __all__ = [
+    "PLAN_ITEM_SCHEMA",
     "PlanStep",
     "PlanStepStatus",
+    "TERMINAL_STATUSES",
     "TaskPlan",
     "parse_task_plan",
     "task_plan_from_payload",

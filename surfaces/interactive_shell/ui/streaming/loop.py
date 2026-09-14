@@ -41,9 +41,9 @@ from core.agent_harness.spi.prompt_chrome import WANT_ME_TO_MARKER
 from surfaces.interactive_shell.ui.streaming.renderer import (
     _build_markdown_block,
     render_reply_block,
-    reply_gutter,
     reply_width,
 )
+from surfaces.interactive_shell.ui.transcript import transcript_gutter
 
 # Throttle for the optional ``update_streaming_progress`` hook on the
 # console — caps cross-thread queueing on long bursts of chunks. Same
@@ -134,7 +134,7 @@ def stream_to_console_state(
     defer_want_me_to_closer: bool = False,
 ) -> StreamRenderResult:
     """Like :func:`stream_to_console` but returns render/defer metadata."""
-    del label  # the inline Ω marker replaced the ``Ω OpenSRE`` header
+    del label  # the transcript paints the stable assistant marker
     if not console.is_terminal:
         text = "".join(chunks)
         if suppress_if_starts_with is not None and text.lstrip().startswith(
@@ -229,8 +229,7 @@ def stream_to_console_state(
             markdown.parsed and markdown.parsed[0].type in _SELF_SPACING_BLOCK_TOKEN_TYPES
         )
         if not rendered_paragraphs:
-            # One blank row between the user turn and its reply (Droid rhythm):
-            # the echo row and the Ω reply must not sit flush against each other.
+            # One blank row keeps the user turn and its reply distinct.
             console.print()
         if rendered_paragraphs and source_break and not starts_with_self_spacing_block:
             # ``_flush_paragraphs`` consumes the source ``\n\n`` boundary.
@@ -238,12 +237,16 @@ def stream_to_console_state(
             # for the next standalone block. This matters most after lists,
             # whose renderer adds no trailing blank line.
             console.print()
-        # The first paragraph carries the ``Ω`` marker in the gutter; every
+        # The first paragraph carries the assistant marker in the gutter; every
         # paragraph hangs in the same indented body column. Explicit TEXT so
         # body never falls through to terminal white and washes the marker out.
         with console.use_theme(ui_theme.MARKDOWN_THEME):
             console.print(
-                reply_gutter(markdown, lead=rendered_paragraphs == 0),
+                transcript_gutter(
+                    markdown,
+                    lead=rendered_paragraphs == 0,
+                    label_style=ui_theme.reply_marker_style(),
+                ),
                 style=str(ui_theme.TEXT),
                 width=reply_width(console),
             )
@@ -418,15 +421,14 @@ def stream_to_console_state(
             footer_elapsed_s=elapsed,
             footer_total_bytes=total_bytes,
         )
-    # One blank after the reply so the next user row / prompt chrome breathes
-    # like Droid — not flush against the last reply line.
+    # One blank after the reply keeps the next user row off the answer body.
     console.print()
     return StreamRenderResult(text=text, deferred_closer=False)
 
 
 def publish_full_response(console: Console, text: str, *, label: str = "assistant") -> None:
     """Render a complete assistant answer (non-TTY deferred gather path)."""
-    del label  # the inline Ω marker replaced the ``Ω OpenSRE`` header
+    del label  # the transcript paints the stable assistant marker
     body = (text or "").strip()
     if not body:
         return

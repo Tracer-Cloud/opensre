@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping
+from contextlib import ExitStack
 from typing import Any, Final
 
 from integrations.coding_agent import (
@@ -15,7 +16,7 @@ from integrations.coding_agent import (
 )
 from integrations.git import GitCommandError, changed_paths, ensure_git_repo, file_fingerprints
 from integrations.github.client import resolve_github_token
-from integrations.github.repo_scope import detect_git_remote_repo_scope
+from integrations.github.repair_workspace import repair_workspace
 from integrations.github.tools.security_fix.context import (
     SecurityAlertContext,
     gather_security_alert_context,
@@ -25,8 +26,6 @@ from integrations.github.tools.security_fix.errors import (
     ERR_CONFIRMATION_DENIED,
     ERR_EXECUTION,
     ERR_GITHUB_TOKEN,
-    ERR_REPO_MISMATCH,
-    ERR_REPO_SCOPE,
     ERR_TIMEOUT,
     GitHubSecurityFixError,
 )
@@ -43,29 +42,6 @@ def ensure_cli_ready() -> None:
         raise GitHubSecurityFixError(ERR_CLI_UNAVAILABLE, f"Coding agent is not ready: {detail}")
 
 
-def ensure_workspace_ready(workspace: str, owner: str, repo: str) -> None:
-    """Require a git checkout whose origin matches the alert repository."""
-    try:
-        ensure_git_repo(workspace)
-    except GitCommandError as exc:
-        raise GitHubSecurityFixError(exc.kind, exc.message) from exc
-    detected = detect_git_remote_repo_scope(workspace)
-    if detected is None:
-        raise GitHubSecurityFixError(
-            ERR_REPO_SCOPE,
-            "Could not determine the GitHub owner/repo from the workspace's origin remote.",
-        )
-    detected_owner, detected_repo = detected
-    if (detected_owner.lower(), detected_repo.lower()) != (owner.lower(), repo.lower()):
-        raise GitHubSecurityFixError(
-            ERR_REPO_MISMATCH,
-            (
-                f"Workspace origin is {detected_owner}/{detected_repo}, "
-                f"but the alert belongs to {owner}/{repo}."
-            ),
-        )
-
-
 def ensure_ship_ready(workspace: str, github_token: str | None = None) -> None:
     if not resolve_github_token(github_token):
         raise GitHubSecurityFixError(
@@ -76,11 +52,6 @@ def ensure_ship_ready(workspace: str, github_token: str | None = None) -> None:
         ensure_git_repo(workspace)
     except GitCommandError as exc:
         raise GitHubSecurityFixError(exc.kind, exc.message) from exc
-
-
-def resolve_workspace(workspace: str | None) -> str:
-    """Resolve the workspace once for the full run."""
-    return workspace or coding_workspace()
 
 
 def pre_coding_changes(workspace: str) -> dict[str, str]:
@@ -251,62 +222,71 @@ def run_security_fix(
     github_token: str | None = None,
     confirm_fn: Callable[[str], str] | None = None,
 ) -> dict[str, Any]:
-    ws = resolve_workspace(workspace)
-    ctx: SecurityAlertContext | None = None
-    try:
-        coding_available, _coding_detail = verify_coding_agent()
-        ctx = gather_security_alert_context(
-            owner=owner,
-            repo=repo,
-            alert_type=alert_type,
-            alert_number=alert_number,
-            alert_url=alert_url,
-            workspace=ws,
-            github_token=github_token,
-            prefer_builtin_local_fix=not coding_available,
-        )
-        ensure_workspace_ready(ws, ctx.owner, ctx.repo)
-        if open_pr:
-            ensure_ship_ready(ws, github_token=github_token)
-        require_confirmation(
-            confirm_fn,
-            (
-                f"Apply an OpenSRE fix in {ws} for "
-                f"{ctx.owner}/{ctx.repo} {ctx.alert_type} finding #{ctx.number}? [y/N] "
-            ),
-        )
-    except GitHubSecurityFixError as exc:
-        return error_output(exc.kind, exc.message, ctx)
+    with ExitStack() as workspaces:
+        ws = workspace or coding_workspace()
+        ctx: SecurityAlertContext | None = None
+        try:
+            coding_available, _coding_detail = verify_coding_agent()
+            ctx = gather_security_alert_context(
+                owner=owner,
+                repo=repo,
+                alert_type=alert_type,
+                alert_number=alert_number,
+                alert_url=alert_url,
+                workspace=ws,
+                github_token=github_token,
+                prefer_builtin_local_fix=not coding_available,
+            )
+            ws = str(
+                workspaces.enter_context(
+                    repair_workspace(
+                        ctx.owner,
+                        ctx.repo,
+                        workspace=workspace if open_pr and ((owner and repo) or alert_url) else ws,
+                        token=resolve_github_token(github_token),
+                        target=f"security:{ctx.alert_type}:{ctx.number}",
+                    )
+                )
+            )
+            if open_pr:
+                ensure_ship_ready(ws, github_token=github_token)
+            require_confirmation(
+                confirm_fn,
+                (
+                    f"Apply an OpenSRE fix in {ws} for "
+                    f"{ctx.owner}/{ctx.repo} {ctx.alert_type} finding #{ctx.number}? [y/N] "
+                ),
+            )
+        except (GitHubSecurityFixError, GitCommandError) as exc:
+            return error_output(exc.kind, exc.message, ctx)
 
-    baseline = pre_coding_changes(ws) if open_pr else {}
-    result = run_fix(ctx, ws, model)
-    output = to_output(ctx, result)
-    if not (open_pr and result.success):
-        return output
+        baseline = pre_coding_changes(ws) if open_pr else {}
+        result = run_fix(ctx, ws, model)
+        output = to_output(ctx, result)
+        if not (open_pr and result.success):
+            return output
 
-    try:
-        require_confirmation(
-            confirm_fn,
-            (
-                "Commit the changed files to a new opensre/github-security-fix-* branch, "
-                "push it, and open a GitHub pull request? [y/N] "
-            ),
-        )
-        ship = run_ship(ctx, result, ws, baseline=baseline, github_token=github_token)
-    except GitHubSecurityFixError as exc:
-        return ship_error_output(output, exc)
-    return with_ship_output(output, ship)
+        try:
+            require_confirmation(
+                confirm_fn,
+                (
+                    "Commit the changed files to a new opensre/github-security-fix-* branch, "
+                    "push it, and open a GitHub pull request? [y/N] "
+                ),
+            )
+            ship = run_ship(ctx, result, ws, baseline=baseline, github_token=github_token)
+        except GitHubSecurityFixError as exc:
+            return ship_error_output(output, exc)
+        return with_ship_output(output, ship)
 
 
 __all__ = [
     "SOURCE",
     "ensure_cli_ready",
     "ensure_ship_ready",
-    "ensure_workspace_ready",
     "error_output",
     "pre_coding_changes",
     "require_confirmation",
-    "resolve_workspace",
     "run_fix",
     "run_security_fix",
     "run_ship",

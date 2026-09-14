@@ -66,6 +66,19 @@ class ClaudeCodeRunResult:
     cancelled: bool
 
 
+@dataclass(frozen=True)
+class ImplementationLaunch:
+    """Whether Claude Code was started as a background task, and why not otherwise."""
+
+    started: bool
+    task_id: str | None = None
+    detail: str = ""
+
+    @classmethod
+    def declined(cls, detail: str) -> ImplementationLaunch:
+        return cls(started=False, detail=detail)
+
+
 def is_context_dependent_implementation_request(request: str) -> bool:
     normalized = " ".join(request.strip().lower().split())
     return normalized in {
@@ -172,7 +185,9 @@ def format_claude_failure_diag(stdout: str, stderr: str) -> str:
     return (stderr or stdout).strip()[:TASK_DIAG_CHARS]
 
 
-def run_claude_code_implementation(request: str, presenter: SubprocessPresenter) -> None:
+def run_claude_code_implementation(
+    request: str, presenter: SubprocessPresenter
+) -> ImplementationLaunch:
     session = presenter.session
     policy = allow_tool("code_agent")
     if not presenter.execution_allowed(
@@ -180,7 +195,7 @@ def run_claude_code_implementation(request: str, presenter: SubprocessPresenter)
         action_summary=f"Claude Code implementation: {request}",
     ):
         session.record("implementation", request, ok=False)
-        return
+        return ImplementationLaunch.declined("The user declined the Claude Code run.")
 
     if is_context_dependent_implementation_request(request) and not session.agent.messages:
         presenter.print(
@@ -188,18 +203,20 @@ def run_claude_code_implementation(request: str, presenter: SubprocessPresenter)
             "describe what Claude Code should change."
         )
         session.record("implementation", request, ok=False)
-        return
+        return ImplementationLaunch.declined(
+            "The request is too vague; describe what Claude Code should change."
+        )
 
     adapter = ClaudeCodeAdapter()
     probe = adapter.detect()
     if not probe.installed or not probe.bin_path:
         presenter.print_error(f"Claude Code CLI not available: {probe.detail}")
         session.record("implementation", request, ok=False)
-        return
+        return ImplementationLaunch.declined(f"Claude Code CLI not available: {probe.detail}")
     if probe.logged_in is False:
         presenter.print_error(f"Claude Code is not authenticated: {probe.detail}")
         session.record("implementation", request, ok=False)
-        return
+        return ImplementationLaunch.declined(f"Claude Code is not authenticated: {probe.detail}")
 
     recent = session.agent.messages[-6:]
     prompt = build_claude_code_implementation_prompt(request, recent_messages=recent)
@@ -213,7 +230,7 @@ def run_claude_code_implementation(request: str, presenter: SubprocessPresenter)
         presenter.report_exception(exc, context="surfaces.interactive_shell.claude_code.build")
         presenter.print_error(f"Claude Code failed to prepare: {exc}")
         session.record("implementation", request, ok=False)
-        return
+        return ImplementationLaunch.declined("Claude Code failed to prepare.")
 
     display_command = "claude -p"
     presenter.print_bold_command(display_command)
@@ -228,7 +245,7 @@ def run_claude_code_implementation(request: str, presenter: SubprocessPresenter)
         presenter.report_exception(exc, context="surfaces.interactive_shell.claude_code.start")
         presenter.print_error(f"Claude Code failed to start: {exc}")
         session.record("implementation", request, ok=False)
-        return
+        return ImplementationLaunch.declined("Claude Code failed to start.")
 
     task.attach_process(proc)
     session.record("implementation", request, ok=True)
@@ -284,6 +301,7 @@ def run_claude_code_implementation(request: str, presenter: SubprocessPresenter)
         "[highlight]/tasks[/] [dim]to monitor,[/] "
         f"[highlight]/cancel {task.task_id}[/] [dim]to stop.[/]"
     )
+    return ImplementationLaunch(started=True, task_id=str(task.task_id))
 
 
-__all__ = ["run_claude_code_implementation"]
+__all__ = ["ImplementationLaunch", "run_claude_code_implementation"]

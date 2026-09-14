@@ -12,6 +12,7 @@ from rich.markup import escape
 from rich.text import Text
 
 from config.constants.paths import OPENSRE_HOME_DIR
+from config.constants.skills import CONNECTING_SLACK_SKILL_NAME
 from core.agent_harness.spi.grounding import (
     GETTING_STARTED_CUSTOM,
     getting_started_skills,
@@ -33,7 +34,8 @@ from integrations.github import (
     schedule_ci_reliability_loop,
 )
 from surfaces.interactive_shell.runtime.loop_scheduler import reload_loop_scheduler, run_loop_now
-from surfaces.interactive_shell.ui.streaming.renderer import render_note_block, reply_gutter
+from surfaces.interactive_shell.ui.streaming.renderer import render_note_block
+from surfaces.interactive_shell.ui.transcript import transcript_gutter
 from surfaces.shared.terminal.components.choice_menu import (
     repl_choose_one,
 )
@@ -91,7 +93,7 @@ def marker_path() -> Path:
     return OPENSRE_HOME_DIR / MARKER_FILENAME
 
 
-def _scan_and_show(console: Console | None) -> WorkspaceSnapshot:
+def scan_and_show(console: Console | None) -> WorkspaceSnapshot:
     """Scan the home directory under a spinner and paint the activity chart."""
     home = Path.home()
     if console is not None:
@@ -104,14 +106,14 @@ def _scan_and_show(console: Console | None) -> WorkspaceSnapshot:
         # same gutter, so the demo does not read as a different program.
         console.print()
         render_note_block(console, _SNAPSHOT_LEAD)
-        console.print(reply_gutter(snapshot_renderable(snapshot), lead=False))
+        console.print(transcript_gutter(snapshot_renderable(snapshot), lead=False))
         console.print()
     return snapshot
 
 
 def _warn(console: Console | None, text: str) -> None:
     if console is not None:
-        console.print(reply_gutter(Text(text, style=str(WARNING)), lead=False))
+        console.print(transcript_gutter(Text(text, style=str(WARNING)), lead=False))
 
 
 def start_ci_agent_demo(
@@ -122,7 +124,7 @@ def start_ci_agent_demo(
 ) -> bool:
     """Scan, choose a repository and time, then schedule and run the reliability loop."""
     if repository is None:
-        snapshot = _scan_and_show(console)
+        snapshot = scan_and_show(console)
         if not resolve_github_token(None):
             _warn(console, _LOOP_TOKEN_MISSING)
             return False
@@ -146,10 +148,11 @@ def start_ci_agent_demo(
         return False
     reload_loop_scheduler()
     if console is not None:
-        headline, *details = loop_card(scheduled)
+        card = loop_card(scheduled)
         console.print()
-        render_note_block(console, headline)
-        console.print(reply_gutter(Text("\n".join(details)), lead=False))
+        render_note_block(console, card.headline)
+        bullets = "\n".join(f"- {detail}" for detail in card.details)
+        console.print(transcript_gutter(ReplyMarkdown(bullets), lead=False))
         console.print()
     _record(OPTION_CI_AGENT)
     _run_first_pass(console, scheduled.task_id, owner=owner, repo=repo)
@@ -194,13 +197,15 @@ def _run_first_pass(console: Console | None, task_id: str, *, owner: str, repo: 
     if console is not None:
         console.print()
         render_note_block(console, "The first report, as it will land in /loops messages:")
-        console.print(reply_gutter(ReplyMarkdown(report), lead=False))
+        console.print(transcript_gutter(ReplyMarkdown(report), lead=False))
         console.print()
 
 
 def _offer_after_loop(session: Session, console: Console | None) -> bool:
     """Offer the background service and the Slack demo; ``True`` when a prompt was queued."""
-    slack = next(skill for skill in getting_started_skills() if skill.name == "slack-handoff")
+    slack = next(
+        skill for skill in getting_started_skills() if skill.name == CONNECTING_SLACK_SKILL_NAME
+    )
     choices = [(_NEXT_SLACK, slack.getting_started or slack.name), (_NEXT_EXIT, _NEXT_EXIT_LABEL)]
     service = background_service_state()
     if service.supported and not service.installed:
@@ -227,7 +232,7 @@ def _install_service(console: Console | None) -> None:
         return
     if console is not None:
         render_note_block(console, _SERVICE_INSTALLED)
-        console.print(reply_gutter(Text(f"Log: {state.log_path}"), lead=False))
+        console.print(transcript_gutter(Text(f"Log: {state.log_path}"), lead=False))
         console.print()
 
 

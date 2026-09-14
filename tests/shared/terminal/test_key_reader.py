@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from types import SimpleNamespace
 
 import pytest
@@ -83,3 +84,28 @@ def test_read_key_unix_alpha_mode_ignores_digits(monkeypatch: pytest.MonkeyPatch
     # Numbering is off in letter menus, so a digit is inert rather than a selector.
     assert _drive_read_key_unix(monkeypatch, b"2", alpha_keys=True) == "ignore"
     assert _drive_read_key_unix(monkeypatch, b"2", alpha_keys=False) == "2"
+
+
+def test_raw_key_reads_keep_output_post_processing() -> None:
+    """A termios snapshot taken during a key read is restored later; it must not carry bare LFs.
+
+    With OPOST cleared, a report painted mid-turn started every line where the
+    previous one ended and walked across the screen.
+    """
+    termios = pytest.importorskip("termios")
+    pty = pytest.importorskip("pty")
+    # Arrange: a real terminal, cooked.
+    master, slave = pty.openpty()
+    try:
+        assert termios.tcgetattr(slave)[1] & termios.OPOST
+
+        # Act
+        key_reader._raw_input_mode(slave)
+        during = termios.tcgetattr(slave)
+
+        # Assert: keystrokes are raw, output is still post-processed.
+        assert not during[3] & termios.ICANON
+        assert during[1] & termios.OPOST
+    finally:
+        os.close(master)
+        os.close(slave)

@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import os
+import sys
 from collections.abc import Iterator
 
 import pytest
 
 import config.constants.paths as paths
 from config.constants import (
+    OPENSRE_LANGFUSE_DISABLED_ENV,
     OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV,
     OPENSRE_MEMORY_DIR_ENV,
 )
@@ -22,6 +24,7 @@ def pytest_configure(config: pytest.Config) -> None:
     _ = config
     _load_env()
     _disable_sentry()
+    _disable_langfuse()
     _mark_tests_for_analytics()
 
 
@@ -34,6 +37,12 @@ def _disable_sentry() -> None:
     os.environ["OPENSRE_SENTRY_DISABLED"] = "1"
 
 
+def _disable_langfuse() -> None:
+    # A developer ``.env`` may carry real Langfuse keys; boot-path tests must
+    # not export traces. Adapter tests re-enable it explicitly.
+    os.environ[OPENSRE_LANGFUSE_DISABLED_ENV] = "1"
+
+
 def _mark_tests_for_analytics() -> None:
     os.environ["OPENSRE_NO_TELEMETRY"] = "1"
     os.environ["OPENSRE_INVESTIGATION_SOURCE"] = "test"
@@ -41,20 +50,43 @@ def _mark_tests_for_analytics() -> None:
 
 _load_env()
 _disable_sentry()
+_disable_langfuse()
 _mark_tests_for_analytics()
 
 
-@pytest.fixture(autouse=True)
-def _harness_providers_per_test() -> Iterator[None]:
-    """Wire harness ports before each test; reset after to avoid session leakage."""
-    from bootstrap.adapters import install_cli_auth_checker
-    from infrastructure.harness_providers import reset_harness_providers
-    from surfaces.shared.terminal.output.boundary import install_harness_providers
+# Harness provider wiring lives in ``tests/harness_providers_plugin.py`` (loaded
+# via ``pytest.ini``) so colocated skill tests outside ``tests/`` get it too.
 
-    install_harness_providers()
-    install_cli_auth_checker()
+
+@pytest.fixture(autouse=True)
+def _isolate_session_trace_store() -> Iterator[None]:
+    """Restore the process-global session trace store after every test.
+
+    ``create_repl_runtime`` installs a JSONL-backed store for the shell and never
+    removes it; under xdist that leaked store made later tests on the same worker
+    emit ``trace_span`` sidecars into session files they were asserting on.
+    """
+    from infrastructure.observability.trace.spans import (
+        get_session_trace_store,
+        set_session_trace_store,
+    )
+
+    previous = get_session_trace_store()
     yield
-    reset_harness_providers()
+    set_session_trace_store(previous)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_observation_sink() -> Iterator[None]:
+    """Restore the process-global LLM observation sink after every test."""
+    from infrastructure.observability.trace.observations import (
+        get_observation_sink,
+        set_observation_sink,
+    )
+
+    previous = get_observation_sink()
+    yield
+    set_observation_sink(previous)
 
 
 @pytest.fixture(autouse=True)
@@ -135,6 +167,22 @@ def _isolate_opensre_home_files(request, monkeypatch, tmp_path) -> None:
     # secret would otherwise land it in the developer's
     # ~/.opensre/credentials.json.
     monkeypatch.setattr(paths, "OPENSRE_HOME_DIR", tmp_path / "opensre-home")
+
+
+@pytest.fixture(autouse=True)
+def _isolate_ci_fix_counters() -> Iterator[None]:
+    """Release counter caches and listeners without importing unused GitHub modules."""
+
+    def reset() -> None:
+        ledger = sys.modules.get("integrations.github.tools.ci_fix.ledger")
+        if ledger is not None:
+            ledger.reset_ci_fix_counters()
+
+    reset()
+    try:
+        yield
+    finally:
+        reset()
 
 
 @pytest.fixture(autouse=True)

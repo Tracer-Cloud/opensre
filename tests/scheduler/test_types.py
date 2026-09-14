@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import pytest
+from pydantic import ValidationError
+
 from infrastructure.scheduling.scheduler.types import (
     Provider,
     ScheduledTask,
@@ -45,6 +48,14 @@ class TestScheduledTask:
         assert task.params == {}
         assert task.last_run is None
         assert task.next_run is None
+
+    def test_work_item_reminder_requires_work_item_id(self) -> None:
+        with pytest.raises(ValidationError, match="params.work_item_id"):
+            ScheduledTask(
+                kind=TaskKind.WORK_ITEM_REMINDER,
+                cron="0 9 * * *",
+                provider=Provider.INTERACTIVE_SHELL,
+            )
 
     def test_all_task_kinds(self) -> None:
         assert TaskKind.MANUAL_LOOP == "manual_loop"

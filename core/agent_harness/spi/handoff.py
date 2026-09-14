@@ -12,10 +12,12 @@ from core.agent_harness.session.pending_choice import (
     AskUserQuestion,
     format_ask_user_answers,
     parse_ask_user_answers,
+    question_key,
 )
 
 __all__ = [
     "AskUserQuestion",
     "format_ask_user_answers",
     "parse_ask_user_answers",
+    "question_key",
 ]

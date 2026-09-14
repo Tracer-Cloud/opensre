@@ -20,7 +20,12 @@ from rich.console import Console, Group, RenderableType
 from rich.padding import Padding
 from rich.text import Text
 
-from config.constants import PRODUCT_DISPLAY_NAME, WELCOME_DESCRIPTION, WELCOME_TITLE
+from config.constants import (
+    CI_FIX_COUNT_LABEL,
+    PRODUCT_DISPLAY_NAME,
+    WELCOME_DESCRIPTION,
+    WELCOME_TITLE,
+)
 from config.version import get_opensre_version
 from infrastructure.terminal import theme as ui_theme
 from infrastructure.terminal.theme import (
@@ -55,7 +60,7 @@ class LaunchStatusLabel(enum.StrEnum):
     """Labels for the launch banner's capability status line."""
 
     SKILLS = "Skills"
-    INTEGRATIONS = "Integrations"
+    CI_CD_FIXES = CI_FIX_COUNT_LABEL
 
 
 #: The canonical overlapping-ring OpenSRE mark (docs/images/opensre-mark.svg),
@@ -265,12 +270,16 @@ def _append_status_item(
     count: int | None,
     *,
     available: bool,
+    mark_unavailable: bool = True,
 ) -> None:
     if line:
         line.append(_STATUS_ITEM_GAP, style=DIM)
-    line.append(label, style=f"bold {TEXT}")
+    muted = not available and not mark_unavailable
+    line.append(label, style=DIM if muted else f"bold {TEXT}")
     if count is not None:
-        line.append(f" ({count})", style=SECONDARY)
+        line.append(f" ({count})", style=DIM if muted else SECONDARY)
+    if muted:
+        return
     glyph = _STATUS_OK_GLYPH if available else _STATUS_MISSING_GLYPH
     # Green success / red missing — same signal language as Droid's chips.
     line.append(f" {glyph}", style=BOLD_SKILL if available else ERROR)
@@ -304,9 +313,10 @@ def _build_capabilities(status: LaunchStatus, *, max_width: int) -> Text:
     )
     _append_status_item(
         capabilities,
-        LaunchStatusLabel.INTEGRATIONS,
-        status.integration_count,
-        available=status.integration_count > 0,
+        LaunchStatusLabel.CI_CD_FIXES,
+        status.ci_fix_count,
+        available=status.ci_fix_count > 0,
+        mark_unavailable=False,
     )
     # Clip rather than soft-wrap — a wrapped chip row looks left-ragged.
     plain = capabilities.plain

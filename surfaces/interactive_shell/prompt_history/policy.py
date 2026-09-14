@@ -10,7 +10,6 @@ redaction on, persistence on, and entries capped at 5000.
 from __future__ import annotations
 
 import os
-import re
 from collections.abc import AsyncGenerator, Iterator
 from pathlib import Path
 from typing import Any, ClassVar
@@ -19,61 +18,11 @@ from filelock import BaseFileLock, FileLock
 from prompt_toolkit.history import FileHistory
 from pydantic import ConfigDict
 
+from config.secret_redaction import DEFAULT_REDACTION_RULES, RedactionRule
 from config.strict_config import StrictConfigModel
+from infrastructure.safety.secret_redaction import redact_text
 
 DEFAULT_MAX_ENTRIES = 5000
-
-
-class RedactionRule(StrictConfigModel):
-    """One named regex with its replacement."""
-
-    model_config = ConfigDict(extra="forbid", frozen=True, arbitrary_types_allowed=True)
-
-    name: str
-    pattern: re.Pattern[str]
-    replacement: str
-
-
-def _build_default_rules() -> tuple[RedactionRule, ...]:
-    raw: list[tuple[str, str, str]] = [
-        ("aws_key", r"(?:AKIA|ASIA)[A-Z0-9]{16}", "[REDACTED:aws_key]"),
-        (
-            "aws_secret",
-            r"(?i)aws_secret_access_key[\s=:]+[A-Za-z0-9/+=]{40}",
-            "aws_secret_access_key=[REDACTED:aws_secret]",
-        ),
-        ("github_pat_classic", r"ghp_[A-Za-z0-9]{36}", "[REDACTED:github_pat]"),
-        ("github_pat_fine", r"github_pat_[A-Za-z0-9_]{82}", "[REDACTED:github_pat]"),
-        ("anthropic_key", r"sk-ant-[A-Za-z0-9_\-]{40,}", "[REDACTED:anthropic_key]"),
-        ("openai_key", r"sk-(?!ant-)[A-Za-z0-9_\-]{20,}", "[REDACTED:openai_key]"),
-        ("slack_token", r"xox[bopas]-[A-Za-z0-9-]{10,}", "[REDACTED:slack_token]"),
-        ("stripe_key", r"sk_(?:live|test)_[A-Za-z0-9]{24,}", "[REDACTED:stripe_key]"),
-        ("bearer", r"(?i)bearer\s+[A-Za-z0-9_\-\.]{20,}", "Bearer [REDACTED]"),
-        (
-            "jwt",
-            r"eyJ[A-Za-z0-9_\-]{8,}\.eyJ[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}",
-            "[REDACTED:jwt]",
-        ),
-        ("password_arg", r"(?i)(--password=|password=)\S+", "[REDACTED:password]"),
-        (
-            "private_key",
-            r"-----BEGIN (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----[\s\S]*?-----END (?:RSA |EC |DSA |OPENSSH )?PRIVATE KEY-----",
-            "[REDACTED:private_key]",
-        ),
-    ]
-    return tuple(
-        RedactionRule(name=name, pattern=re.compile(p), replacement=repl) for (name, p, repl) in raw
-    )
-
-
-DEFAULT_REDACTION_RULES: tuple[RedactionRule, ...] = _build_default_rules()
-
-
-def redact_text(text: str, rules: tuple[RedactionRule, ...] = DEFAULT_REDACTION_RULES) -> str:
-    """Apply each rule's pattern in declared order, replacing every match."""
-    for rule in rules:
-        text = rule.pattern.sub(rule.replacement, text)
-    return text
 
 
 class HistoryPolicy(StrictConfigModel):

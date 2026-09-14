@@ -24,16 +24,17 @@ from integrations.github.helpers import (
 )
 from integrations.github.repo_scope import detect_git_remote_repo_scope
 from integrations.github.tools.ci_analytics.analysis import analyze_repository
+from integrations.github.tools.ci_analytics.benchmarks import MEASURED_ON
 from integrations.github.tools.ci_analytics.loop import LOOP_WINDOW_DAYS
 from integrations.github.tools.ci_analytics.models import CiAnalyticsReport, FailureKind
 from integrations.github.tools.ci_analytics.render import (
+    comparison_figures,
     comparison_markdown,
     format_minutes,
     headline,
     key_results_payload,
-    render_comparison,
+    peer_benchmarks,
     render_markdown,
-    render_report,
 )
 from integrations.github.tools.ci_analytics.snapshots import (
     read_fresh_snapshot,
@@ -50,13 +51,6 @@ _SOURCE = "github"
 _DEFAULT_WINDOW_DAYS = 30
 _MIN_WINDOW_DAYS = 1
 _MAX_WINDOW_DAYS = 90
-_DEFAULT_BENCHMARKS = (("apache", "airflow"), ("fastapi", "fastapi"))
-
-
-def _flag(value: Any) -> bool:
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes"}
-    return bool(value)
 
 
 def _available(sources: dict[str, dict]) -> bool:
@@ -81,10 +75,11 @@ def _extract_params(sources: dict[str, dict]) -> dict[str, Any]:
 
 
 def _console(context: Any) -> Any:
-    """The terminal to paint on, or None when the caller only reads the result.
+    """The terminal for progress lines while GitHub is read, or None when there is none.
 
-    A headless run (scheduled loop, gateway) carries a capture console; painting
-    there would hide the report, so it is returned as text instead.
+    Only progress is printed there; the figures always travel in the result.
+    A headless run (scheduled loop, gateway) carries a capture console
+    and gets no progress lines.
     """
     if context is None:
         return None
@@ -136,6 +131,7 @@ def report_payload(report: CiAnalyticsReport) -> dict[str, Any]:
         "blocked_minutes_all": round(report.blocked_minutes_all, 1),
         "merged_pr_branches": report.merged_pr_branches,
         "blocked_working_minutes": round(report.blocked_working_minutes, 1),
+        "blocked_working_hours": round(report.blocked_working_minutes / 60, 1),
         "working_hours": report.working_hours_label,
         "developers_affected": report.developers_affected,
         "developers": [
@@ -144,6 +140,7 @@ def report_payload(report: CiAnalyticsReport) -> dict[str, Any]:
                 "pull_requests": w.pull_requests,
                 "working_minutes": round(w.working_minutes, 1),
                 "working_minutes_per_week": round(w.working_minutes_per_week, 1),
+                "working_hours_per_week": round(w.working_minutes_per_week / 60, 1),
             }
             for w in report.developer_waits[:10]
         ],
@@ -170,6 +167,7 @@ def report_payload(report: CiAnalyticsReport) -> dict[str, Any]:
                 "failures": s.failures,
                 "reliability_failures": s.reliability_failures,
                 "normal_minutes": s.normal_minutes,
+                "red_hours": round(s.red_hours, 2),
             }
             for s in report.workflows
         ],
@@ -177,54 +175,14 @@ def report_payload(report: CiAnalyticsReport) -> dict[str, Any]:
     }
 
 
-def _from_snapshot(
-    snapshot: dict[str, Any],
-    owner: str,
-    repo: str,
-    window: int,
-    console: Any,
-    *,
-    include_benchmarks: bool = True,
-    compact: bool = False,
-) -> dict[str, Any] | None:
-    """Answer from a same-day snapshot, or ``None`` when it holds no usable report.
-
-    A snapshot written before the report object was saved cannot produce the
-    comparison, so it counts as a miss and the caller reads GitHub instead.
-    """
-    saved = snapshot.get("report")
-    report = report_from_dict(saved) if isinstance(saved, dict) else None
-    if report is None:
-        return None
-    generated = str(snapshot.get("generated_at", ""))[:16].replace("T", " ")
-    if console is not None:
-        console.print(
-            f"  [dim]Using the CI reliability snapshot of {escape(f'{owner}/{repo}')} "
-            f"from {generated} UTC (same {window}-day window).[/dim]"
-        )
-        console.print()
-    result = _result(
-        report,
-        owner,
-        repo,
-        window,
-        console,
-        include_benchmarks=include_benchmarks,
-        compact=compact,
-    )
-    result["summary"] += f" Figures as of {generated} UTC, from the saved snapshot."
-    result["from_snapshot"] = snapshot.get("generated_at")
-    return result
-
-
 def report_text_from_snapshot(
     owner: str, repo: str, *, days: int = _DEFAULT_WINDOW_DAYS, include_benchmarks: bool = True
 ) -> tuple[str, str]:
     """``(markdown, generated_at)`` from today's snapshot, or ``("", "")`` when none.
 
-    Compact: key results and the comparison, without the counts appendix.
-
-    Reads saved snapshots only; never resolves a token or starts a live fetch.
+    Compact: the cost sentence, key results and the comparison, without the
+    counts appendix. Reads saved snapshots only; never resolves a token or
+    starts a live fetch.
     """
     now = datetime.now(UTC)
     # The scheduled loop saves its own window; a same-day loop report counts too.
@@ -234,92 +192,40 @@ def report_text_from_snapshot(
             break
     else:
         return "", ""
-    result = _from_snapshot(
-        snapshot, owner, repo, window, None, include_benchmarks=include_benchmarks, compact=True
-    )
-    if result is None or not result.get("success"):
+    saved = snapshot.get("report")
+    if not isinstance(saved, dict):
         return "", ""
-    return str(result.get("response_text") or "").strip(), str(snapshot.get("generated_at", ""))
+    try:
+        report = report_from_dict(saved)
+    except TypeError:
+        # A snapshot written before a report-shape change; treat it as absent.
+        return "", ""
+    text = render_markdown(report, compact=True)
+    if include_benchmarks:
+        compare = comparison_markdown(report, peer_benchmarks(report))
+        text = f"{text}\n\n{compare}"
+    return text.strip(), str(snapshot.get("generated_at", ""))
 
 
-def _peer_payload(report: CiAnalyticsReport, *, from_snapshot: str | None) -> dict[str, Any]:
+def _benchmarks_payload(report: CiAnalyticsReport) -> dict[str, Any]:
+    """The peer columns of the comparison: benchmark figures shipped with the product."""
+    peers = peer_benchmarks(report)
     return {
-        "owner": report.owner,
-        "repo": report.repo,
-        "from_snapshot": from_snapshot,
-        "key_results": key_results_payload(report),
-        "red_hours": round(report.red_hours, 2),
-        "mean_recovery_hours": report.mean_recovery_hours,
-        "pr_failure_rate": report.pr_failure_rate,
-        "reliability_failures": report.count(FailureKind.RELIABILITY),
-        "pr_executions": report.pr_executions,
+        "benchmarks": [
+            {"owner": item.owner, "repo": item.repo, "figures": dict(item.figures)}
+            for item in peers
+        ],
+        "benchmarks_measured_on": MEASURED_ON.isoformat(),
     }
 
 
-def _load_peer_report(
-    owner: str,
-    repo: str,
-    *,
-    window: int,
-    now: datetime,
-) -> tuple[CiAnalyticsReport, str | None] | None:
-    """Today's snapshot for a benchmark repo, or ``None`` (no live fetch)."""
-    snapshot = read_fresh_snapshot(snapshot_root(), owner, repo, window_days=window, now=now)
-    if snapshot is None:
-        return None
-    saved = snapshot.get("report")
-    if not isinstance(saved, dict):
-        return None
-    return report_from_dict(saved), str(snapshot.get("generated_at") or "")
+def _result(report: CiAnalyticsReport, owner: str, repo: str, window: int) -> dict[str, Any]:
+    """The tool's return for ``report``: every figure as data, no rendered report.
 
-
-def _attach_benchmarks(
-    result: dict[str, Any],
-    report: CiAnalyticsReport,
-    *,
-    window: int,
-    console: Any,
-) -> dict[str, Any]:
-    """Add the host comparison table from same-day peer snapshots."""
-    now = datetime.now(UTC)
-    peers: list[CiAnalyticsReport] = []
-    rows: list[dict[str, Any]] = []
-    skipped: list[str] = []
-    for owner, repo in _DEFAULT_BENCHMARKS:
-        if owner == report.owner and repo == report.repo:
-            continue
-        loaded = _load_peer_report(owner, repo, window=window, now=now)
-        if loaded is None:
-            skipped.append(f"{owner}/{repo} (no same-day snapshot)")
-            continue
-        peer, stamp = loaded
-        peers.append(peer)
-        rows.append(_peer_payload(peer, from_snapshot=stamp))
-    result["benchmarks"] = rows
-    if skipped:
-        result["benchmarks_skipped"] = skipped
-    if console is not None:
-        render_comparison(console, report, peers, skipped=skipped)
-        return result
-    compare = comparison_markdown(report, peers, skipped=skipped)
-    result["comparison_text"] = compare
-    result["response_text"] = f"{result['response_text']}\n\n{compare}"
-    return result
-
-
-def _result(
-    report: CiAnalyticsReport,
-    owner: str,
-    repo: str,
-    window: int,
-    console: Any,
-    *,
-    include_benchmarks: bool = True,
-    compact: bool = False,
-) -> dict[str, Any]:
-    """The tool's return for ``report``: painted in the shell, markdown elsewhere.
-
-    ``compact`` drops the counts appendix from both forms.
+    Presentation belongs to the caller (the skill's report template); the
+    tool ships the labelled values it needs — ``headline``, ``key_results``,
+    ``comparison_figures`` for the repository's own column, ``benchmarks``
+    for the peer columns — beside the raw counts.
     """
     summary = (
         f"{owner}/{repo}: {report.executions} runs in {window} days, "
@@ -328,8 +234,7 @@ def _result(
         f"{format_minutes(report.blocked_working_minutes)} of developer downtime "
         f"({format_minutes(report.blocked_minutes)} wall clock) on merged PRs."
     )
-    takeaways = key_results_payload(report)
-    base = {
+    return {
         "source": _SOURCE,
         "success": True,
         "owner": owner,
@@ -338,23 +243,11 @@ def _result(
         "window_days": window,
         "summary": summary,
         "headline": headline(report),
-        "key_results": takeaways,
-        "rendered_in_shell": console is not None,
+        "key_results": key_results_payload(report),
+        "comparison_figures": comparison_figures(report),
+        **report_payload(report),
+        **_benchmarks_payload(report),
     }
-    if console is not None:
-        # The painted report is the turn's output; a reply restating its figures
-        # would print them twice.
-        render_report(console, report, compact=compact)
-        result = {**base, "coverage_notices": list(report.coverage_notices)}
-    else:
-        result = {
-            **base,
-            **report_payload(report),
-            "response_text": render_markdown(report, compact=compact),
-        }
-    if include_benchmarks:
-        result = _attach_benchmarks(result, report, window=window, console=console)
-    return result
 
 
 @tool(
@@ -366,11 +259,15 @@ def _result(
         "reliability KPIs: executions, PR failure rate, failures classified as "
         "CI-caused (same commit passed later) versus source-code, developer time "
         "blocked by unreliable CI on merged PRs, and default-branch red time. "
-        "Read-only. A same-day snapshot answers without a token; a live GitHub "
-        "read needs a token. Every report also carries a comparison with "
-        "apache/airflow and fastapi/fastapi built from same-day snapshots: it "
-        "costs no extra request and cannot be turned off, so never offer to skip "
-        "it. The report is painted on screen — do not restate its figures."
+        "Read-only. Every analysis reads GitHub Actions and needs a token; a "
+        "saved snapshot is written for the scheduled loop, never used to answer "
+        "here. Every result also carries the comparison figures for "
+        "langchain-ai/langchain and anomalyco/opencode shipped with the product, so "
+        "a first run compares as well as a later one. It cannot be turned off, so "
+        "never offer to skip it. The tool computes and prints nothing: it returns "
+        "figures only (headline, key_results, comparison_figures, benchmarks, raw "
+        "counts), and the caller writes the report from them; never rerun the "
+        "analysis to fetch one figure."
     ),
     use_cases=[
         "Analyze a repository's CI/CD performance and reliability",
@@ -380,7 +277,7 @@ def _result(
     ],
     anti_examples=[
         "Fixing a failing check (use fix_github_pr_ci)",
-        "Listing currently failing checks on open PRs (use the CI health report)",
+        "Listing currently failing checks on open PRs or branches (use scan_github_ci_health)",
         "Reading one workflow run's logs (use the GitHub Actions log tools)",
     ],
     requires=[],
@@ -390,15 +287,20 @@ def _result(
         "reliability_failures": "Failures that passed later on the identical commit",
         "blocked_minutes": "Wall-clock minutes merged PRs waited past their expected green time",
         "blocked_working_minutes": "The part of that wait inside working hours: developer downtime",
-        "red_hours": "Hours the default branch had at least one red workflow",
-        "headline": "One sentence naming the biggest cost (already painted; do not repeat)",
-        "key_results": "The five takeaway rows, red time first, even when the shell painted the report",
-        "response_text": "The rendered report, or a one-line summary when the shell painted it",
-        "benchmarks": "Airflow and FastAPI rows from the same window, when a snapshot exists",
+        "red_hours": "Hours the default branch's latest commit had a failing check",
+        "headline": "One sentence naming the biggest cost",
+        "key_results": "The takeaway rows, red time first",
+        "comparison_figures": "The analyzed repository's column of the comparison table, by metric",
+        "developers_affected": "Developers whose merged PRs waited inside working hours",
+        "mean_recovery_hours": "Mean time back to green on the default branch; null when never",
+        "benchmarks": (
+            "The peer columns of the comparison table: langchain-ai/langchain and "
+            "anomalyco/opencode figures shipped with the product, by metric"
+        ),
+        "coverage_notices": "Gaps in the analyzed history the report must name",
     },
     surfaces=(ToolSurface.CHAT, ToolSurface.ACTION),
     side_effect_level=SideEffectLevel.READ_ONLY,
-    parallel_safe=False,
     accepts_runtime_context=True,
     input_schema={
         "type": "object",
@@ -421,14 +323,6 @@ def _result(
                 "type": "string",
                 "description": "Local checkout used to detect owner/repo when not given.",
             },
-            "compact": {
-                "type": "boolean",
-                "description": (
-                    "Key results and the comparison only, without the counts appendix "
-                    "(executions, failure classification, blocked time, workflows). "
-                    "Use for a first-look report. Default false."
-                ),
-            },
             "github_token": {"type": "string"},
         },
         "additionalProperties": False,
@@ -443,23 +337,20 @@ def analyze_github_ci_reliability(
     repo: str | None = None,
     days: int | None = None,
     workspace: str | None = None,
-    compact: bool = False,
     github_token: str | None = None,
     context: Any = None,
     **_kwargs: Any,
 ) -> dict[str, Any]:
-    """Compute and render CI reliability KPIs for one repository window.
+    """Compute CI reliability KPIs for one repository window and return them as data.
 
-    In the interactive shell the report is painted straight to the console so
-    every figure the user sees is the computed one; the returned
-    ``response_text`` then only summarizes. Other surfaces get the markdown.
-    The same call also paints one comparison table against apache/airflow and
-    fastapi/fastapi, built from same-day snapshots only — never a live fetch. The
-    comparison is not the model's choice to make; ``compact`` drops the counts
-    appendix.
+    The result carries every figure and no rendered report; nothing is printed
+    except progress lines while GitHub is read in the interactive shell. The
+    comparison figures shipped with the product always ride along, so a first
+    run compares as well as a hundredth and the comparison is not the model's
+    choice to make. Every analysis reads GitHub: a saved snapshot is written
+    for the scheduled loop, never used to answer here.
     """
     window = min(max(int(days or _DEFAULT_WINDOW_DAYS), _MIN_WINDOW_DAYS), _MAX_WINDOW_DAYS)
-    brief = _flag(compact)
     repo_owner = (owner or "").strip()
     repo_name = (repo or "").strip().removesuffix(".git")
     if not repo_owner or not repo_name:
@@ -474,21 +365,7 @@ def analyze_github_ci_reliability(
         )
     now = datetime.now(UTC)
     console = _console(context)
-    snapshot = read_fresh_snapshot(
-        snapshot_root(), repo_owner, repo_name, window_days=window, now=now
-    )
     token = resolve_github_token(github_token)
-    if snapshot is not None:
-        answered = _from_snapshot(
-            snapshot,
-            repo_owner,
-            repo_name,
-            window,
-            console,
-            compact=brief,
-        )
-        if answered is not None:
-            return answered
     if not token:
         message = (
             f"A GitHub token is required to read the Actions history of {repo_owner}/{repo_name}. "
@@ -541,21 +418,14 @@ def analyze_github_ci_reliability(
         )
     except OSError:
         # The analysis is the result; a snapshot that cannot be written only
-        # means the next call reads GitHub again.
+        # leaves the schedule card without today's report beside it.
         logger.warning("Could not save the CI reliability snapshot", exc_info=True)
     if console is not None:
         console.print(
             f"  [dim]Read {analysis.runs_read} runs in {time.monotonic() - started:.0f}s.[/dim]"
         )
         console.print()
-    return _result(
-        report,
-        repo_owner,
-        repo_name,
-        window,
-        console,
-        compact=brief,
-    )
+    return _result(report, repo_owner, repo_name, window)
 
 
 __all__ = ["report_text_from_snapshot", "TOOL_NAME", "analyze_github_ci_reliability"]

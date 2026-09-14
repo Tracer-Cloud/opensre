@@ -4,12 +4,19 @@ from __future__ import annotations
 
 import io
 
+import pytest
 from rich.console import Console
 from rich.text import Text
 
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.session.terminal_session import ActionLogEntry
 from surfaces.interactive_shell.ui.action_log import flush_action_log
+
+
+@pytest.fixture(autouse=True)
+def _verbose_on(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The grouped rows only render with verbose on; the default TTY hides them."""
+    monkeypatch.setenv("TRACER_VERBOSE", "1")
 
 
 def _tty(buffer: io.StringIO) -> Console:
@@ -22,10 +29,39 @@ def _push(session: Session, call_id: str, kind: str, concise: str, detail: str) 
     )
 
 
+def test_a_tty_hides_the_action_log_by_default_but_keeps_ctrl_o(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv("TRACER_VERBOSE", raising=False)
+    session = Session()
+    _push(
+        session,
+        "1",
+        "get github repository",
+        "",
+        "Tool     get github repository\n         owner: o",
+    )
+    _push(
+        session,
+        "2",
+        "get github repository",
+        "",
+        "Tool     get github repository\n         owner: p",
+    )
+    buffer = io.StringIO()
+
+    flush_action_log(_tty(buffer), session)
+
+    assert buffer.getvalue() == ""  # no box, no rows, no Ctrl+O hint
+    assert session.terminal.has_action_log() is False  # buffer drained
+    expanded = session.terminal.next_collapsed_output_for_expand()
+    assert "owner: o" in expanded and "owner: p" in expanded  # detail still behind Ctrl+O
+
+
 def test_consecutive_same_kind_calls_group_into_one_bordered_section() -> None:
     session = Session()
-    _push(session, "1", "GitHub CLI", "gh repo view", "⏺ GitHub CLI · gh repo view")
-    _push(session, "2", "GitHub CLI", "gh pr list", "⏺ GitHub CLI · gh pr list")
+    _push(session, "1", "GitHub CLI", "gh repo view", "Tool     GitHub CLI · gh repo view")
+    _push(session, "2", "GitHub CLI", "gh pr list", "Tool     GitHub CLI · gh pr list")
     buffer = io.StringIO()
 
     flush_action_log(_tty(buffer), session)
@@ -49,7 +85,9 @@ def test_no_inline_dotted_arguments_on_a_single_call() -> None:
         "1",
         "list github actions workflow runs",
         "",
-        "⏺ list github actions workflow runs\n    owner: Tracer-Cloud\n    per_page: 100",
+        "Tool     list github actions workflow runs\n"
+        "         owner: Tracer-Cloud\n"
+        "         per_page: 100",
     )
     buffer = io.StringIO()
 
@@ -66,7 +104,7 @@ def test_a_long_collapsed_command_is_clipped_only_at_render_width() -> None:
         ",".join(f"field{index}" for index in range(40))
     )
     session = Session()
-    _push(session, "1", "GitHub CLI", command, f"⏺ GitHub CLI · {command}")
+    _push(session, "1", "GitHub CLI", command, f"Tool     GitHub CLI · {command}")
     buffer = io.StringIO()
     console = Console(
         file=buffer, force_terminal=True, highlight=False, color_system="truecolor", width=80
@@ -82,7 +120,7 @@ def test_a_long_collapsed_command_is_clipped_only_at_render_width() -> None:
 
 def test_a_lone_call_is_a_dim_line_not_a_one_row_box() -> None:
     session = Session()
-    _push(session, "1", "GitHub CLI", "gh pr list", "⏺ GitHub CLI · gh pr list")
+    _push(session, "1", "GitHub CLI", "gh pr list", "Tool     GitHub CLI · gh pr list")
     buffer = io.StringIO()
 
     flush_action_log(_tty(buffer), session)
@@ -108,7 +146,13 @@ def test_two_different_lone_kinds_render_as_two_dim_lines_no_box() -> None:
 
 def test_non_tty_inlines_the_detail() -> None:
     session = Session()
-    _push(session, "1", "GitHub CLI", "gh pr list", "⏺ GitHub CLI · gh pr list\n  ↳ 4 open PRs")
+    _push(
+        session,
+        "1",
+        "GitHub CLI",
+        "gh pr list",
+        "Tool     GitHub CLI · gh pr list\n         ↳ 4 open PRs",
+    )
     buffer = io.StringIO()
 
     flush_action_log(Console(file=buffer, force_terminal=False, highlight=False), session)
@@ -169,8 +213,8 @@ def test_a_tty_flush_is_one_buffered_write_of_every_row(monkeypatch) -> None:  #
     assert len(writes) == 1
     rendered = [str(row) for row in writes[0].renderables]  # type: ignore[attr-defined]
     assert rendered[0] == ""
-    assert rendered[1] == "⏺ summarize github pr status"
-    assert rendered[2] == "⏺ propose scheduled delivery"
+    assert rendered[1] == "Tool     summarize github pr status"
+    assert rendered[2] == "Tool     propose scheduled delivery"
 
 
 def test_box_rows_fit_the_render_width_so_none_wraps() -> None:
@@ -231,6 +275,7 @@ def test_a_window_too_narrow_for_any_box_prints_plain_rows(monkeypatch) -> None:
     plain = [Text.from_ansi(line).plain for line in buffer.getvalue().splitlines() if line.strip()]
     assert not any(row[0] in "╭│╰" for row in plain)
     assert len(plain) == 2 and all(len(row) <= 13 for row in plain), plain
+    assert all(row.startswith("Tool GitHub") for row in plain), plain
 
 
 def test_a_tool_that_painted_its_own_output_leaves_no_row() -> None:

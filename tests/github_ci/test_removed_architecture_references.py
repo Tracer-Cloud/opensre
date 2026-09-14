@@ -3,9 +3,14 @@ from __future__ import annotations
 from pathlib import Path
 
 from config.constants.paths import REPO_ROOT
+from integrations.github.tools.ci_analytics.benchmarks import BENCHMARKS
 from tests.utils.tracked_sources import tracked_files, tracked_python_files
 
 ROOT = REPO_ROOT
+# The CI analytics report compares against well-known public repositories by
+# their ``owner/repo`` slug. Naming one as a benchmark peer is data, not a
+# return to the framework; only the exact slug is tolerated.
+BENCHMARK_REPOSITORY_SLUGS = tuple(benchmark.label.lower() for benchmark in BENCHMARKS)
 SKIP_DIRS = {
     ".git",
     ".mypy_cache",
@@ -57,6 +62,8 @@ def test_removed_framework_names_do_not_reappear() -> None:
 
     for path in _iter_repo_text_files():
         text = path.read_text(encoding="utf-8", errors="ignore").lower()
+        for slug in BENCHMARK_REPOSITORY_SLUGS:
+            text = text.replace(slug, "")
         if any(token in text for token in removed):
             offenders.append(str(path.relative_to(ROOT)))
 

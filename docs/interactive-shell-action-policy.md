@@ -262,3 +262,30 @@ not an available tool that turn.
 post-hoc rewriting of LLM-selected tool calls, and any deterministic mapping from
 non-`/`-prefixed text to an action. Those compete with the LLM and were removed
 for good reason.
+
+### Plan guards (host-enforced)
+
+The live plan (`update_plan`) is checked by the host, not trusted from the
+model:
+
+- A step is `completed` only when a non-bookkeeping tool returned while it
+  was `in_progress`; a plan cannot be born or bulk-ticked complete
+  (`core/agent_harness/task_plan/completion.py`).
+- The step marked `verifies: true` is the only one labelled `(verify)`. It is
+  never exempt from that rule, and a text-only closing step closes for free
+  only after such a step completed. Without one the closing step is reset and
+  the tool result says so; the model adds a check or marks the step
+  `blocked`, and the result is reported as unverified.
+- A step newly marked `blocked` does not end the turn: the conclusion is
+  rejected until the model has asked the user how to resolve it
+  (`core/agent_harness/task_plan/conclusion.py`), and the "Plan ended"
+  breakdown is not printed while that question is queued.
+- The onboarding menu's answer turn that loads the chosen demo skill and
+  does nothing else is rejected once, with a nudge to write the plan and run
+  the first step; the first demo stalled that way live.
+- The second work tool of a turn is refused while no plan with open work is
+  stored (`core/agent_harness/task_plan/required.py`). The refusal
+  names the fix: write the plan, then run the tool again.
+
+These are before/after tool hooks on the execution path, the same seam as the
+duplicate-call guard; they never route intent or rewrite a tool call.

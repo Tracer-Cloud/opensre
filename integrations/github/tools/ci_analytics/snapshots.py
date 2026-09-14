@@ -1,10 +1,8 @@
 """On-disk snapshots of CI reliability reports, shared by the loop tick and the tool.
 
-A snapshot is the report's raw figures plus when they were computed. The
-loop writes one per tick; the tool writes one per live analysis and reuses a
-fresh one for the same repository and window instead of reading GitHub
-again, which matters for benchmark repositories whose 30-day history takes
-minutes to read.
+A snapshot is the report's raw figures plus when they were computed. The loop
+writes one per tick and the tool one per live analysis; the schedule card reads
+today's to show the report beside it. A live analysis never answers from one.
 """
 
 from __future__ import annotations
@@ -42,7 +40,10 @@ def write_snapshot(
     The owner and repository are stored in the file too, so a read can check
     that a snapshot belongs to the repository it is answering for.
     """
-    target = _folder(root, owner, repo) / f"{now:%Y-%m-%dT%H%M%SZ}.json"
+    window = int(payload.get("window_days") or 0)
+    stamp = f"{now:%Y-%m-%dT%H%M%SZ}"
+    name = f"{stamp}-{window}d.json" if window else f"{stamp}.json"
+    target = _folder(root, owner, repo) / name
     target.parent.mkdir(parents=True, exist_ok=True)
     stamped = {**payload, "owner": owner, "repo": repo}
     target.write_text(json.dumps(stamped, indent=2, sort_keys=True, default=str), encoding="utf-8")

@@ -54,6 +54,10 @@ from core.llm.types import AgentLLMResponse, ModelType, SchemaDescribedTool, Too
 
 logger = logging.getLogger(__name__)
 
+# The runtime executes one action per response (``core.tool.execution``); ask
+# the model for one tool call so the batch is never generated and rejected.
+ANTHROPIC_SINGLE_TOOL_CHOICE: dict[str, Any] = {"type": "auto", "disable_parallel_tool_use": True}
+
 
 def _anthropic_tool_schema(tool: Any) -> dict[str, Any]:
     return {
@@ -186,6 +190,7 @@ class AnthropicAgentClient:
             kwargs["system"] = _anthropic_cached_system(system) if cache else system
         if tools:
             kwargs["tools"] = _anthropic_tools_with_cache(tools) if cache else tools
+            kwargs["tool_choice"] = ANTHROPIC_SINGLE_TOOL_CHOICE
 
         backoff = _RETRY_INITIAL_BACKOFF_SEC
         last_err: Exception | None = None
@@ -643,7 +648,7 @@ class OpenAIAgentClient:
             if tools:
                 kwargs["tools"] = responses_tool_specs(tools)
                 kwargs["tool_choice"] = "auto"
-                kwargs["parallel_tool_calls"] = True
+                kwargs["parallel_tool_calls"] = False
             from config.llm_reasoning_effort import get_active_reasoning_effort
 
             reasoning_effort = get_active_reasoning_effort()
@@ -659,7 +664,7 @@ class OpenAIAgentClient:
                 kwargs["tools"] = tools
                 kwargs["tool_choice"] = "auto"
                 if _supports_openai_parallel_tool_calls_param(api_key_env):
-                    kwargs["parallel_tool_calls"] = True
+                    kwargs["parallel_tool_calls"] = False
 
         backoff = _RETRY_INITIAL_BACKOFF_SEC
         last_err: Exception | None = None

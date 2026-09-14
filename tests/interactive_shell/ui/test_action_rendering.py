@@ -137,14 +137,29 @@ def _skill_observer() -> tuple[ActionRenderObserver, io.StringIO]:
     return observer, buffer
 
 
-def test_skill_view_renders_activation_event() -> None:
-    """Loading a skill shows the two-line activation tree, nothing else."""
+def _load_skill(observer: ActionRenderObserver, call_id: str, name: str) -> None:
+    observer("tool_start", {"id": call_id, "name": "skill_view", "input": {"name": name}})
+    observer(
+        "tool_end",
+        {
+            "id": call_id,
+            "name": "skill_view",
+            "input": {"name": name},
+            "output": {"ok": True, "name": name, "content": "<CDATA body>"},
+        },
+    )
+
+
+def test_skill_view_renders_single_activation_line() -> None:
+    """Loading a skill shows one labeled status line, nothing underneath."""
     observer, buffer = _skill_observer()
 
     observer(
         "tool_start",
         {"id": "t1", "name": "skill_view", "input": {"name": "install_code_review"}},
     )
+    assert buffer.getvalue() == ""
+
     observer(
         "tool_end",
         {
@@ -155,21 +170,16 @@ def test_skill_view_renders_activation_event() -> None:
         },
     )
 
-    assert buffer.getvalue() == "\nSkill install-code-review\n  ↳ Skill activated\n"
+    assert buffer.getvalue() == "\nSkill activated install-code-review\n"
 
 
-def test_two_skills_in_one_batch_name_the_skill_on_each_activation_line() -> None:
-    """Headers print first, results after; the first skill's line must say which skill."""
+def test_two_skills_in_one_batch_each_get_their_own_line() -> None:
+    """Starts print nothing, so interleaved batches cannot mislabel a result."""
     observer, buffer = _skill_observer()
-    for call_id, name in (
-        ("t1", "reporting-github-ci-failures"),
-        ("t2", "github-ci-fix-onboarding"),
-    ):
+    names = ("reporting-github-ci-failures", "github-ci-fix-onboarding")
+    for call_id, name in zip(("t1", "t2"), names, strict=True):
         observer("tool_start", {"id": call_id, "name": "skill_view", "input": {"name": name}})
-    for call_id, name in (
-        ("t1", "reporting-github-ci-failures"),
-        ("t2", "github-ci-fix-onboarding"),
-    ):
+    for call_id, name in zip(("t1", "t2"), names, strict=True):
         observer(
             "tool_end",
             {
@@ -181,23 +191,20 @@ def test_two_skills_in_one_batch_name_the_skill_on_each_activation_line() -> Non
         )
 
     assert buffer.getvalue() == (
-        "\nSkill reporting-github-ci-failures\n\nSkill github-ci-fix-onboarding\n"
-        "  ↳ reporting-github-ci-failures activated\n  ↳ Skill activated\n"
+        "\nSkill activated reporting-github-ci-failures\n"
+        "\nSkill activated github-ci-fix-onboarding\n"
     )
 
 
-def test_skill_view_renders_bold_green_skill_label() -> None:
+def test_skill_view_renders_bold_green_activation_label() -> None:
     console = Mock(spec=Console)
     observer = ActionRenderObserver(session=Session(), console=console, message="run code review")
 
-    observer(
-        "tool_start",
-        {"id": "t1", "name": "skill_view", "input": {"name": "install_code_review"}},
-    )
+    _load_skill(observer, "t1", "install_code_review")
 
     heading = console.print.call_args_list[1].args[0]
     assert isinstance(heading, Text)
-    assert heading.plain == "Skill install-code-review"
+    assert heading.plain == "Skill activated install-code-review"
     assert len(heading.spans) == 2
     assert str(heading.spans[0].style) == BOLD_SKILL
     assert str(heading.spans[1].style) == str(TEXT)
@@ -209,12 +216,9 @@ def test_skill_view_strips_terminal_controls_from_model_name() -> None:
     observer = ActionRenderObserver(session=Session(), console=console, message="run code review")
 
     # Act
-    observer(
-        "tool_start",
-        {"id": "t1", "name": "skill_view", "input": {"name": "code\x1b[2Kreview\x07"}},
-    )
+    _load_skill(observer, "t1", "code\x1b[2Kreview\x07")
 
-    # Assert: the rendered skill heading carries no C0/C1/DEL controls
+    # Assert: the rendered skill line carries no C0/C1/DEL controls
     heading = console.print.call_args_list[1].args[0]
     assert isinstance(heading, Text)
     assert "\x1b" not in heading.plain
@@ -371,6 +375,26 @@ def test_generic_tool_call_display_is_bounded_and_omits_execution_controls() -> 
     assert "secret-token" not in content
 
 
+def test_generic_tool_detail_children_align_beneath_the_body_column() -> None:
+    observer, _buffer = _observer_with_buffer()
+
+    observer(
+        "tool_start",
+        {
+            "id": "t1",
+            "name": "custom_registry_tool",
+            "input": {"query": "incidents", "limit": 25},
+        },
+    )
+
+    detail = observer.session.terminal.action_log_entries[0].detail
+    assert detail.splitlines() == [
+        "Tool     custom registry tool",
+        "         limit: 25",
+        "         query: incidents",
+    ]
+
+
 def test_intermediate_message_strips_terminal_controls_before_markdown() -> None:
     # Arrange: a real terminal, where Rich would otherwise pass the model's
     # control bytes straight through (a non-terminal console strips them anyway,
@@ -416,7 +440,7 @@ def test_skill_view_failure_renders_failure_child() -> None:
         },
     )
 
-    assert buffer.getvalue() == "\nSkill no-such-skill\n  ↳ Skill failed to load\n"
+    assert buffer.getvalue() == "\nError    Could not load skill · no-such-skill\n"
 
 
 def test_skill_view_tool_end_without_start_prints_nothing() -> None:
@@ -433,6 +457,78 @@ def test_skill_view_tool_end_without_start_prints_nothing() -> None:
     )
 
     assert buffer.getvalue() == ""
+
+
+def test_skill_view_reference_load_is_silent() -> None:
+    """``skill_view(reference=…)`` loads a file without re-entering the skill.
+
+    It is prompt plumbing: no "Skill activated" line (the bug: every successful
+    ``skill_view`` printed one) and no buffered "Skill reference" action-log
+    panel either.
+    """
+    observer, buffer = _skill_observer()
+
+    observer(
+        "tool_start",
+        {
+            "id": "t1",
+            "name": "skill_view",
+            "input": {"name": "cicd-analytics-demo", "reference": "metrics"},
+        },
+    )
+    observer(
+        "tool_end",
+        {
+            "id": "t1",
+            "name": "skill_view",
+            "input": {"name": "cicd-analytics-demo", "reference": "metrics"},
+            "output": {
+                "ok": True,
+                "name": "cicd-analytics-demo",
+                "reference": "metrics",
+                "summary": "loaded the metrics reference of cicd-analytics-demo",
+                "content": "<reference body>",
+            },
+        },
+    )
+
+    assert buffer.getvalue() == ""
+    assert observer.session.terminal.action_log_entries == []
+
+    observer("agent_end", {})
+    out = buffer.getvalue()
+    assert out == ""
+    assert "Skill activated" not in out
+    assert "Skill reference" not in out
+    assert "<reference body>" not in out
+
+
+def test_skill_view_already_active_reentry_prints_nothing() -> None:
+    """A redundant re-entry must not repeat the activation line."""
+    observer, buffer = _skill_observer()
+
+    observer(
+        "tool_start",
+        {"id": "t1", "name": "skill_view", "input": {"name": "cicd-analytics-demo"}},
+    )
+    observer(
+        "tool_end",
+        {
+            "id": "t1",
+            "name": "skill_view",
+            "input": {"name": "cicd-analytics-demo"},
+            "output": {
+                "ok": True,
+                "name": "cicd-analytics-demo",
+                "already_active": True,
+                "summary": "the cicd-analytics-demo skill is already active",
+                "content": "<body>",
+            },
+        },
+    )
+    observer("agent_end", {})
+
+    assert "Skill activated" not in buffer.getvalue()
 
 
 def test_llm_start_sets_thinking_phase_without_verb_rotation() -> None:
@@ -488,7 +584,7 @@ def test_non_skill_tool_end_prints_nothing() -> None:
 
 
 def test_generic_tool_end_nests_the_result_under_the_call() -> None:
-    """Droid / Claude Code / Cursor attach the result to the call as a ``↳`` child."""
+    """Attach a concise result to its tool call as a ``↳`` child."""
     observer, buffer = _observer_with_buffer()
 
     observer(
@@ -509,7 +605,7 @@ def test_generic_tool_end_nests_the_result_under_the_call() -> None:
     entries = observer.session.terminal.action_log_entries
     assert len(entries) == 1
     assert entries[0].kind == "GitHub CLI"
-    assert "↳ GitHub API call succeeded" in entries[0].detail
+    assert "\n         ↳ GitHub API call succeeded" in entries[0].detail
     assert observer.session.terminal.inline_tool_results is True
 
     observer("agent_end", {})
@@ -572,7 +668,7 @@ def test_skill_block_renders_live_not_buffered() -> None:
     )
 
     out = buffer.getvalue()
-    assert "\nSkill install-code-review\n  ↳ Skill activated\n" in out
+    assert "\nSkill activated install-code-review\n" in out
     assert "\n\n\n" not in out
     # The github call is buffered for the grouped log, not printed inline yet.
     assert any(e.kind == "GitHub CLI" for e in observer.session.terminal.action_log_entries)

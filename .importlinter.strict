@@ -43,5 +43,12 @@ ignore_imports =
     tools.cross_vendor.fix_sentry_issue.ship -> integrations.coding_agent
     tools.cross_vendor.fix_sentry_issue.ship -> integrations.git
     tools.cross_vendor.fix_sentry_issue.ship -> integrations.github
+    tools.cross_vendor.resolve_merge_conflicts.runner -> integrations.coding_agent
+    tools.cross_vendor.resolve_merge_conflicts.runner -> integrations.git
+    tools.cross_vendor.resolve_merge_conflicts.runner -> integrations.github
+    tools.cross_vendor.resolve_merge_conflicts.tool -> integrations.git
+    tools.cross_vendor.resolve_merge_conflicts.comparison -> integrations.git
+    tools.cross_vendor.resolve_merge_conflicts.errors -> integrations.git
     tools.interactive_shell.implementation.claude_code_executor -> integrations.llm_cli
+    tools.interactive_shell.shell.merge_guard -> integrations.git
     tools.system.python_execution_tool.credentials -> integrations.github

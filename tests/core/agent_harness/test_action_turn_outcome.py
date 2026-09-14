@@ -224,6 +224,75 @@ def test_a_closing_written_over_a_painted_report_is_dropped() -> None:
     assert chunks == []
 
 
+def _painted_result_with_reply_text(*, failed: bool) -> Any:
+    """A painting tool that also ships a one-line ``response_text`` recap."""
+    from core.llm.types import ToolCall
+
+    class _ToolResult:
+        details = {
+            "rendered_in_shell": True,
+            "response_text": "Found 43 git repositories: 6031 commits in the last 30 days.",
+        }
+        content = "{}"
+        is_error = failed
+
+    call = ToolCall(id="1", name="scan_local_git_workspace", input={})
+
+    class _Result:
+        tool_results = [(call, _ToolResult())]
+        executed = tool_results
+        planned = [call]
+        final_text = ""
+
+    return _Result()
+
+
+def _one_generic_success() -> Any:
+    from core.agent_harness.turns.action_driver import _TurnCounts
+
+    return _TurnCounts(
+        executed_entries=[],
+        executed_count=1,
+        executed_success_count=1,
+        generic_success_count=1,
+        planned_count=1,
+        handled=True,
+    )
+
+
+def test_a_silent_model_does_not_resurface_a_painted_recap() -> None:
+    """The demo ends its scan turn on a menu call, so the model writes no closing.
+
+    The fallback that then borrows the tool's reply text must respect the same
+    painted rule as a written closing, or the scan summary lands as a ``●`` reply
+    under the table it summarizes.
+    """
+    # Arrange
+    from core.agent_harness.turns.action_driver import _compose_response
+
+    # Act
+    _text, chunks, _use_final = _compose_response(
+        _painted_result_with_reply_text(failed=False), Session(), _one_generic_success()
+    )
+
+    # Assert
+    assert chunks == []
+
+
+def test_a_failed_painter_still_surfaces_its_reply_text() -> None:
+    """A painter that errored drew nothing, so its text is the only thing to show."""
+    # Arrange
+    from core.agent_harness.turns.action_driver import _compose_response
+
+    # Act
+    _text, chunks, _use_final = _compose_response(
+        _painted_result_with_reply_text(failed=True), Session(), _one_generic_success()
+    )
+
+    # Assert
+    assert chunks == ["Found 43 git repositories: 6031 commits in the last 30 days."]
+
+
 def test_a_closing_question_survives_a_painted_report() -> None:
     """A question seeks direction; dropping it would leave the user with dead air."""
     # Arrange

@@ -1,0 +1,109 @@
+---
+title: "Resolve merge conflicts"
+description: "Ask OpenSRE to resolve the conflicts of a git merge with a coding agent, review each hunk side by side, then commit and push."
+---
+
+## Overview
+
+When a `git merge` stops on conflicts, ask OpenSRE to resolve them. It hands the
+conflicted files to your installed coding agent, checks that no conflict marker
+or unmerged path is left, shows you each conflict side by side, then commits the
+merge and pushes the branch to the one it tracks, so the pull request updates.
+Files the agent cannot settle are named back to you and the merge stays open, so
+you decide them together and run it again.
+
+<Warning>
+This is a **mutating** tool: it edits the conflicted files in your repository,
+creates the merge commit, and pushes your branch. It never aborts a merge and
+never pushes to a protected branch such as `main`. Whether it asks before the
+commit and push follows your `/auto` level (see below).
+</Warning>
+
+## Prerequisites
+
+- A coding agent CLI installed and logged in (Pi, Claude Code, Codex, or Cursor;
+  `CODING_AGENT=auto` picks the first ready one)
+- The repository checked out locally, with the merge already started or a branch
+  name to merge
+
+## Use it
+
+Start the merge yourself, or let OpenSRE start it, then ask in `opensre`:
+
+```text
+resolve the merge conflicts
+merge main into this branch and resolve the conflicts
+resolve the conflicts, keep our version of config.py
+```
+
+Any decision you give ("keep our version of config.py") is passed to the coding
+agent word for word.
+
+### What happens
+
+1. OpenSRE reads the unmerged paths of the merge in progress in the current
+   directory. With no merge in progress, it merges the branch you named first.
+2. It prints one table per conflicted file right away: each conflict hunk with
+   your side and their side, so you see what is disputed before anything runs.
+3. The coding agent resolves every file on its own, as Claude Code or Cursor
+   would. While it works, each step it takes is printed under the running tool
+   ("Reading migrations.py", "Editing migrations.py", "Running: uv run pytest
+   …"), so you can see what it is doing and stop it with ESC at any point. A decision you stated in your request ("take main's version of
+   config.py") is applied by git instead, and "decide file by file" opens a
+   menu per file (keep ours, take theirs, combine, or type what you want).
+   Lockfiles are regenerated from the resolved manifest, never merged by hand.
+4. OpenSRE verifies that no conflict marker or unmerged path remains and
+   prints the table again with the merged result. A file the agent could not
+   settle comes back as a menu showing both sides, and the merge waits.
+5. It asks to commit the merge and push the branch, following your `/auto`
+   level, then does both. Unrelated changes you had in the working tree stay
+   uncommitted. While a merge is in progress the shell refuses `git commit`,
+   `push`, `checkout`, `reset` and `merge` typed by the assistant, so the
+   merge only changes through this flow.
+6. When the branch has an open pull request on GitHub, it waits for that pull
+   request's checks (up to 15 minutes) and reports whether they passed, which
+   ones failed, or whether another commit replaced the merge. Pass
+   `wait_for_checks: false` in your request to skip the wait. Without a GitHub
+   origin, a GitHub token, or an open pull request, the checks are reported as
+   not watched.
+
+### Approval and unattended runs
+
+The commit and push are one approval, recorded as the shell's `/auto` level:
+
+| `/auto` level | Behaviour |
+| --- | --- |
+| `high` (default) | Commits and pushes without asking |
+| `med`, `low`, `off` | Asks `[y/N]` after showing the side-by-side view; `n` leaves the resolved files in the working tree, uncommitted |
+| Unattended run (scheduled skill, no terminal) | Commits and pushes, like `high` |
+
+Run `/auto med` when you want to review before anything leaves your machine.
+After a decline, ask again ("commit and push the merge") once you are happy;
+the coding agent is not run a second time.
+
+| Env var | What it does |
+| --- | --- |
+| `CODING_AGENT` | Which coding agent to run (`auto`, `pi`, `claude-code`, `codex`, `cursor`) |
+| `CODING_MODEL` | Optional model override for the coding agent |
+| `CODING_WORKSPACE` | Repository to work in. Defaults to the current directory |
+| `CODING_TIMEOUT_SECONDS` | Per-run timeout (default 600, clamped 60 to 1800) |
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| "No merge is in progress" | Run `git merge <branch>` first, or name the branch in your request |
+| "none is ready" | Install and log in to a coding agent CLI |
+| "still need a person's decision" | Tell OpenSRE how to settle the named files and ask again |
+| "abandoned the merge" | The agent reset the merge; start it again with `git merge <branch>` |
+| "did not push it" | The merge is committed locally; push the branch yourself (`git push`) |
+| "checks failed" | The merge is pushed; open the named checks on the pull request, or ask OpenSRE to fix its CI |
+| "checks were not watched" | Set `GITHUB_TOKEN` and install `gh`, or open a pull request for the branch |
+
+## Security
+
+- The merge commit is authored and committed as the OpenSRE Agent GitHub
+  account, so the pull request shows who made it.
+- The push goes to the branch your checkout tracks, never to `main`, `master`,
+  `develop`, or `trunk`.
+- Review the side-by-side view before approving when your `/auto` level asks.

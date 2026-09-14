@@ -7,7 +7,13 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from integrations.git.errors import COMMIT_FAILED, MERGE_FAILED, GitCommandError
-from integrations.git.local import _run_git, _with_opensre_coauthor
+from integrations.git.local import (
+    _opensre_author_env,
+    _remote_https_base,
+    _run_git,
+    _token_auth_env,
+    _with_opensre_coauthor,
+)
 
 # ``git ls-files -u`` stage numbers: 1 = merge base, 2 = ours (HEAD), 3 = theirs.
 _STAGE_OURS = "2"
@@ -21,11 +27,19 @@ class ConflictedPath:
 
     path: str
     description: str
+    deleted_on: str = ""
+    """``ours`` or ``theirs`` when that side deleted the file; empty for a content conflict."""
 
 
-def fetch_remote_branch(workspace: str, branch: str, *, remote: str = "origin") -> None:
+def fetch_remote_branch(
+    workspace: str, branch: str, *, remote: str = "origin", token: str | None = None
+) -> None:
     """Update ``refs/remotes/<remote>/<branch>`` without touching local branches."""
-    result = _run_git(workspace, "fetch", remote, f"{branch}:refs/remotes/{remote}/{branch}")
+    base = _remote_https_base(workspace, remote) if token else ""
+    env = _token_auth_env(token, base) if token and base else None
+    result = _run_git(
+        workspace, "fetch", remote, f"refs/heads/{branch}:refs/remotes/{remote}/{branch}", env=env
+    )
     if result.returncode != 0:
         raise GitCommandError(
             MERGE_FAILED,
@@ -33,15 +47,24 @@ def fetch_remote_branch(workspace: str, branch: str, *, remote: str = "origin") 
         )
 
 
-def merge_ref(workspace: str, ref: str, *, message: str) -> bool:
-    """Merge *ref* into HEAD with a merge commit.
+def merge_ref(workspace: str, ref: str, *, message: str, commit: bool = True) -> bool:
+    """Merge *ref* into HEAD with a merge commit authored by the OpenSRE Agent account.
 
-    Returns True when the merge committed cleanly. Returns False when git
+    Returns True when the merge applied cleanly: committed, or with ``commit``
+    False left staged and in progress for ``commit_merge`` (an already
+    up-to-date branch then has no merge in progress). Returns False when git
     stopped on content conflicts, leaving the merge in progress for the caller
     to resolve. Any other failure aborts the merge and raises.
     """
     result = _run_git(
-        workspace, "merge", "--no-ff", "--no-edit", "-m", _with_opensre_coauthor(message), ref
+        workspace,
+        "merge",
+        "--no-ff",
+        *(("--no-edit",) if commit else ("--no-commit",)),
+        "-m",
+        _with_opensre_coauthor(message),
+        ref,
+        env=_opensre_author_env(),
     )
     if result.returncode == 0:
         return True
@@ -54,6 +77,32 @@ def merge_ref(workspace: str, ref: str, *, message: str) -> bool:
 def merge_in_progress(workspace: str) -> bool:
     result = _run_git(workspace, "rev-parse", "-q", "--verify", "MERGE_HEAD")
     return result.returncode == 0
+
+
+def merge_head_sha(workspace: str) -> str:
+    """Commit being merged into HEAD; empty when no merge is in progress."""
+    result = _run_git(workspace, "rev-parse", "-q", "--verify", "MERGE_HEAD")
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def merge_head_name(workspace: str) -> str:
+    """Branch name of the commit being merged, else its short sha; empty outside a merge."""
+    sha = merge_head_sha(workspace)
+    if not sha:
+        return ""
+    result = _run_git(
+        workspace,
+        "name-rev",
+        "--name-only",
+        "--no-undefined",
+        "--refs=refs/heads/*",
+        "--refs=refs/remotes/*",
+        "MERGE_HEAD",
+    )
+    name = result.stdout.strip()
+    if result.returncode != 0 or not name or "~" in name or "^" in name:
+        return sha[:12]
+    return name.removeprefix("remotes/")
 
 
 def unmerged_paths(workspace: str) -> list[str]:
@@ -77,13 +126,47 @@ def describe_conflicts(workspace: str, *, ours: str, theirs: str) -> list[Confli
     described: list[ConflictedPath] = []
     for path, present in stages.items():
         if _STAGE_OURS not in present:
-            description = f"deleted on {ours}, changed on {theirs}"
+            described.append(
+                ConflictedPath(path, f"deleted on {ours}, changed on {theirs}", deleted_on="ours")
+            )
         elif _STAGE_THEIRS not in present:
-            description = f"changed on {ours}, deleted on {theirs}"
+            described.append(
+                ConflictedPath(path, f"changed on {ours}, deleted on {theirs}", deleted_on="theirs")
+            )
         else:
-            description = f"changed on both {ours} and {theirs}"
-        described.append(ConflictedPath(path=path, description=description))
+            described.append(ConflictedPath(path, f"changed on both {ours} and {theirs}"))
     return described
+
+
+def take_side(workspace: str, path: str, side: str) -> None:
+    """Resolve *path* by taking ``ours`` or ``theirs`` wholesale and staging it.
+
+    When the chosen side deleted the file, the resolution is the deletion.
+    """
+    if side not in ("ours", "theirs"):
+        raise GitCommandError(MERGE_FAILED, f"Unknown merge side {side!r} for {path}.")
+    present = _conflict_stages(workspace, path)
+    wanted = _STAGE_OURS if side == "ours" else _STAGE_THEIRS
+    if wanted not in present:
+        result = _run_git(workspace, "rm", "-q", "--", path)
+    else:
+        result = _run_git(workspace, "checkout", f"--{side}", "--", path)
+        if result.returncode == 0:
+            result = _run_git(workspace, "add", "--", path)
+    if result.returncode != 0:
+        raise GitCommandError(
+            MERGE_FAILED, f"Could not take {side} for {path}: {result.stderr.strip()}"
+        )
+
+
+def _conflict_stages(workspace: str, path: str) -> set[str]:
+    result = _run_git(workspace, "ls-files", "-u", "-z", "--", path)
+    stages: set[str] = set()
+    for record in result.stdout.split("\0"):
+        fields = record.partition("\t")[0].split()
+        if len(fields) >= 3:
+            stages.add(fields[2])
+    return stages
 
 
 def paths_with_conflict_markers(workspace: str, paths: Sequence[str]) -> list[str]:
@@ -126,10 +209,13 @@ def _indexed(workspace: str, paths: Sequence[str]) -> set[str]:
 def commit_merge(workspace: str) -> str:
     """Conclude the in-progress merge with its prepared message; return the new HEAD.
 
+    The commit is authored and committed as the OpenSRE Agent account.
     ``--cleanup=strip`` drops the ``# Conflicts:`` comment block git adds to the
     prepared message, which a non-editor commit would otherwise keep verbatim.
     """
-    result = _run_git(workspace, "commit", "--no-edit", "--cleanup=strip")
+    result = _run_git(
+        workspace, "commit", "--no-edit", "--cleanup=strip", env=_opensre_author_env()
+    )
     if result.returncode != 0:
         raise GitCommandError(COMMIT_FAILED, f"git commit failed: {result.stderr.strip()}")
     return head_sha(workspace)
@@ -153,17 +239,54 @@ def is_ancestor(workspace: str, ancestor: str, descendant: str) -> bool:
     return result.returncode == 0
 
 
+def commit_parents(workspace: str, sha: str) -> list[str]:
+    """Parent shas of *sha* in order (two for a merge commit)."""
+    result = _run_git(workspace, "rev-list", "--parents", "-n", "1", sha)
+    fields = result.stdout.split()
+    return fields[1:] if result.returncode == 0 and fields else []
+
+
+def merge_commit_edits(workspace: str, merge_sha: str) -> list[str]:
+    """Paths a merge commit changed relative to *both* parents.
+
+    A file only one side touched equals that parent's version, so the set is the
+    hand edits made while resolving the merge (conflict resolutions and anything
+    else the resolver changed).
+    """
+    edited: set[str] | None = None
+    for parent in ("^1", "^2"):
+        result = _run_git(
+            workspace,
+            "diff",
+            "--name-only",
+            "--no-renames",
+            "-z",
+            f"{merge_sha}{parent}",
+            merge_sha,
+        )
+        if result.returncode != 0:
+            raise GitCommandError(MERGE_FAILED, "Could not inspect the merge commit's edits.")
+        paths = {path for path in result.stdout.split("\0") if path}
+        edited = paths if edited is None else edited & paths
+    return sorted(edited or ())
+
+
 __all__ = [
     "ConflictedPath",
     "abort_merge",
     "commit_merge",
+    "commit_parents",
     "describe_conflicts",
     "fetch_remote_branch",
     "head_sha",
     "is_ancestor",
+    "merge_commit_edits",
+    "merge_head_name",
+    "merge_head_sha",
     "merge_in_progress",
     "merge_ref",
     "paths_with_conflict_markers",
     "stage_paths",
+    "take_side",
     "unmerged_paths",
 ]

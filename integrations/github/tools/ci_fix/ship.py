@@ -12,20 +12,26 @@ from integrations.git import (
     BRANCH_FAILED,
     GitCommandError,
     assert_not_protected,
-    changed_paths,
+    changed_since_baseline,
     checkout_branch,
     commit_paths,
     current_branch,
     ensure_git_repo,
-    file_fingerprints,
+    fetch_local_branch,
     head_sha,
     push_branch,
+    remote_branch_sha,
 )
 from integrations.github.client import resolve_github_token
 from integrations.github.tools.ci_fix.context import CiFixContext
 from integrations.github.tools.ci_fix.errors import (
     ERR_NO_CHANGES,
     GitHubCiFixError,
+)
+from integrations.github.tools.ci_fix.storage.attempts import (
+    PreparedPush,
+    repair_key,
+    save_prepared_push,
 )
 
 _GIT_TIMEOUT_SEC = 60
@@ -45,7 +51,7 @@ class PushResult:
     changed_files: list[str]
 
 
-def checkout_target_branch(workspace: str, ctx: CiFixContext) -> None:
+def checkout_target_branch(workspace: str, ctx: CiFixContext, *, token: str | None = None) -> None:
     """Switch the workspace to the PR head branch the fix will edit and push.
 
     PR mode refuses protected/base branches. Branch-target repairs use a linked
@@ -56,7 +62,7 @@ def checkout_target_branch(workspace: str, ctx: CiFixContext) -> None:
         assert_not_protected(ctx.head_branch, protected_extra=ctx.base_branch)
         if current_branch(workspace) != ctx.head_branch:
             if not _local_branch_exists(workspace, ctx.head_branch):
-                _fetch_branch(workspace, ctx.head_branch)
+                fetch_local_branch(workspace, ctx.head_branch, token=token)
             checkout_branch(workspace, ctx.head_branch)
     except GitCommandError as exc:
         raise GitHubCiFixError(exc.kind, exc.message, branch_name=ctx.head_branch) from exc
@@ -90,7 +96,7 @@ def push_ci_fix(
                     ),
                     branch_name=ctx.head_branch,
                 )
-            checkout_target_branch(workspace, ctx)
+            checkout_target_branch(workspace, ctx, token=token)
         changed = changed_since_baseline(workspace, baseline=baseline)
         if not changed and not already_committed:
             raise GitHubCiFixError(
@@ -101,6 +107,20 @@ def push_ci_fix(
         if changed:
             commit_paths(workspace, changed, _commit_message(ctx, result.summary))
         pushed_head_sha = head_sha(workspace)
+        source_branch = ctx.target_branch if ctx.is_branch_target else ctx.head_branch
+        if remote_branch_sha(workspace, source_branch, token=token) != ctx.head_sha:
+            raise GitHubCiFixError(
+                "checks_superseded",
+                "The remote source head changed during repair; no push was made.",
+            )
+        save_prepared_push(
+            repair_key(
+                ctx.owner,
+                ctx.repo,
+                str(ctx.number) if not ctx.is_branch_target else ctx.target_branch,
+            ),
+            PreparedPush(ctx.head_sha, pushed_head_sha, ctx.head_branch, changed),
+        )
         push_branch(
             workspace,
             ctx.head_branch,
@@ -115,18 +135,6 @@ def push_ci_fix(
         head_sha=pushed_head_sha,
         changed_files=changed,
     )
-
-
-def changed_since_baseline(workspace: str, *, baseline: Mapping[str, str] | None) -> list[str]:
-    """Dirty paths that are new or whose content differs from *baseline*."""
-    pre_existing = dict(baseline or {})
-    current = changed_paths(workspace)
-    current_fingerprints = file_fingerprints(workspace, current)
-    return [
-        path
-        for path in current
-        if path not in pre_existing or current_fingerprints.get(path, "") != pre_existing[path]
-    ]
 
 
 def _commit_message(ctx: CiFixContext, summary: str) -> str:
@@ -169,20 +177,4 @@ def _local_branch_exists(workspace: str, branch: str) -> bool:
     return result.returncode == 0
 
 
-def _fetch_branch(workspace: str, branch: str) -> None:
-    result = subprocess.run(
-        ["git", "fetch", "origin", f"{branch}:{branch}"],
-        cwd=workspace,
-        capture_output=True,
-        text=True,
-        timeout=_GIT_TIMEOUT_SEC,
-        check=False,
-    )
-    if result.returncode != 0:
-        raise GitCommandError(
-            BRANCH_FAILED,
-            f"Could not fetch PR branch '{branch}': {result.stderr.strip()}",
-        )
-
-
-__all__ = ["PushResult", "changed_since_baseline", "checkout_target_branch", "push_ci_fix"]
+__all__ = ["PushResult", "checkout_target_branch", "push_ci_fix"]

@@ -8,11 +8,13 @@ import pytest
 
 from config.constants.turn_concurrency import OPENSRE_SCHEDULER_MAX_CONCURRENT_RUNS_ENV
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_PROMPT_PARAM
+from infrastructure.scheduling.scheduler.outcomes import WorkOutcome, WorkStatus
 from infrastructure.scheduling.scheduler.runner import (
     _build_scheduler,
     _compute_fire_time,
     _make_trigger,
     _queue_scheduled_run,
+    _record_task_success_after_full_delivery,
     _register_jobs,
     _scheduled_job,
     compute_next_run,
@@ -52,6 +54,40 @@ class TestMakeTrigger:
         )
         with pytest.raises(ValueError, match="5 fields"):
             _make_trigger(task)
+
+    def test_six_field_cron_fires_within_the_minute(self) -> None:
+        """A leading seconds field yields sub-minute ticks with distinct fire-time keys."""
+        from datetime import UTC, datetime
+
+        from infrastructure.scheduling.scheduler.runner import _compute_fire_time
+
+        task = ScheduledTask(
+            kind=TaskKind.MANUAL_LOOP,
+            cron="*/30 * * * * *",
+            timezone="UTC",
+            provider=Provider.INTERACTIVE_SHELL,
+        )
+        trigger = _make_trigger(task)
+        start = datetime(2026, 9, 14, 10, 0, 1, tzinfo=UTC)
+        first = trigger.get_next_fire_time(None, start)
+        second = trigger.get_next_fire_time(first, first)
+        assert first == datetime(2026, 9, 14, 10, 0, 30, tzinfo=UTC)
+        assert second == datetime(2026, 9, 14, 10, 1, 0, tzinfo=UTC)
+        assert _compute_fire_time(first) != _compute_fire_time(second)
+        assert _compute_fire_time(first) == "2026-09-14T10:00:30Z"
+
+    def test_five_field_cron_keeps_zero_seconds(self) -> None:
+        from datetime import UTC, datetime
+
+        task = ScheduledTask(
+            kind=TaskKind.MANUAL_LOOP,
+            cron="*/2 * * * *",
+            timezone="UTC",
+            provider=Provider.INTERACTIVE_SHELL,
+        )
+        trigger = _make_trigger(task)
+        fire = trigger.get_next_fire_time(None, datetime(2026, 9, 14, 10, 0, 1, tzinfo=UTC))
+        assert fire == datetime(2026, 9, 14, 10, 2, 0, tzinfo=UTC)
 
     def test_invalid_cron_bad_values(self) -> None:
         task = ScheduledTask(
@@ -99,7 +135,7 @@ class TestScheduledAdmission:
             "task-1",
             datetime(2026, 1, 15, 9, 0, tzinfo=UTC),
         )
-        assert claims == [("task-1", "2026-01-15T09:00Z")]
+        assert claims == [("task-1", "2026-01-15T09:00:00Z")]
 
 
 class TestScheduledConcurrency:
@@ -252,7 +288,7 @@ class TestComputeFireTime:
 
         dt = datetime(2026, 1, 15, 9, 0, tzinfo=UTC)
         result = _compute_fire_time(dt)
-        assert result == "2026-01-15T09:00Z"
+        assert result == "2026-01-15T09:00:00Z"
 
     def test_with_non_utc_datetime(self) -> None:
         from datetime import datetime, timedelta, timezone
@@ -262,7 +298,7 @@ class TestComputeFireTime:
         dt = datetime(2026, 1, 15, 14, 30, tzinfo=tz)
         result = _compute_fire_time(dt)
         # 14:30 IST = 09:00 UTC
-        assert result == "2026-01-15T09:00Z"
+        assert result == "2026-01-15T09:00:00Z"
 
     def test_scheduled_job_uses_callback_fire_time(
         self,
@@ -292,11 +328,66 @@ class TestComputeFireTime:
             scheduled_run_time=datetime(2026, 1, 15, 9, 0, tzinfo=UTC),
         )
 
-        assert observed == ["2026-01-15T09:00Z"]
+        assert observed == ["2026-01-15T09:00:00Z"]
 
     def test_scheduled_job_rejects_missing_fire_time(self) -> None:
         with pytest.raises(RuntimeError, match="scheduled_run_time"):
             _scheduled_job("task-1", real_runners())
+
+
+class TestTaskCompletion:
+    @pytest.mark.parametrize(
+        ("status", "targets", "expected"),
+        [
+            (TaskStatus.SUCCESS, (), True),
+            (
+                TaskStatus.SUCCESS,
+                (DeliveryOutcome(provider=Provider.SLACK, chat_id="C1", ok=True),),
+                True,
+            ),
+            (
+                TaskStatus.SUCCESS,
+                (
+                    DeliveryOutcome(provider=Provider.SLACK, chat_id="C1", ok=True),
+                    DeliveryOutcome(
+                        provider=Provider.TELEGRAM,
+                        chat_id="-100",
+                        ok=False,
+                        error="unavailable",
+                    ),
+                ),
+                False,
+            ),
+            (TaskStatus.FAILED, (), False),
+        ],
+    )
+    def test_finalizes_only_after_full_delivery(
+        self,
+        status: TaskStatus,
+        targets: tuple[DeliveryOutcome, ...],
+        expected: bool,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        run = TaskRun(
+            task_id="task-1",
+            fire_time="2026-01-01T09:00Z",
+            status=status,
+            work_outcome=WorkOutcome(status=WorkStatus.SUCCEEDED),
+            targets=targets,
+        )
+        completed: list[str] = []
+        monkeypatch.setattr(
+            "infrastructure.scheduling.scheduler.runner.get_latest_run_for_fire_time",
+            lambda _task_id, _fire_time: run,
+        )
+        monkeypatch.setattr(
+            "infrastructure.scheduling.scheduler.runner.record_task_success",
+            completed.append,
+        )
+
+        _record_task_success_after_full_delivery(run.task_id, run.fire_time)
+
+        assert completed == ([run.task_id] if expected else [])
 
 
 class TestComputeNextRun:
@@ -391,7 +482,7 @@ class TestRegisterJobs:
             if started:
                 scheduler.shutdown(wait=True)
 
-        expected_fire_time = scheduled_run_time.strftime("%Y-%m-%dT%H:%MZ")
+        expected_fire_time = scheduled_run_time.strftime("%Y-%m-%dT%H:%M:%SZ")
         assert observed_fire_times == [expected_fire_time]
 
     def test_applies_task_filter(
@@ -514,7 +605,25 @@ class TestRunTaskNow:
         )
         assert run_task_now("nonexistent", real_runners()) is False
 
-    def test_runs_existing_task(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    @pytest.mark.parametrize(
+        ("targets", "records_completion"),
+        [
+            ((DeliveryOutcome(provider=Provider.TELEGRAM, ok=True),), True),
+            (
+                (
+                    DeliveryOutcome(provider=Provider.TELEGRAM, ok=True),
+                    DeliveryOutcome(provider=Provider.SLACK, ok=False),
+                ),
+                False,
+            ),
+        ],
+    )
+    def test_runs_existing_task(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        targets: tuple[DeliveryOutcome, ...],
+        records_completion: bool,
+    ) -> None:
         task = ScheduledTask(
             id="run_now_test",
             kind=TaskKind.MANUAL_LOOP,
@@ -526,12 +635,31 @@ class TestRunTaskNow:
             "infrastructure.scheduling.scheduler.runner.get_task", lambda _task_id: task
         )
 
-        with patch("infrastructure.scheduling.scheduler.runner.execute_task") as mock_exec:
+        with (
+            patch("infrastructure.scheduling.scheduler.runner.execute_task") as mock_exec,
+            patch(
+                "infrastructure.scheduling.scheduler.runner.get_latest_run_for_fire_time"
+            ) as get_run,
+            patch(
+                "infrastructure.scheduling.scheduler.runner.record_task_success"
+            ) as record_success,
+        ):
             mock_exec.return_value = True
+            get_run.side_effect = lambda _task_id, fire_time: TaskRun(
+                task_id=task.id,
+                fire_time=fire_time,
+                status=TaskStatus.SUCCESS,
+                work_outcome=WorkOutcome(status=WorkStatus.SUCCEEDED),
+                targets=targets,
+            )
             result = run_task_now("run_now_test", real_runners())
 
         assert result is True
         mock_exec.assert_called_once()
+        if records_completion:
+            record_success.assert_called_once_with(task.id)
+        else:
+            record_success.assert_not_called()
         # Verify fire_time has seconds (ad-hoc format) and ends with Z
         call_args = mock_exec.call_args
         fire_time = call_args[0][1]
@@ -579,6 +707,8 @@ class TestRunTaskNow:
             task_id="run_now_partial",
             fire_time="2026-01-01T09:00",
             status=TaskStatus.SUCCESS,
+            report="Retained result",
+            work_outcome=WorkOutcome(status=WorkStatus.SUCCEEDED),
             targets=(
                 DeliveryOutcome(provider=Provider.INTERACTIVE_SHELL, ok=True, message_id="local:1"),
                 DeliveryOutcome(
@@ -614,6 +744,8 @@ class TestRunTaskNow:
             task_id="run_now_all_ok",
             fire_time="2026-01-01T09:00",
             status=TaskStatus.SUCCESS,
+            report="Retained result",
+            work_outcome=WorkOutcome(status=WorkStatus.SUCCEEDED),
             targets=(DeliveryOutcome(provider=Provider.TELEGRAM, chat_id="-100", ok=True),),
         )
         monkeypatch.setattr(
@@ -628,7 +760,7 @@ class TestRunTaskNow:
             mock_exec.return_value = True
             run_task_now("run_now_all_ok", real_runners(), only_failed=True)
 
-        assert mock_exec.call_args.kwargs["target_filter"] == frozenset()
+        mock_exec.assert_not_called()
 
 
 class TestStartSchedulerIdle:

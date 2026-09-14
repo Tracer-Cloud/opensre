@@ -144,12 +144,8 @@ def test_quality_jobs_start_in_parallel_and_gate_aggregates_them() -> None:
     assert "needs" not in jobs["session-store-locked"]
     assert "needs" not in jobs["package-preflight"]
     assert "Restore mypy cache" in {step.get("name") for step in jobs["quality-typecheck"]["steps"]}
-    assert "Verify typed tool contracts" in {
-        step.get("name") for step in jobs["quality-typecheck"]["steps"]
-    }
-    assert "Verify tool registry index" in {
-        step.get("name") for step in jobs["quality-static"]["steps"]
-    }
+    assert "Shared type checks" in {step.get("name") for step in jobs["quality-typecheck"]["steps"]}
+    assert "Shared static checks" in {step.get("name") for step in jobs["quality-static"]["steps"]}
     tool_groups = [
         entry
         for entry in jobs["test"]["strategy"]["matrix"]["include"]

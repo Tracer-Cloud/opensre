@@ -34,6 +34,7 @@ from infrastructure.scheduling.scheduler.types import (
     Provider,
     ScheduledTask,
     TaskKind,
+    TaskReport,
     TaskStatus,
 )
 from tests.scheduler._bundle import real_runners
@@ -90,7 +91,7 @@ class _SlowFailingAdapter:
 
     def deliver(self, _task: ScheduledTask, _message: str) -> tuple[bool, str, str]:
         self.calls += 1
-        threading.Event().wait(0.25)
+        threading.Event().wait(_AFTER_ORIGINAL_LEASE_SECONDS)
         return False, "temporary delivery failure", ""
 
 
@@ -246,12 +247,15 @@ class TestExecutor:
     ) -> None:
         from infrastructure.scheduling.scheduler.claim_lease import ClaimLeaseRenewer
 
-        monkeypatch.setattr(run_store, "_CLAIM_LEASE_SECONDS", 0.2)
+        # The first delivery attempt must start inside the lease even on a
+        # loaded xdist shard (0.2s expired before the first attempt on CI);
+        # the adapter then outlives the lease so retries meet lost ownership.
+        monkeypatch.setattr(run_store, "_CLAIM_LEASE_SECONDS", _TEST_CLAIM_LEASE_SECONDS)
 
         def unavailable(_claims: Any) -> Any:
             raise sqlite3.OperationalError("database unavailable")
 
-        renewer = ClaimLeaseRenewer(renew=unavailable, renewal_interval_seconds=0.01)
+        renewer = ClaimLeaseRenewer(renew=unavailable, renewal_interval_seconds=0.05)
         monkeypatch.setattr(scheduler_executor, "default_claim_lease_renewer", renewer)
         adapter = _SlowFailingAdapter()
         _install_bundle({Provider.SLACK: adapter, Provider.TELEGRAM: adapter})
@@ -454,7 +458,7 @@ class TestExecutor:
         assert len(adapters[Provider.SLACK].calls) == 1
         with (
             patch(
-                "infrastructure.scheduling.scheduler.executor.build_message",
+                "infrastructure.scheduling.scheduler.executor._deliver_all",
                 side_effect=KeyboardInterrupt,
             ),
             pytest.raises(KeyboardInterrupt),
@@ -538,6 +542,7 @@ class TestExecutor:
         runs = get_runs(task.id)
         assert [run.status for run in runs] == [TaskStatus.SUCCESS, TaskStatus.ABANDONED]
         assert runs[0].attempt == 2
+        assert [run.report for run in runs] == ["Scheduled report", "Scheduled report"]
         assert adapter.calls == 2
 
     def test_scheduler_recovery_sweep_resubmits_the_original_fire_time(
@@ -582,12 +587,15 @@ class TestExecutor:
 
         with patch(
             "infrastructure.scheduling.scheduler.executor.build_message",
-            return_value="Scheduled report",
+            return_value=TaskReport("Scheduled report", summary="1 workflow fixed"),
         ):
             result = execute_task(task, "2026-01-01T09:00", real_runners())
 
         assert result is True
         assert len(adapters[Provider.TELEGRAM].calls) == 1
+        run = get_runs(task.id)[0]
+        assert run.report == "Scheduled report"
+        assert run.report_summary == "1 workflow fixed"
 
     def test_telegram_missing_credentials(self) -> None:
         _install_real_bundle()
@@ -975,6 +983,7 @@ class TestExecutor:
 
         assert result is False
         assert len(adapters[Provider.TELEGRAM].calls) == 1
+        assert get_runs(task.id)[0].report == "Scheduled report"
 
     def test_delivery_targets_fan_out_same_message(self) -> None:
         adapters = _install_fake_bundle()
@@ -1070,6 +1079,7 @@ class TestExecutor:
 
         assert result is True
         assert adapters[Provider.SLACK].calls == []
+        assert get_runs(task.id)[0].report == ""
 
 
 class _BlockingAdapter:

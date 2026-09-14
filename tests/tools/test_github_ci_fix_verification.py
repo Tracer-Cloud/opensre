@@ -706,6 +706,95 @@ def test_wait_for_pr_checks_starts_registration_after_exact_head_is_visible() ->
     assert result.failing_checks == ("external security scan",)
 
 
+def test_known_checks_do_not_hide_a_previously_unseen_late_failure() -> None:
+    """The original rollup is not an inventory of every check that can register."""
+    ctx = replace(_CONTEXT, known_check_names=("quality",))
+    passed = _rollup(sha="new-sha", name="quality", conclusion="SUCCESS", status="COMPLETED")
+    failed = _rollup(sha="new-sha", name="security", conclusion="FAILURE", status="COMPLETED")
+    failed["statusCheckRollup"].extend(passed["statusCheckRollup"])
+    elapsed = iter((0.0, 0.0, 30.0, 45.0, 60.0, 90.0))
+
+    with patch(
+        "integrations.github.tools.ci_fix.verification.run_gh_json",
+        side_effect=[passed, passed, failed, failed, failed],
+    ):
+        result = wait_for_pr_checks(
+            ctx,
+            github_token="tok",
+            expected_head_sha="new-sha",
+            registration_seconds=60,
+            settle_seconds=30,
+            sleep=lambda _seconds: None,
+            monotonic=lambda: next(elapsed),
+        )
+
+    assert result.state is CheckState.FAILED
+    assert result.failing_checks == ("security",)
+
+
+def test_wait_for_pr_checks_keeps_registration_grace_while_a_known_check_is_missing() -> None:
+    """A check that existed on the old head but has not registered yet still gets the grace."""
+    ctx = replace(_CONTEXT, known_check_names=("quality", "external security scan"))
+    late_failure = {
+        "headRefOid": "new-sha",
+        "statusCheckRollup": [
+            {"name": "quality", "conclusion": "SUCCESS", "status": "COMPLETED"},
+            {"name": "external security scan", "conclusion": "FAILURE", "status": "COMPLETED"},
+        ],
+    }
+    responses = [
+        _rollup(sha="new-sha", name="quality", conclusion="SUCCESS", status="COMPLETED"),
+        late_failure,
+    ]
+    elapsed = iter((0.0, 0.0, 60.0))
+
+    with patch(
+        "integrations.github.tools.ci_fix.verification.run_gh_json",
+        side_effect=responses,
+    ):
+        result = wait_for_pr_checks(
+            ctx,
+            github_token="tok",
+            expected_head_sha="new-sha",
+            registration_seconds=60,
+            settle_seconds=0,
+            sleep=lambda _seconds: None,
+            monotonic=lambda: next(elapsed),
+        )
+
+    assert result.state is CheckState.FAILED
+    assert result.failing_checks == ("external security scan",)
+
+
+def test_branch_known_runs_do_not_skip_registration_grace() -> None:
+    ctx = replace(_BRANCH_CONTEXT, known_check_names=("CI",))
+    responses = [
+        {"runs": [{"databaseId": 1, "name": "CI", "status": "completed", "conclusion": "success"}]},
+        {"runs": [{"databaseId": 1, "name": "CI", "status": "completed", "conclusion": "success"}]},
+        {"check_runs": [{"name": "CI job", "status": "completed", "conclusion": "success"}]},
+        {"state": "success", "statuses": []},
+    ]
+    sleeps: list[float] = []
+    elapsed = iter((0.0, 0.0, 60.0))
+
+    with patch(
+        "integrations.github.tools.ci_fix.verification.run_gh_json",
+        side_effect=responses,
+    ):
+        result = wait_for_branch_checks(
+            ctx,
+            github_token="tok",
+            expected_head_sha="new-sha",
+            registration_seconds=60,
+            settle_seconds=0,
+            sleep=sleeps.append,
+            monotonic=lambda: next(elapsed),
+        )
+
+    assert result.state is CheckState.PASSED
+    assert sleeps
+
+
 def test_wait_for_pr_checks_rejects_unrelated_newer_head() -> None:
     payload = _rollup(
         sha="other-users-sha",

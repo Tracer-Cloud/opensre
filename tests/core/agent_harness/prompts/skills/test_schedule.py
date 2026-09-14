@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from core.agent_harness.prompts.skills.loader import (
+from core.agent_harness.prompts.skills import (
     clear_skills_caches,
     list_action_skills,
     load_skill_body,
 )
-from core.agent_harness.prompts.skills.schedule import (
+from core.agent_harness.prompts.skills.scheduling import (
     find_action_skill,
     is_recurring_skill,
     pin_recurring_skill,
@@ -25,7 +25,7 @@ def test_morning_report_is_recurring() -> None:
 
 def test_non_recurring_skill_is_not_schedulable() -> None:
     for skill in list_action_skills():
-        if not (skill.recurring or "").strip():
+        if not skill.recurring:
             assert is_recurring_skill(skill.name) is False
             with pytest.raises(RuntimeError, match="not marked recurring"):
                 pin_recurring_skill(skill.name)
@@ -84,7 +84,10 @@ def test_legacy_skill_names_resolve_to_their_renamed_successor() -> None:
     for legacy, current in (
         ("morning-report", "delivering-morning-briefings"),
         ("github-ci-health", "reporting-github-ci-failures"),
-        ("github_ci_fix", "fixing-github-ci"),
+        ("github_ci_fix", "repair-github-ci"),
+        ("fixing-github-ci", "repair-github-ci"),
+        ("cicd-reliability-agent", "scheduling-github-ci-repairs"),
+        ("scheduling-github-ci-fixes", "scheduling-github-ci-repairs"),
     ):
         skill = find_action_skill(legacy)
         assert skill is not None and skill.name == current

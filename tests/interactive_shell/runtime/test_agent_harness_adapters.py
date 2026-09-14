@@ -35,7 +35,8 @@ def test_render_error_shows_auth_login_hint_on_credit_exhaustion() -> None:
 
 
 def test_render_error_no_hint_for_generic_error() -> None:
-    output = _render_error("some other failure")
+    output = _render_error("some\nother failure")
+    assert output.startswith("Error    some other failure")
     assert "/model" not in output
     assert "/auth login" not in output
 
@@ -75,20 +76,20 @@ def test_finalize_satisfies_the_host_contract_while_staying_silent() -> None:
     assert isinstance(sink, TurnOutput)
 
 
-def test_response_header_opens_without_a_leading_blank() -> None:
-    """The sink used to print a blank before ``Ω``; that padded turns vs Droid.
-
-    ``_show_response`` used to own that spacer in the shared turn engine.
-    Chat sinks never wanted it; keeping a blank in the shell sink only was
-    the remaining gap between user row and reply marker.
-    """
-    # Arrange
+def test_response_header_waits_for_the_following_terminal_renderer() -> None:
+    """The body or error row owns the terminal marker, so no empty row appears."""
     console = _RecordingConsole()
 
-    # Act
     ShellOutputSink(console).render_response_header("assistant")  # type: ignore[arg-type]
 
-    # Assert: marker on the first painted line — no spacer row above.
-    assert console.lines
-    assert "Ω" in console.lines[0]
-    assert console.lines[0] != ""
+    assert console.lines == []
+
+
+def test_error_after_response_header_emits_only_the_labeled_error() -> None:
+    console = _RecordingConsole()
+    sink = ShellOutputSink(console)  # type: ignore[arg-type]
+
+    sink.render_response_header("assistant")
+    sink.render_error("tool call failed")
+
+    assert console.lines == ["Error    tool call failed"]

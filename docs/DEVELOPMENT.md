@@ -60,7 +60,7 @@ The dev container is defined under [`.devcontainer/`](https://github.com/Tracer-
 ## Deployment
 
 Full deployment instructions, prerequisites, and environment variable reference:
-**[DEPLOYMENT.md](../DEPLOYMENT.md)**
+**[DEPLOYMENT.md](https://github.com/Tracer-Cloud/opensre/blob/main/DEPLOYMENT.md)**
 
 Quick reference:
 

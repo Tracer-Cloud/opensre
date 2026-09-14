@@ -44,7 +44,6 @@ def test_parse_accepts_a_verifiable_plan() -> None:
     text = format_task_plan_plain(plan)
     assert text.startswith("Plan · 2/3")
     assert "✓" in text and "●" in text and "○" in text
-    assert "(verify)" in text
 
 
 def test_payload_round_trips() -> None:
@@ -108,15 +107,37 @@ def test_parse_rejects_an_unknown_status() -> None:
         {"plan": [{"step": "do it", "status": "done"}, {"step": "verify", "status": "pending"}]}
     )
     assert plan is None
-    assert "pending, in_progress, or completed" in (error or "")
+    assert "pending, in_progress, completed, or blocked" in (error or "")
 
 
-def test_parse_rejects_completing_the_verification_step_while_another_runs() -> None:
+def test_blocked_step_needs_a_named_blocker_and_settles_without_completing() -> None:
+    """A blocked step is terminal but never counts as done: no 3/3, no ✓."""
+    unexplained, error = parse_task_plan({"plan": _items("completed", "blocked", "completed")})
+    assert unexplained is None
+    assert "blocker" in (error or "")
+
+    plan, error = parse_task_plan(
+        {
+            "plan": _items("completed", "blocked", "completed"),
+            "explanation": "Trace blocked: no deploy history for this window.",
+        }
+    )
+    assert error is None and plan is not None
+    assert plan.is_settled and not plan.all_completed
+    assert plan.completed_count == 2 and plan.blocked_count == 1
+    assert task_plan_to_payload(plan)["blocked"] == 1
+    assert task_plan_from_payload(task_plan_to_payload(plan)) == plan
+    text = format_task_plan_plain(plan)
+    assert text.startswith("Plan · 2/3 · 1 blocked")
+    assert "⊘ Trace 502s to the last deploy" in text
+
+
+def test_parse_rejects_completing_the_final_step_while_another_runs() -> None:
     # The final step is completed while an earlier step is still in_progress —
     # a distinct rule from "more than one in_progress".
     plan, error = parse_task_plan({"plan": _items("in_progress", "completed")})
     assert plan is None
-    assert "cannot complete the verification step" in (error or "")
+    assert "cannot complete the final step" in (error or "")
 
 
 def test_parse_ignores_a_non_string_explanation() -> None:
@@ -142,7 +163,7 @@ def test_focused_step_falls_back_to_the_first_pending_step() -> None:
     assert plan.current_index == 2
 
 
-def test_focused_step_is_the_last_verification_step_when_all_completed() -> None:
+def test_focused_step_is_the_last_step_when_all_completed() -> None:
     plan, _ = parse_task_plan({"plan": _items("completed", "completed", "completed")})
     assert plan is not None
     assert plan.all_completed
@@ -185,3 +206,34 @@ def test_from_payload_rejects_garbage() -> None:
     assert task_plan_from_payload(None) is None
     assert task_plan_from_payload([]) is None
     assert task_plan_from_payload({"plan": [{"step": "only one", "status": "pending"}]}) is None
+
+
+def test_only_a_declared_verification_step_is_labelled_verify() -> None:
+    """The last step used to be labelled (verify) whatever it said; the label is declared now."""
+    # Arrange
+    plan, error = parse_task_plan(
+        {
+            "plan": [
+                {"step": "Count the files", "status": "completed"},
+                {
+                    "step": "Re-count with a second method",
+                    "status": "in_progress",
+                    "verifies": True,
+                },
+                {"step": "Summarize results", "status": "pending"},
+            ]
+        }
+    )
+    assert error is None and plan is not None
+
+    # Act
+    text = format_task_plan_plain(plan)
+
+    # Assert: one label, on the declared step, and the flag survives a round trip.
+    assert text.count("(verify)") == 1
+    assert "● Re-count with a second method (verify)" in text
+    assert "Summarize results (verify)" not in text
+    assert plan.verified is False
+    restored = task_plan_from_payload(task_plan_to_payload(plan))
+    assert restored == plan
+    assert restored is not None and restored.steps[1].verifies is True

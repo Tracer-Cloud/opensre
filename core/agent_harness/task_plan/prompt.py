@@ -89,6 +89,8 @@ def current_task_plan_block(
         return ""
     if plan.all_completed:
         status = "complete"
+    elif plan.is_settled:
+        status = f"ended; {plan.blocked_count} blocked, nothing left to run"
     elif plan.all_pending:
         status = "ready, nothing executed"
     else:
@@ -119,11 +121,17 @@ def current_task_plan_block(
             "a step is in_progress. Keep working that step, or ask_user_choice "
             "if facts are missing. Do not start another workload."
         )
-    elif not plan.all_completed and not plan_only:
+    elif not plan.is_settled and not plan_only:
         lines.append(
             "When this turn continues the plan: Work remains on this plan and "
             "no step is in_progress. Call update_plan to set the next pending "
             "step in_progress and execute it now — do not end the turn idle."
+        )
+    if plan.blocked_count:
+        lines.append(
+            "Blocked steps stay blocked: their work did not happen. Do not run "
+            "tools to earn a completed mark for them, and name each blocker "
+            "when you report."
         )
     lines.append("")
     return "\n".join(lines)

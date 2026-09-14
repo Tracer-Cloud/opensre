@@ -393,8 +393,12 @@ def test_choice_failure_remains_visible_beside_preferred_sibling_response() -> N
 
     assert "3 failed, 59 succeeded" in response_text
     assert "title is required" in response_text
-    assert display_chunks == ["3 failed, 59 succeeded\ntitle is required"]
-    assert use_final_text is False
+    assert "I could not open the picker." in response_text
+    assert display_chunks == [
+        "I could not open the picker.",
+        "3 failed, 59 succeeded\ntitle is required",
+    ]
+    assert use_final_text is True
 
 
 def test_selected_choice_hides_only_a_pure_acknowledgement() -> None:
@@ -445,6 +449,41 @@ def test_inline_tool_results_are_not_repeated_in_the_closing() -> None:
     assert session.terminal.collapsed_tool_output == "stashed-by-observer"
 
 
+def test_earlier_scan_reply_does_not_replace_the_final_report() -> None:
+    scan_summary = "Found 43 git repositories under /workspace."
+    closing = (
+        "| Metric | Result |\n| --- | --- |\n| Main branch red time | 77.0% |\n\n"
+        "Would you like to schedule a reliability check?"
+    )
+    result = _Result(
+        tool_results=[
+            (
+                ToolCall(id="1", name="scan_local_git_workspace", input={}),
+                _ToolResult({**_payload(scan_summary), "rendered_in_shell": True}),
+            ),
+            (
+                ToolCall(id="2", name="analyze_github_ci_reliability", input={}),
+                _ToolResult({"ok": True, "rendered_in_shell": True}),
+            ),
+            (
+                ToolCall(id="3", name="get_github_repository", input={}),
+                _ToolResult({"ok": True, "summary": "o/r · main · internal · TypeScript"}),
+            ),
+        ],
+        final_text=closing,
+    )
+    session = _Session()
+    session.terminal.inline_tool_results = True
+
+    response_text, display_chunks, use_final_text = _compose_response(result, session, _counts(3))
+
+    assert display_chunks == [closing]
+    assert closing in response_text
+    assert scan_summary not in response_text
+    assert use_final_text is True
+    assert session.terminal.inline_tool_results is False
+
+
 def test_bulky_tool_output_is_capped_and_fenced_for_display() -> None:
     # A large tool result must not flood the transcript or blend into the report:
     # it is capped and shown in its own fenced code block for the console.
@@ -462,9 +501,9 @@ def test_bulky_tool_output_is_capped_and_fenced_for_display() -> None:
     # Display: capped + text-fenced (truncated content is not valid code to highlight).
     assert "```text" in joined
     assert "Ctrl+O to view" in joined
-    assert joined.count("run ") <= 12
+    assert sum(line.startswith("run ") for line in joined.splitlines()) <= 12
     assert "```text" not in response_text
-    assert response_text.count("run ") == 30
+    assert sum(line.startswith("run ") for line in response_text.splitlines()) == 30
     assert session.terminal.collapsed_tool_output == bulky
 
 
@@ -533,18 +572,17 @@ def test_plan_snapshots_are_stripped_from_the_reply() -> None:
     assert "✓ Inspect path" not in shown
 
 
-def test_tool_reply_text_is_shown_when_the_model_closing_is_dropped_for_it() -> None:
-    # Arrange: the observer already nested results inline and the tool carries
-    # its own reply (a schedule card); the model's closing is dropped for it.
+def test_tool_reply_text_is_shown_when_the_model_has_no_closing() -> None:
     card = "Scheduled: CI reliability check · o/r\nRuns weekdays at 08:00 UTC."
     call = ToolCall(id="1", name="schedule_ci_reliability_loop", input={"owner": "o", "repo": "r"})
-    result = _Result(tool_results=[(call, _ToolResult(_payload(card)))], final_text="Done.")
+    result = _Result(tool_results=[(call, _ToolResult(_payload(card)))])
     session = _Session()
     session.terminal.inline_tool_results = True  # type: ignore[attr-defined]
 
     # Act
-    _response_text, display_chunks, _use_final_text = _compose_response(result, session, _counts(1))
+    response_text, display_chunks, use_final_text = _compose_response(result, session, _counts(1))
 
     # Assert: the card is the visible closing, not an empty turn.
-    shown = "\n".join(display_chunks)
-    assert "Scheduled: CI reliability check" in shown
+    assert display_chunks == [card]
+    assert response_text == card
+    assert use_final_text is False

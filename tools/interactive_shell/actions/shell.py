@@ -13,6 +13,7 @@ from core.agent_harness.tools import (
 from core.domain.types.tools import ToolSurface
 from core.tool import RegisteredTool, SideEffectLevel
 from core.tool_framework.utils import object_schema, string_property
+from tools.interactive_shell.shell.merge_guard import git_refusal_during_merge
 from tools.interactive_shell.shell.runner import run_shell_command
 from tools.interactive_shell.subprocess import require_subprocess_presenter
 
@@ -35,6 +36,9 @@ def execute_shell_tool(args: dict[str, Any], ctx: ActionToolScope) -> dict[str, 
     if not command:
         return {"ok": False, "command": "", "response_text": "missing shell command"}
     quiet = _coerce_quiet(args.get("quiet", False))
+    refusal = git_refusal_during_merge(command)
+    if refusal is not None:
+        return {"ok": False, "command": command, "response_text": refusal}
     return run_shell_command(
         command,
         require_subprocess_presenter(ctx),
@@ -98,7 +102,6 @@ shell_run_tool = RegisteredTool(
     source="interactive_shell",
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
-    parallel_safe=False,
     accepts_runtime_context=True,
     run=run_shell,
     is_available=lambda sources: capability_available_from_sources(sources, "shell_commands"),

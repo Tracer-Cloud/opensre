@@ -18,7 +18,7 @@ import io
 import pytest
 from rich.console import Console
 
-from core.agent_harness.prompts.skills.loader import load_skill_body
+from core.agent_harness.prompts.skills import load_skill_body
 from surfaces.interactive_shell.runtime.agent_harness_adapters import ShellOutputSink
 
 

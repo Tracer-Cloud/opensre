@@ -10,6 +10,8 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from infrastructure.observability.trace.decisions import record_decision
+
 
 @dataclass(frozen=True)
 class GoalObservation:
@@ -62,6 +64,9 @@ def should_accept_with_goal(
     no ceiling — only a met goal accepts.
     """
     if goal is None:
+        record_decision(
+            "conclusion", attributes={"accepted": True, "reason": "no_goal", "iteration": iteration}
+        )
         return True, None
     # iteration is 0-based inside ReactLoop; last lap is max_iterations - 1.
     # None/non-positive budgets mean "no ceiling" (do not treat as already done).
@@ -78,9 +83,20 @@ def should_accept_with_goal(
         extras=extras,
     )
     if goal_met(goal, observation):
+        record_decision(
+            "conclusion",
+            attributes={"accepted": True, "reason": "goal_check_accepted", "iteration": iteration},
+        )
         return True, None
     if at_ceiling:
+        record_decision(
+            "conclusion",
+            attributes={"accepted": True, "reason": "iteration_ceiling", "iteration": iteration},
+        )
         return True, None
+    record_decision(
+        "conclusion", attributes={"accepted": False, "reason": "goal_unmet", "iteration": iteration}
+    )
     if goal.nudge is not None:
         return False, goal.nudge(observation)
     nudge = (

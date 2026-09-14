@@ -170,7 +170,7 @@ Other useful commands:
 
 ```bash
 opensre integrations setup
-opensre agents scan
+opensre fleet scan
 opensre update
 opensre uninstall   # remove opensre and all local data
 ```

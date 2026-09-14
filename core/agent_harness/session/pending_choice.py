@@ -19,6 +19,11 @@ from dataclasses import dataclass, field
 _ANSWER_HEADER = re.compile(r"^(\d+)\.\s+(.+)$")
 
 
+def question_key(title: str) -> str:
+    """Identity of a question for matching it to an answer: whitespace and case folded."""
+    return " ".join(title.split()).casefold()
+
+
 @dataclass(frozen=True, slots=True)
 class AskUserQuestion:
     """One question in a batched Ask User payload."""
@@ -118,4 +123,5 @@ __all__ = [
     "PendingUserChoice",
     "format_ask_user_answers",
     "parse_ask_user_answers",
+    "question_key",
 ]

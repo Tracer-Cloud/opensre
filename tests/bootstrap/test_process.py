@@ -32,6 +32,10 @@ def test_configure_process_gateway_order(monkeypatch: pytest.MonkeyPatch) -> Non
         lambda **_kw: order.append("sentry"),
     )
     monkeypatch.setattr(
+        "infrastructure.observability.langfuse.init_langfuse_tracing",
+        lambda: order.append("llm_tracing"),
+    )
+    monkeypatch.setattr(
         "bootstrap.process.install_harness_adapters",
         lambda: order.append("adapters"),
     )
@@ -50,10 +54,10 @@ def test_configure_process_gateway_order(monkeypatch: pytest.MonkeyPatch) -> Non
 
     configure_process(GATEWAY_PROFILE, logger=logging.getLogger("test.process"))
 
-    assert order == ["env", "sentry", "adapters", "caps", "preload"], order
+    assert order == ["env", "sentry", "llm_tracing", "adapters", "caps", "preload"], order
 
 
-def test_configure_process_cli_only_boots_env(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_configure_process_cli_boots_env_and_llm_tracing(monkeypatch: pytest.MonkeyPatch) -> None:
     """CLI_PROFILE leaves Sentry and Rich adapters to surfaces/cli/startup."""
     order: list[str] = []
     monkeypatch.setattr(
@@ -63,6 +67,10 @@ def test_configure_process_cli_only_boots_env(monkeypatch: pytest.MonkeyPatch) -
     monkeypatch.setattr(
         "infrastructure.observability.errors.sentry.init_sentry",
         lambda **_kw: order.append("sentry"),
+    )
+    monkeypatch.setattr(
+        "infrastructure.observability.langfuse.init_langfuse_tracing",
+        lambda: order.append("llm_tracing"),
     )
     monkeypatch.setattr(
         "bootstrap.process.install_harness_adapters",
@@ -75,7 +83,7 @@ def test_configure_process_cli_only_boots_env(monkeypatch: pytest.MonkeyPatch) -
 
     configure_process(CLI_PROFILE)
 
-    assert order == ["env"], order
+    assert order == ["env", "llm_tracing"], order
 
 
 def test_configure_process_web_skips_llm_preload(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -87,6 +95,10 @@ def test_configure_process_web_skips_llm_preload(monkeypatch: pytest.MonkeyPatch
     monkeypatch.setattr(
         "infrastructure.observability.errors.sentry.init_sentry",
         lambda **_kw: order.append("sentry"),
+    )
+    monkeypatch.setattr(
+        "infrastructure.observability.langfuse.init_langfuse_tracing",
+        lambda: order.append("llm_tracing"),
     )
     monkeypatch.setattr(
         "bootstrap.process.install_harness_adapters",
@@ -103,7 +115,7 @@ def test_configure_process_web_skips_llm_preload(monkeypatch: pytest.MonkeyPatch
 
     configure_process(WEB_PROFILE)
 
-    assert order == ["env", "sentry", "adapters"], order
+    assert order == ["env", "sentry", "llm_tracing", "adapters"], order
 
 
 def test_configure_process_is_idempotent_per_profile(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -117,6 +129,9 @@ def test_configure_process_is_idempotent_per_profile(monkeypatch: pytest.MonkeyP
     monkeypatch.setattr(
         "infrastructure.observability.errors.sentry.init_sentry",
         lambda **_kw: None,
+    )
+    monkeypatch.setattr(
+        "infrastructure.observability.langfuse.init_langfuse_tracing", lambda: False
     )
     monkeypatch.setattr("bootstrap.process.install_harness_adapters", lambda: None)
     monkeypatch.setattr("bootstrap.process.install_scheduled_delivery_adapters", lambda: None)
@@ -160,6 +175,7 @@ class TestEmbeddedProfile:
 
         # Assert
         assert BootStep.SENTRY not in EMBEDDED_PROFILE.steps
+        assert BootStep.LLM_TRACING not in EMBEDDED_PROFILE.steps
         assert BootStep.PRELOAD_LLM not in EMBEDDED_PROFILE.steps
         assert BootStep.SCHEDULER_RUNNERS not in EMBEDDED_PROFILE.steps
 

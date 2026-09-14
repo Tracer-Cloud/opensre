@@ -41,6 +41,22 @@ def flush_pending_input() -> None:
             msvcrt.getwch()  # type: ignore[attr-defined]
 
 
+def _raw_input_mode(fd: int) -> None:
+    """Raw keystrokes with output left cooked: a line feed still returns the carriage.
+
+    ``tty.setraw`` also clears OPOST. A termios snapshot taken while a key read
+    is in flight restores that later, and everything painted after it walks
+    across the screen one column further per line.
+    """
+    import termios
+    import tty
+
+    tty.setraw(fd)  # type: ignore[attr-defined]
+    attrs = termios.tcgetattr(fd)  # type: ignore[attr-defined]
+    attrs[1] |= termios.OPOST  # type: ignore[attr-defined]
+    termios.tcsetattr(fd, termios.TCSANOW, attrs)  # type: ignore[attr-defined]
+
+
 def restore_stdin_terminal() -> None:
     """Return stdin to canonical echo mode after Live/raw progress UI.
 
@@ -94,12 +110,11 @@ def read_key_unix(
     """
     import select as _sel
     import termios
-    import tty
 
     fd = sys.stdin.fileno()
     old = termios.tcgetattr(fd)  # type: ignore[attr-defined]
     try:
-        tty.setraw(fd)  # type: ignore[attr-defined]
+        _raw_input_mode(fd)
         ch = os.read(fd, 1)
         if not ch:
             return "eof"
@@ -230,12 +245,11 @@ def read_menu_or_char(*, allow_chars: bool = False, alpha_keys: bool = False) ->
 def _read_menu_or_char_unix(*, allow_chars: bool, alpha_keys: bool = False) -> str:
     import select as _sel
     import termios
-    import tty
 
     fd = sys.stdin.fileno()
     old = termios.tcgetattr(fd)  # type: ignore[attr-defined]
     try:
-        tty.setraw(fd)  # type: ignore[attr-defined]
+        _raw_input_mode(fd)
         ch = os.read(fd, 1)
         if not ch:
             return "eof"
@@ -347,12 +361,11 @@ def _read_menu_or_char_windows(*, allow_chars: bool, alpha_keys: bool = False) -
 def _read_typing_key_unix() -> str:
     import select as _sel
     import termios
-    import tty
 
     fd = sys.stdin.fileno()
     old = termios.tcgetattr(fd)  # type: ignore[attr-defined]
     try:
-        tty.setraw(fd)  # type: ignore[attr-defined]
+        _raw_input_mode(fd)
         ch = os.read(fd, 1)
         if not ch:
             return "eof"

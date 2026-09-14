@@ -14,8 +14,12 @@ from __future__ import annotations
 from rich.console import Console
 from rich.markup import escape
 
-from config.constants.skills import SKIP_DEMO_OPTION
-from core.agent_harness.spi.handoff import format_ask_user_answers
+from config.constants.skills import ONBOARDING_SKILL_NAME, SKIP_DEMO_OPTION
+from core.agent_harness.spi.handoff import (
+    format_ask_user_answers,
+    question_key,
+)
+from core.agent_harness.spi.task_plan import discard_task_plan
 from infrastructure.terminal import theme as ui_theme
 from infrastructure.terminal.notify import NotifyEvent, play_notification
 from surfaces.interactive_shell.command_registry.types import SlashCommand
@@ -34,6 +38,7 @@ from surfaces.shared.terminal.components.choice_menu import (
 
 _CANCELLED = "Selection cancelled — type a reply instead."
 _DEMO_SKIPPED = "Demo skipped — type a request, or /demo to come back to it."
+_DEMO_UNAVAILABLE = "Guided demo selection is unavailable here — request a task directly."
 
 
 def _remember_answered(session: Session, *titles: str) -> None:
@@ -41,16 +46,17 @@ def _remember_answered(session: Session, *titles: str) -> None:
     settled = getattr(session, "questions_already_answered", None)
     if not isinstance(settled, set):
         return
-    settled.update(" ".join(title.split()).casefold() for title in titles if title.strip())
+    settled.update(question_key(title) for title in titles if title.strip())
 
 
 def _leave_menu(session: Session, console: Console, note: str) -> None:
     """Close the menu with no answer for the model and leave the skill."""
     console.print(f"[{ui_theme.DIM}]{note}[/]")
     session.terminal.awaiting_handoff_answer = False
+    if session.active_skill is not None:
+        session.skills_already_prompted.discard(session.active_skill)
+        discard_task_plan(session)
     session.active_skill = None
-    session.active_skill_tools = ()
-    session.skill_hooks_fired = set()
 
 
 def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
@@ -62,6 +68,9 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
         return True
 
     if not repl_tty_interactive():
+        if session.active_skill == ONBOARDING_SKILL_NAME:
+            _leave_menu(session, console, _DEMO_UNAVAILABLE)
+            return True
         for question in pending.items():
             print_valid_choice_list(
                 console,
@@ -109,7 +118,6 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
     if picked_one is None:
         _leave_menu(session, console, _CANCELLED)
         return True
-    _remember_answered(session, items[0].title)
     if picked_one == SKIP_DEMO_OPTION:
         # A shell decision, not an answer for the model: the demo is over.
         _leave_menu(session, console, _DEMO_SKIPPED)
@@ -119,11 +127,13 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
     if command:
         # A mapped option, or a slash command typed into the custom row, is a
         # command the shell runs, not an answer for the model.
+        _remember_answered(session, items[0].title)
         console.print(f"[{ui_theme.DIM}]Running {escape(command)}.[/]")
         session.terminal.awaiting_handoff_answer = False
         session.terminal.set_auto_command(command)
         return True
-    render_choice_selection(console, items[0].title, picked_one, options=items[0].options)
+    _remember_answered(session, items[0].title)
+    render_choice_selection(console, items[0].title, picked_one)
     # The answer travels with its question, as the batched wizard's does: a bare
     # label such as "owner/repo (757 commits, CI configured)" reads to the
     # planner like a fresh request and gets re-asked or re-routed.

@@ -122,7 +122,6 @@ task_cancel_tool = RegisteredTool(
     source="interactive_shell",
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
-    parallel_safe=False,
     accepts_runtime_context=True,
     run=run_task_cancel,
     is_available=lambda sources: capability_available_from_sources(

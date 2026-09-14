@@ -40,7 +40,7 @@ def test_factory_setup_uses_the_shell_banner_with_concise_steps(monkeypatch) -> 
     monkeypatch.setattr(
         banner_module,
         "load_launch_status",
-        lambda: LaunchStatus(skill_count=4, integration_count=1),
+        lambda: LaunchStatus(skill_count=4, ci_fix_count=1),
     )
     monkeypatch.setattr(
         summaries,

@@ -19,7 +19,7 @@ from integrations.coding_agent.codex_backend import verify as _codex_verify
 from integrations.coding_agent.config import coding_agent_provider
 from integrations.coding_agent.cursor_backend import run as _cursor_run
 from integrations.coding_agent.cursor_backend import verify as _cursor_verify
-from integrations.coding_agent.models import CodingResult
+from integrations.coding_agent.models import CodingResult, Progress
 from integrations.coding_agent.pi_backend import run as _pi_run
 from integrations.coding_agent.pi_backend import verify as _pi_verify
 
@@ -92,8 +92,13 @@ def run_coding_task(
     model: str | None,
     timeout_sec: float,
     provider: str | None = None,
+    on_progress: Progress | None = None,
 ) -> CodingResult:
-    """Run the configured coding agent on *task* in *workspace*."""
+    """Run the configured coding agent on *task* in *workspace*.
+
+    *on_progress* receives one short line per step for backends that can stream
+    their activity; others ignore it.
+    """
     name = _normalize(provider)
     if name == AUTO_PROVIDER:
         selected, backend, detail = _select_auto_backend()
@@ -106,4 +111,6 @@ def run_coding_task(
                 success=False, summary="", error=f"Unsupported coding agent '{name}'."
             )
     run, _verify = backend
-    return run(task, workspace=workspace, model=model, timeout_sec=timeout_sec)
+    return run(
+        task, workspace=workspace, model=model, timeout_sec=timeout_sec, on_progress=on_progress
+    )

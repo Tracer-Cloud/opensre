@@ -19,7 +19,7 @@ Token reference
   BG         terminal background, never used as foreground
   INPUT_SURFACE  composer/menu plate — visibly lifted vs BG (input box fill)
   BOLD_SKILL fixed green skill-activation label
-  reply marker  assistant ``Ω`` lead-in — Factory/Droid-warm accent via
+  reply marker  assistant circle and working-state lead-in via
                 :func:`reply_marker_style` (not WARNING; must stay vivid)
 
 Usage
@@ -362,7 +362,7 @@ def _parse_hex_color(value: str) -> tuple[int, int, int]:
 
 
 def reply_marker_hex() -> str:
-    """Hex for the assistant ``Ω`` / tool ``⏺`` accent — the active theme's
+    """Hex for transcript lead labels — the active theme's
     ``HIGHLIGHT``, so every component follows the selected palette rather than a
     fixed colour that would read as a copy of another tool."""
     return _ACTIVE_THEME.HIGHLIGHT

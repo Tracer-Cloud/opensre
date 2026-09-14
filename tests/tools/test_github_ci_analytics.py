@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-import contextlib
 import io
+import re
 from datetime import UTC, datetime, timedelta
+from http import HTTPStatus
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -19,10 +20,12 @@ from integrations.github.tools.ci_analytics.metrics import (
     find_outages,
     normal_minutes,
     union_hours,
+    workflow_red_hours,
 )
 from integrations.github.tools.ci_analytics.models import (
     FailureKind,
     MergedPullRequest,
+    Outage,
     WorkflowRun,
 )
 from integrations.github.tools.ci_analytics.render import render_markdown
@@ -590,27 +593,234 @@ def test_normal_minutes_uses_median_of_first_attempt_passes_only() -> None:
     assert normal_minutes(runs) == {"CI": 10.0}
 
 
-def test_outages_span_failure_to_next_success_and_overlaps_count_once() -> None:
-    # Arrange: two workflows red over overlapping periods, one never recovers.
+def test_outages_span_first_red_commit_to_next_fully_green_commit() -> None:
+    # Arrange: c1 red (CI fails), c2 still red (Lint fails), c3 fully green,
+    # c4 red again and never recovered.
     now = _T0 + timedelta(hours=10)
     runs = [
-        _run(1, workflow="CI", event="push", conclusion="failure", start_minutes=0),
-        _run(2, workflow="CI", event="push", conclusion="success", start_minutes=110),
-        _run(3, workflow="Lint", event="push", conclusion="failure", start_minutes=60),
-        _run(4, workflow="Lint", event="push", conclusion="success", start_minutes=170),
-        _run(5, workflow="Release", event="push", conclusion="failure", start_minutes=300),
+        _run(1, workflow="CI", workflow_id=1, event="push", sha="c1", conclusion="failure"),
+        _run(2, workflow="Lint", workflow_id=2, event="push", sha="c1", conclusion="success"),
+        _run(
+            3,
+            workflow="CI",
+            workflow_id=1,
+            event="push",
+            sha="c2",
+            conclusion="success",
+            start_minutes=60,
+        ),
+        _run(
+            4,
+            workflow="Lint",
+            workflow_id=2,
+            event="push",
+            sha="c2",
+            conclusion="failure",
+            start_minutes=60,
+        ),
+        _run(
+            5,
+            workflow="CI",
+            workflow_id=1,
+            event="push",
+            sha="c3",
+            conclusion="success",
+            start_minutes=120,
+        ),
+        _run(
+            6,
+            workflow="Lint",
+            workflow_id=2,
+            event="push",
+            sha="c3",
+            conclusion="success",
+            start_minutes=130,
+        ),
+        _run(
+            7,
+            workflow="Release",
+            workflow_id=3,
+            event="push",
+            sha="c4",
+            conclusion="failure",
+            start_minutes=300,
+        ),
     ]
 
     # Act
     outages = find_outages(runs)
 
-    # Assert: CI red 0:10→2:00, Lint red 1:10→3:00, Release red from 5:10 and ongoing.
-    assert [(o.workflow, o.ongoing) for o in outages] == [
-        ("CI", False),
-        ("Lint", False),
-        ("Release", True),
+    # Assert: one outage from CI's failure (0:10) to c3's last completion (2:20),
+    # naming both red workflows; c4 opens an ongoing one at 5:10.
+    assert [(o.workflows, o.ongoing) for o in outages] == [
+        (("CI", "Lint"), False),
+        (("Release",), True),
     ]
-    assert union_hours(outages, now=now) == pytest.approx((170 + 290) / 60)
+    assert union_hours(outages, now=now) == pytest.approx((130 + 290) / 60)
+
+
+def test_a_workflow_that_skips_the_next_commit_cannot_keep_the_branch_red() -> None:
+    # Arrange: Docs fails on c1; c2 triggers only CI (path filter) and passes.
+    now = _T0 + timedelta(hours=10)
+    runs = [
+        _run(1, workflow="Docs", workflow_id=2, event="push", sha="c1", conclusion="failure"),
+        _run(2, workflow="CI", workflow_id=1, event="push", sha="c1", conclusion="success"),
+        _run(
+            3,
+            workflow="CI",
+            workflow_id=1,
+            event="push",
+            sha="c2",
+            conclusion="success",
+            start_minutes=60,
+        ),
+    ]
+
+    # Act
+    outages = find_outages(runs)
+
+    # Assert: GitHub shows c2 green, so the branch recovered at c2's completion
+    # even though Docs never ran again; the red hour is attributed to Docs alone.
+    assert [(o.workflows, o.started_at, o.ended_at) for o in outages] == [
+        (("Docs",), _T0 + timedelta(minutes=10), _T0 + timedelta(minutes=70)),
+    ]
+    assert workflow_red_hours(runs, outages, now=now) == {2: pytest.approx(1.0)}
+
+
+def test_one_failing_check_makes_the_branch_red_and_attribution_names_it() -> None:
+    # Arrange: four daily commits each pass CI but fail Security, then a green one.
+    day = 24 * 60
+    runs = []
+    for index, sha in enumerate(("c1", "c2", "c3", "c4")):
+        base = index * day
+        runs.append(
+            _run(
+                index * 10 + 1,
+                workflow="CI",
+                workflow_id=1,
+                event="push",
+                sha=sha,
+                start_minutes=base,
+            )
+        )
+        runs.append(
+            _run(
+                index * 10 + 2,
+                workflow="Security",
+                workflow_id=2,
+                event="push",
+                sha=sha,
+                conclusion="failure",
+                start_minutes=base,
+            )
+        )
+    runs.append(
+        _run(51, workflow="CI", workflow_id=1, event="push", sha="c5", start_minutes=4 * day)
+    )
+    runs.append(
+        _run(
+            52,
+            workflow="Security",
+            workflow_id=2,
+            event="push",
+            sha="c5",
+            start_minutes=4 * day,
+            duration_minutes=20,
+        )
+    )
+    now = _T0 + timedelta(days=5)
+
+    # Act
+    outages = find_outages(runs)
+
+    # Assert: one four-day outage carried entirely by Security; CI gets no share.
+    assert [(o.workflows, o.ongoing) for o in outages] == [(("Security",), False)]
+    assert union_hours(outages, now=now) == pytest.approx(4 * 24 + 10 / 60)
+    assert workflow_red_hours(runs, outages, now=now) == {2: pytest.approx(4 * 24 + 10 / 60)}
+
+
+def test_a_stale_failure_is_not_blamed_for_a_later_unrelated_outage() -> None:
+    # Arrange: A fails on c1 and never runs again; c2 (A skipped) recovers the
+    # branch; B alone breaks it again on c3.
+    now = _T0 + timedelta(hours=10)
+    runs = [
+        _run(1, workflow="A", workflow_id=1, event="push", sha="c1", conclusion="failure"),
+        _run(2, workflow="B", workflow_id=2, event="push", sha="c1"),
+        _run(3, workflow="B", workflow_id=2, event="push", sha="c2", start_minutes=60),
+        _run(
+            4,
+            workflow="B",
+            workflow_id=2,
+            event="push",
+            sha="c3",
+            conclusion="failure",
+            start_minutes=300,
+        ),
+    ]
+
+    # Act
+    outages = find_outages(runs)
+
+    # Assert: A carries only the first hour; B's ongoing outage is its own.
+    assert [(o.workflows, o.ongoing) for o in outages] == [(("A",), False), (("B",), True)]
+    assert workflow_red_hours(runs, outages, now=now) == {
+        1: pytest.approx(1.0),
+        2: pytest.approx(290 / 60),
+    }
+
+
+def test_touching_outages_do_not_share_their_workflows_red_time() -> None:
+    # Arrange: A's outage ends exactly when B's begins (completion-time skew can
+    # even make them overlap); a union would let A's failure claim B's period.
+    now = _T0 + timedelta(hours=10)
+    runs = [
+        _run(1, workflow="A", workflow_id=1, event="push", sha="c1", conclusion="failure"),
+        _run(
+            2,
+            workflow="B",
+            workflow_id=2,
+            event="push",
+            sha="c3",
+            conclusion="failure",
+            start_minutes=60,
+        ),
+    ]
+    outages = [
+        Outage(
+            workflows=("A",),
+            started_at=_T0 + timedelta(minutes=10),
+            ended_at=_T0 + timedelta(minutes=70),
+            first_failure_url="u",
+        ),
+        Outage(
+            workflows=("B",),
+            started_at=_T0 + timedelta(minutes=70),
+            ended_at=_T0 + timedelta(minutes=130),
+            first_failure_url="u",
+        ),
+    ]
+
+    # Act / Assert: each workflow keeps exactly its own hour.
+    assert workflow_red_hours(runs, outages, now=now) == {
+        1: pytest.approx(1.0),
+        2: pytest.approx(1.0),
+    }
+
+
+def test_a_cancelled_only_commit_decides_nothing() -> None:
+    # Arrange: c1 fails; c2's only run was cancelled (superseded by a later push).
+    now = _T0 + timedelta(hours=10)
+    runs = [
+        _run(1, event="push", sha="c1", conclusion="failure"),
+        _run(2, event="push", sha="c2", conclusion="cancelled", start_minutes=60),
+    ]
+
+    # Act
+    outages = find_outages(runs)
+
+    # Assert: the cancelled commit neither closes nor extends; the outage is ongoing.
+    assert [(o.workflows, o.ongoing) for o in outages] == [(("CI",), True)]
+    assert union_hours(outages, now=now) == pytest.approx(590 / 60)
 
 
 def test_parse_run_reads_live_payload_shape_and_drops_incomplete_rows() -> None:
@@ -710,6 +920,7 @@ def test_same_display_name_does_not_share_duration_or_outage() -> None:
             workflow_id=1,
             event="push",
             branch="main",
+            sha="c1",
             conclusion="success",
             duration_minutes=8,
         ),
@@ -718,6 +929,7 @@ def test_same_display_name_does_not_share_duration_or_outage() -> None:
             workflow_id=2,
             event="push",
             branch="main",
+            sha="c1",
             conclusion="success",
             duration_minutes=40,
         ),
@@ -726,6 +938,7 @@ def test_same_display_name_does_not_share_duration_or_outage() -> None:
             workflow_id=1,
             event="push",
             branch="main",
+            sha="c2",
             conclusion="failure",
             start_minutes=60,
         ),
@@ -734,6 +947,7 @@ def test_same_display_name_does_not_share_duration_or_outage() -> None:
             workflow_id=2,
             event="push",
             branch="main",
+            sha="c2",
             conclusion="success",
             start_minutes=80,
             duration_minutes=40,
@@ -744,6 +958,8 @@ def test_same_display_name_does_not_share_duration_or_outage() -> None:
     outages = find_outages(runs)
     assert len(outages) == 1
     assert outages[0].ongoing is True
+    # The red time belongs to workflow id 1 only, despite the shared display name.
+    assert set(workflow_red_hours(runs, outages, now=_T0 + timedelta(hours=10))) == {1}
 
 
 def test_collect_runs_keeps_the_timestamp_cutoff_and_proves_earlier_failures() -> None:
@@ -957,6 +1173,43 @@ def test_collect_runs_caps_attempt_lookups_and_says_so(monkeypatch: pytest.Monke
     assert any("1 later re-run counted as passes" in n for n in collected.coverage_notices)
 
 
+def test_collect_runs_survives_a_repository_with_pull_requests_disabled() -> None:
+    # GitHub answers 404 on /pulls for mirrors that have pull requests turned off,
+    # even though the repository and its Actions runs are readable.
+    now = datetime(2026, 9, 7, 18, 0, tzinfo=UTC)
+    row = _payload(5, created_at="2026-09-01T09:00:00Z", conclusion="success", attempt=2)
+    client = _FakeGitHub(
+        repository={"default_branch": "master"},
+        runs=[row],
+        attempts={
+            (5, 1): _payload(5, created_at=row["created_at"], conclusion="failure", attempt=1)
+        },
+        pulls_error=GitHubApiError('{"message":"Not Found"}', status_code=HTTPStatus.NOT_FOUND),
+    )
+
+    collected = collect_runs(client, owner="o", repo="r", window_days=30, now=now)
+
+    assert collected.merged_prs == ()
+    assert [run.run_id for run in collected.pr_runs] == [5]
+    assert collected.pr_runs[0].retried_to_green is True
+    assert any("pull requests are disabled" in n for n in collected.coverage_notices)
+
+
+def test_collect_runs_still_fails_when_pull_requests_are_forbidden() -> None:
+    # A token without pull-request scope is a setup problem, not a disabled feature.
+    now = datetime(2026, 9, 7, 18, 0, tzinfo=UTC)
+    client = _FakeGitHub(
+        repository={"default_branch": "main"},
+        runs=[],
+        pulls_error=GitHubApiError("forbidden", status_code=HTTPStatus.FORBIDDEN),
+    )
+
+    with pytest.raises(GitHubApiError) as excinfo:
+        collect_runs(client, owner="o", repo="r", window_days=30, now=now)
+
+    assert excinfo.value.status_code == HTTPStatus.FORBIDDEN
+
+
 def _iso(value: datetime) -> str:
     return value.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -995,11 +1248,13 @@ class _FakeGitHub:
         runs: list[dict[str, Any]],
         attempts: dict[tuple[int, int], dict[str, Any]] | None = None,
         pulls: list[dict[str, Any]] | None = None,
+        pulls_error: GitHubApiError | None = None,
     ) -> None:
         self._repository = repository
         self._runs = runs
         self._attempts = attempts or {}
         self._pulls = pulls or []
+        self._pulls_error = pulls_error
         self.run_queries: list[dict[str, Any]] = []
 
     def request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
@@ -1011,6 +1266,8 @@ class _FakeGitHub:
             inside = self._runs_in(params)
             return {"total_count": len(inside), "workflow_runs": inside[:100]}
         if path == "/repos/o/r/pulls":
+            if self._pulls_error is not None:
+                raise self._pulls_error
             page = int((kwargs.get("params") or {}).get("page", 1))
             return self._pulls[(page - 1) * 100 : page * 100]
         marker = "/actions/runs/"
@@ -1081,6 +1338,202 @@ def test_render_shows_the_kpi_block_and_classification() -> None:
     assert "| CI | 3 | 1 | 1 | 10m |" in text
 
 
+def test_a_report_with_no_blocked_time_says_so_in_words() -> None:
+    """``0m of working time across 0 developers`` read like a broken calculation.
+
+    The same repository's one open breakage also printed the same line and
+    link twice, once as the longest breakage and once as still red.
+    """
+    # Arrange: main has been red since its only push; PR failures never recovered.
+    report = compute_report(
+        owner="o",
+        repo="r",
+        default_branch="main",
+        window_days=30,
+        branch_runs=[_run(9, event="push", branch="main", conclusion="failure")],
+        pr_runs=[_run(1, branch="A", sha="s", conclusion="failure")],
+        merged_prs=_merged("A"),
+        now=_T0 + timedelta(days=1),
+    )
+
+    # Act
+    text = render_markdown(report)
+
+    # Assert
+    assert "Developer Blocked Time, estimated bottom-up: none" in text
+    assert "across 0 developers" not in text
+    assert text.count("Still red now") == 1
+    assert "Longest breakage" not in text
+    assert text.count(report.outages[0].first_failure_url) == 1
+
+
+def test_large_counts_and_tiny_rates_stay_readable() -> None:
+    """3118 read as a code; one CI-caused failure out of thousands showed as 0.0%."""
+    # Arrange
+    from integrations.github.tools.ci_analytics.render import comparison_figures, key_results
+
+    pr_runs = [_run(1, branch="A", sha="s", conclusion="failure", start_minutes=0)] + [
+        _run(2, branch="A", sha="s", conclusion="success", start_minutes=40)
+    ]
+    pr_runs += [
+        _run(100 + i, branch=f"B{i}", sha=f"b{i}", conclusion="failure") for i in range(3000)
+    ]
+    report = compute_report(
+        owner="o",
+        repo="r",
+        default_branch="main",
+        window_days=30,
+        branch_runs=[_run(9, event="push", branch="main")],
+        pr_runs=pr_runs,
+        merged_prs=_merged("A"),
+        now=_T0 + timedelta(days=1),
+    )
+
+    # Act
+    text = render_markdown(report)
+    rows = dict(key_results(report))
+
+    # Assert
+    assert "PR-triggered failed workflows: **3,001**" in text
+    assert (
+        rows["CI-caused failures"]
+        == "1 of 3,001 failed PR runs (<0.1%); <0.1% of all 3,002 PR runs"
+    )
+    assert comparison_figures(report)["CI-caused failure rate"] == "<0.1%"
+
+
+def test_the_comparison_names_its_window_and_the_analyzed_repositorys_own_figures() -> None:
+    """A 7-day loop report sat beside 30-day benchmarks with nothing saying so.
+
+    The analyzed column also showed the rate alone, so a reader had to scroll
+    back for the hours and the workflow the rate came from.
+    """
+    # Arrange
+    from integrations.github.tools.ci_analytics.benchmarks import MEASURED_ON
+    from integrations.github.tools.ci_analytics.render import comparison_markdown, peer_benchmarks
+
+    report = compute_report(
+        owner="o",
+        repo="r",
+        default_branch="main",
+        window_days=7,
+        branch_runs=[
+            _run(9, event="push", branch="main", sha="c1", conclusion="failure"),
+            _run(10, event="push", branch="main", sha="c2", start_minutes=120),
+        ],
+        pr_runs=[_run(1, conclusion="failure")],
+        merged_prs=_merged("A"),
+        now=_T0 + timedelta(days=1),
+    )
+
+    # Act
+    text = comparison_markdown(report, peer_benchmarks(report))
+
+    # Assert
+    assert "| Red time on main | 2.0h (1.2%) |" in text
+    assert "| Slowest normal run | 10m (CI) |" in text
+    assert f"measured {MEASURED_ON.isoformat()}" in text
+    assert "The o/r column covers 7 days." in text
+
+
+def test_key_results_name_the_workflows_that_carried_the_red_time() -> None:
+    """One red scan turns the whole branch red on GitHub; the row must say which check."""
+    from integrations.github.tools.ci_analytics.render import key_results
+
+    day = 24 * 60
+    branch_runs = [
+        _run(1, workflow="CI", workflow_id=1, event="push", branch="main", sha="c1"),
+        _run(
+            2,
+            workflow="Security",
+            workflow_id=2,
+            event="push",
+            branch="main",
+            sha="c1",
+            conclusion="failure",
+        ),
+        _run(
+            3,
+            workflow="CI",
+            workflow_id=1,
+            event="push",
+            branch="main",
+            sha="c2",
+            conclusion="failure",
+            start_minutes=120,
+        ),
+        _run(
+            4,
+            workflow="Security",
+            workflow_id=2,
+            event="push",
+            branch="main",
+            sha="c2",
+            conclusion="failure",
+            start_minutes=120,
+        ),
+        _run(
+            5,
+            workflow="CI",
+            workflow_id=1,
+            event="push",
+            branch="main",
+            sha="c3",
+            start_minutes=day,
+        ),
+        _run(
+            6,
+            workflow="Security",
+            workflow_id=2,
+            event="push",
+            branch="main",
+            sha="c3",
+            start_minutes=day,
+        ),
+    ]
+    report = compute_report(
+        owner="o",
+        repo="r",
+        default_branch="main",
+        window_days=30,
+        branch_runs=branch_runs,
+        pr_runs=[],
+        merged_prs=(),
+        now=_T0 + timedelta(days=2),
+    )
+
+    label, value = key_results(report)[0]
+
+    assert label == "main branch red"
+    assert "1 breakage" in value
+    # Security was red the whole period, CI only part of it, heaviest first.
+    assert value.endswith("; Security 24.0h, CI 22.0h")
+
+
+def test_key_results_omit_the_attribution_when_one_workflow_explains_it() -> None:
+    from integrations.github.tools.ci_analytics.render import key_results
+
+    branch_runs = [
+        _run(1, event="push", branch="main", sha="c1", conclusion="failure"),
+        _run(2, event="push", branch="main", sha="c2", start_minutes=60),
+    ]
+    report = compute_report(
+        owner="o",
+        repo="r",
+        default_branch="main",
+        window_days=30,
+        branch_runs=branch_runs,
+        pr_runs=[],
+        merged_prs=(),
+        now=_T0 + timedelta(days=1),
+    )
+
+    _label, value = key_results(report)[0]
+
+    assert "1 breakage" in value
+    assert ";" not in value
+
+
 def test_tool_names_the_setup_command_when_no_token_is_available() -> None:
     with patch("integrations.github.tools.ci_analytics.tool.resolve_github_token", return_value=""):
         result = analyze_github_ci_reliability(owner="o", repo="r")
@@ -1129,15 +1582,14 @@ def test_tool_renders_report_from_collected_runs() -> None:
     assert result["reliability_failures"] == 1
     assert result["blocked_minutes"] == 40.0
     assert result["headline"] == (
-        "Unreliable CI cost 1 developer 40m of working time in the last 7 days, up to 40m a "
-        "week for the worst hit; 40m of wall-clock wait across 1 merged PR."
+        "Waiting on CI cost 1 developer 40m of working time in the last 7 days, "
+        "up to 40m a week for the worst hit."
     )
-    assert "Coverage notice: sample" in result["response_text"]
+    assert result["coverage_notices"] == ["Coverage notice: sample"]
 
 
-def test_tool_shows_progress_lines_around_the_painted_report() -> None:
-    import io
-
+def test_tool_prints_progress_lines_but_never_the_report() -> None:
+    """The shell console gets progress only; the report travels in the result."""
     from rich.console import Console
 
     from core.agent_harness.tools.tool_context import (
@@ -1172,10 +1624,51 @@ def test_tool_shows_progress_lines_around_the_painted_report() -> None:
     # A bracket in the repository name must print literally, never parse as markup.
     assert "Reading GitHub Actions history for o/r[1], last 7 days" in output
     assert "Read 2 runs in" in output
-    assert "CI/CD reliability for o/r[1], last 7 days" in output
-    assert result["rendered_in_shell"] is True
-    assert "executions" not in result
+    assert "CI/CD reliability" not in output
+    assert "Compared with" not in output
+    assert "rendered_in_shell" not in result
+    # Every figure travels with the result on every surface, so the model
+    # writes the report from it and never reruns the analysis for one field.
+    assert result["executions"] == 2
+    assert result["developers_affected"] == 0
+    assert result["mean_recovery_hours"] is None
+    assert result["comparison_figures"]["PR failure rate"] == "100.0%"
     assert result["key_results"]
+    assert [item["owner"] + "/" + item["repo"] for item in result["benchmarks"]] == [
+        "langchain-ai/langchain",
+        "anomalyco/opencode",
+    ]
+
+
+def test_tool_returns_figures_and_no_rendered_report() -> None:
+    """The skill template is the report; a tool-rendered copy printed it twice.
+
+    With the turn ending on ``ask_user_choice`` the harness falls back to a
+    tool's ``response_text`` as the closing reply, so a markdown report in the
+    result landed under the model's own table.
+    """
+    collected = CollectedRuns(
+        default_branch="main",
+        branch_runs=[_run(9, event="push", branch="main")],
+        pr_runs=[_run(1, branch="A", sha="s", conclusion="failure", start_minutes=0)],
+        merged_prs=(),
+        coverage_notices=[],
+    )
+
+    with (
+        patch("integrations.github.tools.ci_analytics.tool.resolve_github_token", return_value="t"),
+        patch(
+            "integrations.github.tools.ci_analytics.analysis.collect_runs", return_value=collected
+        ),
+    ):
+        result = analyze_github_ci_reliability(owner="o", repo="r", days=7)
+
+    assert result["success"] is True
+    assert "response_text" not in result
+    assert "comparison_text" not in result
+    assert not any(
+        isinstance(value, str) and value.lstrip().startswith("|") for value in result.values()
+    )
 
 
 class TestAnalyzeGithubCiReliabilityContract(BaseToolContract):
@@ -1193,10 +1686,6 @@ def test_a_pipe_in_a_workflow_name_does_not_shift_the_rendered_row() -> None:
     moving ``Deploy`` into the Runs column and dropping the failure count.
     """
     # Arrange
-    from rich.console import Console
-
-    from integrations.github.tools.ci_analytics.render import render_report
-
     report = compute_report(
         owner="o",
         repo="r",
@@ -1207,67 +1696,22 @@ def test_a_pipe_in_a_workflow_name_does_not_shift_the_rendered_row() -> None:
         merged_prs=_merged("A"),
         now=_T0 + timedelta(days=1),
     )
-    buf = io.StringIO()
-    console = Console(file=buf, force_terminal=False, width=100)
 
     # Act
-    render_report(console, report)
+    row = next(line for line in render_markdown(report).splitlines() if "Build \\| Deploy" in line)
 
-    # Assert: the name survives whole and its counts stay in their columns.
-    row = next(line for line in buf.getvalue().splitlines() if "Build | Deploy" in line)
-    assert row.split("│")[1].strip() == "1"
-
-
-def test_the_painted_report_follows_a_theme_change() -> None:
-    """The painter reads the theme when it paints, not when the module loads."""
-    # Arrange
-    import infrastructure.terminal.theme as ui_theme
-    from integrations.github.tools.ci_analytics.render import render_report
-
-    themes: list[Any] = []
-
-    class _Console:
-        is_terminal = True
-
-        def use_theme(self, theme: Any) -> contextlib.AbstractContextManager[None]:
-            themes.append(theme)
-            return contextlib.nullcontext()
-
-        def print(self, *_args: Any, **_kwargs: Any) -> None:
-            return None
-
-    report = compute_report(
-        owner="o",
-        repo="r",
-        default_branch="main",
-        window_days=30,
-        branch_runs=[_run(9, event="push", branch="main")],
-        pr_runs=[_run(1, conclusion="failure")],
-        merged_prs=_merged("A"),
-        now=_T0 + timedelta(days=1),
-    )
-
-    # Act: paint, switch theme, paint again.
-    original = ui_theme.get_active_theme().name
-    try:
-        ui_theme.set_active_theme("blue")
-        render_report(_Console(), report)
-        ui_theme.set_active_theme("green")
-        expected = ui_theme.MARKDOWN_THEME
-        render_report(_Console(), report)
-    finally:
-        ui_theme.set_active_theme(original)
-
-    # Assert: the second paint used the theme built for the new palette.
-    assert themes[1] is expected
-    assert themes[0] is not themes[1]
+    # Assert: the pipe is escaped, so the unescaped cell borders keep the count in Runs.
+    cells = re.split(r"(?<!\\)\|", row)
+    assert cells[1].strip() == "Build \\| Deploy"
+    assert cells[2].strip() == "1"
 
 
 def test_the_comparison_is_not_a_choice_the_model_can_forget() -> None:
-    """The model chooses brevity, never whether to compare.
+    """The model never chooses whether to compare, and there is no report shape to pick.
 
     A flag advertising "Default false" led the demo to call the tool with
     benchmarks off, so the comparison table Vincent asked for was missing.
+    ``compact`` only shaped the markdown the tool no longer renders.
     """
     # Arrange / Act
     from tools.registry import get_registered_tool
@@ -1278,37 +1722,7 @@ def test_the_comparison_is_not_a_choice_the_model_can_forget() -> None:
     assert registered is not None
     properties = registered.public_input_schema["properties"]
     assert "include_benchmarks" not in properties
-    assert "compact" in properties
-
-
-def test_the_comparison_starts_on_its_own_line() -> None:
-    """A markdown leading newline is dropped, gluing the heading to a bullet."""
-    # Arrange
-    from rich.console import Console
-
-    from integrations.github.tools.ci_analytics.render import render_comparison, render_report
-
-    report = compute_report(
-        owner="o",
-        repo="r",
-        default_branch="main",
-        window_days=30,
-        branch_runs=[_run(9, event="push", branch="main")],
-        pr_runs=[_run(1, conclusion="failure")],
-        merged_prs=_merged("A"),
-        now=_T0 + timedelta(days=1),
-    )
-    buf = io.StringIO()
-    console = Console(file=buf, force_terminal=False, width=100)
-
-    # Act
-    render_report(console, report, compact=True)
-    render_comparison(console, report, [report])
-
-    # Assert: a blank line separates the report from the comparison heading.
-    lines = buf.getvalue().splitlines()
-    heading = next(i for i, line in enumerate(lines) if "Compared with" in line)
-    assert not lines[heading - 1].strip()
+    assert "compact" not in properties
 
 
 def test_the_description_tells_the_model_the_comparison_cannot_be_skipped() -> None:
@@ -1322,3 +1736,98 @@ def test_the_description_tells_the_model_the_comparison_cannot_be_skipped() -> N
     assert registered is not None
     assert "cannot be turned off" in registered.description
     assert "never offer to skip" in registered.description
+    assert "same-day snapshot answers" not in registered.description
+    assert "shipped with the product" in registered.description
+
+
+def test_headline_names_the_cost_when_no_developer_can_be_attributed() -> None:
+    """blocked_working_minutes can be set without per-author waits."""
+    # Arrange
+    from integrations.github.tools.ci_analytics.models import CiAnalyticsReport
+    from integrations.github.tools.ci_analytics.render import headline
+
+    report = CiAnalyticsReport(
+        owner="o",
+        repo="r",
+        default_branch="main",
+        window_days=30,
+        generated_at=_T0,
+        executions=1,
+        pr_executions=1,
+        pr_failures=0,
+        classified=(),
+        merged_pr_branches=1,
+        blocked_minutes=60.0,
+        blocked_minutes_all=60.0,
+        branch_runs=0,
+        branch_failures=0,
+        red_hours=0.0,
+        outages=(),
+        mean_recovery_hours=None,
+        blocked_working_minutes=90.0,
+    )
+
+    # Act / Assert
+    assert headline(report) == "Waiting on CI cost 1.5h of developer time in the last 30 days."
+
+
+def test_headline_names_the_worst_hit_not_the_average() -> None:
+    """An average hides the person who waited most; that is the number guests remember."""
+    from integrations.github.tools.ci_analytics.models import (
+        CiAnalyticsReport,
+        PullRequestDelay,
+    )
+    from integrations.github.tools.ci_analytics.render import headline
+
+    delay = PullRequestDelay(
+        head_repo="o/r",
+        branch="feat/x",
+        author="heavy",
+        pr_number=1,
+        commits=1,
+        url="https://example.test/1",
+        expected_green=_T0,
+        actual_green=_T0,
+        delay_minutes=468.0,
+        working_minutes=468.0,
+        critical_path=True,
+    )
+    light = PullRequestDelay(
+        head_repo="o/r",
+        branch="feat/y",
+        author="light",
+        pr_number=2,
+        commits=1,
+        url="https://example.test/2",
+        expected_green=_T0,
+        actual_green=_T0,
+        delay_minutes=60.0,
+        working_minutes=60.0,
+        critical_path=True,
+    )
+    report = CiAnalyticsReport(
+        owner="o",
+        repo="r",
+        default_branch="main",
+        window_days=30,
+        generated_at=_T0,
+        executions=1,
+        pr_executions=1,
+        pr_failures=0,
+        classified=(),
+        merged_pr_branches=2,
+        blocked_minutes=528.0,
+        blocked_minutes_all=528.0,
+        branch_runs=0,
+        branch_failures=0,
+        red_hours=0.0,
+        outages=(),
+        mean_recovery_hours=None,
+        pr_delays=(delay, light),
+        blocked_working_minutes=528.0,
+    )
+
+    assert headline(report) == (
+        "Waiting on CI cost 2 developers 8.8h of working time in the last 30 days, "
+        "up to 1.8h a week for the worst hit."
+    )

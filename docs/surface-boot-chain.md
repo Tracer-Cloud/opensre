@@ -5,7 +5,7 @@ shell, the gateway daemon (chat channels), the gateway's web app, scheduled
 `cron` commands, and even a plain Python script embedding the agent. Each of
 them starts up by running the same shared setup —
 `configure_process(<profile>)` in
-[`bootstrap/process.py`](../bootstrap/process.py) — rather than assembling
+[`bootstrap/process.py`](https://github.com/Tracer-Cloud/opensre/blob/main/bootstrap/process.py) — rather than assembling
 its own startup sequence. A surface's own code is responsible only for its
 channel and UX (rendering to a terminal, replying in chat, serving an HTTP
 route, parsing CLI arguments) plus any prerequisites specific to that
@@ -49,10 +49,10 @@ that's already started is a harmless no-op.
 
 ## Where each surface calls it
 
-- **CLI** — [`surfaces/cli/startup.py`](../surfaces/cli/startup.py) runs the
+- **CLI** — [`surfaces/cli/startup.py`](https://github.com/Tracer-Cloud/opensre/blob/main/surfaces/cli/startup.py) runs the
   CLI profile first, then handles CLI-only setup: its own error reporting
   (tolerant of a missing dependency during `opensre update`), terminal output
-  styling, and keyboard-interrupt handling. [`main.py`](../main.py), the
+  styling, and keyboard-interrupt handling. [`main.py`](https://github.com/Tracer-Cloud/opensre/blob/main/main.py), the
   module-level entry point (`python main.py`), delegates straight into this
   same CLI path — it does not use the embedded profile. (The embedded
   profile only appears in `main.py`'s docstring, as an illustrative example
@@ -62,26 +62,26 @@ that's already started is a harmless no-op.
 - **Interactive shell's saved loops** — when a saved prompt loop needs its
   own background scheduler, it starts up with the scheduled-command profile
   in
-  [`surfaces/interactive_shell/runtime/loop_scheduler.py`](../surfaces/interactive_shell/runtime/loop_scheduler.py)
+  [`surfaces/interactive_shell/runtime/loop_scheduler.py`](https://github.com/Tracer-Cloud/opensre/blob/main/surfaces/interactive_shell/runtime/loop_scheduler.py)
   and
-  [`surfaces/interactive_shell/command_registry/loops_cmds.py`](../surfaces/interactive_shell/command_registry/loops_cmds.py).
-- **Gateway daemon** — [`gateway/core/lifecycle/controller.py`](../gateway/core/lifecycle/controller.py)
+  [`surfaces/interactive_shell/command_registry/loops_cmds.py`](https://github.com/Tracer-Cloud/opensre/blob/main/surfaces/interactive_shell/command_registry/loops_cmds.py).
+- **Gateway daemon** — [`gateway/core/lifecycle/controller.py`](https://github.com/Tracer-Cloud/opensre/blob/main/gateway/core/lifecycle/controller.py)
   sets up its own logging, readiness state, and credentials first, then runs
   the gateway profile before connecting chat channels and the scheduler.
-- **Gateway web app** — [`gateway/web/webapp.py`](../gateway/web/webapp.py)
+- **Gateway web app** — [`gateway/web/webapp.py`](https://github.com/Tracer-Cloud/opensre/blob/main/gateway/web/webapp.py)
   runs the web profile as soon as the module loads, so both the in-process
   gateway and a standalone web server have everything they need before
   handling a request.
 - **Scheduled/cron CLI commands** — one-off commands like `cron run` in
-  [`surfaces/cli/commands/cron.py`](../surfaces/cli/commands/cron.py) and
-  [`sentry_digest.py`](../surfaces/cli/commands/sentry_digest.py) run the
+  [`surfaces/cli/commands/cron.py`](https://github.com/Tracer-Cloud/opensre/blob/main/surfaces/cli/commands/cron.py) and
+  [`sentry_digest.py`](https://github.com/Tracer-Cloud/opensre/blob/main/surfaces/cli/commands/sentry_digest.py) run the
   scheduled-command profile.
-  [`posthog_report.py`](../surfaces/cli/commands/posthog_report.py) checks
+  [`posthog_report.py`](https://github.com/Tracer-Cloud/opensre/blob/main/surfaces/cli/commands/posthog_report.py) checks
   that the PostHog integration is configured first, then runs the same
   profile. The long-running `cron start` daemon uses the scheduler-worker
   profile instead, since it needs its own error reporting and only needs to
   register task runners once, not on every run.
-- **Embedded Python usage** — [`bootstrap/embedded.py`](../bootstrap/embedded.py)
+- **Embedded Python usage** — [`bootstrap/embedded.py`](https://github.com/Tracer-Cloud/opensre/blob/main/bootstrap/embedded.py)
   runs the embedded profile. This is also the pattern to follow if you're
   driving the agent from your own Python script: run
   `configure_process(EMBEDDED_PROFILE)` before your first request.

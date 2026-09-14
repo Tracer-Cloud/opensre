@@ -181,3 +181,31 @@ def test_other_platforms_are_reported_unsupported_without_touching_the_os(tmp_pa
     assert state.installed is False
     assert runner.commands == []
     assert "not supported on Windows" in state.summary
+
+
+def test_installed_but_crashed_service_is_not_healthy(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(svc, "OPENSRE_HOME_DIR", tmp_path / ".opensre")
+    installed = svc.install_background_service(
+        home=tmp_path, system="Darwin", run=_Runner(), command=["x"]
+    )
+    assert installed.installed
+
+    def crashed(command: Sequence[str]) -> subprocess.CompletedProcess[str]:
+        return subprocess.CompletedProcess(
+            list(command), 0, "state = waiting\nlast exit code = 1", ""
+        )
+
+    state = svc.check_background_service(home=tmp_path, system="Darwin", run=crashed)
+    assert state.installed and not state.running
+
+
+def test_expired_setup_deadline_prevents_service_activation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(svc, "OPENSRE_HOME_DIR", tmp_path / ".opensre")
+    runner = _Runner()
+    with pytest.raises(RuntimeError, match="deadline expired"):
+        svc.ensure_background_service(home=tmp_path, system="Darwin", run=runner, deadline=0)
+    assert not runner.commands

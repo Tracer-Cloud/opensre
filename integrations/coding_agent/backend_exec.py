@@ -10,6 +10,7 @@ capture what changed via git, and classify the outcome into a neutral
 from __future__ import annotations
 
 import os
+from collections.abc import Callable
 from pathlib import Path
 
 from integrations.coding_agent.models import CodingResult
@@ -55,6 +56,7 @@ def run_agentic_cli(
     timeout_sec: float,
     agent_name: str,
     stdin: str | None = None,
+    on_stdout_line: Callable[[str], None] | None = None,
 ) -> CodingResult:
     """Run a prepared agent CLI invocation in *workspace* and classify the result."""
     outcome = poll_agent_process(
@@ -63,6 +65,7 @@ def run_agentic_cli(
         env=env,
         timeout_sec=timeout_sec,
         stdin=stdin,
+        on_stdout_line=on_stdout_line,
     )
     if outcome.spawn_error:
         return failure(outcome.spawn_error)

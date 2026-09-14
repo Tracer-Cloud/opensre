@@ -27,7 +27,7 @@ from infrastructure.observability.trace.redaction import redact_sensitive
 from infrastructure.safety.terminal_output import strip_terminal_controls
 from infrastructure.terminal.theme import (
     BOLD_SKILL,
-    DIM,
+    ERROR,
     TEXT,
 )
 from infrastructure.text import is_data_blob
@@ -36,16 +36,18 @@ from surfaces.interactive_shell.runtime.core.state import SpinnerState
 from surfaces.interactive_shell.session.terminal_session import ActionLogEntry
 from surfaces.interactive_shell.ui.action_log import flush_action_log
 from surfaces.interactive_shell.ui.streaming import render_note_block
+from surfaces.interactive_shell.ui.transcript import (
+    TranscriptRole,
+    transcript_continuation,
+    transcript_line,
+    transcript_prefix,
+)
 from surfaces.shared.terminal.output.console_state import get_turn_spinner
 from tools.interactive_shell.action_names import ActionToolName
 from tools.interactive_shell.shell.display import format_shell_command_for_display
 
 # Tool labels whose payload is a runnable command.
 _COMMAND_TOOL_LABELS: frozenset[str] = frozenset({"Execute", "GitHub CLI", "opensre"})
-
-# Leads every tool-call line so a call reads apart from the ``Ω`` reply and the
-# ``[n] ❯`` user row — the call → result → reply hierarchy Claude Code / Droid use.
-_TOOL_CALL_MARKER = "⏺"
 
 # Tools whose preview is just ``(label, single-arg)``. The display content is the
 # stripped string value of that single argument. Anything that needs to combine
@@ -109,6 +111,12 @@ _COMMAND_STREAMING_TOOLS: frozenset[str] = frozenset(
 def _tool_event_id(data: dict[str, Any]) -> str:
     """Stable id for one tool call, or empty when the event omitted it."""
     return str(data.get("id") or data.get("tool_call_id") or "").strip()
+
+
+def _skill_view_reference(data: dict[str, Any]) -> str:
+    """The ``reference`` arg of a ``skill_view`` event, or empty for a skill entry."""
+    args = data.get("input")
+    return str(args.get("reference", "")).strip() if isinstance(args, dict) else ""
 
 
 def _is_internal_choice_command(name: str, data: dict[str, Any]) -> bool:
@@ -345,6 +353,13 @@ def tool_call_display(tool_name: str, args: dict[str, Any]) -> tuple[str, str]:
         raw_args = args.get("args")
         parsed_args = [str(item).strip() for item in raw_args] if isinstance(raw_args, list) else []
         label, content = "command", " ".join([command, *parsed_args]).strip()
+    elif tool_name == ActionToolName.SKILL_VIEW:
+        skill_name = str(args.get("name", "")).strip()
+        reference = str(args.get("reference", "")).strip()
+        if reference:
+            label, content = "Skill reference", f"references/{reference}.md · {skill_name}"
+        else:
+            label, content = "Skill", skill_name
     else:
         simple = _SIMPLE_TOOL_LABELS.get(tool_name)
         if simple is not None:
@@ -368,8 +383,8 @@ class ActionRenderObserver:
 
     Self-recording tools (``slash_invoke``, ``shell_run``, etc.) append their own
     history row; chat turns are recorded later by turn accounting when the
-    assistant runs. ``skill_view`` gets a dedicated live event: the skill name
-    on ``tool_start`` and an activation/failure child line on ``tool_end``.
+    assistant runs. ``skill_view`` gets a dedicated live event: a labeled skill
+    status line painted on ``tool_end``.
     """
 
     def __init__(self, *, session: Session, console: Console, message: str) -> None:
@@ -378,7 +393,6 @@ class ActionRenderObserver:
         self.message = message
         self.planned_count = 0
         self._pending_skill_calls: dict[str, str] = {}
-        self._last_skill_header: str = ""
         self._pending_result_tools: set[str] = set()
 
     def __call__(self, kind: str, data: dict[str, Any]) -> None:
@@ -403,8 +417,10 @@ class ActionRenderObserver:
                 )
             return
         if kind == "tool_end":
-            name = str(data.get("name", "")).strip()
-            if name == ActionToolName.SKILL_VIEW:
+            # Discriminate by how the start registered the call: skill entries
+            # sit in ``_pending_skill_calls`` (activation line); reference
+            # loads registered nothing and stay silent.
+            if _tool_event_id(data) in self._pending_skill_calls:
                 self._render_skill_end(data)
             elif _tool_event_id(data) in self._pending_result_tools:
                 self._render_tool_result(data)
@@ -427,7 +443,12 @@ class ActionRenderObserver:
             return
         self._set_spinner_phase(SpinnerState.INVOKING_TOOLS_PHASE)
         if name == ActionToolName.SKILL_VIEW:
-            self._render_skill_start(data)
+            # ``reference=`` loads one bundled file without re-entering the
+            # skill. It is prompt plumbing, not a user-visible action: no
+            # transcript row (the spinner status row still names it while it
+            # runs). Only a real entry earns the "Skill activated" line.
+            if not _skill_view_reference(data):
+                self._render_skill_start(data)
         elif name == ActionToolName.UPDATE_PLAN:
             pass  # no transcript preview; the plan shows in the pinned bottom overlay
         elif _is_internal_choice_command(name, data):
@@ -469,7 +490,7 @@ class ActionRenderObserver:
         Stacked by tool-call id: the ReAct loop emits every ``tool_start``
         before executing the batch, so a single slot would show the last
         tool and clear on the first ``tool_end``. Scrollback keeps the
-        settled ``⏺`` copy. Only relabels an already-running spinner
+        settled transcript copy. Only relabels an already-running spinner
         (see ``_set_spinner_phase``).
         """
         spinner = get_turn_spinner()
@@ -509,26 +530,17 @@ class ActionRenderObserver:
         if is_plan_diagnosis_prose(content):
             return
         self.console.print()
-        # Intermediate narration is a working note: recessed body + dim ``·`` in
-        # the same gutter column as ``Ω``, so it reads apart from the user row
-        # and the bright final reply without floating as unmarked prose.
+        # Intermediate narration is a labeled working note, visually secondary
+        # to the final reply without floating as unmarked prose.
         # ``render_note_block`` sanitizes model text at ``_build_markdown_block``.
         render_note_block(self.console, content)
 
     def _render_skill_start(self, data: dict[str, Any]) -> None:
-        """Print ``Skill <name>`` when the agent starts loading a skill."""
+        """Remember the skill slug for its ``tool_end``; nothing prints yet."""
         args = data.get("input")
         raw_name = str(args.get("name", "")).strip() if isinstance(args, dict) else ""
         slug = strip_terminal_controls(raw_name.replace("_", "-").lower()) or "skill"
-        self._pending_skill_calls[str(data.get("id") or "")] = slug
-        self._last_skill_header = slug
-        # ``Text`` renders the (model-supplied) skill name literally — never
-        # through Rich markup.
-        line = Text()
-        line.append("Skill ", style=BOLD_SKILL)
-        line.append(slug, style=str(TEXT))
-        self.console.print()
-        self.console.print(line)
+        self._pending_skill_calls[_tool_event_id(data)] = slug
 
     def _render_tool_invocation(self, name: str, data: dict[str, Any]) -> None:
         """Buffer the running tool for the grouped action log — no inline args.
@@ -541,13 +553,17 @@ class ActionRenderObserver:
         label, content = tool_call_display(name, args if isinstance(args, dict) else {})
         if label in _COMMAND_TOOL_LABELS:
             concise = _collapsed_line(content) if content else ""
-            detail = f"{_TOOL_CALL_MARKER} {label} · {content}" if content else f"{label}"
+            detail = transcript_line(
+                TranscriptRole.TOOL,
+                f"{label} · {content}" if content else label,
+            )
         else:
             concise = ""
-            detail = f"{_TOOL_CALL_MARKER} {label}"
+            detail = transcript_line(TranscriptRole.TOOL, label)
             if content:
-                # Unfold the dotted argument strip into one indented line each.
-                detail += "\n" + "\n".join(f"    {part}" for part in content.split(" · "))
+                # Unfold the dotted argument strip beneath the labeled body column.
+                indent = transcript_continuation(TranscriptRole.TOOL)
+                detail += "\n" + "\n".join(f"{indent}{part}" for part in content.split(" · "))
         self.session.terminal.push_action_log(
             ActionLogEntry(call_id=_tool_event_id(data), kind=label, concise=concise, detail=detail)
         )
@@ -568,27 +584,38 @@ class ActionRenderObserver:
         if not preview:
             return
         rows = preview.splitlines() or [preview]
-        result = "\n".join([f"  ↳ {rows[0]}", *(f"    {row}" for row in rows[1:])])
+        indent = transcript_continuation(TranscriptRole.TOOL)
+        result = "\n".join([f"{indent}↳ {rows[0]}", *(f"{indent}  {row}" for row in rows[1:])])
         self.session.terminal.append_action_result(_tool_event_id(data), result)
         self.session.terminal.inline_tool_results = True
 
     def _render_skill_end(self, data: dict[str, Any]) -> None:
-        """Print the ``↳`` child line under the skill's ``tool_start`` parent.
+        """Print one labeled status line once the skill load finishes.
 
-        The next block (another call, a note, or the ``Ω`` reply) opens with
-        its own blank line — do not add one here or the gap doubles.
+        Opens with its own blank line like every other block; the next block
+        (another call, a note, or the final reply) adds its own — do not add a
+        trailing one here or the gap doubles.
         """
-        slug = self._pending_skill_calls.pop(str(data.get("id") or ""), None)
+        slug = self._pending_skill_calls.pop(_tool_event_id(data), None)
         if slug is None:
             return
         output = data.get("output")
+        if isinstance(output, dict) and output.get("already_active"):
+            # The activation line is already in the transcript from the first
+            # entry; a redundant re-entry must not repeat it.
+            return
         activated = isinstance(output, dict) and bool(output.get("ok"))
-        # Several skills loading in one batch print their headers first and
-        # their results after; name the skill whenever the line would land
-        # under another skill's header.
-        subject = "Skill" if slug == self._last_skill_header else slug
-        label = f"{subject} activated" if activated else f"{subject} failed to load"
-        self.console.print(Text(f"  ↳ {label}", style=DIM))
+        # ``Text`` renders the (model-supplied) skill name literally — never
+        # through Rich markup.
+        line = Text()
+        if activated:
+            line.append("Skill activated ", style=BOLD_SKILL)
+        else:
+            line.append(transcript_prefix(TranscriptRole.ERROR), style=str(ERROR))
+            line.append("Could not load skill · ", style=str(TEXT))
+        line.append(slug, style=str(TEXT))
+        self.console.print()
+        self.console.print(line)
 
 
 __all__ = [

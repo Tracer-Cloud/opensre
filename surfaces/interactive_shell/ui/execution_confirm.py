@@ -52,6 +52,9 @@ _APPROVE_PROMPT = "Approve this action?"
 # Only shell commands get a per-command risk grade; matches ``tool_type`` set by
 # ``tools.interactive_shell.shell.policy``.
 _SHELL_TOOL_TYPE = "shell"
+# Tool types whose action the assistant's numbered plan already shows; the
+# approval card repeats the summary for every other tool type.
+_PLAN_LISTED_TOOL_TYPES = frozenset({_SHELL_TOOL_TYPE, "slash", "cli_command", "opensre_cli"})
 
 
 _ALWAYS_ALLOW_LABEL = {
@@ -223,7 +226,7 @@ def execution_allowed(
         summary=summary,
         risk=risk,
         why=why,
-        action_already_listed=action_already_listed,
+        action_already_listed=action_already_listed and result.tool_type in _PLAN_LISTED_TOOL_TYPES,
     )
     terminal = getattr(session, "terminal", None)
     if terminal is not None:

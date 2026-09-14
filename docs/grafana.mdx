@@ -375,39 +375,39 @@ emit or relabel a `service_name` label.
    relabel config alongside Promtail's defaults:
 
    ```bash
-cat > /tmp/promtail-values.yaml << 'EOF'
-promtail:
-  config:
-    snippets:
-      common:
-        - action: replace
-          source_labels: [__meta_kubernetes_pod_node_name]
-          target_label: node_name
-        - action: replace
-          source_labels: [__meta_kubernetes_namespace]
-          target_label: namespace
-        - action: replace
-          replacement: $1
-          separator: /
-          source_labels: [namespace, app]
-          target_label: job
-        - action: replace
-          source_labels: [__meta_kubernetes_pod_name]
-          target_label: pod
-        - action: replace
-          source_labels: [__meta_kubernetes_pod_container_name]
-          target_label: container
-        - action: replace
-          source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
-          target_label: service_name
-        - action: replace
-          replacement: /var/log/pods/*$1/*.log
-          separator: /
-          source_labels: [__meta_kubernetes_pod_uid, __meta_kubernetes_pod_container_name]
-          target_label: __path__
-EOF
-helm upgrade loki grafana/loki-stack -n monitoring -f /tmp/promtail-values.yaml \
-  --set promtail.enabled=true --reuse-values
+   cat > /tmp/promtail-values.yaml << 'EOF'
+   promtail:
+     config:
+       snippets:
+         common:
+           - action: replace
+             source_labels: [__meta_kubernetes_pod_node_name]
+             target_label: node_name
+           - action: replace
+             source_labels: [__meta_kubernetes_namespace]
+             target_label: namespace
+           - action: replace
+             replacement: $1
+             separator: /
+             source_labels: [namespace, app]
+             target_label: job
+           - action: replace
+             source_labels: [__meta_kubernetes_pod_name]
+             target_label: pod
+           - action: replace
+             source_labels: [__meta_kubernetes_pod_container_name]
+             target_label: container
+           - action: replace
+             source_labels: [__meta_kubernetes_pod_label_app_kubernetes_io_name]
+             target_label: service_name
+           - action: replace
+             replacement: /var/log/pods/*$1/*.log
+             separator: /
+             source_labels: [__meta_kubernetes_pod_uid, __meta_kubernetes_pod_container_name]
+             target_label: __path__
+   EOF
+   helm upgrade loki grafana/loki-stack -n monitoring -f /tmp/promtail-values.yaml \
+     --set promtail.enabled=true --reuse-values
    ```
 
    <Warning>
@@ -425,17 +425,17 @@ helm upgrade loki grafana/loki-stack -n monitoring -f /tmp/promtail-values.yaml 
    states tracing is disabled unless `--otel-service-name` is set):
 
    ```bash
-cat > /tmp/podinfo-tracing-values.yaml << 'EOF'
-serviceMonitor:
-  enabled: true
-extraArgs:
-  - "--otel-service-name=podinfo"
-extraEnvs:
-  - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
-    value: "http://tempo.monitoring:4317"
-EOF
-helm upgrade podinfo podinfo/podinfo -n podinfo -f /tmp/podinfo-tracing-values.yaml
-kubectl -n podinfo wait --for=condition=Ready pods --all --timeout=60s
+   cat > /tmp/podinfo-tracing-values.yaml << 'EOF'
+   serviceMonitor:
+     enabled: true
+   extraArgs:
+     - "--otel-service-name=podinfo"
+   extraEnvs:
+     - name: OTEL_EXPORTER_OTLP_TRACES_ENDPOINT
+       value: "http://tempo.monitoring:4317"
+   EOF
+   helm upgrade podinfo podinfo/podinfo -n podinfo -f /tmp/podinfo-tracing-values.yaml
+   kubectl -n podinfo wait --for=condition=Ready pods --all --timeout=60s
    ```
 
    The upgrade replaces the podinfo pod, so re-run the port-forward from

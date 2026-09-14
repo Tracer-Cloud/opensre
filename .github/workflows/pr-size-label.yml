@@ -37,9 +37,9 @@ jobs:
             // #FBCA04, size:large #D93F0B, size:extra-large #B60205) — recreate
             // manually with `gh label create` if one is ever deleted.
             const SIZES = [
-              { name: "size:small", max: 99 },
-              { name: "size:medium", max: 499 },
-              { name: "size:large", max: 1999 },
+              { name: "size:small", max: 199 },
+              { name: "size:medium", max: 999 },
+              { name: "size:large", max: 2999 },
               { name: "size:extra-large", max: Infinity },
             ];
 

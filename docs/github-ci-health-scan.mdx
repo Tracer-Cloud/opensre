@@ -1,0 +1,75 @@
+---
+title: "Scan CI health across repositories"
+description: "Find every open pull request and branch with failing CI across all your GitHub organizations and repositories in one call."
+---
+
+## Overview
+
+Ask OpenSRE "how many PRs and branches have failing CI across my organizations?" and it scans every repository your token can see, in parallel, and answers with the exact list: which PRs, which branches, which checks.
+
+The scan is read-only. It never re-runs, retries, or fixes anything; hand a result to [Fix GitHub CI](/github-ci-fix) for that.
+
+## Prerequisites
+
+- GitHub connected via the [GitHub integration](/github), or `GITHUB_TOKEN` / `GH_TOKEN` in the environment
+- Token scopes: `repo` (private repositories and their checks) and `read:org` (to list organizations)
+
+A token without `read:org` still scans your own account and any owner you name explicitly.
+
+## What it scans
+
+| Scope | Default | Option |
+| --- | --- | --- |
+| Owners | Your account plus every organization you belong to | `owners: ["Tracer-Cloud", "davincios"]` |
+| Repositories | Not archived, pushed to in the last 365 days | `since_days: 0` scans everything; `visibility: private` narrows |
+| Heads per repository | Default branch head plus the 100 most recently updated open PRs | `include_all_branches: true` adds every branch head |
+
+A check counts as failing when its conclusion is `FAILURE`, `TIMED_OUT`, `ACTION_REQUIRED`, or `STARTUP_FAILURE`, or a commit status (Vercel, Aikido, and similar) is `FAILURE` or `ERROR`. Cancelled checks are listed separately and not counted; a cancelled run is usually superseded, not broken.
+
+Stale branches are the reason `include_all_branches` is off by default. On a real organization almost every failing branch was either a years-old ref or a duplicate of a failing PR; the PR list is the signal.
+
+## Example turn
+
+```text
+you> how many PRs and branches currently have failing CI across all my orgs?
+
+opensre> Scanned 152 repositories under davincios, FlymbleTeam, netrunnerhq,
+Tracer-Cloud in 7.0s. 8 of 201 open PRs are failing CI and 2 default
+branches are red:
+
+PRs
+- Tracer-Cloud/opensre #6148 perf/windows-onedir-lifecycle-5935 (fork, draft) — windows test
+- Tracer-Cloud/tracer-client #583 dependabot/cargo/main/jsonwebtoken-10.1.0 — Build and Lint, Build and Test, ...
+- ...
+
+Default branches
+- Tracer-Cloud/nextflow-test-pipelines main — build-and-push, build-and-push-minimal
+- Tracer-Cloud/tracer-agent-archive main — Analyze (python), test-kubernetes, ...
+```
+
+## Result fields
+
+| Field | Meaning |
+| --- | --- |
+| `failing_prs` | Open PRs whose head commit has a failing check: repo, number, branch, sha, fork/draft flags, check names and links |
+| `failing_default_branches` | Repositories whose default branch head is red |
+| `failing_branches` | Other branch heads with failures; only filled with `include_all_branches` |
+| `counts` | Totals of the three lists |
+| `repos_in_scope`, `repos_scanned` | Attempted versus successfully read; the difference is in `errors` |
+| `errors` | Repositories that could not be read, with the reason |
+| `coverage_notices` | Every cap that applied: skipped stale repositories, owners that could not be listed, repositories with more than 100 open PRs, heads with more than 1000 checks |
+| `elapsed_seconds` | Wall-clock time of the scan |
+| `rate_limit_cost`, `rate_limit_remaining` | GraphQL points spent and left this hour |
+
+## Speed and rate limits
+
+Repositories are read ten per GraphQL request, eight requests in flight at once. 150 repositories with 200 open PRs finish in about 7 seconds; with every branch head included, about 10 seconds. `concurrency` (1 to 16) tunes the fan-out.
+
+A full scan spends a few hundred of GitHub's 5000 hourly GraphQL points. When the budget is gone GitHub answers every request with a rate-limit error and the tool reports that once instead of listing 150 unreadable repositories. Wait for the hour to reset or pass `owners` to narrow the scan.
+
+## Gotchas
+
+- A PR from a fork shows as a failing PR but never as a failing branch; the branch lives in the fork.
+- A Vercel or Aikido "failure" is often a blocked preview deploy or a security gate rather than a broken build. The check name tells you which.
+- Only the 100 most recently updated open PRs per repository are scanned. A repository past that cap gets a coverage notice.
+- A misspelled or inaccessible owner in `owners` is reported in `coverage_notices`; the other owners are still scanned.

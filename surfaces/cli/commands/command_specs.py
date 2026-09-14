@@ -13,6 +13,8 @@ from dataclasses import dataclass
 
 import click
 
+from config.constants.ci_repair import CI_REPAIR_WORKER_COMMAND
+
 
 @dataclass(frozen=True, slots=True)
 class CommandSpec:
@@ -27,6 +29,12 @@ class CommandSpec:
 # Help strings are the first line of each command's docstring. A test loads
 # the real Click object and fails if these drift.
 COMMAND_SPECS: tuple[CommandSpec, ...] = (
+    CommandSpec(
+        CI_REPAIR_WORKER_COMMAND,
+        "",
+        "surfaces.cli.commands.ci_repair_worker:ci_repair_worker_command",
+        hidden=True,
+    ),
     CommandSpec(
         "account",
         "Sign in to OpenSRE and inspect the local account.",

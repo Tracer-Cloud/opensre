@@ -107,6 +107,7 @@ from infrastructure.harness_providers.subprocess_presenter import (
 )
 from infrastructure.harness_providers.tool_registry import (
     ToolSources,
+    resolve_skill_tools,
     resolve_surface_tool_map,
     resolve_surface_tools,
 )
@@ -221,6 +222,7 @@ __all__ = [
     "resolve_subprocess_presenter",
     "resolve_surface_tool_map",
     "resolve_surface_tools",
+    "resolve_skill_tools",
     "setupable_integration_services",
     "strip_message_context_prefix",
 ]

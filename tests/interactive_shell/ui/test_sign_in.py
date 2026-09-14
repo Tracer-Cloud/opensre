@@ -30,7 +30,7 @@ def test_screen_shows_welcome_box_and_sign_in_prompt() -> None:
     assert WELCOME_TITLE in out
     assert WELCOME_DESCRIPTION.split(" that ")[0] in out  # description body reached the screen
     assert SIGN_IN_PROMPT in out
-    assert "Skills" in out and "Integrations" in out
+    assert "Skills" in out and "CI/CD fixes" in out
 
 
 def test_welcome_title_renders_in_the_accent_colour() -> None:

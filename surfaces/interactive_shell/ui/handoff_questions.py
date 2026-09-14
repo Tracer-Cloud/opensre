@@ -20,53 +20,27 @@ def _display_safe(text: str) -> str:
     return "\n".join(strip_terminal_controls(line) for line in text.splitlines())
 
 
-def render_choice_selection(
-    console: Console,
-    title: str,
-    answer: str,
-    *,
-    options: tuple[str, ...] = (),
-) -> None:
-    """Persist the pick after the menu closes, as an answer line rather than a repeated question.
+def render_choice_selection(console: Console, title: str, answer: str) -> None:
+    """Persist a single pick after its menu closes, as a one-question Ask User card.
 
     The menu itself is erased, so this is the transcript's only record of the
-    choice. It must read as "answered", not as the question asked again: no
-    header, the question dim on one line with a single answer after it, and a
-    multi-select listed underneath. Must not use the plan-step ``✓`` glyph.
-    Leading blank separates it from Plan complete / reply text above.
-    ``options`` are the rows that were offered; they follow on one dim line so
-    a reader of the transcript sees what the choice was made against.
+    choice. It uses the same card as the batched wizard (header, numbered bold
+    question, answer beneath) so every hand-off answer reads alike. Must not use
+    the plan-step ``✓`` glyph. The leading blank replaces the section gap the
+    erased menu took with it.
     """
     console.print()
-    question = _display_safe(title.strip())
-    answers = [line for line in _display_safe(answer.strip()).splitlines() if line.strip()]
-    line = Text()
-    line.append("  ↳ ", style=str(ui_theme.DIM))
-    line.append(question, style=str(ui_theme.DIM))
-    if len(answers) == 1:
-        line.append("  ", style=str(ui_theme.DIM))
-        line.append(answers[0], style=str(ui_theme.BRAND))
-        console.print(line)
-    else:
-        console.print(line)
-        for item in answers:
-            aline = Text()
-            aline.append("      ", style=str(ui_theme.DIM))
-            aline.append(item, style=str(ui_theme.BRAND))
-            console.print(aline)
-    offered = [_display_safe(item.strip()) for item in options if item.strip()]
-    if len(offered) > 1:
-        console.print(Text("    offered: " + " · ".join(offered), style=str(ui_theme.DIM)))
+    render_ask_user_qa(console, [(title.strip(), answer.strip())])
 
 
 def render_ask_user_qa(console: Console, pairs: list[tuple[str, str]]) -> None:
     """Print Ask User Q→A: accent header, bold numbered questions, brand answers.
 
-    Each pair is a two-line block — a bold question, then its answer in the brand
-    colour indented beneath it — with a blank row after the header and between
-    items so the filled-in recap is scannable and the answer reads apart from the
-    question. No extra blank above or below the card (the stream / prompt
-    already own that margin).
+    Each pair is a block — a bold question, then its answer in the brand colour
+    indented beneath it, one row per selected option for a multi-select — with a
+    blank row after the header and between items so the filled-in recap is
+    scannable and the answer reads apart from the question. No extra blank above
+    or below the card (the stream / prompt already own that margin).
     """
     console.print(Text("Ask User", style=f"bold {ui_theme.HIGHLIGHT}"))
     console.print()
@@ -77,10 +51,13 @@ def render_ask_user_qa(console: Console, pairs: list[tuple[str, str]]) -> None:
         qline.append(f"  {index + 1}.  ", style=str(ui_theme.DIM))
         qline.append(_display_safe(question), style=f"bold {ui_theme.TEXT}")
         console.print(qline)
-        aline = Text()
-        aline.append("      ", style=str(ui_theme.DIM))
-        aline.append(_display_safe(answer), style=str(ui_theme.BRAND))
-        console.print(aline)
+        for item in _display_safe(answer).splitlines():
+            if not item.strip():
+                continue
+            aline = Text()
+            aline.append("      ", style=str(ui_theme.DIM))
+            aline.append(item, style=str(ui_theme.BRAND))
+            console.print(aline)
 
 
 def try_render_ask_user_submission(console: Console, text: str) -> bool:

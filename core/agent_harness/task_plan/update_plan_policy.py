@@ -1,4 +1,4 @@
-"""Host policy for ``update_plan`` — normalize model mistakes after Ask User."""
+"""Ask User and plan-only rules for ``update_plan`` — not completion."""
 
 from __future__ import annotations
 

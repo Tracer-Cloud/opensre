@@ -27,17 +27,17 @@ _REQUIRED_ACTION_SKILL_NAMES = frozenset(
     {
         # Nested onboarding tree: the router plus one child prove that frozen
         # builds bundle and discover skills/<package>/<child>/SKILL.md.
-        "cicd-analytics-demo",
-        "fixing-github-ci",
+        "analyzing-github-ci-performance",
+        "repair-github-ci",
         "fixing-github-security-alerts",
         "delivering-morning-briefings",
-        "onboarding-cicd-fix",
+        "onboarding-github-ci",
     }
 )
 _REQUIRED_INTEGRATION_VERIFIER_NAMES = frozenset({"datadog", "grafana", "x_mcp"})
 _GUIDED_TOOL_NAMES = frozenset({"execute_python_code", "generate_work_status_report"})
 # Proves the frozen build ships the fat skill body, not just the index entry.
-_ACTION_SKILL_BODY_MARKERS = {"fixing-github-ci": "fix_github_pr_ci"}
+_ACTION_SKILL_BODY_MARKERS = {"repair-github-ci": "fix_github_pr_ci"}
 
 
 def _load_required_tools() -> tuple[dict[str, RegisteredTool], int]:

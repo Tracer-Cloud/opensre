@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from core.agent_harness.prompts.skills.loader import (
+from core.agent_harness.prompts.skills import (
     clear_skills_caches,
     load_skill_body,
     load_skills_index,

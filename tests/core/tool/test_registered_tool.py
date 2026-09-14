@@ -7,7 +7,7 @@ from typing import Any
 import pytest
 
 from core.domain.types.evidence import EvidenceSource
-from core.domain.types.tools import ToolSurface
+from core.domain.types.tools import ToolRole, ToolSurface
 from core.tool.contracts import BaseTool, RegisteredTool, _normalize_surfaces
 from core.tool_framework.tool_decorator import tool
 
@@ -98,9 +98,9 @@ class TestRequiresApprovalOnRegisteredTool:
         assert registered.requires_approval is False
         assert registered.approval_reason == ""
 
-    def test_from_base_tool_reads_parallel_safe_default(self) -> None:
+    def test_from_base_tool_reads_role_default(self) -> None:
         registered = RegisteredTool.from_base_tool(_ReadOnlyTool())
-        assert registered.parallel_safe is True
+        assert registered.role is ToolRole.ACTION
 
     def test_from_function_carries_requires_approval_metadata(self) -> None:
         registered = approval_function_tool.__opensre_registered_tool__  # type: ignore[attr-defined]
@@ -317,7 +317,7 @@ class _TaggedBaseTool(BaseTool):
     source: EvidenceSource = "grafana"
     surfaces = (ToolSurface.ACTION,)
     tags = ("logs", "observability")
-    parallel_safe = False
+    role = ToolRole.BOOKKEEPING
 
     def run(self) -> dict[str, Any]:
         return {}
@@ -327,7 +327,7 @@ def test_from_base_tool_uses_class_registry_metadata() -> None:
     registered = RegisteredTool.from_base_tool(_TaggedBaseTool())
     assert registered.surfaces == ("action",)
     assert registered.tags == ("logs", "observability")
-    assert registered.parallel_safe is False
+    assert registered.role is ToolRole.BOOKKEEPING
 
 
 def test_from_base_tool_explicit_surfaces_override_class_metadata() -> None:

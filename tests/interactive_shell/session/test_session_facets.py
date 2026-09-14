@@ -16,15 +16,6 @@ from core.domain.alerts.inbox import IncomingAlert
 from surfaces.interactive_shell.session.session import Session
 
 # Core fields are inherited from SessionCore; the shell adds these two facets.
-# Includes pending_schedule_offer (structured yes → /cron confirmations),
-# pending_user_choice (structured decision → /choose selection menu), and
-# pending_recovery_note (WAL recovery note for the first turn after /resume),
-# plus the session-goal trio (session_goal, pending_integration_setup_offer,
-# offered_upgrade_ctas), and the host-owned task-plan work log
-# (task_plan_work, task_plan_work_step_texts, task_plan_breakdown_emitted),
-# and the two 'do not ask twice' sets (questions_already_answered,
-# skills_already_prompted).
-_CORE_FIELD_COUNT = 34
 _FACET_FIELDS = ("alerts", "terminal")
 
 
@@ -35,9 +26,8 @@ def _session() -> Session:
 def test_session_is_a_session_core_with_two_facets() -> None:
     assert issubclass(Session, SessionCore)
     field_names = {f.name for f in dataclasses.fields(Session)}
-    assert "terminal" in field_names
-    assert "alerts" in field_names
-    assert len(field_names) == _CORE_FIELD_COUNT + len(_FACET_FIELDS)
+    core_field_names = {f.name for f in dataclasses.fields(SessionCore)}
+    assert field_names == core_field_names | set(_FACET_FIELDS)
 
 
 def test_alert_inbox_facet_holds_the_relocated_alert_state() -> None:

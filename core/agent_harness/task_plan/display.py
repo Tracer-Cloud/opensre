@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from core.agent_harness.task_plan.plan import PlanStep, PlanStepStatus, TaskPlan
 
 
@@ -44,9 +46,10 @@ def ensure_active_step(plan: TaskPlan) -> TaskPlan:
     Models often mark a step ``completed`` and leave the rest ``pending`` without
     setting the next row ``in_progress``. The overlay then shows ``Plan · 2/3``
     with only empty circles and the turn goes idle. Host-normalize so the
-    focused step is always ``●`` until the plan is finished or plan-only.
+    focused step is always ``●`` until the plan is settled or plan-only.
+    Blocked steps are terminal and are never promoted.
     """
-    if not plan.steps or plan.all_completed:
+    if not plan.steps or plan.is_settled:
         return plan
     if any(item.status is PlanStepStatus.IN_PROGRESS for item in plan.steps):
         return plan
@@ -54,7 +57,7 @@ def ensure_active_step(plan: TaskPlan) -> TaskPlan:
     promoted = False
     for item in plan.steps:
         if not promoted and item.status is PlanStepStatus.PENDING:
-            steps.append(PlanStep(step=item.step, status=PlanStepStatus.IN_PROGRESS))
+            steps.append(replace(item, status=PlanStepStatus.IN_PROGRESS))
             promoted = True
         else:
             steps.append(item)

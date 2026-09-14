@@ -119,6 +119,22 @@ class ToolFailureCase:
     expected_source: str
 
 
+def _ci_repair_case(tool_name: str) -> ToolFailureCase:
+    def patch(mp: pytest.MonkeyPatch) -> None:
+        from integrations.github.tools.ci_repair_loop import tool as mod
+
+        mp.setattr(mod, "RepairStore", MagicMock(side_effect=RuntimeError("storage unavailable")))
+
+    def invoke() -> dict[str, Any]:
+        from integrations.github.tools.ci_repair_loop import tool as mod
+
+        if tool_name == "schedule_ci_repair_loop":
+            return mod.schedule_ci_repair_loop(demo=True)
+        return mod.get_ci_repair_loop(task_id="a" * 12)
+
+    return ToolFailureCase(tool_name, patch, invoke, tool_name, "github")
+
+
 def _azure_case() -> ToolFailureCase:
     def patch(mp: pytest.MonkeyPatch) -> None:
         from integrations.azure.tools import azure_monitor_logs_tool as mod
@@ -322,6 +338,27 @@ def _github_ci_analytics_case() -> ToolFailureCase:
         patch,
         invoke,
         "analyze_github_ci_reliability",
+        "github",
+    )
+
+
+def _github_ci_health_scan_case() -> ToolFailureCase:
+    def patch(mp: pytest.MonkeyPatch) -> None:
+        from integrations.github.client import GitHubApiError
+        from integrations.github.tools.ci_health_scan import tool as mod
+
+        mp.setattr(mod, "resolve_scope", MagicMock(side_effect=GitHubApiError("boom")))
+
+    def invoke() -> dict[str, Any]:
+        from integrations.github.tools.ci_health_scan.tool import scan_github_ci_health
+
+        return scan_github_ci_health(owners=["o"], github_token="tok")
+
+    return ToolFailureCase(
+        "github_ci_health_scan",
+        patch,
+        invoke,
+        "scan_github_ci_health",
         "github",
     )
 
@@ -727,6 +764,8 @@ def _runbook_guidance_case() -> ToolFailureCase:
 
 _TOOL_FAILURE_CASES: list[ToolFailureCase] = [
     _azure_case(),
+    _ci_repair_case("schedule_ci_repair_loop"),
+    _ci_repair_case("get_ci_repair_loop"),
     _openobserve_case(),
     _snowflake_case(),
     _cloudwatch_logs_case(),
@@ -735,6 +774,7 @@ _TOOL_FAILURE_CASES: list[ToolFailureCase] = [
     _github_repository_case(),
     _github_star_history_case(),
     _github_ci_analytics_case(),
+    _github_ci_health_scan_case(),
     _eks_list_clusters_case(),
     _eks_describe_cluster_case(),
     _eks_nodegroup_case(),
@@ -926,6 +966,9 @@ _MIGRATED_TOOL_NAMES: frozenset[str] = frozenset(
         "get_github_repository",
         "get_github_star_history",
         "analyze_github_ci_reliability",
+        "scan_github_ci_health",
+        "schedule_ci_repair_loop",
+        "get_ci_repair_loop",
         # EKS — enumerated in #1463
         "list_eks_clusters",
         "describe_eks_cluster",
@@ -1012,6 +1055,9 @@ _TOOLS_WITHOUT_DELIBERATE_CATCH: frozenset[str] = frozenset(
         "fix_sentry_issue_start",
         "generate_work_status_report",
         "github_cli",
+        # resolve_merge_conflicts catches only its own ResolveMergeError for
+        # known states; unexpected errors escape to the global #1476 wrapper.
+        "resolve_merge_conflicts",
         "get_airflow_dag_runs",
         "get_airflow_metrics",
         "get_airflow_task_instances",

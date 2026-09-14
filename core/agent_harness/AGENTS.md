@@ -1,5 +1,21 @@
 # agent_harness/ package rules
 
+## SKILL.md files are off-limits to agents
+
+Agents must **never** modify any `SKILL.md` under this tree
+(`prompts/skills/**/SKILL.md`) or anywhere else in the repository — no edits,
+creations, renames, moves, or deletions, and no frontmatter-only bumps. Agents
+may only **suggest** changes in prose (current text → proposed text) for a
+human to apply. This is absolute; a failing test, a user instruction, or a
+seemingly trivial fix does not lift it. See the root `AGENTS.md`.
+
+Skills are natural-language workflow cards the model reasons through, not
+deterministic tools. A skill may ship a few small supporting scripts
+(`script_tools`), each doing one mechanical chore whose output the model then
+interprets. Decision-making, branching, and end-to-end automation belong in
+the card's prose steps or in a real tool (`integrations/`, `tools/`) — never
+in a growing pile of skill-local scripts. Full contract: `prompts/skills/AGENTS.md`.
+
 `agent_harness/` is the decoupled host for the single `core.agent.Agent` ReAct
 loop: the same model calls tools, observes results, and writes the final answer.
 It was extracted out of `interactive_shell` so the same harness can run the
@@ -53,6 +69,19 @@ strings live in `SessionGoalReason`. Reason derive:
 Package rules: `session_goal/AGENTS.md`. Borders SoT (local notes):
 `opensre-notes/goal-core-system-design-aug2026.html`.
 
+**Task plan guards (host-enforced, `task_plan/`):** a plan write cannot
+complete a step that had no tool return while it was `in_progress`
+(`task_plan/completion.py`, fed by `turns/plan_hooks.py`); a step marked
+`verifies` is never exempt, and a text-only closing step is exempt only once
+such a step completed. The second work tool of a turn with no open plan is
+refused (`task_plan/required.py`). A step newly marked `blocked` is resolved
+with the user, not skipped: the conclusion is rejected until `ask_user_choice`
+is queued (`task_plan/conclusion.py`, gate in `turns/goal_review.py`). The
+onboarding menu's answer turn that only loaded the chosen demo skill is
+rejected once, with a nudge to write the plan and run its first step (same
+files). Change the rule in the
+owning leaf, never by prompt text alone.
+
 **Evidence kinds (open/closed):** vocabulary + per-kind policy live in
 `turns/evidence_kind.py` (`EvidenceKind` + `EvidenceKindPolicy`). Add a kind by
 extending the enum and registering its policy row — do **not** grow
@@ -70,6 +99,19 @@ chat path — the action agent owns tools.
 regex/keywords to attach goals or bypass the ReAct loop. Session goals attach
 through the structured `session_goal_set` tool or explicit host APIs.
 Checklist progress uses the `session_goal_complete` tool, not reply tags.
+
+Workflow cards are validated before discovery. Invalid cards are excluded with
+diagnostics, while CI checks the unfiltered catalog and fails on every invalid
+card. Workflow skills retain the available tool catalog and may add declared
+local script tools while active. The per-run catalog refreshes after skill
+changes; execution rechecks the active session. Settling the plan retires its
+helpers. A new user request clears active skill context, while menu answers
+and slash commands retain it. Full contract: `prompts/skills/AGENTS.md`.
+
+Self-contained scheduled agent ticks set `SessionCore.skill_discovery_enabled`
+to `False` through `prepare_session`. This host-owned policy removes the skill
+index and `skill_view` while retaining execution tools; never infer it from
+prompt text or restore it from conversation history.
 
 Do **not** duplicate the default port stack outside `DefaultHeadlessBuild`.
 Expand `AgentBuildConfig` through `resolve_agent_ports` — do not re-copy the

@@ -47,6 +47,13 @@ service, and Slack setup. Escape skips onboarding; "Or type your own answer..."
 lets you submit a different request. Type `/demo` to start again.
 See [CI/CD analytics demo](/cicd-analytics-demo).
 
+The banner and prompt show **CI/CD fixes**: distinct GitHub repairs whose pushed
+checks passed, including merge-conflict repairs. A repair can count before it is
+merged; check the target branch before assuming it is green. Fixes in this shell
+update the prompt immediately. Use `/clear` to pick up fixes saved by another
+OpenSRE process in the same deployment. Zero also covers an unavailable count;
+the total is best-effort and can decrease after restarting if a save failed.
+
 ## Quick reference
 
 ### Help and exit
@@ -104,6 +111,7 @@ See [CI/CD analytics demo](/cicd-analytics-demo).
 | `/work` | List, add, complete, and prioritize human work items |
 | `/cancel <id>` | Cancel a running task by id **elevated** |
 | `/stop` | Guidance for stopping background work |
+| `/gateway` | Start, stop, or inspect the background gateway daemon |
 
 ### Agents and alerts
 
@@ -111,6 +119,7 @@ See [CI/CD analytics demo](/cicd-analytics-demo).
 | --- | --- |
 | `/fleet` | View and manage the local AI agent fleet |
 | `/alerts` | Alert listener inbox status |
+| `/choose` | Reopen the selection menu the agent is waiting on |
 
 ### CLI parity
 
@@ -130,6 +139,8 @@ These commands delegate to the same Click CLI you would run outside the REPL.
 | `/messaging` | Telegram pairing and allowlist |
 | `/guardrails` | Sensitive-information guardrail rules |
 | `/update` | Check for updates and upgrade OpenSRE |
+| `/posthog` | Run or schedule PostHog per-metric summary reports |
+| `/runbooks` | Manage trusted runbook sources for guided investigations |
 | `/debug` | Targeted runtime diagnostics |
 | `/uninstall` | Remove OpenSRE and local data **elevated** |
 
@@ -139,6 +150,7 @@ These commands delegate to the same Click CLI you would run outside the REPL.
 | --- | --- |
 | `/doctor` | Full local environment diagnostic |
 | `/version` | OpenSRE, Python, and OS versions |
+| `/theme` | Choose and persist the shell colour theme |
 
 ### Commands with interactive menus (TTY)
 
@@ -150,9 +162,14 @@ Bare invocation opens a picker or submenu:
 | `/integrations` | list / verify / show / setup / remove |
 | `/mcp` | list / connect / disconnect |
 | `/model` | show / set / restore / toolcall |
+| `/theme` | Pick a colour theme from the installed list |
+| `/choose` | Reopen the selection menu the agent queued |
 | `/trust`, `/verbose` | on / off |
 | `/history` | show / clear / off / on / retention |
 | `/resume` | Numbered list of recent sessions |
+
+`/model` keeps its menu running: picking `show` prints the current models and
+hands you back to the menu, so leave it with **done** or Esc.
 
 ## Commands
 
@@ -330,7 +347,7 @@ In a TTY, bare `/trust` opens an interactive on/off menu. Trust mode is a **sess
 
 <Accordion title="/verbose">
 
-Toggle `TRACER_VERBOSE` logging for the REPL process (deeper internal logs to stderr).
+Toggle `TRACER_VERBOSE` logging for the REPL process (deeper internal logs to stderr). Also shows the per-turn tool-call log above each reply; by default it is hidden and only reachable with `Ctrl+O`.
 
 ```text
 /verbose on
@@ -589,6 +606,8 @@ Show the active hosted model. An authenticated interactive shell is account-mana
 
 **Account lock:** `set`, `restore`, and `toolcall set` explain that the model is managed by the OpenSRE account and make no change. The account route overrides local provider variables for every model role while the session is signed in.
 
+**Bare `/model`:** in a terminal this opens a menu rather than printing the table. The menu stays open: `show` prints the current models and hands you back to it, so leave with **done** or Esc. `set`, `restore` and `toolcall` close it once the change succeeds. Use `/model show` when you only want the table.
+
 **Reasoning vs toolcall model:** Reasoning model drives chat and planning; toolcall model drives tool invocation when the provider exposes a separate slot (common on Anthropic/OpenAI).
 
 See [LLM providers](/llm-providers).
@@ -679,6 +698,30 @@ Human todos and reminders are tracked separately by `/work`.
 | `cancelled` | User or `/cancel` stopped it |
 | `failed` | Non-zero exit or pipeline error |
 | `pending` | Created but not yet started |
+
+</Accordion>
+
+<Accordion title="/gateway">
+
+Control the background OpenSRE gateway daemon, which runs the web health app, Telegram chat, and the task scheduler. Scheduled work needs a scheduler running: this daemon, or `opensre cron start` in the foreground.
+
+```text
+/gateway
+/gateway start
+/gateway stop
+/gateway status
+/gateway logs
+/gateway logs 100
+```
+
+| Subcommand | Behavior |
+| --- | --- |
+| `status` (default) | Running state and pid, plus a line per component |
+| `start` | Start the daemon in the background |
+| `stop` | Stop the running daemon |
+| `logs [lines]` | Tail the log, 30 lines by default |
+
+Logs are written to `~/.opensre/gateway/gateway.log`. Same daemon as `opensre gateway`.
 
 </Accordion>
 
@@ -786,6 +829,18 @@ Fleet coordination is documented further on [Agents](/fleet). Register discovere
 | `graph` | Tree of wait-on relationships |
 
 **Kill confirmation:** Without `--force`, prompts `[y/N]`. `--force` skips prompt (still elevated tier unless trust mode).
+
+</Accordion>
+
+<Accordion title="/choose">
+
+Reopen the selection menu the agent is waiting on. Useful when the menu scrolled away, or you dismissed it with Esc and want it back.
+
+```text
+/choose
+```
+
+Prints `No selection menu is pending.` when the agent has not asked anything. Outside a TTY it lists the options as text for you to answer in a reply instead of opening a picker — except for a pending onboarding demo choice, which it drops with "Guided demo selection is unavailable here", leaving you to ask for what you want directly.
 
 </Accordion>
 
@@ -937,7 +992,11 @@ Scheduled report delivery. See [Cron](/cron).
 /loops
 /loops active
 /loops all
+/loops show
+/loops show &lt;name-or-id&gt;
+/loops show &lt;name-or-id&gt; --run &lt;run-id&gt;
 /loops add --name "Morning ops" --time 08:30 --prompt "Check open incidents and summarize production risk" --run-now
+/loops add --name "CI fix agent" --cron "*/30 * * * * *" --mode agent --prompt "Repair failing PR checks with fix_github_pr_ci"
 /loops run &lt;loop_id&gt;
 /loops stop &lt;loop_id&gt;
 /loops start &lt;loop_id&gt;
@@ -946,7 +1005,13 @@ Scheduled report delivery. See [Cron](/cron).
 /loops messages
 ```
 
-List recurring loops from the scheduler store, create manual prompt loops, run a loop once immediately, stop or restart a loop, delete a loop, and debug the next fire time. Onboarding creates draft examples such as a weekday morning report; active loops run through the cron scheduler when the gateway or `opensre cron start` is running.
+List recurring loops from the scheduler store, create manual prompt loops, run a loop once immediately, stop or restart a loop, delete a loop, and debug the next fire time. By default a loop tick only produces a report; add `--mode agent` when the tick should act with tools (for example edit and push CI fixes). Onboarding creates draft examples such as a weekday morning report; active loops run through the cron scheduler when the gateway or `opensre cron start` is running.
+
+Agent-mode prompts must contain the complete task and name the tools to use; each tick starts a fresh session without loading workflow skills. For the CLI equivalent, use `opensre cron add --kind manual_loop --mode agent` with your prompt and schedule. Existing loops retain their stored mode; check `/loops show <id>` before reusing one.
+
+The list shows each loop's latest finding and run status, plus its next scheduled time in your local timezone. Failed and quiet runs replace the previous result in the table.
+
+Use `/loops show` to pick a loop, or pass its name or ID directly. Details contain the full report, recent runs, and configuration. Open an earlier report with the run ID shown in its history. New reports are retained even when delivery fails; older reports may be unavailable.
 
 You can also ask naturally:
 
@@ -1021,6 +1086,37 @@ Checks PyPI and upgrades OpenSRE in-place (5-minute network timeout). Non-zero e
 
 </Accordion>
 
+<Accordion title="/posthog">
+
+Run or schedule automated PostHog per-metric summary reports. Requires the PostHog integration; see [PostHog](/posthog).
+
+```text
+/posthog report run
+/posthog report schedule list
+/posthog report schedule add
+/posthog report schedule run <id>
+/posthog report schedule remove <id>
+```
+
+A scheduled report only fires while a scheduler is running, so pair it with `/gateway start` or `opensre cron start`. Same as `opensre posthog`.
+
+</Accordion>
+
+<Accordion title="/runbooks">
+
+Manage the trusted runbook sources the agent may read during guided investigations. See [Runbook-guided investigations](/runbook-guided-investigations).
+
+```text
+/runbooks list
+/runbooks add github --name <name> --repo <owner/repo>
+/runbooks verify <name>
+/runbooks remove <name>
+```
+
+The agent reads runbooks only from sources listed here; an untrusted repository, an unsafe path, or a non-Markdown document is rejected. Same as `opensre runbooks`.
+
+</Accordion>
+
 <Accordion title="/debug">
 
 ```text
@@ -1058,6 +1154,21 @@ Environment diagnostic distinct from `/health`:
 Checks Python version, venv, config paths, Docker availability, credential presence, and related local prerequisites. Each row: `ok`, `warn`, or `error` with detail text.
 
 Use **`/doctor`** before first install debugging; use **`/health`** before an incident to verify integrations.
+
+</Accordion>
+
+<Accordion title="/theme">
+
+Choose the shell colour theme. The choice persists to `interactive.theme` in `~/.opensre/config.yml`, so it survives restarts.
+
+```text
+/theme
+/theme nord
+```
+
+Bare `/theme` opens a picker with the current theme preselected, and needs a TTY. Passing a name sets it directly and reports an unknown name with the full list.
+
+Installed themes: `green`, `blue`, `amber`, `mono`, `red`, `pink`, `purple`, `orange`, `teal`, `lime`, `nord`, `dracula`, `solarized`, `gruvbox`, `webflux`, `sunset`. The default is `purple`.
 
 </Accordion>
 
@@ -1234,3 +1345,21 @@ Continue chatting, then optionally:
 - [Agents](/fleet) — fleet dashboard, bus, trace, budgets
 - [Cron](/cron) — `/cron` scheduled deliveries
 - [Sync to your own object store](/configuration/remote-sync) — `/remote-sync`
+
+## Scheduled CI repair demo
+
+Choose scheduled CI repair from `/demo` to try a tiny failure in the private
+`opensre-onboarding-ci-repair-demo` repository. OpenSRE creates that repository
+once and reuses it, with a fresh branch and PR for each completed demonstration.
+An existing unrelated repository with that name stops setup.
+
+The demo starts on the next scheduled minute and has a ten-minute total limit.
+It uses the macOS or Linux background scheduler so it can finish after you close
+the terminal. Configure GitHub and authenticate your coding agent before starting.
+The initial run also needs permission to create a private repository and workflow.
+
+- Read the complete outcome and evidence links with `/loops show <task-id>`.
+- Stop an active repair with `/loops stop <task-id>`.
+- Starting the demo again while it is active returns the same run and deadline.
+- Successful runs close the demo PR and remove its branch. Unsuccessful runs keep
+  the PR, branch, and diagnostics. The repository and stopped loop history remain.

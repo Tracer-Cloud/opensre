@@ -41,6 +41,7 @@ from core.agent_harness.turns.gather_discovery_budget import (
 )
 from core.events import RuntimeEvent, RuntimeEventCallback, ToolExecutionEndEvent
 from core.llm.types import AgentLLMClient
+from infrastructure.observability.trace.decisions import record_decision
 
 # One rejection is enough to catch a stopped-short turn; the follow-up work is
 # then accepted as-is. More reviews only amplify the damage when the reviewer
@@ -154,7 +155,27 @@ _PLAN_INCOMPLETE_NUDGE = (
     "The live task plan still has unfinished steps. Keep working the "
     "in_progress step (call tools), or call ask_user_choice if a fact is "
     "missing — do not pause and idle. Mark steps completed with update_plan "
-    "as you finish them; end the turn only when every plan step is completed."
+    "as you finish them. A step this runtime cannot perform is marked blocked "
+    "with its blocker in explanation, never completed. End the turn only when "
+    "every plan step is completed or blocked."
+)
+_BLOCKED_NEEDS_USER_NUDGE = (
+    "A step was marked blocked this turn. A blocked step is resolved with the "
+    "user, not skipped: call ask_user_choice naming the step and its blocker, "
+    "with options for what would unblock it (running the command they ruled "
+    "out, a value or permission you need) and one to leave it blocked. When "
+    "they unblock it, set that same step in_progress with update_plan — not a "
+    "renamed or duplicated copy — and do the work."
+)
+_SKILL_LOAD_ONLY_NUDGE = (
+    "The user picked this demo, and this turn only loaded its skill. "
+    "Continue it now: write its plan with update_plan and run its first step, "
+    "or open the menu it prescribes. Do not end the turn on a skill load."
+)
+# Prefix for the nudge when the deferred reply was painted for the user: the
+# model must not restate a report it can already see in its own transcript.
+_PLAN_DEFERRED_REPLY_SHOWN = (
+    "Your last reply has been shown to the user exactly as written; do not repeat it. "
 )
 
 
@@ -169,30 +190,6 @@ def plan_worked_this_turn(executed_tool_names: Sequence[str]) -> bool:
     not pull that answer back into plan execution.
     """
     return _PLAN_TOOL_NAME in executed_tool_names
-
-
-def task_plan_blocks_conclusion(
-    *,
-    task_plan: Any | None,
-    plan_only: bool,
-) -> bool:
-    """True when a live execution plan still requires work this turn.
-
-    Plan-only (user asked not to run yet) never blocks. A fully completed plan
-    never blocks. Otherwise the agent must keep going — stopping with ``●`` on
-    a mid-plan step leaves the shell idle while the overlay still shows work.
-    """
-    if plan_only or task_plan is None:
-        return False
-    steps = getattr(task_plan, "steps", None)
-    if not steps:
-        return False
-    all_completed = getattr(task_plan, "all_completed", None)
-    if callable(all_completed):
-        return not bool(all_completed())
-    if isinstance(all_completed, bool):
-        return not all_completed
-    return any(getattr(item, "status", None) != "completed" for item in steps)
 
 
 @dataclass
@@ -215,33 +212,53 @@ class _LLMGoalReviewer:
     # Live plan gate: when True at conclusion, reject without spending the LLM
     # review budget (the overlay still shows unfinished work).
     plan_incomplete: Callable[[], bool] | None = None
+    # Blocked-step gate: a step newly blocked this turn ends the turn only
+    # through a question to the user.
+    blocked_needs_user: Callable[[], bool] | None = None
+    # Skill-load gate: an answer turn that only loaded a skill is rejected once.
+    skill_load_only: Callable[[], bool] | None = None
+    skill_load_rejections: int = 0
     reviews_remaining: int = field(default=_MAX_GOAL_REVIEWS)
+    trace_context: Callable[[], dict[str, Any]] | None = None
 
     def __call__(self, observation: GoalObservation) -> bool:
         final_text = (observation.final_text or "").strip()
         # No tools ran: the conclusion is a direct answer (or a refusal), not a
         # stopped-short action chain — the case this reviewer exists for.
         if observation.evidence_count == 0:
-            return True
+            return self._decision(observation, True, "no_tool_evidence")
         if self.skip_on_question and final_text.endswith("?"):
-            return True
+            return self._decision(observation, True, "closing_question")
         names = self.executed_tool_names
         if self.executed_tool_calls:
             names = [name for name, _ in self.executed_tool_calls]
         if any(name in self.skip_tool_names for name in names):
-            return True
+            return self._decision(observation, True, "unreviewable_tool")
         if (
             self.plan_incomplete is not None
             and plan_worked_this_turn(names)
             and self.plan_incomplete()
         ):
-            return False
+            return self._decision(observation, False, "plan_incomplete")
+        if (
+            self.blocked_needs_user is not None
+            and plan_worked_this_turn(names)
+            and self.blocked_needs_user()
+        ):
+            return self._decision(observation, False, "blocked_needs_user")
+        if (
+            self.skill_load_only is not None
+            and self.skill_load_rejections == 0
+            and self.skill_load_only()
+        ):
+            self.skill_load_rejections += 1
+            return self._decision(observation, False, "skill_loaded_only")
         if self.reject_discovery_only and _gather_ran_only_discovery(self.executed_tool_calls):
-            return False
+            return self._decision(observation, False, "discovery_only")
         if not react_goal_llm_review_enabled():
-            return True
+            return self._decision(observation, True, "llm_review_disabled")
         if self.reviews_remaining <= 0:
-            return True
+            return self._decision(observation, True, "review_budget_exhausted")
         self.reviews_remaining -= 1
         # Fail open on transport/parse errors — a broken reviewer must not
         # force extra ReAct iterations.
@@ -251,8 +268,28 @@ class _LLMGoalReviewer:
             system=self.system_prompt,
         )
         if verdict is None:
-            return True
-        return verdict != "NOT_REACHED"
+            return self._decision(observation, True, "llm_review_unavailable")
+        return self._decision(
+            observation,
+            verdict != "NOT_REACHED",
+            "llm_goal_not_reached" if verdict == "NOT_REACHED" else "llm_goal_reached",
+        )
+
+    def _decision(self, observation: GoalObservation, accepted: bool, reason: str) -> bool:
+        record_decision(
+            "goal_review",
+            attributes={
+                "accepted": accepted,
+                "reason": reason,
+                "final_text": observation.final_text,
+                "iteration": observation.iteration,
+                "max_iterations": observation.max_iterations,
+                "evidence_count": observation.evidence_count,
+                "executed_tools": self.executed_tool_names,
+            },
+            context=self.trace_context,
+        )
+        return accepted
 
     def _review_message(self, observation: GoalObservation) -> str:
         final_text = (observation.final_text or "").strip() or "(empty)"
@@ -279,6 +316,11 @@ def build_goal_reviewer(
     executed_tool_names: list[str],
     *,
     plan_incomplete: Callable[[], bool] | None = None,
+    plan_awaits_reply: Callable[[], bool] | None = None,
+    on_plan_deferred_reply: Callable[[str], bool] | None = None,
+    blocked_needs_user: Callable[[], bool] | None = None,
+    skill_load_only: Callable[[], bool] | None = None,
+    trace_context: Callable[[], dict[str, Any]] | None = None,
 ) -> Goal:
     """Build a reviewed :class:`Goal` for one action turn over ``user_goal``.
 
@@ -289,20 +331,53 @@ def build_goal_reviewer(
     task plan still has unfinished steps, so the shell does not go idle with
     ``Plan · n/m`` and a mid-list ``●``. It applies only to a turn that
     worked the plan (see :func:`plan_worked_this_turn`).
+
+    ``on_plan_deferred_reply`` receives the non-empty reply text a plan
+    rejection defers, but only while ``plan_awaits_reply`` says the plan's
+    current or next step is a ``deliverable`` (a report the plan then follows
+    with a menu). Any other rejected reply is a premature stop and stays off
+    the screen. The presenter returns whether the reply reached the user; only
+    then does the nudge tell the model it was shown so it does not restate it.
+
+    ``blocked_needs_user`` rejects a conclusion on a turn that newly marked a
+    step ``blocked`` without asking the user how to resolve it.
+
+    ``skill_load_only`` rejects, once per turn, a conclusion on the demo
+    menu's answer turn that loaded the chosen skill and did nothing else.
     """
     reviewer = _LLMGoalReviewer(
         llm=llm,
         user_goal=user_goal,
         executed_tool_names=executed_tool_names,
         plan_incomplete=plan_incomplete,
+        blocked_needs_user=blocked_needs_user,
+        skill_load_only=skill_load_only,
+        trace_context=trace_context,
     )
 
-    def _nudge(_observation: GoalObservation) -> str:
+    def _nudge(observation: GoalObservation) -> str:
+        if skill_load_only is not None and skill_load_only():
+            return _SKILL_LOAD_ONLY_NUDGE
+        if (
+            blocked_needs_user is not None
+            and plan_worked_this_turn(executed_tool_names)
+            and blocked_needs_user()
+        ):
+            return _BLOCKED_NEEDS_USER_NUDGE
         if (
             plan_incomplete is not None
             and plan_worked_this_turn(executed_tool_names)
             and plan_incomplete()
         ):
+            deferred_reply = (observation.final_text or "").strip()
+            if (
+                deferred_reply
+                and on_plan_deferred_reply is not None
+                and plan_awaits_reply is not None
+                and plan_awaits_reply()
+                and on_plan_deferred_reply(deferred_reply)
+            ):
+                return _PLAN_DEFERRED_REPLY_SHOWN + _PLAN_INCOMPLETE_NUDGE
             return _PLAN_INCOMPLETE_NUDGE
         return (
             f"Goal not yet met: {user_goal}. "
@@ -359,5 +434,4 @@ __all__ = [
     "plan_worked_this_turn",
     "tap_executed_tool_calls",
     "tap_executed_tool_names",
-    "task_plan_blocks_conclusion",
 ]
