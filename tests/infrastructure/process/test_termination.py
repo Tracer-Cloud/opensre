@@ -166,7 +166,11 @@ def test_terminate_process_tree_forces_a_bounded_unfreezable_tree(
 
     root.children = _children
     monotonic_values = iter((0.0, 0.0, 0.5, 1.0))
-    monkeypatch.setattr(termination_module, "monotonic", lambda: next(monotonic_values))
+
+    def _next_monotonic() -> float:
+        return next(monotonic_values)
+
+    monkeypatch.setattr(termination_module, "monotonic", _next_monotonic)
     monkeypatch.setattr(psutil, "Process", lambda _pid: root)
 
     def _wait_procs(
