@@ -307,3 +307,32 @@ def test_a_fresh_delete_modify_conflict_is_asked_not_silently_kept(tmp_path: Pat
     assert asked == [["doomed.txt"]]
     assert out["error_kind"] == "awaiting_decisions"
     assert head_sha(str(work)) == before and merge_in_progress(str(work))
+
+
+def test_the_coding_agents_steps_are_shown_while_it_works(tmp_path: Path) -> None:
+    # Arrange
+    work = _stopped_merge_two_files(tmp_path)
+    buffer = io.StringIO()
+    console = Console(file=buffer, width=120, force_terminal=False, color_system=None)
+
+    def combine(task: str, **kwargs: object) -> CodingResult:
+        report = kwargs["on_progress"]
+        assert callable(report)
+        report("Reading a.txt")
+        report("Editing a.txt")
+        (work / "a.txt").write_text("a feature and main\n")
+        (work / "b.txt").write_text("b feature and main\n")
+        return CodingResult(success=True, summary="Combined both files.")
+
+    # Act
+    with patch(_VERIFY, return_value=(True, "ready")), patch(_RUN, side_effect=combine):
+        out = resolve_merge(
+            str(work), ref=None, model=None, instructions=None, console=console, approve=None
+        )
+
+    # Assert: the steps appear between the two tables.
+    assert out["success"] is True
+    text = buffer.getvalue()
+    first_table = text.index("(resolving)")
+    assert first_table < text.index("Reading a.txt") < text.index("Editing a.txt")
+    assert text.index("Editing a.txt") < text.rindex("merged result")

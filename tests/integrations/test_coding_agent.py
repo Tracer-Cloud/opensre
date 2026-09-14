@@ -75,7 +75,7 @@ def test_auto_run_dispatches_to_first_ready_backend() -> None:
         result = run_coding_task("fix", workspace="/w", model=None, timeout_sec=60, provider="auto")
     assert result.success is True
     table["claude-code"][0].assert_called_once_with(
-        "fix", workspace="/w", model=None, timeout_sec=60
+        "fix", workspace="/w", model=None, timeout_sec=60, on_progress=None
     )
     table["pi"][0].assert_not_called()
 

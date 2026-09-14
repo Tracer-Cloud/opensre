@@ -14,6 +14,8 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from typing import Any, Final
 
+from rich.markup import escape
+
 from integrations.coding_agent import (
     CodingResult,
     coding_model,
@@ -278,6 +280,7 @@ def _resolve(
             model=model,
             merged_ref=theirs,
             instructions="\n".join(part for part in (instructions or "", *notes) if part),
+            console=console,
         )
     else:
         result = CodingResult(success=True, summary=_choices_summary(plan))
@@ -385,6 +388,7 @@ def _run_agent(
     model: str | None,
     merged_ref: str,
     instructions: str | None,
+    console: Any = None,
 ) -> CodingResult:
     ready, detail = verify_coding_agent()
     if not ready:
@@ -401,7 +405,19 @@ def _run_agent(
         workspace=ws,
         model=model or coding_model(),
         timeout_sec=coding_timeout_seconds(),
+        on_progress=_progress_printer(console),
     )
+
+
+def _progress_printer(console: Any) -> Callable[[str], None] | None:
+    """Print each step the coding agent takes as a dim line under the running tool."""
+    if console is None:
+        return None
+
+    def show(step: str) -> None:
+        console.print(f"[dim]  {escape(step)}[/]")
+
+    return show
 
 
 def _unresolved(ws: str, conflicts: MergeConflicts) -> list[tuple[str, str]]:

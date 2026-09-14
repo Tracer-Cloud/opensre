@@ -46,7 +46,9 @@ agent word for word.
 2. It prints one table per conflicted file right away: each conflict hunk with
    your side and their side, so you see what is disputed before anything runs.
 3. The coding agent resolves every file on its own, as Claude Code or Cursor
-   would. A decision you stated in your request ("take main's version of
+   would. While it works, each step it takes is printed under the running tool
+   ("Reading migrations.py", "Editing migrations.py", "Running: uv run pytest
+   …"), so you can see what it is doing and stop it with ESC at any point. A decision you stated in your request ("take main's version of
    config.py") is applied by git instead, and "decide file by file" opens a
    menu per file (keep ours, take theirs, combine, or type what you want).
    Lockfiles are regenerated from the resolved manifest, never merged by hand.

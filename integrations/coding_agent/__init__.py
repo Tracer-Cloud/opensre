@@ -15,11 +15,12 @@ from integrations.coding_agent.config import (
     coding_timeout_seconds,
     coding_workspace,
 )
-from integrations.coding_agent.models import CodingResult
+from integrations.coding_agent.models import CodingResult, Progress
 from integrations.coding_agent.runner import run_coding_task, verify_coding_agent
 
 __all__ = [
     "CodingResult",
+    "Progress",
     "coding_agent_provider",
     "coding_model",
     "coding_timeout_seconds",

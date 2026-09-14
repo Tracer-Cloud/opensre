@@ -14,13 +14,16 @@ are forwarded to the subprocess.
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from integrations.coding_agent.backend_exec import (
     failure,
     resolve_workspace_dir,
     run_agentic_cli,
     workspace_error,
 )
-from integrations.coding_agent.models import CodingResult
+from integrations.coding_agent.claude_stream import ClaudeStreamReader
+from integrations.coding_agent.models import CodingResult, Progress
 from integrations.llm_cli.agent_exec import build_guarded_task_prompt
 from integrations.llm_cli.binary_resolver import (
     candidate_binary_names,
@@ -51,7 +54,15 @@ def _subprocess_env() -> dict[str, str]:
     return build_cli_subprocess_env(env)
 
 
-def run(task: str, *, workspace: str, model: str | None, timeout_sec: float) -> CodingResult:
+def run(
+    task: str,
+    *,
+    workspace: str,
+    model: str | None,
+    timeout_sec: float,
+    on_progress: Progress | None = None,
+) -> CodingResult:
+    """Run Claude Code on *task*; with *on_progress* its steps are streamed as they happen."""
     binary = _resolve_binary()
     if not binary:
         return failure(
@@ -65,12 +76,14 @@ def run(task: str, *, workspace: str, model: str | None, timeout_sec: float) -> 
         return failure(ws_error)
 
     prompt = build_guarded_task_prompt(task, agent_label="the Claude Code coding agent")
+    reader = ClaudeStreamReader(on_progress, workspace=ws) if on_progress else None
     argv: list[str] = [
         binary,
         "-p",
         prompt,
         "--output-format",
-        "text",
+        "stream-json" if reader else "text",
+        *(("--verbose",) if reader else ()),
         "--permission-mode",
         "acceptEdits",
         "--allowedTools",
@@ -80,13 +93,18 @@ def run(task: str, *, workspace: str, model: str | None, timeout_sec: float) -> 
     if resolved_model:
         argv.extend(["--model", resolved_model])
 
-    return run_agentic_cli(
+    result = run_agentic_cli(
         argv,
         workspace=ws,
         env=_subprocess_env(),
         timeout_sec=timeout_sec,
         agent_name="claude-code",
+        on_stdout_line=reader.line if reader else None,
     )
+    if reader is not None and reader.result_text:
+        # Streamed stdout is JSON events; the agent's own account is the result event.
+        return replace(result, summary=reader.result_text)
+    return result
 
 
 def verify() -> tuple[bool, str]:
