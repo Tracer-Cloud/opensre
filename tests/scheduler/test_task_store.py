@@ -30,6 +30,27 @@ def _db_path(store_path: Path) -> Path:
     return store_path.with_name("scheduler.db")
 
 
+@pytest.mark.parametrize(
+    ("read_error", "complete"),
+    [(FileNotFoundError, True), (PermissionError, False), (OSError, False)],
+)
+def test_snapshot_distinguishes_absence_from_read_failures(
+    store_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    read_error: type[OSError],
+    complete: bool,
+) -> None:
+    def failed_read(_path: Path, **_kwargs: object) -> str:
+        raise read_error("simulated task-store read failure")
+
+    monkeypatch.setattr(Path, "read_text", failed_read)
+
+    snapshot = get_task_store_snapshot(store_path)
+
+    assert snapshot.tasks == ()
+    assert snapshot.complete is complete
+
+
 class TestStore:
     def test_list_empty(self, store_path: Path) -> None:
         tasks = list_tasks(store_path)
