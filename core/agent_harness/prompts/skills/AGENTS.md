@@ -292,6 +292,11 @@ once, following these rules, and treat a rename as a breaking change.
 1. **Shape is `<verb-ing>-<object>`** — gerund first, then what it acts on,
    2–4 hyphenated lowercase words. The verb says what the agent does; the
    object says to what. `reporting-github-ci-failures`, `summarizing-sentry-issues`.
+   The CI repair family is the one defined exception: it uses the bare stem
+   `repair` — `repair-github-ci` for the one-off action and `…-repairs` as the
+   object of skills that act on it (`scheduling-github-ci-repairs`). Do not
+   add other bare-verb names; extend this rule first if a second family needs
+   one.
 2. **Vendor is an adjective on the object, never a prefix.**
    `reporting-github-ci-failures`, not `github-ci-health` or
    `github-reporting-ci-failures`. Every GitHub
@@ -338,7 +343,8 @@ once, following these rules, and treat a rename as a breaking change.
 Sanctioned verbs (add a new one here before using it): `analyzing`,
 `connecting`, `delegating`, `delivering`, `fixing`, `investigating`,
 `measuring`, `onboarding`, `operating`, `querying`, `reporting`,
-`scheduling`, `summarizing`, `tracking`.
+`scheduling`, `summarizing`, `tracking`; plus the bare stem `repair` for the
+CI repair family (rule 1).
 
 Avoid: vague objects (`helper`, `utils`, `tools`, `data`, `files`), reserved
 prefixes (`anthropic-`, `claude-`), and mixing patterns across the collection.
