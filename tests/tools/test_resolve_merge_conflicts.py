@@ -177,7 +177,9 @@ def test_no_coding_agent_reports_the_files_and_keeps_the_merge_open(tmp_path: Pa
     assert merge_in_progress(str(work)) is True
 
 
-def test_without_a_merge_the_ref_is_merged_first_or_the_caller_is_told(tmp_path: Path) -> None:
+def test_without_a_merge_the_default_branch_is_merged_and_a_repeat_has_nothing_to_do(
+    tmp_path: Path,
+) -> None:
     # Arrange: feature and main diverge on app.py only.
     work = _diverged_repo(tmp_path)
     _git(work, "checkout", "main")
@@ -188,15 +190,36 @@ def test_without_a_merge_the_ref_is_merged_first_or_the_caller_is_told(tmp_path:
     (work / "app.py").write_text("greeting = 'hi'\n")
     _git(work, "commit", "-am", "match main")
 
-    # Act
-    told = resolve_merge_conflicts.run(workspace=str(work))
-    merged = resolve_merge_conflicts.run(workspace=str(work), ref="main")
+    _git(work, "push", "-q", "origin", "main")
+    _git(work, "remote", "set-head", "origin", "main")
+
+    # Act: with no ref the default branch is merged; asking again finds nothing to do.
+    merged = resolve_merge_conflicts.run(workspace=str(work))
+    again = resolve_merge_conflicts.run(workspace=str(work))
 
     # Assert
-    assert told["success"] is False
-    assert told["error_kind"] == "no_merge_in_progress"
+    assert merged["merged"] == "origin/main"
+    assert again["up_to_date"] is True and again["success"] is True
+    assert "nothing to merge, commit or push" in again["outcome"]
+    assert again["next_step"] == "Nothing to do."
     assert merged["success"] is True
     assert merged["resolved_files"] == []
     assert merged["commit_sha"] == head_sha(str(work))
     assert _git(work, "log", "-1", "--pretty=%an") == "OpenSRE Agent"
     assert (work / "notes.txt").read_text() == "main notes\n"
+
+
+def test_a_remote_whose_head_is_a_feature_branch_is_not_merged_by_default(tmp_path: Path) -> None:
+    # Arrange: origin/HEAD points at "feature", which is no base branch.
+    work = _diverged_repo(tmp_path)
+    _git(work, "remote", "set-head", "origin", "feature")
+    _git(work, "reset", "-q", "--hard", "HEAD")
+    before = head_sha(str(work))
+
+    # Act
+    out = resolve_merge_conflicts.run(workspace=str(work))
+
+    # Assert
+    assert out["success"] is False and out["error_kind"] == "no_merge_in_progress"
+    assert "name the branch" in out["error"]
+    assert head_sha(str(work)) == before

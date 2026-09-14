@@ -209,9 +209,10 @@ class ResolveMergeConflictsTool(BaseTool):
             "ref": {
                 "type": "string",
                 "description": (
-                    "Branch or commit to merge into the current branch when no merge is "
-                    "in progress yet (for example 'main' or 'origin/main'). Omit to "
-                    "resolve the merge already in progress."
+                    "Branch or commit to merge into the current branch when no merge is in "
+                    "progress yet. Omit it: the merge already in progress is resolved, and "
+                    "otherwise the repository's default branch (origin/main) is merged. Pass "
+                    "a ref only when the user named one."
                 ),
                 "nullable": True,
             },
@@ -277,6 +278,8 @@ class ResolveMergeConflictsTool(BaseTool):
         "coding_agent_summary": "The coding agent's account of how it resolved each file, "
         "written before OpenSRE committed the merge",
         "merge_in_progress": "True when the merge is still open in the working tree",
+        "up_to_date": "True when the branch already contained the merged ref: nothing was "
+        "committed or pushed and nothing is left to do",
         "rendered_in_shell": "True when each conflict hunk was already shown side by side "
         "(ours, theirs, merged) in the terminal",
     }

@@ -279,6 +279,17 @@ def run_gh(
     }
     if stdout_truncated or stderr_truncated:
         payload["truncated"] = True
+    if ok and stdout_truncated and stdout.lstrip().startswith(("[", "{")):
+        # A cut JSON document is not a partial answer, it is no answer: refuse it
+        # outright so the caller narrows the query instead of acting on it.
+        payload["ok"] = False
+        payload["error"] = (
+            f"gh output exceeded {MAX_GH_OUTPUT_CHARS} characters and the JSON was cut, so "
+            "this result is incomplete and must not be used. Re-run with --jq to select "
+            "only the needed fields, fewer --json fields, or a smaller --limit."
+        )
+        payload["error_type"] = "output_truncated"
+        return payload
     if not ok:
         error_text = stderr.strip() or stdout.strip() or f"gh exited with {completed.returncode}"
         payload["error"] = _redact_secret(error_text, token)

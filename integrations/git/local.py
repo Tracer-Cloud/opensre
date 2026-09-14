@@ -313,6 +313,11 @@ def changed_since_baseline(workspace: str, *, baseline: Mapping[str, str] | None
     ]
 
 
+def is_base_branch(name: str) -> bool:
+    """True for the branch names pull requests are normally merged into."""
+    return name.strip().casefold() in _PROTECTED_BRANCHES
+
+
 def assert_not_protected(branch: str, *, protected_extra: str = "") -> None:
     """Raise unless *branch* is a safe, non-base feature branch to push to."""
     name = branch.strip()

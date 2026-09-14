@@ -34,9 +34,11 @@ from integrations.git import (
     conclude_merge,
     conflict_resolution_task,
     current_branch,
+    default_branch,
     ensure_git_repo,
     file_fingerprints,
     head_sha,
+    is_base_branch,
     is_git_repo,
     merge_committed_by_resolver,
     merge_conflicts,
@@ -211,11 +213,12 @@ def _resolve(
         branch = current_branch(ws) or "HEAD"
         already_merging = merge_in_progress(ws)
         if not already_merging:
+            ref = ref or _default_base(ws)
             if not ref:
                 raise ResolveMergeError(
                     ERR_NO_MERGE_IN_PROGRESS,
-                    f"No merge is in progress in {ws}. Name the branch or commit to merge "
-                    f"into {branch} and it will be merged first.",
+                    f"No merge is in progress in {ws} and the repository has no default "
+                    f"branch to merge; name the branch or commit to merge into {branch}.",
                 )
             if finish.cancelled():
                 raise ResolveMergeError(
@@ -226,11 +229,7 @@ def _resolve(
             clean = merge_ref(ws, ref, message=f"Merge {ref} into {branch}", commit=False)
             if clean and not merge_in_progress(ws):
                 return _output(
-                    ws,
-                    branch=branch,
-                    merged=str(ref),
-                    commit_sha=head_sha(ws),
-                    summary=f"{branch} already contains {ref}; nothing to merge or push.",
+                    ws, branch=branch, merged=str(ref), commit_sha=head_sha(ws), up_to_date=True
                 )
         theirs = merge_head_name(ws) if already_merging else str(ref)
         merging = merge_head_sha(ws)
@@ -624,6 +623,19 @@ def _checks_error(checks: ChecksOutcome | None) -> str | None:
     return f"The pull request checks did not pass: {checks.detail}."
 
 
+def _default_base(ws: str) -> str | None:
+    """``origin/<default branch>`` when that is a base branch (main, master, develop, trunk).
+
+    A remote whose HEAD points at some feature branch is not merged silently;
+    the caller has to name the ref.
+    """
+    try:
+        name = default_branch(ws)
+    except GitCommandError:
+        return None
+    return f"origin/{name}" if name and is_base_branch(name) else None
+
+
 def _push(ws: str) -> tuple[str, GitCommandError | None]:
     try:
         return push_head_to_upstream(ws), None
@@ -725,7 +737,19 @@ def _output(
     checks: ChecksOutcome | None = None,
     questions: list[dict[str, Any]] | None = None,
     awaiting: bool = False,
+    up_to_date: bool = False,
 ) -> dict[str, Any]:
+    if up_to_date:
+        sha = (commit_sha or "")[:12]
+        return {
+            **_output(ws, branch=branch, merged=merged, commit_sha=commit_sha, rendered=rendered),
+            "outcome": (
+                f"{branch} already contains {merged} (at {sha}); nothing to merge, commit or "
+                "push, and the remote branch is unchanged."
+            ),
+            "next_step": "Nothing to do.",
+            "up_to_date": True,
+        }
     committed = success and bool(commit_sha)
     # A set error kind means the requested operation did not complete, even when the
     # merge commit exists (cancelled, not approved, push failed, checks failed).
@@ -771,6 +795,7 @@ def _output(
         "coding_agent_summary": summary,
         "merge_in_progress": _merge_still_in_progress(ws),
         "rendered_in_shell": rendered,
+        "up_to_date": False,
     }
 
 
