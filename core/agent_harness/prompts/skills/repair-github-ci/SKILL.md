@@ -5,7 +5,7 @@ description: >-
   a branch's failing CI via a linked repair worktree
 metadata:
   owner: Vaibhav
-  last_changed_by: Yauhen
+  last_changed_by: Jan
   last_changed_at: 2026-09-14
   usecases:
   - For repository contributors repairing failed CI on a pull request.
@@ -15,7 +15,7 @@ metadata:
   - A local checkout whose origin matches the target repository.
   - An installed and authenticated coding agent.
   - The fix_github_pr_ci tool and its supported local execution environment.
-  version: '1.2'
+  version: '2.0'
 ---
 
 # GitHub CI fix
@@ -63,10 +63,6 @@ branch.
   pushes, and waits for the checks — also when the conflict only appears after
   its own push. Never run `git merge`, `git rebase`, or conflict edits around
   it. If it reports blocked files, relay that one line and stop.
-- When the user is in a checkout with a merge stopped on conflicts, or asks to
-  resolve, finish, commit, or push a merge, follow
-  [Resolving merge conflicts](references/resolve-merge-conflicts.md) and use
-  `resolve_merge_conflicts` instead.
 - For branch targets such as `main`, the tool creates a separate linked git
   worktree, commits on a fresh `opensre/ci-fix-*` branch, and pushes that branch.
   It never pushes directly to protected branches.
