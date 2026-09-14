@@ -76,7 +76,10 @@ def cron_command() -> None:
     "cron_expr",
     type=str,
     required=True,
-    help="Cron expression (5 fields: minute hour day month day_of_week).",
+    help=(
+        "Cron expression (5 fields: minute hour day month day_of_week; "
+        "prepend a seconds field, e.g. '*/30 * * * * *', for sub-minute polling)."
+    ),
 )
 @click.option(
     "--tz",

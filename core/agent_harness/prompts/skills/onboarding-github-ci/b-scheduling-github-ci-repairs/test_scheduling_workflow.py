@@ -4,10 +4,10 @@ Observed live (2026-09-12): a demo took 646 s over 56 model iterations. The
 model spent ~60 s grepping the OpenSRE source tree to discover ``/cron add``,
 made nine stand-alone ``update_plan`` calls, re-fetched the same check state
 through three tools, and the tick prompt described "invoke the
-fixing-github-ci workflow" instead of naming ``fix_github_pr_ci``. This suite
-pins the corrected card: the ``/cron add`` call is spelled out for both
-cadences, the tick prompt names the tool call, plan writes ride along with
-the next action, and nothing is created before the repository question.
+repair-github-ci workflow" instead of naming ``fix_github_pr_ci``. This suite
+pins the corrected card: the ``/cron add`` call is spelled out with the one
+30-second cadence, the tick prompt names the tool call, plan writes ride along
+with the next action, and nothing is created before the repository question.
 """
 
 from __future__ import annotations
@@ -21,7 +21,7 @@ from typing import Any
 import pytest
 
 from config.constants import OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV, OPENSRE_MEMORY_DIR_ENV
-from config.constants.skills import SCHEDULING_GITHUB_CI_FIXES_SKILL_NAME
+from config.constants.skills import SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME
 from core.agent_harness.ports import TurnBinding
 from core.agent_harness.prompts.skills import (
     list_action_skills,
@@ -53,8 +53,7 @@ _MASTER_ANSWER = (
 )
 _REPOSITORY_QUESTION = "CI Repair Target"
 _DEMO_OPTION = "Private disposable demo repository"
-_REAL_LOOP_CRON = "*/2 * * * *"
-_DEMO_LOOP_CRON = "* * * * *"
+_LOOP_CRON = "*/30 * * * * *"
 _PLAN_LINE = re.compile(r"^- \[ \] Step (\d+)\. ", re.MULTILINE)
 _WORKFLOW_HEADING = re.compile(r"^### Step (\d+)\. ", re.MULTILINE)
 
@@ -118,17 +117,20 @@ def _recording_tool(name: str, calls: list[tuple[str, dict[str, Any]]]) -> Regis
 
 def test_skill_card_spells_out_the_loop_call_and_direct_tick_prompt() -> None:
     frontmatter, _ = parse_frontmatter(_SKILL_PATH.read_text(encoding="utf-8"))
-    assert frontmatter["name"] == SCHEDULING_GITHUB_CI_FIXES_SKILL_NAME
+    assert frontmatter["name"] == SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME
     assert frontmatter["includes"] == ["common/ask_once.md"]
-    assert frontmatter["metadata"]["last_changed_at"] == date(2026, 9, 13)
-    body = load_skill_body(SCHEDULING_GITHUB_CI_FIXES_SKILL_NAME)
+    assert frontmatter["metadata"]["last_changed_at"] == date(2026, 9, 14)
+    body = load_skill_body(SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME)
     # Blockquoted tick prompts wrap across lines; compare phrases on one line.
     flat = " ".join(re.sub(r"\n> ?", " ", body).split())
 
-    # The loop is created by one spelled-out call for each cadence; the model
-    # must never rediscover the flags from the source tree.
-    assert f'"--cron", "{_REAL_LOOP_CRON}"' in body
-    assert f'"--cron", "{_DEMO_LOOP_CRON}"' in body
+    # The loop is created by one spelled-out call at the one 30-second cadence;
+    # the model must never rediscover the flags from the source tree, and no
+    # slower minute-granular schedule survives on the card.
+    assert f'"--cron", "{_LOOP_CRON}"' in body
+    assert body.count('"--cron"') == 1
+    assert '"--cron", "*/2 * * * *"' not in body
+    assert '"--cron", "* * * * *"' not in body
     assert '"--mode", "agent"' in body
     assert '"--provider", "interactive_shell"' in body
     assert "--timezone" not in body and "Poll every" not in body
@@ -148,11 +150,11 @@ def test_skill_card_spells_out_the_loop_call_and_direct_tick_prompt() -> None:
     assert '["repo", "delete"' not in body
     assert "report that the repository remains" in body
     assert "confirms `Mode: agent`" in body
-    assert skill_reference_names(SCHEDULING_GITHUB_CI_FIXES_SKILL_NAME) == ("script-tools",)
+    assert skill_reference_names(SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME) == ("script-tools",)
 
 
 def test_plan_checklist_matches_workflow_headings() -> None:
-    body = load_skill_body(SCHEDULING_GITHUB_CI_FIXES_SKILL_NAME)
+    body = load_skill_body(SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME)
     plan_numbers = [int(match) for match in _PLAN_LINE.findall(body)]
     heading_numbers = [int(match) for match in _WORKFLOW_HEADING.findall(body)]
     assert plan_numbers == list(range(1, 12))
@@ -166,7 +168,7 @@ def test_repository_question_carries_the_plan_and_blocks_creation_until_answered
     monkeypatch.setenv(OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV, "1")
     monkeypatch.setenv(OPENSRE_MEMORY_DIR_ENV, str(tmp_path / "memory"))
     skill = next(item for item in list_action_skills() if item.path == _SKILL_PATH)
-    assert skill.name == SCHEDULING_GITHUB_CI_FIXES_SKILL_NAME
+    assert skill.name == SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME
     steps = _plan_steps(load_skill_body(skill.name))
     # The host activated this child of the onboarding menu already.
     session = _Session(

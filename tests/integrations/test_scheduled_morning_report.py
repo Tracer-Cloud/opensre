@@ -63,7 +63,7 @@ def test_format_fetched_briefing_inputs_uses_city(monkeypatch: pytest.MonkeyPatc
 
 
 def test_prefetched_context_empty_for_other_skills() -> None:
-    assert scheduled_skill_runner._prefetched_context("fixing-github-ci", {}) == ""
+    assert scheduled_skill_runner._prefetched_context("repair-github-ci", {}) == ""
 
 
 def test_prefetched_context_morning_report(

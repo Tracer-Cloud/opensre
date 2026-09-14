@@ -245,11 +245,11 @@ def test_skills_loader_bundles_github_security_fix_skill() -> None:
 
 def test_skills_loader_bundles_github_ci_fix_skill() -> None:
     clear_skills_caches()
-    skill = skills_dir() / "fixing-github-ci" / "SKILL.md"
+    skill = skills_dir() / "repair-github-ci" / "SKILL.md"
     assert skill.is_file()
 
-    assert "fixing-github-ci" in load_skills_index()
-    body = load_skill_body("fixing-github-ci")
+    assert "repair-github-ci" in load_skills_index()
+    body = load_skill_body("repair-github-ci")
     assert "fix_github_pr_ci" in body
     assert "output exactly that text and stop" in body
     assert '"next steps"' in body
@@ -285,9 +285,9 @@ def test_action_system_prompt_includes_context_blocks() -> None:
     )
     assert "CONNECTED INTEGRATIONS (this install, right now): github" in prompt
     assert "RECENT CONVERSATION" in prompt
-    assert "fixing-github-ci" in prompt
+    assert "repair-github-ci" in prompt
     assert "skill_view" in prompt
-    assert load_skill_body("fixing-github-ci") not in prompt
+    assert load_skill_body("repair-github-ci") not in prompt
 
 
 def test_skills_index_is_thin_relative_to_full_bodies() -> None:
@@ -303,7 +303,7 @@ def test_skills_index_is_thin_relative_to_full_bodies() -> None:
     assert names >= {
         "delivering-morning-briefings",
         "fixing-github-security-alerts",
-        "fixing-github-ci",
+        "repair-github-ci",
     }
     for skill in list_action_skills():
         assert skill.name in index

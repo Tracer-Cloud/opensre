@@ -93,7 +93,7 @@ def test_cancelling_a_skill_menu_drops_the_skill_plan(
     session = Session()
     plain_placeholder = resolve_prompt_placeholder(session)
     session.pending_user_choice = _CHOICE
-    session.active_skill = "scheduling-github-ci-fixes"
+    session.active_skill = "scheduling-github-ci-repairs"
     session.skills_already_prompted.add(session.active_skill)
     session.task_plan = TaskPlan(
         steps=(
@@ -115,7 +115,7 @@ def test_cancelling_a_skill_menu_drops_the_skill_plan(
     assert _handler(session, console) is True
 
     assert session.active_skill is None
-    assert "scheduling-github-ci-fixes" not in session.skills_already_prompted
+    assert "scheduling-github-ci-repairs" not in session.skills_already_prompted
     assert session.task_plan is None
     assert session.plan_only_until_authorized is False
     assert "Plan" not in render_prompt_region(session, state, spinner).value

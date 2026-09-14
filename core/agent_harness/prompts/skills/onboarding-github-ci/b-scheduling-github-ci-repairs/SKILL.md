@@ -1,17 +1,17 @@
 ---
-name: scheduling-github-ci-fixes
+name: scheduling-github-ci-repairs
 description: >-
   Sets up ongoing local monitoring of one repository's open pull requests,
   automatically editing, testing, and pushing fixes for failing GitHub Actions
   checks. Offers a disposable private-repository demonstration when no target
   PR was supplied. Use for recurring PR repair or the local CI onboarding demo.
-  A one-off PR repair belongs to fixing-github-ci.
+  A one-off PR repair belongs to repair-github-ci.
 getting_started: Set up an agent that improves CI/CD reliability over time
 demo_order: 2
 metadata:
   owner: Vincent
   last_changed_by: Jan
-  last_changed_at: 2026-09-13
+  last_changed_at: 2026-09-14
   usecases:
     - For configuring ongoing repair of failing pull requests in one repository.
     - For demonstrating a scheduled repair in a disposable private repository.
@@ -19,7 +19,7 @@ metadata:
     - GitHub write access to the watched repository and an authenticated coding agent
     - Git installed on the scheduler host; repair checkouts are created automatically
     - For the demo, a GitHub token that can create a private repository and an example PR
-  version: "6.2"
+  version: "7.0"
 script_tools: references/script-tools.md
 includes:
   - common/ask_once.md
@@ -27,11 +27,11 @@ includes:
 
 # Onboarding for Scheduled CI fixes
 
-Monitor one repository on a schedule and automatically edit, test, and
-push fixes to one failing PR branch per tick. A green PR does not stop
+Monitor one repository every **30 seconds** and automatically edit, test,
+and push fixes to one failing PR branch per tick. A green PR does not stop
 monitoring.
 
-The optional private demo uses the same repair policy every **minute**.
+The optional private demo uses the same repair policy and the same cadence.
 
 ## Goal
 
@@ -40,8 +40,11 @@ one real repair as fast as possible in well under five minutes.
 
 ## Runtime facts
 
-- The loop is a scheduler task: `slash_invoke` with `command: "/cron"`. Cron
-  granularity is one minute; there is no 20-second polling.
+- The loop is a scheduler task: `slash_invoke` with `command: "/cron"`. The
+  cron takes six fields with a leading seconds field; `*/30 * * * * *` polls
+  every 30 seconds. Never use a slower cadence such as `*/2 * * * *`: a
+  failing PR must be picked up within half a minute. A tick that fires while
+  the previous tick is still repairing is skipped, so ticks never overlap.
 - Scheduled ticks run headless with the full tool catalog. The tick prompt
   must name the tool call directly; `fix_github_pr_ci` itself reports when a
   PR has no failing checks, so the tick needs no separate status read.
@@ -147,14 +150,14 @@ One `slash_invoke` call. Record the `Task <id> created.` id from its output.
 {"command": "/cron", "args": ["add",
   "--name", "CI repair: <owner>/<repo>",
   "--kind", "manual_loop",
-  "--cron", "*/2 * * * *",
+  "--cron", "*/30 * * * * *",
   "--provider", "interactive_shell",
   "--mode", "agent",
   "--owner", "<owner>", "--repo", "<repo>",
   "--prompt", "<tick prompt>"]}
 ```
 
-Demo loop: same call with `"--cron", "* * * * *"` and the name
+Demo loop: same call and cadence with the name
 `CI repair demo: <owner>/<repo>#<n>`. Add `"--pr", "<n>"` when a
 single PR is selected. The saved repository target is independent of the
 scheduler host's current directory; omit `workspace` to use a managed checkout.

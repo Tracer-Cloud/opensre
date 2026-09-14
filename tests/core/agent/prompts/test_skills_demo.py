@@ -38,7 +38,7 @@ def test_master_menu_matches_three_unique_children_and_preserves_specialists() -
     children = getting_started_skills()
     assert [s.name for s in children] == [
         "analyzing-github-ci-performance",
-        "scheduling-github-ci-fixes",
+        "scheduling-github-ci-repairs",
         "connecting-slack",
     ]
     assert [s.demo_order for s in children] == [1, 2, 3]
@@ -71,7 +71,7 @@ def test_master_menu_matches_three_unique_children_and_preserves_specialists() -
     for option in ("- Schedule local loops", "- Slack setup", "- Finish"):
         assert option in body
     # Each next-step branch hands off to its sibling skill instead of inlining it.
-    assert 'skill_view(name="scheduling-github-ci-fixes")' in body
+    assert 'skill_view(name="scheduling-github-ci-repairs")' in body
     assert 'skill_view(name="connecting-slack")' in body
     # The comparison is the tool's job, not a flag the model can forget; the
     # report shape is the skill's, so no flag on the tool picks one either.
@@ -80,7 +80,7 @@ def test_master_menu_matches_three_unique_children_and_preserves_specialists() -
     assert "Compare these numbers" not in body
     assert "Output its `headline`" not in body
     assert "same-day snapshot" not in body
-    fix_loop = skills.load_skill_body("scheduling-github-ci-fixes")
+    fix_loop = skills.load_skill_body("scheduling-github-ci-repairs")
     # The fix loop repairs red pull requests; it is not the analytics report
     # loop, so it never reaches for the analytics or report-scheduling tools.
     assert "fix_github_pr_ci" in fix_loop
@@ -98,7 +98,7 @@ def test_master_menu_matches_three_unique_children_and_preserves_specialists() -
     names = [skill.name for skill in discovered if skill is not None]
     assert len(names) == len(set(names))
     assert ONBOARDING_SKILL_NAME in skills.load_skills_index()
-    assert skills.load_skill_body("fixing-github-ci")
+    assert skills.load_skill_body("repair-github-ci")
 
 
 def test_multi_step_skills_track_progress_with_update_plan_not_step_headers() -> None:
@@ -111,7 +111,7 @@ def test_multi_step_skills_track_progress_with_update_plan_not_step_headers() ->
     skills.clear_skills_caches()
     multi_step = (
         "analyzing-github-ci-performance",
-        "scheduling-github-ci-fixes",
+        "scheduling-github-ci-repairs",
         "connecting-slack",
         "delivering-morning-briefings",
     )
@@ -223,14 +223,14 @@ def test_includes_append_shared_markdown_once(
 def test_onboarding_children_load_shared_rules_once() -> None:
     skills.clear_skills_caches()
     by_name = {s.name: s for s in skills.list_action_skills()}
-    reliability = skills.load_skill_body("scheduling-github-ci-fixes")
+    reliability = skills.load_skill_body("scheduling-github-ci-repairs")
     analytics = skills.load_skill_body("analyzing-github-ci-performance")
     analytics_card = by_name["analyzing-github-ci-performance"].path.read_text(encoding="utf-8")
     # Shared rules resolve from the skills-tree ``common/`` folder and are
     # appended exactly once, never copied into the card body.
-    assert by_name["scheduling-github-ci-fixes"].includes == ("common/ask_once.md",)
+    assert by_name["scheduling-github-ci-repairs"].includes == ("common/ask_once.md",)
     assert reliability.count("Ask each question once.") == 1
-    assert "Ask each question once." not in by_name["scheduling-github-ci-fixes"].path.read_text(
+    assert "Ask each question once." not in by_name["scheduling-github-ci-repairs"].path.read_text(
         encoding="utf-8"
     )
     # The analytics card lists no shared rules; its plan carries its own wording.

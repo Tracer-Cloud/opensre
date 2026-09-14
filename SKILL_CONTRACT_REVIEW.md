@@ -55,9 +55,9 @@ Markdown citations remain Markdown links. Neither mechanism is an automatic
 | --- | --- |
 | `onboarding-github-ci` | Keep: entry menu for the implemented workflows. |
 | `analyzing-github-ci-performance` | Keep: historical CI metrics. Its scheduling handoff contains stale prose. |
-| `scheduling-github-ci-fixes` | Keep: recurring repair setup and private demo. Current v5 instructions have a checkout mismatch described below. |
+| `scheduling-github-ci-repairs` | Keep: recurring repair setup and private demo. Current v5 instructions have a checkout mismatch described below. |
 | `connecting-slack` | Keep: Slack setup and handoffs; now the third demo. |
-| `fixing-github-ci` | Keep: one-off repair. Tool-call details overlap its tool-usage card; consolidate those details when that workflow is next edited. |
+| `repair-github-ci` | Keep: one-off repair. Tool-call details overlap its tool-usage card; consolidate those details when that workflow is next edited. |
 | `fixing-github-security-alerts` | Keep: supported GitHub security remediation. Similar tool-guidance overlap does not make the workflow obsolete. |
 | `investigating-incidents-with-runbooks` | Keep: supported runbook investigation. Its formatting and absent default plan need alignment with authoring guidance. |
 | `reporting-github-ci-failures` | Keep: current failure reporting and schedule discovery. Some unattended execution prose is redundant. |
@@ -76,7 +76,7 @@ Contributor `AGENTS.md` is excluded from skill discovery.
    The demo's temporary clone must be carried into the saved call, or the host
    must already default to that checkout. Correct the runtime statement and
    pass the established workspace. Evidence:
-   [card](/Users/janvincentfranciszek/opensre/core/agent_harness/prompts/skills/onboarding-github-ci/b-scheduling-github-ci-fixes/SKILL.md:51),
+   [card](/Users/janvincentfranciszek/opensre/core/agent_harness/prompts/skills/onboarding-github-ci/b-scheduling-github-ci-repairs/SKILL.md:51),
    [workspace validation](/Users/janvincentfranciszek/opensre/integrations/github/tools/ci_fix/runner.py:59).
 2. **Analytics handoff:** the card says the scheduling workflow has an analysis
    step that reuses today's report. The current scheduling workflow repairs

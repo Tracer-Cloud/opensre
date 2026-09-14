@@ -50,7 +50,7 @@ def _result(run: RepairRun, store: RepairStore) -> dict[str, Any]:
     description=(
         "Schedule repair of one GitHub PR, or demo=true for a tiny CI repair demonstration "
         "in a fixed reusable private repository. Starts and checks the local background "
-        "scheduler, uses a real minute trigger, stops within ten minutes, and retains a "
+        "scheduler, uses a real 30-second trigger, stops within ten minutes, and retains a "
         "linked outcome report. Reuses the active run without extending its deadline."
     ),
     surfaces=(ToolSurface.ACTION,),

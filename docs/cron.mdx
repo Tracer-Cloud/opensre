@@ -77,7 +77,7 @@ Create a new scheduled delivery task.
 |--------|----------|-------------|
 | `--name` | No | Human-readable loop name shown by `opensre cron list` and `/loops` |
 | `--kind` | Yes | Task kind: `manual_loop`, `recurring_skill`, `github_pr_sweep`, `posthog_metric_report`, `work_item_reminder`, `work_item_checkin` |
-| `--cron` | Yes | Cron expression (5 fields: minute hour day month day_of_week) |
+| `--cron` | Yes | Cron expression (5 fields: minute hour day month day_of_week; prepend a seconds field for sub-minute polling, see [Cron Syntax](#cron-syntax)) |
 | `--tz` | No | IANA timezone (default: `UTC`). Examples: `Europe/London`, `US/Eastern`, `Asia/Kolkata` |
 | `--provider` | Yes | Messaging provider: `telegram`, `slack`, `discord`, `rocketchat`, `interactive_shell` |
 | `--chat-id` | Cond. | Required for telegram/discord/rocketchat. Optional for slack when an incoming webhook or `SLACK_DEFAULT_CHAT_ID` is configured, and not needed for `interactive_shell`. |
@@ -172,6 +172,16 @@ Examples:
 - `0 8 * * 1` — Mondays at 08:00
 - `*/30 * * * *` — every 30 minutes
 - `0 0 1 * *` — first day of each month at midnight
+
+A five-field expression fires at most once per minute. For polling loops that
+must react faster — the CI repair loop polls every 30 seconds — prepend a
+seconds field (`0-59`) to get a six-field expression:
+
+- `*/30 * * * * *` — every 30 seconds
+- `0 */5 * * * *` — every 5 minutes, on the minute (same as `*/5 * * * *`)
+
+A tick that fires while the previous tick of the same task is still running is
+skipped, so a slow tick never overlaps with the next one.
 
 Cron expressions are validated at `cron add` time using APScheduler's
 `CronTrigger`. Invalid expressions are rejected immediately.

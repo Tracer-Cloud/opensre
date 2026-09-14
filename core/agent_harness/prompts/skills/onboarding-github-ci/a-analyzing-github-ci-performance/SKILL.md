@@ -9,7 +9,7 @@ demo_order: 1
 metadata:
   owner: Vincent
   last_changed_by: Jan
-  last_changed_at: 2026-09-13
+  last_changed_at: 2026-09-14
   usecases:
   - For repository maintainers analyzing CI reliability over the previous 30 days.
   - For engineering teams assessing estimated developer waiting time and failure patterns.
@@ -18,7 +18,7 @@ metadata:
   - GitHub authentication with read access to the repository's Actions history.
   - The analyze_github_ci_reliability and scan_local_git_workspace tools.
   - For local discovery, a local Git checkout; the example repository does not require one.
-  version: '1.16'
+  version: '1.17'
 ---
 
 # CI/CD analytics
@@ -154,7 +154,7 @@ this turn. The user's answer arrives in the next turn. Each branch except
 `Finish` is owned by a sibling skill: load it with `skill_view` and follow
 its plan; do not reimplement its steps here.
 
-- **Schedule local loops:** call `skill_view(name="scheduling-github-ci-fixes")`
+- **Schedule local loops:** call `skill_view(name="scheduling-github-ci-repairs")`
   and follow that skill. The repository is already chosen and analyzed in
   this session, so its plan omits the scan and repository-pick steps and
   its analyze step reuses today's saved report.

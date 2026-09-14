@@ -64,7 +64,7 @@ def test_required_skill_data_covers_action_and_tool_guidance() -> None:
         path.relative_to(_REPO_ROOT).as_posix() for path in required_skill_files(_REPO_ROOT)
     }
 
-    assert "core/agent_harness/prompts/skills/fixing-github-ci/SKILL.md" in relative_paths
+    assert "core/agent_harness/prompts/skills/repair-github-ci/SKILL.md" in relative_paths
     assert (
         "core/agent_harness/prompts/skills/reporting-github-ci-failures/SKILL.md" in relative_paths
     )
@@ -84,7 +84,7 @@ def test_required_skill_data_covers_action_and_tool_guidance() -> None:
 def test_release_includes_executable_skill_helpers_and_their_reference() -> None:
     skill = (
         _REPO_ROOT
-        / "core/agent_harness/prompts/skills/onboarding-github-ci/b-scheduling-github-ci-fixes"
+        / "core/agent_harness/prompts/skills/onboarding-github-ci/b-scheduling-github-ci-repairs"
     )
     included = set(required_skill_files(_REPO_ROOT))
     assert skill / "references/script-tools.md" in included

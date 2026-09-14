@@ -13,13 +13,18 @@ from typing import TYPE_CHECKING
 
 from rich.console import Console
 
+from infrastructure.scheduling.scheduler.cron_expression import (
+    CRON_FIELD_COUNT,
+    CRON_FIELD_COUNT_ERROR,
+    CRON_FIELD_COUNT_WITH_SECONDS,
+    CRON_FORMAT_HELP,
+    build_cron_trigger,
+)
+
 if TYPE_CHECKING:
     from infrastructure.scheduling.scheduler.types import ScheduledTask
 
 _console = Console()
-
-#: A standard crontab line: minute, hour, day, month, day_of_week.
-CRON_FIELD_COUNT = 5
 
 
 def validate_cron_and_timezone(cron_expr: str, timezone: str) -> None:
@@ -27,21 +32,17 @@ def validate_cron_and_timezone(cron_expr: str, timezone: str) -> None:
 
     Fails fast with a clear error message instead of creating inert tasks.
     """
-    parts = cron_expr.split()
-    if len(parts) != CRON_FIELD_COUNT:
-        _console.print(
-            f"[red]Error: cron expression must have exactly {CRON_FIELD_COUNT} fields.[/red]"
-        )
-        _console.print("  Format: minute hour day month day_of_week")
+    if len(cron_expr.split()) not in (CRON_FIELD_COUNT, CRON_FIELD_COUNT_WITH_SECONDS):
+        _console.print(f"[red]Error: {CRON_FIELD_COUNT_ERROR}.[/red]")
+        _console.print(f"  Format: {CRON_FORMAT_HELP}")
         _console.print("  Example: 0 9 * * 1-5  (weekdays at 09:00)")
+        _console.print("  Example: */30 * * * * *  (every 30 seconds)")
         raise SystemExit(1)
 
     try:
-        from apscheduler.triggers.cron import CronTrigger
-
-        CronTrigger.from_crontab(cron_expr, timezone=timezone)
-    except (ValueError, TypeError, KeyError) as exc:
-        _console.print(f"[red]Error: invalid cron expression or timezone: {exc}[/red]")
+        build_cron_trigger(cron_expr, timezone)
+    except ValueError as exc:
+        _console.print(f"[red]Error: {exc}[/red]")
         raise SystemExit(1) from exc
 
 
@@ -61,4 +62,4 @@ def add_task_and_echo(task: ScheduledTask, *, label: str) -> ScheduledTask:
     return added
 
 
-__all__ = ["CRON_FIELD_COUNT", "add_task_and_echo", "validate_cron_and_timezone"]
+__all__ = ["add_task_and_echo", "validate_cron_and_timezone"]

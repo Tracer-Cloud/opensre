@@ -529,7 +529,7 @@ def test_cron_add_rejects_non_recurring_skill() -> None:
             "--kind",
             "recurring_skill",
             "--skill",
-            "fixing-github-ci",
+            "repair-github-ci",
             "--cron",
             "0 8 * * 1-5",
             "--provider",
