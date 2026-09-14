@@ -1,14 +1,20 @@
 # prompts/ — single-agent prompt assembly
 
-## SKILL.md files: suggest only, never edit
+## SKILL.md files and the system prompt: suggest only, never edit
 
 Agents are **never** allowed to change a `SKILL.md` file — not the body, not
 the frontmatter, not `version` / `last_changed_by` / `last_changed_at`, not a
-rename or move, not a new card, not a deletion. The formatting and metadata
-rules below describe what a **human** author must do; for an agent they are
-review criteria only. When you believe a `SKILL.md` needs a change, write the
+rename or move, not a new card, not a deletion. The same applies to the system
+prompt `opensre_system_prompt.md` in this directory: no edits to its text, no
+rename, move, or deletion. The formatting and metadata rules below describe
+what a **human** author must do; for an agent they are review criteria only.
+When you believe a `SKILL.md` or the system prompt needs a change, write the
 proposal (quote current text, give proposed text) in your reply or the PR
-description and leave the file as it is. No exception exists to this rule.
+description and leave the file as it is. **Under no circumstance** may an
+agent modify these files otherwise. The sole exception is a literal Ctrl-H
+replacement: the user gives the exact current word or sentence and the exact
+replacement, and the agent swaps one for the other character for character
+with no other change to the file (see the root `AGENTS.md`).
 
 ## Skills are prose first, scripts last
 

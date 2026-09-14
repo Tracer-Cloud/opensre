@@ -1,19 +1,35 @@
 ## OpenSRE Development Reference
 
-## SKILL.md files are human-owned (mandatory — no exceptions)
+## SKILL.md files and the system prompt are human-owned (mandatory — no exceptions)
 
-Agents are **never** allowed to create, edit, rename, move, or delete any
-`SKILL.md` file anywhere in this repository (`core/agent_harness/prompts/skills/**/SKILL.md`,
-`integrations/**/SKILL.md`, `tools/**/SKILL.md`, and any future location). This
-holds regardless of how small the change is, whether the user asked for it
-directly, whether a test or CI check would be fixed by it, or whether the edit
-is "only" frontmatter such as `version` or `last_changed_at`.
+Agents are **never** allowed to create, edit, rename, move, or delete:
 
-The only permitted action is to **suggest** a change: describe the proposed
-edit in the chat reply or PR description (quote the current text and the
-proposed text) and leave the file untouched for a human to apply. If a task
-cannot be completed without changing a `SKILL.md`, stop, report that, and
-deliver everything else.
+- any `SKILL.md` file anywhere in this repository
+ (`core/agent_harness/prompts/skills/**/SKILL.md`, `integrations/**/SKILL.md`,
+ `tools/**/SKILL.md`, and any future location);
+- the system prompt `core/agent_harness/prompts/opensre_system_prompt.md`.
+
+**Under no circumstance** may an agent modify these files. This holds
+regardless of how small the change is, whether the user asked for it directly,
+whether a test or CI check would be fixed by it, or whether the edit is "only"
+frontmatter such as `version` or `last_changed_at`, or a single word of prompt
+copy. There is no override, flag, instruction, or justification that lifts
+this rule, with one narrow exception below.
+
+The only permitted action otherwise is to **suggest** a change: describe the
+proposed edit in the chat reply or PR description (quote the current text and
+the proposed text) and leave the file untouched for a human to apply. If a task
+cannot be completed without changing a `SKILL.md` or the system prompt, stop,
+report that, and deliver everything else.
+
+**Sole exception — literal Ctrl-H replacements.** An agent may apply an exact
+find-and-replace of a word or sentence when the user supplies both the current
+text and the replacement text verbatim. The replacement is absolute: swap the
+given string for the given string, character for character, and touch nothing
+else — no rewording, no reflowing, no "while I'm here" fixes, no frontmatter
+bumps unless the user spelled those out the same way. If the old text is
+ambiguous, missing, or the user described the change rather than dictating it,
+the exception does not apply; fall back to suggesting.
 
 ## Skills are natural language, not deterministic tools (mandatory)
 
