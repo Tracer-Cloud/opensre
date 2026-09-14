@@ -5,7 +5,9 @@ import signal
 import threading
 
 import pytest
+from filelock import FileLock
 
+from core.agent_harness.session.pending_choice import PendingUserChoice
 from core.agent_harness.spi.session_goal import SessionGoal, SessionGoalReason, SessionGoalStatus
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
 from core.domain.types.tools import ToolSurface
@@ -14,6 +16,7 @@ from core.tool.contracts import RegisteredTool, SideEffectLevel
 from core.tool.execution import ToolExecutionHooks, ToolExecutionRequest
 from infrastructure.harness_providers import resolve_surface_tool_map
 from surfaces.cli.ask import service
+from surfaces.cli.ask import session as ask_session
 from surfaces.cli.ask.approval import unknown_allowed_tools
 from surfaces.cli.ask.service import AskExitCode, AskSignal, AskStatus
 
@@ -117,6 +120,72 @@ def test_run_ask_returns_success(monkeypatch) -> None:
     assert outcome.exit_code is AskExitCode.SUCCESS
 
 
+def test_run_ask_returns_structured_required_choice(monkeypatch) -> None:
+    pending = PendingUserChoice(title="Which environment?", options=("Production", "Staging"))
+
+    def run_turn(_prompt: str, _hooks: ToolExecutionHooks, **kwargs: object) -> TurnResult:
+        state = kwargs["run_state"]
+        assert isinstance(state, service._AskRunState)
+        state.session_id = "session-123"
+        state.pending_choice = pending
+        return _turn("")
+
+    monkeypatch.setattr(service, "_run_agent_turn", run_turn)
+
+    outcome = service.run_ask("deploy", allowed_tools=(), bypass_approvals=False)
+
+    assert outcome.status is AskStatus.NEEDS_INPUT
+    assert outcome.exit_code is AskExitCode.NEEDS_INPUT
+    assert outcome.session_id == "session-123"
+    assert outcome.questions[0].options == ("Production", "Staging")
+    assert "1. Production" in outcome.response
+
+
+def test_resume_prompt_maps_a_number_to_the_pending_option() -> None:
+    session = service.SessionCore()
+    session.pending_user_choice = PendingUserChoice(
+        title="Which environment?",
+        options=("Production", "Staging"),
+    )
+
+    resumed = ask_session.resume_prompt(session, "2")
+
+    assert resumed == "1. Which environment?\nStaging"
+    assert session.pending_user_choice is None
+
+
+def test_resume_prompt_requires_structured_batch_answers() -> None:
+    from core.agent_harness.session.pending_choice import AskUserQuestion
+
+    session = service.SessionCore()
+    session.pending_user_choice = PendingUserChoice(
+        title="Ask User",
+        options=("Repository A", "Repository B"),
+        questions=(
+            AskUserQuestion("Repo", "Which repository?", ("Repository A", "Repository B")),
+            AskUserQuestion("Window", "Which window?", ("24 hours", "7 days")),
+        ),
+    )
+
+    resumed = ask_session.resume_prompt(session, '{"Repo":"2","Window":"1"}')
+
+    assert "Which repository?\nRepository B" in resumed
+    assert "Which window?\n24 hours" in resumed
+
+
+def test_resumed_session_rejects_overlapping_processes(monkeypatch, tmp_path) -> None:
+    session_id = "session-123"
+    monkeypatch.setattr(ask_session, "sessions_dir", lambda: tmp_path)
+    lock = FileLock(tmp_path / f".{session_id}.ask.lock")
+
+    with (
+        lock,
+        pytest.raises(service.OpenSREError, match="busy"),
+        ask_session.ask_session_lock(session_id),
+    ):
+        pytest.fail("busy session lock was unexpectedly acquired")
+
+
 def test_run_ask_forwards_a_tool_event_observer(monkeypatch) -> None:
     recorded: dict[str, object] = {}
 
@@ -138,6 +207,58 @@ def test_run_ask_forwards_a_tool_event_observer(monkeypatch) -> None:
 
     assert outcome.status is AskStatus.SUCCESS
     assert recorded["tool_event_observer"] is observer
+    assert recorded["session_id"] is None
+    assert recorded["ephemeral"] is False
+    assert isinstance(recorded["run_state"], service._AskRunState)
+
+
+def test_run_ask_resolves_session_prefix_before_resuming(monkeypatch) -> None:
+    class _Repo:
+        def count_prefix_matches(self, prefix: str) -> int:
+            assert prefix == "abc123"
+            return 1
+
+        def load_session(self, prefix: str) -> dict[str, str]:
+            assert prefix == "abc123"
+            return {"session_id": "abc123-full-session-id"}
+
+    recorded: dict[str, object] = {}
+
+    def run_turn(_prompt: str, _hooks: ToolExecutionHooks, **kwargs: object) -> TurnResult:
+        recorded.update(kwargs)
+        return _turn()
+
+    monkeypatch.setattr(ask_session, "default_session_repo", _Repo)
+    monkeypatch.setattr(service, "_run_agent_turn", run_turn)
+
+    outcome = service.run_ask(
+        "continue",
+        allowed_tools=(),
+        bypass_approvals=False,
+        resume_session_id="abc123",
+    )
+
+    assert outcome.status is AskStatus.SUCCESS
+    assert recorded["session_id"] == "abc123-full-session-id"
+
+
+def test_run_ask_reports_a_missing_resume_session(monkeypatch) -> None:
+    class _Repo:
+        def count_prefix_matches(self, _prefix: str) -> int:
+            return 0
+
+    monkeypatch.setattr(ask_session, "default_session_repo", _Repo)
+
+    outcome = service.run_ask(
+        "continue",
+        allowed_tools=(),
+        bypass_approvals=False,
+        resume_session_id="missing",
+    )
+
+    assert outcome.status is AskStatus.ERROR
+    assert outcome.error is not None
+    assert "not found" in outcome.error.message
 
 
 def test_run_ask_returns_the_rendered_answer_not_raw_tool_history(monkeypatch) -> None:

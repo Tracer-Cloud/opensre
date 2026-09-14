@@ -23,11 +23,23 @@ from core.agent_harness import (
 )
 from core.agent_harness.ports import ToolEventObserver
 from core.agent_harness.prompts.kernel.surfaces import PromptSurface
+from core.agent_harness.session.pending_choice import (
+    PendingUserChoice,
+)
 from core.agent_harness.spi.cancel import ensure_turn_cancel
 from core.agent_harness.spi.session_goal import SessionGoal, SessionGoalReason, SessionGoalStatus
 from core.tool import ToolExecutionHooks
 from infrastructure.errors import OpenSREError
 from surfaces.cli.ask.approval import ApprovalTracker, build_approval_hooks
+from surfaces.cli.ask.session import (
+    ask_session_lock as _ask_session_lock,
+)
+from surfaces.cli.ask.session import (
+    resolve_resume_session_id as _resolve_resume_session_id,
+)
+from surfaces.cli.ask.session import (
+    resume_prompt as _resume_prompt,
+)
 from surfaces.cli.ask.signals import AskSignal, ask_signal_scope
 
 #: Capabilities the one-shot ``ask`` agent must not reach — it answers or runs a
@@ -37,6 +49,7 @@ _ASK_DISABLED_CAPABILITIES = ("llm_provider", "slash_commands", "task_cancel")
 
 class AskStatus(StrEnum):
     SUCCESS = "success"
+    NEEDS_INPUT = "needs_input"
     APPROVAL_DENIED = "approval_denied"
     ERROR = "error"
     CANCELLED = "cancelled"
@@ -46,6 +59,7 @@ class AskExitCode(IntEnum):
     SUCCESS = 0
     ERROR = 1
     APPROVAL_DENIED = 3
+    NEEDS_INPUT = 4
     SIGINT = 130
     SIGTERM = 143
 
@@ -62,12 +76,32 @@ class AskError:
 
 
 @dataclass(frozen=True, slots=True)
+class AskQuestion:
+    """One structured question returned by a headless ask invocation."""
+
+    label: str
+    title: str
+    options: tuple[str, ...]
+    multi_select: bool = False
+
+    def as_dict(self) -> dict[str, object]:
+        return {
+            "label": self.label,
+            "title": self.title,
+            "options": list(self.options),
+            "multi_select": self.multi_select,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class AskOutcome:
     """Normalized process outcome for one ask invocation."""
 
     status: AskStatus
     response: str
     denied_tools: tuple[str, ...] = ()
+    session_id: str | None = None
+    questions: tuple[AskQuestion, ...] = ()
     error: AskError | None = None
     exit_code: AskExitCode = AskExitCode.SUCCESS
 
@@ -76,8 +110,18 @@ class AskOutcome:
             "status": self.status.value,
             "response": self.response,
             "denied_tools": list(self.denied_tools),
+            "session_id": self.session_id,
+            "questions": [question.as_dict() for question in self.questions],
             "error": self.error.as_dict() if self.error is not None else None,
         }
+
+
+@dataclass(slots=True)
+class _AskRunState:
+    """Session details captured before the manager releases its handle."""
+
+    session_id: str | None = None
+    pending_choice: PendingUserChoice | None = None
 
 
 class _CancellableConsole:
@@ -186,6 +230,9 @@ def _run_agent_turn(
     *,
     tool_event_observer: ToolEventObserver | None = None,
     output: _AskOutputSink | None = None,
+    session_id: str | None = None,
+    ephemeral: bool = True,
+    run_state: _AskRunState | None = None,
 ) -> TurnResult:
     manager = SessionManager()
     output = output or _AskOutputSink()
@@ -196,11 +243,12 @@ def _run_agent_turn(
         with ask_signal_scope(cancel_event), _ask_log_scope():
             agent_session = AgentSession.start(
                 SessionConfig(
+                    session_id=session_id,
                     load_env=True,
                     hydrate_integrations=True,
                     warm_integrations=True,
                     persistent_tasks=False,
-                    open_store=False,
+                    open_store=not ephemeral,
                     session_manager=manager,
                 ),
                 output=output,
@@ -212,17 +260,52 @@ def _run_agent_turn(
                 tool_event_observer=tool_event_observer,
             )
             session = agent_session.bound_session
+            if session is None:
+                raise RuntimeError("AgentSession.start() did not bind a session.")
+            if run_state is not None:
+                run_state.session_id = None if ephemeral else session.session_id
+            prior_pending = session.pending_user_choice if session_id else None
+            turn_prompt = _resume_prompt(session, prompt) if session_id else prompt
             # chat_until_goal, not chat: the agent can attach a session goal,
             # which must run to completion rather than stop after one turn.
-            result = agent_session.chat_until_goal(
-                prompt,
-                on_progress=lambda goal: _clear_prior_goal_response(output, goal),
-            ).last_result
+            try:
+                result = agent_session.chat_until_goal(
+                    turn_prompt,
+                    on_progress=lambda goal: _clear_prior_goal_response(output, goal),
+                ).last_result
+            except Exception:
+                # A failed resume must not consume its still-unhandled question.
+                session.pending_user_choice = prior_pending
+                raise
             output.mark_turn_complete()
+            if run_state is not None:
+                run_state.pending_choice = getattr(session, "pending_user_choice", None)
             return result
     finally:
         if session is not None:
             manager.close(session, extract_memory=False)
+
+
+def _outcome_questions(pending: PendingUserChoice) -> tuple[AskQuestion, ...]:
+    return tuple(
+        AskQuestion(
+            label=question.label,
+            title=question.title,
+            options=question.options,
+            multi_select=question.multi_select,
+        )
+        for question in pending.items()
+    )
+
+
+def _questions_response(questions: tuple[AskQuestion, ...]) -> str:
+    blocks: list[str] = []
+    for question in questions:
+        options = "\n".join(
+            f"  {index}. {option}" for index, option in enumerate(question.options, start=1)
+        )
+        blocks.append(f"{question.title}\n{options}")
+    return "\n\n".join(blocks)
 
 
 def _successful_turn(result: TurnResult, response: str) -> bool:
@@ -289,8 +372,17 @@ def run_ask(
     allowed_tools: tuple[str, ...],
     bypass_approvals: bool,
     tool_event_observer: ToolEventObserver | None = None,
+    resume_session_id: str | None = None,
+    ephemeral: bool = False,
 ) -> AskOutcome:
     """Execute one ask turn with invocation-scoped approval authority."""
+    if resume_session_id and ephemeral:
+        return AskOutcome(
+            status=AskStatus.ERROR,
+            response="",
+            error=AskError(message="A resumed session cannot be ephemeral."),
+            exit_code=AskExitCode.ERROR,
+        )
     tracker = ApprovalTracker()
     output = _AskOutputSink()
     hooks = build_approval_hooks(
@@ -298,13 +390,19 @@ def run_ask(
         bypass_approvals=bypass_approvals,
         tracker=tracker,
     )
+    run_state = _AskRunState()
     try:
-        result = _run_agent_turn(
-            prompt,
-            hooks,
-            tool_event_observer=tool_event_observer,
-            output=output,
-        )
+        session_id = _resolve_resume_session_id(resume_session_id) if resume_session_id else None
+        with _ask_session_lock(session_id):
+            result = _run_agent_turn(
+                prompt,
+                hooks,
+                tool_event_observer=tool_event_observer,
+                output=output,
+                session_id=session_id,
+                ephemeral=ephemeral,
+                run_state=run_state,
+            )
     except AskSignal as exc:
         return cancelled_outcome(exc.signum)
     except OpenSREError as exc:
@@ -357,6 +455,15 @@ def run_ask(
     )
     if denied is not None:
         return denied
+    if run_state.pending_choice is not None:
+        questions = _outcome_questions(run_state.pending_choice)
+        return AskOutcome(
+            status=AskStatus.NEEDS_INPUT,
+            response=_questions_response(questions),
+            session_id=run_state.session_id,
+            questions=questions,
+            exit_code=AskExitCode.NEEDS_INPUT,
+        )
     if result.cancelled:
         return AskOutcome(
             status=AskStatus.CANCELLED,
@@ -373,6 +480,7 @@ def run_ask(
     return AskOutcome(
         status=AskStatus.SUCCESS,
         response=response,
+        session_id=run_state.session_id,
     )
 
 
@@ -380,6 +488,7 @@ __all__ = [
     "AskError",
     "AskExitCode",
     "AskOutcome",
+    "AskQuestion",
     "AskSignal",
     "AskStatus",
     "ask_signal_scope",

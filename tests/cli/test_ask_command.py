@@ -11,10 +11,11 @@ from surfaces.cli.ask.service import (
     AskError,
     AskExitCode,
     AskOutcome,
+    AskQuestion,
     AskSignal,
     AskStatus,
 )
-from surfaces.cli.commands.ask import _echo_answer, ask_command
+from surfaces.cli.commands.ask import _echo_answer, _render_outcome, ask_command
 
 
 def _success(response: str = "done") -> AskOutcome:
@@ -58,6 +59,25 @@ def test_ask_answer_renders_markdown_on_a_tty(monkeypatch) -> None:
     assert isinstance(printed[0], Markdown)
 
 
+def test_required_choice_prints_exact_resume_command_on_stderr(monkeypatch, capsys) -> None:
+    outcome = AskOutcome(
+        status=AskStatus.NEEDS_INPUT,
+        response="Which environment?\n  1. Production\n  2. Staging",
+        session_id="session-123",
+        questions=(AskQuestion("Environment", "Which environment?", ("Production", "Staging")),),
+        exit_code=AskExitCode.NEEDS_INPUT,
+    )
+    monkeypatch.setattr("sys.stderr.isatty", lambda: True)
+    monkeypatch.setattr("surfaces.cli.commands.ask._echo_answer", lambda _text: None)
+
+    _render_outcome(outcome)
+
+    captured = capsys.readouterr()
+    assert captured.out == ""
+    assert "Session: session-123" in captured.err
+    assert 'opensre ask --resume session-123 "1"' in captured.err
+
+
 def test_ask_passes_prompt_and_invocation_authority(monkeypatch) -> None:
     captured: dict[str, object] = {}
 
@@ -80,7 +100,37 @@ def test_ask_passes_prompt_and_invocation_authority(monkeypatch) -> None:
         "allowed_tools": ("grafana_query",),
         "bypass_approvals": False,
         "tool_event_observer": None,
+        "resume_session_id": None,
+        "ephemeral": False,
     }
+
+
+def test_ask_passes_resume_and_ephemeral_options(monkeypatch) -> None:
+    captured: dict[str, object] = {}
+
+    def fake_run(prompt: str, **kwargs: object) -> AskOutcome:
+        captured.update(prompt=prompt, **kwargs)
+        return _success()
+
+    monkeypatch.setattr("surfaces.cli.ask.approval.unknown_allowed_tools", lambda _v: ())
+    monkeypatch.setattr("surfaces.cli.ask.service.run_ask", fake_run)
+
+    resumed = CliRunner().invoke(ask_command, ["--resume", "abc123", "continue"])
+    assert resumed.exit_code == 0
+    assert captured["resume_session_id"] == "abc123"
+    assert captured["ephemeral"] is False
+
+    ephemeral = CliRunner().invoke(ask_command, ["--ephemeral", "one shot"])
+    assert ephemeral.exit_code == 0
+    assert captured["resume_session_id"] is None
+    assert captured["ephemeral"] is True
+
+
+def test_ask_rejects_resume_with_ephemeral() -> None:
+    result = CliRunner().invoke(ask_command, ["--resume", "abc123", "--ephemeral", "reply"])
+
+    assert result.exit_code == 2
+    assert "--resume cannot be combined with --ephemeral" in result.output
 
 
 def test_ask_passes_a_live_observer_only_for_an_interactive_text_terminal(monkeypatch) -> None:
@@ -231,6 +281,8 @@ def test_ask_json_output_is_one_stable_document(monkeypatch) -> None:
         "status": "error",
         "response": "",
         "denied_tools": [],
+        "session_id": None,
+        "questions": [],
         "error": {"message": "failed", "suggestion": "retry"},
     }
     assert result.stderr == ""
