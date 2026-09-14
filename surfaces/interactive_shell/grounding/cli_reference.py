@@ -173,8 +173,7 @@ def _interactive_shell_slash_hints(provider: SlashCommandProvider | None = None)
         + "or get CLI help.",
         "Every nonempty shell command runs through the platform command shell.",
         "This includes plain commands, pipes, redirects, substitutions, and compact operators.",
-        "A leading ! is optional; /auto High runs immediately, while lower levels may ask.",
-        "Plan-only may also ask; there is no read-only shell allowlist or blocked command list.",
+        "A leading ! is optional.",
         "Slash commands:",
         "",
     ]

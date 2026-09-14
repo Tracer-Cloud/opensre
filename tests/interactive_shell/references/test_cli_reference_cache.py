@@ -161,6 +161,13 @@ def test_shell_prompt_context_provider_includes_cli_reference() -> None:
     assert "plain commands are parsed to argv" not in text
 
 
+def test_shell_reference_hints_omit_runtime_confirmation_policy() -> None:
+    hints = cli_reference_module._interactive_shell_slash_hints()  # noqa: SLF001
+    assert "platform command shell" in hints
+    assert "/auto" not in hints
+    assert "Plan-only" not in hints
+
+
 def test_shell_prompt_context_provider_reuses_session_cli_cache() -> None:
     session = _session_with_cli()
     first = cli_reference_module.shell_prompt_context_provider(session)
