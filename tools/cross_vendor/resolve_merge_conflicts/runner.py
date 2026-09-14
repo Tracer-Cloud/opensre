@@ -445,6 +445,8 @@ def _merge_finished_by_agent(
     )
     if finish.approve is not None and not finish.approve(action):
         return done(error_kind=ERR_CONFIRMATION_DENIED, error=f"Not approved: {action}.")
+    if finish.cancelled():
+        return done(error_kind=ERR_CANCELLED, error="Stopped before the push.")
     pushed_to, push_error, checks = _push_and_watch(ws, sha, finish)
     return done(
         pushed_to=pushed_to,

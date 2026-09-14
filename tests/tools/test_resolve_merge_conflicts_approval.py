@@ -336,3 +336,37 @@ def test_a_merge_the_agent_committed_itself_is_still_approved_and_pushed(tmp_pat
     )
     assert out["success"] is True and out["pushed"] is True
     assert _git(bare, "rev-parse", "refs/heads/feature") == out["commit_sha"]
+
+
+def test_escape_during_approval_of_an_agent_committed_merge_stops_the_push(tmp_path: Path) -> None:
+    # Arrange: the agent commits the merge; ESC arrives while the approval card is open.
+    work, bare = _stopped_merge_with_origin(tmp_path)
+    before_remote = _git(bare, "rev-parse", "refs/heads/feature")
+    cancelled = False
+
+    def agent_commits(_task: str, **_kwargs: object) -> CodingResult:
+        (work / "app.py").write_text("greeting = 'hi, world'\n")
+        _git(work, "add", "app.py")
+        _git(work, "commit", "-qm", "merge main")
+        return CodingResult(success=True, summary="Merged and committed.")
+
+    def approve_then_cancel(_action: str) -> bool:
+        nonlocal cancelled
+        cancelled = True
+        return True
+
+    # Act
+    with patch(_VERIFY, return_value=(True, "ready")), patch(_RUN, side_effect=agent_commits):
+        out = resolve_merge(
+            str(work),
+            ref=None,
+            model=None,
+            instructions=None,
+            approve=approve_then_cancel,
+            cancelled=lambda: cancelled,
+        )
+
+    # Assert
+    assert out["error_kind"] == "cancelled" and out["success"] is False
+    assert out["commit_sha"] == head_sha(str(work)) and out["pushed"] is False
+    assert _git(bare, "rev-parse", "refs/heads/feature") == before_remote
