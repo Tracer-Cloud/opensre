@@ -9,6 +9,7 @@ from pathlib import Path
 import pytest
 from click.testing import CliRunner
 
+import infrastructure.process.runtime_flags as runtime_flags
 from infrastructure.scheduling.scheduler.storage import BacklogSnapshot, TaskStoreSnapshot
 from infrastructure.scheduling.scheduler.types import Provider, TaskKind, TaskRun, TaskStatus
 from surfaces.cli.commands.cron import (
@@ -19,12 +20,21 @@ from surfaces.cli.commands.cron import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _isolate_runtime_flags(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(runtime_flags, "_flags", runtime_flags.RuntimeFlags())
+
+
 def test_cron_add_provider_choices_match_full_provider_enum() -> None:
     """cron delivery genuinely supports every Provider member."""
     assert set(_PROVIDER_CHOICES) == {p.value for p in Provider}
 
 
-def test_cron_status_reports_backlog_in_json(monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.parametrize("global_json", [False, True])
+def test_cron_status_reports_backlog_in_json(
+    monkeypatch: pytest.MonkeyPatch, global_json: bool
+) -> None:
+    monkeypatch.setattr(runtime_flags, "_flags", runtime_flags.RuntimeFlags(json=global_json))
     snapshot = BacklogSnapshot(
         pending_count=7,
         oldest_pending_at=datetime(2026, 1, 1, 9, 0, tzinfo=UTC),
@@ -39,7 +49,8 @@ def test_cron_status_reports_backlog_in_json(monkeypatch: pytest.MonkeyPatch) ->
         lambda: TaskStoreSnapshot((), True),
     )
 
-    result = CliRunner().invoke(cron_command, ["status", "--json"])
+    args = ["status"] if global_json else ["status", "--json"]
+    result = CliRunner().invoke(cron_command, args)
 
     assert result.exit_code == 0
     assert json.loads(result.output) == {
@@ -67,9 +78,11 @@ def test_cron_status_formats_empty_backlog(monkeypatch: pytest.MonkeyPatch) -> N
     assert "0" in result.output
 
 
+@pytest.mark.parametrize("global_json", [False, True])
 def test_cron_status_reports_unknown_for_non_utf8_store(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, global_json: bool
 ) -> None:
+    monkeypatch.setattr(runtime_flags, "_flags", runtime_flags.RuntimeFlags(json=global_json))
     store_path = tmp_path / "scheduler_tasks.json"
     store_path.write_bytes(b"\xff\xfe")
     monkeypatch.setattr(
@@ -77,7 +90,8 @@ def test_cron_status_reports_unknown_for_non_utf8_store(
         lambda: store_path,
     )
 
-    result = CliRunner().invoke(cron_command, ["status", "--json"])
+    args = ["status"] if global_json else ["status", "--json"]
+    result = CliRunner().invoke(cron_command, args)
 
     assert result.exit_code == 1
     assert json.loads(result.output) == {

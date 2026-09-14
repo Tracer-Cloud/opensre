@@ -12,6 +12,7 @@ from rich.console import Console
 from rich.table import Table
 
 from core.agent_harness import pin_recurring_skill, validate_skill_inputs
+from infrastructure.process.runtime_flags import is_json_output
 from infrastructure.scheduling.scheduler.credentials import requires_explicit_chat_id
 from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_MODE_AGENT,
@@ -365,6 +366,7 @@ def cron_status(as_json: bool) -> None:
         get_task_store_snapshot,
     )
 
+    as_json = as_json or is_json_output()
     task_store = get_task_store_snapshot()
     if not task_store.complete:
         if as_json:
