@@ -195,7 +195,7 @@ def execution_allowed(
         why=why,
         action_already_listed=action_already_listed,
     )
-    options = (("y", "Yes, allow"), ("n", "No, cancel"))
+    options: tuple[tuple[str, str], ...] = (("y", "Yes, allow"), ("n", "No, cancel"))
     if plan_only_active and result.tool_type == _SHELL_TOOL_TYPE:
         options = (
             ("y", "Yes, allow this command"),
