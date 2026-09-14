@@ -190,6 +190,12 @@ def _resolve(
                     f"No merge is in progress in {ws}. Name the branch or commit to merge "
                     f"into {branch} and it will be merged first.",
                 )
+            if finish.cancelled():
+                raise ResolveMergeError(
+                    ERR_CANCELLED,
+                    f"Stopped before the merge of {ref} into {branch}. "
+                    "Nothing was committed or pushed.",
+                )
             if merge_ref(ws, ref, message=f"Merge {ref} into {branch}"):
                 return _pushed_output(ws, branch, str(ref), head_sha(ws), finish=finish)
         theirs = merge_head_name(ws) if already_merging else str(ref)
@@ -441,17 +447,15 @@ def _commit(
             rendered=rendered,
         ) from exc
     if finish.cancelled():
-        return _output(
+        return _cancelled_before_push(
             ws,
-            branch=conflicts.ours,
-            merged=conflicts.theirs,
-            commit_sha=sha,
+            conflicts.ours,
+            conflicts.theirs,
+            sha,
             resolved=conflicts.names,
             resolutions=_resolutions(ws, sha, conflicts),
             summary=summary,
             rendered=rendered,
-            error_kind=ERR_CANCELLED,
-            error="Stopped before the push.",
         )
     pushed_to, push_error, checks = _push_and_watch(ws, sha, finish)
     return _output(
@@ -470,14 +474,44 @@ def _commit(
     )
 
 
+def _cancelled_before_push(
+    ws: str,
+    branch: str,
+    merged: str,
+    sha: str,
+    *,
+    resolved: tuple[str, ...] = (),
+    resolutions: tuple[str, ...] = (),
+    summary: str = "",
+    rendered: bool = False,
+) -> dict[str, Any]:
+    """The merge commit exists locally; ESC arrived before the remote was updated."""
+    return _output(
+        ws,
+        branch=branch,
+        merged=merged,
+        commit_sha=sha,
+        resolved=resolved,
+        resolutions=resolutions,
+        summary=summary,
+        rendered=rendered,
+        error_kind=ERR_CANCELLED,
+        error="Stopped before the push.",
+    )
+
+
 def _pushed_output(
     ws: str, branch: str, merged: str, sha: str, *, finish: _Finish
 ) -> dict[str, Any]:
     """A merge git committed cleanly still needs approval before it is pushed."""
+    if finish.cancelled():
+        return _cancelled_before_push(ws, branch, merged, sha)
     target = _push_target(ws, branch)
     action = f"push the clean merge of {merged} into {branch} to {target}"
     if finish.approve is not None and not finish.approve(action):
         return _output(ws, branch=branch, merged=merged, commit_sha=sha)
+    if finish.cancelled():
+        return _cancelled_before_push(ws, branch, merged, sha)
     pushed_to, push_error, checks = _push_and_watch(ws, sha, finish)
     return _output(
         ws,

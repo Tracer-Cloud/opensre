@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from integrations.coding_agent import CodingResult
-from integrations.git import head_sha, merge_in_progress
+from integrations.git import head_sha, merge_in_progress, merge_ref
 from integrations.github import ChecksOutcome
 from tools.cross_vendor.resolve_merge_conflicts.runner import resolve_merge
 
@@ -168,6 +168,84 @@ def test_green_checks_end_the_run_and_failed_checks_are_reported(tmp_path: Path)
     assert failed_output["error_kind"] == "checks_failed"
     assert failed_output["failing_checks"] == ["CI Gate"]
     assert "but checks failed: CI Gate" in failed_output["outcome"]
+
+
+def _clean_merge_with_origin(tmp_path: Path) -> tuple[Path, Path]:
+    """``feature`` tracks ``origin/feature``; ``main`` changed a different file so the merge is clean."""
+    bare = tmp_path / "origin.git"
+    work = tmp_path / "work"
+    _git(tmp_path, "init", "--bare", str(bare))
+    _git(tmp_path, "init", "-b", "main", str(work))
+    _git(work, "config", "user.email", "t@example.com")
+    _git(work, "config", "user.name", "Tester")
+    (work / "app.py").write_text("greeting = 'hello'\n")
+    (work / "notes.txt").write_text("notes\n")
+    _git(work, "add", "-A")
+    _git(work, "commit", "-m", "init")
+    _git(work, "remote", "add", "origin", str(bare))
+    _git(work, "checkout", "-b", "feature")
+    (work / "app.py").write_text("greeting = 'hello, world'\n")
+    _git(work, "commit", "-am", "feature greeting")
+    _git(work, "push", "-u", "origin", "feature")
+    _git(work, "checkout", "main")
+    (work / "notes.txt").write_text("main notes\n")
+    _git(work, "commit", "-am", "main notes")
+    _git(work, "checkout", "feature")
+    return work, bare
+
+
+def test_escape_before_a_clean_merge_does_not_push(tmp_path: Path) -> None:
+    # Arrange: ESC is already pressed before the conflict-free merge starts.
+    work, bare = _clean_merge_with_origin(tmp_path)
+    before_local = head_sha(str(work))
+    before_remote = _git(bare, "rev-parse", "refs/heads/feature")
+
+    # Act
+    out = resolve_merge(
+        str(work), ref="main", model=None, instructions=None, cancelled=lambda: True
+    )
+
+    # Assert
+    assert out["success"] is False
+    assert out["error_kind"] == "cancelled"
+    assert out["pushed"] is False
+    assert head_sha(str(work)) == before_local
+    assert _git(bare, "rev-parse", "refs/heads/feature") == before_remote
+    assert "Nothing was committed or pushed" in out["error"]
+
+
+def test_escape_after_a_clean_merge_commit_does_not_push(tmp_path: Path) -> None:
+    # Arrange: ESC arrives after git has created the merge commit, before the push.
+    work, bare = _clean_merge_with_origin(tmp_path)
+    before_remote = _git(bare, "rev-parse", "refs/heads/feature")
+    cancelled = False
+
+    def merge_then_cancel(workspace: str, ref: str, *, message: str) -> bool:
+        nonlocal cancelled
+        committed = merge_ref(workspace, ref, message=message)
+        cancelled = True
+        return committed
+
+    # Act
+    with patch(
+        "tools.cross_vendor.resolve_merge_conflicts.runner.merge_ref",
+        side_effect=merge_then_cancel,
+    ):
+        out = resolve_merge(
+            str(work),
+            ref="main",
+            model=None,
+            instructions=None,
+            cancelled=lambda: cancelled,
+        )
+
+    # Assert
+    assert out["error_kind"] == "cancelled"
+    assert out["pushed"] is False
+    assert out["commit_sha"] == head_sha(str(work))
+    assert out["commit_sha"] != before_remote
+    assert _git(bare, "rev-parse", "refs/heads/feature") == before_remote
+    assert out["error"] == "Stopped before the push."
 
 
 def test_escape_before_the_commit_leaves_the_merge_open(tmp_path: Path) -> None:
