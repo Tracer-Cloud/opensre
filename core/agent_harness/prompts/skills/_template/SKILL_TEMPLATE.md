@@ -62,6 +62,6 @@ Complete when <the user has received the result>.
 <!-- Authoring notes: copy to skills/<name>/SKILL.md, replace placeholders,
      set the actual unquoted change date, and remove these notes. Follow
      ../AGENTS.md. Single-call tool-usage cards use their separate schema.
-     Add an optional pre_execute ask_user_choice menu only when the host must
-     open it on entry. Describe mid-flow questions in the numbered workflow.
+     Cards declare no entry hooks; describe every question, including any
+     first one, in the numbered workflow as an ask_user_choice step.
      Run the raw-card validator test and relevant workflow tests before release. -->

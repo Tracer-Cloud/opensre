@@ -19,7 +19,7 @@ metadata:
     - GitHub write access to the watched repository and an authenticated coding agent
     - Git installed on the scheduler host; repair checkouts are created automatically
     - For the demo, a GitHub token that can create a private repository and an example PR
-  version: "7.2"
+  version: "7.3"
 script_tools: references/script-tools.md
 includes:
   - common/ask_once.md
@@ -43,8 +43,8 @@ one real repair as fast as possible in well under five minutes.
 Use `update_plan` to create the live plan from the
 numbered workflow headings below. Mark Step 8 with `verifies: true` in every `update_plan` call: it is the check that the repair happened, and the report step relies on it to close.
 
-- [ ] Step 1. Select the repository, or the private demo, with ask_user_choice.
-- [ ] Step 2. Check prerequisites: GitHub identity and scopes, then the scheduler.
+- [ ] Step 1. Check prerequisites: GitHub identity and scopes, then the scheduler.
+- [ ] Step 2. Select the repository, or the private demo, with ask_user_choice.
 - [ ] Step 3. Select the failing PR, or confirm the authorized demo scope.
 - [ ] Step 4. Create the demo repository, failing branch, and PR (demo only).
 - [ ] Step 5. Confirm GitHub reports the failure with list_github_actions_workflow_runs.
@@ -57,16 +57,8 @@ numbered workflow headings below. Mark Step 8 with `verifies: true` in every `up
 
 ## Workflow
 
-### Step 1. Select the repository
 
-Use the repository already named by the user. Otherwise ask once with
-`ask_user_choice`: "Private disposable demo repository" first (recommended),
-then the repositories the user has configured. Choosing the demo authorizes
-creating and deleting one private repository, its branch, PR, and loop.
-
-Complete when the repository, or the demo scope, is established.
-
-### Step 2. Check prerequisites
+### Step 1. Check prerequisites
 
 Two calls, one per response:
 
@@ -78,8 +70,32 @@ Two calls, one per response:
 - `slash_invoke` `{"command": "/cron", "args": ["list"]}` — confirms the
   scheduler answers.
 
-Complete when GitHub identity, token scopes, and the scheduler are
-confirmed.
+**Complete this step when:**
+- GitHub identity, token scopes, and the scheduler are confirmed.
+
+### Step 2. Select the repository
+
+
+Use the repository already named by the user and skip the rest of this step.
+Otherwise, two calls, one per response:
+**find what is red right now**
+- `scan_github_ci_health()` — every repository of the user's account and
+  organizations, default branch and open PRs only. Read `failing_prs`;
+**ask once**
+- `ask_user_choice` titled "CI Repair Target": "Private disposable demo
+  repository" first (recommended), then one option per repository that
+  still has at least one failing PR, labelled `owner/repo — N failing PRs`,
+  most failures first, at most six. A repository with no failing PR is not
+  offered; a loop there would idle. If the scan returns
+  `available: false`, offer the demo and the configured repositories as
+  before and say the live scan was unavailable.
+
+Choosing the demo authorizes creating and deleting one private repository,
+its branch, PR, and loop. Keep the scan result: Step 3 selects the PR from
+it without a second GitHub read.
+
+**Complete this step when:**
+- When the repository, or the demo scope, is established.
 
 ### Step 3. Select the failure scenario
 

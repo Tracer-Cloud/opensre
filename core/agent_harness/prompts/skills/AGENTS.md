@@ -82,7 +82,6 @@ templates are not skill entries.
 | `description` | Required nonempty discovery text; state behavior and activation conditions. |
 | `metadata` | Required block described below; unknown fields are rejected. |
 | `getting_started`, `demo_order` | Optional pair: nonempty demo label and positive integer order. Labels and orders must be unique. |
-| `pre_execute` | Optional single entry call with `tool: ask_user_choice` and validated `args`. Use its `questions` array for several decisions. |
 | `includes` | Optional local Markdown files appended as instructions, once per resolved file. |
 | `recurring` | Optional boolean, default `false`; enables the recurring-skill runner. Actual cron and timezone belong to the scheduled task. |
 | `script_tools` | Optional pointer to `references/script-tools.md` declaring skill-local helper tools. |
@@ -107,7 +106,8 @@ no later than today.
   it does not claim to replace the full release record.
 
 `metadata.type`, `metadata.dependencies`, `metadata.prerequisite_for`, workflow
-`tools`, `after_tool`, and top-level `references` are unsupported. Tool-usage
+`tools`, `pre_execute`, `after_tool`, and top-level `references` are unsupported.
+Cards declare no entry hooks; see the onboarding menu paragraph below. Tool-usage
 cards retain their separate schema and required `tools` field.
 
 Put script-tool definitions in `references/script-tools.md`. Keep only the
@@ -132,13 +132,18 @@ URLs, self-inclusion, and another `SKILL.md` are invalid. Supporting citations
 remain Markdown links. Optional `references/<slug>.md` files still load on demand
 through `skill_view(name=..., reference=...)`; they are not automatic includes.
 
-The onboarding master's `pre_execute` supplies its question and presentation
-settings but omits `args.options`. The loader generates options and the matching
-skill handoffs from child demo metadata, then adds the shell's Skip option.
-Only implemented workflows belong in the demo menu or discovery catalog.
-Generated menus must contain one to seven child choices plus Skip. A child
-cannot reuse the reserved Skip label. Entry options must be distinct, and
-batched question titles must remain distinct after whitespace and case folding.
+The onboarding master's entry menu is not declared in its card. The loader
+(`catalog/demo_menu.py`) builds it in code: the title is
+`config.constants.skills.ONBOARDING_MENU_TITLE`, the options are the children's
+`getting_started` labels in `demo_order` followed by the shell's Skip option,
+and free text is disabled. The matching skill handoffs are generated from the
+same metadata. Only implemented workflows belong in the demo menu or discovery
+catalog. The generated menu must contain one to seven child choices plus Skip;
+otherwise the master is excluded with a diagnostic. A child cannot reuse the
+reserved Skip label. The host opens the menu on skill entry
+(`tools/interactive_shell/actions/skill_entry.py`) through the real
+`ask_user_choice` executor and reports `queued`, `suppressed`, or
+`unavailable` under the `entry_menu` key of the `skill_view` result.
 
 ## Narrow purpose
 
@@ -287,7 +292,7 @@ touched it last, when, and which revision of the card this is:
   it never resets on its own. The number before the dot does not move for
   routine work — wording, step reordering, new checks, a bigger report. Bump
   it (and reset the minor part to `.0`) only when the card breaks something
-  outside itself: a rename, a changed or removed `pre_execute` question, or a
+  outside itself: a rename, a changed or removed entry-menu question, or a
   removed workflow step that a persisted schedule or colocated test depends
   on. A history like `1.2 → 2.0 → 3.0 → 4.0 → 5.0` for ordinary edits is
   wrong; it should read `1.2 → 1.3 → 1.4 → 1.5 → 1.6`.

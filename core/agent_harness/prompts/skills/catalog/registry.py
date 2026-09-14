@@ -6,15 +6,10 @@ import logging
 from collections import Counter
 from functools import lru_cache
 from pathlib import Path
-from types import MappingProxyType
 
 from pydantic import ValidationError
 
-from core.agent_harness.prompts.skills.catalog.contracts import (
-    ActionSkill,
-    SkillCatalog,
-    SkillToolCall,
-)
+from core.agent_harness.prompts.skills.catalog.contracts import ActionSkill, SkillCatalog
 from core.agent_harness.prompts.skills.catalog.demo_menu import demo_skills, populate_demo_menu
 from core.agent_harness.prompts.skills.catalog.discovery import iter_skill_paths
 from core.agent_harness.prompts.skills.catalog.naming import normalize_skill_name
@@ -48,9 +43,6 @@ def validate_skill_file(skill_path: Path) -> ActionSkill:
         recurring=card.recurring,
         getting_started=card.getting_started,
         demo_order=card.demo_order,
-        pre_execute=tuple(
-            SkillToolCall(call.tool, MappingProxyType(call.args)) for call in card.pre_execute
-        ),
         includes=tuple(card.includes),
         script_tools=script_tools,
     )

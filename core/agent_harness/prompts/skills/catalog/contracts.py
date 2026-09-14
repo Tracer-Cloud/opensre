@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -11,11 +10,20 @@ from core.agent_harness.prompts.skills.catalog.script_tools import SkillScriptTo
 
 
 @dataclass(frozen=True)
-class SkillToolCall:
-    """One static entry-menu call declared by a skill."""
+class SkillEntryMenu:
+    """The single-choice menu the host opens on skill entry; catalog data, never frontmatter."""
 
-    tool: str
-    args: Mapping[str, Any]
+    title: str
+    options: tuple[str, ...]
+    allow_custom: bool = False
+
+    def tool_args(self) -> dict[str, Any]:
+        """Return the ``ask_user_choice`` arguments that open this menu."""
+        return {
+            "title": self.title,
+            "options": list(self.options),
+            "allow_custom": self.allow_custom,
+        }
 
 
 @dataclass(frozen=True)
@@ -28,7 +36,7 @@ class ActionSkill:
     recurring: bool = False
     getting_started: str | None = None
     demo_order: int | None = None
-    pre_execute: tuple[SkillToolCall, ...] = ()
+    entry_menu: SkillEntryMenu | None = None
     includes: tuple[str, ...] = ()
     script_tools: tuple[SkillScriptTool, ...] = ()
 

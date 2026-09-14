@@ -20,8 +20,8 @@ from tools.interactive_shell.actions.skill_entry import enter_skill
 def _view_skill_reference(name: str, reference: str) -> dict[str, Any]:
     """Load one bundled reference file without re-entering the skill.
 
-    Re-entering would re-run ``pre_execute`` menus and reset the active-skill
-    tool scope, so a reference load never goes through :func:`enter_skill`.
+    Re-entering would reopen the entry menu and reset the active-skill tool
+    scope, so a reference load never goes through :func:`enter_skill`.
     """
     content = load_skill_reference(name, reference)
     if not content:

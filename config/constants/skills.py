@@ -9,6 +9,10 @@ SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME = "scheduling-github-ci-repairs"
 DELEGATING_GITHUB_CI_REPAIRS_SKILL_NAME = "delegating-github-ci-repairs"
 CONNECTING_SLACK_SKILL_NAME = "connecting-slack"
 
+# Master onboarding menu the host opens on skill entry; its options are the
+# children's ``getting_started`` labels plus the Skip row below.
+ONBOARDING_MENU_TITLE = "Which demo would you like me to run?"
+
 # Master onboarding menu row the shell handles itself: no model turn, plain prompt.
 SKIP_DEMO_OPTION = "Skip the demo and open the shell"
 

@@ -4,7 +4,7 @@ from config.constants.skills import SKILLS_HEADER
 from core.agent_harness.prompts.skills.catalog.contracts import (
     ActionSkill,
     SkillCatalog,
-    SkillToolCall,
+    SkillEntryMenu,
 )
 from core.agent_harness.prompts.skills.catalog.naming import (
     is_legacy_skill_name,
@@ -30,7 +30,7 @@ __all__ = [
     "ActionSkill",
     "SKILLS_HEADER",
     "SkillCatalog",
-    "SkillToolCall",
+    "SkillEntryMenu",
     "clear_skills_caches",
     "find_action_skill",
     "getting_started_skills",

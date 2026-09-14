@@ -71,9 +71,10 @@ Use ordinary Markdown, following
 - Keep commands and exact output examples in inline code or fenced blocks.
 - Preserve frontmatter, tool contracts, exact choice labels, authorization
   boundaries, and required output formats when changing presentation.
-- A static menu a skill always opens on entry belongs in `pre_execute`
-  frontmatter (`tool: ask_user_choice` + `args`), not in prose the model must
-  replay; the host runs it before any model step (see `onboarding-github-ci`).
+- Skills declare no entry hooks. The one host-opened entry menu (the
+  `onboarding-github-ci` demo picker) is catalog data built from the
+  children's demo metadata in `skills/catalog/demo_menu.py`; the host opens it
+  before any model step. Do not restate it as prose the model must replay.
 - Describe mid-flow menus in the numbered workflow; the model calls
   `ask_user_choice` after completing the preceding step.
 - Rules shared by sibling skills belong in a markdown file listed under

@@ -47,9 +47,9 @@ def test_skill_view_reference_loads_without_reentering_skill() -> None:
     assert result["ok"] is True
     assert result["reference"] == "metrics"
     assert "red_hours" in result["content"]
-    # A reference load never re-enters the skill: no activation, no pre_execute.
+    # A reference load never re-enters the skill: no activation, no entry menu.
     assert ctx.session.active_skill is None
-    assert "pre_execute" not in result
+    assert "entry_menu" not in result
 
 
 def test_skill_view_unknown_reference_lists_available_references() -> None:

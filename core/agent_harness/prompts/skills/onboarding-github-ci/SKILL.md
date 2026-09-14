@@ -7,31 +7,26 @@ description: >-
 metadata:
   owner: Vincent
   last_changed_by: Jan
-  last_changed_at: 2026-09-12
+  last_changed_at: 2026-09-14
   usecases:
   - For new users selecting an available onboarding workflow at startup or through /demo.
   - For users exploring OpenSRE capabilities before choosing a specific workflow.
   requires:
   - An interactive terminal for the entry picker, or a conversational surface for its text fallback.
   - At least one available onboarding child skill.
-  version: '2.2'
-pre_execute:
-- tool: ask_user_choice
-  args:
-    title: Which demo would you like me to run?
-    allow_custom: false
+  version: '3.0'
 ---
 
 # CI/CD onboarding
 
-This master skill owns the onboarding question. Its menu is declared in
-`pre_execute`; the entry result reports whether it opened. If the current message
+This master skill owns the onboarding question. The host opens its menu on
+entry; the result's `entry_menu` reports whether it opened. If the current message
 already answers it, continue directly to the selected child. Never ask the
 onboarding question twice for one request.
 
 ## Ask User
 
-Read the `pre_execute` results before deciding what to do:
+Read the `entry_menu` result before deciding what to do:
 
 - `menu: queued`: end the turn and wait for the selection. The host owns the
   menu; do not call `ask_user_choice` again or repeat its options as text.

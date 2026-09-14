@@ -93,8 +93,8 @@ def test_metadata_is_required_and_strict(catalog_root: Path, field: str, value: 
         {"demo_order": 1},
         {"getting_started": "Demo", "demo_order": True},
         {"getting_started": SKIP_DEMO_OPTION, "demo_order": 1},
-        {"pre_execute": [{"tool": "shell_run", "args": {"command": "echo hello"}}]},
-        {"pre_execute": [{"tool": "ask_user_choice", "args": {"title": "Pick", "options": "a,b"}}]},
+        # Entry menus are catalog data built from demo metadata, not a frontmatter hook.
+        {"pre_execute": [{"tool": "ask_user_choice", "args": {"title": "Pick"}}]},
     ],
 )
 def test_runtime_fields_reject_unsupported_or_mistyped_values(
@@ -120,12 +120,7 @@ def test_duplicate_skill_names_are_all_excluded(catalog_root: Path) -> None:
 def test_unrenderable_generated_menu_excludes_only_the_master(
     catalog_root: Path, child_count: int
 ) -> None:
-    (catalog_root / "master.md").write_text(
-        skill_card(
-            ONBOARDING_SKILL_NAME,
-            pre_execute=[{"tool": "ask_user_choice", "args": {"title": "Pick a workflow"}}],
-        )
-    )
+    (catalog_root / "master.md").write_text(skill_card(ONBOARDING_SKILL_NAME))
     for index in range(child_count):
         (catalog_root / f"child-{index}.md").write_text(
             skill_card(f"child-{index}", getting_started=f"Demo {index}", demo_order=index + 1)
@@ -135,42 +130,6 @@ def test_unrenderable_generated_menu_excludes_only_the_master(
     assert all(skill.name != ONBOARDING_SKILL_NAME for skill in catalog.skills)
     assert len(catalog.diagnostics) == 1
     assert "generated demo menu" in catalog.diagnostics[0]
-
-
-@pytest.mark.parametrize(
-    "args",
-    [
-        {"title": "Pick", "options": ["same", " same "]},
-        {
-            "questions": [
-                {"label": "First", "title": "Pick", "options": ["one", "two"]},
-                {"label": "Second", "title": "pick", "options": ["one", "two"]},
-            ]
-        },
-    ],
-)
-def test_ambiguous_entry_menus_fail_validation(catalog_root: Path, args: dict[str, Any]) -> None:
-    (catalog_root / "invalid.md").write_text(
-        skill_card("invalid", pre_execute=[{"tool": "ask_user_choice", "args": args}])
-    )
-    catalog = skills.read_skill_catalog()
-    assert catalog.skills == ()
-    assert "distinct" in catalog.diagnostics[0]
-
-
-def test_multiple_entry_menus_cannot_overwrite_pending_questions(catalog_root: Path) -> None:
-    (catalog_root / "invalid.md").write_text(
-        skill_card(
-            "invalid",
-            pre_execute=[
-                {"tool": "ask_user_choice", "args": {"title": title, "options": ["one", "two"]}}
-                for title in ("First?", "Second?")
-            ],
-        )
-    )
-    catalog = skills.read_skill_catalog()
-    assert catalog.skills == ()
-    assert "pre_execute" in catalog.diagnostics[0]
 
 
 def test_duplicate_yaml_keys_are_not_silently_overwritten(catalog_root: Path) -> None:
