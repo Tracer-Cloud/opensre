@@ -57,7 +57,7 @@ Default branches
 | `counts` | Totals of the three lists |
 | `repos_in_scope`, `repos_scanned` | Attempted versus successfully read; the difference is in `errors` |
 | `errors` | Repositories that could not be read, with the reason |
-| `coverage_notices` | Every cap that applied: skipped stale repositories, repositories with more than 100 open PRs, heads with more than 100 checks |
+| `coverage_notices` | Every cap that applied: skipped stale repositories, owners that could not be listed, repositories with more than 100 open PRs, heads with more than 1000 checks |
 | `elapsed_seconds` | Wall-clock time of the scan |
 | `rate_limit_cost`, `rate_limit_remaining` | GraphQL points spent and left this hour |
 
@@ -72,3 +72,4 @@ A full scan spends a few hundred of GitHub's 5000 hourly GraphQL points. When th
 - A PR from a fork shows as a failing PR but never as a failing branch; the branch lives in the fork.
 - A Vercel or Aikido "failure" is often a blocked preview deploy or a security gate rather than a broken build. The check name tells you which.
 - Only the 100 most recently updated open PRs per repository are scanned. A repository past that cap gets a coverage notice.
+- A misspelled or inaccessible owner in `owners` is reported in `coverage_notices`; the other owners are still scanned.

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any
 
 from integrations.github.tools.ci_health_scan.models import CheckSummary, FailingCheck
@@ -23,20 +24,23 @@ def _text(value: Any) -> str:
     return " ".join(str(value or "").split()).strip()
 
 
-def classify_rollup(rollup: Any) -> CheckSummary:
+def classify_rollup(rollup: Any, extra_nodes: Sequence[Any] = ()) -> CheckSummary:
     """Reduce a ``statusCheckRollup`` node to the checks that failed on it.
 
     Returns an empty summary when the commit has no rollup at all (no CI ran).
     Check-runs are judged by ``conclusion``, status contexts by ``state``.
+    ``extra_nodes`` are context nodes fetched from later pages; ``truncated``
+    is true while ``totalCount`` still exceeds every node seen.
     """
     if not isinstance(rollup, dict):
         return _EMPTY
     contexts = rollup.get("contexts")
-    nodes = contexts.get("nodes") if isinstance(contexts, dict) else None
-    if not isinstance(nodes, list):
+    first_page = contexts.get("nodes") if isinstance(contexts, dict) else None
+    if not isinstance(first_page, list):
         return CheckSummary(
             rollup_state=_text(rollup.get("state")), failing=(), cancelled=(), truncated=False
         )
+    nodes = [*first_page, *extra_nodes]
     # Two workflow runs on one commit (e.g. push and pull_request events) each
     # contribute a check with the same name; the model needs each name once.
     failing: dict[str, FailingCheck] = {}

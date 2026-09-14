@@ -20,6 +20,7 @@ from integrations.github.helpers import (
     github_creds,
     github_source_available,
 )
+from integrations.github.tools.ci_health_scan.graphql import RateLimitTally
 from integrations.github.tools.ci_health_scan.scan import (
     DEFAULT_CONCURRENCY,
     MAX_CONCURRENCY,
@@ -149,7 +150,10 @@ def _clean_owners(owners: Any) -> list[str]:
         "errors": "Repositories that could not be read, with the reason",
         "coverage_notices": "Caps and skips the report must name",
         "elapsed_seconds": "Wall-clock time of the scan",
-        "rate_limit_cost": "GraphQL points the scan spent; rate_limit_remaining is what is left",
+        "rate_limit_cost": (
+            "GraphQL points the whole call spent (owner listing, batches, branch and check "
+            "pages); rate_limit_remaining is what is left"
+        ),
         "summary": "One sentence with the headline numbers",
     },
     surfaces=(ToolSurface.CHAT, ToolSurface.ACTION),
@@ -227,6 +231,8 @@ def scan_github_ci_health(
     client = GitHubRestClient(token)
     console = _console(context)
     started = time.monotonic()
+    # One tally for the whole call: owner listing, batches, and follow-up pages.
+    tally = RateLimitTally()
     try:
         scope = resolve_scope(
             client,
@@ -234,6 +240,7 @@ def scan_github_ci_health(
             visibility=scope_visibility,
             since_days=window,
             concurrency=workers,
+            tally=tally,
         )
     except GitHubApiError as exc:
         report_run_error(
@@ -262,6 +269,7 @@ def scan_github_ci_health(
         concurrency=workers,
         skipped_stale=scope.skipped_stale,
         started=started,
+        tally=tally,
     )
     if report.all_failed:
         # Every batch failed the same way (typically the hourly GraphQL budget

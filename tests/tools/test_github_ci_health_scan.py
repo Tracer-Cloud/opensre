@@ -53,15 +53,21 @@ def _status(context: str, state: str) -> dict[str, Any]:
 
 
 def _rollup(
-    *nodes: dict[str, Any], total: int | None = None, state: str = "FAILURE"
+    *nodes: dict[str, Any],
+    total: int | None = None,
+    state: str = "FAILURE",
+    next_cursor: str | None = None,
 ) -> dict[str, Any]:
-    return {
+    rollup: dict[str, Any] = {
         "state": state,
         "contexts": {
             "totalCount": total if total is not None else len(nodes),
             "nodes": list(nodes),
         },
     }
+    if next_cursor is not None:
+        rollup["contexts"]["pageInfo"] = {"hasNextPage": True, "endCursor": next_cursor}
+    return rollup
 
 
 def _commit(rollup: dict[str, Any] | None, sha: str = "abc1234") -> dict[str, Any]:
@@ -228,6 +234,61 @@ def test_scan_batch_follows_ref_pages_and_does_not_double_count_the_default_bran
     assert result.branches_seen == 3
 
 
+def test_scan_batch_pages_through_checks_and_reports_heads_it_could_not_finish() -> None:
+    """A failure on the second page of checks must not read as green.
+
+    PR 1's first 100 checks pass and the failing one is on page two, so the
+    scan follows the cursor and lists it. PR 2 has more checks than were
+    returned but no cursor to follow: it stays out of the failing list, and the
+    gap is a coverage notice instead of a silently dropped head. The follow-up
+    page's cost joins the batch total.
+    """
+    green = [_check_run(f"unit-{i}", "SUCCESS") for i in range(100)]
+
+    def respond(operation: str, variables: dict[str, Any]) -> dict[str, Any]:
+        if operation == "RepoScan":
+            return {
+                "data": {
+                    "rateLimit": {"cost": 3, "remaining": 4000},
+                    "r0": _repository(
+                        prs=[
+                            _pr(1, _rollup(*green, total=101, next_cursor="page2")),
+                            _pr(2, _rollup(*green[:3], total=150)),
+                        ]
+                    ),
+                }
+            }
+        assert operation == "CommitChecksPage"
+        assert variables["oid"] == "0000001" * 5 and variables["after"] == "page2"
+        return {
+            "data": {
+                "rateLimit": {"cost": 1, "remaining": 3999},
+                "repository": {
+                    "object": {
+                        "statusCheckRollup": {
+                            "contexts": {
+                                "pageInfo": {"hasNextPage": False, "endCursor": None},
+                                "nodes": [_check_run("slow-e2e", "FAILURE")],
+                            }
+                        }
+                    }
+                },
+            }
+        }
+
+    outcome = scan_batch(
+        FakeGraphQLClient(respond),  # type: ignore[arg-type]
+        _repos("alpha"),
+        include_all_branches=False,
+    )
+    (alpha,) = outcome.results
+    (head,) = alpha.failing_heads
+    assert head.number == 1 and [c.name for c in head.checks] == ["slow-e2e"]
+    assert head.checks_truncated is False
+    assert [n for n in alpha.coverage_notices if "0000002" in n and "150 checks" in n]
+    assert outcome.rate_limit_cost == 4 and outcome.rate_limit_remaining == 3999
+
+
 def test_scan_repositories_runs_batches_concurrently() -> None:
     """Three batches with concurrency three must all be in flight at once.
 
@@ -328,6 +389,68 @@ def test_resolve_scope_defaults_to_viewer_and_orgs_and_stops_at_the_stale_cutoff
     assert any("since_days=0" in n for n in scope.coverage_notices)
 
 
+def _owner_page(*names: str) -> dict[str, Any]:
+    nodes = [
+        {"name": n, "isPrivate": True, "pushedAt": "2026-09-10T00:00:00Z", "owner": {"login": "x"}}
+        for n in names
+    ]
+    page = {"pageInfo": {"hasNextPage": False, "endCursor": None}, "nodes": nodes}
+    return {"data": {"repositoryOwner": {"repositories": page}}}
+
+
+def test_resolve_scope_follows_organization_pages() -> None:
+    """A token in more than 100 organizations must not lose the later ones."""
+
+    def respond(operation: str, variables: dict[str, Any]) -> dict[str, Any]:
+        if operation == "ViewerScope":
+            if variables.get("after") is None:
+                orgs = {
+                    "pageInfo": {"hasNextPage": True, "endCursor": "orgs2"},
+                    "nodes": [{"login": "first"}],
+                }
+            else:
+                assert variables["after"] == "orgs2"
+                orgs = {
+                    "pageInfo": {"hasNextPage": False, "endCursor": None},
+                    "nodes": [{"login": "second"}],
+                }
+            return {"data": {"viewer": {"login": "me", "organizations": orgs}}}
+        return _owner_page(variables["login"])
+
+    scope = resolve_scope(FakeGraphQLClient(respond), owners=None, since_days=0)  # type: ignore[arg-type]
+    assert scope.owners == ("me", "first", "second")
+    assert [r.name for r in scope.repos] == ["me", "first", "second"]
+
+
+def test_resolve_scope_keeps_valid_owners_when_one_cannot_be_resolved() -> None:
+    """``owners=["acme", "typo"]`` scans acme and reports typo instead of failing the call."""
+
+    def respond(_operation: str, variables: dict[str, Any]) -> dict[str, Any]:
+        if variables["login"] == "typo":
+            return {
+                "data": {"repositoryOwner": None},
+                "errors": [{"message": "Could not resolve to a RepositoryOwner"}],
+            }
+        return _owner_page("svc")
+
+    scope = resolve_scope(FakeGraphQLClient(respond), owners=["acme", "typo"], since_days=0)  # type: ignore[arg-type]
+    assert [r.full_name for r in scope.repos] == ["x/svc"]
+    assert any("typo" in n and "RepositoryOwner" in n for n in scope.coverage_notices)
+
+
+def test_resolve_scope_raises_when_every_owner_fails_the_same_way() -> None:
+    """All owners unreadable (exhausted budget) is still one clear tool error, not an empty scan."""
+
+    def respond(_operation: str, _variables: dict[str, Any]) -> dict[str, Any]:
+        return {
+            "data": None,
+            "errors": [{"type": "RATE_LIMIT", "message": "API rate limit already exceeded"}],
+        }
+
+    with pytest.raises(GitHubApiError, match="rate limit"):
+        resolve_scope(FakeGraphQLClient(respond), owners=["acme", "beta"], since_days=0)  # type: ignore[arg-type]
+
+
 # --- tool ---------------------------------------------------------------------
 
 
@@ -371,6 +494,7 @@ def test_tool_returns_counts_notices_and_timing(monkeypatch: pytest.MonkeyPatch)
         if operation == "OwnerRepos":
             return {
                 "data": {
+                    "rateLimit": {"cost": 1, "remaining": 4994},
                     "repositoryOwner": {
                         "repositories": {
                             "pageInfo": {"hasNextPage": False, "endCursor": None},
@@ -389,7 +513,7 @@ def test_tool_returns_counts_notices_and_timing(monkeypatch: pytest.MonkeyPatch)
                                 },
                             ],
                         }
-                    }
+                    },
                 }
             }
         assert operation == "RepoScan"
@@ -412,7 +536,8 @@ def test_tool_returns_counts_notices_and_timing(monkeypatch: pytest.MonkeyPatch)
     }
     assert result["failing_prs"][0]["number"] == 7
     assert result["failing_default_branches"][0]["repo"] == "acme/b"
-    assert result["rate_limit_cost"] == 4
+    # Owner listing (1) plus the batch (4): every document's spend is counted.
+    assert result["rate_limit_cost"] == 5 and result["rate_limit_remaining"] == 4990
     assert result["elapsed_seconds"] >= 0
     assert "1 of 1 open PRs failing CI" in result["summary"]
 
