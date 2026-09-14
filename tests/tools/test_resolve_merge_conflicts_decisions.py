@@ -151,3 +151,84 @@ def test_normalize_decision_maps_labels_and_keeps_free_text() -> None:
     assert normalize_decision("keep the header from main, the body from ours") == (
         "keep the header from main, the body from ours"
     )
+
+
+def test_files_already_resolved_in_the_tree_are_not_sent_to_the_agent_again(
+    tmp_path: Path,
+) -> None:
+    # Arrange: a.txt was combined by an earlier run; b.txt still holds markers.
+    work = _stopped_merge_two_files(tmp_path)
+    (work / "a.txt").write_text("a feature and main\n")
+    tasks: list[str] = []
+
+    def combine(task: str, **_kwargs: object) -> CodingResult:
+        tasks.append(task)
+        (work / "b.txt").write_text("b feature and main\n")
+        return CodingResult(success=True, summary="Combined b.txt.")
+
+    # Act
+    with patch(_VERIFY, return_value=(True, "ready")), patch(_RUN, side_effect=combine):
+        out = resolve_merge(
+            str(work),
+            ref=None,
+            model=None,
+            instructions=None,
+            decisions={"a.txt": "combine", "b.txt": "combine"},
+            ask=None,
+        )
+
+    # Assert
+    assert out["success"] is True
+    assert len(tasks) == 1 and "- b.txt:" in tasks[0] and "- a.txt:" not in tasks[0]
+    assert (work / "a.txt").read_text() == "a feature and main\n"
+
+
+def test_several_files_are_asked_once_and_the_answer_applies_to_all(tmp_path: Path) -> None:
+    # Arrange
+    work = _stopped_merge_two_files(tmp_path)
+
+    # Act
+    with patch(_VERIFY, return_value=(True, "ready")), patch(_RUN, side_effect=_never_run):
+        out = resolve_merge(
+            str(work),
+            ref=None,
+            model=None,
+            instructions=None,
+            decisions={"*": "Take theirs for all"},
+            approve=None,
+        )
+
+    # Assert
+    assert out["success"] is True
+    assert (work / "a.txt").read_text() == "a main\n"
+    assert (work / "b.txt").read_text() == "b main\n"
+
+
+def test_files_the_agent_could_not_settle_are_asked_through_the_menu(tmp_path: Path) -> None:
+    # Arrange: the agent combines a.txt but leaves b.txt with markers.
+    work = _stopped_merge_two_files(tmp_path)
+    asked: list[list[str]] = []
+
+    def combine(_task: str, **_kwargs: object) -> CodingResult:
+        (work / "a.txt").write_text("a feature and main\n")
+        return CodingResult(success=True, summary="b.txt needs a decision.")
+
+    def ask(choices: list[FileChoice]) -> bool:
+        asked.append([c.path for c in choices])
+        return True
+
+    # Act
+    with patch(_VERIFY, return_value=(True, "ready")), patch(_RUN, side_effect=combine):
+        out = resolve_merge(
+            str(work),
+            ref=None,
+            model=None,
+            instructions=None,
+            decisions={"*": "combine"},
+            ask=ask,
+        )
+
+    # Assert: the tool itself queues the menu for b.txt only.
+    assert asked == [["b.txt"]]
+    assert out["error_kind"] == "awaiting_decisions" and out["menu"] == "queued"
+    assert merge_in_progress(str(work))
