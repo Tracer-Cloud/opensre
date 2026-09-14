@@ -16,7 +16,9 @@ from integrations.git import (
     fetch_remote_branch,
     head_sha,
     is_ancestor,
+    merge_committed_by_resolver,
     merge_conflicts,
+    merge_head_sha,
     merge_in_progress,
     merge_ref,
     unresolved_conflicts,
@@ -74,13 +76,14 @@ def merge_base_into_head(
         if merge_ref(workspace, base_ref, message=_merge_message(ctx)):
             return BaseMergeResult(base_branch=ctx.base_branch, commit_sha=head_sha(workspace))
         conflicts = merge_conflicts(workspace, ours=ctx.head_branch, theirs=ctx.base_branch)
+        merging = merge_head_sha(workspace)
     except GitCommandError as exc:
         raise GitHubCiFixError(exc.kind, exc.message, branch_name=ctx.head_branch) from exc
 
     result = resolve_conflicts(_resolution_task(ctx, conflicts))
     try:
         if not merge_in_progress(workspace):
-            return _merge_finished_by_agent(workspace, ctx, base_ref, conflicts)
+            return _merge_finished_by_agent(workspace, ctx, merging, conflicts)
         blocked = unresolved_conflicts(workspace, conflicts)
         if not result.success or blocked:
             abort_merge(workspace)
@@ -97,11 +100,11 @@ def merge_base_into_head(
 def _merge_finished_by_agent(
     workspace: str,
     ctx: CiFixContext,
-    base_ref: str,
+    merging: str,
     conflicts: MergeConflicts,
 ) -> BaseMergeResult:
-    """Accept a merge the coding agent committed itself; refuse one it abandoned."""
-    if is_ancestor(workspace, base_ref, "HEAD"):
+    """Accept a merge the coding agent committed itself on the PR branch; refuse one it abandoned."""
+    if merge_committed_by_resolver(workspace, conflicts, merging):
         return BaseMergeResult(
             base_branch=ctx.base_branch,
             commit_sha=head_sha(workspace),

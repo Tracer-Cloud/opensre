@@ -15,11 +15,20 @@ from difflib import SequenceMatcher
 from typing import Final
 
 from integrations.git.errors import MERGE_FAILED, GitCommandError
-from integrations.git.local import _run_git, changed_since_baseline, file_fingerprints
+from integrations.git.local import (
+    _run_git,
+    changed_since_baseline,
+    current_branch,
+    file_fingerprints,
+    staged_paths,
+    unstage_paths,
+)
 from integrations.git.merge import (
     ConflictedPath,
     commit_merge,
+    commit_parents,
     describe_conflicts,
+    head_sha,
     paths_with_conflict_markers,
     stage_paths,
     unmerged_paths,
@@ -59,6 +68,8 @@ class MergeConflicts:
     paths: tuple[ConflictedPath, ...]
     content: Mapping[str, str]
     conflicted_lines: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
+    head: str = ""
+    staged_before: tuple[str, ...] = ()
 
     @property
     def names(self) -> tuple[str, ...]:
@@ -78,6 +89,8 @@ def merge_conflicts(workspace: str, *, ours: str, theirs: str) -> MergeConflicts
         paths=tuple(conflicts),
         content=file_fingerprints(workspace, names),
         conflicted_lines={path: _read_lines(workspace, path) for path in names},
+        head=head_sha(workspace),
+        staged_before=tuple(staged_paths(workspace)),
     )
 
 
@@ -166,15 +179,21 @@ def unresolved_conflicts(workspace: str, conflicts: MergeConflicts) -> list[Conf
     """Conflicted paths the resolver left with markers or never touched.
 
     Delete/modify conflicts carry no markers, so an untouched file is judged by
-    its content fingerprint being unchanged since the merge stopped.
+    its content fingerprint being unchanged since the merge stopped while its
+    index entry is still unmerged; a kept file the resolver staged as-is counts
+    as resolved.
     """
     marked = set(paths_with_conflict_markers(workspace, conflicts.names))
+    still_unmerged = set(unmerged_paths(workspace))
     current = file_fingerprints(workspace, conflicts.names)
     return [
         conflict
         for conflict in conflicts.paths
         if conflict.path in marked
-        or current.get(conflict.path, "") == conflicts.content.get(conflict.path, "")
+        or (
+            conflict.path in still_unmerged
+            and current.get(conflict.path, "") == conflicts.content.get(conflict.path, "")
+        )
     ]
 
 
@@ -185,10 +204,16 @@ def conclude_merge(
 
     *baseline* fingerprints the files that were already dirty before the
     resolver ran, so a person's unrelated work in progress is not swept into
-    the merge commit. Raises ``GitCommandError`` when an unmerged path remains.
+    the merge commit; anything the resolver staged beyond its edits, the
+    conflicted paths, and what git had staged when the merge stopped is put
+    back out of the index first. Raises ``GitCommandError`` when an unmerged
+    path remains.
     """
-    stage_paths(workspace, changed_since_baseline(workspace, baseline=baseline))
+    edited = changed_since_baseline(workspace, baseline=baseline)
+    stage_paths(workspace, edited)
     stage_paths(workspace, conflicts.names)
+    intended = {*conflicts.staged_before, *conflicts.names, *edited}
+    unstage_paths(workspace, [path for path in staged_paths(workspace) if path not in intended])
     remaining = unmerged_paths(workspace)
     if remaining:
         raise GitCommandError(
@@ -253,6 +278,19 @@ def _numstat(workspace: str, base: str, target: str, path: str) -> str:
     return f"+{fields[0]} -{fields[1]}"
 
 
+def merge_committed_by_resolver(workspace: str, conflicts: MergeConflicts, merged_sha: str) -> bool:
+    """True when HEAD is a merge of the snapshot's tip and *merged_sha* on the original branch.
+
+    A resolver that abandons the merge and checks out the incoming branch (or
+    any other branch containing *merged_sha*) does not pass: the original tip
+    must be a parent of HEAD and the branch must be the one the merge started on.
+    """
+    if conflicts.ours and conflicts.ours != "HEAD" and current_branch(workspace) != conflicts.ours:
+        return False
+    parents = set(commit_parents(workspace, head_sha(workspace)))
+    return bool(conflicts.head) and conflicts.head in parents and merged_sha in parents
+
+
 def conflict_resolution_task(
     conflicts: MergeConflicts,
     *,
@@ -301,6 +339,7 @@ __all__ = [
     "conclude_merge",
     "conflict_resolution_task",
     "describe_resolutions",
+    "merge_committed_by_resolver",
     "merge_conflicts",
     "parse_conflict_hunks",
     "unresolved_conflicts",

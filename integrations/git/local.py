@@ -24,6 +24,7 @@ from integrations.git.errors import (
     BRANCH_FAILED,
     COMMIT_FAILED,
     GIT_UNAVAILABLE,
+    MERGE_FAILED,
     NOT_A_GIT_REPO,
     PROTECTED_BRANCH,
     PUSH_FAILED,
@@ -266,6 +267,21 @@ def file_fingerprints(workspace: str, paths: Sequence[str]) -> dict[str, str]:
         for path, digest in zip(existing, hashes):
             fingerprints[path] = digest.strip()
     return fingerprints
+
+
+def staged_paths(workspace: str) -> list[str]:
+    """Paths whose index entry differs from HEAD (added, modified, deleted, renamed)."""
+    result = _run_git(workspace, "diff", "--cached", "--name-only", "--no-renames", "-z")
+    return [path for path in result.stdout.split("\0") if path]
+
+
+def unstage_paths(workspace: str, paths: Sequence[str]) -> None:
+    """Restore the index entries of *paths* from HEAD, leaving the working tree as it is."""
+    if not paths:
+        return
+    result = _run_git(workspace, "reset", "-q", "--", *paths)
+    if result.returncode != 0:
+        raise GitCommandError(MERGE_FAILED, f"git reset failed: {result.stderr.strip()}")
 
 
 def changed_since_baseline(workspace: str, *, baseline: Mapping[str, str] | None) -> list[str]:

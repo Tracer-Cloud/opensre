@@ -34,8 +34,8 @@ from integrations.git import (
     ensure_git_repo,
     file_fingerprints,
     head_sha,
-    is_ancestor,
     is_git_repo,
+    merge_committed_by_resolver,
     merge_conflicts,
     merge_head_name,
     merge_head_sha,
@@ -213,7 +213,7 @@ def _merge_finished_by_agent(
     ws: str, conflicts: MergeConflicts, merging: str, result: CodingResult, *, finish: _Finish
 ) -> dict[str, Any]:
     """Accept a merge the coding agent committed itself; report one it abandoned."""
-    if merging and is_ancestor(ws, merging, "HEAD"):
+    if merging and merge_committed_by_resolver(ws, conflicts, merging):
         sha = head_sha(ws)
         return _output(
             ws,

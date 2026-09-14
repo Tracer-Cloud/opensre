@@ -24,6 +24,7 @@ from integrations.git.conflict_resolution import (
     conclude_merge,
     conflict_resolution_task,
     describe_resolutions,
+    merge_committed_by_resolver,
     merge_conflicts,
     parse_conflict_hunks,
     unresolved_conflicts,
@@ -55,6 +56,8 @@ from integrations.git.local import (
     push_branch,
     push_head_to_upstream,
     short_head,
+    staged_paths,
+    unstage_paths,
     upstream_branch,
 )
 from integrations.git.merge import (
@@ -121,6 +124,7 @@ __all__ = [
     "is_ancestor",
     "merge_commit_edits",
     "is_git_repo",
+    "merge_committed_by_resolver",
     "merge_conflicts",
     "merge_head_name",
     "merge_head_sha",
@@ -135,7 +139,9 @@ __all__ = [
     "remote_branch_sha",
     "short_head",
     "stage_paths",
+    "staged_paths",
     "unmerged_paths",
     "unresolved_conflicts",
+    "unstage_paths",
     "upstream_branch",
 ]
