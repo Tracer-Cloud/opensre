@@ -72,7 +72,9 @@ def _run_git(
     env: dict[str, str] | None = None,
     timeout: float = _GIT_TIMEOUT_SEC,
 ) -> subprocess.CompletedProcess[str]:
-    """Run ``git <args>`` in *workspace*; raise GitCommandError if git is missing."""
+    """Run ``git <args>`` in *workspace*; raise GitCommandError if git or the directory is missing."""
+    if not os.path.isdir(workspace):
+        raise GitCommandError(NOT_A_GIT_REPO, f"{workspace} is not a directory.")
     try:
         return subprocess.run(  # nosemgrep: dangerous-subprocess-use-audit
             ["git", *args],

@@ -33,12 +33,12 @@ def test_tool_uses_and_narration_become_short_steps_and_the_result_is_kept() -> 
     for line in lines:
         reader.line(line + "\n")
 
-    # Assert: duplicates collapse, paths are relative, commands are whitespace-normalized.
+    # Assert: duplicates collapse, paths are relative, commands become intents.
     assert steps == [
         "I'll compare both sides.",
         "Reading a/b.py",
         "Editing a/b.py",
-        "Running: uv run pytest tests -q",
+        "Running tests: tests",
         "Searching report",
     ]
     assert reader.result_text == "Combined both sides; 12 tests pass."

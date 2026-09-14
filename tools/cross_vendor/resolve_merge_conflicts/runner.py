@@ -10,6 +10,7 @@ the merge is left in progress, so the user decides them; nothing is aborted.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from typing import Any, Final
@@ -25,6 +26,7 @@ from integrations.coding_agent import (
     verify_coding_agent,
 )
 from integrations.git import (
+    NOT_A_GIT_REPO,
     GitCommandError,
     MergeConflicts,
     changed_paths,
@@ -32,7 +34,6 @@ from integrations.git import (
     conclude_merge,
     conflict_resolution_task,
     current_branch,
-    describe_resolutions,
     ensure_git_repo,
     file_fingerprints,
     head_sha,
@@ -50,7 +51,12 @@ from integrations.git import (
     upstream_branch,
 )
 from integrations.github import CHECKS_NOT_WATCHED, ChecksOutcome, watch_pull_request_checks
-from tools.cross_vendor.resolve_merge_conflicts.comparison import PENDING, render_comparison
+from tools.cross_vendor.resolve_merge_conflicts.comparison import (
+    PENDING,
+    render_overview,
+    render_review,
+    verdict,
+)
 from tools.cross_vendor.resolve_merge_conflicts.errors import (
     ERR_AWAITING_DECISIONS,
     ERR_CANCELLED,
@@ -145,6 +151,14 @@ def resolve_merge(
     request's checks.
     """
     ws = workspace or coding_workspace()
+    if workspace and not os.path.isdir(ws):
+        return _output(
+            ws,
+            success=False,
+            error_kind=NOT_A_GIT_REPO,
+            error=f"{ws} does not exist; omit workspace to use the current directory "
+            f"({os.getcwd()}).",
+        )
     try:
         return _resolve(
             ws,
@@ -625,7 +639,20 @@ def _push_target(ws: str, branch: str) -> str:
 
 
 def _resolutions(ws: str, sha: str, conflicts: MergeConflicts) -> tuple[str, ...]:
-    return tuple(str(r) for r in describe_resolutions(ws, sha, conflicts))
+    """One line per file: how many conflicts and the verdict of each ("kept ours", ...)."""
+    del sha  # the working tree equals the commit once the merge is concluded
+    comparisons = compare_hunks(ws, conflicts)
+    lines: list[str] = []
+    for path in conflicts.names:
+        verdicts = [verdict(c) for c in comparisons if c.path == path]
+        if not verdicts:
+            lines.append(f"{path}: resolved")
+            continue
+        parts = ", ".join(f"conflict {i} {v}" for i, v in enumerate(verdicts, start=1))
+        lines.append(
+            f"{path}: {len(verdicts)} conflict{'s' if len(verdicts) != 1 else ''} ({parts})"
+        )
+    return tuple(lines)
 
 
 _HUNK_SUMMARY_CHARS = 90
@@ -669,20 +696,14 @@ def _hunk_summary(lines: list[str]) -> str:
 def _paint(
     console: Any, ws: str, conflicts: MergeConflicts | None, *, pending_label: str | None = None
 ) -> bool:
-    """Draw the side-by-side hunk comparison when a terminal console is available."""
+    """Show the conflicts: the overview before resolving, the per-hunk review after."""
     if console is None or conflicts is None or not conflicts.paths:
         return False
     comparisons = compare_hunks(ws, conflicts)
     if pending_label is not None:
-        render_comparison(
-            console,
-            comparisons,
-            ours=conflicts.ours,
-            theirs=conflicts.theirs,
-            pending_label=pending_label,
-        )
+        render_overview(console, comparisons, ours=conflicts.ours, theirs=conflicts.theirs)
     else:
-        render_comparison(console, comparisons, ours=conflicts.ours, theirs=conflicts.theirs)
+        render_review(console, comparisons, ours=conflicts.ours, theirs=conflicts.theirs)
     return True
 
 

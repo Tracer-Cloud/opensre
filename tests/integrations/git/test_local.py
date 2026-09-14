@@ -331,3 +331,16 @@ def test_push_branch_no_env_without_token(tmp_path: Path) -> None:
     with patch.object(gitlocal, "_run_git", _fake_run_git):
         gitlocal.push_branch(str(work), "opensre/sentry-fix-1-x", base_default="main")
     assert captured["env"] is None
+
+
+def test_a_missing_workspace_is_reported_as_such_not_as_missing_git(tmp_path: Path) -> None:
+    # Arrange
+    missing = str(tmp_path / "nowhere")
+
+    # Act
+    with pytest.raises(GitCommandError) as excinfo:
+        gitlocal.current_branch(missing)
+
+    # Assert
+    assert excinfo.value.kind == NOT_A_GIT_REPO
+    assert "is not a directory" in excinfo.value.message

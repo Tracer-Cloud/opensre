@@ -83,10 +83,14 @@ def test_sides_are_taken_by_git_and_the_table_is_shown_before_anything_runs(
     assert out["success"] is True and out["commit_sha"] == head_sha(str(work))
     assert (work / "a.txt").read_text() == "a feature\n"
     assert (work / "b.txt").read_text() == "b main\n"
-    assert out["resolutions"] == ["a.txt: kept the feature version", "b.txt: took the main version"]
+    assert out["resolutions"] == [
+        "a.txt: 1 conflict (conflict 1 kept ours)",
+        "b.txt: 1 conflict (conflict 1 took theirs)",
+    ]
     assert out["coding_agent_summary"] == "a.txt: kept ours; b.txt: took theirs"
     text = buffer.getvalue()
-    assert text.index("(resolving)") < text.index("merged result", text.index("(resolving)"))
+    assert text.index("Merging main into feature") < text.index("kept ours (feature)")
+    assert "took theirs (main)" in text
 
 
 def test_undecided_files_open_the_menu_when_the_user_wants_to_decide_per_file(
@@ -333,6 +337,6 @@ def test_the_coding_agents_steps_are_shown_while_it_works(tmp_path: Path) -> Non
     # Assert: the steps appear between the two tables.
     assert out["success"] is True
     text = buffer.getvalue()
-    first_table = text.index("(resolving)")
-    assert first_table < text.index("Reading a.txt") < text.index("Editing a.txt")
-    assert text.index("Editing a.txt") < text.rindex("merged result")
+    first_view = text.index("Merging main into feature")
+    assert first_view < text.index("Reading a.txt") < text.index("Editing a.txt")
+    assert text.index("Editing a.txt") < text.rindex("combined")

@@ -200,8 +200,9 @@ class ResolveMergeConflictsTool(BaseTool):
             "workspace": {
                 "type": "string",
                 "description": (
-                    "Absolute path to the repository with the merge. "
-                    "Defaults to CODING_WORKSPACE or the current directory."
+                    "Omit this: the merge is resolved in the current directory. Pass an "
+                    "absolute path only when the user named a different checkout; never "
+                    "derive one from a branch or remote name."
                 ),
                 "nullable": True,
             },

@@ -53,7 +53,7 @@ class ClaudeStreamReader:
         if name in _TEXT_TOOLS:
             return f"{_TEXT_TOOLS[name]} {self._relative(str(params.get('file_path') or ''))}"
         if name == "Bash":
-            return _clip(f"Running: {' '.join(str(params.get('command') or '').split())}")
+            return _describe_command(" ".join(str(params.get("command") or "").split()))
         if name in _SEARCH_TOOLS:
             return _clip(f"Searching {params.get('pattern') or ''}")
         return name
@@ -62,6 +62,26 @@ class ClaudeStreamReader:
         if path.startswith(self._workspace.rstrip(os.sep) + os.sep):
             return path[len(self._workspace.rstrip(os.sep)) + 1 :]
         return path
+
+
+_TEST_RUNNERS = ("pytest", "npm test", "go test", "cargo test", "make test")
+_LINTERS = ("ruff", "mypy", "eslint", "tsc", "flake8", "black", "prettier")
+_LOOKUPS = ("grep ", "rg ", "sed ", "cat ", "wc ", "ls ", "find ", "head ", "tail ")
+
+
+def _describe_command(command: str) -> str:
+    """Say what a shell command is for, instead of echoing it."""
+    lowered = command.lower()
+    if any(runner in lowered for runner in _TEST_RUNNERS):
+        paths = [part for part in command.split() if part.startswith("tests")]
+        return f"Running tests: {' '.join(paths)}" if paths else "Running tests"
+    if any(linter in lowered for linter in _LINTERS):
+        return "Checking lint and types"
+    if lowered.startswith("git ") or " git " in f" {lowered}":
+        return "Inspecting the merge"
+    if lowered.startswith(_LOOKUPS) or any(f"&& {tool}" in lowered for tool in _LOOKUPS):
+        return "Searching the code"
+    return _clip(f"Running: {command}")
 
 
 def _clip(text: str) -> str:
