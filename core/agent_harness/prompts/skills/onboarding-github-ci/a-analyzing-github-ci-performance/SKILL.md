@@ -80,9 +80,7 @@ column of the comparison table), `benchmarks` (the peer columns),
 is yours to write. Do not paginate the REST API or run `execute_python_code`
 yourself.
 
-If the tool reports a missing token, tell the user to run
-`opensre integrations setup github` and carry that blocker into step 4 as a
-coverage gap.
+If the tool reports a missing token, tell the user to run `opensre integrations setup github` and carry that blocker into step 4 as a coverage gap.
 
 Metric definitions live in [Metrics](references/metrics.md)
 (`skill_view(name="analyzing-github-ci-performance", reference="metrics")`); read it only
@@ -111,7 +109,8 @@ Identify the repository, default branch, UTC window, and coverage. Render
 this table as text, replacing every placeholder with a calculated value or a
 benchmark from the reference:
 
-```
+```bash
+`
 Developer impact:
 - xx developer-hours spent waiting on CI across xx developers.
 - Most affected developer: up to xx h/week waiting on CI.
@@ -129,6 +128,7 @@ Compared with langchain-ai/langchain and anomalyco/opencode:
 
 What insights stand out:
 - CI-caused failures account for x.x% of all PR runs, roughly x.x-x.x× higher than the comparison repositories.
+`
 ```
 
 Complete when `skill_view` has returned the benchmarks reference in this
