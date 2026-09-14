@@ -24,14 +24,15 @@ Never resolve conflict markers with `code_implement`.
 1. Shows each conflict hunk side by side in the shell at once: our side,
    their side, and "(to decide)". `rendered_in_shell` is true when this
    happened, so do not repeat the file contents.
-2. Asks the user through the shell menu. With several files it first asks
-   one question for all of them (combine all, keep ours for all, take theirs
-   for all, or decide file by file); per file it offers keep ours, take
-   theirs, combine with the coding agent, or free text. When the result says
-   `menu: queued`, end the turn; the answers arrive as the next user message
-   and the next call with no arguments reads them itself. Pass `decisions`
-   only for choices the user already stated in words. Never ask a question of
-   your own about how to resolve a file: the tool asks.
+2. Lets the coding agent resolve every file, the way Claude Code or Cursor
+   would, without asking first. It asks through the shell menu only for a
+   file the agent could not settle (keep ours, take theirs, combine, or free
+   text), or when the user asked to decide file by file (pass
+   `decisions={"*": "each"}`). When the result says `menu: queued`, end the
+   turn; the answers arrive as the next user message and the next call with
+   no arguments reads them itself. Pass per-file `decisions` only for choices
+   the user already stated in words. Never ask a question of your own about
+   how to resolve a file: the tool asks.
 3. Applies "keep ours" and "take theirs" with git, and sends only the files
    to combine to the coding agent. Lockfiles are regenerated from the resolved
    manifest, never merged by hand. Then it verifies that no conflict marker or

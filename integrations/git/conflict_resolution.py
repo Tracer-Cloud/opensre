@@ -176,27 +176,26 @@ def _read_lines(workspace: str, path: str) -> tuple[str, ...]:
 
 
 def unresolved_conflicts(workspace: str, conflicts: MergeConflicts) -> list[ConflictedPath]:
-    """Conflicted paths the resolver left with markers or never touched.
+    """Conflicted paths the resolver left with markers, never touched, or removed.
 
     A content conflict always starts with markers, so a file without them was
-    edited. Delete/modify conflicts carry no markers, so an untouched one is
-    judged by its content fingerprint being unchanged since the merge stopped
-    while its index entry is still unmerged; a kept file the resolver staged
-    as-is counts as resolved.
+    edited; one whose working-tree file is gone while its index entry is still
+    unmerged was not resolved, only removed. Delete/modify conflicts carry no
+    markers, so an untouched one is judged by its content fingerprint being
+    unchanged since the merge stopped while its index entry is still unmerged;
+    a kept file the resolver staged as-is counts as resolved.
     """
     marked = set(paths_with_conflict_markers(workspace, conflicts.names))
     still_unmerged = set(unmerged_paths(workspace))
     current = file_fingerprints(workspace, conflicts.names)
-    return [
-        conflict
-        for conflict in conflicts.paths
-        if conflict.path in marked
-        or (
-            bool(conflict.deleted_on)
-            and conflict.path in still_unmerged
-            and current.get(conflict.path, "") == conflicts.content.get(conflict.path, "")
-        )
-    ]
+    unresolved: list[ConflictedPath] = []
+    for conflict in conflicts.paths:
+        fingerprint = current.get(conflict.path, "")
+        untouched = fingerprint == conflicts.content.get(conflict.path, "")
+        removed_or_untouched = fingerprint == "" or (bool(conflict.deleted_on) and untouched)
+        if conflict.path in marked or (conflict.path in still_unmerged and removed_or_untouched):
+            unresolved.append(conflict)
+    return unresolved
 
 
 def conclude_merge(

@@ -133,12 +133,14 @@ def resolve_merge(
 ) -> dict[str, Any]:
     """Resolve the merge in *workspace*, then commit and push it once *approve* allows.
 
-    The conflicts are shown side by side first. *decisions* maps a conflicted
+    The conflicts are shown side by side first, then the coding agent resolves
+    them, the way Claude Code or Cursor would. *decisions* maps a conflicted
     path to ``ours``, ``theirs``, ``combine`` or free text for the coding
-    agent; files without a decision are asked through *ask* when it can show a
-    menu, and otherwise go to the coding agent. Without *approve* (no shell
-    policy to consult, as in an unattended run) the commit and push proceed.
-    After the push, *wait_for_checks* waits for the pull request's checks.
+    agent, and ``"*": "each"`` asks the user per file through *ask* instead.
+    Files the agent cannot settle are asked through *ask* as well. Without
+    *approve* (no shell policy to consult, as in an unattended run) the commit
+    and push proceed. After the push, *wait_for_checks* waits for the pull
+    request's checks.
     """
     ws = workspace or coding_workspace()
     try:
@@ -240,7 +242,8 @@ def _resolve(
     shown = _paint(console, ws, conflicts, pending_label=PENDING)
     plan = _decision_plan(conflicts, decisions)
     undecided = [path for path in conflicts.names if path in open_paths and path not in plan]
-    if undecided and ask is not None and ask(_choices(ws, conflicts, undecided)):
+    per_file = normalize_decision(decisions.get("*", "")) == DECIDE_EACH
+    if undecided and per_file and ask is not None and ask(_choices(ws, conflicts, undecided)):
         raise ResolveMergeError(
             ERR_AWAITING_DECISIONS,
             f"Waiting for the user's choice on {len(undecided)} file(s): "
@@ -685,6 +688,9 @@ def _output(
     awaiting: bool = False,
 ) -> dict[str, Any]:
     committed = success and bool(commit_sha)
+    # A set error kind means the requested operation did not complete, even when the
+    # merge commit exists (cancelled, not approved, push failed, checks failed).
+    success = success and error_kind is None
     return {
         "outcome": _outcome(
             committed,

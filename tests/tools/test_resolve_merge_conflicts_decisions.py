@@ -82,10 +82,12 @@ def test_sides_are_taken_by_git_and_the_table_is_shown_before_anything_runs(
     assert out["resolutions"] == ["a.txt: kept the feature version", "b.txt: took the main version"]
     assert out["coding_agent_summary"] == "a.txt: kept ours; b.txt: took theirs"
     text = buffer.getvalue()
-    assert text.index("(to decide)") < text.index("merged result", text.index("(to decide)"))
+    assert text.index("(resolving)") < text.index("merged result", text.index("(resolving)"))
 
 
-def test_undecided_files_open_the_menu_and_the_merge_waits(tmp_path: Path) -> None:
+def test_undecided_files_open_the_menu_when_the_user_wants_to_decide_per_file(
+    tmp_path: Path,
+) -> None:
     # Arrange
     work = _stopped_merge_two_files(tmp_path)
     before = head_sha(str(work))
@@ -98,7 +100,12 @@ def test_undecided_files_open_the_menu_and_the_merge_waits(tmp_path: Path) -> No
     # Act
     with patch(_VERIFY, return_value=(True, "ready")), patch(_RUN, side_effect=_never_run):
         out = resolve_merge(
-            str(work), ref=None, model=None, instructions=None, decisions={"a.txt": "ours"}, ask=ask
+            str(work),
+            ref=None,
+            model=None,
+            instructions=None,
+            decisions={"*": "Decide file by file", "a.txt": "ours"},
+            ask=ask,
         )
 
     # Assert: only b.txt is asked, with both sides in the options, and nothing was changed.
@@ -234,6 +241,33 @@ def test_files_the_agent_could_not_settle_are_asked_through_the_menu(tmp_path: P
     assert merge_in_progress(str(work))
 
 
+def test_by_default_every_open_file_goes_to_the_coding_agent_without_a_question(
+    tmp_path: Path,
+) -> None:
+    # Arrange
+    work = _stopped_merge_two_files(tmp_path)
+    tasks: list[str] = []
+
+    def combine(task: str, **_kwargs: object) -> CodingResult:
+        tasks.append(task)
+        (work / "a.txt").write_text("a feature and main\n")
+        (work / "b.txt").write_text("b feature and main\n")
+        return CodingResult(success=True, summary="Combined both files.")
+
+    def never_ask(_choices: list[FileChoice]) -> bool:
+        raise AssertionError("no menu before the agent unless the user asked for it")
+
+    # Act
+    with patch(_VERIFY, return_value=(True, "ready")), patch(_RUN, side_effect=combine):
+        out = resolve_merge(
+            str(work), ref=None, model=None, instructions=None, ask=never_ask, approve=None
+        )
+
+    # Assert
+    assert out["success"] is True and len(tasks) == 1
+    assert "- a.txt:" in tasks[0] and "- b.txt:" in tasks[0]
+
+
 def test_a_fresh_delete_modify_conflict_is_asked_not_silently_kept(tmp_path: Path) -> None:
     # Arrange: main deleted a file that feature changed; the file carries no markers.
     work = tmp_path / "work"
@@ -258,11 +292,14 @@ def test_a_fresh_delete_modify_conflict_is_asked_not_silently_kept(tmp_path: Pat
         asked.append([c.path for c in choices])
         return True
 
+    def agent_leaves_it(_task: str, **_kwargs: object) -> CodingResult:
+        return CodingResult(success=True, summary="A person must decide about doomed.txt.")
+
     # Act
-    with patch(_VERIFY, return_value=(True, "ready")), patch(_RUN, side_effect=_never_run):
+    with patch(_VERIFY, return_value=(True, "ready")), patch(_RUN, side_effect=agent_leaves_it):
         out = resolve_merge(str(work), ref=None, model=None, instructions=None, ask=ask)
 
-    # Assert
+    # Assert: the agent could not settle it, so the tool asks with both sides.
     assert asked == [["doomed.txt"]]
     assert out["error_kind"] == "awaiting_decisions"
     assert head_sha(str(work)) == before and merge_in_progress(str(work))

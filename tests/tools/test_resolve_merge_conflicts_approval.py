@@ -132,8 +132,8 @@ def test_push_failure_keeps_the_local_commit_and_says_so(tmp_path: Path) -> None
     ):
         out = resolve_merge(str(work), ref=None, model=None, instructions=None, approve=None)
 
-    # Assert
-    assert out["success"] is True and out["pushed"] is False
+    # Assert: the merge commit exists, but the requested operation did not complete.
+    assert out["success"] is False and out["pushed"] is False
     assert out["error_kind"] == "push_failed"
     assert out["commit_sha"] == head_sha(str(work))
     assert "did not push it" in out["outcome"]
@@ -171,6 +171,7 @@ def test_green_checks_end_the_run_and_failed_checks_are_reported(tmp_path: Path)
     assert passed["outcome"].endswith(f"all 3 pull request checks passed ({url}).")
     assert passed["next_step"] == "The pull request is green; it is ready for review or merge."
     assert failed_output["error_kind"] == "checks_failed"
+    assert failed_output["success"] is False and failed_output["commit_sha"]
     assert failed_output["failing_checks"] == ["CI Gate"]
     assert "but checks failed: CI Gate" in failed_output["outcome"]
 

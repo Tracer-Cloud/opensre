@@ -51,7 +51,7 @@ def _ask(scope: ActionToolScope | None) -> Callable[[list[FileChoice]], bool] | 
     def ask(choices: list[FileChoice]) -> bool:
         if not choices:
             return False
-        if len(choices) > 1 and not _all_files_answered(scope):
+        if len(choices) > 1 and not _all_files_answered(scope) and not _per_file_requested(scope):
             pending = PendingUserChoice(
                 title=ALL_FILES_TITLE,
                 options=ALL_FILES_OPTIONS,
@@ -95,6 +95,12 @@ def _turn_answers(scope: ActionToolScope | None) -> dict[str, str]:
         question_key(asked): answer
         for asked, answer in parse_ask_user_answers(getattr(scope, "turn_user_message", "") or "")
     }
+
+
+def _per_file_requested(scope: ActionToolScope | None) -> bool:
+    """True when the user asked to decide file by file in this turn's message."""
+    text = (getattr(scope, "turn_user_message", "") or "").casefold()
+    return "file by file" in text or "per file" in text
 
 
 def _all_files_answered(scope: ActionToolScope | None) -> bool:
@@ -214,7 +220,8 @@ class ResolveMergeConflictsTool(BaseTool):
                     "Per conflicted file, what the user decided: 'ours' (keep the current "
                     "branch), 'theirs' (take the merged branch), 'combine' (the coding agent "
                     "merges both), or free text the agent must follow. Files not listed are "
-                    "asked in the shell menu; menu answers are read automatically."
+                    'resolved by the coding agent. Pass {"*": "each"} only when the '
+                    "user asks to decide file by file; menu answers are read automatically."
                 ),
                 "additionalProperties": {"type": "string"},
                 "nullable": True,

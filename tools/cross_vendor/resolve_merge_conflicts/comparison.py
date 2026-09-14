@@ -12,7 +12,7 @@ from integrations.git import HunkComparison
 
 _MAX_LINES_PER_CELL = 30
 _UNRESOLVED = "(still conflicted)"
-PENDING = "(to decide)"
+PENDING = "(resolving)"
 
 
 def render_comparison(

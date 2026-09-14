@@ -173,3 +173,18 @@ def test_take_side_resolves_a_file_by_one_side_and_a_deleted_side_by_removing_it
     assert unresolved_conflicts(str(work), conflicts) == []
     assert not (work / "doomed.txt").exists()
     assert _git(work, "diff", "--name-only", "--diff-filter=U") == ""
+
+
+def test_a_content_conflict_whose_file_was_removed_is_not_treated_as_resolved(
+    tmp_path: Path,
+) -> None:
+    # Arrange
+    work = _stopped_merge(tmp_path)
+    conflicts = merge_conflicts(str(work), ours="feature", theirs="main")
+
+    # Act
+    (work / "shared.txt").unlink()
+    removed = unresolved_conflicts(str(work), conflicts)
+
+    # Assert
+    assert [c.path for c in removed] == ["shared.txt"]
