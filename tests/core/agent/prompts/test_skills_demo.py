@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 import core.agent_harness.prompts.skills as skills
-from config.constants.skills import ONBOARDING_SKILL_NAME, SKIP_DEMO_OPTION
+from config.constants.skills import ONBOARDING_MENU_TITLE, ONBOARDING_SKILL_NAME, SKIP_DEMO_OPTION
 from core.agent_harness.prompts.action import build_action_system_prompt
 from core.agent_harness.prompts.action.assemble import build_action_system_prompt_envelope
 from core.agent_harness.prompts.getting_started import (
@@ -51,13 +51,13 @@ def test_master_menu_matches_four_unique_children_and_preserves_specialists() ->
     )
     master = skills.load_skill_body(ONBOARDING_SKILL_NAME)
     master_skill = next(s for s in skills.list_action_skills() if s.name == ONBOARDING_SKILL_NAME)
-    # The menu is data the host runs on entry, not prose the model replays; its
-    # options are the children's own labels so the two cannot drift apart.
-    assert [call.tool for call in master_skill.pre_execute] == ["ask_user_choice"]
-    menu = master_skill.pre_execute[0].args
-    assert menu["title"] == "Which demo would you like me to run?"
-    assert "note" not in menu
-    assert tuple(menu["options"]) == (*GETTING_STARTED_OPTIONS, SKIP_DEMO_OPTION)
+    # The menu is catalog data the host opens on entry, not frontmatter or prose
+    # the model replays; its options are the children's own labels so the two
+    # cannot drift apart.
+    menu = master_skill.entry_menu
+    assert menu is not None
+    assert menu.title == ONBOARDING_MENU_TITLE == "Which demo would you like me to run?"
+    assert menu.options == (*GETTING_STARTED_OPTIONS, SKIP_DEMO_OPTION)
     assert "Call `ask_user_choice`" not in master
     for skill in children:
         assert f'skill_view(name="{skill.name}")' in master
@@ -65,8 +65,8 @@ def test_master_menu_matches_four_unique_children_and_preserves_specialists() ->
         assert skills.load_skill_body(skill.name)
     analytics = next(s for s in children if s.name == "analyzing-github-ci-performance")
     # The analytics card runs its menus from the plan the model follows, not
-    # from host hooks, and keeps the full tool catalog.
-    assert analytics.pre_execute == ()
+    # from a host-opened entry menu, and keeps the full tool catalog.
+    assert analytics.entry_menu is None
     body = skills.load_skill_body("analyzing-github-ci-performance")
     assert "`Which repository should I analyze?`" in body
     assert "`What would you like to do next?`" in body
@@ -91,7 +91,7 @@ def test_master_menu_matches_four_unique_children_and_preserves_specialists() ->
     assert "schedule_ci_reliability_loop" not in fix_loop
     # Repository selection remains part of the child workflow.
     assert "ask_user_choice" in fix_loop
-    assert menu["allow_custom"] is False
+    assert menu.allow_custom is False
     assert GETTING_STARTED_CUSTOM not in master
     # Demo C is the one sanctioned placeholder: it explains, calls no tool, and exits.
     managed = skills.load_skill_body("delegating-github-ci-repairs")

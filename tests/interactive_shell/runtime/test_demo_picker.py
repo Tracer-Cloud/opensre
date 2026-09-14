@@ -110,7 +110,7 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
     monkeypatch: pytest.MonkeyPatch,
     onboarding_outcomes: list[tuple[str, bool | None]],
 ) -> None:
-    """Boot output contract: the pre_execute menu is the first paint and needs no model."""
+    """Boot output contract: the skill's entry menu is the first paint and needs no model."""
     _offerable(monkeypatch)
     session = Session()
     session.resolved_integrations_cache = {}
@@ -385,7 +385,7 @@ def test_startup_without_a_menu_hook_does_not_fall_back_to_a_model_turn(
     session = Session()
 
     def enter_without_menu(_name: str, _ctx: Any) -> dict[str, Any]:
-        return {"ok": True, "name": ONBOARDING_SKILL_NAME, "content": "body", "pre_execute": []}
+        return {"ok": True, "name": ONBOARDING_SKILL_NAME, "content": "body", "entry_menu": None}
 
     monkeypatch.setattr(demo_picker, "enter_skill", enter_without_menu)
     assert not demo_picker.offer_demo(session, force=True)

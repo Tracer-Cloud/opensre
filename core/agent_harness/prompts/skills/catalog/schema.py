@@ -3,11 +3,10 @@
 from __future__ import annotations
 
 from datetime import date
-from typing import Annotated, Any, Literal, Self
+from typing import Annotated, Any, Self
 
 import yaml
 from pydantic import (
-    AfterValidator,
     BaseModel,
     ConfigDict,
     Field,
@@ -16,21 +15,9 @@ from pydantic import (
     model_validator,
 )
 
-from config.constants.skills import ONBOARDING_SKILL_NAME, SKIP_DEMO_OPTION
-from core.agent_harness.session.pending_choice import question_key
+from config.constants.skills import SKIP_DEMO_OPTION
 
 _Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
-
-
-def _distinct_options(options: list[str]) -> list[str]:
-    if len(set(options)) != len(options):
-        raise ValueError("menu options must be distinct")
-    return options
-
-
-_Options = Annotated[
-    list[_Text], Field(min_length=2, max_length=8), AfterValidator(_distinct_options)
-]
 
 
 class SkillCardError(ValueError):
@@ -66,41 +53,6 @@ class SkillMetadata(_StrictModel):
         return value
 
 
-class _EntryQuestion(_StrictModel):
-    label: _Text
-    title: _Text
-    options: _Options
-    multi_select: bool = False
-
-
-class _EntryArguments(_StrictModel):
-    title: _Text | None = None
-    options: _Options | None = None
-    note: str = ""
-    questions: Annotated[list[_EntryQuestion], Field(min_length=2, max_length=6)] | None = None
-    multi_select: bool = False
-    allow_custom: bool = True
-
-    @field_validator("questions")
-    @classmethod
-    def distinct_questions(cls, value: list[_EntryQuestion] | None) -> list[_EntryQuestion] | None:
-        if value is not None and len({question_key(item.title) for item in value}) != len(value):
-            raise ValueError("question titles must be distinct after whitespace and case folding")
-        return value
-
-
-class SkillEntryCall(_StrictModel):
-    """A validated entry menu, checked again against the public tool schema on entry."""
-
-    tool: Literal["ask_user_choice"]
-    args: dict[str, Any]
-
-    @field_validator("args")
-    @classmethod
-    def menu_arguments(cls, value: dict[str, Any]) -> dict[str, Any]:
-        return _EntryArguments.model_validate(value).model_dump(exclude_unset=True)
-
-
 class SkillCard(_StrictModel):
     """The supported YAML fields of a main workflow card."""
 
@@ -111,7 +63,6 @@ class SkillCard(_StrictModel):
     getting_started: _Text | None = None
     demo_order: Annotated[int, Field(gt=0)] | None = None
     includes: list[_Text] = Field(default_factory=list)
-    pre_execute: list[SkillEntryCall] = Field(default_factory=list, max_length=1)
     script_tools: Annotated[str, Field(pattern=r"^references/[a-z0-9_-]+\.md$")] | None = None
 
     @model_validator(mode="after")
@@ -120,22 +71,6 @@ class SkillCard(_StrictModel):
             raise ValueError("getting_started and demo_order must be declared together")
         if self.getting_started == SKIP_DEMO_OPTION:
             raise ValueError("getting_started cannot use the reserved Skip label")
-        if self.name == ONBOARDING_SKILL_NAME:
-            if len(self.pre_execute) != 1:
-                raise ValueError("onboarding requires exactly one pre_execute menu")
-            if "options" in self.pre_execute[0].args:
-                raise ValueError("onboarding menu options are generated from demo metadata")
-            if self.pre_execute[0].args.get("questions") or self.pre_execute[0].args.get(
-                "multi_select"
-            ):
-                raise ValueError("onboarding requires one single-choice menu")
-        for call in self.pre_execute:
-            if call.args.get("questions"):
-                continue
-            if not call.args.get("title"):
-                raise ValueError("pre_execute menu requires a title")
-            if self.name != ONBOARDING_SKILL_NAME and not call.args.get("options"):
-                raise ValueError("pre_execute menu requires options or questions")
         return self
 
 

@@ -1,6 +1,6 @@
 """End the action turn as soon as a user-choice menu is queued.
 
-``ask_user_choice``, a skill's ``pre_execute``, and a skill's ``after_tool``
+``ask_user_choice``, a skill's entry menu, and a skill's ``after_tool``
 hook all queue the picker on the session. The loop must not take another
 model step — or run bookkeeping queued after an ``after_tool`` menu in the
 same response — or the model sees no answer and asks again. A hook, not an

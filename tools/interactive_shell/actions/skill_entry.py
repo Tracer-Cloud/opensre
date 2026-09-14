@@ -1,39 +1,38 @@
-"""Enter an action-agent skill: activate it on the session and run its ``pre_execute`` hooks.
+"""Enter an action-agent skill: activate it on the session and open its entry menu.
 
 One entry point serves every way into a skill. The model enters through the
 ``skill_view`` tool; the host enters directly (interactive startup, ``/demo``)
-with no model step and no tool-event render. A skill's ``pre_execute`` calls run
-here through the real tool executors, so a hook-queued menu behaves exactly as
-if the model had called the tool. Only allowlisted tools may run from a hook.
+with no model step and no tool-event render. A skill's entry menu is catalog
+data (``ActionSkill.entry_menu``, built by the loader), never frontmatter; it
+opens here through the real ``ask_user_choice`` executor, so a host-opened menu
+behaves exactly as if the model had called the tool.
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
-from types import MappingProxyType
 from typing import Any
 
 from core.agent_harness import normalize_skill_name
-from core.agent_harness.spi.grounding import ActionSkill, list_action_skills, load_skill_body
+from core.agent_harness.spi.grounding import (
+    ActionSkill,
+    SkillEntryMenu,
+    list_action_skills,
+    load_skill_body,
+)
 from core.agent_harness.spi.handoff import question_key
-from core.agent_harness.tools import ActionToolScope, ToolExecutor
-from core.tool import RegisteredTool
+from core.agent_harness.tools import ActionToolScope
 from tools.interactive_shell.actions.ask_choice import (
     ask_user_choice_tool,
     execute_ask_user_choice_tool,
 )
 
-# Allowlisted hook tools: the registered tool (its public schema gates the
-# frontmatter args exactly as it gates a model call) and the executor to run.
-_PRE_EXECUTE_TOOLS: Mapping[str, tuple[RegisteredTool, ToolExecutor]] = MappingProxyType(
-    {"ask_user_choice": (ask_user_choice_tool, execute_ask_user_choice_tool)}
-)
+_ENTRY_MENU_TOOL = "ask_user_choice"
 
 MENU_QUEUED_INSTRUCTION = (
-    "A menu declared by this skill's pre_execute is already queued. End the turn "
-    "now without narrating, without calling ask_user_choice, and without "
-    "repeating the options as text. The user's selection arrives as the next "
-    "user message."
+    "This skill's entry menu is already queued. End the turn now without "
+    "narrating, without calling ask_user_choice, and without repeating the "
+    "options as text. The user's selection arrives as the next user message."
 )
 
 _MENU_SUPPRESSED_INSTRUCTION = (
@@ -50,37 +49,30 @@ def _skill_by_name(name: str) -> ActionSkill | None:
     return next((skill for skill in list_action_skills() if skill.name == slug), None)
 
 
-def _run_pre_execute(skill: ActionSkill, ctx: ActionToolScope) -> list[dict[str, Any]]:
-    results: list[dict[str, Any]] = []
-    for call in skill.pre_execute:
-        allowed = _PRE_EXECUTE_TOOLS.get(call.tool)
-        if allowed is None:
-            results.append(
-                {"ok": False, "tool": call.tool, "error": "pre_execute tool not allowed"}
-            )
-            continue
-        tool, executor = allowed
-        args = dict(call.args)
-        validation_error = tool.validate_public_input(args)
-        if validation_error is not None:
-            results.append({"ok": False, "tool": call.tool, "error": validation_error})
-            continue
-        outcome = executor(args, ctx)
-        payload: dict[str, Any] = (
-            dict(outcome) if isinstance(outcome, dict) else {"ok": bool(outcome)}
-        )
-        payload.setdefault("ok", True)
-        payload["tool"] = call.tool
-        results.append(payload)
-    return results
+def _open_entry_menu(menu: SkillEntryMenu, ctx: ActionToolScope) -> dict[str, Any]:
+    """Queue ``menu`` through the public tool schema and executor, as a model call would."""
+    args = menu.tool_args()
+    validation_error = ask_user_choice_tool.validate_public_input(args)
+    if validation_error is not None:
+        return {"ok": False, "tool": _ENTRY_MENU_TOOL, "error": validation_error}
+    outcome = execute_ask_user_choice_tool(args, ctx)
+    payload: dict[str, Any] = dict(outcome) if isinstance(outcome, dict) else {"ok": bool(outcome)}
+    payload.setdefault("ok", True)
+    payload["tool"] = _ENTRY_MENU_TOOL
+    return payload
 
 
-def pre_execute_queued_menu(results: list[dict[str, Any]]) -> bool:
-    """True when a ``pre_execute`` hook queued the interactive selection menu."""
-    return any(item.get("ok") and item.get("menu") == "queued" for item in results)
+def _hook_queued(hook: Mapping[str, Any] | None) -> bool:
+    return hook is not None and bool(hook.get("ok")) and hook.get("menu") == "queued"
 
 
-def _forget_hook_questions(session: Any, skill: ActionSkill) -> None:
+def entry_menu_queued(result: Mapping[str, Any]) -> bool:
+    """True when the :func:`enter_skill` result queued the interactive selection menu."""
+    hook = result.get("entry_menu")
+    return isinstance(hook, Mapping) and _hook_queued(hook)
+
+
+def _forget_entry_question(session: Any, menu: SkillEntryMenu) -> None:
     """Let a host-requested menu ask again what the session already answered.
 
     ``/demo`` and startup mean "ask me that question", so the session must drop
@@ -90,14 +82,13 @@ def _forget_hook_questions(session: Any, skill: ActionSkill) -> None:
     settled = getattr(session, "questions_already_answered", None)
     if not isinstance(settled, set):
         return
-    for call in skill.pre_execute:
-        title = str(call.args.get("title", "")).strip()
-        if title:
-            settled.discard(question_key(title))
+    title = menu.title.strip()
+    if title:
+        settled.discard(question_key(title))
 
 
 def _may_open_menu(session: Any, skill: ActionSkill, *, from_model: bool) -> bool:
-    """True when this entry may open the skill's ``pre_execute`` menu.
+    """True when this entry may open the skill's entry menu.
 
     The host opens it on request. The model must not reopen one the session has
     already answered: a later message that routes back to the skill would ask
@@ -109,7 +100,7 @@ def _may_open_menu(session: Any, skill: ActionSkill, *, from_model: bool) -> boo
 
 
 def enter_skill(name: str, ctx: Any, *, from_model: bool = False) -> dict[str, Any]:
-    """Activate ``name`` on the session, run its hooks, and return the body for the model."""
+    """Activate ``name`` on the session, open its entry menu, and return the body for the model."""
     skill = _skill_by_name(name)
     body = load_skill_body(name) if skill is not None else ""
     if skill is None or not body:
@@ -127,32 +118,30 @@ def enter_skill(name: str, ctx: Any, *, from_model: bool = False) -> dict[str, A
     # Re-entry retains the active skill and does not reopen an answered menu.
     if session is not None and not already_active:
         session.active_skill = skill.name
-    if skill.pre_execute and not from_model:
-        _forget_hook_questions(session, skill)
-    hooks: list[dict[str, Any]] = []
-    if skill.pre_execute and isinstance(ctx, ActionToolScope):
+    menu = skill.entry_menu
+    if menu is not None and not from_model:
+        _forget_entry_question(session, menu)
+    hook: dict[str, Any] | None = None
+    if menu is not None and isinstance(ctx, ActionToolScope):
         if already_active or not _may_open_menu(session, skill, from_model=from_model):
-            hooks = [
-                {
-                    "ok": False,
-                    "tool": call.tool,
-                    "menu": "suppressed",
-                    "reason": "already_active" if already_active else "already_prompted",
-                    "instruction": _MENU_SUPPRESSED_INSTRUCTION,
-                }
-                for call in skill.pre_execute
-                if call.tool == "ask_user_choice"
-            ]
+            hook = {
+                "ok": False,
+                "tool": _ENTRY_MENU_TOOL,
+                "menu": "suppressed",
+                "reason": "already_active" if already_active else "already_prompted",
+                "instruction": _MENU_SUPPRESSED_INSTRUCTION,
+            }
         else:
-            hooks = _run_pre_execute(skill, ctx)
-    if pre_execute_queued_menu(hooks) and session is not None:
+            hook = _open_entry_menu(menu, ctx)
+    queued = _hook_queued(hook)
+    if queued and session is not None:
         already = getattr(session, "skills_already_prompted", None)
         if isinstance(already, set):
             already.add(skill.name)
     content = body
-    if pre_execute_queued_menu(hooks):
+    if queued:
         content = "".join((body, "\n\n", MENU_QUEUED_INSTRUCTION))
-    elif any(item.get("menu") == "suppressed" for item in hooks):
+    elif hook is not None and hook.get("menu") == "suppressed":
         content = "".join((body, "\n\n", _MENU_SUPPRESSED_INSTRUCTION))
     # ``summary`` is what the user sees; ``content`` is for the model only.
     # Without it the generic formatter prints the whole skill body on screen.
@@ -165,11 +154,11 @@ def enter_skill(name: str, ctx: Any, *, from_model: bool = False) -> dict[str, A
             else f"loaded the {skill.name} skill"
         ),
         "content": content,
-        "pre_execute": hooks,
+        "entry_menu": hook,
     }
     if already_active:
         result["already_active"] = True
     return result
 
 
-__all__ = ["MENU_QUEUED_INSTRUCTION", "enter_skill", "pre_execute_queued_menu"]
+__all__ = ["MENU_QUEUED_INSTRUCTION", "enter_skill", "entry_menu_queued"]
