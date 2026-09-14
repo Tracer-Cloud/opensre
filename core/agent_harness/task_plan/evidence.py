@@ -63,9 +63,16 @@ def result_counts_as_work(*, is_error: bool, details: Mapping[str, Any] | None) 
 
 @dataclass
 class PlanEvidence:
-    """Tool-return counters for one action turn."""
+    """Tool-return counters for one action turn.
+
+    ``tool_returns`` is evidence: every successful non-bookkeeping return,
+    slash commands included, since a step whose work is ``/cron add`` has
+    nothing else to show. ``work_returns`` excludes slash commands and feeds
+    the second-work-tool rule only.
+    """
 
     tool_returns: int = 0
+    work_returns: int = 0
     returns_at_last_write: int = 0
     writes: int = 0
 
@@ -92,17 +99,24 @@ def record_plan_evidence(
     is_error: bool = False,
     details: Mapping[str, Any] | None = None,
 ) -> None:
-    """Count one successful work return; bookkeeping, slash, and failed calls are ignored."""
+    """Count one successful return; bookkeeping and failed calls are ignored.
+
+    A slash command is evidence for the step it serves but not work for the
+    second-work-tool rule: the shell's own commands never require a plan.
+    """
     if not result_counts_as_work(is_error=is_error, details=details):
         return
-    if not is_plan_work_name(tool_name, arguments):
+    if is_plan_bookkeeping_call(tool_name, arguments):
         return
-    _evidence(session).tool_returns += 1
+    state = _evidence(session)
+    state.tool_returns += 1
+    if is_plan_work_name(tool_name, arguments):
+        state.work_returns += 1
 
 
 def work_returns_this_turn(session: Any) -> int:
-    """Successful work returns recorded on this action turn."""
-    return _evidence(session).tool_returns
+    """Successful work returns (slash commands excluded) recorded on this action turn."""
+    return _evidence(session).work_returns
 
 
 def mark_plan_written(session: Any) -> None:

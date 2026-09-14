@@ -376,3 +376,71 @@ def test_apply_update_plan_session_refreshes_the_live_prompt() -> None:
     apply_update_plan_session(session, plan, plan_only=True)
     assert session.task_plan is plan
     assert refreshes["count"] == 1
+
+
+def test_a_slash_command_is_evidence_for_its_step_but_not_work_for_the_plan_rule() -> None:
+    """Skill B's loop steps are `/cron add`, `/cron run`, `/cron list`: they must complete.
+
+    The shell's own commands never require a plan, so they are not work for
+    the second-work-tool rule; a step that consists of one still earns its
+    tick from the command's return.
+    """
+    from core.agent_harness.task_plan.evidence import work_returns_this_turn
+
+    # Arrange: a plan was written, then one slash command returned.
+    session = Session()
+    mark_plan_written(session)
+    record_plan_evidence(
+        session, "slash_invoke", {"command": "/cron", "args": ["add"]}, details={"ok": True}
+    )
+
+    # Act / Assert
+    assert plan_evidence_available(session, prior=None, turn_user_message="") is True
+    assert work_returns_this_turn(session) == 0
+
+
+def test_a_deliverable_step_completes_on_its_reply_but_not_as_the_closing_step() -> None:
+    """Demo A: the report step is marked done in the response that opens the menu.
+
+    Its work is the reply itself, so it has no tool to show; without this it
+    was reset every run and the plan ended blocked instead of complete.
+    """
+
+    # Arrange: the report step is active and flagged; the menu step follows.
+    def _items(report: str, offer: str) -> list[dict[str, Any]]:
+        return [
+            {"step": "Collect metrics", "status": "completed"},
+            {"step": "Show the report", "status": report, "deliverable": True},
+            {"step": "Offer the next step", "status": offer},
+        ]
+
+    prior, _ = parse_task_plan({"plan": _items("in_progress", "pending")})
+    written, _ = parse_task_plan({"plan": _items("completed", "in_progress")})
+    assert prior is not None and written is not None
+
+    # Act
+    mid_plan = demote_unevidenced_completions(written, prior=prior, evidence=False)
+
+    # Assert: the report step keeps its tick while work remains.
+    assert mid_plan.demoted == ()
+
+    # The same flag on a closing step does not bypass verification.
+    last_prior, _ = parse_task_plan(
+        {
+            "plan": [
+                {"step": "Count", "status": "completed"},
+                {"step": "Summarize", "status": "in_progress", "deliverable": True},
+            ]
+        }
+    )
+    last_written, _ = parse_task_plan(
+        {
+            "plan": [
+                {"step": "Count", "status": "completed"},
+                {"step": "Summarize", "status": "completed", "deliverable": True},
+            ]
+        }
+    )
+    assert last_prior is not None and last_written is not None
+    closing = demote_unevidenced_completions(last_written, prior=last_prior, evidence=False)
+    assert closing.demoted == ("Summarize",) and closing.closed_unverified is True

@@ -50,8 +50,11 @@ def demote_unevidenced_completions(
     only once the plan is verified: a step marked ``verifies`` completed on
     its own evidence. A plan ending with blocked steps closes its report
     step freely — it never claims completion. A ``verifies`` step itself is
-    never exempt: a check that ran nothing checked nothing.
-    Neither exemption covers a plan with no stored prior or a step that was
+    never exempt: a check that ran nothing checked nothing. A ``deliverable``
+    step that was active completes on its reply while later steps remain —
+    its work is the text — but not as the closing step, where the same flag
+    would bypass verification.
+    No exemption covers a plan with no stored prior or a step that was
     still ``pending``, so a checklist cannot be born or bulk-ticked complete.
     ``blocked`` is not a completion and is never demoted: it records work
     that did not happen, with the blocker named in the explanation
@@ -92,7 +95,8 @@ def demote_unevidenced_completions(
             continue
         was_active = _before(index, item.step) is PlanStepStatus.IN_PROGRESS
         free_close = closing and (verified or not claims_completion)
-        exempt = was_active and not item.verifies and (newly_blocked or free_close)
+        delivered = item.deliverable and not closing
+        exempt = was_active and not item.verifies and (newly_blocked or free_close or delivered)
         if _earned_alone(index, item) or exempt:
             steps.append(item)
             continue
