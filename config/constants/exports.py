@@ -33,6 +33,7 @@ EXPORTS: dict[str, str] = {
     "OPENSRE_APP_URL_DEFAULT": "account",
     "OPENSRE_APP_URL_DEV": "account",
     "OPENSRE_APP_URL_ENV": "account",
+    "OPENSRE_STAFF_EMAIL_DOMAIN": "account",
     # analytics
     "ANALYTICS_DISABLED_ENV": "analytics",
     "ANALYTICS_EVENT_SCHEMA_VERSION": "analytics",
