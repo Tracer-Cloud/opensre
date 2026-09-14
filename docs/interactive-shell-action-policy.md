@@ -169,9 +169,9 @@ sandboxing, and commands run on the developer's machine with their privileges.
 - The **only** remaining non-execution outcome is genuinely empty input (a bare
   `!` or whitespace), which is rejected as input validation, not as a guardrail.
 
-Each command starts a new shell in the task workspace. A directory change
-therefore applies only within the same command (`cd path && command`); start a
-new task to continue work from another persistent workspace. On POSIX, commands
+Each command starts a new shell in OpenSRE's working directory. A directory
+change therefore applies only within the same command; prefix each command
+that needs another directory with `cd path && command`. On POSIX, commands
 use non-interactive `/bin/sh` syntax rather than loading the configured
 interactive shell, its aliases, or its startup files.
 
