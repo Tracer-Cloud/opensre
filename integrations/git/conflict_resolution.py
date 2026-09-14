@@ -178,10 +178,11 @@ def _read_lines(workspace: str, path: str) -> tuple[str, ...]:
 def unresolved_conflicts(workspace: str, conflicts: MergeConflicts) -> list[ConflictedPath]:
     """Conflicted paths the resolver left with markers or never touched.
 
-    Delete/modify conflicts carry no markers, so an untouched file is judged by
-    its content fingerprint being unchanged since the merge stopped while its
-    index entry is still unmerged; a kept file the resolver staged as-is counts
-    as resolved.
+    A content conflict always starts with markers, so a file without them was
+    edited. Delete/modify conflicts carry no markers, so an untouched one is
+    judged by its content fingerprint being unchanged since the merge stopped
+    while its index entry is still unmerged; a kept file the resolver staged
+    as-is counts as resolved.
     """
     marked = set(paths_with_conflict_markers(workspace, conflicts.names))
     still_unmerged = set(unmerged_paths(workspace))
@@ -191,7 +192,8 @@ def unresolved_conflicts(workspace: str, conflicts: MergeConflicts) -> list[Conf
         for conflict in conflicts.paths
         if conflict.path in marked
         or (
-            conflict.path in still_unmerged
+            bool(conflict.deleted_on)
+            and conflict.path in still_unmerged
             and current.get(conflict.path, "") == conflicts.content.get(conflict.path, "")
         )
     ]

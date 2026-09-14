@@ -27,6 +27,8 @@ class ConflictedPath:
 
     path: str
     description: str
+    deleted_on: str = ""
+    """``ours`` or ``theirs`` when that side deleted the file; empty for a content conflict."""
 
 
 def fetch_remote_branch(
@@ -122,12 +124,15 @@ def describe_conflicts(workspace: str, *, ours: str, theirs: str) -> list[Confli
     described: list[ConflictedPath] = []
     for path, present in stages.items():
         if _STAGE_OURS not in present:
-            description = f"deleted on {ours}, changed on {theirs}"
+            described.append(
+                ConflictedPath(path, f"deleted on {ours}, changed on {theirs}", deleted_on="ours")
+            )
         elif _STAGE_THEIRS not in present:
-            description = f"changed on {ours}, deleted on {theirs}"
+            described.append(
+                ConflictedPath(path, f"changed on {ours}, deleted on {theirs}", deleted_on="theirs")
+            )
         else:
-            description = f"changed on both {ours} and {theirs}"
-        described.append(ConflictedPath(path=path, description=description))
+            described.append(ConflictedPath(path, f"changed on both {ours} and {theirs}"))
     return described
 
 
