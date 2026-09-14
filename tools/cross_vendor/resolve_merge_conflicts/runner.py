@@ -212,6 +212,9 @@ def _output(
     error: str | None = None,
 ) -> dict[str, Any]:
     return {
+        "outcome": _outcome(
+            success, branch=branch, merged=merged, commit_sha=commit_sha, error=error
+        ),
         "success": success,
         "error_kind": error_kind,
         "error": error,
@@ -221,9 +224,21 @@ def _output(
         "commit_sha": commit_sha,
         "resolved_files": list(resolved),
         "unresolved_files": list(unresolved),
-        "summary": summary,
+        "coding_agent_summary": summary,
         "merge_in_progress": _merge_still_in_progress(ws),
     }
+
+
+def _outcome(
+    success: bool, *, branch: str, merged: str, commit_sha: str | None, error: str | None
+) -> str:
+    """One sentence the caller can repeat verbatim; it outranks the coding agent's own account."""
+    if success and commit_sha:
+        return (
+            f"OpenSRE committed the merge of {merged} into {branch} as {commit_sha[:12]}; "
+            "no conflict remains and nothing was pushed."
+        )
+    return error or "The merge was not committed."
 
 
 def _merge_still_in_progress(ws: str) -> bool:

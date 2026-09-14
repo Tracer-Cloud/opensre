@@ -90,6 +90,7 @@ class ResolveMergeConflictsTool(BaseTool):
         },
     }
     outputs = {
+        "outcome": "One sentence stating whether OpenSRE committed the merge; repeat it to the user",
         "success": "True when the merge was committed with every conflict resolved",
         "error_kind": "Stable failure category (no_merge_in_progress, not_a_git_repo, "
         "merge_failed, cli_unavailable, timeout, execution_error, conflicts_remain, "
@@ -101,7 +102,8 @@ class ResolveMergeConflictsTool(BaseTool):
         "commit_sha": "The merge commit, or None when the merge was not committed",
         "resolved_files": "Conflicted files the coding agent resolved",
         "unresolved_files": "Conflicted files still waiting for a decision",
-        "summary": "The coding agent's account of how each conflict was resolved",
+        "coding_agent_summary": "The coding agent's account of how it resolved each file, "
+        "written before OpenSRE committed the merge",
         "merge_in_progress": "True when the merge is still open in the working tree",
     }
 

@@ -95,7 +95,7 @@ def test_resolved_conflicts_are_committed_without_sweeping_in_unrelated_work(
     assert out["resolved_files"] == ["app.py"]
     assert out["merge_in_progress"] is False
     assert out["branch"] == "feature" and out["merged"] == "main"
-    assert out["summary"] == "Combined both greetings."
+    assert out["coding_agent_summary"] == "Combined both greetings."
     assert len(_git(work, "log", "-1", "--pretty=%P").split()) == 2
     assert _git(work, "status", "--porcelain").split() == ["M", "notes.txt"]
     assert "- app.py: changed on both feature and main" in tasks[0]
@@ -119,7 +119,7 @@ def test_markers_left_behind_keep_the_merge_open_and_name_the_file(tmp_path: Pat
     assert out["error_kind"] == "conflicts_remain"
     assert out["unresolved_files"] == ["app.py"]
     assert "app.py (changed on both feature and main)" in out["error"]
-    assert out["summary"] == "Could not decide which greeting to keep."
+    assert out["coding_agent_summary"] == "Could not decide which greeting to keep."
     assert out["merge_in_progress"] is True
     assert head_sha(str(work)) == before
 
