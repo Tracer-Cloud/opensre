@@ -66,7 +66,10 @@ class TestTickTraceSession:
 
         daemon, nested = seen
         assert daemon is not None and daemon.session_id == "cf9d8a4169ac"
+        # ``/loops run`` inside a turn: same session, still attributed as scheduled work.
         assert nested is not None and nested.session_id == "outer-turn"
+        assert nested.tags == (tasks_mod.SCHEDULED_TRACE_TAG,)
+        assert nested.metadata["task_id"] == "cf9d8a4169ac"
 
 
 class TestMessageBuilders:

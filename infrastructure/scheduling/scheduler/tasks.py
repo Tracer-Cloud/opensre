@@ -40,7 +40,8 @@ def build_message(task: ScheduledTask, runners: SchedulerRunners) -> str:
     runner failures. Every turn the tick runs is traced under the hosting
     session when there is one (the shell that started this scheduler), else
     under the task id, so ticks of one loop share one trace session. A tick
-    fired from inside a turn (``/loops run``) inherits that turn's session.
+    fired from inside a turn (``/loops run``) inherits that turn's session and
+    still gains the scheduled tag and task metadata.
     """
     with inherit_trace_session(
         runners.host_session_id() or task.id,

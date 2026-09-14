@@ -46,17 +46,33 @@ def inherit_trace_session(
 ) -> Iterator[TraceSession | None]:
     """Bind ``session_id`` unless an outer turn already bound one; yield the effective session.
 
+    An outer binding keeps its session id but gains ``tags`` and ``metadata``
+    (inner values win on a key clash), so a scheduled tick run from inside a
+    turn stays in that turn's session and is still attributed as scheduled.
     Yields ``None`` only when nothing is bound and ``session_id`` is empty.
     """
     bound = _CURRENT.get()
-    if bound is not None or not session_id:
-        yield bound
+    if bound is not None:
+        effective = _extend(bound, tags, metadata)
+    elif session_id:
+        effective = TraceSession(session_id, tags, dict(metadata or {}))
+    else:
+        yield None
         return
-    token = _CURRENT.set(TraceSession(session_id, tags, dict(metadata or {})))
+    token = _CURRENT.set(effective)
     try:
-        yield _CURRENT.get()
+        yield effective
     finally:
         _CURRENT.reset(token)
+
+
+def _extend(
+    outer: TraceSession, tags: tuple[str, ...], metadata: Mapping[str, Any] | None
+) -> TraceSession:
+    if not tags and not metadata:
+        return outer
+    merged_tags = outer.tags + tuple(tag for tag in tags if tag not in outer.tags)
+    return TraceSession(outer.session_id, merged_tags, {**outer.metadata, **(metadata or {})})
 
 
 __all__ = ["TraceSession", "current_trace_session", "inherit_trace_session"]
