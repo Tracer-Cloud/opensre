@@ -152,6 +152,23 @@ def test_capability_answers_and_direct_requests_do_not_require_onboarding() -> N
     assert "ask_user_choice menu: available" in prompt
 
 
+def test_headless_capability_answer_points_to_the_interactive_command() -> None:
+    snapshot = TurnSnapshot(
+        text="What can you do?",
+        conversation_messages=(),
+        configured_integrations=(),
+        configured_integrations_known=True,
+        reasoning_effort=None,
+        prompt_surface="headless_cli",
+        interactive_choice_available=True,
+    )
+
+    prompt = " ".join(build_action_system_prompt(snapshot).split())
+
+    assert "Do not offer a bare `/demo` command" in prompt
+    assert "run `opensre` first" in prompt
+
+
 def test_answer_keeps_skill_in_ephemeral_context_after_history_is_lost() -> None:
     question = AskUserQuestion(
         label="", title="Which repository?", options=("acme/one", "acme/two")

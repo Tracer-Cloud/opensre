@@ -21,6 +21,7 @@ from core.agent_harness import (
     SessionManager,
     TurnResult,
 )
+from core.agent_harness.prompts.kernel.surfaces import PromptSurface
 from core.agent_harness.ports import ToolEventObserver
 from core.agent_harness.spi.cancel import ensure_turn_cancel
 from core.agent_harness.spi.session_goal import SessionGoal, SessionGoalReason, SessionGoalStatus
@@ -204,6 +205,7 @@ def _run_agent_turn(
                 output=output,
                 prepare_session=_restrict_ask_capabilities,
                 console=console,
+                surface=PromptSurface.HEADLESS_CLI.value,
                 is_tty=False,
                 tool_hooks=hooks,
                 tool_event_observer=tool_event_observer,

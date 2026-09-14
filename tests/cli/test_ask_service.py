@@ -324,6 +324,7 @@ def test_agent_turn_binds_hooks_and_restricts_capabilities_via_start(monkeypatch
     # dispatched, ephemeral session closed without memory extraction.
     assert recorded["tool_hooks"] is hooks
     assert recorded["is_tty"] is False
+    assert recorded["surface"] == "headless_cli"
     assert session.available_capabilities["slash_commands"] == ()
     assert session.available_capabilities["shell"] == ("keep",)
     assert recorded["prompt"] == "hello"

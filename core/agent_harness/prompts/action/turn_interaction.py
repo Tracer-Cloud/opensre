@@ -20,12 +20,21 @@ def turn_interaction_facts_block(turn_snapshot: TurnSnapshot) -> str:
     menu = "available" if turn_snapshot.interactive_choice_available else "unavailable"
     brief = turn_snapshot.session_goal_brief.strip()
     goal_lines = "".join(f"  {line}\n" for line in brief.splitlines()) if brief else ""
+    surface_rules = ""
+    if surface == "headless_cli":
+        surface_rules = (
+            "This is a non-interactive `opensre ask` invocation: do not describe "
+            "it as the interactive shell and do not recommend slash commands. "
+            "The process exits after this turn; use a required structured choice "
+            "when user input is needed so the invocation can be resumed.\n"
+        )
     return (
         "TURN INTERACTION (authoritative for this turn):\n"
         f"- surface: {surface}\n"
         f"- session_goal: {goal}\n"
         f"{goal_lines}"
         f"- ask_user_choice menu: {menu}\n"
+        f"{surface_rules}"
         "Optional follow-ups (run tests, commit, build next): call "
         "ask_user_choice only when the menu is available AND session_goal is "
         "none. Otherwise finish the work; one sentence of instructions is "
