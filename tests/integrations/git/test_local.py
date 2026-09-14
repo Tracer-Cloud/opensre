@@ -379,3 +379,28 @@ def test_push_head_follows_the_push_remote_gh_sets_for_a_fork_checkout(tmp_path:
     assert origin_heads == ""
     assert label == f"{tmp_path.name}:feature"
     assert gitlocal.push_destination(str(work)) == label
+
+
+@pytest.mark.parametrize(
+    "push_remote",
+    [
+        "git@github.com:contributor/opensre.git",
+        "https://github.com/contributor/opensre.git",
+        "ssh://git@github.com/contributor/opensre.git",
+    ],
+)
+def test_push_destination_names_the_fork_owner_for_every_remote_url_form(
+    tmp_path: Path, push_remote: str
+) -> None:
+    # Arrange
+    work = _init_repo(tmp_path)
+    _git(work, "checkout", "-q", "-b", "feature")
+    _git(work, "config", "branch.feature.remote", "origin")
+    _git(work, "config", "branch.feature.merge", "refs/heads/feature")
+    _git(work, "config", "branch.feature.pushRemote", push_remote)
+
+    # Act
+    label = gitlocal.push_destination(str(work))
+
+    # Assert
+    assert label == "contributor:feature"

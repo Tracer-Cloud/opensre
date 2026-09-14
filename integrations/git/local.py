@@ -466,9 +466,17 @@ def _push_remote(workspace: str, branch: str) -> str:
 def _push_label(destination: str, remote_branch: str) -> str:
     if not _is_url(destination):
         return f"{destination}/{remote_branch}"
-    parts = urlsplit(destination).path.strip("/").split("/")
+    parts = _repository_path(destination).strip("/").split("/")
     owner = parts[-2] if len(parts) >= 2 else parts[-1]
     return f"{owner}:{remote_branch}"
+
+
+def _repository_path(url: str) -> str:
+    """The path part of a remote URL, including the scp form ``git@host:owner/repo.git``."""
+    if "://" in url:
+        return urlsplit(url).path
+    _host, colon, path = url.partition(":")
+    return path if colon and not url.startswith("/") else url
 
 
 def push_branch(
