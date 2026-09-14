@@ -146,7 +146,7 @@ def test_capability_answers_and_direct_requests_do_not_require_onboarding() -> N
     assert "load that specialist directly and carry the original request forward" in prompt
     assert "an explicit demo or onboarding request that needs path selection" in prompt
     assert "stop onboarding without a replacement text menu" in prompt
-    assert "Do not ask a separate onboarding question before loading it" in prompt
+    assert "Do not invent a separate getting-started menu" in prompt
     assert "are NOT a skill_view match" not in prompt
     assert "Which demo would you like me to run?" not in load_getting_started_block()
     assert "ask_user_choice menu: available" in prompt

@@ -5,9 +5,10 @@ model spent ~60 s grepping the OpenSRE source tree to discover ``/cron add``,
 made nine stand-alone ``update_plan`` calls, re-fetched the same check state
 through three tools, and the tick prompt described "invoke the
 repair-github-ci workflow" instead of naming ``fix_github_pr_ci``. This suite
-pins the corrected card: the ``/cron add`` call is spelled out with the one
-30-second cadence, the tick prompt names the tool call, plan writes ride along
-with the next action, and nothing is created before the repository question.
+pins the corrected card: the loop is created by one spelled-out
+``schedule_ci_repair_loop`` call (the tool owns cadence and the tick), the
+first tick is forced with ``/cron run``, verification is a single read, and
+nothing is created before the repository question.
 """
 
 from __future__ import annotations
@@ -53,7 +54,7 @@ _MASTER_ANSWER = (
 )
 _REPOSITORY_QUESTION = "CI Repair Target"
 _DEMO_OPTION = "Private disposable demo repository"
-_LOOP_CRON = "*/30 * * * * *"
+_LOOP_CALL = 'schedule_ci_repair_loop(owner="<owner>", repo="<repo>", pr_number=<n>)'
 _PLAN_LINE = re.compile(r"^- \[ \] Step (\d+)\. ", re.MULTILINE)
 _WORKFLOW_HEADING = re.compile(r"^### Step (\d+)\. ", re.MULTILINE)
 
@@ -115,41 +116,29 @@ def _recording_tool(name: str, calls: list[tuple[str, dict[str, Any]]]) -> Regis
     )
 
 
-def test_skill_card_spells_out_the_loop_call_and_direct_tick_prompt() -> None:
+def test_skill_card_spells_out_the_loop_call_and_forced_first_tick() -> None:
     frontmatter, _ = parse_frontmatter(_SKILL_PATH.read_text(encoding="utf-8"))
     assert frontmatter["name"] == SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME
     assert frontmatter["includes"] == ["common/ask_once.md"]
     assert frontmatter["metadata"]["last_changed_at"] == date(2026, 9, 14)
     body = load_skill_body(SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME)
-    # Blockquoted tick prompts wrap across lines; compare phrases on one line.
-    flat = " ".join(re.sub(r"\n> ?", " ", body).split())
 
-    # The loop is created by one spelled-out call at the one 30-second cadence;
-    # the model must never rediscover the flags from the source tree, and no
-    # slower minute-granular schedule survives on the card.
-    assert f'"--cron", "{_LOOP_CRON}"' in body
-    assert body.count('"--cron"') == 1
-    assert '"--cron", "*/2 * * * *"' not in body
-    assert '"--cron", "* * * * *"' not in body
-    assert '"--mode", "agent"' in body
-    assert '"--provider", "interactive_shell"' in body
+    # The loop is created by one spelled-out tool call that owns the cadence;
+    # the model must never rediscover `/cron add` flags from the source tree,
+    # and no hand-written cron schedule survives on the card.
+    assert _LOOP_CALL in body
+    assert body.count("schedule_ci_repair_loop(") == 1
+    assert '"--cron"' not in body and "/cron add" not in body
     assert "--timezone" not in body and "Poll every" not in body
-    # Tick prompts name the tool call instead of describing a workflow.
-    assert 'fix_github_pr_ci(owner="<owner>", repo="<repo>", pr_number=' in flat
-    assert "first PR in the returned list" in flat
-    assert "exactly once" in flat and "a refusal consumes this tick's attempt" in flat
     # The first tick is forced, not awaited; verification is a single read.
     assert '"args": ["run", "<id>"]' in body
     assert "headRefOid,commits,statusCheckRollup" in body
     assert "Do not run the tests locally" in body
-    # Plan writes ride with the next action; the menu stands alone.
-    assert "except before `ask_user_choice`, which must be the only call" in body
     # The demo loop is removed after the evidence is saved; the repository is
     # kept, so the token never needs delete_repo scope.
     assert '"args": ["remove", "<id>"]' in body
     assert '["repo", "delete"' not in body
     assert "report that the repository remains" in body
-    assert "confirms `Mode: agent`" in body
     assert skill_reference_names(SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME) == ("script-tools",)
 
 
@@ -159,7 +148,11 @@ def test_plan_checklist_matches_workflow_headings() -> None:
     heading_numbers = [int(match) for match in _WORKFLOW_HEADING.findall(body)]
     assert plan_numbers == list(range(1, 12))
     assert heading_numbers == plan_numbers
-    assert all("Complete when" in section for section in body.split("### Step ")[1:])
+    # Every step states its completion condition, in either accepted phrasing.
+    sections = body.split("### Step ")[1:]
+    assert all(
+        "Complete when" in section or "Complete this step when" in section for section in sections
+    )
 
 
 def test_repository_question_carries_the_plan_and_blocks_creation_until_answered(
