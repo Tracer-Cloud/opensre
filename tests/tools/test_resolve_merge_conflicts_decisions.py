@@ -232,3 +232,37 @@ def test_files_the_agent_could_not_settle_are_asked_through_the_menu(tmp_path: P
     assert asked == [["b.txt"]]
     assert out["error_kind"] == "awaiting_decisions" and out["menu"] == "queued"
     assert merge_in_progress(str(work))
+
+
+def test_a_fresh_delete_modify_conflict_is_asked_not_silently_kept(tmp_path: Path) -> None:
+    # Arrange: main deleted a file that feature changed; the file carries no markers.
+    work = tmp_path / "work"
+    _git(tmp_path, "init", "-b", "main", str(work))
+    _git(work, "config", "user.email", "t@example.com")
+    _git(work, "config", "user.name", "Tester")
+    (work / "doomed.txt").write_text("keep?\n")
+    _git(work, "add", "-A")
+    _git(work, "commit", "-m", "init")
+    _git(work, "checkout", "-b", "feature")
+    (work / "doomed.txt").write_text("changed on feature\n")
+    _git(work, "commit", "-am", "feature")
+    _git(work, "checkout", "main")
+    _git(work, "rm", "-q", "doomed.txt")
+    _git(work, "commit", "-m", "main deletes")
+    _git(work, "checkout", "feature")
+    subprocess.run(["git", "merge", "main"], cwd=work, capture_output=True, text=True)
+    before = head_sha(str(work))
+    asked: list[list[str]] = []
+
+    def ask(choices: list[FileChoice]) -> bool:
+        asked.append([c.path for c in choices])
+        return True
+
+    # Act
+    with patch(_VERIFY, return_value=(True, "ready")), patch(_RUN, side_effect=_never_run):
+        out = resolve_merge(str(work), ref=None, model=None, instructions=None, ask=ask)
+
+    # Assert
+    assert asked == [["doomed.txt"]]
+    assert out["error_kind"] == "awaiting_decisions"
+    assert head_sha(str(work)) == before and merge_in_progress(str(work))

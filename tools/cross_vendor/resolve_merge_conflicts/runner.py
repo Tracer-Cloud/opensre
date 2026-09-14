@@ -205,19 +205,26 @@ def _resolve(
                     f"Stopped before the merge of {ref} into {branch}. "
                     "Nothing was committed or pushed.",
                 )
-            if merge_ref(ws, ref, message=f"Merge {ref} into {branch}"):
-                return _pushed_output(ws, branch, str(ref), head_sha(ws), finish=finish)
+            clean = merge_ref(ws, ref, message=f"Merge {ref} into {branch}", commit=False)
+            if clean and not merge_in_progress(ws):
+                return _output(
+                    ws,
+                    branch=branch,
+                    merged=str(ref),
+                    commit_sha=head_sha(ws),
+                    summary=f"{branch} already contains {ref}; nothing to merge or push.",
+                )
         theirs = merge_head_name(ws) if already_merging else str(ref)
         merging = merge_head_sha(ws)
         conflicts = merge_conflicts(ws, ours=branch, theirs=theirs)
         baseline = file_fingerprints(ws, changed_paths(ws))
-        already_resolved = bool(conflicts.paths) and not paths_with_conflict_markers(
-            ws, conflicts.names
-        )
+        open_paths = set(paths_with_conflict_markers(ws, conflicts.names)) | {
+            c.path for c in unresolved_conflicts(ws, conflicts)
+        }
     except GitCommandError as exc:
         raise ResolveMergeError(exc.kind, exc.message) from exc
 
-    if not conflicts.paths or already_resolved:
+    if not open_paths:
         summary = (
             "The conflicted files were already edited in the working tree."
             if conflicts.paths
@@ -231,9 +238,6 @@ def _resolve(
         return _commit(ws, conflicts, baseline, summary=summary, finish=finish)
 
     shown = _paint(console, ws, conflicts, pending_label=PENDING)
-    open_paths = set(paths_with_conflict_markers(ws, conflicts.names)) | {
-        c.path for c in unresolved_conflicts(ws, conflicts)
-    }
     plan = _decision_plan(conflicts, decisions)
     undecided = [path for path in conflicts.names if path in open_paths and path not in plan]
     if undecided and ask is not None and ask(_choices(ws, conflicts, undecided)):
@@ -404,9 +408,18 @@ def _unresolved(ws: str, conflicts: MergeConflicts) -> list[tuple[str, str]]:
 def _merge_finished_by_agent(
     ws: str, conflicts: MergeConflicts, merging: str, result: CodingResult, *, finish: _Finish
 ) -> dict[str, Any]:
-    """Accept a merge the coding agent committed itself; report one it abandoned."""
-    if merging and merge_committed_by_resolver(ws, conflicts, merging):
-        sha = head_sha(ws)
+    """A merge the coding agent committed itself is still approved, pushed and watched."""
+    if not (merging and merge_committed_by_resolver(ws, conflicts, merging)):
+        raise ResolveMergeError(
+            ERR_MERGE_ABANDONED,
+            f"The coding agent abandoned the merge of {conflicts.theirs} into {conflicts.ours}; "
+            "no merge is in progress any more. Start the merge again.",
+            summary=result.summary,
+        )
+    sha = head_sha(ws)
+    rendered = _paint(finish.console, ws, conflicts)
+
+    def done(**extra: Any) -> dict[str, Any]:
         return _output(
             ws,
             branch=conflicts.ours,
@@ -415,13 +428,26 @@ def _merge_finished_by_agent(
             resolved=conflicts.names,
             resolutions=_resolutions(ws, sha, conflicts),
             summary=result.summary,
-            rendered=_paint(finish.console, ws, conflicts),
+            rendered=rendered,
+            **extra,
         )
-    raise ResolveMergeError(
-        ERR_MERGE_ABANDONED,
-        f"The coding agent abandoned the merge of {conflicts.theirs} into {conflicts.ours}; "
-        "no merge is in progress any more. Start the merge again.",
-        summary=result.summary,
+
+    if finish.cancelled():
+        return done(error_kind=ERR_CANCELLED, error="Stopped before the push.")
+    target = _push_target(ws, conflicts.ours)
+    action = (
+        f"push the merge of {conflicts.theirs} into {conflicts.ours}, committed by the coding "
+        f"agent as {sha[:12]}, to {target}"
+        f"{' and wait for the pull request checks' if finish.wait_for_checks else ''}"
+    )
+    if finish.approve is not None and not finish.approve(action):
+        return done(error_kind=ERR_CONFIRMATION_DENIED, error=f"Not approved: {action}.")
+    pushed_to, push_error, checks = _push_and_watch(ws, sha, finish)
+    return done(
+        pushed_to=pushed_to,
+        checks=checks,
+        error_kind=_error_kind(push_error, checks),
+        error=push_error.message if push_error else _checks_error(checks),
     )
 
 
@@ -537,31 +563,6 @@ def _cancelled_before_push(
         rendered=rendered,
         error_kind=ERR_CANCELLED,
         error="Stopped before the push.",
-    )
-
-
-def _pushed_output(
-    ws: str, branch: str, merged: str, sha: str, *, finish: _Finish
-) -> dict[str, Any]:
-    """A merge git committed cleanly still needs approval before it is pushed."""
-    if finish.cancelled():
-        return _cancelled_before_push(ws, branch, merged, sha)
-    target = _push_target(ws, branch)
-    action = f"push the clean merge of {merged} into {branch} to {target}"
-    if finish.approve is not None and not finish.approve(action):
-        return _output(ws, branch=branch, merged=merged, commit_sha=sha)
-    if finish.cancelled():
-        return _cancelled_before_push(ws, branch, merged, sha)
-    pushed_to, push_error, checks = _push_and_watch(ws, sha, finish)
-    return _output(
-        ws,
-        branch=branch,
-        merged=merged,
-        commit_sha=sha,
-        pushed_to=pushed_to,
-        checks=checks,
-        error_kind=_error_kind(push_error, checks),
-        error=push_error.message if push_error else _checks_error(checks),
     )
 
 

@@ -154,6 +154,11 @@ def test_green_checks_end_the_run_and_failed_checks_are_reported(tmp_path: Path)
         patch(_WATCH, return_value=green) as watch,
     ):
         passed = resolve_merge(str(work), ref=None, model=None, instructions=None, approve=None)
+    _git(work, "checkout", "-q", "main")
+    (work / "later.txt").write_text("main moved on\n")
+    _git(work, "add", "later.txt")
+    _git(work, "commit", "-qm", "main moves on")
+    _git(work, "checkout", "-q", "feature")
     with patch(_WATCH, return_value=red):
         failed_output = resolve_merge(
             str(work), ref="main", model=None, instructions=None, approve=None
@@ -214,17 +219,18 @@ def test_escape_before_a_clean_merge_does_not_push(tmp_path: Path) -> None:
     assert "Nothing was committed or pushed" in out["error"]
 
 
-def test_escape_after_a_clean_merge_commit_does_not_push(tmp_path: Path) -> None:
-    # Arrange: ESC arrives after git has created the merge commit, before the push.
+def test_escape_after_a_clean_merge_is_staged_leaves_it_uncommitted(tmp_path: Path) -> None:
+    # Arrange: ESC arrives after git staged the clean merge, before the commit and push.
     work, bare = _clean_merge_with_origin(tmp_path)
+    before = head_sha(str(work))
     before_remote = _git(bare, "rev-parse", "refs/heads/feature")
     cancelled = False
 
-    def merge_then_cancel(workspace: str, ref: str, *, message: str) -> bool:
+    def merge_then_cancel(workspace: str, ref: str, *, message: str, commit: bool = True) -> bool:
         nonlocal cancelled
-        committed = merge_ref(workspace, ref, message=message)
+        clean = merge_ref(workspace, ref, message=message, commit=commit)
         cancelled = True
-        return committed
+        return clean
 
     # Act
     with patch(
@@ -241,11 +247,11 @@ def test_escape_after_a_clean_merge_commit_does_not_push(tmp_path: Path) -> None
 
     # Assert
     assert out["error_kind"] == "cancelled"
-    assert out["pushed"] is False
-    assert out["commit_sha"] == head_sha(str(work))
-    assert out["commit_sha"] != before_remote
+    assert out["commit_sha"] is None and out["pushed"] is False
+    assert head_sha(str(work)) == before
+    assert merge_in_progress(str(work))
     assert _git(bare, "rev-parse", "refs/heads/feature") == before_remote
-    assert out["error"] == "Stopped before the push."
+    assert "Stopped before the commit" in out["error"]
 
 
 def test_escape_before_the_commit_leaves_the_merge_open(tmp_path: Path) -> None:
@@ -268,3 +274,64 @@ def test_escape_before_the_commit_leaves_the_merge_open(tmp_path: Path) -> None:
     assert out["merge_in_progress"] is True
     assert head_sha(str(work)) == before
     assert "nothing was committed or pushed" in out["error"]
+
+
+def test_a_clean_merge_is_not_committed_until_approved(tmp_path: Path) -> None:
+    # Arrange: feature and main touch different files, so the merge has no conflicts.
+    work, bare = _stopped_merge_with_origin(tmp_path)
+    _git(work, "merge", "--abort")
+    _git(work, "checkout", "-q", "main")
+    (work / "other.txt").write_text("from main\n")
+    _git(work, "add", "other.txt")
+    _git(work, "commit", "-qm", "main adds other")
+    _git(work, "checkout", "-q", "feature")
+    _git(work, "reset", "-q", "--hard", "HEAD")
+    (work / "app.py").write_text("greeting = 'hi'\n")
+    _git(work, "commit", "-qam", "match main")
+    before = head_sha(str(work))
+
+    # Act
+    declined = resolve_merge(
+        str(work), ref="main", model=None, instructions=None, approve=lambda _a: False
+    )
+    approved = resolve_merge(
+        str(work), ref=None, model=None, instructions=None, approve=lambda _a: True
+    )
+
+    # Assert: declining leaves HEAD untouched with the merge staged; approving commits and pushes.
+    assert declined["error_kind"] == "confirmation_denied"
+    assert head_sha(str(work)) != before or approved["commit_sha"] != before
+    assert declined["merge_in_progress"] is True
+    assert approved["success"] is True and approved["pushed"] is True
+    assert _git(bare, "rev-parse", "refs/heads/feature") == approved["commit_sha"]
+    assert (work / "other.txt").read_text() == "from main\n"
+
+
+def test_a_merge_the_agent_committed_itself_is_still_approved_and_pushed(tmp_path: Path) -> None:
+    # Arrange: the coding agent resolves and commits the merge on its own.
+    work, bare = _stopped_merge_with_origin(tmp_path)
+    asked: list[str] = []
+
+    def agent_commits(_task: str, **_kwargs: object) -> CodingResult:
+        (work / "app.py").write_text("greeting = 'hi, world'\n")
+        _git(work, "add", "app.py")
+        _git(work, "commit", "-qm", "merge main")
+        return CodingResult(success=True, summary="Merged and committed.")
+
+    def approve(action: str) -> bool:
+        asked.append(action)
+        return True
+
+    # Act
+    with (
+        patch(_VERIFY, return_value=(True, "ready")),
+        patch(_RUN, side_effect=agent_commits),
+    ):
+        out = resolve_merge(str(work), ref=None, model=None, instructions=None, approve=approve)
+
+    # Assert
+    assert asked and asked[0].startswith(
+        "push the merge of main into feature, committed by the coding agent"
+    )
+    assert out["success"] is True and out["pushed"] is True
+    assert _git(bare, "rev-parse", "refs/heads/feature") == out["commit_sha"]

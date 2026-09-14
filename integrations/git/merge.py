@@ -47,10 +47,12 @@ def fetch_remote_branch(
         )
 
 
-def merge_ref(workspace: str, ref: str, *, message: str) -> bool:
+def merge_ref(workspace: str, ref: str, *, message: str, commit: bool = True) -> bool:
     """Merge *ref* into HEAD with a merge commit authored by the OpenSRE Agent account.
 
-    Returns True when the merge committed cleanly. Returns False when git
+    Returns True when the merge applied cleanly: committed, or with ``commit``
+    False left staged and in progress for ``commit_merge`` (an already
+    up-to-date branch then has no merge in progress). Returns False when git
     stopped on content conflicts, leaving the merge in progress for the caller
     to resolve. Any other failure aborts the merge and raises.
     """
@@ -58,7 +60,7 @@ def merge_ref(workspace: str, ref: str, *, message: str) -> bool:
         workspace,
         "merge",
         "--no-ff",
-        "--no-edit",
+        *(("--no-edit",) if commit else ("--no-commit",)),
         "-m",
         _with_opensre_coauthor(message),
         ref,
