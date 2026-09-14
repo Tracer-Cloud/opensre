@@ -287,3 +287,32 @@ def test_ask_json_output_is_one_stable_document(monkeypatch) -> None:
     }
     assert result.stderr == ""
     assert result.output.count("\n") == 1
+
+
+def test_ask_json_required_choice_includes_resume_fields(monkeypatch) -> None:
+    outcome = AskOutcome(
+        status=AskStatus.NEEDS_INPUT,
+        response="Which environment?\n  1. Production\n  2. Staging",
+        session_id="session-123",
+        questions=(AskQuestion("Environment", "Which environment?", ("Production", "Staging")),),
+        exit_code=AskExitCode.NEEDS_INPUT,
+    )
+    monkeypatch.setattr("surfaces.cli.ask.approval.unknown_allowed_tools", lambda _v: ())
+    monkeypatch.setattr("surfaces.cli.ask.service.run_ask", lambda *_a, **_kw: outcome)
+    monkeypatch.setattr("surfaces.cli.commands.ask.is_json_output", lambda: True)
+
+    result = CliRunner().invoke(ask_command, ["deploy"])
+
+    assert result.exit_code == AskExitCode.NEEDS_INPUT
+    payload = json.loads(result.output)
+    assert payload["status"] == "needs_input"
+    assert payload["session_id"] == "session-123"
+    assert payload["questions"] == [
+        {
+            "label": "Environment",
+            "title": "Which environment?",
+            "options": ["Production", "Staging"],
+            "multi_select": False,
+        }
+    ]
+    assert result.stderr == ""
