@@ -47,11 +47,17 @@ class PlanStep:
     (a report, a table): the host shows that reply even though later steps
     remain. It is the structured signal that separates an intended mid-plan
     deliverable from a premature stop the plan gate rejects.
+
+    ``verifies`` marks the step that checks the outcome of the earlier ones by
+    running something. It is the only step shown as ``(verify)``, it never
+    completes without a tool return of its own, and a text-only closing step
+    completes for free only after one has.
     """
 
     step: str
     status: PlanStepStatus
     deliverable: bool = False
+    verifies: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,6 +115,11 @@ class TaskPlan:
         when :attr:`all_completed` also holds.
         """
         return bool(self.steps) and all(item.status in TERMINAL_STATUSES for item in self.steps)
+
+    @property
+    def verified(self) -> bool:
+        """True when a step marked ``verifies`` has completed."""
+        return any(item.verifies and item.status is PlanStepStatus.COMPLETED for item in self.steps)
 
     @property
     def all_pending(self) -> bool:
@@ -169,7 +180,12 @@ def parse_task_plan(args: dict[str, Any]) -> tuple[TaskPlan | None, str | None]:
         if status is PlanStepStatus.IN_PROGRESS:
             in_progress += 1
         steps.append(
-            PlanStep(step=step_text, status=status, deliverable=item.get("deliverable") is True)
+            PlanStep(
+                step=step_text,
+                status=status,
+                deliverable=item.get("deliverable") is True,
+                verifies=item.get("verifies") is True,
+            )
         )
     if in_progress > 1:
         return None, "at most one step can be in_progress at a time"
@@ -185,6 +201,8 @@ def _step_payload(item: PlanStep) -> dict[str, Any]:
     payload: dict[str, Any] = {"step": item.step, "status": str(item.status)}
     if item.deliverable:
         payload["deliverable"] = True
+    if item.verifies:
+        payload["verifies"] = True
     return payload
 
 

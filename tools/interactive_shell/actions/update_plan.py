@@ -48,6 +48,15 @@ _PLAN_ITEM_SCHEMA = {
                 "stop and is not shown."
             ),
         },
+        "verifies": {
+            "type": "boolean",
+            "description": (
+                "True for the step that checks the outcome of the earlier steps by "
+                "running something (a re-read, a re-run, a comparison). It is the only "
+                "step shown as (verify), it completes only after its own tool returned, "
+                "and a text-only last step closes only after it has run."
+            ),
+        },
     },
     "required": ["step", "status"],
     "additionalProperties": False,
@@ -62,11 +71,12 @@ def execute_update_plan_tool(args: dict[str, Any], ctx: ActionToolScope) -> dict
     prior = getattr(ctx.session, "task_plan", None)
     if not isinstance(prior, TaskPlan):
         prior = None
-    plan, demoted = demote_unevidenced_completions(
+    checked = demote_unevidenced_completions(
         plan,
         prior=prior,
         evidence=plan_evidence_available(ctx.session, prior=prior, turn_user_message=turn_text),
     )
+    plan, demoted = checked.plan, checked.demoted
     plan, plan_only_requested = apply_update_plan_host_policy(
         plan,
         plan_only_requested=bool(args.get("plan_only")),
@@ -109,9 +119,19 @@ def execute_update_plan_tool(args: dict[str, Any], ctx: ActionToolScope) -> dict
         payload["instruction"] += (
             f" Reset to pending — marked completed before any tool ran for them: {names}."
             " A step is completed only after its work returned while it was in_progress:"
-            " set it in_progress, run the work, then mark it completed."
+            " set it in_progress, run the work, then mark it completed. When that work"
+            " must not happen (the user said not to run it, or nothing here can), mark"
+            " the step blocked and name the reason in explanation instead of running"
+            " something else to earn the tick."
             " update_plan, session_goal_*, and loading a skill body do not count as work;"
             " reading a skill reference does."
+        )
+    if checked.closed_unverified:
+        payload["instruction"] += (
+            " The last step closed without a tool and no step marked verifies has run,"
+            " so the plan cannot be complete. Either add a step with verifies: true that"
+            " checks the result with a tool, run it, then close — or mark the last step"
+            " blocked with the reason, and tell the user the result is unverified."
         )
     return payload
 
@@ -136,7 +156,9 @@ update_plan_tool = RegisteredTool(
     description=(
         "Create or revise the live execution plan for this workload, and mark "
         "steps pending, in_progress, completed, or blocked. Call this BEFORE executing "
-        "any multi-step workload. Include verification before declaring the task complete. "
+        "any multi-step workload: the second work tool of a turn is refused until a plan "
+        "is stored. Mark the step that checks the outcome verifies: true; a text-only "
+        "last step closes only after it has run. "
         "Mark a step blocked (with the blocker in explanation) when the runtime cannot "
         "perform it; never mark undone work completed. "
         "At most one step may be in_progress. Not for durable human todos "

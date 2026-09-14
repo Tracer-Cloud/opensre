@@ -28,6 +28,7 @@ from core.agent_harness.task_plan.progress import (
     PLAN_STATUS_GLYPH,
     format_plan_header,
     format_task_plan_plain,
+    step_label,
 )
 from core.agent_harness.task_plan.update_plan_policy import (
     apply_update_plan_host_policy,
@@ -58,6 +59,7 @@ __all__ = [
     "promote_first_pending_step",
     "record_plan_evidence",
     "record_task_plan_work",
+    "step_label",
     "take_completed_plan_breakdown",
     "task_plan_to_payload",
 ]

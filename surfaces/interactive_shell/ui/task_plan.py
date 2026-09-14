@@ -18,6 +18,7 @@ from core.agent_harness.spi.task_plan import (
     TaskPlan,
     format_plan_header,
     parse_task_plan,
+    step_label,
 )
 from infrastructure.terminal import theme as ui_theme
 from surfaces.interactive_shell.ui.input_prompt.layout import clip_prompt_text, prompt_line_width
@@ -97,7 +98,7 @@ def _overlay_line(text: str, style: str, width: int) -> str:
 
 
 def _step_overlay_line(item: PlanStep, width: int) -> str:
-    step = item.step
+    step = step_label(item)
     glyph = PLAN_STATUS_GLYPH[item.status]
     if item.status is PlanStepStatus.IN_PROGRESS:
         return _overlay_line(

@@ -6,7 +6,9 @@ Rich rendering lives in
 
 from __future__ import annotations
 
-from core.agent_harness.task_plan.plan import PlanStepStatus, TaskPlan
+from core.agent_harness.task_plan.plan import PlanStep, PlanStepStatus, TaskPlan
+
+VERIFY_LABEL = "(verify)"
 
 PLAN_STATUS_GLYPH: dict[PlanStepStatus, str] = {
     PlanStepStatus.COMPLETED: "✓",
@@ -31,13 +33,24 @@ def format_plan_header(plan: TaskPlan) -> str:
     return f"Plan · {plan.current_index}/{plan.total}"
 
 
+def step_label(item: PlanStep) -> str:
+    """The step text, marked ``(verify)`` only when the step declares it checks the outcome."""
+    return f"{item.step} {VERIFY_LABEL}" if item.verifies else item.step
+
+
 def format_task_plan_plain(plan: TaskPlan) -> str:
     """Checklist with ``Plan · n/m`` header and ✓ / ● / ○ / ⊘ step marks."""
     lines = [format_plan_header(plan)]
     for item in plan.steps:
         mark = PLAN_STATUS_GLYPH[item.status]
-        lines.append(f"  {mark} {item.step}")
+        lines.append(f"  {mark} {step_label(item)}")
     return "\n".join(lines)
 
 
-__all__ = ["PLAN_STATUS_GLYPH", "format_plan_header", "format_task_plan_plain"]
+__all__ = [
+    "PLAN_STATUS_GLYPH",
+    "VERIFY_LABEL",
+    "format_plan_header",
+    "format_task_plan_plain",
+    "step_label",
+]

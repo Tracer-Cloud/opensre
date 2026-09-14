@@ -181,6 +181,20 @@ def _statuses(plan: TaskPlan) -> tuple[str, ...]:
     return tuple(str(item.status) for item in plan.steps)
 
 
+def _verified_plan(*statuses: str, verify: int) -> TaskPlan:
+    """``_plan`` with step ``verify`` (1-based) declared as the verification step."""
+    items = [{"step": f"Step {i}", "status": s} for i, s in enumerate(statuses, 1)]
+    items[verify - 1]["verifies"] = True
+    plan, error = parse_task_plan({"plan": items})
+    assert error is None and plan is not None
+    return plan
+
+
+def _demoted(*args: Any, **kwargs: Any) -> tuple[TaskPlan, tuple[str, ...]]:
+    check = demote_unevidenced_completions(*args, **kwargs)
+    return check.plan, check.demoted
+
+
 def test_completions_without_tool_evidence_are_reset_to_pending() -> None:
     """The demo run: two ``update_plan`` writes ticked steps whose tools had not run yet.
 
@@ -189,13 +203,13 @@ def test_completions_without_tool_evidence_are_reset_to_pending() -> None:
     a pending step cannot have been worked, so steps 1 and 2 are reset; step 3 keeps
     its tick because work returned while it was the active step.
     """
-    first, demoted = demote_unevidenced_completions(
+    first, demoted = _demoted(
         _plan("pending", "completed", "in_progress", "pending"), prior=None, evidence=False
     )
     assert demoted == ("Step 2",)
     assert _statuses(first) == ("pending", "pending", "in_progress", "pending")
 
-    second, demoted = demote_unevidenced_completions(
+    second, demoted = _demoted(
         _plan("completed", "completed", "completed", "in_progress"), prior=first, evidence=True
     )
     assert demoted == ("Step 1", "Step 2")
@@ -204,7 +218,7 @@ def test_completions_without_tool_evidence_are_reset_to_pending() -> None:
 
 def test_plan_written_after_the_work_keeps_its_completed_steps() -> None:
     """A retroactive plan (tools ran, then update_plan) is not a false tick."""
-    plan, demoted = demote_unevidenced_completions(
+    plan, demoted = _demoted(
         _plan("completed", "completed", "in_progress"), prior=None, evidence=True
     )
     assert demoted == ()
@@ -212,34 +226,77 @@ def test_plan_written_after_the_work_keeps_its_completed_steps() -> None:
 
 
 def test_finishing_the_whole_checklist_in_one_write_is_not_demoted() -> None:
-    """Closing the plan after the work is sanctioned; a text-only last step has no tool."""
-    plan, demoted = demote_unevidenced_completions(
-        _plan("completed", "completed"), prior=_plan("completed", "in_progress"), evidence=False
+    """Closing the plan after the work is sanctioned once a verification step has run.
+
+    A text-only last step has no tool of its own; it closes for free because
+    the plan's check already completed on its own evidence.
+    """
+    # Arrange: step 1 is the check and completed earlier; step 2 is the summary.
+    prior = _verified_plan("completed", "in_progress", verify=1)
+
+    # Act
+    plan, demoted = _demoted(
+        _verified_plan("completed", "completed", verify=1), prior=prior, evidence=False
     )
+
+    # Assert
     assert demoted == ()
-    assert plan.all_completed
+    assert plan.all_completed and plan.verified
+
+
+def test_a_text_only_close_without_a_verification_step_is_reset() -> None:
+    """The adversarial run: list, count, summarize — the summary closed with nothing checked."""
+    # Arrange: two steps done with tools, the summary active, no step verifies.
+    prior = _plan("completed", "completed", "in_progress")
+
+    # Act: the summary is completed with no tool return since the last write.
+    check = demote_unevidenced_completions(
+        _plan("completed", "completed", "completed"), prior=prior, evidence=False
+    )
+
+    # Assert: the summary is reset and the reason is named for the tool result.
+    assert check.demoted == ("Step 3",)
+    assert _statuses(check.plan) == ("completed", "completed", "pending")
+    assert check.closed_unverified is True
+
+
+def test_a_verification_step_never_closes_for_free() -> None:
+    """A check that ran nothing checked nothing, even when it is the closing step."""
+    # Arrange: the check is the last step and is active; no tool returned.
+    prior = _verified_plan("completed", "in_progress", verify=2)
+
+    # Act
+    check = demote_unevidenced_completions(
+        _verified_plan("completed", "completed", verify=2), prior=prior, evidence=False
+    )
+
+    # Assert: reset, and not reported as the unverified-close case (it is the check itself).
+    assert check.demoted == ("Step 2",)
+    assert check.closed_unverified is False
+    # With its own evidence it completes, and the plan is verified.
+    passed = demote_unevidenced_completions(
+        _verified_plan("completed", "completed", verify=2), prior=prior, evidence=True
+    )
+    assert passed.demoted == () and passed.plan.verified
 
 
 def test_a_checklist_cannot_be_born_or_bulk_ticked_complete_without_evidence() -> None:
-    """The all-completed exemption covers only the stored plan's active step.
-
-    A brand-new plan submitted fully completed before any tool ran, and a write
+    """A brand-new plan submitted fully completed before any tool ran, and a write
     that completes every step while some were still pending, are demoted like
-    any other unevidenced tick; only the in_progress step closes for free.
+    any other unevidenced tick. The active step closes for free only once a
+    verification step has run, so here it is reset too.
     """
-    fresh, demoted = demote_unevidenced_completions(
-        _plan("completed", "completed"), prior=None, evidence=False
-    )
+    fresh, demoted = _demoted(_plan("completed", "completed"), prior=None, evidence=False)
     assert demoted == ("Step 1", "Step 2")
     assert _statuses(fresh) == ("pending", "pending")
 
-    bulk, demoted = demote_unevidenced_completions(
+    bulk, demoted = _demoted(
         _plan("completed", "completed", "completed"),
         prior=_plan("completed", "in_progress", "pending"),
         evidence=False,
     )
-    assert demoted == ("Step 3",)
-    assert _statuses(bulk) == ("completed", "completed", "pending")
+    assert demoted == ("Step 2", "Step 3")
+    assert _statuses(bulk) == ("completed", "pending", "pending")
 
 
 def test_ask_user_answer_completes_only_the_step_that_was_waiting() -> None:

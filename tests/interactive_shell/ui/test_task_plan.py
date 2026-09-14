@@ -319,3 +319,24 @@ def test_a_finished_plan_stays_pinned_until_its_breakdown_is_printed() -> None:
 
     # Assert
     assert "Plan complete · 2/2" in rendered or "Plan · 2/2" in rendered
+
+
+def test_overlay_labels_only_the_declared_verification_step() -> None:
+    # Arrange
+    plan, error = parse_task_plan(
+        {
+            "plan": [
+                {"step": "Capture 502 samples from checkout", "status": "completed"},
+                {"step": "Confirm checkout returns 2xx", "status": "in_progress", "verifies": True},
+                {"step": "Write up the finding", "status": "pending"},
+            ]
+        }
+    )
+    assert error is None and plan is not None
+
+    # Act
+    rows = _strip_ansi(task_plan_overlay_ansi(plan)).splitlines()
+
+    # Assert
+    assert any(row.strip() == "● Confirm checkout returns 2xx (verify)" for row in rows)
+    assert not any("Write up the finding (verify)" in row for row in rows)

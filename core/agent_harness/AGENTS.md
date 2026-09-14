@@ -53,6 +53,14 @@ strings live in `SessionGoalReason`. Reason derive:
 Package rules: `session_goal/AGENTS.md`. Borders SoT (local notes):
 `opensre-notes/goal-core-system-design-aug2026.html`.
 
+**Task plan guards (host-enforced, `task_plan/` + `turns/`):** a plan write
+cannot complete a step that had no tool return while it was `in_progress`
+(`demote_unevidenced_completions`, fed by `turns/plan_evidence_hook.py`); a
+step marked `verifies` is never exempt, and a text-only closing step is exempt
+only once such a step completed. The second work tool of a turn with no open
+plan is refused (`turns/plan_required_guard.py`). Change the rule in the
+policy or the guard, never by prompt text alone.
+
 **Evidence kinds (open/closed):** vocabulary + per-kind policy live in
 `turns/evidence_kind.py` (`EvidenceKind` + `EvidenceKindPolicy`). Add a kind by
 extending the enum and registering its policy row — do **not** grow

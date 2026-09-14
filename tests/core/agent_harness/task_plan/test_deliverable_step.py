@@ -50,6 +50,6 @@ def test_deliverable_flag_survives_payload_round_trip_and_status_demotion() -> N
     assert restored is not None
     assert [item.deliverable for item in restored.steps] == [False, False, False, True, False]
 
-    demoted, names = demote_unevidenced_completions(plan, prior=None, evidence=False)
-    assert names
-    assert [item.deliverable for item in demoted.steps] == [False, False, False, True, False]
+    check = demote_unevidenced_completions(plan, prior=None, evidence=False)
+    assert check.demoted
+    assert [item.deliverable for item in check.plan.steps] == [False, False, False, True, False]

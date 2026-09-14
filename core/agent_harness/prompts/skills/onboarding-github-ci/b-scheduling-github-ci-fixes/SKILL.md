@@ -64,7 +64,9 @@ After reading this skill, use `update_plan` to create the live plan from the
 eleven numbered workflow headings below. Mark steps the request already
 satisfies `completed` (a named repository skips Step 1; an existing failing
 PR skips Steps 4 and 8) and move each step to `completed` when its
-completion condition is met.
+completion condition is met. Mark Step 8 with `verifies: true` in every
+`update_plan` call: it is the check that the repair happened, and the
+report step relies on it to close.
 
 - [ ] Step 1. Select the repository, or the private demo, with ask_user_choice.
 - [ ] Step 2. Check prerequisites: GitHub identity and scopes, then the scheduler.

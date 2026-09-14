@@ -11,7 +11,11 @@ from __future__ import annotations
 from typing import Any
 
 from core.agent_harness.task_plan.plan import PlanStepStatus, TaskPlan
-from core.agent_harness.task_plan.progress import PLAN_STATUS_GLYPH, format_plan_header
+from core.agent_harness.task_plan.progress import (
+    PLAN_STATUS_GLYPH,
+    format_plan_header,
+    step_label,
+)
 from infrastructure.safety.terminal_output import strip_terminal_controls
 
 _MAX_WORK_LINES_PER_STEP = 12
@@ -146,7 +150,7 @@ def format_task_plan_breakdown(
     lines = [header]
     for index, item in enumerate(plan.steps):
         mark = PLAN_STATUS_GLYPH[item.status]
-        lines.append(f"  {mark} {item.step}")
+        lines.append(f"  {mark} {step_label(item)}")
         step_work = work[index] if index < len(work) else []
         lines.extend(_grouped_work_lines(step_work))
     return "\n".join(lines)

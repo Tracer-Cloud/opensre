@@ -190,6 +190,7 @@ SPI_ROLE_NAMES: dict[str, frozenset[str]] = {
             "promote_first_pending_step",
             "record_plan_evidence",
             "record_task_plan_work",
+            "step_label",
             "take_completed_plan_breakdown",
             "task_plan_to_payload",
         }
