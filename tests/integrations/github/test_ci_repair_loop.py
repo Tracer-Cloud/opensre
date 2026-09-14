@@ -16,7 +16,7 @@ import psutil
 import pytest
 from filelock import FileLock
 
-from config.constants.ci_repair import CI_REPAIR_FINISH_RESERVE_SECONDS
+from config.constants.ci_repair import CI_REPAIR_CRON, CI_REPAIR_FINISH_RESERVE_SECONDS
 from config.constants.github import GITHUB_CI_DEMO_REPOSITORY
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
 from integrations.github.client import GitHubApiError
@@ -45,7 +45,7 @@ def _task(run: RepairRun) -> ScheduledTask:
     return ScheduledTask(
         id=run.id,
         kind=TaskKind.MANUAL_LOOP,
-        cron="* * * * *",
+        cron=CI_REPAIR_CRON,
         provider=Provider.INTERACTIVE_SHELL,
     )
 
@@ -325,7 +325,7 @@ def test_schedule_reuses_active_run_instead_of_resetting_deadline(
     second, reused_again, _ = schedule.schedule_repair(demo=True, store=store)
     assert not reused and reused_again
     assert first.id == second.id and first.deadline == second.deadline
-    assert len(tasks) == 1 and next(iter(tasks.values())).cron == "* * * * *"
+    assert len(tasks) == 1 and next(iter(tasks.values())).cron == CI_REPAIR_CRON
 
 
 def test_failure_retains_diagnostics_and_report_contains_evidence_links(tmp_path: Path) -> None:

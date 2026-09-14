@@ -190,7 +190,7 @@ async def test_cancelling_a_running_turn_keeps_its_skill_and_plan() -> None:
     controller = _controller()
     plan = _plan("in_progress", "pending")
     controller.session.task_plan = plan
-    controller.session.active_skill = "scheduling-github-ci-fixes"
+    controller.session.active_skill = "scheduling-github-ci-repairs"
     cancel_event = threading.Event()
 
     async def _hold() -> None:
@@ -204,7 +204,7 @@ async def test_cancelling_a_running_turn_keeps_its_skill_and_plan() -> None:
         assert kept is True
         assert cancel_event.is_set()
         assert controller.session.task_plan is plan
-        assert controller.session.active_skill == "scheduling-github-ci-fixes"
+        assert controller.session.active_skill == "scheduling-github-ci-repairs"
     finally:
         task.cancel()
         _ = await asyncio.gather(task, return_exceptions=True)

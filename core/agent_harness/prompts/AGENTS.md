@@ -1,5 +1,33 @@
 # prompts/ — single-agent prompt assembly
 
+## SKILL.md files and the system prompt: suggest only, never edit
+
+Agents are **never** allowed to change a `SKILL.md` file — not the body, not
+the frontmatter, not `version` / `last_changed_by` / `last_changed_at`, not a
+rename or move, not a new card, not a deletion. The same applies to the system
+prompt `opensre_system_prompt.md` in this directory: no edits to its text, no
+rename, move, or deletion. The formatting and metadata rules below describe
+what a **human** author must do; for an agent they are review criteria only.
+When you believe a `SKILL.md` or the system prompt needs a change, write the
+proposal (quote current text, give proposed text) in your reply or the PR
+description and leave the file as it is. **Under no circumstance** may an
+agent modify these files otherwise. The sole exception is a literal Ctrl-H
+replacement: the user gives the exact current word or sentence and the exact
+replacement, and the agent swaps one for the other character for character
+with no other change to the file (see the root `AGENTS.md`).
+
+## Skills are prose first, scripts last
+
+A skill is primarily natural language: numbered steps the model reads,
+reasons about, and executes with the normal tool catalog. Supporting scripts
+are the exception — a few small helpers at most, each handling one mechanical
+chore (collect, reshape, count) whose result the model interprets. A skill
+must not become a deterministic tool in disguise: no script that decides what
+the next step is, no script chain that runs the workflow end to end, no
+vendor logic that should live under `integrations/` or `tools/`. When a
+proposed script would replace the model's judgment, propose a tool or a prose
+step instead.
+
 ## Layout
 
 | Package | Role |

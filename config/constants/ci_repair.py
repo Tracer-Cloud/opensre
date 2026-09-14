@@ -6,7 +6,9 @@ CI_REPAIR_FINISH_RESERVE_SECONDS = 15
 CI_REPAIR_POLL_SECONDS = 1.0
 CI_REPAIR_DIRECTORY = "ci-repair"
 CI_REPAIR_REPORT_BUILDER = "github_ci_repair"
-CI_REPAIR_CRON = "* * * * *"
+#: Six-field cron (leading seconds field): poll every 30 seconds. A slower
+#: cadence leaves failing PRs unrepaired for too long; never widen it.
+CI_REPAIR_CRON = "*/30 * * * * *"
 
 __all__ = [
     "CI_REPAIR_CRON",

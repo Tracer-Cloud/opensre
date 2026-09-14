@@ -283,6 +283,7 @@ def test_onboarding_outcomes_keep_stable_ids_and_exclude_child_menus(
     assert onboarding_outcomes == [
         ("ci_analytics", False),
         ("ci_agent", False),
+        ("remote_managed_service", False),
         ("slack", False),
     ]
 

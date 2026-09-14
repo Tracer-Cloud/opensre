@@ -35,6 +35,8 @@ _FAILED_CHECK_CONCLUSIONS = {
     "startup_failure",
 }
 _TERMINAL_CHECK_CONCLUSIONS = _FAILED_CHECK_CONCLUSIONS | {"success", "skipped", "neutral"}
+_OWNER_PROPERTY: dict[str, str] = {"type": "string", "description": "Repository owner."}
+_REPO_PROPERTY: dict[str, str] = {"type": "string", "description": "Repository name."}
 
 
 def _github_available(sources: dict[str, dict]) -> bool:
@@ -153,8 +155,8 @@ def _map_summarize_github_pr_status(
     input_schema={
         "type": "object",
         "properties": {
-            "owner": {"type": "string"},
-            "repo": {"type": "string"},
+            "owner": _OWNER_PROPERTY,
+            "repo": _REPO_PROPERTY,
             "state": {"type": "string", "enum": ["open", "closed", "all"]},
             "labels": {"type": "string"},
             "include_prs": {"type": "boolean"},
@@ -294,8 +296,8 @@ def _count_prs(prs: list[dict[str, Any]]) -> dict[str, int]:
     input_schema={
         "type": "object",
         "properties": {
-            "owner": {"type": "string"},
-            "repo": {"type": "string"},
+            "owner": _OWNER_PROPERTY,
+            "repo": _REPO_PROPERTY,
             "state": {"type": "string", "enum": ["open", "closed", "all"]},
             "per_page": {"type": "integer"},
             "include_checks": {"type": "boolean"},
@@ -423,8 +425,8 @@ _ISSUE_MUTATION_OPERATIONS = {"create", "update", "close"}
     input_schema={
         "type": "object",
         "properties": {
-            "owner": {"type": "string"},
-            "repo": {"type": "string"},
+            "owner": _OWNER_PROPERTY,
+            "repo": _REPO_PROPERTY,
             "alert_type": {
                 "type": "string",
                 "enum": ["all", "dependabot", "secret_scanning", "code_scanning"],
@@ -494,11 +496,18 @@ def list_github_security_alerts(
     input_schema={
         "type": "object",
         "properties": {
-            "owner": {"type": "string"},
-            "repo": {"type": "string"},
-            "operation": {"type": "string", "enum": ["create", "update", "close"]},
+            "owner": _OWNER_PROPERTY,
+            "repo": _REPO_PROPERTY,
+            "operation": {
+                "type": "string",
+                "enum": ["create", "update", "close"],
+                "description": "Issue mutation to propose.",
+            },
             "issue_number": {"type": "integer"},
-            "slack_text": {"type": "string"},
+            "slack_text": {
+                "type": "string",
+                "description": "Slack message text the proposal is derived from.",
+            },
             "slack_url": {"type": "string"},
             "title": {"type": "string"},
             "labels": {"type": "array", "items": {"type": "string"}},
@@ -698,9 +707,14 @@ def _marker_exists_on_issue(
     input_schema={
         "type": "object",
         "properties": {
-            "owner": {"type": "string"},
-            "repo": {"type": "string"},
-            "proposal": {"type": "object"},
+            "owner": _OWNER_PROPERTY,
+            "repo": _REPO_PROPERTY,
+            "proposal": {
+                "type": "object",
+                "description": (
+                    "Proposal object returned by propose_github_issue_mutation_from_slack."
+                ),
+            },
             "github_token": {"type": "string"},
         },
         "required": ["owner", "repo", "proposal"],

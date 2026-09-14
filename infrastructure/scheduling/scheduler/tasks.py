@@ -17,6 +17,7 @@ from core.agent_harness import (
     pin_recurring_skill,
     resolve_scheduled_skill,
 )
+from infrastructure.observability.trace.trace_session import inherit_trace_session
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_PROMPT_PARAM
 from infrastructure.scheduling.scheduler.operation_log import record_scheduler_task_operation
 from infrastructure.scheduling.scheduler.runners import SchedulerRunners
@@ -28,13 +29,29 @@ logger = logging.getLogger(__name__)
 # Keys that should never be forwarded to the agent runner
 _CREDENTIAL_KEYS = frozenset({"bot_token", "access_token", "api_key", "webhook_url", "secret"})
 
+#: Trace tag on every turn a scheduled tick runs, so unattended work is filterable.
+SCHEDULED_TRACE_TAG = "scheduled"
+
 
 def build_message(task: ScheduledTask, runners: SchedulerRunners) -> str:
     """Build the report message for a scheduled task based on its kind.
 
     Returns the formatted message string. Raises RuntimeError on unrecoverable
-    runner failures.
+    runner failures. Every turn the tick runs is traced under the hosting
+    session when there is one (the shell that started this scheduler), else
+    under the task id, so ticks of one loop share one trace session. A tick
+    fired from inside a turn (``/loops run``) inherits that turn's session and
+    still gains the scheduled tag and task metadata.
     """
+    with inherit_trace_session(
+        runners.host_session_id() or task.id,
+        tags=(SCHEDULED_TRACE_TAG,),
+        metadata={"task_id": task.id, "task_name": task.name, "task_kind": task.kind.value},
+    ):
+        return _build_message(task, runners)
+
+
+def _build_message(task: ScheduledTask, runners: SchedulerRunners) -> str:
     builders = {
         TaskKind.MANUAL_LOOP: _build_manual_loop,
         TaskKind.SENTRY_MORNING_DIGEST: _build_sentry_morning_digest,
@@ -244,4 +261,4 @@ def _migrate_renamed_skill(task: ScheduledTask) -> None:
     )
 
 
-__all__ = ["build_message"]
+__all__ = ["SCHEDULED_TRACE_TAG", "build_message"]

@@ -84,8 +84,10 @@ def test_legacy_skill_names_resolve_to_their_renamed_successor() -> None:
     for legacy, current in (
         ("morning-report", "delivering-morning-briefings"),
         ("github-ci-health", "reporting-github-ci-failures"),
-        ("github_ci_fix", "fixing-github-ci"),
-        ("cicd-reliability-agent", "scheduling-github-ci-fixes"),
+        ("github_ci_fix", "repair-github-ci"),
+        ("fixing-github-ci", "repair-github-ci"),
+        ("cicd-reliability-agent", "scheduling-github-ci-repairs"),
+        ("scheduling-github-ci-fixes", "scheduling-github-ci-repairs"),
     ):
         skill = find_action_skill(legacy)
         assert skill is not None and skill.name == current

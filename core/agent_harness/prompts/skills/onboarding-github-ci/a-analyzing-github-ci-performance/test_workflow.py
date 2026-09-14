@@ -11,7 +11,7 @@ import pytest
 from config.constants import OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV, OPENSRE_MEMORY_DIR_ENV
 from config.constants.skills import (
     ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME,
-    SCHEDULING_GITHUB_CI_FIXES_SKILL_NAME,
+    SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME,
 )
 from core.agent_harness.ports import TurnBinding
 from core.agent_harness.prompts.skills import list_action_skills, load_skill_body
@@ -189,7 +189,7 @@ def test_local_analysis_waits_for_choices_before_analyzing_and_handing_off(
         ask_user_choice.name,
         {"title": _NEXT_QUESTION, "options": [_SCHEDULE_LOOPS, "Slack setup", "Finish"]},
     )
-    handoff_call = tool_response(skill_view.name, {"name": SCHEDULING_GITHUB_CI_FIXES_SKILL_NAME})
+    handoff_call = tool_response(skill_view.name, {"name": SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME})
     benchmarks_call = tool_response(
         skill_view.name,
         {"name": ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME, "reference": "benchmarks"},
@@ -308,7 +308,7 @@ def test_local_analysis_waits_for_choices_before_analyzing_and_handing_off(
     # The sibling skill is entered only after the user chose it, and the
     # retired report-scheduling tool is never called.
     assert calls == [(scan.name, {}), (analyze.name, analyze_args)]
-    assert session.active_skill == SCHEDULING_GITHUB_CI_FIXES_SKILL_NAME
+    assert session.active_skill == SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME
     assert session.pending_user_choice is None
     assert llm.invocations == 11
     assert not llm.responses

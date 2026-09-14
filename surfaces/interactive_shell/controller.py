@@ -253,7 +253,7 @@ class InteractiveShellController:
         # Fleet sampler is lazy: /fleet triggers it on first live use.
         self.session.terminal.fleet_sampler_starter = self.background.ensure_fleet_sampler_started
         try:
-            start_loop_scheduler()
+            start_loop_scheduler(host_session=lambda: self.session.session_id)
         except Exception as exc:  # noqa: BLE001
             log.warning("Loop scheduler could not start: %s", exc)
         self._ci_fix_status_cleanup = bind_ci_fix_status(self.session.terminal)

@@ -317,11 +317,11 @@ def test_loading_a_skill_body_is_bookkeeping_but_reading_its_reference_is_work()
     """A skill step whose only tool is ``skill_view(reference=…)`` must be completable."""
     session = Session()
     mark_plan_written(session)
-    record_plan_evidence(session, "skill_view", {"name": "scheduling-github-ci-fixes"})
+    record_plan_evidence(session, "skill_view", {"name": "scheduling-github-ci-repairs"})
     record_plan_evidence(session, "skill_view", {"name": "x", "reference": "  "})
     assert plan_evidence_available(session, prior=None, turn_user_message="") is False
     record_plan_evidence(
-        session, "skill_view", {"name": "scheduling-github-ci-fixes", "reference": "runtime"}
+        session, "skill_view", {"name": "scheduling-github-ci-repairs", "reference": "runtime"}
     )
     assert plan_evidence_available(session, prior=None, turn_user_message="") is True
 

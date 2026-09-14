@@ -290,9 +290,9 @@ def test_update_plan_gate_read_from_a_skill_reference_earns_the_gate_step() -> N
         {"step": "Offer repair, Slack, or finish options", "status": "blocked"},
     ]
     assert execute_update_plan_tool({"plan": handoff, "explanation": "menu blocked"}, ctx)["ok"]
-    record_plan_evidence(session, "skill_view", {"name": "scheduling-github-ci-fixes"})
+    record_plan_evidence(session, "skill_view", {"name": "scheduling-github-ci-repairs"})
     record_plan_evidence(
-        session, "skill_view", {"name": "scheduling-github-ci-fixes", "reference": "runtime"}
+        session, "skill_view", {"name": "scheduling-github-ci-repairs", "reference": "runtime"}
     )
 
     # Act: the gate write the skill asks for, in one call.

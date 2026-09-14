@@ -7,9 +7,69 @@ from pathlib import Path
 import pytest
 
 import infrastructure.scheduling.scheduler.tasks as tasks_mod
+from infrastructure.observability.trace.trace_session import (
+    TraceSession,
+    current_trace_session,
+    inherit_trace_session,
+)
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_MODE_PARAM, LOOP_PROMPT_PARAM
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
 from tests.scheduler._bundle import runners_with_agent
+
+
+class TestTickTraceSession:
+    """Every tick's turns are traced under one session, not one per throwaway session."""
+
+    @staticmethod
+    def _task() -> ScheduledTask:
+        return ScheduledTask(
+            id="cf9d8a4169ac",
+            name="CI repair: acme/api",
+            kind=TaskKind.MANUAL_LOOP,
+            cron="*/2 * * * *",
+            provider=Provider.INTERACTIVE_SHELL,
+            params={LOOP_PROMPT_PARAM: "Fix CI.", LOOP_MODE_PARAM: "agent"},
+        )
+
+    @staticmethod
+    def _recording_runner(seen: list[TraceSession | None]):  # noqa: ANN205
+        def run(_payload: dict[str, object]) -> str:
+            seen.append(current_trace_session())
+            return "report"
+
+        return run
+
+    def test_shell_hosted_tick_joins_the_shell_session(self) -> None:
+        seen: list[TraceSession | None] = []
+        runners = runners_with_agent(self._recording_runner(seen)).hosted_by(lambda: "shell-1")
+
+        tasks_mod.build_message(self._task(), runners)
+
+        (bound,) = seen
+        assert bound is not None
+        assert bound.session_id == "shell-1"
+        assert bound.tags == (tasks_mod.SCHEDULED_TRACE_TAG,)
+        assert bound.metadata == {
+            "task_id": "cf9d8a4169ac",
+            "task_name": "CI repair: acme/api",
+            "task_kind": "manual_loop",
+        }
+        assert current_trace_session() is None
+
+    def test_daemon_tick_groups_per_task_and_never_overrides_an_outer_turn(self) -> None:
+        seen: list[TraceSession | None] = []
+        runners = runners_with_agent(self._recording_runner(seen))
+
+        tasks_mod.build_message(self._task(), runners)
+        with inherit_trace_session("outer-turn"):
+            tasks_mod.build_message(self._task(), runners)
+
+        daemon, nested = seen
+        assert daemon is not None and daemon.session_id == "cf9d8a4169ac"
+        # ``/loops run`` inside a turn: same session, still attributed as scheduled work.
+        assert nested is not None and nested.session_id == "outer-turn"
+        assert nested.tags == (tasks_mod.SCHEDULED_TRACE_TAG,)
+        assert nested.metadata["task_id"] == "cf9d8a4169ac"
 
 
 class TestMessageBuilders:

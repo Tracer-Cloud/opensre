@@ -996,7 +996,7 @@ Scheduled report delivery. See [Cron](/cron).
 /loops show &lt;name-or-id&gt;
 /loops show &lt;name-or-id&gt; --run &lt;run-id&gt;
 /loops add --name "Morning ops" --time 08:30 --prompt "Check open incidents and summarize production risk" --run-now
-/loops add --name "CI fix agent" --cron "*/2 * * * *" --mode agent --prompt "Repair failing PR checks with fix_github_pr_ci"
+/loops add --name "CI fix agent" --cron "*/30 * * * * *" --mode agent --prompt "Repair failing PR checks with fix_github_pr_ci"
 /loops run &lt;loop_id&gt;
 /loops stop &lt;loop_id&gt;
 /loops start &lt;loop_id&gt;

@@ -80,7 +80,7 @@ skill_view_tool = RegisteredTool(
             "name": string_property(
                 description=(
                     "Skill name from the SKILLS INDEX (kebab-case), e.g. "
-                    "'delivering-morning-briefings' or 'fixing-github-ci'."
+                    "'delivering-morning-briefings' or 'repair-github-ci'."
                 ),
                 min_length=1,
             ),

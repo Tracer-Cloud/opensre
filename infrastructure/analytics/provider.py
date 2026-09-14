@@ -340,6 +340,15 @@ def _get_or_create_anonymous_id() -> str:
         return _cached_anonymous_id
 
 
+def installation_id() -> str:
+    """The stable per-install id every analytics event posts as ``anonymous_id``.
+
+    Public so other telemetry (Langfuse traces) can name the same installation
+    the analytics backend already knows, and later join it to a signed-in user.
+    """
+    return _get_or_create_anonymous_id()
+
+
 def _identity_persistence() -> str:
     return _cached_identity_persistence
 
