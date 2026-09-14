@@ -60,6 +60,9 @@ opensre cron add --kind manual_loop --cron "0 9 * * 1-5" \
 # List configured tasks
 opensre cron list
 
+# Inspect durable backlog pressure
+opensre cron status
+
 # Run a task immediately (for debugging)
 opensre cron run <task_id>
 
@@ -98,6 +101,15 @@ Display all configured scheduled tasks in a table, including the loop name, enab
 
 Remove a scheduled task by its ID. Its run history remains available through
 `opensre cron logs <task_id>`.
+
+### `opensre cron status`
+
+Show the number of durably admitted runs still pending, when the oldest one was
+admitted, and its current age. Pending work remains visible across scheduler
+restarts and while a task is paused or disabled. Use `--json` for structured
+output suitable for monitoring and runbooks. JSON output includes `status: ok`;
+if the task store cannot be read, the command exits unsuccessfully and reports
+`status: unknown` instead of returning a misleading empty backlog.
 
 ### `opensre cron run <task_id>`
 

@@ -13,6 +13,7 @@ from infrastructure.scheduling.scheduler.storage.task_store import (
     _quarantine_unreadable,
     add_task,
     get_task,
+    get_task_store_snapshot,
     list_tasks,
     remove_task,
     update_task,
@@ -390,6 +391,26 @@ class TestStoreSurvivesTornWrites:
         assert removed is False
         assert updated is False
         assert store_path.read_text(encoding="utf-8") == "{ not json"
+
+    def test_snapshot_marks_an_unreadable_store_incomplete(self, store_path: Path) -> None:
+        store_path.write_text("{ not json", encoding="utf-8")
+
+        snapshot = get_task_store_snapshot(store_path)
+
+        assert snapshot.tasks == ()
+        assert snapshot.complete is False
+
+    def test_snapshot_marks_partially_invalid_entries_incomplete(self, store_path: Path) -> None:
+        task = self._digest(7)
+        store_path.write_text(
+            json.dumps([task.model_dump(mode="json"), {"id": "invalid-task"}]),
+            encoding="utf-8",
+        )
+
+        snapshot = get_task_store_snapshot(store_path)
+
+        assert snapshot.tasks == (task,)
+        assert snapshot.complete is False
 
     def test_a_non_list_payload_is_treated_as_unreadable(self, store_path: Path) -> None:
         # Valid JSON of the wrong shape is just as unusable as broken JSON,

@@ -9,6 +9,7 @@ import os
 import tempfile
 import time
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -25,6 +26,14 @@ from infrastructure.scheduling.scheduler.types import ScheduledTask
 logger = logging.getLogger(__name__)
 
 _STORE_FILENAME = "scheduler_tasks.json"
+
+
+@dataclass(frozen=True, slots=True)
+class TaskStoreSnapshot:
+    """Validated tasks plus whether the full store was readable."""
+
+    tasks: tuple[ScheduledTask, ...]
+    complete: bool
 
 
 def default_task_store_path() -> Path:
@@ -154,13 +163,13 @@ def _save_raw(store_path: Path, data: list[dict[str, object]]) -> None:
         raise
 
 
-def list_tasks(store_path: Path | None = None) -> list[ScheduledTask]:
-    """Return all persisted scheduled tasks."""
+def get_task_store_snapshot(store_path: Path | None = None) -> TaskStoreSnapshot:
+    """Return validated tasks and flag any unreadable store content."""
     path = store_path or default_task_store_path()
     lock = FileLock(_lock_path(path))
     with lock:
-        raw = _load_raw(path)
-        if migrate_legacy_task_entries(raw):
+        raw, complete = _read_raw(path)
+        if complete and migrate_legacy_task_entries(raw):
             try:
                 _save_raw(path, raw)
             except OSError:
@@ -176,7 +185,13 @@ def list_tasks(store_path: Path | None = None) -> list[ScheduledTask]:
             tasks.append(ScheduledTask.model_validate(entry))
         except Exception as exc:  # noqa: BLE001
             logger.warning("Skipping invalid task entry: %s", exc)
-    return tasks
+            complete = False
+    return TaskStoreSnapshot(tuple(tasks), complete)
+
+
+def list_tasks(store_path: Path | None = None) -> list[ScheduledTask]:
+    """Return all valid persisted scheduled tasks, skipping unreadable content."""
+    return list(get_task_store_snapshot(store_path).tasks)
 
 
 def get_task(task_id: str, store_path: Path | None = None) -> ScheduledTask | None:
@@ -289,9 +304,11 @@ def record_task_success(task_id: str, store_path: Path | None = None) -> bool:
 
 
 __all__ = [
+    "TaskStoreSnapshot",
     "add_task",
     "default_task_store_path",
     "get_task",
+    "get_task_store_snapshot",
     "list_tasks",
     "record_task_success",
     "remove_task",

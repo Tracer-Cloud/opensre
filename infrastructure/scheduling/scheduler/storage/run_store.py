@@ -58,6 +58,52 @@ class RecoverableRun:
     fire_time: str
 
 
+@dataclass(frozen=True, slots=True)
+class BacklogSnapshot:
+    """Current durable pending-work pressure."""
+
+    pending_count: int
+    oldest_pending_at: datetime | None
+    oldest_pending_age_seconds: float | None
+
+
+def get_backlog_snapshot(
+    db_path: Path | None = None,
+    *,
+    eligible_task_ids: Collection[str] | None = None,
+    now: datetime | None = None,
+) -> BacklogSnapshot:
+    """Return pending count and age from one consistent database snapshot."""
+    if eligible_task_ids is not None and not eligible_task_ids:
+        return BacklogSnapshot(0, None, None)
+    observed_at = now or datetime.now(UTC)
+    if observed_at.tzinfo is None:
+        observed_at = observed_at.replace(tzinfo=UTC)
+    else:
+        observed_at = observed_at.astimezone(UTC)
+
+    task_ids_json = json.dumps(list(eligible_task_ids)) if eligible_task_ids is not None else None
+    with database.connection(db_path) as conn:
+        row = conn.execute(
+            "SELECT COUNT(*), MIN(started_at) FROM task_runs WHERE status = ? "
+            "AND (? IS NULL OR task_id IN (SELECT value FROM json_each(?)))",
+            (TaskStatus.PENDING.value, task_ids_json, task_ids_json),
+        ).fetchone()
+
+    pending_count = int(row[0])
+    oldest_pending_at = _parse_datetime(row[1])
+    oldest_pending_age_seconds = (
+        max(0.0, (observed_at - oldest_pending_at).total_seconds())
+        if oldest_pending_at is not None
+        else None
+    )
+    return BacklogSnapshot(
+        pending_count=pending_count,
+        oldest_pending_at=oldest_pending_at,
+        oldest_pending_age_seconds=oldest_pending_age_seconds,
+    )
+
+
 def try_queue_run(task_id: str, fire_time: str, db_path: Path | None = None) -> bool:
     """Record a pending scheduler submission unless this tick already exists."""
     now_text = datetime.now(UTC).isoformat()
@@ -544,9 +590,11 @@ def delete_runs(task_id: str, db_path: Path | None = None) -> int:
 
 
 __all__ = [
+    "BacklogSnapshot",
     "claim_renewal_interval_seconds",
     "complete_run",
     "delete_runs",
+    "get_backlog_snapshot",
     "RecoverableRun",
     "ExecutionClaim",
     "get_recoverable_runs",
