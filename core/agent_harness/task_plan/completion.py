@@ -27,6 +27,8 @@ class CompletionCheck:
     demoted: tuple[str, ...] = ()
     closed_unverified: bool = False
     """True when the closing step was reset because no step marked ``verifies`` has run."""
+    newly_blocked: tuple[str, ...] = ()
+    """Steps this write marked ``blocked`` that were not blocked before."""
 
 
 def demote_unevidenced_completions(
@@ -77,11 +79,13 @@ def demote_unevidenced_completions(
 
     closing = plan.is_settled
     claims_completion = plan.all_completed
-    newly_blocked = any(
-        item.status is PlanStepStatus.BLOCKED
-        and _before(index, item.step) is not PlanStepStatus.BLOCKED
+    blocked_now = tuple(
+        item.step
         for index, item in enumerate(plan.steps)
+        if item.status is PlanStepStatus.BLOCKED
+        and _before(index, item.step) is not PlanStepStatus.BLOCKED
     )
+    newly_blocked = bool(blocked_now)
     verified = any(
         item.verifies and item.status is PlanStepStatus.COMPLETED and _earned_alone(index, item)
         for index, item in enumerate(plan.steps)
@@ -105,11 +109,12 @@ def demote_unevidenced_completions(
         demoted.append(item.step)
         steps.append(replace(item, status=PlanStepStatus.PENDING))
     if not demoted:
-        return CompletionCheck(plan)
+        return CompletionCheck(plan, newly_blocked=blocked_now)
     return CompletionCheck(
         TaskPlan(steps=tuple(steps), explanation=plan.explanation),
         tuple(demoted),
         closed_unverified,
+        blocked_now,
     )
 
 

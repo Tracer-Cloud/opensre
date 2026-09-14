@@ -454,3 +454,26 @@ def test_a_reset_step_may_be_blocked_instead_of_worked_around() -> None:
     assert result["ok"] is True
     assert "Inspect repository; Summarize results" in result["instruction"]
     assert "mark the step blocked" in result["instruction"]
+
+
+def test_update_plan_records_the_steps_it_newly_blocked() -> None:
+    """The conclusion gate reads this to ask the user before the turn ends."""
+    from core.agent_harness.task_plan.evidence import blocked_this_turn
+
+    # Arrange / Act: a fresh plan blocks one step, with the blocker named.
+    session = Session()
+    result = execute_update_plan_tool(
+        {
+            "plan": [
+                {"step": "Inspect repository", "status": "blocked"},
+                {"step": "Summarize results", "status": "pending"},
+            ],
+            "explanation": "The user forbade running commands.",
+        },
+        _ctx(session=session),
+    )
+
+    # Assert
+    assert result["ok"] is True
+    assert blocked_this_turn(session) == ("Inspect repository",)
+    assert "ask_user_choice" in result["instruction"]

@@ -276,6 +276,10 @@ model:
   only after such a step completed. Without one the closing step is reset and
   the tool result says so; the model adds a check or marks the step
   `blocked`, and the result is reported as unverified.
+- A step newly marked `blocked` does not end the turn: the conclusion is
+  rejected until the model has asked the user how to resolve it
+  (`core/agent_harness/task_plan/conclusion.py`), and the "Plan ended"
+  breakdown is not printed while that question is queued.
 - The second work tool of a turn is refused while no plan with open work is
   stored (`core/agent_harness/task_plan/required.py`). The refusal
   names the fix: write the plan, then run the tool again.

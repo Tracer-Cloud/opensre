@@ -75,6 +75,8 @@ class PlanEvidence:
     work_returns: int = 0
     returns_at_last_write: int = 0
     writes: int = 0
+    blocked_this_turn: tuple[str, ...] = ()
+    """Steps a write of this turn newly marked ``blocked``; the user is asked before the turn ends."""
 
 
 def _evidence(session: Any) -> PlanEvidence:
@@ -119,6 +121,18 @@ def work_returns_this_turn(session: Any) -> int:
     return _evidence(session).work_returns
 
 
+def record_blocked_this_turn(session: Any, steps: tuple[str, ...]) -> None:
+    """Remember the steps a write of this turn newly marked ``blocked``."""
+    if steps:
+        state = _evidence(session)
+        state.blocked_this_turn = tuple(dict.fromkeys((*state.blocked_this_turn, *steps)))
+
+
+def blocked_this_turn(session: Any) -> tuple[str, ...]:
+    """Steps newly marked ``blocked`` by a write of this turn."""
+    return _evidence(session).blocked_this_turn
+
+
 def mark_plan_written(session: Any) -> None:
     """Record an ``update_plan`` write so later completions need fresh evidence."""
     state = _evidence(session)
@@ -149,10 +163,12 @@ def plan_evidence_available(
 __all__ = [
     "PLAN_BOOKKEEPING_TOOLS",
     "PlanEvidence",
+    "blocked_this_turn",
     "is_plan_bookkeeping_call",
     "is_plan_work_name",
     "mark_plan_written",
     "plan_evidence_available",
+    "record_blocked_this_turn",
     "record_plan_evidence",
     "reset_plan_evidence",
     "result_counts_as_work",

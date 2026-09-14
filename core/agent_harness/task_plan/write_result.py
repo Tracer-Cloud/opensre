@@ -13,7 +13,11 @@ _AUTHORIZED = " Execution is authorized: the first step is in_progress — run i
 _CONTINUE = " Continue the in_progress step now — do not end the turn while pending steps remain."
 _BLOCKED = (
     " Blocked steps stay blocked — their work did not happen. Do not run tools"
-    " to earn a completed mark for them; name each blocker in the reply."
+    " to earn a completed mark for them. A blocked step is resolved with the"
+    " user, not skipped: before the turn ends, call ask_user_choice naming the"
+    " step and its blocker, with options for what would unblock it and one to"
+    " leave it. A step the user unblocks goes back to in_progress — that same"
+    " step, not a renamed or duplicated copy — and is worked."
 )
 _DEMOTED = (
     " A step is completed only after its work returned while it was in_progress:"

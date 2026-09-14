@@ -16,6 +16,7 @@ from core.agent_harness.task_plan.display import (
 from core.agent_harness.task_plan.evidence import (
     mark_plan_written,
     plan_evidence_available,
+    record_blocked_this_turn,
     record_plan_evidence,
 )
 from core.agent_harness.task_plan.plan import (
@@ -61,6 +62,7 @@ __all__ = [
     "parse_task_plan",
     "plan_evidence_available",
     "promote_first_pending_step",
+    "record_blocked_this_turn",
     "record_plan_evidence",
     "record_task_plan_work",
     "step_label",

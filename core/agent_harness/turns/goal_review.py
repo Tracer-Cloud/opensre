@@ -159,6 +159,14 @@ _PLAN_INCOMPLETE_NUDGE = (
     "with its blocker in explanation, never completed. End the turn only when "
     "every plan step is completed or blocked."
 )
+_BLOCKED_NEEDS_USER_NUDGE = (
+    "A step was marked blocked this turn. A blocked step is resolved with the "
+    "user, not skipped: call ask_user_choice naming the step and its blocker, "
+    "with options for what would unblock it (running the command they ruled "
+    "out, a value or permission you need) and one to leave it blocked. When "
+    "they unblock it, set that same step in_progress with update_plan — not a "
+    "renamed or duplicated copy — and do the work."
+)
 # Prefix for the nudge when the deferred reply was painted for the user: the
 # model must not restate a report it can already see in its own transcript.
 _PLAN_DEFERRED_REPLY_SHOWN = (
@@ -199,6 +207,9 @@ class _LLMGoalReviewer:
     # Live plan gate: when True at conclusion, reject without spending the LLM
     # review budget (the overlay still shows unfinished work).
     plan_incomplete: Callable[[], bool] | None = None
+    # Blocked-step gate: a step newly blocked this turn ends the turn only
+    # through a question to the user.
+    blocked_needs_user: Callable[[], bool] | None = None
     reviews_remaining: int = field(default=_MAX_GOAL_REVIEWS)
     trace_context: Callable[[], dict[str, Any]] | None = None
 
@@ -221,6 +232,12 @@ class _LLMGoalReviewer:
             and self.plan_incomplete()
         ):
             return self._decision(observation, False, "plan_incomplete")
+        if (
+            self.blocked_needs_user is not None
+            and plan_worked_this_turn(names)
+            and self.blocked_needs_user()
+        ):
+            return self._decision(observation, False, "blocked_needs_user")
         if self.reject_discovery_only and _gather_ran_only_discovery(self.executed_tool_calls):
             return self._decision(observation, False, "discovery_only")
         if not react_goal_llm_review_enabled():
@@ -286,6 +303,7 @@ def build_goal_reviewer(
     plan_incomplete: Callable[[], bool] | None = None,
     plan_awaits_reply: Callable[[], bool] | None = None,
     on_plan_deferred_reply: Callable[[str], bool] | None = None,
+    blocked_needs_user: Callable[[], bool] | None = None,
     trace_context: Callable[[], dict[str, Any]] | None = None,
 ) -> Goal:
     """Build a reviewed :class:`Goal` for one action turn over ``user_goal``.
@@ -304,16 +322,26 @@ def build_goal_reviewer(
     with a menu). Any other rejected reply is a premature stop and stays off
     the screen. The presenter returns whether the reply reached the user; only
     then does the nudge tell the model it was shown so it does not restate it.
+
+    ``blocked_needs_user`` rejects a conclusion on a turn that newly marked a
+    step ``blocked`` without asking the user how to resolve it.
     """
     reviewer = _LLMGoalReviewer(
         llm=llm,
         user_goal=user_goal,
         executed_tool_names=executed_tool_names,
         plan_incomplete=plan_incomplete,
+        blocked_needs_user=blocked_needs_user,
         trace_context=trace_context,
     )
 
     def _nudge(observation: GoalObservation) -> str:
+        if (
+            blocked_needs_user is not None
+            and plan_worked_this_turn(executed_tool_names)
+            and blocked_needs_user()
+        ):
+            return _BLOCKED_NEEDS_USER_NUDGE
         if (
             plan_incomplete is not None
             and plan_worked_this_turn(executed_tool_names)

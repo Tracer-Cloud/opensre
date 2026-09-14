@@ -17,6 +17,7 @@ from core.agent_harness.spi.task_plan import (
     mark_plan_written,
     parse_task_plan,
     plan_evidence_available,
+    record_blocked_this_turn,
     task_plan_to_payload,
 )
 from core.agent_harness.tools import ActionToolScope, execute_with_action_context
@@ -54,6 +55,7 @@ def execute_update_plan_tool(args: dict[str, Any], ctx: ActionToolScope) -> dict
     ):
         ctx.session.active_skill = None
     mark_plan_written(ctx.session)
+    record_blocked_this_turn(ctx.session, checked.newly_blocked)
     payload = task_plan_to_payload(plan)
     payload["ok"] = True
     payload["summary"] = format_task_plan_plain(plan)
@@ -86,10 +88,7 @@ update_plan_tool = RegisteredTool(
     name=ActionToolName.UPDATE_PLAN,
     description=(
         "Create or revise the live execution plan for this workload, and mark "
-        "steps pending, in_progress, completed, or blocked. Call this BEFORE executing "
-        "any multi-step workload: the second work tool of a turn is refused until a plan "
-        "is stored. Mark the step that checks the outcome verifies: true; a text-only "
-        "last step closes only after it has run. "
+        "steps pending, in_progress, completed, or blocked. "
         "Mark a step blocked (with the blocker in explanation) when the runtime cannot "
         "perform it; never mark undone work completed. "
         "At most one step may be in_progress. Not for durable human todos "

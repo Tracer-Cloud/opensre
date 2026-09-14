@@ -328,3 +328,43 @@ def test_ordinary_turn_goal_review_uses_current_message() -> None:
     )
 
     assert _goal_review_user_request(snapshot.text, snapshot) == snapshot.text
+
+
+def test_goal_reviewer_rejects_a_turn_that_blocked_a_step_without_asking_the_user() -> None:
+    """A blocked step is resolved with the user, not skipped: the turn ends through a question."""
+    # Arrange: the plan was worked this turn and a step was newly blocked.
+    llm = _ScriptedLLM('{"verdict": "GOAL_REACHED"}')
+    goal = build_goal_reviewer(
+        llm,
+        "inspect the repository",
+        executed_tool_names=["update_plan"],
+        blocked_needs_user=lambda: True,
+    )
+    assert goal.verify is not None and goal.nudge is not None
+
+    # Act / Assert: rejected without LLM spend, and the nudge names the fix.
+    assert goal.verify(_obs()) is False
+    assert llm.invokes == 0
+    assert "ask_user_choice" in goal.nudge(_obs())
+
+
+def test_blocked_steps_await_the_user_until_a_question_is_queued() -> None:
+    from types import SimpleNamespace
+
+    from core.agent_harness.task_plan.conclusion import blocked_steps_await_the_user
+    from core.agent_harness.task_plan.evidence import record_blocked_this_turn, reset_plan_evidence
+
+    # Arrange
+    session = SimpleNamespace(pending_user_choice=None)
+    reset_plan_evidence(session)
+    assert blocked_steps_await_the_user(session) is False
+
+    # Act: a write blocks a step this turn.
+    record_blocked_this_turn(session, ("Inspect repository",))
+
+    # Assert: the user must be asked; once a question is queued the turn may end.
+    assert blocked_steps_await_the_user(session) is True
+    # The turn that carries their answer has consulted them already.
+    assert blocked_steps_await_the_user(session, user_answered=True) is False
+    session.pending_user_choice = object()
+    assert blocked_steps_await_the_user(session) is False
