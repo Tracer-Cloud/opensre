@@ -61,6 +61,7 @@ def runtime_hidden_imports(repo_root: Path) -> tuple[str, ...]:
 def required_skill_files(repo_root: Path) -> tuple[Path, ...]:
     """Return built-in action skills, workflow guidance, and tool data files."""
     files = set((repo_root / _ACTION_SKILLS_DIR).rglob("*.md"))
+    files.update((repo_root / _ACTION_SKILLS_DIR).glob("**/scripts/*.py"))
     for relative_root in _SKILL_DATA_ROOTS:
         files.update((repo_root / relative_root).rglob("SKILL.md"))
     files.update(repo_root / relative_path for relative_path in _RUNTIME_DATA_FILES)

@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from core.agent_harness import AgentSession, ToolCallingTurnResult, TurnResult, pin_recurring_skill
-from core.agent_harness.prompts.skills.loader import load_skill_body
+from core.agent_harness.prompts.skills import load_skill_body
 from core.agent_harness.tools.tool_provider import tool_allowed_for_unattended_run
 from core.tool import SideEffectLevel
 from integrations import scheduled_skill_runner

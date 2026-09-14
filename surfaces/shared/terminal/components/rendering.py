@@ -101,8 +101,9 @@ def _write_repl_tty_buffered(
 ) -> None:
     """Render Rich output to a buffer and write it in one TTY-safe stdout call."""
     buf = io.StringIO()
-    # Inherit the caller's color depth so theme colours are not down-converted
-    # on a truecolor terminal (Rich would otherwise re-detect from the env).
+    # Inherit the caller's color depth and NO_COLOR decision so theme colours
+    # are not down-converted or stripped on a truecolor terminal (Rich would
+    # otherwise re-detect both from the env).
     buf_console = Console(
         file=buf,
         force_terminal=True,
@@ -112,6 +113,7 @@ def _write_repl_tty_buffered(
             Literal["auto", "standard", "256", "truecolor", "windows"],
             console.color_system or "auto",
         ),
+        no_color=console.no_color,
     )
     render_to_buffer(buf_console)
     styled = buf.getvalue()

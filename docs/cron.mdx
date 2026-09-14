@@ -96,7 +96,8 @@ Display all configured scheduled tasks in a table, including the loop name, enab
 
 ### `opensre cron remove <task_id>`
 
-Delete a scheduled task by its ID.
+Remove a scheduled task by its ID. Its run history remains available through
+`opensre cron logs <task_id>`.
 
 ### `opensre cron run <task_id>`
 
@@ -106,7 +107,9 @@ without waiting for the next cron tick.
 By default this delivers to every configured destination again, even ones that
 already received the message — that is what you want to trigger a task on
 demand. To recover a partial failure instead, use `--failed-only`: it retries
-only the destinations the most recent run failed at.
+only the destinations the most recent run failed at, using the saved report
+without executing the task again. A missing saved report requires a deliberate
+full run.
 
 `--failed-only` never widens. If it cannot read per-target history for the task
 — no prior run, or one recorded before that history was tracked — it stops and
@@ -118,16 +121,23 @@ destinations it is about to re-deliver to before it sends.
 
 ### `opensre cron logs <task_id>`
 
-Show execution history for a task (newest first). Displays start time, attempt,
-status, delivered targets, message ID, and any errors. A status such as
-`reclaimed/success` means a later worker recovered an expired claim;
-`abandoned` means the earlier worker stopped before completing.
+Show execution history and the newest retained report. Work status and delivery
+status are separate: `blocked` work can have a successfully delivered report.
+`unknown` work status means the older run did not retain completion evidence.
 
-A task with more than one destination delivers to all of them at once, so one
-slow channel does not delay the rest. The **Targets** column counts how many
-destinations were delivered to (`1/2`); when some fail, the run still counts as
-`success` — the message did go out — and the Error column names the destinations
-that missed it. A run is `failed` only when every destination failed.
+Use `--run <run_id>` to read one historical attempt and `--json` for structured
+results. Reports remain available after removing the schedule.
+
+For a repository repair loop, use `--kind manual_loop --mode agent` with
+`--owner <owner> --repo <repo>` and optionally `--pr <number>` or
+`--branch <branch>`. The repository target is saved with the task. CI repairs
+and security repairs that open a PR create their own matching checkouts when
+no explicit workspace is supplied.
+
+`opensre cron run <task_id>` prints the work result, delivery result, and report.
+A blocked or incomplete agent task exits unsuccessfully even if its report was
+delivered. Agent tasks need a structured completion result from their execution
+tools; report text alone is recorded as unverified work.
 
 ### `opensre cron start`
 

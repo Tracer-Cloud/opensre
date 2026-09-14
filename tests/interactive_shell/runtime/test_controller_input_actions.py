@@ -169,11 +169,45 @@ async def test_idle_new_turn_clears_a_completed_plan() -> None:
     """A finished plan must not linger over the next unrelated typed turn."""
     controller = _controller()
     controller.session.task_plan = _plan("completed", "completed")
+    controller.session.task_plan_work = [["Prior work"], []]
+    controller.session.task_plan_work_step_texts = ("Step 1", "Step 2")
+    controller.session.plan_only_until_authorized = True
 
     kept = await controller._handle_input_action(SubmitTurn(text="new question"))
 
     assert kept is True
     assert controller.session.task_plan is None
+    assert controller.session.task_plan_work == []
+    assert controller.session.task_plan_work_step_texts is None
+    assert controller.session.plan_only_until_authorized is False
+
+
+@pytest.mark.asyncio
+async def test_cancelling_a_running_turn_keeps_its_skill_and_plan() -> None:
+    import asyncio
+    import threading
+
+    controller = _controller()
+    plan = _plan("in_progress", "pending")
+    controller.session.task_plan = plan
+    controller.session.active_skill = "scheduling-github-ci-fixes"
+    cancel_event = threading.Event()
+
+    async def _hold() -> None:
+        await asyncio.Event().wait()
+
+    task = asyncio.create_task(_hold())
+    controller.state.start_dispatch(task=task, cancel_event=cancel_event)
+    try:
+        kept = await controller._handle_input_action(CancelTurn())
+
+        assert kept is True
+        assert cancel_event.is_set()
+        assert controller.session.task_plan is plan
+        assert controller.session.active_skill == "scheduling-github-ci-fixes"
+    finally:
+        task.cancel()
+        _ = await asyncio.gather(task, return_exceptions=True)
 
 
 @pytest.mark.asyncio

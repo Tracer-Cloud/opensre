@@ -20,7 +20,7 @@ from prompt_toolkit.formatted_text import ANSI
 from rich.console import Console
 
 from infrastructure.terminal import theme as ui_theme
-from surfaces.interactive_shell.ui.auto_status import auto_status_ansi
+from surfaces.interactive_shell.ui.ci_fix_status import prompt_status_ansi
 from surfaces.interactive_shell.ui.hooks import confirmation_choice_overlay_ansi
 from surfaces.interactive_shell.ui.input_prompt import rendering as prompt_rendering
 from surfaces.interactive_shell.ui.prompt_visibility import (
@@ -103,7 +103,7 @@ def render_prompt_region(session: Session, state: ReplState, spinner: SpinnerSta
     # A pending confirmation renders a stacked, arrow-navigable Yes/No choice
     # (box hidden). Density matches the streaming stack: status → Auto → composer.
     if state.is_awaiting_confirmation():
-        auto_line = strip_cpr_sequences(auto_status_ansi(session, quiet=False))
+        auto_line = strip_cpr_sequences(prompt_status_ansi(session, quiet=False))
         choice = _confirmation_block(state)
         return ANSI(f"{plan_prefix}{choice}\n{auto_line}\n{base}")
 
@@ -122,7 +122,7 @@ def render_prompt_region(session: Session, state: ReplState, spinner: SpinnerSta
     # folded into the spinner status row (same line as ``Invoking tools…``).
     # Auto stays on the page while busy (DIM) so permission chrome does not
     # vanish for the length of the turn.
-    auto_line = strip_cpr_sequences(auto_status_ansi(session, quiet=bool(inline_spinner)))
+    auto_line = strip_cpr_sequences(prompt_status_ansi(session, quiet=bool(inline_spinner)))
     # Mid-turn stream text has no trailing blank (that lands only when the
     # reply finishes). One lead row under Thinking/Invoking so status chrome
     # does not sit flush on the last assistant line. Skip when a plan overlay

@@ -5,6 +5,7 @@ from __future__ import annotations
 import io
 import re
 from datetime import UTC, datetime, timedelta
+from http import HTTPStatus
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -1172,6 +1173,43 @@ def test_collect_runs_caps_attempt_lookups_and_says_so(monkeypatch: pytest.Monke
     assert any("1 later re-run counted as passes" in n for n in collected.coverage_notices)
 
 
+def test_collect_runs_survives_a_repository_with_pull_requests_disabled() -> None:
+    # GitHub answers 404 on /pulls for mirrors that have pull requests turned off,
+    # even though the repository and its Actions runs are readable.
+    now = datetime(2026, 9, 7, 18, 0, tzinfo=UTC)
+    row = _payload(5, created_at="2026-09-01T09:00:00Z", conclusion="success", attempt=2)
+    client = _FakeGitHub(
+        repository={"default_branch": "master"},
+        runs=[row],
+        attempts={
+            (5, 1): _payload(5, created_at=row["created_at"], conclusion="failure", attempt=1)
+        },
+        pulls_error=GitHubApiError('{"message":"Not Found"}', status_code=HTTPStatus.NOT_FOUND),
+    )
+
+    collected = collect_runs(client, owner="o", repo="r", window_days=30, now=now)
+
+    assert collected.merged_prs == ()
+    assert [run.run_id for run in collected.pr_runs] == [5]
+    assert collected.pr_runs[0].retried_to_green is True
+    assert any("pull requests are disabled" in n for n in collected.coverage_notices)
+
+
+def test_collect_runs_still_fails_when_pull_requests_are_forbidden() -> None:
+    # A token without pull-request scope is a setup problem, not a disabled feature.
+    now = datetime(2026, 9, 7, 18, 0, tzinfo=UTC)
+    client = _FakeGitHub(
+        repository={"default_branch": "main"},
+        runs=[],
+        pulls_error=GitHubApiError("forbidden", status_code=HTTPStatus.FORBIDDEN),
+    )
+
+    with pytest.raises(GitHubApiError) as excinfo:
+        collect_runs(client, owner="o", repo="r", window_days=30, now=now)
+
+    assert excinfo.value.status_code == HTTPStatus.FORBIDDEN
+
+
 def _iso(value: datetime) -> str:
     return value.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
@@ -1210,11 +1248,13 @@ class _FakeGitHub:
         runs: list[dict[str, Any]],
         attempts: dict[tuple[int, int], dict[str, Any]] | None = None,
         pulls: list[dict[str, Any]] | None = None,
+        pulls_error: GitHubApiError | None = None,
     ) -> None:
         self._repository = repository
         self._runs = runs
         self._attempts = attempts or {}
         self._pulls = pulls or []
+        self._pulls_error = pulls_error
         self.run_queries: list[dict[str, Any]] = []
 
     def request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
@@ -1226,6 +1266,8 @@ class _FakeGitHub:
             inside = self._runs_in(params)
             return {"total_count": len(inside), "workflow_runs": inside[:100]}
         if path == "/repos/o/r/pulls":
+            if self._pulls_error is not None:
+                raise self._pulls_error
             page = int((kwargs.get("params") or {}).get("page", 1))
             return self._pulls[(page - 1) * 100 : page * 100]
         marker = "/actions/runs/"

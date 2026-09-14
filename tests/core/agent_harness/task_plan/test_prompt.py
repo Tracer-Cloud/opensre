@@ -226,6 +226,27 @@ def test_current_task_plan_block_completed_status() -> None:
     assert "in_progress" not in block
 
 
+def test_current_task_plan_block_ended_with_blocked_steps_does_not_nudge_work() -> None:
+    from core.agent_harness.task_plan.prompt import current_task_plan_block
+
+    plan, error = parse_task_plan(
+        {
+            "plan": [
+                {"step": "Verify runtime support", "status": "completed"},
+                {"step": "Create the repair loop", "status": "blocked"},
+                {"step": "Report the outcome", "status": "completed"},
+            ],
+            "explanation": "Loop blocked: unattended turns are read-only.",
+        }
+    )
+    assert error is None and plan is not None
+    block = current_task_plan_block(plan)
+    assert "CURRENT PLAN (ended; 1 blocked" in block
+    assert "complete;" not in block
+    assert "do not end the turn idle" not in block
+    assert "Blocked steps stay blocked" in block
+
+
 def test_current_task_plan_block_defers_to_the_latest_message() -> None:
     """A plan from an earlier turn yields to a new question or a skill branch."""
     from core.agent_harness.task_plan.prompt import (

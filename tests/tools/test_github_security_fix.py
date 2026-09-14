@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import subprocess
+from contextlib import nullcontext
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -581,7 +582,10 @@ def test_gather_auto_prefer_builtin_raises_without_running_fix() -> None:
 
 
 @patch("integrations.github.tools.security_fix.runner.run_fix")
-@patch("integrations.github.tools.security_fix.runner.ensure_workspace_ready")
+@patch(
+    "integrations.github.tools.security_fix.runner.repair_workspace",
+    side_effect=lambda *_a, **kw: nullcontext(kw.get("workspace") or "/workspace"),
+)
 @patch("integrations.github.tools.security_fix.runner.ensure_cli_ready")
 @patch(
     "integrations.github.tools.security_fix.runner.gather_security_alert_context",
@@ -621,7 +625,10 @@ def test_run_security_fix_confirms_before_coding(
 @patch("integrations.github.tools.security_fix.runner.pre_coding_changes", return_value={})
 @patch("integrations.github.tools.security_fix.runner.run_fix")
 @patch("integrations.github.tools.security_fix.runner.ensure_ship_ready")
-@patch("integrations.github.tools.security_fix.runner.ensure_workspace_ready")
+@patch(
+    "integrations.github.tools.security_fix.runner.repair_workspace",
+    side_effect=lambda *_a, **kw: nullcontext(kw.get("workspace") or "/workspace"),
+)
 @patch("integrations.github.tools.security_fix.runner.ensure_cli_ready")
 @patch(
     "integrations.github.tools.security_fix.runner.gather_security_alert_context",
@@ -671,7 +678,10 @@ def test_run_security_fix_denied_before_shipping_keeps_diff(
 @patch("integrations.github.tools.security_fix.runner.pre_coding_changes", return_value={})
 @patch("integrations.github.tools.security_fix.runner.run_fix")
 @patch("integrations.github.tools.security_fix.runner.ensure_ship_ready")
-@patch("integrations.github.tools.security_fix.runner.ensure_workspace_ready")
+@patch(
+    "integrations.github.tools.security_fix.runner.repair_workspace",
+    side_effect=lambda *_a, **kw: nullcontext(kw.get("workspace") or "/workspace"),
+)
 @patch("integrations.github.tools.security_fix.runner.ensure_cli_ready")
 @patch(
     "integrations.github.tools.security_fix.runner.gather_security_alert_context",
@@ -788,7 +798,8 @@ def test_tool_passes_repl_confirmation_function() -> None:
     ) as runner:
         result = fix_github_security_alert(context=agent_context)
 
-    assert result == {"success": True}
+    assert result["success"] is True
+    assert result["work_outcome"]["status"] == "succeeded"
     assert runner.call_args.kwargs["confirm_fn"] is confirm
 
 

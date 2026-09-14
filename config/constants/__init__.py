@@ -44,6 +44,9 @@ if TYPE_CHECKING:
     from config.constants.account import (
         OPENSRE_APP_URL_ENV as OPENSRE_APP_URL_ENV,
     )
+    from config.constants.account import (
+        OPENSRE_STAFF_EMAIL_DOMAIN as OPENSRE_STAFF_EMAIL_DOMAIN,
+    )
     from config.constants.alertmanager import (
         ALERTMANAGER_BEARER_TOKEN_ENV as ALERTMANAGER_BEARER_TOKEN_ENV,
     )
@@ -206,6 +209,24 @@ if TYPE_CHECKING:
     from config.constants.buzz import (
         BUZZ_RELAY_URL_ENV as BUZZ_RELAY_URL_ENV,
     )
+    from config.constants.ci_fixes import (
+        CI_FIX_COUNT_LABEL as CI_FIX_COUNT_LABEL,
+    )
+    from config.constants.ci_fixes import (
+        CI_FIX_LEDGER_LOCK_TIMEOUT_SECONDS as CI_FIX_LEDGER_LOCK_TIMEOUT_SECONDS,
+    )
+    from config.constants.ci_fixes import (
+        CI_FIX_LEDGER_PATH_ENV as CI_FIX_LEDGER_PATH_ENV,
+    )
+    from config.constants.ci_repair import CI_REPAIR_CRON as CI_REPAIR_CRON
+    from config.constants.ci_repair import CI_REPAIR_DIRECTORY as CI_REPAIR_DIRECTORY
+    from config.constants.ci_repair import (
+        CI_REPAIR_FINISH_RESERVE_SECONDS as CI_REPAIR_FINISH_RESERVE_SECONDS,
+    )
+    from config.constants.ci_repair import CI_REPAIR_POLL_SECONDS as CI_REPAIR_POLL_SECONDS
+    from config.constants.ci_repair import CI_REPAIR_REPORT_BUILDER as CI_REPAIR_REPORT_BUILDER
+    from config.constants.ci_repair import CI_REPAIR_SECONDS as CI_REPAIR_SECONDS
+    from config.constants.ci_repair import CI_REPAIR_WORKER_COMMAND as CI_REPAIR_WORKER_COMMAND
     from config.constants.clerk import (
         CLERK_ISSUER_ENV as CLERK_ISSUER_ENV,
     )
@@ -335,6 +356,7 @@ if TYPE_CHECKING:
     from config.constants.github import (
         GITHUB_API_BASE_URL as GITHUB_API_BASE_URL,
     )
+    from config.constants.github import GITHUB_CI_DEMO_REPOSITORY as GITHUB_CI_DEMO_REPOSITORY
     from config.constants.github import (
         GITHUB_CLI_REQUIRED_SCOPES as GITHUB_CLI_REQUIRED_SCOPES,
     )
@@ -478,6 +500,24 @@ if TYPE_CHECKING:
     )
     from config.constants.kubernetes import (
         KUBECONFIG_PATH_ENV as KUBECONFIG_PATH_ENV,
+    )
+    from config.constants.langfuse import (
+        LANGFUSE_BASE_URL_ENV as LANGFUSE_BASE_URL_ENV,
+    )
+    from config.constants.langfuse import (
+        LANGFUSE_DEFAULT_BASE_URL as LANGFUSE_DEFAULT_BASE_URL,
+    )
+    from config.constants.langfuse import (
+        LANGFUSE_HOST_ENV as LANGFUSE_HOST_ENV,
+    )
+    from config.constants.langfuse import (
+        LANGFUSE_PUBLIC_KEY_ENV as LANGFUSE_PUBLIC_KEY_ENV,
+    )
+    from config.constants.langfuse import (
+        LANGFUSE_SECRET_KEY_ENV as LANGFUSE_SECRET_KEY_ENV,
+    )
+    from config.constants.langfuse import (
+        OPENSRE_LANGFUSE_DISABLED_ENV as OPENSRE_LANGFUSE_DISABLED_ENV,
     )
     from config.constants.llm import (
         AZURE_OPENAI_API_KEY_ENV as AZURE_OPENAI_API_KEY_ENV,
@@ -662,6 +702,7 @@ if TYPE_CHECKING:
     from config.constants.paths import (
         UnsafePathSegmentError as UnsafePathSegmentError,
     )
+    from config.constants.paths import ci_fix_ledger_path as ci_fix_ledger_path
     from config.constants.paths import (
         ensure_opensre_tmp_dir as ensure_opensre_tmp_dir,
     )
@@ -941,7 +982,18 @@ if TYPE_CHECKING:
     from config.constants.signoz import (
         SIGNOZ_URL_ENV as SIGNOZ_URL_ENV,
     )
-    from config.constants.skills import ONBOARDING_SKILL_NAME as ONBOARDING_SKILL_NAME
+    from config.constants.skills import (
+        ONBOARDING_SKILL_NAME as ONBOARDING_SKILL_NAME,
+    )
+    from config.constants.skills import (
+        SKILL_FILENAME as SKILL_FILENAME,
+    )
+    from config.constants.skills import (
+        SKILL_REPORT_SUFFIX as SKILL_REPORT_SUFFIX,
+    )
+    from config.constants.skills import (
+        SKILLS_HEADER as SKILLS_HEADER,
+    )
     from config.constants.slack import (
         SLACK_ACCESS_TOKEN_ENV as SLACK_ACCESS_TOKEN_ENV,
     )

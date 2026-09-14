@@ -22,7 +22,7 @@ from core.agent_harness.prompts.memory.conversation import (
     format_recent_conversation,
 )
 from core.agent_harness.prompts.runtime_facts import render_static_runtime_facts
-from core.agent_harness.prompts.skills.loader import load_skills_index
+from core.agent_harness.prompts.skills import load_skills_index
 from core.agent_harness.task_plan.prompt import (
     ask_user_answered_block,
     current_task_plan_block,
@@ -34,7 +34,6 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_MAX_TEXT_LEN = 512
 _USER_TEMPLATE = "USER MESSAGE (literal): <<<{text}>>>"
 
 
@@ -120,7 +119,13 @@ def build_action_system_prompt_envelope(turn_snapshot: TurnSnapshot) -> PromptEn
             suffix="\n\n",
         )
     )
-    skills_index = "\n\n".join(filter(None, (load_skills_index(), load_getting_started_block())))
+    skills_index = (
+        "\n\n".join(filter(None, (load_skills_index(), load_getting_started_block())))
+        if turn_snapshot.skill_discovery_enabled
+        else "The host supplies a complete task for this turn. Execute that task with its "
+        "named tools. Workflow discovery is disabled; do not load skill_view or substitute "
+        "an onboarding or report-only workflow."
+    )
     blocks.extend(
         _optional_block(
             id=PromptBlockId.ACTION_SKILLS,
@@ -393,9 +398,9 @@ def build_action_user_message(text: str, *, prefix: str = "") -> str:
 
 
 def sanitize_action_text(text: str) -> str:
+    """Remove control characters and envelope delimiters; budgeting owns truncation."""
     sanitised = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
-    sanitised = re.sub(r"<{3,}|>{3,}", " ", sanitised)
-    return sanitised[:_MAX_TEXT_LEN]
+    return re.sub(r"<{3,}|>{3,}", " ", sanitised)
 
 
 __all__ = [

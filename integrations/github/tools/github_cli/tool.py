@@ -30,7 +30,12 @@ _ARGS_SCHEMA: dict[str, Any] = {
         },
         "repo": {
             "type": "string",
-            "description": "Optional owner/name passed to gh as -R (overrides default repo).",
+            "description": (
+                "Optional owner/name passed to gh as -R (overrides default repo). "
+                "Ignored for `gh repo`, `gh api`, and other commands without -R; "
+                "give those the repository positionally, e.g. "
+                '["repo", "create", "owner/name", "--private"].'
+            ),
         },
         "timeout": {
             "type": "integer",

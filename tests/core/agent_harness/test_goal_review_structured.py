@@ -9,11 +9,15 @@ import pytest
 from config.constants.llm import OPENSRE_REACT_GOAL_LLM_REVIEW_ENV
 from core.agent.goals import GoalObservation
 from core.agent_harness.session.pending_choice import AskUserQuestion, format_ask_user_answers
-from core.agent_harness.turns.action_driver import _goal_review_user_request
+from core.agent_harness.turns.action_driver import (
+    _deferred_reply_presenter,
+    _goal_review_user_request,
+)
 from core.agent_harness.turns.goal_review import (
     build_gather_goal_reviewer,
     build_goal_reviewer,
 )
+from core.agent_harness.turns.headless_adapters import BufferOutputSink
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
 from core.llm.types import AgentLLMResponse
 
@@ -64,6 +68,87 @@ def test_goal_reviewer_rejects_while_task_plan_incomplete() -> None:
     assert llm.invokes == 0  # deterministic plan gate — no LLM spend
     assert goal.nudge is not None
     assert "unfinished steps" in goal.nudge(_obs())
+
+
+def test_goal_reviewer_shows_a_plan_deferred_reply_before_nudging() -> None:
+    """A mid-plan report is a step's deliverable: paint it, then say it was shown.
+
+    Observed live: the CI analytics card asked for the report as a text-only
+    reply followed by a menu step; the plan gate rejected the reply and the
+    accepted conclusion was empty, so the report never reached the screen.
+    """
+    shown: list[str] = []
+    awaits_reply = True
+    llm = _ScriptedLLM('{"verdict": "GOAL_REACHED"}')
+
+    def _present(text: str) -> bool:
+        shown.append(text)
+        return True
+
+    goal = build_goal_reviewer(
+        llm,
+        "analyze CI reliability",
+        executed_tool_names=["update_plan", "analyze_github_ci_reliability"],
+        plan_incomplete=lambda: True,
+        plan_awaits_reply=lambda: awaits_reply,
+        on_plan_deferred_reply=_present,
+    )
+    assert goal.verify is not None and goal.nudge is not None
+
+    assert goal.verify(_obs(text="| Metric | repo |\n|---|---:|")) is False
+    nudge = goal.nudge(_obs(text="| Metric | repo |\n|---|---:|"))
+
+    assert shown == ["| Metric | repo |\n|---|---:|"]
+    assert nudge.startswith("Your last reply has been shown")
+    assert "unfinished steps" in nudge
+    # An empty conclusion has nothing to show and must not claim otherwise.
+    assert goal.nudge(_obs(text="   ")) == goal.nudge(_obs(text=""))
+    assert not goal.nudge(_obs(text="")).startswith("Your last reply")
+    assert shown == ["| Metric | repo |\n|---|---:|"]
+    # Without the plan's explicit deliverable signal a rejected reply is a
+    # premature stop: it stays off the screen and the model is not told otherwise.
+    awaits_reply = False
+    nudge = goal.nudge(_obs(text="All done, the report is ready."))
+    assert shown == ["| Metric | repo |\n|---|---:|"]
+    assert not nudge.startswith("Your last reply has been shown")
+    assert "unfinished steps" in nudge
+    assert llm.invokes == 0
+
+
+def test_deferred_reply_presenter_records_only_replies_that_reached_the_sink() -> None:
+    """A failed stream must not mark the turn streamed, or the reply is lost."""
+    delivered: list[str] = []
+
+    class _BrokenSink(BufferOutputSink):
+        def stream(self, *_args: Any, **_kwargs: Any) -> None:
+            raise OSError("terminal went away")
+
+    working = BufferOutputSink()
+    assert _deferred_reply_presenter(working, delivered)("| Metric |") is True
+    assert delivered == ["| Metric |"]
+    assert working.streamed == ["| Metric |"]
+
+    assert _deferred_reply_presenter(_BrokenSink(), delivered)("| Lost |") is False
+    assert delivered == ["| Metric |"]
+
+
+def test_goal_reviewer_does_not_claim_a_reply_was_shown_when_presenting_failed() -> None:
+    """A presenter that could not paint the reply must not make the nudge say it did."""
+    llm = _ScriptedLLM('{"verdict": "GOAL_REACHED"}')
+    goal = build_goal_reviewer(
+        llm,
+        "analyze CI reliability",
+        executed_tool_names=["update_plan"],
+        plan_incomplete=lambda: True,
+        plan_awaits_reply=lambda: True,
+        on_plan_deferred_reply=lambda _text: False,
+    )
+    assert goal.nudge is not None
+
+    nudge = goal.nudge(_obs(text="| Metric | repo |"))
+
+    assert not nudge.startswith("Your last reply has been shown")
+    assert "unfinished steps" in nudge
 
 
 def test_goal_reviewer_lets_an_active_goal_redirect_over_a_stale_plan() -> None:
@@ -132,8 +217,8 @@ def test_goal_reviewer_opt_in_llm_still_accepts_reached(
 
 
 def test_task_plan_blocks_conclusion_helpers() -> None:
+    from core.agent_harness.task_plan.conclusion import task_plan_blocks_conclusion
     from core.agent_harness.task_plan.plan import parse_task_plan
-    from core.agent_harness.turns.goal_review import task_plan_blocks_conclusion
 
     incomplete, _ = parse_task_plan(
         {
@@ -152,10 +237,22 @@ def test_task_plan_blocks_conclusion_helpers() -> None:
             ]
         }
     )
-    assert incomplete is not None and done is not None
+    # Blocked steps are terminal: the gate must not force fake work to close them.
+    settled, _ = parse_task_plan(
+        {
+            "plan": [
+                {"step": "Discover", "status": "completed"},
+                {"step": "Query", "status": "blocked"},
+                {"step": "Verify", "status": "blocked"},
+            ],
+            "explanation": "Query blocked: the runtime has no metrics source.",
+        }
+    )
+    assert incomplete is not None and done is not None and settled is not None
     assert task_plan_blocks_conclusion(task_plan=incomplete, plan_only=False) is True
     assert task_plan_blocks_conclusion(task_plan=incomplete, plan_only=True) is False
     assert task_plan_blocks_conclusion(task_plan=done, plan_only=False) is False
+    assert task_plan_blocks_conclusion(task_plan=settled, plan_only=False) is False
     assert task_plan_blocks_conclusion(task_plan=None, plan_only=False) is False
 
 
@@ -231,3 +328,94 @@ def test_ordinary_turn_goal_review_uses_current_message() -> None:
     )
 
     assert _goal_review_user_request(snapshot.text, snapshot) == snapshot.text
+
+
+def test_goal_reviewer_rejects_a_turn_that_blocked_a_step_without_asking_the_user() -> None:
+    """A blocked step is resolved with the user, not skipped: the turn ends through a question."""
+    # Arrange: the plan was worked this turn and a step was newly blocked.
+    llm = _ScriptedLLM('{"verdict": "GOAL_REACHED"}')
+    goal = build_goal_reviewer(
+        llm,
+        "inspect the repository",
+        executed_tool_names=["update_plan"],
+        blocked_needs_user=lambda: True,
+    )
+    assert goal.verify is not None and goal.nudge is not None
+
+    # Act / Assert: rejected without LLM spend, and the nudge names the fix.
+    assert goal.verify(_obs()) is False
+    assert llm.invokes == 0
+    assert "ask_user_choice" in goal.nudge(_obs())
+
+
+def test_blocked_steps_await_the_user_until_a_question_is_queued() -> None:
+    from types import SimpleNamespace
+
+    from core.agent_harness.task_plan.conclusion import blocked_steps_await_the_user
+    from core.agent_harness.task_plan.evidence import record_blocked_this_turn, reset_plan_evidence
+
+    # Arrange
+    session = SimpleNamespace(pending_user_choice=None)
+    reset_plan_evidence(session)
+    assert blocked_steps_await_the_user(session) is False
+
+    # Act: a write blocks a step this turn.
+    record_blocked_this_turn(session, ("Inspect repository",))
+
+    # Assert: the user must be asked; once a question is queued the turn may end.
+    assert blocked_steps_await_the_user(session) is True
+    # The turn that carries their answer has consulted them already.
+    assert blocked_steps_await_the_user(session, user_answered=True) is False
+    session.pending_user_choice = object()
+    assert blocked_steps_await_the_user(session) is False
+
+
+def test_goal_reviewer_rejects_an_answer_turn_that_only_loaded_a_skill_once() -> None:
+    """Live: demo A was picked, the skill loaded, and the turn ended on "Next, I'll scan"."""
+    # Arrange: the gate says the turn stalled on a skill load.
+    llm = _ScriptedLLM('{"verdict": "GOAL_REACHED"}')
+    goal = build_goal_reviewer(
+        llm,
+        "run demo A",
+        executed_tool_names=["skill_view"],
+        skill_load_only=lambda: True,
+    )
+    assert goal.verify is not None and goal.nudge is not None
+
+    # Act / Assert: rejected once with the fix named, then accepted — one extra call at most.
+    assert goal.verify(_obs()) is False
+    assert "run its first step" in goal.nudge(_obs())
+    assert goal.verify(_obs()) is True
+    assert llm.invokes == 0
+
+
+def test_a_demo_pick_stalls_only_when_the_chosen_skill_was_loaded_and_nothing_else_done() -> None:
+    from types import SimpleNamespace
+
+    from core.agent_harness.task_plan.conclusion import demo_pick_stalled_on_skill_load
+    from core.agent_harness.task_plan.evidence import record_plan_evidence, reset_plan_evidence
+
+    # Arrange: a skill body was loaded this turn.
+    session = SimpleNamespace(pending_user_choice=None)
+    reset_plan_evidence(session)
+    record_plan_evidence(session, "skill_view", {"name": "analyzing-github-ci-performance"})
+
+    # Act / Assert: only the onboarding menu's answer stalls; a question or a
+    # hand-off between workflow skills does not.
+    assert demo_pick_stalled_on_skill_load(session, user_answered=True, from_onboarding_menu=True)
+    assert not demo_pick_stalled_on_skill_load(
+        session, user_answered=False, from_onboarding_menu=True
+    )
+    assert not demo_pick_stalled_on_skill_load(
+        session, user_answered=True, from_onboarding_menu=False
+    )
+    # A menu the skill queued, or any work, means the turn did something.
+    session.pending_user_choice = object()
+    assert not demo_pick_stalled_on_skill_load(
+        session, user_answered=True, from_onboarding_menu=True
+    )
+    session.pending_user_choice = None
+    record_plan_evidence(session, "scan_local_git_workspace", {})
+    assert not demo_pick_stalled_on_skill_load(
+        session, user_answered=True, from_onboarding_menu=True
+    )

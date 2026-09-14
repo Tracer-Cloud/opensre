@@ -48,7 +48,6 @@ TOOL_NAME = "schedule_ci_reliability_loop"
     },
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
-    parallel_safe=False,
     input_schema={
         "type": "object",
         "properties": {

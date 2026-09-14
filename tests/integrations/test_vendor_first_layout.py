@@ -51,6 +51,9 @@ ALLOWED_FLAT_MODULES = frozenset(
         # Cross-cutting scheduled-agent runner for pinned recurring skills
         # (not a SaaS vendor). Routed by scheduled_agent_bootstrap.
         "scheduled_skill_runner.py",
+        # Cross-cutting work-outcome retention shared by every scheduled-agent
+        # runner (not a SaaS vendor).
+        "scheduled_outcomes.py",
         # Cross-cutting credential-resolution infra (hydrates every vendor's org
         # creds from the tenant's Secrets Manager blob), not a vendor — the
         # Secrets Manager peer of webapp_vault.py.

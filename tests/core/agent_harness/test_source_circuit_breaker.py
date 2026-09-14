@@ -314,7 +314,6 @@ class _ConnectTimeoutTool:
 
     name = "query_grafana_metrics"
     source = "grafana"
-    parallel_safe = False
 
     def validate_public_input(self, _payload: dict[str, Any]) -> str:
         return ""

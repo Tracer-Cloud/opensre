@@ -157,14 +157,11 @@ class SessionCore:
     """Ask-User clarification rounds asked this workload; caps repeated batches.
     Reset on a genuine user turn."""
 
+    skill_discovery_enabled: bool = True
+    """Host-owned policy for the skill index and skill_view; never restored from history."""
+
     active_skill: str | None = None
     """Skill loaded by ``skill_view`` in the current flow; cleared on a genuine user turn."""
-
-    active_skill_tools: tuple[str, ...] = ()
-    """The active skill's declared tools; an answer turn inside the flow offers only these."""
-
-    skill_hooks_fired: set[str] = field(default_factory=set)
-    """``after_tool`` hook keys already queued for this skill activation."""
 
     questions_already_answered: set[str] = field(default_factory=set)
     """Menu questions this session has answered, normalized for comparison.
@@ -175,6 +172,9 @@ class SessionCore:
     clean, and a ``/resume`` may ask again, since the answer's effect is not
     restored either.
     """
+
+    skill_question_keys: dict[str, set[str]] = field(default_factory=dict)
+    """Queued question keys by owning skill, for explicit workflow restarts."""
 
     skills_already_prompted: set[str] = field(default_factory=set)
     """Skills whose ``pre_execute`` menu this session has already opened.
@@ -432,6 +432,7 @@ class SessionCore:
         self.gather_unreachable_tools.clear()
         self.gather_unreachable_sources.clear()
         self.questions_already_answered.clear()
+        self.skill_question_keys.clear()
         self.skills_already_prompted.clear()
         if rotate_identity:
             # Rotate session identity so the new post-reset session gets its own ID and file.

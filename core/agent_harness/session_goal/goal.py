@@ -31,6 +31,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import Any
 
+from core.agent_harness.task_plan.discard import discard_task_plan
 from infrastructure.evidence.evidence_compaction import truncate_message
 
 
@@ -446,19 +447,13 @@ def attach_session_goal(session: Any, goal: SessionGoal) -> SessionGoal:
         goal = mark_session_goal_started(goal, session=session)
     session.session_goal = goal
     if new_identity:
-        _discard_session_task_plan(session)
+        discard_task_plan(session)
     return goal
 
 
 def clear_session_goal(session: Any) -> None:
     session.session_goal = None
-    _discard_session_task_plan(session)
-
-
-def _discard_session_task_plan(session: Any) -> None:
-    """Drop the live plan so a later goal cannot inherit completed steps."""
-    if hasattr(session, "task_plan"):
-        session.task_plan = None
+    discard_task_plan(session)
 
 
 def session_goal_elapsed_seconds(

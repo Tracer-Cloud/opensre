@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import click
 
+from config.constants.ci_repair import CI_REPAIR_WORKER_COMMAND
 from surfaces.cli.app import cli
 
 #: Every user-visible top-level command, alphabetized. Update deliberately —
@@ -41,7 +42,7 @@ EXPECTED_VISIBLE_COMMANDS = frozenset(
     }
 )
 
-EXPECTED_HIDDEN_COMMANDS = frozenset({"_package-smoke"})
+EXPECTED_HIDDEN_COMMANDS = frozenset({"_package-smoke", CI_REPAIR_WORKER_COMMAND})
 
 
 def _command_inventory() -> tuple[frozenset[str], frozenset[str]]:

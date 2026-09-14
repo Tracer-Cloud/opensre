@@ -9,8 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from pathlib import Path
 
-# Distinct app areas in one diff that trigger escalation to ``make test-cov``.
-ESCALATION_AREA_THRESHOLD = 3
+from git_changes import is_documentation
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,7 +18,6 @@ class PathRule:
 
     path_prefix: str
     test_targets: tuple[str, ...]
-    always_escalate: bool = False
 
 
 # Matched in list order — more specific prefixes must appear before parents.
@@ -45,8 +43,8 @@ RULES: tuple[PathRule, ...] = (
         ".github/scripts/sync-homebrew-tap-formula.sh",
         ("tests/cli/test_install_matrix.py",),
     ),
-    # Shared core (always escalate)
-    PathRule("core/domain/", (), always_escalate=True),
+    # Shared core
+    PathRule("core/domain/", ("tests/core/domain/",)),
     PathRule("core/agent_harness/session/", ("tests/core/agent_harness/session/",)),
     PathRule(
         "core/agent_harness/prompts/skills/",
@@ -57,17 +55,16 @@ RULES: tuple[PathRule, ...] = (
         ),
     ),
     PathRule("core/", ("tests/core/",)),
-    PathRule("utils/", (), always_escalate=True),
+    PathRule("utils/", ("tests/utils/",)),
     # Specific sub-packages before their parent
     PathRule("integrations/llm_cli/", ("tests/integrations/llm_cli/",)),
-    PathRule("integrations/opensre/", ("tests/integrations/opensre/",)),
     PathRule(
         "integrations/alertmanager/",
-        ("tests/integrations/alertmanager/", "tests/e2e/alertmanager/"),
+        ("tests/integrations/alertmanager/",),
     ),
     PathRule(
         "integrations/dagster/",
-        ("tests/integrations/dagster/",),
+        ("tests/integrations/test_dagster.py",),
     ),
     PathRule(
         "integrations/eks/",
@@ -117,7 +114,8 @@ RULES: tuple[PathRule, ...] = (
     PathRule(
         "integrations/jira/",
         (
-            "tests/integrations/jira/",
+            "tests/integrations/test_jira_client.py",
+            "tests/integrations/test_jira_search_and_factory.py",
             "tests/tools/test_jira_add_comment_tool.py",
             "tests/tools/test_jira_create_issue_tool.py",
             "tests/tools/test_jira_issue_detail_tool.py",
@@ -127,7 +125,7 @@ RULES: tuple[PathRule, ...] = (
     PathRule(
         "integrations/clickhouse/",
         (
-            "tests/integrations/clickhouse/",
+            "tests/integrations/test_clickhouse.py",
             "tests/tools/test_clickhouse_query_activity_tool.py",
             "tests/tools/test_clickhouse_system_health_tool.py",
         ),
@@ -135,19 +133,18 @@ RULES: tuple[PathRule, ...] = (
     PathRule(
         "integrations/mariadb/",
         (
-            "tests/integrations/mariadb/",
+            "tests/integrations/test_mariadb_integration.py",
             "tests/tools/test_mariadb_innodb_status_tool.py",
             "tests/tools/test_mariadb_process_list_tool.py",
             "tests/tools/test_mariadb_replication_tool.py",
             "tests/tools/test_mariadb_slow_queries_tool.py",
             "tests/tools/test_mariadb_status_tool.py",
-            "tests/e2e/mariadb/",
         ),
     ),
     PathRule(
         "integrations/mongodb_atlas/",
         (
-            "tests/integrations/mongodb_atlas/",
+            "tests/integrations/test_mongodb_atlas_integration.py",
             "tests/tools/test_mongodb_atlas_alerts_tool.py",
             "tests/tools/test_mongodb_atlas_clusters_tool.py",
             "tests/tools/test_mongodb_atlas_events_tool.py",
@@ -158,44 +155,41 @@ RULES: tuple[PathRule, ...] = (
     PathRule(
         "integrations/mongodb/",
         (
-            "tests/integrations/mongodb/",
+            "tests/integrations/test_mongodb_integration.py",
             "tests/tools/test_mongodb_collection_stats_tool.py",
             "tests/tools/test_mongodb_current_ops_tool.py",
             "tests/tools/test_mongodb_profiler_tool.py",
             "tests/tools/test_mongodb_replica_status_tool.py",
             "tests/tools/test_mongodb_server_status_tool.py",
-            "tests/e2e/mongodb/",
         ),
     ),
     PathRule(
         "integrations/mysql/",
         (
-            "tests/integrations/mysql/",
+            "tests/integrations/test_mysql.py",
             "tests/tools/test_mysql_current_processes_tool.py",
             "tests/tools/test_mysql_replication_status_tool.py",
             "tests/tools/test_mysql_server_status_tool.py",
             "tests/tools/test_mysql_slow_queries_tool.py",
             "tests/tools/test_mysql_table_stats_tool.py",
-            "tests/e2e/mysql/",
         ),
     ),
     PathRule(
         "integrations/postgresql/",
         (
-            "tests/integrations/postgresql/",
+            "tests/integrations/test_postgresql.py",
             "tests/tools/test_postgresql_current_queries_tool.py",
             "tests/tools/test_postgresql_locks_tool.py",
             "tests/tools/test_postgresql_replication_status_tool.py",
             "tests/tools/test_postgresql_server_status_tool.py",
             "tests/tools/test_postgresql_slow_queries_tool.py",
             "tests/tools/test_postgresql_table_stats_tool.py",
-            "tests/e2e/postgresql/",
         ),
     ),
     PathRule(
         "integrations/redis/",
         (
-            "tests/integrations/redis/",
+            "tests/integrations/test_redis.py",
             "tests/tools/test_redis_client_list_tool.py",
             "tests/tools/test_redis_key_scan_tool.py",
             "tests/tools/test_redis_latency_doctor_tool.py",
@@ -203,13 +197,12 @@ RULES: tuple[PathRule, ...] = (
             "tests/tools/test_redis_replication_tool.py",
             "tests/tools/test_redis_server_info_tool.py",
             "tests/tools/test_redis_slowlog_tool.py",
-            "tests/e2e/redis/",
         ),
     ),
     PathRule(
         "integrations/snowflake/",
         (
-            "tests/integrations/snowflake/",
+            "tests/tools/test_snowflake_query_history_evidence.py",
             "tests/tools/test_snowflake_query_history_tool.py",
             "tests/tools/test_telemetry.py",
         ),
@@ -298,11 +291,7 @@ RULES: tuple[PathRule, ...] = (
     ),
     PathRule(
         "integrations/supabase/",
-        (
-            "tests/integrations/test_supabase.py",
-            "tests/tools/test_supabase_health_tool.py",
-            "tests/tools/test_supabase_storage_tool.py",
-        ),
+        ("tests/integrations/test_supabase.py",),
     ),
     PathRule(
         "integrations/bitbucket/",
@@ -339,6 +328,25 @@ RULES: tuple[PathRule, ...] = (
         ),
     ),
     PathRule(
+        "integrations/github/tools/ci_repair_loop/",
+        (
+            "tests/integrations/github/test_ci_repair_loop.py",
+            "tests/tools/test_ci_repair_loop.py",
+        ),
+    ),
+    PathRule(
+        "integrations/github/tools/ci_fix/",
+        (
+            "tests/tools/test_github_ci_fix.py",
+            "tests/tools/test_github_ci_fix_verification.py",
+            "tests/tools/test_github_ci_fix_base_merge.py",
+            "tests/integrations/github/test_ci_fix_ledger.py",
+        ),
+    ),
+    PathRule(
+        "integrations/github/tools/security_fix/", ("tests/tools/test_github_security_fix.py",)
+    ),
+    PathRule(
         "integrations/github/tools/",
         (
             "tests/tools/test_github_actions_tool.py",
@@ -361,7 +369,6 @@ RULES: tuple[PathRule, ...] = (
             "tests/tools/test_gitlab_file_tool.py",
             "tests/tools/test_gitlab_mrs_tool.py",
             "tests/tools/test_gitlab_pipelines_tool.py",
-            "tests/e2e/gitlab/",
         ),
     ),
     PathRule(
@@ -436,7 +443,7 @@ RULES: tuple[PathRule, ...] = (
     PathRule(
         "integrations/prefect/",
         (
-            "tests/integrations/prefect/",
+            "tests/integrations/test_prefect_catalog.py",
             "tests/tools/test_prefect_flow_runs_tool.py",
             "tests/tools/test_prefect_worker_health_tool.py",
         ),
@@ -483,7 +490,6 @@ RULES: tuple[PathRule, ...] = (
         (
             "tests/integrations/victoria_logs/",
             "tests/tools/test_victoria_logs_tool.py",
-            "tests/e2e/victoria_logs/",
         ),
     ),
     PathRule(
@@ -544,7 +550,7 @@ RULES: tuple[PathRule, ...] = (
         ),
     ),
     PathRule("integrations/", ("tests/integrations/",)),
-    PathRule("tools/system/fleet_monitoring/", ("tests/agent/", "tests/fleet_monitoring/")),
+    PathRule("tools/system/fleet_monitoring/", ("tests/core/agent/", "tests/fleet_monitoring/")),
     PathRule("surfaces/cli/", ("tests/cli/",)),
     PathRule("surfaces/interactive_shell/", ("tests/interactive_shell/",)),
     PathRule("gateway/", ("gateway/tests/",)),
@@ -568,66 +574,77 @@ RULES: tuple[PathRule, ...] = (
     ),
     PathRule("infrastructure/safety/auth/", ("tests/infrastructure/safety/auth/",)),
     PathRule("gateway/web/webapp.py", ("gateway/tests/web/test_webapp.py",)),
-    # Repo-wide config
-    PathRule("pyproject.toml", (), always_escalate=True),
-    PathRule("uv.lock", (), always_escalate=True),
-    PathRule("pytest.ini", (), always_escalate=True),
-    PathRule("Makefile", (), always_escalate=True),
-    PathRule(".github/ci/", ("tests/github_ci/",)),
+    PathRule("infrastructure/scheduling/", ("tests/scheduler/",)),
+    PathRule("infrastructure/", ("tests/infrastructure/",)),
+    PathRule("config/", ("tests/config/",)),
+    PathRule("bootstrap/", ("tests/bootstrap/",)),
+    PathRule("surfaces/", ("tests/surfaces/",)),
+    # Repository tooling and broad configuration changes still run focused contracts.
+    PathRule("pyproject.toml", ("tests/packaging/", "tests/config/")),
+    PathRule("uv.lock", ("tests/packaging/", "tests/config/")),
+    PathRule("pytest.ini", ("tests/github_ci/",)),
+    PathRule("Makefile", ("tests/github_ci/",)),
+    PathRule(".github/", ("tests/github_ci/",)),
+    PathRule(".githooks/", ("tests/github_ci/",)),
+    PathRule(".pre-commit-config.yaml", ("tests/github_ci/",)),
+    PathRule("mypy.ini", ("tests/github_ci/",)),
+    PathRule(".importlinter", ("tests/shared/", "tests/github_ci/")),
+    PathRule(".importlinter.strict", ("tests/shared/", "tests/github_ci/")),
+    PathRule(".gitignore", ("tests/github_ci/",)),
 )
 
 
-def _matches(path: str, prefix: str) -> bool:
-    return path.startswith(prefix) or path == prefix.rstrip("/")
+@dataclass(frozen=True)
+class TestSelection:
+    """Selected pytest targets and gaps that must block local validation."""
+
+    targets: tuple[str, ...]
+    errors: tuple[str, ...]
 
 
-def _area_key(prefix: str) -> str:
-    parts = prefix.split("/")
-    if parts[0] == "deployment" or (
-        len(parts) >= 2 and parts[0] == "infrastructure" and parts[1].startswith("deployment")
-    ):
-        return "deployment"
-    return prefix
-
-
-def classify(changed: list[str]) -> tuple[bool, list[str], list[str]]:
-    """Return ``(should_escalate, test_targets, matched_areas)``."""
-    escalate = False
-    targets: list[str] = []
-    areas: list[str] = []
-
+def select_tests(changed: list[str], *, root: Path) -> TestSelection:
+    """Resolve every source path without silently discarding unmapped changes."""
+    targets: set[str] = set()
+    errors: set[str] = set()
     for path in changed:
-        matched = False
-        for rule in RULES:
-            if not _matches(path, rule.path_prefix):
+        if is_documentation(path):
+            continue
+        item = Path(path)
+        if path.startswith(("tests/", "gateway/tests/")):
+            if not (root / path).exists():
                 continue
-            matched = True
-            if rule.always_escalate:
-                escalate = True
+            if item.name.startswith("test_") and item.suffix == ".py":
+                targets.add(path)
             else:
-                area = _area_key(rule.path_prefix)
-                if area not in areas:
-                    areas.append(area)
-                for target in rule.test_targets:
-                    if target not in targets:
-                        targets.append(target)
-            break
-
-        # Only .py files are pytest-collectible; passing fixture/scenario data
-        # files (.json/.yml) as raw targets aborts the whole run with exit 4.
-        if (
-            not matched
-            and path.startswith("tests/")
-            and path.endswith(".py")
-            and path not in targets
-        ):
-            targets.append(path)
-
-    if len(areas) >= ESCALATION_AREA_THRESHOLD:
-        escalate = True
-
-    existing = [t for t in targets if Path(t).exists()]
-    dropped = [t for t in targets if t not in existing]
-    if dropped:
-        print(f"  (skipping non-existent targets: {', '.join(dropped)})", flush=True)
-    return escalate, existing, areas
+                targets.add(item.parent.as_posix() + "/")
+            continue
+        rule = next(
+            (
+                rule
+                for rule in RULES
+                if (
+                    path.startswith(rule.path_prefix)
+                    if rule.path_prefix.endswith("/")
+                    else path == rule.path_prefix
+                )
+            ),
+            None,
+        )
+        if rule is None:
+            errors.add(f"No test rule for {path}")
+            continue
+        for target in rule.test_targets:
+            if (root / target).exists():
+                targets.add(target)
+            else:
+                errors.add(f"Missing configured test target {target} for {path}")
+    # Avoid collecting a test twice when a broader directory is already selected.
+    directories = {target.rstrip("/") for target in targets if (root / target).is_dir()}
+    selected = tuple(
+        sorted(
+            target
+            for target in targets
+            if not any(parent.as_posix() in directories for parent in Path(target).parents)
+        )
+    )
+    return TestSelection(selected, tuple(sorted(errors)))

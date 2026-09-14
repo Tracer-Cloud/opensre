@@ -96,7 +96,6 @@ skill_view_tool = RegisteredTool(
     ),
     source="interactive_shell",
     surfaces=(ToolSurface.ACTION,),
-    parallel_safe=True,
     accepts_runtime_context=True,
     run=run_skill_view,
     tags=("safe", "fast", "no-credentials"),

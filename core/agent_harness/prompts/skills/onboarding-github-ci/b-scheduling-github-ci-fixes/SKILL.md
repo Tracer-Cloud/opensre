@@ -1,285 +1,249 @@
 ---
 name: scheduling-github-ci-fixes
 description: >-
-  Sets up a local scheduled loop for one repository that checks its open pull
-  requests for failing GitHub Actions checks and repairs them with
-  fix_github_pr_ci. Optionally creates a private demo repository with a
-  deliberately broken pull request first, fixes it once end to end, and
-  deletes it afterwards. Use for the startup demo option "Set up an agent
-  that improves CI/CD reliability over time" or "keep our pull requests green
-  automatically". A one-off fix of a named pull request is fixing-github-ci;
-  a historical metrics table is analyzing-github-ci-performance.
+  Sets up ongoing local monitoring of one repository's open pull requests,
+  automatically editing, testing, and pushing fixes for failing GitHub Actions
+  checks. Offers a disposable private-repository demonstration when no target
+  PR was supplied. Use for recurring PR repair or the local CI onboarding demo.
+  A one-off PR repair belongs to fixing-github-ci.
 getting_started: Set up an agent that improves CI/CD reliability over time
 demo_order: 2
 metadata:
   owner: Vincent
-  last_changed_by: Vincent
-  last_changed_at: 2026-09-11
+  last_changed_by: Jan
+  last_changed_at: 2026-09-13
   usecases:
-    - First-experience demo: get to a real CI fix as quickly as possible
-    - Weekday loop that repairs failing pull-request checks in one repository
-    - One end-to-end fix on a throwaway private repository, deleted afterwards
+    - For configuring ongoing repair of failing pull requests in one repository.
+    - For demonstrating a scheduled repair in a disposable private repository.
   requires:
-    - GitHub token usable by OpenSRE with write access to the watched repository
-    - Local git checkout of the watched repository (fix_github_pr_ci edits and pushes from it)
-    - Installed and authenticated coding agent for fix_github_pr_ci
-    - For the demo, permission to create and delete a private repository in the user's account
-  type: repair
-  version: "2.0"
-references:
+    - GitHub write access to the watched repository and an authenticated coding agent
+    - Git installed on the scheduler host; repair checkouts are created automatically
+    - For the demo, a GitHub token that can create a private repository and an example PR
+  version: "6.2"
+script_tools: references/script-tools.md
+includes:
   - common/ask_once.md
 ---
 
-# Scheduled CI fix loop
+# Onboarding for Scheduled CI fixes
 
-Set up a loop on this machine that looks at one repository's open pull
-requests every weekday morning and repairs the ones whose GitHub Actions
-checks are failing. Before scheduling, offer to prove the fix on a throwaway
-private repository with a deliberately broken pull request, and delete that
-repository afterwards.
+Monitor one repository on a schedule and automatically edit, test, and
+push fixes to one failing PR branch per tick. A green PR does not stop
+monitoring.
 
-Rules that hold for every step:
+The optional private demo uses the same repair policy every **minute**.
 
-- If a tool reports a missing GitHub token, tell the user to run
-  `opensre integrations setup github` and stop.
-- `fix_github_pr_ci` owns the repair: never run `git commit`, `git push`,
-  `gh pr checkout`, or `gh run view` around it. It pushes to the pull
-  request's own branch and never to `main`.
-- Every question is one `ask_user_choice` call with the exact title given
-  below. End the turn after calling it; the answer arrives as the next user
-  message.
+## Goal
+
+Get the user to a running scheduled loop that repairs a failing PR, and show
+one real repair as fast as possible in well under five minutes.
+
+## Runtime facts
+
+- The loop is a scheduler task: `slash_invoke` with `command: "/cron"`. Cron
+  granularity is one minute; there is no 20-second polling.
+- Scheduled ticks run headless with the full tool catalog. The tick prompt
+  must name the tool call directly; `fix_github_pr_ci` itself reports when a
+  PR has no failing checks, so the tick needs no separate status read.
+- `fix_github_pr_ci` clones, repairs, pushes, and waits for the new checks
+  before it returns. A tick therefore takes a few minutes; `/cron run <id>`
+  blocks for that long and returns the tick's report. Do not poll while it
+  runs.
+- `github_cli` passes `repo` as `-R` only to commands that accept it. `gh repo
+  …` takes the repository positionally: `["repo", "create", "<name>", …]`.
+- One action per response: send `update_plan` in the same response as the
+  next tool call, except before `ask_user_choice`, which must be the only call
+  in its response. Separate read-only checks are separate responses.
+- `seed_demo_repository` and `write_demo_evidence` are available while this
+  skill is active. Call them directly; they return structured results and
+  keep command output out of the transcript.
 
 ## Plan
 
-After reading this skill, use `update_plan` to create or revise the live
-CI Fix Loop Progress plan using the eight numbered workflow headings below as
-its steps. Keep the loop card and the cleanup as separate plan items. Mark a
-step `completed` without running it when its body says it may be skipped;
-never delete it. Update statuses when each step's completion condition is
-met.
+After reading this skill, use `update_plan` to create the live plan from the
+eleven numbered workflow headings below. Mark steps the request already
+satisfies `completed` (a named repository skips Step 1; an existing failing
+PR skips Steps 4 and 8) and move each step to `completed` when its
+completion condition is met. Mark Step 8 with `verifies: true` in every
+`update_plan` call: it is the check that the repair happened, and the
+report step relies on it to close.
 
-- [ ] Step 1. Scan local repositories with scan_local_git_workspace.
-- [ ] Step 2. Select the repository to watch using ask_user_choice.
-- [ ] Step 3. Ask whether to create a broken demo pull request using ask_user_choice.
-- [ ] Step 4. Create the private demo repository and its failing pull request with shell_run and github_cli.
-- [ ] Step 5. Repair the demo pull request with fix_github_pr_ci.
-- [ ] Step 6. Schedule the fix loop with slash_invoke and show its card.
-- [ ] Step 7. Ask whether to delete the demo repository using ask_user_choice.
-- [ ] Step 8. Delete the demo repository and its clone with github_cli and shell_run.
+- [ ] Step 1. Select the repository, or the private demo, with ask_user_choice.
+- [ ] Step 2. Check prerequisites: GitHub identity and scopes, then the scheduler.
+- [ ] Step 3. Select the failing PR, or confirm the authorized demo scope.
+- [ ] Step 4. Create the demo repository, failing branch, and PR (demo only).
+- [ ] Step 5. Confirm GitHub reports the failure with list_github_actions_workflow_runs.
+- [ ] Step 6. Start the loop with the `/cron add` call and record its task id.
+- [ ] Step 7. Run the first tick with `/cron run <id>` and read its report.
+- [ ] Step 8. Verify the repair with one `pr view` call.
+- [ ] Step 9. Save evidence, remove the demo loop and resources, verify with `/cron list`.
+- [ ] Step 10. Respond with the outcome report as Markdown.
+- [ ] Step 11. After the report is shown, offer the follow-up with ask_user_choice.
 
 ## Workflow
 
-### 1. Scan this machine
+### Step 1. Select the repository
 
-Call `scan_local_git_workspace()` with no arguments.
+Use the repository already named by the user. Otherwise ask once with
+`ask_user_choice`: "Private disposable demo repository" first (recommended),
+then the repositories the user has configured. Choosing the demo authorizes
+creating and deleting one private repository, its branch, PR, and loop.
 
-Skip this step and step 2 when the repository is already chosen in this
-session, for example after the analytics demo handed off here: mark both
-plan items `completed` and resume at step 3 with that repository. When it
-was chosen from a scan, keep its `path` from that scan result.
+Complete when the repository, or the demo scope, is established.
 
-Complete when `scan_local_git_workspace` has returned in this turn, even
-with an empty result.
+### Step 2. Check prerequisites
 
-### 2. Pick the repository
+Two calls, one per response:
 
-Call `ask_user_choice` with the title `Which repository should the agent watch?`.
-Offer up to 5 scanned repositories that have `has_workflows` true and a
-`github` name, as `<owner/repo>`, the user's own commits first. Offer the
-picker even when only one repository qualifies; a single scan result is
-not a selection. Do not offer `Tracer-Cloud/opensre`: the loop pushes fixes,
-so the user needs write access.
+- `github_cli` `["api", "user", "--include"]` — confirms authentication and
+  prints the token's `X-Oauth-Scopes` header.
+- `slash_invoke` `{"command": "/cron", "args": ["list"]}` — confirms the
+  scheduler answers.
 
-When no scanned repository qualifies, skip the picker: say so in one line,
-mark this plan item `completed`, and continue to step 3, where the demo
-repository becomes the watched repository if the user accepts it.
+Complete when GitHub identity, token scopes, and the scheduler are
+confirmed.
 
-Complete when the user's answer to `ask_user_choice` has arrived as a
-message, or the step was skipped. Remember the chosen repository as
-`<owner>/<repo>` and its local checkout `path` as `<checkout>`.
+### Step 3. Select the failure scenario
 
-### 3. Offer the demo
+- Existing repository: `summarize_github_pr_status(owner, repo, state="open",
+  include_checks=true)`; pick the user's PR, or the first PR with a failing
+  check. If none is failing, the loop still starts in Step 6 and Step 7 is
+  skipped.
+- Demo: the scope was authorized in Step 1; nothing to fetch.
 
-Call `ask_user_choice` with the title
-`Should I create a broken pull request to demonstrate the fix?` and these
-options:
+Complete when a PR is selected or the demo is authorized.
 
-- Yes, create a private demo repository with a failing check
-- No, watch the repository as it is
+### Step 4. Create the demo failure (demo only)
 
-Complete when the answer has arrived as a message. On `No`, mark steps 4, 5,
-7, and 8 `completed` as skipped and resume at step 6. On `No` with no
-repository chosen in step 2, say in one line that there is nothing to
-watch and conclude.
+Exactly three calls, in order. Keep the example relatable — a `calculator.add`
+that subtracts — with one test that runs in seconds.
 
-### 4. Create the demo repository and its failing pull request
+1. `github_cli` `["repo", "create", "opensre-ci-repair-demo-<random>",
+   "--private", "--add-readme", "--description", "Temporary OpenSRE
+   scheduled CI repair demo"]`. No owner prefix: creating under the
+   authenticated user keeps admin rights for deletion.
+2. `seed_demo_repository(repo="<owner>/<repo>")` creates the fixed calculator
+   demo and pushes the failing branch. Record its `workspace` and `head_sha`.
+   On failure, inspect the returned stage and saved progress before retrying
+   the same call. Stop if it reports unexpected local or remote changes.
+3. `github_cli` `["pr", "create", "--base", "main", "--head",
+   "demo/failing-ci", "--title", "Demo: repair failing calculator CI",
+   "--body", "…"]` with `repo` set to the new repository.
 
-Call `github_cli(args=["api", "user", "--jq", ".login"])` and keep the
-result as `<login>`. The demo repository is `<login>/opensre-ci-fix-demo`
-and its clone is `~/opensre-ci-fix-demo`; if a repository of that name
-already exists, append `-2`, `-3`, … until `repo create` succeeds.
+Complete when the PR URL is known.
 
-Then run these actions in order, each as one tool call:
+### Step 5. Confirm the failure
 
-1. `shell_run` to build a passing project on `main`:
+`list_github_actions_workflow_runs(owner, repo, branch=<head branch>)`. If
+the run is still queued or in progress, wait 20 seconds with one
+`shell_run` `sleep 20` and call it again; do not use any other status tool.
+Record the failed run id and head commit.
 
-   ```bash
-   set -e
-   DEMO_DIR="$HOME/opensre-ci-fix-demo"
-   rm -rf "$DEMO_DIR" && mkdir -p "$DEMO_DIR/.github/workflows" && cd "$DEMO_DIR"
-   git init -q -b main
-   cat > .github/workflows/ci.yml <<'EOF'
-   name: CI
-   on:
-     pull_request:
-     push:
-       branches: [main]
-   jobs:
-     test:
-       runs-on: ubuntu-latest
-       steps:
-         - uses: actions/checkout@v4
-         - uses: actions/setup-python@v5
-           with:
-             python-version: "3.12"
-         - run: python -m unittest -v
-   EOF
-   cat > pricing.py <<'EOF'
-   def total(prices: list[float], discount: float = 0.0) -> float:
-       """Sum the prices and apply a fractional discount."""
-       return sum(prices) * (1 - discount)
-   EOF
-   cat > test_pricing.py <<'EOF'
-   import unittest
+Complete when GitHub reports a failed run on the PR head.
 
-   from pricing import total
+### Step 6. Start the loop
 
+One `slash_invoke` call. Record the `Task <id> created.` id from its output.
 
-   class TotalTest(unittest.TestCase):
-       def test_total_applies_discount(self) -> None:
-           self.assertEqual(total([10.0, 20.0], discount=0.5), 15.0)
-
-       def test_total_without_discount(self) -> None:
-           self.assertEqual(total([10.0, 20.0]), 30.0)
-   EOF
-   git add -A && git commit -qm "Pricing helper with tests and CI"
-   ```
-
-2. `github_cli(args=["repo", "create", "<login>/opensre-ci-fix-demo", "--private", "--source", "<clone>", "--remote", "origin", "--push"])`
-   with `<clone>` the absolute path of the directory above.
-
-3. `shell_run` to break the arithmetic on a branch and push it:
-
-   ```bash
-   set -e
-   cd "$HOME/opensre-ci-fix-demo" && git checkout -qb break-pricing
-   cat > pricing.py <<'EOF'
-   def total(prices: list[float], discount: float = 0.0) -> float:
-       """Sum the prices and apply a fractional discount."""
-       return sum(prices) - discount
-   EOF
-   git commit -qam "Simplify the discount arithmetic" && git push -qu origin break-pricing
-   ```
-
-4. `github_cli(args=["pr", "create", "--repo", "<login>/opensre-ci-fix-demo", "--head", "break-pricing", "--base", "main", "--title", "Simplify the discount arithmetic", "--body", "Demo pull request created by OpenSRE. Its CI check fails on purpose so the fix loop has something to repair."])`
-   and keep the returned pull request URL as `<demo pr>`.
-
-If any of these fails, relay the error in one line and stop; do not
-improvise a different repository layout.
-
-Complete when `pr create` has returned `<demo pr>`. If no repository was
-chosen in step 2, the demo repository is now the watched repository:
-`<owner>/<repo>` is `<login>/opensre-ci-fix-demo` and `<checkout>` is its
-clone.
-
-### 5. Repair the demo pull request
-
-The check has to finish before it can be fixed. Call
-`github_cli(args=["pr", "checks", "<demo pr>", "--watch"])` and wait for it
-to return; it exits non-zero with `CI` listed as failed, which is the
-expected result, not an error to report.
-
-Then call `fix_github_pr_ci(pr_url="<demo pr>", workspace="<clone>")`. It
-inspects the failing check, runs the coding agent, commits, pushes to
-`break-pricing`, and waits for the new check. If it returns
-`response_text`, put that text in your reply exactly. If `error_kind` is
-set, reply with one short line from `error`, then continue to step 6; the
-loop is still worth scheduling.
-
-Complete when `fix_github_pr_ci` has returned in this turn and your reply
-carries its outcome. Every figure in the reply comes from the tool result.
-
-### 6. Schedule the fix loop
-
-Call `slash_invoke` with `command="/loops"` and these `args`, in this
-order, each as its own list element:
-
-```text
-add
---name
-CI fix agent · <owner>/<repo>
---time
-08:00
---weekdays
---tz
-<IANA timezone of this machine, from the runtime facts; omit --tz and this value when unknown>
---channel
-shell
---prompt
-<tick prompt>
+```json
+{"command": "/cron", "args": ["add",
+  "--name", "CI repair: <owner>/<repo>",
+  "--kind", "manual_loop",
+  "--cron", "*/2 * * * *",
+  "--provider", "interactive_shell",
+  "--mode", "agent",
+  "--owner", "<owner>", "--repo", "<repo>",
+  "--prompt", "<tick prompt>"]}
 ```
 
-The tick prompt is one list element, with the placeholders filled in and
-no line breaks:
+Demo loop: same call with `"--cron", "* * * * *"` and the name
+`CI repair demo: <owner>/<repo>#<n>`. Add `"--pr", "<n>"` when a
+single PR is selected. The saved repository target is independent of the
+scheduler host's current directory; omit `workspace` to use a managed checkout.
 
-```text
-Scheduled CI fix pass for <owner>/<repo>. First call summarize_github_pr_status(owner="<owner>", repo="<repo>", state="open") and keep the pull requests whose check_status is failed. For each of them, one at a time, call fix_github_pr_ci(owner="<owner>", repo="<repo>", pr_number=<number>, workspace="<checkout>") and take its response_text as the outcome; when the tool refuses one, keep its reason and move on. Reply with one line per pull request that had a failing check: number, title, the checks that failed, and the repair commit or the reason it was left alone. Write "No failing checks on <owner>/<repo>." when none were red. Every figure comes from a tool result.
-```
+Tick prompt for one PR (demo, or a user-selected PR):
 
-The tool observation carries the created loop's `id`, cron, timezone, and
-next run. Reply with this card, filled from that observation:
+> Call `fix_github_pr_ci(owner="<owner>", repo="<repo>", pr_number=<n>)`
+> exactly once. If it reports no failing checks, reply `no repair needed` and stop. Do
+> not touch any other repository or pull request. Reply with the failed run
+> id, the fix commit, and the final check state.
 
-```text
-**Scheduled: CI fix agent · <owner>/<repo>**
+Tick prompt for a whole repository:
 
-- Runs weekdays at 08:00 <timezone>, next <next run>
-- Repairs pull requests whose checks are failing and reports to this shell's inbox: `/loops messages`
-- Manage: `/loops list`, `/loops stop <id>`, `/loops delete <id>`
-- Runs while the shell is open; `/loops service install` keeps it running when it is not
-```
+> Call `summarize_github_pr_status(owner="<owner>", repo="<repo>",
+> state="open", include_checks=true)`. Take the first PR in the returned list
+> with a failing check and call `fix_github_pr_ci(owner="<owner>",
+> repo="<repo>", pr_number=<that number>)` exactly once; a refusal consumes
+> this tick's attempt. If no PR is failing, report that no repair was needed. Reply
+> with the PR link, the fix commit, and the final check state.
 
-Do not ask about the cadence: the card says how to change it. If the
-observation reports an error, relay it in one line and stop.
+Complete when the output confirms `Mode: agent` and the task id is recorded.
 
-Complete when `slash_invoke` has returned in this turn and your reply
-contains the card.
+### Step 7. Run the first tick
 
-### 7. Ask about cleanup
+`slash_invoke` `{"command": "/cron", "args": ["run", "<id>"]}`. It blocks
+until the repair finishes and prints the tick's report; that report is the
+detection and repair evidence. Follow with one
+`{"command": "/cron", "args": ["logs", "<id>", "--limit", "1"]}` only if the
+run output did not include the status.
 
-Skip when the user declined the demo in step 3. Otherwise call
-`ask_user_choice` with the title `Delete the demo repository now?` and these
-options:
+Skip this step when Step 3 found no failing PR.
 
-- Yes, delete the demo repository and its local clone
-- Keep it for now
+Read the work outcome separately from delivery: a delivered report can describe
+a blocked or failed repair. If delivery failed after work completed, retry with
+`/cron run <id> --failed-only`; this resends the retained report.
 
-Complete when the answer has arrived as a message. On `Keep it for now`, say
-in one line that `<login>/opensre-ci-fix-demo` and `~/opensre-ci-fix-demo`
-remain, mark step 8 `completed` as skipped, and conclude.
+Complete when the tick reports a verified fix commit, a no-op, or a refusal
+with its reason. Failed or blocked work ends this step too: record the reason
+and continue to verification and cleanup.
 
-### 8. Delete the demo repository
+### Step 8. Verify the repair
 
-Call `github_cli(args=["repo", "delete", "<login>/opensre-ci-fix-demo", "--yes"])`.
-If it fails because the token lacks the `delete_repo` scope, tell the user to
-run `gh auth refresh -h github.com -s delete_repo` and then
-`gh repo delete <login>/opensre-ci-fix-demo --yes`, and continue.
+One call: `github_cli` `["pr", "view", "<n>", "--json",
+"headRefOid,commits,statusCheckRollup"]`. The head must be a new commit by
+the fix, every rollup entry `SUCCESS`, and the test file untouched in the fix
+commit's file list. Do not run the tests locally, do not fetch the same
+state through a second tool, and do not clone the repository again.
 
-Then call `shell_run` with `rm -rf "$HOME/opensre-ci-fix-demo"`.
+If a check is still running, wait 20 seconds once and repeat the same call.
 
-When the demo repository is also the watched repository (no repository was
-chosen in step 2), the loop from step 6 has nothing left to watch: call
-`slash_invoke(command="/loops", args=["delete", "<id>"])` as well and say
-that the loop was removed.
+Complete when the head commit's checks pass; otherwise record the blocker.
 
-Complete when the delete calls have returned in this turn. Reply in one
-line with what was removed, and conclude.
+### Step 9. Clean up (demo only)
+
+In this order, no verification calls in between:
+
+1. `write_demo_evidence(repo, pr_number, loop_id, outcome, failed_run_id,
+   fix_commit, passing_run_id, blocker)` saves evidence under
+   `~/.opensre/demo-results/` and removes the owned temp checkout. Omit
+   unavailable IDs for failed or blocked demos. Record the returned evidence
+   path and `checkout_removed` status. If saving fails before cleanup, the
+   helper retains the checkout. Continue to loop removal after any failure.
+2. Always call `slash_invoke` `{"command": "/cron", "args": ["remove", "<id>"]}`,
+   including after an evidence-tool failure. The
+   demo repository is never deleted; report that the repository remains.
+3. `slash_invoke` `{"command": "/cron", "args": ["list"]}` as the single
+   verification.
+
+For an existing repository the loop stays; only record its id.
+
+Complete when the loop is gone and remaining resources are documented.
+
+### Step 10. Report
+
+Respond with the report as Markdown, linking the PR inline: PR, failed
+run id, loop id, fix commit, final check result, cleanup status, evidence
+path.
+
+Claim success only when detection, scheduled repair, passing checks,
+and (for the demo) loop removal are all evidenced.
+
+Complete when the report has been shown to the user as Markdown text.
+
+### Step 11. Offer the follow-up question
+
+After the report is shown, one `ask_user_choice`: "Set up monitoring for a
+real repository" / "No thanks". Remote continuous monitoring is a separate
+task with its own scope; it is not a condition of completion.
+
+Complete when the menu has been offered.

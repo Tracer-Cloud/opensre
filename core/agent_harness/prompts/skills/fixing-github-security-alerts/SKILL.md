@@ -1,21 +1,19 @@
 ---
 name: fixing-github-security-alerts
 description: >-
-  Remediate GitHub security / Dependabot / CodeQL / code-quality alerts via
-  fix_github_security_alert
+  Remediate GitHub security / Dependabot / CodeQL / code-quality alerts via fix_github_security_alert
 metadata:
   owner: Vaibhav
-  last_changed_by: Vincent
-  last_changed_at: 2026-09-09
+  last_changed_by: Jan
+  last_changed_at: 2026-09-12
   usecases:
-    - Remediate Dependabot, CodeQL, and code-quality alerts and raise a pull request
-    - Fix the findings behind a security alert URL or a security and quality page URL
+  - For repository maintainers remediating Dependabot, CodeQL, or code-quality alerts.
+  - For users requesting a fix from an exact security alert or repository security page.
   requires:
-    - GitHub account with write access to the target repository
-    - GitHub token usable by OpenSRE with security-events read access
-    - Installed and authenticated coding agent
-  type: repair
-  version: "1.0"
+  - GitHub authentication with repository write access and security-events read access.
+  - An installed and authenticated coding agent.
+  - The fix_github_security_alert tool and its supported local execution environment.
+  version: '1.0'
 ---
 
 # GitHub security and quality fix

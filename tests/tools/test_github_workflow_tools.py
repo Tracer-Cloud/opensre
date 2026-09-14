@@ -5,6 +5,8 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import patch
 
+import pytest
+
 from core.llm.types import ToolCall
 from core.tool.contracts import RegisteredTool
 from core.tool.execution import (
@@ -58,6 +60,33 @@ class TestExecuteGitHubIssueMutationContract(BaseToolContract):
         return _registered_tool(execute_github_issue_mutation)
 
 
+def test_pr_discovery_accepts_explicit_repo_without_configured_default() -> None:
+    tool: RegisteredTool = _registered_tool(summarize_github_pr_status)
+    sources = {"github": {"connection_verified": True, "github_token": "tok"}}
+
+    with (
+        patch("integrations.github.tools.work_status.resolve_github_token", return_value=""),
+        patch.object(GitHubRestClient, "paginate", return_value=[]) as paginate,
+    ):
+        assert tool.is_available(sources)
+        assert not tool.is_available({})
+        result = execute_tool_calls(
+            [
+                ToolCall(
+                    id="discover",
+                    name=tool.name,
+                    input={"owner": "o", "repo": "r", "state": "open"},
+                )
+            ],
+            [tool],
+            sources,
+        )[0]
+
+    assert result.is_error is False
+    assert result.details["available"] is True
+    assert paginate.call_args.args[0] == "/repos/o/r/pulls"
+
+
 def test_list_github_work_items_classifies_taken_and_up_for_grabs() -> None:
     issues = [
         {
@@ -90,7 +119,10 @@ def test_list_github_work_items_classifies_taken_and_up_for_grabs() -> None:
     assert [item["work_status"] for item in result["items"]] == ["taken", "up_for_grabs"]
 
 
-def test_summarize_github_pr_status_uses_detail_mergeability_not_list_nulls() -> None:
+@pytest.mark.parametrize("total_checks", [1, 2])
+def test_summarize_github_pr_status_uses_detail_mergeability_not_list_nulls(
+    total_checks: int,
+) -> None:
     list_pr = {
         "number": 10,
         "title": "Ready PR",
@@ -109,7 +141,8 @@ def test_summarize_github_pr_status_uses_detail_mergeability_not_list_nulls() ->
             return detail_pr
         if path == "/repos/o/r/commits/abc/check-runs":
             return {
-                "check_runs": [{"name": "test", "conclusion": "success", "status": "completed"}]
+                "total_count": total_checks,
+                "check_runs": [{"name": "test", "conclusion": "success", "status": "completed"}],
             }
         raise AssertionError((method, path))
 
@@ -121,6 +154,10 @@ def test_summarize_github_pr_status_uses_detail_mergeability_not_list_nulls() ->
 
     assert result["counts"]["mergeable"] == 1
     assert result["pull_requests"][0]["mergeability"] == "mergeable"
+    if total_checks == 1:
+        assert result["work_outcome"]["status"] == "noop"
+    else:
+        assert "work_outcome" not in result
 
 
 def test_summarize_github_pr_status_reports_unknown_mergeability() -> None:

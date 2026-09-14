@@ -1,23 +1,21 @@
 ---
 name: fixing-github-ci
 description: >-
-  Fix failing GitHub CI / Actions checks via fix_github_pr_ci and push to the
-  existing PR head, or fix a branch's failing CI via a linked repair worktree
+  Fix failing GitHub CI / Actions checks via fix_github_pr_ci and push to the existing PR head, or fix
+  a branch's failing CI via a linked repair worktree
 metadata:
   owner: Vaibhav
-  last_changed_by: Vincent
-  last_changed_at: 2026-09-09
+  last_changed_by: Jan
+  last_changed_at: 2026-09-13
   usecases:
-    - Fix failing CI checks on a pull request and push to its head branch
-    - Fix failing CI on a branch such as main through a linked repair worktree
-    - Repair the checks of a pull request given by URL or owner/repo#number
+  - For repository contributors repairing failed CI on a pull request.
+  - For maintainers repairing a named branch through a linked local worktree.
   requires:
-    - GitHub account with write access to the target repository
-    - Local checkout whose origin matches the target repository
-    - GitHub token usable by OpenSRE
-    - Installed and authenticated coding agent
-  type: repair
-  version: "1.0"
+  - GitHub authentication with write access to the target repository.
+  - A local checkout whose origin matches the target repository.
+  - An installed and authenticated coding agent.
+  - The fix_github_pr_ci tool and its supported local execution environment.
+  version: '1.1'
 ---
 
 # GitHub CI fix
@@ -59,10 +57,11 @@ branch.
   failing-check log inspection, fix execution, branch safety, commit, and push.
 - The tool pushes to the existing PR head branch after approval. Do not ask the
   user whether to open a new PR.
-- A PR that conflicts with its base branch (GitHub shows it as not mergeable
-  and starts no checks) is handled by the tool: it merges the base branch into
-  the PR branch, resolves conflicts, regenerates lockfiles, pushes, and waits
-  for the checks. Never run `git merge`, `git rebase`, or conflict edits around
+- A PR that is behind its base branch, or conflicts with it (GitHub shows it
+  as not mergeable and starts no checks), is handled by the tool: it merges the
+  base branch into the PR branch, resolves conflicts, regenerates lockfiles,
+  pushes, and waits for the checks — also when the conflict only appears after
+  its own push. Never run `git merge`, `git rebase`, or conflict edits around
   it. If it reports blocked files, relay that one line and stop.
 - For branch targets such as `main`, the tool creates a separate linked git
   worktree, commits on a fresh `opensre/ci-fix-*` branch, and pushes that branch.

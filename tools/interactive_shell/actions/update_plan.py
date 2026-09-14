@@ -4,39 +4,27 @@ from __future__ import annotations
 
 from typing import Any
 
+from core.agent_harness.spi.grounding import list_action_skills
 from core.agent_harness.spi.handoff import parse_ask_user_answers
 from core.agent_harness.spi.task_plan import (
+    PLAN_ITEM_SCHEMA,
     TaskPlan,
     apply_update_plan_host_policy,
     apply_update_plan_session,
     demote_unevidenced_completions,
     format_task_plan_plain,
+    format_update_plan_instruction,
     mark_plan_written,
     parse_task_plan,
     plan_evidence_available,
+    record_blocked_this_turn,
     task_plan_to_payload,
 )
 from core.agent_harness.tools import ActionToolScope, execute_with_action_context
-from core.domain.types.tools import ToolSurface
+from core.domain.types.tools import ToolRole, ToolSurface
 from core.tool import RegisteredTool, SideEffectLevel
 from core.tool_framework.utils import object_schema, string_property
 from tools.interactive_shell.action_names import ActionToolName
-
-_PLAN_ITEM_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "step": string_property(
-            description="One short observable outcome (about 5–10 words).",
-            min_length=1,
-        ),
-        "status": string_property(
-            description="One of: pending, in_progress, completed.",
-            enum=("pending", "in_progress", "completed"),
-        ),
-    },
-    "required": ["step", "status"],
-    "additionalProperties": False,
-}
 
 
 def execute_update_plan_tool(args: dict[str, Any], ctx: ActionToolScope) -> dict[str, Any]:
@@ -47,43 +35,37 @@ def execute_update_plan_tool(args: dict[str, Any], ctx: ActionToolScope) -> dict
     prior = getattr(ctx.session, "task_plan", None)
     if not isinstance(prior, TaskPlan):
         prior = None
-    plan, demoted = demote_unevidenced_completions(
+    checked = demote_unevidenced_completions(
         plan,
         prior=prior,
         evidence=plan_evidence_available(ctx.session, prior=prior, turn_user_message=turn_text),
     )
     plan, plan_only_requested = apply_update_plan_host_policy(
-        plan,
+        checked.plan,
         plan_only_requested=bool(args.get("plan_only")),
         turn_user_message=turn_text,
         session=ctx.session,
     )
     apply_update_plan_session(ctx.session, plan, plan_only=plan_only_requested)
+    active_skill = getattr(ctx.session, "active_skill", None)
+    if (
+        plan.is_settled
+        and active_skill
+        and any(skill.name == active_skill and skill.script_tools for skill in list_action_skills())
+    ):
+        ctx.session.active_skill = None
     mark_plan_written(ctx.session)
+    record_blocked_this_turn(ctx.session, checked.newly_blocked)
     payload = task_plan_to_payload(plan)
     payload["ok"] = True
     payload["summary"] = format_task_plan_plain(plan)
-    payload["instruction"] = (
-        "Plan stored. Keep it current with update_plan; the CURRENT PLAN "
-        "block is the durable record when older messages drop."
+    payload["instruction"] = format_update_plan_instruction(
+        plan,
+        plan_only=plan_only_requested,
+        ask_user_turn=bool(parse_ask_user_answers(turn_text)),
+        demoted=checked.demoted,
+        closed_unverified=checked.closed_unverified,
     )
-    if plan_only_requested:
-        payload["instruction"] += " Plan-only: leave every step pending until the user says go."
-    elif parse_ask_user_answers(turn_text) and not plan.all_pending:
-        payload["instruction"] += (
-            " Execution is authorized: the first step is in_progress — run it now."
-        )
-    elif not plan.all_completed:
-        payload["instruction"] += (
-            " Continue the in_progress step now — do not end the turn while pending steps remain."
-        )
-    if demoted:
-        names = "; ".join(demoted)
-        payload["instruction"] += (
-            f" Reset to pending — marked completed before any tool ran for them: {names}."
-            " A step is completed only after its work returned while it was in_progress:"
-            " set it in_progress, run the work, then mark it completed."
-        )
     return payload
 
 
@@ -106,8 +88,9 @@ update_plan_tool = RegisteredTool(
     name=ActionToolName.UPDATE_PLAN,
     description=(
         "Create or revise the live execution plan for this workload, and mark "
-        "steps pending, in_progress, or completed. Call this BEFORE executing "
-        "any multi-step workload. Include verification before declaring the task complete. "
+        "steps pending, in_progress, completed, or blocked. "
+        "Mark a step blocked (with the blocker in explanation) when the runtime cannot "
+        "perform it; never mark undone work completed. "
         "At most one step may be in_progress. Not for durable human todos "
         "(use work_task_*) and not for /goal keep-going."
     ),
@@ -137,7 +120,7 @@ update_plan_tool = RegisteredTool(
             "plan": {
                 "type": "array",
                 "description": "Ordered steps. At most one status may be in_progress.",
-                "items": _PLAN_ITEM_SCHEMA,
+                "items": PLAN_ITEM_SCHEMA,
                 "minItems": 2,
             },
             "plan_only": {
@@ -154,7 +137,7 @@ update_plan_tool = RegisteredTool(
     ),
     source="interactive_shell",
     surfaces=(ToolSurface.ACTION,),
-    parallel_safe=False,
+    role=ToolRole.BOOKKEEPING,
     accepts_runtime_context=True,
     run=run_update_plan,
     tags=("safe", "fast", "no-credentials"),

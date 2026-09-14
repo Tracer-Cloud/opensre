@@ -171,6 +171,9 @@ class TurnSnapshot:
     active_tools: tuple[RuntimeTool, ...] = ()
     """Subset of tools offered to the model for this turn."""
 
+    skill_discovery_enabled: bool = True
+    """Whether the host allows workflow discovery for this turn."""
+
     active_skill: str | None = None
     """Skill whose question this turn answers, independent of transcript retention."""
 
@@ -264,6 +267,7 @@ class TurnSnapshot:
             system_prompt=getattr(runtime_input, "system_prompt", ""),
             available_tools=tuple(getattr(runtime_input, "available_tools", ())),
             active_tools=tuple(getattr(runtime_input, "active_tools", ())),
+            skill_discovery_enabled=bool(getattr(session, "skill_discovery_enabled", True)),
             active_skill=getattr(session, "active_skill", None),
             resolved_integrations=dict(getattr(runtime_input, "resolved_integrations", {}) or {}),
             tool_resources=dict(getattr(runtime_input, "tool_resources", {}) or {}),

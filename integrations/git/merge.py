@@ -7,7 +7,12 @@ from collections.abc import Sequence
 from dataclasses import dataclass
 
 from integrations.git.errors import COMMIT_FAILED, MERGE_FAILED, GitCommandError
-from integrations.git.local import _run_git, _with_opensre_coauthor
+from integrations.git.local import (
+    _remote_https_base,
+    _run_git,
+    _token_auth_env,
+    _with_opensre_coauthor,
+)
 
 # ``git ls-files -u`` stage numbers: 1 = merge base, 2 = ours (HEAD), 3 = theirs.
 _STAGE_OURS = "2"
@@ -23,9 +28,15 @@ class ConflictedPath:
     description: str
 
 
-def fetch_remote_branch(workspace: str, branch: str, *, remote: str = "origin") -> None:
+def fetch_remote_branch(
+    workspace: str, branch: str, *, remote: str = "origin", token: str | None = None
+) -> None:
     """Update ``refs/remotes/<remote>/<branch>`` without touching local branches."""
-    result = _run_git(workspace, "fetch", remote, f"{branch}:refs/remotes/{remote}/{branch}")
+    base = _remote_https_base(workspace, remote) if token else ""
+    env = _token_auth_env(token, base) if token and base else None
+    result = _run_git(
+        workspace, "fetch", remote, f"refs/heads/{branch}:refs/remotes/{remote}/{branch}", env=env
+    )
     if result.returncode != 0:
         raise GitCommandError(
             MERGE_FAILED,
@@ -153,6 +164,31 @@ def is_ancestor(workspace: str, ancestor: str, descendant: str) -> bool:
     return result.returncode == 0
 
 
+def merge_commit_edits(workspace: str, merge_sha: str) -> list[str]:
+    """Paths a merge commit changed relative to *both* parents.
+
+    A file only one side touched equals that parent's version, so the set is the
+    hand edits made while resolving the merge (conflict resolutions and anything
+    else the resolver changed).
+    """
+    edited: set[str] | None = None
+    for parent in ("^1", "^2"):
+        result = _run_git(
+            workspace,
+            "diff",
+            "--name-only",
+            "--no-renames",
+            "-z",
+            f"{merge_sha}{parent}",
+            merge_sha,
+        )
+        if result.returncode != 0:
+            raise GitCommandError(MERGE_FAILED, "Could not inspect the merge commit's edits.")
+        paths = {path for path in result.stdout.split("\0") if path}
+        edited = paths if edited is None else edited & paths
+    return sorted(edited or ())
+
+
 __all__ = [
     "ConflictedPath",
     "abort_merge",
@@ -161,6 +197,7 @@ __all__ = [
     "fetch_remote_branch",
     "head_sha",
     "is_ancestor",
+    "merge_commit_edits",
     "merge_in_progress",
     "merge_ref",
     "paths_with_conflict_markers",

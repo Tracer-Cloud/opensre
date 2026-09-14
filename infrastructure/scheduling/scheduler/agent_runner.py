@@ -13,13 +13,15 @@ from __future__ import annotations
 
 from typing import Any, Protocol
 
+from infrastructure.scheduling.scheduler.types import TaskReport
+
 AgentPayload = dict[str, Any]
 
 
 class AgentRunner(Protocol):
     """Callable that runs a headless agent turn and returns report text."""
 
-    def __call__(self, payload: AgentPayload) -> str:
+    def __call__(self, payload: AgentPayload) -> TaskReport:
         """Run the agent for ``payload`` and return the formatted report."""
 
 

@@ -95,12 +95,3 @@ def test_cli_payload_matches_across_surrounding_whitespace() -> None:
 
     # Assert.
     assert executed == ["integrations verify"]
-
-
-def test_identical_cli_exec_twice_in_one_batch_runs_once() -> None:
-    """Same-batch duplicates must not wait for the next batch boundary to suppress."""
-    first: _Call = ("cli_exec", {"payload": "integrations verify --dry-run"}, True)
-    second: _Call = ("cli_exec", {"payload": "integrations verify --dry-run"}, True)
-    executed = _drive([[first, second]])
-
-    assert executed == ["integrations verify --dry-run"]

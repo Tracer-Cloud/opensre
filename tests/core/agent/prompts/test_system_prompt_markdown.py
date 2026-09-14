@@ -123,3 +123,15 @@ def test_counts_come_from_a_parser_not_a_pattern() -> None:
     assert "Count by parsing, not by pattern" in shell_section
     assert "answers a different question" in shell_section
     assert "say which field you could not read" in shell_section
+
+
+def test_a_requested_plan_is_written_even_when_its_marks_are_declined() -> None:
+    """Asked to tick undone steps, the model refused in prose and no checklist appeared."""
+    collapsed = " ".join(_SYSTEM_PROMPT_BASE.split())
+    assert "write it with `update_plan` even when you must decline the marks" in collapsed
+    assert "The checklist with its statuses is the answer" in collapsed
+
+
+def test_a_blocked_step_is_resolved_with_the_user_not_skipped() -> None:
+    collapsed = " ".join(_SYSTEM_PROMPT_BASE.split())
+    assert "A blocked step is resolved with the user, not skipped" in collapsed

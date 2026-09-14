@@ -209,6 +209,7 @@ class AgentSession:
         logger: logging.Logger | None = None,
         is_tty: bool | None = None,
         unattended: bool = False,
+        tool_hooks: ToolExecutionHooks | None = None,
     ) -> TurnResult:
         """Run exactly one turn for ``message`` on a throwaway session.
 
@@ -224,6 +225,7 @@ class AgentSession:
             logger=logger,
             is_tty=is_tty,
             unattended=unattended,
+            tool_hooks=tool_hooks,
         ).chat(message)
 
     def startup(self) -> SessionStartupResult:

@@ -81,7 +81,6 @@ llm_set_provider_tool = RegisteredTool(
     source="interactive_shell",
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
-    parallel_safe=False,
     accepts_runtime_context=True,
     run=run_llm_provider,
     is_available=lambda sources: capability_available_from_sources(sources, "llm_provider"),

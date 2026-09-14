@@ -18,6 +18,7 @@ import re
 import tempfile
 from pathlib import Path
 
+from config.constants.ci_fixes import CI_FIX_LEDGER_PATH_ENV
 from config.constants.memory import OPENSRE_MEMORY_DIR_ENV
 from config.constants.organization import organization_id
 from config.constants.tenancy import INTEGRATIONS_STORE_PATH_ENV
@@ -180,6 +181,13 @@ def session_home() -> Path:
     return org_root / USERS_DIR_NAME / actor_id
 
 
+def ci_fix_ledger_path() -> Path:
+    """CI repair ledger shared by this deployment's shell and organization turns."""
+    root = deployment_home()
+    override = os.getenv(CI_FIX_LEDGER_PATH_ENV, "").strip()
+    return Path(override).expanduser() if override else root / "ci_fixes.json"
+
+
 def integrations_store_path() -> Path:
     """Integrations store path (shared by every member of the org).
 
@@ -235,6 +243,7 @@ __all__ = [
     "ContextRootOwnerMismatchError",
     "UnsafePathSegmentError",
     "deployment_home",
+    "ci_fix_ledger_path",
     "ensure_opensre_tmp_dir",
     "get_memory_dir",
     "get_store_path",

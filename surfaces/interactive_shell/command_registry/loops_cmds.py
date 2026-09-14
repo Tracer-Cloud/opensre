@@ -25,6 +25,7 @@ _LOOPS_FIRST_ARGS: tuple[tuple[str, str], ...] = (
     ("list", "all active and draft loops"),
     ("active", "only enabled loops"),
     ("all", "active and draft loops"),
+    ("show", "full report, run history, and configuration"),
     ("add", "create a recurring prompt loop"),
     ("run", "execute one loop immediately"),
     ("stop", "disable a loop without deleting it"),
@@ -38,7 +39,8 @@ _LOOPS_FIRST_ARGS: tuple[tuple[str, str], ...] = (
 _USAGE = (
     "/loops",
     "/loops active",
-    "/loops add --name NAME --time HH:MM --prompt PROMPT [--run-now]",
+    "/loops show [NAME_OR_ID] [--run RUN]",
+    "/loops add --name NAME --time HH:MM --prompt PROMPT [--mode report|agent] [--run-now]",
     "/loops run LOOP_ID",
     "/loops stop LOOP_ID",
     "/loops start LOOP_ID",
@@ -62,6 +64,7 @@ class _AddLoopArgs:
     telegram_chat_id: str = ""
     slack_chat_id: str = ""
     window_hours: int = 24
+    mode: str = ""
 
 
 def _channel_label(channel: str) -> str:
@@ -70,10 +73,6 @@ def _channel_label(channel: str) -> str:
 
 def _channels_label(channels: tuple[str, ...]) -> str:
     return ", ".join(_channel_label(channel) for channel in channels)
-
-
-def _schedule_label(cron: str, timezone: str) -> str:
-    return f"{cron} ({timezone})"
 
 
 def _short(text: str, *, max_chars: int = 120) -> str:
@@ -86,9 +85,10 @@ def _short(text: str, *, max_chars: int = 120) -> str:
 def _loops_usage_error() -> str:
     return (
         f"[{ERROR}]usage:[/] "
-        "/loops [list|active|all|add|run|stop|start|delete|next|messages|service]\n"
+        "/loops [list|active|all|show|add|run|stop|start|delete|next|messages|service]\n"
         f'[{DIM}]example:[/] /loops add --name "Morning ops" --time 08:30 '
-        '--prompt "Check open incidents and summarize risk" --run-now'
+        '--prompt "Check open incidents and summarize risk" --run-now\n'
+        f"[{DIM}]add --mode agent lets the tick act with tools instead of only reporting[/]"
     )
 
 
@@ -139,6 +139,8 @@ def _parse_add_args(args: list[str]) -> tuple[_AddLoopArgs | None, str]:
                     parsed.window_hours = int(value)
                 except ValueError:
                     return None, "--window must be an integer"
+        elif flag == "--mode":
+            parsed.mode, index, error = _take_flag_value(args, index, flag)
         elif flag == "--weekdays":
             parsed.weekdays = True
             error = ""
@@ -179,6 +181,7 @@ def _validate_loops_args(args: list[str]) -> str | None:
         "resume",
         "run",
         "service",
+        "show",
         "start",
         "stop",
     }:
@@ -191,6 +194,10 @@ def _cmd_loops(session: Session, console: Console, args: list[str]) -> bool:
     rest = args[1:] if args else []
     if sub in {"list", "all", "active"}:
         return _cmd_loops_list(session, console, args)
+    if sub == "show":
+        from surfaces.interactive_shell.command_registry.loop_show import show_loop
+
+        return show_loop(session, console, rest)
     if sub == "add":
         return _cmd_loops_add(session, console, rest)
     if sub == "run":
@@ -213,7 +220,9 @@ def _cmd_loops(session: Session, console: Console, args: list[str]) -> bool:
 
 
 def _cmd_loops_list(session: Session, console: Console, args: list[str]) -> bool:  # noqa: ARG001
+    from infrastructure.scheduling.scheduler.loop_results import latest_loop_runs
     from infrastructure.scheduling.scheduler.loops import list_loop_summaries
+    from surfaces.interactive_shell.ui.loops import render_loops
 
     sub = args[0].lower() if args else "list"
     include_disabled = sub != "active"
@@ -232,37 +241,7 @@ def _cmd_loops_list(session: Session, console: Console, args: list[str]) -> bool
             )
         return True
 
-    table = repl_table(title="Loops\n", title_style=BOLD_BRAND)
-    table.add_column("id", style="bold")
-    table.add_column("loop")
-    table.add_column("status")
-    table.add_column("time", style=DIM)
-    table.add_column("schedule", style=DIM, overflow="fold")
-    table.add_column("next", style=DIM)
-    table.add_column("channels", style=DIM, overflow="fold")
-    table.add_column("last run", style=DIM)
-
-    for loop in loops:
-        if loop.schedule_error:
-            status_style = ERROR
-            status = "invalid"
-            next_run = "-"
-        else:
-            status_style = HIGHLIGHT if loop.enabled else WARNING
-            status = loop.status
-            next_run = format_repl_timestamp(loop.next_run, style="utc")
-        table.add_row(
-            loop.id[:12],
-            escape(loop.name),
-            f"[{status_style}]{status}[/]",
-            escape(loop.time or "-"),
-            escape(_schedule_label(loop.cron, loop.timezone)),
-            next_run,
-            escape(_channels_label(loop.channels)),
-            format_repl_timestamp(loop.last_run, style="utc"),
-        )
-
-    print_repl_table(console, table)
+    render_loops(console, loops, latest_loop_runs(loops))
     return True
 
 
@@ -287,6 +266,7 @@ def _cmd_loops_add(session: Session, console: Console, args: list[str]) -> bool:
             telegram_chat_id=parsed.telegram_chat_id,
             slack_chat_id=parsed.slack_chat_id,
             window_hours=parsed.window_hours,
+            mode=parsed.mode,
         )
     except ValueError as exc:
         console.print(f"[{ERROR}]could not add loop:[/] {escape(str(exc))}")

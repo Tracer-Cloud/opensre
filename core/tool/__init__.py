@@ -8,6 +8,7 @@ from core.tool.contracts import (
     RegisteredTool,
     RuntimeTool,
     SideEffectLevel,
+    ToolRole,
     ToolSurface,
 )
 from core.tool.execution import (
@@ -18,6 +19,7 @@ from core.tool.execution import (
     availability_view,
     report_run_error,
 )
+from core.tool.live_catalog import LiveToolCatalog
 from core.tool.registry import ToolRegistry, normalize_surfaces
 
 __all__ = [
@@ -26,6 +28,7 @@ __all__ = [
     "BaseTool",
     "BeforeToolCallResult",
     "EvidenceType",
+    "LiveToolCatalog",
     "RegisteredTool",
     "RuntimeTool",
     "SideEffectLevel",
@@ -33,6 +36,7 @@ __all__ = [
     "ToolExecutionRequest",
     "ToolExecutionResult",
     "ToolRegistry",
+    "ToolRole",
     "ToolSurface",
     "availability_view",
     "normalize_surfaces",

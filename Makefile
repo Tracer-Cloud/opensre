@@ -9,7 +9,7 @@ export
 	install-gateway-on-new-server destroy-gateway-on-new-server \
 	test test-full test-cov test-scope test-cli-smoke test-grafana \
 	clean lint format-check format typecheck vulture \
-	check-imports check-cycles check-layers check-imports-strict check-layers-strict check help
+	check-imports check-cycles check-layers check-imports-strict check-layers-strict check pre-push install-hooks help
 
 
 ifneq ($(wildcard .venv/bin/python),)
@@ -41,6 +41,7 @@ PYTHON_SOURCE_PATHS := bootstrap config core gateway integrations infrastructure
 # Create venv and install dependencies (requires https://docs.astral.sh/uv/)
 install:
 	uv sync --frozen --extra dev
+	$(MAKE) install-hooks
 	uv run python -m infrastructure.analytics.install
 
 build:
@@ -112,7 +113,7 @@ test-cov:
 # Run only the tests relevant to files changed on this branch (local use only).
 # Pass ARGS=--dry-run to preview the command without executing it.
 test-scope:
-	$(PYTHON) .github/ci/run_test_scope.py --base main $(ARGS)
+	$(PYTHON) .github/ci/run_test_scope.py $(ARGS)
 
 # Run the CLI smoke suite against the installed opensre entrypoint.
 test-cli-smoke:
@@ -133,19 +134,19 @@ clean:
 
 # Lint code
 lint:
-	$(PYTHON) -m ruff check $(PYTHON_SOURCE_PATHS) tests/
+	$(PYTHON) .github/ci/run_checks.py --check lint
 
 # Check formatting (read-only; CI uses this)
 format-check:
-	$(PYTHON) -m ruff format --check $(PYTHON_SOURCE_PATHS) tests/
+	$(PYTHON) .github/ci/run_checks.py --check format
 
 # Format code
 format:
-	$(PYTHON) -m ruff format $(PYTHON_SOURCE_PATHS) tests/
+	$(PYTHON) -m ruff format $(PYTHON_SOURCE_PATHS) tests/ .github/ci/
 
 # Type check
 typecheck:
-	$(PYTHON) -m mypy $(PYTHON_SOURCE_PATHS)
+	$(PYTHON) .github/ci/run_checks.py --check types
 
 # Dead-code scan (reads [tool.vulture] from pyproject.toml; advisory only, not in CI)
 vulture:
@@ -164,8 +165,14 @@ check-imports-strict:
 
 check-layers-strict: check-imports-strict
 
-# Run all checks (lint + format read-only check + types + imports + full tests; mirrors CI quality gates)
-check: lint format-check typecheck check-imports test-full
+# Run the repository pre-push gate (full tests remain a separate explicit target).
+check: pre-push
+
+pre-push:
+	uv run --frozen --extra dev python .github/ci/run_checks.py --scope $(ARGS)
+
+install-hooks:
+	uv run --no-sync python .github/ci/install_hooks.py
 
 # Show help
 help:
@@ -207,4 +214,5 @@ help:
 	@echo "  make typecheck       - Type check with mypy"
 	@echo "  make check-imports   - Import cycles, layers, and direct-edge checks"
 	@echo "  make check-layers-strict - Full transitive layer contracts (.importlinter.strict)"
-	@echo "  make check           - Run all checks"
+	@echo "  make install-hooks   - Install blocking push validation in this checkout"
+	@echo "  make pre-push        - Shared quality checks and affected tests (60-second target)"

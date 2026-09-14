@@ -75,7 +75,6 @@ def _work_items_available(_sources: dict[str, dict[str, Any]]) -> bool:
     tags=("safe", "fast", "no-credentials"),
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
-    parallel_safe=False,
     accepts_runtime_context=True,
     is_available=_work_items_available,
     input_schema={
@@ -248,7 +247,6 @@ def work_task_list(
     tags=("safe", "fast", "no-credentials"),
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
-    parallel_safe=False,
     is_available=_work_items_available,
     input_schema={
         "type": "object",
@@ -284,7 +282,6 @@ def work_task_complete(selectors: list[str]) -> dict[str, Any]:
     tags=("safe", "fast", "no-credentials"),
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
-    parallel_safe=False,
     accepts_runtime_context=True,
     is_available=_work_items_available,
     input_schema={
@@ -486,7 +483,6 @@ def work_task_prioritize(
     tags=("safe", "no-credentials"),
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
-    parallel_safe=False,
     accepts_runtime_context=True,
     is_available=_work_items_available,
     input_schema={

@@ -128,9 +128,8 @@ def wait_for_pr_checks(
         else:
             workflows_complete, workflow_signature = False, ()
         external_checks_registered = required_external_checks.issubset(set(last_names))
-        registration_complete = (
-            expected_head_seen_at is not None
-            and now - expected_head_seen_at >= max(0, registration_seconds)
+        registration_complete = expected_head_seen_at is not None and (
+            now - expected_head_seen_at >= max(0, registration_seconds)
         )
         if (
             head_sha == expected_head_sha
@@ -149,7 +148,7 @@ def wait_for_pr_checks(
                     failing = tuple(
                         _check_name(check)
                         for check in checks
-                        if _check_failed(check, expected_skips=expected_skips)
+                        if check_failed(check, expected_skips=expected_skips)
                     )
                     return CheckVerification(
                         state=CheckState.FAILED if failing else CheckState.PASSED,
@@ -202,8 +201,8 @@ def wait_for_branch_checks(
         if runs and first_seen_at is None:
             first_seen_at = now
         # Give late workflows time to register after the first run appears.
-        registration_complete = first_seen_at is not None and now - first_seen_at >= max(
-            0, registration_seconds
+        registration_complete = first_seen_at is not None and (
+            now - first_seen_at >= max(0, registration_seconds)
         )
         all_completed = bool(runs) and all(
             str(run.get("status") or "").strip().lower() == _WORKFLOW_RUN_COMPLETED for run in runs
@@ -411,7 +410,8 @@ def _check_signature(checks: list[dict[str, Any]]) -> tuple[str, ...]:
     return tuple(sorted(signatures))
 
 
-def _check_failed(check: dict[str, Any], *, expected_skips: set[str]) -> bool:
+def check_failed(check: dict[str, Any], *, expected_skips: set[str]) -> bool:
+    """Classify a GitHub check or commit status, allowing only explicitly expected skips."""
     conclusion = str(check.get("conclusion") or "").strip().upper()
     state = str(check.get("state") or "").strip().upper()
     if conclusion == _SKIPPED_CONCLUSION:
@@ -434,6 +434,7 @@ def _check_is_terminal(check: dict[str, Any]) -> bool:
 __all__ = [
     "CheckState",
     "CheckVerification",
+    "check_failed",
     "DEFAULT_CHECK_WAIT_SECONDS",
     "DEFAULT_HEAD_PROPAGATION_SECONDS",
     "DEFAULT_POLL_INTERVAL_SECONDS",

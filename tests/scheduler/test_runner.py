@@ -8,6 +8,7 @@ import pytest
 
 from config.constants.turn_concurrency import OPENSRE_SCHEDULER_MAX_CONCURRENT_RUNS_ENV
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_PROMPT_PARAM
+from infrastructure.scheduling.scheduler.outcomes import WorkOutcome, WorkStatus
 from infrastructure.scheduling.scheduler.runner import (
     _build_scheduler,
     _compute_fire_time,
@@ -337,6 +338,7 @@ class TestTaskCompletion:
             task_id="task-1",
             fire_time="2026-01-01T09:00Z",
             status=status,
+            work_outcome=WorkOutcome(status=WorkStatus.SUCCEEDED),
             targets=targets,
         )
         completed: list[str] = []
@@ -613,6 +615,7 @@ class TestRunTaskNow:
                 task_id=task.id,
                 fire_time=fire_time,
                 status=TaskStatus.SUCCESS,
+                work_outcome=WorkOutcome(status=WorkStatus.SUCCEEDED),
                 targets=targets,
             )
             result = run_task_now("run_now_test", real_runners())
@@ -670,6 +673,8 @@ class TestRunTaskNow:
             task_id="run_now_partial",
             fire_time="2026-01-01T09:00",
             status=TaskStatus.SUCCESS,
+            report="Retained result",
+            work_outcome=WorkOutcome(status=WorkStatus.SUCCEEDED),
             targets=(
                 DeliveryOutcome(provider=Provider.INTERACTIVE_SHELL, ok=True, message_id="local:1"),
                 DeliveryOutcome(
@@ -705,6 +710,8 @@ class TestRunTaskNow:
             task_id="run_now_all_ok",
             fire_time="2026-01-01T09:00",
             status=TaskStatus.SUCCESS,
+            report="Retained result",
+            work_outcome=WorkOutcome(status=WorkStatus.SUCCEEDED),
             targets=(DeliveryOutcome(provider=Provider.TELEGRAM, chat_id="-100", ok=True),),
         )
         monkeypatch.setattr(
@@ -719,7 +726,7 @@ class TestRunTaskNow:
             mock_exec.return_value = True
             run_task_now("run_now_all_ok", real_runners(), only_failed=True)
 
-        assert mock_exec.call_args.kwargs["target_filter"] == frozenset()
+        mock_exec.assert_not_called()
 
 
 class TestStartSchedulerIdle:

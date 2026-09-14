@@ -389,7 +389,6 @@ propose_scheduled_delivery_tool = RegisteredTool(
     ),
     source="interactive_shell",
     surfaces=(ToolSurface.ACTION,),
-    parallel_safe=False,
     accepts_runtime_context=True,
     run=run_propose_scheduled_delivery,
     tags=("safe", "fast", "no-credentials"),

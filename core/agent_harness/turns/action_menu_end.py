@@ -2,9 +2,10 @@
 
 ``ask_user_choice``, a skill's ``pre_execute``, and a skill's ``after_tool``
 hook all queue the picker on the session. The loop must not take another
-model step — or run later tools in the same batch — or the model sees no
-answer and asks again. A hook, not an instruction: any tool result is
-marked ``terminate`` when a choice is pending, and later calls are blocked.
+model step — or run bookkeeping queued after an ``after_tool`` menu in the
+same response — or the model sees no answer and asks again. A hook, not an
+instruction: any tool result is marked ``terminate`` when a choice is
+pending, and later calls are blocked.
 """
 
 from __future__ import annotations

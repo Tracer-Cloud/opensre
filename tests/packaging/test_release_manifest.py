@@ -81,6 +81,18 @@ def test_required_skill_data_covers_action_and_tool_guidance() -> None:
     )
 
 
+def test_release_includes_executable_skill_helpers_and_their_reference() -> None:
+    skill = (
+        _REPO_ROOT
+        / "core/agent_harness/prompts/skills/onboarding-github-ci/b-scheduling-github-ci-fixes"
+    )
+    included = set(required_skill_files(_REPO_ROOT))
+    assert skill / "references/script-tools.md" in included
+    assert set((skill / "scripts").glob("*.py")) <= included
+    assert skill / "scripts/seed_demo_repository.py" in included
+    assert skill / "scripts/write_demo_evidence.py" in included
+
+
 def test_required_data_covers_runtime_files_that_are_not_skill_documents() -> None:
     """Runtime file loading breaks or degrades when data is left out of the build.
 

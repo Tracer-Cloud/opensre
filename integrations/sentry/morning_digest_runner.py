@@ -12,6 +12,8 @@ from core.agent_harness.spi.integrations import (
 )
 from infrastructure.harness_providers import configured_integration_services
 from infrastructure.scheduling.scheduler.agent_runner import AgentPayload
+from infrastructure.scheduling.scheduler.types import TaskReport
+from integrations.scheduled_outcomes import ScheduledOutcomes
 from integrations.sentry.project_scope import (
     apply_sentry_project_scope,
     payload_project_slug,
@@ -66,7 +68,7 @@ def _dispatch_headless_turn(message: str, payload: AgentPayload) -> TurnResult:
     )
 
 
-def run_sentry_morning_digest(payload: AgentPayload) -> str:
+def run_sentry_morning_digest(payload: AgentPayload) -> TaskReport:
     """Run one headless summarizing-sentry-issues turn and return the assistant report."""
     message = build_morning_digest_prompt(payload)
     result = _dispatch_headless_turn(message, payload)
@@ -81,7 +83,7 @@ def run_sentry_morning_digest(payload: AgentPayload) -> str:
         raise RuntimeError(
             "Sentry morning digest failed: the reasoning client did not produce a response."
         )
-    return report
+    return ScheduledOutcomes().report(result, agent_mode=False)
 
 
 __all__ = ["build_morning_digest_prompt", "run_sentry_morning_digest"]

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -11,7 +12,7 @@ import pytest
 from config.constants import OPENSRE_OPERATIONS_LOG_PATH_ENV
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_PROMPT_PARAM
 from infrastructure.scheduling.scheduler.storage import list_tasks
-from infrastructure.scheduling.scheduler.types import Provider, TaskKind
+from infrastructure.scheduling.scheduler.types import Provider, TaskKind, TaskReport
 from integrations.github.tools.ci_analytics import loop as ci_loop
 from integrations.github.tools.ci_analytics import loop_tool
 
@@ -90,8 +91,10 @@ def test_the_next_run_is_shown_in_the_schedule_timezone(store_path: Path) -> Non
     # Act
     schedule_line = ci_loop.loop_card(scheduled).details[0]
 
-    # Assert
-    assert "T" not in schedule_line.split("next ")[1]
+    # Assert: a human ``Tue 15 Sep 08:00``, not a ``2026-09-15T13:00`` UTC stamp.
+    # (Checking for the letter ``T`` alone fails whenever the weekday is Tue/Thu.)
+    next_run = schedule_line.split("next ")[1]
+    assert not re.search(r"\d{4}-\d{2}-\d{2}T", next_run), next_run
     assert schedule_line.endswith("08:00")
 
 
@@ -305,6 +308,8 @@ def test_build_report_renders_the_analytics_and_keeps_a_json_snapshot(
     )
 
     # Assert: header and a traceable snapshot on disk.
+    assert isinstance(report, TaskReport)
+    assert report.summary == "No completed workflow runs were found in this window."
     assert "CI/CD reliability for acme/app, last 7 days" in report
     assert "Raw data: " in report
     snapshot = Path(report.rsplit("Raw data: ", 1)[1].strip())

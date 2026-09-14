@@ -76,8 +76,8 @@ class TestStore:
         assert remove_task(task.id, store_path) is True
         assert list_tasks(store_path) == []
 
-    def test_remove_task_cascade_deletes_runs(self, store_path: Path) -> None:
-        """Removing a task must also remove its TaskRun records."""
+    def test_remove_task_retains_runs(self, store_path: Path) -> None:
+        """Removing a schedule retains its execution evidence."""
         task = ScheduledTask(
             kind=TaskKind.MANUAL_LOOP,
             cron="0 9 * * *",
@@ -92,10 +92,10 @@ class TestStore:
 
         assert remove_task(task.id, store_path) is True
 
-        assert get_runs(task.id, db_path=db_path) == []
+        assert len(get_runs(task.id, db_path=db_path)) == 1
 
-    def test_remove_task_cascade_does_not_affect_other_tasks(self, store_path: Path) -> None:
-        """Removing one task's runs must not delete another task's runs."""
+    def test_remove_task_preserves_history_for_both_tasks(self, store_path: Path) -> None:
+        """Removing one schedule preserves both tasks' histories."""
         task_a = ScheduledTask(
             id="task-a",
             kind=TaskKind.MANUAL_LOOP,
@@ -119,7 +119,7 @@ class TestStore:
 
         assert remove_task("task-a", store_path) is True
 
-        assert get_runs("task-a", db_path=db_path) == []
+        assert len(get_runs("task-a", db_path=db_path)) == 1
         assert len(get_runs("task-b", db_path=db_path)) == 1
 
     def test_remove_nonexistent(self, store_path: Path) -> None:
@@ -187,7 +187,7 @@ class TestStore:
 
 class TestRecurringSkillStoreIdentity:
     def test_changed_skill_revision_updates_existing_schedule(self, store_path: Path) -> None:
-        from core.agent_harness.prompts.skills.schedule import find_action_skill, skill_revision
+        from core.agent_harness.prompts.skills.scheduling import find_action_skill, skill_revision
 
         skill = find_action_skill("delivering-morning-briefings")
         assert skill is not None

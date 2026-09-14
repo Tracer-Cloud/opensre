@@ -9,7 +9,7 @@ import pytest
 
 from integrations.coding_agent import CodingResult
 from integrations.git import head_sha, merge_in_progress
-from integrations.github.tools.ci_fix.base_merge import merge_base_into_head
+from integrations.github.tools.ci_fix.base_merge import base_has_new_commits, merge_base_into_head
 from integrations.github.tools.ci_fix.context import MERGE_STATE_DIRTY, CiFixContext
 from integrations.github.tools.ci_fix.errors import ERR_MERGE_CONFLICT, GitHubCiFixError
 
@@ -71,6 +71,21 @@ def _repo(tmp_path: Path, *, conflict: bool) -> Path:
 
 def _never_called(task: str) -> CodingResult:
     raise AssertionError(f"coding agent must not run for a clean merge: {task}")
+
+
+def test_base_has_new_commits_reads_the_remote_base_not_github(tmp_path: Path) -> None:
+    # Arrange: origin/main moved on without touching the PR's files, so GitHub calls it mergeable.
+    work = _repo(tmp_path, conflict=False)
+    _git(work, "update-ref", "-d", "refs/remotes/origin/main")
+
+    # Act
+    behind = base_has_new_commits(str(work), _CTX)
+    merge_base_into_head(str(work), _CTX, baseline={}, resolve_conflicts=_never_called)
+    up_to_date = base_has_new_commits(str(work), _CTX)
+
+    # Assert
+    assert behind is True
+    assert up_to_date is False
 
 
 def test_clean_merge_commits_without_the_coding_agent(tmp_path: Path) -> None:

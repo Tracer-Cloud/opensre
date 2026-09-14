@@ -9,7 +9,7 @@
 | `action/` | Tool-calling agent prompt assembly and policies |
 | `memory/` | Conversation window + prior-investigation recall |
 | `runtime_facts/` | Runtime-metadata fact lines for prompts |
-| `skills/` | Progressive skill index + markdown bodies (`loader.py` + `*.md`) |
+| `skills/` | Progressive skill index + markdown bodies (`catalog/` + `content/` + workflow Markdown) |
 | `rules.py` | Shared rule fragments (leaf) |
 | `system_prompt.py` + `opensre_system_prompt.md` | Loader and adjacent Markdown for the shared system base |
 
@@ -46,11 +46,10 @@ Use ordinary Markdown, following
 - A static menu a skill always opens on entry belongs in `pre_execute`
   frontmatter (`tool: ask_user_choice` + `args`), not in prose the model must
   replay; the host runs it before any model step (see `onboarding-github-ci`).
-- A mid-flow menu the model must not skip belongs in `after_tool` (same call
-  shape, plus `after:` the trigger tool). The host opens it after that tool
-  succeeds; later tools in the batch are blocked once a menu is queued.
+- Describe mid-flow menus in the numbered workflow; the model calls
+  `ask_user_choice` after completing the preceding step.
 - Rules shared by sibling skills belong in a markdown file listed under
-  `references:` (resolved inside the skills tree), not copied into each body.
+  `includes:` (resolved inside the skills tree), not copied into each body.
 
 ## Skill metadata ownership
 
@@ -62,16 +61,20 @@ Every `SKILL.md` frontmatter `metadata` block records two people:
 - `last_changed_by` — the name of the person who most recently changed the
   skill.
 - `last_changed_at` — the ISO date (`YYYY-MM-DD`) of that change.
+- `version` — a quoted `MAJOR.MINOR` string; each edit adds one behind the
+  dot (`"2.1"` → `"2.2"` → … → `"2.15"`). The major part moves only for a
+  breaking change to the card's contract.
 
-`last_changed_by` and `last_changed_at` move together: whoever edits a skill
-(body or frontmatter) must update both lines in the same change; a skill edit
-that leaves either behind is incomplete.
+`last_changed_by`, `last_changed_at`, and `version` move together: whoever
+edits a skill (body or frontmatter) must update all three lines in the same
+change; a skill edit that leaves any behind is incomplete.
 
 ```yaml
 metadata:
   owner: Vincent
   last_changed_by: Jan
   last_changed_at: 2026-09-09
+  version: "2.2"
 ```
 
 Full rules: [`skills/AGENTS.md`](skills/AGENTS.md).

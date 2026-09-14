@@ -43,7 +43,13 @@ from infrastructure.scheduling.scheduler.storage import (
     try_queue_run,
     update_task,
 )
-from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskStatus
+from infrastructure.scheduling.scheduler.types import (
+    Provider,
+    ScheduledTask,
+    TaskReport,
+    TaskRun,
+    TaskStatus,
+)
 
 logger = logging.getLogger(__name__)
 TaskFilter = Callable[[ScheduledTask], bool]
@@ -464,7 +470,13 @@ def start_scheduler(runners: SchedulerRunners, *, idle_when_empty: bool = False)
         record_scheduler_service_operation("scheduler_stopped", task_count=enabled_count)
 
 
-def run_task_now(task_id: str, runners: SchedulerRunners, *, only_failed: bool = False) -> bool:
+def run_task_now(
+    task_id: str,
+    runners: SchedulerRunners,
+    *,
+    only_failed: bool = False,
+    on_result: Callable[[TaskRun], None] | None = None,
+) -> bool:
     """Execute a task immediately (ad-hoc one-shot for debugging).
 
     Uses the current time with seconds precision as fire_time so it does
@@ -486,6 +498,7 @@ def run_task_now(task_id: str, runners: SchedulerRunners, *, only_failed: bool =
         return False
 
     target_filter: frozenset[tuple[Provider, str]] | None = None
+    replay_report: TaskReport | None = None
     if only_failed:
         target_filter = failed_retry_scope(task_id)
         if target_filter is None:
@@ -496,8 +509,28 @@ def run_task_now(task_id: str, runners: SchedulerRunners, *, only_failed: bool =
             )
             return False
 
-    fire_time = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-    result = execute_task(task, fire_time, runners, target_filter=target_filter)
+        if not target_filter:
+            return True
+
+        from infrastructure.scheduling.scheduler.storage import get_latest_targeted_run
+
+        previous = get_latest_targeted_run(task_id)
+        replay_report = previous.retained_report() if previous is not None else None
+        if replay_report is None:
+            logger.warning(
+                "Task %s has no retained report; refusing to repeat work for delivery.", task_id
+            )
+            return False
+
+    fire_time = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    result = execute_task(
+        task,
+        fire_time,
+        runners,
+        target_filter=target_filter,
+        replay_report=replay_report,
+        on_result=on_result,
+    )
     if result:
         _record_task_success_after_full_delivery(task.id, fire_time)
     return result
@@ -509,6 +542,7 @@ def _record_task_success_after_full_delivery(task_id: str, fire_time: str) -> No
     if (
         run is not None
         and run.status is TaskStatus.SUCCESS
+        and run.work_outcome.completed
         and all(outcome.ok for outcome in run.targets)
     ):
         record_task_success(task_id)

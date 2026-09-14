@@ -16,6 +16,7 @@ from integrations.git import (
     fetch_remote_branch,
     head_sha,
     is_ancestor,
+    merge_commit_edits,
     merge_in_progress,
     merge_ref,
     paths_with_conflict_markers,
@@ -153,3 +154,48 @@ def test_merge_ref_raises_on_non_conflict_failure(tmp_path: Path) -> None:
         merge_ref(str(work), "origin/does-not-exist", message="Merge")
     assert excinfo.value.kind == MERGE_FAILED
     assert merge_in_progress(str(work)) is False
+
+
+def test_fetch_uses_explicit_token_without_putting_it_in_argv(monkeypatch) -> None:
+    import subprocess
+
+    from integrations.git import merge
+
+    monkeypatch.delenv("GIT_CONFIG_COUNT", raising=False)
+    calls = []
+
+    def run(workspace, *args, **kwargs):
+        calls.append((workspace, args, kwargs))
+        return subprocess.CompletedProcess(args, 0, "", "")
+
+    monkeypatch.setattr(merge, "_run_git", run)
+    monkeypatch.setattr(
+        merge, "_remote_https_base", lambda *_args: "https://github.com/", raising=False
+    )
+    fetch_remote_branch("/checkout", "demo/repair", token="private-demo-token")
+    _, args, kwargs = calls[-1]
+    assert args == ("fetch", "origin", "refs/heads/demo/repair:refs/remotes/origin/demo/repair")
+    assert "private-demo-token" not in repr(args)
+    env = kwargs["env"]
+    assert env["GIT_CONFIG_KEY_0"] == "http.https://github.com/.extraheader"
+    assert env["GIT_CONFIG_VALUE_0"].startswith("Authorization: Basic ")
+
+
+def test_merge_commit_edits_are_the_resolver_changes_not_either_side(tmp_path: Path) -> None:
+    """Base-only and head-only changes belong to a parent; hand edits differ from both."""
+    # Arrange: stop on the conflict, resolve it, and sneak in an unrelated edit.
+    work = _diverged_repo(tmp_path)
+    fetch_remote_branch(str(work), "main")
+    assert merge_ref(str(work), "origin/main", message="merge main") is False
+    (work / "shared.txt").write_text("resolved\n")
+    (work / "untouched.txt").write_text("weakened\n")
+    _git(work, "rm", "-q", "--cached", "doomed.txt")
+    (work / "doomed.txt").unlink()
+    stage_paths(str(work), ["shared.txt", "untouched.txt"])
+    merged = commit_merge(str(work))
+
+    # Act
+    edited = merge_commit_edits(str(work), merged)
+
+    # Assert: only-main.txt (base) and the head's own history are not edits.
+    assert edited == ["shared.txt", "untouched.txt"]

@@ -1,21 +1,20 @@
 ---
 name: delivering-morning-briefings
 description: >-
-  Weather + news morning briefing: fetch live weather and headlines, compose
-  a plain-text briefing, deliver it. Multi-step; load before acting.
+  Weather + news morning briefing: fetch live weather and headlines, compose a plain-text briefing, deliver
+  it. Multi-step; load before acting.
 metadata:
   owner: Gust
-  last_changed_by: Vincent
-  last_changed_at: 2026-09-09
+  last_changed_by: Jan
+  last_changed_at: 2026-09-12
   usecases:
-    - Weather and headlines morning briefing on demand
-    - Recurring weekday briefing delivered to the shell inbox or a chat channel
+  - For users who want an on-demand weather and news briefing.
+  - For users who want a weekday briefing delivered to their chosen destination.
   requires:
-    - Outbound network access for the weather and news fetches
-    - A delivery channel for the recurring offer (shell inbox, Slack, or Telegram)
-  type: report
-  version: "1.1"
-recurring: weekdays 08:00
+  - Outbound network access to the weather and news sources.
+  - For recurring delivery, a configured destination such as the shell inbox, Slack, or Telegram.
+  version: '1.2'
+recurring: true
 ---
 
 # Morning report
@@ -30,11 +29,10 @@ Use for requests such as "morning report", "morning briefing", "daily brief",
 
 ## Workflow rules
 
-Fetch the raw inputs first with read-only shell commands and wait for both
-results before composing or delivering. Follow the compound-turn rule for
-dependent tool calls: never emit the compose/deliver step in the same response
-as the fetches. Complete this workflow in the current agent; do not start an
-investigation that produces a second, unrelated status report.
+Fetch the raw inputs first with read-only shell commands, one `shell_run`
+per response, and wait for both results before composing or delivering.
+Complete this workflow in the current agent; do not start an investigation
+that produces a second, unrelated status report.
 
 Never fabricate weather values or headlines. Treat RSS/XML/HTML as intermediate
 data. Show only the composed briefing, without raw feed markup, XML tags, CDATA
@@ -49,11 +47,11 @@ with headers or prose:
   the first step `in_progress`, and a one-line `explanation` (this is not a
   diagnosis; no hypothesis table): `Fetch weather and headlines` /
   `Compose the briefing` / `Deliver the briefing` /
-  `Offer a recurring schedule`. Steps 1–2 below fire as one parallel batch
-  and share the first plan step.
+  `Offer a recurring schedule`. Steps 1–2 below are two consecutive
+  responses that share the first plan step.
 - After a step's tool results, call `update_plan` marking it `completed` and
-  the next step `in_progress`, in the same response as the next step's tool
-  calls.
+  the next step `in_progress`, in the same response as the next step's single
+  tool call.
 - Do not narrate the plan or repeat step names in prose; the shell renders
   the checklist. The composed briefing itself (step 3) and the schedule
   offer's response_text (step 5) stay exactly as specified below — the plan

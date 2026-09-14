@@ -77,7 +77,6 @@ def _repo_payload(snapshot: WorkspaceSnapshot) -> list[dict[str, Any]]:
     ],
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.READ_ONLY,
-    parallel_safe=False,
     accepts_runtime_context=True,
     input_schema=_INPUT_SCHEMA,
     tags=("safe", "no-credentials"),

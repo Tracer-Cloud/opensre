@@ -16,19 +16,14 @@ from rich.markup import escape
 
 from config.constants.skills import ONBOARDING_SKILL_NAME, SKIP_DEMO_OPTION
 from core.agent_harness.spi.handoff import (
-    AskUserQuestion,
     format_ask_user_answers,
     question_key,
 )
+from core.agent_harness.spi.task_plan import discard_task_plan
 from infrastructure.terminal import theme as ui_theme
 from infrastructure.terminal.notify import NotifyEvent, play_notification
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
-from surfaces.interactive_shell.runtime.startup.demo_repository import (
-    choose_demo_repository,
-    demo_skill_for,
-    repository_question,
-)
 from surfaces.interactive_shell.runtime.startup.onboarding_telemetry import (
     capture_onboarding_choice,
 )
@@ -43,6 +38,7 @@ from surfaces.shared.terminal.components.choice_menu import (
 
 _CANCELLED = "Selection cancelled — type a reply instead."
 _DEMO_SKIPPED = "Demo skipped — type a request, or /demo to come back to it."
+_DEMO_UNAVAILABLE = "Guided demo selection is unavailable here — request a task directly."
 
 
 def _remember_answered(session: Session, *titles: str) -> None:
@@ -53,23 +49,14 @@ def _remember_answered(session: Session, *titles: str) -> None:
     settled.update(question_key(title) for title in titles if title.strip())
 
 
-def _demo_repository_question(session: Session, answer: str) -> str | None:
-    """The repository question the chosen demo needs, when the onboarding menu was answered."""
-    if session.active_skill != ONBOARDING_SKILL_NAME:
-        return None
-    skill = demo_skill_for(answer)
-    return repository_question(skill) if skill is not None else None
-
-
 def _leave_menu(session: Session, console: Console, note: str) -> None:
     """Close the menu with no answer for the model and leave the skill."""
     console.print(f"[{ui_theme.DIM}]{note}[/]")
     session.terminal.awaiting_handoff_answer = False
     if session.active_skill is not None:
         session.skills_already_prompted.discard(session.active_skill)
+        discard_task_plan(session)
     session.active_skill = None
-    session.active_skill_tools = ()
-    session.skill_hooks_fired = set()
 
 
 def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
@@ -81,6 +68,9 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
         return True
 
     if not repl_tty_interactive():
+        if session.active_skill == ONBOARDING_SKILL_NAME:
+            _leave_menu(session, console, _DEMO_UNAVAILABLE)
+            return True
         for question in pending.items():
             print_valid_choice_list(
                 console,
@@ -141,24 +131,6 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
         console.print(f"[{ui_theme.DIM}]Running {escape(command)}.[/]")
         session.terminal.awaiting_handoff_answer = False
         session.terminal.set_auto_command(command)
-        return True
-    repository_title = _demo_repository_question(session, picked_one)
-    if repository_title is not None:
-        # The demo's repository is the user's choice, made here: left to the
-        # model, the scan is skipped and the menu tied to it never opens.
-        repository = choose_demo_repository(console, repository_title)
-        if repository is None:
-            _leave_menu(session, console, _CANCELLED)
-            return True
-        _remember_answered(session, items[0].title, repository_title)
-        answered = (
-            items[0],
-            AskUserQuestion(label="", title=repository_title, options=(repository,)),
-        )
-        session.terminal.set_auto_command(
-            format_ask_user_answers(answered, (picked_one, repository))
-        )
-        session.terminal.awaiting_handoff_answer = True
         return True
     _remember_answered(session, items[0].title)
     render_choice_selection(console, items[0].title, picked_one)

@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import os
+import sys
 from collections.abc import Iterator
 
 import pytest
 
 import config.constants.paths as paths
 from config.constants import (
+    OPENSRE_LANGFUSE_DISABLED_ENV,
     OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV,
     OPENSRE_MEMORY_DIR_ENV,
 )
@@ -22,6 +24,7 @@ def pytest_configure(config: pytest.Config) -> None:
     _ = config
     _load_env()
     _disable_sentry()
+    _disable_langfuse()
     _mark_tests_for_analytics()
 
 
@@ -34,6 +37,12 @@ def _disable_sentry() -> None:
     os.environ["OPENSRE_SENTRY_DISABLED"] = "1"
 
 
+def _disable_langfuse() -> None:
+    # A developer ``.env`` may carry real Langfuse keys; boot-path tests must
+    # not export traces. Adapter tests re-enable it explicitly.
+    os.environ[OPENSRE_LANGFUSE_DISABLED_ENV] = "1"
+
+
 def _mark_tests_for_analytics() -> None:
     os.environ["OPENSRE_NO_TELEMETRY"] = "1"
     os.environ["OPENSRE_INVESTIGATION_SOURCE"] = "test"
@@ -41,6 +50,7 @@ def _mark_tests_for_analytics() -> None:
 
 _load_env()
 _disable_sentry()
+_disable_langfuse()
 _mark_tests_for_analytics()
 
 
@@ -64,6 +74,19 @@ def _isolate_session_trace_store() -> Iterator[None]:
     previous = get_session_trace_store()
     yield
     set_session_trace_store(previous)
+
+
+@pytest.fixture(autouse=True)
+def _isolate_observation_sink() -> Iterator[None]:
+    """Restore the process-global LLM observation sink after every test."""
+    from infrastructure.observability.trace.observations import (
+        get_observation_sink,
+        set_observation_sink,
+    )
+
+    previous = get_observation_sink()
+    yield
+    set_observation_sink(previous)
 
 
 @pytest.fixture(autouse=True)
@@ -144,6 +167,22 @@ def _isolate_opensre_home_files(request, monkeypatch, tmp_path) -> None:
     # secret would otherwise land it in the developer's
     # ~/.opensre/credentials.json.
     monkeypatch.setattr(paths, "OPENSRE_HOME_DIR", tmp_path / "opensre-home")
+
+
+@pytest.fixture(autouse=True)
+def _isolate_ci_fix_counters() -> Iterator[None]:
+    """Release counter caches and listeners without importing unused GitHub modules."""
+
+    def reset() -> None:
+        ledger = sys.modules.get("integrations.github.tools.ci_fix.ledger")
+        if ledger is not None:
+            ledger.reset_ci_fix_counters()
+
+    reset()
+    try:
+        yield
+    finally:
+        reset()
 
 
 @pytest.fixture(autouse=True)

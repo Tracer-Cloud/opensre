@@ -19,6 +19,7 @@ from core.agent_harness.tools.tool_context import (
     ActionToolScope,
 )
 from core.agent_harness.turns.headless_adapters import InMemorySessionState
+from core.domain.types.tools import ToolRole
 from core.tool import AgentToolContext
 from surfaces.interactive_shell.session import Session
 from tools.interactive_shell.actions.ask_choice import (
@@ -63,7 +64,7 @@ def test_ask_user_choice_tool_is_action_surface_read_only() -> None:
     assert ask_user_choice_tool.name == "ask_user_choice"
     assert "action" in ask_user_choice_tool.surfaces
     assert ask_user_choice_tool.side_effect_level == "read_only"
-    assert ask_user_choice_tool.parallel_safe is False
+    assert ask_user_choice_tool.role is ToolRole.TURN_ENDING
     assert any(
         "headless, scheduled, gateway, or /goal" in example
         for example in ask_user_choice_tool.anti_examples
