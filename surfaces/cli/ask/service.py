@@ -81,6 +81,7 @@ class AskQuestion:
     title: str
     options: tuple[str, ...]
     multi_select: bool = False
+    allow_custom: bool = True
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -88,6 +89,7 @@ class AskQuestion:
             "title": self.title,
             "options": list(self.options),
             "multi_select": self.multi_select,
+            "allow_custom": self.allow_custom,
         }
 
 
@@ -285,14 +287,16 @@ def _run_agent_turn(
 
 
 def _outcome_questions(pending: PendingUserChoice) -> tuple[AskQuestion, ...]:
+    items = pending.items()
     return tuple(
         AskQuestion(
             label=question.label,
             title=question.title,
             options=question.options,
             multi_select=question.multi_select,
+            allow_custom=pending.custom_answer if len(items) == 1 else True,
         )
-        for question in pending.items()
+        for question in items
     )
 
 

@@ -313,6 +313,7 @@ def test_ask_json_required_choice_includes_resume_fields(monkeypatch) -> None:
             "title": "Which environment?",
             "options": ["Production", "Staging"],
             "multi_select": False,
+            "allow_custom": True,
         }
     ]
     assert result.stderr == ""

@@ -154,6 +154,20 @@ def test_resume_prompt_maps_a_number_to_the_pending_option() -> None:
     assert session.pending_user_choice is None
 
 
+def test_resume_prompt_rejects_custom_answer_when_choice_forbids_it() -> None:
+    session = service.SessionCore()
+    session.pending_user_choice = PendingUserChoice(
+        title="Which environment?",
+        options=("Production", "Staging"),
+        custom_answer=False,
+    )
+
+    with pytest.raises(service.OpenSREError, match="numbered options"):
+        ask_session.resume_prompt(session, "another environment")
+
+    assert session.pending_user_choice is not None
+
+
 def test_resume_prompt_requires_structured_batch_answers() -> None:
     from core.agent_harness.session.pending_choice import AskUserQuestion
 

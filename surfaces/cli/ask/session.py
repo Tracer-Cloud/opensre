@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterator
 from contextlib import contextmanager
 
@@ -16,6 +17,8 @@ from core.agent_harness.spi.handoff import (
     question_key,
 )
 from infrastructure.errors import OpenSREError
+
+_SAFE_SESSION_ID = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 
 
 def resolve_resume_session_id(reference: str) -> str:
@@ -35,7 +38,10 @@ def resolve_resume_session_id(reference: str) -> str:
     loaded = repo.load_session(reference)
     if not isinstance(loaded, dict) or not loaded.get("session_id"):
         raise OpenSREError(f"Session {reference!r} could not be loaded.")
-    return str(loaded["session_id"])
+    session_id = str(loaded["session_id"])
+    if _SAFE_SESSION_ID.fullmatch(session_id) is None:
+        raise OpenSREError(f"Session {reference!r} has an invalid stored ID.")
+    return session_id
 
 
 @contextmanager
@@ -57,7 +63,12 @@ def ask_session_lock(session_id: str | None) -> Iterator[None]:
         ) from exc
 
 
-def _selected_answer(question: AskUserQuestion, value: object) -> str:
+def _selected_answer(
+    question: AskUserQuestion,
+    value: object,
+    *,
+    allow_custom: bool = True,
+) -> str:
     """Normalize numeric headless selections while preserving free-text answers."""
     if isinstance(value, list):
         raw = [str(item).strip() for item in value if str(item).strip()]
@@ -68,8 +79,10 @@ def _selected_answer(question: AskUserQuestion, value: object) -> str:
     for item in raw:
         if item.isdigit() and 1 <= int(item) <= len(question.options):
             answers.append(question.options[int(item) - 1])
-        elif item:
+        elif item and (allow_custom or item in question.options):
             answers.append(item)
+        elif item:
+            raise OpenSREError(f"Choose one of the numbered options for {question.title!r}.")
     if not answers:
         raise OpenSREError(f"An answer is required for {question.title!r}.")
     if not question.multi_select and len(answers) != 1:
@@ -85,7 +98,13 @@ def resume_prompt(session: SessionCore, prompt: str) -> str:
     questions = pending.items()
     answers: tuple[str, ...]
     if len(questions) == 1:
-        answers = (_selected_answer(questions[0], prompt),)
+        answers = (
+            _selected_answer(
+                questions[0],
+                prompt,
+                allow_custom=pending.custom_answer,
+            ),
+        )
     else:
         try:
             supplied = json.loads(prompt)

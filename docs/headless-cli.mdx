@@ -106,8 +106,9 @@ opensre --json ask "summarize current service health"
 
 The command writes one JSON object with `status`, `response`, `session_id`,
 `questions`, `denied_tools`, and `error`. Each question includes its title,
-label, options, and whether it accepts multiple selections. The `error` value
-is either `null` or an object with `message` and `suggestion`.
+label, options, whether it accepts multiple selections, and whether a custom
+answer is allowed. The `error` value is either `null` or an object with
+`message` and `suggestion`.
 
 | Exit code | Meaning |
 | --- | --- |
