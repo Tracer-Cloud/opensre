@@ -85,7 +85,7 @@ def test_master_menu_matches_four_unique_children_and_preserves_specialists() ->
     fix_loop = skills.load_skill_body("scheduling-github-ci-repairs")
     # The fix loop repairs red pull requests; it is not the analytics report
     # loop, so it never reaches for the analytics or report-scheduling tools.
-    assert "fix_github_pr_ci" in fix_loop
+    assert "schedule_ci_repair_loop" in fix_loop
     assert '"/cron"' in fix_loop
     assert "analyze_github_ci_reliability" not in fix_loop
     assert "schedule_ci_reliability_loop" not in fix_loop
