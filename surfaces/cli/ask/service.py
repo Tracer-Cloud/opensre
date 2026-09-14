@@ -21,8 +21,8 @@ from core.agent_harness import (
     SessionManager,
     TurnResult,
 )
-from core.agent_harness.prompts.kernel.surfaces import PromptSurface
 from core.agent_harness.ports import ToolEventObserver
+from core.agent_harness.prompts.kernel.surfaces import PromptSurface
 from core.agent_harness.spi.cancel import ensure_turn_cancel
 from core.agent_harness.spi.session_goal import SessionGoal, SessionGoalReason, SessionGoalStatus
 from core.tool import ToolExecutionHooks
@@ -171,6 +171,7 @@ def _restrict_ask_capabilities(session: SessionCore) -> None:
     """Zero the capabilities the one-shot ask agent must not use."""
     for capability in _ASK_DISABLED_CAPABILITIES:
         session.available_capabilities[capability] = ()
+    session.deferred_user_choices = True
 
 
 def _clear_prior_goal_response(output: _AskOutputSink, goal: SessionGoal) -> None:

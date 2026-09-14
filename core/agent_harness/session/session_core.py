@@ -102,6 +102,9 @@ class SessionCore:
     available_capabilities: dict[str, tuple[str, ...]] = field(default_factory=dict)
     """Optional planning-time capability constraints (slash/cli/synthetic)."""
 
+    deferred_user_choices: bool = False
+    """Whether this host persists required choices for a later invocation."""
+
     accumulated_context: dict[str, Any] = field(default_factory=dict)
     """Reusable infra context — service names, clusters, regions — learned from
     earlier turns that should seed future ones."""

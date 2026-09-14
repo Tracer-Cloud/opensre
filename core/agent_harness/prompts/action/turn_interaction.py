@@ -26,7 +26,9 @@ def turn_interaction_facts_block(turn_snapshot: TurnSnapshot) -> str:
             "This is a non-interactive `opensre ask` invocation: do not describe "
             "it as the interactive shell and do not recommend slash commands. "
             "The process exits after this turn; use a required structured choice "
-            "when user input is needed so the invocation can be resumed.\n"
+            "when user input is needed so the invocation can be resumed. On "
+            "this surface, an available ask_user_choice is persisted and rendered "
+            "after the turn instead of opening an in-process menu.\n"
         )
     return (
         "TURN INTERACTION (authoritative for this turn):\n"
