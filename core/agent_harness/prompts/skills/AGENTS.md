@@ -1,5 +1,48 @@
 # Skill release and authoring contract
 
+## Agents never edit SKILL.md (read this first)
+
+Every `SKILL.md` in this tree is human-owned. Agents are **never** permitted to
+create, edit, rename, move, or delete one — not a workflow step, not a
+`## Plan` line, not a `metadata` field, not a one-character typo fix. "Never"
+includes: the user asked for it, a colocated `test_*.py` or CI check fails
+because of it, the card violates a rule in this file, or the change looks
+trivial. Everything below describing how a card must be written applies to
+human authors; an agent uses it only to **review** and to **suggest** — quote
+the current text and the proposed text in the reply or PR description, then
+leave the file untouched. Agents may still edit non-`SKILL.md` files in this
+tree (catalog code, tests, `references/*.md` when not part of a card change)
+under the normal rules.
+
+## Skills are natural language; scripts are a small supporting cast
+
+A skill's substance is its prose: activation conditions, numbered workflow
+steps, completion conditions, report shape. The model reads it and reasons
+its way through with the shared tool catalog. Skill-local scripts
+(`scripts/<script>.py`, declared in `references/script-tools.md` and pointed
+to by `script_tools:`) exist only to take one mechanical chore off the
+model — fetch a payload, reshape a table, compute a count — and hand the
+result back for the model to interpret.
+
+Limits:
+
+- **A few scripts, not many.** A skill needing more than a handful of helpers
+  is describing a tool, not a skill; move that behavior into
+  `integrations/<vendor>/tools/` or `tools/system/` and let the card call it.
+- **No decisions in scripts.** A helper does not choose the next step, branch
+  on business rules, or decide whether a step is complete. Those judgments
+  stay in the workflow prose and in the model.
+- **No end-to-end automation.** Chaining scripts so the workflow runs without
+  the model reasoning between steps turns the skill into a deterministic
+  pipeline; that is not a skill.
+- **Stdlib-only, single-purpose, JSON in / JSON out** (see the `script_tools`
+  contract below). A script that grows dependencies or a second purpose is a
+  signal it belongs in the tool tier.
+
+When reviewing or proposing a skill, ask whether every script could be
+removed and the step still described in a sentence the model can follow. If
+the skill only works because of its scripts, it is a tool wearing a card.
+
 ## Runtime modules
 
 Keep the skills root as a public import facade and the home of workflow assets.
@@ -307,7 +350,11 @@ once, following these rules, and treat a rename as a breaking change.
    `demo_order` frontmatter; recurrence lives in `recurring`. The name must
    survive the skill graduating out of the demo menu.
 4. **Only implemented workflows are discoverable.** Keep roadmap placeholders
-   outside the skill catalog and selectable demo menu.
+   outside the skill catalog and selectable demo menu. The one sanctioned
+   exception is demo C, `delegating-github-ci-repairs`: its menu label says
+   "(coming soon)", its body tells the user the managed service is not
+   available yet and points at what works today, and it calls no tool. Do not
+   add a second placeholder; graduate this one when the service ships.
 5. **Disambiguate siblings by verb, not by qualifier.** Two skills over the
    same object must differ in what they do: `reporting-github-ci-failures`
    (what is red now) vs `analyzing-github-ci-performance` (trend over a
@@ -361,7 +408,8 @@ Current collection:
 | `onboarding-github-ci` | workflow (master menu) | `skills/onboarding-github-ci/` | — |
 | `analyzing-github-ci-performance` | workflow (demo A) | `skills/onboarding-github-ci/a-…/` | — |
 | `scheduling-github-ci-repairs` | workflow (demo B) | `skills/onboarding-github-ci/b-…/` | — |
-| `connecting-slack` | workflow (demo C) | `skills/onboarding-github-ci/c-…/` | — |
+| `delegating-github-ci-repairs` | workflow (demo C, placeholder) | `skills/onboarding-github-ci/c-…/` | — |
+| `connecting-slack` | workflow (demo D) | `skills/onboarding-github-ci/d-…/` | — |
 | `operating-github-cli` | tool usage | `integrations/github/tools/github_cli/` | `github_cli` |
 | `operating-github-ci-fixer` | tool usage | `integrations/github/tools/ci_fix/` | `fix_github_pr_ci` |
 | `operating-github-security-fixer` | tool usage | `integrations/github/tools/security_fix/` | `fix_github_security_alert` |
@@ -373,6 +421,7 @@ Current collection:
 
 The onboarding tree's pre-convention slugs (`onboarding-cicd-fix`,
 `cicd-analytics-demo`, `cicd-reliability-agent`, `slack-handoff`) and the
-retired `fixing-github-ci` (now `repair-github-ci`) and
-`scheduling-github-ci-fixes` (now `scheduling-github-ci-repairs`) live on only
+retired `fixing-github-ci` (now `repair-github-ci`),
+`scheduling-github-ci-fixes` (now `scheduling-github-ci-repairs`), and
+`delegating-github-ci-fixes` (now `delegating-github-ci-repairs`) live on only
 in `LEGACY_SKILL_NAMES`; do not reuse them.

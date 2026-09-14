@@ -1,5 +1,35 @@
 ## OpenSRE Development Reference
 
+## SKILL.md files are human-owned (mandatory — no exceptions)
+
+Agents are **never** allowed to create, edit, rename, move, or delete any
+`SKILL.md` file anywhere in this repository (`core/agent_harness/prompts/skills/**/SKILL.md`,
+`integrations/**/SKILL.md`, `tools/**/SKILL.md`, and any future location). This
+holds regardless of how small the change is, whether the user asked for it
+directly, whether a test or CI check would be fixed by it, or whether the edit
+is "only" frontmatter such as `version` or `last_changed_at`.
+
+The only permitted action is to **suggest** a change: describe the proposed
+edit in the chat reply or PR description (quote the current text and the
+proposed text) and leave the file untouched for a human to apply. If a task
+cannot be completed without changing a `SKILL.md`, stop, report that, and
+deliver everything else.
+
+## Skills are natural language, not deterministic tools (mandatory)
+
+A skill is a natural-language card the model reads and follows; its value is
+the reasoning it guides, not code it triggers. Skills may carry **a few**
+supporting scripts (`scripts/<name>.py` declared in
+`references/script-tools.md`), and only as small helpers for one narrow
+mechanical chore — fetching or reshaping data the model then reasons about.
+Do not turn a skill into a deterministic pipeline: no script that makes the
+decisions the workflow steps describe, no chain of scripts that encodes the
+whole flow, no logic that belongs in a real tool under `integrations/` or
+`tools/`. If a skill needs more than a handful of scripts, or a script starts
+choosing branches, that behavior belongs in a tool or in the model's
+step-by-step reasoning, not in the skill. Suggest the split; do not build it
+into the skill.
+
 ## CI failures and tests (mandatory — every PR / push)
 
 Agents **must** close the loop on CI and tests. Do not treat "pushed a fix" or "opened a PR" as done.

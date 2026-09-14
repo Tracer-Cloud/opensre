@@ -21,6 +21,7 @@ EXPORTS: dict[str, str] = {
     "SKILLS_HEADER": "skills",
     "ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME": "skills",
     "SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME": "skills",
+    "DELEGATING_GITHUB_CI_REPAIRS_SKILL_NAME": "skills",
     "CONNECTING_SLACK_SKILL_NAME": "skills",
     # account
     "OPENSRE_ACCOUNT_FILENAME": "account",

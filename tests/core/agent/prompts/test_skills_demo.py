@@ -1,4 +1,4 @@
-"""The master skill owns the menu and refers to three independently loadable children."""
+"""The master skill owns the menu and refers to four independently loadable children."""
 
 from __future__ import annotations
 
@@ -33,18 +33,20 @@ def test_child_directories_are_letter_prefixed_skill_names() -> None:
         assert suffix == skill.name, directory
 
 
-def test_master_menu_matches_three_unique_children_and_preserves_specialists() -> None:
+def test_master_menu_matches_four_unique_children_and_preserves_specialists() -> None:
     skills.clear_skills_caches()
     children = getting_started_skills()
     assert [s.name for s in children] == [
         "analyzing-github-ci-performance",
         "scheduling-github-ci-repairs",
+        "delegating-github-ci-repairs",
         "connecting-slack",
     ]
-    assert [s.demo_order for s in children] == [1, 2, 3]
+    assert [s.demo_order for s in children] == [1, 2, 3, 4]
     assert GETTING_STARTED_OPTIONS == (
         "Explore a repo and analyze its CI/CD performance (recommended)",
         "Set up an agent that improves CI/CD reliability over time",
+        "Run CI/CD improvements with a managed service (coming soon)",
         "Connect OpenSRE to Slack and hand off DevOps chores for your team",
     )
     master = skills.load_skill_body(ONBOARDING_SKILL_NAME)
@@ -91,7 +93,10 @@ def test_master_menu_matches_three_unique_children_and_preserves_specialists() -
     assert "ask_user_choice" in fix_loop
     assert menu["allow_custom"] is False
     assert GETTING_STARTED_CUSTOM not in master
-    assert skills.load_skill_body("delegating-github-ci-fixes") == ""
+    # Demo C is the one sanctioned placeholder: it explains, calls no tool, and exits.
+    managed = skills.load_skill_body("delegating-github-ci-repairs")
+    assert "not implemented yet" in managed
+    assert "Do not call a tool" in managed
     catalog = skills.read_skill_catalog()
     assert catalog.diagnostics == ()
     discovered = catalog.skills

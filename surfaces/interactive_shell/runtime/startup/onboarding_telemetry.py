@@ -8,6 +8,7 @@ from types import MappingProxyType
 from config.constants.skills import (
     ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME,
     CONNECTING_SLACK_SKILL_NAME,
+    DELEGATING_GITHUB_CI_REPAIRS_SKILL_NAME,
     ONBOARDING_SKILL_NAME,
     SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME,
 )
@@ -24,6 +25,7 @@ _OPTION_BY_SKILL = MappingProxyType(
     {
         ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME: "ci_analytics",
         SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME: "ci_agent",
+        DELEGATING_GITHUB_CI_REPAIRS_SKILL_NAME: "remote_managed_service",
         CONNECTING_SLACK_SKILL_NAME: "slack",
     }
 )

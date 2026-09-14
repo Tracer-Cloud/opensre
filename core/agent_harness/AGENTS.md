@@ -1,5 +1,21 @@
 # agent_harness/ package rules
 
+## SKILL.md files are off-limits to agents
+
+Agents must **never** modify any `SKILL.md` under this tree
+(`prompts/skills/**/SKILL.md`) or anywhere else in the repository — no edits,
+creations, renames, moves, or deletions, and no frontmatter-only bumps. Agents
+may only **suggest** changes in prose (current text → proposed text) for a
+human to apply. This is absolute; a failing test, a user instruction, or a
+seemingly trivial fix does not lift it. See the root `AGENTS.md`.
+
+Skills are natural-language workflow cards the model reasons through, not
+deterministic tools. A skill may ship a few small supporting scripts
+(`script_tools`), each doing one mechanical chore whose output the model then
+interprets. Decision-making, branching, and end-to-end automation belong in
+the card's prose steps or in a real tool (`integrations/`, `tools/`) — never
+in a growing pile of skill-local scripts. Full contract: `prompts/skills/AGENTS.md`.
+
 `agent_harness/` is the decoupled host for the single `core.agent.Agent` ReAct
 loop: the same model calls tools, observes results, and writes the final answer.
 It was extracted out of `interactive_shell` so the same harness can run the
