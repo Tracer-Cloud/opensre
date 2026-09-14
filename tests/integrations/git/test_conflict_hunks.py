@@ -130,5 +130,21 @@ def test_a_file_removed_by_the_resolution_reads_as_removed_not_conflicted(tmp_pa
     # Act
     comparisons = compare_hunks(str(work), conflicts)
 
-    # Assert: an empty result means removed; None would mean markers remain.
-    assert all(c.result == () for c in comparisons)
+    # Assert: the file is gone; None would mean markers remain.
+    assert all(c.result == () and c.file_removed for c in comparisons)
+
+
+def test_a_file_emptied_by_the_resolution_is_not_reported_as_removed(tmp_path: Path) -> None:
+    # Arrange: the resolution keeps the file but drops every line, then commits.
+    work = _stopped_merge_with_two_hunks(tmp_path)
+    conflicts = merge_conflicts(str(work), ours="feature", theirs="main")
+    (work / "app.py").write_text("")
+    sha = conclude_merge(str(work), conflicts, baseline={})
+
+    # Act
+    in_tree = compare_hunks(str(work), conflicts)
+    committed = compare_hunks(str(work), conflicts, revision=sha)
+
+    # Assert: resolved to nothing, but the file still exists in both views.
+    assert all(c.result == () and not c.file_removed for c in in_tree)
+    assert all(c.result == () and not c.file_removed for c in committed)

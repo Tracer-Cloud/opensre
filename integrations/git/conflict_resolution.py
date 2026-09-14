@@ -125,6 +125,7 @@ class HunkComparison:
     ours: tuple[str, ...]
     theirs: tuple[str, ...]
     result: tuple[str, ...] | None
+    file_removed: bool = False
 
 
 def compare_hunks(
@@ -132,34 +133,43 @@ def compare_hunks(
 ) -> list[HunkComparison]:
     """Each conflict hunk with its resolution as found in the working tree or in *revision*.
 
-    ``result`` is ``None`` while the file still carries markers; an empty
-    result means the file was removed in the resolution.
+    ``result`` is ``None`` while the file still carries markers or cannot be
+    read; ``file_removed`` says the resolution deleted the file, which is
+    distinct from a hunk resolved to nothing in a file that still exists.
     """
     comparisons: list[HunkComparison] = []
     for path in conflicts.names:
         before = conflicts.conflicted_lines.get(path, ())
-        after = (
-            _read_lines(workspace, path)
+        exists, after = (
+            _content_in_tree(workspace, path)
             if revision is None
-            else _lines_at(workspace, revision, path)
+            else _content_at(workspace, revision, path)
         )
-        if not after:
-            resolved: bool = revision is not None or not os.path.exists(
-                os.path.join(workspace, path)
-            )
-        else:
-            resolved = not any(line.startswith(_CONFLICT_MARKERS) for line in after)
-        opcodes = SequenceMatcher(None, before, after, autojunk=False).get_opcodes()
+        lines = after or ()
+        readable = after is not None
+        resolved = readable and not any(line.startswith(_CONFLICT_MARKERS) for line in lines)
+        opcodes = SequenceMatcher(None, before, lines, autojunk=False).get_opcodes()
         for hunk in parse_conflict_hunks(before):
-            result = _resolved_region(after, opcodes, hunk) if resolved else None
-            comparisons.append(HunkComparison(path, hunk.ours, hunk.theirs, result))
+            result = _resolved_region(lines, opcodes, hunk) if resolved else None
+            comparisons.append(
+                HunkComparison(path, hunk.ours, hunk.theirs, result, file_removed=not exists)
+            )
     return comparisons
 
 
-def _lines_at(workspace: str, revision: str, path: str) -> tuple[str, ...]:
-    """The committed content of *path* at *revision*; empty when the commit has no such file."""
+def _content_at(workspace: str, revision: str, path: str) -> tuple[bool, tuple[str, ...] | None]:
+    """(whether *revision* has *path*, its lines or None when it cannot be read)."""
+    if _run_git(workspace, "cat-file", "-e", f"{revision}:{path}").returncode != 0:
+        return False, ()
     result = _run_git(workspace, "show", f"{revision}:{path}")
-    return tuple(result.stdout.splitlines()) if result.returncode == 0 else ()
+    return True, tuple(result.stdout.splitlines()) if result.returncode == 0 else None
+
+
+def _content_in_tree(workspace: str, path: str) -> tuple[bool, tuple[str, ...] | None]:
+    file = os.path.join(workspace, path)
+    if not os.path.isfile(file):
+        return False, ()
+    return True, _read_lines(workspace, path)
 
 
 def _resolved_region(

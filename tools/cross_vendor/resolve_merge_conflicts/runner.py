@@ -37,6 +37,7 @@ from integrations.git import (
     current_branch,
     default_branch,
     ensure_git_repo,
+    fetch_remote_branch,
     file_fingerprints,
     head_sha,
     is_base_branch,
@@ -622,16 +623,25 @@ def _checks_error(checks: ChecksOutcome | None) -> str | None:
 
 
 def _default_base(ws: str) -> str | None:
-    """``origin/<default branch>`` when that is a base branch (main, master, develop, trunk).
+    """``origin/<default branch>``, freshly fetched, when that is a base branch.
 
     A remote whose HEAD points at some feature branch is not merged silently;
-    the caller has to name the ref.
+    the caller has to name the ref. A fetch that fails stops the merge rather
+    than merging whatever stale copy of the branch the clone holds.
     """
     try:
         name = default_branch(ws)
     except GitCommandError:
         return None
-    return f"origin/{name}" if name and is_base_branch(name) else None
+    if not name or not is_base_branch(name):
+        return None
+    try:
+        fetch_remote_branch(ws, name)
+    except GitCommandError as exc:
+        raise ResolveMergeError(
+            ERR_EXECUTION, f"Could not update origin/{name} before merging it: {exc.message}"
+        ) from exc
+    return f"origin/{name}"
 
 
 def _push(ws: str) -> tuple[str, GitCommandError | None]:

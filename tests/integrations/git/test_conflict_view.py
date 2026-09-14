@@ -107,6 +107,9 @@ def test_review_gives_a_verdict_per_conflict_and_code_only_where_it_was_combined
     assert text.count("merged") == 1
 
 
-def test_a_removed_file_gets_its_own_verdict() -> None:
+def test_a_removed_file_and_an_emptied_hunk_get_different_verdicts() -> None:
     # Arrange / Act / Assert
-    assert verdict(HunkComparison("gone.txt", ("a",), ("b",), ())) == "file removed"
+    assert (
+        verdict(HunkComparison("gone.txt", ("a",), ("b",), (), file_removed=True)) == "file removed"
+    )
+    assert verdict(HunkComparison("kept.txt", ("a",), ("b",), ())) == "dropped both sides"

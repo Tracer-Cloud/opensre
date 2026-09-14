@@ -31,6 +31,7 @@ from integrations.git.conflict_resolution import (
 )
 from integrations.git.conflict_view import (
     COMBINED,
+    DROPPED,
     KEPT_OURS,
     PENDING,
     REMOVED,
@@ -100,6 +101,7 @@ from integrations.git.worktree_capture import WorktreeChanges, capture_worktree_
 __all__ = [
     "BRANCH_FAILED",
     "COMBINED",
+    "DROPPED",
     "COMMIT_FAILED",
     "GIT_UNAVAILABLE",
     "KEPT_OURS",
