@@ -187,7 +187,7 @@ def _side(label: str, style: str, lines: Sequence[str], path: str) -> list[Any]:
     code = "\n".join(_dedent(shown)) if shown else "(empty)"
     block = Syntax(
         code,
-        _lexer_for(path),
+        Syntax.guess_lexer(path),
         theme="ansi_dark",
         word_wrap=False,
         background_color="default",
@@ -218,13 +218,6 @@ def resolution_lines(workspace: str, merge_sha: str, conflicts: MergeConflicts) 
         count = f"{len(verdicts)} conflict{'s' if len(verdicts) != 1 else ''}"
         lines.append(f"{path}: {count} ({parts})")
     return tuple(lines)
-
-
-def _lexer_for(path: str) -> str:
-    try:
-        return Syntax.guess_lexer(path)
-    except Exception:  # noqa: BLE001 - unknown extension: plain text is fine
-        return "text"
 
 
 def _paths_in_order(comparisons: Sequence[HunkComparison]) -> list[str]:
