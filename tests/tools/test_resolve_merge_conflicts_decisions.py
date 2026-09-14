@@ -41,6 +41,10 @@ def _stopped_merge_two_files(tmp_path: Path) -> Path:
     (work / "a.txt").write_text("a feature\n")
     (work / "b.txt").write_text("b feature\n")
     _git(work, "commit", "-am", "feature")
+    bare = tmp_path / "origin.git"
+    _git(tmp_path, "init", "--bare", str(bare))
+    _git(work, "remote", "add", "origin", str(bare))
+    _git(work, "push", "-q", "-u", "origin", "feature")
     _git(work, "checkout", "main")
     (work / "a.txt").write_text("a main\n")
     (work / "b.txt").write_text("b main\n")

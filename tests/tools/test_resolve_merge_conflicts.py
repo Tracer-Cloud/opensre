@@ -26,7 +26,7 @@ def _git(cwd: Path, *args: str) -> str:
 
 
 def _diverged_repo(tmp_path: Path) -> Path:
-    """Work tree on ``feature`` where ``main`` changed the same line of ``app.py``."""
+    """Work tree on ``feature`` (tracking a local bare origin) where ``main`` changed the same line of ``app.py``."""
     work = tmp_path / "work"
     _git(tmp_path, "init", "-b", "main", str(work))
     _git(work, "config", "user.email", "t@example.com")
@@ -38,6 +38,10 @@ def _diverged_repo(tmp_path: Path) -> Path:
     _git(work, "checkout", "-b", "feature")
     (work / "app.py").write_text("greeting = 'hello, world'\n")
     _git(work, "commit", "-am", "feature greeting")
+    bare = tmp_path / "origin.git"
+    _git(tmp_path, "init", "--bare", str(bare))
+    _git(work, "remote", "add", "origin", str(bare))
+    _git(work, "push", "-q", "-u", "origin", "feature")
     _git(work, "checkout", "main")
     (work / "app.py").write_text("greeting = 'hi'\n")
     _git(work, "commit", "-am", "main greeting")
