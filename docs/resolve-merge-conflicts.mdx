@@ -1,0 +1,69 @@
+---
+title: "Resolve merge conflicts"
+description: "Ask OpenSRE to resolve the conflicts of a git merge with a coding agent and commit the merge."
+---
+
+## Overview
+
+When a `git merge` stops on conflicts, ask OpenSRE to resolve them. It hands the
+conflicted files to your installed coding agent, checks that no conflict marker
+or unmerged path is left, then stages and commits the merge. Files the agent
+cannot settle are named back to you and the merge stays open, so you decide them
+together and run it again.
+
+<Warning>
+This is a **mutating** tool: it edits the conflicted files in your repository and
+creates the merge commit. It never aborts a merge and never pushes.
+</Warning>
+
+## Prerequisites
+
+- A coding agent CLI installed and logged in (Pi, Claude Code, Codex, or Cursor;
+  `CODING_AGENT=auto` picks the first ready one)
+- The repository checked out locally, with the merge already started or a branch
+  name to merge
+
+## Use it
+
+Start the merge yourself, or let OpenSRE start it, then ask in `opensre`:
+
+```text
+resolve the merge conflicts
+merge main into this branch and resolve the conflicts
+resolve the conflicts, keep our version of config.py
+```
+
+Any decision you give ("keep our version of config.py") is passed to the coding
+agent word for word.
+
+### What happens
+
+1. OpenSRE reads the unmerged paths of the merge in progress in the current
+   directory. With no merge in progress, it merges the branch you named first.
+2. The coding agent edits the conflicted files. Lockfiles are regenerated from
+   the resolved manifest, never merged by hand.
+3. OpenSRE verifies that no conflict marker or unmerged path remains. If any
+   does, it reports those files and leaves the merge open for you.
+4. It stages the agent's edits plus the conflicted files and commits the merge.
+   Unrelated changes you had in the working tree stay uncommitted.
+
+| Env var | What it does |
+| --- | --- |
+| `CODING_AGENT` | Which coding agent to run (`auto`, `pi`, `claude-code`, `codex`, `cursor`) |
+| `CODING_MODEL` | Optional model override for the coding agent |
+| `CODING_WORKSPACE` | Repository to work in. Defaults to the current directory |
+| `CODING_TIMEOUT_SECONDS` | Per-run timeout (default 600, clamped 60 to 1800) |
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| "No merge is in progress" | Run `git merge <branch>` first, or name the branch in your request |
+| "none is ready" | Install and log in to a coding agent CLI |
+| "still need a person's decision" | Tell OpenSRE how to settle the named files and ask again |
+| "abandoned the merge" | The agent reset the merge; start it again with `git merge <branch>` |
+
+## Security
+
+- The merge commit carries the OpenSRE co-author trailer.
+- Nothing is pushed; review the merge commit before you push.

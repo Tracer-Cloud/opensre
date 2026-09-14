@@ -12,13 +12,12 @@ from integrations.git import (
     BRANCH_FAILED,
     GitCommandError,
     assert_not_protected,
-    changed_paths,
+    changed_since_baseline,
     checkout_branch,
     commit_paths,
     current_branch,
     ensure_git_repo,
     fetch_local_branch,
-    file_fingerprints,
     head_sha,
     push_branch,
     remote_branch_sha,
@@ -138,18 +137,6 @@ def push_ci_fix(
     )
 
 
-def changed_since_baseline(workspace: str, *, baseline: Mapping[str, str] | None) -> list[str]:
-    """Dirty paths that are new or whose content differs from *baseline*."""
-    pre_existing = dict(baseline or {})
-    current = changed_paths(workspace)
-    current_fingerprints = file_fingerprints(workspace, current)
-    return [
-        path
-        for path in current
-        if path not in pre_existing or current_fingerprints.get(path, "") != pre_existing[path]
-    ]
-
-
 def _commit_message(ctx: CiFixContext, summary: str) -> str:
     subject_tail = _subject_tail(summary, fallback="repair failing CI")
     if ctx.is_branch_target:
@@ -190,4 +177,4 @@ def _local_branch_exists(workspace: str, branch: str) -> bool:
     return result.returncode == 0
 
 
-__all__ = ["PushResult", "changed_since_baseline", "checkout_target_branch", "push_ci_fix"]
+__all__ = ["PushResult", "checkout_target_branch", "push_ci_fix"]

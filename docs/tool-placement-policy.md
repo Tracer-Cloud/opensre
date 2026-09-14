@@ -50,6 +50,7 @@ Applied to the pre-existing top-level `tools/` packages:
 | `tools/system/python_execution_tool/` | system | Generic sandboxed Python execution; the GitHub token import is one of several optional credential sources, not the tool's purpose. |
 | `tools/system/sre_guidance_tool/` | system | Local knowledge-base retrieval; no vendor. |
 | `tools/cross_vendor/fix_sentry_issue/` | cross_vendor | Reads a Sentry issue and hands the fix to the Pi coding agent — two `integrations/` packages in one tool's logic. |
+| `tools/cross_vendor/resolve_merge_conflicts/` | cross_vendor | Reads the conflicts of a local git merge and hands them to the coding agent, then commits the merge — `integrations/git` and `integrations/coding_agent` in one tool's logic. |
 
 **Migrated to their vendor packages** — every single-vendor tool now lives
 under `integrations/<vendor>/tools/`, so rule 1 has no exceptions left:

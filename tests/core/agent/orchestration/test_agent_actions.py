@@ -29,6 +29,7 @@ from tools.interactive_shell.action_names import (
     TOOL_KIND_TO_NAME,
     ToolKind,
 )
+from tools.interactive_shell.implementation.claude_code_executor import ImplementationLaunch
 from tools.interactive_shell.subprocess import SubprocessWatchResult
 
 _ACTION_LLM_FACTORY_PATCHES = (
@@ -570,10 +571,11 @@ def test_execute_cli_actions_sets_bare_model_for_active_provider(
 def test_execute_cli_actions_runs_implementation_action(monkeypatch: object) -> None:
     calls: list[str] = []
 
-    def _fake_run_implementation(request: str, presenter: object) -> None:
+    def _fake_run_implementation(request: str, presenter: object) -> ImplementationLaunch:
         calls.append(request)
         presenter.session.record("implementation", request, ok=True)  # type: ignore[attr-defined]
         presenter.console.print(f"implemented {request}")  # type: ignore[attr-defined]
+        return ImplementationLaunch(started=True, task_id="task-1")
 
     monkeypatch.setattr(
         "tools.interactive_shell.actions.implementation.run_claude_code_implementation",

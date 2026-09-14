@@ -1032,6 +1032,9 @@ _TOOLS_WITHOUT_DELIBERATE_CATCH: frozenset[str] = frozenset(
         "fix_sentry_issue_start",
         "generate_work_status_report",
         "github_cli",
+        # resolve_merge_conflicts catches only its own ResolveMergeError for
+        # known states; unexpected errors escape to the global #1476 wrapper.
+        "resolve_merge_conflicts",
         "get_airflow_dag_runs",
         "get_airflow_metrics",
         "get_airflow_task_instances",

@@ -207,6 +207,7 @@
                   "github",
                   "github-ci-fix",
                   "github-security-fix",
+                  "resolve-merge-conflicts",
                   "github-workflow-tools",
                   "integrations/github-actions",
                   "gitlab",

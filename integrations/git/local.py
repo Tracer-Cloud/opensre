@@ -16,7 +16,7 @@ from __future__ import annotations
 import base64
 import os
 import subprocess
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from urllib.parse import urlsplit
 
 from config.constants.git import OPENSRE_COMMIT_COAUTHOR_TRAILER
@@ -266,6 +266,18 @@ def file_fingerprints(workspace: str, paths: Sequence[str]) -> dict[str, str]:
         for path, digest in zip(existing, hashes):
             fingerprints[path] = digest.strip()
     return fingerprints
+
+
+def changed_since_baseline(workspace: str, *, baseline: Mapping[str, str] | None) -> list[str]:
+    """Dirty paths that are new or whose content differs from *baseline* fingerprints."""
+    pre_existing = dict(baseline or {})
+    current = changed_paths(workspace)
+    current_fingerprints = file_fingerprints(workspace, current)
+    return [
+        path
+        for path in current
+        if path not in pre_existing or current_fingerprints.get(path, "") != pre_existing[path]
+    ]
 
 
 def assert_not_protected(branch: str, *, protected_extra: str = "") -> None:

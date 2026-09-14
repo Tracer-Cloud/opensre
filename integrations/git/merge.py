@@ -67,6 +67,32 @@ def merge_in_progress(workspace: str) -> bool:
     return result.returncode == 0
 
 
+def merge_head_sha(workspace: str) -> str:
+    """Commit being merged into HEAD; empty when no merge is in progress."""
+    result = _run_git(workspace, "rev-parse", "-q", "--verify", "MERGE_HEAD")
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def merge_head_name(workspace: str) -> str:
+    """Branch name of the commit being merged, else its short sha; empty outside a merge."""
+    sha = merge_head_sha(workspace)
+    if not sha:
+        return ""
+    result = _run_git(
+        workspace,
+        "name-rev",
+        "--name-only",
+        "--no-undefined",
+        "--refs=refs/heads/*",
+        "--refs=refs/remotes/*",
+        "MERGE_HEAD",
+    )
+    name = result.stdout.strip()
+    if result.returncode != 0 or not name or "~" in name or "^" in name:
+        return sha[:12]
+    return name.removeprefix("remotes/")
+
+
 def unmerged_paths(workspace: str) -> list[str]:
     """Paths still carrying unresolved index stages."""
     result = _run_git(workspace, "diff", "--name-only", "--diff-filter=U", "-z")
@@ -198,6 +224,8 @@ __all__ = [
     "head_sha",
     "is_ancestor",
     "merge_commit_edits",
+    "merge_head_name",
+    "merge_head_sha",
     "merge_in_progress",
     "merge_ref",
     "paths_with_conflict_markers",
