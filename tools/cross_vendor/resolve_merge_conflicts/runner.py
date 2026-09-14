@@ -11,6 +11,7 @@ the merge is left in progress, so the user decides them; nothing is aborted.
 from __future__ import annotations
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import Any, Final
 
 from integrations.coding_agent import (
@@ -45,6 +46,7 @@ from integrations.git import (
     unresolved_conflicts,
     upstream_branch,
 )
+from integrations.github import CHECKS_NOT_WATCHED, ChecksOutcome, watch_pull_request_checks
 from tools.cross_vendor.resolve_merge_conflicts.comparison import render_comparison
 from tools.cross_vendor.resolve_merge_conflicts.errors import (
     ERR_CLI_UNAVAILABLE,
@@ -71,17 +73,25 @@ def resolve_merge(
     instructions: str | None,
     console: Any = None,
     approve: Approve | None = None,
+    wait_for_checks: bool = True,
 ) -> dict[str, Any]:
     """Resolve the merge in *workspace*, then commit and push it once *approve* allows.
 
     With a *console*, each conflict hunk is painted side by side (ours, theirs,
     merged result) before approval is requested. Without *approve* (no shell
     policy to consult, as in an unattended run) the commit and push proceed.
+    After the push, *wait_for_checks* waits for the pull request's checks.
     """
     ws = workspace or coding_workspace()
     try:
         return _resolve(
-            ws, ref=ref, model=model, instructions=instructions, console=console, approve=approve
+            ws,
+            ref=ref,
+            model=model,
+            instructions=instructions,
+            console=console,
+            approve=approve,
+            wait_for_checks=wait_for_checks,
         )
     except ResolveMergeError as exc:
         rendered = _paint(console, ws, exc.conflicts)
@@ -104,7 +114,9 @@ def _resolve(
     instructions: str | None,
     console: Any,
     approve: Approve | None,
+    wait_for_checks: bool,
 ) -> dict[str, Any]:
+    finish = _Finish(console=console, approve=approve, wait_for_checks=wait_for_checks)
     try:
         ensure_git_repo(ws)
         branch = current_branch(ws) or "HEAD"
@@ -117,7 +129,7 @@ def _resolve(
                     f"into {branch} and it will be merged first.",
                 )
             if merge_ref(ws, ref, message=f"Merge {ref} into {branch}"):
-                return _pushed_output(ws, branch, str(ref), head_sha(ws), approve=approve)
+                return _pushed_output(ws, branch, str(ref), head_sha(ws), finish=finish)
         theirs = merge_head_name(ws) if already_merging else str(ref)
         merging = merge_head_sha(ws)
         conflicts = merge_conflicts(ws, ours=branch, theirs=theirs)
@@ -134,12 +146,12 @@ def _resolve(
             if conflicts.paths
             else ""
         )
-        return _commit(ws, conflicts, baseline, summary=summary, console=console, approve=approve)
+        return _commit(ws, conflicts, baseline, summary=summary, finish=finish)
 
     result = _run_agent(conflicts, ws, model=model, merged_ref=theirs, instructions=instructions)
     try:
         if not merge_in_progress(ws):
-            return _merge_finished_by_agent(ws, conflicts, merging, result, console=console)
+            return _merge_finished_by_agent(ws, conflicts, merging, result, finish=finish)
         remaining = _unresolved(ws, conflicts)
     except GitCommandError as exc:
         raise ResolveMergeError(exc.kind, exc.message, conflicts=conflicts) from exc
@@ -164,9 +176,7 @@ def _resolve(
             summary=result.summary,
             conflicts=conflicts,
         )
-    return _commit(
-        ws, conflicts, baseline, summary=result.summary, console=console, approve=approve
-    )
+    return _commit(ws, conflicts, baseline, summary=result.summary, finish=finish)
 
 
 def _run_agent(
@@ -200,7 +210,7 @@ def _unresolved(ws: str, conflicts: MergeConflicts) -> list[tuple[str, str]]:
 
 
 def _merge_finished_by_agent(
-    ws: str, conflicts: MergeConflicts, merging: str, result: CodingResult, *, console: Any
+    ws: str, conflicts: MergeConflicts, merging: str, result: CodingResult, *, finish: _Finish
 ) -> dict[str, Any]:
     """Accept a merge the coding agent committed itself; report one it abandoned."""
     if merging and is_ancestor(ws, merging, "HEAD"):
@@ -213,7 +223,7 @@ def _merge_finished_by_agent(
             resolved=conflicts.names,
             resolutions=_resolutions(ws, sha, conflicts),
             summary=result.summary,
-            rendered=_paint(console, ws, conflicts),
+            rendered=_paint(finish.console, ws, conflicts),
         )
     raise ResolveMergeError(
         ERR_MERGE_ABANDONED,
@@ -223,20 +233,31 @@ def _merge_finished_by_agent(
     )
 
 
+@dataclass(frozen=True)
+class _Finish:
+    """How the run ends once the files are resolved: show, approve, commit, push, watch."""
+
+    console: Any
+    approve: Approve | None
+    wait_for_checks: bool
+
+
 def _commit(
     ws: str,
     conflicts: MergeConflicts,
     baseline: dict[str, str],
     *,
     summary: str,
-    console: Any,
-    approve: Approve | None,
+    finish: _Finish,
 ) -> dict[str, Any]:
-    """Show the resolution, ask to commit and push, then do both."""
-    rendered = _paint(console, ws, conflicts)
+    """Show the resolution, ask to commit and push, then do both and watch the checks."""
+    rendered = _paint(finish.console, ws, conflicts)
     target = _push_target(ws, conflicts.ours)
-    action = f"commit the merge of {conflicts.theirs} into {conflicts.ours} and push it to {target}"
-    if approve is not None and not approve(action):
+    action = (
+        f"commit the merge of {conflicts.theirs} into {conflicts.ours}, push it to {target}"
+        f"{' and wait for the pull request checks' if finish.wait_for_checks else ''}"
+    )
+    if finish.approve is not None and not finish.approve(action):
         raise ResolveMergeError(
             ERR_CONFIRMATION_DENIED,
             f"Not approved: {action}. The resolved files are in the working tree, unstaged; "
@@ -253,7 +274,7 @@ def _commit(
             summary=summary,
             rendered=rendered,
         ) from exc
-    pushed_to, push_error = _push(ws)
+    pushed_to, push_error, checks = _push_and_watch(ws, sha, finish)
     return _output(
         ws,
         branch=conflicts.ours,
@@ -264,29 +285,54 @@ def _commit(
         summary=summary,
         rendered=rendered,
         pushed_to=pushed_to,
-        error_kind=push_error.kind if push_error else None,
-        error=push_error.message if push_error else None,
+        checks=checks,
+        error_kind=_error_kind(push_error, checks),
+        error=push_error.message if push_error else _checks_error(checks),
     )
 
 
 def _pushed_output(
-    ws: str, branch: str, merged: str, sha: str, *, approve: Approve | None
+    ws: str, branch: str, merged: str, sha: str, *, finish: _Finish
 ) -> dict[str, Any]:
     """A merge git committed cleanly still needs approval before it is pushed."""
     target = _push_target(ws, branch)
     action = f"push the clean merge of {merged} into {branch} to {target}"
-    if approve is not None and not approve(action):
+    if finish.approve is not None and not finish.approve(action):
         return _output(ws, branch=branch, merged=merged, commit_sha=sha)
-    pushed_to, push_error = _push(ws)
+    pushed_to, push_error, checks = _push_and_watch(ws, sha, finish)
     return _output(
         ws,
         branch=branch,
         merged=merged,
         commit_sha=sha,
         pushed_to=pushed_to,
-        error_kind=push_error.kind if push_error else None,
-        error=push_error.message if push_error else None,
+        checks=checks,
+        error_kind=_error_kind(push_error, checks),
+        error=push_error.message if push_error else _checks_error(checks),
     )
+
+
+def _push_and_watch(
+    ws: str, sha: str, finish: _Finish
+) -> tuple[str, GitCommandError | None, ChecksOutcome | None]:
+    pushed_to, push_error = _push(ws)
+    if not pushed_to or not finish.wait_for_checks:
+        return pushed_to, push_error, None
+    return pushed_to, None, watch_pull_request_checks(ws, pushed_to=pushed_to, commit_sha=sha)
+
+
+def _error_kind(push_error: GitCommandError | None, checks: ChecksOutcome | None) -> str | None:
+    if push_error is not None:
+        return push_error.kind
+    if checks is None or checks.passed or checks.state == CHECKS_NOT_WATCHED:
+        return None
+    return f"checks_{checks.state}"
+
+
+def _checks_error(checks: ChecksOutcome | None) -> str | None:
+    if checks is None or checks.passed or checks.state == CHECKS_NOT_WATCHED:
+        return None
+    return f"The pull request checks did not pass: {checks.detail}."
 
 
 def _push(ws: str) -> tuple[str, GitCommandError | None]:
@@ -332,6 +378,7 @@ def _output(
     error: str | None = None,
     rendered: bool = False,
     pushed_to: str = "",
+    checks: ChecksOutcome | None = None,
 ) -> dict[str, Any]:
     committed = success and bool(commit_sha)
     return {
@@ -341,6 +388,7 @@ def _output(
             merged=merged,
             commit_sha=commit_sha,
             pushed_to=pushed_to,
+            checks=checks,
             error=error,
         ),
         "resolutions": list(resolutions),
@@ -349,6 +397,7 @@ def _output(
             branch=branch,
             commit_sha=commit_sha,
             pushed_to=pushed_to,
+            checks=checks,
             unresolved=unresolved,
         ),
         "success": success,
@@ -360,6 +409,10 @@ def _output(
         "commit_sha": commit_sha,
         "pushed": bool(pushed_to),
         "pushed_to": pushed_to,
+        "pull_request_url": checks.pr_url if checks else "",
+        "checks_state": checks.state if checks else "",
+        "checks_detail": checks.detail if checks else "",
+        "failing_checks": list(checks.failing_checks) if checks else [],
         "resolved_files": list(resolved),
         "unresolved_files": list(unresolved),
         "coding_agent_summary": summary,
@@ -375,14 +428,22 @@ def _outcome(
     merged: str,
     commit_sha: str | None,
     pushed_to: str,
+    checks: ChecksOutcome | None,
     error: str | None,
 ) -> str:
     """One sentence the caller can repeat verbatim; it outranks the coding agent's own account."""
     if committed and commit_sha and pushed_to:
-        return (
+        head = (
             f"OpenSRE committed the merge of {merged} into {branch} as {commit_sha[:12]} and "
-            f"pushed it to {pushed_to}; the pull request is updated."
+            f"pushed it to {pushed_to}"
         )
+        if checks is None:
+            return f"{head}; the pull request is updated."
+        if checks.passed:
+            return f"{head}; {checks.detail} ({checks.pr_url})."
+        if checks.state == CHECKS_NOT_WATCHED:
+            return f"{head}; the checks were not watched because {checks.detail}."
+        return f"{head}, but {checks.detail} ({checks.pr_url})."
     if committed and commit_sha:
         detail = f": {error}" if error else ""
         return (
@@ -399,11 +460,18 @@ def _next_step(
     branch: str,
     commit_sha: str | None,
     pushed_to: str,
+    checks: ChecksOutcome | None,
     unresolved: tuple[str, ...],
 ) -> str:
     """What the user does now; the caller should suggest it."""
     if committed and commit_sha and pushed_to:
-        return "Watch the pull request's checks on the pushed commit."
+        if checks is None or checks.state == CHECKS_NOT_WATCHED:
+            return "Watch the pull request's checks on the pushed commit."
+        if checks.passed:
+            return "The pull request is green; it is ready for review or merge."
+        if checks.state == "failed":
+            return "Open the failing checks on the pull request, or ask OpenSRE to fix its CI."
+        return "Open the pull request and check its latest commit and checks."
     if committed and commit_sha:
         return (
             f"Review the merge with `git show {commit_sha[:12]}`, then push {branch} to update "

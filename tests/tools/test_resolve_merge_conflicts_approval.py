@@ -8,10 +8,12 @@ from unittest.mock import patch
 
 from integrations.coding_agent import CodingResult
 from integrations.git import head_sha, merge_in_progress
+from integrations.github import ChecksOutcome
 from tools.cross_vendor.resolve_merge_conflicts.runner import resolve_merge
 
 _VERIFY = "tools.cross_vendor.resolve_merge_conflicts.runner.verify_coding_agent"
 _RUN = "tools.cross_vendor.resolve_merge_conflicts.runner.run_coding_task"
+_WATCH = "tools.cross_vendor.resolve_merge_conflicts.runner.watch_pull_request_checks"
 
 
 def _git(cwd: Path, *args: str) -> str:
@@ -67,7 +69,12 @@ def test_approved_merge_is_committed_and_pushed_to_the_tracked_branch(tmp_path: 
         out = resolve_merge(str(work), ref=None, model=None, instructions=None, approve=approve)
 
     # Assert
-    assert asked == ["commit the merge of main into feature and push it to origin/feature"]
+    assert asked == [
+        "commit the merge of main into feature, push it to origin/feature "
+        "and wait for the pull request checks"
+    ]
+    assert out["checks_state"] == "not_watched"
+    assert "not watched because the origin is not a GitHub repository" in out["outcome"]
     assert out["success"] is True and out["pushed"] is True
     assert out["pushed_to"] == "origin/feature"
     assert out["commit_sha"] == _git(bare, "rev-parse", "refs/heads/feature")
@@ -131,3 +138,33 @@ def test_push_failure_keeps_the_local_commit_and_says_so(tmp_path: Path) -> None
     assert out["commit_sha"] == head_sha(str(work))
     assert "did not push it" in out["outcome"]
     assert "push feature to update the pull request" in out["next_step"]
+
+
+def test_green_checks_end_the_run_and_failed_checks_are_reported(tmp_path: Path) -> None:
+    # Arrange
+    work, _bare = _stopped_merge_with_origin(tmp_path)
+    url = "https://github.com/Tracer-Cloud/opensre/pull/6183"
+    green = ChecksOutcome("passed", "all 3 pull request checks passed", pr_url=url)
+    red = ChecksOutcome("failed", "checks failed: CI Gate", pr_url=url, failing_checks=("CI Gate",))
+
+    # Act
+    with (
+        patch(_VERIFY, return_value=(True, "ready")),
+        patch(_RUN, side_effect=lambda *_a, **_k: _resolve_app(work)),
+        patch(_WATCH, return_value=green) as watch,
+    ):
+        passed = resolve_merge(str(work), ref=None, model=None, instructions=None, approve=None)
+    with patch(_WATCH, return_value=red):
+        failed_output = resolve_merge(
+            str(work), ref="main", model=None, instructions=None, approve=None
+        )
+
+    # Assert
+    assert watch.call_args.kwargs["pushed_to"] == "origin/feature"
+    assert passed["checks_state"] == "passed" and passed["error_kind"] is None
+    assert passed["pull_request_url"] == url
+    assert passed["outcome"].endswith(f"all 3 pull request checks passed ({url}).")
+    assert passed["next_step"] == "The pull request is green; it is ready for review or merge."
+    assert failed_output["error_kind"] == "checks_failed"
+    assert failed_output["failing_checks"] == ["CI Gate"]
+    assert "but checks failed: CI Gate" in failed_output["outcome"]

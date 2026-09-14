@@ -28,11 +28,18 @@ STREAM_LABEL_ANSWER = "answer"
 # strips the underscores and restyles that span. Escape dunder filenames so
 # path-heavy reports (architecture audits, etc.) keep uniform body color.
 _DUNDER_FILENAME_RE = re.compile(r"__([A-Za-z0-9_]+)__(?=\.py\b)")
+# Fenced blocks and inline code spans render verbatim, so a backslash added
+# there would show as a backslash.
+_MARKDOWN_CODE_RE = re.compile(r"(```.*?```|`[^`\n]*`)", re.DOTALL)
 
 
 def _escape_markdown_dunder_filenames(text: str) -> str:
-    """Neutralize ``__name__.py`` so Markdown does not parse it as strong emphasis."""
-    return _DUNDER_FILENAME_RE.sub(r"\_\_\1\_\_", text)
+    """Neutralize ``__name__.py`` outside code so Markdown does not parse it as emphasis."""
+    parts = _MARKDOWN_CODE_RE.split(text)
+    return "".join(
+        part if index % 2 else _DUNDER_FILENAME_RE.sub(r"\_\_\1\_\_", part)
+        for index, part in enumerate(parts)
+    )
 
 
 # The model sometimes pastes a tool's raw result (JSON, listings) into its reply

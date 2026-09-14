@@ -190,6 +190,13 @@ def is_ancestor(workspace: str, ancestor: str, descendant: str) -> bool:
     return result.returncode == 0
 
 
+def commit_parents(workspace: str, sha: str) -> list[str]:
+    """Parent shas of *sha* in order (two for a merge commit)."""
+    result = _run_git(workspace, "rev-list", "--parents", "-n", "1", sha)
+    fields = result.stdout.split()
+    return fields[1:] if result.returncode == 0 and fields else []
+
+
 def merge_commit_edits(workspace: str, merge_sha: str) -> list[str]:
     """Paths a merge commit changed relative to *both* parents.
 
@@ -219,6 +226,7 @@ __all__ = [
     "ConflictedPath",
     "abort_merge",
     "commit_merge",
+    "commit_parents",
     "describe_conflicts",
     "fetch_remote_branch",
     "head_sha",

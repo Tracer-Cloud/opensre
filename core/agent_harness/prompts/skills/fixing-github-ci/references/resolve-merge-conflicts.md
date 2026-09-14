@@ -30,6 +30,10 @@ Never run `git merge`, `git add`, `git commit`, or `git push` through
    the one it tracks. At `/auto high` (the default) it proceeds; at lower
    levels the user is asked first; an unattended run proceeds. The remote
    branch is never a protected base branch.
+5. Waits for the checks of the open pull request whose head is that branch
+   and reports `checks_state` (`passed`, `failed`, `timed_out`, `superseded`,
+   `conflicted`, or `not_watched`). Pass `wait_for_checks=false` only when the
+   user asks not to wait.
 
 ## How to reply
 
@@ -46,3 +50,5 @@ Never run `git merge`, `git add`, `git commit`, or `git push` through
   working tree uncommitted and ask what should change.
 - When `error_kind` is `push_failed`, the merge is committed locally; give the
   push command from `next_step`.
+- When `error_kind` starts with `checks_`, the merge is pushed; name
+  `failing_checks` and offer to fix the pull request's CI.

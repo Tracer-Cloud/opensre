@@ -53,6 +53,12 @@ agent word for word.
 5. It asks to commit the merge and push the branch, following your `/auto`
    level, then does both. Unrelated changes you had in the working tree stay
    uncommitted.
+6. When the branch has an open pull request on GitHub, it waits for that pull
+   request's checks (up to 15 minutes) and reports whether they passed, which
+   ones failed, or whether another commit replaced the merge. Pass
+   `wait_for_checks: false` in your request to skip the wait. Without a GitHub
+   origin, a GitHub token, or an open pull request, the checks are reported as
+   not watched.
 
 ### Approval and unattended runs
 
@@ -84,6 +90,8 @@ the coding agent is not run a second time.
 | "still need a person's decision" | Tell OpenSRE how to settle the named files and ask again |
 | "abandoned the merge" | The agent reset the merge; start it again with `git merge <branch>` |
 | "did not push it" | The merge is committed locally; push the branch yourself (`git push`) |
+| "checks failed" | The merge is pushed; open the named checks on the pull request, or ask OpenSRE to fix its CI |
+| "checks were not watched" | Set `GITHUB_TOKEN` and install `gh`, or open a pull request for the branch |
 
 ## Security
 

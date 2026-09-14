@@ -67,8 +67,8 @@ class ResolveMergeConflictsTool(BaseTool):
     )
     description = (
         "Resolve the git merge conflicts in the current repository with a coding agent, "
-        "show each conflict side by side, then commit the merge and push the branch to "
-        "update its pull request. Use whenever a merge stopped on conflicts (git reported "
+        "show each conflict side by side, then commit the merge, push the branch to "
+        "update its pull request and wait for the pull request checks. Use whenever a merge stopped on conflicts (git reported "
         "'CONFLICT', 'Unmerged paths', or files hold '<<<<<<<' markers) or the user asks "
         "to resolve, fix, or finish a merge, or to commit and push a resolved merge. It "
         "works on the merge already in progress, or merges the named branch first. Before "
@@ -121,6 +121,14 @@ class ResolveMergeConflictsTool(BaseTool):
                 "description": "Optional coding-agent model override. Defaults to CODING_MODEL.",
                 "nullable": True,
             },
+            "wait_for_checks": {
+                "type": "boolean",
+                "description": (
+                    "After the push, wait for the pull request's checks and report whether "
+                    "they passed. Defaults to true."
+                ),
+                "nullable": True,
+            },
         },
     }
     outputs = {
@@ -137,6 +145,10 @@ class ResolveMergeConflictsTool(BaseTool):
         "commit_sha": "The merge commit, or None when the merge was not committed",
         "pushed": "True when the branch was pushed after the commit",
         "pushed_to": "remote/branch the merge commit was pushed to, else empty",
+        "pull_request_url": "The open pull request whose checks were watched, else empty",
+        "checks_state": "passed, failed, timed_out, superseded, conflicted, or not_watched",
+        "checks_detail": "One line on the checks outcome",
+        "failing_checks": "Names of the checks that failed",
         "resolved_files": "Conflicted files the coding agent resolved",
         "unresolved_files": "Conflicted files still waiting for a decision",
         "coding_agent_summary": "The coding agent's account of how it resolved each file, "
@@ -156,6 +168,7 @@ class ResolveMergeConflictsTool(BaseTool):
         ref: str | None = None,
         instructions: str | None = None,
         model: str | None = None,
+        wait_for_checks: bool | None = True,
         context: Any = None,
     ) -> dict[str, Any]:
         scope = _action_scope(context)
@@ -166,6 +179,7 @@ class ResolveMergeConflictsTool(BaseTool):
             instructions=instructions,
             console=getattr(scope, "console", None),
             approve=_approval(scope),
+            wait_for_checks=wait_for_checks is not False,
         )
 
 
