@@ -32,6 +32,46 @@ class PlanStepStatus(StrEnum):
 
 _ALLOWED_STATUSES: frozenset[str] = frozenset(PlanStepStatus)
 _STATUS_ERROR = "status must be pending, in_progress, completed, or blocked"
+PLAN_ITEM_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "step": {
+            "type": "string",
+            "description": "One short observable outcome (about 5–10 words).",
+            "minLength": 1,
+        },
+        "status": {
+            "type": "string",
+            "description": (
+                "One of: pending, in_progress, completed, blocked. Use blocked "
+                "for a step this runtime or the current facts prevent; it is "
+                "terminal, never counts as done, and needs its blocker named "
+                "in explanation."
+            ),
+            "enum": ["pending", "in_progress", "completed", "blocked"],
+        },
+        "deliverable": {
+            "type": "boolean",
+            "description": (
+                "True when this step's work is a text-only assistant reply the user "
+                "must see (a report or table) while later steps remain. Without it a "
+                "text-only reply before the plan is settled is treated as a premature "
+                "stop and is not shown."
+            ),
+        },
+        "verifies": {
+            "type": "boolean",
+            "description": (
+                "True for the step that checks the outcome of the earlier steps by "
+                "running something (a re-read, a re-run, a comparison). It is the only "
+                "step shown as (verify), it completes only after its own tool returned, "
+                "and a text-only last step closes only after it has run."
+            ),
+        },
+    },
+    "required": ["step", "status"],
+    "additionalProperties": False,
+}
 _BLOCKED_NEEDS_EXPLANATION = "a blocked step needs its blocker named in explanation"
 #: Statuses that leave no work to do: the plan is settled once every step has one.
 TERMINAL_STATUSES: frozenset[PlanStepStatus] = frozenset(
@@ -47,11 +87,17 @@ class PlanStep:
     (a report, a table): the host shows that reply even though later steps
     remain. It is the structured signal that separates an intended mid-plan
     deliverable from a premature stop the plan gate rejects.
+
+    ``verifies`` marks the step that checks the outcome of the earlier ones by
+    running something. It is the only step shown as ``(verify)``, it never
+    completes without a tool return of its own, and a text-only closing step
+    completes for free only after one has.
     """
 
     step: str
     status: PlanStepStatus
     deliverable: bool = False
+    verifies: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -109,6 +155,11 @@ class TaskPlan:
         when :attr:`all_completed` also holds.
         """
         return bool(self.steps) and all(item.status in TERMINAL_STATUSES for item in self.steps)
+
+    @property
+    def verified(self) -> bool:
+        """True when a step marked ``verifies`` has completed."""
+        return any(item.verifies and item.status is PlanStepStatus.COMPLETED for item in self.steps)
 
     @property
     def all_pending(self) -> bool:
@@ -169,7 +220,12 @@ def parse_task_plan(args: dict[str, Any]) -> tuple[TaskPlan | None, str | None]:
         if status is PlanStepStatus.IN_PROGRESS:
             in_progress += 1
         steps.append(
-            PlanStep(step=step_text, status=status, deliverable=item.get("deliverable") is True)
+            PlanStep(
+                step=step_text,
+                status=status,
+                deliverable=item.get("deliverable") is True,
+                verifies=item.get("verifies") is True,
+            )
         )
     if in_progress > 1:
         return None, "at most one step can be in_progress at a time"
@@ -185,6 +241,8 @@ def _step_payload(item: PlanStep) -> dict[str, Any]:
     payload: dict[str, Any] = {"step": item.step, "status": str(item.status)}
     if item.deliverable:
         payload["deliverable"] = True
+    if item.verifies:
+        payload["verifies"] = True
     return payload
 
 
@@ -215,6 +273,7 @@ def task_plan_from_payload(payload: Any) -> TaskPlan | None:
 
 
 __all__ = [
+    "PLAN_ITEM_SCHEMA",
     "PlanStep",
     "PlanStepStatus",
     "TERMINAL_STATUSES",

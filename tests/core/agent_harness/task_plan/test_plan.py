@@ -206,3 +206,34 @@ def test_from_payload_rejects_garbage() -> None:
     assert task_plan_from_payload(None) is None
     assert task_plan_from_payload([]) is None
     assert task_plan_from_payload({"plan": [{"step": "only one", "status": "pending"}]}) is None
+
+
+def test_only_a_declared_verification_step_is_labelled_verify() -> None:
+    """The last step used to be labelled (verify) whatever it said; the label is declared now."""
+    # Arrange
+    plan, error = parse_task_plan(
+        {
+            "plan": [
+                {"step": "Count the files", "status": "completed"},
+                {
+                    "step": "Re-count with a second method",
+                    "status": "in_progress",
+                    "verifies": True,
+                },
+                {"step": "Summarize results", "status": "pending"},
+            ]
+        }
+    )
+    assert error is None and plan is not None
+
+    # Act
+    text = format_task_plan_plain(plan)
+
+    # Assert: one label, on the declared step, and the flag survives a round trip.
+    assert text.count("(verify)") == 1
+    assert "● Re-count with a second method (verify)" in text
+    assert "Summarize results (verify)" not in text
+    assert plan.verified is False
+    restored = task_plan_from_payload(task_plan_to_payload(plan))
+    assert restored == plan
+    assert restored is not None and restored.steps[1].verifies is True

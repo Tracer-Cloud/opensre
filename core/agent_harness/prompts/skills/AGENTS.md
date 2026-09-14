@@ -185,6 +185,19 @@ set it); the host shows a text-only reply before the plan is settled only
 when the current or next step is flagged, and treats any other one as a
 premature stop.
 
+The step that checks the outcome carries `verifies: true` (tell the card's
+reader to set it). It is the only step the shell labels `(verify)`, it
+completes only after its own tool returned, and a text-only last step
+closes for free only after it has. A card whose last step is prose (an
+explanation, a report) therefore names which earlier step verifies, or the
+plan cannot be marked complete.
+
+Do not apply that teaching to onboarding demo A
+(`onboarding-github-ci/a-analyzing-github-ci-performance/`). Leave the card,
+references, and workflow script as they are on `main`. Still run
+`test_workflow.py` when the host or skill loader changes; if it fails, fix
+the product or the harness, not the card. Demos B and C are not frozen.
+
 ## Default recommended plan
 
 Every workflow `SKILL.md` carries a `## Plan` section directly after its

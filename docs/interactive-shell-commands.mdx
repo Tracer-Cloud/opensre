@@ -111,6 +111,7 @@ the total is best-effort and can decrease after restarting if a save failed.
 | `/work` | List, add, complete, and prioritize human work items |
 | `/cancel <id>` | Cancel a running task by id **elevated** |
 | `/stop` | Guidance for stopping background work |
+| `/gateway` | Start, stop, or inspect the background gateway daemon |
 
 ### Agents and alerts
 
@@ -118,6 +119,7 @@ the total is best-effort and can decrease after restarting if a save failed.
 | --- | --- |
 | `/fleet` | View and manage the local AI agent fleet |
 | `/alerts` | Alert listener inbox status |
+| `/choose` | Reopen the selection menu the agent is waiting on |
 
 ### CLI parity
 
@@ -137,6 +139,8 @@ These commands delegate to the same Click CLI you would run outside the REPL.
 | `/messaging` | Telegram pairing and allowlist |
 | `/guardrails` | Sensitive-information guardrail rules |
 | `/update` | Check for updates and upgrade OpenSRE |
+| `/posthog` | Run or schedule PostHog per-metric summary reports |
+| `/runbooks` | Manage trusted runbook sources for guided investigations |
 | `/debug` | Targeted runtime diagnostics |
 | `/uninstall` | Remove OpenSRE and local data **elevated** |
 
@@ -146,6 +150,7 @@ These commands delegate to the same Click CLI you would run outside the REPL.
 | --- | --- |
 | `/doctor` | Full local environment diagnostic |
 | `/version` | OpenSRE, Python, and OS versions |
+| `/theme` | Choose and persist the shell colour theme |
 
 ### Commands with interactive menus (TTY)
 
@@ -157,9 +162,14 @@ Bare invocation opens a picker or submenu:
 | `/integrations` | list / verify / show / setup / remove |
 | `/mcp` | list / connect / disconnect |
 | `/model` | show / set / restore / toolcall |
+| `/theme` | Pick a colour theme from the installed list |
+| `/choose` | Reopen the selection menu the agent queued |
 | `/trust`, `/verbose` | on / off |
 | `/history` | show / clear / off / on / retention |
 | `/resume` | Numbered list of recent sessions |
+
+`/model` keeps its menu running: picking `show` prints the current models and
+hands you back to the menu, so leave it with **done** or Esc.
 
 ## Commands
 
@@ -596,6 +606,8 @@ Show the active hosted model. An authenticated interactive shell is account-mana
 
 **Account lock:** `set`, `restore`, and `toolcall set` explain that the model is managed by the OpenSRE account and make no change. The account route overrides local provider variables for every model role while the session is signed in.
 
+**Bare `/model`:** in a terminal this opens a menu rather than printing the table. The menu stays open: `show` prints the current models and hands you back to it, so leave with **done** or Esc. `set`, `restore` and `toolcall` close it once the change succeeds. Use `/model show` when you only want the table.
+
 **Reasoning vs toolcall model:** Reasoning model drives chat and planning; toolcall model drives tool invocation when the provider exposes a separate slot (common on Anthropic/OpenAI).
 
 See [LLM providers](/llm-providers).
@@ -686,6 +698,30 @@ Human todos and reminders are tracked separately by `/work`.
 | `cancelled` | User or `/cancel` stopped it |
 | `failed` | Non-zero exit or pipeline error |
 | `pending` | Created but not yet started |
+
+</Accordion>
+
+<Accordion title="/gateway">
+
+Control the background OpenSRE gateway daemon, which runs the web health app, Telegram chat, and the task scheduler. Scheduled work needs a scheduler running: this daemon, or `opensre cron start` in the foreground.
+
+```text
+/gateway
+/gateway start
+/gateway stop
+/gateway status
+/gateway logs
+/gateway logs 100
+```
+
+| Subcommand | Behavior |
+| --- | --- |
+| `status` (default) | Running state and pid, plus a line per component |
+| `start` | Start the daemon in the background |
+| `stop` | Stop the running daemon |
+| `logs [lines]` | Tail the log, 30 lines by default |
+
+Logs are written to `~/.opensre/gateway/gateway.log`. Same daemon as `opensre gateway`.
 
 </Accordion>
 
@@ -793,6 +829,18 @@ Fleet coordination is documented further on [Agents](/fleet). Register discovere
 | `graph` | Tree of wait-on relationships |
 
 **Kill confirmation:** Without `--force`, prompts `[y/N]`. `--force` skips prompt (still elevated tier unless trust mode).
+
+</Accordion>
+
+<Accordion title="/choose">
+
+Reopen the selection menu the agent is waiting on. Useful when the menu scrolled away, or you dismissed it with Esc and want it back.
+
+```text
+/choose
+```
+
+Prints `No selection menu is pending.` when the agent has not asked anything. Outside a TTY it lists the options as text for you to answer in a reply instead of opening a picker — except for a pending onboarding demo choice, which it drops with "Guided demo selection is unavailable here", leaving you to ask for what you want directly.
 
 </Accordion>
 
@@ -1038,6 +1086,37 @@ Checks PyPI and upgrades OpenSRE in-place (5-minute network timeout). Non-zero e
 
 </Accordion>
 
+<Accordion title="/posthog">
+
+Run or schedule automated PostHog per-metric summary reports. Requires the PostHog integration; see [PostHog](/posthog).
+
+```text
+/posthog report run
+/posthog report schedule list
+/posthog report schedule add
+/posthog report schedule run <id>
+/posthog report schedule remove <id>
+```
+
+A scheduled report only fires while a scheduler is running, so pair it with `/gateway start` or `opensre cron start`. Same as `opensre posthog`.
+
+</Accordion>
+
+<Accordion title="/runbooks">
+
+Manage the trusted runbook sources the agent may read during guided investigations. See [Runbook-guided investigations](/runbook-guided-investigations).
+
+```text
+/runbooks list
+/runbooks add github --name <name> --repo <owner/repo>
+/runbooks verify <name>
+/runbooks remove <name>
+```
+
+The agent reads runbooks only from sources listed here; an untrusted repository, an unsafe path, or a non-Markdown document is rejected. Same as `opensre runbooks`.
+
+</Accordion>
+
 <Accordion title="/debug">
 
 ```text
@@ -1075,6 +1154,21 @@ Environment diagnostic distinct from `/health`:
 Checks Python version, venv, config paths, Docker availability, credential presence, and related local prerequisites. Each row: `ok`, `warn`, or `error` with detail text.
 
 Use **`/doctor`** before first install debugging; use **`/health`** before an incident to verify integrations.
+
+</Accordion>
+
+<Accordion title="/theme">
+
+Choose the shell colour theme. The choice persists to `interactive.theme` in `~/.opensre/config.yml`, so it survives restarts.
+
+```text
+/theme
+/theme nord
+```
+
+Bare `/theme` opens a picker with the current theme preselected, and needs a TTY. Passing a name sets it directly and reports an unknown name with the full list.
+
+Installed themes: `green`, `blue`, `amber`, `mono`, `red`, `pink`, `purple`, `orange`, `teal`, `lime`, `nord`, `dracula`, `solarized`, `gruvbox`, `webflux`, `sunset`. The default is `purple`.
 
 </Accordion>
 

@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from core.agent_harness.task_plan.completion import demote_unevidenced_completions
 from core.agent_harness.task_plan.plan import (
     TaskPlan,
     parse_task_plan,
     task_plan_from_payload,
     task_plan_to_payload,
 )
-from core.agent_harness.task_plan.update_plan_policy import demote_unevidenced_completions
 
 
 def _plan(statuses: list[str], *, deliverable_index: int = 3) -> TaskPlan:
@@ -50,6 +50,6 @@ def test_deliverable_flag_survives_payload_round_trip_and_status_demotion() -> N
     assert restored is not None
     assert [item.deliverable for item in restored.steps] == [False, False, False, True, False]
 
-    demoted, names = demote_unevidenced_completions(plan, prior=None, evidence=False)
-    assert names
-    assert [item.deliverable for item in demoted.steps] == [False, False, False, True, False]
+    check = demote_unevidenced_completions(plan, prior=None, evidence=False)
+    assert check.demoted
+    assert [item.deliverable for item in check.plan.steps] == [False, False, False, True, False]

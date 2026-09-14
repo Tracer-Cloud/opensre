@@ -172,6 +172,7 @@ SPI_ROLE_NAMES: dict[str, frozenset[str]] = {
     ),
     "task_plan": frozenset(
         {
+            "PLAN_ITEM_SCHEMA",
             "PLAN_STATUS_GLYPH",
             "PlanStep",
             "PlanStepStatus",
@@ -183,13 +184,16 @@ SPI_ROLE_NAMES: dict[str, frozenset[str]] = {
             "ensure_active_step",
             "format_plan_header",
             "format_task_plan_plain",
+            "format_update_plan_instruction",
             "is_plan_diagnosis_prose",
             "mark_plan_written",
             "parse_task_plan",
             "plan_evidence_available",
             "promote_first_pending_step",
+            "record_blocked_this_turn",
             "record_plan_evidence",
             "record_task_plan_work",
+            "step_label",
             "take_completed_plan_breakdown",
             "task_plan_to_payload",
         }

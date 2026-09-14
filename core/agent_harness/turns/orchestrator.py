@@ -30,7 +30,13 @@ from core.agent_harness.turns.turn_results import (
     TurnResult,
 )
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
-from infrastructure.observability.trace.observations import TraceAttributes, observe_span
+from infrastructure.observability.trace.observations import (
+    TraceAttributes,
+    is_observation_sink_active,
+    observe_span,
+)
+from infrastructure.observability.trace.trace_session import TraceSession, inherit_trace_session
+from infrastructure.observability.trace.user_identity import resolve_trace_identity
 
 log = logging.getLogger(__name__)
 
@@ -106,15 +112,19 @@ def run_turn(
     """Run one ReAct turn whose accepted conclusion is the user-facing answer.
 
     One turn is one trace for the observation sink: the user text is the trace
-    input, the assistant reply the output, and ``session_id`` groups the turns
-    of a conversation.
+    input, the assistant reply the output, ``session_id`` groups the turns of a
+    conversation and ``user_id`` names who took the turn. The outermost turn
+    owns the session id; a turn nested inside it (a loop run from a command, a
+    tool driving a headless turn) inherits it rather than stamping its own.
     """
-    trace = TraceAttributes(
-        session_id=getattr(session, "session_id", None),
-        tags=(surface,),
-        metadata={"surface": surface},
-    )
-    with observe_span(_TURN_OBSERVATION_NAME, input=text, trace=trace) as observation:
+    with (
+        inherit_trace_session(getattr(session, "session_id", None)) as trace_session,
+        observe_span(
+            _TURN_OBSERVATION_NAME,
+            input=text,
+            trace=_trace_attributes(trace_session, surface),
+        ) as observation,
+    ):
         result = _run_turn(
             text,
             session,
@@ -130,6 +140,27 @@ def run_turn(
             metadata=_turn_outcome_metadata(result),
         )
         return result
+
+
+def _trace_attributes(trace_session: TraceSession | None, surface: str) -> TraceAttributes:
+    """Trace-wide attributes for the root observation; identity is resolved only when exported."""
+    tags: tuple[str, ...] = (surface,)
+    metadata: dict[str, Any] = {"surface": surface}
+    if trace_session is not None:
+        tags += trace_session.tags
+        metadata.update(trace_session.metadata)
+    user_id: str | None = None
+    if is_observation_sink_active():
+        identity = resolve_trace_identity()
+        user_id = identity.user_id
+        if identity.installation_id:
+            metadata["installation_id"] = identity.installation_id
+    return TraceAttributes(
+        session_id=trace_session.session_id if trace_session is not None else None,
+        user_id=user_id,
+        tags=tags,
+        metadata=metadata,
+    )
 
 
 def _run_turn(

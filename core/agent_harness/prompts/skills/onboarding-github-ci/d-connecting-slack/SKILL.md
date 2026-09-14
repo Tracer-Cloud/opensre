@@ -42,7 +42,9 @@ Track progress with the `update_plan` tool, not with headers or prose:
 - On entry, before the first workflow tool call, call `update_plan` with the
   steps below verbatim, the first step `in_progress`, and a one-line
   `explanation` (this is not a diagnosis; no hypothesis table):
-  `Check Slack` / `Set up if needed` / `Explain the hand-off`.
+  `Check Slack` / `Set up if needed` / `Explain the hand-off`. Mark
+  `Check Slack` with `verifies: true` in every call: it is the check the
+  text-only last step relies on to close.
 - After a step's tool results, call `update_plan` marking it `completed` and
   the next step `in_progress`, in the same response as the next step's single
   tool call. When Slack is already connected, mark `Set up if needed` completed

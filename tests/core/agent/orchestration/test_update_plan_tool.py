@@ -76,10 +76,11 @@ def test_update_plan_preserves_report_and_followup_after_verification() -> None:
         "Display the report",
         "Offer the next step",
     ]
-    items = [
+    items: list[dict[str, Any]] = [
         {"step": label, "status": "completed" if index < 4 else "pending"}
         for index, label in enumerate(labels)
     ]
+    items[3]["verifies"] = True
     items[4]["status"] = "in_progress"
     result = execute_update_plan_tool({"plan": items}, _ctx(session=session))
 
@@ -98,11 +99,13 @@ def test_update_plan_preserves_report_and_followup_after_verification() -> None:
     items[5]["status"] = "in_progress"
     result = execute_update_plan_tool({"plan": items}, _ctx(session=_worked(session)))
     assert result["ok"] is True
-    completed = [{"step": label, "status": "completed"} for label in labels]
+    completed: list[dict[str, Any]] = [{"step": label, "status": "completed"} for label in labels]
+    completed[3]["verifies"] = True
     result = execute_update_plan_tool({"plan": completed}, _ctx(session=session))
     assert result["ok"] is True
     breakdown = take_completed_plan_breakdown(session)
     assert breakdown.startswith("Plan complete · 6/6")
+    assert "  ✓ Calculate metrics and verify coverage (verify)" in breakdown
     assert breakdown.splitlines()[-1] == "  ✓ Offer the next step"
 
 
@@ -408,3 +411,69 @@ def test_update_plan_result_payload_is_a_reparseable_durable_record() -> None:
     assert restored is not None and reparsed is not None
     assert [step.step for step in restored.steps] == [item["step"] for item in _PLAN]
     assert restored.current_index == reparsed.current_index == 2
+
+
+def test_a_text_only_close_without_a_verification_step_is_not_complete() -> None:
+    """The adversarial run: list, count, "summarize" closed the plan with nothing checked."""
+    # Arrange: two steps done with tools; the summary step is active.
+    session = _worked(Session())
+    steps = ["List top-level Markdown files", "Count them", "Summarize the result"]
+    working = [
+        {"step": steps[0], "status": "completed"},
+        {"step": steps[1], "status": "completed"},
+        {"step": steps[2], "status": "in_progress"},
+    ]
+    assert execute_update_plan_tool({"plan": working}, _ctx(session=session))["ok"] is True
+
+    # Act: the summary is marked completed with no tool and no verification step.
+    closing = [{"step": step, "status": "completed"} for step in steps]
+    result = execute_update_plan_tool({"plan": closing}, _ctx(session=session))
+
+    # Assert: the plan stays open and the model is told what closes it.
+    assert result["ok"] is True
+    assert session.task_plan is not None and session.task_plan.all_completed is False
+    assert "Summarize the result" in result["instruction"]
+    assert "verifies: true" in result["instruction"]
+    assert "unverified" in result["instruction"]
+
+
+def test_a_reset_step_may_be_blocked_instead_of_worked_around() -> None:
+    """The adversarial run: told to reset, the model ran commands the user had forbidden."""
+    # Arrange / Act: a plan born complete before any tool ran.
+    result = execute_update_plan_tool(
+        {
+            "plan": [
+                {"step": "Inspect repository", "status": "completed"},
+                {"step": "Summarize results", "status": "completed"},
+            ]
+        },
+        _ctx(session=Session()),
+    )
+
+    # Assert: both reset, and the reply offers blocked, not "run something else".
+    assert result["ok"] is True
+    assert "Inspect repository; Summarize results" in result["instruction"]
+    assert "mark the step blocked" in result["instruction"]
+
+
+def test_update_plan_records_the_steps_it_newly_blocked() -> None:
+    """The conclusion gate reads this to ask the user before the turn ends."""
+    from core.agent_harness.task_plan.evidence import blocked_this_turn
+
+    # Arrange / Act: a fresh plan blocks one step, with the blocker named.
+    session = Session()
+    result = execute_update_plan_tool(
+        {
+            "plan": [
+                {"step": "Inspect repository", "status": "blocked"},
+                {"step": "Summarize results", "status": "pending"},
+            ],
+            "explanation": "The user forbade running commands.",
+        },
+        _ctx(session=session),
+    )
+
+    # Assert
+    assert result["ok"] is True
+    assert blocked_this_turn(session) == ("Inspect repository",)
+    assert "ask_user_choice" in result["instruction"]

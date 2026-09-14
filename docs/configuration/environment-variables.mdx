@@ -379,8 +379,19 @@ Want credentials only from the environment, never on disk? Set `OPENSRE_DISABLE_
 Every chat turn can be exported as a [Langfuse](https://langfuse.com) trace:
 one trace per turn, with the user message and the reply on the root, a
 `generation` per model call (model, prompt, response, token usage) and a
-`tool` per tool execution nested under the agent loop. Traces of the same
-session share a Langfuse `session_id`.
+`tool` per tool execution nested under the agent loop.
+
+Traces are grouped and attributed the way you work:
+
+- **Session**: the Langfuse `session_id` is the OpenSRE session id (the
+  `~/.opensre/sessions/<id>.jsonl` file). Everything run from a shell session
+  joins it — including the scheduled loops that shell is hosting, which are
+  tagged `scheduled` with the task id and name in metadata. Loops run by the
+  background scheduler service or the gateway group per task instead.
+- **User**: the chat-platform user for gateway turns; the signed-in OpenSRE
+  account for the shell and CLI; a stable per-install id when signed out.
+  Shell and CLI traces also carry that `installation_id` in metadata so traces
+  from before a login can be matched to the user afterwards.
 
 Tracing is off unless **both** keys are set and the extra is installed:
 
