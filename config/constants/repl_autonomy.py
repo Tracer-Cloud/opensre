@@ -48,9 +48,10 @@ AUTO_LEVEL_TITLES: Final[dict[AutoLevel, str]] = {
 
 # tool_type values that still need confirmation at this level (High: none).
 # Mutation-capable agent tools ask at Med+ — including synthetic_test (spawns a
-# mutation-classified subprocess), slash/CLI, and Sentry issue-fix (edits the
-# working tree and can commit/push/open a PR) — otherwise those run without
-# the confirmation promised by ``/auto med``.
+# mutation-classified subprocess), slash/CLI, Sentry issue-fix (edits the
+# working tree and can commit/push/open a PR), and the merge push (commits a
+# resolved merge and pushes the branch) — otherwise those run without the
+# confirmation promised by ``/auto med``.
 _MUTATING_AGENT_TOOL_TYPES: Final[frozenset[str]] = frozenset(
     {
         "shell",
@@ -61,6 +62,7 @@ _MUTATING_AGENT_TOOL_TYPES: Final[frozenset[str]] = frozenset(
         "switch_llm_provider",
         "synthetic_test",
         "sentry_issue_fix",
+        "merge_push",
     }
 )
 

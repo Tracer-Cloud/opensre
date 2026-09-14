@@ -8,12 +8,14 @@ unresolved (abort, or keep the merge in progress for a person).
 
 from __future__ import annotations
 
+import os
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+from difflib import SequenceMatcher
 from typing import Final
 
 from integrations.git.errors import MERGE_FAILED, GitCommandError
-from integrations.git.local import changed_since_baseline, file_fingerprints
+from integrations.git.local import _run_git, changed_since_baseline, file_fingerprints
 from integrations.git.merge import (
     ConflictedPath,
     commit_merge,
@@ -39,6 +41,16 @@ LOCKFILE_NAMES: Final = frozenset(
 
 
 @dataclass(frozen=True)
+class ConflictHunk:
+    """One ``<<<<<<< … >>>>>>>`` block: the two competing versions of the same lines."""
+
+    ours: tuple[str, ...]
+    theirs: tuple[str, ...]
+    start: int
+    end: int
+
+
+@dataclass(frozen=True)
 class MergeConflicts:
     """The unmerged paths of a stopped merge and their content at that moment."""
 
@@ -46,17 +58,108 @@ class MergeConflicts:
     theirs: str
     paths: tuple[ConflictedPath, ...]
     content: Mapping[str, str]
+    conflicted_lines: Mapping[str, tuple[str, ...]] = field(default_factory=dict)
 
     @property
     def names(self) -> tuple[str, ...]:
         return tuple(conflict.path for conflict in self.paths)
 
+    def hunks(self, path: str) -> tuple[ConflictHunk, ...]:
+        return parse_conflict_hunks(self.conflicted_lines.get(path, ()))
+
 
 def merge_conflicts(workspace: str, *, ours: str, theirs: str) -> MergeConflicts:
     """Snapshot the conflicts of the merge in progress in *workspace*."""
     conflicts = describe_conflicts(workspace, ours=ours, theirs=theirs)
-    content = file_fingerprints(workspace, [conflict.path for conflict in conflicts])
-    return MergeConflicts(ours=ours, theirs=theirs, paths=tuple(conflicts), content=content)
+    names = [conflict.path for conflict in conflicts]
+    return MergeConflicts(
+        ours=ours,
+        theirs=theirs,
+        paths=tuple(conflicts),
+        content=file_fingerprints(workspace, names),
+        conflicted_lines={path: _read_lines(workspace, path) for path in names},
+    )
+
+
+def parse_conflict_hunks(lines: Sequence[str]) -> tuple[ConflictHunk, ...]:
+    """The conflict blocks of a file with markers; a diff3 base section is skipped."""
+    hunks: list[ConflictHunk] = []
+    ours: list[str] = []
+    theirs: list[str] = []
+    start = -1
+    side: list[str] | None = None
+    for index, line in enumerate(lines):
+        if line.startswith("<<<<<<< "):
+            ours, theirs, start = [], [], index
+            side = ours
+        elif start >= 0 and line.startswith("||||||| "):
+            side = None
+        elif start >= 0 and line == "=======":
+            side = theirs
+        elif start >= 0 and line.startswith(">>>>>>> "):
+            hunks.append(ConflictHunk(tuple(ours), tuple(theirs), start=start, end=index + 1))
+            start, side = -1, None
+        elif side is not None:
+            side.append(line)
+    return tuple(hunks)
+
+
+@dataclass(frozen=True)
+class HunkComparison:
+    """One conflict hunk next to what the working tree holds for it now."""
+
+    path: str
+    ours: tuple[str, ...]
+    theirs: tuple[str, ...]
+    result: tuple[str, ...] | None
+
+
+def compare_hunks(workspace: str, conflicts: MergeConflicts) -> list[HunkComparison]:
+    """Each conflict hunk with its resolution as found in the working tree.
+
+    ``result`` is ``None`` while the file still carries markers or is gone.
+    """
+    comparisons: list[HunkComparison] = []
+    for path in conflicts.names:
+        before = conflicts.conflicted_lines.get(path, ())
+        after = _read_lines(workspace, path)
+        resolved = bool(after) and not any(line.startswith(_CONFLICT_MARKERS) for line in after)
+        opcodes = SequenceMatcher(None, before, after, autojunk=False).get_opcodes()
+        for hunk in parse_conflict_hunks(before):
+            result = _resolved_region(after, opcodes, hunk) if resolved else None
+            comparisons.append(HunkComparison(path, hunk.ours, hunk.theirs, result))
+    return comparisons
+
+
+def _resolved_region(
+    after: Sequence[str], opcodes: Sequence[tuple[str, int, int, int, int]], hunk: ConflictHunk
+) -> tuple[str, ...]:
+    """Lines of *after* that replaced the marker block ``[hunk.start, hunk.end)``."""
+    region: list[str] = []
+    for tag, i1, i2, j1, j2 in opcodes:
+        if tag == "insert":
+            if hunk.start <= i1 <= hunk.end:
+                region.extend(after[j1:j2])
+            continue
+        lo, hi = max(i1, hunk.start), min(i2, hunk.end)
+        if lo >= hi:
+            continue
+        if tag == "equal":
+            region.extend(after[j1 + (lo - i1) : j1 + (hi - i1)])
+        elif tag == "replace":
+            region.extend(after[j1:j2])
+    return tuple(region)
+
+
+_CONFLICT_MARKERS = ("<<<<<<< ", ">>>>>>> ")
+
+
+def _read_lines(workspace: str, path: str) -> tuple[str, ...]:
+    file = os.path.join(workspace, path)
+    if not os.path.isfile(file):
+        return ()
+    with open(file, encoding="utf-8", errors="replace") as handle:
+        return tuple(handle.read().splitlines())
 
 
 def unresolved_conflicts(workspace: str, conflicts: MergeConflicts) -> list[ConflictedPath]:
@@ -93,6 +196,61 @@ def conclude_merge(
             f"Conflicts remain in {', '.join(remaining)}; the merge was not committed.",
         )
     return commit_merge(workspace)
+
+
+@dataclass(frozen=True)
+class ResolvedPath:
+    """How one conflicted path ended up in the merge commit."""
+
+    path: str
+    resolution: str
+
+    def __str__(self) -> str:
+        return f"{self.path}: {self.resolution}"
+
+
+def describe_resolutions(
+    workspace: str, merge_sha: str, conflicts: MergeConflicts
+) -> list[ResolvedPath]:
+    """Say, per conflicted path, whether the merge kept ours, took theirs, or combined both."""
+    return [
+        ResolvedPath(
+            path=conflict.path,
+            resolution=_resolution(workspace, merge_sha, conflict.path, conflicts),
+        )
+        for conflict in conflicts.paths
+    ]
+
+
+def _resolution(workspace: str, merge_sha: str, path: str, conflicts: MergeConflicts) -> str:
+    exists = _run_git(workspace, "cat-file", "-e", f"{merge_sha}:{path}").returncode == 0
+    if not exists:
+        return "removed"
+    same_as_ours = _same_in(workspace, f"{merge_sha}^1", merge_sha, path)
+    same_as_theirs = _same_in(workspace, f"{merge_sha}^2", merge_sha, path)
+    if same_as_ours and same_as_theirs:
+        return "identical on both sides"
+    if same_as_ours:
+        return f"kept the {conflicts.ours} version"
+    if same_as_theirs:
+        return f"took the {conflicts.theirs} version"
+    return (
+        f"combined both sides ({_numstat(workspace, f'{merge_sha}^1', merge_sha, path)} "
+        f"against {conflicts.ours}, {_numstat(workspace, f'{merge_sha}^2', merge_sha, path)} "
+        f"against {conflicts.theirs})"
+    )
+
+
+def _same_in(workspace: str, base: str, target: str, path: str) -> bool:
+    return _run_git(workspace, "diff", "--quiet", base, target, "--", path).returncode == 0
+
+
+def _numstat(workspace: str, base: str, target: str, path: str) -> str:
+    result = _run_git(workspace, "diff", "--numstat", base, target, "--", path)
+    fields = result.stdout.split()
+    if len(fields) < 2:
+        return "changed"
+    return f"+{fields[0]} -{fields[1]}"
 
 
 def conflict_resolution_task(
@@ -135,9 +293,15 @@ def conflict_resolution_task(
 
 __all__ = [
     "LOCKFILE_NAMES",
+    "ConflictHunk",
+    "HunkComparison",
     "MergeConflicts",
+    "ResolvedPath",
+    "compare_hunks",
     "conclude_merge",
     "conflict_resolution_task",
+    "describe_resolutions",
     "merge_conflicts",
+    "parse_conflict_hunks",
     "unresolved_conflicts",
 ]

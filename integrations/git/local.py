@@ -350,6 +350,37 @@ def commit_paths(workspace: str, paths: Sequence[str], message: str) -> None:
         raise GitCommandError(COMMIT_FAILED, f"git commit failed: {commit.stderr.strip()}")
 
 
+def upstream_branch(workspace: str) -> str:
+    """``remote/branch`` the current branch tracks, or empty when it tracks nothing."""
+    result = _run_git(workspace, "rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}")
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def push_head_to_upstream(workspace: str, *, token: str | None = None) -> str:
+    """Push HEAD to the branch it tracks (or to a same-named branch); return ``remote/branch``.
+
+    The remote branch must not be a protected base branch.
+    """
+    upstream = upstream_branch(workspace)
+    if not upstream:
+        branch = current_branch(workspace)
+        push_branch(workspace, branch, token=token)
+        return f"origin/{branch}"
+    remote, _, remote_branch = upstream.partition("/")
+    assert_not_protected(remote_branch)
+    env = None
+    if token:
+        base = _remote_https_base(workspace, remote)
+        if base:
+            env = _token_auth_env(token, base)
+    result = _run_git(workspace, "push", remote, f"HEAD:refs/heads/{remote_branch}", env=env)
+    if result.returncode != 0:
+        raise GitCommandError(
+            PUSH_FAILED, f"git push to {upstream} failed: {result.stderr.strip()}"
+        )
+    return upstream
+
+
 def push_branch(
     workspace: str,
     branch: str,

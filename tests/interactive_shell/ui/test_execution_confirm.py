@@ -231,6 +231,31 @@ def test_auto_med_prompts_before_sentry_issue_fix() -> None:
     assert "Command to approve" in buf.getvalue()
 
 
+def test_auto_med_shows_the_merge_push_action_even_when_the_plan_was_listed() -> None:
+    """The merge push never appears in the numbered plan, so the card must name it."""
+    # Arrange
+    session = Session()
+    session.terminal.auto_level = AutoLevel.MED
+    buf = io.StringIO()
+    console = Console(file=buf, force_terminal=False)
+    action = "commit the merge of main into feature and push it to origin/feature"
+
+    # Act
+    allowed = execution_allowed(
+        allow_tool("merge_push"),
+        session=session,
+        console=console,
+        action_summary=action,
+        confirm_fn=lambda _prompt: "n",
+        is_tty=True,
+        action_already_listed=True,
+    )
+
+    # Assert
+    assert allowed is False
+    assert action in buf.getvalue()
+
+
 def test_auto_off_shows_command_to_approve() -> None:
     session = Session()
     session.terminal.auto_level = AutoLevel.OFF

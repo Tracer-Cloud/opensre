@@ -1,19 +1,22 @@
 ---
 title: "Resolve merge conflicts"
-description: "Ask OpenSRE to resolve the conflicts of a git merge with a coding agent and commit the merge."
+description: "Ask OpenSRE to resolve the conflicts of a git merge with a coding agent, review each hunk side by side, then commit and push."
 ---
 
 ## Overview
 
 When a `git merge` stops on conflicts, ask OpenSRE to resolve them. It hands the
 conflicted files to your installed coding agent, checks that no conflict marker
-or unmerged path is left, then stages and commits the merge. Files the agent
-cannot settle are named back to you and the merge stays open, so you decide them
-together and run it again.
+or unmerged path is left, shows you each conflict side by side, then commits the
+merge and pushes the branch to the one it tracks, so the pull request updates.
+Files the agent cannot settle are named back to you and the merge stays open, so
+you decide them together and run it again.
 
 <Warning>
-This is a **mutating** tool: it edits the conflicted files in your repository and
-creates the merge commit. It never aborts a merge and never pushes.
+This is a **mutating** tool: it edits the conflicted files in your repository,
+creates the merge commit, and pushes your branch. It never aborts a merge and
+never pushes to a protected branch such as `main`. Whether it asks before the
+commit and push follows your `/auto` level (see below).
 </Warning>
 
 ## Prerequisites
@@ -44,8 +47,26 @@ agent word for word.
    the resolved manifest, never merged by hand.
 3. OpenSRE verifies that no conflict marker or unmerged path remains. If any
    does, it reports those files and leaves the merge open for you.
-4. It stages the agent's edits plus the conflicted files and commits the merge.
-   Unrelated changes you had in the working tree stay uncommitted.
+4. It prints one table per file: each conflict hunk with your side, their side,
+   and the merged result, so you can see what was decided before anything is
+   committed.
+5. It asks to commit the merge and push the branch, following your `/auto`
+   level, then does both. Unrelated changes you had in the working tree stay
+   uncommitted.
+
+### Approval and unattended runs
+
+The commit and push are one approval, recorded as the shell's `/auto` level:
+
+| `/auto` level | Behaviour |
+| --- | --- |
+| `high` (default) | Commits and pushes without asking |
+| `med`, `low`, `off` | Asks `[y/N]` after showing the side-by-side view; `n` leaves the resolved files in the working tree, uncommitted |
+| Unattended run (scheduled skill, no terminal) | Commits and pushes, like `high` |
+
+Run `/auto med` when you want to review before anything leaves your machine.
+After a decline, ask again ("commit and push the merge") once you are happy;
+the coding agent is not run a second time.
 
 | Env var | What it does |
 | --- | --- |
@@ -62,8 +83,11 @@ agent word for word.
 | "none is ready" | Install and log in to a coding agent CLI |
 | "still need a person's decision" | Tell OpenSRE how to settle the named files and ask again |
 | "abandoned the merge" | The agent reset the merge; start it again with `git merge <branch>` |
+| "did not push it" | The merge is committed locally; push the branch yourself (`git push`) |
 
 ## Security
 
 - The merge commit carries the OpenSRE co-author trailer.
-- Nothing is pushed; review the merge commit before you push.
+- The push goes to the branch your checkout tracks, never to `main`, `master`,
+  `develop`, or `trunk`.
+- Review the side-by-side view before approving when your `/auto` level asks.
