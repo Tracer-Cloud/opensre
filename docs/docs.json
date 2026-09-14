@@ -206,6 +206,7 @@
                   "cicd-analytics-demo",
                   "github",
                   "github-ci-fix",
+                  "github-ci-health-scan",
                   "github-security-fix",
                   "github-workflow-tools",
                   "integrations/github-actions",
