@@ -19,7 +19,7 @@ metadata:
     - GitHub write access to the watched repository and an authenticated coding agent
     - Git installed on the scheduler host; repair checkouts are created automatically
     - For the demo, a GitHub token that can create a private repository and an example PR
-  version: "7.1"
+  version: "7.2"
 script_tools: references/script-tools.md
 includes:
   - common/ask_once.md
@@ -41,7 +41,7 @@ one real repair as fast as possible in well under five minutes.
 ## Plan
 
 Use `update_plan` to create the live plan from the
-numbered workflow headings below:
+numbered workflow headings below. Mark Step 8 with `verifies: true` in every `update_plan` call: it is the check that the repair happened, and the report step relies on it to close.
 
 - [ ] Step 1. Select the repository, or the private demo, with ask_user_choice.
 - [ ] Step 2. Check prerequisites: GitHub identity and scopes, then the scheduler.
