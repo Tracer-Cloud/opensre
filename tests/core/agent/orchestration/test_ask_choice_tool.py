@@ -120,7 +120,7 @@ def test_headless_session_without_deferred_choice_support_falls_back() -> None:
 
 def test_headless_session_persists_deferred_choice() -> None:
     session = InMemorySessionState()
-    session.deferred_user_choices = True
+    session.available_capabilities["ask_user_choice"] = ("deferred",)
     ctx = _ctx(session=session, is_tty=False)
 
     result = execute_ask_user_choice_tool({"title": _TITLE, "options": _OPTIONS}, ctx)

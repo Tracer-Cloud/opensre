@@ -124,7 +124,8 @@ def _interactive_choice_available(session: Any, surface: str | None) -> bool:
     if surface == "gateway":
         return False
     if surface == "headless_cli":
-        return bool(getattr(session, "deferred_user_choices", False))
+        capabilities = getattr(session, "available_capabilities", {})
+        return "deferred" in capabilities.get("ask_user_choice", ())
     if surface not in (None, "interactive_shell"):
         return False
     return getattr(session, "terminal", None) is not None

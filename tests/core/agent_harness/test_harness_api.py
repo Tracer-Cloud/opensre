@@ -27,6 +27,7 @@ ROOT_API = frozenset(
     {
         "AgentSession",
         "OutputSink",
+        "PromptSurface",
         "SessionConfig",
         "SessionCore",
         "SessionManager",

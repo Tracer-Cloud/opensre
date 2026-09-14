@@ -16,18 +16,16 @@ from rich.console import Console
 
 from core.agent_harness import (
     AgentSession,
+    PromptSurface,
     SessionConfig,
     SessionCore,
     SessionManager,
     TurnResult,
 )
 from core.agent_harness.ports import ToolEventObserver
-from core.agent_harness.prompts.kernel.surfaces import PromptSurface
-from core.agent_harness.session.pending_choice import (
-    PendingUserChoice,
-)
 from core.agent_harness.spi.cancel import ensure_turn_cancel
 from core.agent_harness.spi.session_goal import SessionGoal, SessionGoalReason, SessionGoalStatus
+from core.agent_harness.spi.session_state import PendingUserChoice
 from core.tool import ToolExecutionHooks
 from infrastructure.errors import OpenSREError
 from surfaces.cli.ask.approval import ApprovalTracker, build_approval_hooks
@@ -215,7 +213,7 @@ def _restrict_ask_capabilities(session: SessionCore) -> None:
     """Zero the capabilities the one-shot ask agent must not use."""
     for capability in _ASK_DISABLED_CAPABILITIES:
         session.available_capabilities[capability] = ()
-    session.deferred_user_choices = True
+    session.available_capabilities["ask_user_choice"] = ("deferred",)
 
 
 def _clear_prior_goal_response(output: _AskOutputSink, goal: SessionGoal) -> None:

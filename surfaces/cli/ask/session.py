@@ -9,12 +9,12 @@ from contextlib import contextmanager
 from filelock import FileLock, Timeout
 
 from core.agent_harness import SessionCore
-from core.agent_harness.session.pending_choice import (
+from core.agent_harness.spi.defaults import default_session_repo, sessions_dir
+from core.agent_harness.spi.handoff import (
     AskUserQuestion,
     format_ask_user_answers,
     question_key,
 )
-from core.agent_harness.spi.defaults import default_session_repo, sessions_dir
 from infrastructure.errors import OpenSREError
 
 

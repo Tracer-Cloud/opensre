@@ -109,6 +109,11 @@ def _menu_available(ctx: ActionToolScope) -> bool:
     return ports is not None and bool(ports.tty_interactive())
 
 
+def _deferred_choice_available(ctx: ActionToolScope) -> bool:
+    capabilities = getattr(ctx.session, "available_capabilities", {})
+    return "deferred" in capabilities.get("ask_user_choice", ())
+
+
 def _parse_options(raw: object) -> list[str]:
     options: list[str] = []
     seen: set[str] = set()
@@ -293,7 +298,7 @@ def execute_ask_user_choice_tool(args: dict[str, Any], ctx: ActionToolScope) -> 
         summary = f"selection menu queued: {title}"
 
     menu_available = _menu_available(ctx)
-    deferred = bool(getattr(ctx.session, "deferred_user_choices", False))
+    deferred = _deferred_choice_available(ctx)
     if not menu_available and not deferred:
         return {"ok": True, "menu": "unavailable", "instruction": _FALLBACK_INSTRUCTION}
 
