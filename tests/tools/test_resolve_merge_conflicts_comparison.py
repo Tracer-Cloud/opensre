@@ -105,3 +105,8 @@ def test_review_gives_a_verdict_per_conflict_and_code_only_where_it_was_combined
     assert "conflict 2  kept ours (feature)  limit = 250" in text
     assert "conflict 1  took theirs (main)  v2" in text
     assert text.count("merged") == 1
+
+
+def test_a_removed_file_gets_its_own_verdict() -> None:
+    # Arrange / Act / Assert
+    assert verdict(HunkComparison("gone.txt", ("a",), ("b",), ())) == "file removed"

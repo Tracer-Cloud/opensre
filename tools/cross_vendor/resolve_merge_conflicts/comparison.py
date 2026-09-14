@@ -31,13 +31,16 @@ _PENDING_STYLE = "yellow"
 KEPT_OURS = "kept ours"
 TOOK_THEIRS = "took theirs"
 COMBINED = "combined"
+REMOVED = "file removed"
 STILL_CONFLICTED = "still conflicted"
 
 
 def verdict(hunk: HunkComparison) -> str:
-    """How the hunk ended: kept ours, took theirs, combined, or still conflicted."""
+    """How the hunk ended: kept ours, took theirs, combined, file removed, or still conflicted."""
     if hunk.result is None:
         return STILL_CONFLICTED
+    if not hunk.result and (hunk.ours or hunk.theirs):
+        return REMOVED
     if tuple(hunk.result) == tuple(hunk.ours):
         return KEPT_OURS
     if tuple(hunk.result) == tuple(hunk.theirs):
@@ -98,6 +101,9 @@ def _verdict_view(path: str, number: int, hunk: HunkComparison, ours: str, their
             *_side(f"ours · {ours}", _OURS_STYLE, hunk.ours, path),
             *_side(f"theirs · {theirs}", _THEIRS_STYLE, hunk.theirs, path),
         )
+    if outcome == REMOVED:
+        line.append(REMOVED, style=_MERGED_STYLE)
+        return Group(line)
     line.append(COMBINED, style=_MERGED_STYLE)
     return Group(line, *_side("merged", _MERGED_STYLE, hunk.result or (), path))
 
@@ -221,6 +227,7 @@ __all__ = [
     "COMBINED",
     "KEPT_OURS",
     "PENDING",
+    "REMOVED",
     "STILL_CONFLICTED",
     "TOOK_THEIRS",
     "comparison_text",

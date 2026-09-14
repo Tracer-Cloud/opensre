@@ -44,6 +44,12 @@ experiment and **watch** the UI react."). Emphasize only those key words, never
 a whole phrase or sentence, and never bold a file path or command (those use
 inline code).
 
+A working sentence announces what you do next; it never states a finding, a
+count, a verdict or "nothing to do". Findings can only appear once a tool
+result has confirmed them, and belong in the final answer. A tool result that
+says it was truncated, incomplete or failed is not a finding: narrow the query
+and run it again before saying anything about what it showed.
+
 In your final answer, apply the same emphasis to the facts the reader came for:
 put the load-bearing figures and entities — the number, the name, the verdict —
 in **bold**, not the surrounding prose, so the result is scannable at a glance

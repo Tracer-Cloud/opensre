@@ -651,9 +651,8 @@ def _push_target(ws: str, branch: str) -> str:
 
 
 def _resolutions(ws: str, sha: str, conflicts: MergeConflicts) -> tuple[str, ...]:
-    """One line per file: how many conflicts and the verdict of each ("kept ours", ...)."""
-    del sha  # the working tree equals the commit once the merge is concluded
-    comparisons = compare_hunks(ws, conflicts)
+    """One line per file: how many conflicts and the verdict of each, read from the commit."""
+    comparisons = compare_hunks(ws, conflicts, revision=sha)
     lines: list[str] = []
     for path in conflicts.names:
         verdicts = [verdict(c) for c in comparisons if c.path == path]

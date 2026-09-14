@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from typing import Any
 
 from integrations.coding_agent.models import Progress
@@ -64,24 +65,43 @@ class ClaudeStreamReader:
         return path
 
 
-_TEST_RUNNERS = ("pytest", "npm test", "go test", "cargo test", "make test")
-_LINTERS = ("ruff", "mypy", "eslint", "tsc", "flake8", "black", "prettier")
-_LOOKUPS = ("grep ", "rg ", "sed ", "cat ", "wc ", "ls ", "find ", "head ", "tail ")
+_TEST_RUNNERS = frozenset({"pytest", "jest", "vitest", "mocha", "phpunit", "rspec"})
+_TEST_SUBCOMMANDS = {"go": "test", "cargo": "test", "make": "test", "npm": "test", "pnpm": "test"}
+_LINTERS = frozenset({"ruff", "mypy", "eslint", "tsc", "flake8", "black", "prettier", "pyright"})
+_LOOKUPS = frozenset({"grep", "rg", "sed", "cat", "wc", "ls", "find", "head", "tail", "awk"})
+_WRAPPERS = frozenset({"uv", "run", "npx", "poetry", "env", "python", "python3", "-m", "sudo"})
+_SEGMENT_SPLIT = re.compile(r"\s*(?:&&|\|\||;|\|)\s*")
 
 
 def _describe_command(command: str) -> str:
-    """Say what a shell command is for, instead of echoing it."""
-    lowered = command.lower()
-    if any(runner in lowered for runner in _TEST_RUNNERS):
-        paths = [part for part in command.split() if part.startswith("tests")]
-        return f"Running tests: {' '.join(paths)}" if paths else "Running tests"
-    if any(linter in lowered for linter in _LINTERS):
-        return "Checking lint and types"
-    if lowered.startswith("git ") or " git " in f" {lowered}":
-        return "Inspecting the merge"
-    if lowered.startswith(_LOOKUPS) or any(f"&& {tool}" in lowered for tool in _LOOKUPS):
-        return "Searching the code"
+    """Say what a shell command is for, judged by the programs it runs, not by its text."""
+    intents = [
+        intent for segment in _SEGMENT_SPLIT.split(command) if (intent := _segment_intent(segment))
+    ]
+    for wanted in ("tests", "lint", "search", "git"):
+        for label, kind in intents:
+            if kind == wanted:
+                return label
     return _clip(f"Running: {command}")
+
+
+def _segment_intent(segment: str) -> tuple[str, str] | None:
+    words = [word for word in segment.split() if word not in _WRAPPERS]
+    if not words:
+        return None
+    program = words[0].rsplit("/", 1)[-1]
+    if program in _LOOKUPS:
+        return "Searching the code", "search"
+    if program in _TEST_RUNNERS or (
+        program in _TEST_SUBCOMMANDS and _TEST_SUBCOMMANDS[program] in words[1:2]
+    ):
+        paths = [word for word in words[1:] if word.startswith("tests")]
+        return (f"Running tests: {' '.join(paths)}" if paths else "Running tests"), "tests"
+    if program in _LINTERS:
+        return "Checking lint and types", "lint"
+    if program == "git":
+        return "Inspecting the merge", "git"
+    return None
 
 
 def _clip(text: str) -> str:
