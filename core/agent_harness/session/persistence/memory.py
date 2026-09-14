@@ -249,6 +249,25 @@ class InMemorySessionStore:
                     },
                 )
                 records = self._files.get(session.session_id, records)
+        if hasattr(session, "pending_user_choice"):
+            from core.agent_harness.session.pending_choice import (
+                PENDING_USER_CHOICE_STATE_CUSTOM_TYPE,
+                pending_user_choice_state_snapshot,
+                should_persist_pending_user_choice_state,
+            )
+
+            choice_state = pending_user_choice_state_snapshot(session)
+            if should_persist_pending_user_choice_state(choice_state, prior_records=records):
+                self._append(
+                    session.session_id,
+                    "custom_message",
+                    {
+                        "custom_type": PENDING_USER_CHOICE_STATE_CUSTOM_TYPE,
+                        "content": choice_state or {},
+                        "display": False,
+                    },
+                )
+                records = self._files.get(session.session_id, records)
         if trailing_leaf:
             return
         if session.agent.messages and not any(rec.get("type") == "message" for rec in records):

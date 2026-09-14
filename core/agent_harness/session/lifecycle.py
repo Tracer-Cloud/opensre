@@ -285,6 +285,13 @@ class SessionManager:
             from core.agent_harness.task_plan.persist import apply_task_plan_state
 
             apply_task_plan_state(session, plan_state)
+        choice_state = data.get(RestoreContextKey.PENDING_USER_CHOICE_STATE)
+        if choice_state is not None:
+            from core.agent_harness.session.pending_choice import (
+                apply_pending_user_choice_state,
+            )
+
+            apply_pending_user_choice_state(session, choice_state)
         history = data.get(RestoreContextKey.HISTORY)
         if isinstance(history, list):
             session.history = [dict(item) for item in history if isinstance(item, dict)]

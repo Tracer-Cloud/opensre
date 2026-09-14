@@ -77,6 +77,7 @@ class JsonlSessionRepo:
             context = _accumulated_context_for_branch(branch)
             goal_state = _session_goal_state_for_branch(branch)
             plan_state = _task_plan_state_for_branch(branch)
+            choice_state = _pending_user_choice_state_for_branch(branch)
             history = _history_for_branch(branch)
             turn_details = _turn_details_for_branch(branch)
             return {
@@ -89,6 +90,7 @@ class JsonlSessionRepo:
                 RestoreContextKey.ACCUMULATED_CONTEXT: context,
                 RestoreContextKey.SESSION_GOAL_STATE: goal_state,
                 RestoreContextKey.TASK_PLAN_STATE: plan_state,
+                RestoreContextKey.PENDING_USER_CHOICE_STATE: choice_state,
                 RestoreContextKey.HISTORY: history,
                 "turn_details": turn_details,
                 "has_snapshot": False,
@@ -296,6 +298,26 @@ def _task_plan_state_for_branch(branch: list[dict[str, Any]]) -> dict[str, Any] 
         if rec.get("type") != "custom_message":
             continue
         if rec.get("custom_type") != TASK_PLAN_STATE_CUSTOM_TYPE:
+            continue
+        content = rec.get("content")
+        if isinstance(content, dict):
+            latest = content
+    return latest
+
+
+def _pending_user_choice_state_for_branch(
+    branch: list[dict[str, Any]],
+) -> dict[str, Any] | None:
+    """Return the last pending-choice custom message on the branch."""
+    from core.agent_harness.session.pending_choice import (
+        PENDING_USER_CHOICE_STATE_CUSTOM_TYPE,
+    )
+
+    latest: dict[str, Any] | None = None
+    for rec in branch:
+        if rec.get("type") != "custom_message":
+            continue
+        if rec.get("custom_type") != PENDING_USER_CHOICE_STATE_CUSTOM_TYPE:
             continue
         content = rec.get("content")
         if isinstance(content, dict):

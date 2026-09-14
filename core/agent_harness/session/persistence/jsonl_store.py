@@ -465,6 +465,21 @@ class JsonlSessionStore:
                     content=plan_state or {},
                     display=False,
                 )
+        if hasattr(session, "pending_user_choice"):
+            from core.agent_harness.session.pending_choice import (
+                PENDING_USER_CHOICE_STATE_CUSTOM_TYPE,
+                pending_user_choice_state_snapshot,
+                should_persist_pending_user_choice_state,
+            )
+
+            choice_state = pending_user_choice_state_snapshot(session)
+            if should_persist_pending_user_choice_state(choice_state, prior_records=records):
+                self.append_custom_message(
+                    session.session_id,
+                    custom_type=PENDING_USER_CHOICE_STATE_CUSTOM_TYPE,
+                    content=choice_state or {},
+                    display=False,
+                )
         if trailing_leaf:
             return
         if session.agent.messages and not any(rec.get("type") == "message" for rec in records):
