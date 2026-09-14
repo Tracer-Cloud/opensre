@@ -344,3 +344,38 @@ def test_a_missing_workspace_is_reported_as_such_not_as_missing_git(tmp_path: Pa
     # Assert
     assert excinfo.value.kind == NOT_A_GIT_REPO
     assert "is not a directory" in excinfo.value.message
+
+
+def test_push_head_follows_the_push_remote_gh_sets_for_a_fork_checkout(tmp_path: Path) -> None:
+    # Arrange: the branch tracks origin but, as after `gh pr checkout` of a fork PR,
+    # pushes to the contributor's fork.
+    work = _init_repo(tmp_path)
+    fork = tmp_path / "fork.git"
+    _git(tmp_path, "init", "--bare", str(fork))
+    _git(work, "checkout", "-q", "-b", "feature")
+    (work / "README.md").write_text("from the fork\n")
+    _git(work, "commit", "-qam", "fork work")
+    _git(work, "config", "branch.feature.remote", "origin")
+    _git(work, "config", "branch.feature.merge", "refs/heads/feature")
+    _git(work, "config", "branch.feature.pushRemote", str(fork))
+    head = subprocess.run(
+        ["git", "rev-parse", "HEAD"], cwd=work, capture_output=True, text=True
+    ).stdout.strip()
+
+    # Act
+    label = gitlocal.push_head_to_upstream(str(work))
+
+    # Assert: the fork received the commit, origin gained no branch, and the
+    # label names the fork's owner the way GitHub does.
+    fork_heads = subprocess.run(
+        ["git", "ls-remote", str(fork), "refs/heads/feature"], capture_output=True, text=True
+    ).stdout
+    origin_heads = subprocess.run(
+        ["git", "ls-remote", str(tmp_path / "remote.git"), "refs/heads/feature"],
+        capture_output=True,
+        text=True,
+    ).stdout
+    assert head in fork_heads
+    assert origin_heads == ""
+    assert label == f"{tmp_path.name}:feature"
+    assert gitlocal.push_destination(str(work)) == label

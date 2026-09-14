@@ -48,13 +48,13 @@ from integrations.git import (
     merge_in_progress,
     merge_ref,
     paths_with_conflict_markers,
+    push_destination,
     push_head_to_upstream,
     render_overview,
     render_review,
     resolution_lines,
     take_side,
     unresolved_conflicts,
-    upstream_branch,
 )
 from integrations.github import CHECKS_NOT_WATCHED, ChecksOutcome, watch_pull_request_checks
 from tools.cross_vendor.resolve_merge_conflicts.errors import (
@@ -643,7 +643,7 @@ def _push(ws: str) -> tuple[str, GitCommandError | None]:
 
 def _push_target(ws: str, branch: str) -> str:
     try:
-        return upstream_branch(ws) or f"origin/{branch}"
+        return push_destination(ws) or f"origin/{branch}"
     except GitCommandError:
         return f"origin/{branch}"
 

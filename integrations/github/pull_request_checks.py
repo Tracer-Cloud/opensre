@@ -55,7 +55,7 @@ def watch_pull_request_checks(
     owner, repo = _github_repository(workspace)
     if not owner:
         return ChecksOutcome(CHECKS_NOT_WATCHED, "the origin is not a GitHub repository")
-    branch = pushed_to.partition("/")[2] or pushed_to
+    branch = _pushed_branch(pushed_to)
     try:
         pull = _open_pull_request(owner, repo, branch)
         if pull is None:
@@ -76,6 +76,13 @@ def watch_pull_request_checks(
         check_names=verification.check_names,
         failing_checks=verification.failing_checks,
     )
+
+
+def _pushed_branch(pushed_to: str) -> str:
+    """Branch name inside a push label, ``remote/branch`` or a fork's ``owner:branch``."""
+    if ":" in pushed_to:
+        return pushed_to.partition(":")[2]
+    return pushed_to.partition("/")[2] or pushed_to
 
 
 def _github_repository(workspace: str) -> tuple[str, str]:
