@@ -27,6 +27,7 @@ from integrations.coding_agent import (
 )
 from integrations.git import (
     NOT_A_GIT_REPO,
+    PENDING,
     GitCommandError,
     MergeConflicts,
     changed_paths,
@@ -48,17 +49,14 @@ from integrations.git import (
     merge_ref,
     paths_with_conflict_markers,
     push_head_to_upstream,
+    render_overview,
+    render_review,
+    resolution_lines,
     take_side,
     unresolved_conflicts,
     upstream_branch,
 )
 from integrations.github import CHECKS_NOT_WATCHED, ChecksOutcome, watch_pull_request_checks
-from tools.cross_vendor.resolve_merge_conflicts.comparison import (
-    PENDING,
-    render_overview,
-    render_review,
-    verdict,
-)
 from tools.cross_vendor.resolve_merge_conflicts.errors import (
     ERR_AWAITING_DECISIONS,
     ERR_CANCELLED,
@@ -458,7 +456,7 @@ def _merge_finished_by_agent(
             merged=conflicts.theirs,
             commit_sha=sha,
             resolved=conflicts.names,
-            resolutions=_resolutions(ws, sha, conflicts),
+            resolutions=resolution_lines(ws, sha, conflicts),
             summary=result.summary,
             rendered=rendered,
             **extra,
@@ -553,7 +551,7 @@ def _commit(
             conflicts.theirs,
             sha,
             resolved=conflicts.names,
-            resolutions=_resolutions(ws, sha, conflicts),
+            resolutions=resolution_lines(ws, sha, conflicts),
             summary=summary,
             rendered=rendered,
         )
@@ -564,7 +562,7 @@ def _commit(
         merged=conflicts.theirs,
         commit_sha=sha,
         resolved=conflicts.names,
-        resolutions=_resolutions(ws, sha, conflicts),
+        resolutions=resolution_lines(ws, sha, conflicts),
         summary=summary,
         rendered=rendered,
         pushed_to=pushed_to,
@@ -648,22 +646,6 @@ def _push_target(ws: str, branch: str) -> str:
         return upstream_branch(ws) or f"origin/{branch}"
     except GitCommandError:
         return f"origin/{branch}"
-
-
-def _resolutions(ws: str, sha: str, conflicts: MergeConflicts) -> tuple[str, ...]:
-    """One line per file: how many conflicts and the verdict of each, read from the commit."""
-    comparisons = compare_hunks(ws, conflicts, revision=sha)
-    lines: list[str] = []
-    for path in conflicts.names:
-        verdicts = [verdict(c) for c in comparisons if c.path == path]
-        if not verdicts:
-            lines.append(f"{path}: resolved")
-            continue
-        parts = ", ".join(f"conflict {i} {v}" for i, v in enumerate(verdicts, start=1))
-        lines.append(
-            f"{path}: {len(verdicts)} conflict{'s' if len(verdicts) != 1 else ''} ({parts})"
-        )
-    return tuple(lines)
 
 
 _HUNK_SUMMARY_CHARS = 90

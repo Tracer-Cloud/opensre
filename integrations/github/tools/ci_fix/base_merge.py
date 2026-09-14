@@ -4,13 +4,15 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass
+from typing import Any
 
-from integrations.coding_agent import CodingResult
+from integrations.coding_agent import CodingResult, Progress
 from integrations.git import (
     ConflictedPath,
     GitCommandError,
     MergeConflicts,
     abort_merge,
+    compare_hunks,
     conclude_merge,
     conflict_resolution_task,
     fetch_remote_branch,
@@ -21,6 +23,9 @@ from integrations.git import (
     merge_head_sha,
     merge_in_progress,
     merge_ref,
+    render_overview,
+    render_review,
+    resolution_lines,
     unresolved_conflicts,
 )
 from integrations.github.tools.ci_fix.context import CiFixContext
@@ -34,12 +39,15 @@ class BaseMergeResult:
     base_branch: str
     commit_sha: str
     resolved_files: tuple[str, ...] = ()
+    resolutions: tuple[str, ...] = ()
+    """One line per resolved file with the verdict of each conflict."""
 
     @property
     def summary(self) -> str:
         if not self.resolved_files:
             return f"merged {self.base_branch}"
-        return f"merged {self.base_branch}, resolving conflicts in {', '.join(self.resolved_files)}"
+        detail = "; ".join(self.resolutions) if self.resolutions else ", ".join(self.resolved_files)
+        return f"merged {self.base_branch}, resolving conflicts in {detail}"
 
 
 def base_has_new_commits(workspace: str, ctx: CiFixContext, *, token: str | None = None) -> bool:
@@ -61,14 +69,18 @@ def merge_base_into_head(
     ctx: CiFixContext,
     *,
     baseline: Mapping[str, str],
-    resolve_conflicts: Callable[[str], CodingResult],
+    resolve_conflicts: Callable[..., CodingResult],
     token: str | None = None,
+    console: Any = None,
+    on_progress: Progress | None = None,
 ) -> BaseMergeResult:
     """Merge ``origin/<base>`` into the checked-out PR head, resolving conflicts via the coding agent.
 
     A clean merge commits directly. Conflicts are handed to *resolve_conflicts*
-    with the exact files; the merge is committed only when no conflict marker
-    or unmerged path remains, and aborted otherwise so the branch is untouched.
+    with the exact files (and *on_progress* for its steps); the merge is
+    committed only when no conflict marker or unmerged path remains, and
+    aborted otherwise so the branch is untouched. With a *console*, the
+    conflicts are shown before resolving and the verdict per conflict after.
     """
     base_ref = f"origin/{ctx.base_branch}"
     try:
@@ -80,7 +92,14 @@ def merge_base_into_head(
     except GitCommandError as exc:
         raise GitHubCiFixError(exc.kind, exc.message, branch_name=ctx.head_branch) from exc
 
-    result = resolve_conflicts(_resolution_task(ctx, conflicts))
+    if console is not None:
+        render_overview(
+            console,
+            compare_hunks(workspace, conflicts),
+            ours=ctx.head_branch,
+            theirs=ctx.base_branch,
+        )
+    result = resolve_conflicts(_resolution_task(ctx, conflicts), on_progress=on_progress)
     try:
         if not merge_in_progress(workspace):
             return _merge_finished_by_agent(workspace, ctx, merging, conflicts)
@@ -88,12 +107,22 @@ def merge_base_into_head(
         if not result.success or blocked:
             abort_merge(workspace)
             raise _blocked_error(ctx, blocked or list(conflicts.paths), result)
+        if console is not None:
+            render_review(
+                console,
+                compare_hunks(workspace, conflicts),
+                ours=ctx.head_branch,
+                theirs=ctx.base_branch,
+            )
         sha = conclude_merge(workspace, conflicts, baseline=baseline)
     except GitCommandError as exc:
         abort_merge(workspace)
         raise GitHubCiFixError(exc.kind, exc.message, branch_name=ctx.head_branch) from exc
     return BaseMergeResult(
-        base_branch=ctx.base_branch, commit_sha=sha, resolved_files=conflicts.names
+        base_branch=ctx.base_branch,
+        commit_sha=sha,
+        resolved_files=conflicts.names,
+        resolutions=resolution_lines(workspace, sha, conflicts),
     )
 
 

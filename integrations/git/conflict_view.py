@@ -16,7 +16,7 @@ from rich.padding import Padding
 from rich.syntax import Syntax
 from rich.text import Text
 
-from integrations.git import HunkComparison
+from integrations.git.conflict_resolution import HunkComparison, MergeConflicts, compare_hunks
 
 _MAX_LINES_PER_SIDE = 30
 _HINT_CHARS = 60
@@ -202,6 +202,21 @@ def _dedent(lines: Sequence[str]) -> list[str]:
     return [line[common:] if line.strip() else "" for line in lines]
 
 
+def resolution_lines(workspace: str, merge_sha: str, conflicts: MergeConflicts) -> tuple[str, ...]:
+    """One line per resolved file: how many conflicts and the verdict of each, read from the commit."""
+    comparisons = compare_hunks(workspace, conflicts, revision=merge_sha)
+    lines: list[str] = []
+    for path in conflicts.names:
+        verdicts = [verdict(c) for c in comparisons if c.path == path]
+        if not verdicts:
+            lines.append(f"{path}: resolved")
+            continue
+        parts = ", ".join(f"conflict {i} {v}" for i, v in enumerate(verdicts, start=1))
+        count = f"{len(verdicts)} conflict{'s' if len(verdicts) != 1 else ''}"
+        lines.append(f"{path}: {count} ({parts})")
+    return tuple(lines)
+
+
 def _lexer_for(path: str) -> str:
     try:
         return Syntax.guess_lexer(path)
@@ -234,5 +249,6 @@ __all__ = [
     "render_comparison",
     "render_overview",
     "render_review",
+    "resolution_lines",
     "verdict",
 ]

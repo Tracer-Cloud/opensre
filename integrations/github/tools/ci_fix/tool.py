@@ -88,13 +88,20 @@ def _github_ci_fix_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
 
 
 def _confirm_fn(context: Any) -> Any:
+    return getattr(_action_scope(context), "confirm_fn", None)
+
+
+def _console(context: Any) -> Any:
+    return getattr(_action_scope(context), "console", None)
+
+
+def _action_scope(context: Any) -> Any:
     if context is None:
         return None
     try:
-        action_context = action_context_from_agent_context(context)
+        return action_context_from_agent_context(context)
     except RuntimeError:
         return None
-    return action_context.confirm_fn
 
 
 @tool(
@@ -156,6 +163,7 @@ def fix_github_pr_ci(
         model=model,
         github_token=github_token,
         confirm_fn=_confirm_fn(context),
+        console=_console(context),
     )
     record_ci_fix_outcome(output)
     return attach_repair_outcome(

@@ -6,8 +6,8 @@ import io
 
 from rich.console import Console
 
-from integrations.git import HunkComparison
-from tools.cross_vendor.resolve_merge_conflicts.comparison import (
+from integrations.git import (
+    HunkComparison,
     comparison_text,
     render_comparison,
     render_overview,
