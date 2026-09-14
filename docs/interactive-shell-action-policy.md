@@ -270,14 +270,14 @@ model:
 
 - A step is `completed` only when a non-bookkeeping tool returned while it
   was `in_progress`; a plan cannot be born or bulk-ticked complete
-  (`core/agent_harness/task_plan/update_plan_policy.py`).
+  (`core/agent_harness/task_plan/completion.py`).
 - The step marked `verifies: true` is the only one labelled `(verify)`. It is
   never exempt from that rule, and a text-only closing step closes for free
   only after such a step completed. Without one the closing step is reset and
   the tool result says so; the model adds a check or marks the step
   `blocked`, and the result is reported as unverified.
 - The second work tool of a turn is refused while no plan with open work is
-  stored (`core/agent_harness/turns/plan_required_guard.py`). The refusal
+  stored (`core/agent_harness/task_plan/required.py`). The refusal
   names the fix: write the plan, then run the tool again.
 
 These are before/after tool hooks on the execution path, the same seam as the

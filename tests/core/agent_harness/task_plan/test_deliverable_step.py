@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from typing import Any
 
+from core.agent_harness.task_plan.completion import demote_unevidenced_completions
 from core.agent_harness.task_plan.plan import (
     TaskPlan,
     parse_task_plan,
     task_plan_from_payload,
     task_plan_to_payload,
 )
-from core.agent_harness.task_plan.update_plan_policy import demote_unevidenced_completions
 
 
 def _plan(statuses: list[str], *, deliverable_index: int = 3) -> TaskPlan:

@@ -217,8 +217,8 @@ def test_goal_reviewer_opt_in_llm_still_accepts_reached(
 
 
 def test_task_plan_blocks_conclusion_helpers() -> None:
+    from core.agent_harness.task_plan.conclusion import task_plan_blocks_conclusion
     from core.agent_harness.task_plan.plan import parse_task_plan
-    from core.agent_harness.turns.goal_review import task_plan_blocks_conclusion
 
     incomplete, _ = parse_task_plan(
         {

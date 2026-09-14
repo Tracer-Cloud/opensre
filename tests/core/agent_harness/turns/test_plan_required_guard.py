@@ -5,7 +5,8 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from core.agent_harness.task_plan.plan import parse_task_plan
-from core.agent_harness.turns.plan_required_guard import PLAN_REQUIRED_REASON, with_plan_required
+from core.agent_harness.task_plan.required import PLAN_REQUIRED_REASON
+from core.agent_harness.turns.plan_hooks import with_task_plan_hooks
 from core.domain.types.tools import ToolRole
 from core.llm.types import ToolCall
 from core.tool.execution import (
@@ -53,7 +54,7 @@ def _returned(
 def test_the_second_work_tool_is_refused_until_a_plan_is_stored() -> None:
     # Arrange: a fresh turn in which one work tool has returned.
     session = Session()
-    hooks = with_plan_required(None, session)
+    hooks = with_task_plan_hooks(None, session)
     _returned(hooks, "shell_run")
 
     # Act
@@ -68,7 +69,7 @@ def test_the_second_work_tool_is_refused_until_a_plan_is_stored() -> None:
 def test_the_first_work_tool_and_non_work_calls_are_never_refused() -> None:
     # Arrange
     session = Session()
-    hooks = with_plan_required(None, session)
+    hooks = with_task_plan_hooks(None, session)
 
     # Act / Assert: nothing has run yet, so a lookup is not a workload.
     assert hooks.before_tool_call(_request("shell_run")) is None
@@ -84,11 +85,17 @@ def test_slash_commands_and_failed_calls_do_not_count_as_work() -> None:
     """The live run: `rg` was not installed, and the retry with `grep` was refused."""
     # Arrange: two shell commands, one tool error, and one command that failed to start.
     session = Session()
-    hooks = with_plan_required(None, session)
+    hooks = with_task_plan_hooks(None, session)
     _returned(hooks, "slash_invoke")
     _returned(hooks, "slash_invoke")
     _returned(hooks, "shell_run", ok=False)
     _returned(hooks, "shell_run", payload_ok=False)
+    hooks.after_tool_call(
+        _request("fix_github_pr_ci"),
+        ToolExecutionResult(
+            content="blocked", details={"success": False, "error_kind": "repo_mismatch"}
+        ),
+    )
 
     # Act / Assert: the first work tool is still allowed.
     assert hooks.before_tool_call(_request("shell_run")) is None
@@ -97,7 +104,7 @@ def test_slash_commands_and_failed_calls_do_not_count_as_work() -> None:
 def test_an_open_plan_lets_work_continue_but_a_settled_one_does_not() -> None:
     # Arrange: one work tool already returned this turn.
     session = Session()
-    hooks = with_plan_required(None, session)
+    hooks = with_task_plan_hooks(None, session)
     _returned(hooks, "shell_run")
 
     # Act / Assert
@@ -114,7 +121,7 @@ def test_a_base_refusal_wins_over_the_plan_rule() -> None:
     base = ToolExecutionHooks(
         before_tool_call=lambda _request: BeforeToolCallResult(blocked=True, reason="duplicate")
     )
-    hooks = with_plan_required(base, session)
+    hooks = with_task_plan_hooks(base, session)
     _returned(hooks, "shell_run")
 
     # Act

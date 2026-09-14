@@ -11,16 +11,14 @@ from core.agent_harness.session.pending_choice import (
     AskUserQuestion,
     format_ask_user_answers,
 )
+from core.agent_harness.task_plan.completion import demote_unevidenced_completions
 from core.agent_harness.task_plan.evidence import (
     mark_plan_written,
     plan_evidence_available,
     record_plan_evidence,
 )
 from core.agent_harness.task_plan.plan import PlanStepStatus, TaskPlan, parse_task_plan
-from core.agent_harness.task_plan.update_plan_policy import (
-    apply_update_plan_host_policy,
-    demote_unevidenced_completions,
-)
+from core.agent_harness.task_plan.update_plan_policy import apply_update_plan_host_policy
 from core.agent_harness.tools.tool_context import ActionToolScope
 from surfaces.interactive_shell.session import Session
 from tools.interactive_shell.actions.update_plan import execute_update_plan_tool

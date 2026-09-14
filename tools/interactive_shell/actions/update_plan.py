@@ -7,11 +7,13 @@ from typing import Any
 from core.agent_harness.spi.grounding import list_action_skills
 from core.agent_harness.spi.handoff import parse_ask_user_answers
 from core.agent_harness.spi.task_plan import (
+    PLAN_ITEM_SCHEMA,
     TaskPlan,
     apply_update_plan_host_policy,
     apply_update_plan_session,
     demote_unevidenced_completions,
     format_task_plan_plain,
+    format_update_plan_instruction,
     mark_plan_written,
     parse_task_plan,
     plan_evidence_available,
@@ -22,45 +24,6 @@ from core.domain.types.tools import ToolRole, ToolSurface
 from core.tool import RegisteredTool, SideEffectLevel
 from core.tool_framework.utils import object_schema, string_property
 from tools.interactive_shell.action_names import ActionToolName
-
-_PLAN_ITEM_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "step": string_property(
-            description="One short observable outcome (about 5–10 words).",
-            min_length=1,
-        ),
-        "status": string_property(
-            description=(
-                "One of: pending, in_progress, completed, blocked. Use blocked "
-                "for a step this runtime or the current facts prevent; it is "
-                "terminal, never counts as done, and needs its blocker named "
-                "in explanation."
-            ),
-            enum=("pending", "in_progress", "completed", "blocked"),
-        ),
-        "deliverable": {
-            "type": "boolean",
-            "description": (
-                "True when this step's work is a text-only assistant reply the user "
-                "must see (a report or table) while later steps remain. Without it a "
-                "text-only reply before the plan is settled is treated as a premature "
-                "stop and is not shown."
-            ),
-        },
-        "verifies": {
-            "type": "boolean",
-            "description": (
-                "True for the step that checks the outcome of the earlier steps by "
-                "running something (a re-read, a re-run, a comparison). It is the only "
-                "step shown as (verify), it completes only after its own tool returned, "
-                "and a text-only last step closes only after it has run."
-            ),
-        },
-    },
-    "required": ["step", "status"],
-    "additionalProperties": False,
-}
 
 
 def execute_update_plan_tool(args: dict[str, Any], ctx: ActionToolScope) -> dict[str, Any]:
@@ -76,9 +39,8 @@ def execute_update_plan_tool(args: dict[str, Any], ctx: ActionToolScope) -> dict
         prior=prior,
         evidence=plan_evidence_available(ctx.session, prior=prior, turn_user_message=turn_text),
     )
-    plan, demoted = checked.plan, checked.demoted
     plan, plan_only_requested = apply_update_plan_host_policy(
-        plan,
+        checked.plan,
         plan_only_requested=bool(args.get("plan_only")),
         turn_user_message=turn_text,
         session=ctx.session,
@@ -95,44 +57,13 @@ def execute_update_plan_tool(args: dict[str, Any], ctx: ActionToolScope) -> dict
     payload = task_plan_to_payload(plan)
     payload["ok"] = True
     payload["summary"] = format_task_plan_plain(plan)
-    payload["instruction"] = (
-        "Plan stored. Keep it current with update_plan; the CURRENT PLAN "
-        "block is the durable record when older messages drop."
+    payload["instruction"] = format_update_plan_instruction(
+        plan,
+        plan_only=plan_only_requested,
+        ask_user_turn=bool(parse_ask_user_answers(turn_text)),
+        demoted=checked.demoted,
+        closed_unverified=checked.closed_unverified,
     )
-    if plan_only_requested:
-        payload["instruction"] += " Plan-only: leave every step pending until the user says go."
-    elif parse_ask_user_answers(turn_text) and not plan.all_pending:
-        payload["instruction"] += (
-            " Execution is authorized: the first step is in_progress — run it now."
-        )
-    elif not plan.is_settled:
-        payload["instruction"] += (
-            " Continue the in_progress step now — do not end the turn while pending steps remain."
-        )
-    if plan.blocked_count:
-        payload["instruction"] += (
-            " Blocked steps stay blocked — their work did not happen. Do not run tools"
-            " to earn a completed mark for them; name each blocker in the reply."
-        )
-    if demoted:
-        names = "; ".join(demoted)
-        payload["instruction"] += (
-            f" Reset to pending — marked completed before any tool ran for them: {names}."
-            " A step is completed only after its work returned while it was in_progress:"
-            " set it in_progress, run the work, then mark it completed. When that work"
-            " must not happen (the user said not to run it, or nothing here can), mark"
-            " the step blocked and name the reason in explanation instead of running"
-            " something else to earn the tick."
-            " update_plan, session_goal_*, and loading a skill body do not count as work;"
-            " reading a skill reference does."
-        )
-    if checked.closed_unverified:
-        payload["instruction"] += (
-            " The last step closed without a tool and no step marked verifies has run,"
-            " so the plan cannot be complete. Either add a step with verifies: true that"
-            " checks the result with a tool, run it, then close — or mark the last step"
-            " blocked with the reason, and tell the user the result is unverified."
-        )
     return payload
 
 
@@ -190,7 +121,7 @@ update_plan_tool = RegisteredTool(
             "plan": {
                 "type": "array",
                 "description": "Ordered steps. At most one status may be in_progress.",
-                "items": _PLAN_ITEM_SCHEMA,
+                "items": PLAN_ITEM_SCHEMA,
                 "minItems": 2,
             },
             "plan_only": {

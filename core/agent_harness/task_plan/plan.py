@@ -32,6 +32,46 @@ class PlanStepStatus(StrEnum):
 
 _ALLOWED_STATUSES: frozenset[str] = frozenset(PlanStepStatus)
 _STATUS_ERROR = "status must be pending, in_progress, completed, or blocked"
+PLAN_ITEM_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "step": {
+            "type": "string",
+            "description": "One short observable outcome (about 5–10 words).",
+            "minLength": 1,
+        },
+        "status": {
+            "type": "string",
+            "description": (
+                "One of: pending, in_progress, completed, blocked. Use blocked "
+                "for a step this runtime or the current facts prevent; it is "
+                "terminal, never counts as done, and needs its blocker named "
+                "in explanation."
+            ),
+            "enum": ["pending", "in_progress", "completed", "blocked"],
+        },
+        "deliverable": {
+            "type": "boolean",
+            "description": (
+                "True when this step's work is a text-only assistant reply the user "
+                "must see (a report or table) while later steps remain. Without it a "
+                "text-only reply before the plan is settled is treated as a premature "
+                "stop and is not shown."
+            ),
+        },
+        "verifies": {
+            "type": "boolean",
+            "description": (
+                "True for the step that checks the outcome of the earlier steps by "
+                "running something (a re-read, a re-run, a comparison). It is the only "
+                "step shown as (verify), it completes only after its own tool returned, "
+                "and a text-only last step closes only after it has run."
+            ),
+        },
+    },
+    "required": ["step", "status"],
+    "additionalProperties": False,
+}
 _BLOCKED_NEEDS_EXPLANATION = "a blocked step needs its blocker named in explanation"
 #: Statuses that leave no work to do: the plan is settled once every step has one.
 TERMINAL_STATUSES: frozenset[PlanStepStatus] = frozenset(
@@ -233,6 +273,7 @@ def task_plan_from_payload(payload: Any) -> TaskPlan | None:
 
 
 __all__ = [
+    "PLAN_ITEM_SCHEMA",
     "PlanStep",
     "PlanStepStatus",
     "TERMINAL_STATUSES",

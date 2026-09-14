@@ -18,6 +18,7 @@ from core.agent_harness.task_plan.plan import PlanStepStatus, TaskPlan
 PLAN_BOOKKEEPING_TOOLS: frozenset[str] = frozenset(
     {"update_plan", "skill_view", "session_goal_set", "session_goal_complete"}
 )
+_SLASH_TOOL = "slash_invoke"
 _SKILL_VIEW_TOOL = "skill_view"
 _SKILL_REFERENCE_ARG = "reference"
 _EVIDENCE_ATTR = "task_plan_evidence"
@@ -37,6 +38,27 @@ def is_plan_bookkeeping_call(tool_name: str, arguments: Mapping[str, Any] | None
     if name != _SKILL_VIEW_TOOL or not arguments:
         return True
     return not str(arguments.get(_SKILL_REFERENCE_ARG, "") or "").strip()
+
+
+def is_plan_work_name(tool_name: str, arguments: Mapping[str, Any] | None = None) -> bool:
+    """True when this tool name can be step work (not bookkeeping, not a slash command)."""
+    if tool_name.strip() == _SLASH_TOOL:
+        return False
+    return not is_plan_bookkeeping_call(tool_name, arguments)
+
+
+def result_counts_as_work(*, is_error: bool, details: Mapping[str, Any] | None) -> bool:
+    """True when the tool ran and its own payload does not report failure.
+
+    A command that failed to start or exited non-zero returns without an
+    execution error but says ``ok: false``; a repair that did not land says
+    ``success: false``. Retrying either is not a second step.
+    """
+    if is_error or not isinstance(details, Mapping):
+        return not is_error
+    if details.get("ok") is False:
+        return False
+    return details.get("success") is not False
 
 
 @dataclass
@@ -63,12 +85,24 @@ def reset_plan_evidence(session: Any) -> None:
 
 
 def record_plan_evidence(
-    session: Any, tool_name: str, arguments: Mapping[str, Any] | None = None
+    session: Any,
+    tool_name: str,
+    arguments: Mapping[str, Any] | None = None,
+    *,
+    is_error: bool = False,
+    details: Mapping[str, Any] | None = None,
 ) -> None:
-    """Count one successful tool return; bookkeeping calls are ignored."""
-    if is_plan_bookkeeping_call(tool_name, arguments):
+    """Count one successful work return; bookkeeping, slash, and failed calls are ignored."""
+    if not result_counts_as_work(is_error=is_error, details=details):
+        return
+    if not is_plan_work_name(tool_name, arguments):
         return
     _evidence(session).tool_returns += 1
+
+
+def work_returns_this_turn(session: Any) -> int:
+    """Successful work returns recorded on this action turn."""
+    return _evidence(session).tool_returns
 
 
 def mark_plan_written(session: Any) -> None:
@@ -102,8 +136,11 @@ __all__ = [
     "PLAN_BOOKKEEPING_TOOLS",
     "PlanEvidence",
     "is_plan_bookkeeping_call",
+    "is_plan_work_name",
     "mark_plan_written",
     "plan_evidence_available",
     "record_plan_evidence",
     "reset_plan_evidence",
+    "result_counts_as_work",
+    "work_returns_this_turn",
 ]

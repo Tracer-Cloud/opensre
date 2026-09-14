@@ -42,6 +42,10 @@ from core.agent_harness.session.integration_resolution import resolve_and_cache_
 from core.agent_harness.session.pending_choice import parse_ask_user_answers
 from core.agent_harness.session.terminal_access import execute_cli_onboard_on_missing_key
 from core.agent_harness.session_goal.review_input import collect_tool_evidence
+from core.agent_harness.task_plan.conclusion import (
+    task_plan_awaits_reply,
+    task_plan_blocks_conclusion,
+)
 from core.agent_harness.turns.action_dedup import (
     coerce_fingerprint_quiet,
     with_duplicate_action_call_guard,
@@ -61,11 +65,8 @@ from core.agent_harness.turns.display_text import (
 from core.agent_harness.turns.goal_review import (
     build_goal_reviewer,
     tap_executed_tool_names,
-    task_plan_awaits_reply,
-    task_plan_blocks_conclusion,
 )
-from core.agent_harness.turns.plan_evidence_hook import with_plan_evidence
-from core.agent_harness.turns.plan_required_guard import with_plan_required
+from core.agent_harness.turns.plan_hooks import with_task_plan_hooks
 from core.agent_harness.turns.skill_activation import prepare_active_skill
 from core.agent_harness.turns.turn_plan import TurnPlan
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult
@@ -1026,10 +1027,7 @@ def _run_action_turn(
             resolved_integrations=resolved_integrations,
             llm_factory=args.llm_factory,
             tool_hooks=with_menu_turn_end(
-                with_plan_evidence(
-                    with_plan_required(with_duplicate_action_call_guard(args.tool_hooks), session),
-                    session,
-                ),
+                with_task_plan_hooks(with_duplicate_action_call_guard(args.tool_hooks), session),
                 session,
             ),
             tool_resources=tool_resources,
