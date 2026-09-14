@@ -18,7 +18,7 @@ metadata:
   - GitHub authentication with read access to the repository's Actions history.
   - The analyze_github_ci_reliability and scan_local_git_workspace tools.
   - For local discovery, a local Git checkout; the example repository does not require one.
-  version: '1.18'
+  version: '1.19'
 ---
 
 # CI/CD analytics
@@ -109,8 +109,7 @@ Identify the repository, default branch, UTC window, and coverage. Render
 this table as text, replacing every placeholder with a calculated value or a
 benchmark from the reference:
 
-```bash
-`
+```
 Developer impact:
 - xx developer-hours spent waiting on CI across xx developers.
 - Most affected developer: up to xx h/week waiting on CI.
@@ -128,7 +127,6 @@ Compared with langchain-ai/langchain and anomalyco/opencode:
 
 What insights stand out:
 - CI-caused failures account for x.x% of all PR runs, roughly x.x-x.x× higher than the comparison repositories.
-`
 ```
 
 Complete when `skill_view` has returned the benchmarks reference in this
