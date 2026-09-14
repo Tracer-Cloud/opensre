@@ -89,8 +89,7 @@ def test_conclude_merge_commits_resolver_edits_but_not_baseline_work(tmp_path: P
     assert sha == _git(work, "rev-parse", "HEAD")
     assert len(_git(work, "log", "-1", "--pretty=%P").split()) == 2
     assert _git(work, "log", "-1", "--pretty=%an <%ae>|%cn <%ce>") == (
-        "OpenSRE Agent <opensreagent@opensre.com>|"
-        "OpenSRE Agent <opensreagent@opensre.com>"
+        "OpenSRE Agent <opensreagent@opensre.com>|OpenSRE Agent <opensreagent@opensre.com>"
     )
     assert _git(work, "show", "--name-only", "--pretty=", "HEAD").split() == [
         "added.txt",
