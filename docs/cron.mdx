@@ -104,9 +104,11 @@ Remove a scheduled task by its ID. Its run history remains available through
 
 ### `opensre cron status`
 
-Show the number of durably admitted runs still pending, when the oldest one was
-admitted, and its current age. Pending work remains visible across scheduler
-restarts and while a task is paused or disabled. Use `--json` for structured
+Show the number of durable runs waiting for execution, including expired claims
+awaiting recovery. Age starts at admission for pending runs and at lease expiry
+for interrupted runs; live claims are excluded. Waiting work remains visible
+across scheduler restarts and while a task is paused or disabled. Deleted tasks
+are excluded. Use `--json` for structured
 output suitable for monitoring and runbooks. JSON output includes `status: ok`;
 if the task store cannot be read, the command exits unsuccessfully and reports
 `status: unknown` instead of returning a misleading empty backlog.

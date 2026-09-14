@@ -120,6 +120,43 @@ class TestClaimStore:
         assert snapshot.pending_count == 0
         assert snapshot.oldest_pending_at is None
 
+    def test_backlog_counts_latest_expired_claims_but_not_live_or_deleted_work(
+        self, db_path: Path
+    ) -> None:
+        now = datetime(2026, 1, 1, 10, 30, tzinfo=UTC)
+        expired_at = "2026-01-01T10:00:00+00:00"
+        with database.transaction(db_path, immediate=True) as conn:
+            conn.executemany(
+                "INSERT INTO task_runs "
+                "(task_id, fire_time, attempt, started_at, status, lease_expires_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                [
+                    (task_id, "tick", attempt, "2026-01-01T09:00:00+00:00", status, lease)
+                    for task_id, attempt, status, lease in [
+                        ("expired", 1, "running", expired_at),
+                        ("removed", 1, "running", expired_at),
+                        ("live", 1, "running", now.isoformat()),
+                        ("no-lease", 1, "running", ""),
+                        ("superseded", 1, "running", expired_at),
+                        ("superseded", 2, "success", ""),
+                    ]
+                ],
+            )
+
+        snapshot = get_backlog_snapshot(
+            db_path,
+            eligible_task_ids={"expired", "live", "no-lease", "superseded"},
+            now=now,
+        )
+
+        assert snapshot.pending_count == 1
+        assert snapshot.oldest_pending_at == datetime(2026, 1, 1, 10, tzinfo=UTC)
+        assert snapshot.oldest_pending_age_seconds == 1_800
+
+        # A pending tick still waits even when another tick owns the task.
+        assert try_queue_run("live", "next-tick", db_path=db_path)
+        assert get_backlog_snapshot(db_path, eligible_task_ids={"live"}, now=now).pending_count == 1
+
     def test_empty_backlog_snapshot_has_no_synthetic_age(self, db_path: Path) -> None:
         snapshot = get_backlog_snapshot(db_path)
 

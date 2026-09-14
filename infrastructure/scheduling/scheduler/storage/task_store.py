@@ -56,7 +56,7 @@ def _read_raw(store_path: Path) -> tuple[list[dict[str, object]], bool]:
         return [], True
     try:
         data = json.loads(store_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as exc:
+    except (json.JSONDecodeError, UnicodeDecodeError, OSError) as exc:
         logger.warning("Failed to read scheduler store: %s", exc)
         return [], False
     if not isinstance(data, list):

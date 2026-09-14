@@ -392,13 +392,17 @@ class TestStoreSurvivesTornWrites:
         assert updated is False
         assert store_path.read_text(encoding="utf-8") == "{ not json"
 
-    def test_snapshot_marks_an_unreadable_store_incomplete(self, store_path: Path) -> None:
-        store_path.write_text("{ not json", encoding="utf-8")
+    @pytest.mark.parametrize("contents", [b"{ not json", b"\xff\xfe"])
+    def test_snapshot_marks_an_unreadable_store_incomplete(
+        self, store_path: Path, contents: bytes
+    ) -> None:
+        store_path.write_bytes(contents)
 
         snapshot = get_task_store_snapshot(store_path)
 
         assert snapshot.tasks == ()
         assert snapshot.complete is False
+        assert store_path.read_bytes() == contents
 
     def test_snapshot_marks_partially_invalid_entries_incomplete(self, store_path: Path) -> None:
         task = self._digest(7)

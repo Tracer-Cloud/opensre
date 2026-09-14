@@ -67,6 +67,29 @@ def test_cron_status_formats_empty_backlog(monkeypatch: pytest.MonkeyPatch) -> N
     assert "0" in result.output
 
 
+def test_cron_status_reports_unknown_for_non_utf8_store(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    store_path = tmp_path / "scheduler_tasks.json"
+    store_path.write_bytes(b"\xff\xfe")
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.task_store.default_task_store_path",
+        lambda: store_path,
+    )
+
+    result = CliRunner().invoke(cron_command, ["status", "--json"])
+
+    assert result.exit_code == 1
+    assert json.loads(result.output) == {
+        "status": "unknown",
+        "pending_count": None,
+        "oldest_pending_at": None,
+        "oldest_pending_age_seconds": None,
+        "error": "task_store_unreadable",
+    }
+    assert store_path.read_bytes() == b"\xff\xfe"
+
+
 def test_cron_status_formats_oldest_pending_age(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "infrastructure.scheduling.scheduler.storage.get_backlog_snapshot",

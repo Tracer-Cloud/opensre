@@ -60,7 +60,7 @@ class RecoverableRun:
 
 @dataclass(frozen=True, slots=True)
 class BacklogSnapshot:
-    """Current durable pending-work pressure."""
+    """Durable waiting work, including expired claims awaiting recovery."""
 
     pending_count: int
     oldest_pending_at: datetime | None
@@ -73,7 +73,7 @@ def get_backlog_snapshot(
     eligible_task_ids: Collection[str] | None = None,
     now: datetime | None = None,
 ) -> BacklogSnapshot:
-    """Return pending count and age from one consistent database snapshot."""
+    """Count latest waiting ticks; age starts at admission or claim expiry."""
     if eligible_task_ids is not None and not eligible_task_ids:
         return BacklogSnapshot(0, None, None)
     observed_at = now or datetime.now(UTC)
@@ -85,9 +85,25 @@ def get_backlog_snapshot(
     task_ids_json = json.dumps(list(eligible_task_ids)) if eligible_task_ids is not None else None
     with database.connection(db_path) as conn:
         row = conn.execute(
-            "SELECT COUNT(*), MIN(started_at) FROM task_runs WHERE status = ? "
-            "AND (? IS NULL OR task_id IN (SELECT value FROM json_each(?)))",
-            (TaskStatus.PENDING.value, task_ids_json, task_ids_json),
+            "SELECT COUNT(*), MIN(waiting_since) FROM ("
+            "SELECT task_id, fire_time, attempt, started_at AS waiting_since "
+            "FROM task_runs WHERE status = ? "
+            "UNION ALL "
+            "SELECT task_id, fire_time, attempt, lease_expires_at AS waiting_since "
+            "FROM task_runs WHERE status = ? "
+            "AND lease_expires_at != '' AND lease_expires_at < ?"
+            ") AS candidate "
+            "WHERE (? IS NULL OR task_id IN (SELECT value FROM json_each(?))) "
+            "AND attempt = (SELECT MAX(latest.attempt) FROM task_runs AS latest "
+            "WHERE latest.task_id = candidate.task_id "
+            "AND latest.fire_time = candidate.fire_time)",
+            (
+                TaskStatus.PENDING.value,
+                TaskStatus.RUNNING.value,
+                observed_at.isoformat(),
+                task_ids_json,
+                task_ids_json,
+            ),
         ).fetchone()
 
     pending_count = int(row[0])
