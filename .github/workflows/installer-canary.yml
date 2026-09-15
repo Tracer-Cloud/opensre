@@ -23,6 +23,14 @@ permissions:
   contents: read
   issues: write
 
+# All triggers report through the same ``installer-canary-failure`` issue. Queue
+# complete cycles globally so an older successful run cannot close a newer
+# failure, and retain every report rather than dropping a pending release check.
+concurrency:
+  group: installer-canary-tracking-issue
+  cancel-in-progress: false
+  queue: max
+
 env:
   OPENSRE_LIVE_INSTALL: "1"
   OPENSRE_LIVE_INSTALL_TAG: ${{ github.event.client_payload.tag || inputs.tag || '' }}
