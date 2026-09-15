@@ -23,6 +23,9 @@ else
   SUCCESS_MARK="Success:"
 fi
 
+# Release binaries are built (and glibc-symbol-capped) on ubuntu-22.04 in
+# .github/workflows/release.yml — keep this in sync with that cap.
+LINUX_MIN_GLIBC="2.35"
 REPO="${OPENSRE_INSTALL_REPO:-Tracer-Cloud/opensre}"
 DEFAULT_INSTALL_DIR="${HOME}/.local/bin"
 USER_INSTALL_DIR_CANDIDATES="${OPENSRE_USER_INSTALL_DIR_CANDIDATES:-$HOME/.local/bin:$HOME/bin}"
@@ -963,6 +966,71 @@ detect_platform() {
   esac
 }
 
+detect_glibc_version() {
+  # getconf reports "glibc X.Y" on glibc systems and is part of the C library
+  # itself, so prefer it; fall back to parsing `ldd --version` when getconf
+  # is missing, or present but unable to report a version (e.g. a non-glibc
+  # getconf that doesn't know GNU_LIBC_VERSION). Empty output means no glibc
+  # version was found; the caller distinguishes known musl from an unknown libc.
+  local version=""
+
+  if command -v getconf >/dev/null 2>&1; then
+    version="$(getconf GNU_LIBC_VERSION 2>/dev/null | sed -n 's/^glibc \([0-9][0-9.]*\)/\1/p')"
+    if [ -n "$version" ]; then
+      printf '%s\n' "$version"
+      return 0
+    fi
+  fi
+
+  if command -v ldd >/dev/null 2>&1; then
+    ldd --version 2>/dev/null | sed -n '1s/.*[^0-9]\([0-9][0-9]*\.[0-9][0-9]*\)$/\1/p'
+    return 0
+  fi
+}
+
+is_musl_linux() {
+  local ldd_output
+
+  command -v ldd >/dev/null 2>&1 || return 1
+  ldd_output="$(ldd --version 2>&1 || true)"
+  case "$ldd_output" in
+    *musl*|*MUSL*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
+
+version_ge() {
+  [ "$(printf '%s\n%s\n' "$1" "$2" | sort -V | tail -n 1)" = "$1" ]
+}
+
+check_linux_glibc_compatibility() {
+  local glibc_version
+
+  [ "$platform" = "linux" ] || return 0
+
+  glibc_version="$(detect_glibc_version)"
+  if [ -z "$glibc_version" ]; then
+    if is_musl_linux; then
+      die "$(cat <<EOF
+The OpenSRE Linux binary requires glibc ${LINUX_MIN_GLIBC}+, but this system uses musl libc, so the prebuilt binary will not start here.
+Use a glibc-based distribution or container, or run OpenSRE from source: clone https://github.com/${REPO}, install uv (https://docs.astral.sh/uv/getting-started/installation/), then run 'make install' followed by 'uv run opensre'.
+EOF
+)"
+    fi
+
+    warn "Could not determine this Linux system's libc version. The prebuilt binary requires glibc ${LINUX_MIN_GLIBC}+; continuing without a compatibility guarantee."
+    return 0
+  fi
+
+  if ! version_ge "$glibc_version" "$LINUX_MIN_GLIBC"; then
+    die "$(cat <<EOF
+The OpenSRE Linux binary requires glibc ${LINUX_MIN_GLIBC}+ (Ubuntu 22.04+, Debian 12+, Fedora 36+, or similarly current distributions). This system reports glibc ${glibc_version}, so the prebuilt binary will not start here.
+Upgrade to a supported distribution rather than replacing the system glibc manually, or run OpenSRE from source: clone https://github.com/${REPO}, install uv (https://docs.astral.sh/uv/getting-started/installation/), then run 'make install' followed by 'uv run opensre'.
+EOF
+)"
+  fi
+}
+
 resolve_release_metadata() {
   version="$requested_version"
   release_tag=""
@@ -1178,6 +1246,7 @@ main() {
   parse_args "$@"
   require_prerequisites
   detect_platform
+  check_linux_glibc_compatibility
   resolve_install_dir
   resolve_release_metadata
   select_archive_asset
