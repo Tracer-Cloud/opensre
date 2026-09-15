@@ -76,6 +76,12 @@ jobs:
         # test_live_installers.py — Homebrew ships preinstalled on
         # macos-latest runners, so they aren't skipped.
         shell: bash
+        env:
+          # install.sh resolves release metadata through the GitHub API, which
+          # allows 60 anonymous requests per hour per IP. Runner egress is
+          # shared, so the macOS leg in particular kept exhausting it and
+          # failing with 403 on a release that was published fine (#6243).
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -uo pipefail
           uv run python -m pytest ${{ matrix.test_path }} -v \

@@ -33,6 +33,10 @@ INSTALL_CHANNEL="${OPENSRE_INSTALL_CHANNEL:-main}"
 INSTALL_CHANNEL_EXPLICIT=0
 [ -n "${OPENSRE_INSTALL_CHANNEL:-}" ] && INSTALL_CHANNEL_EXPLICIT=1
 MAIN_RELEASE_TAG="${OPENSRE_MAIN_RELEASE_TAG:-main-build}"
+# Optional credential for the release-metadata lookups only. Anonymous callers
+# get 60 GitHub API requests per hour per IP, which shared CI runners and office
+# NAT addresses exhaust; a token lifts that. Never sent with an asset download.
+GITHUB_API_TOKEN="${OPENSRE_GITHUB_TOKEN:-${GITHUB_TOKEN:-${GH_TOKEN:-}}}"
 BIN_NAME="opensre"
 requested_version="${OPENSRE_VERSION:-}"
 
@@ -278,6 +282,18 @@ download_to() {
 
 download_text() {
   local url="$1"
+
+  if [ -n "$GITHUB_API_TOKEN" ]; then
+    # The header goes in on stdin rather than argv so the token cannot be read
+    # out of `ps` by other users on the machine.
+    printf 'header = "Authorization: Bearer %s"\n' "$GITHUB_API_TOKEN" \
+      | curl "${CURL_FLAGS[@]}" \
+        --config - \
+        -H "Accept: application/vnd.github+json" \
+        -H "User-Agent: opensre-install-script" \
+        "$url"
+    return
+  fi
 
   curl "${CURL_FLAGS[@]}" \
     -H "Accept: application/vnd.github+json" \
@@ -963,16 +979,39 @@ detect_platform() {
   esac
 }
 
+github_api_failure_hint() {
+  # A 403 from this endpoint is almost always the anonymous 60/hour API limit
+  # rather than a missing release, and the caller cannot tell those apart from
+  # the curl error alone. Name the usual cause and its fix.
+  if [ -n "$GITHUB_API_TOKEN" ]; then
+    return
+  fi
+
+  printf '%s\n' "If the error above is HTTP 403, this is usually GitHub's anonymous API limit of 60 requests per hour per IP address. Set GITHUB_TOKEN to a token with public read access and run the installer again."
+}
+
+die_github_metadata() {
+  local subject="$1"
+  local hint
+
+  hint="$(github_api_failure_hint)"
+  if [ -n "$hint" ]; then
+    die "Failed to query ${subject} metadata from GitHub. ${hint}"
+  fi
+
+  die "Failed to query ${subject} metadata from GitHub."
+}
+
 resolve_release_metadata() {
   version="$requested_version"
   release_tag=""
 
   release_json="$(fetch_release_json "$version")" || {
     if [ "$INSTALL_CHANNEL" = "main" ]; then
-      die "Failed to query main build metadata from GitHub."
+      die_github_metadata "main build"
     fi
 
-    die "Failed to query release metadata from GitHub."
+    die_github_metadata "release"
   }
 
   if [ "$INSTALL_CHANNEL" = "main" ]; then
