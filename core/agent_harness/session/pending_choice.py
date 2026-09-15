@@ -90,8 +90,15 @@ class PendingUserChoice:
 def pending_user_choice_state_snapshot(session: Any) -> dict[str, Any] | None:
     """Return the pending choice and its workflow context for persistence."""
     pending = getattr(session, "pending_user_choice", None)
+    workflow_context = {
+        "active_skill": getattr(session, "active_skill", None),
+        "ask_user_rounds": int(getattr(session, "ask_user_rounds", 0)),
+        "questions_already_answered": sorted(
+            str(key) for key in getattr(session, "questions_already_answered", set())
+        ),
+    }
     if not isinstance(pending, PendingUserChoice):
-        return None
+        return workflow_context if any(workflow_context.values()) else None
     return {
         "title": pending.title,
         "options": list(pending.options),
@@ -108,11 +115,7 @@ def pending_user_choice_state_snapshot(session: Any) -> dict[str, Any] | None:
         "note": pending.note,
         "commands": dict(pending.commands),
         "custom_answer": pending.custom_answer,
-        "active_skill": getattr(session, "active_skill", None),
-        "ask_user_rounds": int(getattr(session, "ask_user_rounds", 0)),
-        "questions_already_answered": sorted(
-            str(key) for key in getattr(session, "questions_already_answered", set())
-        ),
+        **workflow_context,
     }
 
 
@@ -147,11 +150,11 @@ def apply_pending_user_choice_state(session: Any, payload: Any) -> None:
         return
     if not isinstance(payload, dict) or not payload:
         session.pending_user_choice = None
-        if hasattr(session, "active_skill"):
-            session.active_skill = None
-        answered = getattr(session, "questions_already_answered", None)
-        if isinstance(answered, set):
-            answered.clear()
+        _apply_workflow_context(session, {})
+        return
+    if "title" not in payload:
+        session.pending_user_choice = None
+        _apply_workflow_context(session, payload)
         return
     raw_questions = payload.get("questions")
     questions: list[AskUserQuestion] = []
@@ -188,6 +191,11 @@ def apply_pending_user_choice_state(session: Any, payload: Any) -> None:
         commands=commands,
         custom_answer=bool(payload.get("custom_answer", True)),
     )
+    _apply_workflow_context(session, payload)
+
+
+def _apply_workflow_context(session: Any, payload: Mapping[str, Any]) -> None:
+    """Restore the state that survives after a pending choice is consumed."""
     if hasattr(session, "active_skill"):
         active_skill = payload.get("active_skill")
         session.active_skill = (

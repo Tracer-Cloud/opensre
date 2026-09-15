@@ -14,6 +14,7 @@ from core.agent_harness.session import (
     SessionManager,
 )
 from core.agent_harness.session.pending_choice import AskUserQuestion, PendingUserChoice
+from core.agent_harness.session.persistence.memory import InMemorySessionStore
 from core.agent_harness.session.persistence.paths import session_path
 
 
@@ -90,3 +91,61 @@ def test_clearing_pending_choice_writes_a_tombstone() -> None:
         if record.get("custom_type") == "pending_user_choice_state" and record.get("content") == {}
     ]
     assert len(tombstones) == 1
+
+
+def test_consuming_pending_choice_preserves_settled_workflow_context() -> None:
+    storage = JsonlSessionStore()
+    repo = JsonlSessionRepo()
+    session = SessionCore(store=storage)
+    storage.open_session(session)
+    storage.append_turn(session, "chat", "investigate CI")
+    session.pending_user_choice = _pending_choice()
+    session.active_skill = "reporting-github-ci-failures"
+    session.ask_user_rounds = 1
+    session.questions_already_answered.add("earlier question")
+    storage.flush(session)
+
+    session.pending_user_choice = None
+    session.questions_already_answered.add("settled question")
+    storage.flush(session)
+    data = repo.load_session(session.session_id)
+    assert data is not None
+
+    restored = SessionCore(store=storage)
+    SessionManager(store=storage, repo=repo).restore_context(restored, data)
+
+    assert restored.pending_user_choice is None
+    assert restored.active_skill == "reporting-github-ci-failures"
+    assert restored.ask_user_rounds == 1
+    assert restored.questions_already_answered == {"earlier question", "settled question"}
+
+
+def test_flush_keeps_silent_pending_choice_resumable() -> None:
+    storage = JsonlSessionStore()
+    repo = JsonlSessionRepo()
+    session = SessionCore(store=storage)
+    storage.open_session(session)
+    session.pending_user_choice = _pending_choice()
+
+    storage.flush(session)
+    data = repo.load_session(session.session_id)
+    assert data is not None
+
+    restored = SessionCore(store=storage)
+    SessionManager(store=storage, repo=repo).restore_context(restored, data)
+
+    assert restored.pending_user_choice == session.pending_user_choice
+
+
+def test_memory_store_keeps_silent_pending_choice() -> None:
+    storage = InMemorySessionStore()
+    session = SessionCore(store=storage)
+    storage.open_session(session)
+    session.pending_user_choice = _pending_choice()
+
+    storage.flush(session)
+
+    assert any(
+        record.get("custom_type") == "pending_user_choice_state"
+        for record in storage.read(session.session_id)
+    )
