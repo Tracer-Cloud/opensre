@@ -486,6 +486,38 @@ def post_channel_message(
     thread_ts: str = "",
 ) -> tuple[bool, str]:
     """Post plain text to a channel (optionally as a thread reply)."""
+    payload, error = _post_channel_message_payload(
+        target, channel_id=channel_id, text=text, thread_ts=thread_ts
+    )
+    return payload is not None, error
+
+
+def post_channel_message_with_id(
+    target: SlackBotTarget,
+    *,
+    channel_id: str,
+    text: str,
+    thread_ts: str = "",
+) -> tuple[str | None, str]:
+    """Post plain text and return Slack's message timestamp identifier."""
+    payload, error = _post_channel_message_payload(
+        target, channel_id=channel_id, text=text, thread_ts=thread_ts
+    )
+    if payload is None:
+        return None, error
+    message_ts = str(payload.get("ts") or "").strip()
+    if not message_ts:
+        return None, "Slack accepted the message without returning its timestamp."
+    return message_ts, ""
+
+
+def _post_channel_message_payload(
+    target: SlackBotTarget,
+    *,
+    channel_id: str,
+    text: str,
+    thread_ts: str,
+) -> tuple[dict[str, Any] | None, str]:
     body: dict[str, str] = {"channel": channel_id, "text": text}
     if thread_ts:
         body["thread_ts"] = thread_ts
@@ -493,11 +525,11 @@ def post_channel_message(
         "POST", "chat.postMessage", target.bot_token, json_body=body, idempotent=False
     )
     if payload is None:
-        return False, req_err
+        return None, req_err
     if not payload.get("ok"):
         error = str(payload.get("error") or "unknown_error")
-        return False, _api_error_hint(error, context="post")
-    return True, ""
+        return None, _api_error_hint(error, context="post")
+    return payload, ""
 
 
 def join_channel(target: SlackBotTarget, *, channel_id: str) -> tuple[bool, str]:

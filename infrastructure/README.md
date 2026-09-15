@@ -64,6 +64,8 @@ junk drawer. Prefer leaf imports over re-export shims.
   contract and persistent registry. (Not under a `tasks/` directory — root
   `.gitignore` ignores `tasks/` everywhere.)
 - `scheduling/background_investigations/` — background investigation store and types.
+- `proactive_messages/` — event-driven second-pass judgement, durable cursor, and
+  decision ledger for unsolicited follow-ups.
 
 ## Delivery — `delivery/`
 

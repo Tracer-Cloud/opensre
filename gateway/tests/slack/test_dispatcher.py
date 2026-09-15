@@ -172,6 +172,7 @@ def _dispatcher(
     resolver: _FakeSessionResolver,
     handler: Any,
     bot_user_id: str = "",
+    proactive: Any = None,
 ) -> SlackTurnDispatcher:
     return SlackTurnDispatcher(
         settings=settings,
@@ -180,6 +181,7 @@ def _dispatcher(
         handler=handler,
         logger=logging.getLogger("test"),
         bot_user_id=bot_user_id,
+        proactive=proactive,
     )
 
 
@@ -212,6 +214,45 @@ def test_authorized_message_reaches_handler_with_thread_sink() -> None:
     assert ("add", "eyes") in emoji_ops
     assert ("remove", "eyes") in emoji_ops
     assert ("add", "white_check_mark") in emoji_ops
+
+
+def test_completed_turn_queues_proactive_review_for_same_actor_and_thread() -> None:
+    messaging = _FakeMessagingClient()
+    resolver = _FakeSessionResolver()
+
+    class _Proactive:
+        def __init__(self) -> None:
+            self.enqueued: list[dict[str, Any]] = []
+
+        def capture_boundary(self, session_id: str) -> str:
+            assert session_id == _FakeSession.session_id
+            return "before-record"
+
+        def enqueue(self, **kwargs: Any) -> bool:
+            self.enqueued.append(kwargs)
+            return True
+
+    proactive = _Proactive()
+
+    def handler(_text: str, _session: Any, sink: Any, _logger: logging.Logger) -> None:
+        sink.finalize("done")
+
+    _dispatcher(
+        settings=_settings(["U1"]),
+        messaging=messaging,
+        resolver=resolver,
+        handler=handler,
+        proactive=proactive,
+    ).dispatch(_inbound())
+
+    assert len(proactive.enqueued) == 1
+    queued = proactive.enqueued[0]
+    assert queued["session_id"] == _FakeSession.session_id
+    assert queued["start_record_id"] == "before-record"
+    assert queued["channel_id"] == "C1"
+    assert queued["thread_ts"] == "100.1"
+    assert queued["user_id"] == "U1"
+    assert queued["scope"] == _test_scope()
 
 
 def test_unauthorized_user_gets_denial_reply_and_no_turn() -> None:

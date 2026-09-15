@@ -50,13 +50,16 @@ def test_package_module_runner_uses_the_entrypoint() -> None:
     assert f"from {_ENTRYPOINT_MODULE} import main" in source
 
 
-def test_frozen_bundle_ships_the_shared_system_prompt() -> None:
-    """The shared prompt loader reads its adjacent Markdown at runtime."""
+def test_frozen_bundle_ships_runtime_prompts() -> None:
+    """Runtime prompt loaders can read their adjacent Markdown in the bundle."""
     spec = (REPO_ROOT / "opensre.spec").read_text(encoding="utf-8")
 
     assert '"core.agent_harness.prompts"' in spec
-    assert 'includes=["opensre_system_prompt.md"]' in spec
+    assert 'includes=["opensre_system_prompt.md", "proactive_messages/*.md"]' in spec
     assert (REPO_ROOT / "core/agent_harness/prompts/opensre_system_prompt.md").is_file()
+    assert (
+        REPO_ROOT / "core/agent_harness/prompts/proactive_messages/MASTER_JUDGEMENT.md"
+    ).is_file()
 
 
 def test_release_artifacts_do_not_ship_removed_planning_instructions() -> None:

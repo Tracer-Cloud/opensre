@@ -48,6 +48,7 @@ from gateway.transports.slack.processing.thread_history import (
 )
 from gateway.transports.slack.settings import SlackGatewaySettings
 from infrastructure.analytics.usage_context import UsageSurface, bound_usage_context
+from infrastructure.proactive_messages import ProactiveMessageScheduler
 from infrastructure.turn_host.turn_callback import TurnCallback
 from integrations.messaging_security import MessagingPlatform
 
@@ -68,6 +69,7 @@ class SlackTurnDispatcher:
         logger: logging.Logger,
         bot_user_id: str = "",
         approvals: ApprovalBroker | None = None,
+        proactive: ProactiveMessageScheduler | None = None,
     ) -> None:
         self._settings = settings
         self._messaging = messaging
@@ -76,6 +78,7 @@ class SlackTurnDispatcher:
         self._logger = logger
         self._bot_user_id = bot_user_id
         self._approvals = approvals if approvals is not None else ApprovalBroker()
+        self._proactive = proactive
         self._active_cancels = ActiveTurnRegistry()
         self._attention = ThreadAttentionGate()
         self._conversation_locks = ConversationLockRegistry()
@@ -259,6 +262,11 @@ class SlackTurnDispatcher:
             )
             terminal = TerminalOutcomeArbiter()
             output.turn_cancel = terminal.cancel_event
+            proactive_boundary = (
+                self._proactive.capture_boundary(session.session_id)
+                if self._proactive is not None
+                else None
+            )
 
             def _on_turn_timeout() -> None:
                 self._logger.warning(
@@ -360,6 +368,20 @@ class SlackTurnDispatcher:
                         ),
                     ):
                         self._handler(agent_text, session, output, self._logger)
+                    if self._proactive is not None and not terminal.cancel_event.is_set():
+                        try:
+                            self._proactive.enqueue(
+                                scope=scope,
+                                session_id=session.session_id,
+                                start_record_id=proactive_boundary,
+                                channel_id=inbound.channel_id,
+                                thread_ts=inbound.thread_ts,
+                                user_id=inbound.user_id,
+                            )
+                        except Exception:
+                            self._logger.exception(
+                                "[slack-gateway] proactive judgement enqueue failed"
+                            )
                 except Exception:
                     self._logger.exception(
                         "[slack-gateway] turn ERRORED after %.1fs channel=%s session=%s",

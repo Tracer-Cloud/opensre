@@ -313,6 +313,10 @@ def _cmd_messaging(session: Session, console: Console, args: list[str]) -> bool:
     return run_cli_command(console, ["messaging", *args], session=session)
 
 
+def _cmd_proactive(session: Session, console: Console, args: list[str]) -> bool:
+    return run_cli_command(console, ["proactive", *args], session=session)
+
+
 def _cmd_cron(session: Session, console: Console, args: list[str]) -> bool:
     # ``cron start`` blocks as the scheduler daemon and must stream to the real
     # TTY. Every other subcommand is a printer; the captured output reaches the
@@ -429,6 +433,17 @@ COMMANDS: list[SlashCommand] = [
             "/messaging allow",
             "/messaging revoke",
             "/messaging status",
+        ),
+    ),
+    SlashCommand(
+        "/proactive",
+        "Inspect and manually trigger proactive Slack message policies.",
+        _cmd_proactive,
+        usage=(
+            "/proactive policies",
+            "/proactive status",
+            "/proactive send-test --channel-id <channel>",
+            "/proactive trigger --session-id <id> --channel-id <channel> --thread-ts <ts> --user-id <user>",
         ),
     ),
     SlashCommand(

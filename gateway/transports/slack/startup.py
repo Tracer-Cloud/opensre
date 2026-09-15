@@ -90,6 +90,12 @@ def _start_events_api_http(
         stack.executor.submit(stack.dispatcher.dispatch, message)
 
     gate = ListenerGate()
+
+    def _stop_background(timeout: float) -> bool:
+        stopped = stack.proactive.stop(timeout=timeout)
+        stack.close()
+        return stopped
+
     app = build_slack_http_app(
         settings=settings,
         approvals=stack.approvals,
@@ -98,7 +104,11 @@ def _start_events_api_http(
         gate=gate,
     )
     handle = serve_slack_http_in_thread(
-        app=app, port=settings.http_port, workers=stack.executor, gate=gate
+        app=app,
+        port=settings.http_port,
+        workers=stack.executor,
+        gate=gate,
+        background_stop=_stop_background,
     )
     logger.info("[slack-gateway] events api listening on %s", handle.bound_address)
     return handle
