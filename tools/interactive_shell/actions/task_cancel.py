@@ -104,6 +104,10 @@ def run_task_cancel(*, target: str, context: Any) -> dict[str, Any]:
 task_cancel_tool = RegisteredTool(
     name="task_cancel",
     description="Cancel a running task by id or kind.",
+    use_cases=[
+        "User asks to cancel a running background task by id",
+        "User asks to stop the single task that is running",
+    ],
     input_schema=object_schema(
         properties={
             "target": {

@@ -272,6 +272,10 @@ def run_slash(*, command: str, args: list[str] | None = None, context: Any) -> d
 slash_invoke_tool = RegisteredTool(
     name="slash_invoke",
     description=slash_invoke_tool_description(),
+    use_cases=[
+        "User types a literal /command",
+        "User explicitly asks to run a named slash command",
+    ],
     input_schema=slash_invoke_input_schema(),
     source="interactive_shell",
     surfaces=(ToolSurface.ACTION,),

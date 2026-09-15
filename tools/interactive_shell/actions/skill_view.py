@@ -75,6 +75,10 @@ skill_view_tool = RegisteredTool(
         "skill's linked reference files (named in its body as "
         "references/<name>.md) without re-entering the skill."
     ),
+    use_cases=[
+        "The user request matches a skill listed in the SKILLS INDEX",
+        "A loaded skill names a reference file its workflow needs",
+    ],
     input_schema=object_schema(
         properties={
             "name": string_property(
