@@ -1,12 +1,10 @@
-"""Coarse risk classification for a mutating shell command.
+"""Coarse, advisory risk classification for a shell command.
 
-Turns a command that already needs approval into a ``(risk, why)`` pair so the
-confirmation card can show a human-readable impact and offer an "always allow
-commands like this" option. Read-only commands never reach here — they run
-without approval — so every classified command changes state; the only question
-is how reversible that change is.
+Turns a command that already needs approval into a ``(risk, why)`` pair for
+the confirmation card. The grade does not control approval; even commands that
+look read-only may have effects after shell expansion.
 
-The classifier is deliberately conservative: an unrecognized mutation is
+The classifier is deliberately conservative: an unrecognized command is
 ``MEDIUM``, and anything matching a destructive or remote pattern is ``HIGH``.
 It never reports ``LOW`` for a command it does not positively recognize as a
 small, local, reversible write.
@@ -160,7 +158,7 @@ def classify_command_risk(command: str) -> tuple[CommandRisk, str]:
     if ">>" in command or any(verb in _CREATE_VERBS for verb in verbs):
         return CommandRisk.LOW, "Creates new files or appends to them; reversible."
 
-    return CommandRisk.MEDIUM, "Changes local state."
+    return CommandRisk.MEDIUM, "Shell commands may affect local state; review before execution."
 
 
 __all__ = ["CommandRisk", "classify_command_risk"]

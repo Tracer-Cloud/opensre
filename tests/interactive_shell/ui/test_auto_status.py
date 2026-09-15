@@ -30,7 +30,7 @@ def test_high_auto_shows_allow_all_permission() -> None:
         render_prompt_region(session, ReplState(), SpinnerState()).value,
     )
     assert "Auto (Med)" in med
-    assert "Reversible only" in med
+    assert "Ask shell + edits" in med
 
 
 def test_idle_auto_status_omits_the_model_slug() -> None:

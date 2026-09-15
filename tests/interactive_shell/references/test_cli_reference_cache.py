@@ -157,6 +157,15 @@ def test_shell_prompt_context_provider_includes_cli_reference() -> None:
     text = provider.cli_reference()
     assert "=== opensre --help ===" in text
     assert "Usage: opensre" in text
+    assert "Every nonempty shell command runs through the platform command shell" in text
+    assert "plain commands are parsed to argv" not in text
+
+
+def test_shell_reference_hints_omit_runtime_confirmation_policy() -> None:
+    hints = cli_reference_module._interactive_shell_slash_hints()  # noqa: SLF001
+    assert "platform command shell" in hints
+    assert "/auto" not in hints
+    assert "Plan-only" not in hints
 
 
 def test_shell_prompt_context_provider_reuses_session_cli_cache() -> None:

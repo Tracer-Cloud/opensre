@@ -23,7 +23,7 @@ from rich.console import Console
 from rich.markup import escape
 from rich.text import Text
 
-from config.constants.repl_autonomy import AUTO_LEVEL_TITLES, DEFAULT_AUTO_LEVEL, AutoLevel
+from config.constants.repl_autonomy import DEFAULT_AUTO_LEVEL
 from core.agent_harness.spi.session_state import trust_mode_enabled
 from infrastructure.analytics.capture import capture_repl_execution_policy_decision
 from infrastructure.analytics.provider import Properties
@@ -55,31 +55,6 @@ _SHELL_TOOL_TYPE = "shell"
 # Tool types whose action the assistant's numbered plan already shows; the
 # approval card repeats the summary for every other tool type.
 _PLAN_LISTED_TOOL_TYPES = frozenset({_SHELL_TOOL_TYPE, "slash", "cli_command", "opensre_cli"})
-
-
-_ALWAYS_ALLOW_LABEL = {
-    AutoLevel.MED: "Yes, and always allow reversible commands",
-    AutoLevel.HIGH: "Yes, and always allow all commands",
-}
-
-
-def _confirm_options_and_target(
-    risk: CommandRisk, plan_only: bool
-) -> tuple[tuple[tuple[str, str], ...], AutoLevel | None]:
-    """The confirmation rows and the auto level an "always allow" row would set.
-
-    Plan-only confirmations offer only Yes/No — raising the auto level would not
-    lift the plan-only latch. Auto-level confirmations add an "always allow" row
-    targeting the level that runs this command's risk (reversible → Med, else
-    High).
-    """
-    if plan_only:
-        return (("y", "Yes, allow"), ("n", "No, cancel")), None
-    target = AutoLevel.MED if risk in (CommandRisk.LOW, CommandRisk.MEDIUM) else AutoLevel.HIGH
-    return (
-        (("y", "Yes, allow"), ("always", _ALWAYS_ALLOW_LABEL[target]), ("n", "No, cancel")),
-        target,
-    )
 
 
 def _render_command_to_approve(
@@ -207,20 +182,15 @@ def execution_allowed(
     summary = action_summary.strip()
     policy_reason = (result.reason or "").strip()
     if result.tool_type == _SHELL_TOOL_TYPE:
-        # Only shell commands carry a per-command risk grade and an "always allow
-        # reversible" row. The classifier's impact replaces the generic auto-level
-        # reason; a specific policy reason still wins.
+        # The risk grade is advisory; it never bypasses confirmation or raises
+        # the auto level. A specific policy reason still wins.
         risk: CommandRisk | None
         risk, impact = classify_command_risk(summary)
         why = impact if (not policy_reason or policy_reason.startswith("Auto (")) else policy_reason
-        options, always_target = _confirm_options_and_target(risk, plan_only_active)
     else:
-        # Slash commands and other tools are not shell mutations: no risk grade,
-        # no "always allow" row — a plain Yes/No with the policy reason.
+        # Slash commands and other tools have no shell risk grade.
         risk = None
         why = policy_reason or "this action"
-        options = (("y", "Yes, allow"), ("n", "No, cancel"))
-        always_target = None
     _render_command_to_approve(
         console,
         summary=summary,
@@ -228,11 +198,21 @@ def execution_allowed(
         why=why,
         action_already_listed=action_already_listed and result.tool_type in _PLAN_LISTED_TOOL_TYPES,
     )
+    options: tuple[tuple[str, str], ...] = (("y", "Yes, allow"), ("n", "No, cancel"))
+    if plan_only_active and result.tool_type == _SHELL_TOOL_TYPE:
+        options = (
+            ("y", "Yes, allow this command"),
+            ("allow_plan", "Yes, run the plan"),
+            ("n", "No, cancel"),
+        )
     terminal = getattr(session, "terminal", None)
     if terminal is not None:
         terminal.pending_confirm_options = options
     answer = confirm(_APPROVE_PROMPT).strip().lower()
-    if answer not in {"", "y", "yes", "always"}:
+    approve_plan = (
+        answer == "allow_plan" and plan_only_active and result.tool_type == _SHELL_TOOL_TYPE
+    )
+    if answer not in {"", "y", "yes"} and not approve_plan:
         _emit_decision(
             tool_type=result.tool_type,
             policy_verdict=result.verdict,
@@ -244,25 +224,19 @@ def execution_allowed(
         console.print(f"[{DIM}]cancelled.[/]")
         return False
 
-    if answer == "always" and always_target is not None and terminal is not None:
-        # "Yes, and always allow …" both approves now and raises the auto level
-        # so commands of this risk stop asking for the rest of the session.
-        terminal.auto_level = always_target
-        console.print(
-            f"[{DIM}]Auto raised to {AUTO_LEVEL_TITLES[always_target]}; "
-            f"commands like this now run without asking.[/]"
-        )
     _emit_decision(
         tool_type=result.tool_type,
         policy_verdict=result.verdict,
         outcome="allowed",
         trust_mode=trust_mode,
-        reason="user_confirmed_always" if answer == "always" else "user_confirmed",
+        reason="user_confirmed",
         user_prompted=True,
     )
-    if plan_only_active and is_mutating_tool_type(result.tool_type):
-        # Confirming a mutating step at the gate is the explicit authorization
-        # that lifts a plan-only request; the rest of the plan runs normally.
+    if plan_only_active and (
+        approve_plan
+        or (result.tool_type != _SHELL_TOOL_TYPE and is_mutating_tool_type(result.tool_type))
+    ):
+        # A one-command shell approval does not authorize the rest of the plan.
         session.plan_only_until_authorized = False
     return True
 

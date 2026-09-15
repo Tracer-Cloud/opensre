@@ -9,6 +9,9 @@ import threading
 from dataclasses import dataclass
 from typing import IO
 
+from config.constants.terminal_host import (
+    BASH_EXPORTED_FUNCTION_ENV_PREFIX,
+)
 from tools.interactive_shell.subprocess import watch_subprocess_until_exit
 
 
@@ -17,7 +20,6 @@ class ShellExecutionResult:
     """Normalized command execution output."""
 
     command: str
-    argv: list[str] | None
     stdout: str
     stderr: str
     exit_code: int | None
@@ -35,10 +37,37 @@ def _truncate_output(text: str, *, max_chars: int) -> tuple[str, bool]:
 
 def _shell_argv(command: str) -> list[str]:
     if os.name == "nt":
-        shell = os.environ.get("COMSPEC") or "cmd.exe"
-        return [shell, "/d", "/s", "/c", command]
-    shell = os.environ.get("SHELL") or "/bin/sh"
-    return [shell, "-lc", command]
+        windows_shell = _windows_command_shell()
+        # /d suppresses registry AutoRun commands before the approved command;
+        # /v:off prevents inherited delayed !VAR! expansion from changing it.
+        # Keep the tool contract's platform-neutral ``pwd`` diagnostic working:
+        # bare ``cd`` is cmd.exe's current-directory display form.
+        shell_command = "cd" if command.strip().lower() == "pwd" else command
+        return [windows_shell, "/d", "/v:off", "/s", "/c", shell_command]
+    # Do not use the interactive $SHELL: its startup hooks can run before the
+    # command that policy classified. /bin/sh -c is non-interactive and stable.
+    return ["/bin/sh", "-c", command]
+
+
+def _windows_command_shell() -> str:
+    """Return cmd.exe from Windows' system directory, not inherited COMSPEC."""
+    import ctypes
+
+    buffer = ctypes.create_unicode_buffer(32_768)
+    kernel32 = ctypes.__dict__["windll"].kernel32
+    length = kernel32.GetSystemDirectoryW(buffer, len(buffer))
+    if length == 0 or length >= len(buffer):
+        raise OSError("Unable to locate the Windows system directory")
+    return os.path.join(buffer.value, "cmd.exe")
+
+
+def _shell_environment() -> dict[str, str]:
+    """Copy the environment without Bash functions that can replace commands."""
+    return {
+        name: value
+        for name, value in os.environ.items()
+        if not name.startswith(BASH_EXPORTED_FUNCTION_ENV_PREFIX)
+    }
 
 
 def _drain_pipe(pipe: IO[str] | None, buffer: list[str]) -> None:
@@ -58,18 +87,15 @@ def _drain_pipe(pipe: IO[str] | None, buffer: list[str]) -> None:
 def _cancelled_result(
     *,
     command: str,
-    argv: list[str] | None,
-    use_shell: bool,
 ) -> ShellExecutionResult:
     return ShellExecutionResult(
         command=command,
-        argv=argv,
         stdout="",
         stderr="",
         exit_code=None,
         timed_out=False,
         truncated=False,
-        executed_with_shell=use_shell,
+        executed_with_shell=True,
         cancelled=True,
     )
 
@@ -77,8 +103,6 @@ def _cancelled_result(
 def execute_shell_command(
     *,
     command: str,
-    argv: list[str] | None,
-    use_shell: bool,
     timeout_seconds: int,
     max_output_chars: int,
     cancel_event: threading.Event | None = None,
@@ -91,14 +115,9 @@ def execute_shell_command(
     """
     watch_cancel = cancel_event if cancel_event is not None else threading.Event()
     if watch_cancel.is_set():
-        return _cancelled_result(command=command, argv=argv, use_shell=use_shell)
+        return _cancelled_result(command=command)
 
-    if use_shell:
-        exec_argv = _shell_argv(command)
-    else:
-        if argv is None:
-            raise ValueError("argv is required for shell=False execution.")
-        exec_argv = argv
+    exec_argv = _shell_argv(command)
 
     proc = subprocess.Popen(
         exec_argv,
@@ -108,6 +127,7 @@ def execute_shell_command(
         encoding="utf-8",
         errors="replace",
         start_new_session=True,
+        env=_shell_environment(),
     )
     out_buf: list[str] = []
     err_buf: list[str] = []
@@ -136,13 +156,12 @@ def execute_shell_command(
     )
     return ShellExecutionResult(
         command=command,
-        argv=argv,
         stdout=stdout,
         stderr=stderr,
         exit_code=watch.exit_code,
         timed_out=watch.timed_out,
         truncated=truncated_stdout or truncated_stderr,
-        executed_with_shell=use_shell,
+        executed_with_shell=True,
         cancelled=watch.cancelled,
     )
 

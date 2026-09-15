@@ -276,23 +276,55 @@ def test_auto_off_shows_command_to_approve() -> None:
 # --- plan-only execution gate (integration + latch clearing) -----------------
 
 
-def test_plan_only_guard_prompts_then_clears_on_a_confirmed_mutating_step() -> None:
+def test_plan_only_guard_preserves_latch_after_approving_one_shell_command() -> None:
     session = Session()
     session.plan_only_until_authorized = True
     buf = io.StringIO()
     console = Console(file=buf, force_terminal=False)
 
-    # A mutating step under a standing plan-only request must prompt...
+    # Approving one opaque shell command does not authorize the rest of a plan.
     assert execution_allowed(
         allow_tool("shell"),
         session=session,
         console=console,
-        action_summary="!deploy",
+        action_summary="ls",
         confirm_fn=lambda _: "y",
         is_tty=True,
     )
     assert "Command to approve" in buf.getvalue()
-    # ...and confirming it is the explicit authorization that lifts the guard.
+    assert session.plan_only_until_authorized is True
+    assert session.terminal.pending_confirm_options[1] == ("allow_plan", "Yes, run the plan")
+
+
+def test_plan_only_shell_can_explicitly_authorize_the_plan() -> None:
+    session = Session()
+    session.plan_only_until_authorized = True
+    console = Console(file=io.StringIO(), force_terminal=False)
+
+    assert execution_allowed(
+        allow_tool("shell"),
+        session=session,
+        console=console,
+        action_summary="ls",
+        confirm_fn=lambda _: "allow_plan",
+        is_tty=True,
+    )
+    assert session.plan_only_until_authorized is False
+
+
+def test_plan_only_guard_clears_on_confirmed_non_shell_mutation() -> None:
+    session = Session()
+    session.plan_only_until_authorized = True
+    console = Console(file=io.StringIO(), force_terminal=False)
+
+    assert execution_allowed(
+        allow_tool("slash"),
+        session=session,
+        console=console,
+        action_summary="/save out.md",
+        confirm_fn=lambda _: "y",
+        is_tty=True,
+    )
     assert session.plan_only_until_authorized is False
 
 
@@ -331,25 +363,22 @@ def test_plan_only_guard_is_not_cleared_by_a_read_only_step() -> None:
     assert session.plan_only_until_authorized is True
 
 
-def test_always_allow_approves_and_raises_the_auto_level() -> None:
-    from config.constants.repl_autonomy import AutoLevel
-
+def test_shell_approval_does_not_offer_auto_escalation() -> None:
     session = Session()
     session.terminal.auto_level = AutoLevel.LOW
     buf = io.StringIO()
     console = Console(file=buf, force_terminal=False)
 
-    # A reversible command approved with "always" runs now AND lifts Auto to Med
-    # so commands like it stop asking.
     assert execution_allowed(
         ExecutionPolicyResult(verdict="ask", tool_type="shell", reason=None),
         session=session,
         console=console,
         action_summary="echo hi > /tmp/s1.txt",
-        confirm_fn=lambda _: "always",
+        confirm_fn=lambda _: "y",
         is_tty=True,
     )
-    assert session.terminal.auto_level is AutoLevel.MED
+    assert session.terminal.auto_level is AutoLevel.LOW
+    assert session.terminal.pending_confirm_options == (("y", "Yes, allow"), ("n", "No, cancel"))
     assert "medium risk" in buf.getvalue()
 
 
@@ -381,9 +410,8 @@ def test_non_shell_action_gets_plain_confirmation_no_risk_grade() -> None:
     console = Console(file=buf, force_terminal=False)
     captured: list[str] = []
 
-    # A slash command is not a shell mutation: no "risk" grade, no "always allow
-    # reversible" row, and "always" must not raise the auto level.
-    execution_allowed(
+    # The unoffered "always" answer cannot silently approve or raise autonomy.
+    assert not execution_allowed(
         ExecutionPolicyResult(verdict="ask", tool_type="slash", reason="explains itself"),
         session=session,
         console=console,

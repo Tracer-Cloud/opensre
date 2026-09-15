@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
 from core.agent_harness.tools import ActionToolScope
+from infrastructure.process.termination import terminate_process_tree
 from tools.interactive_shell.shared import ExecutionPolicyResult
 
 # --- constants ---
@@ -88,12 +89,32 @@ def _signal_child(
 
 
 def terminate_child_process(proc: subprocess.Popen[Any]) -> None:
-    """SIGTERM the child (and its group), then SIGKILL leftovers.
+    """Terminate the child and descendants, then forcefully reap leftovers.
 
-    Descendants that ignore SIGTERM, or are still starting when the
-    leader exits, outlive a parent-only wait. The second signal still
-    uses the snapshotted pgid so they cannot.
+    POSIX uses the process group created at launch. Windows has no equivalent
+    group-wide primitive, so psutil snapshots the descendant tree before the
+    shell parent can orphan it.
     """
+    if os.name == "nt":
+        pid = proc.pid
+        # Check the Popen handle before resolving the PID through psutil. An
+        # exited process may have had its PID reused by an unrelated process.
+        if proc.poll() is None and isinstance(pid, int):
+            terminate_process_tree(
+                pid,
+                grace_seconds=SIGTERM_GRACE_SECONDS,
+                force_wait_seconds=5,
+            )
+        # Refresh Popen.returncode and retain a parent-only fallback when tree
+        # inspection raced process exit or was denied.
+        if proc.poll() is None:
+            with contextlib.suppress(OSError):
+                proc.kill()
+        if proc.poll() is None:
+            with contextlib.suppress(subprocess.TimeoutExpired):
+                proc.wait(timeout=5)
+        return
+
     group_pid = _process_group_leader_pid(proc)
     if proc.poll() is None:
         _signal_child(proc, forceful=False, group_pid=group_pid)
