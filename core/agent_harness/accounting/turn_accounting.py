@@ -23,12 +23,12 @@ class DefaultTurnAccounting:
 
     def finalize(self, result: TurnResult) -> TurnResult:
         response = (result.assistant_response_text or "").strip()
-        if response:
+        if response or getattr(self._session, "pending_user_choice", None) is not None:
             _append_turn_detail(
                 self._session,
                 kind="chat",
                 prompt=self._text,
-                response=response,
+                response=response or None,
             )
         with contextlib.suppress(AttributeError):
             self._session.last_assistant_intent = result.final_intent
@@ -40,7 +40,7 @@ def _append_turn_detail(
     *,
     kind: str,
     prompt: str,
-    response: str,
+    response: str | None,
     llm_run: Any | None = None,
 ) -> None:
     store = getattr(session, "store", None)

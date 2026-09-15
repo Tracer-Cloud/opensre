@@ -15,7 +15,7 @@ from contextlib import contextmanager
 
 from rich.console import Console
 
-from core.agent_harness import SessionCore
+from core.agent_harness import SessionCore, SessionManager
 from core.agent_harness.ports import SlashPortsFactory
 from core.agent_harness.runtime import (
     AgentBuildConfig,
@@ -27,6 +27,7 @@ from core.agent_harness.runtime import (
 )
 from infrastructure.turn_host.bindable_output import BindableOutput
 from infrastructure.turn_host.capability_policy import ensure_gateway_capability_policy
+from infrastructure.turn_host.session_lock import session_execution_lock
 from infrastructure.turn_host.status_messages import status_from_tool_start
 from infrastructure.turn_host.turn_output import TurnOutput
 
@@ -121,7 +122,14 @@ class SessionAgentPool:
             # No id means no cache entry and nothing shared to protect.
             yield self.agent_for(session=session, output=output, logger=logger)
             return
-        with self._lock_for(session_id):
+        # Take the cross-host lease first, matching TurnRunner.run.  A direct
+        # pool caller that waited on another host must not hold this process's
+        # agent lock while a runner holds the lease and waits for that lock.
+        with session_execution_lock(session_id, reentrant=True), self._lock_for(session_id):
+            # Gateway ingress resolves before taking this cross-host lease. A
+            # CLI resume could have completed while it waited, so reload the
+            # persisted branch before this turn binds or later flushes it.
+            SessionManager.for_session(session).refresh_from_storage(session)
             yield self.agent_for(session=session, output=output, logger=logger)
 
     def agent_for(

@@ -15,6 +15,7 @@ class PromptSurface(StrEnum):
     """A surface the harness assembles prompts for."""
 
     INTERACTIVE_SHELL = "interactive_shell"
+    HEADLESS_CLI = "headless_cli"
     GATEWAY = "gateway"
 
 
@@ -39,6 +40,13 @@ class SurfaceProfile:
 _PROFILES: dict[PromptSurface, SurfaceProfile] = {
     PromptSurface.INTERACTIVE_SHELL: SurfaceProfile(
         surface=PromptSurface.INTERACTIVE_SHELL,
+        cli_rules=True,
+        vendor_persona=False,
+        long_term_memory_by_default=True,
+        setup_state=True,
+    ),
+    PromptSurface.HEADLESS_CLI: SurfaceProfile(
+        surface=PromptSurface.HEADLESS_CLI,
         cli_rules=True,
         vendor_persona=False,
         long_term_memory_by_default=True,

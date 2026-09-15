@@ -8,6 +8,7 @@ when the command runs, not when ``opensre ask --help`` prints usage.
 from __future__ import annotations
 
 import json
+import shlex
 import sys
 from typing import TYPE_CHECKING
 
@@ -55,8 +56,28 @@ def _render_outcome(outcome: AskOutcome) -> None:
     if is_json_output():
         click.echo(json.dumps(outcome.as_dict(), ensure_ascii=False))
         return
-    if outcome.status is AskStatus.SUCCESS:
+    if outcome.status in {AskStatus.SUCCESS, AskStatus.NEEDS_INPUT}:
         _echo_answer(outcome.response)
+        if outcome.session_id is not None and (
+            outcome.status is AskStatus.NEEDS_INPUT or sys.stderr.isatty()
+        ):
+            click.echo(f"Session: {outcome.session_id}", err=True)
+        if outcome.session_id is not None and sys.stderr.isatty():
+            reply = '"<follow-up>"'
+            if len(outcome.questions) == 1:
+                reply = '"1"'
+            elif outcome.questions:
+                labels = [question.label for question in outcome.questions]
+                use_labels = all(labels) and len(set(labels)) == len(labels)
+                sample = {
+                    question.label if use_labels else str(index): "1"
+                    for index, question in enumerate(outcome.questions, start=1)
+                }
+                reply = shlex.quote(json.dumps(sample, ensure_ascii=False))
+            click.echo(
+                f"Continue: opensre ask --resume {outcome.session_id} {reply}",
+                err=True,
+            )
         return
     if outcome.response:
         click.echo(outcome.response, err=True)
@@ -85,16 +106,31 @@ def _show_live_progress() -> bool:
     is_flag=True,
     help="Authorize every approval-gated tool for this invocation.",
 )
+@click.option(
+    "--resume",
+    "resume_session_id",
+    metavar="SESSION",
+    help="Continue a previous ask session by ID or unambiguous prefix.",
+)
+@click.option(
+    "--ephemeral",
+    is_flag=True,
+    help="Do not persist this invocation or print a resumable session ID.",
+)
 def ask_command(
     prompt: str,
     allowed_tools: tuple[str, ...],
     dangerously_bypass_approvals: bool,
+    resume_session_id: str | None,
+    ephemeral: bool,
 ) -> None:
     """Run one configured OpenSRE agent request and exit."""
     if allowed_tools and dangerously_bypass_approvals:
         raise click.UsageError(
             "--allowed-tool cannot be combined with --dangerously-bypass-approvals."
         )
+    if resume_session_id and ephemeral:
+        raise click.UsageError("--resume cannot be combined with --ephemeral.")
 
     if allowed_tools:
         from surfaces.cli.ask import approval as ask_approval
@@ -121,6 +157,8 @@ def ask_command(
                     allowed_tools=allowed_tools,
                     bypass_approvals=dangerously_bypass_approvals,
                     tool_event_observer=tool_event_observer,
+                    resume_session_id=resume_session_id,
+                    ephemeral=ephemeral,
                 )
     except AskSignal as exc:
         from surfaces.cli.ask.service import cancelled_outcome

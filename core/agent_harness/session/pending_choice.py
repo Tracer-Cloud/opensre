@@ -13,10 +13,15 @@ and no "Reply with 1, 2, or 3" free-text parsing.
 
 from __future__ import annotations
 
+import json
 import re
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
+from typing import Any
 
-_ANSWER_HEADER = re.compile(r"^(\d+)\.\s+(.+)$")
+PENDING_USER_CHOICE_STATE_CUSTOM_TYPE = "pending_user_choice_state"
+_ANSWER_HEADER = re.compile(r"^(\d+)\.\s+(.+)\n", re.MULTILINE)
+_ANSWER_JSON_PREFIX = "@json:"
 
 
 def question_key(title: str) -> str:
@@ -84,6 +89,152 @@ class PendingUserChoice:
         return len(self.items()) >= 2
 
 
+def pending_user_choice_state_snapshot(session: Any) -> dict[str, Any] | None:
+    """Return the pending choice and its workflow context for persistence."""
+    pending = getattr(session, "pending_user_choice", None)
+    skill_question_keys = getattr(session, "skill_question_keys", {})
+    workflow_context = {
+        "active_skill": getattr(session, "active_skill", None),
+        "ask_user_rounds": int(getattr(session, "ask_user_rounds", 0)),
+        "questions_already_answered": sorted(
+            str(key) for key in getattr(session, "questions_already_answered", set())
+        ),
+        "skill_question_keys": (
+            {
+                skill: sorted(str(key) for key in keys)
+                for skill, keys in skill_question_keys.items()
+                if isinstance(skill, str) and skill and isinstance(keys, set)
+            }
+            if isinstance(skill_question_keys, dict)
+            else {}
+        ),
+    }
+    if not isinstance(pending, PendingUserChoice):
+        return workflow_context if any(workflow_context.values()) else None
+    return {
+        "title": pending.title,
+        "options": list(pending.options),
+        "questions": [
+            {
+                "label": question.label,
+                "title": question.title,
+                "options": list(question.options),
+                "multi_select": question.multi_select,
+            }
+            for question in pending.questions
+        ],
+        "multi_select": pending.multi_select,
+        "note": pending.note,
+        "commands": dict(pending.commands),
+        "custom_answer": pending.custom_answer,
+        **workflow_context,
+    }
+
+
+def _last_pending_choice_content(
+    prior_records: Sequence[Mapping[str, Any]],
+) -> dict[str, Any] | None:
+    for record in reversed(prior_records):
+        if record.get("type") != "custom_message":
+            continue
+        if record.get("custom_type") != PENDING_USER_CHOICE_STATE_CUSTOM_TYPE:
+            continue
+        content = record.get("content")
+        return content if isinstance(content, dict) else None
+    return None
+
+
+def should_persist_pending_user_choice_state(
+    snapshot: dict[str, Any] | None,
+    *,
+    prior_records: Sequence[Mapping[str, Any]],
+) -> bool:
+    """Return whether a changed pending-choice snapshot needs appending."""
+    last = _last_pending_choice_content(prior_records)
+    if snapshot is None:
+        return bool(last)
+    return last != snapshot
+
+
+def apply_pending_user_choice_state(session: Any, payload: Any) -> None:
+    """Restore a pending choice and the active workflow that owns it."""
+    if not hasattr(session, "pending_user_choice"):
+        return
+    if not isinstance(payload, dict) or not payload:
+        session.pending_user_choice = None
+        _apply_workflow_context(session, {})
+        return
+    if "title" not in payload:
+        session.pending_user_choice = None
+        _apply_workflow_context(session, payload)
+        return
+    raw_questions = payload.get("questions")
+    questions: list[AskUserQuestion] = []
+    if isinstance(raw_questions, list):
+        for item in raw_questions:
+            if not isinstance(item, dict):
+                continue
+            title = item.get("title")
+            raw_options = item.get("options")
+            if not isinstance(title, str) or not isinstance(raw_options, list):
+                continue
+            questions.append(
+                AskUserQuestion(
+                    label=str(item.get("label") or ""),
+                    title=title,
+                    options=tuple(str(option) for option in raw_options),
+                    multi_select=bool(item.get("multi_select", False)),
+                )
+            )
+    raw_options = payload.get("options")
+    options = tuple(str(option) for option in raw_options) if isinstance(raw_options, list) else ()
+    raw_commands = payload.get("commands")
+    commands = (
+        {str(key): str(value) for key, value in raw_commands.items()}
+        if isinstance(raw_commands, dict)
+        else {}
+    )
+    session.pending_user_choice = PendingUserChoice(
+        title=str(payload.get("title") or "Ask User"),
+        options=options,
+        questions=tuple(questions),
+        multi_select=bool(payload.get("multi_select", False)),
+        note=str(payload.get("note") or ""),
+        commands=commands,
+        custom_answer=bool(payload.get("custom_answer", True)),
+    )
+    _apply_workflow_context(session, payload)
+
+
+def _apply_workflow_context(session: Any, payload: Mapping[str, Any]) -> None:
+    """Restore the state that survives after a pending choice is consumed."""
+    if hasattr(session, "active_skill"):
+        active_skill = payload.get("active_skill")
+        session.active_skill = (
+            active_skill if isinstance(active_skill, str) and active_skill else None
+        )
+    if hasattr(session, "ask_user_rounds"):
+        rounds = payload.get("ask_user_rounds")
+        session.ask_user_rounds = rounds if isinstance(rounds, int) and rounds >= 0 else 0
+    answered = getattr(session, "questions_already_answered", None)
+    if isinstance(answered, set):
+        answered.clear()
+        settled = payload.get("questions_already_answered")
+        if isinstance(settled, list):
+            answered.update(str(key) for key in settled if str(key))
+    by_skill = getattr(session, "skill_question_keys", None)
+    if isinstance(by_skill, dict):
+        by_skill.clear()
+        saved = payload.get("skill_question_keys")
+        if isinstance(saved, dict):
+            for skill, keys in saved.items():
+                if not isinstance(skill, str) or not skill or not isinstance(keys, list):
+                    continue
+                restored = {str(key) for key in keys if str(key)}
+                if restored:
+                    by_skill[skill] = restored
+
+
 def format_ask_user_answers(
     questions: tuple[AskUserQuestion, ...],
     answers: tuple[str, ...],
@@ -93,7 +244,13 @@ def format_ask_user_answers(
         raise ValueError("questions and answers must be the same length")
     blocks: list[str] = []
     for index, (question, answer) in enumerate(zip(questions, answers, strict=True), start=1):
-        blocks.append(f"{index}. {question.title}\n{answer}")
+        # JSON keeps every answer on one physical line, so blank lines and
+        # numbered paragraphs in a custom answer cannot impersonate a later
+        # question header when the next turn parses this hand-off payload.
+        blocks.append(
+            f"{index}. {question.title}\n{_ANSWER_JSON_PREFIX}"
+            + json.dumps(answer, ensure_ascii=False)
+        )
     return "\n\n".join(blocks)
 
 
@@ -102,16 +259,56 @@ def parse_ask_user_answers(text: str) -> list[tuple[str, str]]:
     stripped = text.strip()
     if not stripped:
         return []
+
+    framed = _parse_json_answer_blocks(stripped)
+    if framed is not None:
+        return framed
+    return _parse_legacy_answer_blocks(stripped)
+
+
+def _parse_json_answer_blocks(text: str) -> list[tuple[str, str]] | None:
+    """Parse the unambiguous current answer framing, or signal legacy input."""
+    cursor = 0
     pairs: list[tuple[str, str]] = []
-    for block in stripped.split("\n\n"):
-        lines = [line.rstrip() for line in block.splitlines() if line.strip()]
-        if len(lines) < 2:
+    for index in range(1, len(text) + 1):
+        header = _ANSWER_HEADER.match(text, cursor)
+        if header is None:
+            return [] if pairs else None
+        if int(header.group(1)) != index:
             return []
-        match = _ANSWER_HEADER.match(lines[0])
-        if match is None:
+        answer_start = header.end()
+        if not text.startswith(_ANSWER_JSON_PREFIX, answer_start):
+            return None if not pairs else []
+        try:
+            answer, used = json.JSONDecoder().raw_decode(
+                text[answer_start + len(_ANSWER_JSON_PREFIX) :]
+            )
+        except json.JSONDecodeError:
             return []
-        question = match.group(2).strip()
-        answer = "\n".join(lines[1:]).strip()
+        if not isinstance(answer, str) or not answer:
+            return []
+        cursor = answer_start + len(_ANSWER_JSON_PREFIX) + used
+        pairs.append((header.group(2).strip(), answer))
+        if cursor == len(text):
+            return pairs
+        if not text.startswith("\n\n", cursor):
+            return []
+        cursor += 2
+    return []
+
+
+def _parse_legacy_answer_blocks(text: str) -> list[tuple[str, str]]:
+    """Read historical unframed answer messages persisted before JSON framing."""
+    headers = list(re.finditer(r"(?m)^(\d+)\.\s+(.+)\n", text))
+    if not headers:
+        return []
+    pairs: list[tuple[str, str]] = []
+    for index, header in enumerate(headers, start=1):
+        if int(header.group(1)) != index:
+            return []
+        question = header.group(2).strip()
+        next_start = headers[index].start() if index < len(headers) else len(text)
+        answer = text[header.end() : next_start].strip()
         if not question or not answer:
             return []
         pairs.append((question, answer))
@@ -120,8 +317,12 @@ def parse_ask_user_answers(text: str) -> list[tuple[str, str]]:
 
 __all__ = [
     "AskUserQuestion",
+    "PENDING_USER_CHOICE_STATE_CUSTOM_TYPE",
     "PendingUserChoice",
+    "apply_pending_user_choice_state",
     "format_ask_user_answers",
     "parse_ask_user_answers",
+    "pending_user_choice_state_snapshot",
     "question_key",
+    "should_persist_pending_user_choice_state",
 ]

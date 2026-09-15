@@ -6,6 +6,7 @@ import io
 import json
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -1443,6 +1444,155 @@ class TestResumeCommand:
 
         assert session.session_id == old_id
         assert "no conversation to resume" in buf.getvalue()
+
+    def test_apply_resume_does_not_rebind_while_the_target_session_is_busy(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """/resume must not wait for or rebind a session another host owns."""
+        from core.agent_harness.session import InMemorySessionStore
+        from infrastructure.turn_host.session_lock import session_execution_lock
+        from surfaces.interactive_shell.command_registry.session_cmds import _apply_resume_data
+
+        monkeypatch.setattr(
+            "infrastructure.turn_host.session_lock.sessions_dir",
+            lambda: tmp_path,
+        )
+        target_id = "target-session-123"
+        data = {
+            "session_id": target_id,
+            "name": "Target",
+            "cli_agent_messages": [("user", "resume me")],
+            "accumulated_context": {},
+            "history": [],
+            "turn_details": [],
+            "has_snapshot": True,
+        }
+        session = Session()
+        session.store = InMemorySessionStore()
+        old_id = session.session_id
+        console, _ = _capture()
+        attempted = threading.Event()
+        completed = threading.Event()
+        errors: list[Exception] = []
+        results: list[bool] = []
+
+        def _resume() -> None:
+            try:
+                attempted.set()
+                results.append(_apply_resume_data(data, session, console))
+                completed.set()
+            except Exception as exc:
+                errors.append(exc)
+
+        with session_execution_lock(target_id):
+            thread = threading.Thread(target=_resume)
+            thread.start()
+            assert attempted.wait(timeout=1)
+            assert completed.wait(timeout=1)
+            assert session.session_id == old_id
+
+        thread.join(timeout=5)
+        assert not thread.is_alive()
+        assert not errors, errors
+        assert completed.is_set()
+        assert results == [False]
+        assert session.session_id == old_id
+
+    def test_apply_resume_retains_target_lease_until_the_turn_scope_exits(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """A turn-hosted /resume keeps its target safe through final flush."""
+        from core.agent_harness.session import InMemorySessionStore
+        from infrastructure.turn_host.session_lock import (
+            SessionExecutionBusyError,
+            retained_session_execution_locks,
+            session_execution_lock,
+        )
+        from surfaces.interactive_shell.command_registry.session_cmds import _apply_resume_data
+
+        monkeypatch.setattr(
+            "infrastructure.turn_host.session_lock.sessions_dir",
+            lambda: tmp_path,
+        )
+        target_id = "target-session-123"
+        data = {
+            "session_id": target_id,
+            "name": "Target",
+            "cli_agent_messages": [("user", "resume me")],
+            "accumulated_context": {},
+            "history": [],
+            "turn_details": [],
+            "has_snapshot": True,
+        }
+        session = Session()
+        session.store = InMemorySessionStore()
+        console, _ = _capture()
+
+        def _try_target_lock(results: list[bool]) -> threading.Thread:
+            def _try_lock() -> None:
+                try:
+                    with session_execution_lock(target_id, timeout=0):
+                        results.append(True)
+                except SessionExecutionBusyError:
+                    results.append(False)
+
+            thread = threading.Thread(target=_try_lock)
+            thread.start()
+            return thread
+
+        with retained_session_execution_locks():
+            assert _apply_resume_data(data, session, console) is True
+            held_results: list[bool] = []
+            thread = _try_target_lock(held_results)
+            thread.join(timeout=5)
+            assert not thread.is_alive()
+            assert held_results == [False]
+
+        released_results: list[bool] = []
+        thread = _try_target_lock(released_results)
+        thread.join(timeout=5)
+        assert not thread.is_alive()
+        assert released_results == [True]
+
+    def test_apply_resume_reloads_the_target_after_acquiring_its_lease(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A resumed target is restored from the post-lease repository state."""
+        from core.agent_harness.session import InMemorySessionStore
+        from surfaces.interactive_shell.command_registry.session_cmds import _apply_resume_data
+
+        target_id = "target-session-123"
+        stale_data = {
+            "session_id": target_id,
+            "name": "Target",
+            "cli_agent_messages": [("user", "stale")],
+            "accumulated_context": {},
+            "history": [],
+            "turn_details": [],
+            "has_snapshot": True,
+        }
+        fresh_data = {**stale_data, "cli_agent_messages": [("user", "fresh")]}
+
+        class _Repo:
+            def load_session(self, session_id: str) -> dict:
+                assert session_id == target_id
+                return fresh_data
+
+        monkeypatch.setattr(
+            "surfaces.interactive_shell.command_registry.session_cmds.resume.default_session_repo",
+            _Repo,
+        )
+        session = Session()
+        session.store = InMemorySessionStore()
+        console, _ = _capture()
+
+        assert _apply_resume_data(stale_data, session, console, refresh_target=True) is True
+        assert session.agent.messages == [("user", "fresh")]
 
     def test_apply_resume_displays_history_in_repl_format(self, tmp_path: Path) -> None:
         """History display uses REPL turn order and includes slash commands."""
