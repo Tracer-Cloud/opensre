@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from infrastructure.scheduling.scheduler import delivery
 from infrastructure.scheduling.scheduler.types import Provider
+from surfaces.cli.commands.cron import _PROVIDER_CHOICES
 
 #: Every member the vocabulary offers a caller.
 ALL_PROVIDERS = frozenset(Provider)
@@ -28,6 +29,7 @@ EXECUTOR_DELIVERS = frozenset(
         Provider.DISCORD,
         Provider.ROCKETCHAT,
         Provider.INTERACTIVE_SHELL,
+        Provider.BUZZ,
     }
 )
 
@@ -47,17 +49,9 @@ def test_the_executor_delivers_to_exactly_these_providers() -> None:
     assert reachable == EXECUTOR_DELIVERS
 
 
-def test_buzz_is_offered_by_the_vocabulary_and_refused_by_the_executor() -> None:
-    """A scheduled task set to ``buzz`` fails at delivery, not at creation.
-
-    Cron delivery does not support ``Provider.BUZZ``, so the enum offers a
-    cron task a choice its executor will refuse
-    with "Unsupported provider". Pinned so the gap stays visible; delete this
-    test when the executor grows a buzz branch or the vocabularies split.
-    """
-    # Assert
-    assert Provider.BUZZ in ALL_PROVIDERS
-    assert Provider.BUZZ not in EXECUTOR_DELIVERS
+def test_cron_advertises_only_executable_providers() -> None:
+    """Each generic-cron provider has an installed scheduled-delivery adapter."""
+    assert frozenset(_PROVIDER_CHOICES) == EXECUTOR_DELIVERS == ALL_PROVIDERS
 
 
 def test_the_spec_list_is_narrower_than_what_the_executor_can_send_to() -> None:
@@ -74,4 +68,8 @@ def test_the_spec_list_is_narrower_than_what_the_executor_can_send_to() -> None:
     # Assert
     assert specs == DELIVERY_SPECS_COVER
     assert Provider.INTERACTIVE_SHELL in EXECUTOR_DELIVERS - specs
-    assert Provider.DISCORD in EXECUTOR_DELIVERS - specs
+    assert {
+        Provider.BUZZ,
+        Provider.DISCORD,
+        Provider.INTERACTIVE_SHELL,
+    } <= EXECUTOR_DELIVERS - specs

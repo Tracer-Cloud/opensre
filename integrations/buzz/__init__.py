@@ -8,6 +8,7 @@ from typing import Any
 from integrations._validation_helpers import report_classify_failure
 from integrations.buzz.client import BuzzClient, resolve_buzz_binary
 from integrations.buzz.credentials import load_credentials_from_env
+from integrations.buzz.scheduled_delivery import BuzzScheduledDelivery
 from integrations.buzz.setup import BUZZ_SETUP
 from integrations.config_models import BuzzConfig
 
@@ -38,6 +39,7 @@ def classify(credentials: dict[str, Any], record_id: str) -> tuple[BuzzConfig | 
 __all__ = [
     "BUZZ_SETUP",
     "BuzzClient",
+    "BuzzScheduledDelivery",
     "classify",
     "load_credentials_from_env",
     "resolve_buzz_binary",
