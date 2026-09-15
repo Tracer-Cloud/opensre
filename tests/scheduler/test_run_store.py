@@ -5,6 +5,7 @@ from __future__ import annotations
 import sqlite3
 import threading
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,7 @@ from infrastructure.scheduling.scheduler.storage.run_store import (
     RecoverableRun,
     complete_run,
     delete_runs,
+    get_backlog_snapshot,
     get_latest_finished_run,
     get_latest_run_for_fire_time,
     get_latest_targeted_run,
@@ -67,6 +69,101 @@ class _AlterFailsConnection:
 
 
 class TestClaimStore:
+    def test_backlog_snapshot_tracks_oldest_durable_pending_run(self, db_path: Path) -> None:
+        with database.transaction(db_path, immediate=True) as conn:
+            conn.executemany(
+                "INSERT INTO task_runs (task_id, fire_time, started_at, status) "
+                "VALUES (?, ?, ?, ?)",
+                [
+                    (
+                        f"task-{index}",
+                        f"tick-{index}",
+                        (
+                            "2026-01-01T09:00:00+00:00"
+                            if index == 0
+                            else "2026-01-01T10:00:00+00:00"
+                        ),
+                        TaskStatus.PENDING.value,
+                    )
+                    for index in range(1_000)
+                ],
+            )
+
+        snapshot = get_backlog_snapshot(
+            db_path,
+            now=datetime(2026, 1, 1, 10, 30, tzinfo=UTC),
+        )
+
+        assert snapshot.pending_count == 1_000
+        assert snapshot.oldest_pending_at == datetime(2026, 1, 1, 9, 0, tzinfo=UTC)
+        assert snapshot.oldest_pending_age_seconds == 5_400
+
+    def test_backlog_snapshot_survives_reopen_and_excludes_claimed_work(
+        self, db_path: Path
+    ) -> None:
+        assert try_queue_run("waiting", "2026-01-01T09:00Z", db_path=db_path)
+        assert try_queue_run("removed", "2026-01-01T09:00Z", db_path=db_path)
+        assert try_queue_run("active", "2026-01-01T09:00Z", db_path=db_path)
+        assert try_claim("active", "2026-01-01T09:00Z", db_path=db_path) is not None
+
+        snapshot = get_backlog_snapshot(db_path, eligible_task_ids={"waiting", "active"})
+
+        assert snapshot.pending_count == 1
+
+    def test_backlog_snapshot_with_no_eligible_tasks_ignores_retained_history(
+        self, db_path: Path
+    ) -> None:
+        assert try_queue_run("removed", "2026-01-01T09:00Z", db_path=db_path)
+
+        snapshot = get_backlog_snapshot(db_path, eligible_task_ids=set())
+
+        assert snapshot.pending_count == 0
+        assert snapshot.oldest_pending_at is None
+
+    def test_backlog_counts_latest_expired_claims_but_not_live_or_deleted_work(
+        self, db_path: Path
+    ) -> None:
+        now = datetime(2026, 1, 1, 10, 30, tzinfo=UTC)
+        expired_at = "2026-01-01T10:00:00+00:00"
+        with database.transaction(db_path, immediate=True) as conn:
+            conn.executemany(
+                "INSERT INTO task_runs "
+                "(task_id, fire_time, attempt, started_at, status, lease_expires_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                [
+                    (task_id, "tick", attempt, "2026-01-01T09:00:00+00:00", status, lease)
+                    for task_id, attempt, status, lease in [
+                        ("expired", 1, "running", expired_at),
+                        ("removed", 1, "running", expired_at),
+                        ("live", 1, "running", now.isoformat()),
+                        ("no-lease", 1, "running", ""),
+                        ("superseded", 1, "running", expired_at),
+                        ("superseded", 2, "success", ""),
+                    ]
+                ],
+            )
+
+        snapshot = get_backlog_snapshot(
+            db_path,
+            eligible_task_ids={"expired", "live", "no-lease", "superseded"},
+            now=now,
+        )
+
+        assert snapshot.pending_count == 1
+        assert snapshot.oldest_pending_at == datetime(2026, 1, 1, 10, tzinfo=UTC)
+        assert snapshot.oldest_pending_age_seconds == 1_800
+
+        # A pending tick still waits even when another tick owns the task.
+        assert try_queue_run("live", "next-tick", db_path=db_path)
+        assert get_backlog_snapshot(db_path, eligible_task_ids={"live"}, now=now).pending_count == 1
+
+    def test_empty_backlog_snapshot_has_no_synthetic_age(self, db_path: Path) -> None:
+        snapshot = get_backlog_snapshot(db_path)
+
+        assert snapshot.pending_count == 0
+        assert snapshot.oldest_pending_at is None
+        assert snapshot.oldest_pending_age_seconds is None
+
     def test_first_claim_succeeds(self, db_path: Path) -> None:
         assert try_claim("task1", "2026-01-01T09:00", db_path=db_path) is not None
 

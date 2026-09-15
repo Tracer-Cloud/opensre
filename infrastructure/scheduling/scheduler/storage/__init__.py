@@ -5,11 +5,13 @@ from infrastructure.scheduling.scheduler.storage.database import (
     run_database_path,
 )
 from infrastructure.scheduling.scheduler.storage.run_store import (
+    BacklogSnapshot,
     ExecutionClaim,
     RecoverableRun,
     claim_renewal_interval_seconds,
     complete_run,
     delete_runs,
+    get_backlog_snapshot,
     get_group_run,
     get_group_runs,
     get_latest_finished_run,
@@ -24,9 +26,11 @@ from infrastructure.scheduling.scheduler.storage.run_store import (
     try_queue_run,
 )
 from infrastructure.scheduling.scheduler.storage.task_store import (
+    TaskStoreSnapshot,
     add_task,
     default_task_store_path,
     get_task,
+    get_task_store_snapshot,
     list_tasks,
     record_task_success,
     remove_task,
@@ -35,11 +39,13 @@ from infrastructure.scheduling.scheduler.storage.task_store import (
 
 __all__ = [
     "add_task",
+    "BacklogSnapshot",
     "claim_renewal_interval_seconds",
     "complete_run",
     "default_run_database_path",
     "default_task_store_path",
     "delete_runs",
+    "get_backlog_snapshot",
     "get_group_run",
     "get_group_runs",
     "ExecutionClaim",
@@ -51,6 +57,7 @@ __all__ = [
     "get_latest_runs",
     "get_runs",
     "get_task",
+    "get_task_store_snapshot",
     "list_tasks",
     "record_task_success",
     "record_run_report",
@@ -59,5 +66,6 @@ __all__ = [
     "run_database_path",
     "try_claim",
     "try_queue_run",
+    "TaskStoreSnapshot",
     "update_task",
 ]

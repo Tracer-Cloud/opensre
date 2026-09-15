@@ -14,6 +14,7 @@ import sysconfig
 import time
 from collections.abc import Iterator
 from dataclasses import dataclass
+from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from threading import Thread
@@ -614,8 +615,45 @@ def test_integrations_verify_datadog_smoke(cli_sandbox: CliSandbox) -> None:
     assert "Missing API key or application key." in result.stdout
 
 
+@pytest.fixture()
+def rejected_provider_endpoint() -> Iterator[tuple[str, list[str]]]:
+    """Exercise credential rejection without sending the probe to a provider."""
+    requests: list[str] = []
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_CONNECT(self) -> None:
+            requests.append(self.path)
+            self.send_error(HTTPStatus.FORBIDDEN, "Provider connections blocked by test")
+
+        def do_POST(self) -> None:
+            requests.append(self.path)
+            self.rfile.read(int(self.headers.get("Content-Length", "0")))
+            payload = b'{"error":{"message":"Invalid test key","type":"authentication_error"}}'
+            self.send_response(HTTPStatus.UNAUTHORIZED)
+            self.send_header("Content-Type", "application/json")
+            self.send_header("Content-Length", str(len(payload)))
+            self.end_headers()
+            self.wfile.write(payload)
+
+        def log_message(self, _format: str, *_args: object) -> None:
+            return
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_port}/v1", requests
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
 @pytest.mark.skipif(os.name == "nt", reason="interactive smoke uses POSIX PTYs")
-def test_onboard_interactive_smoke(cli_sandbox: CliSandbox) -> None:
+def test_onboard_interactive_smoke(
+    cli_sandbox: CliSandbox, rejected_provider_endpoint: tuple[str, list[str]]
+) -> None:
+    probe_url, probe_requests = rejected_provider_endpoint
     result = _run_cli_pty(
         cli_sandbox,
         "onboard",
@@ -625,25 +663,23 @@ def test_onboard_interactive_smoke(cli_sandbox: CliSandbox) -> None:
             # against the model that actually gets persisted.
             PtyAction(expect="Choose OpenAI model", send=b"\r"),
             PtyAction(expect="OpenAI API key", send=b"smoke-test-key\r"),
-            # #3591: the wizard now live-validates the key; smoke-test-key fails
-            # (401 online, connection error offline — the menu renders either way).
-            # One `j` moves from the default "Re-enter the API key" to "Save anyway
-            # without validating", which keeps the keyring persistence path and every
-            # downstream assertion intact. The per-action timeout covers a hanging
-            # network: the validator's client timeout is 30s and connection errors
-            # are retried (the CLI login expect below already uses 90.0 as well).
+            # The local probe returns 401; choose "Save anyway without validating"
+            # to exercise credential persistence after an explicit rejection.
             PtyAction(
                 expect="could not be verified. What next?",
                 send=b"\r",
                 stagger_j=1,
-                timeout=90.0,
             ),
         ],
         timeout=30.0,
-        extra_env={"OPENSRE_AUTO_LAUNCH": "0"},
+        extra_env={
+            "OPENSRE_AUTO_LAUNCH": "0",
+            "OPENAI_BASE_URL": probe_url,
+        },
     )
 
     assert result.exit_code == 0
+    assert probe_requests
     assert "Done." in result.stdout
     assert "next" in result.stdout
 
@@ -673,6 +709,7 @@ def test_onboard_interactive_smoke(cli_sandbox: CliSandbox) -> None:
 @pytest.mark.skipif(os.name == "nt", reason="interactive smoke uses POSIX PTYs")
 def test_onboard_interactive_smoke_cli_provider_repick_when_unauthenticated(
     cli_sandbox: CliSandbox,
+    rejected_provider_endpoint: tuple[str, list[str]],
     _cli_binary: str,
     provider_key: str,
     provider_label: str,
@@ -688,6 +725,7 @@ def test_onboard_interactive_smoke_cli_provider_repick_when_unauthenticated(
     from surfaces.cli.wizard.custom_endpoints import CUSTOM_ENDPOINT_SELECTION
     from surfaces.shared.llm_setup.provider_choices import other_setup_provider_options
 
+    probe_url, probe_requests = rejected_provider_endpoint
     other_values = [
         CUSTOM_ENDPOINT_SELECTION,
         *(
@@ -755,7 +793,7 @@ def test_onboard_interactive_smoke_cli_provider_repick_when_unauthenticated(
                 "OPENAI_API_KEY": "",
                 "OPENAI_ORG_ID": "",
                 "OPENAI_PROJECT_ID": "",
-                "OPENAI_BASE_URL": "",
+                "OPENAI_BASE_URL": probe_url,
             },
         )
     except AssertionError as exc:
@@ -769,6 +807,7 @@ def test_onboard_interactive_smoke_cli_provider_repick_when_unauthenticated(
         raise
 
     assert result.exit_code == 0
+    assert probe_requests
     assert "Done." in result.stdout
     assert "next" in result.stdout
 
@@ -784,6 +823,7 @@ def test_onboard_interactive_smoke_cli_provider_repick_when_unauthenticated(
 @pytest.mark.skipif(os.name == "nt", reason="interactive smoke uses POSIX PTYs")
 def test_integrations_setup_datadog_rejects_credentials_that_do_not_verify(
     cli_sandbox: CliSandbox,
+    rejected_provider_endpoint: tuple[str, list[str]],
 ) -> None:
     """Placeholder keys must leave nothing behind, on any tier.
 
@@ -792,6 +832,8 @@ def test_integrations_setup_datadog_rejects_credentials_that_do_not_verify(
     setup flow verifies before it persists; with keys the Datadog API rejects,
     the store and ``.env`` are expected to stay untouched.
     """
+    probe_url, probe_requests = rejected_provider_endpoint
+    proxy_url = probe_url.removesuffix("/v1")
     result = _run_cli_pty(
         cli_sandbox,
         "integrations",
@@ -802,11 +844,18 @@ def test_integrations_setup_datadog_rejects_credentials_that_do_not_verify(
             PtyAction(expect="application key", send=b"dd-app-key\r"),
             PtyAction(expect="Site", send=b"\r"),
         ],
-        # Setup runs verify against the Datadog API; CI runners can exceed 20s.
+        # The loopback proxy rejects CONNECT without forwarding data to Datadog.
+        extra_env={
+            "HTTPS_PROXY": proxy_url,
+            "https_proxy": proxy_url,
+            "NO_PROXY": "",
+            "no_proxy": "",
+        },
         timeout=45.0,
     )
 
     assert result.exit_code == 1
+    assert probe_requests == ["api.datadoghq.com:443"]
     assert "Saved" not in result.stdout
     assert cli_sandbox.read_integrations() == []
     assert "DD_SITE" not in cli_sandbox.read_project_env()

@@ -13,6 +13,7 @@ from infrastructure.scheduling.scheduler.storage.task_store import (
     _quarantine_unreadable,
     add_task,
     get_task,
+    get_task_store_snapshot,
     list_tasks,
     remove_task,
     update_task,
@@ -27,6 +28,27 @@ def store_path(tmp_path: Path) -> Path:
 
 def _db_path(store_path: Path) -> Path:
     return store_path.with_name("scheduler.db")
+
+
+@pytest.mark.parametrize(
+    ("read_error", "complete"),
+    [(FileNotFoundError, True), (PermissionError, False), (OSError, False)],
+)
+def test_snapshot_distinguishes_absence_from_read_failures(
+    store_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    read_error: type[OSError],
+    complete: bool,
+) -> None:
+    def failed_read(_path: Path, **_kwargs: object) -> str:
+        raise read_error("simulated task-store read failure")
+
+    monkeypatch.setattr(Path, "read_text", failed_read)
+
+    snapshot = get_task_store_snapshot(store_path)
+
+    assert snapshot.tasks == ()
+    assert snapshot.complete is complete
 
 
 class TestStore:
@@ -390,6 +412,30 @@ class TestStoreSurvivesTornWrites:
         assert removed is False
         assert updated is False
         assert store_path.read_text(encoding="utf-8") == "{ not json"
+
+    @pytest.mark.parametrize("contents", [b"{ not json", b"\xff\xfe"])
+    def test_snapshot_marks_an_unreadable_store_incomplete(
+        self, store_path: Path, contents: bytes
+    ) -> None:
+        store_path.write_bytes(contents)
+
+        snapshot = get_task_store_snapshot(store_path)
+
+        assert snapshot.tasks == ()
+        assert snapshot.complete is False
+        assert store_path.read_bytes() == contents
+
+    def test_snapshot_marks_partially_invalid_entries_incomplete(self, store_path: Path) -> None:
+        task = self._digest(7)
+        store_path.write_text(
+            json.dumps([task.model_dump(mode="json"), {"id": "invalid-task"}]),
+            encoding="utf-8",
+        )
+
+        snapshot = get_task_store_snapshot(store_path)
+
+        assert snapshot.tasks == (task,)
+        assert snapshot.complete is False
 
     def test_a_non_list_payload_is_treated_as_unreadable(self, store_path: Path) -> None:
         # Valid JSON of the wrong shape is just as unusable as broken JSON,

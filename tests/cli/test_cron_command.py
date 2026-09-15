@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import json
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
 
+import infrastructure.process.runtime_flags as runtime_flags
+from infrastructure.scheduling.scheduler.storage import BacklogSnapshot, TaskStoreSnapshot
 from infrastructure.scheduling.scheduler.types import Provider, TaskKind, TaskRun, TaskStatus
 from surfaces.cli.commands.cron import (
     _KIND_CHOICES,
@@ -16,9 +20,135 @@ from surfaces.cli.commands.cron import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _isolate_runtime_flags(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(runtime_flags, "_flags", runtime_flags.RuntimeFlags())
+
+
 def test_cron_add_provider_choices_match_full_provider_enum() -> None:
     """cron delivery genuinely supports every Provider member."""
     assert set(_PROVIDER_CHOICES) == {p.value for p in Provider}
+
+
+@pytest.mark.parametrize("global_json", [False, True])
+def test_cron_status_reports_backlog_in_json(
+    monkeypatch: pytest.MonkeyPatch, global_json: bool
+) -> None:
+    monkeypatch.setattr(runtime_flags, "_flags", runtime_flags.RuntimeFlags(json=global_json))
+    snapshot = BacklogSnapshot(
+        pending_count=7,
+        oldest_pending_at=datetime(2026, 1, 1, 9, 0, tzinfo=UTC),
+        oldest_pending_age_seconds=3_661.0,
+    )
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.get_backlog_snapshot",
+        lambda **_kwargs: snapshot,
+    )
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.get_task_store_snapshot",
+        lambda: TaskStoreSnapshot((), True),
+    )
+
+    args = ["status"] if global_json else ["status", "--json"]
+    result = CliRunner().invoke(cron_command, args)
+
+    assert result.exit_code == 0
+    assert json.loads(result.output) == {
+        "status": "ok",
+        "pending_count": 7,
+        "oldest_pending_at": "2026-01-01T09:00:00+00:00",
+        "oldest_pending_age_seconds": 3_661.0,
+    }
+
+
+def test_cron_status_formats_empty_backlog(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.get_backlog_snapshot",
+        lambda **_kwargs: BacklogSnapshot(0, None, None),
+    )
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.get_task_store_snapshot",
+        lambda: TaskStoreSnapshot((), True),
+    )
+
+    result = CliRunner().invoke(cron_command, ["status"])
+
+    assert result.exit_code == 0
+    assert "Pending runs" in result.output
+    assert "0" in result.output
+
+
+@pytest.mark.parametrize("global_json", [False, True])
+def test_cron_status_reports_unknown_for_non_utf8_store(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, global_json: bool
+) -> None:
+    monkeypatch.setattr(runtime_flags, "_flags", runtime_flags.RuntimeFlags(json=global_json))
+    store_path = tmp_path / "scheduler_tasks.json"
+    store_path.write_bytes(b"\xff\xfe")
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.task_store.default_task_store_path",
+        lambda: store_path,
+    )
+
+    args = ["status"] if global_json else ["status", "--json"]
+    result = CliRunner().invoke(cron_command, args)
+
+    assert result.exit_code == 1
+    assert json.loads(result.output) == {
+        "status": "unknown",
+        "pending_count": None,
+        "oldest_pending_at": None,
+        "oldest_pending_age_seconds": None,
+        "error": "task_store_unreadable",
+    }
+    assert store_path.read_bytes() == b"\xff\xfe"
+
+
+def test_cron_status_formats_oldest_pending_age(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.get_backlog_snapshot",
+        lambda **_kwargs: BacklogSnapshot(
+            7,
+            datetime(2026, 1, 1, 9, 0, tzinfo=UTC),
+            3_661.0,
+        ),
+    )
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.get_task_store_snapshot",
+        lambda: TaskStoreSnapshot((), True),
+    )
+
+    result = CliRunner().invoke(cron_command, ["status"])
+
+    assert result.exit_code == 0
+    assert "2026-01-01T09:00:00+00:00" in result.output
+    assert "1h 1m" in result.output
+
+
+@pytest.mark.parametrize("as_json", [False, True])
+def test_cron_status_fails_closed_for_an_unreadable_task_store(
+    monkeypatch: pytest.MonkeyPatch,
+    as_json: bool,
+) -> None:
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.get_task_store_snapshot",
+        lambda: TaskStoreSnapshot((), False),
+    )
+    args = ["status", "--json"] if as_json else ["status"]
+
+    result = CliRunner().invoke(cron_command, args)
+
+    assert result.exit_code == 1
+    if as_json:
+        assert json.loads(result.output) == {
+            "status": "unknown",
+            "pending_count": None,
+            "oldest_pending_at": None,
+            "oldest_pending_age_seconds": None,
+            "error": "task_store_unreadable",
+        }
+    else:
+        assert "backlog status is unknown" in result.output
 
 
 def test_cron_add_kind_choices_exclude_sentry_kinds() -> None:
