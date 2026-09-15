@@ -110,6 +110,9 @@ def pending_user_choice_state_snapshot(session: Any) -> dict[str, Any] | None:
         "custom_answer": pending.custom_answer,
         "active_skill": getattr(session, "active_skill", None),
         "ask_user_rounds": int(getattr(session, "ask_user_rounds", 0)),
+        "questions_already_answered": sorted(
+            str(key) for key in getattr(session, "questions_already_answered", set())
+        ),
     }
 
 
@@ -134,7 +137,7 @@ def should_persist_pending_user_choice_state(
     """Return whether a changed pending-choice snapshot needs appending."""
     last = _last_pending_choice_content(prior_records)
     if snapshot is None:
-        return last is not None
+        return bool(last)
     return last != snapshot
 
 
@@ -146,6 +149,9 @@ def apply_pending_user_choice_state(session: Any, payload: Any) -> None:
         session.pending_user_choice = None
         if hasattr(session, "active_skill"):
             session.active_skill = None
+        answered = getattr(session, "questions_already_answered", None)
+        if isinstance(answered, set):
+            answered.clear()
         return
     raw_questions = payload.get("questions")
     questions: list[AskUserQuestion] = []
@@ -190,6 +196,12 @@ def apply_pending_user_choice_state(session: Any, payload: Any) -> None:
     if hasattr(session, "ask_user_rounds"):
         rounds = payload.get("ask_user_rounds")
         session.ask_user_rounds = rounds if isinstance(rounds, int) and rounds >= 0 else 0
+    answered = getattr(session, "questions_already_answered", None)
+    if isinstance(answered, set):
+        answered.clear()
+        settled = payload.get("questions_already_answered")
+        if isinstance(settled, list):
+            answered.update(str(key) for key in settled if str(key))
 
 
 def format_ask_user_answers(

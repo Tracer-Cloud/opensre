@@ -8,6 +8,7 @@ when the command runs, not when ``opensre ask --help`` prints usage.
 from __future__ import annotations
 
 import json
+import shlex
 import sys
 from typing import TYPE_CHECKING
 
@@ -63,11 +64,13 @@ def _render_outcome(outcome: AskOutcome) -> None:
             if len(outcome.questions) == 1:
                 reply = '"1"'
             elif outcome.questions:
+                labels = [question.label for question in outcome.questions]
+                use_labels = all(labels) and len(set(labels)) == len(labels)
                 sample = {
-                    question.label or str(index): "1"
+                    question.label if use_labels else str(index): "1"
                     for index, question in enumerate(outcome.questions, start=1)
                 }
-                reply = f"'{json.dumps(sample, ensure_ascii=False)}'"
+                reply = shlex.quote(json.dumps(sample, ensure_ascii=False))
             click.echo(
                 f"Continue: opensre ask --resume {outcome.session_id} {reply}",
                 err=True,

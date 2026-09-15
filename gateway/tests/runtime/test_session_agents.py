@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -14,6 +15,7 @@ from core.agent_harness.session.persistence.memory import InMemorySessionStore
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
 from infrastructure.turn_host.bindable_output import BindableOutput
 from infrastructure.turn_host.session_agents import SessionAgentPool
+from infrastructure.turn_host.session_lock import session_execution_lock
 from infrastructure.turn_host.turn_runner import TurnRunner
 from tests.shared.default_headless_build_stub import default_headless_build_stub
 from tests.shared.fake_agent import fake_agent
@@ -220,6 +222,39 @@ def test_same_session_turns_do_not_interleave(monkeypatch: pytest.MonkeyPatch) -
     # Assert
     assert "OVERLAP" not in order, order
     assert order.index("first-exit") < order.index("second-enter"), order
+
+
+def test_pool_waits_for_a_session_lease_held_by_another_host(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Gateway and CLI turns must share the same whole-session lease."""
+    import threading
+
+    monkeypatch.setattr(
+        "infrastructure.turn_host.session_lock.sessions_dir",
+        lambda: tmp_path,
+    )
+    pool = _fake_agent_pool(monkeypatch)
+    logger = logging.getLogger("test.pool.cross-host")
+    session = SessionCore(store=InMemorySessionStore())
+    attempted = threading.Event()
+    entered = threading.Event()
+
+    def _enter_pool() -> None:
+        attempted.set()
+        with pool.session_agent(session=session, output=MagicMock(), logger=logger):
+            entered.set()
+
+    with session_execution_lock(session.session_id):
+        thread = threading.Thread(target=_enter_pool)
+        thread.start()
+        assert attempted.wait(timeout=1)
+        assert not entered.wait(timeout=0.2)
+
+    thread.join(timeout=5)
+    assert not thread.is_alive()
+    assert entered.is_set()
 
 
 def test_different_sessions_still_run_concurrently(monkeypatch: pytest.MonkeyPatch) -> None:

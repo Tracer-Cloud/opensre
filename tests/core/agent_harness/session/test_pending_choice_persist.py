@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,7 @@ from core.agent_harness.session import (
     SessionManager,
 )
 from core.agent_harness.session.pending_choice import AskUserQuestion, PendingUserChoice
+from core.agent_harness.session.persistence.paths import session_path
 
 
 def _pending_choice() -> PendingUserChoice:
@@ -43,6 +45,7 @@ def test_flush_and_restore_preserve_pending_choice_and_skill() -> None:
     storage.append_turn(session, "chat", "investigate CI")
     session.pending_user_choice = _pending_choice()
     session.active_skill = "reporting-github-ci-failures"
+    session.questions_already_answered.add("which signal?")
 
     storage.flush(session)
     data = repo.load_session(session.session_id)
@@ -53,6 +56,7 @@ def test_flush_and_restore_preserve_pending_choice_and_skill() -> None:
 
     assert restored.pending_user_choice == session.pending_user_choice
     assert restored.active_skill == "reporting-github-ci-failures"
+    assert restored.questions_already_answered == {"which signal?"}
 
 
 def test_clearing_pending_choice_writes_a_tombstone() -> None:
@@ -75,3 +79,14 @@ def test_clearing_pending_choice_writes_a_tombstone() -> None:
 
     assert restored.pending_user_choice is None
     assert restored.active_skill is None
+
+    storage.flush(session)
+    records = [
+        json.loads(line) for line in session_path(session.session_id).read_text().splitlines()
+    ]
+    tombstones = [
+        record
+        for record in records
+        if record.get("custom_type") == "pending_user_choice_state" and record.get("content") == {}
+    ]
+    assert len(tombstones) == 1

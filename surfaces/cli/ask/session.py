@@ -7,22 +7,29 @@ import re
 from collections.abc import Iterator
 from contextlib import contextmanager
 
-from filelock import FileLock, Timeout
-
 from core.agent_harness import SessionCore
-from core.agent_harness.spi.defaults import default_session_repo, sessions_dir
+from core.agent_harness.spi.defaults import default_session_repo
 from core.agent_harness.spi.handoff import (
     AskUserQuestion,
     format_ask_user_answers,
     question_key,
 )
 from infrastructure.errors import OpenSREError
+from infrastructure.turn_host.session_lock import (
+    SessionExecutionBusyError,
+    session_execution_lock,
+)
 
 _SAFE_SESSION_ID = re.compile(r"^[A-Za-z0-9_-]{1,128}$")
 
 
 def resolve_resume_session_id(reference: str) -> str:
     """Resolve an unambiguous persisted session reference to its full ID."""
+    if _SAFE_SESSION_ID.fullmatch(reference) is None:
+        raise OpenSREError(
+            f"Session reference {reference!r} is invalid.",
+            suggestion="Pass only the session ID or an unambiguous prefix.",
+        )
     repo = default_session_repo()
     matches = repo.count_prefix_matches(reference)
     if matches == 0:
@@ -50,13 +57,10 @@ def ask_session_lock(session_id: str | None) -> Iterator[None]:
     if session_id is None:
         yield
         return
-    root = sessions_dir()
-    root.mkdir(parents=True, exist_ok=True)
-    lock = FileLock(root / f".{session_id}.ask.lock", timeout=0)
     try:
-        with lock:
+        with session_execution_lock(session_id, timeout=0):
             yield
-    except Timeout as exc:
+    except SessionExecutionBusyError as exc:
         raise OpenSREError(
             f"Session {session_id!r} is busy in another process.",
             suggestion="Wait for that `opensre ask` invocation to finish, then retry.",
@@ -95,6 +99,11 @@ def resume_prompt(session: SessionCore, prompt: str) -> str:
     pending = session.pending_user_choice
     if pending is None:
         return prompt
+    if pending.commands:
+        raise OpenSREError(
+            "This choice runs an interactive-shell command and cannot be answered headlessly.",
+            suggestion=f"Run `opensre`, then `/resume {session.session_id}` and use `/choose`.",
+        )
     questions = pending.items()
     answers: tuple[str, ...]
     if len(questions) == 1:

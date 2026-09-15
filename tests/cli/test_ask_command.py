@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import shlex
 import signal
 
 from click.testing import CliRunner
@@ -76,6 +77,33 @@ def test_required_choice_prints_exact_resume_command_on_stderr(monkeypatch, caps
     assert captured.out == ""
     assert "Session: session-123" in captured.err
     assert 'opensre ask --resume session-123 "1"' in captured.err
+
+
+def test_batch_resume_command_is_shell_safe_and_uses_unambiguous_keys(
+    monkeypatch,
+    capsys,
+) -> None:
+    outcome = AskOutcome(
+        status=AskStatus.NEEDS_INPUT,
+        response="Choose values",
+        session_id="session-123",
+        questions=(
+            AskQuestion("What's affected", "Which service?", ("API", "Worker")),
+            AskQuestion("What's affected", "Which region?", ("India", "US")),
+        ),
+        exit_code=AskExitCode.NEEDS_INPUT,
+    )
+    monkeypatch.setattr("sys.stderr.isatty", lambda: True)
+    monkeypatch.setattr("surfaces.cli.commands.ask._echo_answer", lambda _text: None)
+
+    _render_outcome(outcome)
+
+    continue_line = next(
+        line for line in capsys.readouterr().err.splitlines() if line.startswith("Continue: ")
+    )
+    argv = shlex.split(continue_line.removeprefix("Continue: "))
+    assert argv[:4] == ["opensre", "ask", "--resume", "session-123"]
+    assert json.loads(argv[4]) == {"1": "1", "2": "1"}
 
 
 def test_ask_passes_prompt_and_invocation_authority(monkeypatch) -> None:

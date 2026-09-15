@@ -27,6 +27,7 @@ from core.agent_harness.runtime import (
 )
 from infrastructure.turn_host.bindable_output import BindableOutput
 from infrastructure.turn_host.capability_policy import ensure_gateway_capability_policy
+from infrastructure.turn_host.session_lock import session_execution_lock
 from infrastructure.turn_host.status_messages import status_from_tool_start
 from infrastructure.turn_host.turn_output import TurnOutput
 
@@ -121,7 +122,7 @@ class SessionAgentPool:
             # No id means no cache entry and nothing shared to protect.
             yield self.agent_for(session=session, output=output, logger=logger)
             return
-        with self._lock_for(session_id):
+        with self._lock_for(session_id), session_execution_lock(session_id):
             yield self.agent_for(session=session, output=output, logger=logger)
 
     def agent_for(

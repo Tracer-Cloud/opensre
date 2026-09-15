@@ -5,7 +5,6 @@ import signal
 import threading
 
 import pytest
-from filelock import FileLock
 
 from core.agent_harness.session.pending_choice import PendingUserChoice
 from core.agent_harness.spi.session_goal import SessionGoal, SessionGoalReason, SessionGoalStatus
@@ -15,6 +14,7 @@ from core.llm.types import ToolCall
 from core.tool.contracts import RegisteredTool, SideEffectLevel
 from core.tool.execution import ToolExecutionHooks, ToolExecutionRequest
 from infrastructure.harness_providers import resolve_surface_tool_map
+from infrastructure.turn_host.session_lock import session_execution_lock
 from surfaces.cli.ask import service
 from surfaces.cli.ask import session as ask_session
 from surfaces.cli.ask.approval import unknown_allowed_tools
@@ -83,6 +83,9 @@ class _FakeSessionManager:
 class _FakeSession:
     def __init__(self) -> None:
         self.available_capabilities: dict[str, object] = {}
+        self.pending_user_choice: PendingUserChoice | None = None
+        self.questions_already_answered: set[str] = set()
+        self.session_id = "session-123"
 
 
 class _FakeAgentSession:
@@ -168,6 +171,20 @@ def test_resume_prompt_rejects_custom_answer_when_choice_forbids_it() -> None:
     assert session.pending_user_choice is not None
 
 
+def test_resume_prompt_rejects_interactive_command_choices() -> None:
+    session = service.SessionCore()
+    session.pending_user_choice = PendingUserChoice(
+        title="Start over?",
+        options=("Start over", "Keep working"),
+        commands={"Start over": "/new"},
+    )
+
+    with pytest.raises(service.OpenSREError, match="cannot be answered headlessly"):
+        ask_session.resume_prompt(session, "1")
+
+    assert session.pending_user_choice is not None
+
+
 def test_resume_prompt_requires_structured_batch_answers() -> None:
     from core.agent_harness.session.pending_choice import AskUserQuestion
 
@@ -189,11 +206,13 @@ def test_resume_prompt_requires_structured_batch_answers() -> None:
 
 def test_resumed_session_rejects_overlapping_processes(monkeypatch, tmp_path) -> None:
     session_id = "session-123"
-    monkeypatch.setattr(ask_session, "sessions_dir", lambda: tmp_path)
-    lock = FileLock(tmp_path / f".{session_id}.ask.lock")
+    monkeypatch.setattr(
+        "infrastructure.turn_host.session_lock.sessions_dir",
+        lambda: tmp_path,
+    )
 
     with (
-        lock,
+        session_execution_lock(session_id),
         pytest.raises(service.OpenSREError, match="busy"),
         ask_session.ask_session_lock(session_id),
     ):
@@ -273,6 +292,19 @@ def test_run_ask_reports_a_missing_resume_session(monkeypatch) -> None:
     assert outcome.status is AskStatus.ERROR
     assert outcome.error is not None
     assert "not found" in outcome.error.message
+
+
+def test_run_ask_rejects_a_non_session_reference() -> None:
+    outcome = service.run_ask(
+        "continue",
+        allowed_tools=(),
+        bypass_approvals=False,
+        resume_session_id="abc123:old-entry",
+    )
+
+    assert outcome.status is AskStatus.ERROR
+    assert outcome.error is not None
+    assert "invalid" in outcome.error.message
 
 
 def test_run_ask_returns_the_rendered_answer_not_raw_tool_history(monkeypatch) -> None:
@@ -419,6 +451,32 @@ def test_agent_turn_closes_ephemeral_session_after_failure(monkeypatch) -> None:
     assert manager.closed == [(_FakeAgentSession.session, False)]
 
 
+def test_failed_resumed_turn_restores_pending_choice_state(monkeypatch) -> None:
+    manager = _FakeSessionManager()
+    session = _FakeSession()
+    pending = PendingUserChoice(
+        title="Which environment?",
+        options=("Production", "Staging"),
+    )
+    session.pending_user_choice = pending
+    session.questions_already_answered = {"earlier question"}
+    _FakeAgentSession.session = session
+    monkeypatch.setattr(service, "SessionManager", lambda: manager)
+    monkeypatch.setattr(service, "AgentSession", _FakeAgentSession)
+
+    with pytest.raises(RuntimeError, match="turn failed"):
+        service._run_agent_turn(
+            "1",
+            ToolExecutionHooks(),
+            session_id=session.session_id,
+            ephemeral=False,
+        )
+
+    assert session.pending_user_choice is pending
+    assert session.questions_already_answered == {"earlier question"}
+    assert manager.closed == [(session, False)]
+
+
 def test_agent_turn_binds_hooks_and_restricts_capabilities_via_start(monkeypatch) -> None:
     """The collapse onto AgentSession.start must still bind the approval hooks
     and strip the one-shot ask agent's forbidden capabilities."""
@@ -461,6 +519,7 @@ def test_agent_turn_binds_hooks_and_restricts_capabilities_via_start(monkeypatch
     assert recorded["is_tty"] is False
     assert recorded["surface"] == "headless_cli"
     assert session.available_capabilities["slash_commands"] == ()
+    assert session.available_capabilities["ask_user_choice"] == ()
     assert session.available_capabilities["shell"] == ("keep",)
     assert recorded["prompt"] == "hello"
     assert result.primary_response_text == "answer"

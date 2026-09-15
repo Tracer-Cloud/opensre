@@ -9,6 +9,7 @@ from collections.abc import Iterable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass
 from enum import IntEnum, StrEnum
+from functools import partial
 from io import StringIO
 from typing import Any
 
@@ -211,11 +212,17 @@ def _ask_log_scope() -> Iterator[None]:
         root.removeHandler(handler)
 
 
-def _restrict_ask_capabilities(session: SessionCore) -> None:
+def _restrict_ask_capabilities(
+    session: SessionCore,
+    *,
+    deferred_user_choices: bool = True,
+) -> None:
     """Zero the capabilities the one-shot ask agent must not use."""
     for capability in _ASK_DISABLED_CAPABILITIES:
         session.available_capabilities[capability] = ()
-    session.available_capabilities["ask_user_choice"] = ("deferred",)
+    session.available_capabilities["ask_user_choice"] = (
+        ("deferred",) if deferred_user_choices else ()
+    )
 
 
 def _clear_prior_goal_response(output: _AskOutputSink, goal: SessionGoal) -> None:
@@ -252,7 +259,10 @@ def _run_agent_turn(
                     session_manager=manager,
                 ),
                 output=output,
-                prepare_session=_restrict_ask_capabilities,
+                prepare_session=partial(
+                    _restrict_ask_capabilities,
+                    deferred_user_choices=not ephemeral,
+                ),
                 console=console,
                 surface=PromptSurface.HEADLESS_CLI.value,
                 is_tty=False,
@@ -265,6 +275,7 @@ def _run_agent_turn(
             if run_state is not None:
                 run_state.session_id = None if ephemeral else session.session_id
             prior_pending = session.pending_user_choice if session_id else None
+            prior_answered = set(session.questions_already_answered) if session_id else None
             turn_prompt = _resume_prompt(session, prompt) if session_id else prompt
             # chat_until_goal, not chat: the agent can attach a session goal,
             # which must run to completion rather than stop after one turn.
@@ -276,6 +287,9 @@ def _run_agent_turn(
             except Exception:
                 # A failed resume must not consume its still-unhandled question.
                 session.pending_user_choice = prior_pending
+                if prior_answered is not None:
+                    session.questions_already_answered.clear()
+                    session.questions_already_answered.update(prior_answered)
                 raise
             output.mark_turn_complete()
             if run_state is not None:
