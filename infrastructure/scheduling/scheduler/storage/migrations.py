@@ -33,6 +33,48 @@ _TASK_RUNS_SCHEMA = """
     )
 """
 
+_REQUIRED_COLUMNS = frozenset(
+    {
+        "attempt",
+        "targets",
+        "target_filter",
+        "report",
+        "report_summary",
+        "work_outcome",
+    }
+)
+
+# Recovery only considers pending work and expired running attempts. Keeping the
+# indexes partial prevents completed history from growing either candidate set.
+_RECOVERY_INDEX_STATEMENTS = (
+    "CREATE INDEX IF NOT EXISTS idx_task_runs_recovery_pending_order "
+    "ON task_runs (started_at, task_id, fire_time, attempt) "
+    "WHERE status = 'pending'",
+    "CREATE INDEX IF NOT EXISTS idx_task_runs_recovery_expired "
+    "ON task_runs (lease_expires_at, started_at, task_id, fire_time, attempt) "
+    "WHERE status = 'running' AND lease_expires_at != ''",
+    "CREATE INDEX IF NOT EXISTS idx_task_runs_live_owner "
+    "ON task_runs (task_id, lease_expires_at) "
+    "WHERE status = 'running'",
+)
+_RECOVERY_INDEX_NAMES = frozenset(
+    {
+        "idx_task_runs_recovery_pending_order",
+        "idx_task_runs_recovery_expired",
+        "idx_task_runs_live_owner",
+    }
+)
+
+# History lookups page one task's attempts newest-first regardless of status, so
+# this index covers the whole table rather than a recovery subset.
+_HISTORY_INDEX_STATEMENTS = (
+    "CREATE INDEX IF NOT EXISTS task_runs_recent ON task_runs (task_id, started_at DESC, id DESC)",
+)
+_HISTORY_INDEX_NAMES = frozenset({"task_runs_recent"})
+
+_INDEX_STATEMENTS = _RECOVERY_INDEX_STATEMENTS + _HISTORY_INDEX_STATEMENTS
+_INDEX_NAMES = _RECOVERY_INDEX_NAMES | _HISTORY_INDEX_NAMES
+
 
 def _table_columns(conn: sqlite3.Connection, table: str = "task_runs") -> set[str]:
     return {str(row[1]) for row in conn.execute(f"PRAGMA table_info({table})")}
@@ -40,6 +82,15 @@ def _table_columns(conn: sqlite3.Connection, table: str = "task_runs") -> set[st
 
 def _has_targets_column(conn: sqlite3.Connection) -> bool:
     return "targets" in _table_columns(conn)
+
+
+def _index_names(conn: sqlite3.Connection, table: str = "task_runs") -> set[str]:
+    return {str(row[1]) for row in conn.execute(f"PRAGMA index_list({table})")}
+
+
+def _schema_is_current(conn: sqlite3.Connection) -> bool:
+    """Whether columns and indexes already meet the current contract."""
+    return _table_columns(conn) >= _REQUIRED_COLUMNS and _index_names(conn) >= _INDEX_NAMES
 
 
 def _migrate_legacy_claim_table(conn: sqlite3.Connection, legacy_columns: set[str]) -> None:
@@ -92,21 +143,52 @@ def _add_missing_columns(conn: sqlite3.Connection) -> None:
             return
 
 
+def _add_indexes(conn: sqlite3.Connection) -> None:
+    """Create the indexes used by recovery, live-owner, and history lookups."""
+    for statement in _INDEX_STATEMENTS:
+        conn.execute(statement)
+
+
+def _begin_migration_transaction(conn: sqlite3.Connection) -> bool:
+    """Acquire the migration write lock, tolerating a competing index build.
+
+    Creating an index can take longer than SQLite's regular ``busy_timeout``
+    on a database with substantial completed-run history. A second scheduler
+    process must wait for that migration to commit, then recheck the schema,
+    rather than failing its startup just because its first ``BEGIN IMMEDIATE``
+    timed out.
+
+    Returns ``False`` when the competing process completed the migration while
+    this process was waiting, so the caller has no transaction to commit.
+    """
+    deadline = time.monotonic() + _MIGRATION_TIMEOUT_SECONDS
+    while True:
+        try:
+            conn.execute("BEGIN IMMEDIATE")
+        except sqlite3.OperationalError as exc:
+            error = str(exc).lower()
+            if "locked" not in error and "busy" not in error:
+                raise
+            if _schema_is_current(conn):
+                return False
+            if time.monotonic() >= deadline:
+                raise
+            time.sleep(_MIGRATION_RETRY_DELAY_SECONDS)
+        else:
+            return True
+
+
 def apply_migrations(conn: sqlite3.Connection) -> None:
     """Create or migrate the task-runs schema under one SQLite write lock."""
-    columns = _table_columns(conn)
-    if {
-        "attempt",
-        "targets",
-        "target_filter",
-        "report",
-        "report_summary",
-        "work_outcome",
-    } <= columns:
+    if _schema_is_current(conn):
         return
 
-    conn.execute("BEGIN IMMEDIATE")
+    if not _begin_migration_transaction(conn):
+        return
     try:
+        if _schema_is_current(conn):
+            conn.commit()
+            return
         columns = _table_columns(conn)
         if not columns:
             conn.execute(_TASK_RUNS_SCHEMA)
@@ -125,10 +207,7 @@ def apply_migrations(conn: sqlite3.Connection) -> None:
             conn.execute("ALTER TABLE task_runs ADD COLUMN report_summary TEXT NOT NULL DEFAULT ''")
         if "work_outcome" not in _table_columns(conn):
             conn.execute("ALTER TABLE task_runs ADD COLUMN work_outcome TEXT NOT NULL DEFAULT '{}'")
-        conn.execute(
-            "CREATE INDEX IF NOT EXISTS task_runs_recent "
-            "ON task_runs (task_id, started_at DESC, id DESC)"
-        )
+        _add_indexes(conn)
         conn.commit()
     except Exception:
         conn.rollback()
