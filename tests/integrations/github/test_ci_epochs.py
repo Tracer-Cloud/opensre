@@ -112,6 +112,7 @@ class GitHubHistory:
                 "id": index + 1,
                 "workflow_id": 1,
                 "event": "pull_request",
+                "pull_requests": [{"number": 1}],
                 "head_sha": str(index),
                 "status": "completed",
                 "conclusion": "failure" if index < size - 1 else "success",
@@ -198,6 +199,36 @@ def test_truncated_history_does_not_overwrite_valid_evidence(observe):
     assert observer.path.with_suffix(".json").read_text() == previous
 
 
+def test_observer_excludes_push_runs_and_other_pull_requests(observe):
+    history = GitHubHistory()
+    passing = history.runs[-1]
+    history.runs.extend(
+        [
+            dict(passing, id=100, event="push", conclusion="failure"),
+            dict(passing, id=101, pull_requests=[{"number": 2}], conclusion="failure"),
+            dict(passing, id=102, pull_requests=[], conclusion="failure"),
+        ]
+    )
+    history.total_runs = len(history.runs)
+    observer = observe(history)
+    observer.tick()
+    assert observer.epochs[0].outcome == "agent_fixed"
+    assert observer.epochs[0].fixing_commit.sha == "1"
+    assert all(
+        params["event"] == "pull_request"
+        for path, params in history.calls
+        if path.endswith("/actions/runs")
+    )
+
+    history.runs.remove(passing)
+    history.total_runs = len(history.runs)
+    observer.tick()
+    assert observer.commits[-1].result == "unknown"
+    assert observer.epochs[0].outcome == "unresolved"
+    assert history.calls[-1][1]["head_sha"] == "1"
+    assert history.calls[-1][1]["event"] == "pull_request"
+
+
 def test_publishing_keeps_stable_identity_and_limits_credit_to_this_repair(observe, monkeypatch):
     history = GitHubHistory(5)
     for index, run in enumerate(history.runs):
@@ -231,7 +262,7 @@ def test_publishing_keeps_stable_identity_and_limits_credit_to_this_repair(obser
         "attribution_source": "git_authorship",
     }
     assert observer.publish(fixing_sha="3") == 1
-    assert captured[1] == captured[0]  # Consumer deduplicates replayed stable IDs.
+    assert captured[1] == captured[0]  # Consumer deduplicates replayed repair identities.
     assert observer.publish(fixing_sha="4") == 0  # Later green commits are not new fixes.
     observer.epochs = build_epochs("owner/repo", 1, [Commit("x", "opensre", "red")])
     assert observer.publish() == 0

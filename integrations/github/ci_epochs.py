@@ -183,6 +183,15 @@ class Observer:
                 return rows
         raise ValueError("GitHub history exceeded the page limit; no epoch snapshot was written.")
 
+    def _pr_runs(self, **params: Any) -> list[dict[str, Any]]:
+        """Exclude other events and runs without an explicit link to this PR."""
+        return [
+            run
+            for run in self._pages("actions/runs", "workflow_runs", event="pull_request", **params)
+            if run.get("event") == "pull_request"
+            and any(pr.get("number") == self.number for pr in run.get("pull_requests", []))
+        ]
+
     def tick(self) -> bool:
         """Rebuild from remote history, including repairs completed before startup."""
         pr = self._get(f"pulls/{self.number}")
@@ -200,11 +209,11 @@ class Observer:
             ):
                 raise ValueError("PR history changed or is incomplete; retry the snapshot.")
             self._history, self._refs = history, refs
-        runs = self._pages("actions/runs", "workflow_runs", branch=pr["head"]["ref"])
+        runs = self._pr_runs(branch=pr["head"]["ref"])
         covered = {run["head_sha"] for run in runs}
         for row in self._history:
             if row["sha"] not in covered:
-                runs.extend(self._pages("actions/runs", "workflow_runs", head_sha=row["sha"]))
+                runs.extend(self._pr_runs(head_sha=row["sha"]))
         results = workflow_results(runs)
         self.commits = [
             Commit(row["sha"], commit_author(row), *results.get(row["sha"], ("unknown", "")))
@@ -246,7 +255,7 @@ class Observer:
         )
 
     def publish(self, *, fixing_sha: str | None = None) -> int:
-        """Queue confirmed agent fixes; consumers deduplicate by stable epoch ID."""
+        """Queue fixes; consumers deduplicate by repository, PR, and fixing SHA."""
         published = 0
         for epoch in self.epochs:
             fixing = epoch.fixing_commit
