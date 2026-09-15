@@ -24,6 +24,10 @@ from core.agent_harness import (
     TurnResult,
 )
 from core.agent_harness.ports import ToolEventObserver
+from core.agent_harness.session.pending_choice import (
+    apply_pending_user_choice_state,
+    pending_user_choice_state_snapshot,
+)
 from core.agent_harness.spi.cancel import ensure_turn_cancel
 from core.agent_harness.spi.session_state import PendingUserChoice
 from core.tool import ToolExecutionHooks
@@ -224,6 +228,11 @@ def _restrict_ask_capabilities(
     )
 
 
+def _resumed_turn_did_not_complete(result: TurnResult) -> bool:
+    """Whether a consumed choice must be restored so the user can retry it."""
+    return result.cancelled or result.action_result.accounting_status == "not_run"
+
+
 def _run_agent_turn(
     prompt: str,
     hooks: ToolExecutionHooks,
@@ -267,18 +276,19 @@ def _run_agent_turn(
                 raise RuntimeError("AgentSession.start() did not bind a session.")
             if run_state is not None:
                 run_state.session_id = None if ephemeral else session.session_id
-            prior_pending = session.pending_user_choice if session_id else None
-            prior_answered = set(session.questions_already_answered) if session_id else None
+            prior_choice_state = (
+                pending_user_choice_state_snapshot(session) if session_id is not None else None
+            )
             turn_prompt = _resume_prompt(session, prompt) if session_id else prompt
             try:
                 result = agent_session.chat(turn_prompt)
-            except Exception:
+            except BaseException:
                 # A failed resume must not consume its still-unhandled question.
-                session.pending_user_choice = prior_pending
-                if prior_answered is not None:
-                    session.questions_already_answered.clear()
-                    session.questions_already_answered.update(prior_answered)
+                if prior_choice_state is not None:
+                    apply_pending_user_choice_state(session, prior_choice_state)
                 raise
+            if prior_choice_state is not None and _resumed_turn_did_not_complete(result):
+                apply_pending_user_choice_state(session, prior_choice_state)
             output.mark_turn_complete()
             if run_state is not None:
                 run_state.pending_choice = getattr(session, "pending_user_choice", None)

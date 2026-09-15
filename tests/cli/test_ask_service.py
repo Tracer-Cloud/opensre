@@ -40,6 +40,20 @@ def _turn(
     )
 
 
+def _not_run_turn() -> TurnResult:
+    return TurnResult(
+        final_intent="agent_failed",
+        action_result=ToolCallingTurnResult(
+            planned_count=0,
+            executed_count=0,
+            executed_success_count=0,
+            has_unhandled_clause=True,
+            handled=True,
+            accounting_status="not_run",
+        ),
+    )
+
+
 def _risky_request() -> ToolExecutionRequest:
     tool = RegisteredTool(
         name="shell_run",
@@ -437,7 +451,79 @@ def test_failed_resumed_turn_restores_pending_choice_state(monkeypatch) -> None:
             ephemeral=False,
         )
 
-    assert session.pending_user_choice is pending
+    assert session.pending_user_choice == pending
+    assert session.questions_already_answered == {"earlier question"}
+    assert manager.closed == [(session, False)]
+
+
+@pytest.mark.parametrize("result", [_not_run_turn(), _turn(cancelled=True)])
+def test_unsuccessful_resumed_turn_restores_pending_choice_state(
+    monkeypatch, result: TurnResult
+) -> None:
+    manager = _FakeSessionManager()
+    session = _FakeSession()
+    pending = PendingUserChoice(
+        title="Which environment?",
+        options=("Production", "Staging"),
+    )
+    session.pending_user_choice = pending
+    session.questions_already_answered = {"earlier question"}
+
+    class _UnsuccessfulAgentSession:
+        @classmethod
+        def start(cls, _config: object, **_kwargs: object) -> _UnsuccessfulAgentSession:
+            return cls()
+
+        @property
+        def bound_session(self) -> _FakeSession:
+            return session
+
+        def chat(self, _prompt: str) -> TurnResult:
+            return result
+
+    monkeypatch.setattr(service, "SessionManager", lambda: manager)
+    monkeypatch.setattr(service, "AgentSession", _UnsuccessfulAgentSession)
+
+    service._run_agent_turn(
+        "1", ToolExecutionHooks(), session_id=session.session_id, ephemeral=False
+    )
+
+    assert session.pending_user_choice == pending
+    assert session.questions_already_answered == {"earlier question"}
+    assert manager.closed == [(session, False)]
+
+
+def test_signal_during_resumed_turn_restores_pending_choice_state(monkeypatch) -> None:
+    manager = _FakeSessionManager()
+    session = _FakeSession()
+    pending = PendingUserChoice(
+        title="Which environment?",
+        options=("Production", "Staging"),
+    )
+    session.pending_user_choice = pending
+    session.questions_already_answered = {"earlier question"}
+
+    class _SignalAgentSession:
+        @classmethod
+        def start(cls, _config: object, **_kwargs: object) -> _SignalAgentSession:
+            return cls()
+
+        @property
+        def bound_session(self) -> _FakeSession:
+            return session
+
+        def chat(self, _prompt: str) -> TurnResult:
+            raise service.AskSignal(signal.SIGINT)
+
+    monkeypatch.setattr(service, "SessionManager", lambda: manager)
+    monkeypatch.setattr(service, "AgentSession", _SignalAgentSession)
+
+    with pytest.raises(service.AskSignal):
+        service._run_agent_turn(
+            "1", ToolExecutionHooks(), session_id=session.session_id, ephemeral=False
+        )
+
+    assert session.pending_user_choice == pending
     assert session.questions_already_answered == {"earlier question"}
     assert manager.closed == [(session, False)]
 

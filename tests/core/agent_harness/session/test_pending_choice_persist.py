@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from core.agent_harness.accounting.turn_accounting import DefaultTurnAccounting
 from core.agent_harness.session import (
     JsonlSessionRepo,
     JsonlSessionStore,
@@ -16,6 +17,7 @@ from core.agent_harness.session import (
 from core.agent_harness.session.pending_choice import AskUserQuestion, PendingUserChoice
 from core.agent_harness.session.persistence.memory import InMemorySessionStore
 from core.agent_harness.session.persistence.paths import session_path
+from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
 
 
 def _pending_choice() -> PendingUserChoice:
@@ -153,3 +155,22 @@ def test_memory_store_keeps_silent_pending_choice() -> None:
         record.get("custom_type") == "pending_user_choice_state"
         for record in storage.read(session.session_id)
     )
+
+
+def test_silent_pending_choice_persists_its_initiating_prompt() -> None:
+    storage = JsonlSessionStore()
+    repo = JsonlSessionRepo()
+    session = SessionCore(store=storage)
+    storage.open_session(session)
+    session.pending_user_choice = _pending_choice()
+    result = TurnResult(
+        final_intent="answer",
+        action_result=ToolCallingTurnResult(0, 0, 0, False, False),
+    )
+
+    DefaultTurnAccounting(session, "deploy the app").finalize(result)
+    storage.flush(session)
+    data = repo.load_session(session.session_id)
+
+    assert data is not None
+    assert ("user", "deploy the app") in data["cli_agent_messages"]
