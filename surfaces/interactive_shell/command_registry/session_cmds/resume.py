@@ -10,6 +10,7 @@ from core.agent_harness.spi.defaults import default_session_repo
 from core.agent_harness.spi.session_state import format_recovery_note
 from infrastructure.turn_host.session_lock import (
     SessionExecutionBusyError,
+    retain_session_execution_lock,
     session_execution_lock,
 )
 from surfaces.interactive_shell.command_registry.session_cmds.resume_rendering import (
@@ -171,26 +172,35 @@ def _apply_resume_data(
             console,
             slash_command=slash_command,
         )
+
     # TurnRunner begins with the shell's current id, but /resume rebinds the
     # live handle.  Do not wait on a target while holding the source lease: two
     # shells crossing A -> B and B -> A would otherwise deadlock.  The user can
     # retry once the active host finishes its target turn.
+    def _apply_with_target_lease() -> bool:
+        nonlocal data
+        if refresh_target:
+            refreshed = default_session_repo().load_session(session_id)
+            if refreshed is None:
+                console.print(f"[{ERROR}]session '{escape(session_id)}' is no longer available.[/]")
+                return False
+            data = refreshed
+        return _apply_resume_data_unlocked(
+            data,
+            session,
+            console,
+            slash_command=slash_command,
+        )
+
     try:
+        # When /resume executes inside TurnRunner, transfer the acquired target
+        # lease to its whole-turn scope.  The shell keeps it through the final
+        # SessionManager.flush after this slash handler returns.  Direct startup
+        # resume still uses the ordinary lexical lease below.
+        if retain_session_execution_lock(session_id, timeout=0, reentrant=True):
+            return _apply_with_target_lease()
         with session_execution_lock(session_id, timeout=0, reentrant=True):
-            if refresh_target:
-                refreshed = default_session_repo().load_session(session_id)
-                if refreshed is None:
-                    console.print(
-                        f"[{ERROR}]session '{escape(session_id)}' is no longer available.[/]"
-                    )
-                    return False
-                data = refreshed
-            return _apply_resume_data_unlocked(
-                data,
-                session,
-                console,
-                slash_command=slash_command,
-            )
+            return _apply_with_target_lease()
     except SessionExecutionBusyError:
         console.print(
             f"[{WARNING}]session {escape(session_id[:8])} is busy in another process — retry shortly.[/]"

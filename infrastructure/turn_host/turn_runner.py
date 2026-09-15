@@ -52,7 +52,10 @@ from infrastructure.process.turn_capacity import turn_slot
 from infrastructure.turn_host.cancel_console import CancelConsole
 from infrastructure.turn_host.concurrency import AT_CAPACITY_MESSAGE, TurnConcurrencyGate
 from infrastructure.turn_host.session_agents import SessionAgentPool
-from infrastructure.turn_host.session_lock import session_execution_lock
+from infrastructure.turn_host.session_lock import (
+    retained_session_execution_locks,
+    session_execution_lock,
+)
 from infrastructure.turn_host.status_messages import EMPTY_RESPONSE_MESSAGE
 from infrastructure.turn_host.turn_memory import log_turn_memory, resident_memory_bytes
 from infrastructure.turn_host.turn_output import TurnOutput
@@ -140,7 +143,10 @@ class TurnRunner:
         # turn budget while it waits.  The pool takes this same reentrant lease
         # around agent binding, preserving safety for direct pool callers.
         lease = session_execution_lock(session_id) if session_id else nullcontext()
-        with lease, turn_slot(self._gate) as running:
+        # /resume may non-blockingly claim a second session while this turn is
+        # running. Keep that target protected until _run_turn has flushed its
+        # rebound state, then release it together with this turn's source lease.
+        with retained_session_execution_locks(), lease, turn_slot(self._gate) as running:
             if not running:
                 output.finalize(self._busy_message)
                 return None

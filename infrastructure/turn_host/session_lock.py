@@ -5,7 +5,7 @@ from __future__ import annotations
 import hashlib
 import threading
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 
 from filelock import FileLock, Timeout
 
@@ -17,6 +17,7 @@ class SessionExecutionBusyError(RuntimeError):
 
 
 _thread_leases = threading.local()
+_thread_retained_lease_scopes = threading.local()
 
 
 def _leases_held_by_current_thread() -> dict[str, tuple[FileLock, int]]:
@@ -26,6 +27,15 @@ def _leases_held_by_current_thread() -> dict[str, tuple[FileLock, int]]:
         leases = {}
         _thread_leases.leases = leases
     return leases
+
+
+def _retained_lease_scopes_for_current_thread() -> list[list[AbstractContextManager[None]]]:
+    """Return the active whole-turn lease scopes for this thread."""
+    scopes = getattr(_thread_retained_lease_scopes, "scopes", None)
+    if scopes is None:
+        scopes = []
+        _thread_retained_lease_scopes.scopes = scopes
+    return scopes
 
 
 @contextmanager
@@ -70,4 +80,53 @@ def session_execution_lock(
         lock.release()
 
 
-__all__ = ["SessionExecutionBusyError", "session_execution_lock"]
+@contextmanager
+def retained_session_execution_locks() -> Iterator[None]:
+    """Keep any lease retained during this scope until the enclosing turn ends.
+
+    A slash command can move a live shell from session A to session B during a
+    turn that already owns A.  It must take B without waiting (to avoid the
+    A -> B / B -> A deadlock), then keep B protected through that turn's final
+    persistence.  This scope gives that deliberately narrow hand-off a
+    deterministic release point without putting transient locks on SessionCore.
+    """
+    scopes = _retained_lease_scopes_for_current_thread()
+    retained: list[AbstractContextManager[None]] = []
+    scopes.append(retained)
+    try:
+        yield
+    finally:
+        scopes.pop()
+        while retained:
+            # Context managers returned by ``session_execution_lock`` do not
+            # suppress exceptions, and releasing in reverse matches ``with``.
+            retained.pop().__exit__(None, None, None)
+
+
+def retain_session_execution_lock(
+    session_id: str,
+    *,
+    timeout: float = -1,
+    reentrant: bool = False,
+) -> bool:
+    """Retain a session lease for the active whole-turn scope when present.
+
+    ``False`` means the caller is outside a turn host, where it should use the
+    ordinary lexical :func:`session_execution_lock` instead.  Busy leases still
+    raise :class:`SessionExecutionBusyError`, just like the lexical form.
+    """
+    scopes = _retained_lease_scopes_for_current_thread()
+    if not scopes:
+        return False
+    lease = session_execution_lock(session_id, timeout=timeout, reentrant=reentrant)
+    lease.__enter__()
+    scopes[-1].append(lease)
+    return True
+
+
+__all__ = [
+    "SessionExecutionBusyError",
+    "retain_session_execution_lock",
+    "retained_session_execution_locks",
+    "session_execution_lock",
+]

@@ -1500,6 +1500,64 @@ class TestResumeCommand:
         assert results == [False]
         assert session.session_id == old_id
 
+    def test_apply_resume_retains_target_lease_until_the_turn_scope_exits(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """A turn-hosted /resume keeps its target safe through final flush."""
+        from core.agent_harness.session import InMemorySessionStore
+        from infrastructure.turn_host.session_lock import (
+            SessionExecutionBusyError,
+            retained_session_execution_locks,
+            session_execution_lock,
+        )
+        from surfaces.interactive_shell.command_registry.session_cmds import _apply_resume_data
+
+        monkeypatch.setattr(
+            "infrastructure.turn_host.session_lock.sessions_dir",
+            lambda: tmp_path,
+        )
+        target_id = "target-session-123"
+        data = {
+            "session_id": target_id,
+            "name": "Target",
+            "cli_agent_messages": [("user", "resume me")],
+            "accumulated_context": {},
+            "history": [],
+            "turn_details": [],
+            "has_snapshot": True,
+        }
+        session = Session()
+        session.store = InMemorySessionStore()
+        console, _ = _capture()
+
+        def _try_target_lock(results: list[bool]) -> threading.Thread:
+            def _try_lock() -> None:
+                try:
+                    with session_execution_lock(target_id, timeout=0):
+                        results.append(True)
+                except SessionExecutionBusyError:
+                    results.append(False)
+
+            thread = threading.Thread(target=_try_lock)
+            thread.start()
+            return thread
+
+        with retained_session_execution_locks():
+            assert _apply_resume_data(data, session, console) is True
+            held_results: list[bool] = []
+            thread = _try_target_lock(held_results)
+            thread.join(timeout=5)
+            assert not thread.is_alive()
+            assert held_results == [False]
+
+        released_results: list[bool] = []
+        thread = _try_target_lock(released_results)
+        thread.join(timeout=5)
+        assert not thread.is_alive()
+        assert released_results == [True]
+
     def test_apply_resume_reloads_the_target_after_acquiring_its_lease(
         self,
         monkeypatch: pytest.MonkeyPatch,
