@@ -57,6 +57,10 @@ class InspectRailwayDeploymentTool(BaseTool):
     description = (
         "Show the latest successful Railway deployment and source commit metadata for a service."
     )
+    use_cases = [
+        "Check which commit a Railway service is running after a deploy",
+        "Confirm the latest successful Railway deployment before deciding to redeploy",
+    ]
     input_schema = {
         "type": "object",
         "properties": {

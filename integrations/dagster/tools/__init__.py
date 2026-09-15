@@ -17,6 +17,10 @@ from integrations.dagster import (
 @tool(
     name="list_dagster_assets",
     description="List Dagster assets and their latest materialization status.",
+    use_cases=[
+        "Check the latest materialization status of Dagster assets",
+        "Find Dagster assets whose latest materialization is old or failed",
+    ],
     source="dagster",
     surfaces=(ToolSurface.CHAT,),
     is_available=dagster_is_available,
@@ -66,6 +70,10 @@ from integrations.dagster import (
         "`summary.fetch_error` is set, a mid-pagination error stopped "
         "the fetch early; the failures shown are a partial set."
     ),
+    use_cases=[
+        "Read the error details and failed steps for a specific Dagster run",
+        "Find every failed step in a run whose ops ran in parallel",
+    ],
     source="dagster",
     surfaces=(ToolSurface.CHAT,),
     is_available=dagster_is_available,
@@ -110,6 +118,10 @@ from integrations.dagster import (
         '`job_name` once and pair it with `status="FAILURE"` for '
         "incident investigations."
     ),
+    use_cases=[
+        "List recent Dagster job runs with their status and duration",
+        "Find the runs for a pipeline named in an alert",
+    ],
     source="dagster",
     surfaces=(ToolSurface.CHAT,),
     is_available=dagster_is_available,
@@ -149,6 +161,9 @@ from integrations.dagster import (
         "identified by all three ScheduleSelector coordinates: repository "
         "location name, repository name, and schedule name."
     ),
+    use_cases=[
+        "Check whether a Dagster schedule fired, skipped, or failed recently",
+    ],
     source="dagster",
     surfaces=(ToolSurface.CHAT,),
     is_available=dagster_is_available,
@@ -196,6 +211,9 @@ from integrations.dagster import (
         "identified by all three SensorSelector coordinates: repository "
         "location name, repository name, and sensor name."
     ),
+    use_cases=[
+        "Check whether a Dagster sensor evaluated or failed recently",
+    ],
     source="dagster",
     surfaces=(ToolSurface.CHAT,),
     is_available=dagster_is_available,

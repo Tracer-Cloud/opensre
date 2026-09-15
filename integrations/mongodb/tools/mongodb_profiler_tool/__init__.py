@@ -53,6 +53,9 @@ def _map_get_mongodb_profiler_data(
 @tool(
     name="get_mongodb_profiler_data",
     description="Retrieve slow queries from the MongoDB database system.profile collection (requires profiling enabled).",
+    use_cases=[
+        "Review slow MongoDB queries recorded by the profiler when profiling is enabled",
+    ],
     source="mongodb",
     surfaces=(ToolSurface.CHAT,),
     is_available=mongodb_database_is_available,

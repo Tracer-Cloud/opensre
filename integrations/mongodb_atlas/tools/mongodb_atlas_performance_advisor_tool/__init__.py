@@ -18,6 +18,10 @@ from integrations.mongodb_atlas.tools._evidence import (
 @tool(
     name="get_mongodb_atlas_performance_advisor",
     description="Retrieve Performance Advisor suggestions for a MongoDB Atlas cluster including recommended indexes and slow query logs.",
+    use_cases=[
+        "Get index recommendations for a slow Atlas cluster",
+        "Review slow query logs surfaced by Atlas Performance Advisor",
+    ],
     source="mongodb_atlas",
     surfaces=(ToolSurface.CHAT,),
     is_available=atlas_is_available,

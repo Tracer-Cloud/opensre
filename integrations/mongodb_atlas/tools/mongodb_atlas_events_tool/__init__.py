@@ -16,6 +16,10 @@ from integrations.mongodb_atlas.tools._evidence import map_get_mongodb_atlas_clu
 @tool(
     name="get_mongodb_atlas_cluster_events",
     description="Retrieve recent events for a MongoDB Atlas cluster including operational events, configuration changes, and user actions.",
+    use_cases=[
+        "Check recent operational events or configuration changes on an Atlas cluster",
+        "Correlate an incident with a user action or config change in Atlas",
+    ],
     source="mongodb_atlas",
     surfaces=(ToolSurface.CHAT,),
     is_available=atlas_is_available,
