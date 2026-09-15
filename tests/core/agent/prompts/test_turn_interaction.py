@@ -60,6 +60,19 @@ def test_headless_cli_facts_forbid_interactive_shell_claims() -> None:
     assert "do not recommend slash commands" in text
 
 
+def test_ephemeral_headless_cli_facts_do_not_advertise_resumability() -> None:
+    text = turn_interaction_facts_block(
+        _snapshot(
+            prompt_surface="headless_cli",
+            interactive_choice_available=False,
+        )
+    )
+
+    assert "non-resumable" in text
+    assert "or call ask_user_choice" in text
+    assert "use a required structured choice" not in text
+
+
 def test_turn_interaction_block_carries_the_goal_brief_when_a_goal_is_attached() -> None:
     # Arrange: the snapshot carries the goal brief the way from_session builds it.
     from core.agent_harness.session_goal.goal import SessionGoal

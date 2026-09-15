@@ -22,14 +22,22 @@ def turn_interaction_facts_block(turn_snapshot: TurnSnapshot) -> str:
     goal_lines = "".join(f"  {line}\n" for line in brief.splitlines()) if brief else ""
     surface_rules = ""
     if surface == "headless_cli":
-        surface_rules = (
-            "This is a non-interactive `opensre ask` invocation: do not describe "
-            "it as the interactive shell and do not recommend slash commands. "
-            "The process exits after this turn; use a required structured choice "
-            "when user input is needed so the invocation can be resumed. On "
-            "this surface, an available ask_user_choice is persisted and rendered "
-            "after the turn instead of opening an in-process menu.\n"
-        )
+        if turn_snapshot.interactive_choice_available:
+            surface_rules = (
+                "This is a non-interactive `opensre ask` invocation: do not describe "
+                "it as the interactive shell and do not recommend slash commands. "
+                "The process exits after this turn; use a required structured choice "
+                "when user input is needed so the invocation can be resumed. On "
+                "this surface, an available ask_user_choice is persisted and rendered "
+                "after the turn instead of opening an in-process menu.\n"
+            )
+        else:
+            surface_rules = (
+                "This is a non-interactive, non-resumable `opensre ask` invocation: "
+                "do not describe it as the interactive shell, recommend slash commands, "
+                "or call ask_user_choice. If required input is missing, state what is "
+                "needed in the final response instead of parking a choice.\n"
+            )
     return (
         "TURN INTERACTION (authoritative for this turn):\n"
         f"- surface: {surface}\n"
