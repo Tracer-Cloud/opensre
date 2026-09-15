@@ -147,6 +147,7 @@ EXPORTS: dict[str, str] = {
     "USER_STOP_MESSAGE": "gateway",
     "WEB_STOP_TIMEOUT_SECONDS": "gateway",
     # git
+    "MERGE_RESOLUTION_TIMEOUT_SECONDS": "git",
     "OPENSRE_COMMIT_COAUTHOR_EMAIL": "git",
     "OPENSRE_COMMIT_COAUTHOR_NAME": "git",
     "OPENSRE_COMMIT_COAUTHOR_TRAILER": "git",
