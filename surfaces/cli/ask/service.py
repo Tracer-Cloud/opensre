@@ -25,7 +25,6 @@ from core.agent_harness import (
 )
 from core.agent_harness.ports import ToolEventObserver
 from core.agent_harness.spi.cancel import ensure_turn_cancel
-from core.agent_harness.spi.session_goal import SessionGoal, SessionGoalReason, SessionGoalStatus
 from core.agent_harness.spi.session_state import PendingUserChoice
 from core.tool import ToolExecutionHooks
 from infrastructure.errors import OpenSREError
@@ -225,12 +224,6 @@ def _restrict_ask_capabilities(
     )
 
 
-def _clear_prior_goal_response(output: _AskOutputSink, goal: SessionGoal) -> None:
-    """Prevent an earlier goal turn from standing in for a silent final turn."""
-    if goal.status == SessionGoalStatus.ACTIVE and SessionGoalReason.is_working(goal.last_reason):
-        output.clear_rendered_event()
-
-
 def _run_agent_turn(
     prompt: str,
     hooks: ToolExecutionHooks,
@@ -277,13 +270,8 @@ def _run_agent_turn(
             prior_pending = session.pending_user_choice if session_id else None
             prior_answered = set(session.questions_already_answered) if session_id else None
             turn_prompt = _resume_prompt(session, prompt) if session_id else prompt
-            # chat_until_goal, not chat: the agent can attach a session goal,
-            # which must run to completion rather than stop after one turn.
             try:
-                result = agent_session.chat_until_goal(
-                    turn_prompt,
-                    on_progress=lambda goal: _clear_prior_goal_response(output, goal),
-                ).last_result
+                result = agent_session.chat(turn_prompt)
             except Exception:
                 # A failed resume must not consume its still-unhandled question.
                 session.pending_user_choice = prior_pending

@@ -90,11 +90,21 @@ class PendingUserChoice:
 def pending_user_choice_state_snapshot(session: Any) -> dict[str, Any] | None:
     """Return the pending choice and its workflow context for persistence."""
     pending = getattr(session, "pending_user_choice", None)
+    skill_question_keys = getattr(session, "skill_question_keys", {})
     workflow_context = {
         "active_skill": getattr(session, "active_skill", None),
         "ask_user_rounds": int(getattr(session, "ask_user_rounds", 0)),
         "questions_already_answered": sorted(
             str(key) for key in getattr(session, "questions_already_answered", set())
+        ),
+        "skill_question_keys": (
+            {
+                skill: sorted(str(key) for key in keys)
+                for skill, keys in skill_question_keys.items()
+                if isinstance(skill, str) and skill and isinstance(keys, set)
+            }
+            if isinstance(skill_question_keys, dict)
+            else {}
         ),
     }
     if not isinstance(pending, PendingUserChoice):
@@ -210,6 +220,17 @@ def _apply_workflow_context(session: Any, payload: Mapping[str, Any]) -> None:
         settled = payload.get("questions_already_answered")
         if isinstance(settled, list):
             answered.update(str(key) for key in settled if str(key))
+    by_skill = getattr(session, "skill_question_keys", None)
+    if isinstance(by_skill, dict):
+        by_skill.clear()
+        saved = payload.get("skill_question_keys")
+        if isinstance(saved, dict):
+            for skill, keys in saved.items():
+                if not isinstance(skill, str) or not skill or not isinstance(keys, list):
+                    continue
+                restored = {str(key) for key in keys if str(key)}
+                if restored:
+                    by_skill[skill] = restored
 
 
 def format_ask_user_answers(

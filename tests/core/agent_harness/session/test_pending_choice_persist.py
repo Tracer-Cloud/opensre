@@ -103,6 +103,7 @@ def test_consuming_pending_choice_preserves_settled_workflow_context() -> None:
     session.active_skill = "reporting-github-ci-failures"
     session.ask_user_rounds = 1
     session.questions_already_answered.add("earlier question")
+    session.skill_question_keys[session.active_skill] = {"earlier question", "settled question"}
     storage.flush(session)
 
     session.pending_user_choice = None
@@ -118,6 +119,9 @@ def test_consuming_pending_choice_preserves_settled_workflow_context() -> None:
     assert restored.active_skill == "reporting-github-ci-failures"
     assert restored.ask_user_rounds == 1
     assert restored.questions_already_answered == {"earlier question", "settled question"}
+    assert restored.skill_question_keys == {
+        "reporting-github-ci-failures": {"earlier question", "settled question"}
+    }
 
 
 def test_flush_keeps_silent_pending_choice_resumable() -> None:
