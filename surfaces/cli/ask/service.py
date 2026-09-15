@@ -477,6 +477,19 @@ def run_ask(
     )
     if denied is not None:
         return denied
+    if result.cancelled:
+        return AskOutcome(
+            status=AskStatus.CANCELLED,
+            response=response or "Agent execution cancelled.",
+            exit_code=AskExitCode.SIGINT,
+        )
+    if result.action_result.accounting_status == "not_run":
+        return AskOutcome(
+            status=AskStatus.ERROR,
+            response="",
+            error=AskError(message=response or "The agent did not complete the request."),
+            exit_code=AskExitCode.ERROR,
+        )
     if run_state.pending_choice is not None:
         questions = _outcome_questions(run_state.pending_choice)
         return AskOutcome(
@@ -485,12 +498,6 @@ def run_ask(
             session_id=run_state.session_id,
             questions=questions,
             exit_code=AskExitCode.NEEDS_INPUT,
-        )
-    if result.cancelled:
-        return AskOutcome(
-            status=AskStatus.CANCELLED,
-            response=response or "Agent execution cancelled.",
-            exit_code=AskExitCode.SIGINT,
         )
     if not _successful_turn(result, response):
         return AskOutcome(

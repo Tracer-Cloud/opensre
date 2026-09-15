@@ -736,6 +736,43 @@ def test_run_ask_maps_incomplete_and_cancelled_turns(monkeypatch) -> None:
 
 
 @pytest.mark.parametrize(
+    ("result", "status", "exit_code"),
+    [
+        (_not_run_turn(), AskStatus.ERROR, AskExitCode.ERROR),
+        (_turn("stopped", cancelled=True), AskStatus.CANCELLED, AskExitCode.SIGINT),
+    ],
+)
+def test_run_ask_reports_unsuccessful_resume_before_pending_choice(
+    monkeypatch,
+    result: TurnResult,
+    status: AskStatus,
+    exit_code: AskExitCode,
+) -> None:
+    pending = PendingUserChoice(title="Which environment?", options=("Production", "Staging"))
+
+    def failed_resume(_prompt: str, _hooks: ToolExecutionHooks, **kwargs: object) -> TurnResult:
+        run_state = kwargs["run_state"]
+        assert isinstance(run_state, service._AskRunState)
+        run_state.session_id = "session-123"
+        run_state.pending_choice = pending
+        return result
+
+    monkeypatch.setattr(service, "_resolve_resume_session_id", lambda session_id: session_id)
+    monkeypatch.setattr(service, "_run_agent_turn", failed_resume)
+
+    outcome = service.run_ask(
+        "1",
+        allowed_tools=(),
+        bypass_approvals=False,
+        resume_session_id="session-123",
+    )
+
+    assert outcome.status is status
+    assert outcome.exit_code is exit_code
+    assert outcome.questions == ()
+
+
+@pytest.mark.parametrize(
     ("signum", "exit_code"),
     [(signal.SIGINT, AskExitCode.SIGINT), (signal.SIGTERM, AskExitCode.SIGTERM)],
 )
