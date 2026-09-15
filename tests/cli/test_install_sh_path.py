@@ -672,3 +672,40 @@ def test_resign_macos_onedir_parallelizes_nested_libs() -> None:
     assert 'codesign --force --sign - "$binary_path"' in source
     # Cap avoids disk stampede on large hosts.
     assert 'if [ "$jobs" -gt 4 ]; then' in source
+
+
+@pytest.mark.parametrize(
+    ("authority_line", "expect_resign"),
+    [
+        ("Authority=Developer ID Application: Tracer Cloud (TEAMID1234)", False),
+        ("Signature=adhoc", True),
+    ],
+    ids=["developer-id-kept", "adhoc-resigned"],
+)
+def test_resign_keeps_a_developer_id_signature(
+    tmp_path: Path, authority_line: str, expect_resign: bool
+) -> None:
+    """Re-signing a notarized bundle ad-hoc would discard its trust; only ad-hoc gets re-signed."""
+    bundle = tmp_path / "app"
+    bundle.mkdir()
+    binary = bundle / "opensre"
+    binary.write_text("#!/usr/bin/env sh\nexit 0\n", encoding="utf-8")
+    (bundle / "lib.dylib").write_text("", encoding="utf-8")
+    resigned = tmp_path / "resigned"
+
+    result = _run_logging_snippet(
+        f"""
+        uname() {{ printf 'Darwin\\n'; }}
+        xattr() {{ return 0; }}
+        sysctl() {{ printf '2\\n'; }}
+        codesign() {{
+          if [ "$1" = "-dv" ]; then printf '%s\\n' {shlex.quote(authority_line)} >&2; return 0; fi
+          printf '%s\\n' "$*" >> {shlex.quote(str(resigned))}
+        }}
+        export -f codesign uname xattr sysctl
+        resign_macos_onedir_adhoc {shlex.quote(str(binary))}
+        """
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert resigned.exists() == expect_resign
