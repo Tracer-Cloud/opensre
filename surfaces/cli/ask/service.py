@@ -290,7 +290,12 @@ def _run_agent_turn(
             turn_prompt = _resume_prompt(session, prompt) if session_id else prompt
             try:
                 result = agent_session.chat(turn_prompt)
-            except BaseException:
+            except AskSignal:
+                # A failed resume must not consume its still-unhandled question.
+                if prior_choice_state is not None:
+                    apply_pending_user_choice_state(session, prior_choice_state)
+                raise
+            except Exception:
                 # A failed resume must not consume its still-unhandled question.
                 if prior_choice_state is not None:
                     apply_pending_user_choice_state(session, prior_choice_state)
