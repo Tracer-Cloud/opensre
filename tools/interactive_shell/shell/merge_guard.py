@@ -1,4 +1,4 @@
-"""Refuse git commands that would change a merge in progress behind the merge tool's back."""
+"""Refuse shell commands that would change a merge, or the user's checkout, behind the tools' back."""
 
 from __future__ import annotations
 
@@ -43,6 +43,14 @@ _SHELL_OPERATORS = frozenset({"&&", "||", "|", ";", "&"})
 # ``git`` as its own token — not ``gitk``, ``git-commit``, or a prefix of another word.
 _GIT_TOKEN = re.compile(r"(?<![-\w])git(?![-\w])")
 
+_PR_CHECKOUT = re.compile(r"(?<![-\w])gh\s+(?:(?:-R|--repo)\s+\S+\s+)?pr\s+checkout(?![-\w])")
+_PR_CHECKOUT_REFUSAL = (
+    "gh pr checkout would switch the branch of the user's checkout in {cwd}; it is not run "
+    "from the shell. Use resolve_merge_conflicts with pull_request set to the number or URL "
+    "(it clones the pull request into a workspace of its own), or fix_github_pr_ci for a "
+    "CI failure."
+)
+
 _REFUSAL = (
     "A merge is in progress in {cwd}; git {verb} is not run from the shell while it is. "
     "Use resolve_merge_conflicts (it shows each conflict, asks the user per file, commits "
@@ -61,6 +69,13 @@ def git_refusal_during_merge(command: str, cwd: str | None = None) -> str | None
         if merging:
             return _REFUSAL.format(cwd=workspace, verb=verb)
     return None
+
+
+def pull_request_checkout_refusal(command: str, cwd: str | None = None) -> str | None:
+    """The refusal for *command* when it checks a pull request out here, else ``None``."""
+    if _PR_CHECKOUT.search(command) is None:
+        return None
+    return _PR_CHECKOUT_REFUSAL.format(cwd=cwd or os.getcwd())
 
 
 def _mutating_git_ops(command: str, default_cwd: str) -> Iterator[tuple[str, str]]:
@@ -101,4 +116,4 @@ def _workspace_and_verb(tokens: list[str], default_cwd: str) -> tuple[str, str |
     return workspace, None
 
 
-__all__ = ["git_refusal_during_merge"]
+__all__ = ["git_refusal_during_merge", "pull_request_checkout_refusal"]

@@ -710,6 +710,11 @@ def _paint(
     return True
 
 
+def failure_output(ws: str, error_kind: str, error: str) -> dict[str, Any]:
+    """The tool's result for a run that stopped before any merge could start."""
+    return _output(ws, success=False, error_kind=error_kind, error=error)
+
+
 def _output(
     ws: str,
     *,

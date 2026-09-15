@@ -113,3 +113,18 @@ def test_a_removed_file_and_an_emptied_hunk_get_different_verdicts() -> None:
         verdict(HunkComparison("gone.txt", ("a",), ("b",), (), file_removed=True)) == "file removed"
     )
     assert verdict(HunkComparison("kept.txt", ("a",), ("b",), ())) == "dropped both sides"
+
+
+def test_paths_without_a_known_lexer_render_as_plain_text() -> None:
+    # Arrange: names rich cannot map to a lexer, as git allows any conflict path.
+    console = Console(record=True, width=80, force_terminal=False)
+    comparisons = [
+        HunkComparison(path, ("a",), ("b",), ("a", "b"))
+        for path in ("Makefile", "noext", "weird.zzz", ".hidden", "")
+    ]
+
+    # Act
+    render_review(console, comparisons, ours="feature", theirs="main")
+
+    # Assert: every hunk is shown, none aborted the review.
+    assert console.export_text().count("combined") == len(comparisons)

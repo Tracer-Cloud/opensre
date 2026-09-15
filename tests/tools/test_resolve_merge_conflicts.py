@@ -6,8 +6,11 @@ import subprocess
 from pathlib import Path
 from unittest.mock import patch
 
+import pytest
+
 from integrations.coding_agent import CodingResult
-from integrations.git import head_sha, merge_in_progress
+from integrations.git import GitCommandError, head_sha, merge_in_progress
+from integrations.github import PullRequestCheckout
 from tests.tools.conftest import BaseToolContract
 from tools.cross_vendor.resolve_merge_conflicts import (
     ResolveMergeConflictsTool,
@@ -17,6 +20,7 @@ from tools.registry import get_registered_tool_map
 
 _VERIFY = "tools.cross_vendor.resolve_merge_conflicts.runner.verify_coding_agent"
 _RUN = "tools.cross_vendor.resolve_merge_conflicts.runner.run_coding_task"
+_CHECKOUT = "tools.cross_vendor.resolve_merge_conflicts.tool.checkout_pull_request"
 
 
 def _git(cwd: Path, *args: str) -> str:
@@ -233,6 +237,61 @@ def test_the_default_branch_is_fetched_before_it_is_merged(tmp_path: Path) -> No
     # Assert: the merge brought in the commit the clone had not seen.
     assert out["success"] is True and out["merged"] == "origin/main"
     assert (work / "newer.txt").exists()
+
+
+def test_a_pull_request_is_merged_in_its_own_clone_not_in_the_current_directory(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Arrange: the "clone" is a repository whose feature branch is behind origin/main,
+    # while the current directory is an unrelated folder that must stay untouched.
+    clone = _diverged_repo(tmp_path)
+    _git(clone, "checkout", "main")
+    _git(clone, "push", "-q", "origin", "main")
+    _git(clone, "remote", "set-head", "origin", "main")
+    _git(clone, "checkout", "feature")
+    (clone / "app.py").write_text("greeting = 'hi'\n")
+    _git(clone, "commit", "-qam", "match main")
+    elsewhere = tmp_path / "elsewhere"
+    elsewhere.mkdir()
+    monkeypatch.chdir(elsewhere)
+    checkout = PullRequestCheckout(str(clone), "Acme", "widgets", 12, "feature", reused=False)
+    asked: list[tuple[str, str]] = []
+
+    def checkout_pull_request(selector: str, *, cwd: str) -> PullRequestCheckout:
+        asked.append((selector, cwd))
+        return checkout
+
+    # Act
+    with patch(_CHECKOUT, checkout_pull_request):
+        out = resolve_merge_conflicts.run(pull_request="Acme/widgets#12")
+
+    # Assert
+    assert asked == [("Acme/widgets#12", str(elsewhere))]
+    assert out["success"] is True
+    assert out["workspace"] == str(clone)
+    assert out["pull_request"] == "Acme/widgets#12"
+    assert out["commit_sha"] == head_sha(str(clone))
+    assert list(elsewhere.iterdir()) == []
+
+
+def test_a_pull_request_that_cannot_be_checked_out_is_reported_without_a_merge(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Arrange
+    monkeypatch.chdir(tmp_path)
+
+    def checkout_pull_request(selector: str, *, cwd: str) -> PullRequestCheckout:
+        del selector, cwd
+        raise GitCommandError("pr_not_found", "pull request 99 was not found; no push was made.")
+
+    # Act
+    with patch(_CHECKOUT, checkout_pull_request):
+        out = resolve_merge_conflicts.run(pull_request="99")
+
+    # Assert
+    assert out["success"] is False and out["error_kind"] == "pr_not_found"
+    assert "not found" in out["error"]
+    assert out["commit_sha"] is None and out["pushed"] is False
 
 
 def test_a_remote_whose_head_is_a_feature_branch_is_not_merged_by_default(tmp_path: Path) -> None:
