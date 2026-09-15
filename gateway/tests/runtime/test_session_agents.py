@@ -258,6 +258,26 @@ def test_pool_waits_for_a_session_lease_held_by_another_host(
     assert entered.is_set()
 
 
+def test_session_execution_lock_is_reentrant_on_one_thread(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A host and its pool can hold the same session lease without deadlocking."""
+    monkeypatch.setattr(
+        "infrastructure.turn_host.session_lock.sessions_dir",
+        lambda: tmp_path,
+    )
+    session = SessionCore(store=InMemorySessionStore())
+
+    # A zero timeout proves this reuses the held physical lock rather than
+    # taking a second contending lock instance.
+    with (
+        session_execution_lock(session.session_id),
+        session_execution_lock(session.session_id, timeout=0, reentrant=True),
+    ):
+        pass
+
+
 def test_pool_refreshes_session_after_acquiring_external_lease(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,

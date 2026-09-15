@@ -122,7 +122,7 @@ class SessionAgentPool:
             # No id means no cache entry and nothing shared to protect.
             yield self.agent_for(session=session, output=output, logger=logger)
             return
-        with self._lock_for(session_id), session_execution_lock(session_id):
+        with self._lock_for(session_id), session_execution_lock(session_id, reentrant=True):
             # Gateway ingress resolves before taking this cross-host lease. A
             # CLI resume could have completed while it waited, so reload the
             # persisted branch before this turn binds or later flushes it.
