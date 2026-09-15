@@ -167,7 +167,11 @@ def test_release_workflow_does_not_run_on_pull_requests() -> None:
 
     assert isinstance(triggers, dict)
     assert "pull_request" not in triggers
-    assert triggers["push"]["branches"] == ["main"]
+    assert triggers["workflow_run"] == {
+        "workflows": ["CI"],
+        "types": ["completed"],
+        "branches": ["main"],
+    }
     assert 'if [ "$EVENT_NAME" = "pull_request" ]; then' not in workflow
     assert 'echo "channel=pr" >> "$GITHUB_OUTPUT"' not in workflow
     assert "opensre_pr_" not in workflow
