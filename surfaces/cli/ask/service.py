@@ -12,6 +12,7 @@ from enum import IntEnum, StrEnum
 from functools import partial
 from io import StringIO
 from typing import Any
+from uuid import uuid4
 
 from rich.console import Console
 
@@ -288,13 +289,15 @@ def _run_agent_turn(
     output: _AskOutputSink | None = None,
     session_id: str | None = None,
     ephemeral: bool = True,
+    fresh_session: bool = False,
     run_state: _AskRunState | None = None,
 ) -> TurnResult:
     manager = SessionManager()
     output = output or _AskOutputSink()
     cancel_event = ensure_turn_cancel(output)
     console = _CancellableConsole(cancel_event)
-    mutation_tracker = _ResumedMutationTracker() if session_id is not None else None
+    is_resumed_session = session_id is not None and not fresh_session
+    mutation_tracker = _ResumedMutationTracker() if is_resumed_session else None
     tracked_hooks = (
         _track_resumed_mutations(hooks, mutation_tracker) if mutation_tracker is not None else hooks
     )
@@ -328,9 +331,9 @@ def _run_agent_turn(
             if run_state is not None:
                 run_state.session_id = None if ephemeral else session.session_id
             prior_choice_state = (
-                pending_user_choice_state_snapshot(session) if session_id is not None else None
+                pending_user_choice_state_snapshot(session) if is_resumed_session else None
             )
-            turn_prompt = _resume_prompt(session, prompt) if session_id else prompt
+            turn_prompt = _resume_prompt(session, prompt) if is_resumed_session else prompt
             restored_prior_choice = False
             try:
                 result = agent_session.chat(turn_prompt)
@@ -348,12 +351,19 @@ def _run_agent_turn(
                 ):
                     apply_pending_user_choice_state(session, prior_choice_state)
                 raise
-            if prior_choice_state is not None and _resumed_turn_did_not_complete(
-                result,
-                potential_mutation_started=bool(
-                    mutation_tracker and mutation_tracker.potential_mutation_started
-                ),
+            if (
+                prior_choice_state is not None
+                and _resumed_turn_did_not_complete(
+                    result,
+                    potential_mutation_started=bool(
+                        mutation_tracker and mutation_tracker.potential_mutation_started
+                    ),
+                )
+                and getattr(session, "pending_user_choice", None) is None
             ):
+                # A no-op/retry result normally restores the question the
+                # resume just consumed.  If the agent has already queued a
+                # replacement question, that is newer state and must win.
                 apply_pending_user_choice_state(session, prior_choice_state)
                 restored_prior_choice = True
             output.mark_turn_complete()
@@ -477,6 +487,12 @@ def run_ask(
     run_state = _AskRunState()
     try:
         session_id = _resolve_resume_session_id(resume_session_id) if resume_session_id else None
+        fresh_session = session_id is None and not ephemeral
+        if fresh_session:
+            # A persisted ask session is visible as soon as AgentSession.start
+            # writes its header.  Allocate its ID before entering the shared
+            # lease so a concurrent --resume cannot race the first turn.
+            session_id = str(uuid4())
         with _ask_session_lock(session_id):
             result = _run_agent_turn(
                 prompt,
@@ -485,6 +501,7 @@ def run_ask(
                 output=output,
                 session_id=session_id,
                 ephemeral=ephemeral,
+                fresh_session=fresh_session,
                 run_state=run_state,
             )
     except AskSignal as exc:

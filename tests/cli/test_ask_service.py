@@ -215,6 +215,22 @@ def test_resume_prompt_maps_a_number_to_the_pending_option() -> None:
     assert session.pending_user_choice is None
 
 
+def test_resume_prompt_preserves_blank_lines_in_a_custom_answer() -> None:
+    from core.agent_harness.session.pending_choice import parse_ask_user_answers
+
+    session = service.SessionCore()
+    session.pending_user_choice = PendingUserChoice(
+        title="Describe the deployment window",
+        options=(),
+    )
+
+    resumed = ask_session.resume_prompt(session, "First window\n\nSecond window")
+
+    assert parse_ask_user_answers(resumed) == [
+        ("Describe the deployment window", "First window\n\nSecond window")
+    ]
+
+
 def test_resume_prompt_resets_clarification_rounds_for_a_new_request() -> None:
     session = service.SessionCore()
     session.ask_user_rounds = 2
@@ -316,9 +332,36 @@ def test_run_ask_forwards_a_tool_event_observer(monkeypatch) -> None:
 
     assert outcome.status is AskStatus.SUCCESS
     assert recorded["tool_event_observer"] is observer
-    assert recorded["session_id"] is None
+    assert isinstance(recorded["session_id"], str)
+    assert recorded["fresh_session"] is True
     assert recorded["ephemeral"] is False
     assert isinstance(recorded["run_state"], service._AskRunState)
+
+
+def test_run_ask_leases_a_fresh_persisted_session_before_its_first_turn(monkeypatch) -> None:
+    from contextlib import contextmanager
+
+    captured: list[str | None] = []
+    turn_args: dict[str, object] = {}
+
+    @contextmanager
+    def _lock(session_id: str | None):
+        captured.append(session_id)
+        yield
+
+    def run_turn(_prompt: str, _hooks: ToolExecutionHooks, **kwargs: object) -> TurnResult:
+        turn_args.update(kwargs)
+        return _turn()
+
+    monkeypatch.setattr(service, "_ask_session_lock", _lock)
+    monkeypatch.setattr(service, "_run_agent_turn", run_turn)
+    monkeypatch.setattr(service, "uuid4", lambda: "fresh-session-id")
+
+    service.run_ask("prompt", allowed_tools=(), bypass_approvals=False)
+
+    assert captured == ["fresh-session-id"]
+    assert turn_args["session_id"] == "fresh-session-id"
+    assert turn_args["fresh_session"] is True
 
 
 def test_run_ask_resolves_session_prefix_before_resuming(monkeypatch) -> None:
@@ -560,6 +603,49 @@ def test_unsuccessful_resumed_turn_restores_pending_choice_state(
 
     assert session.pending_user_choice == pending
     assert session.questions_already_answered == {"earlier question"}
+    assert manager.closed == [(session, False)]
+
+
+def test_incomplete_resumed_turn_keeps_a_newly_queued_choice(monkeypatch) -> None:
+    manager = _FakeSessionManager()
+    session = _FakeSession()
+    session.pending_user_choice = PendingUserChoice(
+        title="Which environment?",
+        options=("Production", "Staging"),
+    )
+    replacement = PendingUserChoice(
+        title="Which region?",
+        options=("us-east-1", "eu-west-1"),
+    )
+
+    class _ReplacementChoiceAgentSession:
+        @classmethod
+        def start(cls, _config: object, **_kwargs: object) -> _ReplacementChoiceAgentSession:
+            return cls()
+
+        @property
+        def bound_session(self) -> _FakeSession:
+            return session
+
+        def chat(self, _prompt: str) -> TurnResult:
+            session.pending_user_choice = replacement
+            return _not_run_turn()
+
+    monkeypatch.setattr(service, "SessionManager", lambda: manager)
+    monkeypatch.setattr(service, "AgentSession", _ReplacementChoiceAgentSession)
+    run_state = service._AskRunState()
+
+    service._run_agent_turn(
+        "1",
+        ToolExecutionHooks(),
+        session_id=session.session_id,
+        ephemeral=False,
+        run_state=run_state,
+    )
+
+    assert session.pending_user_choice == replacement
+    assert run_state.pending_choice == replacement
+    assert run_state.pending_choice_is_new is True
     assert manager.closed == [(session, False)]
 
 

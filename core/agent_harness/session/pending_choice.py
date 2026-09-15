@@ -18,7 +18,6 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-_ANSWER_HEADER = re.compile(r"^(\d+)\.\s+(.+)$")
 PENDING_USER_CHOICE_STATE_CUSTOM_TYPE = "pending_user_choice_state"
 
 
@@ -251,16 +250,16 @@ def parse_ask_user_answers(text: str) -> list[tuple[str, str]]:
     stripped = text.strip()
     if not stripped:
         return []
+    headers = list(re.finditer(r"(?m)^(\d+)\.\s+(.+)\n", stripped))
+    if not headers:
+        return []
     pairs: list[tuple[str, str]] = []
-    for block in stripped.split("\n\n"):
-        lines = [line.rstrip() for line in block.splitlines() if line.strip()]
-        if len(lines) < 2:
+    for index, header in enumerate(headers, start=1):
+        if int(header.group(1)) != index:
             return []
-        match = _ANSWER_HEADER.match(lines[0])
-        if match is None:
-            return []
-        question = match.group(2).strip()
-        answer = "\n".join(lines[1:]).strip()
+        question = header.group(2).strip()
+        next_start = headers[index].start() if index < len(headers) else len(stripped)
+        answer = stripped[header.end() : next_start].strip()
         if not question or not answer:
             return []
         pairs.append((question, answer))
