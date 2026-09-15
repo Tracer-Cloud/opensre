@@ -534,11 +534,15 @@ jobs:
           && echo "pytest_paths=$(tr '\n' ' ' < .pytest-shard-files)" >> "$GITHUB_OUTPUT"
 
       - name: Run tests
+        # The cli-live-agent shard needs OPENAI_API_KEY. Neither fork PRs nor
+        # Dependabot PRs can read repository secrets, so skip just that shard
+        # for them; every other shard and event runs unchanged.
         if: >-
           (steps.changes.outputs.source == 'true' || github.event_name == 'push') &&
           !(github.event_name == 'pull_request' &&
-          github.event.pull_request.head.repo.fork == true &&
-          matrix.shard == 'cli-live-agent')
+          matrix.shard == 'cli-live-agent' &&
+          (github.event.pull_request.head.repo.fork == true ||
+          github.event.pull_request.user.login == 'dependabot[bot]'))
         env:
           COVERAGE_FILE: .coverage.${{ matrix.shard }}
           # PRs do not consume coverage artifacts. Avoid instrumenting every
