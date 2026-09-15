@@ -35,6 +35,17 @@ INSTALL_CHANNEL_EXPLICIT=0
 MAIN_RELEASE_TAG="${OPENSRE_MAIN_RELEASE_TAG:-main-build}"
 BIN_NAME="opensre"
 requested_version="${OPENSRE_VERSION:-}"
+staged_binary_path=""
+binary_app_transaction_active=0
+binary_app_transaction_committed=0
+binary_app_transaction_had_app=0
+binary_app_transaction_had_destination=0
+binary_app_transaction_app_destination_dir=""
+binary_app_transaction_app_tmp_dir=""
+binary_app_transaction_app_old_dir=""
+binary_app_transaction_destination_path=""
+binary_app_transaction_destination_tmp_path=""
+binary_app_transaction_destination_old_path=""
 
 [ -n "$INSTALL_DIR" ] && INSTALL_DIR_OVERRIDE=1
 requested_version="${requested_version#v}"
@@ -496,7 +507,7 @@ extract_archive() {
   fi
 
   need_cmd tar
-  tar -xzf "$archive_path" -C "$destination_dir"
+  tar --no-same-owner --no-same-permissions -xzf "$archive_path" -C "$destination_dir"
 }
 
 verify_checksum() {
@@ -566,10 +577,87 @@ install_binary() {
   chmod 0755 "$destination_path" 2>/dev/null || true
 }
 
+begin_binary_app_install_transaction() {
+  binary_app_transaction_app_destination_dir="$1"
+  binary_app_transaction_app_tmp_dir="$2"
+  binary_app_transaction_app_old_dir="$3"
+  binary_app_transaction_destination_path="$4"
+  binary_app_transaction_destination_tmp_path="$5"
+  binary_app_transaction_destination_old_path="$6"
+  binary_app_transaction_committed=0
+  binary_app_transaction_had_app=0
+  binary_app_transaction_had_destination=0
+
+  if [ -e "$binary_app_transaction_app_destination_dir" ] \
+    || [ -L "$binary_app_transaction_app_destination_dir" ]; then
+    binary_app_transaction_had_app=1
+  fi
+  if [ -e "$binary_app_transaction_destination_path" ] \
+    || [ -L "$binary_app_transaction_destination_path" ]; then
+    binary_app_transaction_had_destination=1
+  fi
+  binary_app_transaction_active=1
+}
+
+rollback_binary_app_install() {
+  [ "$binary_app_transaction_active" -eq 1 ] || return 0
+
+  if [ "$binary_app_transaction_committed" -eq 1 ]; then
+    rm -rf \
+      "$binary_app_transaction_app_tmp_dir" \
+      "$binary_app_transaction_app_old_dir" \
+      2>/dev/null || true
+    rm -f \
+      "$binary_app_transaction_destination_tmp_path" \
+      "$binary_app_transaction_destination_old_path" \
+      2>/dev/null || true
+    binary_app_transaction_active=0
+    return 0
+  fi
+
+  if [ "$binary_app_transaction_had_app" -eq 1 ]; then
+    if [ -e "$binary_app_transaction_app_old_dir" ] \
+      || [ -L "$binary_app_transaction_app_old_dir" ]; then
+      if rm -rf "$binary_app_transaction_app_destination_dir"; then
+        if ! mv \
+          "$binary_app_transaction_app_old_dir" \
+          "$binary_app_transaction_app_destination_dir"; then
+          warn "Could not restore the previous OpenSRE app; it remains at '${binary_app_transaction_app_old_dir}'."
+        fi
+      else
+        warn "Could not remove the uncommitted OpenSRE app at '${binary_app_transaction_app_destination_dir}'."
+      fi
+    fi
+  else
+    rm -rf "$binary_app_transaction_app_destination_dir" || true
+  fi
+
+  if [ "$binary_app_transaction_had_destination" -eq 1 ]; then
+    if [ -e "$binary_app_transaction_destination_old_path" ] \
+      || [ -L "$binary_app_transaction_destination_old_path" ]; then
+      if rm -f "$binary_app_transaction_destination_path"; then
+        if ! mv \
+          "$binary_app_transaction_destination_old_path" \
+          "$binary_app_transaction_destination_path"; then
+          warn "Could not restore the previous OpenSRE launcher; it remains at '${binary_app_transaction_destination_old_path}'."
+        fi
+      else
+        warn "Could not remove the uncommitted OpenSRE launcher at '${binary_app_transaction_destination_path}'."
+      fi
+    fi
+  else
+    rm -f "$binary_app_transaction_destination_path" || true
+  fi
+
+  rm -rf "$binary_app_transaction_app_tmp_dir" || true
+  rm -f "$binary_app_transaction_destination_tmp_path" || true
+  binary_app_transaction_active=0
+}
+
 # Install is two renames with the checks in between: stage the extracted tree
 # under INSTALL_DIR, verify and warm it there, then swap it into place. A binary
-# that fails its checks never replaces a working install, and nothing is
-# copied: macOS caches signature validation per file, so a renamed tree keeps
+# that fails its checks never replaces a working install, and on macOS nothing
+# is copied: signature validation is cached per file, so a renamed tree keeps
 # what the checks paid for while a copied tree is validated again on the
 # user's first launch.
 
@@ -591,7 +679,16 @@ stage_binary_app() {
   local staged_dir="${INSTALL_DIR}/.${BIN_NAME}-app.new.$$"
 
   rm -rf "$staged_dir"
-  mv "$app_root" "$staged_dir"
+  if [ "$platform" = "darwin" ]; then
+    # Preserve file identity through verify_staged_binary() and the activation
+    # rename. Retaining the verified executable's inode avoids the repeated
+    # cold security-assessment delay observed when an ad-hoc-signed bundle is
+    # copied. ``mv`` falls back to copy/remove semantics across filesystems.
+    mv "$app_root" "$staged_dir"
+  else
+    # A fresh Linux copy inherits destination SELinux labels and default ACLs.
+    cp -R "$app_root" "$staged_dir"
+  fi
   chmod -R u+rwX,go+rX "$staged_dir" 2>/dev/null || true
   printf '%s\n' "${staged_dir}/${BIN_NAME}"
 }
@@ -612,22 +709,57 @@ activate_staged_binary() {
   local staged_path="$1"
   local destination_path="$2"
   local app_destination_dir="${INSTALL_DIR}/.${BIN_NAME}-app"
+  local app_staged_dir="${staged_path%/*}"
   local app_old_dir="${app_destination_dir}.old.$$"
+  local destination_tmp_path="${destination_path}.new.$$"
+  local destination_old_path="${destination_path}.old.$$"
+
+  if [ -d "$destination_path" ] && [ ! -L "$destination_path" ]; then
+    warn "Cannot install OpenSRE because '${destination_path}' is a directory."
+    return 1
+  fi
 
   if ! staged_binary_is_app "$staged_path"; then
     mv -f "$staged_path" "$destination_path"
     return
   fi
 
-  rm -rf "$app_old_dir"
-  if [ -e "$app_destination_dir" ]; then
-    mv "$app_destination_dir" "$app_old_dir"
-  fi
-  mv "${staged_path%/*}" "$app_destination_dir"
-  rm -rf "$app_old_dir"
+  rm -rf "$app_old_dir" || return 1
+  rm -f "$destination_tmp_path" "$destination_old_path" || return 1
+  begin_binary_app_install_transaction \
+    "$app_destination_dir" "$app_staged_dir" "$app_old_dir" \
+    "$destination_path" "$destination_tmp_path" "$destination_old_path"
 
-  rm -f "$destination_path"
-  ln -s "$app_destination_dir/${BIN_NAME}" "$destination_path"
+  if ! ln -s "$app_destination_dir/${BIN_NAME}" "$destination_tmp_path"; then
+    rollback_binary_app_install
+    return 1
+  fi
+
+  if [ -e "$app_destination_dir" ] || [ -L "$app_destination_dir" ]; then
+    if ! mv "$app_destination_dir" "$app_old_dir"; then
+      rollback_binary_app_install
+      return 1
+    fi
+  fi
+  if [ -e "$destination_path" ] || [ -L "$destination_path" ]; then
+    if ! mv "$destination_path" "$destination_old_path"; then
+      rollback_binary_app_install
+      return 1
+    fi
+  fi
+  if ! mv "$app_staged_dir" "$app_destination_dir"; then
+    rollback_binary_app_install
+    return 1
+  fi
+  if ! mv "$destination_tmp_path" "$destination_path"; then
+    rollback_binary_app_install
+    return 1
+  fi
+
+  binary_app_transaction_committed=1
+  rm -rf "$app_old_dir" || warn "Could not remove '${app_old_dir}'."
+  rm -f "$destination_old_path" || warn "Could not remove '${destination_old_path}'."
+  binary_app_transaction_active=0
 }
 
 discard_staged_binary() {
@@ -921,6 +1053,11 @@ ensure_on_path_impl() {
 }
 
 cleanup() {
+  rollback_binary_app_install
+  if [ -n "$staged_binary_path" ]; then
+    discard_staged_binary "$staged_binary_path"
+    staged_binary_path=""
+  fi
   if [ -n "${tmp_dir:-}" ] && [ -d "$tmp_dir" ]; then
     rm -rf "$tmp_dir"
   fi
