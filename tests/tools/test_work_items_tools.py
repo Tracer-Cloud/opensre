@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 from pathlib import Path
 from typing import Any
 
@@ -165,6 +166,224 @@ def test_reminder_scheduling(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     assert len(tasks) == 2
     assert tasks[0].enabled is False
     assert tasks[1].enabled is True
+
+
+def _isolate_work_item_stores(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Point the item store, scheduler store, and reload signal at *tmp_path*."""
+    work_items_file = tmp_path / "work_items.json"
+    for target in (
+        "tools.system.work_items.tool.work_items_path",
+        "tools.system.work_items.results.work_items_path",
+        "tools.system.work_items.reminders.work_items_path",
+        "core.domain.work_items.store.work_items_path",
+    ):
+        monkeypatch.setattr(target, lambda: work_items_file)
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.task_store.default_task_store_path",
+        lambda: tmp_path / "scheduler_tasks.json",
+    )
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.reload_signal.request_scheduler_reload",
+        lambda: None,
+    )
+
+
+def _live_reminder_targets() -> list[list[str]]:
+    """Chat ids carried by every enabled work-item reminder task."""
+    from infrastructure.scheduling.scheduler.storage.task_store import list_tasks
+    from infrastructure.scheduling.scheduler.types import TaskKind
+
+    return [
+        [entry["chat_id"] for entry in json.loads(task.params["delivery_targets"])]
+        for task in list_tasks()
+        if task.kind is TaskKind.WORK_ITEM_REMINDER and task.enabled
+    ]
+
+
+def test_reminder_destination_change_moves_the_schedule(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The task carries its own copy of the targets, so an item edited to a new
+    # channel kept delivering its reminder to the old one.
+    _isolate_work_item_stores(tmp_path, monkeypatch)
+    added = work_task_add(
+        title="Rotate API key",
+        remind_at="2030-09-12T09:00:00Z",
+        channel_provider="slack",
+        channel_id="C1",
+    )
+    assert _live_reminder_targets() == [["C1"]]
+
+    updated = work_task_update(
+        selector=added["task"]["id"], channel_provider="slack", channel_id="C2"
+    )
+
+    assert updated["task"]["channel"]["chat_id"] == "C2"
+    assert _live_reminder_targets() == [["C2"]]
+
+
+def test_clearing_a_reminder_cancels_its_schedule(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # An empty remind_at reads as "unchanged", so removing a reminder needs its
+    # own flag; without it the one-shot task stayed enabled and later fired.
+    _isolate_work_item_stores(tmp_path, monkeypatch)
+    added = work_task_add(
+        title="Rotate API key",
+        remind_at="2030-09-12T09:00:00Z",
+        channel_provider="slack",
+        channel_id="C1",
+    )
+    assert len(_live_reminder_targets()) == 1
+
+    cleared = work_task_update(selector=added["task"]["id"], clear_remind_at=True)
+
+    assert cleared["task"]["remind_at"] == ""
+    assert _live_reminder_targets() == []
+
+
+def test_clear_and_set_reminder_together_is_rejected(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _isolate_work_item_stores(tmp_path, monkeypatch)
+    added = work_task_add(title="Rotate API key", channel_provider="slack", channel_id="C1")
+
+    response = work_task_update(
+        selector=added["task"]["id"],
+        remind_at="2030-09-12T09:00:00Z",
+        clear_remind_at=True,
+    )
+
+    assert response["error"] == "conflicting_reminder_change"
+
+
+def test_destination_change_does_not_invent_a_reminder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Reconciling from the stored item must not schedule anything for an item
+    # that never carried a reminder time.
+    _isolate_work_item_stores(tmp_path, monkeypatch)
+    added = work_task_add(title="Rotate API key", channel_provider="slack", channel_id="C1")
+
+    work_task_update(selector=added["task"]["id"], channel_provider="slack", channel_id="C2")
+
+    assert _live_reminder_targets() == []
+
+
+def test_destination_change_keeps_the_original_reminder_timezone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # The item stores the reminder time but not its zone, so a channel-only edit
+    # that fell back to the UTC default moved a naive 09:00 by several hours.
+    from infrastructure.scheduling.scheduler.storage.task_store import list_tasks
+
+    _isolate_work_item_stores(tmp_path, monkeypatch)
+    added = work_task_add(
+        title="Rotate API key",
+        remind_at="2030-09-12T09:00:00",
+        channel_provider="slack",
+        channel_id="C1",
+        timezone="America/New_York",
+    )
+    assert [task.timezone for task in list_tasks() if task.enabled] == ["America/New_York"]
+
+    work_task_update(selector=added["task"]["id"], channel_provider="slack", channel_id="C2")
+
+    live = [task for task in list_tasks() if task.enabled]
+    assert [task.timezone for task in live] == ["America/New_York"]
+    assert _live_reminder_targets() == [["C2"]]
+
+
+def test_restating_the_reminder_time_uses_the_supplied_timezone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from infrastructure.scheduling.scheduler.storage.task_store import list_tasks
+
+    _isolate_work_item_stores(tmp_path, monkeypatch)
+    added = work_task_add(
+        title="Rotate API key",
+        remind_at="2030-09-12T09:00:00",
+        channel_provider="slack",
+        channel_id="C1",
+        timezone="America/New_York",
+    )
+
+    work_task_update(
+        selector=added["task"]["id"],
+        remind_at="2030-09-13T09:00:00",
+        timezone="Europe/Berlin",
+    )
+
+    assert [task.timezone for task in list_tasks() if task.enabled] == ["Europe/Berlin"]
+
+
+def test_reschedule_never_leaves_two_live_reminders(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Add-then-disable across two store writes could leave both enabled; the
+    # swap has to land in one write.
+    from infrastructure.scheduling.scheduler.storage.task_store import list_tasks
+
+    _isolate_work_item_stores(tmp_path, monkeypatch)
+    item = make_work_item(title="Rotate key", remind_at="2030-09-12T09:00:00Z")
+    first = schedule_item_reminder(
+        item, targets=[WorkItemChannelTarget(provider="slack", chat_id="C1")], timezone="UTC"
+    )
+    assert first is not None
+
+    def _no_second_write(*_args: Any, **_kwargs: Any) -> bool:
+        raise AssertionError("the swap must not need a follow-up update_task write")
+
+    monkeypatch.setattr("tools.system.work_items.reminders.update_task", _no_second_write)
+    second = schedule_item_reminder(
+        item, targets=[WorkItemChannelTarget(provider="slack", chat_id="C2")], timezone="UTC"
+    )
+
+    assert second is not None
+    assert [task.id for task in list_tasks() if task.enabled] == [second.id]
+
+
+def test_rescheduling_back_to_an_earlier_time_revives_the_task(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Moving a reminder T1 -> T2 -> T1 matches the row retired on the first
+    # move. Returning it as the replacement without reviving it reported a
+    # scheduled reminder that would never fire.
+    from infrastructure.scheduling.scheduler.storage.task_store import list_tasks
+
+    _isolate_work_item_stores(tmp_path, monkeypatch)
+    targets = [WorkItemChannelTarget(provider="slack", chat_id="C1")]
+    early = make_work_item(title="Rotate key", remind_at="2030-09-12T09:00:00Z")
+    later = dataclasses.replace(early, remind_at="2030-09-12T10:00:00Z")
+
+    schedule_item_reminder(early, targets=targets, timezone="UTC")
+    schedule_item_reminder(later, targets=targets, timezone="UTC")
+    revived = schedule_item_reminder(early, targets=targets, timezone="UTC")
+
+    assert revived is not None
+    assert [task.id for task in list_tasks() if task.enabled] == [revived.id]
+
+
+def test_failed_replacement_keeps_the_existing_reminder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Disabling the old task first left the user with no reminder at all when
+    # persisting the replacement failed.
+    from tools.system.work_items import reminders
+
+    _isolate_work_item_stores(tmp_path, monkeypatch)
+    item = make_work_item(title="Rotate key", remind_at="2030-09-12T09:00:00Z")
+    targets = [WorkItemChannelTarget(provider="slack", chat_id="C1")]
+    assert schedule_item_reminder(item, targets=targets, timezone="UTC") is not None
+
+    def _store_unavailable(*_args: Any, **_kwargs: Any) -> Any:
+        raise RuntimeError("scheduler store unavailable")
+
+    monkeypatch.setattr(reminders, "replace_task", _store_unavailable)
+    with pytest.raises(RuntimeError):
+        schedule_item_reminder(item, targets=targets, timezone="UTC")
+
+    assert _live_reminder_targets() == [["C1"]]
 
 
 def test_work_task_tools_lifecycle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
