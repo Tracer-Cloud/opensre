@@ -858,20 +858,9 @@ jobs:
             printf 'Windows:\n\n%spowershell\nirm https://install.opensre.com | iex\n%s\n' "$CB" "$CB"
           } > MAIN_RELEASE_NOTES.md
 
-      - name: Move main build tag to the latest commit
-        env:
-          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -f "${{ needs.prepare.outputs.tag_name }}" "$SOURCE_SHA"
-          git push origin "refs/tags/${{ needs.prepare.outputs.tag_name }}" --force
-
       - name: Publish rolling main release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.MAIN_BUILD_TAG_TOKEN || secrets.GITHUB_TOKEN }}
           SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
         shell: bash
         run: |
@@ -895,3 +884,14 @@ jobs:
             --title "Main" \
             --notes-file MAIN_RELEASE_NOTES.md \
             --prerelease
+
+      - name: Move main build tag to the latest commit
+        env:
+          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f "${{ needs.prepare.outputs.tag_name }}" "$SOURCE_SHA"
+          git push origin "refs/tags/${{ needs.prepare.outputs.tag_name }}" --force

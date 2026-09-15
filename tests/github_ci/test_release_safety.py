@@ -90,6 +90,7 @@ def test_release_builds_and_publishes_the_validated_source_sha() -> None:
         step for step in publish["steps"] if step.get("name") == "Publish rolling main release"
     )
     assert '--target "$SOURCE_SHA"' in release_step["run"]
+    assert publish["steps"].index(tag_step) > publish["steps"].index(release_step)
 
 
 def test_release_path_classifier_preserves_the_previous_push_filters() -> None:
