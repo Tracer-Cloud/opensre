@@ -16,7 +16,11 @@ from core.agent_harness.session.persistence.memory import InMemorySessionStore
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
 from infrastructure.turn_host.bindable_output import BindableOutput
 from infrastructure.turn_host.session_agents import SessionAgentPool
-from infrastructure.turn_host.session_lock import session_execution_lock
+from infrastructure.turn_host.session_lock import (
+    retain_session_execution_lock,
+    retained_session_execution_locks,
+    session_execution_lock,
+)
 from infrastructure.turn_host.turn_runner import TurnRunner
 from tests.shared.default_headless_build_stub import default_headless_build_stub
 from tests.shared.fake_agent import fake_agent
@@ -276,6 +280,24 @@ def test_session_execution_lock_is_reentrant_on_one_thread(
         session_execution_lock(session.session_id, timeout=0, reentrant=True),
     ):
         pass
+
+
+def test_retained_reentrant_lease_releases_before_its_owner(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A same-session /resume cannot fail while the turn unwinds its leases."""
+    monkeypatch.setattr(
+        "infrastructure.turn_host.session_lock.sessions_dir",
+        lambda: tmp_path,
+    )
+    session = SessionCore(store=InMemorySessionStore())
+
+    # This is the same nesting order as TurnRunner: the retained reentrant
+    # target lease exits first, while the source's physical lease is still
+    # registered with the current thread.
+    with session_execution_lock(session.session_id), retained_session_execution_locks():
+        assert retain_session_execution_lock(session.session_id, timeout=0, reentrant=True)
 
 
 def test_pool_claims_session_lease_before_its_process_local_lock(

@@ -146,7 +146,7 @@ class TurnRunner:
         # /resume may non-blockingly claim a second session while this turn is
         # running. Keep that target protected until _run_turn has flushed its
         # rebound state, then release it together with this turn's source lease.
-        with retained_session_execution_locks(), lease, turn_slot(self._gate) as running:
+        with lease, retained_session_execution_locks(), turn_slot(self._gate) as running:
             if not running:
                 output.finalize(self._busy_message)
                 return None
