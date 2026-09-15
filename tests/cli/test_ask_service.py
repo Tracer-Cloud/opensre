@@ -170,6 +170,38 @@ def test_run_ask_returns_structured_required_choice(monkeypatch) -> None:
     assert "1. Production" in outcome.response
 
 
+def test_run_ask_surfaces_new_choice_after_later_model_failure(monkeypatch) -> None:
+    manager = _FakeSessionManager()
+    session = _FakeSession()
+
+    class _ChoiceThenFailureAgentSession:
+        @classmethod
+        def start(cls, _config: object, **_kwargs: object) -> _ChoiceThenFailureAgentSession:
+            return cls()
+
+        @property
+        def bound_session(self) -> _FakeSession:
+            return session
+
+        def chat(self, _prompt: str) -> TurnResult:
+            session.pending_user_choice = PendingUserChoice(
+                title="Which environment?",
+                options=("Production", "Staging"),
+            )
+            return _not_run_turn()
+
+    monkeypatch.setattr(service, "SessionManager", lambda: manager)
+    monkeypatch.setattr(service, "AgentSession", _ChoiceThenFailureAgentSession)
+
+    outcome = service.run_ask("deploy", allowed_tools=(), bypass_approvals=False)
+
+    assert outcome.status is AskStatus.NEEDS_INPUT
+    assert outcome.session_id == session.session_id
+    assert outcome.questions[0].title == "Which environment?"
+    assert outcome.exit_code is AskExitCode.NEEDS_INPUT
+    assert manager.closed == [(session, False)]
+
+
 def test_resume_prompt_maps_a_number_to_the_pending_option() -> None:
     session = service.SessionCore()
     session.pending_user_choice = PendingUserChoice(

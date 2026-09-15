@@ -126,6 +126,7 @@ class _AskRunState:
 
     session_id: str | None = None
     pending_choice: PendingUserChoice | None = None
+    pending_choice_is_new: bool = False
 
 
 @dataclass(slots=True)
@@ -330,6 +331,7 @@ def _run_agent_turn(
                 pending_user_choice_state_snapshot(session) if session_id is not None else None
             )
             turn_prompt = _resume_prompt(session, prompt) if session_id else prompt
+            restored_prior_choice = False
             try:
                 result = agent_session.chat(turn_prompt)
             except AskSignal:
@@ -353,9 +355,13 @@ def _run_agent_turn(
                 ),
             ):
                 apply_pending_user_choice_state(session, prior_choice_state)
+                restored_prior_choice = True
             output.mark_turn_complete()
             if run_state is not None:
                 run_state.pending_choice = getattr(session, "pending_user_choice", None)
+                run_state.pending_choice_is_new = (
+                    run_state.pending_choice is not None and not restored_prior_choice
+                )
             return result
     finally:
         if session is not None:
@@ -539,7 +545,9 @@ def run_ask(
             response=response or "Agent execution cancelled.",
             exit_code=AskExitCode.SIGINT,
         )
-    if result.action_result.accounting_status == "not_run":
+    if result.action_result.accounting_status == "not_run" and not (
+        run_state.pending_choice is not None and run_state.pending_choice_is_new
+    ):
         return AskOutcome(
             status=AskStatus.ERROR,
             response="",
