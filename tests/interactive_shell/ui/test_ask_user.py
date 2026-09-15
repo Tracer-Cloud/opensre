@@ -96,6 +96,19 @@ def test_answer_block_round_trips_a_multiline_custom_answer() -> None:
     assert parse_ask_user_answers(text) == [(_QUESTIONS[0].title, answers[0])]
 
 
+def test_legacy_answer_keeps_numbered_lines_inside_one_answer() -> None:
+    text = (
+        f"1. {_QUESTIONS[0].title}\n"
+        "A numbered list:\n"
+        "2. Option A\n"
+        "More details"
+    )
+
+    assert parse_ask_user_answers(text) == [
+        (_QUESTIONS[0].title, "A numbered list:\n2. Option A\nMore details")
+    ]
+
+
 def test_wizard_enter_on_each_question_submits(monkeypatch) -> None:
     _patch_wizard(monkeypatch, ["enter", "enter", "enter"])
     picked = repl_ask_user(_QUESTIONS)
