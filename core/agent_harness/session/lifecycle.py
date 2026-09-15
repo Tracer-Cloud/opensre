@@ -299,8 +299,7 @@ class SessionManager:
         raw_dangling_intents = data.get("dangling_tool_intents")
         dangling_intents = raw_dangling_intents if isinstance(raw_dangling_intents, list) else []
         recovery_note = format_recovery_note(dangling_intents)
-        if recovery_note:
-            session.pending_recovery_note = recovery_note
+        session.pending_recovery_note = recovery_note
         return session
 
     def refresh_from_storage(self, session: _S) -> _S:

@@ -106,6 +106,15 @@ def test_resolve_restores_dangling_tool_recovery_note() -> None:
     assert "never blindly repeat" in session.pending_recovery_note
 
 
+def test_restore_context_clears_a_recovery_note_once_intents_are_committed() -> None:
+    session = Session(session_id="sess-1")
+    session.pending_recovery_note = "stale recovery note"
+
+    _manager().restore_context(session, {"dangling_tool_intents": []})
+
+    assert session.pending_recovery_note is None
+
+
 def test_restore_context_ignores_empty_and_malformed() -> None:
     manager = _manager()
     session = Session(session_id="s")
