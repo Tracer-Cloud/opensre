@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import threading
 from pathlib import Path
 
 from core.domain.work_items.models import WorkItemPriority, WorkItemStatus
@@ -66,3 +67,53 @@ def test_update_rejects_empty_title(tmp_path: Path) -> None:
     assert result.item is None
     listed = list_work_items(status=WorkItemStatus.OPEN, store_path=path)
     assert listed[0].title == "keep me"
+
+
+def test_failed_after_save_rolls_back_before_concurrent_update(tmp_path: Path) -> None:
+    path = _path(tmp_path)
+    item = add_work_item(title="keep me", store_path=path)
+    effect_started = threading.Event()
+    release_effect = threading.Event()
+    concurrent_started = threading.Event()
+    concurrent_finished = threading.Event()
+    failures: list[Exception] = []
+
+    def _fail_after_save(_updated: object) -> None:
+        effect_started.set()
+        assert release_effect.wait(timeout=2)
+        raise OSError("sync failed")
+
+    def _failing_update() -> None:
+        try:
+            update_work_item(
+                item.id,
+                changes={"owner": "temporary"},
+                store_path=path,
+                after_save=_fail_after_save,
+            )
+        except Exception as exc:
+            failures.append(exc)
+
+    def _concurrent_update() -> None:
+        concurrent_started.set()
+        update_work_item(item.id, changes={"notes": "newer"}, store_path=path)
+        concurrent_finished.set()
+
+    failing_thread = threading.Thread(target=_failing_update)
+    concurrent_thread = threading.Thread(target=_concurrent_update)
+    failing_thread.start()
+    assert effect_started.wait(timeout=2)
+    concurrent_thread.start()
+    assert concurrent_started.wait(timeout=2)
+    assert not concurrent_finished.wait(timeout=0.1)
+    release_effect.set()
+    failing_thread.join(timeout=2)
+    concurrent_thread.join(timeout=2)
+
+    assert not failing_thread.is_alive()
+    assert not concurrent_thread.is_alive()
+    assert len(failures) == 1
+    assert isinstance(failures[0], OSError)
+    stored = list_work_items(status=None, store_path=path)[0]
+    assert stored.owner == ""
+    assert stored.notes == "newer"

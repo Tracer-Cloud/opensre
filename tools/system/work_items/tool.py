@@ -9,6 +9,7 @@ from core.domain.types.tools import ToolSurface
 from core.domain.work_items import (
     WORK_ITEM_PRIORITIES,
     WORK_ITEM_STATUSES,
+    WorkItem,
     WorkItemChannelTarget,
     WorkItemPriority,
     WorkItemUpdates,
@@ -17,7 +18,6 @@ from core.domain.work_items import (
     list_work_items,
     make_work_item,
     prioritize_work_items,
-    resolve_work_item_selector,
     update_work_item,
     work_items_path,
 )
@@ -27,7 +27,10 @@ from infrastructure.scheduling.scheduler.storage import add_task as add_schedule
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
 from tools.system.work_items._evidence import map_work_task_list, map_work_task_prioritize
 from tools.system.work_items.delivery import delivery_targets, invalid_delivery_targets
-from tools.system.work_items.reminders import schedule_item_reminder
+from tools.system.work_items.reminders import (
+    disable_existing_item_reminders,
+    schedule_item_reminder,
+)
 from tools.system.work_items.results import (
     added_result,
     complete_result,
@@ -296,7 +299,13 @@ def work_task_complete(selectors: list[str]) -> dict[str, Any]:
             "owner": {"type": "string"},
             "project": {"type": "string"},
             "due_at": {"type": "string"},
-            "remind_at": {"type": "string"},
+            "remind_at": {
+                "type": "string",
+                "description": (
+                    "Optional ISO-like reminder datetime; pass an empty string to clear and "
+                    "disable the reminder."
+                ),
+            },
             "notes": {"type": "string"},
             "channel_provider": {"type": "string"},
             "channel_id": {"type": "string"},
@@ -312,7 +321,13 @@ def work_task_complete(selectors: list[str]) -> dict[str, Any]:
                     "additionalProperties": False,
                 },
             },
-            "timezone": {"type": "string", "default": "UTC"},
+            "timezone": {
+                "type": "string",
+                "description": (
+                    "IANA timezone for naive remind_at values. Omit to preserve an existing "
+                    "reminder timezone, or use UTC when adding a reminder."
+                ),
+            },
         },
         "required": ["selector"],
         "additionalProperties": False,
@@ -325,12 +340,12 @@ def work_task_update(
     owner: str = "",
     project: str = "",
     due_at: str = "",
-    remind_at: str = "",
+    remind_at: str | None = None,
     notes: str = "",
     channel_provider: str = "",
     channel_id: str = "",
     channel_targets: list[dict[str, str]] | None = None,
-    timezone: str = "UTC",
+    timezone: str = "",
     context: AgentToolContext | None = None,
 ) -> dict[str, Any]:
     changes: WorkItemUpdates = {}
@@ -350,14 +365,18 @@ def work_task_update(
         changes["project"] = project
     if due_at:
         changes["due_at"] = due_at
-    if remind_at:
+    if remind_at is not None:
         changes["remind_at"] = remind_at
     if notes:
         changes["notes"] = notes
-    for field_name, value in (("due_at", due_at), ("remind_at", remind_at)):
+    datetime_updates = [("due_at", due_at)]
+    if remind_at is not None:
+        datetime_updates.append(("remind_at", remind_at))
+    for field_name, value in datetime_updates:
         error = validate_datetime_arg(value, field=field_name)
         if error is not None:
             return error
+    target_update_requested = channel_targets is not None or bool(channel_provider.strip())
     explicit_targets = delivery_targets(
         provider=channel_provider,
         chat_id=channel_id,
@@ -366,56 +385,65 @@ def work_task_update(
     invalid_targets = invalid_delivery_targets(explicit_targets)
     if invalid_targets:
         return {"error": "invalid_delivery_target", "detail": "; ".join(invalid_targets)}
-    if explicit_targets:
+    if target_update_requested:
         changes["channel_targets"] = explicit_targets
         changes["channel"] = (
             explicit_targets[0].to_dict() if explicit_targets else WorkItemChannelTarget().to_dict()
         )
-    reminder_targets: list[WorkItemChannelTarget] = []
-    if remind_at:
-        existing = resolve_work_item_selector(selector)
-        if existing.item is None:
-            payload: dict[str, Any] = {"error": existing.error or "not_found"}
-            if existing.candidates:
-                payload["candidates"] = [item_summary(item) for item in existing.candidates]
-            return payload
-        reminder_targets = delivery_targets(
-            provider=channel_provider,
-            chat_id=channel_id,
-            item=existing.item,
-            channel_targets=channel_targets,
-            context=context,
+    reminder_update_requested = remind_at is not None or target_update_requested
+    scheduled: ScheduledTask | None = None
+
+    def _synchronize_reminder(item: WorkItem) -> None:
+        nonlocal scheduled
+        reminder_targets = (
+            list(item.channel_targets)
+            if target_update_requested
+            else delivery_targets(provider="", chat_id="", item=item, context=context)
         )
-        invalid_reminder_targets = invalid_delivery_targets(reminder_targets)
-        if invalid_reminder_targets:
-            return {
-                "error": "invalid_delivery_target",
-                "detail": "; ".join(invalid_reminder_targets),
-                "task": item_summary(existing.item),
-            }
-        if not reminder_targets:
-            return {
-                "error": "missing_delivery_target",
-                "detail": "remind_at needs at least one provider target",
-                "task": item_summary(existing.item),
-            }
-    result = update_work_item(selector, changes=changes)
+        if item.remind_at:
+            invalid_reminder_targets = invalid_delivery_targets(reminder_targets)
+            if invalid_reminder_targets:
+                raise _ReminderSyncValidationError(
+                    "invalid_delivery_target", "; ".join(invalid_reminder_targets)
+                )
+            if not reminder_targets:
+                raise _ReminderSyncValidationError(
+                    "missing_delivery_target", "remind_at needs at least one provider target"
+                )
+            scheduled = schedule_item_reminder(
+                item,
+                targets=reminder_targets,
+                timezone=timezone,
+            )
+        else:
+            disable_existing_item_reminders(item.id)
+
+    try:
+        result = update_work_item(
+            selector,
+            changes=changes,
+            after_save=_synchronize_reminder if reminder_update_requested else None,
+        )
+    except _ReminderSyncValidationError as exc:
+        return {"error": exc.error, "detail": exc.detail}
     if result.item is None:
         update_error_payload: dict[str, Any] = {"error": result.error or "not_found"}
         if result.candidates:
             update_error_payload["candidates"] = [item_summary(item) for item in result.candidates]
         return update_error_payload
-    scheduled = None
-    if remind_at:
-        scheduled = schedule_item_reminder(
-            result.item,
-            targets=reminder_targets,
-            timezone=timezone or "UTC",
-        )
     result_payload = update_result(result.item)
     if scheduled is not None:
         result_payload["scheduled_task_id"] = scheduled.id
     return result_payload
+
+
+class _ReminderSyncValidationError(ValueError):
+    """Carry a user-facing validation error through transactional rollback."""
+
+    def __init__(self, error: str, detail: str) -> None:
+        super().__init__(detail)
+        self.error = error
+        self.detail = detail
 
 
 @tool(

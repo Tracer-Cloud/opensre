@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import dataclasses
+import json
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from core.domain.work_items import WorkItemChannelTarget, WorkItemPriority, make_work_item
+from infrastructure.scheduling.scheduler.storage.task_store import list_tasks
 from infrastructure.scheduling.scheduler.types import Provider
 from tools.system.work_items._evidence import map_work_task_list, map_work_task_prioritize
 from tools.system.work_items.delivery import (
@@ -150,8 +152,6 @@ def test_reminder_scheduling(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     scheduled = schedule_item_reminder(item, targets=targets, timezone="UTC")
     assert scheduled is not None
 
-    from infrastructure.scheduling.scheduler.storage.task_store import list_tasks
-
     tasks = list_tasks()
     assert len(tasks) == 1
     assert tasks[0].enabled is True
@@ -165,6 +165,135 @@ def test_reminder_scheduling(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     assert len(tasks) == 2
     assert tasks[0].enabled is False
     assert tasks[1].enabled is True
+
+
+@pytest.fixture()
+def work_reminder_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
+    work_items_file = tmp_path / "work_items.json"
+    scheduler_file = tmp_path / "scheduler_tasks.json"
+    monkeypatch.setattr("tools.system.work_items.tool.work_items_path", lambda: work_items_file)
+    monkeypatch.setattr("tools.system.work_items.results.work_items_path", lambda: work_items_file)
+    monkeypatch.setattr(
+        "tools.system.work_items.reminders.work_items_path", lambda: work_items_file
+    )
+    monkeypatch.setattr("core.domain.work_items.store.work_items_path", lambda: work_items_file)
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.task_store.default_task_store_path",
+        lambda: scheduler_file,
+    )
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.reload_signal.request_scheduler_reload",
+        lambda: None,
+    )
+    return scheduler_file
+
+
+def test_work_task_update_replaces_reminder_destination(
+    work_reminder_store: Path,
+) -> None:
+    created = work_task_add(
+        title="Rotate API key",
+        remind_at="2026-09-12T09:00:00",
+        channel_provider="slack",
+        channel_id="C1",
+        timezone="America/New_York",
+    )
+
+    updated = work_task_update(
+        selector=created["task"]["id"],
+        channel_provider="slack",
+        channel_id="C2",
+    )
+
+    tasks = list_tasks(work_reminder_store)
+    active = [task for task in tasks if task.enabled]
+    assert updated["task"]["channel_targets"] == [{"provider": "slack", "chat_id": "C2"}]
+    assert len(tasks) == 2
+    assert len(active) == 1
+    assert active[0].timezone == "America/New_York"
+    assert json.loads(active[0].params["delivery_targets"]) == [
+        {"provider": "slack", "chat_id": "C2"}
+    ]
+
+
+def test_work_task_update_reschedules_existing_reminder(
+    work_reminder_store: Path,
+) -> None:
+    created = work_task_add(
+        title="Rotate API key",
+        remind_at="2026-09-12T09:00:00Z",
+        channel_provider="slack",
+        channel_id="C1",
+    )
+    original = list_tasks(work_reminder_store)[0]
+
+    updated = work_task_update(
+        selector=created["task"]["id"],
+        remind_at="2026-09-12T14:00:00Z",
+    )
+
+    tasks = list_tasks(work_reminder_store)
+    active = [task for task in tasks if task.enabled]
+    assert updated["task"]["remind_at"] == "2026-09-12T14:00:00Z"
+    assert len(tasks) == 2
+    assert len(active) == 1
+    assert active[0].id == updated["scheduled_task_id"]
+    assert active[0].cron != original.cron
+    assert next(task for task in tasks if task.id == original.id).enabled is False
+
+
+def test_work_task_update_clears_and_disables_reminder(
+    work_reminder_store: Path,
+) -> None:
+    created = work_task_add(
+        title="Rotate API key",
+        remind_at="2026-09-12T09:00:00Z",
+        channel_provider="slack",
+        channel_id="C1",
+    )
+
+    updated = work_task_update(selector=created["task"]["id"], remind_at="")
+
+    tasks = list_tasks(work_reminder_store)
+    assert updated["task"]["remind_at"] == ""
+    assert "scheduled_task_id" not in updated
+    assert len(tasks) == 1
+    assert tasks[0].enabled is False
+
+
+def test_work_task_update_rolls_back_when_reminder_sync_fails(
+    work_reminder_store: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    created = work_task_add(
+        title="Rotate API key",
+        remind_at="2026-09-12T09:00:00Z",
+        channel_provider="slack",
+        channel_id="C1",
+    )
+
+    def _explode(_store_path: Path, _data: list[dict[str, object]]) -> None:
+        raise OSError("replacement write failed")
+
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.task_store._save_raw", _explode
+    )
+
+    with pytest.raises(OSError, match="replacement write failed"):
+        work_task_update(
+            selector=created["task"]["id"],
+            channel_provider="slack",
+            channel_id="C2",
+        )
+
+    stored_item = work_task_list(status="all")["tasks"][0]
+    tasks = list_tasks(work_reminder_store)
+    assert stored_item["channel_targets"] == [{"provider": "slack", "chat_id": "C1"}]
+    assert len(tasks) == 1
+    assert tasks[0].enabled is True
+    assert json.loads(tasks[0].params["delivery_targets"]) == [
+        {"provider": "slack", "chat_id": "C1"}
+    ]
 
 
 def test_work_task_tools_lifecycle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
