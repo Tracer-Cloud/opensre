@@ -229,8 +229,16 @@ def _restrict_ask_capabilities(
 
 
 def _resumed_turn_did_not_complete(result: TurnResult) -> bool:
-    """Whether a consumed choice must be restored so the user can retry it."""
-    return result.cancelled or result.action_result.accounting_status == "not_run"
+    """Whether a consumed choice can safely be restored for a retry.
+
+    A cancellation before any action ran is safe to retry.  Once a tool has
+    executed, restoring the consumed choice would let a later resume repeat a
+    potentially mutating action.
+    """
+    action = result.action_result
+    return action.accounting_status == "not_run" or (
+        result.cancelled and action.executed_count == 0
+    )
 
 
 def _run_agent_turn(

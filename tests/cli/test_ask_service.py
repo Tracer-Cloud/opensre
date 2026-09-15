@@ -26,12 +26,13 @@ def _turn(
     response: str = "answer",
     *,
     cancelled: bool = False,
+    executed_count: int = 0,
 ) -> TurnResult:
     return TurnResult(
         final_intent="cli_agent_cancelled" if cancelled else "answer",
         action_result=ToolCallingTurnResult(
             planned_count=0,
-            executed_count=0,
+            executed_count=executed_count,
             executed_success_count=0,
             has_unhandled_clause=False,
             handled=False,
@@ -490,6 +491,39 @@ def test_unsuccessful_resumed_turn_restores_pending_choice_state(
 
     assert session.pending_user_choice == pending
     assert session.questions_already_answered == {"earlier question"}
+    assert manager.closed == [(session, False)]
+
+
+def test_cancelled_resumed_turn_after_tool_work_does_not_restore_choice(monkeypatch) -> None:
+    manager = _FakeSessionManager()
+    session = _FakeSession()
+    session.pending_user_choice = PendingUserChoice(
+        title="Which environment?",
+        options=("Production", "Staging"),
+    )
+    session.questions_already_answered = {"earlier question"}
+
+    class _CancelledAfterActionAgentSession:
+        @classmethod
+        def start(cls, _config: object, **_kwargs: object) -> _CancelledAfterActionAgentSession:
+            return cls()
+
+        @property
+        def bound_session(self) -> _FakeSession:
+            return session
+
+        def chat(self, _prompt: str) -> TurnResult:
+            return _turn(cancelled=True, executed_count=1)
+
+    monkeypatch.setattr(service, "SessionManager", lambda: manager)
+    monkeypatch.setattr(service, "AgentSession", _CancelledAfterActionAgentSession)
+
+    service._run_agent_turn(
+        "1", ToolExecutionHooks(), session_id=session.session_id, ephemeral=False
+    )
+
+    assert session.pending_user_choice is None
+    assert session.questions_already_answered == {"earlier question", "which environment?"}
     assert manager.closed == [(session, False)]
 
 
