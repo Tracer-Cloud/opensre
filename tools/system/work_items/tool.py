@@ -197,6 +197,11 @@ def work_task_add(
         "List durable human work items. Use when the user asks for all tasks still to do, "
         "hackathon task overview, completed tasks, blocked tasks, or project-specific todos."
     ),
+    use_cases=[
+        "User asks to see open tasks or what is still to do",
+        "User wants completed, blocked, or project-specific work items",
+        "User asks for a hackathon task overview",
+    ],
     tags=("safe", "fast", "no-credentials"),
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.READ_ONLY,
@@ -244,6 +249,10 @@ def work_task_list(
         "Mark one or more durable work items as completed by id, display id, title, or title fragment. "
         "Use when the user says a task is done or asks to mark tasks Y and Z completed."
     ),
+    use_cases=[
+        "User says a task is done or finished",
+        "User asks to mark several tasks completed at once",
+    ],
     tags=("safe", "fast", "no-credentials"),
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
@@ -279,6 +288,11 @@ def work_task_complete(selectors: list[str]) -> dict[str, Any]:
         "Update a durable work item's status, priority, owner, project, due time, reminder time, "
         "notes, or reminder channel."
     ),
+    use_cases=[
+        "User changes a task's status, priority, owner, or project",
+        "User moves a task's due time or reminder time",
+        "User wants a task's reminder delivered to a different channel",
+    ],
     tags=("safe", "fast", "no-credentials"),
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
@@ -426,6 +440,10 @@ def work_task_update(
         "Rank durable work items or a supplied candidate list to answer 'what should I focus on next?' "
         "and 'which of these tasks should I pick up?'. Use the returned reasons in the final answer."
     ),
+    use_cases=[
+        "User asks what to focus on or pick up next",
+        "User supplies candidate tasks and asks which to do first",
+    ],
     tags=("safe", "fast", "no-credentials"),
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.READ_ONLY,

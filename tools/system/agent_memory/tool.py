@@ -116,6 +116,10 @@ def memory_remember(name: str, type: str, description: str, content: str) -> dic
         "Delete one memory from local long-term memory by exact name. Use when the "
         "user asks to forget something or a stored fact is no longer true."
     ),
+    use_cases=[
+        "User asks OpenSRE to forget something",
+        "A stored memory is no longer true and should be removed",
+    ],
     tags=("safe", "fast", "no-credentials"),
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
@@ -145,6 +149,11 @@ def memory_forget(name: str) -> dict[str, Any]:
         "Read long-term memories: pass 'name' for one full entry, 'query' to keyword-"
         "search names, descriptions, and bodies, or no arguments to list the index."
     ),
+    use_cases=[
+        "User asks what OpenSRE remembers about them, a repository, or a system",
+        "A stored fact may answer the current question before asking the user again",
+        "User asks to search memory for a keyword or topic",
+    ],
     tags=("safe", "fast", "no-credentials"),
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.READ_ONLY,
