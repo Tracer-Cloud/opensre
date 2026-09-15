@@ -6,6 +6,7 @@ import io
 import json
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -1443,6 +1444,59 @@ class TestResumeCommand:
 
         assert session.session_id == old_id
         assert "no conversation to resume" in buf.getvalue()
+
+    def test_apply_resume_waits_for_the_target_session_lease(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """/resume must not rebind a session another host is still mutating."""
+        from core.agent_harness.session import InMemorySessionStore
+        from infrastructure.turn_host.session_lock import session_execution_lock
+        from surfaces.interactive_shell.command_registry.session_cmds import _apply_resume_data
+
+        monkeypatch.setattr(
+            "infrastructure.turn_host.session_lock.sessions_dir",
+            lambda: tmp_path,
+        )
+        target_id = "target-session-123"
+        data = {
+            "session_id": target_id,
+            "name": "Target",
+            "cli_agent_messages": [("user", "resume me")],
+            "accumulated_context": {},
+            "history": [],
+            "turn_details": [],
+            "has_snapshot": True,
+        }
+        session = Session()
+        session.store = InMemorySessionStore()
+        old_id = session.session_id
+        console, _ = _capture()
+        attempted = threading.Event()
+        completed = threading.Event()
+        errors: list[Exception] = []
+
+        def _resume() -> None:
+            try:
+                attempted.set()
+                _apply_resume_data(data, session, console)
+                completed.set()
+            except Exception as exc:
+                errors.append(exc)
+
+        with session_execution_lock(target_id):
+            thread = threading.Thread(target=_resume)
+            thread.start()
+            assert attempted.wait(timeout=1)
+            assert not completed.wait(timeout=0.2)
+            assert session.session_id == old_id
+
+        thread.join(timeout=5)
+        assert not thread.is_alive()
+        assert not errors, errors
+        assert completed.is_set()
+        assert session.session_id == target_id
 
     def test_apply_resume_displays_history_in_repl_format(self, tmp_path: Path) -> None:
         """History display uses REPL turn order and includes slash commands."""

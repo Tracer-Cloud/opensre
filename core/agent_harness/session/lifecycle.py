@@ -40,6 +40,7 @@ from core.agent_harness.session.persistence.contracts import (
     SessionRepo,
     SessionStore,
 )
+from core.agent_harness.session.persistence.wal_recovery import format_recovery_note
 
 # Import from submodules (not the package __init__) so the session package can
 # re-export SessionManager without a circular import.
@@ -295,6 +296,11 @@ class SessionManager:
         history = data.get(RestoreContextKey.HISTORY)
         if isinstance(history, list):
             session.history = [dict(item) for item in history if isinstance(item, dict)]
+        raw_dangling_intents = data.get("dangling_tool_intents")
+        dangling_intents = raw_dangling_intents if isinstance(raw_dangling_intents, list) else []
+        recovery_note = format_recovery_note(dangling_intents)
+        if recovery_note:
+            session.pending_recovery_note = recovery_note
         return session
 
     def refresh_from_storage(self, session: _S) -> _S:
