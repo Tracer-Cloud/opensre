@@ -527,6 +527,44 @@ def test_cancelled_resumed_turn_after_tool_work_does_not_restore_choice(monkeypa
     assert manager.closed == [(session, False)]
 
 
+def test_not_run_resumed_turn_after_tool_start_does_not_restore_choice(monkeypatch) -> None:
+    manager = _FakeSessionManager()
+    session = _FakeSession()
+    session.pending_user_choice = PendingUserChoice(
+        title="Which environment?",
+        options=("Production", "Staging"),
+    )
+    session.questions_already_answered = {"earlier question"}
+
+    class _FailedAfterToolAgentSession:
+        observer: object | None = None
+
+        @classmethod
+        def start(cls, _config: object, **kwargs: object) -> _FailedAfterToolAgentSession:
+            cls.observer = kwargs["tool_event_observer"]
+            return cls()
+
+        @property
+        def bound_session(self) -> _FakeSession:
+            return session
+
+        def chat(self, _prompt: str) -> TurnResult:
+            assert callable(type(self).observer)
+            type(self).observer("tool_start", {"name": "deploy"})
+            return _not_run_turn()
+
+    monkeypatch.setattr(service, "SessionManager", lambda: manager)
+    monkeypatch.setattr(service, "AgentSession", _FailedAfterToolAgentSession)
+
+    service._run_agent_turn(
+        "1", ToolExecutionHooks(), session_id=session.session_id, ephemeral=False
+    )
+
+    assert session.pending_user_choice is None
+    assert session.questions_already_answered == {"earlier question", "which environment?"}
+    assert manager.closed == [(session, False)]
+
+
 def test_signal_during_resumed_turn_restores_pending_choice_state(monkeypatch) -> None:
     manager = _FakeSessionManager()
     session = _FakeSession()

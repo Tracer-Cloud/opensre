@@ -15,7 +15,7 @@ from contextlib import contextmanager
 
 from rich.console import Console
 
-from core.agent_harness import SessionCore
+from core.agent_harness import SessionCore, SessionManager
 from core.agent_harness.ports import SlashPortsFactory
 from core.agent_harness.runtime import (
     AgentBuildConfig,
@@ -123,6 +123,10 @@ class SessionAgentPool:
             yield self.agent_for(session=session, output=output, logger=logger)
             return
         with self._lock_for(session_id), session_execution_lock(session_id):
+            # Gateway ingress resolves before taking this cross-host lease. A
+            # CLI resume could have completed while it waited, so reload the
+            # persisted branch before this turn binds or later flushes it.
+            SessionManager.for_session(session).refresh_from_storage(session)
             yield self.agent_for(session=session, output=output, logger=logger)
 
     def agent_for(

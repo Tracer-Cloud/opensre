@@ -297,6 +297,18 @@ class SessionManager:
             session.history = [dict(item) for item in history if isinstance(item, dict)]
         return session
 
+    def refresh_from_storage(self, session: _S) -> _S:
+        """Refresh persisted state on a live handle without recreating its ports.
+
+        A gateway may resolve a session before waiting for another host's
+        whole-turn lease. Once it acquires that lease, refresh the transcript
+        and resumable workflow state before the next turn mutates or flushes it.
+        """
+        data = self._repo.load_session(session.session_id)
+        if data is not None:
+            self.restore_context(session, data)
+        return session
+
     def close(
         self,
         session: SessionCore,

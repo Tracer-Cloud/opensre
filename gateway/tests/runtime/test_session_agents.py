@@ -11,6 +11,7 @@ import pytest
 from rich.console import Console
 
 from core.agent_harness.session import SessionCore
+from core.agent_harness.session.pending_choice import PendingUserChoice
 from core.agent_harness.session.persistence.memory import InMemorySessionStore
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
 from infrastructure.turn_host.bindable_output import BindableOutput
@@ -255,6 +256,61 @@ def test_pool_waits_for_a_session_lease_held_by_another_host(
     thread.join(timeout=5)
     assert not thread.is_alive()
     assert entered.is_set()
+
+
+def test_pool_refreshes_session_after_acquiring_external_lease(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A host waiting behind CLI resume must not run with stale session state."""
+    import threading
+
+    monkeypatch.setattr(
+        "infrastructure.turn_host.session_lock.sessions_dir",
+        lambda: tmp_path,
+    )
+    pool = _fake_agent_pool(monkeypatch)
+    logger = logging.getLogger("test.pool.refresh-after-lease")
+    session = SessionCore(store=InMemorySessionStore())
+    session.cli_agent_messages = [("user", "stale request")]
+    session.pending_user_choice = PendingUserChoice(
+        title="Stale choice",
+        options=("old",),
+    )
+    attempted = threading.Event()
+    refreshed = threading.Event()
+
+    def refresh_from_storage(_manager: object, target: SessionCore) -> SessionCore:
+        target.cli_agent_messages = [("user", "resumed request")]
+        target.pending_user_choice = PendingUserChoice(
+            title="Fresh choice",
+            options=("new",),
+        )
+        refreshed.set()
+        return target
+
+    monkeypatch.setattr(
+        "infrastructure.turn_host.session_agents.SessionManager.refresh_from_storage",
+        refresh_from_storage,
+    )
+
+    def _enter_pool() -> None:
+        attempted.set()
+        with pool.session_agent(session=session, output=MagicMock(), logger=logger):
+            return
+
+    with session_execution_lock(session.session_id):
+        thread = threading.Thread(target=_enter_pool)
+        thread.start()
+        assert attempted.wait(timeout=1)
+        assert not refreshed.wait(timeout=0.2)
+
+    thread.join(timeout=5)
+    assert not thread.is_alive()
+    assert refreshed.is_set()
+    assert session.cli_agent_messages == [("user", "resumed request")]
+    assert session.pending_user_choice is not None
+    assert session.pending_user_choice.title == "Fresh choice"
 
 
 def test_different_sessions_still_run_concurrently(monkeypatch: pytest.MonkeyPatch) -> None:

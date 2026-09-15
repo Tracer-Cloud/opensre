@@ -128,6 +128,20 @@ class _AskRunState:
     pending_choice: PendingUserChoice | None = None
 
 
+@dataclass(slots=True)
+class _ResumedToolWorkObserver:
+    """Remember whether a resumed turn reached the durable tool-start boundary."""
+
+    observer: ToolEventObserver | None
+    tool_work_started: bool = False
+
+    def __call__(self, kind: str, data: dict[str, Any]) -> None:
+        if kind == "tool_start":
+            self.tool_work_started = True
+        if self.observer is not None:
+            self.observer(kind, data)
+
+
 class _CancellableConsole:
     def __init__(self, cancel_event: threading.Event) -> None:
         self._cancel_event = cancel_event
@@ -228,13 +242,19 @@ def _restrict_ask_capabilities(
     )
 
 
-def _resumed_turn_did_not_complete(result: TurnResult) -> bool:
+def _resumed_turn_did_not_complete(
+    result: TurnResult,
+    *,
+    tool_work_started: bool,
+) -> bool:
     """Whether a consumed choice can safely be restored for a retry.
 
     A cancellation before any action ran is safe to retry.  Once a tool has
     executed, restoring the consumed choice would let a later resume repeat a
     potentially mutating action.
     """
+    if tool_work_started:
+        return False
     action = result.action_result
     return action.accounting_status == "not_run" or (
         result.cancelled and action.executed_count == 0
@@ -255,6 +275,9 @@ def _run_agent_turn(
     output = output or _AskOutputSink()
     cancel_event = ensure_turn_cancel(output)
     console = _CancellableConsole(cancel_event)
+    tool_work_observer = (
+        _ResumedToolWorkObserver(tool_event_observer) if session_id is not None else None
+    )
     session: SessionCore | None = None
     try:
         with ask_signal_scope(cancel_event), _ask_log_scope():
@@ -277,7 +300,7 @@ def _run_agent_turn(
                 surface=PromptSurface.HEADLESS_CLI.value,
                 is_tty=False,
                 tool_hooks=hooks,
-                tool_event_observer=tool_event_observer,
+                tool_event_observer=tool_work_observer or tool_event_observer,
             )
             session = agent_session.bound_session
             if session is None:
@@ -292,15 +315,22 @@ def _run_agent_turn(
                 result = agent_session.chat(turn_prompt)
             except AskSignal:
                 # A failed resume must not consume its still-unhandled question.
-                if prior_choice_state is not None:
+                if prior_choice_state is not None and not (
+                    tool_work_observer and tool_work_observer.tool_work_started
+                ):
                     apply_pending_user_choice_state(session, prior_choice_state)
                 raise
             except Exception:
                 # A failed resume must not consume its still-unhandled question.
-                if prior_choice_state is not None:
+                if prior_choice_state is not None and not (
+                    tool_work_observer and tool_work_observer.tool_work_started
+                ):
                     apply_pending_user_choice_state(session, prior_choice_state)
                 raise
-            if prior_choice_state is not None and _resumed_turn_did_not_complete(result):
+            if prior_choice_state is not None and _resumed_turn_did_not_complete(
+                result,
+                tool_work_started=bool(tool_work_observer and tool_work_observer.tool_work_started),
+            ):
                 apply_pending_user_choice_state(session, prior_choice_state)
             output.mark_turn_complete()
             if run_state is not None:
