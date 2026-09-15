@@ -122,7 +122,10 @@ class SessionAgentPool:
             # No id means no cache entry and nothing shared to protect.
             yield self.agent_for(session=session, output=output, logger=logger)
             return
-        with self._lock_for(session_id), session_execution_lock(session_id, reentrant=True):
+        # Take the cross-host lease first, matching TurnRunner.run.  A direct
+        # pool caller that waited on another host must not hold this process's
+        # agent lock while a runner holds the lease and waits for that lock.
+        with session_execution_lock(session_id, reentrant=True), self._lock_for(session_id):
             # Gateway ingress resolves before taking this cross-host lease. A
             # CLI resume could have completed while it waited, so reload the
             # persisted branch before this turn binds or later flushes it.

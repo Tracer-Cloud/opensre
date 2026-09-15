@@ -278,6 +278,39 @@ def test_session_execution_lock_is_reentrant_on_one_thread(
         pass
 
 
+def test_pool_claims_session_lease_before_its_process_local_lock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Direct pool callers use the same lock order as TurnRunner."""
+    from contextlib import contextmanager
+
+    pool = _fake_agent_pool(monkeypatch)
+    session = SessionCore(store=InMemorySessionStore())
+    logger = logging.getLogger("test.pool.lock-order")
+    entered: list[str] = []
+
+    @contextmanager
+    def _lease(_session_id: str, **_kwargs: object):
+        entered.append("lease")
+        yield
+
+    class _LocalLock:
+        def __enter__(self) -> None:
+            entered.append("local")
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+    monkeypatch.setattr(
+        "infrastructure.turn_host.session_agents.session_execution_lock",
+        _lease,
+    )
+    monkeypatch.setattr(pool, "_lock_for", lambda _session_id: _LocalLock())
+
+    with pool.session_agent(session=session, output=MagicMock(), logger=logger):
+        assert entered == ["lease", "local"]
+
+
 def test_pool_refreshes_session_after_acquiring_external_lease(
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
