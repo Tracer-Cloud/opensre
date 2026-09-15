@@ -73,6 +73,32 @@ class TestDeliveryPlan:
 
         assert [t.chat_id for t in plan.targets] == ["C1", "C2"]
 
+    def test_empty_slack_target_resolves_against_current_credentials(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        task = _task(
+            provider=Provider.SLACK,
+            params={"delivery_targets": json.dumps([{"provider": "slack", "chat_id": ""}])},
+        )
+        monkeypatch.setattr(
+            "infrastructure.scheduling.scheduler.delivery_plan.resolve_slack_credentials",
+            lambda _params: {"access_token": "xoxb-test"},
+        )
+        monkeypatch.setattr(
+            "infrastructure.scheduling.scheduler.delivery_plan.resolve_slack_delivery_chat_id",
+            lambda _task, webhook_url: "C-bot" if not webhook_url else "",
+        )
+
+        bot_plan = resolve_delivery_plan(task)
+        assert [target.chat_id for target in bot_plan.targets] == ["C-bot"]
+
+        monkeypatch.setattr(
+            "infrastructure.scheduling.scheduler.delivery_plan.resolve_slack_credentials",
+            lambda _params: {"webhook_url": "https://hooks.slack.com/x"},
+        )
+        webhook_plan = resolve_delivery_plan(task)
+        assert [target.chat_id for target in webhook_plan.targets] == [""]
+
     def test_unreadable_targets_fall_back_to_the_task_destination(self) -> None:
         task = _task(provider=Provider.SLACK, chat_id="C123", params={"delivery_targets": "{oops"})
 
