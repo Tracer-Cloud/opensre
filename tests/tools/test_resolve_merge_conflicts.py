@@ -167,6 +167,58 @@ def test_user_instructions_reach_the_coding_agent(tmp_path: Path) -> None:
     assert "Instructions from the user: keep the feature branch greeting" in tasks[0]
 
 
+def test_an_agent_cut_short_after_settling_every_conflict_still_gets_the_merge_committed(
+    tmp_path: Path,
+) -> None:
+    # Arrange: the agent resolves app.py, then its test run overruns the timeout.
+    work = _stopped_merge(tmp_path)
+
+    def resolve(task: str, **_kwargs: object) -> CodingResult:
+        del task
+        (work / "app.py").write_text("greeting = 'hello, world'\n")
+        return CodingResult(
+            success=False, summary="Kept the feature greeting.", error="timed out", timed_out=True
+        )
+
+    # Act
+    with patch(_VERIFY, return_value=(True, "ready")), patch(_RUN, side_effect=resolve):
+        out = resolve_merge_conflicts.run(workspace=str(work))
+
+    # Assert: committed, with the cut-short run recorded rather than a false "still conflicted".
+    assert out["success"] is True and out["unresolved_files"] == []
+    assert merge_in_progress(str(work)) is False
+    assert out["commit_sha"] == head_sha(str(work))
+    assert "ran out of time after resolving every conflict" in out["coding_agent_summary"]
+    assert "Kept the feature greeting." in out["coding_agent_summary"]
+
+
+def test_a_failed_run_that_cleared_markers_is_not_committed(tmp_path: Path) -> None:
+    # Arrange: a provider/process failure can leave the tree without markers
+    # without having finished the resolution; that is not the timeout recovery.
+    work = _stopped_merge(tmp_path)
+    before = head_sha(str(work))
+
+    def fail_after_edit(_task: str, **_kwargs: object) -> CodingResult:
+        (work / "app.py").write_text("greeting = 'hello, world'\n")
+        return CodingResult(
+            success=False, summary="Kept the feature greeting.", error="provider error"
+        )
+
+    # Act
+    with patch(_VERIFY, return_value=(True, "ready")), patch(_RUN, side_effect=fail_after_edit):
+        out = resolve_merge_conflicts.run(workspace=str(work))
+
+    # Assert
+    assert out["success"] is False
+    assert out["error_kind"] == "execution_error"
+    assert "provider error" in out["error"]
+    assert out["commit_sha"] is None
+    assert out["merge_in_progress"] is True
+    assert merge_in_progress(str(work)) is True
+    assert head_sha(str(work)) == before
+    assert (work / "app.py").read_text() == "greeting = 'hello, world'\n"
+
+
 def test_no_coding_agent_reports_the_files_and_keeps_the_merge_open(tmp_path: Path) -> None:
     # Arrange
     work = _stopped_merge(tmp_path)
