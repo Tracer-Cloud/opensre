@@ -54,6 +54,11 @@ def test_main_release_runs_only_after_successful_main_ci() -> None:
         step for step in prepare["steps"] if step.get("name") == "Resolve release metadata"
     )
     assert "git diff --name-only" in metadata["run"]
+    assert '"$released_sha" "$source_sha"' in metadata["run"]
+    assert '"${source_sha}^1"' not in metadata["run"]
+    assert "refs/tags/main-build^{commit}" in metadata["run"]
+    assert "git merge-base --is-ancestor" in metadata["run"]
+    assert "git ls-tree -r --name-only" in metadata["run"]
     assert "python3 .github/ci/release_paths.py" in metadata["run"]
 
 

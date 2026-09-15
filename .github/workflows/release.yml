@@ -78,9 +78,20 @@ jobs:
           fi
 
           if [ "$EVENT_NAME" = "workflow_run" ]; then
-            changed_paths="$(git diff --name-only "${source_sha}^1" "$source_sha")"
+            released_sha="$(git rev-parse -q --verify "refs/tags/main-build^{commit}" || true)"
+            if [ -n "$released_sha" ]; then
+              if ! git merge-base --is-ancestor "$released_sha" "$source_sha"; then
+                echo "The validated commit predates the current rolling release."
+                echo "channel=skip" >> "$GITHUB_OUTPUT"
+                echo "source_sha=${source_sha}" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              changed_paths="$(git diff --name-only "$released_sha" "$source_sha")"
+            else
+              changed_paths="$(git ls-tree -r --name-only "$source_sha")"
+            fi
             if [ "$(printf '%s\n' "$changed_paths" | python3 .github/ci/release_paths.py)" != "true" ]; then
-              echo "The validated commit only changes paths excluded from rolling releases."
+              echo "No unreleased validated paths require a rolling release."
               echo "channel=skip" >> "$GITHUB_OUTPUT"
               echo "source_sha=${source_sha}" >> "$GITHUB_OUTPUT"
               exit 0
