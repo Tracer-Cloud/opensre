@@ -172,6 +172,7 @@ include = [
 [tool.setuptools.package-data]
 "core.agent_harness.prompts" = ["opensre_system_prompt.md", "skills/**/*.md", "skills/**/scripts/*.py"]
 "integrations" = ["**/SKILL.md", "yandex_cloud/api_index.json"]
+"surfaces.cli.lifecycle.windows" = ["*.ps1"]
 "tools" = ["**/SKILL.md"]
 
 # With pytest-xdist (-n auto), each worker writes a fragment; put them under

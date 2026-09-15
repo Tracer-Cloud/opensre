@@ -1,11 +1,25 @@
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
 
+from config.constants.installer import (
+    WINDOWS_APP_DIR_NAME,
+    WINDOWS_INSTALL_LOCK_FILENAME,
+    WINDOWS_LAUNCHER_FILENAME,
+)
 from config.constants.paths import OPENSRE_HOME_DIR
+from surfaces.cli.lifecycle.windows import (
+    MalformedWindowsInstallError,
+    WindowsBinaryInstall,
+    classify_windows_binary_install,
+    schedule_windows_cleanup,
+    schedule_windows_managed_cleanup,
+    windows_processes_using_tree,
+)
 
 
 def _is_windows() -> bool:
@@ -86,7 +100,23 @@ def _binary_install_paths(exe_path: Path | None = None) -> list[Path]:
 def run_uninstall(*, yes: bool = False) -> int:
     dirs = _data_dirs()
     binary = _is_binary_install()
-    binary_paths = _binary_install_paths() if binary else []
+    windows_binary = binary and _is_windows()
+    windows_install: WindowsBinaryInstall | None = None
+    if windows_binary:
+        try:
+            windows_install = classify_windows_binary_install()
+        except MalformedWindowsInstallError as exc:
+            print(f"  error    {exc}", file=sys.stderr)
+            print("           Nothing was deleted.", file=sys.stderr)
+            print(
+                "           Inspect or move the unverified .opensre-app directory aside, "
+                "then reinstall with install.ps1 before retrying uninstall.",
+                file=sys.stderr,
+            )
+            return 1
+        binary_paths = list(windows_install.paths)
+    else:
+        binary_paths = _binary_install_paths() if binary else []
 
     print()
     print("  The following will be permanently deleted:")
@@ -115,29 +145,100 @@ def run_uninstall(*, yes: bool = False) -> int:
             print("  Cancelled.")
             return 0
 
+    if windows_binary:
+        # Deliberate revalidation, not a redundant call: the layout can change while
+        # the confirmation prompt is open, so ownership is re-proven before any
+        # deletion is scheduled.
+        try:
+            windows_install = classify_windows_binary_install()
+        except MalformedWindowsInstallError as exc:
+            print(f"  error    {exc}", file=sys.stderr)
+            print("           Nothing was deleted.", file=sys.stderr)
+            return 1
+        binary_paths = list(windows_install.paths)
+        if windows_install.app_root is not None:
+            running, process_error = windows_processes_using_tree(
+                windows_install.app_root,
+                current_pid=os.getpid(),
+            )
+            if process_error is not None:
+                print(f"  error    {process_error}", file=sys.stderr)
+                print(
+                    "           Nothing was deleted. Close other OpenSRE processes and retry.",
+                    file=sys.stderr,
+                )
+                return 1
+            if running:
+                print(
+                    "  error    another OpenSRE process is using this Windows bundle:",
+                    file=sys.stderr,
+                )
+                for pid, process_path in running:
+                    print(f"           PID {pid}: {process_path}", file=sys.stderr)
+                print(
+                    "           Nothing was deleted. Close the other OpenSRE process and retry.",
+                    file=sys.stderr,
+                )
+                return 1
+
     print()
 
     any_error = False
-
-    for d in dirs:
-        if not d.exists():
-            print(f"  skipped  {d}  (not found)")
-            continue
-        ok, err = _remove_path(d)
-        if ok:
-            print(f"  deleted  {d}")
+    deferred_cleanup = False
+    if windows_binary:
+        assert windows_install is not None
+        if windows_install.app_root is not None:
+            ok, err = schedule_windows_managed_cleanup(
+                executable=windows_install.executable,
+                app_root=windows_install.app_root,
+                launcher=windows_install.launcher,
+                parent_pid=os.getpid(),
+                data_paths=dirs,
+            )
         else:
-            print(f"  error    {d}: {err}", file=sys.stderr)
-            any_error = True
+            install_dir = windows_install.executable.parent
+            ok, err = schedule_windows_cleanup(
+                binary_paths,
+                parent_pid=os.getpid(),
+                data_paths=dirs,
+                install_lock_path=install_dir / WINDOWS_INSTALL_LOCK_FILENAME,
+                data_guard_paths=[
+                    install_dir / WINDOWS_APP_DIR_NAME,
+                    install_dir / WINDOWS_LAUNCHER_FILENAME,
+                    install_dir / windows_install.executable.name,
+                ],
+            )
+        if not ok:
+            print(f"  error    could not schedule binary cleanup: {err}", file=sys.stderr)
+            print("           Nothing was deleted.", file=sys.stderr)
+            return 1
+        deferred_cleanup = True
+        for path in binary_paths:
+            print(f"  scheduled {path}  (after this process exits)")
+        for path in dirs:
+            print(f"  scheduled {path}  (after binary cleanup succeeds)")
+
+    if not windows_binary:
+        for d in dirs:
+            if not d.exists():
+                print(f"  skipped  {d}  (not found)")
+                continue
+            ok, err = _remove_path(d)
+            if ok:
+                print(f"  deleted  {d}")
+            else:
+                print(f"  error    {d}: {err}", file=sys.stderr)
+                any_error = True
 
     if binary:
-        for path in binary_paths:
-            ok, err = _remove_path(path)
-            if ok:
-                print(f"  deleted  {path}")
-            else:
-                print(f"  error    {path}: {err}", file=sys.stderr)
-                any_error = True
+        if not windows_binary:
+            for path in binary_paths:
+                ok, err = _remove_path(path)
+                if ok:
+                    print(f"  deleted  {path}")
+                else:
+                    print(f"  error    {path}: {err}", file=sys.stderr)
+                    any_error = True
     else:
         print("  running  pip uninstall opensre")
         rc = _pip_uninstall()
@@ -158,8 +259,16 @@ def run_uninstall(*, yes: bool = False) -> int:
         print("  Uninstall finished with errors. See above for details.", file=sys.stderr)
         return 1
 
-    print("  opensre has been uninstalled.")
-    print()
-    print("  Your config and data have been removed.")
-    print("  To reinstall: curl -fsSL https://install.opensre.com | bash")
+    if deferred_cleanup:
+        print("  opensre will finish uninstalling after this process exits.")
+        print()
+        print("  Your config and data will be removed after binary cleanup succeeds.")
+    else:
+        print("  opensre has been uninstalled.")
+        print()
+        print("  Your config and data have been removed.")
+    if _is_windows():
+        print("  To reinstall: irm https://install.opensre.com | iex")
+    else:
+        print("  To reinstall: curl -fsSL https://install.opensre.com | bash")
     return 0

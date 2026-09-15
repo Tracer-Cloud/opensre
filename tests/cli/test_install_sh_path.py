@@ -167,6 +167,45 @@ def test_install_sh_defaults_to_main_build_channel() -> None:
     assert "releases/tags/nightly" not in source
 
 
+def test_install_sh_directs_windows_users_to_powershell() -> None:
+    result = _run_logging_snippet(
+        """
+        uname() {
+          if [ "${1:-}" = "-s" ]; then
+            printf 'MINGW64_NT-10.0\\n'
+          else
+            printf 'x86_64\\n'
+          fi
+        }
+        detect_platform
+        """
+    )
+    output = result.stdout + result.stderr
+
+    assert result.returncode == 1
+    assert "Windows release bundles require install.ps1" in output
+    assert "Open PowerShell and run" in output
+    assert "irm https://install.opensre.com | iex" in output
+
+
+def test_install_sh_rejects_windows_before_unix_prerequisites() -> None:
+    source = INSTALL_SH.read_text(encoding="utf-8")
+    main_match = re.search(r"(?ms)^main\(\) \{(?P<body>.*?)^\}", source)
+
+    assert main_match is not None
+    main_body = main_match.group("body")
+    assert main_body.index("detect_platform") < main_body.index("require_prerequisites")
+
+
+def test_detect_platform_checks_uname_before_using_it() -> None:
+    source = INSTALL_SH.read_text(encoding="utf-8")
+    detect_match = re.search(r"(?ms)^detect_platform\(\) \{(?P<body>.*?)^\}", source)
+
+    assert detect_match is not None
+    detect_body = detect_match.group("body")
+    assert detect_body.index("need_cmd uname") < detect_body.index('os="$(uname -s)"')
+
+
 def test_install_sh_defines_progress_helpers() -> None:
     source = INSTALL_SH.read_text()
 
