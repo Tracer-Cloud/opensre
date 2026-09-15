@@ -28,6 +28,7 @@ from integrations.git import (
     head_sha,
     merge_commit_edits,
 )
+from integrations.github.ci_epochs import publish_repair_epoch
 from integrations.github.client import resolve_github_token
 from integrations.github.repair_workspace import repair_workspace
 from integrations.github.tools.ci_fix.base_merge import (
@@ -639,6 +640,14 @@ def _verify_repair(
         push.head_sha,
         verification.state.value,
     )
+    if verification.state is CheckState.PASSED and ctx.number is not None:
+        publish_repair_epoch(
+            ctx.owner,
+            ctx.repo,
+            ctx.number,
+            github_token=github_token,
+            fixing_sha=push.head_sha,
+        )
     return with_push_output(output, push, verification)
 
 

@@ -40,6 +40,7 @@ class Event(StrEnum):
     BROWSER_OPEN_REQUESTED = "browser_open_requested"
     SKILL_EXECUTED = "skill_executed"
     OPENSRE_COMMIT_CREATED = "opensre_commit_created"
+    OPENSRE_CI_EPOCH_RESOLVED = "opensre_ci_epoch_resolved"
 
     # Gateway chat turns (Slack / Telegram) — usage sessions, not inventory
     GATEWAY_TURN_STARTED = "gateway_turn_started"
