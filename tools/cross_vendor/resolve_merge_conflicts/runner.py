@@ -17,6 +17,7 @@ from typing import Any, Final
 
 from rich.markup import escape
 
+from config.constants import MERGE_RESOLUTION_TIMEOUT_SECONDS
 from integrations.coding_agent import (
     CodingResult,
     coding_model,
@@ -313,17 +314,17 @@ def _resolve(
                 summary=result.summary,
                 rendered=_paint(console, ws, conflicts, pending_label=PENDING),
             )
-    if not result.success:
-        left = tuple(path for path, _why in remaining) or conflicts.names
-        raise ResolveMergeError(
-            ERR_TIMEOUT if result.timed_out else ERR_EXECUTION,
-            f"The coding agent did not finish: {result.error or 'no detail'}. "
-            f"Conflicts remain in {', '.join(left)}; the merge stays in progress in {ws}.",
-            unresolved=left,
-            summary=result.summary,
-            conflicts=conflicts,
-        )
     if remaining:
+        if not result.success:
+            left = tuple(path for path, _why in remaining)
+            raise ResolveMergeError(
+                ERR_TIMEOUT if result.timed_out else ERR_EXECUTION,
+                f"The coding agent did not finish: {result.error or 'no detail'}. "
+                f"Conflicts remain in {', '.join(left)}; the merge stays in progress in {ws}.",
+                unresolved=left,
+                summary=result.summary,
+                conflicts=conflicts,
+            )
         raise ResolveMergeError(
             ERR_CONFLICTS_REMAIN,
             f"{len(remaining)} file(s) still need a person's decision: "
@@ -334,7 +335,33 @@ def _resolve(
             summary=result.summary,
             conflicts=conflicts,
         )
-    return _commit(ws, conflicts, baseline, summary=result.summary, finish=finish)
+    summary = result.summary
+    if not result.success:
+        if not result.timed_out:
+            # Provider errors and nonzero exits can leave markers gone without a
+            # finished resolution. Only a timeout after the tree is clean is
+            # recovered by committing.
+            raise ResolveMergeError(
+                ERR_EXECUTION,
+                f"The coding agent did not finish: {result.error or 'no detail'}. "
+                "Conflict markers are gone, but the run failed before completing "
+                f"the resolution; the merge stays in progress in {ws}.",
+                summary=result.summary,
+                conflicts=conflicts,
+            )
+        # Every conflict is settled in the tree; only the agent's own follow-up
+        # (its test run, as a rule) was cut short. The review and the checks
+        # after the push judge the result.
+        summary = _unfinished_note(result) + (f" {summary}" if summary else "")
+    return _commit(ws, conflicts, baseline, summary=summary, finish=finish)
+
+
+def _unfinished_note(result: CodingResult) -> str:
+    detail = f" ({result.error})" if result.error else ""
+    return (
+        f"The coding agent ran out of time after resolving every conflict{detail}; "
+        "its own checks did not finish, so the pull request checks are the verification."
+    )
 
 
 def _decision_plan(conflicts: MergeConflicts, decisions: Mapping[str, str]) -> dict[str, str]:
@@ -416,7 +443,7 @@ def _run_agent(
         task,
         workspace=ws,
         model=model or coding_model(),
-        timeout_sec=coding_timeout_seconds(),
+        timeout_sec=max(coding_timeout_seconds(), MERGE_RESOLUTION_TIMEOUT_SECONDS),
         on_progress=_progress_printer(console),
     )
 
