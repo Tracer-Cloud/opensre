@@ -9,6 +9,10 @@ turn, prints the response, and exits instead of opening the interactive shell.
 It uses the LLM provider from `opensre onboard` and any tools configured with
 `opensre integrations setup`.
 
+If you previously used `opensre investigate`, its structured output is not
+compatible with `ask`. Follow the
+[v0.1.2026.9.4 migration guide](/migration-investigation-to-chat-v0-1-2026-9-4).
+
 ```bash
 opensre ask "why did checkout latency increase today?"
 ```

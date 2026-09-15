@@ -13,6 +13,12 @@ Terraform-managed, separately from this repo).
 In production, terminate TLS at a load balancer or reverse proxy in front of
 the application.
 
+The synchronous and asynchronous investigation APIs were removed in
+v0.1.2026.9.4. Existing `/investigate` clients must follow the
+[investigation-to-chat migration guide](/migration-investigation-to-chat-v0-1-2026-9-4);
+`POST /alerts` is intake only and is not a replacement for a report-returning
+endpoint.
+
 ## Authentication
 
 | Routes | Caller | Authentication |
@@ -48,9 +54,9 @@ curl -X POST "https://<host>/alerts" \
 Required field: `text`. Optional fields: `alert_name`, `severity`, `source`,
 `received_at`. Request bodies larger than 1 MiB return `413`.
 
-Queued alerts are picked up by the agent's alert inbox — the interactive shell
-surfaces them with `/alerts`, and chat gateways deliver them to the paired
-channel.
+Queued alerts are drained only by the interactive shell when its alert listener
+is enabled; `/alerts` shows that inbox. The gateway web process accepts and
+queues this request but does not currently consume it.
 
 ## Status codes
 
