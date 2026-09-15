@@ -110,6 +110,26 @@ label, options, whether it accepts multiple selections, and whether a custom
 answer is allowed. The `error` value is either `null` or an object with
 `message` and `suggestion`.
 
+For required input, read `session_id` and `questions` from that object, then
+pass the answer to another JSON invocation of the same session:
+
+```bash
+opensre --json ask "investigate the failing CI"
+opensre --json ask --resume 489e2ba8-3b7f-4fa2-bcdf-55a93177337c "1"
+```
+
+The first result can be `needs_input` (exit code `4`) with a question like:
+
+```json
+{"status":"needs_input","response":"Which repository?\n  1. Tracer-Cloud/opensre\n  2. Another repository","denied_tools":[],"session_id":"489e2ba8-3b7f-4fa2-bcdf-55a93177337c","questions":[{"label":"Repository","title":"Which repository?","options":["Tracer-Cloud/opensre","Another repository"],"multi_select":false,"allow_custom":true}],"error":null}
+```
+
+After the answer, a successful result has `status: "success"`, the same
+`session_id`, and an empty `questions` array.
+
+JSON mode emits no terminal-only continuation footer; use the returned ID.
+`--json` is a global option, so it must appear before `ask` on both invocations.
+
 | Exit code | Meaning |
 | --- | --- |
 | `0` | The agent completed the request. |

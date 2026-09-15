@@ -24,11 +24,11 @@ from core.agent_harness import (
     TurnResult,
 )
 from core.agent_harness.ports import ToolEventObserver
-from core.agent_harness.session.pending_choice import (
+from core.agent_harness.spi.cancel import ensure_turn_cancel
+from core.agent_harness.spi.handoff import (
     apply_pending_user_choice_state,
     pending_user_choice_state_snapshot,
 )
-from core.agent_harness.spi.cancel import ensure_turn_cancel
 from core.agent_harness.spi.session_state import PendingUserChoice
 from core.tool import ToolExecutionHooks
 from infrastructure.errors import OpenSREError
