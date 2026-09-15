@@ -11,7 +11,7 @@ from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnRes
 from core.domain.types.tools import ToolSurface
 from core.llm.types import ToolCall
 from core.tool.contracts import RegisteredTool, SideEffectLevel
-from core.tool.execution import ToolExecutionHooks, ToolExecutionRequest
+from core.tool.execution import BeforeToolCallResult, ToolExecutionHooks, ToolExecutionRequest
 from infrastructure.harness_providers import resolve_surface_tool_map
 from infrastructure.turn_host.session_lock import session_execution_lock
 from surfaces.cli.ask import service
@@ -537,11 +537,11 @@ def test_not_run_resumed_turn_after_tool_start_does_not_restore_choice(monkeypat
     session.questions_already_answered = {"earlier question"}
 
     class _FailedAfterToolAgentSession:
-        observer: object | None = None
+        hooks: ToolExecutionHooks | None = None
 
         @classmethod
         def start(cls, _config: object, **kwargs: object) -> _FailedAfterToolAgentSession:
-            cls.observer = kwargs["tool_event_observer"]
+            cls.hooks = kwargs["tool_hooks"]
             return cls()
 
         @property
@@ -549,8 +549,9 @@ def test_not_run_resumed_turn_after_tool_start_does_not_restore_choice(monkeypat
             return session
 
         def chat(self, _prompt: str) -> TurnResult:
-            assert callable(type(self).observer)
-            type(self).observer("tool_start", {"name": "deploy"})
+            assert type(self).hooks is not None
+            assert type(self).hooks.before_tool_call is not None
+            type(self).hooks.before_tool_call(_risky_request())
             return _not_run_turn()
 
     monkeypatch.setattr(service, "SessionManager", lambda: manager)
@@ -562,6 +563,47 @@ def test_not_run_resumed_turn_after_tool_start_does_not_restore_choice(monkeypat
 
     assert session.pending_user_choice is None
     assert session.questions_already_answered == {"earlier question", "which environment?"}
+    assert manager.closed == [(session, False)]
+
+
+def test_not_run_resumed_turn_after_blocked_tool_restores_choice(monkeypatch) -> None:
+    manager = _FakeSessionManager()
+    session = _FakeSession()
+    pending = PendingUserChoice(
+        title="Which environment?",
+        options=("Production", "Staging"),
+    )
+    session.pending_user_choice = pending
+    session.questions_already_answered = {"earlier question"}
+
+    class _BlockedToolAgentSession:
+        hooks: ToolExecutionHooks | None = None
+
+        @classmethod
+        def start(cls, _config: object, **kwargs: object) -> _BlockedToolAgentSession:
+            cls.hooks = kwargs["tool_hooks"]
+            return cls()
+
+        @property
+        def bound_session(self) -> _FakeSession:
+            return session
+
+        def chat(self, _prompt: str) -> TurnResult:
+            assert type(self).hooks is not None
+            assert type(self).hooks.before_tool_call is not None
+            type(self).hooks.before_tool_call(_risky_request())
+            return _not_run_turn()
+
+    blocked_hooks = ToolExecutionHooks(
+        before_tool_call=lambda _request: BeforeToolCallResult(blocked=True),
+    )
+    monkeypatch.setattr(service, "SessionManager", lambda: manager)
+    monkeypatch.setattr(service, "AgentSession", _BlockedToolAgentSession)
+
+    service._run_agent_turn("1", blocked_hooks, session_id=session.session_id, ephemeral=False)
+
+    assert session.pending_user_choice == pending
+    assert session.questions_already_answered == {"earlier question"}
     assert manager.closed == [(session, False)]
 
 

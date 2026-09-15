@@ -129,17 +129,33 @@ class _AskRunState:
 
 
 @dataclass(slots=True)
-class _ResumedToolWorkObserver:
-    """Remember whether a resumed turn reached the durable tool-start boundary."""
+class _ResumedToolWorkTracker:
+    """Remember whether a resumed turn reached the actual tool-work boundary."""
 
-    observer: ToolEventObserver | None
     tool_work_started: bool = False
 
-    def __call__(self, kind: str, data: dict[str, Any]) -> None:
-        if kind == "tool_start":
-            self.tool_work_started = True
-        if self.observer is not None:
-            self.observer(kind, data)
+
+def _track_resumed_tool_work(
+    hooks: ToolExecutionHooks,
+    tracker: _ResumedToolWorkTracker,
+) -> ToolExecutionHooks:
+    """Mark a resumed choice consumed only after validation and approval pass."""
+    before_tool_call = hooks.before_tool_call
+
+    def before(request: Any) -> Any:
+        decision = before_tool_call(request) if before_tool_call is not None else None
+        if decision is None or not decision.blocked:
+            # ``execute_tool_calls`` invokes this hook only after batch/schema
+            # validation, immediately before it can dispatch the runtime tool.
+            tracker.tool_work_started = True
+        return decision
+
+    return ToolExecutionHooks(
+        before_tool_call=before,
+        after_tool_call=hooks.after_tool_call,
+        on_tool_update=hooks.on_tool_update,
+        before_tool_batch=hooks.before_tool_batch,
+    )
 
 
 class _CancellableConsole:
@@ -275,8 +291,11 @@ def _run_agent_turn(
     output = output or _AskOutputSink()
     cancel_event = ensure_turn_cancel(output)
     console = _CancellableConsole(cancel_event)
-    tool_work_observer = (
-        _ResumedToolWorkObserver(tool_event_observer) if session_id is not None else None
+    tool_work_tracker = _ResumedToolWorkTracker() if session_id is not None else None
+    tracked_hooks = (
+        _track_resumed_tool_work(hooks, tool_work_tracker)
+        if tool_work_tracker is not None
+        else hooks
     )
     session: SessionCore | None = None
     try:
@@ -299,8 +318,8 @@ def _run_agent_turn(
                 console=console,
                 surface=PromptSurface.HEADLESS_CLI.value,
                 is_tty=False,
-                tool_hooks=hooks,
-                tool_event_observer=tool_work_observer or tool_event_observer,
+                tool_hooks=tracked_hooks,
+                tool_event_observer=tool_event_observer,
             )
             session = agent_session.bound_session
             if session is None:
@@ -316,20 +335,20 @@ def _run_agent_turn(
             except AskSignal:
                 # A failed resume must not consume its still-unhandled question.
                 if prior_choice_state is not None and not (
-                    tool_work_observer and tool_work_observer.tool_work_started
+                    tool_work_tracker and tool_work_tracker.tool_work_started
                 ):
                     apply_pending_user_choice_state(session, prior_choice_state)
                 raise
             except Exception:
                 # A failed resume must not consume its still-unhandled question.
                 if prior_choice_state is not None and not (
-                    tool_work_observer and tool_work_observer.tool_work_started
+                    tool_work_tracker and tool_work_tracker.tool_work_started
                 ):
                     apply_pending_user_choice_state(session, prior_choice_state)
                 raise
             if prior_choice_state is not None and _resumed_turn_did_not_complete(
                 result,
-                tool_work_started=bool(tool_work_observer and tool_work_observer.tool_work_started),
+                tool_work_started=bool(tool_work_tracker and tool_work_tracker.tool_work_started),
             ):
                 apply_pending_user_choice_state(session, prior_choice_state)
             output.mark_turn_complete()
