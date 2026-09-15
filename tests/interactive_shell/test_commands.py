@@ -1445,12 +1445,12 @@ class TestResumeCommand:
         assert session.session_id == old_id
         assert "no conversation to resume" in buf.getvalue()
 
-    def test_apply_resume_waits_for_the_target_session_lease(
+    def test_apply_resume_does_not_rebind_while_the_target_session_is_busy(
         self,
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: Path,
     ) -> None:
-        """/resume must not rebind a session another host is still mutating."""
+        """/resume must not wait for or rebind a session another host owns."""
         from core.agent_harness.session import InMemorySessionStore
         from infrastructure.turn_host.session_lock import session_execution_lock
         from surfaces.interactive_shell.command_registry.session_cmds import _apply_resume_data
@@ -1476,11 +1476,12 @@ class TestResumeCommand:
         attempted = threading.Event()
         completed = threading.Event()
         errors: list[Exception] = []
+        results: list[bool] = []
 
         def _resume() -> None:
             try:
                 attempted.set()
-                _apply_resume_data(data, session, console)
+                results.append(_apply_resume_data(data, session, console))
                 completed.set()
             except Exception as exc:
                 errors.append(exc)
@@ -1489,14 +1490,51 @@ class TestResumeCommand:
             thread = threading.Thread(target=_resume)
             thread.start()
             assert attempted.wait(timeout=1)
-            assert not completed.wait(timeout=0.2)
+            assert completed.wait(timeout=1)
             assert session.session_id == old_id
 
         thread.join(timeout=5)
         assert not thread.is_alive()
         assert not errors, errors
         assert completed.is_set()
-        assert session.session_id == target_id
+        assert results == [False]
+        assert session.session_id == old_id
+
+    def test_apply_resume_reloads_the_target_after_acquiring_its_lease(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A resumed target is restored from the post-lease repository state."""
+        from core.agent_harness.session import InMemorySessionStore
+        from surfaces.interactive_shell.command_registry.session_cmds import _apply_resume_data
+
+        target_id = "target-session-123"
+        stale_data = {
+            "session_id": target_id,
+            "name": "Target",
+            "cli_agent_messages": [("user", "stale")],
+            "accumulated_context": {},
+            "history": [],
+            "turn_details": [],
+            "has_snapshot": True,
+        }
+        fresh_data = {**stale_data, "cli_agent_messages": [("user", "fresh")]}
+
+        class _Repo:
+            def load_session(self, session_id: str) -> dict:
+                assert session_id == target_id
+                return fresh_data
+
+        monkeypatch.setattr(
+            "surfaces.interactive_shell.command_registry.session_cmds.resume.default_session_repo",
+            _Repo,
+        )
+        session = Session()
+        session.store = InMemorySessionStore()
+        console, _ = _capture()
+
+        assert _apply_resume_data(stale_data, session, console, refresh_target=True) is True
+        assert session.agent.messages == [("user", "fresh")]
 
     def test_apply_resume_displays_history_in_repl_format(self, tmp_path: Path) -> None:
         """History display uses REPL turn order and includes slash commands."""

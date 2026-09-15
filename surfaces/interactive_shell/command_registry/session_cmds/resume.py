@@ -6,8 +6,12 @@ from rich.console import Console
 from rich.markup import escape
 
 from core.agent_harness import SessionManager
+from core.agent_harness.spi.defaults import default_session_repo
 from core.agent_harness.spi.session_state import format_recovery_note
-from infrastructure.turn_host.session_lock import session_execution_lock
+from infrastructure.turn_host.session_lock import (
+    SessionExecutionBusyError,
+    session_execution_lock,
+)
 from surfaces.interactive_shell.command_registry.session_cmds.resume_rendering import (
     render_resumed_session_history,
 )
@@ -156,6 +160,7 @@ def _apply_resume_data(
     console: Console,
     *,
     slash_command: str | None = None,
+    refresh_target: bool = False,
 ) -> bool:
     """Apply a resumed session while holding that target session's lease."""
     session_id = str(data.get("session_id") or "")
@@ -167,15 +172,30 @@ def _apply_resume_data(
             slash_command=slash_command,
         )
     # TurnRunner begins with the shell's current id, but /resume rebinds the
-    # live handle.  Lease the target for the rebind, restoration, and slash
-    # record so another host cannot mutate that conversation concurrently.
-    with session_execution_lock(session_id, reentrant=True):
-        return _apply_resume_data_unlocked(
-            data,
-            session,
-            console,
-            slash_command=slash_command,
+    # live handle.  Do not wait on a target while holding the source lease: two
+    # shells crossing A -> B and B -> A would otherwise deadlock.  The user can
+    # retry once the active host finishes its target turn.
+    try:
+        with session_execution_lock(session_id, timeout=0, reentrant=True):
+            if refresh_target:
+                refreshed = default_session_repo().load_session(session_id)
+                if refreshed is None:
+                    console.print(
+                        f"[{ERROR}]session '{escape(session_id)}' is no longer available.[/]"
+                    )
+                    return False
+                data = refreshed
+            return _apply_resume_data_unlocked(
+                data,
+                session,
+                console,
+                slash_command=slash_command,
+            )
+    except SessionExecutionBusyError:
+        console.print(
+            f"[{WARNING}]session {escape(session_id[:8])} is busy in another process — retry shortly.[/]"
         )
+        return False
 
 
 def _lookup_resume_session_data(
@@ -229,7 +249,13 @@ def _do_resume(
     data = _lookup_resume_session_data(prefix, session, console)
     if data is None:
         return False
-    return _apply_resume_data(data, session, console, slash_command=slash_command)
+    return _apply_resume_data(
+        data,
+        session,
+        console,
+        slash_command=slash_command,
+        refresh_target=True,
+    )
 
 
 def resume_session_by_prefix(
@@ -270,5 +296,12 @@ def _cmd_resume(session: Session, console: Console, args: list[str]) -> bool:
         return True
 
     slash_command = f"/resume {' '.join(args)}" if args else "/resume"
-    _apply_resume_data(data, session, console, slash_command=slash_command)
+    if not _apply_resume_data(
+        data,
+        session,
+        console,
+        slash_command=slash_command,
+        refresh_target=True,
+    ):
+        _record_resume_slash(session, args, ok=False)
     return True
