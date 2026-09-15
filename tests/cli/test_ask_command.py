@@ -79,6 +79,27 @@ def test_required_choice_prints_exact_resume_command_on_stderr(monkeypatch, caps
     assert 'opensre ask --resume session-123 "1"' in captured.err
 
 
+def test_required_choice_prints_session_id_when_stderr_is_redirected(
+    monkeypatch,
+    capsys,
+) -> None:
+    outcome = AskOutcome(
+        status=AskStatus.NEEDS_INPUT,
+        response="Which environment?\n  1. Production",
+        session_id="session-123",
+        questions=(AskQuestion("Environment", "Which environment?", ("Production",)),),
+        exit_code=AskExitCode.NEEDS_INPUT,
+    )
+    monkeypatch.setattr("sys.stderr.isatty", lambda: False)
+    monkeypatch.setattr("surfaces.cli.commands.ask._echo_answer", lambda _text: None)
+
+    _render_outcome(outcome)
+
+    captured = capsys.readouterr()
+    assert captured.err == "Session: session-123\n"
+    assert captured.out == ""
+
+
 def test_batch_resume_command_is_shell_safe_and_uses_unambiguous_keys(
     monkeypatch,
     capsys,

@@ -98,6 +98,7 @@ def resume_prompt(session: SessionCore, prompt: str) -> str:
     """Turn the resumed CLI argument into the pending choice's Q→A payload."""
     pending = session.pending_user_choice
     if pending is None:
+        session.ask_user_rounds = 0
         return prompt
     if pending.commands:
         raise OpenSREError(

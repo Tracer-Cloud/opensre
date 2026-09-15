@@ -129,6 +129,8 @@ After the answer, a successful result has `status: "success"`, the same
 
 JSON mode emits no terminal-only continuation footer; use the returned ID.
 `--json` is a global option, so it must appear before `ask` on both invocations.
+Without `--json`, a required question also prints `Session: ID` on stderr when
+output is redirected, so the choice can still be resumed.
 
 | Exit code | Meaning |
 | --- | --- |

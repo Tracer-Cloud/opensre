@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import signal
 import threading
+from collections.abc import Callable
 
 import pytest
 
@@ -66,6 +67,24 @@ def _risky_request() -> ToolExecutionRequest:
     )
     return ToolExecutionRequest(
         tool_call=ToolCall(id="call-1", name=tool.name, input={}),
+        tool=tool,
+        arguments={},
+        source=tool.source,
+        resolved_integrations={},
+    )
+
+
+def _read_only_request() -> ToolExecutionRequest:
+    tool = RegisteredTool(
+        name="update_plan",
+        description="Update the plan",
+        input_schema={"type": "object", "properties": {}},
+        source="plan",
+        run=lambda: None,
+        side_effect_level=SideEffectLevel.READ_ONLY,
+    )
+    return ToolExecutionRequest(
+        tool_call=ToolCall(id="call-plan", name=tool.name, input={}),
         tool=tool,
         arguments={},
         source=tool.source,
@@ -162,6 +181,24 @@ def test_resume_prompt_maps_a_number_to_the_pending_option() -> None:
 
     assert resumed == "1. Which environment?\nStaging"
     assert session.pending_user_choice is None
+
+
+def test_resume_prompt_resets_clarification_rounds_for_a_new_request() -> None:
+    session = service.SessionCore()
+    session.ask_user_rounds = 2
+
+    assert ask_session.resume_prompt(session, "check the next deployment") == (
+        "check the next deployment"
+    )
+    assert session.ask_user_rounds == 0
+
+    session.pending_user_choice = PendingUserChoice(
+        title="Which environment?",
+        options=("Production", "Staging"),
+    )
+    session.ask_user_rounds = 2
+    ask_session.resume_prompt(session, "1")
+    assert session.ask_user_rounds == 2
 
 
 def test_resume_prompt_rejects_custom_answer_when_choice_forbids_it() -> None:
@@ -527,13 +564,22 @@ def test_cancelled_resumed_turn_after_tool_work_does_not_restore_choice(monkeypa
     assert manager.closed == [(session, False)]
 
 
-def test_not_run_resumed_turn_after_tool_start_does_not_restore_choice(monkeypatch) -> None:
+@pytest.mark.parametrize(
+    ("request_factory", "restores_choice"),
+    [(_risky_request, False), (_read_only_request, True)],
+)
+def test_not_run_resumed_turn_restores_choice_until_mutating_work_starts(
+    monkeypatch,
+    request_factory: Callable[[], ToolExecutionRequest],
+    restores_choice: bool,
+) -> None:
     manager = _FakeSessionManager()
     session = _FakeSession()
-    session.pending_user_choice = PendingUserChoice(
+    pending = PendingUserChoice(
         title="Which environment?",
         options=("Production", "Staging"),
     )
+    session.pending_user_choice = pending
     session.questions_already_answered = {"earlier question"}
 
     class _FailedAfterToolAgentSession:
@@ -551,7 +597,7 @@ def test_not_run_resumed_turn_after_tool_start_does_not_restore_choice(monkeypat
         def chat(self, _prompt: str) -> TurnResult:
             assert type(self).hooks is not None
             assert type(self).hooks.before_tool_call is not None
-            type(self).hooks.before_tool_call(_risky_request())
+            type(self).hooks.before_tool_call(request_factory())
             return _not_run_turn()
 
     monkeypatch.setattr(service, "SessionManager", lambda: manager)
@@ -561,8 +607,10 @@ def test_not_run_resumed_turn_after_tool_start_does_not_restore_choice(monkeypat
         "1", ToolExecutionHooks(), session_id=session.session_id, ephemeral=False
     )
 
-    assert session.pending_user_choice is None
-    assert session.questions_already_answered == {"earlier question", "which environment?"}
+    assert session.pending_user_choice == (pending if restores_choice else None)
+    assert session.questions_already_answered == (
+        {"earlier question"} if restores_choice else {"earlier question", "which environment?"}
+    )
     assert manager.closed == [(session, False)]
 
 

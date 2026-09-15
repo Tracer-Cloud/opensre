@@ -30,7 +30,7 @@ from core.agent_harness.spi.handoff import (
     pending_user_choice_state_snapshot,
 )
 from core.agent_harness.spi.session_state import PendingUserChoice
-from core.tool import ToolExecutionHooks
+from core.tool import SideEffectLevel, ToolExecutionHooks
 from infrastructure.errors import OpenSREError
 from surfaces.cli.ask.approval import ApprovalTracker, build_approval_hooks
 from surfaces.cli.ask.session import (
@@ -129,25 +129,28 @@ class _AskRunState:
 
 
 @dataclass(slots=True)
-class _ResumedToolWorkTracker:
-    """Remember whether a resumed turn reached the actual tool-work boundary."""
+class _ResumedMutationTracker:
+    """Remember whether a resumed turn reached potentially mutating work."""
 
-    tool_work_started: bool = False
+    potential_mutation_started: bool = False
 
 
-def _track_resumed_tool_work(
+def _track_resumed_mutations(
     hooks: ToolExecutionHooks,
-    tracker: _ResumedToolWorkTracker,
+    tracker: _ResumedMutationTracker,
 ) -> ToolExecutionHooks:
-    """Mark a resumed choice consumed only after validation and approval pass."""
+    """Mark a resumed choice irreversible only before potentially mutating work."""
     before_tool_call = hooks.before_tool_call
 
     def before(request: Any) -> Any:
         decision = before_tool_call(request) if before_tool_call is not None else None
-        if decision is None or not decision.blocked:
+        if (decision is None or not decision.blocked) and request.tool.side_effect_level not in {
+            SideEffectLevel.NONE,
+            SideEffectLevel.READ_ONLY,
+        }:
             # ``execute_tool_calls`` invokes this hook only after batch/schema
             # validation, immediately before it can dispatch the runtime tool.
-            tracker.tool_work_started = True
+            tracker.potential_mutation_started = True
         return decision
 
     return ToolExecutionHooks(
@@ -261,15 +264,14 @@ def _restrict_ask_capabilities(
 def _resumed_turn_did_not_complete(
     result: TurnResult,
     *,
-    tool_work_started: bool,
+    potential_mutation_started: bool,
 ) -> bool:
     """Whether a consumed choice can safely be restored for a retry.
 
-    A cancellation before any action ran is safe to retry.  Once a tool has
-    executed, restoring the consumed choice would let a later resume repeat a
-    potentially mutating action.
+    Once potentially mutating work starts, retrying the choice could replay
+    an external side effect; read-only tools do not create that risk.
     """
-    if tool_work_started:
+    if potential_mutation_started:
         return False
     action = result.action_result
     return action.accounting_status == "not_run" or (
@@ -291,11 +293,9 @@ def _run_agent_turn(
     output = output or _AskOutputSink()
     cancel_event = ensure_turn_cancel(output)
     console = _CancellableConsole(cancel_event)
-    tool_work_tracker = _ResumedToolWorkTracker() if session_id is not None else None
+    mutation_tracker = _ResumedMutationTracker() if session_id is not None else None
     tracked_hooks = (
-        _track_resumed_tool_work(hooks, tool_work_tracker)
-        if tool_work_tracker is not None
-        else hooks
+        _track_resumed_mutations(hooks, mutation_tracker) if mutation_tracker is not None else hooks
     )
     session: SessionCore | None = None
     try:
@@ -335,20 +335,22 @@ def _run_agent_turn(
             except AskSignal:
                 # A failed resume must not consume its still-unhandled question.
                 if prior_choice_state is not None and not (
-                    tool_work_tracker and tool_work_tracker.tool_work_started
+                    mutation_tracker and mutation_tracker.potential_mutation_started
                 ):
                     apply_pending_user_choice_state(session, prior_choice_state)
                 raise
             except Exception:
                 # A failed resume must not consume its still-unhandled question.
                 if prior_choice_state is not None and not (
-                    tool_work_tracker and tool_work_tracker.tool_work_started
+                    mutation_tracker and mutation_tracker.potential_mutation_started
                 ):
                     apply_pending_user_choice_state(session, prior_choice_state)
                 raise
             if prior_choice_state is not None and _resumed_turn_did_not_complete(
                 result,
-                tool_work_started=bool(tool_work_tracker and tool_work_tracker.tool_work_started),
+                potential_mutation_started=bool(
+                    mutation_tracker and mutation_tracker.potential_mutation_started
+                ),
             ):
                 apply_pending_user_choice_state(session, prior_choice_state)
             output.mark_turn_complete()

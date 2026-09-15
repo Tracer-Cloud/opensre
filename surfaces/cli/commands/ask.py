@@ -58,8 +58,11 @@ def _render_outcome(outcome: AskOutcome) -> None:
         return
     if outcome.status in {AskStatus.SUCCESS, AskStatus.NEEDS_INPUT}:
         _echo_answer(outcome.response)
-        if outcome.session_id is not None and sys.stderr.isatty():
+        if outcome.session_id is not None and (
+            outcome.status is AskStatus.NEEDS_INPUT or sys.stderr.isatty()
+        ):
             click.echo(f"Session: {outcome.session_id}", err=True)
+        if outcome.session_id is not None and sys.stderr.isatty():
             reply = '"<follow-up>"'
             if len(outcome.questions) == 1:
                 reply = '"1"'
