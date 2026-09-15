@@ -92,6 +92,9 @@ def test_nothing_is_refused_without_a_merge_in_progress(tmp_path: Path) -> None:
     [
         "gh pr checkout 6254",
         "gh -R Tracer-Cloud/opensre pr checkout 6254 --force",
+        "gh --repo=Tracer-Cloud/opensre pr checkout 6254",
+        "gh --repo Tracer-Cloud/opensre pr checkout 6254",
+        "gh pr --repo=Tracer-Cloud/opensre checkout 6254",
         "cd repo && gh pr checkout 12",
     ],
 )

@@ -93,7 +93,7 @@ def test_the_pull_request_is_checked_out_in_a_clone_of_its_own(tmp_path: Path) -
 
     # Assert: the clone sits under the root, the head is checked out there, and
     # the user's own checkout was never touched.
-    assert checkout.workspace == str(root / "Tracer-Cloud-opensre-7")
+    assert checkout.workspace == str(root / "Tracer-Cloud" / "opensre" / "7")
     assert checkout.head_branch == "pr-7"
     assert checkout.reused is False
     assert checkout.label == "Tracer-Cloud/opensre#7"
@@ -131,4 +131,65 @@ def test_a_clone_left_mid_merge_is_reused_instead_of_replaced(tmp_path: Path) ->
     assert again.reused is True
     assert again.workspace == first.workspace
     assert clones == [first.workspace]
+    assert merge_in_progress(first.workspace)
+
+
+@pytest.mark.parametrize(
+    "selector",
+    [
+        "https://github.com/..\\..\\outside/keep/pull/1",
+        "https://github.com/../evil/pull/1",
+        "https://github.com/foo\\bar/baz/pull/1",
+    ],
+)
+def test_a_url_that_escapes_the_merge_root_is_rejected(tmp_path: Path, selector: str) -> None:
+    # Arrange: a sibling directory that a backslash/parent selector must not delete.
+    work = _github_checkout(tmp_path)
+    root = tmp_path / "merges"
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    keep = outside / "keep.txt"
+    keep.write_text("safe")
+
+    def run_gh(*args: object, **kwargs: object) -> str:
+        del args, kwargs
+        raise AssertionError("gh must not run for an escaped selector")
+
+    # Act
+    with pytest.raises(GitCommandError) as excinfo:
+        checkout_pull_request(selector, cwd=str(work), root=root, clone=_fake_clone, run_gh=run_gh)
+
+    # Assert
+    assert excinfo.value.kind == "invalid_input"
+    assert keep.exists()
+    assert keep.read_text() == "safe"
+    assert not root.exists()
+
+
+def test_hyphenated_owner_and_repo_do_not_share_a_workspace(tmp_path: Path) -> None:
+    # Arrange: a/b-c#7 and a-b/c#7 used to flatten to the same a-b-c-7 directory.
+    work = _github_checkout(tmp_path)
+    root = tmp_path / "merges"
+    clones: list[str] = []
+
+    def clone(url: str, workspace: str, *, token: str | None = None) -> None:
+        clones.append(workspace)
+        _fake_clone(url, workspace, token=token)
+
+    def run_gh(args: list[str], **kwargs: Any) -> str:
+        del args
+        _git(Path(kwargs["cwd"]), "checkout", "-q", "-b", "pr-7")
+        return ""
+
+    first = checkout_pull_request("a/b-c#7", cwd=str(work), root=root, clone=clone, run_gh=run_gh)
+    _stop_a_merge(Path(first.workspace))
+
+    # Act
+    other = checkout_pull_request("a-b/c#7", cwd=str(work), root=root, clone=clone, run_gh=run_gh)
+
+    # Assert
+    assert first.workspace == str(root / "a" / "b-c" / "7")
+    assert other.workspace == str(root / "a-b" / "c" / "7")
+    assert other.reused is False
+    assert clones == [first.workspace, other.workspace]
     assert merge_in_progress(first.workspace)

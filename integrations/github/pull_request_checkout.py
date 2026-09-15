@@ -17,7 +17,10 @@ from integrations.git import (
     merge_in_progress,
     origin_url,
 )
-from integrations.github.identity import workspace_public_repository_source
+from integrations.github.identity import (
+    is_github_repository_part,
+    workspace_public_repository_source,
+)
 from integrations.github.tools.ci_fix.errors import ERR_INVALID_INPUT, GitHubCiFixError
 from integrations.github.tools.ci_fix.gh import run_gh_text
 
@@ -60,13 +63,16 @@ def parse_pull_request(selector: str, *, cwd: str) -> tuple[str, str, int]:
     number = int(match.group("number"))
     owner, repo = match.group("owner"), match.group("repo")
     if owner and repo:
-        return owner, repo.removesuffix(".git"), number
+        repo = repo.removesuffix(".git")
+        _require_repository_parts(owner, repo, selector)
+        return owner, repo, number
     owner, repo = _repository_of(cwd)
     if not owner:
         raise GitCommandError(
             ERR_INVALID_INPUT,
             f"#{number} names no repository: pass owner/repo#{number} or the pull request URL.",
         )
+    _require_repository_parts(owner, repo, selector)
     return owner, repo, number
 
 
@@ -87,7 +93,7 @@ def checkout_pull_request(
     sets the push remote, so a fork's branch is pushed back to the fork.
     """
     owner, repo, number = parse_pull_request(selector, cwd=cwd)
-    path = (root or opensre_home() / "workspaces" / "merges") / f"{owner}-{repo}-{number}"
+    path = _workspace_path(root or opensre_home() / "workspaces" / "merges", owner, repo, number)
     if path.is_dir() and _merge_in_progress(path):
         return PullRequestCheckout(
             str(path), owner, repo, number, current_branch(str(path)), reused=True
@@ -107,6 +113,32 @@ def checkout_pull_request(
     return PullRequestCheckout(
         str(path), owner, repo, number, current_branch(str(path)), reused=False
     )
+
+
+def _require_repository_parts(owner: str, repo: str, selector: str) -> None:
+    if is_github_repository_part(owner) and is_github_repository_part(repo):
+        return
+    raise GitCommandError(
+        ERR_INVALID_INPUT,
+        f"{selector!r} is not a pull request number, owner/repo#N or URL.",
+    )
+
+
+def _workspace_path(root: Path, owner: str, repo: str, number: int) -> Path:
+    """``<root>/<owner>/<repo>/<number>``, or raise if that path leaves *root*.
+
+    Separate segments keep ``a/b-c#7`` and ``a-b/c#7`` from sharing a directory.
+    The containment check is what ``rmtree`` relies on if a name ever slipped
+    through validation (a ``..`` owner, a symlink, a Windows separator).
+    """
+    base = root.resolve()
+    path = (base / owner / repo / str(number)).resolve()
+    if path == base or base not in path.parents:
+        raise GitCommandError(
+            ERR_INVALID_INPUT,
+            f"{owner}/{repo}#{number} is not a usable pull request workspace.",
+        )
+    return path
 
 
 def _merge_in_progress(path: Path) -> bool:

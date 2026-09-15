@@ -16,6 +16,7 @@ from tools.cross_vendor.resolve_merge_conflicts import (
     ResolveMergeConflictsTool,
     resolve_merge_conflicts,
 )
+from tools.cross_vendor.resolve_merge_conflicts.tool import _say
 from tools.registry import get_registered_tool_map
 
 _VERIFY = "tools.cross_vendor.resolve_merge_conflicts.runner.verify_coding_agent"
@@ -291,7 +292,27 @@ def test_a_pull_request_that_cannot_be_checked_out_is_reported_without_a_merge(
     # Assert
     assert out["success"] is False and out["error_kind"] == "pr_not_found"
     assert "not found" in out["error"]
+    assert out["pull_request"] == "99"
     assert out["commit_sha"] is None and out["pushed"] is False
+
+
+def test_checkout_status_escapes_markup_in_the_label_and_workspace() -> None:
+    # Arrange
+    class _Console:
+        def __init__(self) -> None:
+            self.printed: list[str] = []
+
+        def print(self, message: str) -> None:
+            self.printed.append(message)
+
+    console = _Console()
+    scope = type("Scope", (), {"console": console})()
+
+    # Act
+    _say(scope, "/tmp/[red]ws", "Acme/[bold]x#1", reused=False)
+
+    # Assert
+    assert console.printed == [r"[dim]  Checked out Acme/\[bold]x#1 in /tmp/\[red]ws[/]"]
 
 
 def test_a_remote_whose_head_is_a_feature_branch_is_not_merged_by_default(tmp_path: Path) -> None:

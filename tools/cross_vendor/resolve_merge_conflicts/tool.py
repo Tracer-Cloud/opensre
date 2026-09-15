@@ -10,6 +10,8 @@ import os
 from collections.abc import Callable
 from typing import Any
 
+from rich.markup import escape
+
 from core.agent_harness.spi.handoff import AskUserQuestion, parse_ask_user_answers, question_key
 from core.agent_harness.spi.session_state import (
     PendingUserChoice,
@@ -322,7 +324,10 @@ class ResolveMergeConflictsTool(BaseTool):
             try:
                 checkout = checkout_pull_request(pull_request, cwd=os.getcwd())
             except GitCommandError as exc:
-                return failure_output(workspace or os.getcwd(), exc.kind, exc.message)
+                return {
+                    **failure_output(workspace or os.getcwd(), exc.kind, exc.message),
+                    "pull_request": pull_request,
+                }
             workspace, label = checkout.workspace, checkout.label
             _say(scope, checkout.workspace, label, reused=checkout.reused)
         output = resolve_merge(
@@ -345,7 +350,7 @@ def _say(scope: ActionToolScope | None, workspace: str, label: str, *, reused: b
     if console is None:
         return
     verb = "Continuing the merge of" if reused else "Checked out"
-    console.print(f"[dim]  {verb} {label} in {workspace}[/]")
+    console.print(f"[dim]  {verb} {escape(label)} in {escape(workspace)}[/]")
 
 
 def _open_paths(workspace: str | None) -> list[str]:
