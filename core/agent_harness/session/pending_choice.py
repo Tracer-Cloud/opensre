@@ -13,12 +13,15 @@ and no "Reply with 1, 2, or 3" free-text parsing.
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
 PENDING_USER_CHOICE_STATE_CUSTOM_TYPE = "pending_user_choice_state"
+_ANSWER_HEADER = re.compile(r"^(\d+)\.\s+(.+)\n", re.MULTILINE)
+_ANSWER_JSON_PREFIX = "@json:"
 
 
 def question_key(title: str) -> str:
@@ -241,7 +244,13 @@ def format_ask_user_answers(
         raise ValueError("questions and answers must be the same length")
     blocks: list[str] = []
     for index, (question, answer) in enumerate(zip(questions, answers, strict=True), start=1):
-        blocks.append(f"{index}. {question.title}\n{answer}")
+        # JSON keeps every answer on one physical line, so blank lines and
+        # numbered paragraphs in a custom answer cannot impersonate a later
+        # question header when the next turn parses this hand-off payload.
+        blocks.append(
+            f"{index}. {question.title}\n{_ANSWER_JSON_PREFIX}"
+            + json.dumps(answer, ensure_ascii=False)
+        )
     return "\n\n".join(blocks)
 
 
@@ -250,7 +259,47 @@ def parse_ask_user_answers(text: str) -> list[tuple[str, str]]:
     stripped = text.strip()
     if not stripped:
         return []
-    headers = list(re.finditer(r"(?m)^(\d+)\.\s+(.+)\n", stripped))
+
+    framed = _parse_json_answer_blocks(stripped)
+    if framed is not None:
+        return framed
+    return _parse_legacy_answer_blocks(stripped)
+
+
+def _parse_json_answer_blocks(text: str) -> list[tuple[str, str]] | None:
+    """Parse the unambiguous current answer framing, or signal legacy input."""
+    cursor = 0
+    pairs: list[tuple[str, str]] = []
+    for index in range(1, len(text) + 1):
+        header = _ANSWER_HEADER.match(text, cursor)
+        if header is None:
+            return [] if pairs else None
+        if int(header.group(1)) != index:
+            return []
+        answer_start = header.end()
+        if not text.startswith(_ANSWER_JSON_PREFIX, answer_start):
+            return None if not pairs else []
+        try:
+            answer, used = json.JSONDecoder().raw_decode(
+                text[answer_start + len(_ANSWER_JSON_PREFIX) :]
+            )
+        except json.JSONDecodeError:
+            return []
+        if not isinstance(answer, str) or not answer:
+            return []
+        cursor = answer_start + len(_ANSWER_JSON_PREFIX) + used
+        pairs.append((header.group(2).strip(), answer))
+        if cursor == len(text):
+            return pairs
+        if not text.startswith("\n\n", cursor):
+            return []
+        cursor += 2
+    return []
+
+
+def _parse_legacy_answer_blocks(text: str) -> list[tuple[str, str]]:
+    """Read historical unframed answer messages persisted before JSON framing."""
+    headers = list(re.finditer(r"(?m)^(\d+)\.\s+(.+)\n", text))
     if not headers:
         return []
     pairs: list[tuple[str, str]] = []
@@ -258,8 +307,8 @@ def parse_ask_user_answers(text: str) -> list[tuple[str, str]]:
         if int(header.group(1)) != index:
             return []
         question = header.group(2).strip()
-        next_start = headers[index].start() if index < len(headers) else len(stripped)
-        answer = stripped[header.end() : next_start].strip()
+        next_start = headers[index].start() if index < len(headers) else len(text)
+        answer = text[header.end() : next_start].strip()
         if not question or not answer:
             return []
         pairs.append((question, answer))

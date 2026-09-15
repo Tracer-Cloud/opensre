@@ -211,7 +211,7 @@ def test_resume_prompt_maps_a_number_to_the_pending_option() -> None:
 
     resumed = ask_session.resume_prompt(session, "2")
 
-    assert resumed == "1. Which environment?\nStaging"
+    assert resumed == '1. Which environment?\n@json:"Staging"'
     assert session.pending_user_choice is None
 
 
@@ -292,8 +292,12 @@ def test_resume_prompt_requires_structured_batch_answers() -> None:
 
     resumed = ask_session.resume_prompt(session, '{"Repo":"2","Window":"1"}')
 
-    assert "Which repository?\nRepository B" in resumed
-    assert "Which window?\n24 hours" in resumed
+    from core.agent_harness.session.pending_choice import parse_ask_user_answers
+
+    assert parse_ask_user_answers(resumed) == [
+        ("Which repository?", "Repository B"),
+        ("Which window?", "24 hours"),
+    ]
 
 
 def test_resumed_session_rejects_overlapping_processes(monkeypatch, tmp_path) -> None:
@@ -332,8 +336,8 @@ def test_run_ask_forwards_a_tool_event_observer(monkeypatch) -> None:
 
     assert outcome.status is AskStatus.SUCCESS
     assert recorded["tool_event_observer"] is observer
-    assert isinstance(recorded["session_id"], str)
-    assert recorded["fresh_session"] is True
+    assert recorded["session_id"] is None
+    assert isinstance(recorded["fresh_session_id"], str)
     assert recorded["ephemeral"] is False
     assert isinstance(recorded["run_state"], service._AskRunState)
 
@@ -360,8 +364,8 @@ def test_run_ask_leases_a_fresh_persisted_session_before_its_first_turn(monkeypa
     service.run_ask("prompt", allowed_tools=(), bypass_approvals=False)
 
     assert captured == ["fresh-session-id"]
-    assert turn_args["session_id"] == "fresh-session-id"
-    assert turn_args["fresh_session"] is True
+    assert turn_args["session_id"] is None
+    assert turn_args["fresh_session_id"] == "fresh-session-id"
 
 
 def test_run_ask_resolves_session_prefix_before_resuming(monkeypatch) -> None:

@@ -289,14 +289,14 @@ def _run_agent_turn(
     output: _AskOutputSink | None = None,
     session_id: str | None = None,
     ephemeral: bool = True,
-    fresh_session: bool = False,
+    fresh_session_id: str | None = None,
     run_state: _AskRunState | None = None,
 ) -> TurnResult:
     manager = SessionManager()
     output = output or _AskOutputSink()
     cancel_event = ensure_turn_cancel(output)
     console = _CancellableConsole(cancel_event)
-    is_resumed_session = session_id is not None and not fresh_session
+    is_resumed_session = session_id is not None
     mutation_tracker = _ResumedMutationTracker() if is_resumed_session else None
     tracked_hooks = (
         _track_resumed_mutations(hooks, mutation_tracker) if mutation_tracker is not None else hooks
@@ -307,6 +307,7 @@ def _run_agent_turn(
             agent_session = AgentSession.start(
                 SessionConfig(
                     session_id=session_id,
+                    new_session_id=fresh_session_id,
                     load_env=True,
                     hydrate_integrations=True,
                     warm_integrations=True,
@@ -486,22 +487,22 @@ def run_ask(
     )
     run_state = _AskRunState()
     try:
-        session_id = _resolve_resume_session_id(resume_session_id) if resume_session_id else None
-        fresh_session = session_id is None and not ephemeral
-        if fresh_session:
+        resume_id = _resolve_resume_session_id(resume_session_id) if resume_session_id else None
+        fresh_session_id = None
+        if resume_id is None and not ephemeral:
             # A persisted ask session is visible as soon as AgentSession.start
             # writes its header.  Allocate its ID before entering the shared
             # lease so a concurrent --resume cannot race the first turn.
-            session_id = str(uuid4())
-        with _ask_session_lock(session_id):
+            fresh_session_id = str(uuid4())
+        with _ask_session_lock(resume_id or fresh_session_id):
             result = _run_agent_turn(
                 prompt,
                 hooks,
                 tool_event_observer=tool_event_observer,
                 output=output,
-                session_id=session_id,
+                session_id=resume_id,
                 ephemeral=ephemeral,
-                fresh_session=fresh_session,
+                fresh_session_id=fresh_session_id,
                 run_state=run_state,
             )
     except AskSignal as exc:

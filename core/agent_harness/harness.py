@@ -80,6 +80,9 @@ class SessionConfig:
     """
 
     session_id: str | None = None
+    # A caller can preallocate a fresh identity (for example, before acquiring
+    # a cross-process lease) without asking the harness to restore that ID.
+    new_session_id: str | None = None
     prompts: PromptContextProvider | None = None
     load_env: bool = True
     hydrate_integrations: bool = True
@@ -383,6 +386,8 @@ class AgentSession:
         call to make based on whether the surface is resuming.
         """
         manager = self._session_manager
+        if self._config.session_id and self._config.new_session_id:
+            raise ValueError("SessionConfig cannot resume and create the same session.")
         if self._config.session_id:
             # SessionManager.resolve()'s own default is True: a resumed
             # session needs tools ready immediately.
@@ -398,12 +403,15 @@ class AgentSession:
         # SessionManager.create()'s own default is False: a fresh session can
         # warm lazily on first turn.
         warm = False if self._config.warm_integrations is None else self._config.warm_integrations
-        return manager.create(
-            hydrate_integrations=self._config.hydrate_integrations,
-            warm_integrations=warm,
-            persistent_tasks=self._config.persistent_tasks,
-            open_store=self._config.open_store,
-        )
+        create_args: dict[str, Any] = {
+            "hydrate_integrations": self._config.hydrate_integrations,
+            "warm_integrations": warm,
+            "persistent_tasks": self._config.persistent_tasks,
+            "open_store": self._config.open_store,
+        }
+        if self._config.new_session_id is not None:
+            create_args["session_id"] = self._config.new_session_id
+        return manager.create(**create_args)
 
     def _load_context(self) -> PromptContextProvider | None:
         """Return the surface's grounding-context provider, if any."""

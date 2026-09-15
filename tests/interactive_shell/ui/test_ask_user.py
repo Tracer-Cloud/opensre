@@ -90,7 +90,7 @@ def test_answer_block_round_trips() -> None:
 
 
 def test_answer_block_round_trips_a_multiline_custom_answer() -> None:
-    answers = ("First paragraph\n\nSecond paragraph",)
+    answers = ("First paragraph\n\n2. A numbered paragraph",)
     text = format_ask_user_answers((_QUESTIONS[0],), answers)
 
     assert parse_ask_user_answers(text) == [(_QUESTIONS[0].title, answers[0])]
