@@ -8,7 +8,12 @@ from typing import Any
 
 import pytest
 
-from core.domain.work_items import WorkItemChannelTarget, WorkItemPriority, make_work_item
+from core.domain.work_items import (
+    WorkItemChannelTarget,
+    WorkItemPriority,
+    make_work_item,
+)
+from infrastructure.scheduling.scheduler.storage import list_tasks
 from infrastructure.scheduling.scheduler.types import Provider
 from tools.system.work_items._evidence import map_work_task_list, map_work_task_prioritize
 from tools.system.work_items.delivery import (
@@ -147,14 +152,15 @@ def test_reminder_scheduling(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
         remind_at="2026-08-24T10:00:00Z",
     )
     targets = [WorkItemChannelTarget(provider="slack", chat_id="C999")]
-    scheduled = schedule_item_reminder(item, targets=targets, timezone="UTC")
+    scheduled = schedule_item_reminder(item, targets=targets, timezone="Asia/Kolkata")
     assert scheduled is not None
-
-    from infrastructure.scheduling.scheduler.storage.task_store import list_tasks
 
     tasks = list_tasks()
     assert len(tasks) == 1
     assert tasks[0].enabled is True
+    assert tasks[0].cron == ""
+    assert tasks[0].timezone == "UTC"
+    assert tasks[0].params["run_at"] == "2026-08-24T10:00:00+00:00"
 
     # Rescheduling with a new reminder time disables the prior reminder
     updated_item = dataclasses.replace(item, remind_at="2026-08-24T14:00:00Z")
@@ -165,6 +171,82 @@ def test_reminder_scheduling(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
     assert len(tasks) == 2
     assert tasks[0].enabled is False
     assert tasks[1].enabled is True
+
+
+def test_reminder_scheduling_resolves_naive_datetime_in_requested_timezone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.task_store.default_task_store_path",
+        lambda: tmp_path / "scheduler_tasks.json",
+    )
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.reload_signal.request_scheduler_reload",
+        lambda: None,
+    )
+
+    item = make_work_item(
+        title="Check clusters",
+        remind_at="2027-09-12T09:00",
+    )
+    targets = [WorkItemChannelTarget(provider="slack", chat_id="C999")]
+    schedule_item_reminder(item, targets=targets, timezone="Asia/Kolkata")
+
+    task = list_tasks()[0]
+    assert task.timezone == "Asia/Kolkata"
+    assert task.params["run_at"] == "2027-09-12T09:00:00+05:30"
+
+
+@pytest.mark.parametrize(
+    ("remind_at", "timezone", "expected"),
+    [
+        (
+            "2027-09-12T09:00",
+            "Invalid/Timezone",
+            {
+                "error": "invalid_timezone",
+                "detail": "timezone must be a valid IANA timezone",
+            },
+        ),
+        (
+            "2027-03-14T02:30",
+            "America/New_York",
+            {
+                "error": "invalid_remind_at",
+                "detail": "remind_at does not exist in the specified timezone",
+            },
+        ),
+    ],
+)
+def test_work_task_add_rejects_invalid_reminder_before_persistence(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    remind_at: str,
+    timezone: str,
+    expected: dict[str, str],
+) -> None:
+    work_items_file = tmp_path / "work_items.json"
+    scheduler_file = tmp_path / "scheduler_tasks.json"
+    monkeypatch.setattr("core.domain.work_items.store.work_items_path", lambda: work_items_file)
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.task_store.default_task_store_path",
+        lambda: scheduler_file,
+    )
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.reload_signal.request_scheduler_reload",
+        lambda: None,
+    )
+
+    response = work_task_add(
+        title="Check clusters",
+        remind_at=remind_at,
+        channel_provider="slack",
+        timezone=timezone,
+    )
+
+    assert response == expected
+    assert not work_items_file.exists()
+    assert list_tasks(scheduler_file) == []
 
 
 def test_work_task_tools_lifecycle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

@@ -9,15 +9,16 @@ import click
 from rich.console import Console
 from rich.table import Table
 
+from config.constants.work_items import WORK_ITEM_REMINDER_RUN_AT_PARAM
 from core.domain.work_items import (
     WORK_ITEM_PRIORITIES,
     WorkItemChannelTarget,
     add_work_item,
     complete_work_items,
-    cron_from_datetime,
     list_work_items,
     parse_work_item_datetime,
     prioritize_work_items,
+    resolve_work_item_datetime,
     work_items_path,
 )
 from infrastructure.scheduling.scheduler.storage import add_task as add_scheduled_task
@@ -107,6 +108,18 @@ def work_add(
     title_text = " ".join(title).strip()
     _validate_datetime("due-at", due_at)
     _validate_datetime("remind-at", remind_at)
+    reminder_timezone = timezone.strip() or "UTC"
+    if remind_at:
+        try:
+            if resolve_work_item_datetime(remind_at, reminder_timezone) is None:
+                raise click.BadParameter(
+                    "remind-at does not exist in the selected timezone",
+                    param_hint="--remind-at",
+                )
+        except ValueError:
+            raise click.BadParameter(
+                "timezone must be a valid IANA timezone", param_hint="--tz"
+            ) from None
     delivery_targets = _parse_delivery_targets(provider, chat_id, targets)
     item = add_work_item(
         title=title_text,
@@ -125,14 +138,15 @@ def work_add(
     if remind_at:
         if not delivery_targets:
             raise click.BadParameter("--remind-at requires --target or --provider/--chat-id")
-        remind_dt = parse_work_item_datetime(remind_at)
-        if remind_dt is not None:
+        parsed_remind_at = parse_work_item_datetime(remind_at)
+        remind_dt = resolve_work_item_datetime(remind_at, reminder_timezone)
+        if remind_dt is not None and parsed_remind_at is not None:
             primary = delivery_targets[0]
-            schedule_timezone = "UTC" if remind_dt.tzinfo is not None else timezone
+            schedule_timezone = "UTC" if parsed_remind_at.tzinfo is not None else reminder_timezone
             scheduled = add_scheduled_task(
                 ScheduledTask(
                     kind=TaskKind.WORK_ITEM_REMINDER,
-                    cron=cron_from_datetime(remind_dt),
+                    cron="",
                     timezone=schedule_timezone,
                     provider=Provider(primary.provider),
                     chat_id=primary.chat_id,
@@ -140,6 +154,7 @@ def work_add(
                         "work_item_id": item.id,
                         "store_path": str(work_items_path()),
                         "disable_after_success": "true",
+                        WORK_ITEM_REMINDER_RUN_AT_PARAM: remind_dt.isoformat(),
                         "delivery_targets": json.dumps(
                             [target.to_dict() for target in delivery_targets],
                             separators=(",", ":"),

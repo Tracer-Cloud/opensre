@@ -28,7 +28,11 @@ from core.domain.work_items.reminders import (
     build_work_item_checkin_message,
     build_work_item_reminder_message,
 )
-from core.domain.work_items.schedule import cron_from_datetime, parse_work_item_datetime
+from core.domain.work_items.schedule import (
+    cron_from_datetime,
+    parse_work_item_datetime,
+    resolve_work_item_datetime,
+)
 from core.domain.work_items.scoring import (
     DEFAULT_PRIORITY_LIMIT,
     PRIORITY_WEIGHTS,
@@ -84,6 +88,7 @@ __all__ = [
     "parse_status",
     "parse_work_item_datetime",
     "prioritize_work_items",
+    "resolve_work_item_datetime",
     "resolve_work_item_selector",
     "score_work_item",
     "set_work_item_last_reminded",
