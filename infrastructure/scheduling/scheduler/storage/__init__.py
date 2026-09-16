@@ -1,6 +1,9 @@
 """Scheduler task definitions and execution history persistence."""
 
-from infrastructure.scheduling.scheduler.storage.backlog_status import get_task_store_snapshot
+from infrastructure.scheduling.scheduler.storage.backlog_status import (
+    BacklogStatusRunStoreError,
+    get_task_store_snapshot,
+)
 from infrastructure.scheduling.scheduler.storage.database import (
     default_run_database_path,
     run_database_path,
@@ -40,6 +43,7 @@ from infrastructure.scheduling.scheduler.storage.task_store import (
 __all__ = [
     "add_task",
     "BacklogSnapshot",
+    "BacklogStatusRunStoreError",
     "claim_renewal_interval_seconds",
     "complete_run",
     "default_run_database_path",

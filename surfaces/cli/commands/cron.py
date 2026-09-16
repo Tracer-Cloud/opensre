@@ -395,6 +395,7 @@ def cron_status(as_json: bool) -> None:
     import sqlite3
 
     from infrastructure.scheduling.scheduler.storage import (
+        BacklogStatusRunStoreError,
         get_backlog_snapshot,
         get_task_store_snapshot,
     )
@@ -402,6 +403,8 @@ def cron_status(as_json: bool) -> None:
     as_json = as_json or is_json_output()
     try:
         task_store = get_task_store_snapshot(lock_timeout_seconds=_STATUS_STORAGE_TIMEOUT_SECONDS)
+    except BacklogStatusRunStoreError:
+        raise _unknown_backlog_status(as_json, "run_store_unreadable") from None
     except OSError:
         raise _unknown_backlog_status(as_json, "task_store_unreadable") from None
     if not task_store.complete:
