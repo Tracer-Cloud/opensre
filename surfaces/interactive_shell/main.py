@@ -16,6 +16,7 @@ from infrastructure.analytics.capture import capture_interactive_shell_rendered
 from infrastructure.analytics.github_identity import identify_saved_github_username
 from infrastructure.logging import install_shell_log_handler, quiet_noisy_third_party_loggers
 from infrastructure.terminal.theme import set_active_theme
+from infrastructure.turn_host.session_lock import session_execution_lock
 from surfaces.interactive_shell.controller import InteractiveShellController
 from surfaces.interactive_shell.runtime.context import create_repl_runtime
 from surfaces.interactive_shell.runtime.startup.account_gate import (
@@ -115,7 +116,10 @@ async def run_repl_async(
         return 0
     finally:
         # True end-of-run teardown: persist and release the session's resources.
-        SessionManager.for_session(session).close(session)
+        manager = SessionManager.for_session(session)
+        with session_execution_lock(session.session_id):
+            manager.refresh_from_storage(session)
+            manager.close(session)
 
 
 def _start_launch_banner(console: Console) -> Callable[[], None]:

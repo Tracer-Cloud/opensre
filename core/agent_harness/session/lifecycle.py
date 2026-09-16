@@ -219,6 +219,9 @@ class SessionManager:
         self._flush(session)
         self._schedule_memory_extraction(session)
         session.clear()
+        from infrastructure.turn_host.session_lock import retain_session_execution_lock
+
+        retain_session_execution_lock(session.session_id, timeout=0)
         self._store.open_session(session)
         return session
 

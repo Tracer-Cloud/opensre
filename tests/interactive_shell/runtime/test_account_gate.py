@@ -161,6 +161,9 @@ def test_run_repl_async_is_the_already_gated_shell_body(monkeypatch: Any) -> Non
         def open_store(self, _session: object) -> None:
             return
 
+        def refresh_from_storage(self, _session: object) -> None:
+            return
+
         def close(self, _session: object) -> None:
             return
 
@@ -181,6 +184,9 @@ def _boot_repl_without_prompt(monkeypatch: Any) -> None:
 
     class _SessionStore:
         def open_store(self, _session: object) -> None:
+            return
+
+        def refresh_from_storage(self, _session: object) -> None:
             return
 
         def close(self, _session: object) -> None:

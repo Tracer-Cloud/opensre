@@ -22,7 +22,7 @@ from typing import Any
 
 PENDING_USER_CHOICE_STATE_CUSTOM_TYPE = "pending_user_choice_state"
 _ANSWER_HEADER = re.compile(r"^(\d+)\.\s+(.+)\n", re.MULTILINE)
-_LEGACY_ANSWER_HEADER = re.compile(r"^(\d+)\.\s+(.+)$")
+_LEGACY_ANSWER_HEADER = re.compile(r"^(\d+)\.\s+(.+)$", re.MULTILINE)
 _ANSWER_JSON_PREFIX = "@json:"
 
 
@@ -307,18 +307,27 @@ def _parse_json_answer_blocks(text: str) -> list[tuple[str, str]] | None:
 def _parse_legacy_answer_blocks(text: str) -> list[tuple[str, str]]:
     """Read historical unframed answer messages persisted before JSON framing."""
     pairs: list[tuple[str, str]] = []
-    for block in text.split("\n\n"):
-        lines = [line.rstrip() for line in block.splitlines() if line.strip()]
-        if len(lines) < 2:
-            return []
-        header = _LEGACY_ANSWER_HEADER.match(lines[0])
+    cursor = 0
+    for index in range(1, len(text) + 1):
+        header = _LEGACY_ANSWER_HEADER.match(text, cursor)
         if header is None:
             return []
+        if int(header.group(1)) != index:
+            return []
         question = header.group(2).strip()
-        answer = "\n".join(lines[1:]).strip()
+        answer_start = header.end()
+        next_header = re.search(
+            rf"\n\n{index + 1}\.\s+[^\n]+\n",
+            text[answer_start:],
+        )
+        answer_end = answer_start + next_header.start() if next_header is not None else len(text)
+        answer = text[answer_start:answer_end].strip()
         if not question or not answer:
             return []
         pairs.append((question, answer))
+        if next_header is None:
+            return pairs
+        cursor = answer_start + next_header.start() + 2
     return pairs
 
 
