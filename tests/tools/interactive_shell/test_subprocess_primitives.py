@@ -45,6 +45,26 @@ def test_headless_subprocess_env_overrides_exported_columns(
     assert headless_subprocess_env()["COLUMNS"] == str(HEADLESS_SUBPROCESS_TERMINAL_WIDTH)
 
 
+@pytest.mark.parametrize("term", ["dumb", "unknown", "DUMB"])
+def test_width_envs_replace_dumb_term_so_rich_honours_columns(
+    monkeypatch: pytest.MonkeyPatch, term: str
+) -> None:
+    """Rich ignores ``COLUMNS`` and renders 80x25 on a dumb ``TERM``.
+
+    Both width helpers must lift the terminal type, or the width they set is a
+    no-op and the child's tables still ellipsize (CI and gateway hosts export
+    ``TERM=dumb``).
+    """
+    monkeypatch.setenv("TERM", term)
+    assert subprocess_env_with_width(columns=100)["TERM"] == "xterm-256color"
+    assert headless_subprocess_env()["TERM"] == "xterm-256color"
+
+
+def test_width_envs_keep_a_capable_term(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TERM", "screen-256color")
+    assert subprocess_env_with_width(columns=100)["TERM"] == "screen-256color"
+
+
 def test_subprocess_env_with_width_preserves_existing_lines(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

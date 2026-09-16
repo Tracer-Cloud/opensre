@@ -20,11 +20,14 @@ from surfaces.interactive_shell.ui import (
     print_command_output,
 )
 from surfaces.shared.terminal.components.choice_menu import prepare_repl_output_line
-from tools.interactive_shell.subprocess import headless_subprocess_env, subprocess_env_with_width
+from tools.interactive_shell.subprocess import (
+    force_rich_color,
+    headless_subprocess_env,
+    subprocess_env_with_width,
+)
 
 _UPDATE_SUBPROCESS_TIMEOUT_SECONDS = 300
 _HEADLESS_CLI_SUBPROCESS_TIMEOUT_SECONDS = 90.0
-_DUMB_TERMS = frozenset({"dumb", "unknown"})
 
 
 def _captured_child_env(console: Console, *, headless: bool) -> dict[str, str]:
@@ -38,23 +41,18 @@ def _captured_child_env(console: Console, *, headless: bool) -> dict[str, str]:
     ``↳`` gutter and cannot re-flow a table, so rows wider than the terminal
     fold mid-border. On the REPL the child therefore renders exactly to the
     real terminal minus that gutter; headless surfaces have no human reader
-    and render wide so ids stay intact.
+    and render wide so ids stay intact. Colour is forced so the replay can
+    parse the child's styling back instead of losing it.
     """
     if headless:
-        env = headless_subprocess_env()
-    else:
-        env = subprocess_env_with_width(
+        return force_rich_color(headless_subprocess_env())
+    return force_rich_color(
+        subprocess_env_with_width(
             columns=console.size.width,
             lines=console.size.height,
             prefix_width=COMMAND_OUTPUT_GUTTER_WIDTH,
         )
-    # Force Rich colour so the replay can parse its styling back; on a "dumb"
-    # TERM Rich short-circuits to 80x25 and ignores COLUMNS, so give the
-    # forced-colour child a real TERM as well (headless/CI surfaces).
-    env["FORCE_COLOR"] = "1"
-    if env.get("TERM", "").lower() in _DUMB_TERMS:
-        env["TERM"] = "xterm-256color"
-    return env
+    )
 
 
 def publish_headless_slash_response(

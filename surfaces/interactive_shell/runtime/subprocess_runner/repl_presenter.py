@@ -28,7 +28,11 @@ from surfaces.interactive_shell.ui.execution_confirm import execution_allowed
 from surfaces.shared.error_handling.exception_reporting import report_exception
 from surfaces.shared.terminal.prompt_layout import DEFAULT_TERMINAL_COLUMNS
 from tools.interactive_shell.shared import ExecutionPolicyResult
-from tools.interactive_shell.subprocess import SubprocessPresenter, subprocess_env_with_width
+from tools.interactive_shell.subprocess import (
+    SubprocessPresenter,
+    force_rich_color,
+    subprocess_env_with_width,
+)
 
 from .background_task_executor import (
     start_background_cli_task as _start_background_cli_task_default,
@@ -236,11 +240,14 @@ class ReplSubprocessPresenter:
 
     def subprocess_env(self) -> dict[str, str]:
         # Foreground output comes back through ``print_command_output`` under the
-        # ``↳`` gutter, not the wider task-relay prefix background tasks use.
-        return subprocess_env_with_width(
-            columns=self._console.size.width or DEFAULT_TERMINAL_COLUMNS,
-            lines=self._console.size.height,
-            prefix_width=COMMAND_OUTPUT_GUTTER_WIDTH,
+        # ``↳`` gutter, not the wider task-relay prefix background tasks use, and
+        # that replay parses ANSI — so force colour like the slash-parity path.
+        return force_rich_color(
+            subprocess_env_with_width(
+                columns=self._console.size.width or DEFAULT_TERMINAL_COLUMNS,
+                lines=self._console.size.height,
+                prefix_width=COMMAND_OUTPUT_GUTTER_WIDTH,
+            )
         )
 
     def start_task_output_streams(

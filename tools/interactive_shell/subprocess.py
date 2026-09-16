@@ -13,6 +13,14 @@ import time
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
+from config.constants import (
+    CAPABLE_TERMINAL_TYPE,
+    DUMB_TERMINAL_TYPES,
+    FORCE_COLOR_ENV,
+    TERMINAL_COLUMNS_ENV,
+    TERMINAL_LINES_ENV,
+    TERMINAL_TYPE_ENV,
+)
 from core.agent_harness.tools import ActionToolScope
 from infrastructure.process.termination import terminate_process_tree
 from tools.interactive_shell.shared import ExecutionPolicyResult
@@ -188,16 +196,32 @@ def subprocess_env_with_width(
     child table row plus prefix still fits in ``columns`` without folding.
     """
     available = max(MIN_SUBPROCESS_TERMINAL_WIDTH, columns - prefix_width - 1)
-    env = dict(os.environ)
-    env["COLUMNS"] = str(available)
-    env.setdefault("LINES", str(max(20, lines or 24)))
+    env = _piped_rich_env(columns=available)
+    env.setdefault(TERMINAL_LINES_ENV, str(max(20, lines or 24)))
     return env
 
 
 def headless_subprocess_env() -> dict[str, str]:
     """Return ``os.environ`` patched for a piped Rich child with no human reader."""
+    return _piped_rich_env(columns=HEADLESS_SUBPROCESS_TERMINAL_WIDTH)
+
+
+def _piped_rich_env(*, columns: int) -> dict[str, str]:
+    """``os.environ`` with a width Rich will actually honour on a pipe.
+
+    On a dumb ``TERM`` Rich short-circuits to 80x25 and ignores ``COLUMNS``,
+    so the width hint is only meaningful once the terminal type is capable.
+    """
     env = dict(os.environ)
-    env["COLUMNS"] = str(HEADLESS_SUBPROCESS_TERMINAL_WIDTH)
+    env[TERMINAL_COLUMNS_ENV] = str(columns)
+    if env.get(TERMINAL_TYPE_ENV, "").lower() in DUMB_TERMINAL_TYPES:
+        env[TERMINAL_TYPE_ENV] = CAPABLE_TERMINAL_TYPE
+    return env
+
+
+def force_rich_color(env: dict[str, str]) -> dict[str, str]:
+    """Make a piped Rich child emit ANSI so a ``Text.from_ansi`` replay keeps its styling."""
+    env[FORCE_COLOR_ENV] = "1"
     return env
 
 
@@ -338,6 +362,7 @@ __all__ = [
     "SubprocessWatchResult",
     "TASK_OUTPUT_JOIN_TIMEOUT_SECONDS",
     "TASK_OUTPUT_PREFIX_WIDTH",
+    "force_rich_color",
     "headless_subprocess_env",
     "read_diag",
     "read_task_output",
