@@ -9,10 +9,14 @@ from core.tool_framework import tool
 from integrations.aws.aws_sdk_client import execute_aws_sdk_call
 
 
-def _aws_operation_never_auto_available(_sources: dict[str, dict]) -> bool:
-    # Disabled for automatic planning until service/operation can be safely derived from context.
-    return False
-
+def _aws_operation_available(sources: dict[str, dict]) -> bool:
+    aws = sources.get("aws", {})
+    return bool(
+        aws.get("connection_verified")
+        or aws.get("role_arn")
+        or aws.get("credentials")
+        or aws.get("ec2_backend")
+    )
 
 def _summarize_aws_result(result: Any) -> str:
     """Describe an AWS operation payload by shape only.
@@ -85,7 +89,7 @@ def _map_aws_operation(
         },
         "required": ["service", "operation"],
     },
-    is_available=_aws_operation_never_auto_available,
+    is_available=_aws_operation_available,
 )
 def execute_aws_operation(
     service: str,

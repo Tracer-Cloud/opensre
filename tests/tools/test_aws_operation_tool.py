@@ -7,16 +7,30 @@ from unittest.mock import patch
 from integrations.aws.tools.aws_operation_tool import execute_aws_operation
 from tests.tools.conftest import BaseToolContract
 
+rt = execute_aws_operation.__opensre_registered_tool__
 
 class TestAWSOperationToolContract(BaseToolContract):
     def get_tool_under_test(self):
-        return execute_aws_operation.__opensre_registered_tool__
+        return rt
 
 
-def test_is_available_never_auto_available() -> None:
-    # This tool deliberately never auto-selects
-    rt = execute_aws_operation.__opensre_registered_tool__
-    assert rt.is_available({"aws_sdk": {"configured": True}}) is False
+def test_is_available_with_verified_aws_connection():
+    assert rt.is_available({"aws": {"connection_verified": True}}) is True
+
+
+def test_is_available_with_role_arn():
+    assert rt.is_available({"aws": {"role_arn": "arn:aws:iam::123456789012:role/test"}}) is True
+
+
+def test_is_available_with_credentials():
+    assert rt.is_available({"aws": {"credentials": {"access_key": "test"}}}) is True
+
+
+def test_is_available_with_backend():
+    assert rt.is_available({"aws": {"ec2_backend": object()}}) is True
+
+
+def test_is_not_available_without_aws_source():
     assert rt.is_available({}) is False
 
 
