@@ -34,11 +34,13 @@ from infrastructure.scheduling.scheduler.storage.task_store import (
     add_task,
     default_task_store_path,
     get_task,
-    get_task_store_snapshot as _get_task_store_snapshot,
     list_tasks,
     record_task_success,
     remove_task,
     update_task,
+)
+from infrastructure.scheduling.scheduler.storage.task_store import (
+    get_task_store_snapshot as _get_task_store_snapshot,
 )
 
 
@@ -51,9 +53,7 @@ def get_task_store_snapshot(
     work exists, however, the missing definitions make eligibility and recovery
     unknowable, so expose the snapshot as incomplete instead of healthy-empty.
     """
-    snapshot = _get_task_store_snapshot(
-        store_path, lock_timeout_seconds=lock_timeout_seconds
-    )
+    snapshot = _get_task_store_snapshot(store_path, lock_timeout_seconds=lock_timeout_seconds)
     if not snapshot.complete or not snapshot.missing:
         return snapshot
 
