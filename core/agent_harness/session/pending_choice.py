@@ -22,6 +22,7 @@ from typing import Any
 
 PENDING_USER_CHOICE_STATE_CUSTOM_TYPE = "pending_user_choice_state"
 _ANSWER_HEADER = re.compile(r"^(\d+)\.\s+(.+)\n", re.MULTILINE)
+_LEGACY_ANSWER_HEADER = re.compile(r"^(\d+)\.\s+(.+)$")
 _ANSWER_JSON_PREFIX = "@json:"
 
 
@@ -305,16 +306,16 @@ def _parse_json_answer_blocks(text: str) -> list[tuple[str, str]] | None:
 
 def _parse_legacy_answer_blocks(text: str) -> list[tuple[str, str]]:
     """Read historical unframed answer messages persisted before JSON framing."""
-    headers = list(re.finditer(r"(?m)^(\d+)\.\s+(.+)\n", text))
-    if not headers:
-        return []
     pairs: list[tuple[str, str]] = []
-    for index, header in enumerate(headers, start=1):
-        if int(header.group(1)) != index:
+    for block in text.split("\n\n"):
+        lines = [line.rstrip() for line in block.splitlines() if line.strip()]
+        if len(lines) < 2:
+            return []
+        header = _LEGACY_ANSWER_HEADER.match(lines[0])
+        if header is None:
             return []
         question = header.group(2).strip()
-        next_start = headers[index].start() if index < len(headers) else len(text)
-        answer = text[header.end() : next_start].strip()
+        answer = "\n".join(lines[1:]).strip()
         if not question or not answer:
             return []
         pairs.append((question, answer))
