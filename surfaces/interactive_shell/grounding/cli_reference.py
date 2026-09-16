@@ -171,10 +171,9 @@ def _interactive_shell_slash_hints(provider: SlashCommandProvider | None = None)
     lines = [
         "In the interactive shell, chat with the terminal assistant to run tools "
         + "or get CLI help.",
-        "Alpha mode runs every shell command with no guardrails: plain commands are parsed to "
-        + "argv and run without a shell, while pipes, redirects, command substitution, and a "
-        + "leading ! all run through a full shell. There is no read-only allowlist or blocked "
-        + "command list.",
+        "Every nonempty shell command runs through the platform command shell.",
+        "This includes plain commands, pipes, redirects, substitutions, and compact operators.",
+        "A leading ! is optional.",
         "Slash commands:",
         "",
     ]

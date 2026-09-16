@@ -16,9 +16,9 @@ def test_skill_view_tool_is_action_surface_read_only() -> None:
 
 
 def test_skill_view_loads_github_ci_fix_skill() -> None:
-    result = execute_skill_view_tool({"name": "fixing-github-ci"}, ctx=None)  # type: ignore[arg-type]
+    result = execute_skill_view_tool({"name": "repair-github-ci"}, ctx=None)  # type: ignore[arg-type]
     assert result["ok"] is True
-    assert result["content"] == load_skill_body("fixing-github-ci")
+    assert result["content"] == load_skill_body("repair-github-ci")
     assert "fix_github_pr_ci" in result["content"]
 
 
@@ -26,7 +26,7 @@ def test_skill_view_unknown_name_lists_available() -> None:
     result = execute_skill_view_tool({"name": "no-such-skill"}, ctx=None)  # type: ignore[arg-type]
     assert result["ok"] is False
     assert "delivering-morning-briefings" in result["available"]
-    assert "fixing-github-ci" in result["available"]
+    assert "repair-github-ci" in result["available"]
 
 
 class _SessionStub:
@@ -47,9 +47,9 @@ def test_skill_view_reference_loads_without_reentering_skill() -> None:
     assert result["ok"] is True
     assert result["reference"] == "metrics"
     assert "red_hours" in result["content"]
-    # A reference load never re-enters the skill: no activation, no pre_execute.
+    # A reference load never re-enters the skill: no activation, no entry menu.
     assert ctx.session.active_skill is None
-    assert "pre_execute" not in result
+    assert "entry_menu" not in result
 
 
 def test_skill_view_unknown_reference_lists_available_references() -> None:

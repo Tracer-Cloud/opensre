@@ -96,7 +96,13 @@ def _maybe_open_setup_page(profile: ProviderAuthProfile, *, enabled: bool) -> No
         click.echo(f"Setup page: {profile.setup_url}")
         return
     if click.confirm(f"Open {profile.label} setup page in your browser?", default=True):
-        webbrowser.open(profile.setup_url)
+        opened = False
+        try:
+            opened = bool(webbrowser.open(profile.setup_url))
+        finally:
+            from infrastructure.analytics.capture import capture_browser_open_requested
+
+            capture_browser_open_requested(target="provider_setup", opened=opened)
 
 
 # Mirrors render_health_report's table style (surfaces/shared/terminal/health) so

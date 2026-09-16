@@ -3,13 +3,17 @@
 from __future__ import annotations
 
 import json
+import sqlite3
 from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
+from filelock import FileLock, Timeout
+from rich.console import Console
 
 import infrastructure.process.runtime_flags as runtime_flags
+import surfaces.cli.commands.cron as cron_module
 from infrastructure.scheduling.scheduler.storage import BacklogSnapshot, TaskStoreSnapshot
 from infrastructure.scheduling.scheduler.types import Provider, TaskKind, TaskRun, TaskStatus
 from surfaces.cli.commands.cron import (
@@ -125,6 +129,92 @@ def test_cron_status_formats_oldest_pending_age(monkeypatch: pytest.MonkeyPatch)
     assert "1h 1m" in result.output
 
 
+@pytest.mark.parametrize("lock_error", [PermissionError("denied"), Timeout("task.lock")])
+def test_cron_status_reports_task_lock_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, lock_error: OSError
+) -> None:
+    def fail_acquire(*_args: object, **_kwargs: object) -> None:
+        raise lock_error
+
+    monkeypatch.setattr(FileLock, "acquire", fail_acquire)
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.task_store.default_task_store_path",
+        lambda: tmp_path / "scheduler_tasks.json",
+    )
+
+    result = CliRunner().invoke(cron_command, ["status", "--json"])
+
+    assert result.exit_code == 1
+    assert json.loads(result.output) == {
+        "status": "unknown",
+        "pending_count": None,
+        "oldest_pending_at": None,
+        "oldest_pending_age_seconds": None,
+        "error": "task_store_unreadable",
+    }
+
+
+@pytest.mark.parametrize("output_mode", ["human", "local_json", "global_json"])
+def test_cron_status_reports_corrupt_run_database(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, output_mode: str
+) -> None:
+    from infrastructure.scheduling.scheduler.types import ScheduledTask
+
+    database_path = tmp_path / "scheduler.db"
+    database_path.write_bytes(b"not a SQLite database")
+    task = ScheduledTask(
+        kind=TaskKind.MANUAL_LOOP, cron="0 9 * * *", provider=Provider.INTERACTIVE_SHELL
+    )
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.get_task_store_snapshot",
+        lambda: TaskStoreSnapshot((task,), True),
+    )
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.database.default_run_database_path",
+        lambda: database_path,
+    )
+    monkeypatch.setattr(
+        runtime_flags, "_flags", runtime_flags.RuntimeFlags(json=output_mode == "global_json")
+    )
+    args = ["status", "--json"] if output_mode == "local_json" else ["status"]
+
+    result = CliRunner().invoke(cron_command, args)
+
+    assert result.exit_code == 1
+    if output_mode == "human":
+        assert "backlog status is unknown" in result.output
+    else:
+        assert json.loads(result.output) == {
+            "status": "unknown",
+            "pending_count": None,
+            "oldest_pending_at": None,
+            "oldest_pending_age_seconds": None,
+            "error": "run_store_unreadable",
+        }
+    assert database_path.read_bytes() == b"not a SQLite database"
+
+
+@pytest.mark.parametrize("error", [PermissionError("denied"), sqlite3.OperationalError("locked")])
+def test_cron_status_reports_run_storage_access_failure(
+    monkeypatch: pytest.MonkeyPatch, error: Exception
+) -> None:
+    def fail_snapshot(**_kwargs: object) -> BacklogSnapshot:
+        raise error
+
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.get_task_store_snapshot",
+        lambda: TaskStoreSnapshot((), True),
+    )
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.get_backlog_snapshot", fail_snapshot
+    )
+
+    result = CliRunner().invoke(cron_command, ["status", "--json"])
+
+    assert result.exit_code == 1
+    assert json.loads(result.output)["error"] == "run_store_unreadable"
+
+
 @pytest.mark.parametrize("as_json", [False, True])
 def test_cron_status_fails_closed_for_an_unreadable_task_store(
     monkeypatch: pytest.MonkeyPatch,
@@ -211,6 +301,51 @@ def test_cron_list_surfaces_legacy_task_migration_status(
     output = " ".join(result.output.split())
     assert "daily_summary retired" in output
     assert "opensre cron add --kind" in output
+
+
+def test_cron_list_keeps_task_id_whole_when_squeezed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The id must never ellipsize: ``/cron remove <id>`` chains on it.
+
+    At the REPL replay width (terminal minus gutter) ten columns compete for
+    space; the long name and the microsecond timestamps used to take it and
+    the id came back as ``ecf7c2580b…``.
+    """
+    from infrastructure.scheduling.scheduler.loops import LoopSummary
+
+    summary = LoopSummary(
+        id="ecf7c2580b83deadbeef",
+        task_ids=("ecf7c2580b83deadbeef",),
+        name="CI repair: davincios/opensre-ci-fix-demo-9YaBJ",
+        description="",
+        prompt="",
+        kind=TaskKind.MANUAL_LOOP,
+        cron="*/30 * * * * *",
+        timezone="UTC",
+        provider=Provider.INTERACTIVE_SHELL,
+        chat_id="",
+        channels=("interactive_shell",),
+        enabled=True,
+        window_hours=24,
+        last_run="2026-09-16T11:54:47.347779+00:00",
+        next_run="2026-09-16T12:17:30+00:00",
+    )
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.loops.list_loop_summaries", lambda: [summary]
+    )
+    # ``file=None`` resolves to ``sys.stdout`` at print time, so CliRunner still
+    # captures the table; ``width`` pins the squeeze independent of the pytest TTY.
+    monkeypatch.setattr(cron_module, "_console", Console(width=95, force_terminal=False))
+    squeezed = CliRunner().invoke(cron_command, ["list"])
+    assert squeezed.exit_code == 0
+    assert "ecf7c2580b83" in squeezed.output
+    assert "…" not in squeezed.output  # every other cell folds instead of truncating
+
+    monkeypatch.setattr(cron_module, "_console", Console(width=200, force_terminal=False))
+    wide = CliRunner().invoke(cron_command, ["list"])
+    assert "2026-09-16 11:54:47 UTC" in wide.output
+    assert "347779" not in wide.output  # microseconds are noise that cost a column
 
 
 def test_cron_add_manual_loop_requires_prompt() -> None:
@@ -659,7 +794,7 @@ def test_cron_add_rejects_non_recurring_skill() -> None:
             "--kind",
             "recurring_skill",
             "--skill",
-            "fixing-github-ci",
+            "repair-github-ci",
             "--cron",
             "0 8 * * 1-5",
             "--provider",

@@ -44,6 +44,9 @@ if TYPE_CHECKING:
     from config.constants.account import (
         OPENSRE_APP_URL_ENV as OPENSRE_APP_URL_ENV,
     )
+    from config.constants.account import (
+        OPENSRE_STAFF_EMAIL_DOMAIN as OPENSRE_STAFF_EMAIL_DOMAIN,
+    )
     from config.constants.alertmanager import (
         ALERTMANAGER_BEARER_TOKEN_ENV as ALERTMANAGER_BEARER_TOKEN_ENV,
     )
@@ -337,6 +340,9 @@ if TYPE_CHECKING:
     )
     from config.constants.gateway import (
         WEB_STOP_TIMEOUT_SECONDS as WEB_STOP_TIMEOUT_SECONDS,
+    )
+    from config.constants.git import (
+        MERGE_RESOLUTION_TIMEOUT_SECONDS as MERGE_RESOLUTION_TIMEOUT_SECONDS,
     )
     from config.constants.git import (
         OPENSRE_COMMIT_COAUTHOR_EMAIL as OPENSRE_COMMIT_COAUTHOR_EMAIL,
@@ -1088,7 +1094,31 @@ if TYPE_CHECKING:
         APPLE_TERMINAL_PROGRAM as APPLE_TERMINAL_PROGRAM,
     )
     from config.constants.terminal_host import (
+        BASH_EXPORTED_FUNCTION_ENV_PREFIX as BASH_EXPORTED_FUNCTION_ENV_PREFIX,
+    )
+    from config.constants.terminal_host import (
+        CAPABLE_TERMINAL_TYPE as CAPABLE_TERMINAL_TYPE,
+    )
+    from config.constants.terminal_host import (
+        DUMB_TERMINAL_TYPES as DUMB_TERMINAL_TYPES,
+    )
+    from config.constants.terminal_host import (
+        FORCE_COLOR_ENV as FORCE_COLOR_ENV,
+    )
+    from config.constants.terminal_host import (
         TERM_PROGRAM_ENV as TERM_PROGRAM_ENV,
+    )
+    from config.constants.terminal_host import (
+        TERMINAL_COLUMNS_ENV as TERMINAL_COLUMNS_ENV,
+    )
+    from config.constants.terminal_host import (
+        TERMINAL_LINES_ENV as TERMINAL_LINES_ENV,
+    )
+    from config.constants.terminal_host import (
+        TERMINAL_TYPE_ENV as TERMINAL_TYPE_ENV,
+    )
+    from config.constants.terminal_host import (
+        WINDOWS_COMMAND_SHELL_ENV as WINDOWS_COMMAND_SHELL_ENV,
     )
     from config.constants.tooling import (
         DEFAULT_APPROVAL_EXPIRY_SECONDS as DEFAULT_APPROVAL_EXPIRY_SECONDS,

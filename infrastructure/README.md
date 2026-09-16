@@ -15,8 +15,8 @@ junk drawer. Prefer leaf imports over re-export shims.
 ## Process & install
 
 - `process/` — exit codes, CLI runtime flags, process-wide turn capacity
-  (`process/turn_capacity/`), and installed vs latest release version
-  (`process/release_version.py`).
+  (`process/turn_capacity/`), process-tree termination, and installed vs latest
+  release version (`process/release_version.py`).
 - `setup_state.py` — install/setup facts surfaced to agents through prompt context.
 - `alert_intake.py` — minimal HTTP intake (`POST /alerts`) into the process-wide
   inbox, shared by gateway and interactive shell without either surface

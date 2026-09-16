@@ -2,10 +2,21 @@
 
 from __future__ import annotations
 
+import os
+import sys
 from collections.abc import Mapping
+from typing import Final
 
+from config.constants.analytics import (
+    ANALYTICS_INSTALL_CHANNEL_ENV,
+    ANALYTICS_INSTALL_SOURCE_ENV,
+    ANALYTICS_INSTALL_VERSION_ENV,
+)
 from infrastructure.analytics.provider import Properties
 from infrastructure.analytics.repl_context import get_cli_session_id
+from infrastructure.safety.secret_redaction import redact_text
+
+_INSTALL_DIMENSION_MAX_CHARS: Final[int] = 80
 
 
 def _string_value(value: object) -> str | None:
@@ -72,6 +83,37 @@ def _bucket_percentage(percent: float) -> str:
     if percent < 95:
         return "75-94"
     return "95-100"
+
+
+def _bounded_redacted_text(value: object, *, max_chars: int) -> str:
+    text = redact_text(str(value)).strip()
+    if len(text) <= max_chars:
+        return text
+    return f"{text[: max_chars - 1].rstrip()}…"
+
+
+def _optional_install_dimension(raw: str) -> str | None:
+    text = _bounded_redacted_text(raw, max_chars=_INSTALL_DIMENSION_MAX_CHARS)
+    return text or None
+
+
+def build_install_detected_properties(*, entrypoint: str) -> Properties:
+    """Build install dimensions supplied by an installer or inferred on first run."""
+    source = _optional_install_dimension(os.getenv(ANALYTICS_INSTALL_SOURCE_ENV, ""))
+    properties: Properties = {
+        "entrypoint": entrypoint,
+        "install_source": source or "first_cli_invocation",
+        "distribution": (
+            "frozen_binary"
+            if bool(getattr(sys, "frozen", False) or getattr(sys, "_MEIPASS", None))
+            else "python_package"
+        ),
+    }
+    if channel := _optional_install_dimension(os.getenv(ANALYTICS_INSTALL_CHANNEL_ENV, "")):
+        properties["install_channel"] = channel
+    if version := _optional_install_dimension(os.getenv(ANALYTICS_INSTALL_VERSION_ENV, "")):
+        properties["installed_version"] = version
+    return properties
 
 
 def build_cli_invoked_properties(

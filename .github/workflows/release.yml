@@ -1,15 +1,10 @@
 name: Release
 
 on:
-  push:
+  workflow_run:
+    workflows: ["CI"]
+    types: [completed]
     branches: [main]
-    paths-ignore:
-      - "docs/**"
-      - "infrastructure/deployment/cloudflare_install_proxy/**"
-      - "tests/**"
-      - "**/*.md"
-      - "**/*.mdx"
-      - ".claude/**"
   schedule:
     - cron: "30 0 * * *"
   workflow_dispatch:
@@ -32,21 +27,26 @@ permissions:
   actions: read
 
 concurrency:
-  group: release-${{ github.event_name == 'push' && 'main' || (github.event_name == 'workflow_dispatch' && inputs.channel == 'main' && 'main') || 'stable' }}
+  group: release-${{ github.event_name == 'workflow_run' && 'main' || (github.event_name == 'workflow_dispatch' && inputs.channel == 'main' && 'main') || 'stable' }}
   cancel-in-progress: true
 
 jobs:
   prepare:
-    if: github.repository == 'Tracer-Cloud/opensre'
+    if: >-
+      github.repository == 'Tracer-Cloud/opensre' &&
+      (github.event_name != 'workflow_run' ||
+      github.event.workflow_run.conclusion == 'success')
     runs-on: ubuntu-latest
     outputs:
       channel: ${{ steps.meta.outputs.channel }}
+      source_sha: ${{ steps.meta.outputs.source_sha }}
       tag_name: ${{ steps.meta.outputs.tag_name }}
       version_name: ${{ steps.meta.outputs.version_name }}
 
     steps:
       - uses: actions/checkout@v5
         with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0
 
       - name: Resolve release metadata
@@ -55,18 +55,47 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           DISPATCH_CHANNEL: ${{ inputs.channel }}
           DISPATCH_TAG: ${{ inputs.tag }}
+          WORKFLOW_RUN_HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         shell: bash
         run: |
           set -euo pipefail
 
           channel="release"
+          source_sha="$GITHUB_SHA"
 
-          if [ "$EVENT_NAME" = "push" ]; then
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
             channel="main"
+            source_sha="$WORKFLOW_RUN_HEAD_SHA"
           fi
 
           if [ "$EVENT_NAME" = "workflow_dispatch" ] && [ "$DISPATCH_CHANNEL" = "main" ]; then
             channel="main"
+          fi
+
+          if ! git cat-file -e "${source_sha}^{commit}"; then
+            echo "Release source commit is unavailable: ${source_sha}" >&2
+            exit 1
+          fi
+
+          if [ "$EVENT_NAME" = "workflow_run" ]; then
+            released_sha="$(git rev-parse -q --verify "refs/tags/main-build^{commit}" || true)"
+            if [ -n "$released_sha" ]; then
+              if ! git merge-base --is-ancestor "$released_sha" "$source_sha"; then
+                echo "The validated commit predates the current rolling release."
+                echo "channel=skip" >> "$GITHUB_OUTPUT"
+                echo "source_sha=${source_sha}" >> "$GITHUB_OUTPUT"
+                exit 0
+              fi
+              changed_paths="$(git diff --name-only "$released_sha" "$source_sha")"
+            else
+              changed_paths="$(git ls-tree -r --name-only "$source_sha")"
+            fi
+            if [ "$(printf '%s\n' "$changed_paths" | python3 .github/ci/release_paths.py)" != "true" ]; then
+              echo "No unreleased validated paths require a rolling release."
+              echo "channel=skip" >> "$GITHUB_OUTPUT"
+              echo "source_sha=${source_sha}" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
           fi
 
           if [ "$channel" = "main" ]; then
@@ -78,7 +107,7 @@ jobs:
             year="$(date -u +%Y)"
             month="$(date -u +%-m)"
             day="$(date -u +%-d)"
-            short_sha="${GITHUB_SHA:0:7}"
+            short_sha="${source_sha:0:7}"
             raw_version="0.1.${year}.${month}.${day}+main.${short_sha}"
             # Hatchling/importlib report the PEP 440 canonical form: an all-digit
             # SHA segment like 0273802 becomes 273802. Match that here so the
@@ -88,6 +117,7 @@ jobs:
             )"
 
             echo "channel=main" >> "$GITHUB_OUTPUT"
+            echo "source_sha=${source_sha}" >> "$GITHUB_OUTPUT"
             echo "tag_name=main-build" >> "$GITHUB_OUTPUT"
             echo "version_name=${main_version}" >> "$GITHUB_OUTPUT"
             exit 0
@@ -105,16 +135,19 @@ jobs:
           fi
 
           echo "channel=release" >> "$GITHUB_OUTPUT"
+          echo "source_sha=${source_sha}" >> "$GITHUB_OUTPUT"
           echo "tag_name=${tag_name}" >> "$GITHUB_OUTPUT"
           echo "version_name=${tag_name#v}" >> "$GITHUB_OUTPUT"
 
   verify:
     runs-on: ubuntu-latest
     needs: prepare
-    if: github.event_name != 'push'
+    if: github.event_name != 'workflow_run'
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v10.0.1
@@ -151,6 +184,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v10.0.1
@@ -237,6 +272,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
 
       - name: Install uv
         uses: astral-sh/setup-uv@v10.0.1
@@ -778,6 +815,7 @@ jobs:
     steps:
       - uses: actions/checkout@v5
         with:
+          ref: ${{ needs.prepare.outputs.source_sha }}
           fetch-depth: 0
           # The rolling `main-build` tag is force-moved to each new main commit
           # below. Whenever main has advanced past a commit that touches
@@ -803,11 +841,12 @@ jobs:
 
       - name: Create release notes
         env:
+          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
           VERSION_NAME: ${{ needs.prepare.outputs.version_name }}
         shell: bash
         run: |
           set -euo pipefail
-          short_sha="$(printf '%s' "$GITHUB_SHA" | cut -c1-7)"
+          short_sha="$(printf '%s' "$SOURCE_SHA" | cut -c1-7)"
           built_at="$(date -u +"%Y-%m-%d %H:%M UTC")"
 
           CB='```'
@@ -819,18 +858,10 @@ jobs:
             printf 'Windows:\n\n%spowershell\nirm https://install.opensre.com | iex\n%s\n' "$CB" "$CB"
           } > MAIN_RELEASE_NOTES.md
 
-      - name: Move main build tag to the latest commit
-        shell: bash
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag -f "${{ needs.prepare.outputs.tag_name }}" "$GITHUB_SHA"
-          git push origin "refs/tags/${{ needs.prepare.outputs.tag_name }}" --force
-
       - name: Publish rolling main release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.MAIN_BUILD_TAG_TOKEN || secrets.GITHUB_TOKEN }}
+          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
         shell: bash
         run: |
           set -euo pipefail
@@ -849,7 +880,18 @@ jobs:
           gh release create "$tag_name" \
             main-release-assets/* \
             --repo "${{ github.repository }}" \
-            --target "$GITHUB_SHA" \
+            --target "$SOURCE_SHA" \
             --title "Main" \
             --notes-file MAIN_RELEASE_NOTES.md \
             --prerelease
+
+      - name: Move main build tag to the latest commit
+        env:
+          SOURCE_SHA: ${{ needs.prepare.outputs.source_sha }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -f "${{ needs.prepare.outputs.tag_name }}" "$SOURCE_SHA"
+          git push origin "refs/tags/${{ needs.prepare.outputs.tag_name }}" --force

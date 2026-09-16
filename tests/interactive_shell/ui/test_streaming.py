@@ -1132,6 +1132,16 @@ class TestRenderMarkdownBlock:
 
         assert "__init__.py" in _strip_ansi(buf.getvalue())
 
+    def test_dunder_filename_inside_a_code_span_keeps_no_backslashes(self) -> None:
+        """Code spans render verbatim, so the escape must not reach into them."""
+        console, buf = _non_tty_console()
+
+        render_markdown_block(console, "Resolved `core/agent_harness/__init__.py` and README.")
+
+        output = _strip_ansi(buf.getvalue())
+        assert "core/agent_harness/__init__.py" in output
+        assert "\\_" not in output
+
     def test_strips_terminal_controls_from_model_prose(self) -> None:
         """Intermediate/closing model commentary must not inject ESC/BEL."""
         console, buf = _non_tty_console()

@@ -176,7 +176,12 @@ def ship_fix(
     # leaves the user's changes on that branch, so tag it onto the error for the
     # caller to surface for manual recovery instead of reporting an empty branch.
     try:
-        commit_paths(workspace, changed, _commit_message(issue_id, sentry_url, result.summary))
+        commit_paths(
+            workspace,
+            changed,
+            _commit_message(issue_id, sentry_url, result.summary),
+            analytics_workflow="sentry_fix",
+        )
         push_branch(workspace, branch, base_default=base, token=token or None)
         pr = open_pull_request(
             workspace,

@@ -8,14 +8,22 @@ from integrations.coding_agent.backend_exec import (
     run_agentic_cli,
     workspace_error,
 )
-from integrations.coding_agent.models import CodingResult
+from integrations.coding_agent.models import CodingResult, Progress
 from integrations.llm_cli.agent_exec import build_guarded_task_prompt
 from integrations.llm_cli.cursor import CursorAdapter
 from integrations.llm_cli.subprocess_env import build_cli_subprocess_env
 
 
-def run(task: str, *, workspace: str, model: str | None, timeout_sec: float) -> CodingResult:
+def run(
+    task: str,
+    *,
+    workspace: str,
+    model: str | None,
+    timeout_sec: float,
+    on_progress: Progress | None = None,
+) -> CodingResult:
     """Run Cursor Agent over *workspace* and capture the resulting diff."""
+    _ = on_progress  # this backend does not stream its steps
     ws = resolve_workspace_dir(workspace)
     ws_error = workspace_error(ws)
     if ws_error:

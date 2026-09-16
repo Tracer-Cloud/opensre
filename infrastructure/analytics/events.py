@@ -32,6 +32,15 @@ class Event(StrEnum):
     TERMINAL_TURN_SUMMARIZED = "terminal_turn_summarized"
     REACT_TURN_COMPLETED = "react_turn_completed"
     AI_GENERATION = "$ai_generation"
+    AGENT_TOOL_CALL_COMPLETED = "agent_tool_call_completed"
+    ASK_USER_PROMPT_RENDERED = "ask_user_prompt_rendered"
+    ASK_USER_PROMPT_ANSWERED = "ask_user_prompt_answered"
+    ASK_USER_PROMPT_DISMISSED = "ask_user_prompt_dismissed"
+    INTERACTIVE_SHELL_RENDERED = "interactive_shell_rendered"
+    BROWSER_OPEN_REQUESTED = "browser_open_requested"
+    SKILL_EXECUTED = "skill_executed"
+    OPENSRE_COMMIT_CREATED = "opensre_commit_created"
+    OPENSRE_CI_EPOCH_RESOLVED = "opensre_ci_epoch_resolved"
 
     # Gateway chat turns (Slack / Telegram) — usage sessions, not inventory
     GATEWAY_TURN_STARTED = "gateway_turn_started"

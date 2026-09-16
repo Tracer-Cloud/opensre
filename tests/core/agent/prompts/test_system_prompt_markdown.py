@@ -42,42 +42,22 @@ def test_actionable_results_are_bullets_not_a_paragraph() -> None:
 
 
 def test_finite_material_ambiguity_requires_selectable_clarification() -> None:
-    text = _SYSTEM_PROMPT_BASE
-    collapsed = " ".join(text.split())
+    collapsed = " ".join(_SYSTEM_PROMPT_BASE.split())
     assert "Clarification is blocking whenever an underspecified request" in collapsed
     assert "materially different intents, goals, or execution paths" in collapsed
     assert "When TURN INTERACTION reports the menu is available" in collapsed
     assert "you MUST call `ask_user_choice`" in collapsed
-    assert "numbered fallback only for required clarification" in collapsed
-    assert "TURN INTERACTION reports the menu is unavailable" in collapsed
-
-
-def test_demo_requests_load_the_master_before_asking_for_a_child() -> None:
-    collapsed = " ".join(_SYSTEM_PROMPT_BASE.split())
-    assert "For a demo or getting-started request" in collapsed
-    assert "load the master onboarding skill" in collapsed
-    assert "chooses the child skill after the answer" in collapsed
-    assert "Do not ask a separate onboarding question before loading it" in collapsed
-
-
-def test_finite_clarifications_are_batched_without_over_questioning() -> None:
-    collapsed = " ".join(_SYSTEM_PROMPT_BASE.split())
-    assert "batch them in one `ask_user_choice` call using the `questions` payload" in collapsed
-    assert "Do not drip them across turns" in collapsed
-    assert "when the user's intent is explicit" in collapsed
-    assert "a safe default would not materially change the result" in collapsed
-    assert "answers are open-ended rather than a small fixed set" in collapsed
+    assert 'write a numbered "reply with 1, 2, or 3" list' in collapsed
 
 
 def test_optional_choice_protections_follow_turn_interaction_facts() -> None:
     """Optional next-step menus follow TURN INTERACTION facts, not surface guessing."""
     text = _SYSTEM_PROMPT_BASE
     collapsed = " ".join(text.split())
-    assert "Do **not** call `ask_user_choice` just to park an optional follow-up" in collapsed
-    assert "when TURN INTERACTION says the menu is unavailable" in collapsed
-    assert "session_goal` is attached" in collapsed
-    assert "Always leave the user a selectable next step" not in text
     assert "TURN INTERACTION says the ask_user_choice menu is available" in collapsed
+    assert "When the menu is unavailable or a session_goal is attached" in collapsed
+    assert "finish, or one sentence of instructions" in collapsed
+    assert "Always leave the user a selectable next step" not in text
     assert "headless, scheduled, or gateway" not in collapsed
 
 
@@ -123,3 +103,15 @@ def test_counts_come_from_a_parser_not_a_pattern() -> None:
     assert "Count by parsing, not by pattern" in shell_section
     assert "answers a different question" in shell_section
     assert "say which field you could not read" in shell_section
+
+
+def test_a_requested_plan_is_written_even_when_its_marks_are_declined() -> None:
+    """Asked to tick undone steps, the model refused in prose and no checklist appeared."""
+    collapsed = " ".join(_SYSTEM_PROMPT_BASE.split())
+    assert "write it with `update_plan` even when you must decline the marks" in collapsed
+    assert "The checklist with its statuses is the answer" in collapsed
+
+
+def test_a_blocked_step_is_resolved_with_the_user_not_skipped() -> None:
+    collapsed = " ".join(_SYSTEM_PROMPT_BASE.split())
+    assert "A blocked step is resolved with the user, not skipped" in collapsed

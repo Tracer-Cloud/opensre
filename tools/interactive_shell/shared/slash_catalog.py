@@ -420,12 +420,14 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         "User asks for version information",
     ),
     "/work": _mcp(
-        "Manage durable human work items and reminders. Subcommands: list, add, done, next, path.",
+        "Manage durable human work items. Subcommands: list, add, done, next, path. "
+        "Reminder delivery requires the destination-aware work_task_* tools or opensre work CLI.",
         "User explicitly types /work to list, add, complete, or prioritize work items",
         "User asks for a durable task list or hackathon task overview via the slash command",
         anti_examples=(
             "User asks to manage OpenSRE runtime background jobs (use /tasks)",
-            "User asks in natural language to add or prioritize work (use work_task_* tools)",
+            "User asks in natural language to add, prioritize, or schedule work reminders "
+            "(use work_task_* tools)",
         ),
     ),
     "/debug": _mcp(

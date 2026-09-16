@@ -25,6 +25,8 @@ slug: "quickstart"
       <Tab title="Linux" id="install-opensre-linux">
         Choose one install method. The one-line installer tracks the latest stable build from `main`.
 
+        Prebuilt Linux binaries require **glibc 2.35+** (Ubuntu 22.04+ or a comparable distribution) and do not run on Alpine Linux. On an older or musl-based system, [install from source](/environments/linux-local#binary-compatibility) instead.
+
         ```bash
         curl -fsSL https://install.opensre.com | bash
         ```
@@ -54,7 +56,7 @@ slug: "quickstart"
   </Step>
 
   <Step title="Setup">
-    Run first-run setup to create or sign in to your OpenSRE account:
+    Run first-run setup to create or sign in to your OpenSRE account. From a source checkout, prefix commands in this and the next step with `uv run` (for example, `uv run opensre setup`). To update a source checkout, use `git pull --ff-only` followed by `uv sync --frozen --extra dev` instead of `opensre update`.
 
     ```bash
     opensre setup

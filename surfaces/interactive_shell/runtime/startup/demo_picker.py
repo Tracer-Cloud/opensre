@@ -1,13 +1,14 @@
 """Enter the onboarding skill on interactive launch and through ``/demo``.
 
 The host enters the master skill directly — no autosubmitted prompt, no model
-step, no tool-event render — so the skill's ``pre_execute`` menu is the first
-thing painted. The user's pick is the first message the model sees.
+step, no tool-event render — so the skill's entry menu is the first thing
+painted. The user's pick is the first message the model sees.
 """
 
 from __future__ import annotations
 
 import logging
+import os
 from typing import TYPE_CHECKING
 
 from config.constants.skills import ONBOARDING_SKILL_NAME
@@ -15,8 +16,9 @@ from core.agent_harness.spi.grounding import getting_started_skills
 from core.agent_harness.tools import ActionToolScope
 from infrastructure.analytics.capture import capture_onboarding_demo_prompted
 from infrastructure.analytics.source import is_test_run
+from integrations.git import GitCommandError, merge_in_progress
 from surfaces.shared.terminal.components.choice_menu import repl_tty_interactive
-from tools.interactive_shell.actions.skill_entry import enter_skill, pre_execute_queued_menu
+from tools.interactive_shell.actions.skill_entry import enter_skill, entry_menu_queued
 
 if TYPE_CHECKING:
     from rich.console import Console
@@ -39,12 +41,23 @@ class _StartupTtyProbe:
 
 
 def should_offer_demo() -> bool:
-    """Offer onboarding on interactive launches outside the test harness."""
-    return not is_test_run() and repl_tty_interactive()
+    """Offer onboarding on interactive launches outside the test harness, except mid-merge.
+
+    A checkout with a merge in progress was opened to finish that merge; the
+    demo menu would only stand in the way.
+    """
+    return not is_test_run() and repl_tty_interactive() and not _merge_in_progress_here()
+
+
+def _merge_in_progress_here() -> bool:
+    try:
+        return merge_in_progress(os.getcwd())
+    except (GitCommandError, OSError):
+        return False
 
 
 def offer_demo(session: Session, console: Console | None = None, *, force: bool = False) -> bool:
-    """Enter the master skill so its ``pre_execute`` menu opens; prints nothing itself."""
+    """Enter the master skill so its entry menu opens; prints nothing itself."""
     if not repl_tty_interactive() or (not force and not should_offer_demo()):
         return False
     if session.pending_user_choice is not None or session.terminal.pending_prompt_default:
@@ -56,11 +69,11 @@ def offer_demo(session: Session, console: Console | None = None, *, force: bool 
         slash_ports=_StartupTtyProbe(),
     )
     result = enter_skill(ONBOARDING_SKILL_NAME, scope)
-    if not result.get("ok") or not pre_execute_queued_menu(result.get("pre_execute", [])):
-        # A master skill without its menu is a skill bug; do not fall back to a model turn.
+    if not result.get("ok") or not entry_menu_queued(result):
+        # A master skill without its menu is a catalog bug; do not fall back to a model turn.
         logger.warning(
             "Onboarding skill did not queue its menu: %s",
-            result.get("error", "pre_execute queued no menu"),
+            result.get("error", "entry menu was not queued"),
         )
         session.active_skill = None
         return False

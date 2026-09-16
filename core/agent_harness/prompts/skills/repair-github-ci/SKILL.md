@@ -1,12 +1,12 @@
 ---
-name: fixing-github-ci
+name: repair-github-ci
 description: >-
   Fix failing GitHub CI / Actions checks via fix_github_pr_ci and push to the existing PR head, or fix
   a branch's failing CI via a linked repair worktree
 metadata:
   owner: Vaibhav
   last_changed_by: Jan
-  last_changed_at: 2026-09-13
+  last_changed_at: 2026-09-14
   usecases:
   - For repository contributors repairing failed CI on a pull request.
   - For maintainers repairing a named branch through a linked local worktree.
@@ -15,7 +15,7 @@ metadata:
   - A local checkout whose origin matches the target repository.
   - An installed and authenticated coding agent.
   - The fix_github_pr_ci tool and its supported local execution environment.
-  version: '1.1'
+  version: '2.0'
 ---
 
 # GitHub CI fix

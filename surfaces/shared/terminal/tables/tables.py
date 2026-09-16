@@ -214,6 +214,10 @@ def render_tools_table(console: Console, entries: list[ToolCatalogEntry]) -> Non
 
 
 _COMMAND_OUTPUT_INDENT = "    "  # aligns wrapped lines under the ``  ↳ `` marker
+# Cells :func:`print_command_output` prepends to every replayed line. A piped
+# child must render ``console.width - COMMAND_OUTPUT_GUTTER_WIDTH`` wide, or its
+# box-drawing rows fold when re-printed here (borders have no break points).
+COMMAND_OUTPUT_GUTTER_WIDTH = len(_COMMAND_OUTPUT_INDENT)
 
 _TRACEBACK_HEADER = "Traceback (most recent call last):"
 _TRACEBACK_FRAME_RE = re.compile(r'^\s*File "(?P<file>.+)", line (?P<line>\d+), in (?P<fn>.+)$')
@@ -273,6 +277,7 @@ def print_command_output(
 
 
 __all__ = [
+    "COMMAND_OUTPUT_GUTTER_WIDTH",
     "ColumnDef",
     "MCP_INTEGRATION_SERVICES",
     "print_command_output",

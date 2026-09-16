@@ -2,18 +2,23 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
-from typing import Final
+from collections.abc import Mapping, Sequence
+from typing import Final, cast
 
 from infrastructure.analytics.event_properties import (
+    _bounded_redacted_text,
     _bucket_duration_ms,
     _bucket_percentage,
     _integration_lifecycle_properties,
     _onboard_completed_properties,
 )
 from infrastructure.analytics.events import Event
-from infrastructure.analytics.provider import Properties, get_analytics
+from infrastructure.analytics.provider import JsonValue, Properties, get_analytics
 from infrastructure.observability.errors.sentry import capture_exception
+
+_ASK_USER_LABEL_MAX_CHARS: Final[int] = 80
+_ASK_USER_TITLE_MAX_CHARS: Final[int] = 500
+_ASK_USER_OPTION_MAX_CHARS: Final[int] = 300
 
 EVAL_AND_TERMINAL_KPI_QUERIES: Final[dict[str, str]] = {
     "terminal_action_execution_success_rate": """
@@ -286,6 +291,181 @@ def capture_terminal_turn_summarized(
             "session_fallback_count": session_fallback_count,
             "session_action_success_bucket": _bucket_percentage(session_action_success_percent),
             "session_fallback_rate_bucket": _bucket_percentage(session_fallback_rate_percent),
+        },
+    )
+
+
+def capture_agent_tool_call_completed(
+    *,
+    tool_call_id: str,
+    tool_name: str,
+    source: str,
+    role: str,
+    outcome: str,
+    executed: bool,
+    is_error: bool,
+    terminate: bool,
+    duration_ms: int,
+) -> None:
+    """Record the privacy-safe outcome of one model-requested tool call."""
+    _capture(
+        Event.AGENT_TOOL_CALL_COMPLETED,
+        {
+            "tool_call_id": tool_call_id,
+            "tool_name": tool_name,
+            "source": source,
+            "role": role,
+            "outcome": outcome,
+            "executed": executed,
+            "is_error": is_error,
+            "terminate": terminate,
+            "duration_ms": duration_ms,
+            "duration_bucket": _bucket_duration_ms(duration_ms),
+        },
+    )
+
+
+def _ask_user_questions(
+    questions: Sequence[Mapping[str, object]],
+) -> list[dict[str, JsonValue]]:
+    sanitized: list[dict[str, JsonValue]] = []
+    for question in questions:
+        raw_options = question.get("options")
+        options = (
+            raw_options
+            if isinstance(raw_options, Sequence) and not isinstance(raw_options, str)
+            else ()
+        )
+        sanitized.append(
+            {
+                "label": _bounded_redacted_text(
+                    question.get("label", ""), max_chars=_ASK_USER_LABEL_MAX_CHARS
+                ),
+                "title": _bounded_redacted_text(
+                    question.get("title", ""), max_chars=_ASK_USER_TITLE_MAX_CHARS
+                ),
+                "options": [
+                    _bounded_redacted_text(option, max_chars=_ASK_USER_OPTION_MAX_CHARS)
+                    for option in options
+                ],
+                "multi_select": bool(question.get("multi_select", False)),
+            }
+        )
+    return sanitized
+
+
+def _with_optional_skill(properties: Properties, skill_name: str | None) -> Properties:
+    if skill_name:
+        properties["skill_name"] = skill_name
+    return properties
+
+
+def capture_ask_user_prompt_rendered(
+    *,
+    interaction_id: str,
+    questions: Sequence[Mapping[str, object]],
+    render_mode: str,
+    allow_custom: bool,
+    has_command_options: bool,
+    skill_name: str | None,
+) -> None:
+    """Record a structured Ask User prompt when it becomes visible."""
+    sanitized = _ask_user_questions(questions)
+    _capture(
+        Event.ASK_USER_PROMPT_RENDERED,
+        _with_optional_skill(
+            {
+                "interaction_id": interaction_id,
+                "prompt_kind": "batch" if len(sanitized) > 1 else "single",
+                "question_count": len(sanitized),
+                "questions": cast(list[JsonValue], sanitized),
+                "render_mode": render_mode,
+                "allow_custom": allow_custom,
+                "has_command_options": has_command_options,
+            },
+            skill_name,
+        ),
+    )
+
+
+def capture_ask_user_prompt_answered(
+    *,
+    interaction_id: str,
+    selected_option_indices: Sequence[Sequence[int]],
+    custom_answers: Sequence[str | None],
+    disposition: str,
+    skill_name: str | None,
+) -> None:
+    """Record listed/custom options selected from a rendered Ask User prompt."""
+    answer_details: list[JsonValue] = []
+    for index, (indices, custom_answer) in enumerate(
+        zip(selected_option_indices, custom_answers, strict=True)
+    ):
+        detail: dict[str, JsonValue] = {
+            "question_index": index,
+            "selected_option_indices": list(indices),
+            "custom": custom_answer is not None,
+        }
+        if custom_answer is not None:
+            detail["answer"] = _bounded_redacted_text(
+                custom_answer, max_chars=_ASK_USER_TITLE_MAX_CHARS
+            )
+        answer_details.append(detail)
+    _capture(
+        Event.ASK_USER_PROMPT_ANSWERED,
+        _with_optional_skill(
+            {
+                "interaction_id": interaction_id,
+                "question_count": len(answer_details),
+                "answers": answer_details,
+                "disposition": disposition,
+            },
+            skill_name,
+        ),
+    )
+
+
+def capture_ask_user_prompt_dismissed(
+    *, interaction_id: str, reason: str, skill_name: str | None
+) -> None:
+    """Record a rendered Ask User prompt closed without an answer."""
+    _capture(
+        Event.ASK_USER_PROMPT_DISMISSED,
+        _with_optional_skill(
+            {"interaction_id": interaction_id, "reason": reason},
+            skill_name,
+        ),
+    )
+
+
+def capture_interactive_shell_rendered(*, entrypoint: str) -> None:
+    """Record successful first paint of the interactive shell chrome."""
+    _capture(Event.INTERACTIVE_SHELL_RENDERED, {"entrypoint": entrypoint})
+
+
+def capture_browser_open_requested(*, target: str, opened: bool) -> None:
+    """Record an application-requested browser open without retaining its URL."""
+    _capture(Event.BROWSER_OPEN_REQUESTED, {"target": target, "opened": opened})
+
+
+def capture_skill_executed(*, skill_name: str, entrypoint: str) -> None:
+    """Record one successful entry into an OpenSRE skill workflow."""
+    _capture(
+        Event.SKILL_EXECUTED,
+        {"skill_name": skill_name, "entrypoint": entrypoint},
+    )
+
+
+def capture_opensre_commit_created(
+    *, workflow: str, commit_kind: str, changed_file_count: int
+) -> None:
+    """Record a git commit successfully created by an OpenSRE workflow."""
+    _capture(
+        Event.OPENSRE_COMMIT_CREATED,
+        {
+            "workflow": workflow,
+            "commit_kind": commit_kind,
+            "changed_file_count": changed_file_count,
         },
     )
 

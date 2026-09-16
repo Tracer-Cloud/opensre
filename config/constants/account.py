@@ -15,6 +15,8 @@ OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS = 15.0
 OPENSRE_APP_URL_DEFAULT = "https://app.opensre.com"
 OPENSRE_APP_URL_DEV = "http://localhost:3000"
 OPENSRE_APP_URL_ENV = "OPENSRE_APP_URL"
+#: Accounts on this domain are OpenSRE staff; their email may identify them in telemetry.
+OPENSRE_STAFF_EMAIL_DOMAIN = "@opensre.com"
 
 __all__ = [
     "OPENSRE_ACCOUNT_FILENAME",
@@ -30,4 +32,5 @@ __all__ = [
     "OPENSRE_APP_URL_DEFAULT",
     "OPENSRE_APP_URL_DEV",
     "OPENSRE_APP_URL_ENV",
+    "OPENSRE_STAFF_EMAIL_DOMAIN",
 ]

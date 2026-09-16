@@ -163,10 +163,6 @@ def apply_auto_level(
     """
     if result.verdict != "allow":
         return result
-    # Read-only shell commands (ls, find, grep, …) run without approval at every
-    # level: they only inspect state, so gating them is friction without safety.
-    if result.shell_classification == "read_only":
-        return result
     ask_types = AUTO_LEVEL_ASK_TOOL_TYPES[auto_level]
     if ask_types is not None and result.tool_type not in ask_types:
         return result
@@ -194,10 +190,6 @@ def apply_plan_only_gate(
     at the gate. Read-only tool types run normally.
     """
     if not plan_only_active or result.verdict != "allow":
-        return result
-    # Read-only shell commands only inspect state; a plan-only request does not
-    # gate them any more than /auto does.
-    if result.shell_classification == "read_only":
         return result
     if not is_mutating_tool_type(result.tool_type):
         return result

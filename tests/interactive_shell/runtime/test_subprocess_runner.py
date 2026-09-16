@@ -7,7 +7,6 @@ import io
 import subprocess
 import tempfile
 import threading
-from pathlib import Path, PurePosixPath
 from unittest.mock import MagicMock
 
 import pytest
@@ -36,11 +35,7 @@ from tools.interactive_shell.implementation.claude_code_executor import (
 from tools.interactive_shell.shell.execution import (
     ShellExecutionResult,
 )
-from tools.interactive_shell.shell.runner import (
-    run_cd_command,
-    run_pwd_command,
-    run_shell_command,
-)
+from tools.interactive_shell.shell.runner import run_shell_command
 
 _BACKGROUND_TASK_POPEN = "surfaces.interactive_shell.runtime.subprocess_runner.subprocess.Popen"
 _CLI_POPEN = "tools.interactive_shell.cli.subprocess.Popen"
@@ -119,107 +114,6 @@ def test_read_task_output_returns_empty_for_closed_buffer() -> None:
         buf.write(b"data")
     # Buffer is closed once the ``with`` block exits.
     assert read_task_output(buf, limit=100) == ""
-
-
-def test_run_pwd_command_prints_cwd(monkeypatch: pytest.MonkeyPatch) -> None:
-    def _fake_cwd(_: type[Path]) -> PurePosixPath:
-        return PurePosixPath("/shown/pwd")
-
-    monkeypatch.setattr(Path, "cwd", classmethod(_fake_cwd))
-
-    session = Session()
-    buf = io.StringIO()
-    console = Console(file=buf, force_terminal=False)
-
-    run_pwd_command("pwd", _presenter(session, console))
-    assert "/shown/pwd" in buf.getvalue()
-    assert session.history[-1]["type"] == "shell"
-
-
-def test_run_pwd_command_rejects_multiple_tokens() -> None:
-    session = Session()
-    buf = io.StringIO()
-    console = Console(file=buf, force_terminal=False)
-
-    run_pwd_command("pwd extra", _presenter(session, console))
-    assert "too many arguments" in buf.getvalue().lower()
-    assert session.history[-1]["ok"] is False
-
-
-def test_run_cd_command_chdirs_to_target(monkeypatch: pytest.MonkeyPatch) -> None:
-    directories: list[Path] = []
-
-    def _chdir(target: Path) -> None:
-        directories.append(target)
-
-    monkeypatch.setattr(
-        "tools.interactive_shell.shell.runner.os.chdir",
-        _chdir,
-    )
-
-    session = Session()
-    buf = io.StringIO()
-    console = Console(file=buf, force_terminal=False)
-
-    run_cd_command("cd /tmp/example", _presenter(session, console))
-    assert directories == [Path("/tmp/example")]
-    assert session.history[-1]["type"] == "shell"
-
-
-def test_run_shell_command_quiet_cd_hides_cwd(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        "tools.interactive_shell.shell.runner.os.chdir",
-        lambda _target: None,
-    )
-    monkeypatch.setattr(
-        "tools.interactive_shell.shell.runner.Path.cwd",
-        classmethod(lambda _cls: Path("/tmp/example")),
-    )
-
-    session = Session()
-    buf = io.StringIO()
-    console = Console(file=buf, force_terminal=False)
-
-    result = run_shell_command("cd /tmp/example", _presenter(session, console), quiet=True)
-
-    # The dim command line shows what ran; the new cwd stays hidden.
-    assert buf.getvalue().strip() == "$ cd /tmp/example"
-    assert result["ok"] is True
-    assert result["response_text"] == "/tmp/example"
-
-
-def test_run_cd_command_reports_chdir_failure(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured_errors: list[BaseException] = []
-
-    def _chdir(_target: Path) -> None:
-        raise OSError("permission denied")
-
-    monkeypatch.setattr(
-        "tools.interactive_shell.shell.runner.os.chdir",
-        _chdir,
-    )
-    monkeypatch.setattr(
-        "surfaces.shared.error_handling.exception_reporting.capture_exception",
-        lambda exc, **_kwargs: captured_errors.append(exc),
-    )
-
-    session = Session()
-    buf = io.StringIO()
-    console = Console(file=buf, force_terminal=False)
-
-    run_cd_command("cd /root/blocked", _presenter(session, console))
-
-    assert "cd failed" in buf.getvalue()
-    assert len(captured_errors) == 1
-    assert isinstance(captured_errors[0], OSError)
-    assert session.history[-1] == {
-        "type": "shell",
-        "text": "cd /root/blocked",
-        "ok": False,
-        "response_text": "cd failed: permission denied",
-    }
 
 
 def test_run_shell_command_records_when_input_is_empty() -> None:
@@ -371,13 +265,12 @@ def test_run_shell_command_outputless_success_omits_marker(
     def _fake_execute(**_kwargs: object) -> ShellExecutionResult:
         return ShellExecutionResult(
             command="true",
-            argv=["true"],
             stdout="",
             stderr="",
             exit_code=0,
             timed_out=False,
             truncated=False,
-            executed_with_shell=False,
+            executed_with_shell=True,
         )
 
     monkeypatch.setattr(
@@ -402,13 +295,12 @@ def test_run_shell_command_quiet_prints_a_dim_command_line_and_no_stdout(
     def _fake_execute(**_kwargs: object) -> ShellExecutionResult:
         return ShellExecutionResult(
             command="echo hi",
-            argv=["echo", "hi"],
             stdout="hi\n",
             stderr="",
             exit_code=0,
             timed_out=False,
             truncated=False,
-            executed_with_shell=False,
+            executed_with_shell=True,
         )
 
     monkeypatch.setattr(
@@ -442,13 +334,12 @@ def test_run_shell_command_quiet_outputless_success_prints_only_the_command_line
     def _fake_execute(**_kwargs: object) -> ShellExecutionResult:
         return ShellExecutionResult(
             command="touch file",
-            argv=["touch", "file"],
             stdout="",
             stderr="",
             exit_code=0,
             timed_out=False,
             truncated=False,
-            executed_with_shell=False,
+            executed_with_shell=True,
         )
 
     monkeypatch.setattr(
@@ -480,13 +371,12 @@ def test_run_shell_command_success_records_stdout_without_stderr_noise(
     def _fake_execute(**_kwargs: object) -> ShellExecutionResult:
         return ShellExecutionResult(
             command="curl wttr.in/Hawaii?format=3",
-            argv=["curl", "wttr.in/Hawaii?format=3"],
             stdout="Hawaii: +25C\n",
             stderr="curl progress\n",
             exit_code=0,
             timed_out=False,
             truncated=False,
-            executed_with_shell=False,
+            executed_with_shell=True,
         )
 
     monkeypatch.setattr(
@@ -516,13 +406,12 @@ def test_run_shell_command_failure_prints_exit_line(monkeypatch: pytest.MonkeyPa
     def _fake_execute(**_kwargs: object) -> ShellExecutionResult:
         return ShellExecutionResult(
             command="false",
-            argv=["false"],
             stdout="",
             stderr="",
             exit_code=7,
             timed_out=False,
             truncated=False,
-            executed_with_shell=False,
+            executed_with_shell=True,
         )
 
     monkeypatch.setattr(
@@ -554,13 +443,12 @@ def test_run_shell_command_reports_cancelled(monkeypatch: pytest.MonkeyPatch) ->
         seen.update(kwargs)
         return ShellExecutionResult(
             command="sleep 30",
-            argv=["sleep", "30"],
             stdout="",
             stderr="",
             exit_code=-15,
             timed_out=False,
             truncated=False,
-            executed_with_shell=False,
+            executed_with_shell=True,
             cancelled=True,
         )
 
@@ -1444,6 +1332,48 @@ def test_run_opensre_cli_command_runs_integrations_list_in_foreground(
     # Read-only integrations runs foreground, not as a background task, so the
     # turn observes pass/fail instead of ending on a task id.
     assert start_calls == []
+
+
+def test_foreground_cli_child_renders_to_terminal_width_minus_replay_gutter(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Foreground ``cli_exec`` children get the same env contract as slash parity.
+
+    The child's stdout is a pipe: with no ``COLUMNS`` Rich rendered at 80 and
+    ellipsized ids (``ecf7c2580b…``) the action agent then failed to chain; its
+    output is replayed under the 4-cell ``↳`` gutter, so it must render exactly
+    ``width − gutter − 1`` wide to fit without folding. The width is only
+    honoured on a capable ``TERM``, and the replay parses ANSI, so colour is
+    forced and a dumb ``TERM`` is lifted exactly as ``_captured_child_env`` does.
+    """
+    from surfaces.interactive_shell.ui import COMMAND_OUTPUT_GUTTER_WIDTH
+
+    monkeypatch.setenv("TERM", "dumb")
+    seen_env: list[dict[str, str] | None] = []
+
+    def _fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+        env = kwargs.get("env")
+        seen_env.append(env if isinstance(env, dict) else None)
+        return subprocess.CompletedProcess(args=command, returncode=0, stdout="", stderr="")
+
+    monkeypatch.setattr(_CLI_RUN, _fake_run)
+    console = Console(file=io.StringIO(), force_terminal=False, width=134)
+
+    assert (
+        run_opensre_cli_command(
+            "integrations list",
+            Session(),
+            console,
+            confirm_fn=lambda _prompt: "y",
+            is_tty=True,
+        )
+        is True
+    )
+
+    assert seen_env and seen_env[0] is not None
+    assert seen_env[0]["COLUMNS"] == str(134 - COMMAND_OUTPUT_GUTTER_WIDTH - 1)
+    assert seen_env[0]["TERM"] == "xterm-256color"
+    assert seen_env[0]["FORCE_COLOR"] == "1"
 
 
 def test_start_background_cli_task_echoes_command_markup_literally(

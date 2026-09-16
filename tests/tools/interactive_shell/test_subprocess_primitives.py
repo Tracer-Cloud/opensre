@@ -8,10 +8,15 @@ import sys
 import tempfile
 import threading
 import time
+from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 
+import tools.interactive_shell.subprocess as subprocess_tools
 from tools.interactive_shell.subprocess import (
+    HEADLESS_SUBPROCESS_TERMINAL_WIDTH,
+    headless_subprocess_env,
     read_diag,
     subprocess_env_with_width,
     terminate_child_process,
@@ -24,6 +29,40 @@ def test_subprocess_env_with_width_reserves_prefix(monkeypatch: pytest.MonkeyPat
     env = subprocess_env_with_width(columns=100, lines=30)
     assert env["COLUMNS"] == "81"
     assert env["LINES"] == "30"
+
+
+def test_subprocess_env_with_width_reserves_caller_prefix() -> None:
+    """A replay gutter narrower than the task-relay prefix leaves the child more room."""
+    env = subprocess_env_with_width(columns=100, prefix_width=4)
+    assert env["COLUMNS"] == "95"
+
+
+def test_headless_subprocess_env_overrides_exported_columns(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A narrow inherited ``COLUMNS`` would ellipsize ids no human is there to read."""
+    monkeypatch.setenv("COLUMNS", "80")
+    assert headless_subprocess_env()["COLUMNS"] == str(HEADLESS_SUBPROCESS_TERMINAL_WIDTH)
+
+
+@pytest.mark.parametrize("term", ["dumb", "unknown", "DUMB"])
+def test_width_envs_replace_dumb_term_so_rich_honours_columns(
+    monkeypatch: pytest.MonkeyPatch, term: str
+) -> None:
+    """Rich ignores ``COLUMNS`` and renders 80x25 on a dumb ``TERM``.
+
+    Both width helpers must lift the terminal type, or the width they set is a
+    no-op and the child's tables still ellipsize (CI and gateway hosts export
+    ``TERM=dumb``).
+    """
+    monkeypatch.setenv("TERM", term)
+    assert subprocess_env_with_width(columns=100)["TERM"] == "xterm-256color"
+    assert headless_subprocess_env()["TERM"] == "xterm-256color"
+
+
+def test_width_envs_keep_a_capable_term(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("TERM", "screen-256color")
+    assert subprocess_env_with_width(columns=100)["TERM"] == "screen-256color"
 
 
 def test_subprocess_env_with_width_preserves_existing_lines(
@@ -45,6 +84,48 @@ def test_terminate_child_process_noop_when_exited() -> None:
     proc = subprocess.Popen(["true"])
     proc.wait()
     terminate_child_process(proc)
+
+
+def test_terminate_child_process_uses_tree_termination_on_windows(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    terminate_process_tree = MagicMock()
+    proc = MagicMock(pid=123)
+    proc.poll.side_effect = [None, 0, 0]
+    monkeypatch.setattr(subprocess_tools, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(
+        subprocess_tools,
+        "terminate_process_tree",
+        terminate_process_tree,
+    )
+
+    terminate_child_process(proc)
+
+    terminate_process_tree.assert_called_once_with(
+        123,
+        grace_seconds=subprocess_tools.SIGTERM_GRACE_SECONDS,
+        force_wait_seconds=5,
+    )
+    proc.kill.assert_not_called()
+
+
+def test_terminate_child_process_does_not_resolve_exited_windows_pid(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    terminate_process_tree = MagicMock()
+    proc = MagicMock(pid=123)
+    proc.poll.return_value = 0
+    monkeypatch.setattr(subprocess_tools, "os", SimpleNamespace(name="nt"))
+    monkeypatch.setattr(
+        subprocess_tools,
+        "terminate_process_tree",
+        terminate_process_tree,
+    )
+
+    terminate_child_process(proc)
+
+    terminate_process_tree.assert_not_called()
+    proc.kill.assert_not_called()
 
 
 @pytest.mark.skipif(os.name == "nt", reason="process-group cancel is POSIX")

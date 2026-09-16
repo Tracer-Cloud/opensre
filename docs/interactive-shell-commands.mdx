@@ -754,7 +754,11 @@ Shows up to **50** recent tasks, newest first. Use the **id** column (short pref
 /work path
 ```
 
-Human todos, reminders, and follow-ups — separate from `/tasks` (runtime jobs). See [Work Management](/work-management).
+`/work add` creates durable human todos; it does not schedule reminder delivery.
+For reminders, use the destination-aware `opensre work add` command with
+`--remind-at` and `--target provider:chat-id`, or ask from a connected chat whose
+destination OpenSRE can reuse. These work items are separate from `/tasks`
+(runtime jobs). See [Work Management](/work-management).
 
 You can also ask naturally:
 
@@ -996,7 +1000,7 @@ Scheduled report delivery. See [Cron](/cron).
 /loops show &lt;name-or-id&gt;
 /loops show &lt;name-or-id&gt; --run &lt;run-id&gt;
 /loops add --name "Morning ops" --time 08:30 --prompt "Check open incidents and summarize production risk" --run-now
-/loops add --name "CI fix agent" --cron "*/2 * * * *" --mode agent --prompt "Repair failing PR checks with fix_github_pr_ci"
+/loops add --name "CI fix agent" --cron "*/30 * * * * *" --mode agent --prompt "Repair failing PR checks with fix_github_pr_ci"
 /loops run &lt;loop_id&gt;
 /loops stop &lt;loop_id&gt;
 /loops start &lt;loop_id&gt;

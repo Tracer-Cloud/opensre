@@ -13,11 +13,46 @@ from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.runtime.subprocess_runner import build_opensre_cli_argv
 from surfaces.interactive_shell.telemetry.turn_outcome import format_wizard_cli_outcome
-from surfaces.interactive_shell.ui import DIM, ERROR, print_command_output
+from surfaces.interactive_shell.ui import (
+    COMMAND_OUTPUT_GUTTER_WIDTH,
+    DIM,
+    ERROR,
+    print_command_output,
+)
 from surfaces.shared.terminal.components.choice_menu import prepare_repl_output_line
+from tools.interactive_shell.subprocess import (
+    force_rich_color,
+    headless_subprocess_env,
+    subprocess_env_with_width,
+)
 
 _UPDATE_SUBPROCESS_TIMEOUT_SECONDS = 300
 _HEADLESS_CLI_SUBPROCESS_TIMEOUT_SECONDS = 90.0
+
+
+def _captured_child_env(console: Console, *, headless: bool) -> dict[str, str]:
+    """Environment for a delegated child whose stdout is captured and replayed.
+
+    The child's stdout is a pipe, not a TTY, so Rich in the child has neither a
+    width nor a colour decision of its own. Without ``COLUMNS`` it renders at 80
+    and ellipsizes table cells; the ``/cron list`` ids the action agent chains
+    into ``/cron remove <id>`` come back as ``ecf7c2580b…``. Too wide is just as
+    bad: :func:`print_command_output` re-prints the captured text under a
+    ``↳`` gutter and cannot re-flow a table, so rows wider than the terminal
+    fold mid-border. On the REPL the child therefore renders exactly to the
+    real terminal minus that gutter; headless surfaces have no human reader
+    and render wide so ids stay intact. Colour is forced so the replay can
+    parse the child's styling back instead of losing it.
+    """
+    if headless:
+        return force_rich_color(headless_subprocess_env())
+    return force_rich_color(
+        subprocess_env_with_width(
+            columns=console.size.width,
+            lines=console.size.height,
+            prefix_width=COMMAND_OUTPUT_GUTTER_WIDTH,
+        )
+    )
 
 
 def publish_headless_slash_response(
@@ -98,22 +133,12 @@ def run_cli_command(
     should_capture = capture_output or headless
     if headless and subprocess_timeout is None:
         subprocess_timeout = _HEADLESS_CLI_SUBPROCESS_TIMEOUT_SECONDS
-    child_env = os.environ.copy()
+    # A streamed child owns the real TTY and sizes itself; only a captured child
+    # needs to be told how wide its reader is.
+    child_env = (
+        _captured_child_env(console, headless=headless) if should_capture else os.environ.copy()
+    )
     child_env[OPENSRE_PARENT_INTERACTIVE_SHELL_ENV] = "1"
-    if should_capture:
-        # Captured child stdout isn't a TTY, so force Rich colour there and parse
-        # it back in print_command_output — otherwise its styling would be lost.
-        child_env["FORCE_COLOR"] = "1"
-        # Without a terminal (and with no exported COLUMNS) Rich in the child
-        # falls back to 80 columns and truncates table cells with an ellipsis —
-        # `/cron list` task ids come back as `ecf7c2580b…`, which the action
-        # agent cannot chain into `/cron remove <id>`. Render captured output
-        # wide; the REPL re-print re-wraps to the real terminal anyway. On a
-        # "dumb" TERM Rich short-circuits to 80x25 and ignores COLUMNS, so give
-        # the forced-colour child a real TERM as well (headless/CI surfaces).
-        if child_env.get("TERM", "").lower() in {"dumb", "unknown"}:
-            child_env["TERM"] = "xterm-256color"
-        child_env.setdefault("COLUMNS", "200")
     exit_code: int | None = 0
     try:
         if should_capture:

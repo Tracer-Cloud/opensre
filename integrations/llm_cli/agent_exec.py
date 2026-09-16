@@ -24,6 +24,7 @@ import signal
 import subprocess
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import IO
 
@@ -141,8 +142,10 @@ def _terminate(proc: subprocess.Popen[str]) -> None:
         _signal_process_group(proc, forceful=True)
 
 
-def _drain(pipe: IO[str] | None, buffer: list[str]) -> None:
-    """Read *pipe* to EOF into *buffer*.
+def _drain(
+    pipe: IO[str] | None, buffer: list[str], on_line: Callable[[str], None] | None = None
+) -> None:
+    """Read *pipe* to EOF into *buffer*, handing each line to *on_line* as it arrives.
 
     Agent CLIs stream verbose output (tool calls, edits, progress). If we polled
     without draining, that output would fill the OS pipe buffer (~64 KB), block the
@@ -155,6 +158,9 @@ def _drain(pipe: IO[str] | None, buffer: list[str]) -> None:
     try:
         for line in pipe:
             buffer.append(line)
+            if on_line is not None:
+                with contextlib.suppress(Exception):
+                    on_line(line)
     except (OSError, ValueError):
         # Draining is best-effort: the pipe may be closed mid-read when the process
         # is terminated on timeout (OSError) or already closed (ValueError). Either
@@ -172,8 +178,11 @@ def poll_agent_process(
     env: dict[str, str],
     timeout_sec: float,
     stdin: str | None = None,
+    on_stdout_line: Callable[[str], None] | None = None,
 ) -> AgentProcessOutcome:
     """Spawn the agent CLI, drain its pipes, and poll it to completion or *timeout_sec*.
+
+    *on_stdout_line* sees every stdout line as it arrives, for progress display.
 
     Polling (rather than a single blocking ``subprocess.run``) lets us enforce the
     deadline ourselves and terminate the process gracefully on timeout. stdout and
@@ -200,7 +209,7 @@ def poll_agent_process(
     out_buf: list[str] = []
     err_buf: list[str] = []
     readers = (
-        threading.Thread(target=_drain, args=(proc.stdout, out_buf), daemon=True),
+        threading.Thread(target=_drain, args=(proc.stdout, out_buf, on_stdout_line), daemon=True),
         threading.Thread(target=_drain, args=(proc.stderr, err_buf), daemon=True),
     )
     for reader in readers:

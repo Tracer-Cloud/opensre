@@ -170,6 +170,39 @@ def test_build_cli_invoked_properties_handles_root_invocation() -> None:
     assert "command_leaf" not in properties
 
 
+def test_build_install_detected_properties_keeps_installer_dimensions(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENSRE_INSTALL_SOURCE", "posix_installer")
+    monkeypatch.setenv("OPENSRE_INSTALL_CHANNEL", "release")
+    monkeypatch.setenv("OPENSRE_INSTALL_VERSION", "2026.9.14")
+    monkeypatch.setattr(event_properties.sys, "frozen", True, raising=False)
+
+    properties = event_properties.build_install_detected_properties(entrypoint="opensre")
+
+    assert properties == {
+        "entrypoint": "opensre",
+        "install_source": "posix_installer",
+        "distribution": "frozen_binary",
+        "install_channel": "release",
+        "installed_version": "2026.9.14",
+    }
+
+
+def test_build_install_detected_properties_redacts_secret_shaped_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENSRE_INSTALL_SOURCE", "ghp_abcdefghijklmnopqrstuvwxyz1234567890")
+    monkeypatch.setenv("OPENSRE_INSTALL_CHANNEL", "release")
+    monkeypatch.setenv("OPENSRE_INSTALL_VERSION", "ghp_abcdefghijklmnopqrstuvwxyz1234567890")
+
+    properties = event_properties.build_install_detected_properties(entrypoint="opensre")
+
+    assert "ghp_" not in str(properties)
+    assert properties["install_source"] == "[REDACTED:github_pat]"
+    assert properties["installed_version"] == "[REDACTED:github_pat]"
+
+
 def test_capture_update_helpers_emit_expected_events(monkeypatch: pytest.MonkeyPatch) -> None:
     stub = _StubAnalytics()
     monkeypatch.setattr(capture, "get_analytics", lambda: stub)
@@ -212,6 +245,75 @@ def test_capture_terminal_metrics_emit_expected_contract(monkeypatch: pytest.Mon
         if required is None:
             continue
         assert required.issubset(properties.keys())
+
+
+def test_capture_ask_user_events_link_redacted_prompt_and_selected_option(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stub = _StubAnalytics()
+    monkeypatch.setattr(capture, "get_analytics", lambda: stub)
+    questions = [
+        {
+            "label": "Access",
+            "title": "Use token ghp_abcdefghijklmnopqrstuvwxyz1234567890?",
+            "options": ["Read only", "Admin"],
+            "multi_select": False,
+        }
+    ]
+
+    capture.capture_ask_user_prompt_rendered(
+        interaction_id="prompt-1",
+        questions=questions,
+        render_mode="picker",
+        allow_custom=True,
+        has_command_options=False,
+        skill_name="triage",
+    )
+    capture.capture_ask_user_prompt_answered(
+        interaction_id="prompt-1",
+        selected_option_indices=((0,),),
+        custom_answers=(None,),
+        disposition="agent_answer",
+        skill_name="triage",
+    )
+
+    rendered = stub.events[0][1]
+    answered = stub.events[1][1]
+    assert rendered is not None and answered is not None
+    assert stub.events[0][0] is Event.ASK_USER_PROMPT_RENDERED
+    assert stub.events[1][0] is Event.ASK_USER_PROMPT_ANSWERED
+    assert "ghp_" not in str(rendered["questions"])
+    assert rendered["interaction_id"] == answered["interaction_id"] == "prompt-1"
+    assert answered["answers"] == [
+        {
+            "question_index": 0,
+            "selected_option_indices": [0],
+            "custom": False,
+        }
+    ]
+    assert "answer" not in answered["answers"][0]
+
+
+def test_capture_ask_user_answered_keeps_bounded_custom_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stub = _StubAnalytics()
+    monkeypatch.setattr(capture, "get_analytics", lambda: stub)
+    capture.capture_ask_user_prompt_answered(
+        interaction_id="prompt-2",
+        selected_option_indices=((1,),),
+        custom_answers=("Use token ghp_abcdefghijklmnopqrstuvwxyz1234567890",),
+        disposition="agent_answer",
+        skill_name=None,
+    )
+
+    answered = stub.events[0][1]
+    assert answered is not None
+    detail = answered["answers"][0]
+    assert detail["custom"] is True
+    assert detail["selected_option_indices"] == [1]
+    assert "ghp_" not in str(detail["answer"])
+    assert "[REDACTED:github_pat]" in str(detail["answer"])
 
 
 def test_eval_and_terminal_kpi_queries_cover_core_metrics() -> None:

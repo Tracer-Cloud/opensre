@@ -233,15 +233,21 @@ def test_pick_multi_select_returns_values_not_labels(monkeypatch) -> None:
         lambda **_kwargs: next(actions),
     )
     monkeypatch.setattr(choice_menu, "repl_tty_interactive", lambda: True)
+    answers: list[tuple[tuple[int, ...], str | None]] = []
+
+    def remember_answer(indices: tuple[int, ...], custom: str | None) -> None:
+        answers.append((indices, custom))
 
     result = choice_menu._pick(
         title="Extras",
         crumb="",
         labels=["Unit tests", "Dockerfile", "Or type…"],
         multi_select=True,
-        values=["tests", "docker", "custom"],
+        values=["unit\ntests", "docker", "custom"],
+        on_answer=remember_answer,
     )
-    assert result == "tests\ndocker"
+    assert result == "unit\ntests\ndocker"
+    assert answers == [((0, 1), None)]
 
 
 def test_draw_menu_strips_control_characters_from_title_and_labels(monkeypatch) -> None:

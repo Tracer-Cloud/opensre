@@ -29,11 +29,13 @@ metadata:
 
 Use `update_plan` to track the numbered workflow steps below. Keep already
 satisfied steps and mark them completed. Update each status when its completion
-condition is met.
+condition is met. Mark the step that checks the outcome with `verifies: true`;
+a text-only last step closes only after it has run.
 
 - [ ] Step 1. <Resolve the required inputs using the owning tool.>
 - [ ] Step 2. <Perform the work with the named tool.>
-- [ ] Step 3. <Deliver the verified outcome.>
+- [ ] Step 3. <Check the outcome with the named tool; this step carries `verifies: true`.>
+- [ ] Step 4. <Deliver the outcome.>
 
 ## Workflow
 
@@ -60,6 +62,6 @@ Complete when <the user has received the result>.
 <!-- Authoring notes: copy to skills/<name>/SKILL.md, replace placeholders,
      set the actual unquoted change date, and remove these notes. Follow
      ../AGENTS.md. Single-call tool-usage cards use their separate schema.
-     Add an optional pre_execute ask_user_choice menu only when the host must
-     open it on entry. Describe mid-flow questions in the numbered workflow.
+     Cards declare no entry hooks; describe every question, including any
+     first one, in the numbered workflow as an ask_user_choice step.
      Run the raw-card validator test and relevant workflow tests before release. -->

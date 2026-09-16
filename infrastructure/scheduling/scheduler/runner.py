@@ -2,7 +2,7 @@
 
 Loads all enabled tasks from the store, creates CronTrigger jobs, and
 blocks until SIGINT/SIGTERM. Fire times for dedup are passed directly from the
-APScheduler executor to each callback (UTC, minute precision), not recovered
+APScheduler executor to each callback (UTC, second precision), not recovered
 from listener timing or wall-clock time inside the callback.
 """
 
@@ -20,6 +20,7 @@ from config.constants.turn_concurrency import (
     DEFAULT_SCHEDULED_RUN_CONCURRENCY,
     OPENSRE_SCHEDULER_MAX_CONCURRENT_RUNS_ENV,
 )
+from infrastructure.scheduling.scheduler.cron_expression import build_cron_trigger
 from infrastructure.scheduling.scheduler.executor import execute_task
 from infrastructure.scheduling.scheduler.operation_log import (
     record_scheduler_execution_operation,
@@ -63,17 +64,10 @@ def _make_trigger(task: ScheduledTask) -> Any:
 
     Raises ValueError if the cron expression or timezone is invalid.
     """
-    from apscheduler.triggers.cron import CronTrigger
-
-    parts = task.cron.split()
-    if len(parts) != 5:
-        raise ValueError(f"Invalid cron expression (need 5 fields): {task.cron!r}")
-
     try:
-        trigger = CronTrigger.from_crontab(task.cron, timezone=task.timezone)
-    except (ValueError, TypeError, KeyError) as exc:
+        return build_cron_trigger(task.cron, task.timezone)
+    except ValueError as exc:
         raise ValueError(f"Invalid cron/timezone for task {task.id}: {exc}") from exc
-    return trigger
 
 
 def _next_run_from_trigger(trigger: Any, now: datetime | None = None) -> str | None:
@@ -96,9 +90,11 @@ def _compute_fire_time(scheduled_run_time: datetime) -> str:
     """Compute a stable, UTC-normalized fire_time string.
 
     Always converts to UTC so DST transitions don't produce ambiguous keys.
+    Seconds are kept so a six-field cron firing several times a minute gets one
+    claim key per tick instead of deduplicating its later ticks away.
     """
     utc_time: datetime = scheduled_run_time.astimezone(UTC)
-    return utc_time.strftime("%Y-%m-%dT%H:%MZ")
+    return utc_time.strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
 def _queue_scheduled_run(job_id: str, scheduled_run_time: datetime) -> None:
@@ -479,8 +475,8 @@ def run_task_now(
 ) -> bool:
     """Execute a task immediately (ad-hoc one-shot for debugging).
 
-    Uses the current time with seconds precision as fire_time so it does
-    not conflict with scheduled runs (which use minute precision).
+    Uses the current time with microsecond precision as fire_time so it does
+    not conflict with scheduled runs (which use second precision).
 
     ``only_failed=True`` retries only the destinations the most recently
     completed run failed at, instead of delivering to every configured

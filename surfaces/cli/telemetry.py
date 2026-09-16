@@ -20,9 +20,10 @@ if TYPE_CHECKING:
 
 
 def capture_first_run_if_needed() -> None:
+    from infrastructure.analytics.event_properties import build_install_detected_properties
     from infrastructure.analytics.provider import capture_first_run_if_needed as _capture
 
-    _capture()
+    _capture(build_install_detected_properties(entrypoint="opensre"))
 
 
 def capture_cli_invoked(properties: Properties | None = None) -> None:

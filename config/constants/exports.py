@@ -20,7 +20,8 @@ EXPORTS: dict[str, str] = {
     "SKILL_REPORT_SUFFIX": "skills",
     "SKILLS_HEADER": "skills",
     "ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME": "skills",
-    "SCHEDULING_GITHUB_CI_FIXES_SKILL_NAME": "skills",
+    "SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME": "skills",
+    "DELEGATING_GITHUB_CI_REPAIRS_SKILL_NAME": "skills",
     "CONNECTING_SLACK_SKILL_NAME": "skills",
     # account
     "OPENSRE_ACCOUNT_FILENAME": "account",
@@ -33,6 +34,7 @@ EXPORTS: dict[str, str] = {
     "OPENSRE_APP_URL_DEFAULT": "account",
     "OPENSRE_APP_URL_DEV": "account",
     "OPENSRE_APP_URL_ENV": "account",
+    "OPENSRE_STAFF_EMAIL_DOMAIN": "account",
     # analytics
     "ANALYTICS_DISABLED_ENV": "analytics",
     "ANALYTICS_EVENT_SCHEMA_VERSION": "analytics",
@@ -145,6 +147,7 @@ EXPORTS: dict[str, str] = {
     "USER_STOP_MESSAGE": "gateway",
     "WEB_STOP_TIMEOUT_SECONDS": "gateway",
     # git
+    "MERGE_RESOLUTION_TIMEOUT_SECONDS": "git",
     "OPENSRE_COMMIT_COAUTHOR_EMAIL": "git",
     "OPENSRE_COMMIT_COAUTHOR_NAME": "git",
     "OPENSRE_COMMIT_COAUTHOR_TRAILER": "git",
@@ -456,8 +459,16 @@ EXPORTS: dict[str, str] = {
     "OPENSRE_SIZE_PROFILE_ENV": "turn_concurrency",
     # twilio
     "TWILIO_ACCOUNT_SID_ENV": "twilio",
-    "TERM_PROGRAM_ENV": "terminal_host",
     "APPLE_TERMINAL_PROGRAM": "terminal_host",
+    "BASH_EXPORTED_FUNCTION_ENV_PREFIX": "terminal_host",
+    "TERM_PROGRAM_ENV": "terminal_host",
+    "WINDOWS_COMMAND_SHELL_ENV": "terminal_host",
+    "TERMINAL_COLUMNS_ENV": "terminal_host",
+    "TERMINAL_LINES_ENV": "terminal_host",
+    "TERMINAL_TYPE_ENV": "terminal_host",
+    "DUMB_TERMINAL_TYPES": "terminal_host",
+    "CAPABLE_TERMINAL_TYPE": "terminal_host",
+    "FORCE_COLOR_ENV": "terminal_host",
     "TWILIO_AUTH_TOKEN_ENV": "twilio",
     "TWILIO_SMS_DEFAULT_TO_ENV": "twilio",
     "TWILIO_SMS_FROM_ENV": "twilio",

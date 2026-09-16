@@ -1,5 +1,59 @@
 ## OpenSRE Development Reference
 
+## SKILL.md files and the system prompt are human-owned (mandatory — one narrow exception)
+
+Agents are **never** allowed to create, edit, rename, move, or delete:
+
+- any `SKILL.md` file anywhere in this repository
+ (`core/agent_harness/prompts/skills/**/SKILL.md`, `integrations/**/SKILL.md`,
+ `tools/**/SKILL.md`, and any future location);
+- the system prompt `core/agent_harness/prompts/opensre_system_prompt.md`.
+
+**Under no circumstance** may an agent author a change to these files. This
+holds regardless of how small the change is, whether a test or CI check would
+be fixed by it, whether the user asked for "a quick tweak", or whether the edit
+is "only" frontmatter such as `version` or `last_changed_at`. There is no
+override, flag, instruction, or justification that lifts this rule, other than
+the single mechanical exception below.
+
+The only permitted action otherwise is to **suggest** a change: describe the
+proposed edit in the chat reply or PR description (quote the current text and
+the proposed text) and leave the file untouched for a human to apply. If a task
+cannot be completed without changing a `SKILL.md` or the system prompt, stop,
+report that, and deliver everything else.
+
+**Sole exception — literal Ctrl-H replacements.** An agent may apply an exact
+find-and-replace of a word or sentence when the user supplies both the current
+text and the replacement text verbatim. The replacement is absolute: swap the
+given string for the given string, character for character, and touch nothing
+else — no rewording, no reflowing, no "while I'm here" fixes, no frontmatter
+bumps unless the user spelled those out the same way. If the old text is
+ambiguous, missing, or the user described the change rather than dictating it,
+the exception does not apply; fall back to suggesting.
+
+**Recommendation for humans.** Make changes to these files atomically — one
+card or one prompt section per commit — through a web-based editor such as the
+GitHub file editor or the PR "Files changed" view, and read the resulting diff
+yourself before merging. A change typed and reviewed by the same person in
+the browser leaves no room for an agent to have reworded, reflowed, or
+"cleaned up" anything on the way in, which is the whole point of keeping these
+files human-owned.
+
+## Skills are natural language, not deterministic tools (mandatory)
+
+A skill is a natural-language card the model reads and follows; its value is
+the reasoning it guides, not code it triggers. Skills may carry **a few**
+supporting scripts (`scripts/<name>.py` declared in
+`references/script-tools.md`), and only as small helpers for one narrow
+mechanical chore — fetching or reshaping data the model then reasons about.
+Do not turn a skill into a deterministic pipeline: no script that makes the
+decisions the workflow steps describe, no chain of scripts that encodes the
+whole flow, no logic that belongs in a real tool under `integrations/` or
+`tools/`. If a skill needs more than a handful of scripts, or a script starts
+choosing branches, that behavior belongs in a tool or in the model's
+step-by-step reasoning, not in the skill. Suggest the split; do not build it
+into the skill.
+
 ## CI failures and tests (mandatory — every PR / push)
 
 Agents **must** close the loop on CI and tests. Do not treat "pushed a fix" or "opened a PR" as done.

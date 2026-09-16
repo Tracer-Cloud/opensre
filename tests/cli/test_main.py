@@ -240,6 +240,24 @@ def test_main_captures_analytics_once_for_accepted_command(monkeypatch, capsys) 
     assert captured == ["install", "cli"]
 
 
+def test_internal_install_record_captures_install_without_cli_invocation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: list[str] = []
+    monkeypatch.setattr(
+        "surfaces.cli.app.capture_first_run_if_needed", lambda: captured.append("install")
+    )
+    monkeypatch.setattr(
+        "surfaces.cli.app.capture_cli_invoked", lambda *_args: captured.append("cli")
+    )
+    monkeypatch.setattr("surfaces.cli.app.shutdown_analytics", lambda **_kw: None)
+
+    exit_code = main(["--record-install"])
+
+    assert exit_code == 0
+    assert captured == ["install"]
+
+
 def test_main_fast_version_command_skips_first_run_setup(monkeypatch, capsys) -> None:
     captured: list[dict[str, object] | None] = []
     monkeypatch.setattr(
@@ -360,6 +378,7 @@ def test_main_emits_first_run_install_before_cli_invoked(
     provider._cached_anonymous_id = None
     provider._cached_identity_persistence = "unknown"
     provider._first_run_marker_created_this_process = False
+    monkeypatch.setattr(provider, "_install_capture_attempted", False)
     provider._pending_user_id_load_failures.clear()
     monkeypatch.delenv("OPENSRE_NO_TELEMETRY", raising=False)
     monkeypatch.delenv("OPENSRE_ANALYTICS_DISABLED", raising=False)

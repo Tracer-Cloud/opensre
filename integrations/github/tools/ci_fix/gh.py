@@ -53,11 +53,13 @@ def run_gh_text(
     github_token: str | None,
     timeout: int = DEFAULT_GH_TIMEOUT_SECONDS,
     repo_flag: bool = True,
+    cwd: str | None = None,
 ) -> str:
     """Run a narrow ``gh`` command with OpenSRE-resolved token auth.
 
     ``repo_flag=False`` omits the global ``-R`` selector for subcommands that
-    reject it (``gh api``, whose endpoint path already names the repo).
+    reject it (``gh api``, whose endpoint path already names the repo). *cwd*
+    runs the command inside a checkout, for subcommands that act on one.
     """
     token = resolve_github_token(github_token)
     if not token:
@@ -84,6 +86,7 @@ def run_gh_text(
             timeout=max(1, timeout),
             env=env,
             check=False,
+            cwd=cwd,
         )
     except subprocess.TimeoutExpired as exc:
         raise GitHubCiFixError(

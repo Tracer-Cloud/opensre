@@ -146,7 +146,8 @@ def test_onboarding_waits_for_selection_then_runs_the_child_in_the_answer_turn(
 
     pending = session.pending_user_choice
     assert pending is not None
-    assert pending.title == skill.pre_execute[0].args["title"]
+    assert skill.entry_menu is not None
+    assert pending.title == skill.entry_menu.title
     assert session.active_skill == ONBOARDING_SKILL_NAME
     assert work == []
     assert llm.invocations == 2

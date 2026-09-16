@@ -177,7 +177,7 @@ class SessionCore:
     """Queued question keys by owning skill, for explicit workflow restarts."""
 
     skills_already_prompted: set[str] = field(default_factory=set)
-    """Skills whose ``pre_execute`` menu this session has already opened.
+    """Skills whose entry menu this session has already opened.
 
     The host may reopen one on request (startup, ``/demo``); the model may not,
     or a later message that routes back to the skill asks the same question

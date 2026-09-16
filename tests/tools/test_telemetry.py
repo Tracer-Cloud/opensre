@@ -342,6 +342,27 @@ def _github_ci_analytics_case() -> ToolFailureCase:
     )
 
 
+def _github_ci_health_scan_case() -> ToolFailureCase:
+    def patch(mp: pytest.MonkeyPatch) -> None:
+        from integrations.github.client import GitHubApiError
+        from integrations.github.tools.ci_health_scan import tool as mod
+
+        mp.setattr(mod, "resolve_scope", MagicMock(side_effect=GitHubApiError("boom")))
+
+    def invoke() -> dict[str, Any]:
+        from integrations.github.tools.ci_health_scan.tool import scan_github_ci_health
+
+        return scan_github_ci_health(owners=["o"], github_token="tok")
+
+    return ToolFailureCase(
+        "github_ci_health_scan",
+        patch,
+        invoke,
+        "scan_github_ci_health",
+        "github",
+    )
+
+
 def _eks_list_clusters_case() -> ToolFailureCase:
     def patch(mp: pytest.MonkeyPatch) -> None:
         from integrations.eks.tools import eks_list_clusters_tool as mod
@@ -753,6 +774,7 @@ _TOOL_FAILURE_CASES: list[ToolFailureCase] = [
     _github_repository_case(),
     _github_star_history_case(),
     _github_ci_analytics_case(),
+    _github_ci_health_scan_case(),
     _eks_list_clusters_case(),
     _eks_describe_cluster_case(),
     _eks_nodegroup_case(),
@@ -944,6 +966,7 @@ _MIGRATED_TOOL_NAMES: frozenset[str] = frozenset(
         "get_github_repository",
         "get_github_star_history",
         "analyze_github_ci_reliability",
+        "scan_github_ci_health",
         "schedule_ci_repair_loop",
         "get_ci_repair_loop",
         # EKS — enumerated in #1463
@@ -1032,6 +1055,9 @@ _TOOLS_WITHOUT_DELIBERATE_CATCH: frozenset[str] = frozenset(
         "fix_sentry_issue_start",
         "generate_work_status_report",
         "github_cli",
+        # resolve_merge_conflicts catches only its own ResolveMergeError for
+        # known states; unexpected errors escape to the global #1476 wrapper.
+        "resolve_merge_conflicts",
         "get_airflow_dag_runs",
         "get_airflow_metrics",
         "get_airflow_task_instances",

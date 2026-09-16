@@ -158,6 +158,14 @@ def test_install_sh_auto_launches_account_setup_only_on_a_tty() -> None:
     assert '"$binary_path" setup' in source
 
 
+def test_install_sh_records_install_analytics_without_blocking_install() -> None:
+    source = INSTALL_SH.read_text()
+
+    assert "record_install_analytics()" in source
+    assert 'OPENSRE_INSTALL_SOURCE="posix_installer"' in source
+    assert '"$binary_path" --record-install >/dev/null 2>&1 || true' in source
+
+
 def test_install_sh_defaults_to_main_build_channel() -> None:
     source = INSTALL_SH.read_text()
 

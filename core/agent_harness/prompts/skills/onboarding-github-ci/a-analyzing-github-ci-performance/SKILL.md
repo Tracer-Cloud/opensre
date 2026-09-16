@@ -9,7 +9,7 @@ demo_order: 1
 metadata:
   owner: Vincent
   last_changed_by: Jan
-  last_changed_at: 2026-09-13
+  last_changed_at: 2026-09-14
   usecases:
   - For repository maintainers analyzing CI reliability over the previous 30 days.
   - For engineering teams assessing estimated developer waiting time and failure patterns.
@@ -18,21 +18,23 @@ metadata:
   - GitHub authentication with read access to the repository's Actions history.
   - The analyze_github_ci_reliability and scan_local_git_workspace tools.
   - For local discovery, a local Git checkout; the example repository does not require one.
-  version: '1.16'
+  version: '1.19'
 ---
 
 # CI/CD analytics
 
-Produce a CI/CD reliability report for one repository from raw GitHub
-Actions records, including an estimate of CI waiting time on merged pull
-requests. Use a 30-day window unless the request specifies another period.
+Give the user a CI/CD reliability report for one repository from raw GitHub Actions records, including an estimate of CI waiting time on merged pull requests.
+
+Use a 30-day window unless the request specifies another period.
 
 ## Plan
 
 After reading this skill, use `update_plan` to create or revise the live
 CI/CD Reliability Progress plan using the six numbered workflow headings
-below as its steps. Keep showing the table and offering the next step as
-separate plan items; update statuses as each step's completion condition is met.
+below as its steps.
+
+Keep showing the table and offering the next step as separate plan items; update statuses as each step's completion condition is met.
+
 Mark step 5 with `deliverable: true` in every `update_plan` call: its work is
 the reply itself, and without that flag the host treats a text-only reply
 before the plan is settled as a premature stop and does not show it.
@@ -78,9 +80,7 @@ column of the comparison table), `benchmarks` (the peer columns),
 is yours to write. Do not paginate the REST API or run `execute_python_code`
 yourself.
 
-If the tool reports a missing token, tell the user to run
-`opensre integrations setup github` and carry that blocker into step 4 as a
-coverage gap.
+If the tool reports a missing token, tell the user to run `opensre integrations setup github` and carry that blocker into step 4 as a coverage gap.
 
 Metric definitions live in [Metrics](references/metrics.md)
 (`skill_view(name="analyzing-github-ci-performance", reference="metrics")`); read it only
@@ -110,7 +110,7 @@ this table as text, replacing every placeholder with a calculated value or a
 benchmark from the reference:
 
 ```
-Developer impact: 
+Developer impact:
 - xx developer-hours spent waiting on CI across xx developers.
 - Most affected developer: up to xx h/week waiting on CI.
 - xx% of PR runs failed, creating substantial retry and investigation overhead.
@@ -125,7 +125,7 @@ Compared with langchain-ai/langchain and anomalyco/opencode:
 | Slowest normal run | <minutes and workflow> | <benchmark> | <benchmark> |
 | PR failure rate | <% of PR workflow runs> | <benchmark> | <benchmark> |
 
-What insights stand out: 
+What insights stand out:
 - CI-caused failures account for x.x% of all PR runs, roughly x.x-x.x× higher than the comparison repositories.
 ```
 
@@ -154,7 +154,7 @@ this turn. The user's answer arrives in the next turn. Each branch except
 `Finish` is owned by a sibling skill: load it with `skill_view` and follow
 its plan; do not reimplement its steps here.
 
-- **Schedule local loops:** call `skill_view(name="scheduling-github-ci-fixes")`
+- **Schedule local loops:** call `skill_view(name="scheduling-github-ci-repairs")`
   and follow that skill. The repository is already chosen and analyzed in
   this session, so its plan omits the scan and repository-pick steps and
   its analyze step reuses today's saved report.

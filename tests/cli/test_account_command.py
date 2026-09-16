@@ -433,6 +433,11 @@ def test_account_usage_opens_the_usage_page_and_prints_the_url(
         return True
 
     monkeypatch.setattr(account_auth.webbrowser, "open", _open)
+    analytics: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        "infrastructure.analytics.capture.capture_browser_open_requested",
+        lambda **properties: analytics.append(properties),
+    )
 
     # Act
     result = CliRunner().invoke(account_command, ["usage"])
@@ -440,6 +445,7 @@ def test_account_usage_opens_the_usage_page_and_prints_the_url(
     # Assert: one browser call to the usage page and the URL on screen for terminals without links.
     assert result.exit_code == 0, result.output
     assert opened == ["https://app.opensre.com/usage"]
+    assert analytics == [{"target": "account_usage", "opened": True}]
     assert "Usage and top-up: https://app.opensre.com/usage" in result.output
     assert "Opened in your browser." in result.output
 

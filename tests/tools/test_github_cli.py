@@ -174,6 +174,32 @@ def test_run_gh_redacts_token_echo_in_stdout() -> None:
     assert "***" in result["stdout"]
 
 
+def test_run_gh_refuses_a_json_result_the_output_cap_cut_short() -> None:
+    """A truncated JSON list is no answer: it must fail so the caller narrows the query."""
+    # Arrange: a listing far larger than the output cap.
+    huge = "[" + ",".join(f'{{"number": {n}, "state": "OPEN"}}' for n in range(2000)) + "]"
+    completed = MagicMock(returncode=0, stdout=huge, stderr="")
+
+    # Act
+    with (
+        patch(
+            "integrations.github.tools.github_cli.runner.resolve_github_token",
+            return_value="secret-token",
+        ),
+        patch(
+            "integrations.github.tools.github_cli.runner.shutil.which", return_value="/usr/bin/gh"
+        ),
+        patch("integrations.github.tools.github_cli.runner.subprocess.run", return_value=completed),
+    ):
+        result = run_gh(args=["pr", "list", "--json", "number,state"])
+
+    # Assert
+    assert result["ok"] is False
+    assert result["error_type"] == "output_truncated"
+    assert "--jq" in result["error"] and "incomplete" in result["error"]
+    assert result["truncated"] is True
+
+
 def test_run_gh_missing_token() -> None:
     with patch("integrations.github.tools.github_cli.runner.resolve_github_token", return_value=""):
         result = run_gh(args=["issue", "list"])

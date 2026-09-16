@@ -103,8 +103,14 @@ def resolve_literal_slash_typo(
     if cmd.validate_args is not None:
         validation_error = cmd.validate_args(args)
         if validation_error is not None and args:
+            hints = subcommand_hints(cmd)
+            message = (
+                format_invalid_subcommand_message(cmd, args)
+                if hints and args[0].lower() not in hints
+                else validation_error
+            )
             return LiteralSlashTypo(
-                message=format_invalid_subcommand_message(cmd, args),
+                message=message,
                 outcome="invalid_subcommand",
             )
 

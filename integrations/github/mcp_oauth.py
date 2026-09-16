@@ -202,10 +202,15 @@ def authorize_github_via_device_flow(
     if on_prompt is not None:
         on_prompt(device_code)
     if open_browser:
+        opened = False
         try:
-            webbrowser.open(device_code.verification_uri)
+            opened = bool(webbrowser.open(device_code.verification_uri))
         except Exception:  # pragma: no cover - headless/no-browser environments
             logger.debug("Could not open a browser for GitHub device authorization", exc_info=True)
+        finally:
+            from infrastructure.analytics.capture import capture_browser_open_requested
+
+            capture_browser_open_requested(target="github_oauth", opened=opened)
     return poll_github_device_token(
         client_id=resolved_client_id,
         device_code=device_code,

@@ -14,6 +14,7 @@ and no "Reply with 1, 2, or 3" free-text parsing.
 from __future__ import annotations
 
 import re
+import uuid
 from dataclasses import dataclass, field
 
 _ANSWER_HEADER = re.compile(r"^(\d+)\.\s+(.+)$")
@@ -65,6 +66,9 @@ class PendingUserChoice:
 
     custom_answer: bool = True
     """Offer the free-text row under the options (single-question path)."""
+
+    interaction_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    """Opaque identifier joining prompt exposure to its eventual outcome."""
 
     def items(self) -> tuple[AskUserQuestion, ...]:
         """Questions to render: ``questions`` when set, otherwise one from title/options."""

@@ -5,8 +5,7 @@ Renders the pending confirmation as a stacked, tagged choice (``[a] …`` /
 answer keys, or a digit — instead of a typed answer. The free-text box is
 hidden while a confirmation is active (see ``typing_box_hidden``), so the choice
 cannot be confused with a message. The options are supplied per confirmation by
-``ReplState.confirm_options`` (default Yes/No; the auto-level gate adds an
-"always allow" row). Selecting delivers the answer to the parked turn worker.
+``ReplState.confirm_options``. Selecting delivers the answer to the parked turn worker.
 """
 
 from __future__ import annotations
@@ -20,8 +19,7 @@ from prompt_toolkit.key_binding.key_processor import KeyPressEvent
 from infrastructure.terminal import theme as ui_theme
 from surfaces.shared.terminal.prompt_layout import prompt_line_width
 
-# Rows are supplied per confirmation via ``ReplState.confirm_options``. The gate
-# reads "", "y", "yes" as allow; "always" as allow-and-raise-auto; else cancel.
+# Rows are supplied per confirmation via ``ReplState.confirm_options``.
 _MAX_TAGGED = 9
 # Leave room for the ``│ `` / ` │`` box chrome plus one spare column so the
 # border never reaches the last cell and soft-wraps.

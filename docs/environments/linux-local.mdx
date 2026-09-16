@@ -20,6 +20,21 @@ brew install tracer-cloud/tap/opensre
 
 You usually don't need `sudo`. If `opensre` isn't found after install, open a new terminal or add the bin directory the installer printed (often `~/.local/bin`) to your PATH.
 
+### Binary compatibility
+
+Prebuilt Linux binaries require **glibc 2.35+** (Ubuntu 22.04+ or a comparable distribution) and do not run on Alpine Linux. On an older or musl-based Linux system, install from source instead:
+
+Install [uv](https://docs.astral.sh/uv/getting-started/installation/) first, then run:
+
+```bash
+git clone https://github.com/Tracer-Cloud/opensre.git
+cd opensre
+uv sync --frozen --extra dev
+uv run opensre
+```
+
+Run every OpenSRE command below from this checkout with `uv run`, for example `uv run opensre onboard`.
+
 In a normal interactive terminal, install may start onboard for you. To skip that:
 
 ```bash

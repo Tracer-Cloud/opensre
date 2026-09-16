@@ -46,6 +46,7 @@ if TYPE_CHECKING:
         render_agents_table,
     )
     from surfaces.shared.terminal.tables import (
+        COMMAND_OUTPUT_GUTTER_WIDTH,
         MCP_INTEGRATION_SERVICES,
         ColumnDef,
         print_command_output,
@@ -65,6 +66,7 @@ _LAZY_SUBMODULE_EXPORTS: dict[str, str] = {
     "STREAM_LABEL_ANSWER": "surfaces.interactive_shell.ui.streaming",
     "STREAM_LABEL_ASSISTANT": "surfaces.interactive_shell.ui.streaming",
     "stream_to_console": "surfaces.interactive_shell.ui.streaming",
+    "COMMAND_OUTPUT_GUTTER_WIDTH": "surfaces.shared.terminal.tables",
     "MCP_INTEGRATION_SERVICES": "surfaces.shared.terminal.tables",
     "ColumnDef": "surfaces.shared.terminal.tables",
     "print_command_output": "surfaces.shared.terminal.tables",
@@ -91,6 +93,7 @@ __all__ = [
     "ANSI_RESET",
     "BG",
     "BOLD_BRAND",
+    "COMMAND_OUTPUT_GUTTER_WIDTH",
     "ColumnDef",
     "DEVICE_CODE",
     "DEVICE_CODE_ANSI",

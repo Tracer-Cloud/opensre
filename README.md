@@ -98,6 +98,8 @@ curl -fsSL https://install.opensre.com | bash
 
 The macOS/Linux installer does not require sudo. If no writable bin directory is already on `PATH`, it installs to `~/.local/bin` and prints the shell command to apply the PATH update.
 
+Prebuilt Linux binaries require **glibc 2.35+** (Ubuntu 22.04+ or a comparable distribution) and do not run on Alpine Linux. On an older or musl-based Linux system, [install from source](docs/environments/linux-local.mdx#binary-compatibility) instead.
+
 Equivalent explicit main-channel form:
 
 ```bash

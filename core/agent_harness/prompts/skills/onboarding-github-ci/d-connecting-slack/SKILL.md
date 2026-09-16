@@ -6,11 +6,11 @@ description: >-
   needs a full terminal). Use for the startup demo option "Connect OpenSRE to Slack and hand off DevOps
   chores for your team". Never post, reply, or send to Slack in this flow. Multi-step; load before acting.
 getting_started: Connect OpenSRE to Slack and hand off DevOps chores for your team
-demo_order: 3
+demo_order: 4
 metadata:
   owner: Vincent
   last_changed_by: Jan
-  last_changed_at: 2026-09-12
+  last_changed_at: 2026-09-14
   usecases:
   - For Slack workspace administrators connecting OpenSRE for their team.
   - For users verifying an existing Slack connection and learning channel or DM handoffs.
@@ -18,7 +18,7 @@ metadata:
   - Permission to add the OpenSRE bot to the target Slack workspace.
   - The cli_exec and slash_invoke tools.
   - When Slack setup is needed, an interactive terminal for /integrations setup slack.
-  version: '1.2'
+  version: '1.3'
 ---
 
 # Slack handoff
@@ -42,7 +42,9 @@ Track progress with the `update_plan` tool, not with headers or prose:
 - On entry, before the first workflow tool call, call `update_plan` with the
   steps below verbatim, the first step `in_progress`, and a one-line
   `explanation` (this is not a diagnosis; no hypothesis table):
-  `Check Slack` / `Set up if needed` / `Explain the hand-off`.
+  `Check Slack` / `Set up if needed` / `Explain the hand-off`. Mark
+  `Check Slack` with `verifies: true` in every call: it is the check the
+  text-only last step relies on to close.
 - After a step's tool results, call `update_plan` marking it `completed` and
   the next step `in_progress`, in the same response as the next step's single
   tool call. When Slack is already connected, mark `Set up if needed` completed
