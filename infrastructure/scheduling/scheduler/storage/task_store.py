@@ -30,10 +30,11 @@ _STORE_FILENAME = "scheduler_tasks.json"
 
 @dataclass(frozen=True, slots=True)
 class TaskStoreSnapshot:
-    """Validated tasks plus whether the full store was readable."""
+    """Validated tasks plus read completeness and known source absence."""
 
     tasks: tuple[ScheduledTask, ...]
     complete: bool
+    missing: bool = False
 
 
 def default_task_store_path() -> Path:
@@ -45,24 +46,25 @@ def _lock_path(store_path: Path) -> Path:
     return store_path.with_suffix(".lock")
 
 
-def _read_raw(store_path: Path) -> tuple[list[dict[str, object]], bool]:
-    """Load the raw task list; the flag reports whether the file was readable.
+def _read_raw(store_path: Path) -> tuple[list[dict[str, object]], bool, bool]:
+    """Load raw tasks, reporting read completeness and known file absence.
 
-    A missing store is readable and empty. A store that will not parse is
-    ``([], False)`` -- callers about to write must not treat that as "no
-    tasks" and silently overwrite it.
+    A missing store is readable and empty, but remains distinguishable from an
+    explicitly stored empty list. A store that will not parse is incomplete --
+    callers about to write must not treat that as "no tasks" and silently
+    overwrite it.
     """
     try:
         data = json.loads(store_path.read_text(encoding="utf-8"))
     except FileNotFoundError:
-        return [], True
+        return [], True, True
     except (json.JSONDecodeError, UnicodeDecodeError, OSError) as exc:
         logger.warning("Failed to read scheduler store: %s", exc)
-        return [], False
+        return [], False, False
     if not isinstance(data, list):
         logger.warning("Scheduler store is not a JSON list; treating it as unreadable")
-        return [], False
-    return data, True  # type: ignore[return-value]
+        return [], False, False
+    return data, True, False  # type: ignore[return-value]
 
 
 def _load_raw(store_path: Path) -> list[dict[str, object]]:
@@ -127,7 +129,7 @@ def _load_for_write(store_path: Path) -> list[dict[str, object]]:
     An unreadable store is moved aside first, so the write lands on a fresh
     file and the damaged one stays on disk for recovery.
     """
-    raw, readable = _read_raw(store_path)
+    raw, readable, _missing = _read_raw(store_path)
     if not readable:
         _quarantine_unreadable(store_path)
     return raw
@@ -171,7 +173,7 @@ def get_task_store_snapshot(
     lock_timeout = -1 if lock_timeout_seconds is None else lock_timeout_seconds
     lock = FileLock(_lock_path(path), timeout=lock_timeout)
     with lock:
-        raw, complete = _read_raw(path)
+        raw, complete, missing = _read_raw(path)
         if complete and migrate_legacy_task_entries(raw):
             try:
                 _save_raw(path, raw)
@@ -189,7 +191,7 @@ def get_task_store_snapshot(
         except Exception as exc:  # noqa: BLE001
             logger.warning("Skipping invalid task entry: %s", exc)
             complete = False
-    return TaskStoreSnapshot(tuple(tasks), complete)
+    return TaskStoreSnapshot(tasks=tuple(tasks), complete=complete, missing=missing)
 
 
 def list_tasks(store_path: Path | None = None) -> list[ScheduledTask]:
