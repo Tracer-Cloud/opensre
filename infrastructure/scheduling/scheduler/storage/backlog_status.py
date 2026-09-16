@@ -8,8 +8,8 @@ from pathlib import Path
 
 from infrastructure.scheduling.scheduler.storage.database import run_database_path
 from infrastructure.scheduling.scheduler.storage.run_store import get_backlog_snapshot
+from infrastructure.scheduling.scheduler.storage.task_store import TaskStoreSnapshot
 from infrastructure.scheduling.scheduler.storage.task_store import (
-    TaskStoreSnapshot,
     get_task_store_snapshot as _get_task_store_snapshot,
 )
 
