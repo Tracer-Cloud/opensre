@@ -153,7 +153,10 @@ it available for automation usage reporting.
 All delivery honors `OPENSRE_NO_TELEMETRY=1`,
 `OPENSRE_ANALYTICS_DISABLED=1`, and `DO_NOT_TRACK=1`. Opting out prevents even
 destination credentials from being resolved. Delivery failure never fails the
-user command; it is recorded in `~/.opensre/analytics_errors.log`.
+user command; it is recorded in `~/.opensre/analytics_errors.log`. Non-202
+responses include the event name, event ID, HTTP status, and sanitized response
+JSON. Only known error codes and the boolean acceptance flag are retained;
+echoed payloads, unknown error text, and non-JSON bodies are omitted or redacted.
 
 The webapp rejects oversized or unknown payloads, rate-limits both source IPs
 and analytics identities, deduplicates event IDs, and rejects stale, missing,

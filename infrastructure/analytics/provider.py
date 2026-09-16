@@ -18,6 +18,7 @@ import uuid
 from collections.abc import Iterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from http import HTTPStatus
 from pathlib import Path
 from typing import Final
 
@@ -67,6 +68,18 @@ _FAILURE_LOG_MAX_BYTES: Final[int] = 64 * 1024
 _FALLBACK_FAILURE_LOG_PATH: Path = Path(tempfile.gettempdir()) / _FAILURE_LOG_FILENAME
 _HOME_PATH_RE: Final[re.Pattern[str]] = re.compile(r"/(?:Users|home)/[^/\s]+")
 _FAILURE_MESSAGE_MAX_LEN: Final[int] = 240
+_RESPONSE_DIAGNOSTIC_MAX_BYTES: Final[int] = 4096
+_SAFE_RESPONSE_ERRORS = frozenset(
+    {
+        "unsupported_media_type",
+        "payload_too_large",
+        "rate_limited",
+        "temporarily_unavailable",
+        "invalid_request",
+        "invalid_payload",
+        "unauthorized",
+    }
+)
 _COMPOSITE_FINGERPRINT_VERSION: Final[str] = "hashed-local-v1"
 _COMPOSITE_FINGERPRINT_NAMESPACE: Final[str] = "opensre-cli-analytics-fingerprint"
 _CI_FINGERPRINT_ENV_KEYS: Final[tuple[str, ...]] = (
@@ -577,6 +590,26 @@ def _scrub_error_message(message: str) -> str:
     return scrubbed
 
 
+def _sanitized_response_json(response: httpx.Response) -> str:
+    """Keep only bounded, known response metadata; never retain echoed user content."""
+    safe: dict[str, str | bool] = {}
+    if len(response.content) > _RESPONSE_DIAGNOSTIC_MAX_BYTES:
+        return "{}"
+    try:
+        body = response.json()
+    except (ValueError, RecursionError):
+        return "{}"
+    if isinstance(body, dict):
+        if "error" in body:
+            error = body["error"]
+            safe["error"] = (
+                error if isinstance(error, str) and error in _SAFE_RESPONSE_ERRORS else "<redacted>"
+            )
+        if isinstance(body.get("accepted"), bool):
+            safe["accepted"] = body["accepted"]
+    return json.dumps(safe, separators=(",", ":"))
+
+
 def _format_failure_extra(value: object) -> JsonValue:
     if isinstance(value, bool):
         return value
@@ -1003,11 +1036,17 @@ class Analytics:
             )
             return
         try:
-            client.post(
+            response = client.post(
                 destination.endpoint_url,
                 content=body,
                 headers=destination.headers(body),
-            ).raise_for_status()
+            )
+            if response.status_code != HTTPStatus.ACCEPTED:
+                raise httpx.HTTPStatusError(
+                    "Analytics endpoint did not accept event",
+                    request=response.request,
+                    response=response,
+                )
         except httpx.TransportError as exc:
             # Network/TLS failures (ConnectTimeout, ConnectError, ReadTimeout, …) are
             # transient infrastructure issues, not application bugs — log only.
@@ -1015,7 +1054,14 @@ class Analytics:
         except httpx.HTTPStatusError as exc:
             # Webapp HTTP errors (4xx contract/auth issues, 5xx storage failures)
             # are not application bugs — log only, do not surface to Sentry.
-            _log_failure("analytics_send", exc, event=item.event)
+            _log_failure(
+                "analytics_send",
+                exc,
+                event=item.event,
+                event_id=payload["event_id"],
+                status_code=exc.response.status_code,
+                response_json=_sanitized_response_json(exc.response),
+            )
         except Exception as exc:
             _log_failure("analytics_send", exc, event=item.event)
             _capture_sentry_failure(exc)

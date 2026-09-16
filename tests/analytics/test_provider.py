@@ -8,6 +8,7 @@ import threading
 import time
 import uuid
 from collections.abc import Iterator
+from http import HTTPStatus
 from pathlib import Path
 from typing import NoReturn
 
@@ -48,6 +49,8 @@ def _stub_httpx_client(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object
     posted_payloads: list[dict[str, object]] = []
 
     class _StubResponse:
+        status_code = HTTPStatus.ACCEPTED
+
         def raise_for_status(self) -> None:
             return None
 
@@ -297,10 +300,6 @@ def test_analytics_send_failure_is_reported_to_sentry(
     captured_errors: list[BaseException] = []
     expected_error = RuntimeError("analytics unavailable")
 
-    class _StubResponse:
-        def raise_for_status(self) -> None:
-            raise expected_error
-
     class _StubClient:
         def __init__(self, *_args, **_kwargs) -> None:
             pass
@@ -316,9 +315,9 @@ def test_analytics_send_failure_is_reported_to_sentry(
             url: str,
             content: bytes,
             headers: dict[str, str],
-        ) -> _StubResponse:
+        ) -> NoReturn:
             _ = (url, content, headers)
-            return _StubResponse()
+            raise expected_error
 
     monkeypatch.setattr(provider.httpx, "Client", _StubClient)
     monkeypatch.setattr(provider, "_capture_sentry_failure", captured_errors.append)
@@ -328,6 +327,68 @@ def test_analytics_send_failure_is_reported_to_sentry(
     provider.shutdown_analytics(flush=True)
 
     assert captured_errors == [expected_error]
+
+
+@pytest.mark.parametrize(
+    ("status", "response_body", "expected_json"),
+    [
+        (
+            HTTPStatus.BAD_REQUEST,
+            b'{"error":"invalid_payload","token":"private-response-secret"}',
+            {"error": "invalid_payload"},
+        ),
+        (
+            HTTPStatus.OK,
+            b'{"accepted":true,"payload":"private-response-secret"}',
+            {"accepted": True},
+        ),
+        (
+            HTTPStatus.BAD_REQUEST,
+            b'{"error":"private-response-secret"}',
+            {"error": "<redacted>"},
+        ),
+        (HTTPStatus.BAD_GATEWAY, b"<html>private-response-secret</html>", {}),
+        (HTTPStatus.BAD_GATEWAY, b"private-response-secret" * 1000, {}),
+    ],
+    ids=["schema-rejection", "unexpected-success", "unknown-error", "html", "oversized"],
+)
+def test_non_accepted_response_logs_safe_json_without_acknowledging_install(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    status: HTTPStatus,
+    response_body: bytes,
+    expected_json: dict[str, object],
+) -> None:
+    monkeypatch.setattr(provider, "_CONFIG_DIR", tmp_path)
+    monkeypatch.setenv("OPENSRE_ANALYTICS_LOG_EVENTS", "0")
+    captured_errors: list[BaseException] = []
+    monkeypatch.setattr(provider, "_capture_sentry_failure", captured_errors.append)
+    analytics = object.__new__(provider.Analytics)
+    analytics._anonymous_id = str(uuid.uuid4())
+    analytics._identity_persistence = "existing"
+    item = provider._Envelope(
+        Event.INSTALL_DETECTED.value,
+        {"private_property": "private-request-secret"},
+        AnalyticsDestination("https://analytics.test/api/analytics/events"),
+    )
+
+    def respond(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status, content=response_body)
+
+    with httpx.Client(transport=httpx.MockTransport(respond)) as client:
+        analytics._send(client, item)
+
+    assert not provider._FIRST_RUN_PATH.exists()
+    line = (tmp_path / "analytics_errors.log").read_text()
+    # Each breadcrumb value is JSON encoded, including the sanitized JSON string.
+    encoded_json = json.dumps(json.dumps(expected_json, separators=(",", ":")))
+    assert f"response_json={encoded_json}" in line
+    assert f'status_code="{status.value}"' in line
+    assert f'event_id="install_detected:{analytics._anonymous_id}"' in line
+    assert 'event="install_detected"' in line
+    assert "private-response-secret" not in line
+    assert "private-request-secret" not in line
+    assert captured_errors == []
 
 
 def test_analytics_capture_failure_releases_pending_counter(
@@ -950,6 +1011,8 @@ def test_shutdown_is_idempotent_and_capture_after_shutdown_is_noop(
     posted_payloads: list[dict[str, object]] = []
 
     class _StubResponse:
+        status_code = HTTPStatus.ACCEPTED
+
         def raise_for_status(self) -> None:
             return None
 
@@ -1047,6 +1110,8 @@ def test_analytics_needs_flush_true_when_events_pending(
             time.sleep(1.0)
 
             class _Resp:
+                status_code = HTTPStatus.ACCEPTED
+
                 def raise_for_status(self) -> None:
                     return None
 
@@ -1080,6 +1145,8 @@ def test_shutdown_flush_false_returns_without_waiting_on_slow_worker(
     monkeypatch.setattr(provider.atexit, "register", lambda *_a, **_k: None)
 
     class _SlowResponse:
+        status_code = HTTPStatus.ACCEPTED
+
         def raise_for_status(self) -> None:
             return None
 
@@ -1128,6 +1195,8 @@ def test_shutdown_flush_spends_one_budget_not_two(
     monkeypatch.setattr(provider.atexit, "register", lambda *_a, **_k: None)
 
     class _SlowResponse:
+        status_code = HTTPStatus.ACCEPTED
+
         def raise_for_status(self) -> None:
             return None
 
@@ -1185,6 +1254,8 @@ def test_atexit_registers_non_blocking_shutdown(
             time.sleep(2.0)
 
             class _Resp:
+                status_code = HTTPStatus.ACCEPTED
+
                 def raise_for_status(self) -> None:
                     return None
 
