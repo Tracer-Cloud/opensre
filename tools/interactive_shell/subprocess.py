@@ -59,6 +59,21 @@ def _process_group_leader_pid(proc: subprocess.Popen[Any]) -> int | None:
     return pid
 
 
+def _process_group_is_alive(group_pid: int | None) -> bool:
+    """Return whether a process group still has a member."""
+    if group_pid is None or not hasattr(os, "killpg"):
+        return False
+    try:
+        os.killpg(group_pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
 def _signal_child(
     proc: subprocess.Popen[Any],
     *,
@@ -88,7 +103,11 @@ def _signal_child(
             proc.terminate()
 
 
-def terminate_child_process(proc: subprocess.Popen[Any]) -> None:
+def terminate_child_process(
+    proc: subprocess.Popen[Any],
+    *,
+    group_pid: int | None = None,
+) -> None:
     """Terminate the child and descendants, then forcefully reap leftovers.
 
     POSIX uses the process group created at launch. Windows has no equivalent
@@ -115,7 +134,8 @@ def terminate_child_process(proc: subprocess.Popen[Any]) -> None:
                 proc.wait(timeout=5)
         return
 
-    group_pid = _process_group_leader_pid(proc)
+    if group_pid is None:
+        group_pid = _process_group_leader_pid(proc)
     if proc.poll() is None:
         _signal_child(proc, forceful=False, group_pid=group_pid)
         with contextlib.suppress(subprocess.TimeoutExpired):
@@ -182,18 +202,19 @@ def watch_subprocess_until_exit(
     timeout_seconds: float,
     poll_seconds: float = TASK_POLL_SECONDS,
 ) -> SubprocessWatchResult:
-    """Poll ``proc`` until it exits, ``cancel_event`` is set, or ``timeout_seconds`` elapses."""
+    """Poll a child and its process group until exit, cancellation, or timeout."""
     started = time.monotonic()
     timed_out = False
     terminated_by_watcher = False
-    while proc.poll() is None:
+    group_pid = _process_group_leader_pid(proc)
+    while proc.poll() is None or _process_group_is_alive(group_pid):
         if time.monotonic() - started > timeout_seconds:
             timed_out = True
-            terminate_child_process(proc)
+            terminate_child_process(proc, group_pid=group_pid)
             terminated_by_watcher = True
             break
         if cancel_event.is_set():
-            terminate_child_process(proc)
+            terminate_child_process(proc, group_pid=group_pid)
             terminated_by_watcher = True
             break
         time.sleep(poll_seconds)

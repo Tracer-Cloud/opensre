@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import contextlib
 import os
 import shlex
+import signal
 import sys
 import threading
 import time
@@ -210,6 +212,30 @@ def test_execute_shell_command_stops_on_cancel_and_reaps_grandchild(
     assert elapsed < 4
     grand_pid = int(marker.read_text())
     _assert_pid_gone(grand_pid)
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX process groups")
+def test_execute_shell_command_times_out_and_reaps_background_child(
+    tmp_path: Path,
+) -> None:
+    marker = tmp_path / "background.pid"
+    command = f"sleep 60 >/dev/null 2>&1 & echo $! > {shlex.quote(str(marker))}"
+    background_pid: int | None = None
+
+    try:
+        result = execute_shell_command(
+            command=command,
+            timeout_seconds=1,
+            max_output_chars=10_000,
+        )
+        background_pid = int(marker.read_text())
+
+        assert result.timed_out is True
+        _assert_pid_gone(background_pid)
+    finally:
+        if background_pid is not None:
+            with contextlib.suppress(ProcessLookupError):
+                os.kill(background_pid, signal.SIGKILL)
 
 
 def test_execute_quoted_heredoc_through_shell(monkeypatch: pytest.MonkeyPatch) -> None:
