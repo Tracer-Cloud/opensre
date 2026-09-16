@@ -39,6 +39,7 @@ _CRON_ADD_SUPPORTED_KINDS: tuple[TaskKind, ...] = tuple(
 )
 _KIND_CHOICES = [k.value for k in _CRON_ADD_SUPPORTED_KINDS]
 _PROVIDER_CHOICES = [p.value for p in Provider]
+_STATUS_STORAGE_TIMEOUT_SECONDS = 1.0
 
 
 def _format_duration(seconds: float | None) -> str:
@@ -400,7 +401,7 @@ def cron_status(as_json: bool) -> None:
 
     as_json = as_json or is_json_output()
     try:
-        task_store = get_task_store_snapshot()
+        task_store = get_task_store_snapshot(lock_timeout_seconds=_STATUS_STORAGE_TIMEOUT_SECONDS)
     except OSError:
         raise _unknown_backlog_status(as_json, "task_store_unreadable") from None
     if not task_store.complete:

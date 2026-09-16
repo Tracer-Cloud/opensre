@@ -163,10 +163,13 @@ def _save_raw(store_path: Path, data: list[dict[str, object]]) -> None:
         raise
 
 
-def get_task_store_snapshot(store_path: Path | None = None) -> TaskStoreSnapshot:
-    """Return validated tasks and flag any unreadable store content."""
+def get_task_store_snapshot(
+    store_path: Path | None = None, *, lock_timeout_seconds: float | None = None
+) -> TaskStoreSnapshot:
+    """Return validated tasks, optionally bounding the task-store lock wait."""
     path = store_path or default_task_store_path()
-    lock = FileLock(_lock_path(path))
+    lock_timeout = -1 if lock_timeout_seconds is None else lock_timeout_seconds
+    lock = FileLock(_lock_path(path), timeout=lock_timeout)
     with lock:
         raw, complete = _read_raw(path)
         if complete and migrate_legacy_task_entries(raw):
