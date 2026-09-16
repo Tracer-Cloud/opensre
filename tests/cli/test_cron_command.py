@@ -6,7 +6,9 @@ from pathlib import Path
 
 import pytest
 from click.testing import CliRunner
+from rich.console import Console
 
+import surfaces.cli.commands.cron as cron_module
 from infrastructure.scheduling.scheduler.types import Provider, TaskKind, TaskRun, TaskStatus
 from surfaces.cli.commands.cron import (
     _KIND_CHOICES,
@@ -81,6 +83,51 @@ def test_cron_list_surfaces_legacy_task_migration_status(
     output = " ".join(result.output.split())
     assert "daily_summary retired" in output
     assert "opensre cron add --kind" in output
+
+
+def test_cron_list_keeps_task_id_whole_when_squeezed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The id must never ellipsize: ``/cron remove <id>`` chains on it.
+
+    At the REPL replay width (terminal minus gutter) ten columns compete for
+    space; the long name and the microsecond timestamps used to take it and
+    the id came back as ``ecf7c2580b…``.
+    """
+    from infrastructure.scheduling.scheduler.loops import LoopSummary
+
+    summary = LoopSummary(
+        id="ecf7c2580b83deadbeef",
+        task_ids=("ecf7c2580b83deadbeef",),
+        name="CI repair: davincios/opensre-ci-fix-demo-9YaBJ",
+        description="",
+        prompt="",
+        kind=TaskKind.MANUAL_LOOP,
+        cron="*/30 * * * * *",
+        timezone="UTC",
+        provider=Provider.INTERACTIVE_SHELL,
+        chat_id="",
+        channels=("interactive_shell",),
+        enabled=True,
+        window_hours=24,
+        last_run="2026-09-16T11:54:47.347779+00:00",
+        next_run="2026-09-16T12:17:30+00:00",
+    )
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.loops.list_loop_summaries", lambda: [summary]
+    )
+    # ``file=None`` resolves to ``sys.stdout`` at print time, so CliRunner still
+    # captures the table; ``width`` pins the squeeze independent of the pytest TTY.
+    monkeypatch.setattr(cron_module, "_console", Console(width=95, force_terminal=False))
+    squeezed = CliRunner().invoke(cron_command, ["list"])
+    assert squeezed.exit_code == 0
+    assert "ecf7c2580b83" in squeezed.output
+    assert "…" not in squeezed.output  # every other cell folds instead of truncating
+
+    monkeypatch.setattr(cron_module, "_console", Console(width=200, force_terminal=False))
+    wide = CliRunner().invoke(cron_command, ["list"])
+    assert "2026-09-16 11:54:47 UTC" in wide.output
+    assert "347779" not in wide.output  # microseconds are noise that cost a column
 
 
 def test_cron_add_manual_loop_requires_prompt() -> None:

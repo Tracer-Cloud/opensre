@@ -15,6 +15,8 @@ import pytest
 
 import tools.interactive_shell.subprocess as subprocess_tools
 from tools.interactive_shell.subprocess import (
+    HEADLESS_SUBPROCESS_TERMINAL_WIDTH,
+    headless_subprocess_env,
     read_diag,
     subprocess_env_with_width,
     terminate_child_process,
@@ -27,6 +29,20 @@ def test_subprocess_env_with_width_reserves_prefix(monkeypatch: pytest.MonkeyPat
     env = subprocess_env_with_width(columns=100, lines=30)
     assert env["COLUMNS"] == "81"
     assert env["LINES"] == "30"
+
+
+def test_subprocess_env_with_width_reserves_caller_prefix() -> None:
+    """A replay gutter narrower than the task-relay prefix leaves the child more room."""
+    env = subprocess_env_with_width(columns=100, prefix_width=4)
+    assert env["COLUMNS"] == "95"
+
+
+def test_headless_subprocess_env_overrides_exported_columns(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A narrow inherited ``COLUMNS`` would ellipsize ids no human is there to read."""
+    monkeypatch.setenv("COLUMNS", "80")
+    assert headless_subprocess_env()["COLUMNS"] == str(HEADLESS_SUBPROCESS_TERMINAL_WIDTH)
 
 
 def test_subprocess_env_with_width_preserves_existing_lines(

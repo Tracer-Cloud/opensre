@@ -22,6 +22,7 @@ from infrastructure.scheduling.scheduler.loop_constants import (
 from infrastructure.scheduling.scheduler.types import Provider, TaskKind, TaskRun, TaskStatus
 from infrastructure.terminal.theme import GLYPH_ERROR, GLYPH_SUCCESS
 from surfaces.cli.commands.scheduling import validate_cron_and_timezone
+from surfaces.shared.terminal.components import format_repl_timestamp
 
 _console = Console()
 
@@ -310,16 +311,20 @@ def cron_list() -> None:
         return
 
     table = Table(show_header=True, header_style="bold")
-    table.add_column("ID", style="cyan")
-    table.add_column("Name")
-    table.add_column("Kind")
-    table.add_column("Cron")
-    table.add_column("TZ")
-    table.add_column("Provider")
-    table.add_column("Channels")
-    table.add_column("Enabled")
-    table.add_column("Next Run")
-    table.add_column("Last Run")
+    # The id is what `/cron remove <id>` and `/cron run <id>` chain on, so it is
+    # the one cell Rich may never ellipsize when the table is squeezed. Prose
+    # columns fold rather than truncate (`manual_lo…` loses the value); the
+    # short fixed-shape cells stay on one line.
+    table.add_column("ID", style="cyan", no_wrap=True)
+    table.add_column("Name", overflow="fold")
+    table.add_column("Kind", overflow="fold")
+    table.add_column("Cron", no_wrap=True)
+    table.add_column("TZ", no_wrap=True)
+    table.add_column("Provider", overflow="fold")
+    table.add_column("Channels", overflow="fold")
+    table.add_column("Enabled", no_wrap=True)
+    table.add_column("Next Run", overflow="fold")
+    table.add_column("Last Run", overflow="fold")
 
     for loop in loops:
         table.add_row(
@@ -331,8 +336,8 @@ def cron_list() -> None:
             loop.provider.value,
             ", ".join(loop.channels),
             GLYPH_SUCCESS if loop.enabled else GLYPH_ERROR,
-            loop.next_run or "—",
-            loop.last_run or "—",
+            format_repl_timestamp(loop.next_run, style="utc"),
+            format_repl_timestamp(loop.last_run, style="utc"),
         )
 
     _console.print(table)

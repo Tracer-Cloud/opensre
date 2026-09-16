@@ -5,6 +5,7 @@ from surfaces.shared.terminal.tables.provider import (
     resolve_provider_models,
 )
 from surfaces.shared.terminal.tables.tables import (
+    COMMAND_OUTPUT_GUTTER_WIDTH,
     MCP_INTEGRATION_SERVICES,
     ColumnDef,
     print_command_output,
@@ -21,6 +22,7 @@ from surfaces.shared.terminal.tables.tool_catalog import (
 )
 
 __all__ = [
+    "COMMAND_OUTPUT_GUTTER_WIDTH",
     "MCP_INTEGRATION_SERVICES",
     "ColumnDef",
     "ToolCatalogEntry",

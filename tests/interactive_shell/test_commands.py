@@ -1981,6 +1981,62 @@ class TestRunCliCommand:
         assert m.run_cli_command(console, ["remote", "health"], session=session) is False
         assert session.history[-1]["ok"] is False
 
+    def test_captured_child_renders_to_terminal_width_minus_replay_gutter(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """A captured child's Rich tables must fit the REPL once re-printed.
+
+        ``print_command_output`` prepends a 4-cell ``↳`` gutter and cannot
+        re-flow a table, so a child told it has 200 columns produced rows that
+        folded mid-border on every real terminal (``/cron list``). The child
+        must render at the real width minus the gutter, even when the user has
+        exported a wider ``COLUMNS``.
+        """
+        from surfaces.interactive_shell.command_registry import cli_parity as m
+        from surfaces.interactive_shell.ui import COMMAND_OUTPUT_GUTTER_WIDTH
+
+        monkeypatch.setenv("COLUMNS", "200")
+        seen_env: list[dict[str, str]] = []
+
+        def _fake_run(
+            cmd: list[str], *, env: dict[str, str], **_kwargs: object
+        ) -> subprocess.CompletedProcess[str]:
+            seen_env.append(env)
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        monkeypatch.setattr(m.subprocess, "run", _fake_run)
+        console = Console(file=io.StringIO(), force_terminal=False, width=134)
+        assert m.run_cli_command(console, ["cron", "list"], session=Session()) is True
+
+        assert seen_env[0]["COLUMNS"] == str(134 - COMMAND_OUTPUT_GUTTER_WIDTH - 1)
+        assert seen_env[0]["FORCE_COLOR"] == "1"
+
+    def test_headless_captured_child_renders_wide_so_ids_survive(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """With no terminal, only the action agent reads the table: render wide."""
+        from core.agent_harness.session import SessionCore
+        from core.agent_harness.session.persistence.memory import InMemorySessionStore
+        from surfaces.interactive_shell.command_registry import cli_parity as m
+        from tools.interactive_shell.subprocess import HEADLESS_SUBPROCESS_TERMINAL_WIDTH
+
+        seen_env: list[dict[str, str]] = []
+
+        def _fake_run(
+            cmd: list[str], *, env: dict[str, str], **_kwargs: object
+        ) -> subprocess.CompletedProcess[str]:
+            seen_env.append(env)
+            return subprocess.CompletedProcess(cmd, 0, stdout="", stderr="")
+
+        monkeypatch.setattr(m.subprocess, "run", _fake_run)
+        session = SessionCore(store=InMemorySessionStore())
+        console = Console(file=io.StringIO(), force_terminal=False, width=80)
+        assert m.run_cli_command(console, ["cron", "list"], session=session) is True
+
+        assert seen_env[0]["COLUMNS"] == str(HEADLESS_SUBPROCESS_TERMINAL_WIDTH)
+
     def test_frozen_binary_delegate_reexecs_opensre_without_module_flags(
         self,
         monkeypatch: pytest.MonkeyPatch,
