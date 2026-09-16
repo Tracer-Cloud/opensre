@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+from collections.abc import Callable
 
 import pytest
 from rich.console import Console
@@ -69,6 +70,45 @@ def test_selection_is_auto_submitted_as_next_user_message(
     assert "✓" not in output
     assert _CHOICE.title in output
     assert "Commit the changes" in output
+
+
+def test_selection_analytics_links_rendered_prompt_to_chosen_option(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = Session()
+    session.pending_user_choice = _CHOICE
+    console, _buf = _console()
+    rendered: list[dict[str, object]] = []
+    answered: list[dict[str, object]] = []
+
+    def pick(*, on_answer: Callable[[tuple[int, ...], str | None], None], **_kwargs: object) -> str:
+        on_answer((1,), None)
+        return "Commit the changes"
+
+    monkeypatch.setattr(choice_prompt, "repl_tty_interactive", lambda: True)
+    monkeypatch.setattr(
+        choice_prompt,
+        "repl_choose_one",
+        pick,
+    )
+    monkeypatch.setattr(
+        choice_prompt,
+        "capture_ask_user_prompt_rendered",
+        lambda **properties: rendered.append(properties),
+    )
+    monkeypatch.setattr(
+        choice_prompt,
+        "capture_ask_user_prompt_answered",
+        lambda **properties: answered.append(properties),
+    )
+
+    assert _handler(session, console) is True
+
+    assert rendered[0]["interaction_id"] == answered[0]["interaction_id"]
+    assert rendered[0]["render_mode"] == "picker"
+    assert answered[0]["selected_option_indices"] == [(1,)]
+    assert answered[0]["custom_answers"] == [None]
+    assert answered[0]["disposition"] == "agent_answer"
 
 
 def test_cancelled_menu_leaves_prompt_free(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -210,7 +250,7 @@ def test_batch_answers_are_auto_submitted_as_qa_block(
     )
 
     monkeypatch.setattr(choice_prompt, "repl_tty_interactive", lambda: True)
-    monkeypatch.setattr(choice_prompt, "repl_ask_user", lambda _questions: answers)
+    monkeypatch.setattr(choice_prompt, "repl_ask_user", lambda _questions, **_kw: answers)
     monkeypatch.setattr(
         choice_prompt,
         "repl_choose_one",
@@ -239,7 +279,7 @@ def test_batch_custom_option_is_captured_inline_and_auto_submitted(
     )
 
     monkeypatch.setattr(choice_prompt, "repl_tty_interactive", lambda: True)
-    monkeypatch.setattr(choice_prompt, "repl_ask_user", lambda _questions: answers)
+    monkeypatch.setattr(choice_prompt, "repl_ask_user", lambda _questions, **_kw: answers)
 
     assert _handler(session, console) is True
     assert session.terminal.pending_prompt_autosubmit is True

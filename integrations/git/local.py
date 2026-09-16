@@ -72,7 +72,9 @@ def _run_git(
     env: dict[str, str] | None = None,
     timeout: float = _GIT_TIMEOUT_SEC,
 ) -> subprocess.CompletedProcess[str]:
-    """Run ``git <args>`` in *workspace*; raise GitCommandError if git is missing."""
+    """Run ``git <args>`` in *workspace*; raise GitCommandError if git or the directory is missing."""
+    if not os.path.isdir(workspace):
+        raise GitCommandError(NOT_A_GIT_REPO, f"{workspace} is not a directory.")
     try:
         return subprocess.run(  # nosemgrep: dangerous-subprocess-use-audit
             ["git", *args],
@@ -99,10 +101,23 @@ def _remote_https_base(workspace: str, remote: str = "origin") -> str:
     result = _run_git(workspace, "remote", "get-url", remote)
     if result.returncode != 0:
         return ""
-    parsed = urlsplit(result.stdout.strip())
+    return _https_base(result.stdout.strip())
+
+
+def _https_base(url: str) -> str:
+    parsed = urlsplit(url)
     if parsed.scheme == "https" and parsed.hostname:
         return f"https://{parsed.hostname}/"
     return ""
+
+
+def _is_url(destination: str) -> bool:
+    return "://" in destination or destination.startswith(("/", "git@", "ssh:"))
+
+
+def _config(workspace: str, key: str) -> str:
+    result = _run_git(workspace, "config", "--get", key)
+    return result.stdout.strip() if result.returncode == 0 else ""
 
 
 def _token_auth_env(token: str, base_url: str) -> dict[str, str]:
@@ -311,6 +326,11 @@ def changed_since_baseline(workspace: str, *, baseline: Mapping[str, str] | None
     ]
 
 
+def is_base_branch(name: str) -> bool:
+    """True for the branch names pull requests are normally merged into."""
+    return name.strip().casefold() in _PROTECTED_BRANCHES
+
+
 def assert_not_protected(branch: str, *, protected_extra: str = "") -> None:
     """Raise unless *branch* is a safe, non-base feature branch to push to."""
     name = branch.strip()
@@ -349,7 +369,13 @@ def checkout_branch(workspace: str, branch: str) -> None:
         )
 
 
-def commit_paths(workspace: str, paths: Sequence[str], message: str) -> None:
+def commit_paths(
+    workspace: str,
+    paths: Sequence[str],
+    message: str,
+    *,
+    analytics_workflow: str = "unspecified",
+) -> None:
     """Stage and commit *only* the given paths, excluding any other WIP in the tree.
 
     ``git add`` registers the paths (so newly created files are tracked), and
@@ -379,6 +405,13 @@ def commit_paths(workspace: str, paths: Sequence[str], message: str) -> None:
     )
     if commit.returncode != 0:
         raise GitCommandError(COMMIT_FAILED, f"git commit failed: {commit.stderr.strip()}")
+    from infrastructure.analytics.capture import capture_opensre_commit_created
+
+    capture_opensre_commit_created(
+        workflow=analytics_workflow,
+        commit_kind="content",
+        changed_file_count=len(set(paths)),
+    )
 
 
 def upstream_branch(workspace: str) -> str:
@@ -387,29 +420,76 @@ def upstream_branch(workspace: str) -> str:
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
-def push_head_to_upstream(workspace: str, *, token: str | None = None) -> str:
-    """Push HEAD to the branch it tracks (or to a same-named branch); return ``remote/branch``.
+def push_destination(workspace: str) -> str:
+    """Where a push of HEAD lands: ``remote/branch``, or ``owner:branch`` for a fork URL."""
+    branch = current_branch(workspace)
+    destination, remote_branch = _push_destination(workspace, branch)
+    return _push_label(destination, remote_branch)
 
-    The remote branch must not be a protected base branch.
+
+def push_head_to_upstream(workspace: str, *, token: str | None = None) -> str:
+    """Push HEAD where the branch pushes (its push remote, else the branch it tracks).
+
+    A branch without any push or tracking configuration goes to a same-named
+    branch on origin. The remote branch must not be a protected base branch.
+    Returns the destination as ``push_destination`` labels it.
     """
-    upstream = upstream_branch(workspace)
-    if not upstream:
-        branch = current_branch(workspace)
+    branch = current_branch(workspace)
+    if not _config(workspace, f"branch.{branch}.remote") and not _push_remote(workspace, branch):
         push_branch(workspace, branch, token=token)
         return f"origin/{branch}"
-    remote, _, remote_branch = upstream.partition("/")
+    destination, remote_branch = _push_destination(workspace, branch)
     assert_not_protected(remote_branch)
+    label = _push_label(destination, remote_branch)
     env = None
     if token:
-        base = _remote_https_base(workspace, remote)
+        base = (
+            _https_base(destination)
+            if _is_url(destination)
+            else _remote_https_base(workspace, destination)
+        )
         if base:
             env = _token_auth_env(token, base)
-    result = _run_git(workspace, "push", remote, f"HEAD:refs/heads/{remote_branch}", env=env)
+    result = _run_git(workspace, "push", destination, f"HEAD:refs/heads/{remote_branch}", env=env)
     if result.returncode != 0:
-        raise GitCommandError(
-            PUSH_FAILED, f"git push to {upstream} failed: {result.stderr.strip()}"
-        )
-    return upstream
+        raise GitCommandError(PUSH_FAILED, f"git push to {label} failed: {result.stderr.strip()}")
+    return label
+
+
+def _push_destination(workspace: str, branch: str) -> tuple[str, str]:
+    """(remote name or URL, branch name there) that ``git push`` would use for *branch*.
+
+    A push remote (as ``gh pr checkout`` sets for a fork) wins over the tracked
+    remote; in that triangular setup the remote branch keeps the local name.
+    """
+    tracked = _config(workspace, f"branch.{branch}.remote") or "origin"
+    push_remote = _push_remote(workspace, branch)
+    if push_remote and push_remote != tracked:
+        return push_remote, branch
+    merge_ref = _config(workspace, f"branch.{branch}.merge")
+    return tracked, merge_ref.removeprefix("refs/heads/") or branch
+
+
+def _push_remote(workspace: str, branch: str) -> str:
+    return _config(workspace, f"branch.{branch}.pushRemote") or _config(
+        workspace, "remote.pushDefault"
+    )
+
+
+def _push_label(destination: str, remote_branch: str) -> str:
+    if not _is_url(destination):
+        return f"{destination}/{remote_branch}"
+    parts = _repository_path(destination).strip("/").split("/")
+    owner = parts[-2] if len(parts) >= 2 else parts[-1]
+    return f"{owner}:{remote_branch}"
+
+
+def _repository_path(url: str) -> str:
+    """The path part of a remote URL, including the scp form ``git@host:owner/repo.git``."""
+    if "://" in url:
+        return urlsplit(url).path
+    _host, colon, path = url.partition(":")
+    return path if colon and not url.startswith("/") else url
 
 
 def push_branch(

@@ -168,6 +168,7 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
         assert chrome not in painted, painted
     assert len(picker_calls) == 1
     assert callable(picker_calls[0].pop("on_custom_answer"))
+    assert callable(picker_calls[0].pop("on_answer"))
     assert picker_calls[0] == {
         "title": _TITLE,
         "choices": [
@@ -412,3 +413,18 @@ def test_onboarding_losing_its_terminal_ends_without_a_text_menu(
     assert session.pending_user_choice is None
     assert not session.terminal.awaiting_handoff_answer
     assert not session.terminal.pending_prompt_default
+
+
+def test_a_merge_in_progress_here_skips_the_demo_unless_forced(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange
+    _offerable(monkeypatch)
+    monkeypatch.setattr(demo_picker, "merge_in_progress", lambda _cwd: True)
+    session = Session()
+
+    # Act / Assert: startup stays out of the way; /demo still opens the menu.
+    assert not demo_picker.offer_demo(session)
+    assert session.active_skill is None
+    assert demo_picker.offer_demo(session, force=True)
+    assert session.active_skill == ONBOARDING_SKILL_NAME

@@ -13,7 +13,10 @@ from core.agent_harness.tools import (
 from core.domain.types.tools import ToolSurface
 from core.tool import RegisteredTool, SideEffectLevel
 from core.tool_framework.utils import object_schema, string_property
-from tools.interactive_shell.shell.merge_guard import git_refusal_during_merge
+from tools.interactive_shell.shell.merge_guard import (
+    git_refusal_during_merge,
+    pull_request_checkout_refusal,
+)
 from tools.interactive_shell.shell.runner import run_shell_command
 from tools.interactive_shell.subprocess import require_subprocess_presenter
 
@@ -36,7 +39,7 @@ def execute_shell_tool(args: dict[str, Any], ctx: ActionToolScope) -> dict[str, 
     if not command:
         return {"ok": False, "command": "", "response_text": "missing shell command"}
     quiet = _coerce_quiet(args.get("quiet", False))
-    refusal = git_refusal_during_merge(command)
+    refusal = git_refusal_during_merge(command) or pull_request_checkout_refusal(command)
     if refusal is not None:
         return {"ok": False, "command": command, "response_text": refusal}
     return run_shell_command(

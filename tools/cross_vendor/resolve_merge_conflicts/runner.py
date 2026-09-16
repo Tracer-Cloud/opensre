@@ -10,12 +10,14 @@ the merge is left in progress, so the user decides them; nothing is aborted.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, replace
 from typing import Any, Final
 
 from rich.markup import escape
 
+from config.constants import MERGE_RESOLUTION_TIMEOUT_SECONDS
 from integrations.coding_agent import (
     CodingResult,
     coding_model,
@@ -25,6 +27,8 @@ from integrations.coding_agent import (
     verify_coding_agent,
 )
 from integrations.git import (
+    NOT_A_GIT_REPO,
+    PENDING,
     GitCommandError,
     MergeConflicts,
     changed_paths,
@@ -32,10 +36,12 @@ from integrations.git import (
     conclude_merge,
     conflict_resolution_task,
     current_branch,
-    describe_resolutions,
+    default_branch,
     ensure_git_repo,
+    fetch_remote_branch,
     file_fingerprints,
     head_sha,
+    is_base_branch,
     is_git_repo,
     merge_committed_by_resolver,
     merge_conflicts,
@@ -44,13 +50,15 @@ from integrations.git import (
     merge_in_progress,
     merge_ref,
     paths_with_conflict_markers,
+    push_destination,
     push_head_to_upstream,
+    render_overview,
+    render_review,
+    resolution_lines,
     take_side,
     unresolved_conflicts,
-    upstream_branch,
 )
 from integrations.github import CHECKS_NOT_WATCHED, ChecksOutcome, watch_pull_request_checks
-from tools.cross_vendor.resolve_merge_conflicts.comparison import PENDING, render_comparison
 from tools.cross_vendor.resolve_merge_conflicts.errors import (
     ERR_AWAITING_DECISIONS,
     ERR_CANCELLED,
@@ -145,6 +153,14 @@ def resolve_merge(
     request's checks.
     """
     ws = workspace or coding_workspace()
+    if workspace and not os.path.isdir(ws):
+        return _output(
+            ws,
+            success=False,
+            error_kind=NOT_A_GIT_REPO,
+            error=f"{ws} does not exist; omit workspace to use the current directory "
+            f"({os.getcwd()}).",
+        )
     try:
         return _resolve(
             ws,
@@ -197,11 +213,12 @@ def _resolve(
         branch = current_branch(ws) or "HEAD"
         already_merging = merge_in_progress(ws)
         if not already_merging:
+            ref = ref or _default_base(ws)
             if not ref:
                 raise ResolveMergeError(
                     ERR_NO_MERGE_IN_PROGRESS,
-                    f"No merge is in progress in {ws}. Name the branch or commit to merge "
-                    f"into {branch} and it will be merged first.",
+                    f"No merge is in progress in {ws} and the repository has no default "
+                    f"branch to merge; name the branch or commit to merge into {branch}.",
                 )
             if finish.cancelled():
                 raise ResolveMergeError(
@@ -212,11 +229,7 @@ def _resolve(
             clean = merge_ref(ws, ref, message=f"Merge {ref} into {branch}", commit=False)
             if clean and not merge_in_progress(ws):
                 return _output(
-                    ws,
-                    branch=branch,
-                    merged=str(ref),
-                    commit_sha=head_sha(ws),
-                    summary=f"{branch} already contains {ref}; nothing to merge or push.",
+                    ws, branch=branch, merged=str(ref), commit_sha=head_sha(ws), up_to_date=True
                 )
         theirs = merge_head_name(ws) if already_merging else str(ref)
         merging = merge_head_sha(ws)
@@ -301,17 +314,17 @@ def _resolve(
                 summary=result.summary,
                 rendered=_paint(console, ws, conflicts, pending_label=PENDING),
             )
-    if not result.success:
-        left = tuple(path for path, _why in remaining) or conflicts.names
-        raise ResolveMergeError(
-            ERR_TIMEOUT if result.timed_out else ERR_EXECUTION,
-            f"The coding agent did not finish: {result.error or 'no detail'}. "
-            f"Conflicts remain in {', '.join(left)}; the merge stays in progress in {ws}.",
-            unresolved=left,
-            summary=result.summary,
-            conflicts=conflicts,
-        )
     if remaining:
+        if not result.success:
+            left = tuple(path for path, _why in remaining)
+            raise ResolveMergeError(
+                ERR_TIMEOUT if result.timed_out else ERR_EXECUTION,
+                f"The coding agent did not finish: {result.error or 'no detail'}. "
+                f"Conflicts remain in {', '.join(left)}; the merge stays in progress in {ws}.",
+                unresolved=left,
+                summary=result.summary,
+                conflicts=conflicts,
+            )
         raise ResolveMergeError(
             ERR_CONFLICTS_REMAIN,
             f"{len(remaining)} file(s) still need a person's decision: "
@@ -322,7 +335,33 @@ def _resolve(
             summary=result.summary,
             conflicts=conflicts,
         )
-    return _commit(ws, conflicts, baseline, summary=result.summary, finish=finish)
+    summary = result.summary
+    if not result.success:
+        if not result.timed_out:
+            # Provider errors and nonzero exits can leave markers gone without a
+            # finished resolution. Only a timeout after the tree is clean is
+            # recovered by committing.
+            raise ResolveMergeError(
+                ERR_EXECUTION,
+                f"The coding agent did not finish: {result.error or 'no detail'}. "
+                "Conflict markers are gone, but the run failed before completing "
+                f"the resolution; the merge stays in progress in {ws}.",
+                summary=result.summary,
+                conflicts=conflicts,
+            )
+        # Every conflict is settled in the tree; only the agent's own follow-up
+        # (its test run, as a rule) was cut short. The review and the checks
+        # after the push judge the result.
+        summary = _unfinished_note(result) + (f" {summary}" if summary else "")
+    return _commit(ws, conflicts, baseline, summary=summary, finish=finish)
+
+
+def _unfinished_note(result: CodingResult) -> str:
+    detail = f" ({result.error})" if result.error else ""
+    return (
+        f"The coding agent ran out of time after resolving every conflict{detail}; "
+        "its own checks did not finish, so the pull request checks are the verification."
+    )
 
 
 def _decision_plan(conflicts: MergeConflicts, decisions: Mapping[str, str]) -> dict[str, str]:
@@ -404,7 +443,7 @@ def _run_agent(
         task,
         workspace=ws,
         model=model or coding_model(),
-        timeout_sec=coding_timeout_seconds(),
+        timeout_sec=max(coding_timeout_seconds(), MERGE_RESOLUTION_TIMEOUT_SECONDS),
         on_progress=_progress_printer(console),
     )
 
@@ -445,7 +484,7 @@ def _merge_finished_by_agent(
             merged=conflicts.theirs,
             commit_sha=sha,
             resolved=conflicts.names,
-            resolutions=_resolutions(ws, sha, conflicts),
+            resolutions=resolution_lines(ws, sha, conflicts),
             summary=result.summary,
             rendered=rendered,
             **extra,
@@ -525,7 +564,12 @@ def _commit(
         )
     _stop_if_cancelled(finish, ws, before="commit", summary=summary, rendered=rendered)
     try:
-        sha = conclude_merge(ws, conflicts, baseline=baseline)
+        sha = conclude_merge(
+            ws,
+            conflicts,
+            baseline=baseline,
+            analytics_workflow="resolve_merge_conflicts",
+        )
     except GitCommandError as exc:
         raise ResolveMergeError(
             exc.kind,
@@ -540,7 +584,7 @@ def _commit(
             conflicts.theirs,
             sha,
             resolved=conflicts.names,
-            resolutions=_resolutions(ws, sha, conflicts),
+            resolutions=resolution_lines(ws, sha, conflicts),
             summary=summary,
             rendered=rendered,
         )
@@ -551,7 +595,7 @@ def _commit(
         merged=conflicts.theirs,
         commit_sha=sha,
         resolved=conflicts.names,
-        resolutions=_resolutions(ws, sha, conflicts),
+        resolutions=resolution_lines(ws, sha, conflicts),
         summary=summary,
         rendered=rendered,
         pushed_to=pushed_to,
@@ -610,6 +654,28 @@ def _checks_error(checks: ChecksOutcome | None) -> str | None:
     return f"The pull request checks did not pass: {checks.detail}."
 
 
+def _default_base(ws: str) -> str | None:
+    """``origin/<default branch>``, freshly fetched, when that is a base branch.
+
+    A remote whose HEAD points at some feature branch is not merged silently;
+    the caller has to name the ref. A fetch that fails stops the merge rather
+    than merging whatever stale copy of the branch the clone holds.
+    """
+    try:
+        name = default_branch(ws)
+    except GitCommandError:
+        return None
+    if not name or not is_base_branch(name):
+        return None
+    try:
+        fetch_remote_branch(ws, name)
+    except GitCommandError as exc:
+        raise ResolveMergeError(
+            ERR_EXECUTION, f"Could not update origin/{name} before merging it: {exc.message}"
+        ) from exc
+    return f"origin/{name}"
+
+
 def _push(ws: str) -> tuple[str, GitCommandError | None]:
     try:
         return push_head_to_upstream(ws), None
@@ -619,13 +685,9 @@ def _push(ws: str) -> tuple[str, GitCommandError | None]:
 
 def _push_target(ws: str, branch: str) -> str:
     try:
-        return upstream_branch(ws) or f"origin/{branch}"
+        return push_destination(ws) or f"origin/{branch}"
     except GitCommandError:
         return f"origin/{branch}"
-
-
-def _resolutions(ws: str, sha: str, conflicts: MergeConflicts) -> tuple[str, ...]:
-    return tuple(str(r) for r in describe_resolutions(ws, sha, conflicts))
 
 
 _HUNK_SUMMARY_CHARS = 90
@@ -669,21 +731,20 @@ def _hunk_summary(lines: list[str]) -> str:
 def _paint(
     console: Any, ws: str, conflicts: MergeConflicts | None, *, pending_label: str | None = None
 ) -> bool:
-    """Draw the side-by-side hunk comparison when a terminal console is available."""
+    """Show the conflicts: the overview before resolving, the per-hunk review after."""
     if console is None or conflicts is None or not conflicts.paths:
         return False
     comparisons = compare_hunks(ws, conflicts)
     if pending_label is not None:
-        render_comparison(
-            console,
-            comparisons,
-            ours=conflicts.ours,
-            theirs=conflicts.theirs,
-            pending_label=pending_label,
-        )
+        render_overview(console, comparisons, ours=conflicts.ours, theirs=conflicts.theirs)
     else:
-        render_comparison(console, comparisons, ours=conflicts.ours, theirs=conflicts.theirs)
+        render_review(console, comparisons, ours=conflicts.ours, theirs=conflicts.theirs)
     return True
+
+
+def failure_output(ws: str, error_kind: str, error: str) -> dict[str, Any]:
+    """The tool's result for a run that stopped before any merge could start."""
+    return _output(ws, success=False, error_kind=error_kind, error=error)
 
 
 def _output(
@@ -704,7 +765,19 @@ def _output(
     checks: ChecksOutcome | None = None,
     questions: list[dict[str, Any]] | None = None,
     awaiting: bool = False,
+    up_to_date: bool = False,
 ) -> dict[str, Any]:
+    if up_to_date:
+        sha = (commit_sha or "")[:12]
+        return {
+            **_output(ws, branch=branch, merged=merged, commit_sha=commit_sha, rendered=rendered),
+            "outcome": (
+                f"{branch} already contains {merged} (at {sha}); nothing to merge, commit or "
+                "push, and the remote branch is unchanged."
+            ),
+            "next_step": "Nothing to do.",
+            "up_to_date": True,
+        }
     committed = success and bool(commit_sha)
     # A set error kind means the requested operation did not complete, even when the
     # merge commit exists (cancelled, not approved, push failed, checks failed).
@@ -750,6 +823,7 @@ def _output(
         "coding_agent_summary": summary,
         "merge_in_progress": _merge_still_in_progress(ws),
         "rendered_in_shell": rendered,
+        "up_to_date": False,
     }
 
 

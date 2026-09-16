@@ -1049,6 +1049,50 @@ function Start-OpenSreOnboardingAfterInstall {
     }
 }
 
+function Send-OpenSreInstallAnalytics {
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$BinaryPath,
+        [Parameter(Mandatory = $true)]
+        [string]$Channel,
+        [AllowEmptyString()]
+        [string]$Version
+    )
+
+    $previousSource = $env:OPENSRE_INSTALL_SOURCE
+    $previousChannel = $env:OPENSRE_INSTALL_CHANNEL
+    $previousVersion = $env:OPENSRE_INSTALL_VERSION
+    try {
+        $env:OPENSRE_INSTALL_SOURCE = "powershell_installer"
+        $env:OPENSRE_INSTALL_CHANNEL = $Channel
+        $env:OPENSRE_INSTALL_VERSION = $Version
+        & $BinaryPath --record-install *> $null
+    }
+    catch {
+        # Analytics is best-effort and must never fail installation.
+    }
+    finally {
+        if ($null -eq $previousSource) {
+            Remove-Item Env:OPENSRE_INSTALL_SOURCE -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:OPENSRE_INSTALL_SOURCE = $previousSource
+        }
+        if ($null -eq $previousChannel) {
+            Remove-Item Env:OPENSRE_INSTALL_CHANNEL -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:OPENSRE_INSTALL_CHANNEL = $previousChannel
+        }
+        if ($null -eq $previousVersion) {
+            Remove-Item Env:OPENSRE_INSTALL_VERSION -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:OPENSRE_INSTALL_VERSION = $previousVersion
+        }
+    }
+}
+
 function Install-OpenSre {
     $repo = if ($env:OPENSRE_INSTALL_REPO) { $env:OPENSRE_INSTALL_REPO } else { "Tracer-Cloud/opensre" }
     $installDir = if ($env:OPENSRE_INSTALL_DIR) { $env:OPENSRE_INSTALL_DIR } else { Get-OpenSreDefaultInstallDir }
@@ -1178,6 +1222,8 @@ function Install-OpenSre {
     }
 
     $installedBinaryPath = Join-Path $installDir $binaryName
+    $analyticsVersion = if ($binaryVersion) { $binaryVersion } elseif ($version) { $version } else { "main" }
+    Send-OpenSreInstallAnalytics -BinaryPath $installedBinaryPath -Channel $resolvedChannel -Version $analyticsVersion
     if ($resolvedChannel -eq "main") {
         if ($binaryVersion) {
             Write-Host "Installed opensre main build ($binaryVersion) to $installedBinaryPath"

@@ -22,6 +22,7 @@ from core.agent_harness.spi.grounding import (
 )
 from core.agent_harness.spi.handoff import question_key
 from core.agent_harness.tools import ActionToolScope
+from infrastructure.analytics.capture import capture_skill_executed
 from tools.interactive_shell.actions.ask_choice import (
     ask_user_choice_tool,
     execute_ask_user_choice_tool,
@@ -143,6 +144,11 @@ def enter_skill(name: str, ctx: Any, *, from_model: bool = False) -> dict[str, A
         content = "".join((body, "\n\n", MENU_QUEUED_INSTRUCTION))
     elif hook is not None and hook.get("menu") == "suppressed":
         content = "".join((body, "\n\n", _MENU_SUPPRESSED_INSTRUCTION))
+    if not already_active:
+        capture_skill_executed(
+            skill_name=skill.name,
+            entrypoint="model" if from_model else "host",
+        )
     # ``summary`` is what the user sees; ``content`` is for the model only.
     # Without it the generic formatter prints the whole skill body on screen.
     result = {

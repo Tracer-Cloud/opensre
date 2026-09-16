@@ -8,8 +8,11 @@ from contextlib import ExitStack
 from dataclasses import replace
 from typing import Any, Final
 
+from rich.markup import escape
+
 from integrations.coding_agent import (
     CodingResult,
+    Progress,
     coding_model,
     coding_timeout_seconds,
     coding_workspace,
@@ -25,6 +28,7 @@ from integrations.git import (
     head_sha,
     merge_commit_edits,
 )
+from integrations.github.ci_epochs import publish_repair_epoch
 from integrations.github.client import resolve_github_token
 from integrations.github.repair_workspace import repair_workspace
 from integrations.github.tools.ci_fix.base_merge import (
@@ -104,10 +108,10 @@ def run_fix(ctx: CiFixContext, workspace: str, model: str | None) -> CodingResul
 
 def resolve_merge_conflicts(
     ctx: CiFixContext, workspace: str, model: str | None
-) -> Callable[[str], CodingResult]:
+) -> Callable[..., CodingResult]:
     """Coding-agent runner for the conflicts of merging the base into the PR head."""
 
-    def resolve(task: str) -> CodingResult:
+    def resolve(task: str, *, on_progress: Progress | None = None) -> CodingResult:
         return _run_coding(
             task,
             workspace,
@@ -116,12 +120,20 @@ def resolve_merge_conflicts(
                 f"Merging {ctx.base_branch} into {ctx.head_branch} has conflicts, "
                 "but no configured coding agent is ready to resolve them"
             ),
+            on_progress=on_progress,
         )
 
     return resolve
 
 
-def _run_coding(task: str, workspace: str, model: str | None, *, unavailable: str) -> CodingResult:
+def _run_coding(
+    task: str,
+    workspace: str,
+    model: str | None,
+    *,
+    unavailable: str,
+    on_progress: Progress | None = None,
+) -> CodingResult:
     available, _detail = verify_coding_agent()
     if not available:
         return CodingResult(success=False, summary="", error=unavailable, returncode=-1)
@@ -130,6 +142,7 @@ def _run_coding(task: str, workspace: str, model: str | None, *, unavailable: st
         workspace=workspace,
         model=model or coding_model(),
         timeout_sec=coding_timeout_seconds(),
+        on_progress=on_progress,
     )
 
 
@@ -200,6 +213,7 @@ def with_merge_output(output: dict[str, Any], merge: BaseMergeResult) -> dict[st
         **output,
         "merged_base_branch": merge.base_branch,
         "resolved_conflicts": list(merge.resolved_files),
+        "conflict_resolutions": list(merge.resolutions),
     }
 
 
@@ -360,6 +374,7 @@ def run_ci_fix(
     github_token: str | None = None,
     confirm_fn: Callable[[str], str] | None = None,
     allowed_paths: frozenset[str] | None = None,
+    console: Any = None,
 ) -> dict[str, Any]:
     with ExitStack() as workspaces:
         ws = workspace or coding_workspace()
@@ -431,7 +446,7 @@ def run_ci_fix(
 
         output = _base_output(ctx)
         try:
-            merge = _merge_base_if_behind(ctx, run_workspace, model, github_token)
+            merge = _merge_base_if_behind(ctx, run_workspace, model, github_token, console)
             if merge is not None:
                 output = with_merge_output(output, merge)
                 ctx = _with_base_merged(ctx)
@@ -456,7 +471,15 @@ def run_ci_fix(
         if verified.get("checks_state") != CheckState.CONFLICTED.value:
             return verified
         return _merge_after_conflicted_push(
-            ctx, output, push, verified, run_workspace, model, github_token, allowed_paths
+            ctx,
+            output,
+            push,
+            verified,
+            run_workspace,
+            model,
+            github_token,
+            allowed_paths,
+            console=console,
         )
 
 
@@ -492,7 +515,11 @@ def _enforce_scope(
 
 
 def _merge_base_if_behind(
-    ctx: CiFixContext, workspace: str, model: str | None, github_token: str | None
+    ctx: CiFixContext,
+    workspace: str,
+    model: str | None,
+    github_token: str | None,
+    console: Any = None,
 ) -> BaseMergeResult | None:
     """Merge the base into a PR head that lacks its commits; ``None`` when already up to date.
 
@@ -509,7 +536,20 @@ def _merge_base_if_behind(
         baseline=pre_coding_changes(workspace),
         resolve_conflicts=resolve_merge_conflicts(ctx, workspace, model),
         token=token,
+        console=console,
+        on_progress=_progress_printer(console),
     )
+
+
+def _progress_printer(console: Any) -> Progress | None:
+    """Print each step the coding agent takes as a dim line under the running tool."""
+    if console is None:
+        return None
+
+    def show(step: str) -> None:
+        console.print(f"[dim]  {escape(step)}[/]")
+
+    return show
 
 
 def _with_base_merged(ctx: CiFixContext) -> CiFixContext:
@@ -528,6 +568,7 @@ def _merge_after_conflicted_push(
     model: str | None,
     github_token: str | None,
     allowed_paths: frozenset[str] | None = None,
+    console: Any = None,
 ) -> dict[str, Any]:
     """Bring the base into a pushed head GitHub reports as conflicted, push, and re-verify.
 
@@ -537,7 +578,7 @@ def _merge_after_conflicted_push(
     """
     ctx = replace(ctx, head_sha=push.head_sha)
     try:
-        merge = _merge_base_if_behind(ctx, workspace, model, github_token)
+        merge = _merge_base_if_behind(ctx, workspace, model, github_token, console)
         if merge is None:
             return conflicted
         output = with_merge_output(output, merge)
@@ -599,6 +640,14 @@ def _verify_repair(
         push.head_sha,
         verification.state.value,
     )
+    if verification.state is CheckState.PASSED and ctx.number is not None:
+        publish_repair_epoch(
+            ctx.owner,
+            ctx.repo,
+            ctx.number,
+            github_token=github_token,
+            fixing_sha=push.head_sha,
+        )
     return with_push_output(output, push, verification)
 
 

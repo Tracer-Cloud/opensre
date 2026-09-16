@@ -155,7 +155,12 @@ def ship_security_fix(
         raise GitHubSecurityFixError(exc.kind, exc.message) from exc
 
     try:
-        commit_paths(workspace, changed, _commit_message(ctx, result.summary))
+        commit_paths(
+            workspace,
+            changed,
+            _commit_message(ctx, result.summary),
+            analytics_workflow="github_security_fix",
+        )
         push_branch(workspace, branch, base_default=base, token=token or None)
         pr = open_pull_request(
             workspace,

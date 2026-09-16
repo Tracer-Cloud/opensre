@@ -22,6 +22,9 @@ _LAZY_EXPORTS: dict[str, str] = {
     "saved_github_username": "integrations.github.identity",
     "GitHubLoginResult": "integrations.github.login",
     "authenticate_and_configure_github": "integrations.github.login",
+    "PullRequestCheckout": "integrations.github.pull_request_checkout",
+    "checkout_pull_request": "integrations.github.pull_request_checkout",
+    "parse_pull_request": "integrations.github.pull_request_checkout",
     "CHECKS_NOT_WATCHED": "integrations.github.pull_request_checks",
     "ChecksOutcome": "integrations.github.pull_request_checks",
     "watch_pull_request_checks": "integrations.github.pull_request_checks",
@@ -89,6 +92,11 @@ if TYPE_CHECKING:
         authorize_github_via_device_flow,
     )
     from integrations.github.personal_account import disconnect_personal_github
+    from integrations.github.pull_request_checkout import (
+        PullRequestCheckout,
+        checkout_pull_request,
+        parse_pull_request,
+    )
     from integrations.github.pull_request_checks import (
         CHECKS_NOT_WATCHED,
         ChecksOutcome,
@@ -117,6 +125,9 @@ if TYPE_CHECKING:
 
 
 __all__ = [
+    "PullRequestCheckout",
+    "checkout_pull_request",
+    "parse_pull_request",
     "CHECKS_NOT_WATCHED",
     "DEFAULT_GITHUB_MCP_MODE",
     "DEFAULT_GITHUB_MCP_URL",

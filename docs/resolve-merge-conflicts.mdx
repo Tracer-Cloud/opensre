@@ -43,17 +43,19 @@ agent word for word.
 
 1. OpenSRE reads the unmerged paths of the merge in progress in the current
    directory. With no merge in progress, it merges the branch you named first.
-2. It prints one table per conflicted file right away: each conflict hunk with
-   your side and their side, so you see what is disputed before anything runs.
+2. It prints a one-line overview per conflict right away (the first line of
+   each side), so you see what is disputed before anything runs.
 3. The coding agent resolves every file on its own, as Claude Code or Cursor
    would. While it works, each step it takes is printed under the running tool
-   ("Reading migrations.py", "Editing migrations.py", "Running: uv run pytest
-   …"), so you can see what it is doing and stop it with ESC at any point. A decision you stated in your request ("take main's version of
+   ("Inspecting the merge", "Reading migrations.py", "Editing migrations.py",
+   "Running tests: tests/scheduler", "Checking lint and types"), so you can
+   see what it is doing and stop it with ESC at any point. A decision you stated in your request ("take main's version of
    config.py") is applied by git instead, and "decide file by file" opens a
    menu per file (keep ours, take theirs, combine, or type what you want).
    Lockfiles are regenerated from the resolved manifest, never merged by hand.
 4. OpenSRE verifies that no conflict marker or unmerged path remains and
-   prints the table again with the merged result. A file the agent could not
+   prints a verdict per conflict: kept ours, took theirs, or combined, with
+   the merged code shown only for combined hunks. A file the agent could not
    settle comes back as a menu showing both sides, and the merge waits.
 5. It asks to commit the merge and push the branch, following your `/auto`
    level, then does both. Unrelated changes you had in the working tree stay

@@ -307,6 +307,9 @@ def open_usage_page(
         opened = bool(opener(url))
     except Exception:
         opened = False
+    from infrastructure.analytics.capture import capture_browser_open_requested
+
+    capture_browser_open_requested(target="account_usage", opened=opened)
     return url, opened
 
 
@@ -343,7 +346,14 @@ def login_account(
             state=state,
             code_challenge=challenge,
         )
-        opened = bool(open_browser and browser_open(authorization_url))
+        opened = False
+        if open_browser:
+            try:
+                opened = bool(browser_open(authorization_url))
+            finally:
+                from infrastructure.analytics.capture import capture_browser_open_requested
+
+                capture_browser_open_requested(target="account_login", opened=opened)
         reporter.prompt_sign_in(authorization_url, opened=opened)
         callback = _wait_for_callback(server, results, timeout_seconds=timeout_seconds)
     finally:

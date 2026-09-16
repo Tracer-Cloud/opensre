@@ -122,6 +122,8 @@ _anonymous_id_lock = threading.Lock()
 _cached_anonymous_id: str | None = None
 _cached_identity_persistence = "unknown"
 _first_run_marker_created_this_process = False
+_install_capture_lock = threading.Lock()
+_install_capture_attempted = False
 _pending_user_id_load_failures: list[Properties] = []
 _ONE_TIME_EVENTS: Final[frozenset[str]] = frozenset({Event.INSTALL_DETECTED.value})
 
@@ -1017,6 +1019,9 @@ class Analytics:
         except Exception as exc:
             _log_failure("analytics_send", exc, event=item.event)
             _capture_sentry_failure(exc)
+        else:
+            if item.event == Event.INSTALL_DETECTED.value:
+                _touch_once(_FIRST_RUN_PATH)
 
     def _mark_done(self) -> None:
         with self._pending_lock:
@@ -1053,15 +1058,16 @@ def analytics_needs_flush() -> bool:
 
 
 def capture_install_detected_if_needed(properties: Properties | None = None) -> bool:
-    """Capture ``install_detected`` once per persisted OpenSRE home."""
-    if _path_exists(_FIRST_RUN_PATH):
-        return False
-    analytics = get_analytics()
-    if not _touch_once(_FIRST_RUN_PATH):
-        return False
-    analytics.capture(Event.INSTALL_DETECTED, properties)
-    return True
+    """Attempt install capture once per process until delivery is persisted."""
+    global _install_capture_attempted
+    with _install_capture_lock:
+        if _install_capture_attempted or _path_exists(_FIRST_RUN_PATH):
+            return False
+        analytics = get_analytics()
+        analytics.capture(Event.INSTALL_DETECTED, properties)
+        _install_capture_attempted = True
+        return True
 
 
-def capture_first_run_if_needed() -> None:
-    capture_install_detected_if_needed()
+def capture_first_run_if_needed(properties: Properties | None = None) -> None:
+    capture_install_detected_if_needed(properties)

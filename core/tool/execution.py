@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from typing import Any, Literal
@@ -26,6 +27,7 @@ logger = logging.getLogger(__name__)
 _TOOL_LOGGER = logging.getLogger("tools")
 
 _UNSET: object = object()
+_EXECUTED_TOOL_OUTCOMES = frozenset({"ok", "tool_error", "exception"})
 
 
 def availability_view(resolved_integrations: dict[str, Any]) -> dict[str, Any]:
@@ -248,6 +250,15 @@ def execute_tool_calls(
     violation = response_batch_violation(tool_calls, tool_map)
     if violation is not None:
         logger.debug("tool_batch rejected calls=%s", [tc.name for tc in tool_calls])
+        for tc in tool_calls:
+            _capture_tool_call_analytics(
+                tc,
+                tool=tool_map.get(tc.name),
+                outcome="batch_rejected",
+                is_error=True,
+                terminate=False,
+                duration_ms=0,
+            )
         return [
             _error_result(violation, metadata={"tool_name": tc.name, "batch_rejected": True})
             for tc in tool_calls
@@ -259,6 +270,7 @@ def execute_tool_calls(
 
     results: list[ToolExecutionResult] = []
     for tc in tool_calls:
+        started = time.monotonic()
         with (
             observe_tool(
                 tc.name,
@@ -282,14 +294,48 @@ def execute_tool_calls(
                 metadata={"is_error": result.is_error, "terminate": result.terminate},
             )
             results.append(result)
+        _capture_tool_call_analytics(
+            tc,
+            tool=tool_map.get(tc.name),
+            outcome=str(span_attrs.get("outcome", "unknown")),
+            is_error=result.is_error,
+            terminate=result.terminate,
+            duration_ms=max(0, round((time.monotonic() - started) * 1000)),
+        )
     return results
 
 
+def _capture_tool_call_analytics(
+    tool_call: ToolCall,
+    *,
+    tool: RuntimeTool | None,
+    outcome: str,
+    is_error: bool,
+    terminate: bool,
+    duration_ms: int,
+) -> None:
+    """Emit product analytics without retaining tool arguments or results."""
+    from infrastructure.analytics.capture import capture_agent_tool_call_completed
+
+    capture_agent_tool_call_completed(
+        tool_call_id=tool_call.id,
+        tool_name=tool_call.name,
+        source=str(getattr(tool, "source", "unknown")),
+        role=tool_role(tool).value,
+        outcome=outcome,
+        executed=outcome in _EXECUTED_TOOL_OUTCOMES,
+        is_error=is_error,
+        terminate=terminate,
+        duration_ms=duration_ms,
+    )
+
+
 def tool_role(tool: RuntimeTool | None) -> ToolRole:
-    """Return the declared role; an unknown tool counts as an action so it still errors alone."""
+    """Return the declared role; unknown and legacy tools default to action."""
     if tool is None:
         return ToolRole.ACTION
-    return tool.role
+    role = getattr(tool, "role", None)
+    return role if isinstance(role, ToolRole) else ToolRole.ACTION
 
 
 def response_batch_violation(

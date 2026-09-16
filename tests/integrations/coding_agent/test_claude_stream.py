@@ -33,12 +33,40 @@ def test_tool_uses_and_narration_become_short_steps_and_the_result_is_kept() -> 
     for line in lines:
         reader.line(line + "\n")
 
-    # Assert: duplicates collapse, paths are relative, commands are whitespace-normalized.
+    # Assert: duplicates collapse, paths are relative, commands become intents.
     assert steps == [
         "I'll compare both sides.",
         "Reading a/b.py",
         "Editing a/b.py",
-        "Running: uv run pytest tests -q",
+        "Running tests: tests",
         "Searching report",
     ]
     assert reader.result_text == "Combined both sides; 12 tests pass."
+
+
+def test_command_intent_is_judged_by_the_program_not_by_words_in_its_text() -> None:
+    # Arrange
+    steps: list[str] = []
+    reader = ClaudeStreamReader(steps.append, workspace="/repo")
+    commands = [
+        'rg "pytest" tests',
+        "uv run pytest tests/scheduler -x -q 2>&1 | tail -20",
+        "git status --short && grep -n marker file.py",
+        "npx eslint src",
+        "make test",
+        "./scripts/deploy.sh --dry-run",
+    ]
+
+    # Act
+    for command in commands:
+        reader.line(_assistant({"type": "tool_use", "name": "Bash", "input": {"command": command}}))
+
+    # Assert
+    assert steps == [
+        "Searching the code",
+        "Running tests: tests/scheduler",
+        "Searching the code",
+        "Checking lint and types",
+        "Running tests",
+        "Running: ./scripts/deploy.sh --dry-run",
+    ]

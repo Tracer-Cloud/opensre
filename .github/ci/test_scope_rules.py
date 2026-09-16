@@ -22,6 +22,8 @@ class PathRule:
 
 # Matched in list order — more specific prefixes must appear before parents.
 RULES: tuple[PathRule, ...] = (
+    PathRule("dev/cicd_epoch_observer.py", ("tests/integrations/github/test_ci_epochs.py",)),
+    PathRule("integrations/github/ci_epochs.py", ("tests/integrations/github/test_ci_epochs.py",)),
     # User-facing quickstart surface
     PathRule("docs/quickstart.mdx", ("tests/cli/test_quickstart.py",)),
     # Installer surfaces (curl/bash, PowerShell, docs, Homebrew sync)

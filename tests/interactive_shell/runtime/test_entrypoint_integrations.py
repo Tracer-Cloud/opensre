@@ -344,6 +344,28 @@ def test_run_repl_writes_startup_output_to_the_supplied_console(monkeypatch: Any
     assert "READY" in text
 
 
+def test_launch_banner_captures_shell_render_after_successful_first_paint(
+    monkeypatch: Any,
+) -> None:
+    events: list[str] = []
+    monkeypatch.setattr(main_entrypoint, "animate_launch_wordmark", lambda *_a, **_k: None)
+    monkeypatch.setattr(
+        main_entrypoint,
+        "render_terminal_ui",
+        lambda *_a, **_k: events.append("rendered"),
+    )
+    monkeypatch.setattr(
+        main_entrypoint,
+        "capture_interactive_shell_rendered",
+        lambda **_kwargs: events.append("captured"),
+    )
+
+    finish = main_entrypoint._start_launch_banner(Console(file=io.StringIO(), force_terminal=False))
+    finish()
+
+    assert events == ["rendered", "captured"]
+
+
 def test_run_repl_defaults_to_the_module_console(monkeypatch: Any) -> None:
     """Omitting the console keeps today's behaviour, not a silent no-op."""
     # Arrange

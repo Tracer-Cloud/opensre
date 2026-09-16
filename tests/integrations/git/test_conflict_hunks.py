@@ -5,7 +5,13 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from integrations.git import compare_hunks, merge_conflicts, merge_in_progress, parse_conflict_hunks
+from integrations.git import (
+    compare_hunks,
+    conclude_merge,
+    merge_conflicts,
+    merge_in_progress,
+    parse_conflict_hunks,
+)
 
 
 def _git(cwd: Path, *args: str) -> str:
@@ -96,3 +102,49 @@ def test_compare_hunks_marks_a_file_still_holding_markers_as_unresolved(tmp_path
     # Assert
     assert len(comparisons) == 2
     assert all(c.result is None for c in comparisons)
+
+
+def test_compare_hunks_can_read_the_committed_resolution_instead_of_the_tree(
+    tmp_path: Path,
+) -> None:
+    # Arrange: resolve, commit, then change the working tree afterwards.
+    work = _stopped_merge_with_two_hunks(tmp_path)
+    conflicts = merge_conflicts(str(work), ours="feature", theirs="main")
+    (work / "app.py").write_text(f"two from feature\n{_FILLER}\nsix from main\n")
+    sha = conclude_merge(str(work), conflicts, baseline={})
+    (work / "app.py").write_text("drifted after the commit\n")
+
+    # Act
+    committed = compare_hunks(str(work), conflicts, revision=sha)
+
+    # Assert: the report follows the commit, not the tree.
+    assert [c.result for c in committed] == [("two from feature",), ("six from main",)]
+
+
+def test_a_file_removed_by_the_resolution_reads_as_removed_not_conflicted(tmp_path: Path) -> None:
+    # Arrange
+    work = _stopped_merge_with_two_hunks(tmp_path)
+    conflicts = merge_conflicts(str(work), ours="feature", theirs="main")
+    (work / "app.py").unlink()
+
+    # Act
+    comparisons = compare_hunks(str(work), conflicts)
+
+    # Assert: the file is gone; None would mean markers remain.
+    assert all(c.result == () and c.file_removed for c in comparisons)
+
+
+def test_a_file_emptied_by_the_resolution_is_not_reported_as_removed(tmp_path: Path) -> None:
+    # Arrange: the resolution keeps the file but drops every line, then commits.
+    work = _stopped_merge_with_two_hunks(tmp_path)
+    conflicts = merge_conflicts(str(work), ours="feature", theirs="main")
+    (work / "app.py").write_text("")
+    sha = conclude_merge(str(work), conflicts, baseline={})
+
+    # Act
+    in_tree = compare_hunks(str(work), conflicts)
+    committed = compare_hunks(str(work), conflicts, revision=sha)
+
+    # Assert: resolved to nothing, but the file still exists in both views.
+    assert all(c.result == () and not c.file_removed for c in in_tree)
+    assert all(c.result == () and not c.file_removed for c in committed)

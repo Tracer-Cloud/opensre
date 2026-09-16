@@ -190,6 +190,45 @@ def test_before_hook_receives_executed_tools_source() -> None:
     assert captured["source"] == "datadog"
 
 
+def test_tool_call_analytics_records_execution_outcome_without_payloads(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        "infrastructure.analytics.capture.capture_agent_tool_call_completed",
+        lambda **properties: captured.append(properties),
+    )
+
+    result = execute_tool_calls(
+        [_call("dd_echo", "secret input")], [_tool("dd_echo", source="datadog")], {}
+    )[0]
+
+    assert result.is_error is False
+    assert len(captured) == 1
+    assert captured[0]["tool_name"] == "dd_echo"
+    assert captured[0]["source"] == "datadog"
+    assert captured[0]["role"] == "action"
+    assert captured[0]["outcome"] == "ok"
+    assert captured[0]["executed"] is True
+    assert "secret input" not in str(captured[0])
+
+
+def test_tool_call_analytics_records_batch_rejection(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        "infrastructure.analytics.capture.capture_agent_tool_call_completed",
+        lambda **properties: captured.append(properties),
+    )
+    tools = [_tool("first"), _tool("second")]
+
+    execute_tool_calls([_call("first"), _call("second")], tools, {})
+
+    assert [event["outcome"] for event in captured] == ["batch_rejected", "batch_rejected"]
+    assert all(event["executed"] is False for event in captured)
+
+
 def test_after_hook_can_patch_result_and_terminate() -> None:
     def after(
         _request: ToolExecutionRequest,

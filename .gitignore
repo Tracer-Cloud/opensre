@@ -196,3 +196,6 @@ infrastructure/deployment_multi_tenant/
 # Smoke-test temp home dirs — hold real credentials/keys, never commit
 .tmp-home-smoke/
 .tmp-opensre-home/
+
+# Dev scratch output (e.g. dev/cicd_epoch_observer.py)
+.tmp/

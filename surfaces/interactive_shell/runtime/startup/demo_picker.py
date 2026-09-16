@@ -8,6 +8,7 @@ painted. The user's pick is the first message the model sees.
 from __future__ import annotations
 
 import logging
+import os
 from typing import TYPE_CHECKING
 
 from config.constants.skills import ONBOARDING_SKILL_NAME
@@ -15,6 +16,7 @@ from core.agent_harness.spi.grounding import getting_started_skills
 from core.agent_harness.tools import ActionToolScope
 from infrastructure.analytics.capture import capture_onboarding_demo_prompted
 from infrastructure.analytics.source import is_test_run
+from integrations.git import GitCommandError, merge_in_progress
 from surfaces.shared.terminal.components.choice_menu import repl_tty_interactive
 from tools.interactive_shell.actions.skill_entry import enter_skill, entry_menu_queued
 
@@ -39,8 +41,19 @@ class _StartupTtyProbe:
 
 
 def should_offer_demo() -> bool:
-    """Offer onboarding on interactive launches outside the test harness."""
-    return not is_test_run() and repl_tty_interactive()
+    """Offer onboarding on interactive launches outside the test harness, except mid-merge.
+
+    A checkout with a merge in progress was opened to finish that merge; the
+    demo menu would only stand in the way.
+    """
+    return not is_test_run() and repl_tty_interactive() and not _merge_in_progress_here()
+
+
+def _merge_in_progress_here() -> bool:
+    try:
+        return merge_in_progress(os.getcwd())
+    except (GitCommandError, OSError):
+        return False
 
 
 def offer_demo(session: Session, console: Console | None = None, *, force: bool = False) -> bool:

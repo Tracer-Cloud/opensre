@@ -18,6 +18,7 @@ letters toggle. Submit commits the checked set.
 from __future__ import annotations
 
 import sys
+from collections.abc import Callable
 
 from core.agent_harness.spi.handoff import AskUserQuestion
 from infrastructure.safety.terminal_output import strip_terminal_controls
@@ -247,12 +248,15 @@ def _commit_multi(
 
 def repl_ask_user(
     questions: tuple[AskUserQuestion, ...] | list[AskUserQuestion],
+    *,
+    on_answer: Callable[[int, tuple[int, ...], str | None], None] | None = None,
 ) -> tuple[str, ...] | None:
     """Show the Ask User wizard; return selected labels or None on Esc.
 
     Only call when :func:`repl_tty_interactive` is True. The custom row is
     edited in place inside the option array (concrete strings only in the
     result — never the sentinel label). Multi-select answers are newline-joined.
+    ``on_answer`` receives the question index, listed indexes, and custom text.
     """
     from surfaces.shared.terminal.components.cpr_stdin import drain_stale_cpr_bytes
 
@@ -263,7 +267,7 @@ def repl_ask_user(
     drain_stale_cpr_bytes()
     hide_terminal_cursor()
     try:
-        return _run_ask_user(items)
+        return _run_ask_user(items, on_answer=on_answer)
     finally:
         leave_inline_menu()
         # Arrow CSI (↑↓) and CPR bytes can arrive after Enter while the menu
@@ -275,6 +279,8 @@ def repl_ask_user(
 
 def _run_ask_user(
     items: tuple[AskUserQuestion, ...],
+    *,
+    on_answer: Callable[[int, tuple[int, ...], str | None], None] | None = None,
 ) -> tuple[str, ...] | None:
     flush_pending_input()
     answers: list[str | None] = [None] * len(items)
@@ -368,6 +374,14 @@ def _run_ask_user(
                 if committed is None:
                     continue
                 answers[q_idx] = committed
+                if on_answer is not None:
+                    on_answer(
+                        q_idx,
+                        tuple(
+                            index for index in sorted(checked_sets[q_idx]) if index < custom_index
+                        ),
+                        drafts[q_idx].strip() if custom_index in checked_sets[q_idx] else None,
+                    )
                 if all(item is not None for item in answers):
                     _leave_ask_user(question)
                     return tuple(str(item) for item in answers)
@@ -387,6 +401,8 @@ def _run_ask_user(
                 if not text:
                     continue
                 answers[q_idx] = text
+                if on_answer is not None:
+                    on_answer(q_idx, (), text)
                 if all(item is not None for item in answers):
                     _leave_ask_user(question)
                     return tuple(str(item) for item in answers)
@@ -408,6 +424,8 @@ def _run_ask_user(
                 option_focus = selected
                 continue
             answers[q_idx] = chosen
+            if on_answer is not None:
+                on_answer(q_idx, (selected,), None)
             if all(item is not None for item in answers):
                 _leave_ask_user(question)
                 return tuple(str(item) for item in answers)

@@ -47,7 +47,14 @@ def fetch_remote_branch(
         )
 
 
-def merge_ref(workspace: str, ref: str, *, message: str, commit: bool = True) -> bool:
+def merge_ref(
+    workspace: str,
+    ref: str,
+    *,
+    message: str,
+    commit: bool = True,
+    analytics_workflow: str = "unspecified",
+) -> bool:
     """Merge *ref* into HEAD with a merge commit authored by the OpenSRE Agent account.
 
     Returns True when the merge applied cleanly: committed, or with ``commit``
@@ -67,6 +74,14 @@ def merge_ref(workspace: str, ref: str, *, message: str, commit: bool = True) ->
         env=_opensre_author_env(),
     )
     if result.returncode == 0:
+        if commit:
+            from infrastructure.analytics.capture import capture_opensre_commit_created
+
+            capture_opensre_commit_created(
+                workflow=analytics_workflow,
+                commit_kind="merge",
+                changed_file_count=0,
+            )
         return True
     if unmerged_paths(workspace):
         return False
@@ -206,7 +221,7 @@ def _indexed(workspace: str, paths: Sequence[str]) -> set[str]:
     return {path for path in result.stdout.split("\0") if path}
 
 
-def commit_merge(workspace: str) -> str:
+def commit_merge(workspace: str, *, analytics_workflow: str = "unspecified") -> str:
     """Conclude the in-progress merge with its prepared message; return the new HEAD.
 
     The commit is authored and committed as the OpenSRE Agent account.
@@ -218,6 +233,13 @@ def commit_merge(workspace: str) -> str:
     )
     if result.returncode != 0:
         raise GitCommandError(COMMIT_FAILED, f"git commit failed: {result.stderr.strip()}")
+    from infrastructure.analytics.capture import capture_opensre_commit_created
+
+    capture_opensre_commit_created(
+        workflow=analytics_workflow,
+        commit_kind="merge",
+        changed_file_count=0,
+    )
     return head_sha(workspace)
 
 

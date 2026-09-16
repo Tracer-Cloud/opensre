@@ -57,7 +57,6 @@ numbered workflow headings below. Mark Step 8 with `verifies: true` in every `up
 
 ## Workflow
 
-
 ### Step 1. Check prerequisites
 
 Two calls, one per response:

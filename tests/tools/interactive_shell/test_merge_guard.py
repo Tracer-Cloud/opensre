@@ -5,7 +5,12 @@ from __future__ import annotations
 import subprocess
 from pathlib import Path
 
-from tools.interactive_shell.shell.merge_guard import git_refusal_during_merge
+import pytest
+
+from tools.interactive_shell.shell.merge_guard import (
+    git_refusal_during_merge,
+    pull_request_checkout_refusal,
+)
 
 
 def _git(cwd: Path, *args: str) -> str:
@@ -80,3 +85,29 @@ def test_nothing_is_refused_without_a_merge_in_progress(tmp_path: Path) -> None:
     # Act / Assert
     assert git_refusal_during_merge("git commit -am 'x'", str(work)) is None
     assert git_refusal_during_merge("git push", str(tmp_path / "not-a-repo")) is None
+
+
+@pytest.mark.parametrize(
+    "command",
+    [
+        "gh pr checkout 6254",
+        "gh -R Tracer-Cloud/opensre pr checkout 6254 --force",
+        "gh --repo=Tracer-Cloud/opensre pr checkout 6254",
+        "gh --repo Tracer-Cloud/opensre pr checkout 6254",
+        "gh pr --repo=Tracer-Cloud/opensre checkout 6254",
+        "cd repo && gh pr checkout 12",
+    ],
+)
+def test_checking_a_pull_request_out_in_the_shell_is_refused(command: str) -> None:
+    # Arrange / Act
+    refusal = pull_request_checkout_refusal(command, cwd="/work/repo")
+
+    # Assert
+    assert refusal is not None
+    assert "/work/repo" in refusal and "pull_request" in refusal
+
+
+def test_reading_a_pull_request_is_not_refused() -> None:
+    # Arrange / Act / Assert
+    assert pull_request_checkout_refusal("gh pr view 6254 --json title", cwd="/work/repo") is None
+    assert pull_request_checkout_refusal("gh pr list --state open", cwd="/work/repo") is None

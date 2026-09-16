@@ -1166,7 +1166,17 @@ launch_setup_after_install() {
   fi
 }
 
+record_install_analytics() {
+  local binary_path="${INSTALL_DIR}/${BIN_NAME}"
+
+  OPENSRE_INSTALL_SOURCE="posix_installer" \
+    OPENSRE_INSTALL_CHANNEL="$INSTALL_CHANNEL" \
+    OPENSRE_INSTALL_VERSION="$installed_version" \
+    "$binary_path" --record-install >/dev/null 2>&1 || true
+}
+
 finish_install() {
+  record_install_analytics
   print_install_confirmation
   ensure_on_path
   ensure_github_cli

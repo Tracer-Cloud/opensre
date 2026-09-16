@@ -87,6 +87,15 @@ def test_install_ps1_contains_auto_onboarding_launch_hook() -> None:
     assert "[System.Console]::IsInputRedirected" in source
 
 
+def test_install_ps1_records_install_analytics_without_blocking_install() -> None:
+    source = INSTALL_PS1.read_text()
+
+    assert "function Send-OpenSreInstallAnalytics" in source
+    assert '$env:OPENSRE_INSTALL_SOURCE = "powershell_installer"' in source
+    assert "& $BinaryPath --record-install *> $null" in source
+    assert "Analytics is best-effort and must never fail installation." in source
+
+
 def test_install_ps1_preserves_full_binary_name_in_next_steps() -> None:
     shell = _powershell()
     if shell is None:

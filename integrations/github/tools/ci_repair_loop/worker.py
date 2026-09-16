@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Any
 
 from config.constants.ci_repair import CI_REPAIR_FINISH_RESERVE_SECONDS
+from infrastructure.analytics.provider import shutdown_analytics
 from infrastructure.process.tree import start_watchdog
 from integrations.coding_agent import verify_coding_agent
 from integrations.git import clone_repository
@@ -234,3 +235,4 @@ def run_ci_repair_worker(store_directory: Path, run_id: str) -> None:
         store.save(run)
     finally:
         watchdog.set()
+        shutdown_analytics(flush=True, timeout=5)

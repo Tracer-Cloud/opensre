@@ -105,7 +105,12 @@ def push_ci_fix(
                 branch_name=ctx.head_branch,
             )
         if changed:
-            commit_paths(workspace, changed, _commit_message(ctx, result.summary))
+            commit_paths(
+                workspace,
+                changed,
+                _commit_message(ctx, result.summary),
+                analytics_workflow="github_ci_fix",
+            )
         pushed_head_sha = head_sha(workspace)
         source_branch = ctx.target_branch if ctx.is_branch_target else ctx.head_branch
         if remote_branch_sha(workspace, source_branch, token=token) != ctx.head_sha:

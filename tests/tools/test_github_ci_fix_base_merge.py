@@ -6,8 +6,9 @@ import subprocess
 from pathlib import Path
 
 import pytest
+from rich.console import Console
 
-from integrations.coding_agent import CodingResult
+from integrations.coding_agent import CodingResult, Progress
 from integrations.git import head_sha, merge_in_progress
 from integrations.github.tools.ci_fix.base_merge import base_has_new_commits, merge_base_into_head
 from integrations.github.tools.ci_fix.context import MERGE_STATE_DIRTY, CiFixContext
@@ -69,7 +70,7 @@ def _repo(tmp_path: Path, *, conflict: bool) -> Path:
     return work
 
 
-def _never_called(task: str) -> CodingResult:
+def _never_called(task: str, **_kw: object) -> CodingResult:
     raise AssertionError(f"coding agent must not run for a clean merge: {task}")
 
 
@@ -107,7 +108,7 @@ def test_conflicts_resolved_by_agent_are_committed_and_reported(tmp_path: Path) 
     work = _repo(tmp_path, conflict=True)
     tasks: list[str] = []
 
-    def resolve(task: str) -> CodingResult:
+    def resolve(task: str, **_kw: object) -> CodingResult:
         tasks.append(task)
         (work / "package.json").write_text('{"dep": "2.1"}\n')
         (work / "pnpm-lock.yaml").write_text("dep: 2.1\n")
@@ -133,7 +134,7 @@ def test_unresolved_conflicts_abort_the_merge_and_name_the_blocked_files(tmp_pat
     work = _repo(tmp_path, conflict=True)
     before = head_sha(str(work))
 
-    def resolve(_task: str) -> CodingResult:
+    def resolve(_task: str, **_kw: object) -> CodingResult:
         (work / "pnpm-lock.yaml").write_text("dep: 2.0\n")
         return CodingResult(success=True, summary="Regenerated the lockfile; package.json unclear.")
 
@@ -159,7 +160,7 @@ def test_failed_agent_run_aborts_the_merge(tmp_path: Path) -> None:
     work = _repo(tmp_path, conflict=True)
     before = head_sha(str(work))
 
-    def resolve(_task: str) -> CodingResult:
+    def resolve(_task: str, **_kw: object) -> CodingResult:
         return CodingResult(success=False, summary="", error="agent timed out", timed_out=True)
 
     # Act
@@ -171,3 +172,45 @@ def test_failed_agent_run_aborts_the_merge(tmp_path: Path) -> None:
     assert "Coding agent: agent timed out" in excinfo.value.message
     assert merge_in_progress(str(work)) is False
     assert head_sha(str(work)) == before
+
+
+def test_console_shows_the_conflicts_before_and_the_verdicts_after_the_agent(
+    tmp_path: Path,
+) -> None:
+    # Arrange: a console to paint on, and an agent that reports one step while taking main's side.
+    work = _repo(tmp_path, conflict=True)
+    console = Console(record=True, width=100, force_terminal=False)
+    steps: list[str] = []
+
+    def resolve(_task: str, *, on_progress: Progress | None = None) -> CodingResult:
+        assert on_progress is not None
+        on_progress("Editing package.json")
+        (work / "package.json").write_text('{"dep": "2.0"}\n')
+        (work / "pnpm-lock.yaml").write_text("dep: 2.0\n")
+        return CodingResult(success=True, summary="Took main's versions.")
+
+    # Act
+    merge = merge_base_into_head(
+        str(work),
+        _CTX,
+        baseline={},
+        resolve_conflicts=resolve,
+        console=console,
+        on_progress=steps.append,
+    )
+
+    # Assert: the overview names both sides, the review carries a verdict per file,
+    # and the result says how each conflict was settled.
+    painted = console.export_text()
+    assert "Merging main into ci-fix" in painted
+    assert 'ours {"dep": "1.1"}  theirs {"dep": "2.0"}' in painted
+    assert 'took theirs (main)  {"dep": "2.0"}' in painted
+    assert steps == ["Editing package.json"]
+    assert merge.resolutions == (
+        "package.json: 1 conflict (conflict 1 took theirs)",
+        "pnpm-lock.yaml: 1 conflict (conflict 1 took theirs)",
+    )
+    assert merge.summary == (
+        "merged main, resolving conflicts in package.json: 1 conflict (conflict 1 took theirs); "
+        "pnpm-lock.yaml: 1 conflict (conflict 1 took theirs)"
+    )

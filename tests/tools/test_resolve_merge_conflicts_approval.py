@@ -78,9 +78,7 @@ def test_approved_merge_is_committed_and_pushed_to_the_tracked_branch(tmp_path: 
     assert out["success"] is True and out["pushed"] is True
     assert out["pushed_to"] == "origin/feature"
     assert out["commit_sha"] == _git(bare, "rev-parse", "refs/heads/feature")
-    assert out["resolutions"] == [
-        "app.py: combined both sides (+1 -1 against feature, +1 -1 against main)"
-    ]
+    assert out["resolutions"] == ["app.py: 1 conflict (conflict 1 combined)"]
     assert "pushed it to origin/feature" in out["outcome"]
 
 

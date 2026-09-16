@@ -140,3 +140,24 @@ def test_a_non_github_origin_is_not_watched(tmp_path: Path) -> None:
     # Assert
     assert outcome.state == CHECKS_NOT_WATCHED
     assert gh.call_count == 0
+
+
+def test_a_fork_push_label_still_finds_the_pull_request_by_branch(tmp_path: Path) -> None:
+    # Arrange
+    work, sha = _github_clone(tmp_path)
+
+    def wait(
+        ctx: CiFixContext, *, github_token: str | None, expected_head_sha: str
+    ) -> CheckVerification:
+        return CheckVerification(state=CheckState.PASSED, check_names=("CI Gate",))
+
+    # Act
+    with patch(_GH, return_value=json.dumps([_PULL])) as gh:
+        outcome = watch_pull_request_checks(
+            str(work), pushed_to="contributor:feat/proactive_messaging", commit_sha=sha, wait=wait
+        )
+
+    # Assert
+    argv = gh.call_args.args[0]
+    assert argv[argv.index("--head") + 1] == "feat/proactive_messaging"
+    assert outcome.passed

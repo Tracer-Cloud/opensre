@@ -10,6 +10,8 @@ import os
 from collections.abc import Callable
 from typing import Any
 
+from rich.markup import escape
+
 from core.agent_harness.spi.handoff import AskUserQuestion, parse_ask_user_answers, question_key
 from core.agent_harness.spi.session_state import (
     PendingUserChoice,
@@ -19,12 +21,14 @@ from core.agent_harness.spi.session_state import (
 from core.agent_harness.tools import ActionToolScope, action_context_from_agent_context
 from core.domain.types.tools import ToolSurface
 from core.tool import BaseTool, SideEffectLevel
-from integrations.git import merge_in_progress, unmerged_paths
+from integrations.git import GitCommandError, merge_in_progress, unmerged_paths
+from integrations.github import checkout_pull_request
 from tools.cross_vendor.resolve_merge_conflicts.runner import (
     ALL_FILES_OPTIONS,
     ALL_FILES_TITLE,
     SOURCE,
     FileChoice,
+    failure_output,
     resolve_merge,
 )
 from tools.interactive_shell.shared import allow_tool
@@ -177,13 +181,16 @@ class ResolveMergeConflictsTool(BaseTool):
         "update its pull request and wait for the pull request checks. Use whenever a merge stopped on conflicts (git reported "
         "'CONFLICT', 'Unmerged paths', or files hold '<<<<<<<' markers) or the user asks "
         "to resolve, fix, or finish a merge, or to commit and push a resolved merge. It "
-        "works on the merge already in progress, or merges the named branch first. Before "
+        "works on the merge already in progress, or merges the named branch first. A pull "
+        "request named by number or URL is cloned into a workspace of its own and merged "
+        "there, so the current directory is never switched to another branch. Before "
         "committing it checks that no conflict marker or unmerged path remains; files it "
         "cannot settle are reported and the merge is left in progress for the user to "
         "decide. The commit and push follow the shell's /auto approval level."
     )
     use_cases = [
         "Resolve the merge conflicts in the current repository and commit the merge",
+        "Resolve the merge conflicts of pull request #123 (or its URL) and update it",
         "Finish a merge of main into the feature branch that stopped on conflicts",
         "Merge a branch into the current branch and resolve any conflicts",
         "Resolve the remaining conflicted files following the user's decision",
@@ -197,20 +204,33 @@ class ResolveMergeConflictsTool(BaseTool):
     input_schema = {
         "type": "object",
         "properties": {
+            "pull_request": {
+                "type": "string",
+                "description": (
+                    "The pull request to resolve, as a number, owner/repo#number or URL. Pass "
+                    "it whenever the user names a pull request: the tool clones the "
+                    "repository under OpenSRE's home, checks the pull request out there and "
+                    "merges its base branch, leaving the current directory untouched. Never "
+                    "check a pull request out in the current directory instead."
+                ),
+                "nullable": True,
+            },
             "workspace": {
                 "type": "string",
                 "description": (
-                    "Absolute path to the repository with the merge. "
-                    "Defaults to CODING_WORKSPACE or the current directory."
+                    "Omit this: the merge is resolved in the current directory. Pass an "
+                    "absolute path only when the user named a different checkout; never "
+                    "derive one from a branch or remote name."
                 ),
                 "nullable": True,
             },
             "ref": {
                 "type": "string",
                 "description": (
-                    "Branch or commit to merge into the current branch when no merge is "
-                    "in progress yet (for example 'main' or 'origin/main'). Omit to "
-                    "resolve the merge already in progress."
+                    "Branch or commit to merge into the current branch when no merge is in "
+                    "progress yet. Omit it: the merge already in progress is resolved, and "
+                    "otherwise the repository's default branch (origin/main) is merged. Pass "
+                    "a ref only when the user named one."
                 ),
                 "nullable": True,
             },
@@ -257,7 +277,8 @@ class ResolveMergeConflictsTool(BaseTool):
         "merge_failed, cli_unavailable, timeout, execution_error, conflicts_remain, "
         "merge_abandoned, commit_failed) or None on success",
         "error": "Human-readable failure detail",
-        "workspace": "Repository the merge ran in",
+        "workspace": "Repository the merge ran in (OpenSRE's own clone for a pull request)",
+        "pull_request": "owner/repo#number when a pull request was cloned and merged",
         "branch": "Branch that received the merge",
         "merged": "Branch or commit that was merged in",
         "commit_sha": "The merge commit, or None when the merge was not committed",
@@ -276,6 +297,8 @@ class ResolveMergeConflictsTool(BaseTool):
         "coding_agent_summary": "The coding agent's account of how it resolved each file, "
         "written before OpenSRE committed the merge",
         "merge_in_progress": "True when the merge is still open in the working tree",
+        "up_to_date": "True when the branch already contained the merged ref: nothing was "
+        "committed or pushed and nothing is left to do",
         "rendered_in_shell": "True when each conflict hunk was already shown side by side "
         "(ours, theirs, merged) in the terminal",
     }
@@ -292,10 +315,22 @@ class ResolveMergeConflictsTool(BaseTool):
         model: str | None = None,
         decisions: dict[str, str] | None = None,
         wait_for_checks: bool | None = True,
+        pull_request: str | None = None,
         context: Any = None,
     ) -> dict[str, Any]:
         scope = _action_scope(context)
-        return resolve_merge(
+        label = ""
+        if pull_request:
+            try:
+                checkout = checkout_pull_request(pull_request, cwd=os.getcwd())
+            except GitCommandError as exc:
+                return {
+                    **failure_output(workspace or os.getcwd(), exc.kind, exc.message),
+                    "pull_request": pull_request,
+                }
+            workspace, label = checkout.workspace, checkout.label
+            _say(scope, checkout.workspace, label, reused=checkout.reused)
+        output = resolve_merge(
             workspace,
             ref=ref,
             model=model,
@@ -307,6 +342,15 @@ class ResolveMergeConflictsTool(BaseTool):
             cancelled=_cancellation(scope),
             ask=_ask(scope),
         )
+        return {**output, "pull_request": label}
+
+
+def _say(scope: ActionToolScope | None, workspace: str, label: str, *, reused: bool) -> None:
+    console = getattr(scope, "console", None)
+    if console is None:
+        return
+    verb = "Continuing the merge of" if reused else "Checked out"
+    console.print(f"[dim]  {verb} {escape(label)} in {escape(workspace)}[/]")
 
 
 def _open_paths(workspace: str | None) -> list[str]:

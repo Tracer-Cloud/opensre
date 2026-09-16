@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import re
+import uuid
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
@@ -70,6 +71,9 @@ class PendingUserChoice:
 
     custom_answer: bool = True
     """Offer the free-text row under the options (single-question path)."""
+
+    interaction_id: str = field(default_factory=lambda: str(uuid.uuid4()))
+    """Opaque identifier joining prompt exposure to its eventual outcome."""
 
     def items(self) -> tuple[AskUserQuestion, ...]:
         """Questions to render: ``questions`` when set, otherwise one from title/options."""
@@ -127,6 +131,7 @@ def pending_user_choice_state_snapshot(session: Any) -> dict[str, Any] | None:
         "note": pending.note,
         "commands": dict(pending.commands),
         "custom_answer": pending.custom_answer,
+        "interaction_id": pending.interaction_id,
         **workflow_context,
     }
 
@@ -202,6 +207,7 @@ def apply_pending_user_choice_state(session: Any, payload: Any) -> None:
         note=str(payload.get("note") or ""),
         commands=commands,
         custom_answer=bool(payload.get("custom_answer", True)),
+        interaction_id=str(payload.get("interaction_id") or uuid.uuid4()),
     )
     _apply_workflow_context(session, payload)
 

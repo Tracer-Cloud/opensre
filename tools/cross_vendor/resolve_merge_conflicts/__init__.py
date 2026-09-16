@@ -7,7 +7,6 @@ Package layout:
 - ``runner.py``     — the lifecycle: snapshot the stopped merge, run the coding agent
   (via the neutral ``integrations/coding_agent`` seam), verify, show, approve,
   commit, push, watch the checks.
-- ``comparison.py`` — the side-by-side hunk view painted in the shell.
 - ``errors.py``     — :class:`ResolveMergeError` + stable ``error_kind`` constants.
 
 The tool never aborts a merge: files the agent cannot settle are reported with

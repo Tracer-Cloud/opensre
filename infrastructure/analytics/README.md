@@ -97,12 +97,16 @@ server-owned column resolved from the bearer token.
 
 | Area | Events | Important properties / question answered |
 | --- | --- | --- |
-| Acquisition | `install_detected`, `account_authenticated`, `cli_invoked` | Install source, login conversion, entrypoint, command names, and boolean flags; never raw argument values. |
+| Acquisition | `install_detected`, `account_authenticated`, `cli_invoked` | Install source/channel/distribution, login conversion, entrypoint, command names, and boolean flags; never raw argument values. Official installers invoke the hidden record-only path immediately after installation. |
 | Runtime health | `user_id_load_failed`, `sentry_init_skipped` | Identity persistence and telemetry setup failures. |
 | Onboarding | `onboard_started`, `onboard_completed`, `onboard_failed` | Funnel conversion, wizard mode, target, provider, and model. |
 | Integrations | `integration_setup_started`, `integration_setup_completed`, `integration_verified`, `integration_removed`, `integrations_listed` | Integration adoption and setup/verification conversion by service. |
 | Interactive actions | `terminal_actions_planned`, `terminal_actions_executed`, `terminal_turn_summarized` | Planned/executed/success counts, LLM fallback, and session success/fallback buckets. |
 | Agent loop | `react_turn_completed` | Phase, iterations, cap hits, stop reason, tool-call count, latency, provider, and model. |
+| Agent tool calls | `agent_tool_call_completed` | Tool/source/role, whether execution occurred, outcome, latency, error state, and termination; never tool arguments or results. |
+| Ask User | `ask_user_prompt_rendered`, `ask_user_prompt_answered`, `ask_user_prompt_dismissed` | Linked prompt exposure, bounded credential-redacted question/option text, selected option indexes, bounded custom answers, and dismissals. Listed answers send indexes only. |
+| Shell and browser | `interactive_shell_rendered`, `browser_open_requested` | Successful shell first paint and application-requested browser-open outcome by safe target label. Terminals do not expose whether a manually rendered link was clicked. |
+| Agent workflows | `skill_executed`, `opensre_commit_created` | Successful skill entry and commits produced by supported OpenSRE repair workflows. |
 | AI turn | `$ai_generation` | Turn/session IDs, turn kind, model/provider, latency, tokens, integration snapshot, outcome, and error category. It also contains redacted prompt and response text in `$ai_input` and `$ai_output_choices`. |
 | Gateway | `gateway_turn_started`, `gateway_turn_completed`, `gateway_turn_failed` | Surface, answer rate, final intent, latency bucket, and exception type. No message body is included. |
 | Scheduled work | `scheduled_task_started`, `scheduled_task_completed`, `scheduled_task_failed` | Task kind, provider, status, and task ID. Failed events can contain a capped error string. |
@@ -134,6 +138,8 @@ must be calculated from `analytics_product_events`.
 | Action success rate | Sum of `executed_success_count` divided by sum of `executed_count`. |
 | LLM fallback rate | `terminal_turn_summarized` events with `fallback_to_llm=true` divided by all summarized turns. |
 | Agent reliability | Error, cancellation, and iteration-cap `react_turn_completed` events divided by all ReAct turns. |
+| Tool-call success | Executed `agent_tool_call_completed` events with `outcome=ok` divided by all executed tool calls; report pre-execution rejection outcomes separately. |
+| Ask User response rate | Picker-mode `ask_user_prompt_answered` events divided by picker-mode `ask_user_prompt_rendered` events; report dismissals and custom-answer share separately. |
 | Latency | p50/p95 of gateway duration, ReAct duration, and `$ai_latency`, sliced by surface/model/provider. |
 | Integration adoption | Distinct authenticated organizations completing or verifying setup by service. Personal events use a server-resolved organization; silo events use a bearer-authenticated runtime assertion. Current connected inventory remains a webapp database fact, not an event-derived fact. |
 | Scheduled-work reliability | Completed vs failed scheduled tasks by task kind and provider. |
@@ -157,7 +163,9 @@ change open-source client code. Treat raw anonymous install counts as
 directional, use the server-verified linked conversion for decisions, and keep
 an upstream WAF/rate limit on the public route for network-layer DDoS defense.
 
-The `$ai_generation` event is the only product event intended to contain user
-content. Secret-shaped values are redacted, but arbitrary incident details are
-not. Treat that field as confidential, enforce a retention policy server-side,
-and keep it out of broad-access product dashboards.
+`$ai_generation` and `ask_user_prompt_rendered` are the product events
+intended to contain user content. `ask_user_prompt_answered` includes bounded
+custom-answer text only; listed answers send option indexes. Ask User text is
+credential-redacted and bounded before delivery, but arbitrary incident
+details may remain. Treat these fields as confidential, enforce a retention
+policy server-side, and keep them out of broad-access product dashboards.

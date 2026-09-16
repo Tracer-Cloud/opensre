@@ -11,6 +11,7 @@ from collections.abc import Iterator
 from pathlib import Path
 from typing import NoReturn
 
+import httpx
 import pytest
 
 from infrastructure.analytics import install, provider
@@ -26,6 +27,7 @@ def _reset_anonymous_id_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -
     provider._cached_anonymous_id = None
     provider._cached_identity_persistence = "unknown"
     provider._first_run_marker_created_this_process = False
+    monkeypatch.setattr(provider, "_install_capture_attempted", False)
     provider._pending_user_id_load_failures.clear()
     monkeypatch.setattr(provider, "_event_log_state", provider._EventLogState())
     monkeypatch.setattr(provider, "_FIRST_RUN_PATH", tmp_path / "installed")
@@ -84,7 +86,7 @@ def test_capture_install_detected_if_needed_captures_once(monkeypatch, tmp_path:
 
     assert first is True
     assert second is False
-    assert marker_path.exists()
+    assert not marker_path.exists()
     assert stub.events == [
         (Event.INSTALL_DETECTED, {"install_source": "make_install"}),
     ]
@@ -123,6 +125,64 @@ def test_capture_install_detected_initializes_identity_before_install_marker(
     assert (tmp_path / "installed").exists()
     events = [payload["json"]["event"] for payload in posted_payloads]
     assert events == [Event.INSTALL_DETECTED.value]
+
+
+@pytest.mark.parametrize("failure", ["transport", "flush_timeout", "http_status"])
+def test_failed_install_delivery_remains_retryable_on_the_next_cli_run(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, failure: str
+) -> None:
+    from http import HTTPStatus
+
+    monkeypatch.delenv("OPENSRE_ANALYTICS_DISABLED", raising=False)
+    monkeypatch.delenv("DO_NOT_TRACK", raising=False)
+    monkeypatch.setattr(provider, "_CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(provider, "_ANONYMOUS_ID_PATH", tmp_path / "anonymous_id")
+    monkeypatch.setattr(provider.atexit, "register", lambda _func: None)
+    monkeypatch.setattr(
+        provider,
+        "resolve_analytics_destination",
+        lambda: AnalyticsDestination("https://app.opensre.test/api/analytics/events"),
+    )
+    entered = threading.Event()
+    release = threading.Event()
+    attempts: list[dict[str, object]] = []
+
+    def post(_client: httpx.Client, url: str, *, content: bytes, **_kw: object) -> httpx.Response:
+        attempts.append(json.loads(content))
+        if len(attempts) == 1:
+            entered.set()
+            if failure == "flush_timeout":
+                assert release.wait(timeout=5)
+            if failure == "http_status":
+                return httpx.Response(
+                    HTTPStatus.SERVICE_UNAVAILABLE, request=httpx.Request("POST", url)
+                )
+            raise httpx.ConnectError("offline")
+        return httpx.Response(HTTPStatus.ACCEPTED, request=httpx.Request("POST", url))
+
+    monkeypatch.setattr(httpx.Client, "post", post)
+    assert provider.capture_install_detected_if_needed({"install_source": "posix_installer"})
+    analytics = provider.get_analytics()
+    try:
+        assert entered.wait(timeout=5)
+        provider.shutdown_analytics(flush=True, timeout=0 if failure == "flush_timeout" else 5)
+        assert not (tmp_path / "installed").exists()
+    finally:
+        release.set()
+        assert analytics._worker is not None
+        analytics._worker.join(timeout=5)
+        assert not analytics._worker.is_alive()
+
+    # A new CLI process retries with the same stable event ID; success alone consumes the guard.
+    monkeypatch.setattr(provider, "_instance", None)
+    monkeypatch.setattr(provider, "_install_capture_attempted", False)
+    provider.capture_first_run_if_needed()
+    provider.shutdown_analytics(flush=True, timeout=5)
+    assert (tmp_path / "installed").exists()
+    assert len(attempts) == 2
+    assert attempts[0]["event_id"] == attempts[1]["event_id"]
+    monkeypatch.setattr(provider, "_install_capture_attempted", False)
+    assert provider.capture_install_detected_if_needed() is False
 
 
 def test_analytics_posts_versioned_event_contract_to_webapp(
@@ -876,54 +936,6 @@ def test_identity_persistence_property_marks_none_when_disk_unavailable(
 
     assert len(posted_payloads) == 1
     assert posted_payloads[0]["json"]["properties"]["identity_persistence"] == "none"
-
-
-def test_capture_install_detected_if_needed_returns_false_when_marker_write_fails(
-    monkeypatch, tmp_path: Path
-) -> None:
-    """Test that capture_install_detected_if_needed returns False when marker file write fails."""
-    stub = _StubAnalytics()
-    marker_path = tmp_path / "installed"
-    monkeypatch.setattr(provider, "_FIRST_RUN_PATH", marker_path)
-    monkeypatch.setattr(provider, "get_analytics", lambda: stub)
-
-    real_open = Path.open
-
-    def _raise_oserror(self: Path, *args, **kwargs):
-        mode = args[0] if args else kwargs.get("mode", "r")
-        if self == marker_path and "x" in mode:
-            raise OSError("touch failed")
-        return real_open(self, *args, **kwargs)
-
-    monkeypatch.setattr(Path, "open", _raise_oserror)
-
-    captured = provider.capture_install_detected_if_needed({"install_source": "make_install"})
-    assert captured is False
-    assert stub.events == []
-
-
-def test_capture_install_detected_if_needed_handles_exclusive_create_race(
-    monkeypatch, tmp_path: Path
-) -> None:
-    stub = _StubAnalytics()
-    marker_path = tmp_path / "installed"
-    monkeypatch.setattr(provider, "_FIRST_RUN_PATH", marker_path)
-    monkeypatch.setattr(provider, "get_analytics", lambda: stub)
-
-    real_open = Path.open
-
-    def _raise_file_exists(self: Path, *args, **kwargs):
-        mode = args[0] if args else kwargs.get("mode", "r")
-        if self == marker_path and "x" in mode:
-            raise FileExistsError("created by another process")
-        return real_open(self, *args, **kwargs)
-
-    monkeypatch.setattr(Path, "open", _raise_file_exists)
-
-    captured = provider.capture_install_detected_if_needed({"install_source": "make_install"})
-
-    assert captured is False
-    assert stub.events == []
 
 
 def test_shutdown_is_idempotent_and_capture_after_shutdown_is_noop(
