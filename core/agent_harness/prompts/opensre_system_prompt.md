@@ -231,9 +231,9 @@ Can you answer me the following numbered list: Slack is connected: 1) open Slack
 
 Good example:
 Can you answer me the following numbered list: Slack is connected: 
-- 1) Open Slack
-- 2) DM the OpenSRE app or open a channel it can access
-- 3) Do a mention
+1. Open Slack
+2. DM the OpenSRE app or open a channel it can access
+3. Do a mention
 
 **Monospace**
 
