@@ -12,7 +12,6 @@ import mcp_types as types
 import pytest
 
 import integrations.mcp_client as mcp_client
-from integrations.mcp_client import McpSessionOptions
 from integrations.mcp_transport import McpTransportMode
 from integrations.posthog_mcp import (
     PostHogMCPConfig,
@@ -67,7 +66,7 @@ async def _open_session(*_args: object, **_kwargs: object) -> AsyncIterator[_Ses
     yield _Session()
 
 
-def _session_options() -> McpSessionOptions:
+def _session_options() -> mcp_client.McpSessionOptions:
     return {
         "session_url": "https://mcp.example.test/mcp",
         "stdio_env": {},
@@ -184,7 +183,7 @@ def test_open_session_characterizes_sse_wiring(monkeypatch: pytest.MonkeyPatch) 
     monkeypatch.setattr(
         session_module,
         "ClientSession",
-        lambda read_stream, write_stream: _InitializedSession(read_stream, write_stream),
+        _InitializedSession,
     )
     config = _Config(mode=McpTransportMode.SSE, timeout_seconds=7.0)
 
@@ -224,7 +223,7 @@ def test_open_session_characterizes_streamable_http_wiring(
     monkeypatch.setattr(
         session_module,
         "ClientSession",
-        lambda read_stream, write_stream: _InitializedSession(read_stream, write_stream),
+        _InitializedSession,
     )
     config = _Config(timeout_seconds=7.0)
 

@@ -52,3 +52,5 @@ def _build_default_rules() -> tuple[RedactionRule, ...]:
 
 
 DEFAULT_REDACTION_RULES: tuple[RedactionRule, ...] = _build_default_rules()
+
+__all__ = ["DEFAULT_REDACTION_RULES", "RedactionRule"]

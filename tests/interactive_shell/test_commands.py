@@ -394,7 +394,7 @@ class TestSpecificListCommands:
         self._patch_llm(monkeypatch)
         monkeypatch.setattr(
             "config.account.account_llm_route",
-            lambda: object(),
+            object,
         )
         console, buf = _capture()
 

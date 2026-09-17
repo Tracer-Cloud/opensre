@@ -172,8 +172,6 @@ class TestStore:
         assert tasks == []
 
     def test_store_with_invalid_entries_skips_them(self, store_path: Path) -> None:
-        import json
-
         store_path.parent.mkdir(parents=True, exist_ok=True)
         data = [
             {"id": "valid1", "kind": "manual_loop", "cron": "0 9 * * *", "provider": "telegram"},

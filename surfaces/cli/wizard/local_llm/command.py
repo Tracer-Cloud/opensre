@@ -14,13 +14,13 @@ from surfaces.cli.wizard.local_llm.ollama import (
     install,
     is_installed,
     is_server_running,
-    normalize_model_tag,
     pull_model,
     start_server,
     wait_for_server,
 )
 from surfaces.shared.llm_setup.catalog import PROVIDER_BY_VALUE
 from surfaces.shared.llm_setup.env_sync import sync_provider_env
+from surfaces.shared.llm_setup.ollama import normalize_model_tag
 from surfaces.shared.llm_setup.validation import _check_ollama
 
 _console = Console()

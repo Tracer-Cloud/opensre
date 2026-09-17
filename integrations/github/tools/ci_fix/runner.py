@@ -385,7 +385,6 @@ def run_ci_fix(
         branch_name = (branch or "").strip()
         ctx: CiFixContext | None = None
         worktree: BranchWorktree | None = None
-        run_workspace = ws
         try:
             if branch_name and (pr_number is not None or pr_url):
                 raise GitHubCiFixError(

@@ -147,8 +147,8 @@ def build_report(args: Mapping[str, str], *, snapshot_dir: Path | None = None) -
     """
     from integrations.github.client import GitHubApiError, resolve_github_token
     from integrations.github.tools.ci_analytics.analysis import analyze_repository
+    from integrations.github.tools.ci_analytics.payload import report_payload
     from integrations.github.tools.ci_analytics.render import headline, render_markdown
-    from integrations.github.tools.ci_analytics.tool import report_payload
 
     owner = args.get("owner", "").strip()
     repo = args.get("repo", "").strip()

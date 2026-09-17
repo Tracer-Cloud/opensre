@@ -19,7 +19,7 @@ def _clear_registry() -> None:
 
 
 def test_registered_provider_builds_matching_source() -> None:
-    sentinel = cast("RunbookSource", object())
+    sentinel = cast(RunbookSource, object())
     config = RunbookSourceConfig(
         name="platform-runbooks",
         provider="github",

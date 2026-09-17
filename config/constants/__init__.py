@@ -69,6 +69,15 @@ if TYPE_CHECKING:
         ANALYTICS_INGEST_PATH as ANALYTICS_INGEST_PATH,
     )
     from config.constants.analytics import (
+        ANALYTICS_INSTALL_CHANNEL_ENV as ANALYTICS_INSTALL_CHANNEL_ENV,
+    )
+    from config.constants.analytics import (
+        ANALYTICS_INSTALL_SOURCE_ENV as ANALYTICS_INSTALL_SOURCE_ENV,
+    )
+    from config.constants.analytics import (
+        ANALYTICS_INSTALL_VERSION_ENV as ANALYTICS_INSTALL_VERSION_ENV,
+    )
+    from config.constants.analytics import (
         ANALYTICS_LOG_EVENTS_ENV as ANALYTICS_LOG_EVENTS_ENV,
     )
     from config.constants.analytics import (

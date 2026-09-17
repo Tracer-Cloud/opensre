@@ -78,6 +78,7 @@ def _drain_pipe(pipe: IO[str] | None, buffer: list[str]) -> None:
         for line in pipe:
             buffer.append(line)
     except (OSError, ValueError):
+        # Cancellation can close the pipe while this reader is draining it.
         pass
     finally:
         with contextlib.suppress(OSError, ValueError):

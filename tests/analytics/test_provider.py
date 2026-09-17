@@ -8,6 +8,7 @@ import threading
 import time
 import uuid
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from http import HTTPStatus
 from pathlib import Path
 from typing import NoReturn
@@ -28,7 +29,7 @@ def _reset_anonymous_id_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -
     provider._cached_anonymous_id = None
     provider._cached_identity_persistence = "unknown"
     provider._first_run_marker_created_this_process = False
-    monkeypatch.setattr(provider, "_install_capture_attempted", False)
+    monkeypatch.setattr(provider, "_install_capture_state", provider._InstallCaptureState())
     provider._pending_user_id_load_failures.clear()
     monkeypatch.setattr(provider, "_event_log_state", provider._EventLogState())
     monkeypatch.setattr(provider, "_FIRST_RUN_PATH", tmp_path / "installed")
@@ -107,6 +108,24 @@ def test_capture_first_run_if_needed_uses_same_install_guard(monkeypatch, tmp_pa
     assert stub.events == [(Event.INSTALL_DETECTED, None)]
 
 
+def test_concurrent_install_capture_attempts_emit_one_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stub = _StubAnalytics()
+    start = threading.Barrier(8, timeout=10)
+    monkeypatch.setattr(provider, "get_analytics", lambda: stub)
+
+    def capture(_index: int) -> bool:
+        start.wait()
+        return provider.capture_install_detected_if_needed({"install_source": "make_install"})
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(capture, range(8)))
+
+    assert results.count(True) == 1
+    assert stub.events == [(Event.INSTALL_DETECTED, {"install_source": "make_install"})]
+
+
 def test_capture_install_detected_initializes_identity_before_install_marker(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -178,13 +197,13 @@ def test_failed_install_delivery_remains_retryable_on_the_next_cli_run(
 
     # A new CLI process retries with the same stable event ID; success alone consumes the guard.
     monkeypatch.setattr(provider, "_instance", None)
-    monkeypatch.setattr(provider, "_install_capture_attempted", False)
+    monkeypatch.setattr(provider, "_install_capture_state", provider._InstallCaptureState())
     provider.capture_first_run_if_needed()
     provider.shutdown_analytics(flush=True, timeout=5)
     assert (tmp_path / "installed").exists()
     assert len(attempts) == 2
     assert attempts[0]["event_id"] == attempts[1]["event_id"]
-    monkeypatch.setattr(provider, "_install_capture_attempted", False)
+    monkeypatch.setattr(provider, "_install_capture_state", provider._InstallCaptureState())
     assert provider.capture_install_detected_if_needed() is False
 
 

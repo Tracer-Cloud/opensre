@@ -17,6 +17,9 @@ from integrations.github.tools.ci_fix.storage.attempts import (
 def test_journal_startup_is_concurrent_and_failed_writes_roll_back(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    def interrupt_transaction() -> None:
+        raise RuntimeError("interrupted")
+
     monkeypatch.setattr(database, "database_path", lambda: tmp_path / "repairs.db")
 
     def prepare(index: int) -> None:
@@ -27,7 +30,7 @@ def test_journal_startup_is_concurrent_and_failed_writes_roll_back(
     assert all(load_prepared_push(str(index)) is not None for index in range(4))
     with pytest.raises(RuntimeError, match="interrupted"), database.transaction() as conn:
         conn.execute("DELETE FROM prepared_pushes")
-        raise RuntimeError("interrupted")
+        interrupt_transaction()
     record_verification("0", "old-attempt", "failed")
     prepared = load_prepared_push("0")
     assert prepared is not None and prepared.checks_state == ""

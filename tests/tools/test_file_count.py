@@ -8,7 +8,6 @@ from typing import Any
 import pytest
 
 import tools.system.file_count.count as count_module
-from tools.system.file_count.count import FileCountError, count_matching_files
 from tools.system.file_count.tool import TOOL_NAME, count_files
 
 
@@ -39,7 +38,7 @@ def test_generated_directories_are_not_counted(tmp_path: Path) -> None:
     _tree(tmp_path)
 
     # Act
-    tally = count_matching_files(tmp_path, "test_*.py")
+    tally = count_module.count_matching_files(tmp_path, "test_*.py")
 
     # Assert: the two real modules, not the caches or the vendored copy.
     assert tally.count == 2
@@ -51,7 +50,7 @@ def test_the_default_pattern_counts_every_project_file(tmp_path: Path) -> None:
     _tree(tmp_path)
 
     # Act
-    tally = count_matching_files(tmp_path)
+    tally = count_module.count_matching_files(tmp_path)
 
     # Assert
     assert tally.count == 3
@@ -59,8 +58,8 @@ def test_the_default_pattern_counts_every_project_file(tmp_path: Path) -> None:
 
 def test_a_missing_directory_says_so_instead_of_returning_zero(tmp_path: Path) -> None:
     # Arrange / Act / Assert
-    with pytest.raises(FileCountError, match="does not exist"):
-        count_matching_files(tmp_path / "nope")
+    with pytest.raises(count_module.FileCountError, match="does not exist"):
+        count_module.count_matching_files(tmp_path / "nope")
 
 
 def test_a_file_path_is_refused(tmp_path: Path) -> None:
@@ -69,8 +68,8 @@ def test_a_file_path_is_refused(tmp_path: Path) -> None:
     path.write_text("")
 
     # Act / Assert
-    with pytest.raises(FileCountError, match="not a directory"):
-        count_matching_files(path)
+    with pytest.raises(count_module.FileCountError, match="not a directory"):
+        count_module.count_matching_files(path)
 
 
 def test_a_symlinked_directory_is_not_followed(tmp_path: Path) -> None:
@@ -80,7 +79,7 @@ def test_a_symlinked_directory_is_not_followed(tmp_path: Path) -> None:
     (tmp_path / "pkg" / "loop").symlink_to(tmp_path, target_is_directory=True)
 
     # Act
-    tally = count_matching_files(tmp_path, "test_*.py")
+    tally = count_module.count_matching_files(tmp_path, "test_*.py")
 
     # Assert
     assert tally.count == 2
@@ -116,10 +115,10 @@ def test_the_tool_is_registered_and_read_only() -> None:
 def test_a_path_outside_the_working_directory_is_refused(tmp_path: Path) -> None:
     """Read-only tools run without an approval gate, so the root must stay inside."""
     # Arrange / Act / Assert
-    with pytest.raises(FileCountError, match="outside the working directory"):
-        count_matching_files(Path("/etc"))
-    with pytest.raises(FileCountError, match="outside the working directory"):
-        count_matching_files(Path("../.."))
+    with pytest.raises(count_module.FileCountError, match="outside the working directory"):
+        count_module.count_matching_files(Path("/etc"))
+    with pytest.raises(count_module.FileCountError, match="outside the working directory"):
+        count_module.count_matching_files(Path("../.."))
 
 
 def test_a_symlinked_root_is_judged_by_where_it_lands(tmp_path: Path, monkeypatch) -> None:
@@ -130,8 +129,8 @@ def test_a_symlinked_root_is_judged_by_where_it_lands(tmp_path: Path, monkeypatc
     monkeypatch.chdir(workspace)
 
     # Act / Assert
-    with pytest.raises(FileCountError, match="outside the working directory"):
-        count_matching_files(Path("escape"))
+    with pytest.raises(count_module.FileCountError, match="outside the working directory"):
+        count_module.count_matching_files(Path("escape"))
 
 
 def test_an_unreadable_subtree_raises_instead_of_undercounting(
@@ -156,8 +155,8 @@ def test_an_unreadable_subtree_raises_instead_of_undercounting(
     monkeypatch.setattr(count_module.os, "walk", _walk_that_fails)
 
     # Act / Assert
-    with pytest.raises(FileCountError, match="cannot read"):
-        count_matching_files(Path("."), "test_*.py")
+    with pytest.raises(count_module.FileCountError, match="cannot read"):
+        count_module.count_matching_files(Path("."), "test_*.py")
 
 
 def test_the_reported_path_stays_relative_to_the_workspace(tmp_path: Path) -> None:

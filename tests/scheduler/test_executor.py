@@ -24,11 +24,9 @@ import infrastructure.scheduling.scheduler.executor as scheduler_executor
 import infrastructure.scheduling.scheduler.storage.run_store as run_store
 from config.constants import OPENSRE_OPERATIONS_LOG_PATH_ENV
 from infrastructure.observability.operations_log import read_operations
-from infrastructure.scheduling.scheduler.executor import execute_task
 from infrastructure.scheduling.scheduler.local_delivery import get_loop_messages
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_CHANNELS_PARAM
 from infrastructure.scheduling.scheduler.runner import _recover_runs
-from infrastructure.scheduling.scheduler.storage.run_store import get_runs
 from infrastructure.scheduling.scheduler.storage.task_store import add_task
 from infrastructure.scheduling.scheduler.types import (
     Provider,
@@ -190,13 +188,15 @@ class TestExecutor:
             side_effect=build_slowly,
         ):
             worker = threading.Thread(
-                target=lambda: first_result.append(execute_task(task, fire_time, real_runners()))
+                target=lambda: first_result.append(
+                    scheduler_executor.execute_task(task, fire_time, real_runners())
+                )
             )
             worker.start()
             assert building.wait(_SYNC_TIMEOUT_SECONDS)
             assert renewed.wait(_SYNC_TIMEOUT_SECONDS)
             threading.Event().wait(_AFTER_ORIGINAL_LEASE_SECONDS)
-            assert execute_task(task, fire_time, real_runners()) is False
+            assert scheduler_executor.execute_task(task, fire_time, real_runners()) is False
             release.set()
             worker.join(_SYNC_TIMEOUT_SECONDS)
 
@@ -237,7 +237,9 @@ class TestExecutor:
             "infrastructure.scheduling.scheduler.executor.build_message",
             side_effect=build_past_expiry,
         ):
-            assert execute_task(task, "2026-01-01T09:00Z", real_runners()) is False
+            assert (
+                scheduler_executor.execute_task(task, "2026-01-01T09:00Z", real_runners()) is False
+            )
 
         assert adapters[Provider.SLACK].calls == []
 
@@ -278,7 +280,9 @@ class TestExecutor:
             "infrastructure.scheduling.scheduler.executor.build_message",
             return_value="Scheduled report",
         ):
-            assert execute_task(task, "2026-01-01T09:00Z", real_runners()) is False
+            assert (
+                scheduler_executor.execute_task(task, "2026-01-01T09:00Z", real_runners()) is False
+            )
 
         assert adapter.calls == 2
 
@@ -286,7 +290,7 @@ class TestExecutor:
     def test_recovered_one_shot_finalizes_only_after_success(
         self, tmp_path: Path, delivery_succeeds: bool
     ) -> None:
-        from infrastructure.scheduling.scheduler.storage import get_task, try_claim
+        from infrastructure.scheduling.scheduler.storage import get_task
 
         task = add_task(
             ScheduledTask(
@@ -296,7 +300,7 @@ class TestExecutor:
                 params={"disable_after_success": "true"},
             )
         )
-        assert try_claim(task.id, "old-tick") is not None
+        assert run_store.try_claim(task.id, "old-tick") is not None
         _expire_claim(tmp_path / "scheduler.db", task.id, "old-tick")
         adapters = _install_fake_bundle()
         adapters[Provider.SLACK].result = (
@@ -310,7 +314,7 @@ class TestExecutor:
         assert stored is not None
         assert stored.enabled is not delivery_succeeds
         assert (stored.last_run is not None) is delivery_succeeds
-        assert get_runs(task.id)[0].status is (
+        assert run_store.get_runs(task.id)[0].status is (
             TaskStatus.SUCCESS if delivery_succeeds else TaskStatus.FAILED
         )
 
@@ -318,7 +322,7 @@ class TestExecutor:
     def test_recovery_skips_ineligible_claims_before_limiting(
         self, tmp_path: Path, ineligible: str
     ) -> None:
-        from infrastructure.scheduling.scheduler.storage import get_task, try_claim
+        from infrastructure.scheduling.scheduler.storage import get_task
 
         blocked = ScheduledTask(
             id="blocked",
@@ -339,9 +343,9 @@ class TestExecutor:
             )
         )
         for index in range(100):
-            assert try_claim(blocked.id, f"old-{index}") is not None
+            assert run_store.try_claim(blocked.id, f"old-{index}") is not None
             _expire_claim(tmp_path / "scheduler.db", blocked.id, f"old-{index}")
-        assert try_claim(task.id, "eligible-tick") is not None
+        assert run_store.try_claim(task.id, "eligible-tick") is not None
         with sqlite3.connect(tmp_path / "scheduler.db") as conn:
             conn.execute(
                 "UPDATE task_runs SET lease_expires_at = ? WHERE task_id = ?",
@@ -364,8 +368,10 @@ class TestExecutor:
             )
         assert len(adapters[Provider.SLACK].calls) == 1
         assert not adapters[Provider.TELEGRAM].calls
-        assert get_runs(task.id)[0].status is TaskStatus.SUCCESS
-        assert all(run.status is TaskStatus.RUNNING for run in get_runs(blocked.id, limit=100))
+        assert run_store.get_runs(task.id)[0].status is TaskStatus.SUCCESS
+        assert all(
+            run.status is TaskStatus.RUNNING for run in run_store.get_runs(blocked.id, limit=100)
+        )
         stored = get_task(task.id)
         assert stored is not None and stored.last_run is not None
 
@@ -454,7 +460,7 @@ class TestExecutor:
         with patch(
             "infrastructure.scheduling.scheduler.executor.build_message", return_value="report"
         ):
-            assert execute_task(task, "2026-01-01T09:00Z", real_runners())
+            assert scheduler_executor.execute_task(task, "2026-01-01T09:00Z", real_runners())
         assert len(adapters[Provider.SLACK].calls) == 1
         with (
             patch(
@@ -464,7 +470,7 @@ class TestExecutor:
             pytest.raises(KeyboardInterrupt),
         ):
             run_task_now(task.id, real_runners(), only_failed=True)
-        crashed = get_runs(task.id)[0]
+        crashed = run_store.get_runs(task.id)[0]
         assert crashed.status is TaskStatus.RUNNING
         _expire_claim(tmp_path / "scheduler.db", task.id, crashed.fire_time)
         adapters[Provider.TELEGRAM].calls.clear()
@@ -475,7 +481,7 @@ class TestExecutor:
             _recover_runs(real_runners())
         assert len(adapters[Provider.SLACK].calls) == 1
         assert len(adapters[Provider.TELEGRAM].calls) == 1
-        recovered = get_runs(task.id)[0]
+        recovered = run_store.get_runs(task.id)[0]
         assert recovered.attempt == 2
         assert recovered.status is TaskStatus.SUCCESS
         assert [(target.provider, target.chat_id) for target in recovered.targets] == [
@@ -483,7 +489,6 @@ class TestExecutor:
         ]
 
     def test_crash_before_build_is_recovered_by_a_new_attempt(self, tmp_path: Path) -> None:
-        from infrastructure.scheduling.scheduler.storage.run_store import get_runs, try_claim
 
         task = ScheduledTask(
             id="test_build_crash",
@@ -493,7 +498,9 @@ class TestExecutor:
             chat_id="C123",
         )
         fire_time = "2026-01-01T09:00"
-        assert try_claim(task.id, fire_time, db_path=tmp_path / "scheduler.db") is not None
+        assert (
+            run_store.try_claim(task.id, fire_time, db_path=tmp_path / "scheduler.db") is not None
+        )
         _expire_claim(tmp_path / "scheduler.db", task.id, fire_time)
         adapters = _install_fake_bundle()
 
@@ -501,15 +508,14 @@ class TestExecutor:
             "infrastructure.scheduling.scheduler.executor.build_message",
             return_value="Scheduled report",
         ):
-            assert execute_task(task, fire_time, real_runners()) is True
+            assert scheduler_executor.execute_task(task, fire_time, real_runners()) is True
 
-        runs = get_runs(task.id)
+        runs = run_store.get_runs(task.id)
         assert [run.status for run in runs] == [TaskStatus.SUCCESS, TaskStatus.ABANDONED]
         assert runs[0].attempt == 2
         assert len(adapters[Provider.SLACK].calls) == 1
 
     def test_crash_during_delivery_is_recovered_by_a_new_attempt(self, tmp_path: Path) -> None:
-        from infrastructure.scheduling.scheduler.storage.run_store import get_runs
 
         adapter = _CrashOnceAdapter()
         _install_bundle({Provider.SLACK: adapter})
@@ -529,7 +535,7 @@ class TestExecutor:
             ),
             pytest.raises(KeyboardInterrupt),
         ):
-            execute_task(task, fire_time, real_runners())
+            scheduler_executor.execute_task(task, fire_time, real_runners())
 
         _expire_claim(tmp_path / "scheduler.db", task.id, fire_time)
 
@@ -537,9 +543,9 @@ class TestExecutor:
             "infrastructure.scheduling.scheduler.executor.build_message",
             return_value="Scheduled report",
         ):
-            assert execute_task(task, fire_time, real_runners()) is True
+            assert scheduler_executor.execute_task(task, fire_time, real_runners()) is True
 
-        runs = get_runs(task.id)
+        runs = run_store.get_runs(task.id)
         assert [run.status for run in runs] == [TaskStatus.SUCCESS, TaskStatus.ABANDONED]
         assert runs[0].attempt == 2
         assert [run.report for run in runs] == ["Scheduled report", "Scheduled report"]
@@ -548,7 +554,6 @@ class TestExecutor:
     def test_scheduler_recovery_sweep_resubmits_the_original_fire_time(
         self, tmp_path: Path
     ) -> None:
-        from infrastructure.scheduling.scheduler.storage.run_store import get_runs, try_claim
 
         task = ScheduledTask(
             id="test_sweep_recovery",
@@ -559,7 +564,9 @@ class TestExecutor:
         )
         fire_time = "2026-01-01T09:00"
         add_task(task, tmp_path / "tasks.json")
-        assert try_claim(task.id, fire_time, db_path=tmp_path / "scheduler.db") is not None
+        assert (
+            run_store.try_claim(task.id, fire_time, db_path=tmp_path / "scheduler.db") is not None
+        )
         _expire_claim(tmp_path / "scheduler.db", task.id, fire_time)
         adapters = _install_fake_bundle()
 
@@ -569,7 +576,7 @@ class TestExecutor:
         ):
             _recover_runs(real_runners())
 
-        runs = get_runs(task.id)
+        runs = run_store.get_runs(task.id)
         assert [run.status for run in runs] == [TaskStatus.SUCCESS, TaskStatus.ABANDONED]
         assert runs[0].attempt == 2
         assert len(adapters[Provider.SLACK].calls) == 1
@@ -589,11 +596,11 @@ class TestExecutor:
             "infrastructure.scheduling.scheduler.executor.build_message",
             return_value=TaskReport("Scheduled report", summary="1 workflow fixed"),
         ):
-            result = execute_task(task, "2026-01-01T09:00", real_runners())
+            result = scheduler_executor.execute_task(task, "2026-01-01T09:00", real_runners())
 
         assert result is True
         assert len(adapters[Provider.TELEGRAM].calls) == 1
-        run = get_runs(task.id)[0]
+        run = run_store.get_runs(task.id)[0]
         assert run.report == "Scheduled report"
         assert run.report_summary == "1 workflow fixed"
 
@@ -617,7 +624,7 @@ class TestExecutor:
                 return_value={},
             ),
         ):
-            result = execute_task(task, "2026-01-01T09:00", real_runners())
+            result = scheduler_executor.execute_task(task, "2026-01-01T09:00", real_runners())
 
         assert result is False
 
@@ -636,7 +643,7 @@ class TestExecutor:
             "infrastructure.scheduling.scheduler.executor.build_message",
             return_value="Scheduled report",
         ):
-            result = execute_task(task, "2026-01-01T09:00", real_runners())
+            result = scheduler_executor.execute_task(task, "2026-01-01T09:00", real_runners())
 
         assert result is True
         assert len(adapters[Provider.SLACK].calls) == 1
@@ -656,7 +663,7 @@ class TestExecutor:
             "infrastructure.scheduling.scheduler.executor.build_message",
             return_value="Scheduled report",
         ):
-            result = execute_task(task, "2026-01-01T09:00", real_runners())
+            result = scheduler_executor.execute_task(task, "2026-01-01T09:00", real_runners())
 
         assert result is True
         assert len(adapters[Provider.DISCORD].calls) == 1
@@ -676,7 +683,7 @@ class TestExecutor:
             "infrastructure.scheduling.scheduler.executor.build_message",
             return_value="Scheduled report",
         ):
-            result = execute_task(task, "2026-01-01T09:00", real_runners())
+            result = scheduler_executor.execute_task(task, "2026-01-01T09:00", real_runners())
 
         assert result is True
         assert len(adapters[Provider.ROCKETCHAT].calls) == 1
@@ -702,7 +709,7 @@ class TestExecutor:
                 return_value=inbox_path,
             ),
         ):
-            result = execute_task(task, "2026-01-01T09:00", real_runners())
+            result = scheduler_executor.execute_task(task, "2026-01-01T09:00", real_runners())
 
         assert result is True
         messages = get_loop_messages(inbox_path=inbox_path)
@@ -731,7 +738,7 @@ class TestExecutor:
             "infrastructure.scheduling.scheduler.executor.build_message",
             return_value="Sensitive scheduled report body",
         ):
-            result = execute_task(task, "2026-01-01T09:00", real_runners())
+            result = scheduler_executor.execute_task(task, "2026-01-01T09:00", real_runners())
 
         assert result is True
         records = read_operations(path=log_path)
@@ -764,7 +771,7 @@ class TestExecutor:
             "infrastructure.scheduling.scheduler.executor.build_message",
             return_value="Scheduled report",
         ) as mock_build:
-            result = execute_task(task, "2026-01-01T09:00", real_runners())
+            result = scheduler_executor.execute_task(task, "2026-01-01T09:00", real_runners())
 
         assert result is True
         mock_build.assert_called_once()
@@ -773,7 +780,6 @@ class TestExecutor:
 
     def test_loop_fanout_partial_success_completes_claim(self) -> None:
         """One channel failing must not leave an unrecoverable failed claim."""
-        from infrastructure.scheduling.scheduler.storage.run_store import get_runs
 
         adapters = _install_fake_bundle()
         adapters[Provider.INTERACTIVE_SHELL].result = (True, "", "local:1")
@@ -790,10 +796,10 @@ class TestExecutor:
             "infrastructure.scheduling.scheduler.executor.build_message",
             return_value="Scheduled report",
         ):
-            result = execute_task(task, "2026-01-01T09:05", real_runners())
+            result = scheduler_executor.execute_task(task, "2026-01-01T09:05", real_runners())
 
         assert result is True
-        runs = get_runs(task.id)
+        runs = run_store.get_runs(task.id)
         assert len(runs) == 1
         assert runs[0].status.value == "success"
         assert "interactive_shell:local:1" in runs[0].posted_message_id
@@ -831,7 +837,7 @@ class TestExecutor:
             ) as mock_post,
         ):
             mock_post.return_value = (True, "", "msg_rc")
-            result = execute_task(task, "2026-01-01T09:00", real_runners())
+            result = scheduler_executor.execute_task(task, "2026-01-01T09:00", real_runners())
 
         assert result is True
         args = mock_post.call_args.args
@@ -864,7 +870,7 @@ class TestExecutor:
             ),
             patch("integrations.slack.scheduled_delivery.send_slack_webhook_message") as mock_hook,
         ):
-            result = execute_task(task, "2026-01-01T09:00", real_runners())
+            result = scheduler_executor.execute_task(task, "2026-01-01T09:00", real_runners())
 
         assert result is False
         mock_hook.assert_not_called()
@@ -889,7 +895,7 @@ class TestExecutor:
                 return_value={"webhook_url": "https://chat.example.com/hooks/a/b"},
             ),
         ):
-            result = execute_task(task, "2026-01-01T09:00", real_runners())
+            result = scheduler_executor.execute_task(task, "2026-01-01T09:00", real_runners())
 
         # Webhook-only setups cannot honor the task's explicit chat_id.
         assert result is False
@@ -910,9 +916,9 @@ class TestExecutor:
             return_value="Scheduled report",
         ):
             # First execution succeeds
-            result1 = execute_task(task, "2026-01-01T09:00", real_runners())
+            result1 = scheduler_executor.execute_task(task, "2026-01-01T09:00", real_runners())
             # Second execution with same fire_time is deduped
-            result2 = execute_task(task, "2026-01-01T09:00", real_runners())
+            result2 = scheduler_executor.execute_task(task, "2026-01-01T09:00", real_runners())
 
         assert result1 is True
         assert result2 is False
@@ -930,7 +936,7 @@ class TestExecutor:
 
         with patch("infrastructure.scheduling.scheduler.executor.build_message") as mock_build:
             mock_build.side_effect = RuntimeError("Pipeline crashed")
-            result = execute_task(task, "2026-01-01T09:00", real_runners())
+            result = scheduler_executor.execute_task(task, "2026-01-01T09:00", real_runners())
 
         assert result is False
 
@@ -956,10 +962,10 @@ class TestExecutor:
             skill_revision=skill_revision,
         )
 
-        result = execute_task(task, "2026-01-01T09:00", real_runners())
+        result = scheduler_executor.execute_task(task, "2026-01-01T09:00", real_runners())
 
         assert result is False
-        runs = get_runs(task.id)
+        runs = run_store.get_runs(task.id)
         assert len(runs) == 1
         assert runs[0].status is TaskStatus.FAILED
         assert error_text in runs[0].error
@@ -979,11 +985,11 @@ class TestExecutor:
             "infrastructure.scheduling.scheduler.executor.build_message",
             return_value="Scheduled report",
         ):
-            result = execute_task(task, "2026-01-01T09:00", real_runners())
+            result = scheduler_executor.execute_task(task, "2026-01-01T09:00", real_runners())
 
         assert result is False
         assert len(adapters[Provider.TELEGRAM].calls) == 1
-        assert get_runs(task.id)[0].report == "Scheduled report"
+        assert run_store.get_runs(task.id)[0].report == "Scheduled report"
 
     def test_delivery_targets_fan_out_same_message(self) -> None:
         adapters = _install_fake_bundle()
@@ -1009,7 +1015,7 @@ class TestExecutor:
             "infrastructure.scheduling.scheduler.executor.build_message",
             return_value="Scheduled report",
         ):
-            result = execute_task(task, "2026-01-01T09:00", real_runners())
+            result = scheduler_executor.execute_task(task, "2026-01-01T09:00", real_runners())
 
         assert result is True
         slack_call = adapters[Provider.SLACK].calls[-1]
@@ -1025,7 +1031,6 @@ class TestExecutor:
         The delivery-targets path used to fail the whole run after Slack had
         already been posted to, so run history claimed nothing was delivered.
         """
-        from infrastructure.scheduling.scheduler.storage.run_store import get_runs
 
         adapters = _install_fake_bundle()
         adapters[Provider.SLACK].result = (True, "", "ts_123")
@@ -1050,10 +1055,10 @@ class TestExecutor:
             "infrastructure.scheduling.scheduler.executor.build_message",
             return_value="Scheduled report",
         ):
-            result = execute_task(task, "2026-01-01T09:00", real_runners())
+            result = scheduler_executor.execute_task(task, "2026-01-01T09:00", real_runners())
 
         assert result is True
-        runs = get_runs(task.id)
+        runs = run_store.get_runs(task.id)
         assert runs[0].status.value == "success"
         assert "slack:C123:ts_123" in runs[0].posted_message_id
         assert "partial delivery" in runs[0].error
@@ -1075,11 +1080,11 @@ class TestExecutor:
             "infrastructure.scheduling.scheduler.executor.build_message",
             return_value="",
         ):
-            result = execute_task(task, "2026-01-01T09:00", real_runners())
+            result = scheduler_executor.execute_task(task, "2026-01-01T09:00", real_runners())
 
         assert result is True
         assert adapters[Provider.SLACK].calls == []
-        assert get_runs(task.id)[0].report == ""
+        assert run_store.get_runs(task.id)[0].report == ""
 
 
 class _BlockingAdapter:
@@ -1155,7 +1160,6 @@ class TestDeliveryFanOutConcurrency:
     """Fan-out overlaps destinations and reports them in a stable order."""
 
     def test_destinations_are_delivered_to_concurrently(self) -> None:
-        from infrastructure.scheduling.scheduler.storage.run_store import get_runs
 
         barrier = threading.Barrier(3, timeout=_SYNC_TIMEOUT_SECONDS)
         adapters: dict[Provider, Any] = {
@@ -1169,16 +1173,15 @@ class TestDeliveryFanOutConcurrency:
             "infrastructure.scheduling.scheduler.executor.build_message",
             return_value="Scheduled report",
         ):
-            result = execute_task(task, "2026-01-01T09:00", real_runners())
+            result = scheduler_executor.execute_task(task, "2026-01-01T09:00", real_runners())
 
         assert result is True
-        runs = get_runs(task.id)
+        runs = run_store.get_runs(task.id)
         assert [outcome.ok for outcome in runs[0].targets] == [True, True, True]
         assert runs[0].error == ""
 
     def test_target_outcomes_persist_in_plan_order_not_completion_order(self) -> None:
         """The last destination to finish is still reported first."""
-        from infrastructure.scheduling.scheduler.storage.run_store import get_runs
 
         slack_done = threading.Event()
         shell_done = threading.Event()
@@ -1194,11 +1197,11 @@ class TestDeliveryFanOutConcurrency:
             "infrastructure.scheduling.scheduler.executor.build_message",
             return_value="Scheduled report",
         ):
-            result = execute_task(task, "2026-01-01T09:00", real_runners())
+            result = scheduler_executor.execute_task(task, "2026-01-01T09:00", real_runners())
 
         assert result is True
         assert shell_done.is_set()
-        runs = get_runs(task.id)
+        runs = run_store.get_runs(task.id)
         assert [outcome.ok for outcome in runs[0].targets] == [True, True]
         assert [outcome.provider for outcome in runs[0].targets] == [
             Provider.INTERACTIVE_SHELL,
@@ -1206,7 +1209,6 @@ class TestDeliveryFanOutConcurrency:
         ]
 
     def test_retry_targets_only_the_failed_destination(self) -> None:
-        from infrastructure.scheduling.scheduler.storage.run_store import get_runs
 
         flaky = _FlakyAdapter(failures=2)
         healthy = _FakeAdapter()
@@ -1218,17 +1220,16 @@ class TestDeliveryFanOutConcurrency:
             "infrastructure.scheduling.scheduler.executor.build_message",
             return_value="Scheduled report",
         ):
-            result = execute_task(task, "2026-01-01T09:00", real_runners())
+            result = scheduler_executor.execute_task(task, "2026-01-01T09:00", real_runners())
 
         assert result is True
         assert flaky.calls == 3
         assert len(healthy.calls) == 1
-        runs = get_runs(task.id)
+        runs = run_store.get_runs(task.id)
         assert runs[0].error == ""
         assert [outcome.attempts for outcome in runs[0].targets] == [1, 3]
 
     def test_all_destinations_failing_fails_the_run(self) -> None:
-        from infrastructure.scheduling.scheduler.storage.run_store import get_runs
 
         adapters = _install_fake_bundle()
         adapters[Provider.INTERACTIVE_SHELL].result = (False, "inbox unwritable", "")
@@ -1239,16 +1240,15 @@ class TestDeliveryFanOutConcurrency:
             "infrastructure.scheduling.scheduler.executor.build_message",
             return_value="Scheduled report",
         ):
-            result = execute_task(task, "2026-01-01T09:00", real_runners())
+            result = scheduler_executor.execute_task(task, "2026-01-01T09:00", real_runners())
 
         assert result is False
-        runs = get_runs(task.id)
+        runs = run_store.get_runs(task.id)
         assert runs[0].status.value == "failed"
         assert "partial delivery" not in runs[0].error
         assert [outcome.ok for outcome in runs[0].targets] == [False, False]
 
     def test_unsupported_loop_channel_records_the_parse_error(self) -> None:
-        from infrastructure.scheduling.scheduler.storage.run_store import get_runs
 
         _install_fake_bundle()
         task = _fanout_task("test_bad_channel", "interactive_shell,carrier_pigeon")
@@ -1257,10 +1257,10 @@ class TestDeliveryFanOutConcurrency:
             "infrastructure.scheduling.scheduler.executor.build_message",
             return_value="Scheduled report",
         ):
-            result = execute_task(task, "2026-01-01T09:00", real_runners())
+            result = scheduler_executor.execute_task(task, "2026-01-01T09:00", real_runners())
 
         assert result is False
-        runs = get_runs(task.id)
+        runs = run_store.get_runs(task.id)
         assert "carrier_pigeon" in runs[0].error
         assert runs[0].targets == ()
 
@@ -1294,7 +1294,7 @@ class TestSelectiveRerun:
             "infrastructure.scheduling.scheduler.executor.build_message",
             return_value="Scheduled report",
         ):
-            result = execute_task(
+            result = scheduler_executor.execute_task(
                 task,
                 "2026-01-01T09:00",
                 real_runners(),
@@ -1321,7 +1321,7 @@ class TestSelectiveRerun:
             "infrastructure.scheduling.scheduler.executor.build_message",
             return_value="Scheduled report",
         ):
-            result = execute_task(
+            result = scheduler_executor.execute_task(
                 task, "2026-01-01T09:00", real_runners(), target_filter=frozenset()
             )
 
