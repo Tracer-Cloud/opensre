@@ -205,7 +205,12 @@ def test_asset_download_paths_use_asset_headers_not_request_headers(tmp_path: Pa
             f"{function_name} must call Get-OpenSreAssetHeaders — "
             f"asset downloads stay anonymous even when a token is set"
         )
-        assert "Get-OpenSreRequestHeaders" not in body, (
-            f"{function_name} must not call Get-OpenSreRequestHeaders — "
-            f"that builder attaches the metadata Authorization header"
+        # Look for an actual call assignment, not a comment that mentions
+        # the name. A line like ``$headers = Get-OpenSreRequestHeaders`` is
+        # what would leak the Authorization header.
+        bad_assignment = "$headers = Get-OpenSreRequestHeaders"
+        assert bad_assignment not in body, (
+            f"{function_name} must not assign $headers from "
+            f"Get-OpenSreRequestHeaders — that builder attaches the metadata "
+            f"Authorization header to the asset request"
         )
