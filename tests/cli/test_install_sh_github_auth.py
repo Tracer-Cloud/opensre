@@ -231,3 +231,53 @@ def test_no_authorization_header_without_any_token(tmp_path: Path) -> None:
     assert API_URL in argv_log
     # Accept + User-Agent still applied even without a token.
     assert "-H" in argv_log
+
+
+def test_download_to_does_not_add_authorization(tmp_path: Path) -> None:
+    """Asset downloads (download_to) must stay anonymous even when a token is set.
+
+    Asset + checksum downloads go through corp proxies that may rewrite or
+    reject authenticated requests; the release CDN serves binaries
+    anonymously. This pins the bash side's behavior so a future refactor
+    cannot accidentally route downloads through the same auth path as
+    metadata lookups.
+    """
+    fake_dir = tmp_path / "fakebin"
+    fake_dir.mkdir()
+    _fake_curl(fake_dir)
+
+    download_to_block = _extract_function("download_to")
+
+    full_env = {
+        "PATH": f"{fake_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+        "HOME": str(tmp_path / "home"),
+        OPENSRE_GITHUB_TOKEN_ENV: "would-be-mistake",
+        GITHUB_TOKEN_ENV: "would-be-mistake",
+        GH_TOKEN_ENV: "would-be-mistake",
+    }
+
+    block = (
+        'REPO="${OPENSRE_INSTALL_REPO:-Tracer-Cloud/opensre}"\n'
+        'GITHUB_API_TOKEN="${OPENSRE_GITHUB_TOKEN:-${GITHUB_TOKEN:-${GH_TOKEN:-}}}"\n'
+        f"{download_to_block}\n"
+        f'download_to "{API_URL}" "{tmp_path / "asset.bin"}"\n'
+    )
+
+    result = subprocess.run(
+        ["bash", "-c", block],
+        capture_output=True,
+        text=True,
+        env=full_env,
+        check=False,
+        timeout=30,
+    )
+
+    assert result.returncode == 0, result.stderr
+
+    argv_log = _read_log(tmp_path / "fakebin" / "argv.log")
+    stdin_log = _read_log(tmp_path / "fakebin" / "stdin.log")
+
+    assert "Authorization" not in argv_log
+    assert "Authorization" not in stdin_log
+    assert "would-be-mistake" not in argv_log
+    assert "would-be-mistake" not in stdin_log

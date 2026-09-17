@@ -442,6 +442,16 @@ function Get-OpenSreRequestHeaders {
     return $headers
 }
 
+function Get-OpenSreAssetHeaders {
+    # Asset and checksum downloads must stay anonymous — some corporate
+    # proxies rewrite or reject authenticated requests, and the release CDN
+    # serves binaries without auth anyway.
+    return @{
+        "Accept" = "application/octet-stream"
+        "User-Agent" = "opensre-install-script"
+    }
+}
+
 function Invoke-OpenSreWithRetry {
     param(
         [Parameter(Mandatory = $true)]
@@ -574,7 +584,7 @@ function Invoke-OpenSreDownloadFileWithProgress {
 
     $params = @{
         Uri = $Uri
-        Headers = Get-OpenSreRequestHeaders
+        Headers = Get-OpenSreAssetHeaders
         OutFile = $OutFile
     }
 

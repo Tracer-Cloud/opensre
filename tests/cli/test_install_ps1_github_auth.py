@@ -127,3 +127,44 @@ def test_github_token_wins_over_gh_token(tmp_path: Path) -> None:
 def test_no_authorization_header_without_any_token(tmp_path: Path) -> None:
     headers = _run_get_headers(tmp_path, env={})
     assert "Authorization" not in headers
+
+
+def test_asset_headers_never_carry_authorization_even_with_token(tmp_path: Path) -> None:
+    """Get-OpenSreAssetHeaders must not include Authorization even when a token is set.
+
+    Asset + checksum downloads go through corp proxies that may rewrite or
+    reject authenticated requests, and the release CDN serves binaries
+    anonymously. Authenticated asset requests can silently break installs
+    behind those proxies — refactor in PR #6296 splits the two header
+    builders precisely to prevent this.
+    """
+    fake_dir = tmp_path / "fakebin"
+    fake_dir.mkdir()
+    full_env = {
+        "PATH": f"{fake_dir}{os.pathsep}{os.environ.get('PATH', '')}",
+        OPENSRE_GITHUB_TOKEN_ENV: "would-be-mistake",
+        GITHUB_TOKEN_ENV: "would-be-mistake",
+        GH_TOKEN_ENV: "would-be-mistake",
+    }
+
+    script = textwrap.dedent(
+        f"""\
+        . {shlex.quote(str(INSTALL_PS1))} -SkipMain
+        $h = Get-OpenSreAssetHeaders
+        $h | ConvertTo-Json -Compress
+        """
+    )
+
+    shell = _powershell()
+    assert shell is not None
+    result = subprocess.run(
+        [shell, "-NoProfile", "-Command", script],
+        capture_output=True,
+        text=True,
+        env=full_env,
+        check=False,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    headers = json.loads(result.stdout)
+    assert "Authorization" not in headers
