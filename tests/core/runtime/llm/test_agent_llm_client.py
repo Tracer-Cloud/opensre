@@ -443,6 +443,36 @@ def test_opensre_payment_required_raises_upgrade_error_without_retry(
     assert excinfo.value.upgrade_url == upgrade_url
 
 
+def test_openai_agent_client_rebuilds_when_the_account_token_rotates(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fake = _install_fake_openai(monkeypatch)
+    keys: list[str] = []
+
+    class TrackingOpenAI:
+        def __init__(self, *, api_key: str, base_url: str | None, timeout: float) -> None:
+            _ = base_url, timeout
+            keys.append(api_key)
+            self.chat = types.SimpleNamespace(
+                completions=types.SimpleNamespace(
+                    create=lambda **_: _make_fake_openai_response(content="ok")
+                )
+            )
+
+    fake.OpenAI = TrackingOpenAI
+    tokens = iter(["osre_pat_one", "osre_pat_two"])
+    client = OpenAIAgentClient(
+        model="gpt-5.4-mini",
+        api_key_env="OPENSRE_ACCOUNT_TOKEN",
+        credential_resolver=lambda _name: next(tokens),
+        base_url="https://app.opensre.com/api/llm/v1",
+    )
+
+    assert keys == ["osre_pat_one"]
+    client.invoke(messages=[{"role": "user", "content": "hi"}])
+    assert keys == ["osre_pat_one", "osre_pat_two"]
+
+
 def test_anthropic_rate_limit_honors_retry_after_header(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

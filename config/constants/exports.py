@@ -24,6 +24,7 @@ EXPORTS: dict[str, str] = {
     "DELEGATING_GITHUB_CI_REPAIRS_SKILL_NAME": "skills",
     "CONNECTING_SLACK_SKILL_NAME": "skills",
     # account
+    "OPENSRE_ACCOUNT_CREDITS_PATH": "account",
     "OPENSRE_ACCOUNT_FILENAME": "account",
     "OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS": "account",
     "OPENSRE_ACCOUNT_LLM_BASE_PATH": "account",

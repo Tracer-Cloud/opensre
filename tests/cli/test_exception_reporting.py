@@ -19,6 +19,7 @@ def test_should_not_report_expected_cli_errors() -> None:
     assert should_report_exception(OpenSREError("missing integration")) is False
     assert should_report_exception(KeyboardInterrupt()) is False
     assert should_report_exception(click.Abort()) is False
+    assert should_report_exception(click.ClickException("credits unavailable")) is False
     assert should_report_exception(ValueError("user input"), expected=True) is False
 
 

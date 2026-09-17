@@ -15,6 +15,9 @@ from config.constants.exports import __getattr__ as __getattr__
 if TYPE_CHECKING:
     # Static re-exports so mypy sees real types; runtime stays lazy (``__getattr__``).
     from config.constants.account import (
+        OPENSRE_ACCOUNT_CREDITS_PATH as OPENSRE_ACCOUNT_CREDITS_PATH,
+    )
+    from config.constants.account import (
         OPENSRE_ACCOUNT_FILENAME as OPENSRE_ACCOUNT_FILENAME,
     )
     from config.constants.account import (
