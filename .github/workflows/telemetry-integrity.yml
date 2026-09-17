@@ -1,0 +1,74 @@
+name: Telemetry integrity
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/telemetry-integrity-ci]
+    paths:
+      - .github/workflows/telemetry-integrity.yml
+      - tests/analytics/**
+      - infrastructure/analytics/**
+      - config/account.py
+      - config/secrets/**
+
+permissions:
+  contents: read
+
+concurrency:
+  group: telemetry-integrity-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  OPENSRE_NO_TELEMETRY: "1"
+  OPENSRE_SENTRY_DISABLED: "1"
+  OPENSRE_LANGFUSE_DISABLED: "1"
+  INTEGRITY_EVIDENCE_DIR: integrity-evidence
+
+jobs:
+  native:
+    name: Identity and login / ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    env:
+      INTEGRITY_EXPECT_CONTAINER: "0"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - run: uv sync --frozen --extra dev
+      - name: Exercise fresh processes, storage, auth transition, and delivery retry
+        run: uv run python -m pytest tests/analytics/test_integrity_environments.py --junitxml=integrity-evidence/results.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: telemetry-integrity-${{ matrix.os }}
+          path: integrity-evidence/
+
+  container:
+    name: Container runtime / persistent and fresh identity storage
+    runs-on: ubuntu-latest
+    container: python:3.12-bookworm
+    timeout-minutes: 20
+    env:
+      INTEGRITY_EXPECT_CONTAINER: "1"
+    steps:
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --extra dev
+      - name: Exercise real Docker detection and persistent versus replaced storage
+        run: uv run python -m pytest tests/analytics/test_integrity_environments.py --junitxml=integrity-evidence/results.xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: telemetry-integrity-container
+          path: integrity-evidence/
