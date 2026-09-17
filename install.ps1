@@ -423,10 +423,23 @@ function Get-OpenSreDefaultInstallDir {
 }
 
 function Get-OpenSreRequestHeaders {
-    return @{
+    $headers = @{
         "Accept" = "application/vnd.github+json"
         "User-Agent" = "opensre-install-script"
     }
+
+    # Precedence: OPENSRE_GITHUB_TOKEN > GITHUB_TOKEN > GH_TOKEN. Only used for
+    # GitHub API metadata calls; release asset downloads stay anonymous so they
+    # keep working behind corp proxies that strip Authorization headers.
+    $token = $env:OPENSRE_GITHUB_TOKEN
+    if (-not $token) { $token = $env:GITHUB_TOKEN }
+    if (-not $token) { $token = $env:GH_TOKEN }
+
+    if ($token) {
+        $headers["Authorization"] = "token $token"
+    }
+
+    return $headers
 }
 
 function Invoke-OpenSreWithRetry {

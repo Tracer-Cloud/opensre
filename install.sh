@@ -33,6 +33,10 @@ INSTALL_CHANNEL="${OPENSRE_INSTALL_CHANNEL:-main}"
 INSTALL_CHANNEL_EXPLICIT=0
 [ -n "${OPENSRE_INSTALL_CHANNEL:-}" ] && INSTALL_CHANNEL_EXPLICIT=1
 MAIN_RELEASE_TAG="${OPENSRE_MAIN_RELEASE_TAG:-main-build}"
+# Precedence: OPENSRE_GITHUB_TOKEN > GITHUB_TOKEN > GH_TOKEN. Only used for
+# GitHub API metadata calls; release asset downloads stay anonymous so they
+# keep working behind corp proxies that strip Authorization headers.
+GITHUB_API_TOKEN="${OPENSRE_GITHUB_TOKEN:-${GITHUB_TOKEN:-${GH_TOKEN:-}}}"
 BIN_NAME="opensre"
 requested_version="${OPENSRE_VERSION:-}"
 
@@ -278,6 +282,19 @@ download_to() {
 
 download_text() {
   local url="$1"
+
+  # Pass Authorization via curl's stdin config so the token never appears in
+  # argv (other users on a shared host can read ps output). `curl --config -`
+  # reads the file from stdin; combine with -H so the Accept / User-Agent
+  # still apply.
+  if [ -n "$GITHUB_API_TOKEN" ]; then
+    printf 'header = "Authorization: token %s"\n' "$GITHUB_API_TOKEN" \
+      | curl "${CURL_FLAGS[@]}" --config - \
+        -H "Accept: application/vnd.github+json" \
+        -H "User-Agent: opensre-install-script" \
+        "$url"
+    return
+  fi
 
   curl "${CURL_FLAGS[@]}" \
     -H "Accept: application/vnd.github+json" \

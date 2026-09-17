@@ -12,6 +12,10 @@ GITHUB_MCP_TOOLSETS_ENV = "GITHUB_MCP_TOOLSETS"
 # Distinct ecosystem names: GitHub Actions injects GITHUB_TOKEN; the gh CLI reads GH_TOKEN.
 GITHUB_TOKEN_ENV = "GITHUB_TOKEN"
 GH_TOKEN_ENV = "GH_TOKEN"
+# Optional override used by the install scripts to lift GitHub's per-IP
+# anonymous rate limit (60 req/hr) on shared runners. Lets users pin a
+# dedicated read-only token without colliding with the GHA-injected one.
+OPENSRE_GITHUB_TOKEN_ENV = "OPENSRE_GITHUB_TOKEN"
 GITHUB_CLI_REQUIRED_SCOPES = frozenset({"read:org", "repo", "security_events", "workflow"})
 
 __all__ = [
@@ -25,4 +29,5 @@ __all__ = [
     "GITHUB_MCP_TOOLSETS_ENV",
     "GITHUB_MCP_URL_ENV",
     "GITHUB_TOKEN_ENV",
+    "OPENSRE_GITHUB_TOKEN_ENV",
 ]
