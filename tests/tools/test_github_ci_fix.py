@@ -15,7 +15,9 @@ from core.agent_harness.tools.tool_context import (
     ACTION_TOOL_CONTEXT_RESOURCE_KEY,
     ActionToolScope,
 )
+from core.llm.types import ToolCall
 from core.tool.contracts import AgentToolContext, RegisteredTool
+from core.tool.execution import execute_tool_calls
 from integrations.coding_agent import CodingResult
 from integrations.github.tools.ci_fix.context import (
     CI_TARGET_BRANCH,
@@ -97,6 +99,50 @@ _CTX = CiFixContext(
     ),
     task="Fix CI.",
 )
+
+
+def test_clean_pr_is_a_successful_noop_in_tool_analytics(monkeypatch: pytest.MonkeyPatch) -> None:
+    from core.events import tool_result_is_error
+    from integrations.github.tools.ci_fix import runner
+
+    captured: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        runner, "gather_ci_fix_context", lambda **_kw: replace(_CTX, failing_checks=())
+    )
+    monkeypatch.setattr(runner, "repair_workspace", lambda *_a, **_kw: nullcontext("/workspace"))
+    monkeypatch.setattr(runner, "resumed_push", lambda *_a, **_kw: None)
+    monkeypatch.setattr(runner, "resolve_github_token", lambda *_a: "fixture")
+    monkeypatch.setattr(
+        "infrastructure.analytics.capture.capture_agent_tool_call_completed",
+        lambda **properties: captured.append(properties),
+    )
+    coding = MagicMock(side_effect=AssertionError("A clean PR must not run a coding agent"))
+    monkeypatch.setattr(runner, "run_fix", coding)
+    result = execute_tool_calls(
+        [
+            ToolCall(
+                id="clean-pr",
+                name="fix_github_pr_ci",
+                input={
+                    "owner": "Tracer-Cloud",
+                    "repo": "opensre",
+                    "pr_number": 4597,
+                },
+            )
+        ],
+        [_registered(fix_github_pr_ci)],
+        {},
+    )[0]
+    assert result.is_error is False
+    assert tool_result_is_error(result.details) is False
+    assert result.details["work_outcome"]["status"] == "noop"
+    assert result.details["checks_state"] is None
+    assert result.details["branch_name"] is None
+    assert captured[0]["is_error"] is False
+    assert captured[0]["outcome"] == "ok"
+    assert captured[0]["work_status"] == "noop"
+    coding.assert_not_called()
+
 
 _BRANCH_CTX = CiFixContext(
     owner="Tracer-Cloud",
@@ -703,9 +749,10 @@ def test_run_ci_fix_no_failing_checks_response_text() -> None:
     ):
         result = run_ci_fix(owner="Tracer-Cloud", repo="opensre", pr_number=4597)
 
-    assert result["success"] is False
+    assert result["success"] is True
     assert result["error_kind"] == ERR_NO_FAILING_CHECKS
-    assert result["response_text"] == result["error"]
+    assert "error" not in result
+    assert "No failing CI checks" in result["response_text"]
     assert "\n" not in result["response_text"]
 
 

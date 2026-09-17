@@ -22,6 +22,7 @@ class WorkOutcome(BaseModel):
     error_kind: str = ""
     operation: str = ""
     evidence: dict[str, Any] = Field(default_factory=dict)
+    retryable: bool = True
 
     @property
     def completed(self) -> bool:

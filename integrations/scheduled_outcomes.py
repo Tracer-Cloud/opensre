@@ -34,6 +34,7 @@ class ScheduledOutcomes:
     def report(self, turn: TurnResult, *, agent_mode: bool) -> TaskReport:
         """Require work evidence for agent tasks and a complete response for report tasks."""
         text = turn.primary_response_text
+        stop_schedule = False
         if turn.cancelled or turn.action_result.hit_iteration_cap:
             outcome = WorkOutcome(status=WorkStatus.INCOMPLETE, error_kind="turn_interrupted")
         elif not text:
@@ -43,7 +44,18 @@ class ScheduledOutcomes:
         else:
             with self._lock:
                 outcomes = tuple(self._outcomes.values())
-            unresolved = next((item for item in outcomes if not item.completed), None)
+            terminal_block = next(
+                (
+                    item
+                    for item in outcomes
+                    if item.status is WorkStatus.BLOCKED and not item.retryable
+                ),
+                None,
+            )
+            stop_schedule = terminal_block is not None
+            unresolved = terminal_block or next(
+                (item for item in outcomes if not item.completed), None
+            )
             if unresolved is not None:
                 outcome = unresolved
             elif outcomes:
@@ -55,4 +67,6 @@ class ScheduledOutcomes:
                 )
             else:
                 outcome = WorkOutcome(status=WorkStatus.INCOMPLETE, error_kind="work_unverified")
-        return TaskReport(text, outcome=outcome)
+        if stop_schedule:
+            text += "\n\nSchedule paused: the repair target requires attention before retrying."
+        return TaskReport(text, outcome=outcome, stop_schedule=stop_schedule)

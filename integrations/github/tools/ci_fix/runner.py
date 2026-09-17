@@ -314,12 +314,16 @@ def push_error_output(output: dict[str, Any], exc: GitHubCiFixError) -> dict[str
 
 
 def error_output(kind: str, message: str, ctx: CiFixContext | None = None) -> dict[str, Any]:
-    return {
+    output = {
         **_base_output(ctx),
+        "success": kind == ERR_NO_FAILING_CHECKS,
         "error_kind": kind,
         "error": message,
         "response_text": _single_line(message),
     }
+    if kind == ERR_NO_FAILING_CHECKS:
+        del output["error"]
+    return output
 
 
 def _result_response_text(ctx: CiFixContext, result: CodingResult) -> str:

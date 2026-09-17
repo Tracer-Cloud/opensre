@@ -75,5 +75,11 @@ def attach_repair_outcome(output: dict[str, Any], *, operation: str) -> dict[str
         )
         if key in output
     }
-    outcome = WorkOutcome(status=status, error_kind=kind, operation=operation, evidence=evidence)
+    outcome = WorkOutcome(
+        status=status,
+        error_kind=kind,
+        operation=operation,
+        evidence=evidence,
+        retryable=kind not in {"unsupported_pr_branch", "pr_not_open"},
+    )
     return {**output, "work_outcome": outcome.model_dump(mode="json")}
