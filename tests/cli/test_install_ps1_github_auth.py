@@ -66,7 +66,7 @@ def _run_get_headers(tmp_path: Path, *, env: dict[str, str]) -> dict[str, str]:
 
     script = textwrap.dedent(
         f"""\
-        . {shlex.quote(str(INSTALL_PS1))}
+        . {shlex.quote(str(INSTALL_PS1))} -SkipMain
         $h = Get-OpenSreRequestHeaders
         $h | ConvertTo-Json -Compress
         """
