@@ -39,7 +39,7 @@ irm https://install.opensre.com | iex
 
 You usually don't need `sudo`. The installer puts `opensre` somewhere already on your PATH when it can. If it can't, it uses `~/.local/bin` and prints how to add that to PATH.
 
-**Auto setup:** In a normal interactive terminal, install often starts `opensre setup` when it finishes. In CI or scripts it skips that. To turn auto-setup off:
+**Auto setup:** In a normal interactive terminal, install often starts OpenSRE when it finishes. In CI or scripts it skips that. If it did not open, run `opensre`. To turn auto-setup off:
 
 ```bash
 curl -fsSL https://install.opensre.com | OPENSRE_AUTO_LAUNCH=0 bash
@@ -55,13 +55,13 @@ Homebrew installs pull in `gh` automatically.
 
 Shorter overview: [Install OpenSRE](/install).
 
-## 2. Sign in
+## 2. Get started
 
 ```bash
-opensre setup
+opensre
 ```
 
-The browser opens the OpenSRE sign-up page. Create an account or sign in using email or another enabled provider; a successful login activates the hosted model. Setup opens the shell only after the webapp validates that account session. GitHub remains an optional integration you can add later.
+The browser opens the OpenSRE sign-up page. Create an account or sign in using email or another enabled provider; a successful login activates the hosted model. OpenSRE opens the shell only after the webapp validates that account session. GitHub remains an optional integration you can add later.
 
 When developing the webapp locally on port 3000, use:
 
@@ -69,15 +69,11 @@ When developing the webapp locally on port 3000, use:
 opensre setup --dev
 ```
 
-To remain signed out, cancel setup or choose **Exit and stay signed out** when `opensre` shows the account gate. Other CLI commands remain available; the interactive shell does not.
+To remain signed out, cancel sign-in or choose **Exit and stay signed out** when `opensre` shows the account gate. Other CLI commands remain available; the interactive shell does not.
 
 ## 3. Open the shell
 
-```bash
-opensre
-```
-
-The shell revalidates the webapp account on every start. Expired, revoked, incomplete, or unreachable account state returns to the sign-in gate instead of constructing the REPL or a model client.
+The same `opensre` command revalidates the webapp account on every start. Expired, revoked, incomplete, or unreachable account state returns to the sign-in gate instead of constructing the REPL or a model client.
 
 #### Where credentials are saved
 

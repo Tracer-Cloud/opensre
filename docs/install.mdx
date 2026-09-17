@@ -3,7 +3,7 @@ title: "Install OpenSRE"
 description: "Install the OpenSRE CLI on your machine and start chatting with the agent."
 ---
 
-This page gets the `opensre` command onto your laptop or server, then walks you through the short setup so you can start asking questions.
+This page gets the `opensre` command onto your laptop or server. After install, run `opensre` to sign in and start asking questions.
 
 ## What you get
 
@@ -29,7 +29,7 @@ curl -fsSL https://install.opensre.com | bash
 irm https://install.opensre.com | iex
 ```
 
-In a normal interactive terminal, the installer often starts `opensre setup` for you when it finishes. In CI or scripts it skips that and prints what to do next.
+In a normal interactive terminal, the installer often starts OpenSRE for you when it finishes. In CI or scripts it skips that and prints what to do next. If it did not open, run `opensre`.
 
 Don't want auto-setup?
 
@@ -46,12 +46,10 @@ brew install tracer-cloud/tap/opensre
 
 More options (PATH notes, skipping GitHub CLI install, on-prem layout): [Install locally](/install-local).
 
-## Set things up
-
-If setup didn't start automatically, run it yourself:
+## Get started
 
 ```bash
-opensre setup
+opensre
 ```
 
 The browser opens the OpenSRE sign-up page. Create an account or sign in using email or another enabled provider; a successful login activates the hosted model, so no separate LLM key is required. Add GitHub later as an optional integration if you want OpenSRE to work with repositories.

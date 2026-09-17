@@ -55,14 +55,14 @@ slug: "quickstart"
 
   </Step>
 
-  <Step title="Setup">
-    Run first-run setup to create or sign in to your OpenSRE account. From a source checkout, prefix commands in this and the next step with `uv run` (for example, `uv run opensre setup`). To update a source checkout, use `git pull --ff-only` followed by `uv sync --frozen --extra dev` instead of `opensre update`.
+  <Step title="Get started">
+    Run `opensre` to create or sign in to your OpenSRE account and start chatting. From a source checkout, prefix commands in this and the next step with `uv run` (for example, `uv run opensre`). To update a source checkout, use `git pull --ff-only` followed by `uv sync --frozen --extra dev` instead of `opensre update`.
 
     ```bash
-    opensre setup
+    opensre
     ```
 
-    The browser opens the OpenSRE sign-up page, where you can use email or another enabled provider. A successful login activates the OpenSRE-hosted model. When setup finishes, OpenSRE validates the new session and opens the interactive shell. Add integrations later with `opensre integrations setup <service>` when you want OpenSRE to query a specific tool.
+    The browser opens the OpenSRE sign-up page, where you can use email or another enabled provider. A successful login activates the OpenSRE-hosted model. OpenSRE then validates the new session and opens the interactive shell. Add integrations later with `opensre integrations setup <service>` when you want OpenSRE to query a specific tool.
 
     <Tabs>
       <Tab title="macOS">
@@ -146,7 +146,7 @@ opensre uninstall --yes
 
 ## Troubleshooting
 
-- **Docker is not running**: Start Docker Desktop, OrbStack, or Colima before running setup.
+- **Docker is not running**: Start Docker Desktop, OrbStack, or Colima before running `opensre`.
 - **`make` is missing**: Install it via your package manager (`brew install make` on macOS, `choco install make` on Windows).
 - **The shell does not open after login**: Run `opensre account status`. The webapp must be reachable and the stored account token and metadata must both be valid.
 - **You want to stay signed out**: Choose **Exit and stay signed out** at startup. Commands such as `opensre account`, `opensre doctor`, and `opensre integrations` remain available, but the interactive shell stays closed.
