@@ -917,6 +917,9 @@ if TYPE_CHECKING:
         WORKSPACE_REPO_ENV_KEYS as WORKSPACE_REPO_ENV_KEYS,
     )
     from config.constants.scheduler import (
+        NON_RETRYABLE_WORK_ERROR_KINDS as NON_RETRYABLE_WORK_ERROR_KINDS,
+    )
+    from config.constants.scheduler import (
         OPENSRE_GATEWAY_HOST_SCHEDULER_ENV as OPENSRE_GATEWAY_HOST_SCHEDULER_ENV,
     )
     from config.constants.secrets import (

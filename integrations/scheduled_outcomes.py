@@ -34,28 +34,24 @@ class ScheduledOutcomes:
     def report(self, turn: TurnResult, *, agent_mode: bool) -> TaskReport:
         """Require work evidence for agent tasks and a complete response for report tasks."""
         text = turn.primary_response_text
-        stop_schedule = False
-        if turn.cancelled or turn.action_result.hit_iteration_cap:
+        with self._lock:
+            outcomes = tuple(self._outcomes.values())
+        # A block no retry can clear is a verified fact about the target, so it
+        # outranks how the turn ended: a cancel or iteration cap after the tool
+        # reported ``pr_not_open`` must still pause the schedule, or the next
+        # tick fires at a target already known to be stuck.
+        terminal_block = next((item for item in outcomes if item.terminal_block), None)
+        stop_schedule = terminal_block is not None
+        if terminal_block is not None:
+            outcome = terminal_block
+        elif turn.cancelled or turn.action_result.hit_iteration_cap:
             outcome = WorkOutcome(status=WorkStatus.INCOMPLETE, error_kind="turn_interrupted")
         elif not text:
             outcome = WorkOutcome(status=WorkStatus.INCOMPLETE, error_kind="report_missing")
         elif not agent_mode:
             outcome = WorkOutcome(status=WorkStatus.SUCCEEDED)
         else:
-            with self._lock:
-                outcomes = tuple(self._outcomes.values())
-            terminal_block = next(
-                (
-                    item
-                    for item in outcomes
-                    if item.status is WorkStatus.BLOCKED and not item.retryable
-                ),
-                None,
-            )
-            stop_schedule = terminal_block is not None
-            unresolved = terminal_block or next(
-                (item for item in outcomes if not item.completed), None
-            )
+            unresolved = next((item for item in outcomes if not item.completed), None)
             if unresolved is not None:
                 outcome = unresolved
             elif outcomes:

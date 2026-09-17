@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from config.constants.scheduler import NON_RETRYABLE_WORK_ERROR_KINDS
 from infrastructure.scheduling.scheduler.outcomes import WorkOutcome, WorkStatus
 
 
@@ -80,6 +81,6 @@ def attach_repair_outcome(output: dict[str, Any], *, operation: str) -> dict[str
         error_kind=kind,
         operation=operation,
         evidence=evidence,
-        retryable=kind not in {"unsupported_pr_branch", "pr_not_open"},
+        retryable=kind not in NON_RETRYABLE_WORK_ERROR_KINDS,
     )
     return {**output, "work_outcome": outcome.model_dump(mode="json")}

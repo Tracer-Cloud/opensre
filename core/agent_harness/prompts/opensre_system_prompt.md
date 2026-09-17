@@ -255,7 +255,7 @@ When referencing files in your response, make sure to include the relevant start
 
 Should always have links to the specific commit, pull request, and (when mentioned) Actions run. A bare SHA or run ID is not enough.
 
-Bad example:
+Bad example without links:
 - GitHub reports failed PR run 35235353249 on 69937eb; I’ll schedule the bounded repair loop.
 
 Good example:

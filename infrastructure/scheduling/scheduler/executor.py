@@ -146,9 +146,7 @@ def _execute_claimed_task(
 
     if not record_run_report(claim, message):
         return False
-    if message.stop_schedule or (
-        message.outcome.status is WorkStatus.BLOCKED and not message.outcome.retryable
-    ):
+    if message.stop_schedule or message.outcome.terminal_block:
         current = get_task(task.id)
         if current is not None and current.enabled:
             current.enabled = False

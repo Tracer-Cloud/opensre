@@ -121,6 +121,62 @@ def test_retained_terminal_block_still_pauses_schedule_on_delivery_replay(
     assert get_runs(task.id)[0].work_error_kind == "unsupported_pr_branch"
 
 
+@pytest.mark.parametrize("interruption", ["cancelled", "iteration_cap"])
+def test_terminal_block_survives_an_interrupted_turn(interruption: str) -> None:
+    """A cancel or iteration cap after ``pr_not_open`` must not demote it to a retry."""
+    from types import SimpleNamespace
+
+    from core.llm.types import ToolCall
+    from core.tool.contracts import RegisteredTool
+    from core.tool.execution import ToolExecutionHooks, execute_tool_calls
+    from integrations.github.repair_outcomes import attach_repair_outcome
+    from integrations.scheduled_outcomes import ScheduledOutcomes
+
+    outcomes = ScheduledOutcomes()
+    output = attach_repair_outcome({"error_kind": "pr_not_open"}, operation="ci:o/r:42")
+    execute_tool_calls(
+        [ToolCall(id="repair", name="fix_github_pr_ci", input={})],
+        [
+            RegisteredTool(
+                name="fix_github_pr_ci",
+                description="Repair",
+                input_schema={"type": "object", "properties": {}},
+                source="github",
+                run=lambda: output,
+            )
+        ],
+        {},
+        hooks=ToolExecutionHooks(after_tool_call=outcomes.observe),
+    )
+    report = outcomes.report(
+        SimpleNamespace(
+            primary_response_text="",
+            cancelled=interruption == "cancelled",
+            action_result=SimpleNamespace(hit_iteration_cap=interruption == "iteration_cap"),
+        ),
+        agent_mode=True,
+    )
+    assert report.stop_schedule
+    assert report.outcome.error_kind == "pr_not_open"
+    assert not report.outcome.retryable
+
+
+def test_legacy_outcome_without_retryable_derives_it_from_error_kind() -> None:
+    """Rows persisted before ``retryable`` existed still pause on a terminal kind."""
+    from infrastructure.scheduling.scheduler.outcomes import WorkOutcome
+
+    legacy_terminal = WorkOutcome.model_validate_json(
+        '{"status": "blocked", "error_kind": "unsupported_pr_branch"}'
+    )
+    legacy_transient = WorkOutcome.model_validate_json(
+        '{"status": "blocked", "error_kind": "workspace_busy"}'
+    )
+    assert legacy_terminal.terminal_block
+    assert not legacy_transient.terminal_block
+    # An explicit value is never overridden by the derivation.
+    assert WorkOutcome(status="blocked", error_kind="pr_not_open", retryable=True).retryable
+
+
 def _isolate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "infrastructure.scheduling.scheduler.storage.task_store.default_task_store_path",
