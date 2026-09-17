@@ -106,23 +106,11 @@ Equivalent explicit main-channel form:
 curl -fsSL https://install.opensre.com | bash -s -- --main
 ```
 
-Homebrew:
-
-```bash
-brew tap tracer-cloud/tap
-brew install tracer-cloud/tap/opensre
-```
-
 Windows (PowerShell):
 
 ```powershell
 irm https://install.opensre.com | iex
 ```
-
-<!--
-```bash
-pipx install opensre
-``` -->
 
 ---
 
