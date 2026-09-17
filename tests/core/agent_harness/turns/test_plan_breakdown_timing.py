@@ -40,3 +40,15 @@ def test_no_plan_ended_while_the_answer_to_the_resolution_question_is_on_its_way
     session.terminal.awaiting_handoff_answer = False
     _show_completed_plan_breakdown(output, session)
     assert "Plan ended" in output.text
+
+
+def test_breakdown_is_padded_by_one_blank_row_above_and_below() -> None:
+    """Live: the checklist ran straight into the input bar with no gap."""
+    session = _settled_blocked_session()
+    output = BufferOutputSink()
+
+    _show_completed_plan_breakdown(output, session)
+
+    assert output.lines[0] == ""
+    assert output.lines[-1] == ""
+    assert output.lines[1].startswith("Plan ended")

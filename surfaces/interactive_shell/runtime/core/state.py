@@ -370,9 +370,9 @@ class SpinnerState:
         glyph = self._SPINNER_FRAMES[frame_idx % len(self._SPINNER_FRAMES)]
         if token_count > 0:
             tokens_str = format_token_count_short(token_count)
-            elapsed_badge = f"[ {elapsed:.0f}s · ↓ {tokens_str} tokens]"
+            elapsed_badge = f"[{elapsed:.0f}s · ↓ {tokens_str} tokens]"
         else:
-            elapsed_badge = f"[ {elapsed:.0f}s]"
+            elapsed_badge = f"[{elapsed:.0f}s]"
         label = self.phase or self.THINKING_PHASE
         action = self.active_action
         if action:
@@ -381,7 +381,9 @@ class SpinnerState:
         # not soft-wrap, which desyncs row height vs the one-row confirmation
         # prefix and leaves stale spinner/status lines.
         lead = f"{glyph} "
-        tail = f" {self._STOP_HINT}  {elapsed_badge}"
+        # Single spaces throughout the row: the hint and the elapsed badge sit
+        # one cell apart like every other token, and the badge hugs its brackets.
+        tail = f" {self._STOP_HINT} {elapsed_badge}"
         accent = self._phase_accent_ansi()
         width = prompt_line_width()
         reserved = prompt_text_width(lead) + prompt_text_width(tail)
