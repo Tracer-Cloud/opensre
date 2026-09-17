@@ -367,7 +367,11 @@ function Invoke-OpenSreStreamDownload {
     )
 
     $request = [System.Net.HttpWebRequest]::Create($Uri)
-    $headers = Get-OpenSreRequestHeaders
+    # Asset + checksum downloads must stay anonymous even when a GitHub token
+    # is set — see Get-OpenSreAssetHeaders for the rationale. (Routing this
+    # through Get-OpenSreRequestHeaders would attach the metadata Authorization
+    # header to the archive/checksum request.)
+    $headers = Get-OpenSreAssetHeaders
     foreach ($key in $headers.Keys) {
         if ($key -eq "User-Agent") {
             $request.UserAgent = [string]$headers[$key]

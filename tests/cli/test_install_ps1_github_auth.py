@@ -168,3 +168,44 @@ def test_asset_headers_never_carry_authorization_even_with_token(tmp_path: Path)
     assert result.returncode == 0, result.stderr
     headers = json.loads(result.stdout)
     assert "Authorization" not in headers
+
+
+def test_asset_download_paths_use_asset_headers_not_request_headers(tmp_path: Path) -> None:
+    """Both the progress and streaming asset-download paths must reach for Get-OpenSreAssetHeaders.
+
+    Greptile review of PR #6296 caught this: Invoke-OpenSreDownloadFileWithProgress
+    (Invoke-WebRequest branch) was routed to asset headers, but the
+    Invoke-OpenSreStreamDownload fallback (used when the install runs in a
+    real interactive terminal) still called Get-OpenSreRequestHeaders and
+    would have leaked the metadata Authorization header into the asset
+    request. Pin both paths at the source-text level so a future refactor
+    cannot reintroduce the leak.
+    """
+    source = INSTALL_PS1.read_text(encoding="utf-8")
+
+    # Each download-path function must reference Get-OpenSreAssetHeaders,
+    # not Get-OpenSreRequestHeaders.
+    for function_name in (
+        "Invoke-OpenSreDownloadFileWithProgress",
+        "Invoke-OpenSreStreamDownload",
+    ):
+        lines = source.splitlines()
+        start = next(
+            i for i, line in enumerate(lines) if line.startswith(f"function {function_name}")
+        )
+        depth = 0
+        end = start
+        for i in range(start, len(lines)):
+            depth += lines[i].count("{") - lines[i].count("}")
+            if depth == 0 and i > start:
+                end = i
+                break
+        body = "\n".join(lines[start : end + 1])
+        assert "Get-OpenSreAssetHeaders" in body, (
+            f"{function_name} must call Get-OpenSreAssetHeaders — "
+            f"asset downloads stay anonymous even when a token is set"
+        )
+        assert "Get-OpenSreRequestHeaders" not in body, (
+            f"{function_name} must not call Get-OpenSreRequestHeaders — "
+            f"that builder attaches the metadata Authorization header"
+        )
