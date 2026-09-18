@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import shlex
 import sys
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 import click
@@ -107,6 +108,21 @@ def _show_live_progress() -> bool:
     help="Authorize every approval-gated tool for this invocation.",
 )
 @click.option(
+    "--context-file",
+    "-i",
+    "context_paths",
+    multiple=True,
+    metavar="PATH",
+    type=click.Path(
+        exists=True,
+        file_okay=True,
+        dir_okay=False,
+        readable=True,
+        path_type=Path,
+    ),
+    help="Attach a UTF-8 text file as untrusted context. Repeat as needed.",
+)
+@click.option(
     "--resume",
     "resume_session_id",
     metavar="SESSION",
@@ -121,6 +137,7 @@ def ask_command(
     prompt: str,
     allowed_tools: tuple[str, ...],
     dangerously_bypass_approvals: bool,
+    context_paths: tuple[Path, ...],
     resume_session_id: str | None,
     ephemeral: bool,
 ) -> None:
@@ -149,6 +166,12 @@ def ask_command(
     try:
         with ask_signal_scope():
             resolved_prompt = _resolve_prompt(prompt)
+            from surfaces.cli.ask.file_input import AskFileInputError, load_context_files
+
+            try:
+                context_files = load_context_files(context_paths)
+            except AskFileInputError as exc:
+                raise click.BadParameter(str(exc), param_hint="--context-file") from exc
             with ask_progress_scope(enabled=_show_live_progress()) as tool_event_observer:
                 from surfaces.cli.ask import service as ask_service
 
@@ -159,6 +182,7 @@ def ask_command(
                     tool_event_observer=tool_event_observer,
                     resume_session_id=resume_session_id,
                     ephemeral=ephemeral,
+                    context_files=context_files,
                 )
     except AskSignal as exc:
         from surfaces.cli.ask.service import cancelled_outcome

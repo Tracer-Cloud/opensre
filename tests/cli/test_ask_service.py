@@ -18,6 +18,7 @@ from infrastructure.turn_host.session_lock import session_execution_lock
 from surfaces.cli.ask import service
 from surfaces.cli.ask import session as ask_session
 from surfaces.cli.ask.approval import unknown_allowed_tools
+from surfaces.cli.ask.file_input import AskFileInput
 from surfaces.cli.ask.service import AskExitCode, AskSignal, AskStatus
 
 _CHAT_ONLY_TOOL = "query_tempo"
@@ -856,6 +857,44 @@ def test_agent_turn_binds_hooks_and_restricts_capabilities_via_start(monkeypatch
     assert session.available_capabilities["shell"] == ("keep",)
     assert recorded["prompt"] == "hello"
     assert result.primary_response_text == "answer"
+    assert manager.closed == [(session, False)]
+
+
+def test_resumed_agent_turn_parses_choice_before_appending_context(monkeypatch) -> None:
+    manager = _FakeSessionManager()
+    session = _FakeSession()
+    session.pending_user_choice = PendingUserChoice(
+        title="Which environment?",
+        options=("Production", "Staging"),
+    )
+    recorded: dict[str, str] = {}
+
+    class _RecordingAgentSession:
+        @classmethod
+        def start(cls, _config: object, **_kwargs: object) -> _RecordingAgentSession:
+            return cls()
+
+        @property
+        def bound_session(self) -> _FakeSession:
+            return session
+
+        def chat(self, prompt: str, **_kwargs: object) -> TurnResult:
+            recorded["prompt"] = prompt
+            return _turn()
+
+    monkeypatch.setattr(service, "SessionManager", lambda: manager)
+    monkeypatch.setattr(service, "AgentSession", _RecordingAgentSession)
+
+    service._run_agent_turn(
+        "2",
+        ToolExecutionHooks(),
+        session_id=session.session_id,
+        ephemeral=False,
+        context_files=(AskFileInput(path="alert.txt", content="latency spike"),),
+    )
+
+    assert recorded["prompt"].startswith('1. Which environment?\n@json:"Staging"\n\n')
+    assert "BEGIN UNTRUSTED CONTEXT FILE 1" in recorded["prompt"]
     assert manager.closed == [(session, False)]
 
 

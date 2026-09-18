@@ -34,6 +34,7 @@ from core.agent_harness.spi.session_state import PendingUserChoice
 from core.tool import SideEffectLevel, ToolExecutionHooks
 from infrastructure.errors import OpenSREError
 from surfaces.cli.ask.approval import ApprovalTracker, build_approval_hooks
+from surfaces.cli.ask.file_input import AskFileInput, render_prompt_with_context
 from surfaces.cli.ask.session import (
     ask_session_lock as _ask_session_lock,
 )
@@ -291,6 +292,7 @@ def _run_agent_turn(
     ephemeral: bool = True,
     fresh_session_id: str | None = None,
     run_state: _AskRunState | None = None,
+    context_files: tuple[AskFileInput, ...] = (),
 ) -> TurnResult:
     manager = SessionManager()
     output = output or _AskOutputSink()
@@ -335,6 +337,7 @@ def _run_agent_turn(
                 pending_user_choice_state_snapshot(session) if is_resumed_session else None
             )
             turn_prompt = _resume_prompt(session, prompt) if is_resumed_session else prompt
+            turn_prompt = render_prompt_with_context(turn_prompt, context_files)
             restored_prior_choice = False
             try:
                 result = agent_session.chat(turn_prompt)
@@ -469,6 +472,7 @@ def run_ask(
     tool_event_observer: ToolEventObserver | None = None,
     resume_session_id: str | None = None,
     ephemeral: bool = False,
+    context_files: tuple[AskFileInput, ...] = (),
 ) -> AskOutcome:
     """Execute one ask turn with invocation-scoped approval authority."""
     if resume_session_id and ephemeral:
@@ -504,6 +508,7 @@ def run_ask(
                 ephemeral=ephemeral,
                 fresh_session_id=fresh_session_id,
                 run_state=run_state,
+                context_files=context_files,
             )
     except AskSignal as exc:
         return cancelled_outcome(exc.signum)

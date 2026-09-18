@@ -151,7 +151,61 @@ def test_ask_passes_prompt_and_invocation_authority(monkeypatch) -> None:
         "tool_event_observer": None,
         "resume_session_id": None,
         "ephemeral": False,
+        "context_files": (),
     }
+
+
+def test_ask_passes_repeatable_context_files(monkeypatch, tmp_path) -> None:
+    alert = tmp_path / "alert.json"
+    alert.write_text('{"service":"checkout"}', encoding="utf-8")
+    deployment = tmp_path / "deployment.md"
+    deployment.write_text("Deployed release 42", encoding="utf-8")
+    captured: dict[str, object] = {}
+
+    def fake_run(prompt: str, **kwargs: object) -> AskOutcome:
+        captured.update(prompt=prompt, **kwargs)
+        return _success()
+
+    monkeypatch.setattr("surfaces.cli.ask.service.run_ask", fake_run)
+
+    result = CliRunner().invoke(
+        ask_command,
+        [
+            "-i",
+            str(alert),
+            "--context-file",
+            str(deployment),
+            "investigate checkout",
+        ],
+    )
+
+    assert result.exit_code == 0
+    context_files = captured["context_files"]
+    assert isinstance(context_files, tuple)
+    assert [item.path for item in context_files] == [str(alert), str(deployment)]
+    assert [item.content for item in context_files] == [
+        '{"service":"checkout"}',
+        "Deployed release 42",
+    ]
+
+
+def test_ask_rejects_invalid_context_before_agent_start(monkeypatch, tmp_path) -> None:
+    empty = tmp_path / "empty.txt"
+    empty.write_text("\n", encoding="utf-8")
+    called = False
+
+    def fake_run(*_args: object, **_kwargs: object) -> AskOutcome:
+        nonlocal called
+        called = True
+        return _success()
+
+    monkeypatch.setattr("surfaces.cli.ask.service.run_ask", fake_run)
+
+    result = CliRunner().invoke(ask_command, ["-i", str(empty), "investigate"])
+
+    assert result.exit_code == 2
+    assert "must not be empty" in result.output
+    assert called is False
 
 
 def test_ask_passes_resume_and_ephemeral_options(monkeypatch) -> None:
