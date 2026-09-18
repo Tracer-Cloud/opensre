@@ -51,15 +51,33 @@ def pass_sign_in_gate(console: Console) -> bool:
     """
     if is_test_run():
         return True
-    from surfaces.interactive_shell.ui.sign_in import run_sign_in_gate
+    from infrastructure.analytics.capture import (
+        capture_sign_in_prompted,
+        capture_sign_in_selected,
+        capture_stay_signed_out_selected,
+    )
+    from surfaces.interactive_shell.ui.sign_in import SignInChoice, run_sign_in_gate
 
     def _login() -> bool:
         return account_login(console=console)
+
+    def _record_choice(choice: SignInChoice | None) -> None:
+        # Recorded before login runs so the intent survives a failed or
+        # abandoned browser flow; Esc leaves signed out just like the exit option.
+        if choice is SignInChoice.LOGIN:
+            capture_sign_in_selected(choice_label=choice.value)
+            return
+        capture_stay_signed_out_selected(
+            choice_label=SignInChoice.EXIT.value,
+            method="menu" if choice is SignInChoice.EXIT else "escape",
+        )
 
     return run_sign_in_gate(
         console,
         is_signed_in=account_is_signed_in,
         login=_login,
+        on_prompted=capture_sign_in_prompted,
+        on_choice=_record_choice,
     )
 
 

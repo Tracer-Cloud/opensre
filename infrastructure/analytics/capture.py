@@ -96,6 +96,27 @@ def capture_account_authenticated() -> None:
         capture_exception(exc)
 
 
+def capture_sign_in_prompted() -> None:
+    """Exposure event: the mandatory sign-in screen was rendered to a signed-out user."""
+    _capture(Event.SIGN_IN_PROMPTED, {"entrypoint": "sign_in_gate"})
+
+
+def capture_sign_in_selected(*, choice_label: str) -> None:
+    """User picked sign-in on the gate; ``account_authenticated`` reports the outcome."""
+    _capture(
+        Event.SIGN_IN_SELECTED,
+        {"choice_label": choice_label, "method": "menu", "entrypoint": "sign_in_gate"},
+    )
+
+
+def capture_stay_signed_out_selected(*, choice_label: str, method: str) -> None:
+    """User left the gate without signing in via the exit option (``menu``) or Esc (``escape``)."""
+    _capture(
+        Event.STAY_SIGNED_OUT_SELECTED,
+        {"choice_label": choice_label, "method": method, "entrypoint": "sign_in_gate"},
+    )
+
+
 def capture_gateway_turn_started(*, surface: str) -> None:
     """Mark the start of one Slack/Telegram gateway agent turn."""
     _capture(Event.GATEWAY_TURN_STARTED, {"surface": surface})
