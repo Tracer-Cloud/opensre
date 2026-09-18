@@ -7,6 +7,7 @@ from http import HTTPStatus
 import httpx
 import pytest
 
+from config import account_credits as ledger
 from config.account import AccountRecord
 from surfaces.shared import account_credits
 from surfaces.shared.account_credits import AccountCredits, parse_credit_balance_payload
@@ -71,14 +72,19 @@ def test_parse_accepts_session_nested_credits_and_whole_floats() -> None:
     assert nested.total == 100_000
 
 
+@pytest.fixture(autouse=True)
+def _reset_hosted_credits_cache() -> None:
+    ledger.reset_hosted_credits_cache()
+
+
 def test_signed_out_never_calls_the_ledger(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr(account_credits, "load_account_record", lambda: None)
-    monkeypatch.setattr(account_credits, "resolve_account_token", lambda: "")
+    monkeypatch.setattr(ledger, "load_account_record", lambda: None)
+    monkeypatch.setattr(ledger, "resolve_account_token", lambda: "")
 
     def _should_not_fetch(*_args: object, **_kwargs: object) -> httpx.Response:
         raise AssertionError("credits must not be fetched while signed out")
 
-    monkeypatch.setattr(account_credits.httpx, "get", _should_not_fetch)
+    monkeypatch.setattr(ledger.httpx, "get", _should_not_fetch)
 
     status = account_credits.fetch_account_credits()
 
@@ -96,9 +102,9 @@ def test_fetch_sends_the_bearer_token_and_not_a_query_parameter(
         captured["headers"] = kwargs.get("headers")
         return httpx.Response(HTTPStatus.OK, json=_balance_payload())
 
-    monkeypatch.setattr(account_credits, "load_account_record", _record)
-    monkeypatch.setattr(account_credits, "resolve_account_token", lambda: "osre_pat_secret")
-    monkeypatch.setattr(account_credits.httpx, "get", fake_get)
+    monkeypatch.setattr(ledger, "load_account_record", _record)
+    monkeypatch.setattr(ledger, "resolve_account_token", lambda: "osre_pat_secret")
+    monkeypatch.setattr(ledger.httpx, "get", fake_get)
 
     status = account_credits.fetch_account_credits()
 
@@ -126,10 +132,10 @@ def test_fetch_failures_are_not_a_zero_balance(
     status_code: HTTPStatus,
     state: AccountSessionState,
 ) -> None:
-    monkeypatch.setattr(account_credits, "load_account_record", _record)
-    monkeypatch.setattr(account_credits, "resolve_account_token", lambda: "osre_pat_secret")
+    monkeypatch.setattr(ledger, "load_account_record", _record)
+    monkeypatch.setattr(ledger, "resolve_account_token", lambda: "osre_pat_secret")
     monkeypatch.setattr(
-        account_credits.httpx,
+        ledger.httpx,
         "get",
         lambda *_args, **_kwargs: httpx.Response(status_code, json={"total": 0}),
     )
@@ -140,8 +146,13 @@ def test_fetch_failures_are_not_a_zero_balance(
     assert status.credits is None
 
 
-def test_fetch_falls_back_to_cli_session_credits_when_balance_route_is_missing(
+@pytest.mark.parametrize(
+    "balance_status",
+    [HTTPStatus.NOT_FOUND, HTTPStatus.FORBIDDEN, HTTPStatus.FOUND],
+)
+def test_fetch_falls_back_to_cli_session_credits_when_balance_route_rejects_the_pat(
     monkeypatch: pytest.MonkeyPatch,
+    balance_status: HTTPStatus,
 ) -> None:
     captured: list[str] = []
 
@@ -153,15 +164,15 @@ def test_fetch_falls_back_to_cli_session_credits_when_balance_route_is_missing(
             "Accept": "application/json",
         }
         if url.endswith("/api/credits/balance"):
-            return httpx.Response(HTTPStatus.NOT_FOUND, json={"error": "not found"})
+            return httpx.Response(balance_status, json={"error": "not found"})
         return httpx.Response(
             HTTPStatus.OK,
             json={"credits": _balance_payload(), "user": {"id": "user_123"}},
         )
 
-    monkeypatch.setattr(account_credits, "load_account_record", _record)
-    monkeypatch.setattr(account_credits, "resolve_account_token", lambda: "osre_pat_secret")
-    monkeypatch.setattr(account_credits.httpx, "get", fake_get)
+    monkeypatch.setattr(ledger, "load_account_record", _record)
+    monkeypatch.setattr(ledger, "resolve_account_token", lambda: "osre_pat_secret")
+    monkeypatch.setattr(ledger.httpx, "get", fake_get)
 
     status = account_credits.fetch_account_credits()
 
@@ -174,6 +185,24 @@ def test_fetch_falls_back_to_cli_session_credits_when_balance_route_is_missing(
     ]
 
 
+def test_verified_zero_balance_is_not_treated_as_unread(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(ledger, "load_account_record", _record)
+    monkeypatch.setattr(ledger, "resolve_account_token", lambda: "osre_pat_secret")
+    monkeypatch.setattr(
+        ledger.httpx,
+        "get",
+        lambda *_args, **_kwargs: httpx.Response(HTTPStatus.OK, json=_balance_payload(total=0)),
+    )
+
+    status = account_credits.fetch_account_credits()
+
+    assert status.state is AccountSessionState.ACTIVE
+    assert status.credits is not None
+    assert status.credits.total == 0
+
+
 def test_fetch_session_without_credits_is_not_a_zero_balance(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -182,13 +211,13 @@ def test_fetch_session_without_credits_is_not_a_zero_balance(
             return httpx.Response(HTTPStatus.NOT_FOUND, json={"error": "not found"})
         return httpx.Response(HTTPStatus.OK, json={"user": {"id": "user_123"}, "credits": None})
 
-    monkeypatch.setattr(account_credits, "load_account_record", _record)
-    monkeypatch.setattr(account_credits, "resolve_account_token", lambda: "osre_pat_secret")
-    monkeypatch.setattr(account_credits.httpx, "get", fake_get)
+    monkeypatch.setattr(ledger, "load_account_record", _record)
+    monkeypatch.setattr(ledger, "resolve_account_token", lambda: "osre_pat_secret")
+    monkeypatch.setattr(ledger.httpx, "get", fake_get)
 
     status = account_credits.fetch_account_credits()
 
     assert status.state is AccountSessionState.UNAVAILABLE
     assert status.credits is None
-    assert "opensre account usage" in status.detail
+    assert "does not expose" not in status.detail
     assert "0" not in status.detail

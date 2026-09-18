@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import pytest
+
+from config.account_credits import AccountCredits, HostedCreditsKindValue, HostedCreditsRead
 from core.agent_harness.prompts import build_action_system_prompt_envelope
 from core.agent_harness.prompts.action.turn_interaction import turn_interaction_facts_block
 from core.agent_harness.prompts.kernel.envelope import PromptBlockId
@@ -32,6 +35,30 @@ def test_turn_interaction_facts_block_names_surface_goal_and_menu() -> None:
     assert "session_goal: attached" in text
     assert "ask_user_choice menu: unavailable" in text
     assert "only when the menu is available AND session_goal is none" in text
+
+
+def test_turn_interaction_facts_include_hosted_credits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _hosted_read() -> HostedCreditsRead:
+        return HostedCreditsRead(
+            HostedCreditsKindValue.OK,
+            AccountCredits(
+                total=12_500,
+                monthly=12_500,
+                monthly_limit=100_000,
+                top_up=0,
+                resets_at=None,
+                plan_id="team",
+            ),
+            "OpenSRE hosted credits.",
+        )
+
+    monkeypatch.setattr("core.llm.hosted_credits.account_llm_route", lambda: object())
+    monkeypatch.setattr("core.llm.hosted_credits.cached_hosted_credits", _hosted_read)
+    text = turn_interaction_facts_block(_snapshot(prompt_surface="interactive_shell"))
+    assert "OpenSRE hosted credits remaining are 12,500" in text
+    assert "hosted LLM requests are allowed" in text
 
 
 def test_action_envelope_includes_turn_interaction_block() -> None:

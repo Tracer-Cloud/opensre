@@ -622,6 +622,9 @@ class OpenAIAgentClient:
         """Return a text description of an image via this provider's vision model."""
         import base64
 
+        from core.llm.hosted_credits import admit_hosted_credits
+
+        admit_hosted_credits()
         self._ensure_client()
         data_url = f"data:{mimetype};base64,{base64.b64encode(image_bytes).decode('ascii')}"
         messages: Any = [
@@ -649,6 +652,9 @@ class OpenAIAgentClient:
         system: str | None = None,
         tools: list[dict[str, Any]] | None = None,
     ) -> AgentLLMResponse:
+        from core.llm.hosted_credits import admit_hosted_credits
+
+        admit_hosted_credits()
         from openai import (
             AuthenticationError,
             BadRequestError,
