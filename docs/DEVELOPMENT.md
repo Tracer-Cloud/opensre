@@ -87,6 +87,24 @@ For Railway: ensure the project has Postgres and Redis services and that the Ope
 service has `DATABASE_URI` and `REDIS_URI` set before deploying. Set
 `OPENSRE_DEPLOYMENT_METHOD=railway` for telemetry labeling.
 
+## macOS signing and notarization
+
+Release builds sign the macOS onedir bundle with the project's Developer ID
+and notarize it. The credentials live only in the release workflow's GitHub
+Actions secrets. A build without them (a fork, a local dry run) is ad-hoc
+signed instead: it still runs, but every Mac validates all bundled files on
+first use (about 15 seconds at install and several seconds on first launch).
+
+The hardened-runtime exceptions the frozen interpreter needs live in
+`packaging/macos/opensre.entitlements`. The installer leaves a Developer ID
+signature untouched; it only re-signs ad-hoc bundles.
+
+To check a published build:
+
+```bash
+codesign -dv --verbose=2 ~/.local/bin/.opensre-app/opensre 2>&1 | grep Authority
+```
+
 ## Telemetry and privacy
 
 `opensre` ships with two telemetry stacks, both opt-out:
