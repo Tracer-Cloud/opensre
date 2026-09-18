@@ -12,6 +12,7 @@ from core.agent_harness.spi.integrations import (
 )
 from infrastructure.harness_providers import configured_integration_services
 from infrastructure.scheduling.scheduler.agent_runner import AgentPayload
+from infrastructure.scheduling.scheduler.schedule_cancel import cancel_requested_for_payload
 from infrastructure.scheduling.scheduler.types import TaskReport
 from integrations.scheduled_outcomes import ScheduledOutcomes
 from integrations.sentry.project_scope import (
@@ -65,6 +66,7 @@ def _dispatch_headless_turn(message: str, payload: AgentPayload) -> TurnResult:
         prepare_session=lambda session: _apply_digest_project_scope(session, payload),
         logger=logger,
         is_tty=False,
+        cancel_requested=cancel_requested_for_payload(payload),
     )
 
 

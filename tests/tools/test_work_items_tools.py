@@ -197,6 +197,40 @@ def test_reminder_scheduling_resolves_naive_datetime_in_requested_timezone(
     assert task.params["run_at"] == "2027-09-12T09:00:00+05:30"
 
 
+def test_completing_a_work_item_disables_its_reminder(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    work_items_file = tmp_path / "work_items.json"
+    scheduler_file = tmp_path / "scheduler_tasks.json"
+    monkeypatch.setattr("core.domain.work_items.store.work_items_path", lambda: work_items_file)
+    monkeypatch.setattr("tools.system.work_items.tool.work_items_path", lambda: work_items_file)
+    monkeypatch.setattr(
+        "tools.system.work_items.reminders.work_items_path", lambda: work_items_file
+    )
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.task_store.default_task_store_path",
+        lambda: scheduler_file,
+    )
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.reload_signal.request_scheduler_reload",
+        lambda: None,
+    )
+
+    added = work_task_add(
+        title="Page on-call",
+        remind_at="2026-08-24T10:00:00Z",
+        channel_provider="slack",
+        channel_id="C999",
+        timezone="UTC",
+    )
+    assert "error" not in added
+    assert list_tasks()[0].enabled is True
+
+    complete = work_task_complete(selectors=[added["task"]["id"]])
+    assert "error" not in complete
+    assert list_tasks()[0].enabled is False
+
+
 @pytest.mark.parametrize(
     ("remind_at", "timezone", "expected"),
     [

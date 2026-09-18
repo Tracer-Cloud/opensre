@@ -7,6 +7,10 @@ import re
 from typing import TYPE_CHECKING
 
 from core.agent_harness.prompts.action.active_skill import active_skill_block
+from core.agent_harness.prompts.action.goal_kernel import (
+    ACTION_GOAL_KERNEL,
+    ACTION_GOAL_KERNEL_CLOSER,
+)
 from core.agent_harness.prompts.action.text import _SYSTEM_PROMPT_BASE
 from core.agent_harness.prompts.action.turn_interaction import turn_interaction_facts_block
 from core.agent_harness.prompts.getting_started import load_getting_started_block
@@ -95,6 +99,13 @@ def build_action_system_prompt_envelope(turn_snapshot: TurnSnapshot) -> PromptEn
             # copies the entire stable prompt body on every turn.
             content="".join((_SYSTEM_PROMPT_BASE, "\n\n")),
             provenance="core.agent_harness.prompts.opensre_system_prompt.md",
+        ),
+        PromptBlock(
+            id=PromptBlockId.ACTION_GOAL_KERNEL,
+            kind=PromptBlockKind.RULE,
+            tier=PromptTier.STABLE,
+            content="".join((ACTION_GOAL_KERNEL, "\n\n")),
+            provenance="core.agent_harness.prompts.action.goal_kernel",
         ),
     ]
     vendor_fragments = action_prompt_vendor_fragments()
@@ -201,6 +212,15 @@ def build_action_system_prompt_envelope(turn_snapshot: TurnSnapshot) -> PromptEn
             tier=PromptTier.EPHEMERAL,
             content=active_skill_block(turn_snapshot.active_skill, turn_snapshot.text),
             provenance="core.agent_harness.prompts.action.active_skill",
+        )
+    )
+    blocks.append(
+        PromptBlock(
+            id=PromptBlockId.ACTION_GOAL_KERNEL_CLOSER,
+            kind=PromptBlockKind.RULE,
+            tier=PromptTier.EPHEMERAL,
+            content=ACTION_GOAL_KERNEL_CLOSER,
+            provenance="core.agent_harness.prompts.action.goal_kernel",
         )
     )
     blocks.append(

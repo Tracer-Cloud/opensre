@@ -76,6 +76,10 @@ from core.agent_harness.turns.turn_results import ToolCallingTurnResult
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
 from core.agent_harness.turns.turn_trace import turn_trace_state
 from core.agent_harness.turns.wal_recorder import with_wal_recording
+from core.agent_harness.turns.work_outcome import (
+    ExecutedToolOutcome,
+    tap_executed_tool_outcomes,
+)
 from core.events import runtime_event_callback_from_observer
 from core.llm.types import AgentLLMResponse, SchemaDescribedTool, ToolCall
 from core.tool.execution import ToolExecutionHooks, public_tool_input
@@ -560,6 +564,7 @@ def _build_action_agent(
     # so "did the agent reach the goal" is not a meaningful question there.
     goal: Goal | None = None
     executed_tool_names: list[str] = []
+    executed_outcomes: list[ExecutedToolOutcome] = []
     deferred_replies: list[str] = []
 
     if bang_command is not None:
@@ -622,6 +627,7 @@ def _build_action_agent(
                 user_answered=bool(parse_ask_user_answers(message)),
                 from_onboarding_menu=starting_skill == ONBOARDING_SKILL_NAME,
             ),
+            executed_outcomes=executed_outcomes,
             trace_context=lambda: turn_trace_state(session),
         )
 
@@ -637,6 +643,7 @@ def _build_action_agent(
     on_runtime_event = tap_provider_usage(on_runtime_event, session)
     if goal is not None:
         on_runtime_event = tap_executed_tool_names(on_runtime_event, executed_tool_names)
+        on_runtime_event = tap_executed_tool_outcomes(on_runtime_event, executed_outcomes)
 
     config = AgentConfig(
         llm=llm,

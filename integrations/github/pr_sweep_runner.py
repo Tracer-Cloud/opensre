@@ -7,6 +7,7 @@ import logging
 from core.agent_harness import AgentSession
 from infrastructure.harness_providers import configured_integration_services
 from infrastructure.scheduling.scheduler.agent_runner import AgentPayload
+from infrastructure.scheduling.scheduler.schedule_cancel import cancel_requested_for_payload
 from infrastructure.scheduling.scheduler.types import TaskReport
 from integrations.scheduled_outcomes import ScheduledOutcomes
 
@@ -30,13 +31,13 @@ def _require_github_configured() -> None:
 
 def run_github_pr_sweep(payload: AgentPayload) -> TaskReport:
     """Run one headless turn that produces a PR sweep digest."""
-    del payload  # reserved for future repo/org scoping
     _require_github_configured()
 
     result = AgentSession.run_headless_turn(
         _PR_SWEEP_PROMPT,
         logger=logger,
         is_tty=False,
+        cancel_requested=cancel_requested_for_payload(payload),
     )
     report = result.primary_response_text
     if not result.answered or not report:

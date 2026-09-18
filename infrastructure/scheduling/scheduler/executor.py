@@ -20,6 +20,7 @@ from infrastructure.scheduling.scheduler.loop_constants import LOOP_CHANNELS_PAR
 from infrastructure.scheduling.scheduler.operation_log import record_scheduler_execution_operation
 from infrastructure.scheduling.scheduler.outcomes import WorkStatus
 from infrastructure.scheduling.scheduler.runners import SchedulerRunners
+from infrastructure.scheduling.scheduler.schedule_cancel import schedule_cancel_reason
 from infrastructure.scheduling.scheduler.storage import (
     ExecutionClaim,
     complete_run,
@@ -91,6 +92,30 @@ def execute_task(
     return completed
 
 
+def _skip_cancelled_schedule(
+    claim: ExecutionClaim,
+    task: ScheduledTask,
+    fire_time: str,
+) -> bool:
+    """Complete the claim as skipped when the user disabled or removed the task.
+
+    Returns True when the caller must abort (no further work, no delivery).
+    """
+    reason = schedule_cancel_reason(task.id)
+    if reason is None:
+        return False
+    logger.info("Task %s was %s during execution; skipping delivery", task.id, reason)
+    record_scheduler_execution_operation(
+        "scheduled_task_execution_skipped",
+        task,
+        fire_time=fire_time,
+        status=TaskStatus.SKIPPED,
+        extra={"reason": reason, "in_flight_cancel": True},
+    )
+    complete_run(claim, status=TaskStatus.SKIPPED, error=reason)
+    return True
+
+
 def _execute_claimed_task(
     claim: ExecutionClaim,
     ownership: ClaimOwnership,
@@ -108,6 +133,9 @@ def _execute_claimed_task(
     )
     _emit_analytics_started(task)
 
+    if _skip_cancelled_schedule(claim, task, fire_time):
+        return False
+
     if claim.target_filter == frozenset():
         _record_failure(
             claim,
@@ -123,10 +151,14 @@ def _execute_claimed_task(
         built = claim.report if claim.report is not None else build_message(task, runners)
         message = built if isinstance(built, TaskReport) else TaskReport(built)
     except RuntimeError as exc:
+        if _skip_cancelled_schedule(claim, task, fire_time):
+            return False
         # Pipeline failures — record without leaking details to chat
         _record_failure(claim, task, fire_time, str(exc), stage="message_build")
         return False
     except Exception as exc:
+        if _skip_cancelled_schedule(claim, task, fire_time):
+            return False
         _record_failure(
             claim,
             task,
@@ -134,6 +166,9 @@ def _execute_claimed_task(
             f"Message build error: {type(exc).__name__}",
             stage="message_build",
         )
+        return False
+
+    if _skip_cancelled_schedule(claim, task, fire_time):
         return False
 
     if not ownership.valid():
@@ -146,6 +181,8 @@ def _execute_claimed_task(
 
     if not record_run_report(claim, message):
         return False
+    if _skip_cancelled_schedule(claim, task, fire_time):
+        return False
     if isinstance(message, TaskReport) and message.stop_schedule:
         current = get_task(task.id)
         if current is not None and current.enabled:
@@ -156,6 +193,8 @@ def _execute_claimed_task(
 
     # Quiet ticks (e.g. uptime watch with no transitions) skip delivery.
     if not message.strip():
+        if _skip_cancelled_schedule(claim, task, fire_time):
+            return False
         if not complete_run(
             claim,
             status=work_status,
@@ -175,13 +214,18 @@ def _execute_claimed_task(
         )
         return message.outcome.completed
 
+    def _can_deliver() -> bool:
+        return ownership.valid() and schedule_cancel_reason(task.id) is None
+
     # Fan out to every destination the task resolves to, concurrently.
     result = _deliver_all(
         task,
         message,
         target_filter=claim.target_filter,
-        can_deliver=ownership.valid,
+        can_deliver=_can_deliver,
     )
+    if _skip_cancelled_schedule(claim, task, fire_time):
+        return False
     if not ownership.valid():
         logger.warning(
             "Discarding delivery result after losing scheduler claim for task %s fire_time=%s",

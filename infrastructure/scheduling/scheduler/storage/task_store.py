@@ -16,10 +16,12 @@ from typing import Any
 from filelock import FileLock
 
 from config.constants import OPENSRE_HOME_DIR
+from config.constants.work_items import WORK_ITEM_REMINDER_RUN_AT_PARAM
 from infrastructure.scheduling.scheduler import reload_signal
 from infrastructure.scheduling.scheduler.storage.legacy_task_migration import (
     migrate_legacy_task_entries,
 )
+from infrastructure.scheduling.scheduler.storage.run_store import skip_queued_runs
 from infrastructure.scheduling.scheduler.types import ScheduledTask
 
 logger = logging.getLogger(__name__)
@@ -254,6 +256,7 @@ def remove_task(task_id: str, store_path: Path | None = None) -> bool:
 
     # The schedule changed: wake any running scheduler so it stops firing this.
     reload_signal.request_scheduler_reload()
+    skip_queued_runs(task_id, reason="missing_task")
 
     return True
 
@@ -262,14 +265,47 @@ def update_task(task: ScheduledTask, store_path: Path | None = None) -> bool:
     """Update an existing task in the store. Returns True if found and updated."""
     path = store_path or default_task_store_path()
     lock = FileLock(_lock_path(path))
+    should_reload = False
     with lock:
         raw = _load_raw(path)
         for i, entry in enumerate(raw):
             if entry.get("id") == task.id:
-                raw[i] = task.model_dump(mode="json")
+                updated = task.model_dump(mode="json")
+                should_reload = _job_registration_changed(entry, updated)
+                raw[i] = updated
                 _save_raw(path, raw)
-                return True
-    return False
+                break
+        else:
+            return False
+    if should_reload:
+        # Enable/disable/schedule edits must drop or replace the live APScheduler job.
+        reload_signal.request_scheduler_reload()
+    if not task.enabled:
+        skip_queued_runs(task.id, reason="disabled")
+    return True
+
+
+def _job_registration_changed(previous: dict[str, object], updated: dict[str, object]) -> bool:
+    """True when APScheduler must drop or replace the job for this row."""
+    previous_params = previous.get("params")
+    updated_params = updated.get("params")
+    previous_run_at = (
+        previous_params.get(WORK_ITEM_REMINDER_RUN_AT_PARAM)
+        if isinstance(previous_params, dict)
+        else None
+    )
+    updated_run_at = (
+        updated_params.get(WORK_ITEM_REMINDER_RUN_AT_PARAM)
+        if isinstance(updated_params, dict)
+        else None
+    )
+    return (
+        previous.get("enabled") != updated.get("enabled")
+        or previous.get("cron") != updated.get("cron")
+        or previous.get("timezone") != updated.get("timezone")
+        or previous.get("kind") != updated.get("kind")
+        or previous_run_at != updated_run_at
+    )
 
 
 def record_task_success(task_id: str, store_path: Path | None = None) -> bool:

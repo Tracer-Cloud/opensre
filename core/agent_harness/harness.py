@@ -148,6 +148,7 @@ class AgentSession:
         tool_hooks: ToolExecutionHooks | None = None,
         tool_event_observer: ToolEventObserver | None = None,
         unattended: bool = False,
+        cancel_requested: Callable[[], bool] | None = None,
     ) -> AgentSession:
         """Return a session that is ready to :meth:`chat`.
 
@@ -172,9 +173,12 @@ class AgentSession:
         fields; ``tools`` the port its ``agent()`` takes;
         ``is_tty`` and ``tool_hooks`` (the turn's approval hooks) are bound on
         the first turn. ``tool_event_observer`` receives action-tool lifecycle
-        events from the default tool provider. A host that needs more (its own
-        sink, prompts, error reporter, an action ``llm_factory``) builds through
-        :class:`DefaultHeadlessBuild` itself and calls :meth:`attach_agent`.
+        events from the default tool provider. ``cancel_requested`` writes the
+        host cancel Event so ReAct and tools stop when the caller (a disabled
+        cron task, a gateway ``/stop``) says the turn is cancelled. A host that
+        needs more (its own sink, prompts, error reporter, an action
+        ``llm_factory``) builds through :class:`DefaultHeadlessBuild` itself and
+        calls :meth:`attach_agent`.
         """
         from core.agent_harness.turns.headless_adapters import BufferOutputSink
 
@@ -183,12 +187,24 @@ class AgentSession:
         if prepare_session is not None:
             prepare_session(startup.session)
         agent_session._bound_session = startup.session
+        sink = output if output is not None else BufferOutputSink()
+        bound_console = console
+        if cancel_requested is not None:
+            from io import StringIO
+
+            from rich.console import Console
+
+            from core.agent_harness.turns.host_cancel import bind_cancel_predicate
+
+            if bound_console is None:
+                bound_console = Console(force_terminal=False, file=StringIO())
+            bound_console = bind_cancel_predicate(sink, cancel_requested, console=bound_console)
         agent_session._attach_default_headless(
             session=startup.session,
-            output=output if output is not None else BufferOutputSink(),
+            output=sink,
             prompts=prompts if prompts is not None else startup.prompts,
             tools=tools,
-            console=console,
+            console=bound_console,
             logger=logger,
             surface=surface,
             is_tty=is_tty,
@@ -210,6 +226,7 @@ class AgentSession:
         is_tty: bool | None = None,
         unattended: bool = False,
         tool_hooks: ToolExecutionHooks | None = None,
+        cancel_requested: Callable[[], bool] | None = None,
     ) -> TurnResult:
         """Run exactly one turn for ``message`` on a throwaway session.
 
@@ -217,6 +234,8 @@ class AgentSession:
         loop that runs several turns must call :meth:`start` once and
         :meth:`chat` per turn instead — this rebuilds the session, re-hydrates
         integrations, and discards every warm cache on each call.
+        ``cancel_requested`` stops the turn (same host Event as chat ``/stop``)
+        when a scheduled task is disabled or removed mid-tick.
         """
         return cls.start(
             config or SCHEDULED_RUN_CONFIG,
@@ -226,6 +245,7 @@ class AgentSession:
             is_tty=is_tty,
             unattended=unattended,
             tool_hooks=tool_hooks,
+            cancel_requested=cancel_requested,
         ).chat(message)
 
     def startup(self) -> SessionStartupResult:

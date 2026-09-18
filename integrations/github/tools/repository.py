@@ -78,8 +78,10 @@ def _map_get_github_repository(
     name="get_github_repository",
     source="github",
     description=(
-        "Fetch GitHub repository metadata such as star count, forks, open issues, "
-        "description, default branch, and visibility via the GitHub REST API."
+        "Fetch GitHub repository metadata. When the user asks for stars, report "
+        "stargazers_count — never forks_count, watchers_count, or subscribers_count. "
+        "Also returns forks, open issues, description, default branch, and visibility "
+        "via the GitHub REST API."
     ),
     use_cases=[
         "Answering how many GitHub stars a repository has",
@@ -89,6 +91,7 @@ def _map_get_github_repository(
     anti_examples=[
         "Searching repository source code (use search_github_code)",
         "Searching GitHub issues by keyword (use search_github_issues)",
+        "Answering a star-count question with forks_count or watchers_count",
     ],
     requires=["owner", "repo"],
     surfaces=(ToolSurface.CHAT,),

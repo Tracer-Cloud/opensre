@@ -205,6 +205,46 @@ def _scheduled_job(
         _record_task_success_after_full_delivery(task.id, fire_time)
 
 
+def _complete_recoverable_as_skipped(
+    run: Any,
+    task: ScheduledTask | None,
+) -> bool:
+    """Drop a queued tick whose schedule was disabled or deleted."""
+    claim = try_claim(run.task_id, run.fire_time)
+    if claim is None:
+        return False
+    reason = "missing_task" if task is None else "disabled"
+    if task is None:
+        record_scheduler_service_operation(
+            "scheduler_job_skipped",
+            extra={"task_id": run.task_id, "fire_time": run.fire_time, "reason": reason},
+        )
+    else:
+        record_scheduler_execution_operation(
+            "scheduled_task_execution_skipped",
+            task,
+            fire_time=run.fire_time,
+            status=TaskStatus.SKIPPED,
+            extra={"reason": reason},
+        )
+    complete_run(claim, status=TaskStatus.SKIPPED, error=reason)
+    return True
+
+
+def _skip_cancelled_recoverable_runs() -> None:
+    """Finish disabled/deleted ticks without occupying the live-recovery scan."""
+    while True:
+        skipped = 0
+        for run in get_recoverable_runs():
+            task = get_task(run.task_id)
+            if task is not None and task.enabled:
+                continue
+            if _complete_recoverable_as_skipped(run, task):
+                skipped += 1
+        if skipped == 0:
+            return
+
+
 def _recover_runs(
     runners: SchedulerRunners,
     *,
@@ -214,11 +254,13 @@ def _recover_runs(
     """Resume pending and expired ticks within the scheduler worker pool."""
     _ = scheduled_run_time
     eligible_task_ids = _desired_task_ids(task_filter=task_filter)
+    # Cancelled ticks must be skip-completed even when they outnumber the
+    # recovery scan limit, or they stay queued and fire after a later re-enable.
+    _skip_cancelled_recoverable_runs()
     for run in get_recoverable_runs(eligible_task_ids=eligible_task_ids):
         task = get_task(run.task_id)
         if task is None or not task.enabled:
-            continue
-        if task_filter is not None and not task_filter(task):
+            _complete_recoverable_as_skipped(run, task)
             continue
         result = execute_task(task, run.fire_time, runners)
         if result:

@@ -147,7 +147,7 @@ def test_trace_keeps_suppressed_closing_and_pending_question_with_secrets_redact
     assert trace["pending_user_choice"]["title"] == "Which repository?"
 
 
-def test_trace_distinguishes_goal_rejection_from_iteration_ceiling_override(
+def test_trace_records_goal_rejection_even_at_the_iteration_ceiling(
     traced_session: tuple[Session, Path],
 ) -> None:
     session, path = traced_session
@@ -167,10 +167,11 @@ def test_trace_distinguishes_goal_rejection_from_iteration_ceiling_override(
         max_iterations=3,
     )
 
-    assert accepted and nudge is None
+    assert accepted is False
+    assert nudge is not None
     assert _decisions(path, "goal_review")[-1]["accepted"] is False
     assert _decisions(path, "conclusion")[-1] == {
-        "accepted": True,
-        "reason": "iteration_ceiling",
+        "accepted": False,
+        "reason": "goal_unmet",
         "iteration": 2,
     }

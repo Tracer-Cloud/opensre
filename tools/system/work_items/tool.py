@@ -12,6 +12,7 @@ from core.domain.work_items import (
     AmbiguousWorkItemDatetimeError,
     WorkItemChannelTarget,
     WorkItemPriority,
+    WorkItemStatus,
     WorkItemUpdates,
     add_work_item,
     complete_work_items,
@@ -29,7 +30,10 @@ from infrastructure.scheduling.scheduler.storage import add_task as add_schedule
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
 from tools.system.work_items._evidence import map_work_task_list, map_work_task_prioritize
 from tools.system.work_items.delivery import delivery_targets, invalid_delivery_targets
-from tools.system.work_items.reminders import schedule_item_reminder
+from tools.system.work_items.reminders import (
+    disable_existing_item_reminders,
+    schedule_item_reminder,
+)
 from tools.system.work_items.results import (
     added_result,
     complete_result,
@@ -287,7 +291,10 @@ def work_task_complete(selectors: list[str]) -> dict[str, Any]:
             "error": "empty_selectors",
             "detail": "selectors must include at least one task id or title",
         }
-    return complete_result(complete_work_items(normalized))
+    result = complete_work_items(normalized)
+    for item in result.completed:
+        disable_existing_item_reminders(item.id)
+    return complete_result(result)
 
 
 @tool(
@@ -442,7 +449,9 @@ def work_task_update(
             update_error_payload["candidates"] = [item_summary(item) for item in result.candidates]
         return update_error_payload
     scheduled = None
-    if remind_at:
+    if result.item.status is WorkItemStatus.COMPLETED:
+        disable_existing_item_reminders(result.item.id)
+    elif remind_at:
         scheduled = schedule_item_reminder(
             result.item,
             targets=reminder_targets,

@@ -326,6 +326,31 @@ class TestReloadSignal:
         assert remove_task("does-not-exist", store_path) is False
         assert signals == []
 
+    def test_update_signals_reload(self, store_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        added = add_task(self._task(), store_path)
+        signals = self._capture(monkeypatch)
+        added.enabled = False
+        assert update_task(added, store_path) is True
+        assert signals == [True]
+
+    def test_next_run_update_does_not_signal_reload(
+        self, store_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        added = add_task(self._task(), store_path)
+        signals = self._capture(monkeypatch)
+        added.next_run = "2026-01-15T09:00:00+00:00"
+        assert update_task(added, store_path) is True
+        assert signals == []
+
+    def test_update_missing_does_not_signal(
+        self, store_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        signals = self._capture(monkeypatch)
+        missing = self._task()
+        missing.id = "does-not-exist"
+        assert update_task(missing, store_path) is False
+        assert signals == []
+
 
 class TestStoreSurvivesTornWrites:
     """A crash mid-write, or a store that will not parse, must not lose tasks."""
