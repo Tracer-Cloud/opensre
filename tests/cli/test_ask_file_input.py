@@ -90,6 +90,14 @@ def test_load_context_files_accepts_plain_text_at_combined_budget(tmp_path) -> N
     assert len(load_context_files(paths)) == 2
 
 
+def test_load_context_files_limits_attachment_count(tmp_path) -> None:
+    path = tmp_path / "tiny.txt"
+    path.write_text("x", encoding="utf-8")
+
+    with pytest.raises(AskFileInputError, match="At most 16 context files"):
+        load_context_files((path,) * 17)
+
+
 def test_load_context_files_bounds_read_if_file_grows(monkeypatch, tmp_path) -> None:
     path = tmp_path / "growing.txt"
     path.write_text("small", encoding="utf-8")
@@ -119,6 +127,22 @@ def test_load_context_files_rejects_non_regular_files(tmp_path) -> None:
 
     with pytest.raises(AskFileInputError, match="must be a regular file"):
         load_context_files((path,))
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX surrogate-escaped path behavior")
+def test_render_prompt_escapes_non_utf8_filesystem_path(tmp_path) -> None:
+    raw_path = os.fsencode(tmp_path) + b"/alert-\xff.txt"
+    descriptor = os.open(raw_path, os.O_WRONLY | os.O_CREAT, 0o600)
+    try:
+        os.write(descriptor, b"latency spike")
+    finally:
+        os.close(descriptor)
+
+    context_files = load_context_files((tmp_path / os.fsdecode(b"alert-\xff.txt"),))
+    rendered = render_prompt_with_context("investigate", context_files)
+
+    rendered.encode("utf-8")
+    assert r"\\udcff" in rendered
 
 
 @pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="FIFOs are unavailable")

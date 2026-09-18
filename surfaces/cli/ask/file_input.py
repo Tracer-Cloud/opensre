@@ -12,6 +12,7 @@ from pathlib import Path
 _MAX_FILE_BYTES = 64 * 1024
 _MAX_TOTAL_BYTES = 128 * 1024
 _MAX_ENCODED_CONTENT_BYTES = _MAX_TOTAL_BYTES
+_MAX_CONTEXT_FILES = 16
 
 
 class AskFileInputError(ValueError):
@@ -72,7 +73,9 @@ def load_context_files(paths: Iterable[Path]) -> tuple[AskFileInput, ...]:
     loaded: list[AskFileInput] = []
     total_bytes = 0
     encoded_content_bytes = 0
-    for path in paths:
+    for index, path in enumerate(paths, start=1):
+        if index > _MAX_CONTEXT_FILES:
+            raise AskFileInputError(f"At most {_MAX_CONTEXT_FILES} context files may be attached.")
         context_file, size = _read_context_file(path)
         total_bytes += size
         if total_bytes > _MAX_TOTAL_BYTES:
@@ -92,6 +95,11 @@ def load_context_files(paths: Iterable[Path]) -> tuple[AskFileInput, ...]:
     return tuple(loaded)
 
 
+def _display_path(path: str) -> str:
+    """Return a UTF-8-safe display path, escaping undecodable filesystem bytes."""
+    return path.encode("utf-8", errors="backslashreplace").decode("utf-8")
+
+
 def render_prompt_with_context(
     instruction: str,
     context_files: tuple[AskFileInput, ...],
@@ -109,7 +117,7 @@ def render_prompt_with_context(
     ]
     for index, context_file in enumerate(context_files, start=1):
         payload = json.dumps(
-            {"path": context_file.path, "content": context_file.content},
+            {"path": _display_path(context_file.path), "content": context_file.content},
             ensure_ascii=False,
         )
         sections.append(
