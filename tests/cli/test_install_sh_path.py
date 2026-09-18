@@ -174,18 +174,22 @@ def test_macos_warmup_does_not_consume_installer_analytics(
     binary = tmp_path / "opensre"
     binary.write_text(
         "#!/usr/bin/env bash\n"
-        'printf "%s|%s|%s|%s|%s\\n" "$1" "${OPENSRE_ANALYTICS_DISABLED:-}" '
+        'printf "%s|%s|%s|%s|%s|%s\\n" "$1" "${OPENSRE_ANALYTICS_DISABLED:-}" '
         '"${OPENSRE_INSTALL_SOURCE:-}" "${OPENSRE_INSTALL_CHANNEL:-}" '
-        '"${OPENSRE_INSTALL_VERSION:-}" >> "$INSTALL_CALLS"\n',
+        '"${OPENSRE_INSTALL_VERSION:-}" "${OPENSRE_INSTALL_MARKER_STATE:-}" >> "$INSTALL_CALLS"\n',
         encoding="utf-8",
     )
     binary.chmod(0o755)
 
+    # The snapshot is deliberately skipped: the installer runs under ``set -u``
+    # and the record step must report ``unknown`` rather than abort or claim
+    # ``absent`` when the marker was never observed.
     result = _run_logging_snippet(
         f"""
         export INSTALL_CALLS={shlex.quote(str(calls))}
         export OPENSRE_ANALYTICS_DISABLED={shlex.quote(analytics_disabled)}
         unset OPENSRE_INSTALL_SOURCE OPENSRE_INSTALL_CHANNEL OPENSRE_INSTALL_VERSION
+        unset OPENSRE_INSTALL_MARKER_STATE
         uname() {{ printf 'Darwin\\n'; }}
         BIN_NAME=opensre
         INSTALL_DIR={shlex.quote(str(tmp_path))}
@@ -198,8 +202,8 @@ def test_macos_warmup_does_not_consume_installer_analytics(
 
     assert result.returncode == 0, result.stderr
     assert calls.read_text().splitlines() == [
-        "_package-smoke|1|||",
-        f"--record-install|{analytics_disabled}|posix_installer|main|2026.9.17",
+        "_package-smoke|1||||",
+        f"--record-install|{analytics_disabled}|posix_installer|main|2026.9.17|unknown",
     ]
 
 

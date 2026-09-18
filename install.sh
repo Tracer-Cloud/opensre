@@ -1170,8 +1170,10 @@ launch_setup_after_install() {
 record_install_analytics() {
   local binary_path="${INSTALL_DIR}/${BIN_NAME}"
 
+  # ``unknown`` when no pre-install snapshot was taken: never crash under
+  # ``set -u`` and never fabricate ``absent`` for an unobserved marker.
   OPENSRE_INSTALL_SOURCE="posix_installer" \
-    OPENSRE_INSTALL_MARKER_STATE="$install_marker_state" \
+    OPENSRE_INSTALL_MARKER_STATE="${install_marker_state:-unknown}" \
     OPENSRE_INSTALL_CHANNEL="$INSTALL_CHANNEL" \
     OPENSRE_INSTALL_VERSION="$installed_version" \
     "$binary_path" --record-install >/dev/null 2>&1 || true
