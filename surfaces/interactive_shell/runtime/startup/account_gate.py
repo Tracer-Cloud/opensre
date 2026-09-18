@@ -63,13 +63,14 @@ def pass_sign_in_gate(console: Console) -> bool:
 
     def _record_choice(choice: SignInChoice | None) -> None:
         # Recorded before login runs so the intent survives a failed or
-        # abandoned browser flow; Esc leaves signed out just like the exit option.
+        # abandoned browser flow. ``None`` is any dismissal (Esc, q, Ctrl-C,
+        # Ctrl-D, EOF); the picker does not distinguish them, so neither do we.
         if choice is SignInChoice.LOGIN:
             capture_sign_in_selected(choice_label=choice.value)
             return
         capture_stay_signed_out_selected(
             choice_label=SignInChoice.EXIT.value,
-            method="menu" if choice is SignInChoice.EXIT else "escape",
+            method="menu" if choice is SignInChoice.EXIT else "dismissed",
         )
 
     return run_sign_in_gate(

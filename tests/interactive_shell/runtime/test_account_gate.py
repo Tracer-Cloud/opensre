@@ -163,7 +163,9 @@ def test_gate_records_exposure_and_every_explicit_choice_before_login_runs(
     }
 
 
-def test_gate_records_escape_as_staying_signed_out(monkeypatch: Any) -> None:
+def test_gate_records_a_dismissed_menu_as_staying_signed_out(monkeypatch: Any) -> None:
+    # The picker returns None for Esc, q, Ctrl-C, Ctrl-D and EOF alike, so the
+    # gate must not claim a more specific key than it can observe.
     analytics = _gate_with_choices(monkeypatch, [None])
 
     assert account_gate.pass_sign_in_gate(_console()) is False
@@ -171,7 +173,7 @@ def test_gate_records_escape_as_staying_signed_out(monkeypatch: Any) -> None:
         Event.SIGN_IN_PROMPTED,
         Event.STAY_SIGNED_OUT_SELECTED,
     ]
-    assert analytics.events[1][1]["method"] == "escape"
+    assert analytics.events[1][1]["method"] == "dismissed"
 
 
 def test_gate_records_only_the_prompt_and_choice_on_successful_login(monkeypatch: Any) -> None:

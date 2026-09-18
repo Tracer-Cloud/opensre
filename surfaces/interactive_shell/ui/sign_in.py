@@ -86,7 +86,8 @@ def run_sign_in_gate(
 
     ``on_prompted`` fires once when the screen is shown; ``on_choice`` fires for
     every menu round with the pick, or ``None`` when the menu was dismissed
-    with Esc. Neither fires for an already signed-in or non-interactive run.
+    without one (Esc, ``q``, Ctrl-C, Ctrl-D, or EOF). Neither fires for an
+    already signed-in or non-interactive run.
     """
     if is_signed_in():
         return True

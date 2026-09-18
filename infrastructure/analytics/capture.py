@@ -110,7 +110,7 @@ def capture_sign_in_selected(*, choice_label: str) -> None:
 
 
 def capture_stay_signed_out_selected(*, choice_label: str, method: str) -> None:
-    """User left the gate without signing in via the exit option (``menu``) or Esc (``escape``)."""
+    """User left the gate signed out: ``menu`` picked the exit option, ``dismissed`` closed the menu."""
     _capture(
         Event.STAY_SIGNED_OUT_SELECTED,
         {"choice_label": choice_label, "method": method, "entrypoint": "sign_in_gate"},
