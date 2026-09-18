@@ -151,7 +151,8 @@ def run_turn(
         if recorder is not None:
             if result.cancelled:
                 recorder.set_error("cancelled", "Agent execution cancelled.")
-            recorder.set_response(result.primary_response_text)
+            else:
+                recorder.set_response(result.primary_response_text)
         return result
 
 

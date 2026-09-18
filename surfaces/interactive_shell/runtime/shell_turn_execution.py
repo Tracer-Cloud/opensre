@@ -14,6 +14,7 @@ from core.agent_harness import (
     ToolCallingTurnResult,
     TurnResult,
 )
+from core.agent_harness.spi.cancel import host_cancel_requested
 from core.agent_harness.spi.session_goal import (
     SessionGoal,
     SessionGoalReason,
@@ -106,19 +107,17 @@ def execute_shell_turn(
         on_progress=_on_progress,
     )
     if result is None:
-        # No agent work ran. The shell binds no admission hook and its sink
-        # carries no ``turn_cancel``, so for this caller the capacity gate is
-        # the only reason the host returns ``None`` — and it already said so on
-        # the output. Report a turn that ran nothing rather than inventing an
-        # answer.
+        # Admission stopped before agent work, at capacity or cancellation.
+        cancelled = host_cancel_requested(resolved_output)
         return TurnResult(
-            final_intent="cli_agent_at_capacity",
+            final_intent="cli_agent_cancelled" if cancelled else "cli_agent_at_capacity",
             action_result=ToolCallingTurnResult(
                 planned_count=0,
                 executed_count=0,
                 executed_success_count=0,
                 has_unhandled_clause=False,
                 handled=False,
+                cancelled=cancelled,
             ),
         )
     return result

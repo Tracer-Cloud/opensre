@@ -16,7 +16,8 @@ Event on the concrete sink before the turn; retargetable output adapters
 forward ``turn_cancel`` so the harness output port and the transport share
 one signal.
 
-Shell cancel stays on ``StreamingConsole``; it never needs ``turn_cancel``.
+The shell sink shares its ``StreamingConsole.cancel_event`` as ``turn_cancel``
+so cancelling the UI and the worker signals the same turn.
 """
 
 from __future__ import annotations
