@@ -67,6 +67,9 @@ def _write_fake_opensre(binary: Path, *, version_line: str) -> None:
             f"""\
             #!/usr/bin/env bash
             state_dir="${{OPENSRE_HOME:-$HOME/.opensre}}"
+            if [ -n "${{OPENSRE_WIZARD_STORE_PATH:-}}" ]; then
+              state_dir="$(dirname "$OPENSRE_WIZARD_STORE_PATH")"
+            fi
             if [ "${{1:-}}" = "--version" ]; then
               case "${{OPENSRE_TEST_MARKER_MUTATION:-}}" in
                 create) mkdir -p "$state_dir"; touch "$state_dir/installed" ;;
@@ -220,6 +223,7 @@ def _run_install_sh(
 
     env = os.environ.copy()
     env.pop("OPENSRE_HOME", None)
+    env.pop("OPENSRE_WIZARD_STORE_PATH", None)
     env.pop("OPENSRE_INSTALL_MARKER_STATE", None)
     env["HOME"] = str(home)
     env["PATH"] = f"{shim_bin}{os.pathsep}{env.get('PATH', '')}"
@@ -404,11 +408,13 @@ def test_makefile_install_uses_uv_sync() -> None:
 
 
 @pytest.mark.parametrize("prior_marker", [False, True])
-@pytest.mark.parametrize("custom_home", [False, True])
+@pytest.mark.parametrize("state_location", ["default", "home", "wizard", "wizard-relative"])
 def test_install_sh_records_marker_before_binary_runs(
-    tmp_path: Path, prior_marker: bool, custom_home: bool
+    tmp_path: Path, prior_marker: bool, state_location: str
 ) -> None:
-    state_dir = tmp_path / "custom state" if custom_home else tmp_path / "home" / ".opensre"
+    state_dir = (
+        tmp_path / "home" / ".opensre" if state_location == "default" else tmp_path / "custom state"
+    )
     state_dir.mkdir(parents=True)
     marker = state_dir / "installed"
     if prior_marker:
@@ -418,8 +424,16 @@ def test_install_sh_records_marker_before_binary_runs(
         "OPENSRE_TEST_MARKER_MUTATION": "remove" if prior_marker else "create",
         "OPENSRE_TEST_MARKER_LOG": str(recorded),
     }
-    if custom_home:
+    if state_location == "home":
         environment["OPENSRE_HOME"] = str(state_dir)
+    elif state_location.startswith("wizard"):
+        environment["OPENSRE_HOME"] = str(tmp_path / "unused home")
+        wizard_store = state_dir / "wizard.json"
+        environment["OPENSRE_WIZARD_STORE_PATH"] = str(
+            wizard_store.relative_to(tmp_path)
+            if state_location == "wizard-relative"
+            else wizard_store
+        )
 
     result = _run_install_sh(tmp_path, "--main", env_extra=environment)
 

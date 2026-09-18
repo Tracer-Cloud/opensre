@@ -95,7 +95,9 @@ downstream PostHog compatibility. The first-party account user ID belongs in a
 server-owned column resolved from the bearer token.
 
 The shell and PowerShell installers, and `make install`, snapshot `installed`
-before installation work begins, respecting `OPENSRE_HOME`. After a successful
+before installation work begins, resolving its directory the same way as the
+runtime's `get_store_path()`: `OPENSRE_WIZARD_STORE_PATH`'s parent when set,
+otherwise `OPENSRE_HOME`, otherwise `~/.opensre`. After a successful
 install, the record-only path saves that snapshot in `install_marker_state`
 beside the marker. Subsequent product events carry it, including when an
 existing marker suppresses `install_detected`; reinstalling does not manufacture

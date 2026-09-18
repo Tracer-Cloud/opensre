@@ -1176,15 +1176,37 @@ record_install_analytics() {
     "$binary_path" --record-install >/dev/null 2>&1 || true
 }
 
-snapshot_install_marker() {
-  local state_dir="${OPENSRE_HOME:-$HOME/.opensre}"
-  state_dir="${state_dir#"${state_dir%%[![:space:]]*}"}"
-  state_dir="${state_dir%"${state_dir##*[![:space:]]}"}"
-  [ -n "$state_dir" ] || state_dir="$HOME/.opensre"
-  case "$state_dir" in
-    '~') state_dir="$HOME" ;;
-    '~/'*) state_dir="$HOME/${state_dir#\~/}" ;;
+expand_home_prefix() {
+  case "$1" in
+    '~') printf '%s' "$HOME" ;;
+    '~/'*) printf '%s' "$HOME/${1#\~/}" ;;
+    *) printf '%s' "$1" ;;
   esac
+}
+
+trim_whitespace() {
+  local value="$1"
+  value="${value#"${value%%[![:space:]]*}"}"
+  printf '%s' "${value%"${value##*[![:space:]]}"}"
+}
+
+resolve_install_marker_dir() {
+  # Mirror the runtime's get_store_path(): an explicit wizard store path wins
+  # and the marker lives beside it; otherwise OPENSRE_HOME, then ~/.opensre.
+  local store_path state_dir
+  store_path="$(trim_whitespace "${OPENSRE_WIZARD_STORE_PATH:-}")"
+  if [ -n "$store_path" ]; then
+    dirname "$(expand_home_prefix "$store_path")"
+    return 0
+  fi
+  state_dir="$(trim_whitespace "${OPENSRE_HOME:-}")"
+  [ -n "$state_dir" ] || state_dir="$HOME/.opensre"
+  expand_home_prefix "$state_dir"
+}
+
+snapshot_install_marker() {
+  local state_dir
+  state_dir="$(resolve_install_marker_dir)"
   install_marker_state="unknown"
   if [ -e "$state_dir/installed" ]; then
     install_marker_state="present"

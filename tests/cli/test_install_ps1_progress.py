@@ -98,8 +98,9 @@ def test_install_ps1_records_install_analytics_without_blocking_install() -> Non
 
 
 @pytest.mark.parametrize("prior_marker", [False, True])
+@pytest.mark.parametrize("wizard_override", [False, True])
 def test_install_ps1_records_original_marker_and_restores_environment(
-    tmp_path: Path, prior_marker: bool
+    tmp_path: Path, prior_marker: bool, wizard_override: bool
 ) -> None:
     shell = _powershell()
     if shell is None:
@@ -120,7 +121,7 @@ def test_install_ps1_records_original_marker_and_restores_environment(
         $env:OPENSRE_INSTALL_MARKER_STATE = 'original'
         function Write-OpenSreHeader {{
             # Called by the real installer after its initial snapshot.
-            $marker = Join-Path $env:OPENSRE_HOME 'installed'
+            $marker = Join-Path $env:OPENSRE_TEST_STATE_DIR 'installed'
             if (Test-Path -LiteralPath $marker) {{ Remove-Item -LiteralPath $marker }}
             else {{ New-Item -ItemType File -Path $marker | Out-Null }}
             Send-OpenSreInstallAnalytics -BinaryPath $env:OPENSRE_TEST_BINARY -Channel main -Version test -InstallMarkerState $installMarkerState
@@ -139,7 +140,9 @@ def test_install_ps1_records_original_marker_and_restores_environment(
         [shell, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],
         env=os.environ
         | {
-            "OPENSRE_HOME": str(state_dir),
+            "OPENSRE_HOME": str(tmp_path / "unused home" if wizard_override else state_dir),
+            "OPENSRE_WIZARD_STORE_PATH": str(state_dir / "wizard.json") if wizard_override else "",
+            "OPENSRE_TEST_STATE_DIR": str(state_dir),
             "OPENSRE_TEST_BINARY": str(fake_binary),
             "OPENSRE_TEST_MARKER_LOG": str(recorded),
         },

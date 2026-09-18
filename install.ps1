@@ -1103,14 +1103,31 @@ function Send-OpenSreInstallAnalytics {
     }
 }
 
+function Expand-OpenSreHomePrefix {
+    param([string]$Path)
+    if ($Path -eq "~") { return $HOME }
+    if ($Path.StartsWith("~/") -or $Path.StartsWith("~\")) {
+        return Join-Path $HOME $Path.Substring(2)
+    }
+    return $Path
+}
+
+function Get-OpenSreInstallMarkerDir {
+    # Mirror the runtime's get_store_path(): an explicit wizard store path wins
+    # and the marker lives beside it; otherwise OPENSRE_HOME, then ~/.opensre.
+    $storePath = ([string]$env:OPENSRE_WIZARD_STORE_PATH).Trim()
+    if ($storePath) {
+        return Split-Path -Parent (Expand-OpenSreHomePrefix $storePath)
+    }
+    $stateDir = ([string]$env:OPENSRE_HOME).Trim()
+    if (-not $stateDir) { $stateDir = Join-Path $HOME ".opensre" }
+    return Expand-OpenSreHomePrefix $stateDir
+}
+
 function Get-OpenSreInstallMarkerState {
     try {
-        $stateDir = ([string]$env:OPENSRE_HOME).Trim()
-        if (-not $stateDir) { $stateDir = Join-Path $HOME ".opensre" }
-        if ($stateDir -eq "~") { $stateDir = $HOME }
-        elseif ($stateDir.StartsWith("~/") -or $stateDir.StartsWith("~\")) {
-            $stateDir = Join-Path $HOME $stateDir.Substring(2)
-        }
+        $stateDir = Get-OpenSreInstallMarkerDir
+        if (-not $stateDir) { $stateDir = "." }
         if (Test-Path -LiteralPath (Join-Path $stateDir "installed") -ErrorAction Stop) {
             return "present"
         }
