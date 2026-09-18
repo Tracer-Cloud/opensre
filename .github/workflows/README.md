@@ -14,7 +14,7 @@ Internal notes for repository automation under `.github/workflows/`. Not publish
 | [`good-first-issue-assign.yml`](good-first-issue-assign.yml) | Auto-assign good first issues |
 | [`release-safety-scheduled.yml`](release-safety-scheduled.yml) | Hourly release safety regression check |
 | [`release.yml`](release.yml) | Release builds and artifacts |
-| [`installer-canary.yml`](installer-canary.yml) | Post-publish canaries for the public install paths (CDN, GitHub release resolution, PowerShell, Homebrew) on Linux/macOS/Windows |
+| [`installer-canary.yml`](installer-canary.yml) | Post-publish canaries for the public install paths (CDN, GitHub release resolution, platform installers) on Linux/macOS/Windows |
 
 See [CI.md](../../CI.md) for local parity commands before push.
 

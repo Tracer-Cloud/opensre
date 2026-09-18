@@ -3,65 +3,36 @@ title: "Local and on-prem setup"
 description: "Run OpenSRE on your laptop, a VM, or an on-prem host with the local CLI."
 ---
 
-Use this guide when you're installing the `opensre` binary yourself — on a laptop, a shared VM, or a machine in your own network.
+## Before you begin
 
-## Which setup fits you?
+Make sure you have:
 
-| Setup | Best for |
-| --- | --- |
-| **Laptop** | Trying OpenSRE, local debugging, personal use |
-| **On-prem VM / server** | A shared box your team can reach |
-| **Docker** | Same install every time, in a container |
+- A terminal open in a code project
+- A Git repository (recommended for the full workflow demonstration)
 
-Platform steps:
-
-- [macOS](/environments/macos)
-- [Linux (local)](/environments/linux-local)
-- [Windows (local)](/environments/windows-local)
-- [Docker](/environments/docker)
-
-## 1. Install the CLI
+## Step 1: Install and start opensre
 
 ```bash
-# Homebrew
-brew tap tracer-cloud/tap
-brew install tracer-cloud/tap/opensre
-
-# or one-line installer
 curl -fsSL https://install.opensre.com | bash
 ```
 
-On Windows (PowerShell):
-
-```powershell
-irm https://install.opensre.com | iex
-```
-
-You usually don't need `sudo`. The installer puts `opensre` somewhere already on your PATH when it can. If it can't, it uses `~/.local/bin` and prints how to add that to PATH.
-
-**Auto setup:** In a normal interactive terminal, install often starts OpenSRE when it finishes. In CI or scripts it skips that. If it did not open, run `opensre`. To turn auto-setup off:
-
-```bash
-curl -fsSL https://install.opensre.com | OPENSRE_AUTO_LAUNCH=0 bash
-```
-
-**GitHub CLI:** The installer also tries to install `gh` if it's missing (OpenSRE's GitHub tools need it). Skip that with:
-
-```bash
-curl -fsSL https://install.opensre.com | OPENSRE_SKIP_GH_INSTALL=1 bash
-```
-
-Homebrew installs pull in `gh` automatically.
-
-Shorter overview: [Install OpenSRE](/install).
-
-## 2. Get started
+Then start OpenSRE:
 
 ```bash
 opensre
 ```
 
-The browser opens the OpenSRE sign-up page. Create an account or sign in using email or another enabled provider; a successful login activates the hosted model. OpenSRE opens the shell only after the webapp validates that account session. GitHub remains an optional integration you can add later.
+![OpenSRE CLI welcome screen with the sign-in prompt](/images/opensre-welcome.png)
+
+Use a macOS or Linux terminal. On Windows, use [WSL](/environments/windows-local).
+
+You usually don't need `sudo`. The installer uses a writable directory on your PATH when it can. Otherwise, it uses `~/.local/bin` and prints how to add that to PATH.
+
+For platform requirements, see [macOS](/environments/macos), [Linux](/environments/linux-local), or [Windows with WSL](/environments/windows-local). For a container, see [Docker](/environments/docker).
+
+## Step 2: Sign in
+
+Choose **Sign in or create account** in the welcome screen. Your browser opens the OpenSRE sign-up page. Create an account or sign in using email or another enabled provider; a successful login activates the hosted model. OpenSRE opens the shell only after the webapp validates that account session. GitHub remains an optional integration you can add later.
 
 When developing the webapp locally on port 3000, use:
 
@@ -71,7 +42,7 @@ opensre setup --dev
 
 To remain signed out, cancel sign-in or choose **Exit and stay signed out** when `opensre` shows the account gate. Other CLI commands remain available; the interactive shell does not.
 
-## 3. Open the shell
+## Step 3: Open the shell
 
 The same `opensre` command revalidates the webapp account on every start. Expired, revoked, incomplete, or unreachable account state returns to the sign-in gate instead of constructing the REPL or a model client.
 
@@ -81,7 +52,7 @@ OpenSRE saves non-secret identity and hosted-model metadata in owner-only accoun
 
 `OPENSRE_ACCOUNT_TOKEN` overrides the saved account token when set. Never commit it to `.env` or source control. Run `opensre account logout` to revoke the saved session; an environment override must be unset separately.
 
-## 4. Check your tools
+## Step 4: Check your tools
 
 Inside the shell:
 
@@ -97,7 +68,7 @@ integrations verify datadog
 
 From a normal terminal, prefix with `opensre` (for example `opensre integrations verify`).
 
-## 5. Ask a first question
+## Step 5: Ask a first question
 
 Start the shell and describe what's going on in plain English:
 
@@ -115,5 +86,5 @@ Start at [Integrations overview](/integrations-overview), then open each provide
 
 ## Related
 
-- [Quickstart](/quickstart) — install + setup + sample run with GIFs
+- [Quickstart](/quickstart) — install, sign in, and ask a question with screenshots
 - [Deployment](/deployment) — gateway and hosted options beyond a single laptop

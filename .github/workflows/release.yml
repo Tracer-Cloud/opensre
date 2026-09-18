@@ -669,9 +669,7 @@ jobs:
           {
             printf '## Install\n\n'
             printf '### cURL (macOS / Linux)\n\n%sbash\ncurl -fsSL https://install.opensre.com | bash -s -- --release --version %s\n%s\n\n' "$CB" "${TAG_NAME#v}" "$CB"
-            printf '### Homebrew (macOS / Linux)\n\n%sbash\nbrew tap tracer-cloud/tap\nbrew install tracer-cloud/tap/opensre\n%s\n\n' "$CB" "$CB"
-            printf '### PowerShell (Windows)\n\n%spowershell\n$env:OPENSRE_INSTALL_CHANNEL="release"; $env:OPENSRE_VERSION="%s"; irm https://install.opensre.com | iex\n%s\n\n' "$CB" "${TAG_NAME#v}" "$CB"
-            printf '### Python\n\n%sbash\npipx install opensre\n%s\n\n' "$CB" "$CB"
+            printf 'Start OpenSRE:\n\n%sbash\nopensre\n%s\n\nOn Windows, use [WSL](https://www.opensre.com/docs/environments/windows-local).\n\n' "$CB" "$CB"
           } > RELEASE_NOTES.md
           cat GENERATED_CHANGELOG.md >> RELEASE_NOTES.md
 
@@ -854,8 +852,7 @@ jobs:
             printf '## Main build\n\nRolling binary build from `main`.\n\n'
             printf -- '- Version: `%s`\n- Commit: `%s`\n- Built: %s\n\n' "$VERSION_NAME" "$short_sha" "$built_at"
             printf '### Install\n\nmacOS / Linux:\n\n%sbash\ncurl -fsSL https://install.opensre.com | bash\n%s\n\n' "$CB" "$CB"
-            printf 'Equivalent explicit main channel:\n\n%sbash\ncurl -fsSL https://install.opensre.com | bash -s -- --main\n%s\n\n' "$CB" "$CB"
-            printf 'Windows:\n\n%spowershell\nirm https://install.opensre.com | iex\n%s\n' "$CB" "$CB"
+            printf 'Start OpenSRE:\n\n%sbash\nopensre\n%s\n\nOn Windows, use [WSL](https://www.opensre.com/docs/environments/windows-local).\n' "$CB" "$CB"
           } > MAIN_RELEASE_NOTES.md
 
       - name: Publish rolling main release

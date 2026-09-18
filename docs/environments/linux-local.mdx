@@ -3,7 +3,7 @@ title: "Linux"
 description: "Install OpenSRE on a local Linux machine and ask your first question."
 ---
 
-Install OpenSRE on Linux (laptop, desktop, or a local VM), set up your LLM, then ask the agent your first question.
+Install OpenSRE on Linux (laptop, desktop, or a local VM), sign in to your account, then ask the agent your first question.
 
 ## 1. Install
 
@@ -11,43 +11,19 @@ Install OpenSRE on Linux (laptop, desktop, or a local VM), set up your LLM, then
 curl -fsSL https://install.opensre.com | bash
 ```
 
-Or with Homebrew on Linux, if you use it:
-
-```bash
-brew tap tracer-cloud/tap
-brew install tracer-cloud/tap/opensre
-```
-
 You usually don't need `sudo`. If `opensre` isn't found after install, open a new terminal or add the bin directory the installer printed (often `~/.local/bin`) to your PATH.
 
 ### Binary compatibility
 
-Prebuilt Linux binaries require **glibc 2.35+** (Ubuntu 22.04+ or a comparable distribution) and do not run on Alpine Linux. On an older or musl-based Linux system, install from source instead:
-
-Install [uv](https://docs.astral.sh/uv/getting-started/installation/) first, then run:
-
-```bash
-git clone https://github.com/Tracer-Cloud/opensre.git
-cd opensre
-uv sync --frozen --extra dev
-uv run opensre
-```
-
-Run every OpenSRE command below from this checkout with `uv run`, for example `uv run opensre onboard`.
-
-In a normal interactive terminal, install may start onboard for you. To skip that:
-
-```bash
-curl -fsSL https://install.opensre.com | OPENSRE_AUTO_LAUNCH=0 bash
-```
+Prebuilt Linux binaries require **glibc 2.35+** (Ubuntu 22.04+ or a comparable distribution) and do not run on Alpine Linux. Use a supported Linux distribution or the [Docker guide](/environments/docker).
 
 ## 2. Set things up
 
 ```bash
-opensre onboard
+opensre
 ```
 
-Pick an LLM provider and add a key or confirm a CLI login. Add tools later, when you need them:
+Create an OpenSRE account or sign in to activate the hosted model. Add tools later, when you need them:
 
 ```bash
 opensre integrations setup <service>
@@ -71,6 +47,6 @@ Ask: *why is checkout latency spiking?*
 
 ## Next
 
-- [Quickstart](/quickstart) — full walkthrough with GIFs
+- [Quickstart](/quickstart) — full walkthrough with screenshots
 - [Install locally](/install-local) — shared VM / on-prem notes
 - [Integrations overview](/integrations-overview) — tool catalog

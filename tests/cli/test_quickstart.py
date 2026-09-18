@@ -82,10 +82,7 @@ def release_api_url() -> Iterator[str]:
 def test_quickstart_doc_lists_every_user_command() -> None:
     text = QUICKSTART_MDX.read_text(encoding="utf-8")
     for needle in (
-        "brew tap tracer-cloud/tap",
-        "brew install tracer-cloud/tap/opensre",
         "curl -fsSL https://install.opensre.com | bash",
-        "irm https://install.opensre.com | iex",
         "opensre\n",
         'opensre ask "why did checkout latency increase today?"',
         "opensre update",

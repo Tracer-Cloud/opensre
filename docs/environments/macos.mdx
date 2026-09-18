@@ -3,36 +3,23 @@ title: "macOS"
 description: "Install OpenSRE on a Mac and ask your first question."
 ---
 
-Install OpenSRE on macOS, set up your LLM, then ask the agent your first question.
+Install OpenSRE on macOS, sign in to your account, then ask the agent your first question.
 
 ## 1. Install
 
-Pick one:
-
 ```bash
-# Homebrew
-brew tap tracer-cloud/tap
-brew install tracer-cloud/tap/opensre
-
-# or one-line installer
 curl -fsSL https://install.opensre.com | bash
 ```
 
 You usually don't need `sudo`. If the terminal says `opensre: command not found`, open a new window or add the path the installer printed (often `~/.local/bin`).
 
-In a normal interactive terminal, install may start onboard for you. To skip that:
-
-```bash
-curl -fsSL https://install.opensre.com | OPENSRE_AUTO_LAUNCH=0 bash
-```
-
 ## 2. Set things up
 
 ```bash
-opensre onboard
+opensre
 ```
 
-You'll pick an LLM provider and paste a key or confirm a CLI login. Add tools later, when you need them:
+Create an OpenSRE account or sign in to activate the hosted model. Add tools later, when you need them:
 
 ```bash
 opensre integrations setup <service>
@@ -56,6 +43,6 @@ Ask: *why is checkout latency spiking?*
 
 ## Next
 
-- [Quickstart](/quickstart) — same flow with GIFs
-- [Install locally](/install-local) — PATH notes, auto-onboard, on-prem tips
+- [Quickstart](/quickstart) — same flow with screenshots
+- [Install locally](/install-local) — PATH notes, on-prem tips
 - [Integrations overview](/integrations-overview) — connect more tools

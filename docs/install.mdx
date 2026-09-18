@@ -3,56 +3,34 @@ title: "Install OpenSRE"
 description: "Install the OpenSRE CLI on your machine and start chatting with the agent."
 ---
 
-This page gets the `opensre` command onto your laptop or server. After install, run `opensre` to sign in and start asking questions.
+## Before you begin
 
-## What you get
+Make sure you have:
 
-After install, you have:
+- A terminal open in a code project
+- A Git repository (recommended for the full workflow demonstration)
 
-- The `opensre` CLI on your PATH
-- An account-gated interactive shell when you run `opensre` with no arguments
-- A short webapp sign-in that also activates the OpenSRE-hosted model
-
-No sudo required on macOS/Linux in the usual case — the installer puts the binary somewhere writable (often `~/.local/bin`) and tells you if you need a PATH tweak.
-
-## Install
-
-Pick one method.
-
-**One-line installer (most people):**
+## Step 1: Install and start opensre
 
 ```bash
-# macOS / Linux
 curl -fsSL https://install.opensre.com | bash
-
-# Windows (PowerShell)
-irm https://install.opensre.com | iex
 ```
 
-In a normal interactive terminal, the installer often starts OpenSRE for you when it finishes. In CI or scripts it skips that and prints what to do next. If it did not open, run `opensre`.
-
-Don't want auto-setup?
-
-```bash
-curl -fsSL https://install.opensre.com | OPENSRE_AUTO_LAUNCH=0 bash
-```
-
-**Homebrew:**
-
-```bash
-brew tap tracer-cloud/tap
-brew install tracer-cloud/tap/opensre
-```
-
-More options (PATH notes, skipping GitHub CLI install, on-prem layout): [Install locally](/install-local).
-
-## Get started
+Then start OpenSRE:
 
 ```bash
 opensre
 ```
 
-The browser opens the OpenSRE sign-up page. Create an account or sign in using email or another enabled provider; a successful login activates the hosted model, so no separate LLM key is required. Add GitHub later as an optional integration if you want OpenSRE to work with repositories.
+![OpenSRE CLI welcome screen with the sign-in prompt](/images/opensre-welcome.png)
+
+Use a macOS or Linux terminal. On Windows, use [WSL](/environments/windows-local).
+
+For PATH troubleshooting and platform requirements, see [Install locally](/install-local).
+
+## Step 2: Sign in
+
+Choose **Sign in or create account** in the welcome screen. Your browser opens the OpenSRE sign-up page. Create an account or sign in using email or another enabled provider; a successful login activates the hosted model, so no separate LLM key is required. Add GitHub later as an optional integration if you want OpenSRE to work with repositories.
 
 When that finishes, OpenSRE opens the interactive shell. Add tools later, when you need them:
 
@@ -79,7 +57,7 @@ Then check that the tools you connected work:
 opensre integrations verify
 ```
 
-## Ask your first question
+## Step 3: Ask your first question
 
 Open the shell and describe what's going on:
 
@@ -89,7 +67,7 @@ opensre
 
 Ask: *why is checkout latency spiking?*
 
-Full walkthrough with GIFs: [Quickstart](/quickstart).
+Full walkthrough with screenshots: [Quickstart](/quickstart).
 
 ## Environment-specific guides
 

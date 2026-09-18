@@ -3,132 +3,66 @@ title: "Quickstart"
 slug: "quickstart"
 ---
 
-<Steps>
-  <Step title="Install OpenSRE" id="install-opensre">
-    <Tabs>
-      <Tab title="macOS" id="install-opensre-macos">
-        Choose one install method. The one-line installer tracks the latest stable build from `main`.
+## Before you begin
 
-        ```bash
-        brew tap tracer-cloud/tap
-        brew install tracer-cloud/tap/opensre
-        ```
+Make sure you have:
 
-        ```bash
-        curl -fsSL https://install.opensre.com | bash
-        ```
+- A terminal open in a code project
+- A Git repository (recommended for the full workflow demonstration)
 
-        <Frame>
-          ![Installing OpenSRE with the one-line curl installer](/images/quickstart-install.gif)
-        </Frame>
-      </Tab>
-      <Tab title="Linux" id="install-opensre-linux">
-        Choose one install method. The one-line installer tracks the latest stable build from `main`.
+## Step 1: Install and start opensre
 
-        Prebuilt Linux binaries require **glibc 2.35+** (Ubuntu 22.04+ or a comparable distribution) and do not run on Alpine Linux. On an older or musl-based system, [install from source](/environments/linux-local#binary-compatibility) instead.
+```bash
+curl -fsSL https://install.opensre.com | bash
+```
 
-        ```bash
-        curl -fsSL https://install.opensre.com | bash
-        ```
+Then start OpenSRE:
 
-        ```bash
-        brew tap tracer-cloud/tap
-        brew install tracer-cloud/tap/opensre
-        ```
+```bash
+opensre
+```
 
-        <Frame>
-          ![Installing OpenSRE with the one-line curl installer](/images/quickstart-install.gif)
-        </Frame>
-      </Tab>
-      <Tab title="Windows" id="install-opensre-windows">
-        ```powershell
-        irm https://install.opensre.com | iex
-        ```
+![OpenSRE CLI welcome screen with the sign-in prompt](/images/opensre-welcome.png)
 
-        <Frame>
-          ![Installing OpenSRE on Windows with the PowerShell installer](/images/quickstart-install-windows.gif)
-        </Frame>
-      </Tab>
-    </Tabs>
+Use a macOS or Linux terminal. On Windows, use [WSL](/environments/windows-local).
 
-    Before installing, check the [supported platforms and architectures](https://github.com/Tracer-Cloud/opensre/blob/main/SETUP.md#supported-platforms-and-architectures) table for release availability and CI coverage, including the Windows arm64 limitation.
+Prebuilt Linux binaries require **glibc 2.35+** (Ubuntu 22.04+ or comparable). See [platform requirements](/environments/linux-local#binary-compatibility) before installing on another distribution.
 
-  </Step>
+## Step 2: Sign in
 
-  <Step title="Get started">
-    Run `opensre` to create or sign in to your OpenSRE account and start chatting. From a source checkout, prefix commands in this and the next step with `uv run` (for example, `uv run opensre`). To update a source checkout, use `git pull --ff-only` followed by `uv sync --frozen --extra dev` instead of `opensre update`.
+Choose **Sign in or create account** in the welcome screen.
 
-    ```bash
-    opensre
-    ```
+The browser opens the OpenSRE sign-up page, where you can use email or another enabled provider. A successful login activates the OpenSRE-hosted model. OpenSRE then validates the new session and opens the interactive shell. Add integrations later with `opensre integrations setup <service>` when you want OpenSRE to query a specific tool.
 
-    The browser opens the OpenSRE sign-up page, where you can use email or another enabled provider. A successful login activates the OpenSRE-hosted model. OpenSRE then validates the new session and opens the interactive shell. Add integrations later with `opensre integrations setup <service>` when you want OpenSRE to query a specific tool.
+## Step 3: Ask your first question
 
-    <Tabs>
-      <Tab title="macOS">
-        <Frame>
-          ![Signing in to an OpenSRE account from setup](/images/quickstart-onboard.gif)
-        </Frame>
-      </Tab>
-      <Tab title="Linux">
-        <Frame>
-          ![Signing in to an OpenSRE account from setup](/images/quickstart-onboard.gif)
-        </Frame>
-      </Tab>
-      <Tab title="Windows">
-        <Frame>
-          ![Onboarding OpenSRE on Windows with the setup wizard](/images/quickstart-onboard-windows.gif)
-        </Frame>
-      </Tab>
-    </Tabs>
+Choose either path — both use the same local `opensre` binary:
 
-  </Step>
+**Interactive prompt shell** — start OpenSRE with no arguments (TTY). The shell opens only after the webapp validates your account; choosing **Exit and stay signed out** leaves account-independent CLI commands available:
 
-  <Step title="Ask your first question">
-    Choose either path — both use the same local `opensre` binary:
+```bash
+opensre
+```
 
-    **Interactive prompt shell** — start OpenSRE with no arguments (TTY). The shell opens only after the webapp validates your account; choosing **Exit and stay signed out** leaves account-independent CLI commands available:
+**One-shot headless run** — a single agent turn from your shell or a CI job:
 
-    ```bash
-    opensre
-    ```
+```bash
+opensre ask "why did checkout latency increase today?"
+```
 
-    **One-shot headless run** — a single agent turn from your shell or a CI job:
+OpenSRE reasons across your connected systems, calling the tools it needs, and prints the answer. See [Headless CLI](/headless-cli) for tool approvals, `--json` output, and exit codes.
 
-    ```bash
-    opensre ask "why did checkout latency increase today?"
-    ```
+Inside the interactive shell, `/help` lists commands, `/status` shows the current setup, `/effort` changes reasoning effort, and `/exit` closes the shell.
 
-    OpenSRE reasons across your connected systems, calling the tools it needs, and prints the answer. See [Headless CLI](/headless-cli) for tool approvals, `--json` output, and exit codes.
+<Frame>
+  ![Running an OpenSRE turn on a sample incident](/images/quickstart-investigate.gif)
+</Frame>
 
-    Inside the interactive shell, `/help` lists commands, `/status` shows the current setup, `/effort` changes reasoning effort, and `/exit` closes the shell.
+## Step 4: Keep up to date
 
-    <Tabs>
-      <Tab title="macOS">
-        <Frame>
-          ![Running an OpenSRE turn on a sample incident](/images/quickstart-investigate.gif)
-        </Frame>
-      </Tab>
-      <Tab title="Linux">
-        <Frame>
-          ![Running an OpenSRE turn on a sample incident](/images/quickstart-investigate.gif)
-        </Frame>
-      </Tab>
-      <Tab title="Windows">
-        <Frame>
-          ![Running an OpenSRE turn on Windows](/images/quickstart-investigate-windows.gif)
-        </Frame>
-      </Tab>
-    </Tabs>
-
-  </Step>
-
-  <Step title="Keep up to date">
-    ```bash
-    opensre update
-    ```
-  </Step>
-</Steps>
+```bash
+opensre update
+```
 
 ## Uninstall
 
@@ -147,6 +81,6 @@ opensre uninstall --yes
 ## Troubleshooting
 
 - **Docker is not running**: Start Docker Desktop, OrbStack, or Colima before running `opensre`.
-- **`make` is missing**: Install it via your package manager (`brew install make` on macOS, `choco install make` on Windows).
+- **`make` is missing**: See the [development setup guide](https://github.com/Tracer-Cloud/opensre/blob/main/SETUP.md) if you are working from source.
 - **The shell does not open after login**: Run `opensre account status`. The webapp must be reachable and the stored account token and metadata must both be valid.
 - **You want to stay signed out**: Choose **Exit and stay signed out** at startup. Commands such as `opensre account`, `opensre doctor`, and `opensre integrations` remain available, but the interactive shell stays closed.

@@ -44,10 +44,40 @@
 
 ---
 
+## Before you begin
+
+Make sure you have:
+
+- A terminal open in a code project
+- A Git repository (recommended for the full workflow demonstration)
+
+## Step 1: Install and start opensre
+
+```bash
+curl -fsSL https://install.opensre.com | bash
+```
+
+Then start OpenSRE:
+
+```bash
+opensre
+```
+
+![OpenSRE CLI welcome screen with the sign-in prompt](docs/images/opensre-welcome.png)
+
+Use a macOS or Linux terminal. On Windows, use [WSL](docs/environments/windows-local.mdx).
+
+The installer fetches the latest build from `main` without requiring sudo. If `opensre` is not found, follow the PATH instructions printed by the installer or open a new terminal.
+
+For supported platforms and troubleshooting, see [Install locally](https://www.opensre.com/docs/install-local).
+
+---
+
 ## Table of Contents
 
+- [Before you begin](#before-you-begin)
+- [Install and start opensre](#step-1-install-and-start-opensre)
 - [Why OpenSRE?](#why-opensre)
-- [Install](#install)
 - [Quick Start](#quick-start)
 - [Deployment](#deployment)
 - [How OpenSRE Works](#how-opensre-works)
@@ -81,36 +111,6 @@ We do that by:
 Our mission is to build AI SRE agents on top of this, scale it to thousands of realistic infrastructure failure scenarios, and establish OpenSRE as the benchmark and training ground for AI SRE.
 
 <sup>1</sup> https://arxiv.org/abs/2310.06770
-
----
-
-## Install
-
-The root installer URL auto-detects Unix shell vs PowerShell and installs the latest build from `main`. OpenSRE moves quickly, so `main` is the latest stable version for normal installs.
-
-Before installing, check the [supported platforms and architectures](SETUP.md#supported-platforms-and-architectures) table for release availability and CI coverage.
-
-macOS / Linux:
-
-```bash
-curl -fsSL https://install.opensre.com | bash
-```
-
-The macOS/Linux installer does not require sudo. If no writable bin directory is already on `PATH`, it installs to `~/.local/bin` and prints the shell command to apply the PATH update.
-
-Prebuilt Linux binaries require **glibc 2.35+** (Ubuntu 22.04+ or a comparable distribution) and do not run on Alpine Linux. On an older or musl-based Linux system, [install from source](docs/environments/linux-local.mdx#binary-compatibility) instead.
-
-Equivalent explicit main-channel form:
-
-```bash
-curl -fsSL https://install.opensre.com | bash -s -- --main
-```
-
-Windows (PowerShell):
-
-```powershell
-irm https://install.opensre.com | iex
-```
 
 ---
 

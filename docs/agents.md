@@ -2,7 +2,7 @@
 name: opensre-cli-setup
 description: Set up and maintain the OpenSRE CLI (install, setup, verify, first run)
 user-invocable: true
-allowed-tools: Bash(command:*), Bash(brew:*), Bash(curl:*), Bash(opensre:*)
+allowed-tools: Bash(command:*), Bash(curl:*), Bash(opensre:*)
 metadata:
   author: opensre
 ---
@@ -22,34 +22,10 @@ command -v opensre
 opensre --version
 ```
 
-On Windows PowerShell:
-
-```powershell
-Get-Command opensre
-opensre --version
-```
-
-If `opensre` is missing, install with one of these methods. Prefer the one-line installer unless the user already uses Homebrew.
-
-1. macOS / Linux (one-line installer):
+If `opensre` is missing, install it with curl in a macOS or Linux terminal. On Windows, use [WSL](https://www.opensre.com/docs/environments/windows-local).
 
 ```bash
-curl -fsSL https://install.opensre.com | OPENSRE_AUTO_LAUNCH=0 bash
-```
-
-`OPENSRE_AUTO_LAUNCH=0` skips auto-starting OpenSRE so you can run the remaining steps yourself.
-
-2. macOS (Homebrew):
-
-```bash
-brew tap tracer-cloud/tap
-brew install tracer-cloud/tap/opensre
-```
-
-3. Windows (PowerShell):
-
-```powershell
-irm https://install.opensre.com | iex
+curl -fsSL https://install.opensre.com | bash
 ```
 
 No sudo on macOS/Linux in the usual case. If the installer cannot use a writable directory already on `PATH`, it puts the binary in `~/.local/bin` and prints the command to add that directory. Apply that PATH update (or open a new terminal), then re-check `command -v opensre`.
@@ -58,12 +34,6 @@ When `opensre` is already present, upgrade it:
 
 ```bash
 opensre update
-```
-
-Homebrew installs can also use:
-
-```bash
-brew update && brew upgrade tracer-cloud/tap/opensre
 ```
 
 Confirm it runs:
@@ -120,7 +90,6 @@ opensre
 
 - **`opensre: command not found`** — new terminal, or add the bin directory the installer printed (often `~/.local/bin` on macOS/Linux).
 - **Sign-in blocks or looks hung** — it is waiting for webapp browser authentication. Show the user the URL and prompt; do not kill it.
-- **Installer started OpenSRE on its own** — that is expected without `OPENSRE_AUTO_LAUNCH=0`. Let the user finish sign-in, then continue from Step 3.
 - **The shell keeps returning to sign-in** — run `opensre account status`; the account must be active before the shell or hosted model starts.
 - **Only connected tools are queried** — the agent cannot pull Datadog data if Datadog was never set up. Run `opensre integrations verify` before a production run.
 
