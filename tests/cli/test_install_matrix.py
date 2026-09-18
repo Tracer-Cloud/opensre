@@ -293,6 +293,17 @@ def test_install_docs_list_every_process(path: Path, needles: tuple[str, ...]) -
     text = path.read_text(encoding="utf-8")
     for needle in needles:
         assert needle in text, f"{path.name} missing install step {needle!r}"
+    for retired_instruction in (
+        "brew ",
+        "homebrew",
+        "irm https://install.opensre.com",
+        "pipx install opensre",
+        "opensre_auto_launch",
+        "opensre_skip_gh_install",
+    ):
+        assert retired_instruction not in text.lower(), (
+            f"{path.name} advertises retired install guidance {retired_instruction!r}"
+        )
 
 
 def test_install_sh_help_lists_all_channels() -> None:
