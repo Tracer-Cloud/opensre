@@ -336,6 +336,13 @@ def _run_agent_turn(
             prior_choice_state = (
                 pending_user_choice_state_snapshot(session) if is_resumed_session else None
             )
+            if context_files and getattr(session, "pending_user_choice", None) is not None:
+                raise OpenSREError(
+                    "Context files cannot be attached while answering a pending choice.",
+                    suggestion=(
+                        "Resume with the answer first, then attach context files in a follow-up."
+                    ),
+                )
             turn_prompt = _resume_prompt(session, prompt) if is_resumed_session else prompt
             turn_prompt = render_prompt_with_context(turn_prompt, context_files)
             restored_prior_choice = False

@@ -860,14 +860,14 @@ def test_agent_turn_binds_hooks_and_restricts_capabilities_via_start(monkeypatch
     assert manager.closed == [(session, False)]
 
 
-def test_resumed_agent_turn_parses_choice_before_appending_context(monkeypatch) -> None:
+def test_resumed_agent_turn_rejects_context_while_answering_choice(monkeypatch) -> None:
     manager = _FakeSessionManager()
     session = _FakeSession()
-    session.pending_user_choice = PendingUserChoice(
+    pending = PendingUserChoice(
         title="Which environment?",
         options=("Production", "Staging"),
     )
-    recorded: dict[str, str] = {}
+    session.pending_user_choice = pending
 
     class _RecordingAgentSession:
         @classmethod
@@ -878,23 +878,22 @@ def test_resumed_agent_turn_parses_choice_before_appending_context(monkeypatch) 
         def bound_session(self) -> _FakeSession:
             return session
 
-        def chat(self, prompt: str, **_kwargs: object) -> TurnResult:
-            recorded["prompt"] = prompt
-            return _turn()
+        def chat(self, _prompt: str, **_kwargs: object) -> TurnResult:
+            pytest.fail("agent turn should not start")
 
     monkeypatch.setattr(service, "SessionManager", lambda: manager)
     monkeypatch.setattr(service, "AgentSession", _RecordingAgentSession)
 
-    service._run_agent_turn(
-        "2",
-        ToolExecutionHooks(),
-        session_id=session.session_id,
-        ephemeral=False,
-        context_files=(AskFileInput(path="alert.txt", content="latency spike"),),
-    )
+    with pytest.raises(service.OpenSREError, match="answering a pending choice"):
+        service._run_agent_turn(
+            "2",
+            ToolExecutionHooks(),
+            session_id=session.session_id,
+            ephemeral=False,
+            context_files=(AskFileInput(path="alert.txt", content="latency spike"),),
+        )
 
-    assert recorded["prompt"].startswith('1. Which environment?\n@json:"Staging"\n\n')
-    assert "BEGIN UNTRUSTED CONTEXT FILE 1" in recorded["prompt"]
+    assert session.pending_user_choice == pending
     assert manager.closed == [(session, False)]
 
 
