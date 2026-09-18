@@ -148,7 +148,7 @@ def test_fetch_failures_are_not_a_zero_balance(
 
 @pytest.mark.parametrize(
     "balance_status",
-    [HTTPStatus.NOT_FOUND, HTTPStatus.FORBIDDEN, HTTPStatus.FOUND],
+    [HTTPStatus.NOT_FOUND, HTTPStatus.FORBIDDEN, HTTPStatus.FOUND, HTTPStatus.UNAUTHORIZED],
 )
 def test_fetch_falls_back_to_cli_session_credits_when_balance_route_rejects_the_pat(
     monkeypatch: pytest.MonkeyPatch,
@@ -183,6 +183,28 @@ def test_fetch_falls_back_to_cli_session_credits_when_balance_route_rejects_the_
         "https://app.opensre.com/api/credits/balance",
         "https://app.opensre.com/api/auth/cli/session",
     ]
+
+
+def test_fetch_falls_back_to_cli_session_when_balance_returns_sign_in_html(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fake_get(url: str, **_kwargs: object) -> httpx.Response:
+        if url.endswith("/api/credits/balance"):
+            return httpx.Response(HTTPStatus.OK, text="<html>Sign in</html>")
+        return httpx.Response(
+            HTTPStatus.OK,
+            json={"credits": _balance_payload(), "user": {"id": "user_123"}},
+        )
+
+    monkeypatch.setattr(ledger, "load_account_record", _record)
+    monkeypatch.setattr(ledger, "resolve_account_token", lambda: "osre_pat_secret")
+    monkeypatch.setattr(ledger.httpx, "get", fake_get)
+
+    status = account_credits.fetch_account_credits()
+
+    assert status.state is AccountSessionState.ACTIVE
+    assert status.credits is not None
+    assert status.credits.total == 100_000
 
 
 def test_verified_zero_balance_is_not_treated_as_unread(

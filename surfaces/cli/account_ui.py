@@ -129,7 +129,7 @@ class AccountLoginPresenter:
         who = _account_identity(status.record) if status.record else "this account"
         _print_warning_banner(self._console, "A session is already active")
         if status.record is not None:
-            _print_account_fields(self._console, status.record)
+            _print_account_fields(self._console, status.record, credits=status.credits)
         self._console.print()
         note = Text()
         note.append("  Signed in as ", style=SECONDARY)
@@ -175,10 +175,11 @@ class AccountLoginPresenter:
     def success(
         self,
         result: AccountLoginResult,
+        credits: AccountCredits | None = None,
     ) -> None:
         record = result.record
         _print_success_banner(self._console, f"Signed in as {_account_identity(record)}")
-        _print_account_fields(self._console, record)
+        _print_account_fields(self._console, record, credits=credits)
         if result.warning:
             self._console.print()
             warn = Text()
@@ -192,7 +193,11 @@ def _account_identity(record: AccountRecord) -> str:
     return record.email or record.user_id
 
 
-def _print_account_fields(console: Console, record: AccountRecord) -> None:
+def _print_account_fields(
+    console: Console,
+    record: AccountRecord,
+    credits: AccountCredits | None = None,
+) -> None:
     if record.email:
         _print_kv(console, "email", record.email)
     else:
@@ -203,6 +208,8 @@ def _print_account_fields(console: Console, record: AccountRecord) -> None:
         "llm",
         f"{record.llm_provider} · {record.llm_model}  (hosted by OpenSRE)",
     )
+    if credits is not None:
+        _print_kv(console, "credits", f"{credits.total:,}")
     _print_kv(console, "expires", record.token_expires_at, DIM)
     _print_kv(console, "store", _display_home(), BRAND)
 
@@ -212,7 +219,7 @@ def render_account_status(status: AccountStatus) -> None:
     console = _console
     if status.authenticated and status.record is not None:
         _print_success_banner(console, f"Signed in as {_account_identity(status.record)}")
-        _print_account_fields(console, status.record)
+        _print_account_fields(console, status.record, credits=status.credits)
         _print_kv(console, "detail", status.detail, SECONDARY)
         console.print()
         return

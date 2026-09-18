@@ -86,6 +86,18 @@ def _render_status(status: AccountStatus, *, json_output: bool) -> None:
                     "authenticated": status.authenticated,
                     "detail": status.detail,
                     "account": asdict(status.record) if status.record else None,
+                    "credits": (
+                        {
+                            "total": status.credits.total,
+                            "monthly": status.credits.monthly,
+                            "monthly_limit": status.credits.monthly_limit,
+                            "top_up": status.credits.top_up,
+                            "resets_at": status.credits.resets_at,
+                            "plan_id": status.credits.plan_id,
+                        }
+                        if status.credits is not None
+                        else None
+                    ),
                 },
                 indent=2,
             )
@@ -196,21 +208,27 @@ def account_login(
     record = result.record
     if result.effective_token_matches_login:
         capture_account_authenticated()
+    credits = fetch_account_credits(app_url=resolved_app_url).credits
     if json_output:
-        click.echo(
-            json.dumps(
-                {
-                    "state": AccountSessionState.ACTIVE.value,
-                    "authenticated": True,
-                    "account": asdict(record),
-                    "warning": result.warning or None,
-                },
-                indent=2,
-            )
-        )
+        payload = {
+            "state": AccountSessionState.ACTIVE.value,
+            "authenticated": True,
+            "account": asdict(record),
+            "warning": result.warning or None,
+        }
+        if credits is not None:
+            payload["credits"] = {
+                "total": credits.total,
+                "monthly": credits.monthly,
+                "monthly_limit": credits.monthly_limit,
+                "top_up": credits.top_up,
+                "resets_at": credits.resets_at,
+                "plan_id": credits.plan_id,
+            }
+        click.echo(json.dumps(payload, indent=2))
         return
 
-    presenter.success(result)
+    presenter.success(result, credits=credits)
 
 
 @account_command.command(name="usage")

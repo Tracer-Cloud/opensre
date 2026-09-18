@@ -189,20 +189,12 @@ def _read(*, app_url: str | None) -> HostedCreditsRead:
                 "OpenSRE hosted credits.",
                 usage_url,
             )
-        return HostedCreditsRead(
-            HostedCreditsKindValue.UNAVAILABLE,
-            None,
-            "The OpenSRE app returned a credit balance that could not be verified.",
-            usage_url,
-        )
-    if balance.status_code == HTTPStatus.UNAUTHORIZED:
-        return HostedCreditsRead(
-            HostedCreditsKindValue.INVALID,
-            None,
-            "The stored OpenSRE login has expired or was revoked.",
-            usage_url,
-        )
-    if balance.status_code not in _FALLBACK_TO_SESSION_STATUSES:
+        # Clerk sign-in HTML and other non-ledger 200s still fall through to
+        # the CLI session, which is the PAT-authenticated channel.
+    elif (
+        balance.status_code != HTTPStatus.UNAUTHORIZED
+        and balance.status_code not in _FALLBACK_TO_SESSION_STATUSES
+    ):
         return HostedCreditsRead(
             HostedCreditsKindValue.UNAVAILABLE,
             None,

@@ -301,6 +301,28 @@ def test_login_presenter_success_shows_hosted_model_and_store() -> None:
     assert "openai · gpt-5.4-mini" in output
     assert "hosted by OpenSRE" in output
     assert "store" in output
+    assert "credits" not in output.lower()
+
+
+def test_login_presenter_success_shows_hosted_credits() -> None:
+    console, buf = _capture_console()
+    presenter = AccountLoginPresenter(console)
+
+    presenter.success(
+        AccountLoginResult(record=_record(), warning=""),
+        credits=AccountCredits(
+            total=100_000,
+            monthly=80_000,
+            monthly_limit=100_000,
+            top_up=20_000,
+            resets_at=None,
+            plan_id="team",
+        ),
+    )
+
+    output = buf.getvalue()
+    assert "credits" in output.lower()
+    assert "100,000" in output
 
 
 def test_login_presenter_warns_when_a_session_is_already_active() -> None:
@@ -385,6 +407,10 @@ def test_login_force_replaces_valid_session(monkeypatch: pytest.MonkeyPatch) -> 
         "surfaces.cli.commands.account.capture_account_authenticated",
         lambda: analytics_links.append(True),
     )
+    monkeypatch.setattr(
+        "surfaces.cli.commands.account.fetch_account_credits",
+        lambda **_: AccountCreditsStatus(AccountSessionState.UNAVAILABLE, None, "unread"),
+    )
 
     result = _invoke_account_login("--no-browser", "--force")
 
@@ -414,6 +440,10 @@ def test_login_does_not_link_analytics_when_environment_token_overrides(
     monkeypatch.setattr(
         "surfaces.cli.commands.account.capture_account_authenticated",
         lambda: analytics_links.append(True),
+    )
+    monkeypatch.setattr(
+        "surfaces.cli.commands.account.fetch_account_credits",
+        lambda **_: AccountCreditsStatus(AccountSessionState.UNAVAILABLE, None, "unread"),
     )
 
     result = _invoke_account_login("--no-browser")

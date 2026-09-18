@@ -599,6 +599,13 @@ RULES: tuple[PathRule, ...] = (
         "surfaces/shared/account_credits.py",
         ("tests/shared/test_account_credits.py",),
     ),
+    PathRule(
+        "surfaces/shared/account_session.py",
+        (
+            "tests/shared/test_account_session.py",
+            "tests/cli/test_account_command.py",
+        ),
+    ),
     PathRule("surfaces/", ("tests/surfaces/",)),
     # Repository tooling and broad configuration changes still run focused contracts.
     PathRule("pyproject.toml", ("tests/packaging/", "tests/config/")),
