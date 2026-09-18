@@ -8,6 +8,12 @@ from pathlib import Path
 from typing import Any
 
 from config.constants.paths import session_home
+from config.constants.prompt_log import (
+    PROMPT_LOG_DISABLED_ENV,
+    PROMPT_LOG_LOCAL_DISABLED_ENV,
+    PROMPT_LOG_PATH_ENV,
+    PROMPT_LOG_REDACT_ENV,
+)
 from config.repl_config import read_prompt_log_settings
 
 _FALSE_VALUES = {"", "0", "false", "off", "no"}
@@ -46,10 +52,10 @@ class PromptLogConfig:
     @classmethod
     def load(cls) -> PromptLogConfig:
         file_conf = read_prompt_log_settings()
-        disabled = os.getenv("OPENSRE_PROMPT_LOG_DISABLED")
-        local_disabled = os.getenv("OPENSRE_PROMPT_LOG_LOCAL_DISABLED")
-        redact_env = os.getenv("OPENSRE_PROMPT_LOG_REDACT")
-        path_env = os.getenv("OPENSRE_PROMPT_LOG_PATH")
+        disabled = os.getenv(PROMPT_LOG_DISABLED_ENV)
+        local_disabled = os.getenv(PROMPT_LOG_LOCAL_DISABLED_ENV)
+        redact_env = os.getenv(PROMPT_LOG_REDACT_ENV)
+        path_env = os.getenv(PROMPT_LOG_PATH_ENV)
 
         enabled = not _coerce_bool(disabled, default=False)
         local_enabled = not _coerce_bool(local_disabled, default=False)

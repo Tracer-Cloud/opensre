@@ -343,6 +343,11 @@ EXPORTS: dict[str, str] = {
     "UV_RUN_RECURSION_DEPTH_ENV": "product",
     "WELCOME_DESCRIPTION": "product",
     "WELCOME_TITLE": "product",
+    # prompt_log
+    "PROMPT_LOG_DISABLED_ENV": "prompt_log",
+    "PROMPT_LOG_LOCAL_DISABLED_ENV": "prompt_log",
+    "PROMPT_LOG_PATH_ENV": "prompt_log",
+    "PROMPT_LOG_REDACT_ENV": "prompt_log",
     # rabbitmq
     "RABBITMQ_HOST_ENV": "rabbitmq",
     "RABBITMQ_MANAGEMENT_PORT_ENV": "rabbitmq",

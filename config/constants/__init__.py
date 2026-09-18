@@ -835,6 +835,18 @@ if TYPE_CHECKING:
     from config.constants.product import (
         WELCOME_TITLE as WELCOME_TITLE,
     )
+    from config.constants.prompt_log import (
+        PROMPT_LOG_DISABLED_ENV as PROMPT_LOG_DISABLED_ENV,
+    )
+    from config.constants.prompt_log import (
+        PROMPT_LOG_LOCAL_DISABLED_ENV as PROMPT_LOG_LOCAL_DISABLED_ENV,
+    )
+    from config.constants.prompt_log import (
+        PROMPT_LOG_PATH_ENV as PROMPT_LOG_PATH_ENV,
+    )
+    from config.constants.prompt_log import (
+        PROMPT_LOG_REDACT_ENV as PROMPT_LOG_REDACT_ENV,
+    )
     from config.constants.rabbitmq import (
         RABBITMQ_HOST_ENV as RABBITMQ_HOST_ENV,
     )
