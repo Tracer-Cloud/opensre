@@ -51,7 +51,9 @@ def main() -> None:
     with patch("httpx.Client", client):
         capture_first_run_if_needed()
         capture_cli_invoked({"command_family": "help"})
-        if scenario == "login":
+        if scenario == "saved_credentials":
+            # Persist credentials the way the login flow does after its token
+            # exchange; the interactive exchange itself is out of scope here.
             save_account_record(
                 AccountRecord(
                     user_id="user_integrity_fixture",

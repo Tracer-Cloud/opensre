@@ -8,8 +8,22 @@ on:
       - .github/workflows/telemetry-integrity.yml
       - tests/analytics/**
       - infrastructure/analytics/**
+      - infrastructure/observability/**
+      - infrastructure/safety/secret_redaction.py
+      - surfaces/cli/telemetry.py
+      # Identity storage, signing, destination resolution and account state.
       - config/account.py
       - config/secrets/**
+      - config/version.py
+      - config/constants/account.py
+      - config/constants/analytics.py
+      - config/constants/billing.py
+      - config/constants/environment.py
+      - config/constants/organization.py
+      - config/constants/paths.py
+      - config/constants/runtime_metadata.py
+      - pyproject.toml
+      - uv.lock
 
 permissions:
   contents: read
@@ -36,17 +50,17 @@ jobs:
     env:
       INTEGRITY_EXPECT_CONTAINER: "0"
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           enable-cache: true
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.12"
       - run: uv sync --frozen --extra dev
       - name: Exercise fresh processes, storage, auth transition, and delivery retry
         run: uv run python -m pytest tests/analytics/test_integrity_environments.py --junitxml=integrity-evidence/results.xml
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: telemetry-integrity-${{ matrix.os }}
@@ -60,14 +74,14 @@ jobs:
     env:
       INTEGRITY_EXPECT_CONTAINER: "1"
     steps:
-      - uses: actions/checkout@v5
-      - uses: astral-sh/setup-uv@v10.0.1
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           enable-cache: true
       - run: uv sync --frozen --extra dev
       - name: Exercise real Docker detection and persistent versus replaced storage
         run: uv run python -m pytest tests/analytics/test_integrity_environments.py --junitxml=integrity-evidence/results.xml
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         if: always()
         with:
           name: telemetry-integrity-container

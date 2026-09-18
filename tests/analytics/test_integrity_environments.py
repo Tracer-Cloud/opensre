@@ -122,10 +122,10 @@ def test_failed_delivery_retries_the_same_install_event_id(tmp_path: Path) -> No
     record_evidence("delivery-retry", [rejected, accepted, restarted])
 
 
-def test_login_and_subsequent_process_preserve_anonymous_link_and_personal_signature(
+def test_saved_personal_credentials_link_anonymous_id_and_sign_subsequent_processes(
     tmp_path: Path,
 ) -> None:
-    login = run_process(tmp_path, "login")
+    login = run_process(tmp_path, "saved_credentials")
     restarted = run_process(tmp_path)
     requests = login["requests"]
     assert requests[0]["payload"]["event"] == "install_detected"
