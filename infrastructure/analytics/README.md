@@ -84,6 +84,7 @@ Every product event includes:
 | `is_ci`, `is_container`, `container_runtime` | Filters for human vs automated usage. |
 | `composite_fingerprint` | One-way local fingerprint used only when no account identity exists. |
 | `identity_persistence` | Whether the anonymous ID was persisted to disk. |
+| `install_marker_state_before_install` | `present`, `absent`, or `unknown` at the start of the most recent recorded installer run. |
 | `surface` | `cli`, `slack`, `telegram`, `discord`, or `buzz`, when known. |
 | `session_id` | OpenSRE session correlation ID, when known. |
 | `organization_id` | Server-resolved for personal requests; a bearer-authenticated runtime assertion for silos; untrusted on anonymous requests. |
@@ -92,6 +93,21 @@ Every product event includes:
 `$groups`, `$process_person_profile`, `$lib`, and `distinct_id` are retained for
 downstream PostHog compatibility. The first-party account user ID belongs in a
 server-owned column resolved from the bearer token.
+
+The shell and PowerShell installers, and `make install`, snapshot `installed`
+before installation work begins, respecting `OPENSRE_HOME`. After a successful
+install, the record-only path saves that snapshot in `install_marker_state`
+beside the marker. Subsequent product events carry it, including when an
+existing marker suppresses `install_detected`; reinstalling does not manufacture
+another first-install event or a CLI usage event.
+
+`present` is evidence of prior installation state. `absent` means only that no
+marker was found: deleting local state can produce the same result as a new
+installation. `unknown` means the check could not establish presence or absence.
+When no installer snapshot has been recorded, the property is omitted. The
+value describes the most recent recorded installer run, not
+necessarily the first installation or the current invocation. Do not map
+`absent` to “first-ever install.”
 
 ## Event inventory
 

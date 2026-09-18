@@ -66,9 +66,17 @@ def _write_fake_opensre(binary: Path, *, version_line: str) -> None:
         textwrap.dedent(
             f"""\
             #!/usr/bin/env bash
+            state_dir="${{OPENSRE_HOME:-$HOME/.opensre}}"
             if [ "${{1:-}}" = "--version" ]; then
+              case "${{OPENSRE_TEST_MARKER_MUTATION:-}}" in
+                create) mkdir -p "$state_dir"; touch "$state_dir/installed" ;;
+                remove) rm -f "$state_dir/installed" ;;
+              esac
               printf '%s\\n' {json.dumps(version_line)}
               exit 0
+            fi
+            if [ "${{1:-}}" = "--record-install" ] && [ -n "${{OPENSRE_TEST_MARKER_LOG:-}}" ]; then
+              printf '%s\\n' "${{OPENSRE_INSTALL_MARKER_STATE:-unset}}" > "$OPENSRE_TEST_MARKER_LOG"
             fi
             printf 'opensre-stub\\n'
             exit 0
@@ -163,7 +171,7 @@ def _run_install_sh(
 ) -> subprocess.CompletedProcess[str]:
     plat, arch = _host_platform_arch()
     home = tmp_path / "home"
-    home.mkdir()
+    home.mkdir(exist_ok=True)
     install_dir = tmp_path / "opt" / "bin"
     install_dir.mkdir(parents=True)
     assets = tmp_path / "assets"
@@ -211,6 +219,8 @@ def _run_install_sh(
     _write_curl_shim(shim_bin, assets, url_map)
 
     env = os.environ.copy()
+    env.pop("OPENSRE_HOME", None)
+    env.pop("OPENSRE_INSTALL_MARKER_STATE", None)
     env["HOME"] = str(home)
     env["PATH"] = f"{shim_bin}{os.pathsep}{env.get('PATH', '')}"
     env["OPENSRE_AUTO_LAUNCH"] = "0"
@@ -391,6 +401,68 @@ def test_makefile_install_uses_uv_sync() -> None:
 
 
 # ── Sandboxed install.sh end-to-end (all channels) ───────────────────────────
+
+
+@pytest.mark.parametrize("prior_marker", [False, True])
+@pytest.mark.parametrize("custom_home", [False, True])
+def test_install_sh_records_marker_before_binary_runs(
+    tmp_path: Path, prior_marker: bool, custom_home: bool
+) -> None:
+    state_dir = tmp_path / "custom state" if custom_home else tmp_path / "home" / ".opensre"
+    state_dir.mkdir(parents=True)
+    marker = state_dir / "installed"
+    if prior_marker:
+        marker.touch()
+    recorded = tmp_path / "marker-observation"
+    environment = {
+        "OPENSRE_TEST_MARKER_MUTATION": "remove" if prior_marker else "create",
+        "OPENSRE_TEST_MARKER_LOG": str(recorded),
+    }
+    if custom_home:
+        environment["OPENSRE_HOME"] = str(state_dir)
+
+    result = _run_install_sh(tmp_path, "--main", env_extra=environment)
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert marker.exists() is not prior_marker
+    assert recorded.read_text().strip() == ("present" if prior_marker else "absent")
+
+
+def test_make_install_snapshots_before_dependency_install(tmp_path: Path) -> None:
+    state_dir = tmp_path / "state"
+    shim_bin = tmp_path / "bin"
+    shim_bin.mkdir()
+    recorded = tmp_path / "marker-observation"
+    uv = shim_bin / "uv"
+    uv.write_text(
+        "#!/bin/sh\n"
+        'if [ "$1" = sync ]; then\n'
+        '  mkdir -p "$OPENSRE_HOME"\n'
+        '  touch "$OPENSRE_HOME/installed"\n'
+        "else\n"
+        '  printf "%s" "$OPENSRE_INSTALL_MARKER_STATE" > "$OPENSRE_TEST_MARKER_LOG"\n'
+        "fi\n"
+    )
+    uv.chmod(0o755)
+    environment = os.environ | {
+        "PATH": f"{shim_bin}{os.pathsep}{os.environ['PATH']}",
+        "OPENSRE_HOME": str(state_dir),
+        "OPENSRE_TEST_MARKER_LOG": str(recorded),
+    }
+
+    result = subprocess.run(
+        ["make", "install", f"PYTHON={sys.executable}", "MAKE=true", f"PATH={environment['PATH']}"],
+        cwd=REPO_ROOT,
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert (state_dir / "installed").exists()
+    assert recorded.read_text() == "absent"
 
 
 def test_install_sh_main_channel_end_to_end(tmp_path: Path) -> None:

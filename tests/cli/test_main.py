@@ -245,6 +245,9 @@ def test_internal_install_record_captures_install_without_cli_invocation(
 ) -> None:
     captured: list[str] = []
     monkeypatch.setattr(
+        "surfaces.cli.app.record_install_marker_state", lambda: captured.append("marker")
+    )
+    monkeypatch.setattr(
         "surfaces.cli.app.capture_first_run_if_needed", lambda: captured.append("install")
     )
     monkeypatch.setattr(
@@ -255,7 +258,7 @@ def test_internal_install_record_captures_install_without_cli_invocation(
     exit_code = main(["--record-install"])
 
     assert exit_code == 0
-    assert captured == ["install"]
+    assert captured == ["marker", "install"]
 
 
 def test_main_fast_version_command_skips_first_run_setup(monkeypatch, capsys) -> None:

@@ -26,6 +26,13 @@ def capture_first_run_if_needed() -> None:
     _capture(build_install_detected_properties(entrypoint="opensre"))
 
 
+def record_install_marker_state() -> None:
+    from config.constants.paths import get_store_path
+    from infrastructure.analytics.install_state import record_install_marker_state as _record
+
+    _record(get_store_path().parent)
+
+
 def capture_cli_invoked(properties: Properties | None = None) -> None:
     from infrastructure.analytics.capture import capture_cli_invoked as _capture
 

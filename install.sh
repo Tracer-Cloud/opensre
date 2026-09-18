@@ -1170,9 +1170,28 @@ record_install_analytics() {
   local binary_path="${INSTALL_DIR}/${BIN_NAME}"
 
   OPENSRE_INSTALL_SOURCE="posix_installer" \
+    OPENSRE_INSTALL_MARKER_STATE="$install_marker_state" \
     OPENSRE_INSTALL_CHANNEL="$INSTALL_CHANNEL" \
     OPENSRE_INSTALL_VERSION="$installed_version" \
     "$binary_path" --record-install >/dev/null 2>&1 || true
+}
+
+snapshot_install_marker() {
+  local state_dir="${OPENSRE_HOME:-$HOME/.opensre}"
+  state_dir="${state_dir#"${state_dir%%[![:space:]]*}"}"
+  state_dir="${state_dir%"${state_dir##*[![:space:]]}"}"
+  [ -n "$state_dir" ] || state_dir="$HOME/.opensre"
+  case "$state_dir" in
+    '~') state_dir="$HOME" ;;
+    '~/'*) state_dir="$HOME/${state_dir#\~/}" ;;
+  esac
+  install_marker_state="unknown"
+  if [ -e "$state_dir/installed" ]; then
+    install_marker_state="present"
+  elif { [ -d "$state_dir" ] && [ -x "$state_dir" ]; } || \
+       { [ ! -e "$state_dir" ] && [ -x "$(dirname "$state_dir")" ]; }; then
+    install_marker_state="absent"
+  fi
 }
 
 finish_install() {
@@ -1186,6 +1205,7 @@ finish_install() {
 
 main() {
   parse_args "$@"
+  snapshot_install_marker
   require_prerequisites
   detect_platform
   resolve_install_dir

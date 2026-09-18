@@ -40,9 +40,10 @@ PYTHON_SOURCE_PATHS := bootstrap config core gateway integrations infrastructure
 
 # Create venv and install dependencies (requires https://docs.astral.sh/uv/)
 install:
-	uv sync --frozen --extra dev
-	$(MAKE) install-hooks
-	uv run python -m infrastructure.analytics.install
+	@install_marker_state="$$( $(PYTHON) -m infrastructure.analytics.install_state 2>/dev/null || printf unknown )"; \
+	uv sync --frozen --extra dev && \
+	$(MAKE) install-hooks && \
+	OPENSRE_INSTALL_MARKER_STATE="$$install_marker_state" uv run python -m infrastructure.analytics.install
 
 build:
 	$(PYTHON) -m build

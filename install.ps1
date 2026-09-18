@@ -1056,16 +1056,20 @@ function Send-OpenSreInstallAnalytics {
         [Parameter(Mandatory = $true)]
         [string]$Channel,
         [AllowEmptyString()]
-        [string]$Version
+        [string]$Version,
+        [ValidateSet("present", "absent", "unknown")]
+        [string]$InstallMarkerState = "unknown"
     )
 
     $previousSource = $env:OPENSRE_INSTALL_SOURCE
     $previousChannel = $env:OPENSRE_INSTALL_CHANNEL
     $previousVersion = $env:OPENSRE_INSTALL_VERSION
+    $previousMarkerState = $env:OPENSRE_INSTALL_MARKER_STATE
     try {
         $env:OPENSRE_INSTALL_SOURCE = "powershell_installer"
         $env:OPENSRE_INSTALL_CHANNEL = $Channel
         $env:OPENSRE_INSTALL_VERSION = $Version
+        $env:OPENSRE_INSTALL_MARKER_STATE = $InstallMarkerState
         & $BinaryPath --record-install *> $null
     }
     catch {
@@ -1090,10 +1094,35 @@ function Send-OpenSreInstallAnalytics {
         else {
             $env:OPENSRE_INSTALL_VERSION = $previousVersion
         }
+        if ($null -eq $previousMarkerState) {
+            Remove-Item Env:OPENSRE_INSTALL_MARKER_STATE -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:OPENSRE_INSTALL_MARKER_STATE = $previousMarkerState
+        }
+    }
+}
+
+function Get-OpenSreInstallMarkerState {
+    try {
+        $stateDir = ([string]$env:OPENSRE_HOME).Trim()
+        if (-not $stateDir) { $stateDir = Join-Path $HOME ".opensre" }
+        if ($stateDir -eq "~") { $stateDir = $HOME }
+        elseif ($stateDir.StartsWith("~/") -or $stateDir.StartsWith("~\")) {
+            $stateDir = Join-Path $HOME $stateDir.Substring(2)
+        }
+        if (Test-Path -LiteralPath (Join-Path $stateDir "installed") -ErrorAction Stop) {
+            return "present"
+        }
+        return "absent"
+    }
+    catch {
+        return "unknown"
     }
 }
 
 function Install-OpenSre {
+    $installMarkerState = Get-OpenSreInstallMarkerState
     $repo = if ($env:OPENSRE_INSTALL_REPO) { $env:OPENSRE_INSTALL_REPO } else { "Tracer-Cloud/opensre" }
     $installDir = if ($env:OPENSRE_INSTALL_DIR) { $env:OPENSRE_INSTALL_DIR } else { Get-OpenSreDefaultInstallDir }
     $binaryName = "opensre.exe"
@@ -1223,7 +1252,7 @@ function Install-OpenSre {
 
     $installedBinaryPath = Join-Path $installDir $binaryName
     $analyticsVersion = if ($binaryVersion) { $binaryVersion } elseif ($version) { $version } else { "main" }
-    Send-OpenSreInstallAnalytics -BinaryPath $installedBinaryPath -Channel $resolvedChannel -Version $analyticsVersion
+    Send-OpenSreInstallAnalytics -BinaryPath $installedBinaryPath -Channel $resolvedChannel -Version $analyticsVersion -InstallMarkerState $installMarkerState
     if ($resolvedChannel -eq "main") {
         if ($binaryVersion) {
             Write-Host "Installed opensre main build ($binaryVersion) to $installedBinaryPath"

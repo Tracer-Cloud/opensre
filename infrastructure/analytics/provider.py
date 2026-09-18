@@ -43,6 +43,7 @@ from infrastructure.analytics.destination import (
     resolve_analytics_destination,
 )
 from infrastructure.analytics.events import Event
+from infrastructure.analytics.install_state import read_install_marker_state
 from infrastructure.analytics.usage_context import (
     ORGANIZATION_GROUP_TYPE,
     merge_usage_enrichment,
@@ -787,6 +788,10 @@ class Analytics:
         self._shutdown = False
         self._worker_alive = not self._disabled
         self._persistent_properties: Properties = {}
+        if (install_marker_state := read_install_marker_state(_CONFIG_DIR)) is not None:
+            self._persistent_properties["install_marker_state_before_install"] = (
+                install_marker_state
+            )
         self._identified_organization_groups: set[str] = set()
         self._org_group_lock = threading.Lock()
         self._destination: AnalyticsDestination | None = None

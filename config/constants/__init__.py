@@ -78,6 +78,9 @@ if TYPE_CHECKING:
         ANALYTICS_INSTALL_CHANNEL_ENV as ANALYTICS_INSTALL_CHANNEL_ENV,
     )
     from config.constants.analytics import (
+        ANALYTICS_INSTALL_MARKER_STATE_ENV as ANALYTICS_INSTALL_MARKER_STATE_ENV,
+    )
+    from config.constants.analytics import (
         ANALYTICS_INSTALL_SOURCE_ENV as ANALYTICS_INSTALL_SOURCE_ENV,
     )
     from config.constants.analytics import (
