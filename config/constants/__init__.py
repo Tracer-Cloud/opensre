@@ -474,6 +474,18 @@ if TYPE_CHECKING:
     from config.constants.honeycomb import (
         HONEYCOMB_DATASET_ENV as HONEYCOMB_DATASET_ENV,
     )
+    from config.constants.hosted_gateway import (
+        HOSTED_GATEWAY_HEALTH_PATH as HOSTED_GATEWAY_HEALTH_PATH,
+    )
+    from config.constants.hosted_gateway import (
+        HOSTED_GATEWAY_HTTP_TIMEOUT_SECONDS as HOSTED_GATEWAY_HTTP_TIMEOUT_SECONDS,
+    )
+    from config.constants.hosted_gateway import (
+        HOSTED_GATEWAY_LOOPBACK_HOSTS as HOSTED_GATEWAY_LOOPBACK_HOSTS,
+    )
+    from config.constants.hosted_gateway import (
+        HOSTED_GATEWAY_SETTINGS_PATH as HOSTED_GATEWAY_SETTINGS_PATH,
+    )
     from config.constants.http import (
         MAX_REQUEST_BODY_BYTES as MAX_REQUEST_BODY_BYTES,
     )
