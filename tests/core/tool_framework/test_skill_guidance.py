@@ -40,7 +40,7 @@ tools:
     assert "Read first" in result.skill.content
 
     formatted = format_tool_skill_guidance(result.skill)
-    assert '<skill name="tracking-github-work-status"' in formatted
+    assert '<tool_guidance name="tracking-github-work-status"' in formatted
     assert 'description="Guide GitHub workflow tools."' in formatted
     assert f"References are relative to {tmp_path}" in formatted
 
@@ -222,7 +222,7 @@ def test_sentry_summary_skill_loads_and_references_correct_tools() -> None:
     assert set(result.skill.tool_names) == known_tools
 
     formatted = format_tool_skill_guidance(result.skill)
-    assert '<skill name="summarizing-sentry-issues"' in formatted
+    assert '<tool_guidance name="summarizing-sentry-issues"' in formatted
     assert "search_sentry_issues" in result.skill.content
     assert "get_sentry_uptime_digest" in result.skill.content
     assert "is:unresolved" in result.skill.content

@@ -14,26 +14,18 @@ from unittest.mock import MagicMock
 import pytest
 
 import tools.interactive_shell.subprocess as subprocess_tools
-from tools.interactive_shell.subprocess import (
-    HEADLESS_SUBPROCESS_TERMINAL_WIDTH,
-    headless_subprocess_env,
-    read_diag,
-    subprocess_env_with_width,
-    terminate_child_process,
-    watch_subprocess_until_exit,
-)
 
 
 def test_subprocess_env_with_width_reserves_prefix(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.delenv("LINES", raising=False)
-    env = subprocess_env_with_width(columns=100, lines=30)
+    env = subprocess_tools.subprocess_env_with_width(columns=100, lines=30)
     assert env["COLUMNS"] == "81"
     assert env["LINES"] == "30"
 
 
 def test_subprocess_env_with_width_reserves_caller_prefix() -> None:
     """A replay gutter narrower than the task-relay prefix leaves the child more room."""
-    env = subprocess_env_with_width(columns=100, prefix_width=4)
+    env = subprocess_tools.subprocess_env_with_width(columns=100, prefix_width=4)
     assert env["COLUMNS"] == "95"
 
 
@@ -42,7 +34,9 @@ def test_headless_subprocess_env_overrides_exported_columns(
 ) -> None:
     """A narrow inherited ``COLUMNS`` would ellipsize ids no human is there to read."""
     monkeypatch.setenv("COLUMNS", "80")
-    assert headless_subprocess_env()["COLUMNS"] == str(HEADLESS_SUBPROCESS_TERMINAL_WIDTH)
+    assert subprocess_tools.headless_subprocess_env()["COLUMNS"] == str(
+        subprocess_tools.HEADLESS_SUBPROCESS_TERMINAL_WIDTH
+    )
 
 
 @pytest.mark.parametrize("term", ["dumb", "unknown", "DUMB"])
@@ -56,20 +50,20 @@ def test_width_envs_replace_dumb_term_so_rich_honours_columns(
     ``TERM=dumb``).
     """
     monkeypatch.setenv("TERM", term)
-    assert subprocess_env_with_width(columns=100)["TERM"] == "xterm-256color"
-    assert headless_subprocess_env()["TERM"] == "xterm-256color"
+    assert subprocess_tools.subprocess_env_with_width(columns=100)["TERM"] == "xterm-256color"
+    assert subprocess_tools.headless_subprocess_env()["TERM"] == "xterm-256color"
 
 
 def test_width_envs_keep_a_capable_term(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TERM", "screen-256color")
-    assert subprocess_env_with_width(columns=100)["TERM"] == "screen-256color"
+    assert subprocess_tools.subprocess_env_with_width(columns=100)["TERM"] == "screen-256color"
 
 
 def test_subprocess_env_with_width_preserves_existing_lines(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setenv("LINES", "24")
-    env = subprocess_env_with_width(columns=100, lines=30)
+    env = subprocess_tools.subprocess_env_with_width(columns=100, lines=30)
     assert env["LINES"] == "24"
 
 
@@ -77,13 +71,13 @@ def test_read_diag_strips_ansi() -> None:
     with tempfile.SpooledTemporaryFile(max_size=4096) as buf:
         buf.write(b"\x1b[31merror\x1b[0m")
         buf.seek(0)
-        assert read_diag(buf) == "error"
+        assert subprocess_tools.read_diag(buf) == "error"
 
 
 def test_terminate_child_process_noop_when_exited() -> None:
     proc = subprocess.Popen(["true"])
     proc.wait()
-    terminate_child_process(proc)
+    subprocess_tools.terminate_child_process(proc)
 
 
 def test_terminate_child_process_uses_tree_termination_on_windows(
@@ -99,7 +93,7 @@ def test_terminate_child_process_uses_tree_termination_on_windows(
         terminate_process_tree,
     )
 
-    terminate_child_process(proc)
+    subprocess_tools.terminate_child_process(proc)
 
     terminate_process_tree.assert_called_once_with(
         123,
@@ -122,7 +116,7 @@ def test_terminate_child_process_does_not_resolve_exited_windows_pid(
         terminate_process_tree,
     )
 
-    terminate_child_process(proc)
+    subprocess_tools.terminate_child_process(proc)
 
     terminate_process_tree.assert_not_called()
     proc.kill.assert_not_called()
@@ -148,7 +142,7 @@ def test_terminate_reaps_grandchild_that_ignores_sigterm() -> None:
     assert proc.stdout is not None
     line = proc.stdout.readline()
     grand_pid = int(line.strip().split("GRAND:", 1)[1])
-    terminate_child_process(proc)
+    subprocess_tools.terminate_child_process(proc)
     deadline = time.monotonic() + 2.0
     while time.monotonic() < deadline:
         try:
@@ -165,7 +159,7 @@ def test_watch_subprocess_until_exit_on_cancel() -> None:
     proc = subprocess.Popen(["sleep", "30"])
     cancel = threading.Event()
     cancel.set()
-    result = watch_subprocess_until_exit(
+    result = subprocess_tools.watch_subprocess_until_exit(
         proc,
         cancel_event=cancel,
         timeout_seconds=60,

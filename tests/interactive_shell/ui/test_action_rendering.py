@@ -443,6 +443,19 @@ def test_skill_view_failure_renders_failure_child() -> None:
     assert buffer.getvalue() == "\nError    Could not load skill · no-such-skill\n"
 
 
+def test_skill_view_of_already_loaded_tool_guidance_prints_nothing() -> None:
+    # Arrange
+    observer, buffer = _skill_observer()
+    call = {"id": "t1", "name": "skill_view", "input": {"name": "tracking-github-work-status"}}
+
+    # Act
+    observer("tool_start", call)
+    observer("tool_end", {**call, "output": {"ok": True, "already_loaded": True}})
+
+    # Assert: no "Skill activated" line and no error row.
+    assert buffer.getvalue() == ""
+
+
 def test_skill_view_tool_end_without_start_prints_nothing() -> None:
     observer, buffer = _skill_observer()
 

@@ -600,9 +600,12 @@ class ActionRenderObserver:
         if slug is None:
             return
         output = data.get("output")
-        if isinstance(output, dict) and output.get("already_active"):
-            # The activation line is already in the transcript from the first
-            # entry; a redundant re-entry must not repeat it.
+        if isinstance(output, dict) and (
+            output.get("already_active") or output.get("already_loaded")
+        ):
+            # Already active: the activation line is in the transcript from the
+            # first entry. Already loaded: the name was guidance attached to a
+            # tool, so nothing was activated and nothing failed.
             return
         activated = isinstance(output, dict) and bool(output.get("ok"))
         # ``Text`` renders the (model-supplied) skill name literally — never

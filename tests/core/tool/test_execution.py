@@ -229,6 +229,32 @@ def test_tool_call_analytics_records_batch_rejection(
     assert all(event["executed"] is False for event in captured)
 
 
+@pytest.mark.parametrize(
+    "status", ["blocked", "failed", "incomplete", "succeeded", "private result"]
+)
+def test_tool_analytics_retains_only_categorical_work_status(
+    monkeypatch: pytest.MonkeyPatch,
+    status: str,
+) -> None:
+    captured: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        "infrastructure.analytics.capture.capture_agent_tool_call_completed",
+        lambda **properties: captured.append(properties),
+    )
+    payload = {
+        "error": "private error",
+        "work_outcome": {
+            "status": status,
+            "evidence": {"token": "private token"},
+            "operation": "private repository",
+        },
+    }
+    execute_tool_calls([_call()], [_tool(execute=lambda _a, _c: payload)], {})
+    assert captured[0]["work_status"] == ("" if status == "private result" else status)
+    assert captured[0]["is_error"] is True
+    assert "private" not in str(captured[0])
+
+
 def test_after_hook_can_patch_result_and_terminate() -> None:
     def after(
         _request: ToolExecutionRequest,

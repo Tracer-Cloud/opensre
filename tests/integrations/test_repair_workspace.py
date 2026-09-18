@@ -93,6 +93,9 @@ def test_explicit_mismatched_workspace_is_preserved(
 
 
 def test_same_target_is_exclusive_and_released_after_failure(remote: Path, tmp_path: Path) -> None:
+    def interrupt_repair() -> None:
+        raise RuntimeError("interrupted")
+
     def concurrent_repair() -> None:
         with (
             pytest.raises(GitCommandError, match="Another repair"),
@@ -106,7 +109,7 @@ def test_same_target_is_exclusive_and_released_after_failure(remote: Path, tmp_p
     ):
         with ThreadPoolExecutor(max_workers=1) as pool:
             pool.submit(concurrent_repair).result(timeout=10)
-        raise RuntimeError("interrupted")
+        interrupt_repair()
     with repair_workspace("acme", "demo", target="demo/failing-ci", root=tmp_path) as path:
         assert path.exists()
 

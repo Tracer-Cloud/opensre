@@ -3,17 +3,20 @@ from __future__ import annotations
 import logging
 import signal
 import threading
+from collections.abc import Callable
 
 import pytest
 
-from core.agent_harness.spi.session_goal import SessionGoal, SessionGoalReason, SessionGoalStatus
+from core.agent_harness.session.pending_choice import PendingUserChoice
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
 from core.domain.types.tools import ToolSurface
 from core.llm.types import ToolCall
 from core.tool.contracts import RegisteredTool, SideEffectLevel
-from core.tool.execution import ToolExecutionHooks, ToolExecutionRequest
+from core.tool.execution import BeforeToolCallResult, ToolExecutionHooks, ToolExecutionRequest
 from infrastructure.harness_providers import resolve_surface_tool_map
+from infrastructure.turn_host.session_lock import session_execution_lock
 from surfaces.cli.ask import service
+from surfaces.cli.ask import session as ask_session
 from surfaces.cli.ask.approval import unknown_allowed_tools
 from surfaces.cli.ask.service import AskExitCode, AskSignal, AskStatus
 
@@ -24,17 +27,32 @@ def _turn(
     response: str = "answer",
     *,
     cancelled: bool = False,
+    executed_count: int = 0,
 ) -> TurnResult:
     return TurnResult(
         final_intent="cli_agent_cancelled" if cancelled else "answer",
         action_result=ToolCallingTurnResult(
             planned_count=0,
-            executed_count=0,
+            executed_count=executed_count,
             executed_success_count=0,
             has_unhandled_clause=False,
             handled=False,
         ),
         assistant_response_text=response,
+    )
+
+
+def _not_run_turn() -> TurnResult:
+    return TurnResult(
+        final_intent="agent_failed",
+        action_result=ToolCallingTurnResult(
+            planned_count=0,
+            executed_count=0,
+            executed_success_count=0,
+            has_unhandled_clause=True,
+            handled=True,
+            accounting_status="not_run",
+        ),
     )
 
 
@@ -49,6 +67,24 @@ def _risky_request() -> ToolExecutionRequest:
     )
     return ToolExecutionRequest(
         tool_call=ToolCall(id="call-1", name=tool.name, input={}),
+        tool=tool,
+        arguments={},
+        source=tool.source,
+        resolved_integrations={},
+    )
+
+
+def _read_only_request() -> ToolExecutionRequest:
+    tool = RegisteredTool(
+        name="update_plan",
+        description="Update the plan",
+        input_schema={"type": "object", "properties": {}},
+        source="plan",
+        run=lambda: None,
+        side_effect_level=SideEffectLevel.READ_ONLY,
+    )
+    return ToolExecutionRequest(
+        tool_call=ToolCall(id="call-plan", name=tool.name, input={}),
         tool=tool,
         arguments={},
         source=tool.source,
@@ -80,6 +116,9 @@ class _FakeSessionManager:
 class _FakeSession:
     def __init__(self) -> None:
         self.available_capabilities: dict[str, object] = {}
+        self.pending_user_choice: PendingUserChoice | None = None
+        self.questions_already_answered: set[str] = set()
+        self.session_id = "session-123"
 
 
 class _FakeAgentSession:
@@ -96,15 +135,8 @@ class _FakeAgentSession:
     def bound_session(self) -> _FakeSession:
         return type(self).session
 
-    def chat_until_goal(self, _prompt: str, **_kwargs: object) -> object:
+    def chat(self, _prompt: str, **_kwargs: object) -> object:
         raise RuntimeError("turn failed")
-
-
-class _GoalRun:
-    """Stand-in for SessionGoalRunResult: only ``last_result`` is read."""
-
-    def __init__(self, last_result: TurnResult) -> None:
-        self.last_result = last_result
 
 
 def test_run_ask_returns_success(monkeypatch) -> None:
@@ -115,6 +147,172 @@ def test_run_ask_returns_success(monkeypatch) -> None:
     assert outcome.status is AskStatus.SUCCESS
     assert outcome.response == "answer"
     assert outcome.exit_code is AskExitCode.SUCCESS
+
+
+def test_run_ask_returns_structured_required_choice(monkeypatch) -> None:
+    pending = PendingUserChoice(title="Which environment?", options=("Production", "Staging"))
+
+    def run_turn(_prompt: str, _hooks: ToolExecutionHooks, **kwargs: object) -> TurnResult:
+        state = kwargs["run_state"]
+        assert isinstance(state, service._AskRunState)
+        state.session_id = "session-123"
+        state.pending_choice = pending
+        return _turn("")
+
+    monkeypatch.setattr(service, "_run_agent_turn", run_turn)
+
+    outcome = service.run_ask("deploy", allowed_tools=(), bypass_approvals=False)
+
+    assert outcome.status is AskStatus.NEEDS_INPUT
+    assert outcome.exit_code is AskExitCode.NEEDS_INPUT
+    assert outcome.session_id == "session-123"
+    assert outcome.questions[0].options == ("Production", "Staging")
+    assert "1. Production" in outcome.response
+
+
+def test_run_ask_surfaces_new_choice_after_later_model_failure(monkeypatch) -> None:
+    manager = _FakeSessionManager()
+    session = _FakeSession()
+
+    class _ChoiceThenFailureAgentSession:
+        @classmethod
+        def start(cls, _config: object, **_kwargs: object) -> _ChoiceThenFailureAgentSession:
+            return cls()
+
+        @property
+        def bound_session(self) -> _FakeSession:
+            return session
+
+        def chat(self, _prompt: str) -> TurnResult:
+            session.pending_user_choice = PendingUserChoice(
+                title="Which environment?",
+                options=("Production", "Staging"),
+            )
+            return _not_run_turn()
+
+    monkeypatch.setattr(service, "SessionManager", lambda: manager)
+    monkeypatch.setattr(service, "AgentSession", _ChoiceThenFailureAgentSession)
+
+    outcome = service.run_ask("deploy", allowed_tools=(), bypass_approvals=False)
+
+    assert outcome.status is AskStatus.NEEDS_INPUT
+    assert outcome.session_id == session.session_id
+    assert outcome.questions[0].title == "Which environment?"
+    assert outcome.exit_code is AskExitCode.NEEDS_INPUT
+    assert manager.closed == [(session, False)]
+
+
+def test_resume_prompt_maps_a_number_to_the_pending_option() -> None:
+    session = service.SessionCore()
+    session.pending_user_choice = PendingUserChoice(
+        title="Which environment?",
+        options=("Production", "Staging"),
+    )
+
+    resumed = ask_session.resume_prompt(session, "2")
+
+    assert resumed == '1. Which environment?\n@json:"Staging"'
+    assert session.pending_user_choice is None
+
+
+def test_resume_prompt_preserves_blank_lines_in_a_custom_answer() -> None:
+    from core.agent_harness.session.pending_choice import parse_ask_user_answers
+
+    session = service.SessionCore()
+    session.pending_user_choice = PendingUserChoice(
+        title="Describe the deployment window",
+        options=(),
+    )
+
+    resumed = ask_session.resume_prompt(session, "First window\n\nSecond window")
+
+    assert parse_ask_user_answers(resumed) == [
+        ("Describe the deployment window", "First window\n\nSecond window")
+    ]
+
+
+def test_resume_prompt_resets_clarification_rounds_for_a_new_request() -> None:
+    session = service.SessionCore()
+    session.ask_user_rounds = 2
+
+    assert ask_session.resume_prompt(session, "check the next deployment") == (
+        "check the next deployment"
+    )
+    assert session.ask_user_rounds == 0
+
+    session.pending_user_choice = PendingUserChoice(
+        title="Which environment?",
+        options=("Production", "Staging"),
+    )
+    session.ask_user_rounds = 2
+    ask_session.resume_prompt(session, "1")
+    assert session.ask_user_rounds == 2
+
+
+def test_resume_prompt_rejects_custom_answer_when_choice_forbids_it() -> None:
+    session = service.SessionCore()
+    session.pending_user_choice = PendingUserChoice(
+        title="Which environment?",
+        options=("Production", "Staging"),
+        custom_answer=False,
+    )
+
+    with pytest.raises(service.OpenSREError, match="numbered options"):
+        ask_session.resume_prompt(session, "another environment")
+
+    assert session.pending_user_choice is not None
+
+
+def test_resume_prompt_rejects_interactive_command_choices() -> None:
+    session = service.SessionCore()
+    session.pending_user_choice = PendingUserChoice(
+        title="Start over?",
+        options=("Start over", "Keep working"),
+        commands={"Start over": "/new"},
+    )
+
+    with pytest.raises(service.OpenSREError, match="cannot be answered headlessly"):
+        ask_session.resume_prompt(session, "1")
+
+    assert session.pending_user_choice is not None
+
+
+def test_resume_prompt_requires_structured_batch_answers() -> None:
+    from core.agent_harness.session.pending_choice import AskUserQuestion
+
+    session = service.SessionCore()
+    session.pending_user_choice = PendingUserChoice(
+        title="Ask User",
+        options=("Repository A", "Repository B"),
+        questions=(
+            AskUserQuestion("Repo", "Which repository?", ("Repository A", "Repository B")),
+            AskUserQuestion("Window", "Which window?", ("24 hours", "7 days")),
+        ),
+    )
+
+    resumed = ask_session.resume_prompt(session, '{"Repo":"2","Window":"1"}')
+
+    from core.agent_harness.session.pending_choice import parse_ask_user_answers
+
+    assert parse_ask_user_answers(resumed) == [
+        ("Which repository?", "Repository B"),
+        ("Which window?", "24 hours"),
+    ]
+
+
+def test_resumed_session_rejects_overlapping_processes(monkeypatch, tmp_path) -> None:
+    session_id = "session-123"
+    monkeypatch.setattr(
+        "infrastructure.turn_host.session_lock.sessions_dir",
+        lambda: tmp_path,
+    )
+
+    with (
+        session_execution_lock(session_id),
+        pytest.raises(service.OpenSREError, match="busy"),
+        ask_session.ask_session_lock(session_id),
+    ):
+        pytest.fail("busy session lock was unexpectedly acquired")
 
 
 def test_run_ask_forwards_a_tool_event_observer(monkeypatch) -> None:
@@ -138,6 +336,98 @@ def test_run_ask_forwards_a_tool_event_observer(monkeypatch) -> None:
 
     assert outcome.status is AskStatus.SUCCESS
     assert recorded["tool_event_observer"] is observer
+    assert recorded["session_id"] is None
+    assert isinstance(recorded["fresh_session_id"], str)
+    assert recorded["ephemeral"] is False
+    assert isinstance(recorded["run_state"], service._AskRunState)
+
+
+def test_run_ask_leases_a_fresh_persisted_session_before_its_first_turn(monkeypatch) -> None:
+    from contextlib import contextmanager
+
+    captured: list[str | None] = []
+    turn_args: dict[str, object] = {}
+
+    @contextmanager
+    def _lock(session_id: str | None):
+        captured.append(session_id)
+        yield
+
+    def run_turn(_prompt: str, _hooks: ToolExecutionHooks, **kwargs: object) -> TurnResult:
+        turn_args.update(kwargs)
+        return _turn()
+
+    monkeypatch.setattr(service, "_ask_session_lock", _lock)
+    monkeypatch.setattr(service, "_run_agent_turn", run_turn)
+    monkeypatch.setattr(service, "uuid4", lambda: "fresh-session-id")
+
+    service.run_ask("prompt", allowed_tools=(), bypass_approvals=False)
+
+    assert captured == ["fresh-session-id"]
+    assert turn_args["session_id"] is None
+    assert turn_args["fresh_session_id"] == "fresh-session-id"
+
+
+def test_run_ask_resolves_session_prefix_before_resuming(monkeypatch) -> None:
+    class _Repo:
+        def count_prefix_matches(self, prefix: str) -> int:
+            assert prefix == "abc123"
+            return 1
+
+        def load_session(self, prefix: str) -> dict[str, str]:
+            assert prefix == "abc123"
+            return {"session_id": "abc123-full-session-id"}
+
+    recorded: dict[str, object] = {}
+
+    def run_turn(_prompt: str, _hooks: ToolExecutionHooks, **kwargs: object) -> TurnResult:
+        recorded.update(kwargs)
+        return _turn()
+
+    monkeypatch.setattr(ask_session, "default_session_repo", _Repo)
+    monkeypatch.setattr(service, "_run_agent_turn", run_turn)
+
+    outcome = service.run_ask(
+        "continue",
+        allowed_tools=(),
+        bypass_approvals=False,
+        resume_session_id="abc123",
+    )
+
+    assert outcome.status is AskStatus.SUCCESS
+    assert recorded["session_id"] == "abc123-full-session-id"
+
+
+def test_run_ask_reports_a_missing_resume_session(monkeypatch) -> None:
+    class _Repo:
+        def count_prefix_matches(self, _prefix: str) -> int:
+            return 0
+
+    monkeypatch.setattr(ask_session, "default_session_repo", _Repo)
+
+    outcome = service.run_ask(
+        "continue",
+        allowed_tools=(),
+        bypass_approvals=False,
+        resume_session_id="missing",
+    )
+
+    assert outcome.status is AskStatus.ERROR
+    assert outcome.error is not None
+    assert "not found" in outcome.error.message
+
+
+def test_run_ask_rejects_a_non_session_reference() -> None:
+    outcome = service.run_ask(
+        "continue",
+        allowed_tools=(),
+        bypass_approvals=False,
+        resume_session_id="abc123:old-entry",
+    )
+
+    assert outcome.status is AskStatus.ERROR
+    assert outcome.error is not None
+    assert "invalid" in outcome.error.message
 
 
 def test_run_ask_returns_the_rendered_answer_not_raw_tool_history(monkeypatch) -> None:
@@ -203,33 +493,6 @@ def test_ask_output_sink_uses_the_latest_rendered_event() -> None:
     assert output.rendered_response == "The final model request failed."
 
 
-def test_ask_output_sink_clears_an_earlier_goal_response_before_the_next_turn() -> None:
-    """A silent final goal turn must not reuse its predecessor's response."""
-    output = service._AskOutputSink()
-    output.stream(label="OpenSRE", chunks=iter(["Investigation update."]))
-    goal = SessionGoal(
-        condition="investigate the alert",
-        status=SessionGoalStatus.ACTIVE,
-    ).with_reason(SessionGoalReason.working_session_turn(2, 3))
-
-    service._clear_prior_goal_response(output, goal)
-
-    assert output.rendered_response == ""
-
-
-def test_ask_output_sink_keeps_a_final_goal_response() -> None:
-    output = service._AskOutputSink()
-    final_goal = SessionGoal(
-        condition="investigate the alert",
-        status=SessionGoalStatus.ACHIEVED,
-    )
-    output.stream(label="OpenSRE", chunks=iter(["Final investigation summary."]))
-
-    service._clear_prior_goal_response(output, final_goal)
-
-    assert output.rendered_response == "Final investigation summary."
-
-
 def test_ask_log_scope_suppresses_unrendered_fallback_warnings(monkeypatch) -> None:
     """Internal tool warnings must not bypass the one-shot answer renderer."""
 
@@ -284,6 +547,271 @@ def test_agent_turn_closes_ephemeral_session_after_failure(monkeypatch) -> None:
     assert manager.closed == [(_FakeAgentSession.session, False)]
 
 
+def test_failed_resumed_turn_restores_pending_choice_state(monkeypatch) -> None:
+    manager = _FakeSessionManager()
+    session = _FakeSession()
+    pending = PendingUserChoice(
+        title="Which environment?",
+        options=("Production", "Staging"),
+    )
+    session.pending_user_choice = pending
+    session.questions_already_answered = {"earlier question"}
+    _FakeAgentSession.session = session
+    monkeypatch.setattr(service, "SessionManager", lambda: manager)
+    monkeypatch.setattr(service, "AgentSession", _FakeAgentSession)
+
+    with pytest.raises(RuntimeError, match="turn failed"):
+        service._run_agent_turn(
+            "1",
+            ToolExecutionHooks(),
+            session_id=session.session_id,
+            ephemeral=False,
+        )
+
+    assert session.pending_user_choice == pending
+    assert session.questions_already_answered == {"earlier question"}
+    assert manager.closed == [(session, False)]
+
+
+@pytest.mark.parametrize("result", [_not_run_turn(), _turn(cancelled=True)])
+def test_unsuccessful_resumed_turn_restores_pending_choice_state(
+    monkeypatch, result: TurnResult
+) -> None:
+    manager = _FakeSessionManager()
+    session = _FakeSession()
+    pending = PendingUserChoice(
+        title="Which environment?",
+        options=("Production", "Staging"),
+    )
+    session.pending_user_choice = pending
+    session.questions_already_answered = {"earlier question"}
+
+    class _UnsuccessfulAgentSession:
+        @classmethod
+        def start(cls, _config: object, **_kwargs: object) -> _UnsuccessfulAgentSession:
+            return cls()
+
+        @property
+        def bound_session(self) -> _FakeSession:
+            return session
+
+        def chat(self, _prompt: str) -> TurnResult:
+            return result
+
+    monkeypatch.setattr(service, "SessionManager", lambda: manager)
+    monkeypatch.setattr(service, "AgentSession", _UnsuccessfulAgentSession)
+
+    service._run_agent_turn(
+        "1", ToolExecutionHooks(), session_id=session.session_id, ephemeral=False
+    )
+
+    assert session.pending_user_choice == pending
+    assert session.questions_already_answered == {"earlier question"}
+    assert manager.closed == [(session, False)]
+
+
+def test_incomplete_resumed_turn_keeps_a_newly_queued_choice(monkeypatch) -> None:
+    manager = _FakeSessionManager()
+    session = _FakeSession()
+    session.pending_user_choice = PendingUserChoice(
+        title="Which environment?",
+        options=("Production", "Staging"),
+    )
+    replacement = PendingUserChoice(
+        title="Which region?",
+        options=("us-east-1", "eu-west-1"),
+    )
+
+    class _ReplacementChoiceAgentSession:
+        @classmethod
+        def start(cls, _config: object, **_kwargs: object) -> _ReplacementChoiceAgentSession:
+            return cls()
+
+        @property
+        def bound_session(self) -> _FakeSession:
+            return session
+
+        def chat(self, _prompt: str) -> TurnResult:
+            session.pending_user_choice = replacement
+            return _not_run_turn()
+
+    monkeypatch.setattr(service, "SessionManager", lambda: manager)
+    monkeypatch.setattr(service, "AgentSession", _ReplacementChoiceAgentSession)
+    run_state = service._AskRunState()
+
+    service._run_agent_turn(
+        "1",
+        ToolExecutionHooks(),
+        session_id=session.session_id,
+        ephemeral=False,
+        run_state=run_state,
+    )
+
+    assert session.pending_user_choice == replacement
+    assert run_state.pending_choice == replacement
+    assert run_state.pending_choice_is_new is True
+    assert manager.closed == [(session, False)]
+
+
+def test_cancelled_resumed_turn_after_tool_work_does_not_restore_choice(monkeypatch) -> None:
+    manager = _FakeSessionManager()
+    session = _FakeSession()
+    session.pending_user_choice = PendingUserChoice(
+        title="Which environment?",
+        options=("Production", "Staging"),
+    )
+    session.questions_already_answered = {"earlier question"}
+
+    class _CancelledAfterActionAgentSession:
+        @classmethod
+        def start(cls, _config: object, **_kwargs: object) -> _CancelledAfterActionAgentSession:
+            return cls()
+
+        @property
+        def bound_session(self) -> _FakeSession:
+            return session
+
+        def chat(self, _prompt: str) -> TurnResult:
+            return _turn(cancelled=True, executed_count=1)
+
+    monkeypatch.setattr(service, "SessionManager", lambda: manager)
+    monkeypatch.setattr(service, "AgentSession", _CancelledAfterActionAgentSession)
+
+    service._run_agent_turn(
+        "1", ToolExecutionHooks(), session_id=session.session_id, ephemeral=False
+    )
+
+    assert session.pending_user_choice is None
+    assert session.questions_already_answered == {"earlier question", "which environment?"}
+    assert manager.closed == [(session, False)]
+
+
+@pytest.mark.parametrize(
+    ("request_factory", "restores_choice"),
+    [(_risky_request, False), (_read_only_request, True)],
+)
+def test_not_run_resumed_turn_restores_choice_until_mutating_work_starts(
+    monkeypatch,
+    request_factory: Callable[[], ToolExecutionRequest],
+    restores_choice: bool,
+) -> None:
+    manager = _FakeSessionManager()
+    session = _FakeSession()
+    pending = PendingUserChoice(
+        title="Which environment?",
+        options=("Production", "Staging"),
+    )
+    session.pending_user_choice = pending
+    session.questions_already_answered = {"earlier question"}
+
+    class _FailedAfterToolAgentSession:
+        hooks: ToolExecutionHooks | None = None
+
+        @classmethod
+        def start(cls, _config: object, **kwargs: object) -> _FailedAfterToolAgentSession:
+            cls.hooks = kwargs["tool_hooks"]
+            return cls()
+
+        @property
+        def bound_session(self) -> _FakeSession:
+            return session
+
+        def chat(self, _prompt: str) -> TurnResult:
+            assert type(self).hooks is not None
+            assert type(self).hooks.before_tool_call is not None
+            type(self).hooks.before_tool_call(request_factory())
+            return _not_run_turn()
+
+    monkeypatch.setattr(service, "SessionManager", lambda: manager)
+    monkeypatch.setattr(service, "AgentSession", _FailedAfterToolAgentSession)
+
+    service._run_agent_turn(
+        "1", ToolExecutionHooks(), session_id=session.session_id, ephemeral=False
+    )
+
+    assert session.pending_user_choice == (pending if restores_choice else None)
+    assert session.questions_already_answered == (
+        {"earlier question"} if restores_choice else {"earlier question", "which environment?"}
+    )
+    assert manager.closed == [(session, False)]
+
+
+def test_not_run_resumed_turn_after_blocked_tool_restores_choice(monkeypatch) -> None:
+    manager = _FakeSessionManager()
+    session = _FakeSession()
+    pending = PendingUserChoice(
+        title="Which environment?",
+        options=("Production", "Staging"),
+    )
+    session.pending_user_choice = pending
+    session.questions_already_answered = {"earlier question"}
+
+    class _BlockedToolAgentSession:
+        hooks: ToolExecutionHooks | None = None
+
+        @classmethod
+        def start(cls, _config: object, **kwargs: object) -> _BlockedToolAgentSession:
+            cls.hooks = kwargs["tool_hooks"]
+            return cls()
+
+        @property
+        def bound_session(self) -> _FakeSession:
+            return session
+
+        def chat(self, _prompt: str) -> TurnResult:
+            assert type(self).hooks is not None
+            assert type(self).hooks.before_tool_call is not None
+            type(self).hooks.before_tool_call(_risky_request())
+            return _not_run_turn()
+
+    blocked_hooks = ToolExecutionHooks(
+        before_tool_call=lambda _request: BeforeToolCallResult(blocked=True),
+    )
+    monkeypatch.setattr(service, "SessionManager", lambda: manager)
+    monkeypatch.setattr(service, "AgentSession", _BlockedToolAgentSession)
+
+    service._run_agent_turn("1", blocked_hooks, session_id=session.session_id, ephemeral=False)
+
+    assert session.pending_user_choice == pending
+    assert session.questions_already_answered == {"earlier question"}
+    assert manager.closed == [(session, False)]
+
+
+def test_signal_during_resumed_turn_restores_pending_choice_state(monkeypatch) -> None:
+    manager = _FakeSessionManager()
+    session = _FakeSession()
+    pending = PendingUserChoice(
+        title="Which environment?",
+        options=("Production", "Staging"),
+    )
+    session.pending_user_choice = pending
+    session.questions_already_answered = {"earlier question"}
+
+    class _SignalAgentSession:
+        @classmethod
+        def start(cls, _config: object, **_kwargs: object) -> _SignalAgentSession:
+            return cls()
+
+        @property
+        def bound_session(self) -> _FakeSession:
+            return session
+
+        def chat(self, _prompt: str) -> TurnResult:
+            raise service.AskSignal(signal.SIGINT)
+
+    monkeypatch.setattr(service, "SessionManager", lambda: manager)
+    monkeypatch.setattr(service, "AgentSession", _SignalAgentSession)
+
+    with pytest.raises(service.AskSignal):
+        service._run_agent_turn(
+            "1", ToolExecutionHooks(), session_id=session.session_id, ephemeral=False
+        )
+
+    assert session.pending_user_choice == pending
+    assert session.questions_already_answered == {"earlier question"}
+    assert manager.closed == [(session, False)]
+
+
 def test_agent_turn_binds_hooks_and_restricts_capabilities_via_start(monkeypatch) -> None:
     """The collapse onto AgentSession.start must still bind the approval hooks
     and strip the one-shot ask agent's forbidden capabilities."""
@@ -308,11 +836,9 @@ def test_agent_turn_binds_hooks_and_restricts_capabilities_via_start(monkeypatch
         def bound_session(self) -> _FakeSession:
             return session
 
-        def chat_until_goal(self, prompt: str, **_kwargs: object) -> _GoalRun:
-            # chat_until_goal, not chat: ask must run the session-goal loop so a
-            # multi-step turn completes instead of stopping after the first.
+        def chat(self, prompt: str, **_kwargs: object) -> TurnResult:
             recorded["prompt"] = prompt
-            return _GoalRun(_turn())
+            return _turn()
 
     monkeypatch.setattr(service, "SessionManager", lambda: manager)
     monkeypatch.setattr(service, "AgentSession", _RecordingAgentSession)
@@ -324,46 +850,12 @@ def test_agent_turn_binds_hooks_and_restricts_capabilities_via_start(monkeypatch
     # dispatched, ephemeral session closed without memory extraction.
     assert recorded["tool_hooks"] is hooks
     assert recorded["is_tty"] is False
+    assert recorded["surface"] == "headless_cli"
     assert session.available_capabilities["slash_commands"] == ()
+    assert session.available_capabilities["ask_user_choice"] == ()
     assert session.available_capabilities["shell"] == ("keep",)
     assert recorded["prompt"] == "hello"
     assert result.primary_response_text == "answer"
-    assert manager.closed == [(session, False)]
-
-
-def test_agent_turn_discards_a_previous_goal_response_before_a_silent_final_turn(
-    monkeypatch,
-) -> None:
-    manager = _FakeSessionManager()
-    session = _FakeSession()
-
-    class _GoalAgentSession:
-        @classmethod
-        def start(cls, _config: object, **_kwargs: object) -> _GoalAgentSession:
-            return cls()
-
-        @property
-        def bound_session(self) -> _FakeSession:
-            return session
-
-        def chat_until_goal(self, _prompt: str, **kwargs: object) -> _GoalRun:
-            on_progress = kwargs["on_progress"]
-            assert callable(on_progress)
-            progress = SessionGoal(
-                condition="investigate the alert",
-                status=SessionGoalStatus.ACTIVE,
-            ).with_reason(SessionGoalReason.working_session_turn(2, 3))
-            on_progress(progress)
-            return _GoalRun(_turn("raw turn history"))
-
-    output = service._AskOutputSink()
-    output.stream(label="OpenSRE", chunks=iter(["Investigation update."]))
-    monkeypatch.setattr(service, "SessionManager", lambda: manager)
-    monkeypatch.setattr(service, "AgentSession", _GoalAgentSession)
-
-    service._run_agent_turn("hello", ToolExecutionHooks(), output=output)
-
-    assert output.rendered_response == ""
     assert manager.closed == [(session, False)]
 
 
@@ -382,8 +874,8 @@ def test_agent_turn_passes_tool_events_to_the_default_agent_build(monkeypatch) -
         def bound_session(self) -> _FakeSession:
             return session
 
-        def chat_until_goal(self, _prompt: str, **_kwargs: object) -> _GoalRun:
-            return _GoalRun(_turn())
+        def chat(self, _prompt: str, **_kwargs: object) -> TurnResult:
+            return _turn()
 
     def observer(_kind: str, _data: dict[str, object]) -> None:
         """Observe agent tool lifecycle events."""
@@ -491,6 +983,43 @@ def test_run_ask_maps_incomplete_and_cancelled_turns(monkeypatch) -> None:
     assert incomplete.exit_code is AskExitCode.ERROR
     assert cancelled.status is AskStatus.CANCELLED
     assert cancelled.exit_code is AskExitCode.SIGINT
+
+
+@pytest.mark.parametrize(
+    ("result", "status", "exit_code"),
+    [
+        (_not_run_turn(), AskStatus.ERROR, AskExitCode.ERROR),
+        (_turn("stopped", cancelled=True), AskStatus.CANCELLED, AskExitCode.SIGINT),
+    ],
+)
+def test_run_ask_reports_unsuccessful_resume_before_pending_choice(
+    monkeypatch,
+    result: TurnResult,
+    status: AskStatus,
+    exit_code: AskExitCode,
+) -> None:
+    pending = PendingUserChoice(title="Which environment?", options=("Production", "Staging"))
+
+    def failed_resume(_prompt: str, _hooks: ToolExecutionHooks, **kwargs: object) -> TurnResult:
+        run_state = kwargs["run_state"]
+        assert isinstance(run_state, service._AskRunState)
+        run_state.session_id = "session-123"
+        run_state.pending_choice = pending
+        return result
+
+    monkeypatch.setattr(service, "_resolve_resume_session_id", lambda session_id: session_id)
+    monkeypatch.setattr(service, "_run_agent_turn", failed_resume)
+
+    outcome = service.run_ask(
+        "1",
+        allowed_tools=(),
+        bypass_approvals=False,
+        resume_session_id="session-123",
+    )
+
+    assert outcome.status is status
+    assert outcome.exit_code is exit_code
+    assert outcome.questions == ()
 
 
 @pytest.mark.parametrize(

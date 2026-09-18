@@ -4,13 +4,51 @@ slug: "headless-cli"
 description: "Run one OpenSRE agent turn non-interactively from a terminal, script, or CI job."
 ---
 
-`opensre ask` is OpenSRE’s headless, one-shot CLI command. It runs one agent
-turn, prints the response, and exits instead of opening the interactive shell.
+`opensre ask` is OpenSRE’s headless CLI command. It runs one agent turn, prints
+the response, and exits instead of opening the interactive shell. Each run is
+saved as a resumable session unless you pass `--ephemeral`.
 It uses the LLM provider from `opensre onboard` and any tools configured with
 `opensre integrations setup`.
 
 ```bash
 opensre ask "why did checkout latency increase today?"
+```
+
+## Follow-ups and required input
+
+When the agent completes the request, a terminal run prints a session ID and a
+command you can use for a later follow-up:
+
+```text
+Session: 489e2ba8-3b7f-4fa2-bcdf-55a93177337c
+Continue: opensre ask --resume 489e2ba8-3b7f-4fa2-bcdf-55a93177337c "<reply>"
+```
+
+Use the full ID or an unambiguous prefix:
+
+```bash
+opensre ask --resume 489e2ba8 "now check the last deployment"
+```
+
+If the agent cannot continue without a decision, it exits with status
+`needs_input` and prints numbered options. Resume the same session with the
+option number, or a custom answer when the question allows one:
+
+```bash
+opensre ask --resume 489e2ba8 "1"
+```
+
+For a batch of questions, pass a JSON object keyed by the displayed labels:
+
+```bash
+opensre ask --resume 489e2ba8 '{"Repository":"1","Window":"2"}'
+```
+
+Use `--ephemeral` for scripts or sensitive one-off requests that should not
+write conversation history or print a resumable session ID:
+
+```bash
+opensre ask --ephemeral "summarize this public status page"
 ```
 
 ## Live activity
@@ -66,9 +104,33 @@ Put the global `--json` option before `ask` for machine-readable output:
 opensre --json ask "summarize current service health"
 ```
 
-The command writes one JSON object with `status`, `response`, `denied_tools`,
-and `error`. The `error` value is either `null` or an object with `message` and
-`suggestion`.
+The command writes one JSON object with `status`, `response`, `session_id`,
+`questions`, `denied_tools`, and `error`. Each question includes its title,
+label, options, whether it accepts multiple selections, and whether a custom
+answer is allowed. The `error` value is either `null` or an object with
+`message` and `suggestion`.
+
+For required input, read `session_id` and `questions` from that object, then
+pass the answer to another JSON invocation of the same session:
+
+```bash
+opensre --json ask "investigate the failing CI"
+opensre --json ask --resume 489e2ba8-3b7f-4fa2-bcdf-55a93177337c "1"
+```
+
+The first result can be `needs_input` (exit code `4`) with a question like:
+
+```json
+{"status":"needs_input","response":"Which repository?\n  1. Tracer-Cloud/opensre\n  2. Another repository","denied_tools":[],"session_id":"489e2ba8-3b7f-4fa2-bcdf-55a93177337c","questions":[{"label":"Repository","title":"Which repository?","options":["Tracer-Cloud/opensre","Another repository"],"multi_select":false,"allow_custom":true}],"error":null}
+```
+
+After the answer, a successful result has `status: "success"`, the same
+`session_id`, and an empty `questions` array.
+
+JSON mode emits no terminal-only continuation footer; use the returned ID.
+`--json` is a global option, so it must appear before `ask` on both invocations.
+Without `--json`, a required question also prints `Session: ID` on stderr when
+output is redirected, so the choice can still be resumed.
 
 | Exit code | Meaning |
 | --- | --- |
@@ -76,5 +138,6 @@ and `error`. The `error` value is either `null` or an object with `message` and
 | `1` | Setup or agent execution failed. |
 | `2` | The command arguments were invalid. |
 | `3` | A tool required approval and was denied. |
+| `4` | The agent needs structured user input; resume the returned session. |
 | `130` | The invocation was interrupted with `SIGINT`. |
 | `143` | The invocation was terminated with `SIGTERM`. |

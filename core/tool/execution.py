@@ -301,6 +301,7 @@ def execute_tool_calls(
             is_error=result.is_error,
             terminate=result.terminate,
             duration_ms=max(0, round((time.monotonic() - started) * 1000)),
+            details=result.details,
         )
     return results
 
@@ -313,10 +314,17 @@ def _capture_tool_call_analytics(
     is_error: bool,
     terminate: bool,
     duration_ms: int,
+    details: Any = None,
 ) -> None:
     """Emit product analytics without retaining tool arguments or results."""
     from infrastructure.analytics.capture import capture_agent_tool_call_completed
 
+    work = details.get("work_outcome") if isinstance(details, dict) else None
+    status = work.get("status") if isinstance(work, dict) else None
+    # Only categorical status may leave the result; evidence can contain private data.
+    work_status = (
+        status if status in ("noop", "blocked", "failed", "incomplete", "succeeded") else ""
+    )
     capture_agent_tool_call_completed(
         tool_call_id=tool_call.id,
         tool_name=tool_call.name,
@@ -327,6 +335,7 @@ def _capture_tool_call_analytics(
         is_error=is_error,
         terminate=terminate,
         duration_ms=duration_ms,
+        work_status=work_status,
     )
 
 

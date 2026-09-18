@@ -411,7 +411,7 @@ def test_non_shell_action_gets_plain_confirmation_no_risk_grade() -> None:
     captured: list[str] = []
 
     # The unoffered "always" answer cannot silently approve or raise autonomy.
-    assert not execution_allowed(
+    allowed = execution_allowed(
         ExecutionPolicyResult(verdict="ask", tool_type="slash", reason="explains itself"),
         session=session,
         console=console,
@@ -419,6 +419,7 @@ def test_non_shell_action_gets_plain_confirmation_no_risk_grade() -> None:
         confirm_fn=lambda p: captured.append(p) or "always",
         is_tty=True,
     )
+    assert not allowed
     out = buf.getvalue()
     assert "needs confirmation" in out
     assert "low risk" not in out

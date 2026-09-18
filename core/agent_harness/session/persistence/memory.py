@@ -194,8 +194,11 @@ class InMemorySessionStore:
             return
         trailing_leaf = records[-1].get("type") == "leaf"
         if not trailing_leaf and not any(rec.get("type") != "session" for rec in records):
-            del self._files[session.session_id]
-            return
+            from core.agent_harness.session.pending_choice import PendingUserChoice
+
+            if not isinstance(getattr(session, "pending_user_choice", None), PendingUserChoice):
+                del self._files[session.session_id]
+                return
         # A trailing ``leaf`` means a prior flush already closed the tip. Still
         # allow live state (session goals) to append past that marker so
         # mid-session ``/goal pause`` survives the next gateway ``resolve``;
@@ -245,6 +248,25 @@ class InMemorySessionStore:
                     {
                         "custom_type": TASK_PLAN_STATE_CUSTOM_TYPE,
                         "content": plan_state or {},
+                        "display": False,
+                    },
+                )
+                records = self._files.get(session.session_id, records)
+        if hasattr(session, "pending_user_choice"):
+            from core.agent_harness.session.pending_choice import (
+                PENDING_USER_CHOICE_STATE_CUSTOM_TYPE,
+                pending_user_choice_state_snapshot,
+                should_persist_pending_user_choice_state,
+            )
+
+            choice_state = pending_user_choice_state_snapshot(session)
+            if should_persist_pending_user_choice_state(choice_state, prior_records=records):
+                self._append(
+                    session.session_id,
+                    "custom_message",
+                    {
+                        "custom_type": PENDING_USER_CHOICE_STATE_CUSTOM_TYPE,
+                        "content": choice_state or {},
                         "display": False,
                     },
                 )

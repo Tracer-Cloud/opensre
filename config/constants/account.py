@@ -6,6 +6,12 @@ OPENSRE_ACCOUNT_FILENAME = "account.json"
 OPENSRE_ACCOUNT_METADATA_PATH_ENV = "OPENSRE_ACCOUNT_METADATA_PATH"
 OPENSRE_ACCOUNT_TOKEN_ENV = "OPENSRE_ACCOUNT_TOKEN"
 OPENSRE_ACCOUNT_LLM_BASE_PATH = "/api/llm/v1"
+# A hosted gateway never logs in, so it cannot learn the served model the way a
+# CLI does. The webapp enforces its own model on every request; this name only
+# has to pick the matching OpenAI endpoint (gpt-5.6* → Responses API) and size
+# the context window. Override it when the webapp's model changes family.
+OPENSRE_ACCOUNT_LLM_MODEL_ENV = "OPENSRE_ACCOUNT_LLM_MODEL"
+OPENSRE_GATEWAY_LLM_MODEL_DEFAULT = "gpt-5.6-sol"
 OPENSRE_ACCOUNT_LOGIN_PATH = "/cli/auth/start"
 OPENSRE_ACCOUNT_LOGIN_SUCCESS_PATH = "/cli/auth/success"
 OPENSRE_ACCOUNT_EXCHANGE_PATH = "/api/auth/cli/exchange"
@@ -22,6 +28,7 @@ __all__ = [
     "OPENSRE_ACCOUNT_FILENAME",
     "OPENSRE_ACCOUNT_METADATA_PATH_ENV",
     "OPENSRE_ACCOUNT_LLM_BASE_PATH",
+    "OPENSRE_ACCOUNT_LLM_MODEL_ENV",
     "OPENSRE_ACCOUNT_LOGIN_PATH",
     "OPENSRE_ACCOUNT_LOGIN_SUCCESS_PATH",
     "OPENSRE_ACCOUNT_EXCHANGE_PATH",
@@ -32,5 +39,6 @@ __all__ = [
     "OPENSRE_APP_URL_DEFAULT",
     "OPENSRE_APP_URL_DEV",
     "OPENSRE_APP_URL_ENV",
+    "OPENSRE_GATEWAY_LLM_MODEL_DEFAULT",
     "OPENSRE_STAFF_EMAIL_DOMAIN",
 ]

@@ -24,6 +24,9 @@ if TYPE_CHECKING:
         OPENSRE_ACCOUNT_LLM_BASE_PATH as OPENSRE_ACCOUNT_LLM_BASE_PATH,
     )
     from config.constants.account import (
+        OPENSRE_ACCOUNT_LLM_MODEL_ENV as OPENSRE_ACCOUNT_LLM_MODEL_ENV,
+    )
+    from config.constants.account import (
         OPENSRE_ACCOUNT_METADATA_PATH_ENV as OPENSRE_ACCOUNT_METADATA_PATH_ENV,
     )
     from config.constants.account import (
@@ -43,6 +46,9 @@ if TYPE_CHECKING:
     )
     from config.constants.account import (
         OPENSRE_APP_URL_ENV as OPENSRE_APP_URL_ENV,
+    )
+    from config.constants.account import (
+        OPENSRE_GATEWAY_LLM_MODEL_DEFAULT as OPENSRE_GATEWAY_LLM_MODEL_DEFAULT,
     )
     from config.constants.account import (
         OPENSRE_STAFF_EMAIL_DOMAIN as OPENSRE_STAFF_EMAIL_DOMAIN,
@@ -67,6 +73,15 @@ if TYPE_CHECKING:
     )
     from config.constants.analytics import (
         ANALYTICS_INGEST_PATH as ANALYTICS_INGEST_PATH,
+    )
+    from config.constants.analytics import (
+        ANALYTICS_INSTALL_CHANNEL_ENV as ANALYTICS_INSTALL_CHANNEL_ENV,
+    )
+    from config.constants.analytics import (
+        ANALYTICS_INSTALL_SOURCE_ENV as ANALYTICS_INSTALL_SOURCE_ENV,
+    )
+    from config.constants.analytics import (
+        ANALYTICS_INSTALL_VERSION_ENV as ANALYTICS_INSTALL_VERSION_ENV,
     )
     from config.constants.analytics import (
         ANALYTICS_LOG_EVENTS_ENV as ANALYTICS_LOG_EVENTS_ENV,
@@ -917,6 +932,9 @@ if TYPE_CHECKING:
         WORKSPACE_REPO_ENV_KEYS as WORKSPACE_REPO_ENV_KEYS,
     )
     from config.constants.scheduler import (
+        NON_RETRYABLE_WORK_ERROR_KINDS as NON_RETRYABLE_WORK_ERROR_KINDS,
+    )
+    from config.constants.scheduler import (
         OPENSRE_GATEWAY_HOST_SCHEDULER_ENV as OPENSRE_GATEWAY_HOST_SCHEDULER_ENV,
     )
     from config.constants.secrets import (
@@ -1179,6 +1197,9 @@ if TYPE_CHECKING:
     )
     from config.constants.work_items import (
         OPENSRE_WORK_ITEMS_DIR_ENV as OPENSRE_WORK_ITEMS_DIR_ENV,
+    )
+    from config.constants.work_items import (
+        WORK_ITEM_REMINDER_RUN_AT_PARAM as WORK_ITEM_REMINDER_RUN_AT_PARAM,
     )
     from config.constants.x_mcp import (
         X_MCP_AUTH_TOKEN_ENV as X_MCP_AUTH_TOKEN_ENV,

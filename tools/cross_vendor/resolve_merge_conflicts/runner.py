@@ -111,13 +111,6 @@ class FileChoice:
 # Shows the per-file menu; True when it was queued and the turn must end to await the answer.
 Ask = Callable[[list[FileChoice]], bool]
 
-ALL_FILES_TITLE: Final = "Resolve all conflicted files"
-ALL_FILES_OPTIONS: Final = (
-    "Combine all with the coding agent",
-    "Keep ours for all",
-    "Take theirs for all",
-    "Decide file by file",
-)
 DECIDE_EACH: Final = "each"
 
 AWAITING_INSTRUCTION: Final = (

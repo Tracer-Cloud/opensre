@@ -108,9 +108,10 @@ def terminate_process_tree(
         with contextlib.suppress(psutil.Error, OSError):
             root.terminate()
 
-    alive = processes
-    with contextlib.suppress(psutil.Error, OSError):
+    try:
         _, alive = psutil.wait_procs(processes, timeout=grace_seconds)
+    except (psutil.Error, OSError):
+        alive = processes
 
     for process in alive:
         with contextlib.suppress(psutil.Error, OSError):

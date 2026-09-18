@@ -18,12 +18,6 @@ import infrastructure.process.runtime_flags as runtime_flags
 import surfaces.cli.commands.cron as cron_module
 from infrastructure.scheduling.scheduler.storage import BacklogSnapshot, TaskStoreSnapshot
 from infrastructure.scheduling.scheduler.types import Provider, TaskKind, TaskRun, TaskStatus
-from surfaces.cli.commands.cron import (
-    _KIND_CHOICES,
-    _PROVIDER_CHOICES,
-    _run_status_label,
-    cron_command,
-)
 
 
 @pytest.fixture(autouse=True)
@@ -33,7 +27,7 @@ def _isolate_runtime_flags(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_cron_add_provider_choices_match_full_provider_enum() -> None:
     """cron delivery genuinely supports every Provider member."""
-    assert set(_PROVIDER_CHOICES) == {p.value for p in Provider}
+    assert set(cron_module._PROVIDER_CHOICES) == {p.value for p in Provider}
 
 
 @pytest.mark.parametrize("global_json", [False, True])
@@ -56,7 +50,7 @@ def test_cron_status_reports_backlog_in_json(
     )
 
     args = ["status"] if global_json else ["status", "--json"]
-    result = CliRunner().invoke(cron_command, args)
+    result = CliRunner().invoke(cron_module.cron_command, args)
 
     assert result.exit_code == 0
     assert json.loads(result.output) == {
@@ -77,7 +71,7 @@ def test_cron_status_formats_empty_backlog(monkeypatch: pytest.MonkeyPatch) -> N
         lambda **_kwargs: TaskStoreSnapshot((), True),
     )
 
-    result = CliRunner().invoke(cron_command, ["status"])
+    result = CliRunner().invoke(cron_module.cron_command, ["status"])
 
     assert result.exit_code == 0
     assert "Pending runs" in result.output
@@ -97,7 +91,7 @@ def test_cron_status_reports_unknown_for_non_utf8_store(
     )
 
     args = ["status"] if global_json else ["status", "--json"]
-    result = CliRunner().invoke(cron_command, args)
+    result = CliRunner().invoke(cron_module.cron_command, args)
 
     assert result.exit_code == 1
     assert json.loads(result.output) == {
@@ -124,7 +118,7 @@ def test_cron_status_formats_oldest_pending_age(monkeypatch: pytest.MonkeyPatch)
         lambda **_kwargs: TaskStoreSnapshot((), True),
     )
 
-    result = CliRunner().invoke(cron_command, ["status"])
+    result = CliRunner().invoke(cron_module.cron_command, ["status"])
 
     assert result.exit_code == 0
     assert "2026-01-01T09:00:00+00:00" in result.output
@@ -165,7 +159,7 @@ def test_cron_status_times_out_while_another_process_holds_the_task_lock(
     assert ready_path.exists(), "lock-holder process exited before acquiring the lock"
     try:
         started_at = time.monotonic()
-        result = CliRunner().invoke(cron_command, ["status", "--json"])
+        result = CliRunner().invoke(cron_module.cron_command, ["status", "--json"])
         elapsed = time.monotonic() - started_at
     finally:
         lock_holder.terminate()
@@ -206,7 +200,7 @@ def test_cron_status_reports_corrupt_run_database(
     )
     args = ["status", "--json"] if output_mode == "local_json" else ["status"]
 
-    result = CliRunner().invoke(cron_command, args)
+    result = CliRunner().invoke(cron_module.cron_command, args)
 
     assert result.exit_code == 1
     if output_mode == "human":
@@ -237,7 +231,7 @@ def test_cron_status_reports_run_storage_access_failure(
         "infrastructure.scheduling.scheduler.storage.get_backlog_snapshot", fail_snapshot
     )
 
-    result = CliRunner().invoke(cron_command, ["status", "--json"])
+    result = CliRunner().invoke(cron_module.cron_command, ["status", "--json"])
 
     assert result.exit_code == 1
     assert json.loads(result.output)["error"] == "run_store_unreadable"
@@ -254,7 +248,7 @@ def test_cron_status_fails_closed_for_an_unreadable_task_store(
     )
     args = ["status", "--json"] if as_json else ["status"]
 
-    result = CliRunner().invoke(cron_command, args)
+    result = CliRunner().invoke(cron_module.cron_command, args)
 
     assert result.exit_code == 1
     if as_json:
@@ -271,7 +265,7 @@ def test_cron_status_fails_closed_for_an_unreadable_task_store(
 
 def test_cron_add_kind_choices_exclude_sentry_kinds() -> None:
     """Sentry-kind tasks go through `opensre sentry`, not generic cron add."""
-    assert set(_KIND_CHOICES) == {k.value for k in TaskKind} - {
+    assert set(cron_module._KIND_CHOICES) == {k.value for k in TaskKind} - {
         TaskKind.SENTRY_MORNING_DIGEST.value,
         TaskKind.SENTRY_UPTIME_WATCH.value,
     }
@@ -279,7 +273,7 @@ def test_cron_add_kind_choices_exclude_sentry_kinds() -> None:
 
 def test_cron_add_rejects_work_item_reminder_without_a_work_item() -> None:
     result = CliRunner().invoke(
-        cron_command,
+        cron_module.cron_command,
         [
             "add",
             "--kind",
@@ -323,7 +317,7 @@ def test_cron_list_surfaces_legacy_task_migration_status(
         "infrastructure.scheduling.scheduler.loops.list_loop_summaries", lambda: [summary]
     )
 
-    result = CliRunner().invoke(cron_command, ["list"])
+    result = CliRunner().invoke(cron_module.cron_command, ["list"])
 
     assert result.exit_code == 0
     output = " ".join(result.output.split())
@@ -365,20 +359,20 @@ def test_cron_list_keeps_task_id_whole_when_squeezed(
     # ``file=None`` resolves to ``sys.stdout`` at print time, so CliRunner still
     # captures the table; ``width`` pins the squeeze independent of the pytest TTY.
     monkeypatch.setattr(cron_module, "_console", Console(width=95, force_terminal=False))
-    squeezed = CliRunner().invoke(cron_command, ["list"])
+    squeezed = CliRunner().invoke(cron_module.cron_command, ["list"])
     assert squeezed.exit_code == 0
     assert "ecf7c2580b83" in squeezed.output
     assert "…" not in squeezed.output  # every other cell folds instead of truncating
 
     monkeypatch.setattr(cron_module, "_console", Console(width=200, force_terminal=False))
-    wide = CliRunner().invoke(cron_command, ["list"])
+    wide = CliRunner().invoke(cron_module.cron_command, ["list"])
     assert "2026-09-16 11:54:47 UTC" in wide.output
     assert "347779" not in wide.output  # microseconds are noise that cost a column
 
 
 def test_cron_add_manual_loop_requires_prompt() -> None:
     result = CliRunner().invoke(
-        cron_command,
+        cron_module.cron_command,
         [
             "add",
             "--kind",
@@ -396,7 +390,7 @@ def test_cron_add_manual_loop_requires_prompt() -> None:
 
 def test_cron_add_rejects_prompt_for_non_manual_loop() -> None:
     result = CliRunner().invoke(
-        cron_command,
+        cron_module.cron_command,
         [
             "add",
             "--kind",
@@ -429,7 +423,7 @@ def test_cron_add_persists_manual_loop_prompt(
     monkeypatch.setattr(scheduler_store, "default_task_store_path", lambda: store)
 
     result = CliRunner().invoke(
-        cron_command,
+        cron_module.cron_command,
         [
             "add",
             "--kind",
@@ -454,7 +448,7 @@ def test_cron_add_persists_manual_loop_prompt(
 @pytest.mark.parametrize("mode", ["report", "agent"])
 def test_cron_add_rejects_mode_for_non_manual_loop(mode: str) -> None:
     result = CliRunner().invoke(
-        cron_command,
+        cron_module.cron_command,
         [
             "add",
             "--kind",
@@ -475,7 +469,7 @@ def test_cron_add_rejects_mode_for_non_manual_loop(mode: str) -> None:
 def test_cron_add_rejects_non_positive_window() -> None:
     runner = CliRunner()
     result = runner.invoke(
-        cron_command,
+        cron_module.cron_command,
         [
             "add",
             "--kind",
@@ -496,15 +490,15 @@ def test_cron_add_rejects_non_positive_window() -> None:
 
 def test_cron_logs_rejects_non_positive_limit() -> None:
     runner = CliRunner()
-    result = runner.invoke(cron_command, ["logs", "task-123", "--limit", "0"])
+    result = runner.invoke(cron_module.cron_command, ["logs", "task-123", "--limit", "0"])
     assert result.exit_code != 0
     assert "not in the range" in result.output
 
 
 def test_cron_log_status_identifies_reclaimed_attempts() -> None:
-    assert _run_status_label(TaskRun(task_id="t", fire_time="f")) == "pending"
+    assert cron_module._run_status_label(TaskRun(task_id="t", fire_time="f")) == "pending"
     assert (
-        _run_status_label(
+        cron_module._run_status_label(
             TaskRun(
                 task_id="t",
                 fire_time="f",
@@ -515,7 +509,9 @@ def test_cron_log_status_identifies_reclaimed_attempts() -> None:
         == "reclaimed/success"
     )
     assert (
-        _run_status_label(TaskRun(task_id="t", fire_time="f", status=TaskStatus.ABANDONED))
+        cron_module._run_status_label(
+            TaskRun(task_id="t", fire_time="f", status=TaskStatus.ABANDONED)
+        )
         == "abandoned"
     )
 
@@ -536,7 +532,7 @@ def test_cron_add_allows_slack_without_chat_id(
 
     runner = CliRunner()
     result = runner.invoke(
-        cron_command,
+        cron_module.cron_command,
         [
             "add",
             "--kind",
@@ -565,7 +561,7 @@ def test_cron_add_persists_loop_name(tmp_path: Path, monkeypatch: pytest.MonkeyP
 
     runner = CliRunner()
     result = runner.invoke(
-        cron_command,
+        cron_module.cron_command,
         [
             "add",
             "--name",
@@ -597,7 +593,7 @@ def test_cron_add_persists_github_ci_health_scope(
     monkeypatch.setenv("SLACK_WEBHOOK_URL", "https://hooks.slack.test/services/T/B/x")
 
     result = CliRunner().invoke(
-        cron_command,
+        cron_module.cron_command,
         [
             "add",
             "--kind",
@@ -638,7 +634,7 @@ def test_cron_add_persists_morning_report_city(
     monkeypatch.setattr(scheduler_store, "default_task_store_path", lambda: store)
 
     result = CliRunner().invoke(
-        cron_command,
+        cron_module.cron_command,
         [
             "add",
             "--kind",
@@ -663,7 +659,7 @@ def test_cron_add_persists_morning_report_city(
 
 def test_cron_add_rejects_city_for_unrelated_skill() -> None:
     result = CliRunner().invoke(
-        cron_command,
+        cron_module.cron_command,
         [
             "add",
             "--kind",
@@ -689,7 +685,7 @@ def test_cron_add_rejects_city_for_unrelated_skill() -> None:
 
 def test_cron_add_requires_repository_scope_for_github_ci_health() -> None:
     result = CliRunner().invoke(
-        cron_command,
+        cron_module.cron_command,
         [
             "add",
             "--kind",
@@ -709,7 +705,7 @@ def test_cron_add_requires_repository_scope_for_github_ci_health() -> None:
 
 def test_cron_add_rejects_branch_and_pr_for_github_ci_health() -> None:
     result = CliRunner().invoke(
-        cron_command,
+        cron_module.cron_command,
         [
             "add",
             "--kind",
@@ -737,7 +733,7 @@ def test_cron_add_rejects_branch_and_pr_for_github_ci_health() -> None:
 
 def test_cron_add_rejects_github_scope_for_an_unrelated_kind() -> None:
     result = CliRunner().invoke(
-        cron_command,
+        cron_module.cron_command,
         [
             "add",
             "--kind",
@@ -773,7 +769,7 @@ def test_cron_add_allows_interactive_shell_without_chat_id(
 
     runner = CliRunner()
     result = runner.invoke(
-        cron_command,
+        cron_module.cron_command,
         [
             "add",
             "--name",
@@ -796,7 +792,7 @@ def test_cron_add_allows_interactive_shell_without_chat_id(
 def test_cron_add_still_requires_chat_id_for_telegram() -> None:
     runner = CliRunner()
     result = runner.invoke(
-        cron_command,
+        cron_module.cron_command,
         [
             "add",
             "--kind",
@@ -816,7 +812,7 @@ def test_cron_add_still_requires_chat_id_for_telegram() -> None:
 def test_cron_add_rejects_non_recurring_skill() -> None:
     runner = CliRunner()
     result = runner.invoke(
-        cron_command,
+        cron_module.cron_command,
         [
             "add",
             "--kind",
@@ -884,7 +880,7 @@ def test_cron_run_failed_only_flag_is_passed_through(monkeypatch: pytest.MonkeyP
     """``--failed-only`` must reach ``run_task_now`` as ``only_failed=True``."""
     calls = _patch_cron_run_deps(monkeypatch, "t1", _partial_run("t1"))
 
-    result = CliRunner().invoke(cron_command, ["run", "t1", "--failed-only"])
+    result = CliRunner().invoke(cron_module.cron_command, ["run", "t1", "--failed-only"])
 
     assert result.exit_code == 0, result.output
     assert calls == [{"task_id": "t1", "only_failed": True}]
@@ -893,7 +889,7 @@ def test_cron_run_failed_only_flag_is_passed_through(monkeypatch: pytest.MonkeyP
 def test_cron_run_defaults_to_a_full_run(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = _patch_cron_run_deps(monkeypatch, "t1", None)
 
-    result = CliRunner().invoke(cron_command, ["run", "t1"])
+    result = CliRunner().invoke(cron_module.cron_command, ["run", "t1"])
 
     assert result.exit_code == 0, result.output
     assert calls == [{"task_id": "t1", "only_failed": False}]
@@ -905,7 +901,7 @@ def test_cron_run_failed_only_refuses_when_history_is_unreadable(
     """Unknown history must stop the retry, never widen it to every destination."""
     calls = _patch_cron_run_deps(monkeypatch, "t1", None)
 
-    result = CliRunner().invoke(cron_command, ["run", "t1", "--failed-only"])
+    result = CliRunner().invoke(cron_module.cron_command, ["run", "t1", "--failed-only"])
 
     assert result.exit_code == 1
     # Rich wraps the console output, so assert on a phrase that survives it.
@@ -927,7 +923,7 @@ def test_cron_run_failed_only_reports_nothing_to_retry(
     )
     calls = _patch_cron_run_deps(monkeypatch, "t1", all_ok)
 
-    result = CliRunner().invoke(cron_command, ["run", "t1", "--failed-only"])
+    result = CliRunner().invoke(cron_module.cron_command, ["run", "t1", "--failed-only"])
 
     assert result.exit_code == 0, result.output
     assert "Nothing to retry" in result.output
@@ -940,7 +936,7 @@ def test_cron_run_warns_that_a_full_rerun_redelivers_after_a_partial_failure(
     """The default rerun still delivers everywhere — say so before it does."""
     _patch_cron_run_deps(monkeypatch, "t1", _partial_run("t1"))
 
-    result = CliRunner().invoke(cron_command, ["run", "t1"])
+    result = CliRunner().invoke(cron_module.cron_command, ["run", "t1"])
 
     assert result.exit_code == 0, result.output
     assert "already delivered to slack:C1" in result.output
@@ -960,7 +956,7 @@ def test_cron_run_does_not_warn_when_the_last_run_fully_succeeded(
     )
     _patch_cron_run_deps(monkeypatch, "t1", all_ok)
 
-    result = CliRunner().invoke(cron_command, ["run", "t1"])
+    result = CliRunner().invoke(cron_module.cron_command, ["run", "t1"])
 
     assert result.exit_code == 0, result.output
     assert "already delivered" not in result.output
@@ -969,7 +965,7 @@ def test_cron_run_does_not_warn_when_the_last_run_fully_succeeded(
 def test_cron_run_failed_only_skips_the_warning(monkeypatch: pytest.MonkeyPatch) -> None:
     calls = _patch_cron_run_deps(monkeypatch, "t1", _partial_run("t1"))
 
-    result = CliRunner().invoke(cron_command, ["run", "t1", "--failed-only"])
+    result = CliRunner().invoke(cron_module.cron_command, ["run", "t1", "--failed-only"])
 
     assert result.exit_code == 0, result.output
     assert "already delivered" not in result.output

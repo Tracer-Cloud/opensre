@@ -171,12 +171,15 @@ def test_credential_keys_are_redacted_before_reaching_the_sdk() -> None:
 
 
 def test_body_exception_marks_error_and_propagates() -> None:
+    def fail_body() -> None:
+        raise ValueError(f"boom {_GITHUB_PAT}")
+
     client = _FakeLangfuse()
     with (
         pytest.raises(ValueError, match="boom"),
         _sink(client).observe(ObservationKind.SPAN, "handle-turn"),
     ):
-        raise ValueError(f"boom {_GITHUB_PAT}")
+        fail_body()
     (update,) = client.spans[0].updates
     assert update["level"] == ObservationLevel.ERROR.value
     assert update["status_message"].startswith("ValueError: boom")

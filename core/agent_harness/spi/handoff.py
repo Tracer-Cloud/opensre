@@ -10,14 +10,18 @@ from __future__ import annotations
 
 from core.agent_harness.session.pending_choice import (
     AskUserQuestion,
+    apply_pending_user_choice_state,
     format_ask_user_answers,
     parse_ask_user_answers,
+    pending_user_choice_state_snapshot,
     question_key,
 )
 
 __all__ = [
     "AskUserQuestion",
+    "apply_pending_user_choice_state",
     "format_ask_user_answers",
     "parse_ask_user_answers",
+    "pending_user_choice_state_snapshot",
     "question_key",
 ]

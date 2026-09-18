@@ -59,6 +59,10 @@ _QUEUED_BATCH_INSTRUCTION = (
     "NOT call update_plan yet. The user's answers arrive as the next user "
     "message. After they arrive, call update_plan then execute."
 )
+_DEFERRED_INSTRUCTION = (
+    "The host will render this required choice after the turn and persist it for "
+    "a later invocation. End the turn now without repeating the question or options."
+)
 
 _QUESTION_ITEM_SCHEMA = {
     "type": "object",
@@ -103,6 +107,11 @@ def _menu_available(ctx: ActionToolScope) -> bool:
         return False
     ports = ctx.slash_ports
     return ports is not None and bool(ports.tty_interactive())
+
+
+def _deferred_choice_available(ctx: ActionToolScope) -> bool:
+    capabilities = getattr(ctx.session, "available_capabilities", {})
+    return "deferred" in capabilities.get("ask_user_choice", ())
 
 
 def _parse_options(raw: object) -> list[str]:
@@ -288,7 +297,9 @@ def execute_ask_user_choice_tool(args: dict[str, Any], ctx: ActionToolScope) -> 
         queued = _QUEUED_INSTRUCTION
         summary = f"selection menu queued: {title}"
 
-    if not _menu_available(ctx):
+    menu_available = _menu_available(ctx)
+    deferred = _deferred_choice_available(ctx)
+    if not menu_available and not deferred:
         return {"ok": True, "menu": "unavailable", "instruction": _FALLBACK_INSTRUCTION}
 
     ctx.session.pending_user_choice = pending
@@ -298,6 +309,13 @@ def execute_ask_user_choice_tool(args: dict[str, Any], ctx: ActionToolScope) -> 
         by_skill.setdefault(skill, set()).update(question_key(q.title) for q in pending.items())
     if questions:
         ctx.session.ask_user_rounds = getattr(ctx.session, "ask_user_rounds", 0) + 1
+    if deferred and not menu_available:
+        return {
+            "ok": True,
+            "menu": "deferred",
+            "summary": summary,
+            "instruction": _DEFERRED_INSTRUCTION,
+        }
     set_auto_command(ctx.session, _CHOOSE_COMMAND)
     terminal = session_terminal(ctx.session)
     if terminal is not None:

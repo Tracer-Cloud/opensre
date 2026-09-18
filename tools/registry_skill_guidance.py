@@ -50,6 +50,16 @@ def _skill_guidance_files() -> tuple[Path, ...]:
     return (*explicit, *discovered)
 
 
+def tool_guidance_tools(name: str) -> tuple[str, ...]:
+    """Tools whose descriptions carry the guidance called *name*; empty when none does."""
+    wanted = name.strip().casefold()
+    for skill_path in _skill_guidance_files():
+        skill = load_tool_skill_guidance(skill_path).skill
+        if skill is not None and skill.name.casefold() == wanted:
+            return skill.tool_names
+    return ()
+
+
 def _truncate_skill_guidance(text: str) -> str:
     if len(text) <= _MAX_TOOL_SKILL_GUIDANCE_CHARS:
         return text

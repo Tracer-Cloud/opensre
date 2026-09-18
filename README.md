@@ -106,23 +106,11 @@ Equivalent explicit main-channel form:
 curl -fsSL https://install.opensre.com | bash -s -- --main
 ```
 
-Homebrew:
-
-```bash
-brew tap tracer-cloud/tap
-brew install tracer-cloud/tap/opensre
-```
-
 Windows (PowerShell):
 
 ```powershell
 irm https://install.opensre.com | iex
 ```
-
-<!--
-```bash
-pipx install opensre
-``` -->
 
 ---
 
@@ -130,19 +118,15 @@ pipx install opensre
 
 Contributors: start at [`main.py`](main.py) for the process entrypoint map.
 
-Create or sign in to your OpenSRE account once. Setup activates the hosted model:
+Run `opensre` to sign in and get started. The first launch activates the hosted model.
 
 ```bash
-opensre setup
+opensre
 ```
 
 Webapp contributors can run `opensre setup --dev` to authenticate through `http://localhost:3000`.
 
 **Interactive shell** — with no subcommand, `opensre` validates your account and starts a REPL (TTY required). You can exit and stay signed out, but the shell only opens for an active account. Describe incidents in plain language, watch the agent work, and use slash commands for session control (`/help`, `/status`, `/cost`, `/sessions`, `/resume`, `/compact`, `/new`, `/exit`), integrations (`/integrations list`, `/integrations verify`), and local agent fleet monitoring (`/agents`). Ctrl+C cancels an in-flight turn without losing session state. See **[interactive shell commands](https://www.opensre.com/docs/interactive-shell-commands)** for the full reference.
-
-```bash
-opensre
-```
 
 **Headless CLI** — run one agent turn non-interactively from a terminal, script, or CI job:
 

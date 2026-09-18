@@ -34,10 +34,10 @@ description: "An agentic SRE for production systems."
 
 <CardGroup cols={2}>
   <Card title="Install OpenSRE" icon="download" href="/install">
-    One command on macOS or Linux, then a quick setup wizard.
+    One command on macOS or Linux, then run `opensre` to get started.
   </Card>
   <Card title="Create your account" icon="wand-magic-sparkles" href="/quickstart">
-    `opensre setup` signs you in and activates the hosted model.
+    Run `opensre` to sign in and activate the hosted model.
   </Card>
   <Card title="Connect your tools" icon="plug" href="/integrations-overview">
     Datadog, Grafana, PagerDuty, Slack, Kubernetes, and more.
@@ -88,15 +88,8 @@ OpenSRE is an open-source agent that answers production questions for you. When 
     curl -fsSL https://install.opensre.com | bash
     ```
   </Step>
-  <Step title="Set things up">
-    This opens the OpenSRE sign-up page. Create an account or sign in using email or another enabled provider; OpenSRE then activates the hosted model. Add tools later with `opensre integrations setup <service>` when you want it to query GitHub, Datadog, Grafana, Slack, or another system.
-
-    ```bash
-    opensre setup
-    ```
-  </Step>
-  <Step title="Give it something to look at">
-    Open the shell with no arguments and describe what's going on in your own words — or paste the alert body straight in:
+  <Step title="Get started">
+    Run `opensre` to sign in and start the shell. Create an account or sign in using email or another enabled provider; OpenSRE then activates the hosted model. Describe what's going on in your own words — or paste the alert body straight in. Add tools later with `opensre integrations setup <service>` when you want it to query GitHub, Datadog, Grafana, Slack, or another system.
 
     ```bash
     opensre

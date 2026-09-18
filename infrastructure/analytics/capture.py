@@ -306,6 +306,7 @@ def capture_agent_tool_call_completed(
     is_error: bool,
     terminate: bool,
     duration_ms: int,
+    work_status: str = "",
 ) -> None:
     """Record the privacy-safe outcome of one model-requested tool call."""
     _capture(
@@ -321,6 +322,7 @@ def capture_agent_tool_call_completed(
             "terminate": terminate,
             "duration_ms": duration_ms,
             "duration_bucket": _bucket_duration_ms(duration_ms),
+            "work_status": work_status,
         },
     )
 

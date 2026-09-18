@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -10,10 +11,16 @@ import pytest
 from rich.console import Console
 
 from core.agent_harness.session import SessionCore
+from core.agent_harness.session.pending_choice import PendingUserChoice
 from core.agent_harness.session.persistence.memory import InMemorySessionStore
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
 from infrastructure.turn_host.bindable_output import BindableOutput
 from infrastructure.turn_host.session_agents import SessionAgentPool
+from infrastructure.turn_host.session_lock import (
+    retain_session_execution_lock,
+    retained_session_execution_locks,
+    session_execution_lock,
+)
 from infrastructure.turn_host.turn_runner import TurnRunner
 from tests.shared.default_headless_build_stub import default_headless_build_stub
 from tests.shared.fake_agent import fake_agent
@@ -220,6 +227,165 @@ def test_same_session_turns_do_not_interleave(monkeypatch: pytest.MonkeyPatch) -
     # Assert
     assert "OVERLAP" not in order, order
     assert order.index("first-exit") < order.index("second-enter"), order
+
+
+def test_pool_waits_for_a_session_lease_held_by_another_host(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Gateway and CLI turns must share the same whole-session lease."""
+    import threading
+
+    monkeypatch.setattr(
+        "infrastructure.turn_host.session_lock.sessions_dir",
+        lambda: tmp_path,
+    )
+    pool = _fake_agent_pool(monkeypatch)
+    logger = logging.getLogger("test.pool.cross-host")
+    session = SessionCore(store=InMemorySessionStore())
+    attempted = threading.Event()
+    entered = threading.Event()
+
+    def _enter_pool() -> None:
+        attempted.set()
+        with pool.session_agent(session=session, output=MagicMock(), logger=logger):
+            entered.set()
+
+    with session_execution_lock(session.session_id):
+        thread = threading.Thread(target=_enter_pool)
+        thread.start()
+        assert attempted.wait(timeout=1)
+        assert not entered.wait(timeout=0.2)
+
+    thread.join(timeout=5)
+    assert not thread.is_alive()
+    assert entered.is_set()
+
+
+def test_session_execution_lock_is_reentrant_on_one_thread(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A host and its pool can hold the same session lease without deadlocking."""
+    monkeypatch.setattr(
+        "infrastructure.turn_host.session_lock.sessions_dir",
+        lambda: tmp_path,
+    )
+    session = SessionCore(store=InMemorySessionStore())
+
+    # A zero timeout proves this reuses the held physical lock rather than
+    # taking a second contending lock instance.
+    with (
+        session_execution_lock(session.session_id),
+        session_execution_lock(session.session_id, timeout=0, reentrant=True),
+    ):
+        pass
+
+
+def test_retained_reentrant_lease_releases_before_its_owner(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A same-session /resume cannot fail while the turn unwinds its leases."""
+    monkeypatch.setattr(
+        "infrastructure.turn_host.session_lock.sessions_dir",
+        lambda: tmp_path,
+    )
+    session = SessionCore(store=InMemorySessionStore())
+
+    # This is the same nesting order as TurnRunner: the retained reentrant
+    # target lease exits first, while the source's physical lease is still
+    # registered with the current thread.
+    with session_execution_lock(session.session_id), retained_session_execution_locks():
+        assert retain_session_execution_lock(session.session_id, timeout=0, reentrant=True)
+
+
+def test_pool_claims_session_lease_before_its_process_local_lock(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Direct pool callers use the same lock order as TurnRunner."""
+    from contextlib import contextmanager
+
+    pool = _fake_agent_pool(monkeypatch)
+    session = SessionCore(store=InMemorySessionStore())
+    logger = logging.getLogger("test.pool.lock-order")
+    entered: list[str] = []
+
+    @contextmanager
+    def _lease(_session_id: str, **_kwargs: object):
+        entered.append("lease")
+        yield
+
+    class _LocalLock:
+        def __enter__(self) -> None:
+            entered.append("local")
+
+        def __exit__(self, *_args: object) -> None:
+            return None
+
+    monkeypatch.setattr(
+        "infrastructure.turn_host.session_agents.session_execution_lock",
+        _lease,
+    )
+    monkeypatch.setattr(pool, "_lock_for", lambda _session_id: _LocalLock())
+
+    with pool.session_agent(session=session, output=MagicMock(), logger=logger):
+        assert entered == ["lease", "local"]
+
+
+def test_pool_refreshes_session_after_acquiring_external_lease(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A host waiting behind CLI resume must not run with stale session state."""
+    import threading
+
+    monkeypatch.setattr(
+        "infrastructure.turn_host.session_lock.sessions_dir",
+        lambda: tmp_path,
+    )
+    pool = _fake_agent_pool(monkeypatch)
+    logger = logging.getLogger("test.pool.refresh-after-lease")
+    session = SessionCore(store=InMemorySessionStore())
+    session.cli_agent_messages = [("user", "stale request")]
+    session.pending_user_choice = PendingUserChoice(
+        title="Stale choice",
+        options=("old",),
+    )
+    attempted = threading.Event()
+    refreshed = threading.Event()
+
+    def refresh_from_storage(_manager: object, target: SessionCore) -> SessionCore:
+        target.cli_agent_messages = [("user", "resumed request")]
+        target.pending_user_choice = PendingUserChoice(
+            title="Fresh choice",
+            options=("new",),
+        )
+        refreshed.set()
+        return target
+
+    monkeypatch.setattr(
+        "infrastructure.turn_host.session_agents.SessionManager.refresh_from_storage",
+        refresh_from_storage,
+    )
+
+    def _enter_pool() -> None:
+        attempted.set()
+        with pool.session_agent(session=session, output=MagicMock(), logger=logger):
+            return
+
+    with session_execution_lock(session.session_id):
+        thread = threading.Thread(target=_enter_pool)
+        thread.start()
+        assert attempted.wait(timeout=1)
+        assert not refreshed.wait(timeout=0.2)
+
+    thread.join(timeout=5)
+    assert not thread.is_alive()
+    assert refreshed.is_set()
+    assert session.cli_agent_messages == [("user", "resumed request")]
+    assert session.pending_user_choice is not None
+    assert session.pending_user_choice.title == "Fresh choice"
 
 
 def test_different_sessions_still_run_concurrently(monkeypatch: pytest.MonkeyPatch) -> None:

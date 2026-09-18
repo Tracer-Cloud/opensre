@@ -27,6 +27,7 @@ EXPORTS: dict[str, str] = {
     "OPENSRE_ACCOUNT_FILENAME": "account",
     "OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS": "account",
     "OPENSRE_ACCOUNT_LLM_BASE_PATH": "account",
+    "OPENSRE_ACCOUNT_LLM_MODEL_ENV": "account",
     "OPENSRE_ACCOUNT_METADATA_PATH_ENV": "account",
     "OPENSRE_ACCOUNT_SESSION_PATH": "account",
     "OPENSRE_ACCOUNT_TOKEN_ENV": "account",
@@ -34,11 +35,15 @@ EXPORTS: dict[str, str] = {
     "OPENSRE_APP_URL_DEFAULT": "account",
     "OPENSRE_APP_URL_DEV": "account",
     "OPENSRE_APP_URL_ENV": "account",
+    "OPENSRE_GATEWAY_LLM_MODEL_DEFAULT": "account",
     "OPENSRE_STAFF_EMAIL_DOMAIN": "account",
     # analytics
     "ANALYTICS_DISABLED_ENV": "analytics",
     "ANALYTICS_EVENT_SCHEMA_VERSION": "analytics",
     "ANALYTICS_INGEST_PATH": "analytics",
+    "ANALYTICS_INSTALL_CHANNEL_ENV": "analytics",
+    "ANALYTICS_INSTALL_SOURCE_ENV": "analytics",
+    "ANALYTICS_INSTALL_VERSION_ENV": "analytics",
     "ANALYTICS_LOG_EVENTS_ENV": "analytics",
     "ANALYTICS_MAX_PAYLOAD_BYTES": "analytics",
     "ANALYTICS_SIGNATURE_HEADER": "analytics",
@@ -378,6 +383,7 @@ EXPORTS: dict[str, str] = {
     "RUNBOOK_CONTENT_MAX_CHARS": "runbooks",
     "RUNBOOK_MANIFEST_MAX_CHARS": "runbooks",
     # scheduler
+    "NON_RETRYABLE_WORK_ERROR_KINDS": "scheduler",
     "OPENSRE_GATEWAY_HOST_SCHEDULER_ENV": "scheduler",
     # secrets
     "CREDENTIAL_FALLBACK_FILENAME": "secrets",
@@ -481,6 +487,7 @@ EXPORTS: dict[str, str] = {
     "VERCEL_TEAM_ID_ENV": "vercel",
     # work_items
     "OPENSRE_WORK_ITEMS_DIR_ENV": "work_items",
+    "WORK_ITEM_REMINDER_RUN_AT_PARAM": "work_items",
     # x_mcp
     "X_MCP_AUTH_TOKEN_ENV": "x_mcp",
     "X_MCP_URL_ENV": "x_mcp",

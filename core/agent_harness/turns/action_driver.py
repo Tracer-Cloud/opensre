@@ -986,6 +986,9 @@ def _show_completed_plan_breakdown(output: OutputSink, session: SessionState) ->
         render(breakdown)
     else:
         output.print(breakdown)
+    # The breakdown is the last thing a completed turn prints, so it needs the
+    # same blank row below as above — otherwise it butts against the prompt.
+    output.print()
 
 
 def _count_turn(result: Any, session: SessionState, history_start: int) -> _TurnCounts:

@@ -242,8 +242,6 @@ def _run_install_sh(
             README,
             (
                 "curl -fsSL https://install.opensre.com | bash",
-                "brew tap tracer-cloud/tap",
-                "brew install tracer-cloud/tap/opensre",
                 "irm https://install.opensre.com | iex",
             ),
         ),

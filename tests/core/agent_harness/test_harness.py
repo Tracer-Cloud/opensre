@@ -101,6 +101,27 @@ def test_load_or_create_session_resolves_when_session_id_given() -> None:
     assert manager.create_calls == []
 
 
+def test_load_or_create_session_creates_a_preallocated_id() -> None:
+    manager = _FakeSessionManager(Session())
+    harness = harness_module.AgentSession(
+        harness_module.SessionConfig(new_session_id="fresh-abc123", session_manager=manager)  # type: ignore[arg-type]
+    )
+
+    session = harness._load_or_create_session()  # noqa: SLF001
+
+    assert session is manager.session
+    assert manager.create_calls == [
+        {
+            "session_id": "fresh-abc123",
+            "hydrate_integrations": True,
+            "warm_integrations": False,
+            "persistent_tasks": True,
+            "open_store": True,
+        }
+    ]
+    assert manager.resolve_calls == []
+
+
 def test_load_or_create_session_forwards_explicit_warm_integrations() -> None:
     manager = _FakeSessionManager(Session())
     harness = harness_module.AgentSession(

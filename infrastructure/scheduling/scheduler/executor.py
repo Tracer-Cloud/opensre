@@ -146,7 +146,7 @@ def _execute_claimed_task(
 
     if not record_run_report(claim, message):
         return False
-    if isinstance(message, TaskReport) and message.stop_schedule:
+    if message.stop_schedule or message.outcome.terminal_block:
         current = get_task(task.id)
         if current is not None and current.enabled:
             current.enabled = False

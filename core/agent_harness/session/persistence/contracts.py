@@ -30,6 +30,7 @@ class RestoreContextKey(StrEnum):
     ACCUMULATED_CONTEXT = "accumulated_context"
     SESSION_GOAL_STATE = "session_goal_state"
     TASK_PLAN_STATE = "task_plan_state"
+    PENDING_USER_CHOICE_STATE = "pending_user_choice_state"
     HISTORY = "history"
 
 

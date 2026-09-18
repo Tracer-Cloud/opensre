@@ -328,11 +328,11 @@ def test_sentry_and_posthog_summary_guidance_attach_through_the_registry() -> No
     tools_by_name = {tool_def.name: tool_def for tool_def in registry_module.get_registered_tools()}
 
     assert (
-        '<skill name="summarizing-sentry-issues"'
+        '<tool_guidance name="summarizing-sentry-issues"'
         in tools_by_name["search_sentry_issues"].skill_guidance
     )
     assert (
-        '<skill name="summarizing-posthog-analytics"'
+        '<tool_guidance name="summarizing-posthog-analytics"'
         in tools_by_name["call_posthog_tool"].skill_guidance
     )
 

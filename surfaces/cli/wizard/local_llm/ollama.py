@@ -18,9 +18,6 @@ from surfaces.shared.llm_setup.ollama import (
     list_available_models,
     model_is_available,
 )
-from surfaces.shared.llm_setup.ollama import (
-    normalize_model_tag as normalize_model_tag,
-)
 
 if TYPE_CHECKING:
     from rich.console import Console

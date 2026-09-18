@@ -21,6 +21,22 @@ def test_inline_spinner_includes_phase_and_stop_hint() -> None:
     assert "Press ESC to stop" in rendered
 
 
+def test_status_row_uses_single_spaces_around_elapsed_badge() -> None:
+    """Hint and badge sit one cell apart and the badge hugs its brackets."""
+    spinner = SpinnerState()
+    spinner.start()
+    spinner.set_phase(SpinnerState.INVOKING_TOOLS_PHASE)
+    spinner.set_active_action("scan github ci health")
+    rendered = re.sub(r"\x1b\[[0-9;]*m", "", spinner.inline_spinner_ansi())
+    assert re.search(r"scan github ci health \(Press ESC to stop\) \[\d+s\]$", rendered)
+    assert "  " not in rendered
+
+    spinner.bytes_in = 40_000
+    rendered = re.sub(r"\x1b\[[0-9;]*m", "", spinner.inline_spinner_ansi())
+    assert re.search(r"\(Press ESC to stop\) \[\d+s · ↓ \S+ tokens\]$", rendered)
+    assert "  " not in rendered
+
+
 def test_long_phase_clips_to_one_prompt_column_budget() -> None:
     """A long phase label must not soft-wrap past the one reserved prompt row."""
     from surfaces.shared.terminal.prompt_layout import prompt_line_width, prompt_text_width

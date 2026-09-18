@@ -22,6 +22,22 @@ def test_skill_view_loads_github_ci_fix_skill() -> None:
     assert "fix_github_pr_ci" in result["content"]
 
 
+def test_a_tool_guidance_name_is_answered_as_already_loaded_not_as_a_failure() -> None:
+    # Arrange: this name is guidance attached to the GitHub work-status tools,
+    # which the model can mistake for a skill to open.
+    name = "tracking-github-work-status"
+
+    # Act
+    result = execute_skill_view_tool({"name": name}, ctx=None)  # type: ignore[arg-type]
+
+    # Assert: a normal result that names the tools to call, with nothing activated.
+    assert result["ok"] is True
+    assert result["already_loaded"] is True
+    assert "summarize_github_pr_status" in result["tools"]
+    assert "call the tool that fits the request" in result["content"]
+    assert "error" not in result
+
+
 def test_skill_view_unknown_name_lists_available() -> None:
     result = execute_skill_view_tool({"name": "no-such-skill"}, ctx=None)  # type: ignore[arg-type]
     assert result["ok"] is False

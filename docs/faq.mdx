@@ -17,7 +17,7 @@ description: "Common questions about OpenSRE."
 
     ```bash
     curl -fsSL https://install.opensre.com | bash
-    opensre setup
+    opensre
     opensre ask "why did checkout latency increase today?"
     ```
 
@@ -26,7 +26,7 @@ description: "Common questions about OpenSRE."
 
   <Accordion title="Which deployment path should I use?">
     Most users start with the local CLI (`curl` or Homebrew install, then
-    `opensre setup` for account sign-in, plus `opensre integrations setup` for the
+    `opensre` to sign in, plus `opensre integrations setup` for the
     tools you want OpenSRE to query). For organization-wide hosted connectors, use
     [Enterprise setup](/install-enterprise) at
     [app.tracer.cloud](https://app.tracer.cloud).
