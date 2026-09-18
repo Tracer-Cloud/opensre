@@ -71,9 +71,8 @@ def _already_loaded_guidance(name: str, guided_tools: tuple[str, ...]) -> dict[s
         "tools": list(guided_tools),
         "summary": f"{name} is tool guidance, already loaded",
         "content": (
-            f"{name} is guidance attached to these tools, and its full text is already in "
-            f"their descriptions: {listed}. There is nothing to open: call the tool that "
-            "fits the request."
+            f"{name} is guidance attached to these tools: {listed}. There is no separate "
+            "skill to open: call the tool that fits the request."
         ),
     }
 
