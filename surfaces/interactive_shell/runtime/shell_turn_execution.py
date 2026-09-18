@@ -29,7 +29,6 @@ from surfaces.interactive_shell.runtime.agent_harness_adapters import ShellOutpu
 from surfaces.interactive_shell.runtime.core.turn_accounting import ShellTurnAccounting
 from surfaces.interactive_shell.runtime.shell_agent import shell_agent_build_config
 from surfaces.interactive_shell.session import Session
-from surfaces.interactive_shell.telemetry import PromptRecorder
 from surfaces.shared.terminal.components.rendering import print_repl_text
 
 
@@ -58,7 +57,6 @@ def execute_shell_turn(
     session: Session,
     console: Console,
     *,
-    recorder: PromptRecorder | None,
     confirm_fn: Callable[[str], str] | None = None,
     is_tty: bool | None = None,
     request_exit: Callable[[], None] | None = None,
@@ -94,7 +92,7 @@ def execute_shell_turn(
             print_repl_text(console, rendered, markup=False)
 
     def _accounting(message: str) -> ShellTurnAccounting:
-        return ShellTurnAccounting(session=session, text=message, recorder=recorder)
+        return ShellTurnAccounting(session=session, text=message)
 
     result = handler.run(
         text,

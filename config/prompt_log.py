@@ -1,18 +1,21 @@
-"""Configuration helpers for interactive-shell prompt logging."""
+"""Configuration for prompt logging across agent hosts."""
 
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from config.constants import OPENSRE_HOME_DIR
+from config.constants.paths import session_home
 from config.repl_config import read_prompt_log_settings
 
 _FALSE_VALUES = {"", "0", "false", "off", "no"}
 _DEFAULT_MAX_CHARS = 32_000
-_DEFAULT_LOG_PATH = OPENSRE_HOME_DIR / "prompt_log.jsonl"
+
+
+def _default_log_path() -> Path:
+    return session_home() / "prompt_log.jsonl"
 
 
 def _coerce_bool(value: Any, *, default: bool) -> bool:
@@ -38,7 +41,7 @@ class PromptLogConfig:
     posthog_enabled: bool = True
     redact: bool = True
     max_chars: int = _DEFAULT_MAX_CHARS
-    log_path: Path = _DEFAULT_LOG_PATH
+    log_path: Path = field(default_factory=_default_log_path)
 
     @classmethod
     def load(cls) -> PromptLogConfig:
@@ -61,7 +64,7 @@ class PromptLogConfig:
         max_chars = _coerce_int(file_conf.get("max_chars"), default=_DEFAULT_MAX_CHARS)
 
         raw_path = path_env or file_conf.get("path")
-        log_path = Path(raw_path).expanduser() if raw_path else _DEFAULT_LOG_PATH
+        log_path = Path(raw_path).expanduser() if raw_path else _default_log_path()
 
         return cls(
             enabled=enabled,

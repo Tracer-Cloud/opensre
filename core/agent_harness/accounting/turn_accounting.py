@@ -7,6 +7,7 @@ import logging
 from typing import Any
 
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
+from infrastructure.analytics.prompt_log.recorder import PromptRecorder
 
 log = logging.getLogger(__name__)
 
@@ -23,7 +24,9 @@ class DefaultTurnAccounting:
 
     def finalize(self, result: TurnResult) -> TurnResult:
         response = (result.assistant_response_text or "").strip()
-        if response or getattr(self._session, "pending_user_choice", None) is not None:
+        if PromptRecorder.current() is None and (
+            response or getattr(self._session, "pending_user_choice", None) is not None
+        ):
             _append_turn_detail(
                 self._session,
                 kind="chat",

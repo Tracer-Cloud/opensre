@@ -22,6 +22,13 @@ It was extracted out of `interactive_shell` so the same harness can run the
 interactive terminal and be invoked headlessly via
 `agent_harness.turns.headless_agent`.
 
+## Prompt capture
+
+`turns.orchestrator.run_turn` owns prompt capture for every host through
+`infrastructure.analytics.prompt_log.lifecycle`. Keep one recorder per dispatch,
+including continuations, and restore parent correlation after nested turns.
+Hosts enrich the active recorder; only the shared lifecycle flushes it.
+
 ## Host API (teach this)
 
 Prefer `AgentSession.start()` / `start_embedded_session()` → `.chat` —

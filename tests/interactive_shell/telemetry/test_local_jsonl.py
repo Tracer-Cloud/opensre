@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 
-from surfaces.interactive_shell.telemetry.sinks.local_jsonl import (
+from infrastructure.analytics.prompt_log.sinks.local_jsonl import (
     append_prompt_log_record,
 )
 

@@ -44,12 +44,16 @@ For a batch of questions, pass a JSON object keyed by the displayed labels:
 opensre ask --resume 489e2ba8 '{"Repository":"1","Window":"2"}'
 ```
 
-Use `--ephemeral` for scripts or sensitive one-off requests that should not
-write conversation history or print a resumable session ID:
+Use `--ephemeral` for scripts or one-off requests that should not write
+resumable session history or print a session ID:
 
 ```bash
 opensre ask --ephemeral "summarize this public status page"
 ```
+
+[Prompt and response logging](/interactive-shell-privacy#prompt-and-response-logging)
+has separate controls. Set `OPENSRE_PROMPT_LOG_DISABLED=1` to disable it,
+including for ephemeral requests.
 
 ## Live activity
 

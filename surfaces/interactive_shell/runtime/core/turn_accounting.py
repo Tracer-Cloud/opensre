@@ -2,12 +2,12 @@
 
 This module holds the shell's accounting side effects around the core
 "facts only" turn-result models: action-agent analytics, terminal-turn
-aggregate telemetry, prompt-recorder flushing, conversational-turn
-persistence, and the final assistant-intent stamp.
+aggregate telemetry, prompt-recorder enrichment, and the final assistant-intent stamp.
 """
 
 from __future__ import annotations
 
+import contextlib
 from dataclasses import dataclass
 
 # The neutral "facts only" turn-result models live in the decoupled agent
@@ -15,8 +15,11 @@ from dataclasses import dataclass
 from core.agent_harness import ToolCallingTurnResult, TurnResult
 from core.agent_harness.spi.accounting import ToolCallingAccountingStatus
 from infrastructure.analytics.capture import capture_terminal_turn_summarized
+from infrastructure.analytics.prompt_log.recorder import PromptRecorder
 from surfaces.interactive_shell.session import Session
-from surfaces.interactive_shell.telemetry import PromptRecorder
+from surfaces.interactive_shell.telemetry.integration_snapshot import (
+    build_turn_integration_snapshot,
+)
 
 
 @dataclass
@@ -25,13 +28,12 @@ class ShellTurnAccounting:
 
     Separates "what happened" (decided by the turn flow) from "how it is
     accounted for": action-agent analytics, terminal-turn aggregate telemetry,
-    prompt-recorder flushing, conversational-turn persistence, and the final
+    prompt-recorder enrichment, and the final
     assistant-intent stamp.
     """
 
     session: Session
     text: str
-    recorder: PromptRecorder | None
 
     def record_action_result(self, action_result: ToolCallingTurnResult) -> None:
         """Emit action-agent analytics and update terminal-turn aggregates."""
@@ -39,8 +41,8 @@ class ShellTurnAccounting:
         self._record_terminal_turn(action_result)
 
     def finalize(self, result: TurnResult) -> TurnResult:
-        """Flush the recorder, persist the turn, and stamp the session intent."""
-        self._flush_prompt_recorder(result)
+        """Enrich prompt telemetry and stamp the session intent."""
+        self._enrich_prompt_recorder()
         if result.assistant_response_text and not self._cli_agent_already_recorded():
             # ActionRenderObserver may already have recorded this turn on the
             # first tool_start. Do not append a duplicate history row.
@@ -112,20 +114,20 @@ class ShellTurnAccounting:
             session_fallback_rate_percent=snapshot.fallback_rate_percent,
         )
 
-    def _flush_prompt_recorder(self, result: TurnResult) -> None:
+    def _enrich_prompt_recorder(self) -> None:
         # Pending turn LLM/error state is consumed unconditionally so a turn
         # that stages it can never leak it into a later turn's flush.
         pending_run = self.session.terminal.pop_pending_turn_llm()
         pending_error = self.session.terminal.pop_pending_turn_error()
-        if self.recorder is None:
+        recorder = PromptRecorder.current()
+        if recorder is None:
             return
         if pending_error is not None:
-            self.recorder.set_error(pending_error[0], pending_error[1])
-        self.recorder.set_response(
-            result.assistant_response_text,
-            pending_run,
-        )
-        self.recorder.flush()
+            recorder.set_error(pending_error[0], pending_error[1])
+        if pending_run is not None:
+            recorder.set_run(pending_run)
+        with contextlib.suppress(Exception):
+            recorder.set_properties(build_turn_integration_snapshot(self.session))
 
 
 __all__ = [

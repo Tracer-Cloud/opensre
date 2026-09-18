@@ -746,7 +746,6 @@ def test_chat_turn_records_single_cli_agent_history_entry() -> None:
         "what broke in prod?",
         session,
         console,
-        recorder=None,
         execute_actions=_no_actions,
     )
 
