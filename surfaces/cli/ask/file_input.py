@@ -10,6 +10,7 @@ from pathlib import Path
 
 _MAX_FILE_BYTES = 64 * 1024
 _MAX_TOTAL_BYTES = 128 * 1024
+_MAX_ENCODED_CONTENT_BYTES = _MAX_TOTAL_BYTES
 
 
 class AskFileInputError(ValueError):
@@ -63,6 +64,7 @@ def load_context_files(paths: Iterable[Path]) -> tuple[AskFileInput, ...]:
     """Read context files in argument order within per-file and total limits."""
     loaded: list[AskFileInput] = []
     total_bytes = 0
+    encoded_content_bytes = 0
     for path in paths:
         context_file, size = _read_context_file(path)
         total_bytes += size
@@ -70,6 +72,14 @@ def load_context_files(paths: Iterable[Path]) -> tuple[AskFileInput, ...]:
             raise AskFileInputError(
                 f"Context files total {total_bytes} bytes; "
                 f"the combined limit is {_MAX_TOTAL_BYTES} bytes."
+            )
+        encoded_content_bytes += (
+            len(json.dumps(context_file.content, ensure_ascii=False).encode("utf-8")) - 2
+        )
+        if encoded_content_bytes > _MAX_ENCODED_CONTENT_BYTES:
+            raise AskFileInputError(
+                f"Context files require {encoded_content_bytes} bytes after JSON encoding; "
+                f"the combined encoded-content limit is {_MAX_ENCODED_CONTENT_BYTES} bytes."
             )
         loaded.append(context_file)
     return tuple(loaded)

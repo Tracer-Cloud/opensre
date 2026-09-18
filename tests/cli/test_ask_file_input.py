@@ -73,6 +73,24 @@ def test_load_context_files_enforces_combined_budget(tmp_path) -> None:
         load_context_files(paths)
 
 
+def test_load_context_files_enforces_json_encoded_budget(tmp_path) -> None:
+    path = tmp_path / "control-characters.txt"
+    path.write_bytes(b"\x01" * (64 * 1024))
+
+    with pytest.raises(AskFileInputError, match="after JSON encoding"):
+        load_context_files((path,))
+
+
+def test_load_context_files_accepts_plain_text_at_combined_budget(tmp_path) -> None:
+    paths = []
+    for index in range(2):
+        path = tmp_path / f"context-{index}.txt"
+        path.write_bytes(b"x" * (64 * 1024))
+        paths.append(path)
+
+    assert len(load_context_files(paths)) == 2
+
+
 def test_load_context_files_bounds_read_if_file_grows(monkeypatch, tmp_path) -> None:
     path = tmp_path / "growing.txt"
     path.write_text("small", encoding="utf-8")
