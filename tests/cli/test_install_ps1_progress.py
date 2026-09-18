@@ -129,6 +129,9 @@ def test_install_ps1_records_original_marker_and_restores_environment(
         }}
         try {{ Install-OpenSre }}
         catch {{ if ($_.Exception.Message -ne 'TEST_FINISHED') {{ throw }} }}
+        # A caught terminating error leaves pwsh -Command's exit status failed.
+        # Report successful completion only after all test assertions ran.
+        Write-Output 'INSTALLER_SNAPSHOT_OK'
         """
     )
 
@@ -147,6 +150,7 @@ def test_install_ps1_records_original_marker_and_restores_environment(
     )
 
     assert result.returncode == 0, result.stdout + result.stderr
+    assert "INSTALLER_SNAPSHOT_OK" in result.stdout
     assert (state_dir / "installed").exists() is not prior_marker
     assert recorded.read_text(encoding="utf-8-sig").strip() == (
         "present" if prior_marker else "absent"
