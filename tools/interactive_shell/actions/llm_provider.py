@@ -74,6 +74,10 @@ def run_llm_provider(*, target: str, context: Any) -> dict[str, Any]:
 llm_set_provider_tool = RegisteredTool(
     name="llm_set_provider",
     description="Switch the active LLM provider or reasoning model.",
+    use_cases=[
+        "User asks to switch the active LLM provider",
+        "User asks to change the reasoning model",
+    ],
     input_schema=object_schema(
         properties={"target": _target_property_schema()},
         required=("target",),

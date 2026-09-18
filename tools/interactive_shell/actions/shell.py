@@ -77,6 +77,11 @@ shell_run_tool = RegisteredTool(
         "estimating the result another way; never present an approximation as the "
         "measured figure."
     ),
+    use_cases=[
+        "User asks to run a specific local shell command",
+        "A read-only inspection of local files, processes, or repository state is needed",
+        "A user-requested local workflow needs files or scripts created and run step by step",
+    ],
     input_schema=object_schema(
         properties={
             "command": string_property(

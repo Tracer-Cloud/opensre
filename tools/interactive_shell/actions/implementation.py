@@ -44,6 +44,9 @@ code_implement_tool = RegisteredTool(
         "Run code implementation workflow using Claude Code in a background task. "
         "Not for git merge conflicts: use resolve_merge_conflicts for those."
     ),
+    use_cases=[
+        "User asks OpenSRE to implement a code change in the current repository",
+    ],
     input_schema=object_schema(
         properties={
             "task": string_property(
