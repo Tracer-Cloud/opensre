@@ -3,7 +3,6 @@ from __future__ import annotations
 import io
 import json
 import os
-from pathlib import Path
 
 import pytest
 
@@ -101,14 +100,11 @@ def test_load_context_files_bounds_read_if_file_grows(monkeypatch, tmp_path) -> 
             read_sizes.append(size)
             return super().read(size)
 
-    original_open = Path.open
+    def _fdopen(descriptor: int, _mode: str) -> _GrowingFile:
+        os.close(descriptor)
+        return _GrowingFile(b"x" * (65 * 1024))
 
-    def _open(current: Path, *args, **kwargs):
-        if current == path:
-            return _GrowingFile(b"x" * (65 * 1024))
-        return original_open(current, *args, **kwargs)
-
-    monkeypatch.setattr(Path, "open", _open)
+    monkeypatch.setattr(os, "fdopen", _fdopen)
 
     with pytest.raises(AskFileInputError, match="per-file limit"):
         load_context_files((path,))
@@ -120,6 +116,27 @@ def test_load_context_files_bounds_read_if_file_grows(monkeypatch, tmp_path) -> 
 def test_load_context_files_rejects_non_regular_files(tmp_path) -> None:
     path = tmp_path / "context.fifo"
     os.mkfifo(path)
+
+    with pytest.raises(AskFileInputError, match="must be a regular file"):
+        load_context_files((path,))
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="FIFOs are unavailable")
+def test_load_context_files_validates_opened_descriptor(monkeypatch, tmp_path) -> None:
+    path = tmp_path / "replaced.txt"
+    path.write_text("regular file", encoding="utf-8")
+    original_open = os.open
+    replaced = False
+
+    def _replace_then_open(current, flags: int) -> int:
+        nonlocal replaced
+        if not replaced and os.fspath(current) == os.fspath(path):
+            path.unlink()
+            os.mkfifo(path)
+            replaced = True
+        return original_open(current, flags)
+
+    monkeypatch.setattr(os, "open", _replace_then_open)
 
     with pytest.raises(AskFileInputError, match="must be a regular file"):
         load_context_files((path,))

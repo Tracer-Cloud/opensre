@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import stat
 from collections.abc import Iterable
 from dataclasses import dataclass
@@ -26,24 +27,30 @@ class AskFileInput:
 
 
 def _read_context_file(path: Path) -> tuple[AskFileInput, int]:
+    flags = os.O_RDONLY | getattr(os, "O_BINARY", 0) | getattr(os, "O_NONBLOCK", 0)
     try:
-        file_info = path.stat()
+        descriptor = os.open(path, flags)
     except OSError as exc:
-        raise AskFileInputError(f"Could not inspect context file {path}: {exc}") from exc
-    if not stat.S_ISREG(file_info.st_mode):
-        raise AskFileInputError(f"Context file {path} must be a regular file.")
-    size = file_info.st_size
-    if size > _MAX_FILE_BYTES:
-        raise AskFileInputError(
-            f"Context file {path} is too large ({size} bytes); "
-            f"the per-file limit is {_MAX_FILE_BYTES} bytes."
-        )
+        raise AskFileInputError(f"Could not open context file {path}: {exc}") from exc
 
     try:
-        with path.open("rb") as file:
+        file_info = os.fstat(descriptor)
+        if not stat.S_ISREG(file_info.st_mode):
+            raise AskFileInputError(f"Context file {path} must be a regular file.")
+        size = file_info.st_size
+        if size > _MAX_FILE_BYTES:
+            raise AskFileInputError(
+                f"Context file {path} is too large ({size} bytes); "
+                f"the per-file limit is {_MAX_FILE_BYTES} bytes."
+            )
+        with os.fdopen(descriptor, "rb") as file:
+            descriptor = -1
             raw = file.read(_MAX_FILE_BYTES + 1)
     except OSError as exc:
         raise AskFileInputError(f"Could not read context file {path}: {exc}") from exc
+    finally:
+        if descriptor >= 0:
+            os.close(descriptor)
     if len(raw) > _MAX_FILE_BYTES:
         raise AskFileInputError(
             f"Context file {path} is too large ({len(raw)} bytes); "
