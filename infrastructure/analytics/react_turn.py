@@ -18,12 +18,12 @@ from typing import Any, Literal
 
 from core.agent import Agent
 from core.agent.run_io import AgentRunResult
-from core.agent_harness.accounting.token_accounting import (
+from core.agent_harness.ports import SessionState
+from core.agent_harness.spi.accounting import (
     LlmRunInfo,
     resolve_model_name,
     resolve_provider_name,
 )
-from core.agent_harness.ports import SessionState
 from core.messages import RuntimeMessageLike
 from infrastructure.analytics.capture import capture_react_turn_completed
 from infrastructure.analytics.prompt_log.recorder import PromptRecorder

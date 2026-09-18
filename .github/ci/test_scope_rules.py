@@ -557,7 +557,10 @@ RULES: tuple[PathRule, ...] = (
     PathRule("surfaces/interactive_shell/", ("tests/interactive_shell/",)),
     PathRule("gateway/", ("gateway/tests/",)),
     PathRule("tools/", ("tests/tools/",)),
-    PathRule("infrastructure/analytics/", ("tests/analytics/",)),
+    PathRule(
+        "infrastructure/analytics/",
+        ("tests/analytics/", "tests/tools/test_harness_api_border.py"),
+    ),
     # Without this rule a change under infrastructure/filestorage/ matches nothing,
     # and the credential deny-list tests only run via the no-targets fallback —
     # which a diff that also touches any test file silently defeats.

@@ -7,11 +7,10 @@ import time
 import uuid
 from contextvars import ContextVar
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Protocol
 
 from config.prompt_log import PromptLogConfig
 from config.version import get_opensre_version
-from core.agent_harness.accounting.token_accounting import LlmRunInfo
 from core.llm_invoke_errors import LLM_PROVIDER_FAILURE_KINDS, classify_provider_error_kind
 from infrastructure.analytics.prompt_log.sinks.local_jsonl import (
     append_prompt_log_record,
@@ -62,6 +61,30 @@ def _fallback_terminal_response(*, prompt: str) -> str:
     return "terminal turn handled"
 
 
+class _RunInfo(Protocol):
+    """Read-only run metadata accepted without depending on harness accounting."""
+
+    @property
+    def model(self) -> str | None:
+        """Resolved model name, when available."""
+
+    @property
+    def provider(self) -> str | None:
+        """Resolved provider name, when available."""
+
+    @property
+    def latency_ms(self) -> int | None:
+        """Elapsed run time in milliseconds, when available."""
+
+    @property
+    def input_tokens(self) -> int | None:
+        """Provider-reported input usage, when available."""
+
+    @property
+    def output_tokens(self) -> int | None:
+        """Provider-reported output usage, when available."""
+
+
 class PromptRecorder:
     """Captures one `(prompt, response)` pair and flushes to configured sinks."""
 
@@ -104,7 +127,7 @@ class PromptRecorder:
         """Attach host-specific analytics metadata."""
         self._properties.update(properties)
 
-    def set_run(self, run: LlmRunInfo) -> None:
+    def set_run(self, run: _RunInfo) -> None:
         """Attach the model and provider-reported usage of the agent run."""
         self._model = run.model or self._model
         self._provider = run.provider or self._provider
@@ -189,7 +212,7 @@ class PromptRecorder:
         self._error_kind = kind or "error"
         self._error_message = _sanitize_text(message, config=self._config)
 
-    def set_response(self, text: str, run: LlmRunInfo | None = None) -> None:
+    def set_response(self, text: str, run: _RunInfo | None = None) -> None:
         cleaned = _sanitize_text(text, config=self._config)
         if not cleaned.strip():
             cleaned = ""
