@@ -688,7 +688,8 @@ warm_first_launch() {
 
 package_smoke_quiet() {
   # The smoke prints a JSON summary; only its exit status matters here.
-  "$1" _package-smoke >/dev/null 2>&1
+  # Only the completed install should record the one-time installation event.
+  OPENSRE_ANALYTICS_DISABLED=1 "$1" _package-smoke >/dev/null 2>&1
 }
 
 verify_staged_binary() {

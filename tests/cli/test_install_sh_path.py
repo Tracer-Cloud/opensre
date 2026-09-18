@@ -166,6 +166,43 @@ def test_install_sh_records_install_analytics_without_blocking_install() -> None
     assert '"$binary_path" --record-install >/dev/null 2>&1 || true' in source
 
 
+@pytest.mark.parametrize("analytics_disabled", ["0", "1"])
+def test_macos_warmup_does_not_consume_installer_analytics(
+    tmp_path: Path, analytics_disabled: str
+) -> None:
+    calls = tmp_path / "calls"
+    binary = tmp_path / "opensre"
+    binary.write_text(
+        "#!/usr/bin/env bash\n"
+        'printf "%s|%s|%s|%s|%s\\n" "$1" "${OPENSRE_ANALYTICS_DISABLED:-}" '
+        '"${OPENSRE_INSTALL_SOURCE:-}" "${OPENSRE_INSTALL_CHANNEL:-}" '
+        '"${OPENSRE_INSTALL_VERSION:-}" >> "$INSTALL_CALLS"\n',
+        encoding="utf-8",
+    )
+    binary.chmod(0o755)
+
+    result = _run_logging_snippet(
+        f"""
+        export INSTALL_CALLS={shlex.quote(str(calls))}
+        export OPENSRE_ANALYTICS_DISABLED={shlex.quote(analytics_disabled)}
+        unset OPENSRE_INSTALL_SOURCE OPENSRE_INSTALL_CHANNEL OPENSRE_INSTALL_VERSION
+        uname() {{ printf 'Darwin\\n'; }}
+        BIN_NAME=opensre
+        INSTALL_DIR={shlex.quote(str(tmp_path))}
+        INSTALL_CHANNEL=main
+        installed_version=2026.9.17
+        warm_first_launch {shlex.quote(str(binary))}
+        record_install_analytics
+        """
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert calls.read_text().splitlines() == [
+        "_package-smoke|1|||",
+        f"--record-install|{analytics_disabled}|posix_installer|main|2026.9.17",
+    ]
+
+
 def test_install_sh_defaults_to_main_build_channel() -> None:
     source = INSTALL_SH.read_text()
 
