@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import io
 import json
+import os
+from pathlib import Path
 
 import pytest
 
@@ -68,3 +71,37 @@ def test_load_context_files_enforces_combined_budget(tmp_path) -> None:
 
     with pytest.raises(AskFileInputError, match="combined limit"):
         load_context_files(paths)
+
+
+def test_load_context_files_bounds_read_if_file_grows(monkeypatch, tmp_path) -> None:
+    path = tmp_path / "growing.txt"
+    path.write_text("small", encoding="utf-8")
+    read_sizes: list[int] = []
+
+    class _GrowingFile(io.BytesIO):
+        def read(self, size: int = -1) -> bytes:
+            read_sizes.append(size)
+            return super().read(size)
+
+    original_open = Path.open
+
+    def _open(current: Path, *args, **kwargs):
+        if current == path:
+            return _GrowingFile(b"x" * (65 * 1024))
+        return original_open(current, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "open", _open)
+
+    with pytest.raises(AskFileInputError, match="per-file limit"):
+        load_context_files((path,))
+
+    assert read_sizes == [64 * 1024 + 1]
+
+
+@pytest.mark.skipif(not hasattr(os, "mkfifo"), reason="FIFOs are unavailable")
+def test_load_context_files_rejects_non_regular_files(tmp_path) -> None:
+    path = tmp_path / "context.fifo"
+    os.mkfifo(path)
+
+    with pytest.raises(AskFileInputError, match="must be a regular file"):
+        load_context_files((path,))
