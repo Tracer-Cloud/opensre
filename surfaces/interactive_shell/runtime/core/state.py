@@ -226,8 +226,7 @@ class ReplState:
 class SpinnerState:
     """Mutable state read by prompt callbacks for toolbar + inline spinner."""
 
-    # Braille by default; the host picks the set at construction (see
-    # ``infrastructure.terminal.spinner_frames``) for terminals that draw braille badly.
+    # Braille by default; a caller may pass its own frames at construction.
     _SPINNER_FRAMES: tuple[str, ...] = BRAILLE_SPINNER_FRAMES
     # One glyph advance per interval of *elapsed time*. The frame must be a
     # pure function of the clock, never of how often the prompt message

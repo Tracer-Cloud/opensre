@@ -5,7 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 from typing import Any
 
-from infrastructure.terminal.spinner_frames import DOT_SPINNER_FRAMES
+from infrastructure.terminal.spinner_frames import BRAILLE_SPINNER_FRAMES
 from infrastructure.terminal.theme import BRAND, HIGHLIGHT
 from surfaces.cli.ask import progress
 from surfaces.cli.ask.progress import status_for_tool_event
@@ -116,12 +116,12 @@ def test_progress_updates_the_visible_status_when_a_tool_starts(monkeypatch) -> 
 
 
 def test_progress_uses_shared_terminal_spinner_frames_and_activity_colors(monkeypatch) -> None:
-    monkeypatch.setattr(progress, "spinner_frames", lambda: DOT_SPINNER_FRAMES)
+    monkeypatch.setattr(progress, "spinner_frames", lambda: BRAILLE_SPINNER_FRAMES)
     spinner = progress._ActivitySpinnerColumn()
 
     thinking = spinner.render(SimpleNamespace(elapsed=0.0, fields={}))
     running_tool = spinner.render(SimpleNamespace(elapsed=0.0, fields={"tool_active": True}))
 
-    assert thinking.plain == DOT_SPINNER_FRAMES[0]
+    assert thinking.plain == BRAILLE_SPINNER_FRAMES[0]
     assert str(thinking.style) == str(HIGHLIGHT)
     assert str(running_tool.style) == str(BRAND)
