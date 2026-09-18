@@ -46,10 +46,29 @@ _LIMIT_MARKERS: tuple[str, ...] = (
     "rate limit exceeded",
     "rate_limit_exceeded",
     "credit balance is too low",
+    "credit_balance_exhausted",
     '"code":429',
     '"code": 429',
     '"code":413',
     '"code": 413',
+)
+
+# Credit/quota phrases that must not leak through as "the user's OpenSRE credits".
+_PROVIDER_CREDIT_MARKERS: tuple[str, ...] = (
+    "credit balance is too low",
+    "credit balance too low",
+    "credit_balance_exhausted",
+    "insufficient_quota",
+    "exceeded your current quota",
+    "no credits remaining",
+    "billing_hard_limit_reached",
+)
+
+_PROVIDER_CREDIT_ERROR = (
+    "{agent} stopped because its own LLM provider reports credit or quota "
+    "exhaustion. This is not your OpenSRE hosted credit balance. Run "
+    "`opensre credits` or `/credits` while signed in to inspect OpenSRE "
+    "credits, or re-authenticate the coding-agent CLI."
 )
 
 
@@ -269,7 +288,10 @@ def classify_agent_outcome(
     # but only when nothing was produced, so a *successful* edit whose output
     # mentions a limit phrase is not misreported as a provider failure.
     lowered = f"{out_text}\n{err_text}".lower()
-    hit_limit = (not made_changes) and any(marker in lowered for marker in _LIMIT_MARKERS)
+    hit_limit = (not made_changes) and (
+        any(marker in lowered for marker in _LIMIT_MARKERS)
+        or any(marker in lowered for marker in _PROVIDER_CREDIT_MARKERS)
+    )
 
     success = (
         (not outcome.timed_out)
@@ -281,6 +303,8 @@ def classify_agent_outcome(
     error: str | None = None
     if outcome.timed_out:
         error = f"{agent_name} timed out after {timeout_sec:.0f}s"
+    elif hit_limit and any(marker in lowered for marker in _PROVIDER_CREDIT_MARKERS):
+        error = _PROVIDER_CREDIT_ERROR.format(agent=agent_name)
     elif outcome.returncode != 0 or hit_limit:
         detail = err_text or out_text or f"{agent_name} exited with code {outcome.returncode}"
         error = masker.mask(detail[:_MAX_OUTPUT_CHARS])

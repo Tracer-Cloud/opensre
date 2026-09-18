@@ -7,6 +7,8 @@ import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from integrations.coding_agent import (
     CodingResult,
     claude_code_backend,
@@ -19,6 +21,19 @@ from integrations.coding_agent import (
 from integrations.coding_agent.runner import _BACKENDS
 
 _OK = CodingResult(success=True, summary="done")
+
+
+@pytest.fixture(autouse=True)
+def _unsigned_hosted_coding_agent(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep auto-selection independent of a developer machine's OpenSRE login."""
+    monkeypatch.setattr(
+        "integrations.coding_agent.runner.hosted_openai_subprocess_env",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        "integrations.coding_agent.codex_backend.hosted_openai_subprocess_env",
+        lambda: None,
+    )
 
 
 def _fake_backends(
@@ -267,6 +282,83 @@ def test_codex_verify_not_authed_is_unavailable(mock_cls: MagicMock) -> None:
     )
     available, _ = codex_backend.verify()
     assert available is False
+
+
+@patch("integrations.coding_agent.codex_backend.CodexAdapter")
+def test_codex_verify_hosted_session_is_available_without_local_openai(
+    mock_cls: MagicMock, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    mock_cls.return_value.detect.return_value = MagicMock(
+        installed=True, logged_in=False, detail="not logged in"
+    )
+    monkeypatch.setattr(
+        "integrations.coding_agent.codex_backend.hosted_openai_subprocess_env",
+        lambda: {
+            "OPENAI_API_KEY": "osre_pat_secret",
+            "OPENAI_BASE_URL": "https://app.opensre.com/api/llm/v1",
+        },
+    )
+    available, detail = codex_backend.verify()
+    assert available is True
+    assert "OpenSRE hosted credentials" in detail
+    assert "osre_pat_secret" not in detail
+
+
+def test_auto_prefers_hosted_codex_over_claude(monkeypatch: pytest.MonkeyPatch) -> None:
+    table = _fake_backends(claude=(True, "claude ready"), codex=(True, "codex ready"))
+    monkeypatch.setattr(
+        "integrations.coding_agent.runner.hosted_openai_subprocess_env",
+        lambda: {
+            "OPENAI_API_KEY": "osre_pat_secret",
+            "OPENAI_BASE_URL": "https://app.opensre.com/api/llm/v1",
+        },
+    )
+    with patch.dict(_BACKENDS, table):
+        available, detail = verify_coding_agent("auto")
+    assert available is True
+    assert detail == "codex: codex ready"
+    table["claude-code"][1].assert_not_called()
+    table["pi"][1].assert_not_called()
+
+
+def test_hosted_auto_does_not_fall_through_to_claude_when_codex_is_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    table = _fake_backends(claude=(True, "claude ready"))
+    monkeypatch.setattr(
+        "integrations.coding_agent.runner.hosted_openai_subprocess_env",
+        lambda: {
+            "OPENAI_API_KEY": "osre_pat_secret",
+            "OPENAI_BASE_URL": "https://app.opensre.com/api/llm/v1",
+        },
+    )
+    with patch.dict(_BACKENDS, table):
+        available, detail = verify_coding_agent("auto")
+        result = run_coding_task("fix", workspace="/w", model="claude-opus-5", timeout_sec=60)
+    assert available is False
+    assert "Codex CLI" in detail
+    assert "osre_pat_secret" not in detail
+    assert result.success is False
+    assert "Codex CLI" in (result.error or "")
+    table["claude-code"][0].assert_not_called()
+    table["claude-code"][1].assert_not_called()
+
+
+def test_codex_subprocess_env_uses_hosted_credentials_instead_of_local_openai(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENAI_API_KEY", "sk-local")
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
+    monkeypatch.setattr(
+        "integrations.coding_agent.codex_backend.hosted_openai_subprocess_env",
+        lambda: {
+            "OPENAI_API_KEY": "osre_pat_secret",
+            "OPENAI_BASE_URL": "https://app.opensre.com/api/llm/v1",
+        },
+    )
+    env = codex_backend._subprocess_env()
+    assert env["OPENAI_API_KEY"] == "osre_pat_secret"
+    assert env["OPENAI_BASE_URL"] == "https://app.opensre.com/api/llm/v1"
 
 
 @patch("integrations.coding_agent.cursor_backend.CursorAdapter")

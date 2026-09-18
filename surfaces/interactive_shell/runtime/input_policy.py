@@ -85,6 +85,7 @@ _WAIT_FOR_COMPLETION_COMMANDS: frozenset[str] = frozenset(
         "/onboard",
         "/config",
         "/account",
+        "/credits",
         "/auth",
         "/login",
         # ``/goal set|resume`` queues the condition as the next prompt turn.

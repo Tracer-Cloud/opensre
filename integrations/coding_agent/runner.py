@@ -19,6 +19,7 @@ from integrations.coding_agent.codex_backend import verify as _codex_verify
 from integrations.coding_agent.config import coding_agent_provider
 from integrations.coding_agent.cursor_backend import run as _cursor_run
 from integrations.coding_agent.cursor_backend import verify as _cursor_verify
+from integrations.coding_agent.hosted_credentials import hosted_openai_subprocess_env
 from integrations.coding_agent.models import CodingResult, Progress
 from integrations.coding_agent.pi_backend import run as _pi_run
 from integrations.coding_agent.pi_backend import verify as _pi_verify
@@ -39,6 +40,16 @@ _BACKENDS: dict[str, _Backend] = {
 # Detection order for CODING_AGENT=auto: Pi first for backward compatibility with
 # existing Pi setups, then the most widely installed general coding CLIs.
 _AUTO_ORDER: tuple[str, ...] = ("pi", "claude-code", "codex", "cursor")
+# Hosted OpenSRE credentials are OpenAI-compatible. Claude Code / Pi keep using
+# a local Anthropic key and would surface that provider's quota as a fake
+# OpenSRE credit wall, so auto never falls through to them while signed in.
+_HOSTED_AUTO_ORDER: tuple[str, ...] = ("codex",)
+_HOSTED_CODEX_HINT = (
+    "OpenSRE hosted credits require the Codex CLI for coding-agent work. "
+    "Install with: npm i -g @openai/codex"
+)
+
+
 _ALIASES: dict[str, str] = {
     "claude": "claude-code",
     "claude_code": "claude-code",
@@ -51,6 +62,24 @@ def _normalize(provider: str | None) -> str:
     return _ALIASES.get(name, name)
 
 
+def _auto_order() -> tuple[str, ...]:
+    """Prefer Codex when a signed-in account can bill the hosted OpenSRE ledger."""
+    if hosted_openai_subprocess_env() is None:
+        return _AUTO_ORDER
+    return _HOSTED_AUTO_ORDER
+
+
+def _codex_model(requested: str | None) -> str | None:
+    """Drop Anthropic model names so a hosted Codex run cannot keep that quota."""
+    name = (requested or "").strip()
+    if not name:
+        return None
+    lowered = name.lower()
+    if "claude" in lowered or "anthropic" in lowered:
+        return None
+    return name
+
+
 def _select_auto_backend() -> tuple[str, _Backend, str] | tuple[None, None, str]:
     """First ready backend in ``_AUTO_ORDER`` as ``(name, backend, detail)``.
 
@@ -58,13 +87,16 @@ def _select_auto_backend() -> tuple[str, _Backend, str] | tuple[None, None, str]
     backend's failure detail so the user knows exactly what to install or log into.
     """
     details: list[str] = []
-    for name in _AUTO_ORDER:
+    hosted = hosted_openai_subprocess_env() is not None
+    for name in _auto_order():
         backend = _BACKENDS[name]
         _run, verify = backend
         ready, detail = verify()
         if ready:
             return name, backend, detail
         details.append(f"{name}: {detail}")
+    if hosted:
+        return None, None, _HOSTED_CODEX_HINT
     supported = ", ".join(_AUTO_ORDER)
     return None, None, f"No coding agent is ready (checked {supported}). {'; '.join(details)}"
 
@@ -100,10 +132,12 @@ def run_coding_task(
     their activity; others ignore it.
     """
     name = _normalize(provider)
+    selected_name = name
     if name == AUTO_PROVIDER:
         selected, backend, detail = _select_auto_backend()
         if selected is None or backend is None:
             return CodingResult(success=False, summary="", error=detail)
+        selected_name = selected
     else:
         backend = _BACKENDS.get(name)
         if backend is None:
@@ -111,6 +145,13 @@ def run_coding_task(
                 success=False, summary="", error=f"Unsupported coding agent '{name}'."
             )
     run, _verify = backend
+    resolved_model = model
+    if selected_name == "codex" and hosted_openai_subprocess_env() is not None:
+        resolved_model = _codex_model(model)
     return run(
-        task, workspace=workspace, model=model, timeout_sec=timeout_sec, on_progress=on_progress
+        task,
+        workspace=workspace,
+        model=resolved_model,
+        timeout_sec=timeout_sec,
+        on_progress=on_progress,
     )

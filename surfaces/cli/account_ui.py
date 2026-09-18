@@ -29,7 +29,8 @@ from infrastructure.terminal.theme import (
     WARNING,
 )
 from surfaces.cli.account_auth import AccountLoginResult, AccountLogoutResult
-from surfaces.shared.account_session import AccountStatus
+from surfaces.shared.account_credits import AccountCredits, AccountCreditsStatus
+from surfaces.shared.account_session import AccountSessionState, AccountStatus
 
 _console = Console(
     highlight=False, force_terminal=True, color_system="truecolor", legacy_windows=False
@@ -230,6 +231,46 @@ def render_account_status(status: AccountStatus) -> None:
     console.print()
 
 
+def render_account_credits(status: AccountCreditsStatus) -> None:
+    """Print hosted credits without treating a fetch failure as a zero balance."""
+    console = _console
+    credits = status.credits
+    if status.state is AccountSessionState.ACTIVE and credits is not None:
+        _print_success_banner(console, "OpenSRE hosted credits")
+        _print_credit_fields(console, credits)
+        console.print()
+        console.print(
+            f"  [{SECONDARY}]Top up:[/] [bold]opensre account usage[/bold] "
+            f"[{SECONDARY}]or[/] [bold]/account usage[/bold]"
+        )
+        console.print()
+        return
+
+    console.print()
+    console.print(Rule(style=DIM))
+    title = Text()
+    title.append(f"  {GLYPH_ERROR}  ", style=f"bold {ERROR}")
+    title.append("Credits unavailable", style=f"bold {TEXT}")
+    console.print(title)
+    console.print(Rule(style=DIM))
+    console.print()
+    _print_kv(console, "detail", status.detail, SECONDARY)
+    console.print()
+
+
+def _print_credit_fields(console: Console, credits: AccountCredits) -> None:
+    _print_kv(console, "available", f"{credits.total:,}")
+    if credits.monthly is not None:
+        limit = f" / {credits.monthly_limit:,}" if credits.monthly_limit is not None else ""
+        _print_kv(console, "monthly", f"{credits.monthly:,}{limit}")
+    if credits.top_up is not None:
+        _print_kv(console, "top-up", f"{credits.top_up:,}")
+    if credits.resets_at:
+        _print_kv(console, "resets", credits.resets_at, DIM)
+    if credits.plan_id:
+        _print_kv(console, "plan", credits.plan_id, SECONDARY)
+
+
 def render_account_logout(result: AccountLogoutResult) -> None:
     """Print logout result with the shared success/warning glyphs."""
     console = _console
@@ -247,6 +288,7 @@ def render_account_logout(result: AccountLogoutResult) -> None:
 
 __all__ = [
     "AccountLoginPresenter",
+    "render_account_credits",
     "render_account_logout",
     "render_account_status",
 ]

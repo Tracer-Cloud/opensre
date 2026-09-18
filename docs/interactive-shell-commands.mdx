@@ -881,11 +881,23 @@ These spawn `opensre …` subprocesses. Output is captured into the REPL buffer 
 /account
 /account login
 /account status
+/account credits
 /account usage
 /account logout
 ```
 
-Sign in to a personal OpenSRE account, inspect the local login, open the credits and top-up page (`/account usage`, opens your browser; from a chat it replies with the link), or sign out. Same as `opensre account`. The browser opens the OpenSRE sign-up page, where you can use email or any enabled sign-in provider. The shell starts only for an `active` account state. `/account logout` revokes the saved session, invalidates the hosted-model route, and closes the shell before another turn. If `OPENSRE_ACCOUNT_TOKEN` is set in the environment, it overrides the token saved by login until you unset it.
+Sign in to a personal OpenSRE account, inspect the local login, show remaining hosted credits (`/account credits` or `/credits`, same as `opensre credits`), open the credits and top-up page (`/account usage`, opens your browser; from a chat it replies with the link), or sign out. Same as `opensre account`. The browser opens the OpenSRE sign-up page, where you can use email or any enabled sign-in provider. The shell starts only for an `active` account state. `/account logout` revokes the saved session, invalidates the hosted-model route, and closes the shell before another turn. If `OPENSRE_ACCOUNT_TOKEN` is set in the environment, it overrides the token saved by login until you unset it.
+
+</Accordion>
+
+<Accordion title="/credits">
+
+```text
+/credits
+/credits --dev
+```
+
+Show remaining OpenSRE hosted credits for the signed-in account. Same as `opensre credits` and `/account credits`. Requires an active login. A fetch or auth failure is reported as unavailable — it is never shown as a zero balance.
 
 </Accordion>
 

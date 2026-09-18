@@ -18,7 +18,8 @@ from integrations import store
 from surfaces.cli import account_auth
 from surfaces.cli.account_auth import AccountLoginResult
 from surfaces.cli.account_ui import AccountLoginPresenter
-from surfaces.cli.commands.account import account_command
+from surfaces.cli.commands.account import account_command, credits_command
+from surfaces.shared.account_credits import AccountCredits, AccountCreditsStatus
 from surfaces.shared.account_session import AccountSessionState, AccountStatus
 
 
@@ -491,3 +492,87 @@ def test_account_usage_follows_the_deployment_the_account_signed_in_to(
     # Assert: the usage page belongs to that deployment, not the production default.
     assert result.exit_code == 0, result.output
     assert "https://opensre.example.com/usage" in result.output
+
+
+def _active_credits() -> AccountCreditsStatus:
+    return AccountCreditsStatus(
+        AccountSessionState.ACTIVE,
+        AccountCredits(
+            total=100_000,
+            monthly=80_000,
+            monthly_limit=100_000,
+            top_up=20_000,
+            resets_at="2026-10-01T00:00:00.000Z",
+            plan_id="team",
+        ),
+        "OpenSRE hosted credits.",
+    )
+
+
+def test_account_credits_json_prints_the_ledger_total(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "surfaces.cli.commands.account.fetch_account_credits",
+        lambda **_: _active_credits(),
+    )
+
+    result = CliRunner().invoke(account_command, ["credits"], obj={"json": True})
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["authenticated"] is True
+    assert payload["total"] == 100_000
+    assert payload["monthly"] == 80_000
+    assert payload["plan_id"] == "team"
+
+
+def test_top_level_credits_command_json_matches_account_credits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "surfaces.cli.commands.account.fetch_account_credits",
+        lambda **_: _active_credits(),
+    )
+
+    result = CliRunner().invoke(credits_command, obj={"json": True})
+
+    assert result.exit_code == 0, result.output
+    payload = json.loads(result.output)
+    assert payload["authenticated"] is True
+    assert payload["total"] == 100_000
+
+
+def test_credits_fetch_failure_is_not_reported_as_zero(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "surfaces.cli.commands.account.fetch_account_credits",
+        lambda **_: AccountCreditsStatus(
+            AccountSessionState.UNAVAILABLE,
+            None,
+            "The OpenSRE app could not return the credit balance.",
+        ),
+    )
+
+    result = CliRunner().invoke(account_command, ["credits"], obj={"json": True})
+
+    assert result.exit_code == 1
+    payload = json.loads(result.output)
+    assert payload["authenticated"] is False
+    assert payload["state"] == "unavailable"
+    assert "total" not in payload
+    assert "zero" not in payload["detail"].lower()
+
+
+def test_credits_signed_out_fails_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "surfaces.cli.commands.account.fetch_account_credits",
+        lambda **_: AccountCreditsStatus(
+            AccountSessionState.SIGNED_OUT,
+            None,
+            "No OpenSRE account is signed in.",
+        ),
+    )
+
+    result = CliRunner().invoke(credits_command)
+
+    assert result.exit_code == 1
+    assert "No OpenSRE account is signed in." in result.output
+    assert "0" not in result.output

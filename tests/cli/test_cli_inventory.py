@@ -20,6 +20,7 @@ EXPECTED_VISIBLE_COMMANDS = frozenset(
         "ask",
         "auth",
         "config",
+        "credits",
         "cron",
         "debug",
         "doctor",

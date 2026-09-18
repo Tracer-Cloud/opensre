@@ -518,6 +518,40 @@ def test_run_fix_uses_builtin_local_code_quality_fixer_without_coding_agent(
     assert "diff --git" in result.diff
 
 
+def test_run_fix_uses_builtin_local_fixer_for_code_scanning_unused_import(
+    tmp_path: Path,
+) -> None:
+    _git(tmp_path, "init")
+    _git(tmp_path, "config", "user.email", "test@example.com")
+    _git(tmp_path, "config", "user.name", "Test User")
+    target = tmp_path / "app.py"
+    target.write_text("import os\n\nprint('hello')\n", encoding="utf-8")
+    _git(tmp_path, "add", "app.py")
+    _git(tmp_path, "commit", "-m", "base")
+    ctx = SecurityAlertContext(
+        owner="acme",
+        repo="app",
+        alert_type="code_scanning",
+        number=2318,
+        summary="Unused import",
+        url="https://github.com/acme/app/security/code-scanning/2318",
+        task="Fix unused import.",
+        rule_id="py/unused-import",
+        location_path="app.py",
+        start_line=1,
+    )
+
+    with patch(
+        "integrations.github.tools.security_fix.runner.run_coding_task",
+    ) as coding:
+        result = run_fix(ctx, str(tmp_path), model="claude-opus-5")
+
+    assert result.success is True
+    assert result.changed_files == ["app.py"]
+    assert "import os" not in target.read_text(encoding="utf-8")
+    coding.assert_not_called()
+
+
 def test_run_fix_without_local_support_names_the_coding_agent_requirement() -> None:
     ctx = SecurityAlertContext(
         owner="acme",

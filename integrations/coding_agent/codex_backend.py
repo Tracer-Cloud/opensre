@@ -7,8 +7,9 @@ target checkout non-interactively (network stays disabled by Codex's sandbox
 default). The guarded task prompt forbids commits/pushes; branch/commit/PR
 mechanics stay with the caller.
 
-Env vars: ``CODEX_BIN`` (optional explicit binary path); OpenAI Platform auth
-env keys are forwarded to the subprocess.
+Env vars: ``CODEX_BIN`` (optional explicit binary path). A signed-in OpenSRE
+account supplies hosted OpenAI credentials through the child environment;
+otherwise OpenAI Platform auth env keys are forwarded to the subprocess.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from integrations.coding_agent.backend_exec import (
     run_agentic_cli,
     workspace_error,
 )
+from integrations.coding_agent.hosted_credentials import hosted_openai_subprocess_env
 from integrations.coding_agent.models import CodingResult, Progress
 from integrations.llm_cli.agent_exec import build_guarded_task_prompt
 from integrations.llm_cli.binary_resolver import (
@@ -44,7 +46,13 @@ def _resolve_binary() -> str | None:
 
 def _subprocess_env() -> dict[str, str]:
     env: dict[str, str] = {"NO_COLOR": "1"}
-    env.update(nonempty_env_values(OPENAI_PLATFORM_ENV_KEYS))
+    hosted = hosted_openai_subprocess_env()
+    if hosted is not None:
+        # Hosted credentials replace local OpenAI keys so a signed-in session
+        # cannot silently bill a different provider account.
+        env.update(hosted)
+    else:
+        env.update(nonempty_env_values(OPENAI_PLATFORM_ENV_KEYS))
     return build_cli_subprocess_env(env)
 
 
@@ -104,6 +112,8 @@ def verify() -> tuple[bool, str]:
     probe = CodexAdapter().detect()
     if not probe.installed:
         return False, probe.detail
+    if hosted_openai_subprocess_env() is not None:
+        return True, "OpenSRE hosted credentials"
     if probe.logged_in is False:
         return False, probe.detail
     return True, probe.detail
