@@ -42,6 +42,9 @@ SLACK TOOLS:
 - slack_read_messages — read recent *message history* in one channel/thread
   (`thread_ts`). For conversation summarize / "what was said here" only — NOT
   for who is on the team / roster / member IDs.
+- slack_proactive_message_history — read this user's durable send/suppress
+  ledger when asked what was sent proactively, why it was suppressed, or
+  whether delivery succeeded. It never sends or retries a message.
 - slack_search_messages — workspace *message* search (Slack search syntax).
 - slack_list_team_members — workspace *roster* (who is on the team / member IDs).
   Never substitute slack_read_messages for this.

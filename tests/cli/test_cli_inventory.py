@@ -31,6 +31,7 @@ EXPECTED_VISIBLE_COMMANDS = frozenset(
         "messaging",
         "onboard",
         "posthog",
+        "proactive",
         "remote-sync",
         "runbooks",
         "sentry",

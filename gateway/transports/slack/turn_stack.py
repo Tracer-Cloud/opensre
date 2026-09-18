@@ -19,8 +19,10 @@ from gateway.core.storage import SessionResolver
 from gateway.core.storage.session.binding_store import BindingStore, open_binding_store
 from gateway.transports.slack.client import SlackWebApiClient
 from gateway.transports.slack.delivery.channel_intro import ChannelIntroGreeter
+from gateway.transports.slack.proactive import build_proactive_message_service
 from gateway.transports.slack.processing.dispatcher import SlackTurnDispatcher
 from gateway.transports.slack.settings import SlackGatewaySettings
+from infrastructure.proactive_messages import ProactiveMessageService
 from infrastructure.turn_host.turn_callback import TurnCallback
 
 _PLATFORM_SLACK = "slack"
@@ -50,6 +52,7 @@ class SlackTurnStack:
     approvals: ApprovalBroker
     bindings: BindingStore
     bot_user_id: str
+    proactive: ProactiveMessageService
 
     def close(self) -> None:
         """Release the binding store; the owning transport stops the executor."""
@@ -76,6 +79,7 @@ def build_slack_turn_stack(
     bot_user_id = resolve_bot_user_id(web_client, logger)
     approvals = ApprovalBroker()
     messaging = SlackWebApiClient(web_client)
+    proactive = build_proactive_message_service(messaging=messaging, logger=logger)
     bindings = open_binding_store()
     dispatcher = SlackTurnDispatcher(
         settings=settings,
@@ -85,6 +89,7 @@ def build_slack_turn_stack(
         logger=logger,
         bot_user_id=bot_user_id,
         approvals=approvals,
+        proactive=proactive,
     )
     return SlackTurnStack(
         web_client=web_client,
@@ -94,6 +99,7 @@ def build_slack_turn_stack(
         approvals=approvals,
         bindings=bindings,
         bot_user_id=bot_user_id,
+        proactive=proactive,
     )
 
 

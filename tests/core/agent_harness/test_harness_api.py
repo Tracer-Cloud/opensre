@@ -27,6 +27,7 @@ ROOT_API = frozenset(
     {
         "AgentSession",
         "OutputSink",
+        "ProactiveMessagePolicy",
         "SessionConfig",
         "SessionCore",
         "SessionManager",
@@ -34,9 +35,11 @@ ROOT_API = frozenset(
         "TurnResult",
         "is_legacy_skill_name",
         "is_recurring_skill",
+        "load_master_judgement",
         "normalize_skill_name",
         "pin_recurring_skill",
         "resolve_scheduled_skill",
+        "session_path",
         "validate_skill_inputs",
     }
 )
