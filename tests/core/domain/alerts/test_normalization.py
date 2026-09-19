@@ -1,4 +1,3 @@
-import pytest
 from core.domain.alerts.normalization import _coerce_pid
 
 
