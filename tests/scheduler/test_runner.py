@@ -222,46 +222,59 @@ class TestScheduledConcurrency:
             get_runs(task_id)[0].fire_time == _compute_fire_time(run_at) for task_id in tasks
         )
 
-    def test_same_job_never_overlaps_itself(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_same_job_never_overlaps_itself(
+        self,
+        tmp_path,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         import threading
         from datetime import UTC, datetime, timedelta
 
         from apscheduler.events import EVENT_JOB_MAX_INSTANCES
         from apscheduler.schedulers.background import BackgroundScheduler
 
-        monkeypatch.setenv(OPENSRE_SCHEDULER_MAX_CONCURRENT_RUNS_ENV, "2")
-        monkeypatch.setattr(
-            "infrastructure.scheduling.scheduler.runner.try_queue_run",
-            lambda _task_id, _fire_time: True,
+        from infrastructure.scheduling.scheduler import runner
+        from infrastructure.scheduling.scheduler.storage import (
+            complete_run,
+            database,
+            try_claim,
         )
-        scheduler = _build_scheduler(BackgroundScheduler)
-        entered = threading.Barrier(2)
+
+        db_path = tmp_path / "runs.db"
+        monkeypatch.setattr(database, "default_run_database_path", lambda: db_path)
+        monkeypatch.setenv(OPENSRE_SCHEDULER_MAX_CONCURRENT_RUNS_ENV, "2")
+        started = threading.Event()
         release = threading.Event()
         overlap_skipped = threading.Event()
         active = 0
         peak_active = 0
         active_lock = threading.Lock()
-
-        def blocking_job(*_args: object) -> None:
-            nonlocal active, peak_active
-            with active_lock:
-                active += 1
-                peak_active = max(peak_active, active)
-            try:
-                entered.wait(timeout=5)
-                release.wait(timeout=5)
-            finally:
-                with active_lock:
-                    active -= 1
-
         task = ScheduledTask(
             id="repeating-task",
             kind=TaskKind.MANUAL_LOOP,
             cron="* * * * *",
             provider=Provider.TELEGRAM,
         )
-        monkeypatch.setattr("infrastructure.scheduling.scheduler.runner.get_task", lambda _id: task)
-        monkeypatch.setattr("infrastructure.scheduling.scheduler.runner.execute_task", blocking_job)
+
+        def blocking_job(_task: ScheduledTask, fire_time: str, _runners: object) -> None:
+            nonlocal active, peak_active
+            claim = try_claim(task.id, fire_time)
+            assert claim is not None
+            with active_lock:
+                active += 1
+                peak_active = max(peak_active, active)
+            started.set()
+            try:
+                assert release.wait(timeout=5)
+            finally:
+                complete_run(claim, status=TaskStatus.SUCCESS)
+                with active_lock:
+                    active -= 1
+
+        monkeypatch.setattr(runner, "list_tasks", lambda: [task])
+        monkeypatch.setattr(runner, "get_task", lambda _id: task)
+        monkeypatch.setattr(runner, "execute_task", blocking_job)
+        scheduler = _build_scheduler(BackgroundScheduler)
         scheduler.add_listener(lambda _event: overlap_skipped.set(), EVENT_JOB_MAX_INSTANCES)
         scheduler.add_job(
             _scheduled_job,
@@ -273,7 +286,7 @@ class TestScheduledConcurrency:
         )
         scheduler.start()
         try:
-            entered.wait(timeout=5)
+            assert started.wait(timeout=5)
             assert overlap_skipped.wait(timeout=5)
             scheduler.pause()
             assert peak_active == 1
