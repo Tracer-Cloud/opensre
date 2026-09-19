@@ -54,6 +54,12 @@ the event body or source distribution. Production origins require HTTPS.
 
 - `event_id` is a UUID for recurring events. `install_detected` uses the stable
   `install_detected:{anonymous_id}` key so the server can deduplicate installs.
+  Recovery of an unverified `installed` marker uses
+  `install_detected:{anonymous_id}:delivery-v1` and sets
+  `install_detection_reason=unverified_marker`. This is a current detection,
+  not a reconstruction of the original installation. The separate key preserves
+  any earlier event already stored by the server; `METRICS.md` (Installations)
+  defines how consumers collapse the two into one installation.
 - `occurred_at` is assigned when the event enters the local queue, not when the
   network request finishes.
 - `anonymous_id` is the random installation ID stored in
@@ -66,6 +72,9 @@ the event body or source distribution. Production origins require HTTPS.
   does not permanently lose the association.
 - A successful ingest should return `202 Accepted`. The server should dedupe on
   `(source, event_id)` and reject unknown schema versions or event names.
+  Only that acknowledgement creates a receipt under `install-deliveries-v1/`,
+  keyed by a hash of the installation ID and endpoint URL. The older `installed`
+  marker is retained for older clients, but cannot establish first-party delivery.
 
 The accepted event names are the `Event` enum in `events.py`, plus the internal
 identity controls `$identify` and `$groupidentify`. The webapp may translate

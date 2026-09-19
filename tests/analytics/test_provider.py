@@ -45,6 +45,9 @@ class _StubAnalytics:
     def capture(self, event: Event, properties: provider.Properties | None = None) -> None:
         self.events.append((event, properties))
 
+    def _install_delivery_confirmed(self) -> bool:
+        return False
+
 
 def _stub_httpx_client(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object]]:
     posted_payloads: list[dict[str, object]] = []
@@ -105,6 +108,7 @@ def test_installer_snapshot_survives_until_runtime_events_without_recounting_ins
         marker.touch()
     monkeypatch.setattr(provider, "_CONFIG_DIR", tmp_path)
     monkeypatch.setattr(provider, "_ANONYMOUS_ID_PATH", tmp_path / "anonymous_id")
+    monkeypatch.setattr(provider, "_FIRST_RUN_PATH", marker)
     (tmp_path / "anonymous_id").write_text(str(uuid.uuid4()))
     monkeypatch.setattr(install, "get_store_path", lambda: tmp_path / "opensre.json")
     monkeypatch.setenv(
@@ -129,11 +133,18 @@ def test_installer_snapshot_survives_until_runtime_events_without_recounting_ins
     provider.shutdown_analytics(flush=True, timeout=2)
 
     payloads = [request["json"] for request in posted]
-    assert [payload["event"] for payload in payloads] == (
-        [Event.CLI_INVOKED.value]
-        if prior_marker
-        else [Event.INSTALL_DETECTED.value, Event.CLI_INVOKED.value]
-    )
+    # A marker without a delivery receipt is an unverified legacy install and is
+    # recovered exactly once; the runtime process afterwards finds the receipt.
+    assert [payload["event"] for payload in payloads] == [
+        Event.INSTALL_DETECTED.value,
+        Event.CLI_INVOKED.value,
+    ]
+    install_properties = payloads[0]["properties"]
+    if prior_marker:
+        assert install_properties["install_detection_reason"] == "unverified_marker"
+        assert payloads[0]["event_id"].endswith(":delivery-v1")
+    else:
+        assert "install_detection_reason" not in install_properties
     assert all(
         payload["properties"]["install_marker_state_before_install"]
         == ("present" if prior_marker else "absent")

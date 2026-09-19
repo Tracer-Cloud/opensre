@@ -15,7 +15,7 @@ remaining metrics require queries over `analytics_product_events`.
 
 | Metric | Events and calculation |
 | --- | --- |
-| Installations | Distinct non-CI `analytics_id` values with `install_detected`. |
+| Installations | Distinct non-CI `analytics_id` values with `install_detected`. Count each installation once; when an installation has both an original event and a recovery event (`install_detection_reason=unverified_marker`, event ID suffix `:delivery-v1`), keep the earliest `occurred_at` for install date and take `install_source`/`install_channel`/`install_version` from that earliest event. A recovery event that is the only `install_detected` for an installation is a valid installation whose install date is a lower bound only and whose source dimensions may be the runtime fallbacks. |
 | Install-to-signup conversion | Installations linked to a Clerk signup created between `install_detected` and the first authenticated link, divided by installations. |
 | Authenticated installations | Distinct non-CI installations with any later personal-bearer event. `account_authenticated` is the normal first link, but the metric does not depend on that single event being delivered. |
 | Sign-in gate conversion | Distinct non-CI installations with `sign_in_selected`, and distinct installations with `stay_signed_out_selected`, each divided separately by distinct installations with `sign_in_prompted`. Slice `stay_signed_out_selected` by `method` to separate the explicit exit option (`menu`) from a closed menu (`dismissed`). A `sign_in_selected` without a later `account_authenticated` is an abandoned or failed browser login. |
