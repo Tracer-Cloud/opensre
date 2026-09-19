@@ -37,6 +37,10 @@ def _map_get_mariadb_innodb_status(
 @tool(
     name="get_mariadb_innodb_status",
     description="Retrieve InnoDB engine internals including deadlocks, buffer pool state, and I/O activity from SHOW ENGINE INNODB STATUS.",
+    use_cases=[
+        "Investigate a MariaDB deadlock or lock contention",
+        "Inspect InnoDB buffer pool and I/O internals",
+    ],
     source="mariadb",
     surfaces=(ToolSurface.CHAT,),
     is_available=mariadb_is_available,

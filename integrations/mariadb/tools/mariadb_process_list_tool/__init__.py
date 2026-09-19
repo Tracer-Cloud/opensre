@@ -48,6 +48,10 @@ def _map_get_mariadb_process_list(
         "Retrieve active MariaDB threads and queries from"
         " information_schema.PROCESSLIST, excluding idle connections."
     ),
+    use_cases=[
+        "Find which MariaDB queries or connections are active right now",
+        "Identify a long-running active MariaDB query",
+    ],
     source="mariadb",
     surfaces=(ToolSurface.CHAT,),
     is_available=mariadb_is_available,

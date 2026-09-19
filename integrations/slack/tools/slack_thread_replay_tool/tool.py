@@ -39,6 +39,10 @@ class ReplaySlackThreadLocallyTool(BaseTool):
     surfaces = (ToolSurface.CHAT, ToolSurface.ACTION)
     side_effect_level = SideEffectLevel.READ_ONLY
     description = "Fetch a captured Slack thread for local replay and Slack bot behavior testing."
+    use_cases = [
+        "Replay a captured Slack thread locally to reproduce how the bot responded",
+        "Test Slack bot behavior changes against a real thread without posting to Slack",
+    ]
     input_schema = {
         "type": "object",
         "properties": {

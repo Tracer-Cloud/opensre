@@ -16,6 +16,9 @@ from integrations.mongodb_atlas.tools._evidence import map_get_mongodb_atlas_clu
 @tool(
     name="get_mongodb_atlas_cluster_metrics",
     description="Retrieve key process-level metrics for a MongoDB Atlas cluster including connections, opcounters, CPU, memory, cache, and disk IOPS.",
+    use_cases=[
+        "Check CPU, memory, connections, cache, or disk IOPS for an Atlas cluster",
+    ],
     source="mongodb_atlas",
     surfaces=(ToolSurface.CHAT,),
     is_available=atlas_is_available,

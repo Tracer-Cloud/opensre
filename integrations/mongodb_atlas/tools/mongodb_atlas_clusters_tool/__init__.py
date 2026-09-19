@@ -16,6 +16,10 @@ from integrations.mongodb_atlas.tools._evidence import map_get_mongodb_atlas_clu
 @tool(
     name="get_mongodb_atlas_clusters",
     description="Retrieve all MongoDB Atlas clusters in a project including state, version, instance size, and replication topology.",
+    use_cases=[
+        "List the clusters in an Atlas project with their state and size",
+        "Find the right Atlas cluster before querying its metrics or events",
+    ],
     source="mongodb_atlas",
     surfaces=(ToolSurface.CHAT,),
     is_available=atlas_is_available,

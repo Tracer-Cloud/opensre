@@ -34,6 +34,9 @@ def _map_get_mongodb_collection_stats(
 @tool(
     name="get_mongodb_collection_stats",
     description="Retrieve document counts, size metrics, and index information for a specific MongoDB collection.",
+    use_cases=[
+        "Check document count, size, or indexes for one MongoDB collection",
+    ],
     source="mongodb",
     surfaces=(ToolSurface.CHAT,),
     is_available=mongodb_database_is_available,
