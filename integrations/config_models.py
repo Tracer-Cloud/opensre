@@ -1087,6 +1087,19 @@ class AzureIntegrationConfig(StrictConfigModel):
         return max(1, min(v, AZURE_MAX_RESULTS_HARD_LIMIT))
 
 
+class ObserveIntegrationConfig(StrictConfigModel):
+    """Normalized Observe (observe.inc) credentials used by resolution and tool flows."""
+
+    customer_id: str
+    api_token: str
+    base_url: str = ""
+    integration_id: str = ""
+
+    _normalize_strs = field_validator(
+        "customer_id", "api_token", "base_url", "integration_id", mode="before"
+    )(normalize_str())
+
+
 class OpenObserveIntegrationConfig(StrictConfigModel):
     """Normalized OpenObserve credentials used by resolution and tool flows."""
 

@@ -152,6 +152,11 @@ from config.constants.new_relic import (
     NEW_RELIC_BASE_URL_ENV,
     NEW_RELIC_INSTANCES_ENV,
 )
+from config.constants.observe import (
+    OBSERVE_API_TOKEN_ENV,
+    OBSERVE_BASE_URL_ENV,
+    OBSERVE_CUSTOMER_ID_ENV,
+)
 from config.constants.opensearch import (
     OPENSEARCH_API_KEY_ENV,
     OPENSEARCH_PASSWORD_ENV,
@@ -322,6 +327,7 @@ from integrations.mysql import build_mysql_config
 from integrations.mysql import classify as _classify_mysql
 from integrations.new_relic import classify as _classify_new_relic
 from integrations.new_relic.config import NewRelicIntegrationConfig
+from integrations.observe import classify as _classify_observe
 from integrations.openobserve import classify as _classify_openobserve
 from integrations.opensearch import classify as _classify_opensearch
 from integrations.opsgenie import classify as _classify_opsgenie
@@ -537,6 +543,7 @@ _CLASSIFIERS: dict[str, _ClassifyFn] = {
     "bitbucket": _classify_bitbucket,
     "snowflake": _classify_snowflake,
     "azure": _classify_azure,
+    "observe": _classify_observe,
     "openobserve": _classify_openobserve,
     "opensearch": _classify_opensearch,
     "splunk": _classify_splunk,
@@ -1754,6 +1761,20 @@ def load_env_integrations() -> list[dict[str, Any]]:
                     "password": openobserve_password,
                     "stream": os.getenv("OPENOBSERVE_STREAM", "").strip(),
                     "max_results": safe_int(os.getenv("OPENOBSERVE_MAX_RESULTS", "100"), 100),
+                },
+            )
+        )
+
+    observe_customer_id = os.getenv(OBSERVE_CUSTOMER_ID_ENV, "").strip()
+    observe_api_token = resolve_env_credential(OBSERVE_API_TOKEN_ENV)
+    if observe_customer_id and observe_api_token:
+        integrations.append(
+            _active_env_record(
+                "observe",
+                {
+                    "customer_id": observe_customer_id,
+                    "api_token": observe_api_token,
+                    "base_url": os.getenv(OBSERVE_BASE_URL_ENV, "").strip(),
                 },
             )
         )

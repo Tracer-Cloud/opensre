@@ -307,6 +307,14 @@ _BUILTIN_SPECS: tuple[IntegrationSpec, ...] = (
         verify_order=31,
     ),
     IntegrationSpec(
+        service="observe",
+        aliases=("observeinc", "observe inc"),
+        has_verifier=True,
+        direct_effective=True,
+        setup_order=55,
+        verify_order=101,
+    ),
+    IntegrationSpec(
         service="opensearch",
         aliases=("open search",),
         has_verifier=True,

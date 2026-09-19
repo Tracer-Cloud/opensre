@@ -864,6 +864,15 @@ def _setup_azure_sql() -> None:
 _HANDLERS["azure_sql"] = _setup_azure_sql
 
 
+def _setup_observe() -> None:
+    from integrations.observe.setup import OBSERVE_SETUP
+
+    _run_spec_setup(OBSERVE_SETUP)
+
+
+_HANDLERS["observe"] = _setup_observe
+
+
 def setup_services() -> tuple[str, ...]:
     """Return the services that both declare a setup order and have a handler.
 
