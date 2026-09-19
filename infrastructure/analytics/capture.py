@@ -12,7 +12,7 @@ from infrastructure.analytics.event_properties import (
     _integration_lifecycle_properties,
     _onboard_completed_properties,
 )
-from infrastructure.analytics.events import Event
+from infrastructure.analytics.events import Event, cli_command_event_name
 from infrastructure.analytics.provider import JsonValue, Properties, get_analytics
 from infrastructure.observability.errors.sentry import capture_exception
 
@@ -73,7 +73,9 @@ def _capture(event: Event, properties: Properties | None = None) -> None:
         capture_exception(exc)
 
 
-def capture_cli_invoked(properties: Properties | None = None) -> None:
+def capture_cli_invoked(
+    properties: Properties | None = None, command_parts: Sequence[str] = ()
+) -> None:
     # Whole-process default for local CLI; gateway binds surface per turn instead.
     try:
         from infrastructure.analytics.usage_context import UsageSurface, ensure_process_session_id
@@ -81,7 +83,7 @@ def capture_cli_invoked(properties: Properties | None = None) -> None:
         analytics = get_analytics()
         analytics.set_persistent_property("surface", UsageSurface.CLI)
         ensure_process_session_id()
-        analytics.capture(Event.CLI_INVOKED, properties)
+        analytics.capture(cli_command_event_name(command_parts), properties)
     except Exception as exc:
         capture_exception(exc)
 

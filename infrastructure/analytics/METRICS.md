@@ -27,7 +27,7 @@ remaining metrics require queries over `analytics_product_events`.
 
 | Metric | Events and calculation |
 | --- | --- |
-| Personal DAU / WAU / MAU | Distinct server-resolved users with a personal-bearer `cli_invoked` or `$ai_generation` in the requested window. |
+| Personal DAU / WAU / MAU | Distinct server-resolved users with a personal-bearer `cli_command_opensre…` (historically `cli_invoked`) or `$ai_generation` in the requested window. |
 | Organization DAU / WAU / MAU | Distinct authenticated organizations with gateway activity in the requested window; report separately from personal users. |
 | D1 / D7 / D30 retention | Personally activated users with another qualifying personal event in the target day or window. Organization retention is a separate gateway metric. |
 | Feature adoption | Personal users by CLI/AI feature and organizations by gateway surface; never combine the two identity grains. |

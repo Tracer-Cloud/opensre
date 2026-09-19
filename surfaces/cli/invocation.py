@@ -80,9 +80,9 @@ def resolve_command_parts(command: click.Command, argv: list[str]) -> list[str]:
 
         subcommand = current.get_command(click.Context(current), token)
         if subcommand is None:
-            continue
+            break
 
-        parts.append(token)
+        parts.append(subcommand.name or token)
 
     return parts
 

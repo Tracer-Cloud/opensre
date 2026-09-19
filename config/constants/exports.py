@@ -39,6 +39,8 @@ EXPORTS: dict[str, str] = {
     "OPENSRE_STAFF_EMAIL_DOMAIN": "account",
     # analytics
     "ANALYTICS_DISABLED_ENV": "analytics",
+    "ANALYTICS_ENV_ENV": "analytics",
+    "ANALYTICS_TEST_ENV": "analytics",
     "ANALYTICS_EVENT_SCHEMA_VERSION": "analytics",
     "ANALYTICS_INGEST_PATH": "analytics",
     "ANALYTICS_INSTALL_CHANNEL_ENV": "analytics",

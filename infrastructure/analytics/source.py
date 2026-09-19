@@ -4,13 +4,14 @@ from __future__ import annotations
 
 import os
 
+from config.constants.analytics import ANALYTICS_ENV_ENV, ANALYTICS_TEST_ENV
 from config.constants.environment import DEPLOYMENT_ENV_ENV
 from infrastructure.analytics.analytics_runtime import is_ci_environment
 
 
 def is_test_run() -> bool:
     """Return True when the current process should be tagged as test traffic."""
-    if os.getenv("OPENSRE_IS_TEST", "0").strip() == "1":
+    if os.getenv(ANALYTICS_TEST_ENV, "").strip().lower() in {"1", "true", "yes"}:
         return True
 
     if os.getenv("PYTEST_CURRENT_TEST"):
@@ -23,7 +24,7 @@ def resolve_environment_tag() -> str:
     """Resolve coarse environment classification for analytics slicing."""
     raw = (
         (
-            os.getenv("OPENSRE_ANALYTICS_ENV")
+            os.getenv(ANALYTICS_ENV_ENV)
             or os.getenv(DEPLOYMENT_ENV_ENV)
             or os.getenv("ENVIRONMENT")
             or ""
