@@ -302,6 +302,28 @@ class TestSandboxFilesystemRestrictions:
         assert not result.success
         assert "PermissionError" in result.stderr or "PermissionError" in result.stdout
 
+    def test_restricted_open_windows_paths_are_normalized(self) -> None:
+        ensure_opensre_tmp_dir()
+        target = os.path.join(os.fspath(OPENSRE_TMP_DIR), "sandbox_win_test.txt")
+        test_path = target.upper() if os.name == "nt" else target
+        test_path = test_path.replace("/", "\\") if os.name == "nt" else test_path
+        
+        code = f"open({test_path!r}, 'w').write('ok')"
+        result = run_python_sandbox(code)
+        assert result.success
+        
+        if os.path.exists(test_path):
+            os.unlink(test_path)
+
+    def test_restricted_open_bytes_paths(self) -> None:
+        ensure_opensre_tmp_dir()
+        target = os.path.join(os.fspath(OPENSRE_TMP_DIR), "sandbox_bytes_test.txt")
+        code = f"open({target.encode('utf-8')!r}, 'w').write('ok')"
+        result = run_python_sandbox(code)
+        assert result.success
+        if os.path.exists(target):
+            os.unlink(target)
+
 
 class TestSandboxTimeout:
     def test_timeout_enforced(self) -> None:

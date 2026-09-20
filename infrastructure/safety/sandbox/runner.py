@@ -71,9 +71,11 @@ _SANDBOX_PREAMBLE = textwrap.dedent(f"""\
         if isinstance(file, (str, bytes)) or hasattr(file, "__fspath__"):
             mode_str = str(mode)
             if any(c in mode_str for c in ("w", "a", "x")):
-                abs_path = _os_module.path.realpath(_os_module.fspath(file))
+                file_str = _os_module.fsdecode(file)
+                abs_path = _os_module.path.realpath(_os_module.fspath(file_str))
+                norm_path = _os_module.path.normcase(abs_path)
                 if not any(
-                    abs_path == root or abs_path.startswith(root + _os_module.sep)
+                    norm_path == _os_module.path.normcase(root) or norm_path.startswith(_os_module.path.normcase(root) + _os_module.sep)
                     for root in _ALLOWED_WRITE_ROOTS
                 ):
                     raise PermissionError(
