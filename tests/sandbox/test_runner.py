@@ -302,16 +302,17 @@ class TestSandboxFilesystemRestrictions:
         assert not result.success
         assert "PermissionError" in result.stderr or "PermissionError" in result.stdout
 
+    @pytest.mark.skipif(sys.platform != "win32", reason="Windows-specific path normalization")
     def test_restricted_open_windows_paths_are_normalized(self) -> None:
         ensure_opensre_tmp_dir()
         target = os.path.join(os.fspath(OPENSRE_TMP_DIR), "sandbox_win_test.txt")
         test_path = target.upper() if os.name == "nt" else target
         test_path = test_path.replace("/", "\\") if os.name == "nt" else test_path
-        
+
         code = f"open({test_path!r}, 'w').write('ok')"
         result = run_python_sandbox(code)
         assert result.success
-        
+
         if os.path.exists(test_path):
             os.unlink(test_path)
 
