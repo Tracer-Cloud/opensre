@@ -27,21 +27,31 @@ class RemoteSessionState(StrEnum):
     UNAVAILABLE = "unavailable"  # unreachable, or a non-200 response
 
 
-def fetch_account_session(app_url: str, token: str) -> httpx.Response | None:
+def fetch_account_session(
+    app_url: str,
+    token: str,
+    *,
+    timeout: float = OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS,
+) -> httpx.Response | None:
     """GET the session endpoint, or ``None`` when the webapp is unreachable."""
     try:
         return httpx.get(
             f"{app_url}{OPENSRE_ACCOUNT_SESSION_PATH}",
             headers={"Authorization": f"Bearer {token}"},
-            timeout=OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS,
+            timeout=timeout,
         )
     except httpx.HTTPError:
         return None
 
 
-def validate_remote_session(app_url: str, token: str) -> RemoteSessionState:
+def validate_remote_session(
+    app_url: str,
+    token: str,
+    *,
+    timeout: float = OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS,
+) -> RemoteSessionState:
     """Validate ``token`` against ``app_url`` without interpreting the body."""
-    response = fetch_account_session(app_url, token)
+    response = fetch_account_session(app_url, token, timeout=timeout)
     if response is None:
         return RemoteSessionState.UNAVAILABLE
     if response.status_code == HTTPStatus.UNAUTHORIZED:

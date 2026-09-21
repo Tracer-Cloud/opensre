@@ -23,6 +23,7 @@ from config.constants.account import (
     OPENSRE_ACCOUNT_LLM_MODEL_ENV,
     OPENSRE_ACCOUNT_METADATA_PATH_ENV,
     OPENSRE_ACCOUNT_ROUTE_CACHE_SECONDS,
+    OPENSRE_ACCOUNT_ROUTE_VALIDATION_TIMEOUT_SECONDS,
     OPENSRE_ACCOUNT_TOKEN_ENV,
     OPENSRE_APP_URL_DEFAULT,
     OPENSRE_APP_URL_ENV,
@@ -241,14 +242,16 @@ def _record_session_is_live(record: AccountRecord, token: str) -> bool:
 
     ``account_llm_route`` runs on the LLM hot path, so validating with an HTTP
     request on every call would be too costly. A login past its recorded expiry
-    is dropped without a request; anything else is validated and the verdict is
-    cached for ``OPENSRE_ACCOUNT_ROUTE_CACHE_SECONDS``.
+    is dropped without a request when the effective token is the one the record
+    describes — a fresh ``OPENSRE_ACCOUNT_TOKEN`` override for the same account
+    is still validated remotely. Everything else is validated with a short
+    timeout and the verdict cached for ``OPENSRE_ACCOUNT_ROUTE_CACHE_SECONDS``.
     """
     try:
         app_url = normalize_account_app_url(record.app_url)
     except ValueError:
         return False
-    if _session_expired(record):
+    if token == stored_account_token() and _session_expired(record):
         return False
 
     key = (app_url, _token_fingerprint(token))
@@ -260,7 +263,14 @@ def _record_session_is_live(record: AccountRecord, token: str) -> bool:
 
     from config.account_session import RemoteSessionState, validate_remote_session
 
-    live = validate_remote_session(app_url, token) is RemoteSessionState.VALID
+    live = (
+        validate_remote_session(
+            app_url,
+            token,
+            timeout=OPENSRE_ACCOUNT_ROUTE_VALIDATION_TIMEOUT_SECONDS,
+        )
+        is RemoteSessionState.VALID
+    )
     with _ROUTE_SESSION_CACHE_LOCK:
         _ROUTE_SESSION_CACHE[key] = (time.monotonic(), live)
     return live

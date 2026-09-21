@@ -33,6 +33,9 @@ if TYPE_CHECKING:
         OPENSRE_ACCOUNT_ROUTE_CACHE_SECONDS as OPENSRE_ACCOUNT_ROUTE_CACHE_SECONDS,
     )
     from config.constants.account import (
+        OPENSRE_ACCOUNT_ROUTE_VALIDATION_TIMEOUT_SECONDS as OPENSRE_ACCOUNT_ROUTE_VALIDATION_TIMEOUT_SECONDS,
+    )
+    from config.constants.account import (
         OPENSRE_ACCOUNT_SESSION_PATH as OPENSRE_ACCOUNT_SESSION_PATH,
     )
     from config.constants.account import (
