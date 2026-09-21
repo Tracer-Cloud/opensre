@@ -132,7 +132,10 @@ def test_load_context_files_rejects_non_regular_files(tmp_path) -> None:
 @pytest.mark.skipif(os.name == "nt", reason="POSIX surrogate-escaped path behavior")
 def test_render_prompt_escapes_non_utf8_filesystem_path(tmp_path) -> None:
     raw_path = os.fsencode(tmp_path) + b"/alert-\xff.txt"
-    descriptor = os.open(raw_path, os.O_WRONLY | os.O_CREAT, 0o600)
+    try:
+        descriptor = os.open(raw_path, os.O_WRONLY | os.O_CREAT, 0o600)
+    except OSError as exc:
+        pytest.skip(f"filesystem rejects non-UTF-8 names: {exc}")
     try:
         os.write(descriptor, b"latency spike")
     finally:

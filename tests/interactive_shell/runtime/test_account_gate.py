@@ -257,7 +257,9 @@ def test_run_repl_async_is_the_already_gated_shell_body(monkeypatch: Any) -> Non
         lambda **_kwargs: SimpleNamespace(session=Session(), inbox=None),
     )
     monkeypatch.setattr(
-        main_entrypoint, "pass_sign_in_gate", lambda _console, **_kwargs: gated.append(True) or False
+        main_entrypoint,
+        "pass_sign_in_gate",
+        lambda _console, **_kwargs: gated.append(True) or False,
     )
     monkeypatch.setattr(main_entrypoint, "offer_demo", lambda *_a, **_k: None)
     monkeypatch.setattr(main_entrypoint, "InteractiveShellController", _Controller)

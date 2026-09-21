@@ -44,9 +44,7 @@ def account_login(*, console: Console | None = None) -> bool:
     return account_is_signed_in()
 
 
-def pass_sign_in_gate(
-    console: Console, *, on_screen: Callable[[], None] | None = None
-) -> bool:
+def pass_sign_in_gate(console: Console, *, on_screen: Callable[[], None] | None = None) -> bool:
     """Run the sign-in gate; return True to proceed into the REPL.
 
     Test processes skip the prompt (same reason as the loops picker) so pytest
