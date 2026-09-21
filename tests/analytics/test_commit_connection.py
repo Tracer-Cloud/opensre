@@ -9,6 +9,7 @@ import sys
 from collections import Counter
 from collections.abc import Iterator
 from datetime import UTC, datetime
+from http import HTTPStatus
 from pathlib import Path
 from queue import Queue
 from threading import Thread
@@ -145,7 +146,7 @@ def test_client_events_persist_for_two_users_and_replay_counts_once(
     result = evidence(receiver)
     requests = [r for r in result["requests"] if r["payload"]["event"] == "opensre_commit_created"]
     assert len(requests) == 3
-    assert {r["status"] for r in requests} == {202}
+    assert {r["status"] for r in requests} == {HTTPStatus.ACCEPTED}
     rows = commits(result)
     assert Counter(row["user_id"] for row in rows) == {"user_integrity_a": 2, "user_integrity_b": 1}
     assert len({row["analytics_id"] for row in rows}) == 1
@@ -164,7 +165,7 @@ def test_client_events_persist_for_two_users_and_replay_counts_once(
         assert int(payload["properties"]["changed_file_count"]) == 2
         assert row["authenticated"] == row["signature_verified"] == 1
         assert row["auth_kind"] == "personal"
-    assert replay(receiver, requests[0]["payload"]).status_code == 202
+    assert replay(receiver, requests[0]["payload"]).status_code == HTTPStatus.ACCEPTED
     assert Counter(row["user_id"] for row in commits(evidence(receiver))) == {
         "user_integrity_a": 2,
         "user_integrity_b": 1,
@@ -205,7 +206,7 @@ def test_tagged_completion_is_stored_but_excluded_from_graph(
         for request in result["requests"]
         if request["payload"]["event"] == "opensre_commit_created"
     )
-    assert replay(receiver, first).status_code == 202
+    assert replay(receiver, first).status_code == HTTPStatus.ACCEPTED
     env = isolated_environment()
     env.update(
         {
@@ -234,14 +235,20 @@ def test_rejected_requests_do_not_reach_storage(tmp_path: Path, receiver: dict[s
         for request in evidence(receiver)["requests"]
         if request["payload"]["event"] == "opensre_commit_created"
     )
-    assert replay(receiver, payload, token="invalid_fixture_token").status_code == 401
-    assert replay(receiver, payload, tamper=True).status_code == 401
+    assert (
+        replay(receiver, payload, token="invalid_fixture_token").status_code
+        == HTTPStatus.UNAUTHORIZED
+    )
+    assert replay(receiver, payload, tamper=True).status_code == HTTPStatus.UNAUTHORIZED
     malformed = {**payload, "properties": {**payload["properties"], "changed_file_count": -1}}
-    assert replay(receiver, malformed).status_code == 400
+    assert replay(receiver, malformed).status_code == HTTPStatus.BAD_REQUEST
     assert len(commits(evidence(receiver))) == 1
 
 
-@pytest.mark.parametrize("mode,signal", [("storage-failed", "503"), ("timeout", "ReadTimeout")])
+@pytest.mark.parametrize(
+    "mode,signal",
+    [("storage-failed", str(HTTPStatus.SERVICE_UNAVAILABLE.value)), ("timeout", "ReadTimeout")],
+)
 def test_delivery_failure_is_not_an_acknowledgement(
     tmp_path: Path, receiver: dict[str, Any], mode: str, signal: str
 ) -> None:
