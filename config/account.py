@@ -251,7 +251,7 @@ def _record_session_is_live(record: AccountRecord, token: str) -> bool:
         app_url = normalize_account_app_url(record.app_url)
     except ValueError:
         return False
-    if token == stored_account_token() and _session_expired(record):
+    if _session_expired(record) and token == stored_account_token():
         return False
 
     key = (app_url, _token_fingerprint(token))
