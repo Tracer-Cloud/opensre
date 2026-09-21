@@ -29,6 +29,7 @@ EXPORTS: dict[str, str] = {
     "OPENSRE_ACCOUNT_LLM_BASE_PATH": "account",
     "OPENSRE_ACCOUNT_LLM_MODEL_ENV": "account",
     "OPENSRE_ACCOUNT_METADATA_PATH_ENV": "account",
+    "OPENSRE_ACCOUNT_ROUTE_CACHE_SECONDS": "account",
     "OPENSRE_ACCOUNT_SESSION_PATH": "account",
     "OPENSRE_ACCOUNT_TOKEN_ENV": "account",
     "OPENSRE_ACCOUNT_USAGE_PATH": "account",

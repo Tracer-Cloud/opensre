@@ -16,6 +16,9 @@ OPENSRE_ACCOUNT_LOGIN_PATH = "/cli/auth/start"
 OPENSRE_ACCOUNT_LOGIN_SUCCESS_PATH = "/cli/auth/success"
 OPENSRE_ACCOUNT_EXCHANGE_PATH = "/api/auth/cli/exchange"
 OPENSRE_ACCOUNT_SESSION_PATH = "/api/auth/cli/session"
+# Route selection runs on the LLM hot path, so a stale-login verdict is cached
+# for this long instead of validating on every call.
+OPENSRE_ACCOUNT_ROUTE_CACHE_SECONDS = 60.0
 OPENSRE_ACCOUNT_USAGE_PATH = "/usage"
 OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS = 15.0
 OPENSRE_APP_URL_DEFAULT = "https://app.opensre.com"
@@ -34,6 +37,7 @@ __all__ = [
     "OPENSRE_ACCOUNT_EXCHANGE_PATH",
     "OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS",
     "OPENSRE_ACCOUNT_TOKEN_ENV",
+    "OPENSRE_ACCOUNT_ROUTE_CACHE_SECONDS",
     "OPENSRE_ACCOUNT_SESSION_PATH",
     "OPENSRE_ACCOUNT_USAGE_PATH",
     "OPENSRE_APP_URL_DEFAULT",

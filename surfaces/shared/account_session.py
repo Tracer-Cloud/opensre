@@ -8,8 +8,6 @@ from dataclasses import dataclass, replace
 from enum import StrEnum
 from http import HTTPStatus
 
-import httpx
-
 from config.account import (
     AccountRecord,
     load_account_record,
@@ -17,10 +15,7 @@ from config.account import (
     resolve_account_token,
     save_account_record,
 )
-from config.constants.account import (
-    OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS,
-    OPENSRE_ACCOUNT_SESSION_PATH,
-)
+from config.account_session import fetch_account_session
 
 
 class AccountSessionState(StrEnum):
@@ -119,13 +114,8 @@ def account_status(*, app_url: str | None = None) -> AccountStatus:
             record,
             "The stored OpenSRE app URL is invalid.",
         )
-    try:
-        response = httpx.get(
-            f"{resolved_app_url}{OPENSRE_ACCOUNT_SESSION_PATH}",
-            headers={"Authorization": f"Bearer {token}"},
-            timeout=OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS,
-        )
-    except httpx.HTTPError:
+    response = fetch_account_session(resolved_app_url, token)
+    if response is None:
         return AccountStatus(
             AccountSessionState.UNAVAILABLE,
             record,

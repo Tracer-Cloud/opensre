@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import tempfile
+import threading
+import time
 from collections.abc import Mapping
 from contextlib import suppress
 from dataclasses import asdict, dataclass
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlsplit, urlunsplit
 
@@ -18,6 +22,7 @@ from config.constants.account import (
     OPENSRE_ACCOUNT_LLM_BASE_PATH,
     OPENSRE_ACCOUNT_LLM_MODEL_ENV,
     OPENSRE_ACCOUNT_METADATA_PATH_ENV,
+    OPENSRE_ACCOUNT_ROUTE_CACHE_SECONDS,
     OPENSRE_ACCOUNT_TOKEN_ENV,
     OPENSRE_APP_URL_DEFAULT,
     OPENSRE_APP_URL_ENV,
@@ -152,6 +157,7 @@ def save_account_record(record: AccountRecord) -> None:
     _ensure_parent(path)
     with FileLock(str(_lock_path(path)), timeout=_LOCK_TIMEOUT_SECONDS):
         _write_record(path, record)
+    _clear_account_route_session_cache()
 
 
 def load_account_record() -> AccountRecord | None:
@@ -176,6 +182,7 @@ def delete_account_record() -> None:
         return
     with FileLock(str(_lock_path(path)), timeout=_LOCK_TIMEOUT_SECONDS):
         path.unlink(missing_ok=True)
+    _clear_account_route_session_cache()
 
 
 def resolve_account_token() -> str:
@@ -198,19 +205,85 @@ def delete_account_token() -> None:
     delete_secret(OPENSRE_ACCOUNT_TOKEN_ENV)
 
 
-def account_llm_route() -> AccountLLMRoute | None:
-    """Return the hosted OpenAI route when this process holds an OpenSRE token.
+def _token_fingerprint(token: str) -> str:
+    """A stable, non-reversible cache key for a token without storing the token."""
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
 
-    A signed-in laptop has account metadata from ``opensre account login``. A
-    hosted gateway never logs in: the control plane injects its organization's
-    token (``OPENSRE_ACCOUNT_TOKEN``) and the webapp URL, and that pair is the
-    route. The webapp meters the calls against the token's organization.
+
+def _session_expired(record: AccountRecord) -> bool:
+    """Whether the stored login is already past its recorded expiry."""
+    raw = record.token_expires_at.strip()
+    if not raw:
+        return False
+    try:
+        expires_at = datetime.fromisoformat(raw)
+    except ValueError:
+        return False
+    if expires_at.tzinfo is None:
+        expires_at = expires_at.replace(tzinfo=UTC)
+    return expires_at <= datetime.now(UTC)
+
+
+#: Last validation verdict per ``(app_url, token fingerprint)``; short-lived so a
+#: revoked or unreachable login stops owning the route without a request per turn.
+_ROUTE_SESSION_CACHE: dict[tuple[str, str], tuple[float, bool]] = {}
+_ROUTE_SESSION_CACHE_LOCK = threading.Lock()
+
+
+def _clear_account_route_session_cache() -> None:
+    """Drop cached session verdicts (tests, and whenever login state changes)."""
+    with _ROUTE_SESSION_CACHE_LOCK:
+        _ROUTE_SESSION_CACHE.clear()
+
+
+def _record_session_is_live(record: AccountRecord, token: str) -> bool:
+    """Whether the stored login still validates, cached for a short window.
+
+    ``account_llm_route`` runs on the LLM hot path, so validating with an HTTP
+    request on every call would be too costly. A login past its recorded expiry
+    is dropped without a request; anything else is validated and the verdict is
+    cached for ``OPENSRE_ACCOUNT_ROUTE_CACHE_SECONDS``.
     """
-    if not resolve_account_token():
+    try:
+        app_url = normalize_account_app_url(record.app_url)
+    except ValueError:
+        return False
+    if _session_expired(record):
+        return False
+
+    key = (app_url, _token_fingerprint(token))
+    now = time.monotonic()
+    with _ROUTE_SESSION_CACHE_LOCK:
+        cached = _ROUTE_SESSION_CACHE.get(key)
+        if cached is not None and now - cached[0] < OPENSRE_ACCOUNT_ROUTE_CACHE_SECONDS:
+            return cached[1]
+
+    from config.account_session import RemoteSessionState, validate_remote_session
+
+    live = validate_remote_session(app_url, token) is RemoteSessionState.VALID
+    with _ROUTE_SESSION_CACHE_LOCK:
+        _ROUTE_SESSION_CACHE[key] = (time.monotonic(), live)
+    return live
+
+
+def account_llm_route() -> AccountLLMRoute | None:
+    """Return the hosted OpenAI route when this process holds a working login.
+
+    A signed-in laptop has account metadata from ``opensre account login``, and
+    that route is kept only while the stored login still validates — a revoked
+    or unreachable session must not override a working local provider. A hosted
+    gateway never logs in: the control plane injects its organization's token
+    (``OPENSRE_ACCOUNT_TOKEN``) and the webapp URL, and that pair is the route
+    the webapp meters against the token's organization.
+    """
+    token = resolve_account_token()
+    if not token:
         return None
     record = load_account_record()
     if record is not None:
         if record.llm_provider != "openai":
+            return None
+        if not _record_session_is_live(record, token):
             return None
         app_url, model = record.app_url, record.llm_model
     else:
