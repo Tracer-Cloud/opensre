@@ -27,6 +27,7 @@ from core.tool import ToolExecutionHooks
 from infrastructure.turn_host.turn_output import TurnOutput
 from infrastructure.turn_host.turn_runner import TurnRunner
 from surfaces.interactive_shell.runtime.agent_harness_adapters import ShellOutputSink
+from surfaces.interactive_shell.runtime.approval_hooks import with_shell_approval
 from surfaces.interactive_shell.runtime.core.turn_accounting import ShellTurnAccounting
 from surfaces.interactive_shell.runtime.shell_agent import shell_agent_build_config
 from surfaces.interactive_shell.session import Session
@@ -77,7 +78,9 @@ def execute_shell_turn(
     )
     # The host reads per-turn tool hooks off the output, the same way a chat
     # transport supplies them.
-    resolved_output.tool_hooks = tool_hooks  # type: ignore[attr-defined]
+    resolved_output.tool_hooks = with_shell_approval(  # type: ignore[attr-defined]
+        tool_hooks, session=session, console=console, confirm_fn=confirm_fn, is_tty=is_tty
+    )
     if handler is None:
         handler = TurnRunner(
             console=console,
