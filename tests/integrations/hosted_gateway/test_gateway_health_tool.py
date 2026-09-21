@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 
 from integrations.hosted_gateway import GatewayHealth, HostedGatewayError
-from integrations.hosted_gateway.tools import gateway_health
+from integrations.hosted_gateway.tools import gateway_health, results
 from integrations.hosted_gateway.tools.gateway_health import check_hosted_gateway
 from tools.registry import clear_tool_registry_cache, get_registered_tool_map
 
@@ -108,7 +108,7 @@ def test_not_signed_in_tells_the_user_to_sign_in_and_is_not_an_incident(
 ) -> None:
     # Arrange
     reported: list[BaseException] = []
-    monkeypatch.setattr(gateway_health, "report_run_error", lambda exc, **_kw: reported.append(exc))
+    monkeypatch.setattr(results, "report_run_error", lambda exc, **_kw: reported.append(exc))
 
     def from_account() -> _Client:
         raise HostedGatewayError("not_signed_in")
@@ -130,7 +130,7 @@ def test_an_unreachable_app_is_reported_once_and_named_by_code_only(
 ) -> None:
     # Arrange
     reported: list[BaseException] = []
-    monkeypatch.setattr(gateway_health, "report_run_error", lambda exc, **_kw: reported.append(exc))
+    monkeypatch.setattr(results, "report_run_error", lambda exc, **_kw: reported.append(exc))
     _signed_in_with(monkeypatch, HostedGatewayError("unreachable"))
 
     # Act
@@ -138,7 +138,5 @@ def test_an_unreachable_app_is_reported_once_and_named_by_code_only(
 
     # Assert
     assert out["success"] is False and out["error_kind"] == "unreachable"
-    assert out["response_text"] == (
-        "The OpenSRE app could not answer the gateway health check (unreachable)."
-    )
+    assert out["response_text"] == "The OpenSRE app could not do that (unreachable)."
     assert len(reported) == 1

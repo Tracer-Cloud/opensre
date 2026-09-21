@@ -486,6 +486,12 @@ if TYPE_CHECKING:
     from config.constants.hosted_gateway import (
         HOSTED_GATEWAY_SETTINGS_PATH as HOSTED_GATEWAY_SETTINGS_PATH,
     )
+    from config.constants.hosted_gateway import (
+        HOSTED_GATEWAY_START_PATH as HOSTED_GATEWAY_START_PATH,
+    )
+    from config.constants.hosted_gateway import (
+        HOSTED_GATEWAY_STOP_PATH as HOSTED_GATEWAY_STOP_PATH,
+    )
     from config.constants.http import (
         MAX_REQUEST_BODY_BYTES as MAX_REQUEST_BODY_BYTES,
     )

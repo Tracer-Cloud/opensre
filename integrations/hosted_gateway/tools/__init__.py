@@ -2,6 +2,6 @@
 
 from __future__ import annotations
 
-TOOL_MODULES = ("gateway_health",)
+TOOL_MODULES = ("gateway_health", "gateway_lifecycle")
 
 __all__ = ["TOOL_MODULES"]

@@ -161,6 +161,8 @@ EXPORTS: dict[str, str] = {
     "HOSTED_GATEWAY_HTTP_TIMEOUT_SECONDS": "hosted_gateway",
     "HOSTED_GATEWAY_LOOPBACK_HOSTS": "hosted_gateway",
     "HOSTED_GATEWAY_SETTINGS_PATH": "hosted_gateway",
+    "HOSTED_GATEWAY_START_PATH": "hosted_gateway",
+    "HOSTED_GATEWAY_STOP_PATH": "hosted_gateway",
     # github
     "GH_TOKEN_ENV": "github",
     "GITHUB_API_BASE_URL": "github",
