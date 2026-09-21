@@ -462,7 +462,11 @@ def capture_ask_user_prompt_dismissed(
 
 
 def capture_interactive_shell_rendered(*, entrypoint: str) -> None:
-    """Record successful first paint of the interactive shell chrome."""
+    """Record first interactive-shell chrome, including the sign-in screen.
+
+    The REPL entrypoint suppresses this for ``--resume`` and for an auto-launch
+    after ``opensre onboard``. CLI subcommands never call it.
+    """
     _capture(Event.INTERACTIVE_SHELL_RENDERED, {"entrypoint": entrypoint})
 
 

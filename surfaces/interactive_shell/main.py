@@ -122,7 +122,9 @@ async def run_repl_async(
             manager.close(session)
 
 
-def _start_launch_banner(console: Console) -> Callable[[], None]:
+def _start_launch_banner(
+    console: Console, *, on_painted: Callable[[], None] | None = None
+) -> Callable[[], None]:
     """Spin the wordmark on a thread while the runtime boots; return the finisher.
 
     The finisher stops the spin (after its minimum frames), waits for it, and
@@ -143,7 +145,8 @@ def _start_launch_banner(console: Console) -> Callable[[], None]:
         stop.set()
         spinner.join()
         render_terminal_ui(console, animate=False)
-        capture_interactive_shell_rendered(entrypoint="opensre_binary")
+        if on_painted is not None:
+            on_painted()
 
     return finish
 
@@ -156,8 +159,14 @@ def run_repl(
     console: Console | None = None,
     cli_command_group: click.Command | None = None,
     after_banner: Callable[[], None] | None = None,
+    capture_shell_rendered: bool = True,
 ) -> int:
-    """Run the shell on a new event loop and return its exit code."""
+    """Run the shell on a new event loop and return its exit code.
+
+    ``interactive_shell_rendered`` fires at the sign-in screen when that is
+    painted, or at first banner paint when the user is already signed in.
+    ``--resume`` and an auto-launch after ``opensre onboard`` do not record it.
+    """
     cfg = config or ReplConfig.load()
     set_active_theme(cfg.theme)
     out = console or _DEFAULT_CONSOLE
@@ -166,15 +175,29 @@ def run_repl(
     if not sys.stdin.isatty() and initial_input is None:
         return 0
 
+    record_shell = capture_shell_rendered and not resume_session_id
+    shell_rendered = False
+
+    def record_shell_rendered() -> None:
+        nonlocal shell_rendered
+        if not record_shell or shell_rendered:
+            return
+        shell_rendered = True
+        capture_interactive_shell_rendered(entrypoint="opensre_binary")
+
     finish_banner: Callable[[], None] | None = None
     try:
         if not initial_input:
-            if not pass_sign_in_gate(out):
+            if not pass_sign_in_gate(
+                out, on_screen=record_shell_rendered if record_shell else None
+            ):
                 return 0
             # Wipe the calling shell or completed sign-in screen so the REPL
             # reads as its own screen, then boot it under the launch animation.
             repl_clear_screen()
-            finish_banner = _start_launch_banner(out)
+            finish_banner = _start_launch_banner(
+                out, on_painted=record_shell_rendered if record_shell else None
+            )
 
         return asyncio.run(
             run_repl_async(

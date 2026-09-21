@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Final
+from typing import TYPE_CHECKING, Any, Final, Protocol
 
 import click
 
@@ -21,8 +21,20 @@ else:
 
 #: Work the shell runs once its banner is on screen (``None``: nothing deferred).
 AfterBanner = Callable[[], None] | None
-#: ``(config, resume_session_id, after_banner) -> exit code``.
-ShellLauncher = Callable[[ReplConfig, str | None, AfterBanner], int]
+
+
+class ShellLauncher(Protocol):
+    """``(config, resume_session_id, after_banner, capture_shell_rendered=True)``."""
+
+    def __call__(
+        self,
+        config: ReplConfig,
+        resume_session_id: str | None,
+        after_banner: AfterBanner,
+        capture_shell_rendered: bool = True,
+    ) -> int: ...
+
+
 #: Runs the gateway attached to this terminal until it stops.
 GatewayForegroundRunner = Callable[[], None]
 
