@@ -63,6 +63,11 @@ def _parse_tags(value: Any) -> dict[str, str]:
 def _coerce_pid(value: Any) -> int | None:
     if value is None:
         return None
+    # ``bool`` is a subclass of ``int``; a boolean PID from a webhook payload is
+    # not a process id, so reject it before the integer branch coerces True/False
+    # to 1/0 (init/systemd).
+    if isinstance(value, bool):
+        return None
     if isinstance(value, int):
         return value if value >= 0 else None
     if isinstance(value, float) and value.is_integer():
