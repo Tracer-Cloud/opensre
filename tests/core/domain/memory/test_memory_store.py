@@ -302,6 +302,13 @@ class TestSafety:
         assert "[REDACTED]" in redacted
         assert "eks-prod-1" in redacted
 
+    def test_redact_keeps_separator_when_label_contains_value(self) -> None:
+        from core.domain.memory import redact_memory_unsafe_text
+
+        redacted = redact_memory_unsafe_text("pass1234_secret_key: pass1234")
+
+        assert redacted == "pass1234_secret_key: [REDACTED]"
+
 
 class TestConcurrency:
     def test_parallel_writes_to_same_slug_serialize(self) -> None:

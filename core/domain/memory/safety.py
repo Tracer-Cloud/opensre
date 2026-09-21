@@ -103,7 +103,10 @@ def redact_memory_unsafe_text(text: str) -> str:
         if not _looks_like_secret_value(value):
             return match.group(0)
         # Preserve the surrounding delimiter shape loosely: label + separator.
-        separator = match.group(0)[len(label) : match.group(0).find(value)]
+        # Locate the value via its capture-group offset; ``str.find`` could match
+        # the value as a substring of the label and collapse the separator.
+        value_offset = match.start(2) - match.start(0)
+        separator = match.group(0)[len(label) : value_offset]
         return f"{label}{separator}{_REDACTION_PLACEHOLDER}"
 
     return _LABELED_SECRET_RE.sub(_replace_labeled, redacted)
