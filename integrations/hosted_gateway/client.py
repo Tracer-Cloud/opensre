@@ -123,22 +123,24 @@ class HostedGatewayClient:
 
     def health(self) -> GatewayHealth:
         """Ask the app whether this account's organization has a gateway and it is serving."""
-        return _gateway_health(self._request("GET", HOSTED_GATEWAY_HEALTH_PATH))
+        return _gateway_health(self._request("GET", HOSTED_GATEWAY_HEALTH_PATH, _REFUSALS))
 
     def start(self) -> GatewayHealth:
         """Ask the app to start the organization's gateway; organization admins only."""
-        return _gateway_health(self._request("POST", HOSTED_GATEWAY_START_PATH))
+        return _gateway_health(
+            self._request("POST", HOSTED_GATEWAY_START_PATH, _LIFECYCLE_REFUSALS)
+        )
 
     def stop(self) -> GatewayHealth:
         """Ask the app to stop the organization's gateway; its state and credentials are kept."""
-        return _gateway_health(self._request("POST", HOSTED_GATEWAY_STOP_PATH))
+        return _gateway_health(self._request("POST", HOSTED_GATEWAY_STOP_PATH, _LIFECYCLE_REFUSALS))
 
-    def _request(self, method: str, path: str) -> dict[str, Any]:
+    def _request(self, method: str, path: str, refusals: dict[int, str]) -> dict[str, Any]:
         try:
             response = self._http.request(method, path)
         except httpx.HTTPError as exc:
             raise HostedGatewayError(ERR_UNREACHABLE) from exc
-        refusal = _REFUSALS.get(response.status_code)
+        refusal = refusals.get(response.status_code)
         if refusal is not None:
             raise HostedGatewayError(refusal, response.status_code)
         if not response.is_success:
@@ -152,11 +154,16 @@ class HostedGatewayClient:
         return payload
 
 
-#: Status codes the app uses to refuse a request, as stable client codes.
+#: Status codes every hosted-gateway route uses to refuse a request, as stable client codes.
 _REFUSALS: dict[int, str] = {
     HTTPStatus.UNAUTHORIZED: ERR_UNAUTHORIZED,
-    HTTPStatus.FORBIDDEN: ERR_ADMIN_REQUIRED,
     HTTPStatus.NOT_FOUND: ERR_NOT_SUPPORTED,
+}
+
+#: Start and stop also refuse non-admins and organizations without a gateway.
+_LIFECYCLE_REFUSALS: dict[int, str] = {
+    **_REFUSALS,
+    HTTPStatus.FORBIDDEN: ERR_ADMIN_REQUIRED,
     HTTPStatus.CONFLICT: ERR_NOT_PROVISIONED,
 }
 

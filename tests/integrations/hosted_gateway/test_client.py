@@ -102,6 +102,9 @@ def test_plain_http_is_allowed_only_to_this_machine(app_url: str) -> None:
         (httpx.Response(401, json={"error": "unauthorized"}), ERR_UNAUTHORIZED),
         (httpx.Response(404, text="<html>no such route</html>"), ERR_NOT_SUPPORTED),
         (httpx.Response(502, json={"error": "gateway_lookup_failed"}), "http_502"),
+        # Health has no admin or provisioning refusal: these are unexpected, reportable failures.
+        (httpx.Response(403, text="<html>blocked</html>"), "http_403"),
+        (httpx.Response(409, json={"error": "conflict"}), "http_409"),
         (httpx.Response(200, text="<html>not json</html>"), ERR_INVALID_RESPONSE),
         (httpx.Response(200, json={"provisioned": "yes", "healthy": True}), ERR_INVALID_RESPONSE),
         (httpx.Response(200, json=["not", "an", "object"]), ERR_INVALID_RESPONSE),
