@@ -138,7 +138,8 @@ def test_prompt_recorder_sends_ai_generation(monkeypatch, tmp_path: Path) -> Non
     recorder.flush()
     assert captured
     assert captured[0]["$ai_model"] == "gpt-test"
-    assert captured[0]["$ai_input_tokens"] == 0
+    assert "$ai_input_tokens" not in captured[0]
+    assert captured[0]["token_usage_status"] == "unavailable"
     assert captured[0]["connected_integrations"] == []
     assert captured[0]["connected_integrations_count"] == 0
     assert captured[0]["configured_integrations"] == []
@@ -229,10 +230,11 @@ def test_prompt_recorder_still_captures_when_tool_resolution_fails(
     assert captured
     assert captured[0]["$ai_model"] == "gpt-test"
     assert captured[0]["configured_integrations"] == ["datadog"]
-    assert captured[0]["connected_integrations"] == []
+    assert "connected_integrations" not in captured[0]
+    assert captured[0]["integration_snapshot_status"] == "partial"
 
 
-def test_prompt_recorder_uses_no_conversational_agent_without_llm_run(
+def test_prompt_recorder_uses_no_conversational_agent_for_explicit_static_dispatch(
     monkeypatch, tmp_path: Path
 ) -> None:
     captured: list[dict[str, object]] = []
@@ -264,6 +266,7 @@ def test_prompt_recorder_uses_no_conversational_agent_without_llm_run(
     assert recorder is not None
     recorder.set_properties(integration_snapshot.build_turn_integration_snapshot(session))
     recorder.set_response("slash /help (succeeded)")
+    recorder.set_llm_attempted(False)
     recorder.flush()
     assert captured[0]["$ai_model"] == "no_conversational_agent"
     assert captured[0]["$ai_provider"] == "no_conversational_agent"
@@ -336,10 +339,9 @@ def test_prompt_recorder_set_error_adds_structured_properties(monkeypatch, tmp_p
     assert captured[0]["$ai_is_error"] is True
     assert captured[0]["$ai_error"] == "ANTHROPIC_API_KEY not set"
     assert captured[0]["error_kind"] == "config"
-    # Investigation-style errors are terminal-path failures, not conversational
-    # LLM provider failures: no ai_error_kind and the sentinel model stays.
+    # A generic config error alone says nothing about whether an LLM was used.
     assert "ai_error_kind" not in captured[0]
-    assert captured[0]["$ai_model"] == "no_conversational_agent"
+    assert captured[0]["$ai_model"] == "unknown"
 
 
 def test_prompt_recorder_omits_error_properties_by_default(monkeypatch, tmp_path: Path) -> None:
@@ -369,7 +371,7 @@ def test_prompt_recorder_omits_error_properties_by_default(monkeypatch, tmp_path
     recorder.set_properties(integration_snapshot.build_turn_integration_snapshot(session))
     recorder.set_response("world")
     recorder.flush()
-    assert "$ai_is_error" not in captured[0]
+    assert captured[0]["$ai_is_error"] is False
     assert "$ai_error" not in captured[0]
     assert "error_kind" not in captured[0]
 
@@ -463,6 +465,7 @@ def test_prompt_recorder_terminal_error_kinds_keep_terminal_sentinel(
     captured: list[dict[str, object]] = []
     recorder = _posthog_recorder(monkeypatch, tmp_path, text="hi", captured=captured)
     recorder.set_error("timeout", "command timed out after 60 seconds")
+    recorder.set_llm_attempted(False)
     recorder.set_response("command timed out after 60 seconds")
     recorder.flush()
     assert captured[0]["$ai_model"] == "no_conversational_agent"

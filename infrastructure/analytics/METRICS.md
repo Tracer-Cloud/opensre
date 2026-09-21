@@ -20,7 +20,7 @@ remaining metrics require queries over `analytics_product_events`.
 | Authenticated installations | Distinct non-CI installations with any later personal-bearer event. `account_authenticated` is the normal first link, but the metric does not depend on that single event being delivered. |
 | Sign-in gate conversion | Distinct non-CI installations with `sign_in_selected`, and distinct installations with `stay_signed_out_selected`, each divided separately by distinct installations with `sign_in_prompted`. Slice `stay_signed_out_selected` by `method` to separate the explicit exit option (`menu`) from a closed menu (`dismissed`). A `sign_in_selected` without a later `account_authenticated` is an abandoned or failed browser login. |
 | Onboarding conversion | Distinct non-CI installations completing onboarding, and distinct installations failing onboarding, each divided separately by distinct installations that started. |
-| Personal activation | Server-resolved users whose linked installation completes onboarding and later records a non-error `$ai_generation`. |
+| Personal activation | Server-resolved users whose linked installation completes onboarding and later records a completed, captured AI response with an observed LLM attempt and no error. Legacy events require a real model/provider and non-synthetic output. |
 | Gateway activation | Organizations with an authenticated `gateway_turn_completed` where `answered=true`. Keep this separate from personal activation because a gateway actor is not a Clerk user. |
 
 ## Usage and retention
@@ -46,7 +46,8 @@ remaining metrics require queries over `analytics_product_events`.
 | Scheduled-work reliability | Completed versus failed scheduled tasks by task kind and provider. |
 | Latency | p50/p95 for gateway, ReAct, and AI-generation duration by surface, model, and provider. |
 
-Exclude `is_ci=true` from human acquisition and retention. Anonymous install
+Non-CI metrics require recorded Boolean `is_ci=false`; missing flags remain
+unknown. A detector negative is not human verification. Anonymous install
 and onboarding counts are directional because a public open-source client
 cannot keep a signing secret from its machine owner. Use personal-bearer linkage
 for trusted user metrics, and never substitute a gateway actor ID for a Clerk

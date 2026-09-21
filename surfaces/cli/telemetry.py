@@ -68,7 +68,8 @@ def build_cli_invoked_properties(
     verbose: bool,
     debug: bool,
     yes: bool,
-    interactive: bool,
+    interactive: bool | None,
+    interactive_option_source: str = "caller",
 ) -> Properties:
     from infrastructure.analytics.event_properties import build_cli_invoked_properties as _build
 
@@ -80,6 +81,7 @@ def build_cli_invoked_properties(
         debug=debug,
         yes=yes,
         interactive=interactive,
+        interactive_option_source=interactive_option_source,
     )
 
 

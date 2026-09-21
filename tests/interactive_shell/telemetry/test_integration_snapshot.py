@@ -31,6 +31,7 @@ def test_build_turn_integration_snapshot_empty_when_unconfigured() -> None:
         "connected_integrations_count": 0,
         "configured_integrations": [],
         "integration_snapshot_source": "runtime_config",
+        "integration_snapshot_status": "complete",
     }
 
 
@@ -99,8 +100,9 @@ def test_build_turn_integration_snapshot_survives_tool_resolution_failure(
     snapshot = build_turn_integration_snapshot(session)
 
     assert snapshot["configured_integrations"] == ["datadog"]
-    assert snapshot["connected_integrations"] == []
-    assert snapshot["connected_integrations_count"] == 0
+    assert "connected_integrations" not in snapshot
+    assert "connected_integrations_count" not in snapshot
+    assert snapshot["integration_snapshot_status"] == "partial"
 
 
 def test_build_turn_integration_snapshot_survives_family_key_failure(
@@ -127,5 +129,6 @@ def test_build_turn_integration_snapshot_survives_family_key_failure(
     snapshot = build_turn_integration_snapshot(session)
 
     assert snapshot["configured_integrations"] == ["datadog"]
-    assert snapshot["connected_integrations"] == []
-    assert snapshot["connected_integrations_count"] == 0
+    assert "connected_integrations" not in snapshot
+    assert "connected_integrations_count" not in snapshot
+    assert snapshot["integration_snapshot_status"] == "partial"

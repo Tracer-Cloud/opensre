@@ -71,6 +71,7 @@ def _cli_invoked_properties(ctx: click.Context) -> Properties:
         raw_argv if isinstance(raw_argv, list) else [],
     )
     obj = ctx.obj if ctx.obj else {}
+    interactive_option = obj.get("interactive")
     return build_cli_invoked_properties(
         entrypoint="opensre",
         command_parts=command_parts,
@@ -78,7 +79,12 @@ def _cli_invoked_properties(ctx: click.Context) -> Properties:
         verbose=bool(obj.get("verbose", False)),
         debug=bool(obj.get("debug", False)),
         yes=bool(obj.get("yes", False)),
-        interactive=bool(obj.get("interactive", True)),
+        interactive=interactive_option if isinstance(interactive_option, bool) else None,
+        interactive_option_source=(
+            source.name.lower()
+            if (source := ctx.get_parameter_source("interactive"))
+            else "unknown"
+        ),
     )
 
 

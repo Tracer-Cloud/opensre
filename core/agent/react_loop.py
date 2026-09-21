@@ -200,8 +200,8 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
         self._cancelled = False
         self._iterations_used = 0
         # Provider-reported usage summed over every model call of this run.
-        self._input_tokens = 0
-        self._output_tokens = 0
+        self._input_tokens: int | None = 0
+        self._output_tokens: int | None = 0
         self._stop_reason = "iteration_cap"
         self._seen_observations: set[bytes] = set()
         self._stagnant_iterations = 0
@@ -459,11 +459,19 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
                     ),
                     metadata={"stop_reason": str(getattr(response, "stop_reason", "") or "")},
                 )
-        input_tokens = int(getattr(response, "input_tokens", 0) or 0)
-        output_tokens = int(getattr(response, "output_tokens", 0) or 0)
+        input_tokens = getattr(response, "input_tokens", None)
+        output_tokens = getattr(response, "output_tokens", None)
         cache_read_tokens = int(getattr(response, "cache_read_tokens", 0) or 0)
-        self._input_tokens += input_tokens
-        self._output_tokens += output_tokens
+        self._input_tokens = (
+            self._input_tokens + input_tokens
+            if self._input_tokens is not None and input_tokens is not None
+            else None
+        )
+        self._output_tokens = (
+            self._output_tokens + output_tokens
+            if self._output_tokens is not None and output_tokens is not None
+            else None
+        )
         response = self._host._after_response(provider_request, response)
         self._host._emit_runtime(
             ProviderRequestEndEvent(
@@ -815,8 +823,8 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
             hit_iteration_cap=self._hit_cap,
             llm_iterations_used=self._iterations_used,
             final_system_prompt=self._final_system_prompt,
-            input_tokens=self._input_tokens,
-            output_tokens=self._output_tokens,
+            input_tokens=self._input_tokens if self._iterations_used else None,
+            output_tokens=self._output_tokens if self._iterations_used else None,
         )
         self._host._emit_runtime(
             AgentEndEvent(

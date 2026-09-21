@@ -40,11 +40,11 @@ _TURN_TO_SESSION_KIND: dict[str, str] = {
 }
 
 
-def _latest_slash_outcome(session: Any) -> str | None:
+def _latest_slash_outcome(session: Any, *, start: int = 0) -> str | None:
     history = getattr(session, "history", None)
     if not isinstance(history, list):
         return None
-    for entry in reversed(history):
+    for entry in reversed(history[start:]):
         if not isinstance(entry, dict) or entry.get("type") != "slash":
             continue
         outcome = entry.get("slash_outcome")
@@ -105,6 +105,8 @@ class PromptRecorder:
         self._turn_id = turn_id
         self._prompt = prompt
         self._session = session
+        history = getattr(session, "history", None)
+        self._history_start = len(history) if isinstance(history, list) else 0
         self._surface = surface
         self._properties: dict[str, JsonValue] = {}
         self._response: str = ""
@@ -115,6 +117,7 @@ class PromptRecorder:
         self._latency_ms: int | None = None
         self._input_tokens: int | None = None
         self._output_tokens: int | None = None
+        self._llm_attempted: bool | None = None
         self._start = time.monotonic()
         self._flushed = False
 
@@ -129,12 +132,17 @@ class PromptRecorder:
 
     def set_run(self, run: _RunInfo) -> None:
         """Attach the model and provider-reported usage of the agent run."""
+        self._llm_attempted = True
         self._model = run.model or self._model
         self._provider = run.provider or self._provider
         if run.input_tokens is not None:
             self._input_tokens = run.input_tokens
         if run.output_tokens is not None:
             self._output_tokens = run.output_tokens
+
+    def set_llm_attempted(self, attempted: bool) -> None:
+        """Record whether dispatch used a provider or a deterministic tool call."""
+        self._llm_attempted = attempted
 
     @property
     def turn_id(self) -> str:
@@ -211,6 +219,8 @@ class PromptRecorder:
             return
         self._error_kind = kind or "error"
         self._error_message = _sanitize_text(message, config=self._config)
+        if self._error_kind in LLM_PROVIDER_FAILURE_KINDS:
+            self._llm_attempted = True
 
     def set_response(self, text: str, run: _RunInfo | None = None) -> None:
         cleaned = _sanitize_text(text, config=self._config)
@@ -221,7 +231,11 @@ class PromptRecorder:
             self._latency_ms = int((time.monotonic() - self._start) * 1000)
             return
         self.set_run(run)
-        self._latency_ms = run.latency_ms or int((time.monotonic() - self._start) * 1000)
+        self._latency_ms = (
+            run.latency_ms
+            if run.latency_ms is not None
+            else int((time.monotonic() - self._start) * 1000)
+        )
 
     def _response_for_emit(self) -> str:
         """Resolve the assistant text written to sinks at flush time."""
@@ -236,7 +250,11 @@ class PromptRecorder:
             return
         self._flushed = True
         response_text = self._response_for_emit()
-        latency_ms = self._latency_ms or int((time.monotonic() - self._start) * 1000)
+        latency_ms = (
+            self._latency_ms
+            if self._latency_ms is not None
+            else int((time.monotonic() - self._start) * 1000)
+        )
         record = {
             "ts": datetime.now(UTC).isoformat(),
             "session_id": self._session_id,
@@ -276,8 +294,29 @@ class PromptRecorder:
                 # action. Fall back to "unknown" instead of the terminal
                 # sentinel when the attempted model could not be resolved.
                 llm_provider_failed = self._error_kind in LLM_PROVIDER_FAILURE_KINDS
-                fallback_label = UNKNOWN_LLM if llm_provider_failed else NO_CONVERSATIONAL_AGENT
+                fallback_label = (
+                    NO_CONVERSATIONAL_AGENT if self._llm_attempted is False else UNKNOWN_LLM
+                )
+                response_source = (
+                    "captured"
+                    if self._response.strip()
+                    else "error"
+                    if self._error_message.strip()
+                    else "synthetic"
+                )
+                turn_outcome = (
+                    "cancelled"
+                    if self._error_kind == "cancelled"
+                    else "error"
+                    if self._error_kind
+                    else "completed"
+                    if response_source == "captured"
+                    else "unknown"
+                )
                 posthog_properties: dict[str, JsonValue] = {
+                    "turn_outcome": turn_outcome,
+                    "response_source": response_source,
+                    "$ai_is_error": bool(self._error_kind),
                     "$ai_trace_id": self._turn_id,
                     "$ai_session_id": self._session_id,
                     "$ai_span_id": self._turn_id,
@@ -292,15 +331,26 @@ class PromptRecorder:
                         }
                     ],
                     "$ai_latency": (round(latency_ms / 1000.0, 3)),
-                    "$ai_input_tokens": self._input_tokens or 0,
-                    "$ai_output_tokens": self._output_tokens or 0,
                     "cli_turn_kind": self._turn_kind,
                     "cli_session_id": self._session_id,
                     "cli_turn_id": self._turn_id,
                     "opensre_version": get_opensre_version(),
                     **self._properties,
                 }
-                slash_outcome = _latest_slash_outcome(self._session)
+                if self._llm_attempted is not None:
+                    posthog_properties["llm_attempted"] = self._llm_attempted
+                reported = 0
+                for key, value in (
+                    ("$ai_input_tokens", self._input_tokens),
+                    ("$ai_output_tokens", self._output_tokens),
+                ):
+                    if value is not None:
+                        posthog_properties[key] = value
+                        reported += 1
+                posthog_properties["token_usage_status"] = (
+                    "complete" if reported == 2 else "partial" if reported else "unavailable"
+                )
+                slash_outcome = _latest_slash_outcome(self._session, start=self._history_start)
                 if slash_outcome:
                     posthog_properties["slash_outcome"] = slash_outcome
                 if self._error_kind:

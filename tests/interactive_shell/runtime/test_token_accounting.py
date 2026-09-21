@@ -95,8 +95,10 @@ def test_build_llm_run_info_records_tokens_and_metadata() -> None:
     )
     assert run.model == "claude-test"
     assert run.provider == "anthropic"
-    assert run.input_tokens == 10
-    assert run.output_tokens == 5
+    assert run.input_tokens is None
+    assert run.output_tokens is None
+    assert session.tokens.totals["input_estimated"] == 10
+    assert session.tokens.totals["output_estimated"] == 5
     assert run.response_text == "b" * 20
     assert run.latency_ms is not None and run.latency_ms >= 0
 

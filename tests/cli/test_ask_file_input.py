@@ -129,16 +129,9 @@ def test_load_context_files_rejects_non_regular_files(tmp_path) -> None:
         load_context_files((path,))
 
 
-@pytest.mark.skipif(os.name == "nt", reason="POSIX surrogate-escaped path behavior")
-def test_render_prompt_escapes_non_utf8_filesystem_path(tmp_path) -> None:
-    raw_path = os.fsencode(tmp_path) + b"/alert-\xff.txt"
-    descriptor = os.open(raw_path, os.O_WRONLY | os.O_CREAT, 0o600)
-    try:
-        os.write(descriptor, b"latency spike")
-    finally:
-        os.close(descriptor)
-
-    context_files = load_context_files((tmp_path / os.fsdecode(b"alert-\xff.txt"),))
+def test_render_prompt_escapes_non_utf8_filesystem_path() -> None:
+    # Construct the decoded path directly: some filesystems reject the raw bytes.
+    context_files = (AskFileInput(path="alert-\udcff.txt", content="latency spike"),)
     rendered = render_prompt_with_context("investigate", context_files)
 
     rendered.encode("utf-8")

@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import os
+import platform
 from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
-_TRUTHY_VALUES: Final[frozenset[str]] = frozenset({"1", "true", "yes"})
+_TRUTHY_VALUES: Final[frozenset[str]] = frozenset({"1", "true", "yes", "on"})
 _CI_BOOLEAN_ENV_KEYS: Final[tuple[str, ...]] = (
     "CI",
     "CONTINUOUS_INTEGRATION",
@@ -47,8 +48,10 @@ class AnalyticsRuntime:
 
     execution_environment: str
     is_ci: bool
-    is_container: bool
+    is_container: bool | None
     container_runtime: str
+    ci_detection_status: str
+    container_detection_status: str
 
 
 def _normalized_env(environ: Mapping[str, str], key: str) -> str:
@@ -63,16 +66,47 @@ def is_ci_environment(environ: Mapping[str, str] | None = None) -> bool:
     return any(_normalized_env(values, key) for key in _CI_PRESENCE_ENV_KEYS)
 
 
-def _read_cgroup(filesystem_root: Path) -> str:
+def _read_cgroup(filesystem_root: Path) -> tuple[str, bool]:
     contents: list[str] = []
+    complete = True
     for relative_path in ("proc/1/cgroup", "proc/self/cgroup"):
         try:
             contents.append(
                 (filesystem_root / relative_path).read_text(encoding="utf-8", errors="ignore")
             )
         except OSError:
-            continue
-    return "\n".join(contents).lower()
+            complete = False
+    return "\n".join(contents).lower(), complete
+
+
+def _probe_container_runtime(
+    environ: Mapping[str, str] | None = None,
+    filesystem_root: Path | None = None,
+) -> tuple[str | None, bool]:
+    """Return runtime evidence and whether the probes support a known result."""
+    values = os.environ if environ is None else environ
+    root = Path("/") if filesystem_root is None else filesystem_root
+
+    if _normalized_env(values, "KUBERNETES_SERVICE_HOST"):
+        return "kubernetes", True
+    if _normalized_env(values, "ECS_CONTAINER_METADATA_URI_V4") or _normalized_env(
+        values, "ECS_CONTAINER_METADATA_URI"
+    ):
+        return "ecs", True
+
+    declared_runtime = _normalized_env(values, "container") or _normalized_env(values, "CONTAINER")
+    if declared_runtime:
+        return _CONTAINER_ENV_VALUES.get(declared_runtime, "container"), True
+    if (root / ".dockerenv").exists():
+        return "docker", True
+    if (root / "run/.containerenv").exists():
+        return "podman", True
+
+    cgroup, complete = _read_cgroup(root)
+    for marker, runtime in _CGROUP_RUNTIME_MARKERS:
+        if marker in cgroup:
+            return runtime, True
+    return None, complete or platform.system() != "Linux"
 
 
 def detect_container_runtime(
@@ -80,29 +114,8 @@ def detect_container_runtime(
     filesystem_root: Path | None = None,
 ) -> str | None:
     """Return the detected container runtime, if the process is containerized."""
-    values = os.environ if environ is None else environ
-    root = Path("/") if filesystem_root is None else filesystem_root
-
-    if _normalized_env(values, "KUBERNETES_SERVICE_HOST"):
-        return "kubernetes"
-    if _normalized_env(values, "ECS_CONTAINER_METADATA_URI_V4") or _normalized_env(
-        values, "ECS_CONTAINER_METADATA_URI"
-    ):
-        return "ecs"
-
-    declared_runtime = _normalized_env(values, "container") or _normalized_env(values, "CONTAINER")
-    if declared_runtime:
-        return _CONTAINER_ENV_VALUES.get(declared_runtime, "container")
-    if (root / ".dockerenv").exists():
-        return "docker"
-    if (root / "run/.containerenv").exists():
-        return "podman"
-
-    cgroup = _read_cgroup(root)
-    for marker, runtime in _CGROUP_RUNTIME_MARKERS:
-        if marker in cgroup:
-            return runtime
-    return None
+    runtime, _known = _probe_container_runtime(environ, filesystem_root)
+    return runtime
 
 
 def detect_analytics_runtime(
@@ -111,8 +124,10 @@ def detect_analytics_runtime(
 ) -> AnalyticsRuntime:
     """Return first-party traffic dimensions for analytics filtering."""
     is_ci = is_ci_environment(environ)
-    container_runtime = detect_container_runtime(environ, filesystem_root)
-    is_container = container_runtime is not None
+    container_runtime, container_known = _probe_container_runtime(environ, filesystem_root)
+    # Failure to inspect Linux process metadata is unknown, not a negative.
+    # A detected runtime remains positive even if another probe is unavailable.
+    is_container = container_runtime is not None if container_known else None
 
     if is_ci and is_container:
         execution_environment = "ci_container"
@@ -120,12 +135,18 @@ def detect_analytics_runtime(
         execution_environment = "ci"
     elif is_container:
         execution_environment = "container"
-    else:
+    elif container_known:
         execution_environment = "local"
+    else:
+        execution_environment = "unknown"
 
     return AnalyticsRuntime(
         execution_environment=execution_environment,
         is_ci=is_ci,
         is_container=is_container,
-        container_runtime=container_runtime or "none",
+        container_runtime=container_runtime or ("none" if container_known else "unknown"),
+        ci_detection_status="detected" if is_ci else "not_detected",
+        container_detection_status=(
+            "detected" if is_container else "not_detected" if container_known else "unknown"
+        ),
     )

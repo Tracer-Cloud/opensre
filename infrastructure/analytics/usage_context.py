@@ -144,15 +144,17 @@ def build_usage_enrichment() -> Properties:
     return props
 
 
-def merge_usage_enrichment(properties: Properties) -> Properties:
-    """Fill missing usage keys; caller-provided values win."""
+def merge_usage_enrichment(
+    properties: Properties, *, defaults: Properties | None = None
+) -> Properties:
+    """Prefer explicit event properties over bound context over process defaults."""
     enrichment = build_usage_enrichment()
-    merged = dict(properties)
+    merged = dict(defaults or {})
     for key, value in enrichment.items():
         if key == "$groups":
             continue
-        if key not in merged:
-            merged[key] = value
+        merged[key] = value
+    merged.update(properties)
 
     org = merged.get("organization_id")
     if isinstance(org, str) and org.strip():

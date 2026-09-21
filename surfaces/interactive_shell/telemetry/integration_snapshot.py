@@ -18,17 +18,22 @@ class _IntegrationSession(Protocol):
 def build_turn_integration_snapshot(session: _IntegrationSession | None) -> dict[str, Any]:
     """Return analytics-friendly integration state for one LLM generation turn."""
     configured = _configured_slugs(session)
-    resolved = _resolved_integrations(session)
-    connected = _connected_slugs(configured, resolved)
-    return {
-        "connected_integrations": connected,
-        "connected_integrations_count": len(connected),
-        "configured_integrations": configured,
+    snapshot: dict[str, Any] = {
         "integration_snapshot_source": "runtime_config",
+        "integration_snapshot_status": "unavailable",
     }
+    if configured is None:
+        return snapshot
+    snapshot["configured_integrations"] = configured
+    connected = _connected_slugs(configured, _resolved_integrations(session))
+    snapshot["integration_snapshot_status"] = "partial" if connected is None else "complete"
+    if connected is not None:
+        snapshot["connected_integrations"] = connected
+        snapshot["connected_integrations_count"] = len(connected)
+    return snapshot
 
 
-def _configured_slugs(session: _IntegrationSession | None) -> list[str]:
+def _configured_slugs(session: _IntegrationSession | None) -> list[str] | None:
     if session is not None and session.configured_integrations_known:
         return sorted(session.configured_integrations)
     try:
@@ -36,10 +41,10 @@ def _configured_slugs(session: _IntegrationSession | None) -> list[str]:
 
         return sorted(resolve_effective_integrations())
     except Exception:
-        return []
+        return None
 
 
-def _resolved_integrations(session: _IntegrationSession | None) -> dict[str, Any]:
+def _resolved_integrations(session: _IntegrationSession | None) -> dict[str, Any] | None:
     if session is not None and session.resolved_integrations_cache is not None:
         return session.resolved_integrations_cache
     try:
@@ -47,11 +52,15 @@ def _resolved_integrations(session: _IntegrationSession | None) -> dict[str, Any
 
         return resolve_integrations()
     except Exception:
-        return {}
+        return None
 
 
-def _connected_slugs(configured: list[str], resolved: dict[str, Any]) -> list[str]:
-    if not configured or not resolved:
+def _connected_slugs(configured: list[str], resolved: dict[str, Any] | None) -> list[str] | None:
+    if not configured:
+        return []
+    if resolved is None:
+        return None
+    if not resolved:
         return []
     try:
         tools = [tool for tool in get_registered_tools() if tool.is_available(resolved)]
@@ -63,4 +72,4 @@ def _connected_slugs(configured: list[str], resolved: dict[str, Any]) -> list[st
             return []
         return sorted(svc for svc in configured if family_key(svc) in active_families)
     except Exception:
-        return []
+        return None

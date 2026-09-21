@@ -221,23 +221,23 @@ def build_llm_run_info(
     since no explicit counts are accepted here).
 
     ``latency_ms`` is computed from ``started`` (a ``time.monotonic()``
-    timestamp) if given, else defaults to ``0``.
+    timestamp) if given, else stays unknown. Estimated tokens update only the
+    session counters; the returned provider usage fields stay unknown.
 
     ``model``/``provider`` are used as-is if given; otherwise, if
     ``client`` is provided, they're resolved via ``resolve_model_name``/
     ``resolve_provider_name``; otherwise they're left as ``None``.
 
-    Returns a fully populated ``LlmRunInfo``, including the given
+    Returns an ``LlmRunInfo``, including the given
     ``response_text`` and ``final_system_prompt`` verbatim.
     """
-    inp, out, _estimated = record_llm_turn(session, prompt=prompt, response=response_text)
-    latency_ms = 0 if started is None else int((time.monotonic() - started) * 1000)
+    # Session estimates remain available for the UI but are not provider usage.
+    record_llm_turn(session, prompt=prompt, response=response_text)
+    latency_ms = None if started is None else int((time.monotonic() - started) * 1000)
     return LlmRunInfo(
         model=model or (resolve_model_name(client) if client is not None else None),
         provider=provider or (resolve_provider_name(client) if client is not None else None),
         latency_ms=latency_ms,
-        input_tokens=inp,
-        output_tokens=out,
         response_text=response_text,
         final_system_prompt=final_system_prompt,
     )

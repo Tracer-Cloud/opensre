@@ -245,15 +245,18 @@ def capture_terminal_actions_executed(
     executed_count: int,
     executed_success_count: int,
 ) -> None:
-    success_percent = 100.0 * executed_success_count / executed_count if executed_count > 0 else 0.0
+    properties: Properties = {
+        "planned_count": planned_count,
+        "executed_count": executed_count,
+        "executed_success_count": executed_success_count,
+    }
+    if executed_count > 0:
+        properties["success_rate_bucket"] = _bucket_percentage(
+            100.0 * executed_success_count / executed_count
+        )
     _capture(
         Event.TERMINAL_ACTIONS_EXECUTED,
-        {
-            "planned_count": planned_count,
-            "executed_count": executed_count,
-            "executed_success_count": executed_success_count,
-            "success_rate_bucket": _bucket_percentage(success_percent),
-        },
+        properties,
     )
 
 
@@ -298,7 +301,7 @@ def capture_terminal_turn_summarized(
     fallback_to_llm: bool,
     session_turn_index: int,
     session_fallback_count: int,
-    session_action_success_percent: float,
+    session_action_success_percent: float | None,
     session_fallback_rate_percent: float,
 ) -> None:
     _capture(
@@ -310,7 +313,15 @@ def capture_terminal_turn_summarized(
             "fallback_to_llm": fallback_to_llm,
             "session_turn_index": session_turn_index,
             "session_fallback_count": session_fallback_count,
-            "session_action_success_bucket": _bucket_percentage(session_action_success_percent),
+            **(
+                {
+                    "session_action_success_bucket": _bucket_percentage(
+                        session_action_success_percent
+                    )
+                }
+                if session_action_success_percent is not None
+                else {}
+            ),
             "session_fallback_rate_bucket": _bucket_percentage(session_fallback_rate_percent),
         },
     )

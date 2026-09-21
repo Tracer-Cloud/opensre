@@ -80,8 +80,10 @@ Every product event includes:
 | --- | --- |
 | `cli_version`, `python_version` | Client compatibility and release adoption. |
 | `os_family`, `os_version` | Coarse platform support. |
-| `execution_environment` | `local`, `ci`, `container`, or `ci_container`. |
-| `is_ci`, `is_container`, `container_runtime` | Filters for human vs automated usage. |
+| `analytics_properties_version` | Property evidence contract version; currently `2`, independent of envelope schema `1`. |
+| `execution_environment` | `local`, `ci`, `container`, `ci_container`, or `unknown`; a detector classification. |
+| `is_ci`, `is_container`, `container_runtime` | Recognized runtime signals, not human verification. Unknown measurements are omitted. |
+| `ci_detection_status`, `container_detection_status` | `detected`, `not_detected`, or `unknown`. |
 | `composite_fingerprint` | One-way local fingerprint used only when no account identity exists. |
 | `identity_persistence` | Whether the anonymous ID was persisted to disk. |
 | `install_marker_state_before_install` | `present`, `absent`, or `unknown` at the start of the most recent recorded installer run. |
@@ -93,6 +95,17 @@ Every product event includes:
 `$groups`, `$process_person_profile`, `$lib`, and `distinct_id` are retained for
 downstream PostHog compatibility. The first-party account user ID belongs in a
 server-owned column resolved from the bearer token.
+
+For `cli_invoked`, `interactive_option` is configuration, with its source in
+`interactive_option_source`. `stdin_is_tty` and `stdout_is_tty` measure terminal
+state. Use `interactive_shell_rendered` for an observed shell launch.
+
+Prompt events include `turn_outcome`, `response_source`, and `llm_attempted`
+when known. The event name alone does not establish AI success: static terminal
+dispatch and synthetic fallback text are also logged. Missing token usage is
+omitted and described by `token_usage_status`. Integration snapshots use
+`integration_snapshot_status`; unavailable inventories do not emit empty lists
+or zero counts. Action rates without executed actions are omitted.
 
 The shell and PowerShell installers, and `make install`, snapshot `installed`
 before installation work begins, resolving its directory the same way as the
@@ -147,7 +160,7 @@ must be calculated from `analytics_product_events`.
 | Metric | Definition |
 | --- | --- |
 | Install-to-signup conversion | Non-CI installations whose first server-verified account link resolves to a Clerk signup created between install and first authentication, divided by all non-CI installations. |
-| Personal activation | Server-resolved users whose linked installation reaches `onboard_completed`, then records a non-error `$ai_generation`. |
+| Personal activation | Server-resolved users whose linked installation reaches `onboard_completed`, then records a completed, captured AI response with an observed LLM attempt and no error. Legacy events require a real model/provider and non-synthetic output. |
 | Gateway activation | Authenticated organizations with an answered `gateway_turn_completed`; do not count gateway actor IDs as users. |
 | Onboarding conversion | Distinct non-CI installations completed, and distinct installations failed, each divided separately by distinct installations started. |
 | Personal DAU / WAU / MAU | Distinct server-resolved users with personal-bearer `cli_invoked` or `$ai_generation` events in the window. |
@@ -164,8 +177,10 @@ must be calculated from `analytics_product_events`.
 | Scheduled-work reliability | Completed vs failed scheduled tasks by task kind and provider. |
 | Feature adoption | Personal users by CLI/AI feature and organizations by gateway surface, without combining identity grains. |
 
-Exclude `is_ci=true` from human acquisition and retention dashboards, but keep
-it available for automation usage reporting.
+Report CI detection independently from actor identity. A non-CI metric requires
+an explicitly recorded Boolean `is_ci=false`; missing evidence stays unknown.
+An audience may deliberately include unknown traffic, but neither inclusion
+nor a negative detector result proves that a human initiated the run.
 
 ## Privacy and failure behavior
 

@@ -39,8 +39,60 @@ def _session() -> SessionCore:
     return session
 
 
+def test_real_run_attaches_provider_evidence_and_preserves_missing_usage(
+    captured, monkeypatch
+) -> None:
+    from core.llm.types import AgentLLMResponse
+    from tests.core.agent.orchestration.action_execution_test_harness import FakeActionLLM
+
+    client = FakeActionLLM([AgentLLMResponse(content="Recorded answer", output_tokens=0)])
+    monkeypatch.setattr(client, "_model", "test-model", raising=False)
+    monkeypatch.setattr(client, "_provider_label", "test-provider", raising=False)
+    session = _session()
+    agent = InMemoryHeadlessBuild(session=session).agent(
+        tools=NullToolProvider(),
+        llm_factory=lambda: client,
+    )
+    agent.handle("Hello", TurnBinding(session=session))
+    assert len(captured) == 1
+    event = captured[0]
+    assert event["llm_attempted"] is True
+    assert event["$ai_model"] == "test-model"
+    assert event["$ai_provider"] == "test-provider"
+    assert event["turn_outcome"] == "completed"
+    assert event["response_source"] == "captured"
+    assert "$ai_input_tokens" not in event
+    assert event["$ai_output_tokens"] == 0
+    assert event["token_usage_status"] == "partial"
+
+
 def _reply(text: str, **_kwargs: Any) -> ToolCallingTurnResult:
     return ToolCallingTurnResult(1, 1, 1, False, True, response_text=text)
+
+
+def test_failed_static_dispatch_never_claims_a_provider_attempt(captured, monkeypatch) -> None:
+    def _failed_run(_agent, _messages):
+        raise RuntimeError("Tool dispatch failed")
+
+    def _unexpected_provider():
+        raise AssertionError("A literal shell command must not select a provider")
+
+    monkeypatch.setattr("core.agent.Agent.run", _failed_run)
+    session = _session()
+    agent = InMemoryHeadlessBuild(session=session).agent(
+        tools=NullToolProvider(), llm_factory=_unexpected_provider
+    )
+
+    agent.handle("!echo hello", TurnBinding(session=session))
+
+    assert len(captured) == 1
+    event = captured[0]
+    assert event["llm_attempted"] is False
+    assert event["$ai_model"] == "no_conversational_agent"
+    assert event["$ai_provider"] == "no_conversational_agent"
+    assert event["$ai_is_error"] is True
+    assert event["turn_outcome"] == "error"
+    assert event["token_usage_status"] == "unavailable"
 
 
 def _turn(session: SessionCore, text: str, execute=_reply, surface="gateway"):

@@ -1066,7 +1066,7 @@ def _run_action_turn(
             [{"role": "user", "content": built.user_message}],
             phase="action",
             iteration_cap=built.max_iterations,
-            llm=built.llm,
+            llm=None if isinstance(built.llm, _StaticToolCallLLM) else built.llm,
             session=session,
         )
         persist_turn_system_prompt(
@@ -1162,6 +1162,11 @@ def _run_action_turn(
         counts.handled,
         cancelled,
     )
+    from infrastructure.analytics.prompt_log.recorder import PromptRecorder
+
+    recorder = PromptRecorder.current()
+    if recorder is not None and result.hit_iteration_cap and not cancelled:
+        recorder.set_error("iteration_limit", "Agent stopped before producing a final answer.")
     tool_evidence, evidence_success_count = (
         collect_tool_evidence(getattr(result, "tool_results", ()))
         if getattr(session, "session_goal", None) is not None
@@ -1177,8 +1182,8 @@ def _run_action_turn(
         response_streamed=response_streamed,
         hit_iteration_cap=bool(result.hit_iteration_cap and not cancelled),
         cancelled=cancelled,
-        input_tokens=int(getattr(result, "input_tokens", 0) or 0),
-        output_tokens=int(getattr(result, "output_tokens", 0) or 0),
+        input_tokens=getattr(result, "input_tokens", None),
+        output_tokens=getattr(result, "output_tokens", None),
         tool_evidence=tool_evidence,
         evidence_success_count=evidence_success_count,
     )

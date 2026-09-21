@@ -15,6 +15,7 @@ from infrastructure.analytics.analytics_runtime import (
     ("key", "value"),
     [
         ("CI", "true"),
+        ("CI", "on"),
         ("GITHUB_ACTIONS", "1"),
         ("GITLAB_CI", "yes"),
         ("JENKINS_URL", "https://jenkins.example"),
@@ -86,6 +87,10 @@ def test_detect_analytics_runtime_builds_filterable_dimensions(
 ) -> None:
     if with_docker:
         (tmp_path / ".dockerenv").touch()
+    for process in ("1", "self"):
+        path = tmp_path / "proc" / process / "cgroup"
+        path.parent.mkdir(parents=True)
+        path.write_text("0::/", encoding="utf-8")
 
     context = detect_analytics_runtime(environment, tmp_path)
 
@@ -93,3 +98,26 @@ def test_detect_analytics_runtime_builds_filterable_dimensions(
     assert context.is_ci is is_ci
     assert context.is_container is is_container
     assert context.container_runtime == ("docker" if with_docker else "none")
+
+
+def test_unavailable_linux_probes_are_unknown(monkeypatch, tmp_path: Path) -> None:
+    monkeypatch.setattr("platform.system", lambda: "Linux")
+    context = detect_analytics_runtime({}, tmp_path)
+    assert context.is_container is None
+    assert context.container_detection_status == "unknown"
+    assert context.execution_environment == "unknown"
+
+
+def test_container_availability_uses_the_same_observation(monkeypatch, tmp_path: Path) -> None:
+    observations = iter((("", False), ("0::/docker/123", True)))
+
+    def _read_cgroup(_root: Path) -> tuple[str, bool]:
+        return next(observations)
+
+    monkeypatch.setattr("platform.system", lambda: "Linux")
+    monkeypatch.setattr("infrastructure.analytics.analytics_runtime._read_cgroup", _read_cgroup)
+
+    context = detect_analytics_runtime({}, tmp_path)
+
+    assert context.is_container is None
+    assert context.container_detection_status == "unknown"
