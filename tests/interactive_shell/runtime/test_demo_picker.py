@@ -39,6 +39,7 @@ _NOTE = ""
 
 def _offerable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(demo_picker, "is_test_run", lambda: False)
+    monkeypatch.setattr(demo_picker, "merge_in_progress", lambda _cwd: False)
     monkeypatch.setattr(demo_picker, "repl_tty_interactive", lambda: True)
     monkeypatch.setattr(demo_picker, "capture_onboarding_demo_prompted", lambda: None)
     monkeypatch.setattr(choice_prompt, "repl_tty_interactive", lambda: True)

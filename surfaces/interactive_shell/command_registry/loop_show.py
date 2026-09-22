@@ -41,7 +41,7 @@ def show_loop(session: Session, console: Console, args: list[str]) -> bool:
         chosen = repl_choose_one(
             title="Loop results",
             breadcrumb="/loops show",
-            choices=[(loop.id, " ".join(loop.name.split())) for loop in loops],
+            choices=[(loop.id, f"{loop.id} · {' '.join(loop.name.split())}") for loop in loops],
             panel=True,
             searchable=True,
             choice_notes={loop.id: f"Loop {loop.id} · Enter opens the report" for loop in loops},

@@ -152,3 +152,65 @@ def test_mcp_view_filters_display_without_dropping_general_integration_context(
     assert list(dict(details[0]["fields"])) == [mcp_service]
     assert "GitHub connected" in session.agent.last_observation
     assert "MCP connected" in session.agent.last_observation
+
+
+def test_resume_preserves_all_recent_choices_and_identifies_duplicate_names(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import sys
+
+    from core.agent_harness.spi import defaults
+    from surfaces.interactive_shell.command_registry.session_cmds import resume
+    from surfaces.shared.terminal.components import choice_menu, cpr_stdin, key_reader
+
+    session = Session()
+    entries = [
+        {"session_id": f"{i:08d}-session", "name": "/choose", "started_at": "2026-09-22T22:15:00Z"}
+        for i in range(9)
+    ]
+
+    class RecentSessions:
+        def load_recent(self, n: int) -> list[dict[str, str]]:
+            assert n == 10  # The pre-migration recent-session limit, including this session.
+            return [{"session_id": session.session_id}, *entries]
+
+    repository = RecentSessions()
+    monkeypatch.setattr(defaults, "default_session_repo", lambda: repository)
+    output = StringIO()
+    monkeypatch.setattr(sys, "stdout", output)
+    monkeypatch.setattr(choice_menu, "repl_tty_interactive", lambda: True)
+    monkeypatch.setattr(choice_menu, "_clear_prompt_toolkit_paint", lambda: None)
+    monkeypatch.setattr(cpr_stdin, "drain_stale_cpr_bytes", lambda: None)
+    monkeypatch.setattr(choice_menu, "leave_inline_menu", lambda: None)
+    monkeypatch.setattr(choice_menu, "_cols", lambda: 80)
+    monkeypatch.setattr(choice_menu, "_viewport_rows", lambda: 20)
+    actions = iter(["down"] * 8 + ["enter"])
+    monkeypatch.setattr(choice_menu, "_read_action", lambda: next(actions))
+    monkeypatch.setattr(key_reader, "read_menu_or_char", lambda **_: next(actions))
+    selected: list[str] = []
+
+    def apply(sid: str, *_args: Any, **_kwargs: Any) -> bool:
+        selected.append(sid)
+        return True
+
+    monkeypatch.setattr(resume, "_do_resume", apply)
+    assert resume._interactive_resume_menu(session, Console(file=StringIO()))
+    assert selected == [entries[-1]["session_id"]]
+    rows = output.getvalue().splitlines()
+    for entry in entries:
+        assert any(entry["session_id"][:8] in row and "/choose" in row for row in rows)
+    assert "scroll" in output.getvalue()
+
+
+def test_connection_panel_preserves_table_order_and_source(monkeypatch: pytest.MonkeyPatch) -> None:
+    results = [
+        {"service": "sentry", "source": "-", "status": "missing", "detail": "Missing"},
+        {"service": "github", "source": "local store", "status": "configured", "detail": "Ready"},
+        {"service": "datadog", "source": "env", "status": "passed", "detail": "Connected"},
+    ]
+    monkeypatch.setattr(integrations.repl_data, "load_verified_integrations", lambda: results)
+    details: list[dict[str, Any]] = []
+    monkeypatch.setattr(integrations, "repl_show_details", lambda **kwargs: details.append(kwargs))
+    integrations._show_connections(Session(), Console(file=StringIO()))
+    assert [name for name, _ in details[0]["fields"]] == ["datadog", "github", "sentry"]
+    assert "local store" in dict(details[0]["fields"])["github"]

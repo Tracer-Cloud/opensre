@@ -37,6 +37,7 @@ from surfaces.shared.terminal.components.rendering import (
     print_repl_table,
     repl_print,
 )
+from surfaces.shared.terminal.tables import integration_display_rows
 
 _ROOT_INTEGRATIONS = "/integrations"
 _ROOT_MCP = "/mcp"
@@ -397,14 +398,14 @@ def _show_connections(session: Session, console: Console, *, mcp: bool = False) 
     with console.status(f"[{DIM}]Verifying connections…[/]", spinner="dots"):
         results = repl_data.load_verified_integrations()
     _record_integrations_observation(session, results)
-    if mcp:
-        results = [item for item in results if item.get("service") in MCP_INTEGRATION_SERVICES]
+    results = integration_display_rows(results, mcp=mcp)
     repl_show_details(
         title="MCP › Connected servers" if mcp else "Integrations › Connections",
         fields=[
             (
                 item.get("service", "Unknown"),
-                f"{item.get('status', 'unknown')} · {item.get('detail', '')}",
+                f"{item.get('status', 'unknown')} · Source: {item.get('source', '?')}\n"
+                f"{item.get('detail', '')}",
             )
             for item in results
         ],

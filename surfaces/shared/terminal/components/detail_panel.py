@@ -36,7 +36,7 @@ def build_detail_panel(
     columns = content_width >= label_width + 18
     for label, value in fields:
         label = strip_terminal_controls(label)
-        value = strip_terminal_controls(value)
+        value = strip_terminal_controls(value, keep_whitespace=True)
         prefix = label + " " * (label_width - prompt_text_width(label) + 2) if columns else ""
         if not columns:
             content.extend(

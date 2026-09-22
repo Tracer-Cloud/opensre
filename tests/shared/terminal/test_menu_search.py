@@ -178,3 +178,21 @@ def test_search_keeps_query_tail_and_caret_visible(height: int) -> None:
         numbered=False,
     )
     assert "界▏" in "".join(panel.lines)
+
+
+def test_short_search_panel_keeps_query_visible_when_many_matches_scroll() -> None:
+    from surfaces.shared.terminal.components.menu_panel import build_menu_panel
+
+    panel = build_menu_panel(
+        title="Models",
+        breadcrumb="/model",
+        labels=["Blue"] * 20,
+        index=12,
+        width=20,
+        max_height=5,
+        searchable=True,
+        search_query="Blue",
+        numbered=False,
+    )
+    assert "/Blue▏" in "".join(panel.lines)
+    assert list(panel.choice_indices) == [12]

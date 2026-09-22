@@ -86,6 +86,12 @@ def build_menu_panel(
         return f"{frame}│{reset}{style}{content}{reset}{frame}│{reset}"
 
     counter = f"{index + 1}/{len(labels)}" if has_choices else "0/0"
+    if count < len(labels) and (search_query is None or metadata):
+        counter = (
+            ("↑ " if start else "")
+            + f"{start + 1}–{start + count}/{len(labels)}"
+            + (" ↓" if start + count < len(labels) else "")
+        )
     heading_width = max(0, inner - len(counter) - 5)
     heading = (
         _search_field(search_query, heading_width)
@@ -110,19 +116,22 @@ def build_menu_panel(
         lines.append(row(f"{marker} {number}{labels[item]}", style=style, suffix=suffix))
     lines.append(f"{frame}├{'─' * inner}┤{reset}")
     cancel = "back" if "›" in breadcrumb else "close"
-    hint = f"↑↓ move  Enter select  Esc {cancel}"
+    motion = "scroll" if count < len(labels) else "move"
+    hint = f"↑↓ {motion}  Enter select  Esc {cancel}"
     if inner < 34:
         hint = f"↑↓ Enter Esc {cancel}"
     if searchable:
         hint = (
             f"↑↓ Enter Esc {cancel} / search"
             if inner < 48
-            else f"↑↓ move  Enter select  Esc {cancel}  / search"
+            else f"↑↓ {motion}  Enter select  Esc {cancel}  / search"
         )
     if searchable and inner < 34:
         hint = "/ search  ↑↓ Enter Esc"
     if search_query is not None:
-        hint = "↑↓ Enter Esc clear" if inner < 48 else "↑↓ move  Enter select  Esc clear search"
+        hint = (
+            "↑↓ Enter Esc clear" if inner < 48 else f"↑↓ {motion}  Enter select  Esc clear search"
+        )
     if numbered and inner >= 58 and not searchable:
         keys = "1" if count == 1 else f"1–{count}"
         hint += f"  {keys} select"
