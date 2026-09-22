@@ -134,3 +134,21 @@ def test_integration_detail_view_preserves_resource_focus_and_observation(
     assert calls[1]["initial_value"] == "github"
     assert dict(details[0]["fields"])["Status"] == "ok"
     assert "Connected" in session.agent.last_observation
+
+
+def test_mcp_view_filters_display_without_dropping_general_integration_context(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = Session()
+    mcp_service = sorted(integrations.MCP_INTEGRATION_SERVICES)[0]
+    results = [
+        {"service": mcp_service, "status": "ok", "detail": "MCP connected"},
+        {"service": "github", "status": "ok", "detail": "GitHub connected"},
+    ]
+    monkeypatch.setattr(integrations.repl_data, "load_verified_integrations", lambda: results)
+    details: list[dict[str, Any]] = []
+    monkeypatch.setattr(integrations, "repl_show_details", lambda **kwargs: details.append(kwargs))
+    integrations._show_connections(session, Console(file=StringIO()), mcp=True)
+    assert list(dict(details[0]["fields"])) == [mcp_service]
+    assert "GitHub connected" in session.agent.last_observation
+    assert "MCP connected" in session.agent.last_observation

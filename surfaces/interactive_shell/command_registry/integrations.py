@@ -395,9 +395,9 @@ def _cmd_integrations(session: Session, console: Console, args: list[str]) -> bo
 def _show_connections(session: Session, console: Console, *, mcp: bool = False) -> None:
     with console.status(f"[{DIM}]Verifying connections…[/]", spinner="dots"):
         results = repl_data.load_verified_integrations()
+    _record_integrations_observation(session, results)
     if mcp:
         results = [item for item in results if item.get("service") in MCP_INTEGRATION_SERVICES]
-    _record_integrations_observation(session, results)
     repl_show_details(
         title="MCP › Connected servers" if mcp else "Integrations › Connections",
         fields=[

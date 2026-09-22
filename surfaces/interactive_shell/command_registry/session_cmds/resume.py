@@ -63,6 +63,7 @@ def _interactive_resume_menu(session: Session, console: Console) -> bool:
         choices.append((sid, name))
         notes[sid] = f"{started_str} · {short_id}"
     choices.append(("done", "Cancel"))
+    notes["done"] = "Enter cancels without resuming a session."
 
     picked = repl_choose_one(
         title="Resume session",
