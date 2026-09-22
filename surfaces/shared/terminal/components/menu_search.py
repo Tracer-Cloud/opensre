@@ -19,3 +19,8 @@ def matching_indices(texts: Sequence[str], query: str) -> list[int]:
     """Return original indexes matching every whitespace-separated query word."""
     words = query.casefold().split()
     return [index for index, text in enumerate(texts) if all(word in text for word in words)]
+
+
+def is_search_character(text: str) -> bool:
+    """Accept printable code points and joiners used inside Unicode words and emoji."""
+    return len(text) == 1 and (text.isprintable() or text in {"\u200c", "\u200d"})

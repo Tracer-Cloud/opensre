@@ -28,6 +28,7 @@ def test_search_matches_words_in_labels_and_metadata_without_patterns() -> None:
         (["/", "cancel", "cancel"], None),
         (["/", "x", "eof"], None),
         (["/", "4", "2", "enter"], 2),
+        (["/", "👩", "\u200d", "💻", "enter"], 2),
     ],
 )
 def test_filter_selection_maps_to_original_index_and_empty_state_is_not_selectable(
@@ -49,7 +50,7 @@ def test_filter_selection_maps_to_original_index_and_empty_state_is_not_selectab
     result = choice_menu._pick(
         title="Theme",
         crumb="/theme",
-        labels=["Purple", "Orange", "Blue"],
+        labels=["Purple", "Orange", "Blue 👩‍💻"],
         choice_notes=["", "", "theme-42"],
         panel=True,
         searchable=True,
@@ -105,14 +106,14 @@ def test_search_reads_unicode_and_restores_terminal_mode(monkeypatch: pytest.Mon
     try:
         before = termios.tcgetattr(slave)
         monkeypatch.setattr(sys, "stdin", SimpleNamespace(fileno=lambda: slave))
-        os.write(master, "界sun".encode())
+        os.write(master, "界👩‍💻sun".encode())
         assert key_reader.read_menu_or_char(allow_chars=True, unicode_input=True) == "界"
         assert termios.tcgetattr(slave) == before
         assert (
             "".join(
-                key_reader.read_menu_or_char(allow_chars=True, unicode_input=True) for _ in range(3)
+                key_reader.read_menu_or_char(allow_chars=True, unicode_input=True) for _ in range(6)
             )
-            == "sun"
+            == "👩‍💻sun"
         )
         assert termios.tcgetattr(slave) == before
     finally:
@@ -123,9 +124,16 @@ def test_search_reads_unicode_and_restores_terminal_mode(monkeypatch: pytest.Mon
 def test_search_windows_unicode_and_arrow_keys(monkeypatch: pytest.MonkeyPatch) -> None:
     from types import SimpleNamespace
 
-    chars = iter(["界", "\xe0", "P"])
+    chars = iter(["界", "\ud83d", "\udc69", "\u200d", "\ud83d", "\udcbb", "\xe0", "P"])
     monkeypatch.setitem(sys.modules, "msvcrt", SimpleNamespace(getwch=lambda: next(chars)))
     assert key_reader._read_menu_or_char_windows(allow_chars=True, unicode_input=True) == "界"
+    assert (
+        "".join(
+            key_reader._read_menu_or_char_windows(allow_chars=True, unicode_input=True)
+            for _ in range(3)
+        )
+        == "👩‍💻"
+    )
     assert key_reader._read_menu_or_char_windows(allow_chars=True, unicode_input=True) == "down"
 
 

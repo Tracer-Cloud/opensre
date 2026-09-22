@@ -24,7 +24,11 @@ import infrastructure.terminal.theme as ui_theme
 from infrastructure.safety.terminal_output import strip_terminal_controls
 from surfaces.shared.terminal.components.key_reader import read_key_unix, read_key_windows
 from surfaces.shared.terminal.components.menu_panel import build_menu_panel
-from surfaces.shared.terminal.components.menu_search import matching_indices, searchable_text
+from surfaces.shared.terminal.components.menu_search import (
+    is_search_character,
+    matching_indices,
+    searchable_text,
+)
 
 _HINT = "↑↓ Navigate • Enter/1-9 Select • Esc cancel"
 _HINT_MULTI = "↑↓ Navigate • Space/Enter/1-9 Toggle • Submit to confirm • Esc cancel"
@@ -479,12 +483,14 @@ def _pick(
     search_query: str | None = None
     search_texts = searchable_text(labels, choice_notes) if searchable else []
     matches = list(range(len(labels)))
+    match_positions = {index: index for index in matches}
+    filtered_labels = labels
     checked: set[int] = set()
     custom_index = labels.index(custom_label) if custom_label in labels else -1
     row_count = len(labels) + (1 if multi_select else 0)
     while True:
         on_custom = custom_label is not None and idx < len(labels) and labels[idx] == custom_label
-        display = [labels[index] for index in matches] if searchable else list(labels)
+        display = filtered_labels if searchable else list(labels)
         if on_custom:
             display[idx] = f"{draft}█"
         if panel:
@@ -495,7 +501,7 @@ def _pick(
                 title=title,
                 breadcrumb=crumb,
                 labels=display,
-                index=matches.index(idx) if searchable and matches else idx,
+                index=match_positions.get(idx, 0) if searchable else idx,
                 width=paint_width,
                 max_height=_viewport_rows() - 1,
                 note=(
@@ -506,10 +512,8 @@ def _pick(
                     else note
                 ),
                 current_index=(
-                    matches.index(current_index)
-                    if searchable and current_index in matches
-                    else None
-                    if searchable
+                    match_positions.get(current_index)
+                    if searchable and current_index is not None
                     else current_index
                 ),
                 numbered=numbered and search_query is None,
@@ -582,10 +586,12 @@ def _pick(
                 if action == "cancel":
                     search_query = None
                     matches = list(range(len(labels)))
+                    match_positions = {index: index for index in matches}
+                    filtered_labels = labels
                     continue
                 if action == "backspace":
                     search_query = search_query[:-1]
-                elif len(action) == 1 and action.isprintable():
+                elif is_search_character(action):
                     search_query += action
                 elif action not in {"up", "down", "tab", "enter"}:
                     continue
@@ -595,7 +601,7 @@ def _pick(
                         continue
                     if action in {"up", "down"}:
                         if matches:
-                            position = matches.index(idx)
+                            position = match_positions[idx]
                             idx = matches[
                                 (position + (1 if action == "down" else -1)) % len(matches)
                             ]
@@ -606,7 +612,9 @@ def _pick(
                         on_answer((idx,), None)
                     return idx
                 matches = matching_indices(search_texts, search_query)
-                if matches and idx not in matches:
+                match_positions = {index: position for position, index in enumerate(matches)}
+                filtered_labels = [labels[index] for index in matches]
+                if matches and idx not in match_positions:
                     idx = matches[0]
                 continue
         if on_custom and action == "backspace":

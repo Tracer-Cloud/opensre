@@ -16,6 +16,8 @@ import contextlib
 import os
 import sys
 
+from surfaces.shared.terminal.components.menu_search import is_search_character
+
 
 def flush_stdin_unix() -> None:
     """Discard pending stdin bytes before raw-mode reading."""
@@ -338,7 +340,7 @@ def _read_menu_or_char_unix(
                 text = data.decode("utf-8")
             except UnicodeDecodeError:
                 return "ignore"
-            return text if text.isprintable() else "ignore"
+            return text if is_search_character(text) else "ignore"
         return "ignore"
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old)  # type: ignore[attr-defined]
@@ -358,7 +360,7 @@ def _read_menu_or_char_windows(
                     text = text.encode("utf-16", "surrogatepass").decode("utf-16")
                 except UnicodeDecodeError:
                     return "ignore"
-            return text if text.isprintable() else "ignore"
+            return text if is_search_character(text) else "ignore"
         ch = bytes([ord(text)])
     else:
         ch = msvcrt.getch()  # type: ignore[attr-defined]
