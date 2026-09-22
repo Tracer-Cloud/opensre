@@ -13,7 +13,7 @@ def test_format_repl_duration() -> None:
     assert format_repl_duration(45) == "45s"
     assert format_repl_duration(60) == "1m 0s"
     assert format_repl_duration(125) == "2m 5s"
-    assert format_repl_duration(3600) == "59m 60s"
+    assert format_repl_duration(3600) == "1h 0m"
     assert format_repl_duration(3725) == "1h 2m"
 
 
