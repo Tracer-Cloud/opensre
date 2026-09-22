@@ -336,6 +336,12 @@ if TYPE_CHECKING:
         DEFAULT_STOP_TIMEOUT_SECONDS as DEFAULT_STOP_TIMEOUT_SECONDS,
     )
     from config.constants.gateway import (
+        GATEWAY_STOP_TIMEOUT_SECONDS_ENV as GATEWAY_STOP_TIMEOUT_SECONDS_ENV,
+    )
+    from config.constants.gateway import (
+        MAX_STOP_TIMEOUT_SECONDS as MAX_STOP_TIMEOUT_SECONDS,
+    )
+    from config.constants.gateway import (
         NEW_SESSION_MESSAGE as NEW_SESSION_MESSAGE,
     )
     from config.constants.gateway import (
@@ -343,6 +349,9 @@ if TYPE_CHECKING:
     )
     from config.constants.gateway import (
         SCHEDULER_RELOAD_JOIN_TIMEOUT_SECONDS as SCHEDULER_RELOAD_JOIN_TIMEOUT_SECONDS,
+    )
+    from config.constants.gateway import (
+        SCHEDULER_STOP_BUDGET_SHARE as SCHEDULER_STOP_BUDGET_SHARE,
     )
     from config.constants.gateway import (
         TURN_ERROR_MESSAGE as TURN_ERROR_MESSAGE,
@@ -747,6 +756,9 @@ if TYPE_CHECKING:
     )
     from config.constants.paths import (
         get_memory_dir as get_memory_dir,
+    )
+    from config.constants.paths import (
+        get_sessions_dir as get_sessions_dir,
     )
     from config.constants.paths import (
         get_store_path as get_store_path,

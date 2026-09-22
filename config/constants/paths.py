@@ -209,6 +209,11 @@ def get_store_path() -> Path:
     return OPENSRE_HOME_DIR / "opensre.json"
 
 
+def get_sessions_dir() -> Path:
+    """One JSONL file per session lives here."""
+    return session_home() / "sessions"
+
+
 def get_memory_dir() -> Path:
     override = os.getenv(OPENSRE_MEMORY_DIR_ENV, "").strip()
     if override:
@@ -246,6 +251,7 @@ __all__ = [
     "ci_fix_ledger_path",
     "ensure_opensre_tmp_dir",
     "get_memory_dir",
+    "get_sessions_dir",
     "get_store_path",
     "get_work_items_dir",
     "host_home",
