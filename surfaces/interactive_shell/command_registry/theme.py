@@ -75,11 +75,12 @@ def _cmd_theme(session: Session, console: Console, args: list[str]) -> bool:
 
     current = get_active_theme_name()
     session.terminal.active_theme_name = current
-    choices = [
-        (name, f"{name}{' (current)' if name == current else ''}") for name in list_theme_names()
-    ]
+    choices = [(name, name) for name in list_theme_names()]
     picked = repl_choose_one(
-        title="theme",
+        title="Theme",
+        panel=True,
+        current_value=current,
+        note=f"Current: {current} · Enter applies and saves",
         breadcrumb="/theme",
         choices=choices,
         initial_value=current,

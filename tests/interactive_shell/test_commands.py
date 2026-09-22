@@ -855,7 +855,8 @@ class TestModelCommand:
                 "set",  # root -> set
                 model_cmd.OTHER_PROVIDER_SELECTION,  # provider submenu selected
                 "anthropic",  # provider selected
-                None,  # Esc from model selection -> back to provider list
+                None,  # Esc from model selection -> back to other provider list
+                None,  # Esc from other providers -> featured provider list
                 None,  # Esc from provider list -> back to root action list
                 None,  # Esc at root -> close menu
             ]

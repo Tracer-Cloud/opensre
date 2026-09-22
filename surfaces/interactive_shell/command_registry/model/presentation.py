@@ -5,7 +5,7 @@ from __future__ import annotations
 from rich.console import Console
 
 import surfaces.interactive_shell.command_registry.repl_data as repl_data
-from surfaces.interactive_shell.ui import render_models_table
+from surfaces.interactive_shell.ui import render_models_table, resolve_provider_models
 
 
 def render_current_models(console: Console) -> None:
@@ -17,4 +17,14 @@ def render_current_models(console: Console) -> None:
     )
 
 
-__all__ = ["render_current_models"]
+def current_model_selection() -> tuple[str, str, str]:
+    """Return the effective provider, reasoning model, and tool-call model."""
+    settings = repl_data.load_llm_settings()
+    if settings is None:
+        return ("", "", "")
+    provider = str(settings.provider)
+    reasoning, toolcall = resolve_provider_models(settings, provider)
+    return (provider, reasoning, toolcall)
+
+
+__all__ = ["current_model_selection", "render_current_models"]

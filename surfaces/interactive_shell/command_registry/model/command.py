@@ -8,7 +8,10 @@ from rich.console import Console
 from rich.markup import escape
 
 from config.constants.llm import LLM_PROVIDER_ENV
-from surfaces.interactive_shell.command_registry.model.presentation import render_current_models
+from surfaces.interactive_shell.command_registry.model.presentation import (
+    current_model_selection,
+    render_current_models,
+)
 from surfaces.interactive_shell.command_registry.model.switching import (
     _provider_allows_custom_models,
     restore_default_model,
@@ -35,66 +38,76 @@ _ROOT = "/model"  # breadcrumb root label
 
 
 def _provider_menu_choices() -> list[tuple[str, str]]:
-    current_provider = (os.getenv(LLM_PROVIDER_ENV, "anthropic") or "anthropic").strip().lower()
-    options: list[tuple[str, str]] = []
-    for provider in focused_setup_provider_options():
-        suffix = "*" if provider.value == current_provider else ""
-        options.append((provider.value, f"{provider.value}{suffix}"))
-    suffix = "*" if current_provider not in {value for value, _label in options} else ""
-    options.append((OTHER_PROVIDER_SELECTION, f"other provider{suffix}"))
-    return options
+    return [
+        *((provider.value, provider.label) for provider in focused_setup_provider_options()),
+        (OTHER_PROVIDER_SELECTION, "Other providers ›"),
+    ]
 
 
 def _other_provider_menu_choices() -> list[tuple[str, str]]:
-    current_provider = (os.getenv(LLM_PROVIDER_ENV, "anthropic") or "anthropic").strip().lower()
-    options: list[tuple[str, str]] = []
-    for provider in other_setup_provider_options():
-        suffix = "*" if provider.value == current_provider else ""
-        options.append((provider.value, f"{provider.value}{suffix}"))
-    return options
+    return [(provider.value, provider.label) for provider in other_setup_provider_options()]
 
 
-def _choose_provider_value(*, title: str, breadcrumb: str) -> str | None:
-    provider_value = repl_choose_one(
-        title=title,
-        breadcrumb=breadcrumb,
-        choices=_provider_menu_choices(),
-    )
-    if provider_value != OTHER_PROVIDER_SELECTION:
-        return provider_value
-    return repl_choose_one(
-        title="other provider",
-        breadcrumb=f"{breadcrumb}{CRUMB_SEP}other",
-        choices=_other_provider_menu_choices(),
-    )
+def _choose_provider_value(
+    *, title: str, breadcrumb: str, initial_value: str | None = None
+) -> str | None:
+    current_provider, _, _ = current_model_selection()
+    choices = _provider_menu_choices()
+    featured = {value for value, _ in choices}
+    initial = initial_value or current_provider
+    show_other = initial_value is not None and initial_value not in featured
+    while True:
+        if not show_other:
+            provider_value = repl_choose_one(
+                title=title,
+                breadcrumb=breadcrumb,
+                choices=choices,
+                panel=True,
+                initial_value=initial if initial in featured else OTHER_PROVIDER_SELECTION,
+                current_value=current_provider,
+            )
+            if provider_value != OTHER_PROVIDER_SELECTION:
+                return provider_value
+        provider_value = repl_choose_one(
+            title="Other providers",
+            breadcrumb=f"{breadcrumb}{CRUMB_SEP}Other providers",
+            choices=_other_provider_menu_choices(),
+            panel=True,
+            initial_value=initial,
+            current_value=current_provider,
+        )
+        if provider_value is not None:
+            return provider_value
+        initial = OTHER_PROVIDER_SELECTION
+        show_other = False
 
 
 def _reasoning_model_menu_choices(provider: object) -> list[tuple[str, str]]:
     model_options = list(getattr(provider, "models", ()))
     choices: list[tuple[str, str]] = [
-        ("__provider_default__", "provider default (one step)"),
+        ("__provider_default__", "Use provider default"),
     ]
     for option in model_options:
         value = str(getattr(option, "value", ""))
         display = value if value else "cli-default"
         choices.append((value, display))
     if _provider_allows_custom_models(provider):
-        choices.append(("__custom__", "custom model ID"))
+        choices.append(("__custom__", "Enter a custom model ID…"))
     return choices
 
 
 def _toolcall_model_menu_choices(provider: object) -> list[tuple[str, str]]:
     model_options = list(getattr(provider, "models", ()))
     choices: list[tuple[str, str]] = [
-        ("__keep__", "keep"),
-        ("__match_reasoning__", "match-reasoning"),
+        ("__keep__", "Keep current tool-call model"),
+        ("__match_reasoning__", "Use the reasoning model"),
     ]
     for option in model_options:
         value = str(getattr(option, "value", ""))
         display = value if value else "cli-default"
         choices.append((value, display))
     if _provider_allows_custom_models(provider):
-        choices.append(("__custom__", "custom model ID"))
+        choices.append(("__custom__", "Enter a custom model ID…"))
     return choices
 
 
@@ -115,11 +128,14 @@ def _prompt_custom_model_id(console: Console, provider_value: str = "provider") 
 def _interactive_set_provider(console: Console) -> bool | None:
     from surfaces.shared.llm_setup.catalog import PROVIDER_BY_VALUE
 
-    crumb_set = f"{_ROOT}{CRUMB_SEP}set"
+    crumb_set = f"{_ROOT}{CRUMB_SEP}Change model"
+    current_provider, current_reasoning, current_toolcall = current_model_selection()
+    provider_value: str | None = None
     while True:
         provider_value = _choose_provider_value(
             title="LLM provider",
             breadcrumb=crumb_set,
+            initial_value=provider_value,
         )
         if provider_value is None:
             return None
@@ -128,6 +144,9 @@ def _interactive_set_provider(console: Console) -> bool | None:
             return False
 
         crumb_model = f"{crumb_set}{CRUMB_SEP}{provider_value}"
+        active_reasoning = current_reasoning if provider_value == current_provider else None
+        active_toolcall = current_toolcall if provider_value == current_provider else None
+        reasoning_initial = active_reasoning
         while True:
             from surfaces.interactive_shell.command_registry.model.provider_models import (
                 model_menu_choices,
@@ -141,12 +160,16 @@ def _interactive_set_provider(console: Console) -> bool | None:
             if reasoning_choices is None:
                 break
             reasoning_choice = repl_choose_one(
-                title="reasoning model",
+                title="Reasoning model",
                 breadcrumb=crumb_model,
                 choices=reasoning_choices,
+                panel=True,
+                initial_value=reasoning_initial,
+                current_value=active_reasoning,
             )
             if reasoning_choice is None:
                 break
+            reasoning_initial = reasoning_choice
 
             if reasoning_choice == "__custom__":
                 custom = _prompt_custom_model_id(console, provider.value)
@@ -164,12 +187,15 @@ def _interactive_set_provider(console: Console) -> bool | None:
                 crumb_tc = f"{crumb_model}{CRUMB_SEP}toolcall"
                 while True:
                     toolcall_value = repl_choose_one(
-                        title="toolcall model",
+                        title="Tool-call model",
                         breadcrumb=crumb_tc,
                         choices=_toolcall_model_menu_choices(provider),
+                        panel=True,
+                        initial_value=active_toolcall,
+                        current_value=active_toolcall,
                     )
                     if toolcall_value is None:
-                        return None
+                        break
                     if toolcall_value == "__keep__":
                         break
                     if toolcall_value == "__match_reasoning__":
@@ -183,6 +209,8 @@ def _interactive_set_provider(console: Console) -> bool | None:
                         break
                     toolcall_model = str(toolcall_value)
                     break
+                if toolcall_value is None:
+                    continue
 
             return switch_llm_provider(
                 provider.value,
@@ -195,7 +223,7 @@ def _interactive_set_provider(console: Console) -> bool | None:
 def _interactive_restore_provider(console: Console) -> bool | None:
     provider_value = _choose_provider_value(
         title="LLM provider",
-        breadcrumb=f"{_ROOT}{CRUMB_SEP}restore",
+        breadcrumb=f"{_ROOT}{CRUMB_SEP}Restore defaults",
     )
     if provider_value is None:
         return None
@@ -205,58 +233,75 @@ def _interactive_restore_provider(console: Console) -> bool | None:
 def _interactive_set_toolcall(console: Console) -> bool | None:
     from surfaces.shared.llm_setup.catalog import PROVIDER_BY_VALUE
 
-    crumb_tc = f"{_ROOT}{CRUMB_SEP}toolcall"
-    provider_value = _choose_provider_value(
-        title="LLM provider",
-        breadcrumb=crumb_tc,
-    )
-    if provider_value is None:
-        return None
-    provider = PROVIDER_BY_VALUE.get(provider_value)
-    if provider is None:
-        return False
-    if not provider.toolcall_model_env:
-        console.print(
-            f"[{WARNING}]provider {provider.value} does not expose a separate "
-            "toolcall model[/] — nothing to set."
+    crumb_tc = f"{_ROOT}{CRUMB_SEP}Tool-call model"
+    current_provider, _, current_toolcall = current_model_selection()
+    provider_value: str | None = None
+    while True:
+        provider_value = _choose_provider_value(
+            title="LLM provider", breadcrumb=crumb_tc, initial_value=provider_value
         )
-        return False
-    model_value = repl_choose_one(
-        title="toolcall model",
-        breadcrumb=f"{crumb_tc}{CRUMB_SEP}{provider_value}",
-        choices=_toolcall_model_menu_choices(provider),
-    )
-    if model_value is None:
-        return None
-    if model_value == "__keep__":
-        console.print("[dim]toolcall model left unchanged.[/dim]")
-        return True
-    if model_value == "__match_reasoning__":
-        reasoning = (os.getenv(provider.model_env, "") or "").strip() or provider.default_model
-        return switch_toolcall_model(reasoning, console, provider_name=provider.value)
-    if model_value == "__custom__":
-        custom_tc = _prompt_custom_model_id(console, provider.value)
-        if custom_tc is None:
+        if provider_value is None:
             return None
-        model_value = custom_tc
-    return switch_toolcall_model(str(model_value), console, provider_name=provider.value)
+        provider = PROVIDER_BY_VALUE.get(provider_value)
+        if provider is None:
+            return False
+        if not provider.toolcall_model_env:
+            console.print(
+                f"[{WARNING}]provider {provider.value} does not expose a separate "
+                "toolcall model[/] — nothing to set."
+            )
+            return False
+        active = current_toolcall if provider_value == current_provider else None
+        initial = active
+        while True:
+            model_value = repl_choose_one(
+                title="Tool-call model",
+                breadcrumb=f"{crumb_tc}{CRUMB_SEP}{provider_value}",
+                choices=_toolcall_model_menu_choices(provider),
+                panel=True,
+                initial_value=initial,
+                current_value=active,
+            )
+            if model_value is None:
+                break
+            initial = model_value
+            if model_value == "__keep__":
+                console.print("[dim]toolcall model left unchanged.[/dim]")
+                return True
+            if model_value == "__match_reasoning__":
+                reasoning = (
+                    os.getenv(provider.model_env, "") or ""
+                ).strip() or provider.default_model
+                return switch_toolcall_model(reasoning, console, provider_name=provider.value)
+            if model_value == "__custom__":
+                custom_tc = _prompt_custom_model_id(console, provider.value)
+                if custom_tc is None:
+                    continue
+                model_value = custom_tc
+            return switch_toolcall_model(str(model_value), console, provider_name=provider.value)
 
 
 def _interactive_model_menu(session: Session, console: Console) -> bool:
+    initial = "set"
     while True:
+        provider, reasoning, _ = current_model_selection()
         action = repl_choose_one(
-            title="Select Model and Effort",
+            title="Model",
+            panel=True,
+            initial_value=initial,
+            note=f"Current: {provider} · {reasoning}" if provider else "No model configured",
             breadcrumb=f"{_ROOT}",
             choices=[
-                ("show", "show"),
-                ("set", "set"),
-                ("restore", "restore"),
-                ("toolcall", "toolcall"),
-                ("done", "done"),
+                ("set", "Change model ›"),
+                ("show", "View configuration"),
+                ("toolcall", "Configure tool-call model ›"),
+                ("restore", "Restore provider defaults ›"),
+                ("done", "Done"),
             ],
         )
         if action is None or action == "done":
             return True
+        initial = action
         if action == "show":
             repl_section_break(console)
             render_current_models(console)

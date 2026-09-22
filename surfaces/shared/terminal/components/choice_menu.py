@@ -23,6 +23,7 @@ from rich.markup import escape
 import infrastructure.terminal.theme as ui_theme
 from infrastructure.safety.terminal_output import strip_terminal_controls
 from surfaces.shared.terminal.components.key_reader import read_key_unix, read_key_windows
+from surfaces.shared.terminal.components.menu_panel import build_menu_panel
 
 _HINT = "↑↓ Navigate • Enter/1-9 Select • Esc cancel"
 _HINT_MULTI = "↑↓ Navigate • Space/Enter/1-9 Toggle • Submit to confirm • Esc cancel"
@@ -437,6 +438,8 @@ def _pick(
     crumb: str,
     labels: list[str],
     initial_index: int = 0,
+    panel: bool = False,
+    current_index: int | None = None,
     custom_label: str | None = None,
     multi_select: bool = False,
     values: list[str] | None = None,
@@ -467,6 +470,8 @@ def _pick(
     height = _menu_height(crumb, labels, multi_select=multi_select, header=header, note=note)
     draft = ""
     first = True
+    paint_width = _menu_paint_width()
+    lines: list[str] = []
     checked: set[int] = set()
     custom_index = labels.index(custom_label) if custom_label in labels else -1
     row_count = len(labels) + (1 if multi_select else 0)
@@ -475,21 +480,43 @@ def _pick(
         display = list(labels)
         if on_custom:
             display[idx] = f"{draft}█"
-        _draw_menu(
-            title=title,
-            crumb=crumb,
-            labels=display,
-            index=idx,
-            erase_lines=0 if first else height,
-            multi_select=multi_select,
-            checked=checked if multi_select else None,
-            header=header,
-            letter_keys=letter_keys,
-            numbered=numbered,
-            note=note,
-        )
+        if panel:
+            if not first:
+                _erase_menu_block(height)
+            paint_width = _menu_paint_width()
+            lines = build_menu_panel(
+                title=title,
+                breadcrumb=crumb,
+                labels=display,
+                index=idx,
+                width=paint_width,
+                max_height=_viewport_rows() - 1,
+                note=note,
+                current_index=current_index,
+                numbered=numbered,
+            )
+            for line in lines:
+                write_menu_line(line)
+            sys.stdout.flush()
+            height = len(lines)
+        else:
+            _draw_menu(
+                title=title,
+                crumb=crumb,
+                labels=display,
+                index=idx,
+                erase_lines=0 if first else height,
+                multi_select=multi_select,
+                checked=checked if multi_select else None,
+                header=header,
+                letter_keys=letter_keys,
+                numbered=numbered,
+                note=note,
+            )
+            height = _menu_height(
+                crumb, display, multi_select=multi_select, header=header, note=note
+            )
         first = False
-        height = _menu_height(crumb, display, multi_select=multi_select, header=header, note=note)
         if on_custom:
             action = read_menu_or_char(allow_chars=True)
         elif multi_select:
@@ -498,6 +525,11 @@ def _pick(
             action = _read_action(alpha_keys=True)
         else:
             action = _read_action()
+        if panel:
+            # A shrink can reflow each previously painted row into several physical rows.
+            # Count those rows before either redraw or dismissal, not just the old height.
+            columns = max(1, _cols())
+            height = len(lines) * ((paint_width + columns - 1) // columns)
         if on_custom and action == "backspace":
             draft = draft[:-1]
             if multi_select and custom_index >= 0 and not draft.strip():
@@ -607,6 +639,8 @@ def repl_choose_one(
     choices: list[tuple[str, str]],
     breadcrumb: str = "",
     initial_value: str | None = None,
+    panel: bool = False,
+    current_value: str | None = None,
     custom_label: str | None = None,
     multi_select: bool = False,
     header: str = "",
@@ -617,6 +651,10 @@ def repl_choose_one(
     on_answer: Callable[[tuple[int, ...], str | None], None] | None = None,
 ) -> str | None:
     """Show an inline erasing arrow-key menu; return selected value or None on Esc.
+
+    ``panel`` opts a simple single-choice menu into bounded framed presentation.
+    ``current_value`` marks the active value independently of keyboard focus.
+    Agent questions, multi-select, and inline custom answers keep the plain menu.
 
     ``breadcrumb`` is a slash-separated path shown dimly below the title, e.g.
     ``/model › set``.  Only call when :func:`repl_tty_interactive` is True.
@@ -638,6 +676,8 @@ def repl_choose_one(
     """
     from surfaces.shared.terminal.components.cpr_stdin import drain_stale_cpr_bytes
 
+    if panel and (multi_select or custom_label is not None or letter_keys or header):
+        raise ValueError("Panel presentation supports simple single-choice menus only")
     if not choices or not repl_tty_interactive():
         return None
     _clear_prompt_toolkit_paint()
@@ -658,6 +698,12 @@ def repl_choose_one(
             crumb=crumb,
             labels=labels,
             initial_index=initial_index,
+            panel=panel,
+            current_index=(
+                values.index(current_value)
+                if current_value is not None and current_value in values
+                else None
+            ),
             custom_label=custom_label,
             multi_select=multi_select,
             values=values,

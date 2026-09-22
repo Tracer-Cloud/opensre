@@ -1733,7 +1733,9 @@ class TestThemeCommand:
         assert captured.get("initial_value") == "pink"
         choices = captured.get("choices")
         assert isinstance(choices, list)
-        assert any("pink (current)" in label for _value, label in choices)
+        assert ("pink", "pink") in choices
+        assert captured.get("current_value") == "pink"
+        assert captured.get("panel") is True
 
     def test_theme_command_direct_arg_sets_theme(self, monkeypatch) -> None:
         from surfaces.interactive_shell.command_registry import theme as theme_cmd

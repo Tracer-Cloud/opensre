@@ -272,15 +272,17 @@ class TestInteractiveSetToolcallCustom:
         assert result is True
         mock_switch.assert_called_once_with(custom_id, console, provider_name="bedrock")
 
-    def test_custom_toolcall_returns_none_on_cancel(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """If user cancels the custom prompt, _interactive_set_toolcall returns None."""
+    def test_custom_toolcall_returns_none_after_backing_out(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Cancelling custom input returns to the model picker before leaving the flow."""
         from rich.console import Console
 
         from surfaces.interactive_shell.command_registry.model import command as model_mod
 
         console = Console(force_terminal=False)
 
-        choose_returns = iter(["bedrock", "__custom__"])
+        choose_returns = iter(["bedrock", "__custom__", None, None, None])
         monkeypatch.setattr(model_mod, "repl_choose_one", lambda **_kw: next(choose_returns))
         monkeypatch.setattr(model_mod, "_prompt_custom_model_id", lambda *_args: None)
 

@@ -168,15 +168,21 @@ Bare invocation opens a picker or submenu:
 | `/help` | Browse categories; Enter runs the selected command |
 | `/integrations` | list / verify / show / setup / remove |
 | `/mcp` | list / connect / disconnect |
-| `/model` | show / set / restore / toolcall |
+| `/model` | Change model, view configuration, configure tool-call model, or restore defaults |
 | `/theme` | Pick a colour theme from the installed list |
 | `/choose` | Reopen the selection menu the agent queued |
 | `/trust`, `/verbose` | on / off |
 | `/history` | show / clear / off / on / retention |
 | `/resume` | Numbered list of recent sessions |
 
-`/model` keeps its menu running: picking `show` prints the current models and
-hands you back to the menu, so leave it with **done** or Esc.
+`/model` keeps its menu running: **View configuration** prints the current models
+and returns to the menu. Leave with **Done** or Esc. In a child picker, Esc goes
+back one step without applying a change.
+
+`/model` and `/theme` use compact, scrolling panels. The highlighted row is
+keyboard focus; a checkmark marks the current value. Arrow keys only move focus;
+Enter or a numbered shortcut selects an option. `/theme` saves only after selection;
+Esc leaves it unchanged. Use `/effort` separately to inspect or change reasoning effort.
 
 ## Commands
 
@@ -613,7 +619,7 @@ Show the active hosted model. An authenticated interactive shell is account-mana
 
 **Account lock:** `set`, `restore`, and `toolcall set` explain that the model is managed by the OpenSRE account and make no change. The account route overrides local provider variables for every model role while the session is signed in.
 
-**Bare `/model`:** in a terminal this opens a menu rather than printing the table. The menu stays open: `show` prints the current models and hands you back to it, so leave with **done** or Esc. `set`, `restore` and `toolcall` close it once the change succeeds. Use `/model show` when you only want the table.
+**Bare `/model`:** in a terminal this opens a menu rather than printing the table. The menu stays open: **View configuration** prints the current models and hands you back to it, so leave with **Done** or Esc. **Change model**, **Restore provider defaults**, and **Configure tool-call model** close it once the change succeeds. Use `/model show` when you only want the table.
 
 **Reasoning vs toolcall model:** Reasoning model drives chat and planning; toolcall model drives tool invocation when the provider exposes a separate slot (common on Anthropic/OpenAI).
 
