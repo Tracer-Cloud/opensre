@@ -18,6 +18,7 @@ from integrations.hosted_gateway.tools.results import (
     STATE_OUTPUTS,
     failure_output,
     gateway_name,
+    hosted_gateway_available,
     state_output,
 )
 
@@ -45,6 +46,7 @@ _COMPONENT = "integrations.hosted_gateway.tools.gateway_health.check_hosted_gate
     ],
     surfaces=(ToolSurface.ACTION, ToolSurface.CHAT),
     side_effect_level=SideEffectLevel.READ_ONLY,
+    is_available=hosted_gateway_available,
     input_schema={"type": "object", "properties": {}, "additionalProperties": False},
     outputs=STATE_OUTPUTS,
 )

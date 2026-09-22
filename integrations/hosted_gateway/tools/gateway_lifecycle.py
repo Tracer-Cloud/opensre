@@ -17,6 +17,7 @@ from integrations.hosted_gateway.tools.results import (
     STATE_OUTPUTS,
     failure_output,
     gateway_name,
+    hosted_gateway_available,
     state_output,
 )
 
@@ -51,6 +52,7 @@ _WHOSE = (
         "Starts the organization's hosted gateway on Fargate; it runs, and is billed, until "
         "it is stopped."
     ),
+    is_available=hosted_gateway_available,
     input_schema=_NO_INPUT,
     outputs=STATE_OUTPUTS,
 )
@@ -89,6 +91,7 @@ def start_hosted_gateway() -> dict[str, Any]:
         "Stops the organization's hosted gateway: the loops and chat integrations it serves "
         "for the whole organization stop until it is started again."
     ),
+    is_available=hosted_gateway_available,
     input_schema=_NO_INPUT,
     outputs=STATE_OUTPUTS,
 )

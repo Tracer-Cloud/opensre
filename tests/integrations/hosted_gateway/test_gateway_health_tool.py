@@ -140,3 +140,18 @@ def test_an_unreachable_app_is_reported_once_and_named_by_code_only(
     assert out["success"] is False and out["error_kind"] == "unreachable"
     assert out["response_text"] == "The OpenSRE app could not do that (unreachable)."
     assert len(reported) == 1
+
+
+def test_the_hosted_gateway_tools_are_withheld_where_hosted_gateway_is_disabled() -> None:
+    # Arrange: a session that withholds the capability, as the gateway itself does
+    from integrations.hosted_gateway.tools.results import hosted_gateway_available
+
+    withheld = {"_action_session": {"available_capabilities": {"hosted_gateway": ()}}}
+    laptop = {"_action_session": {"available_capabilities": {}}}
+
+    # Act
+    on_gateway = hosted_gateway_available(withheld)
+    on_laptop = hosted_gateway_available(laptop)
+
+    # Assert
+    assert on_gateway is False and on_laptop is True

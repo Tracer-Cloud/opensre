@@ -17,7 +17,11 @@ from integrations.hosted_gateway.client import (
     HostedGatewayError,
     PromptRecord,
 )
-from integrations.hosted_gateway.tools.results import SOURCE, failure_output
+from integrations.hosted_gateway.tools.results import (
+    SOURCE,
+    failure_output,
+    hosted_gateway_available,
+)
 
 TOOL_NAME = "ask_hosted_gateway"
 _COMPONENT = "integrations.hosted_gateway.tools.gateway_prompt.ask_hosted_gateway"
@@ -59,6 +63,7 @@ _STILL_RUNNING = (
     ],
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.EXTERNAL,
+    is_available=hosted_gateway_available,
     input_schema={
         "type": "object",
         "properties": {

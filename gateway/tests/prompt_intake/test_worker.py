@@ -77,6 +77,7 @@ def test_a_remote_turn_cannot_ask_or_switch_runtime_and_gets_the_context_as_fact
     assert handler.seen_capabilities["slash_commands"] == ()
     assert handler.seen_capabilities["llm_provider"] == ()
     assert handler.seen_capabilities["cli_commands"] == ()
+    assert handler.seen_capabilities["hosted_gateway"] == ()
     assert handler.seen_text.endswith("Known context:\n- repository: Tracer-Cloud/opensre")
 
 

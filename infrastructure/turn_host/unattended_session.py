@@ -7,7 +7,13 @@ from core.agent_harness.spi.session_state import withhold_capabilities
 
 #: Capabilities an unattended turn never has: nothing interactive, nothing that switches
 #: the runtime, and no CLI subprocess, whose output only a terminal could show.
-UNATTENDED_DISABLED_CAPABILITIES = ("cli_commands", "llm_provider", "slash_commands", "task_cancel")
+UNATTENDED_DISABLED_CAPABILITIES = (
+    "cli_commands",
+    "hosted_gateway",
+    "llm_provider",
+    "slash_commands",
+    "task_cancel",
+)
 
 
 class UnattendedSessions:

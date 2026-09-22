@@ -12,6 +12,9 @@ from typing import Any
 from core.agent_harness.spi.session_state import withhold_capabilities
 
 UNSUPPORTED_GATEWAY_CAPABILITIES = (
+    # The hosted gateway has no signed-in account: the tools that reach it from a laptop
+    # cannot run on it.
+    "hosted_gateway",
     "llm_provider",
     "task_cancel",
 )
