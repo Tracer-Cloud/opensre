@@ -111,6 +111,8 @@ async def test_tray_is_attached_bounded_and_keeps_selected_result_visible() -> N
         assert "Commands" in lines[2]
         assert "› /integrations" in lines[3]
         assert sum("│ › /" in line or "│   /" in line for line in lines) == 6
+        assert lines[-5].startswith("│") and lines[-5].endswith("│")
+        assert not lines[-5].strip("│ ")
         assert "├" in lines[-3] and "Tab complete" in lines[-4]
         assert "> /" in lines[-2]
         assert all(len(line) <= 79 for line in lines)

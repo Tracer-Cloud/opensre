@@ -33,11 +33,11 @@ class CommandTrayControl(UIControl):
         state = self.buffer.complete_state
         if state is None or not state.completions:
             return 0
-        # Header, navigation, and (on narrow terminals) a shared detail line.
+        # Header, a separated navigation hint, and (on narrow terminals) detail.
         return min(
             max_available_height,
             min(_MAX_VISIBLE_ITEMS, len(state.completions))
-            + 2
+            + 3
             + (width < _INLINE_DESCRIPTION_MIN_WIDTH),
         )
 
@@ -49,8 +49,12 @@ class CommandTrayControl(UIControl):
         selected = state.complete_index or 0
         show_chrome = height >= 3
         show_detail = width < _INLINE_DESCRIPTION_MIN_WIDTH and height >= 4
+        desired_rows = min(_MAX_VISIBLE_ITEMS, len(state.completions))
+        show_hint_spacer = height >= desired_rows + 3 + show_detail
         rows = min(
-            _MAX_VISIBLE_ITEMS, len(state.completions), height - 2 * show_chrome - show_detail
+            _MAX_VISIBLE_ITEMS,
+            len(state.completions),
+            height - 2 * show_chrome - show_detail - show_hint_spacer,
         )
         self._start = max(0, min(self._start, selected, len(state.completions) - rows))
         if selected >= self._start + rows:
@@ -86,6 +90,8 @@ class CommandTrayControl(UIControl):
                     completion_preview_text(include_label=False), width, "class:command-tray.hint"
                 )
             )
+        if show_hint_spacer:
+            lines.append(self._line("", width, "class:command-tray.hint"))
         if show_chrome:
             navigation = "↑↓ navigate   Tab complete   Esc close"
             if width < 44:
