@@ -31,6 +31,7 @@ from surfaces.shared.terminal.components.choice_menu import (
     repl_section_break,
     repl_tty_interactive,
 )
+from surfaces.shared.terminal.components.detail_panel import repl_show_details
 from surfaces.shared.terminal.components.rendering import (
     _repl_table_width,
     print_repl_table,
@@ -89,7 +90,9 @@ def _configured_service_choices() -> list[tuple[str, str]]:
     return [(name, name) for name in repl_data.configured_integration_names()]
 
 
-def _handle_remove(session: Session, console: Console, service: str | None) -> bool:
+def _handle_remove(
+    session: Session, console: Console, service: str | None, *, mcp: bool = False
+) -> bool:
     """Remove an integration with a native inline-picker confirmation (no subprocess)."""
     from infrastructure.analytics.capture import capture_integration_removed
     from integrations.registry import resolve_management_service
@@ -97,37 +100,53 @@ def _handle_remove(session: Session, console: Console, service: str | None) -> b
     from integrations.webapp_vault import delete_webapp_org_integration
 
     svc = resolve_management_service(service) if service else service
-    if not svc:
-        if not repl_tty_interactive():
-            repl_print(console, f"[{DIM}]usage:[/] /integrations remove <service>")
-            session.mark_latest(ok=False, kind="slash")
-            return True
-        choices = _configured_service_choices()
-        if not choices:
-            repl_print(console, f"[{DIM}]no integrations in store to remove.[/]")
-            return True
-        svc = repl_choose_one(
-            title="select integration to remove",
-            breadcrumb=f"{_ROOT_INTEGRATIONS}{CRUMB_SEP}remove",
-            choices=choices,
-        )
-        if not svc:
-            return True
+    if not svc and not repl_tty_interactive():
+        repl_print(console, f"[{DIM}]usage:[/] /integrations remove <service>")
+        session.mark_latest(ok=False, kind="slash")
+        return True
 
     if repl_tty_interactive():
-        confirmed = repl_choose_one(
-            title=f"remove '{escape(svc)}'?",
-            breadcrumb=f"{_ROOT_INTEGRATIONS}{CRUMB_SEP}remove{CRUMB_SEP}{escape(svc)}",
-            choices=[
-                ("no", "No, cancel"),
-                ("yes", f"Yes, remove '{svc}'"),
-            ],
-        )
-        prepare_repl_output_line()
-        if confirmed != "yes":
+        pick_service = not svc
+        root = _ROOT_MCP if mcp else _ROOT_INTEGRATIONS
+        action = "Disconnect" if mcp else "Remove"
+        initial = svc
+        while True:
+            if pick_service:
+                choices = _mcp_service_choices() if mcp else _configured_service_choices()
+                if not choices:
+                    repl_show_details(
+                        title=f"{root} › {action}",
+                        fields=[],
+                        note="No configured services to remove. Use setup/connect to add one.",
+                    )
+                    return True
+                svc = repl_choose_one(
+                    title="Choose server" if mcp else "Choose integration",
+                    breadcrumb=f"{root}{CRUMB_SEP}{action}",
+                    choices=choices,
+                    panel=True,
+                    initial_value=initial,
+                )
+                if svc is None:
+                    return True
+                initial = svc
+            confirmed = repl_choose_one(
+                title=f"{action} {svc}?",
+                breadcrumb=f"{root}{CRUMB_SEP}{action}{CRUMB_SEP}{svc}",
+                panel=True,
+                initial_value="no",
+                note="Removes this service's saved connection configuration.",
+                choices=[("no", "Cancel"), ("yes", f"{action} {svc}")],
+            )
+            if confirmed == "yes":
+                break
+            if pick_service:
+                continue
+            prepare_repl_output_line()
             repl_print(console, f"[{DIM}]cancelled.[/]")
             session.refresh_integration_state()
             return True
+        prepare_repl_output_line()
     else:
         import sys
 
@@ -143,6 +162,8 @@ def _handle_remove(session: Session, console: Console, service: str | None) -> b
             session.refresh_integration_state()
             return True
 
+    if not svc:
+        return True
     if remove_integration(svc):
         delete_webapp_org_integration(svc)
         repl_print(console, f"[{HIGHLIGHT}]removed '{escape(svc)}'.[/]")
@@ -230,7 +251,9 @@ def _cmd_verify(session: Session, console: Console, args: list[str]) -> bool:
     return _cmd_integrations(session, console, ["verify", *args])
 
 
-def _render_integration_show(session: Session, console: Console, service: str) -> bool:
+def _render_integration_show(
+    session: Session, console: Console, service: str, *, interactive: bool = False
+) -> bool:
     """Verify and print one integration. Returns False when the service is unknown."""
     from integrations.registry import resolve_management_service
 
@@ -240,7 +263,8 @@ def _render_integration_show(session: Session, console: Console, service: str) -
         repl_print(console, f"[{ERROR}]service not found:[/] {escape(normalized)}")
         return False
 
-    prepare_repl_output_line()
+    if not interactive:
+        prepare_repl_output_line()
     with console.status(
         f"[{DIM}]Verifying {escape(normalized)}…[/]",
         spinner="dots",
@@ -251,6 +275,15 @@ def _render_integration_show(session: Session, console: Console, service: str) -
         return False
 
     _record_integration_show_observation(session, match)
+
+    if interactive:
+        repl_show_details(
+            title=f"Integration › {normalized}",
+            fields=[
+                (key.replace("_", " ").capitalize(), str(value)) for key, value in match.items()
+            ],
+        )
+        return True
 
     width = _repl_table_width(console)
     table = repl_table(
@@ -359,50 +392,83 @@ def _cmd_integrations(session: Session, console: Console, args: list[str]) -> bo
     return True
 
 
+def _show_connections(session: Session, console: Console, *, mcp: bool = False) -> None:
+    with console.status(f"[{DIM}]Verifying connections…[/]", spinner="dots"):
+        results = repl_data.load_verified_integrations()
+    if mcp:
+        results = [item for item in results if item.get("service") in MCP_INTEGRATION_SERVICES]
+    _record_integrations_observation(session, results)
+    repl_show_details(
+        title="MCP › Connected servers" if mcp else "Integrations › Connections",
+        fields=[
+            (
+                item.get("service", "Unknown"),
+                f"{item.get('status', 'unknown')} · {item.get('detail', '')}",
+            )
+            for item in results
+        ],
+        note=(
+            "No configured connections. Use Connect server."
+            if mcp
+            else "No configured integrations. Use Set up integration."
+        )
+        if not results
+        else "",
+    )
+
+
+def _browse_integration_details(session: Session, console: Console) -> None:
+    initial: str | None = None
+    while True:
+        choices = _configured_service_choices()
+        if not choices:
+            repl_show_details(
+                title="Integrations › Details",
+                fields=[],
+                note="No configured integrations. Use Set up integration.",
+            )
+            return
+        svc = repl_choose_one(
+            title="Integration details",
+            breadcrumb=f"{_ROOT_INTEGRATIONS}{CRUMB_SEP}Details",
+            panel=True,
+            choices=choices,
+            initial_value=initial,
+        )
+        if svc is None:
+            return
+        initial = svc
+        _render_integration_show(session, console, svc, interactive=True)
+
+
 def _interactive_integrations_menu(session: Session, console: Console) -> bool:
-    root = _ROOT_INTEGRATIONS
+    initial = "list"
     while True:
         sub = repl_choose_one(
-            title="integrations",
-            breadcrumb=root,
+            title="Integrations",
+            breadcrumb=_ROOT_INTEGRATIONS,
+            panel=True,
+            initial_value=initial,
             choices=[
-                ("list", "/integrations list"),
-                ("verify", "/integrations verify"),
-                ("show", "/integrations show <service>"),
-                ("setup", "/integrations setup <service>"),
-                ("remove", "/integrations remove <service>"),
-                ("done", "done"),
+                ("list", "View integrations ›"),
+                ("verify", "Verify connections"),
+                ("show", "View details ›"),
+                ("setup", "Set up integration ›"),
+                ("remove", "Remove integration ›"),
+                ("done", "Done"),
             ],
         )
         if sub is None or sub == "done":
             return True
-        show_section_break = False
+        initial = sub
         if sub == "list":
-            _cmd_integrations(session, console, ["list"])
-            show_section_break = True
-        elif sub == "verify":
-            _cmd_integrations(session, console, ["verify"])
-            show_section_break = True
-        elif sub == "setup":
-            _cmd_integrations(session, console, ["setup"])
-            show_section_break = True
+            _show_connections(session, console)
         elif sub == "show":
-            choices = _configured_service_choices()
-            if not choices:
-                repl_print(console, f"[{DIM}]no integrations in store to show.[/]")
-                show_section_break = True
-            else:
-                svc = repl_choose_one(
-                    title="service",
-                    breadcrumb=f"{root}{CRUMB_SEP}show",
-                    choices=choices,
-                )
-                if svc and _render_integration_show(session, console, svc):
-                    show_section_break = True
+            _browse_integration_details(session, console)
         elif sub == "remove":
             _handle_remove(session, console, None)
-            show_section_break = True
-        if show_section_break:
+        else:
+            _cmd_integrations(session, console, [sub])
             repl_section_break(console)
 
 
@@ -420,7 +486,7 @@ def _cmd_mcp(session: Session, console: Console, args: list[str]) -> bool:
         return _run_integrations_setup(session, console, ["setup", *args[1:]])
 
     if sub == "disconnect":
-        return _handle_remove(session, console, args[1] if len(args) > 1 else None)
+        return _handle_remove(session, console, args[1] if len(args) > 1 else None, mcp=True)
 
     repl_print(
         console,
@@ -432,42 +498,29 @@ def _cmd_mcp(session: Session, console: Console, args: list[str]) -> bool:
 
 
 def _interactive_mcp_menu(session: Session, console: Console) -> bool:
-    root = _ROOT_MCP
+    initial = "list"
     while True:
         sub = repl_choose_one(
-            title="mcp",
-            breadcrumb=root,
+            title="MCP servers",
+            breadcrumb=_ROOT_MCP,
+            panel=True,
+            initial_value=initial,
             choices=[
-                ("list", "/mcp list"),
-                ("connect", "/mcp connect <server>"),
-                ("disconnect", "/mcp disconnect <server>"),
-                ("done", "done"),
+                ("list", "Connected servers ›"),
+                ("connect", "Connect server ›"),
+                ("disconnect", "Disconnect server ›"),
+                ("done", "Done"),
             ],
         )
         if sub is None or sub == "done":
             return True
-        show_section_break = False
+        initial = sub
         if sub == "list":
-            _cmd_mcp(session, console, ["list"])
-            show_section_break = True
-        elif sub == "connect":
-            _cmd_mcp(session, console, ["connect"])
-            show_section_break = True
+            _show_connections(session, console, mcp=True)
         elif sub == "disconnect":
-            choices = _mcp_service_choices()
-            if not choices:
-                repl_print(console, f"[{DIM}]no MCP servers configured.[/]")
-                show_section_break = True
-            else:
-                svc = repl_choose_one(
-                    title="server",
-                    breadcrumb=f"{root}{CRUMB_SEP}disconnect",
-                    choices=choices,
-                )
-                if svc:
-                    _cmd_mcp(session, console, ["disconnect", svc])
-                    show_section_break = True
-        if show_section_break:
+            _handle_remove(session, console, None, mcp=True)
+        else:
+            _cmd_mcp(session, console, [sub])
             repl_section_break(console)
 
 

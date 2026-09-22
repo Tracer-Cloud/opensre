@@ -54,16 +54,24 @@ def _interactive_resume_menu(session: Session, console: Console) -> bool:
         return True
 
     choices: list[tuple[str, str]] = []
+    notes: dict[str, str] = {}
     for entry in entries:
         sid = entry["session_id"]
         short_id = sid[:8]
         name = entry.get("name") or f"[{short_id}]"
         started_str = format_repl_timestamp(entry.get("started_at"), style="compact")
-        label = f"{name[:40]:<40}  {short_id}  {started_str}"
-        choices.append((sid, label))
-    choices.append(("done", "done"))
+        choices.append((sid, name))
+        notes[sid] = f"{started_str} · {short_id}"
+    choices.append(("done", "Cancel"))
 
-    picked = repl_choose_one(title="resume session", breadcrumb="/resume", choices=choices)
+    picked = repl_choose_one(
+        title="Resume session",
+        breadcrumb="/resume",
+        choices=choices,
+        panel=True,
+        choice_notes=notes,
+        note="Enter resumes the selected session.",
+    )
     if picked is None or picked == "done":
         return True
 

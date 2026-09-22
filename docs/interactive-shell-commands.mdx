@@ -166,14 +166,15 @@ Bare invocation opens a picker or submenu:
 | Command | Menu behavior |
 | --- | --- |
 | `/help` | Browse categories; Enter runs the selected command |
-| `/integrations` | list / verify / show / setup / remove |
-| `/mcp` | list / connect / disconnect |
+| `/integrations` | View connections and details, verify, set up, or remove an integration |
+| `/mcp` | View connected servers, connect, or disconnect |
 | `/model` | Change model, view configuration, configure tool-call model, or restore defaults |
 | `/theme` | Pick a colour theme from the installed list |
 | `/choose` | Reopen the selection menu the agent queued |
 | `/trust`, `/verbose` | on / off |
-| `/history` | show / clear / off / on / retention |
-| `/resume` | Numbered list of recent sessions |
+| `/history` | View saved commands, pause/resume recording, change retention, or clear history |
+| `/resume` | Recent session names with the focused session's timestamp and short ID |
+| `/loops show` | Loop names with the focused loop's ID; Enter opens its report |
 
 `/model` keeps its menu running: **View configuration** opens read-only details
 with wrapped values and arrow-key scrolling when needed. Enter or Esc returns to
@@ -181,11 +182,19 @@ with wrapped values and arrow-key scrolling when needed. Enter or Esc returns to
 with **Done** or Esc. In a child picker, Esc goes
 back one step without applying a change.
 
-`/model` and `/theme` use compact, scrolling panels. The highlighted row is
+These setting and resource menus use compact, scrolling panels. The highlighted row is
 keyboard focus; a checkmark marks the current value. Arrow keys only move focus;
 Enter or a numbered shortcut selects an option. Numbers address the currently visible
 rows; the header counter shows position in the full list. `/theme` saves only after selection;
 Esc leaves it unchanged. Use `/effort` separately to inspect or change reasoning effort.
+
+`/trust` and `/verbose` start on the current value and close after applying a selection.
+Trust affects only this session; verbose logging affects the current process.
+History retention changes apply to this session and prune older saved commands.
+Clearing history and removing connections require a separate confirmation that starts
+on **Cancel**. Esc from connection removal returns to the service picker.
+Read-only connection and history views use detail panels; Enter or Esc returns to
+the preceding menu. Explicit commands such as `/integrations list` retain printable output.
 
 ## Commands
 

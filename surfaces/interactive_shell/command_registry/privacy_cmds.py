@@ -31,6 +31,7 @@ from surfaces.shared.terminal.components.choice_menu import (
     repl_section_break,
     repl_tty_interactive,
 )
+from surfaces.shared.terminal.components.detail_panel import repl_show_details
 
 
 def _show_history(console: Console) -> bool:
@@ -124,48 +125,87 @@ def _history_retention(session: Session, console: Console, args: list[str]) -> b
     return True
 
 
+def _history_menu_summary(session: Session) -> str:
+    backend = session.terminal.prompt_history_backend
+    if isinstance(backend, RedactingFileHistory):
+        state = "Paused" if backend.paused else "Recording"
+        cap = str(backend.max_entries) if backend.max_entries else "unlimited"
+        return f"{state} · redacted · retention: {cap}"
+    if isinstance(backend, FileHistory):
+        return "Recording · unredacted · runtime pause unavailable"
+    return "Not recording to disk"
+
+
 def _interactive_history_menu(session: Session, console: Console) -> bool:
     root = "/history"
+    initial = "show"
     while True:
         sub = repl_choose_one(
-            title="history",
+            title="History",
             breadcrumb=root,
+            panel=True,
+            initial_value=initial,
+            note=_history_menu_summary(session),
             choices=[
-                ("show", "show"),
-                ("clear", "clear"),
-                ("off", "off"),
-                ("on", "on"),
-                ("retention", "retention"),
-                ("done", "done"),
+                ("show", "View saved history ›"),
+                ("off", "Pause recording"),
+                ("on", "Resume recording"),
+                ("retention", "Retention limit ›"),
+                ("clear", "Clear saved history ›"),
+                ("done", "Done"),
             ],
         )
         if sub is None or sub == "done":
             return True
+        initial = sub
         show_section_break = False
         if sub == "show":
-            _show_history(console)
-            show_section_break = True
+            entries = load_command_history_entries()
+            repl_show_details(
+                title="History › Saved commands",
+                fields=[(str(i), entry) for i, entry in enumerate(entries, start=1)],
+                note="No saved history yet." if not entries else "",
+            )
         elif sub == "clear":
-            _history_clear(session, console)
-            show_section_break = True
-        elif sub == "off":
-            _history_pause(session, console, paused=True)
-            show_section_break = True
-        elif sub == "on":
-            _history_pause(session, console, paused=False)
+            confirmed = repl_choose_one(
+                title="Clear saved history?",
+                breadcrumb=f"{root}{CRUMB_SEP}Clear",
+                panel=True,
+                initial_value="cancel",
+                note="Deletes saved command history. Up-arrow recall resets on next launch.",
+                choices=[("cancel", "Cancel"), ("clear", "Clear saved history")],
+            )
+            if confirmed == "clear":
+                _history_clear(session, console)
+                show_section_break = True
+        elif sub in {"off", "on"}:
+            _history_pause(session, console, paused=sub == "off")
             show_section_break = True
         elif sub == "retention":
+            backend = session.terminal.prompt_history_backend
+            if not isinstance(backend, RedactingFileHistory):
+                repl_show_details(
+                    title="History › Retention",
+                    fields=[],
+                    note="Runtime retention requires redacting file history. "
+                    "Restart with OPENSRE_HISTORY_REDACT=1 to enable it.",
+                )
+                continue
+            current = str(backend.max_entries)
+            choices = [
+                (str(n), "Unlimited" if n == 0 else f"{n} commands")
+                for n in sorted({0, 100, 500, 1000, 5000, backend.max_entries})
+            ]
             cap = repl_choose_one(
-                title="retention cap",
-                breadcrumb=f"{root}{CRUMB_SEP}retention",
-                choices=[
-                    ("100", "100"),
-                    ("500", "500"),
-                    ("1000", "1000"),
-                    ("5000", "5000"),
-                ],
+                title="Retention limit",
+                breadcrumb=f"{root}{CRUMB_SEP}Retention",
+                panel=True,
+                current_value=current,
+                initial_value=current,
+                note="Session only. Enter applies and prunes older saved commands.",
+                choices=choices,
             )
-            if cap:
+            if cap is not None:
                 _history_retention(session, console, [cap])
                 show_section_break = True
         if show_section_break:

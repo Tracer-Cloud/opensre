@@ -24,6 +24,7 @@ from config.llm_reasoning_effort import (
     parse_reasoning_effort,
     provider_supports_reasoning_effort,
 )
+from infrastructure.observability.render.debug import verbose_output_enabled
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.ui import (
@@ -35,7 +36,6 @@ from surfaces.interactive_shell.ui import (
 )
 from surfaces.shared.terminal.components.choice_menu import (
     repl_choose_one,
-    repl_section_break,
     repl_tty_interactive,
 )
 
@@ -97,16 +97,17 @@ _EFFORT_FIRST_ARGS: tuple[tuple[str, str], ...] = tuple(
 
 
 def _interactive_trust_menu(session: Session, console: Console) -> bool:
-    while True:
-        mode = repl_choose_one(
-            title="trust",
-            breadcrumb="/trust",
-            choices=[("on", "on"), ("off", "off"), ("done", "done")],
-        )
-        if mode is None or mode == "done":
-            return True
-        _cmd_trust(session, console, [mode])
-        repl_section_break(console)
+    current = "on" if session.terminal.trust_mode else "off"
+    mode = repl_choose_one(
+        title="Trust",
+        breadcrumb="/trust",
+        panel=True,
+        current_value=current,
+        initial_value=current,
+        note="Session only. Enabling trust skips approval prompts, even when /auto would ask.",
+        choices=[("off", "Off — follow approval policy"), ("on", "On — skip approval prompts")],
+    )
+    return True if mode is None else _cmd_trust(session, console, [mode])
 
 
 def _cmd_trust(session: Session, console: Console, args: list[str]) -> bool:
@@ -171,16 +172,17 @@ def _cmd_effort(session: Session, console: Console, args: list[str]) -> bool:
 
 
 def _interactive_verbose_menu(_session: Session, console: Console) -> bool:
-    while True:
-        mode = repl_choose_one(
-            title="verbose",
-            breadcrumb="/verbose",
-            choices=[("on", "on"), ("off", "off"), ("done", "done")],
-        )
-        if mode is None or mode == "done":
-            return True
-        _cmd_verbose(_session, console, [mode])
-        repl_section_break(console)
+    current = "on" if verbose_output_enabled() else "off"
+    mode = repl_choose_one(
+        title="Verbose logging",
+        breadcrumb="/verbose",
+        panel=True,
+        current_value=current,
+        initial_value=current,
+        note="Current process only. Enter applies; Esc leaves logging unchanged.",
+        choices=[("off", "Off — normal output"), ("on", "On — include debug output")],
+    )
+    return True if mode is None else _cmd_verbose(_session, console, [mode])
 
 
 def _cmd_verbose(_session: Session, console: Console, args: list[str]) -> bool:

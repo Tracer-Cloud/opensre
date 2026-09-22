@@ -202,3 +202,32 @@ def test_details_use_compact_columns_and_secondary_metadata() -> None:
     assert all(prompt_text_width(re.sub(r"\x1b\[[0-9;]*m", "", row)) == 60 for row in rows)
     assert f"{theme.DIM_ANSI}Provider" in rows[1]
     assert f"{theme.TEXT_ANSI}OpenAI" in rows[1]
+
+
+def test_resource_metadata_follows_focus_and_strips_terminal_controls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import io
+    import sys
+
+    from surfaces.shared.terminal.components import choice_menu
+
+    output = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", output)
+    monkeypatch.setattr(choice_menu, "_cols", lambda: 80)
+    monkeypatch.setattr(choice_menu, "_viewport_rows", lambda: 20)
+    actions = iter(["down", "enter"])
+    monkeypatch.setattr(choice_menu, "_read_action", lambda: next(actions))
+    assert (
+        choice_menu._pick(
+            title="Resume",
+            crumb="/resume",
+            labels=["First", "Second"],
+            panel=True,
+            choice_notes=["2026-01-01 · first-id", "2026-01-02 · second-id\x1b[2J"],
+        )
+        == 1
+    )
+    text = output.getvalue()
+    assert "first-id" in text and "second-id" in text
+    assert "\x1b[2J" not in text

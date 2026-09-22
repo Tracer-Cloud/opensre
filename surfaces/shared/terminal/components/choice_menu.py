@@ -14,7 +14,7 @@ import os
 import shutil
 import sys
 import textwrap
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from typing import Literal
 
 from rich.console import Console
@@ -440,6 +440,7 @@ def _pick(
     initial_index: int = 0,
     panel: bool = False,
     current_index: int | None = None,
+    choice_notes: list[str] | None = None,
     custom_label: str | None = None,
     multi_select: bool = False,
     values: list[str] | None = None,
@@ -492,7 +493,7 @@ def _pick(
                 index=idx,
                 width=paint_width,
                 max_height=_viewport_rows() - 1,
-                note=note,
+                note=choice_notes[idx] if choice_notes is not None else note,
                 current_index=current_index,
                 numbered=numbered,
             )
@@ -648,6 +649,7 @@ def repl_choose_one(
     initial_value: str | None = None,
     panel: bool = False,
     current_value: str | None = None,
+    choice_notes: Mapping[str, str] | None = None,
     custom_label: str | None = None,
     multi_select: bool = False,
     header: str = "",
@@ -661,6 +663,7 @@ def repl_choose_one(
 
     ``panel`` opts a simple single-choice menu into bounded framed presentation.
     ``current_value`` marks the active value independently of keyboard focus.
+    ``choice_notes`` supplies panel metadata keyed by choice value; missing keys use ``note``.
     Agent questions, multi-select, and inline custom answers keep the plain menu.
 
     ``breadcrumb`` is a slash-separated path shown dimly below the title, e.g.
@@ -683,6 +686,8 @@ def repl_choose_one(
     """
     from surfaces.shared.terminal.components.cpr_stdin import drain_stale_cpr_bytes
 
+    if choice_notes is not None and not panel:
+        raise ValueError("Choice metadata requires panel presentation")
     if panel and (multi_select or custom_label is not None or letter_keys or header):
         raise ValueError("Panel presentation supports simple single-choice menus only")
     if not choices or not repl_tty_interactive():
@@ -706,6 +711,11 @@ def repl_choose_one(
             labels=labels,
             initial_index=initial_index,
             panel=panel,
+            choice_notes=(
+                [choice_notes.get(value, note) for value in values]
+                if choice_notes is not None
+                else None
+            ),
             current_index=(
                 values.index(current_value)
                 if current_value is not None and current_value in values
