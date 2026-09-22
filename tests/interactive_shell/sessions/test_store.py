@@ -992,3 +992,28 @@ def test_session_rotates_id_on_clear() -> None:
     s.clear()
     assert s.session_id != original_id
     assert s.started_at <= time.time()
+
+
+@pytest.mark.parametrize(
+    "prompt", [None, "why is redis slow?", "/var/log/nginx/error.log has errors"]
+)
+def test_session_name_ignores_slash_commands_mirrored_into_chat(
+    tmp_path: Path, prompt: str | None
+) -> None:
+    session = _make_session()
+    with _patch_dir(tmp_path):
+        SessionStore.open_session(session)
+        for command in ("/choose", "/theme"):
+            SessionStore.append_turn(session, "slash", command)
+            SessionStore.append_turn_detail(session.session_id, "chat", command)
+        SessionStore.append_turn(session, "slash", "/resume abc12345")
+        SessionStore.append_turn(session, "cli_agent", "/resume")
+        if prompt is not None:
+            SessionStore.append_turn_detail(session.session_id, "chat", prompt)
+        path = tmp_path / f"{session.session_id}.jsonl"
+        before = path.read_bytes()
+        assert SessionStore.load_recent()[0]["name"] == (prompt or "")
+        restored = SessionStore.load_session(session.session_id)
+        assert restored is not None
+        assert restored["name"] == (prompt or "")
+        assert path.read_bytes() == before

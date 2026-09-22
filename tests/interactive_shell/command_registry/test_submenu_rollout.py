@@ -198,7 +198,7 @@ def test_resume_preserves_all_recent_choices_and_identifies_duplicate_names(
     assert selected == [entries[-1]["session_id"]]
     rows = output.getvalue().splitlines()
     for entry in entries:
-        assert any(entry["session_id"][:8] in row and "/choose" in row for row in rows)
+        assert any(f"/choose · {entry['session_id'][:8]}" in row for row in rows)
     assert "scroll" in output.getvalue()
 
 
