@@ -463,6 +463,16 @@ def get_active_theme_name() -> str:
     return _ACTIVE_THEME.name
 
 
+def menu_selection_hex() -> str:
+    """Return an accent-tinted selection surface for the active composer palette."""
+    rgb = _mix_rgb(
+        _parse_hex_color(_ACTIVE_THEME.INPUT_SURFACE),
+        _parse_hex_color(_ACTIVE_THEME.HIGHLIGHT),
+        0.16,
+    )
+    return "#" + "".join(f"{channel:02x}" for channel in rgb)
+
+
 def _apply_theme(theme: CliTheme) -> None:
     global HIGHLIGHT_ANSI, BRAND_ANSI, TEXT_ANSI, SECONDARY_ANSI, DIM_ANSI, BOLD_BRAND_ANSI
     global PROMPT_ACCENT_ANSI, PROMPT_FRAME_ANSI, DIM_COUNTER_ANSI, SURFACE_BG_ANSI
@@ -612,6 +622,7 @@ __all__ = [
     "TEXT",
     "TEXT_ANSI",
     "WARNING",
+    "menu_selection_hex",
     "reply_marker_hex",
     "reply_marker_style",
 ]

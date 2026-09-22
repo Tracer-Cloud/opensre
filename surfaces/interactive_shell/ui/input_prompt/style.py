@@ -15,6 +15,7 @@ def _build_prompt_style() -> Style:
     text_fg = f"fg:{theme.TEXT}"
     # Distinct composer plate — same role as Claude/Cursor/Droid's input surface.
     surface = f"bg:{theme.INPUT_SURFACE}"
+    selection = f"bg:{ui_theme.menu_selection_hex()}"
     return Style.from_dict(
         {
             "prompt-frame-line": f"bold {theme.HIGHLIGHT}",
@@ -22,18 +23,15 @@ def _build_prompt_style() -> Style:
             "default": text_fg,
             "placeholder": f"{theme.DIM} {surface}",
             "repl-slash-command": f"bold {theme.HIGHLIGHT} {surface}",
-            "completion-menu": f"bg:{theme.BG}",
-            "completion-menu.completion": f"{theme.TEXT} bg:{theme.BG}",
-            "completion-menu.completion.current": f"bold {theme.HIGHLIGHT} bg:{theme.BG}",
-            "completion-menu.meta.completion": f"{theme.DIM} bg:{theme.BG}",
-            "completion-menu.meta.completion.current": f"{theme.HIGHLIGHT} bg:{theme.BG}",
-            "completion-menu.border": theme.DIM,
-            "scrollbar.background": f"bg:{theme.BG}",
-            "scrollbar.button": f"bg:{theme.DIM}",
             "frame": surface,
             "frame.border": f"{theme.SECONDARY} {surface}",
             "composer": f"{theme.TEXT} {surface}",
             "composer-body": f"{theme.TEXT} {surface}",
+            "command-tray": f"{theme.TEXT} {surface}",
+            "command-tray.description": f"{theme.SECONDARY} {surface}",
+            "command-tray.hint": f"{theme.SECONDARY} {surface}",
+            "command-tray.current": f"bold {theme.HIGHLIGHT} {selection}",
+            "command-tray.current.description": f"nobold {theme.TEXT} {selection}",
             # Footer sits under the plate on terminal bg (hint chrome, not input).
             "composer-footer": theme.DIM,
             # prompt_toolkit defaults the ``bottom-toolbar`` style to

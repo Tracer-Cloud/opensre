@@ -10,7 +10,10 @@ opensre
 /help
 ```
 
-When you type `/` and browse with the arrow keys, the hint line above the prompt shows the highlighted command's description.
+Type `/` to open the command tray attached to the input. Browse with the arrow
+keys, complete with Tab, and press Enter to run the command. Esc closes the tray
+without clearing your draft or stopping running work. On narrow terminals, the
+highlighted command's description appears below the list.
 
 <Info>
   Confirmation prompts come from **`/auto`** (tool-approval autonomy) and from
@@ -36,7 +39,9 @@ When you type `/` and browse with the arrow keys, the hint line above the prompt
 
 | Key | Effect |
 | --- | --- |
-| **Up/Down** | Recall persisted command history (when enabled); during `/` completion browse, preview the highlighted command description in the hint line above the prompt |
+| **Up/Down** | Browse suggestions while the command tray is open; otherwise recall persisted command history (when enabled) |
+| **Tab** | Complete the highlighted suggestion |
+| **Esc** | Close the command tray first; otherwise stop running work or clear the draft |
 | **Ctrl+C** once | Cancel in-flight streaming work or interrupt the current prompt |
 | **Ctrl+C** twice within 2s | Exit the REPL (prints `/resume` hint) |
 | **Ctrl+D** | Exit when the prompt is empty (same resume hint as `/exit`) |
