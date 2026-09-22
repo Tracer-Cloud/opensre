@@ -49,6 +49,7 @@ from gateway.core.process.shutdown_record import (
     record_stopped,
 )
 from gateway.core.process.supervision import GATEWAY_PID_FILE
+from gateway.core.prompt_intake import PromptTurnRunner
 from infrastructure.turn_host.concurrency import (
     TurnConcurrencyGate,
     process_turn_gate,
@@ -123,7 +124,7 @@ class GatewayController:
             admission_check=admit_metered_turn,
         )
 
-        self.start_surfaces(logger=logger, handler=handler)
+        self.start_surfaces(logger=logger, handler=handler, prompt_runner=handler)
         if _gateway_hosts_scheduler():
             self.start_scheduler(logger=logger)
         else:
@@ -147,9 +148,12 @@ class GatewayController:
         *,
         logger: logging.Logger,
         handler: TurnCallback,
+        prompt_runner: PromptTurnRunner | None = None,
     ) -> None:
         """Start web + every chat transport together (via :mod:`gateway.startup`)."""
-        self.surfaces = gateway_startup.start_gateway(logger=logger, handler=handler)
+        self.surfaces = gateway_startup.start_gateway(
+            logger=logger, handler=handler, prompt_runner=prompt_runner
+        )
         self.components.update(self.surfaces.statuses)
 
     def start_scheduler(self, *, logger: logging.Logger) -> None:

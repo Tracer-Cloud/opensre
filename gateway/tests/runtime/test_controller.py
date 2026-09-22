@@ -40,7 +40,8 @@ def test_start_surfaces_delegates_to_the_startup_module(
     )
     captured: dict[str, object] = {}
 
-    def _boot(*, logger, handler):
+    def _boot(*, logger, handler, prompt_runner=None):
+        captured["prompt_runner"] = prompt_runner
         captured["logger"] = logger
         captured["handler"] = handler
         return expected

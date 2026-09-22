@@ -9,9 +9,12 @@ from integrations.hosted_gateway.client import (
     ERR_ADMIN_REQUIRED,
     ERR_INSECURE_APP_URL,
     ERR_NOT_PROVISIONED,
+    ERR_NOT_RUNNING,
     ERR_NOT_SIGNED_IN,
     ERR_NOT_SUPPORTED,
+    ERR_PROMPT_TOO_LARGE,
     ERR_UNAUTHORIZED,
+    ERR_UNKNOWN_PROMPT,
     EXPECTED_ERRORS,
     GatewayHealth,
     HostedGatewayError,
@@ -26,6 +29,9 @@ _FAILURE_TEXT = {
     ERR_NOT_SUPPORTED: "The OpenSRE app you are signed in to does not offer this yet.",
     ERR_ADMIN_REQUIRED: "Only an organization admin can start or stop the hosted gateway.",
     ERR_NOT_PROVISIONED: "Your organization has no hosted gateway to start or stop yet.",
+    ERR_NOT_RUNNING: "Your organization's hosted gateway is not running, so it cannot take a prompt.",
+    ERR_UNKNOWN_PROMPT: "The hosted gateway no longer holds that prompt; send it again.",
+    ERR_PROMPT_TOO_LARGE: "That prompt is too long for the hosted gateway; shorten it.",
     ERR_INSECURE_APP_URL: (
         "The OpenSRE app URL of this sign-in is not https, so the account token was not "
         f"sent. Sign in again with `{_SIGN_IN}`."

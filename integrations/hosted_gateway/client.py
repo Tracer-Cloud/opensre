@@ -21,6 +21,7 @@ from config.constants.hosted_gateway import (
     HOSTED_GATEWAY_HEALTH_PATH,
     HOSTED_GATEWAY_HTTP_TIMEOUT_SECONDS,
     HOSTED_GATEWAY_LOOPBACK_HOSTS,
+    HOSTED_GATEWAY_PROMPTS_PATH,
     HOSTED_GATEWAY_START_PATH,
     HOSTED_GATEWAY_STOP_PATH,
 )
@@ -36,6 +37,11 @@ ERR_NOT_SUPPORTED = "not_supported"
 ERR_ADMIN_REQUIRED = "admin_required"
 # The organization has no gateway to start or stop.
 ERR_NOT_PROVISIONED = "not_provisioned"
+# The gateway exists but no task of it is running, so it cannot take a prompt.
+ERR_NOT_RUNNING = "not_running"
+# The prompt id names nothing the gateway still holds.
+ERR_UNKNOWN_PROMPT = "unknown_prompt"
+ERR_PROMPT_TOO_LARGE = "prompt_too_large"
 
 #: Failures of the account or its setup, not of the service: nothing to report as an incident.
 EXPECTED_ERRORS = frozenset(
@@ -46,6 +52,9 @@ EXPECTED_ERRORS = frozenset(
         ERR_NOT_SUPPORTED,
         ERR_ADMIN_REQUIRED,
         ERR_NOT_PROVISIONED,
+        ERR_NOT_RUNNING,
+        ERR_UNKNOWN_PROMPT,
+        ERR_PROMPT_TOO_LARGE,
     }
 )
 
@@ -78,6 +87,21 @@ class GatewayHealth:
     size_profile: str = ""
     last_error_code: str = ""
     updated_at: str = ""
+
+
+@dataclass(frozen=True)
+class PromptRecord:
+    """One prompt on the organization's gateway, as the app reports it."""
+
+    prompt_id: str
+    state: str
+    answer: str = ""
+    question: str = ""
+    error: str = ""
+
+    @property
+    def settled(self) -> bool:
+        return self.state in {"done", "needs_input", "failed"}
 
 
 class HostedGatewayClient:
@@ -135,9 +159,33 @@ class HostedGatewayClient:
         """Ask the app to stop the organization's gateway; its state and credentials are kept."""
         return _gateway_health(self._request("POST", HOSTED_GATEWAY_STOP_PATH, _LIFECYCLE_REFUSALS))
 
-    def _request(self, method: str, path: str, refusals: dict[int, str]) -> dict[str, Any]:
+    def send_prompt(self, prompt: str, *, context: dict[str, str]) -> PromptRecord:
+        """Queue a prompt on the organization's running gateway; admins only."""
+        payload = self._request(
+            "POST",
+            HOSTED_GATEWAY_PROMPTS_PATH,
+            _PROMPT_REFUSALS,
+            body={"prompt": prompt, "context": context},
+        )
+        return _prompt_record(payload)
+
+    def prompt_result(self, prompt_id: str) -> PromptRecord:
+        """Read one prompt's state; ``unknown_prompt`` once the gateway forgot it."""
+        payload = self._request(
+            "GET", f"{HOSTED_GATEWAY_PROMPTS_PATH}/{prompt_id}", _PROMPT_RESULT_REFUSALS
+        )
+        return _prompt_record(payload)
+
+    def _request(
+        self,
+        method: str,
+        path: str,
+        refusals: dict[int, str],
+        *,
+        body: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         try:
-            response = self._http.request(method, path)
+            response = self._http.request(method, path, json=body)
         except httpx.HTTPError as exc:
             raise HostedGatewayError(ERR_UNREACHABLE) from exc
         refusal = refusals.get(response.status_code)
@@ -166,6 +214,35 @@ _LIFECYCLE_REFUSALS: dict[int, str] = {
     HTTPStatus.FORBIDDEN: ERR_ADMIN_REQUIRED,
     HTTPStatus.CONFLICT: ERR_NOT_PROVISIONED,
 }
+
+#: A prompt needs an admin and a running task; the app answers 409 for both missing cases.
+_PROMPT_REFUSALS: dict[int, str] = {
+    **_REFUSALS,
+    HTTPStatus.FORBIDDEN: ERR_ADMIN_REQUIRED,
+    HTTPStatus.CONFLICT: ERR_NOT_RUNNING,
+    HTTPStatus.REQUEST_ENTITY_TOO_LARGE: ERR_PROMPT_TOO_LARGE,
+}
+
+#: Reading a result: 404 is the prompt, not the route, being unknown.
+_PROMPT_RESULT_REFUSALS: dict[int, str] = {
+    HTTPStatus.UNAUTHORIZED: ERR_UNAUTHORIZED,
+    HTTPStatus.FORBIDDEN: ERR_ADMIN_REQUIRED,
+    HTTPStatus.NOT_FOUND: ERR_UNKNOWN_PROMPT,
+    HTTPStatus.CONFLICT: ERR_NOT_RUNNING,
+}
+
+
+def _prompt_record(payload: dict[str, Any]) -> PromptRecord:
+    prompt_id, state = payload.get("prompt_id"), payload.get("state")
+    if not isinstance(prompt_id, str) or not isinstance(state, str) or not prompt_id:
+        raise HostedGatewayError(ERR_INVALID_RESPONSE)
+    return PromptRecord(
+        prompt_id=prompt_id,
+        state=state,
+        answer=_text(payload.get("answer")),
+        question=_text(payload.get("question")),
+        error=_text(payload.get("error")),
+    )
 
 
 def _gateway_health(payload: dict[str, Any]) -> GatewayHealth:
@@ -204,12 +281,16 @@ __all__ = [
     "ERR_INSECURE_APP_URL",
     "ERR_INVALID_RESPONSE",
     "ERR_NOT_PROVISIONED",
+    "ERR_NOT_RUNNING",
     "ERR_NOT_SIGNED_IN",
     "ERR_NOT_SUPPORTED",
+    "ERR_PROMPT_TOO_LARGE",
     "ERR_UNAUTHORIZED",
+    "ERR_UNKNOWN_PROMPT",
     "ERR_UNREACHABLE",
     "EXPECTED_ERRORS",
     "GatewayHealth",
     "HostedGatewayClient",
     "HostedGatewayError",
+    "PromptRecord",
 ]

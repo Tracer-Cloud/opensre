@@ -8,10 +8,11 @@ from filelock import Timeout
 
 from config.constants.gateway import HEALTH_TASK_STORE_LOCK_TIMEOUT_SECONDS
 from config.constants.paths import get_memory_dir, get_sessions_dir
-from infrastructure.scheduling.scheduler.storage import (
-    default_task_store_path,
-    get_task_store_snapshot,
-)
+from infrastructure.scheduling.scheduler.storage import default_task_store_path
+
+# The task-store reader itself, not the package's backlog variant: that one also
+# opens the run database when the task file is absent, with its own waits and errors.
+from infrastructure.scheduling.scheduler.storage.task_store import get_task_store_snapshot
 
 
 @dataclass(frozen=True)

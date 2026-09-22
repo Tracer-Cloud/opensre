@@ -39,6 +39,27 @@ def test_a_held_task_store_lock_makes_the_count_zero_instead_of_blocking(
     assert waited < 2.0
 
 
+def test_a_missing_task_file_counts_zero_without_opening_the_run_database(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Arrange: no task file, and a run database that would fail if inspected
+    _no_task_store(monkeypatch, tmp_path)
+
+    def run_store_must_not_be_opened(*_args: object, **_kwargs: object) -> object:
+        raise AssertionError("the health count opened the scheduler run database")
+
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.backlog_status.get_task_store_snapshot",
+        run_store_must_not_be_opened,
+    )
+
+    # Act
+    counts = read_state_counts()
+
+    # Assert
+    assert counts.scheduled_tasks == 0
+
+
 def test_counts_are_zero_when_nothing_has_been_written_yet(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

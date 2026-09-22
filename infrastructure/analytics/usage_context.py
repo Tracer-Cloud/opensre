@@ -35,6 +35,8 @@ class UsageSurface(StrEnum):
     TELEGRAM = "telegram"
     DISCORD = "discord"
     BUZZ = "buzz"
+    #: A prompt sent to the hosted gateway from a signed-in shell.
+    PROMPT = "prompt"
 
 
 CANONICAL_SURFACES: Final[frozenset[str]] = frozenset(member.value for member in UsageSurface)

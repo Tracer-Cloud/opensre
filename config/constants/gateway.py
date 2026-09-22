@@ -27,6 +27,18 @@ TURN_TIMEOUT_MESSAGE = "This is taking longer than expected. Please try again."
 UNAUTHORIZED_MESSAGE = "You're not authorized to use this bot. Ask an admin to add you."
 USER_STOP_MESSAGE = "Stopped."
 
+#: Remote prompt intake: one prompt in, one answer out, polled by id.
+PROMPT_ROUTE_PATH = "/v1/prompt"
+PROMPT_MAX_CHARS = 8_000
+PROMPT_CONTEXT_MAX_ITEMS = 16
+PROMPT_CONTEXT_VALUE_MAX_CHARS = 512
+PROMPT_QUEUE_MAX = 8
+PROMPT_RESULT_RETENTION_SECONDS = 3_600.0
+#: Actor recorded for a remote prompt when the caller names none.
+PROMPT_DEFAULT_ACTOR = "remote-shell"
+#: The prompt worker ends after its current job; it gets this slice of the stop budget.
+PROMPT_WORKER_STOP_TIMEOUT_SECONDS = 2.0
+
 #: Postgres DSN for the gateway's shared repositories; unset means process-local storage.
 DATABASE_URL_ENV = "DATABASE_URL"
 
@@ -45,6 +57,14 @@ __all__ = [
     "SCHEDULER_RELOAD_JOIN_TIMEOUT_SECONDS",
     "SCHEDULER_STOP_BUDGET_SHARE",
     "NO_ACTIVE_TURN_MESSAGE",
+    "PROMPT_CONTEXT_MAX_ITEMS",
+    "PROMPT_CONTEXT_VALUE_MAX_CHARS",
+    "PROMPT_DEFAULT_ACTOR",
+    "PROMPT_MAX_CHARS",
+    "PROMPT_QUEUE_MAX",
+    "PROMPT_RESULT_RETENTION_SECONDS",
+    "PROMPT_ROUTE_PATH",
+    "PROMPT_WORKER_STOP_TIMEOUT_SECONDS",
     "TURN_ERROR_MESSAGE",
     "TURN_TIMEOUT_MESSAGE",
     "UNAUTHORIZED_MESSAGE",

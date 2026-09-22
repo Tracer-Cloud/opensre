@@ -351,6 +351,30 @@ if TYPE_CHECKING:
         NO_ACTIVE_TURN_MESSAGE as NO_ACTIVE_TURN_MESSAGE,
     )
     from config.constants.gateway import (
+        PROMPT_CONTEXT_MAX_ITEMS as PROMPT_CONTEXT_MAX_ITEMS,
+    )
+    from config.constants.gateway import (
+        PROMPT_CONTEXT_VALUE_MAX_CHARS as PROMPT_CONTEXT_VALUE_MAX_CHARS,
+    )
+    from config.constants.gateway import (
+        PROMPT_DEFAULT_ACTOR as PROMPT_DEFAULT_ACTOR,
+    )
+    from config.constants.gateway import (
+        PROMPT_MAX_CHARS as PROMPT_MAX_CHARS,
+    )
+    from config.constants.gateway import (
+        PROMPT_QUEUE_MAX as PROMPT_QUEUE_MAX,
+    )
+    from config.constants.gateway import (
+        PROMPT_RESULT_RETENTION_SECONDS as PROMPT_RESULT_RETENTION_SECONDS,
+    )
+    from config.constants.gateway import (
+        PROMPT_ROUTE_PATH as PROMPT_ROUTE_PATH,
+    )
+    from config.constants.gateway import (
+        PROMPT_WORKER_STOP_TIMEOUT_SECONDS as PROMPT_WORKER_STOP_TIMEOUT_SECONDS,
+    )
+    from config.constants.gateway import (
         SCHEDULER_RELOAD_JOIN_TIMEOUT_SECONDS as SCHEDULER_RELOAD_JOIN_TIMEOUT_SECONDS,
     )
     from config.constants.gateway import (
@@ -497,6 +521,15 @@ if TYPE_CHECKING:
     )
     from config.constants.hosted_gateway import (
         HOSTED_GATEWAY_LOOPBACK_HOSTS as HOSTED_GATEWAY_LOOPBACK_HOSTS,
+    )
+    from config.constants.hosted_gateway import (
+        HOSTED_GATEWAY_PROMPT_POLL_SECONDS as HOSTED_GATEWAY_PROMPT_POLL_SECONDS,
+    )
+    from config.constants.hosted_gateway import (
+        HOSTED_GATEWAY_PROMPT_WAIT_SECONDS as HOSTED_GATEWAY_PROMPT_WAIT_SECONDS,
+    )
+    from config.constants.hosted_gateway import (
+        HOSTED_GATEWAY_PROMPTS_PATH as HOSTED_GATEWAY_PROMPTS_PATH,
     )
     from config.constants.hosted_gateway import (
         HOSTED_GATEWAY_SETTINGS_PATH as HOSTED_GATEWAY_SETTINGS_PATH,

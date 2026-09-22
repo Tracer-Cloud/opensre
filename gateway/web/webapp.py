@@ -23,6 +23,7 @@ from gateway.core.process.component_status import read_component_status
 from gateway.core.process.readiness import is_gateway_ready
 from gateway.core.process.shutdown_record import PREVIOUS_SHUTDOWN_COMPONENT
 from gateway.core.process.state_counts import read_state_counts
+from gateway.web.prompt_routes import router as prompt_router
 from infrastructure.alert_intake import router as alert_router
 from infrastructure.request_body_limit import RequestBodyLimitMiddleware
 
@@ -50,6 +51,8 @@ app.add_middleware(RequestBodyLimitMiddleware)
 # Health liveness (/healthz) and alert intake (/alerts) live in the shared
 # router so the interactive shell can serve them without importing the gateway.
 app.include_router(alert_router)
+# Remote prompts run only inside the gateway process, which attaches the queue at startup.
+app.include_router(prompt_router)
 
 
 def get_health_response() -> HealthResponse:
