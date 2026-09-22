@@ -127,3 +127,58 @@ def test_tiny_panel_shortcuts_cannot_select_hidden_choices(
         )
         == 12
     )
+
+
+@pytest.mark.parametrize(("width", "height"), [(80, 20), (39, 10), (15, 6), (8, 3)])
+def test_details_wrap_and_scroll_without_losing_model_text(width: int, height: int) -> None:
+    from surfaces.shared.terminal.components.detail_panel import build_detail_panel
+
+    model = "custom-model-" + "x" * 80
+    seen: list[str] = []
+    offset = 0
+    while True:
+        lines, actual, limit = build_detail_panel(
+            "Configuration",
+            [("Reasoning model", model)],
+            width=width,
+            height=height,
+            offset=offset,
+        )
+        plain = [re.sub(r"\x1b\[[0-9;]*m", "", line) for line in lines]
+        assert len(lines) <= height
+        assert all(prompt_text_width(line) == width for line in plain)
+        if offset == 0:
+            seen.extend(plain[1:-3] if width >= 12 and height >= 5 else plain)
+        elif actual == offset:
+            seen.append(plain[-4] if width >= 12 and height >= 5 else plain[-1])
+        if offset >= limit:
+            break
+        offset += 1
+    assert model in "".join(line.strip(" │") for line in seen)
+
+
+@pytest.mark.parametrize("dismiss", ["enter", "cancel"])
+def test_details_dismiss_and_erase_on_enter_or_escape(
+    monkeypatch: pytest.MonkeyPatch, dismiss: str
+) -> None:
+    import io
+    import sys
+
+    from surfaces.shared.terminal.components import choice_menu, detail_panel
+
+    output = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", output)
+    monkeypatch.setattr(choice_menu, "repl_tty_interactive", lambda: True)
+    monkeypatch.setattr(choice_menu, "_clear_prompt_toolkit_paint", lambda: None)
+    monkeypatch.setattr(detail_panel, "drain_stale_cpr_bytes", lambda: None)
+    monkeypatch.setattr(choice_menu, "_menu_paint_width", lambda: 39)
+    monkeypatch.setattr(choice_menu, "_viewport_rows", lambda: 20)
+    monkeypatch.setattr(choice_menu, "_cols", lambda: 20)
+    monkeypatch.setattr(choice_menu, "_read_action", lambda: dismiss)
+    erased: list[int] = []
+    left: list[bool] = []
+    monkeypatch.setattr(choice_menu, "_erase_menu_block", lambda n, **_: erased.append(n))
+    monkeypatch.setattr(choice_menu, "leave_inline_menu", lambda: left.append(True))
+    detail_panel.repl_show_details(title="Configuration", fields=[("Provider", "OpenAI")])
+    assert erased == [output.getvalue().count("\n") * 2]
+    assert left == [True]

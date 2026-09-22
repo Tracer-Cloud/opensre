@@ -175,8 +175,10 @@ Bare invocation opens a picker or submenu:
 | `/history` | show / clear / off / on / retention |
 | `/resume` | Numbered list of recent sessions |
 
-`/model` keeps its menu running: **View configuration** prints the current models
-and returns to the menu. Leave with **Done** or Esc. In a child picker, Esc goes
+`/model` keeps its menu running: **View configuration** opens read-only details
+with wrapped values and arrow-key scrolling when needed. Enter or Esc returns to
+**View configuration** without adding a table to the transcript. Leave the menu
+with **Done** or Esc. In a child picker, Esc goes
 back one step without applying a change.
 
 `/model` and `/theme` use compact, scrolling panels. The highlighted row is
@@ -620,7 +622,7 @@ Show the active hosted model. An authenticated interactive shell is account-mana
 
 **Account lock:** `set`, `restore`, and `toolcall set` explain that the model is managed by the OpenSRE account and make no change. The account route overrides local provider variables for every model role while the session is signed in.
 
-**Bare `/model`:** in a terminal this opens a menu rather than printing the table. The menu stays open: **View configuration** prints the current models and hands you back to it, so leave with **Done** or Esc. **Change model**, **Restore provider defaults**, and **Configure tool-call model** close it once the change succeeds. Use `/model show` when you only want the table.
+**Bare `/model`:** in a terminal this opens a menu rather than printing the table. **View configuration** opens read-only details; Enter or Esc returns to the menu. Leave with **Done** or Esc. **Change model**, **Restore provider defaults**, and **Configure tool-call model** close it once the change succeeds. Use `/model show` when you only want the table.
 
 **Reasoning vs toolcall model:** Reasoning model drives chat and planning; toolcall model drives tool invocation when the provider exposes a separate slot (common on Anthropic/OpenAI).
 

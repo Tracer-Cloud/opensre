@@ -9,6 +9,7 @@ from rich.console import Console
 import surfaces.interactive_shell.command_registry.repl_data as repl_data
 from config.llm_auth.provider_catalog import provider_spec
 from surfaces.interactive_shell.ui import render_models_table, resolve_provider_models
+from surfaces.shared.terminal.components.detail_panel import repl_show_details
 
 
 def render_current_models(console: Console) -> None:
@@ -35,4 +36,30 @@ def current_model_selection() -> tuple[str, str, str]:
     return (provider, reasoning, toolcall)
 
 
-__all__ = ["current_model_selection", "render_current_models"]
+def show_model_configuration() -> None:
+    """Show effective configuration without appending a table to the transcript."""
+    provider, reasoning, toolcall = current_model_selection()
+    source = repl_data.load_llm_source()
+    spec = provider_spec(provider)
+    repl_show_details(
+        title="Model › Configuration",
+        fields=[
+            (
+                "Provider",
+                spec.label.removesuffix(" API key")
+                if spec is not None
+                else provider or "Not configured",
+            ),
+            ("Reasoning model", reasoning or "Provider default"),
+            ("Tool-call model", toolcall or "Provider default"),
+            ("Configuration source", source),
+        ],
+        note=(
+            "Model settings are managed by your OpenSRE account."
+            if source == "OpenSRE webapp"
+            else ""
+        ),
+    )
+
+
+__all__ = ["current_model_selection", "render_current_models", "show_model_configuration"]

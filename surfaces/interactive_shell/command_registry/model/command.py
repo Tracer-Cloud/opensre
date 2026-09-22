@@ -11,6 +11,7 @@ from config.constants.llm import LLM_PROVIDER_ENV
 from surfaces.interactive_shell.command_registry.model.presentation import (
     current_model_selection,
     render_current_models,
+    show_model_configuration,
 )
 from surfaces.interactive_shell.command_registry.model.switching import (
     _provider_allows_custom_models,
@@ -333,9 +334,7 @@ def _interactive_model_menu(session: Session, console: Console) -> bool:
             return True
         initial = action
         if action == "show":
-            repl_section_break(console)
-            render_current_models(console)
-            repl_section_break(console)
+            show_model_configuration()
             continue
         if action == "set":
             switched = _interactive_set_provider(console)

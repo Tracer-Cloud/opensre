@@ -8,6 +8,7 @@ import subprocess
 import sys
 import threading
 from pathlib import Path
+from typing import Any
 
 import pytest
 from prompt_toolkit.history import FileHistory
@@ -804,21 +805,33 @@ class TestModelCommand:
         stored = json.loads(store_path.read_text(encoding="utf-8"))
         assert stored["targets"]["local"]["provider"] == "anthropic"
 
-    def test_model_interactive_show_then_done_shows_table_once(
+    def test_model_interactive_details_return_to_focused_action(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         self._patch_llm(monkeypatch)
         from surfaces.interactive_shell.command_registry.model import command as model_cmd
+        from surfaces.interactive_shell.command_registry.model import presentation
 
         monkeypatch.setattr(model_cmd, "repl_tty_interactive", lambda: True)
         picks = iter(["show", "done"])
-        monkeypatch.setattr(model_cmd, "repl_choose_one", lambda **_: next(picks))
+        focus: list[str] = []
+        details: list[dict[str, Any]] = []
+
+        def choose(**kwargs: Any) -> str:
+            focus.append(kwargs["initial_value"])
+            return next(picks)
+
+        monkeypatch.setattr(model_cmd, "repl_choose_one", choose)
+        monkeypatch.setattr(presentation, "repl_show_details", lambda **kw: details.append(kw))
         console, buf = _capture()
         session = Session()
         session.terminal.exclusive_stdin_active = True
         dispatch_slash("/model", session, console)
-        assert "anthropic" in buf.getvalue()
+        assert focus == ["set", "show"]
+        assert len(details) == 1
+        assert dict(details[0]["fields"])["Provider"].startswith("Anthropic")
+        assert "reasoning model" not in buf.getvalue().lower()
 
     def test_bare_model_without_exclusive_stdin_shows_table_not_menu(
         self,
