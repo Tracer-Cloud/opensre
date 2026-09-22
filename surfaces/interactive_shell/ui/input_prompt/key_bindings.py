@@ -88,6 +88,8 @@ def _build_prompt_key_bindings() -> KeyBindings:
         if event.data in _MODIFIED_ENTER_SEQUENCES:
             event.current_buffer.newline(copy_margin=False)
             return
+        if event.current_buffer.complete_state is not None:
+            _tab_expand_or_menu(event.current_buffer)
         event.current_buffer.validate_and_handle()
 
     @bindings.add("c-j")

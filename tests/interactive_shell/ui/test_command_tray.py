@@ -15,6 +15,7 @@ from prompt_toolkit.buffer import CompletionState
 from prompt_toolkit.completion import CompleteEvent, Completion
 from prompt_toolkit.data_structures import Size
 from prompt_toolkit.document import Document
+from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.key_binding.key_processor import KeyPress
 from prompt_toolkit.keys import Keys
@@ -23,6 +24,7 @@ from prompt_toolkit.output import DummyOutput
 from surfaces.interactive_shell.ui.input_prompt import build_prompt_session
 from surfaces.interactive_shell.ui.input_prompt.command_tray import CommandTrayControl
 from surfaces.interactive_shell.ui.input_prompt.key_bindings import (
+    _SHIFT_ENTER_SEQUENCE,
     build_cancel_key_bindings,
     install_session_key_bindings,
 )
@@ -51,6 +53,8 @@ async def _running_prompt(
         create_app_session(input=pipe, output=_SizedOutput(columns, rows)),
     ):
         prompt = build_prompt_session(hide_composer=hide_composer)
+        prompt.history = InMemoryHistory()
+        prompt.default_buffer.history = prompt.history
         rendered = asyncio.Event()
 
         def _on_render(_app: object) -> None:
@@ -63,7 +67,7 @@ async def _running_prompt(
             with set_app(prompt.app):
                 yield prompt
         finally:
-            if prompt.app.is_running:
+            if prompt.app.is_running and not prompt.app.is_done:
                 prompt.app.exit(result="")
             await asyncio.wait_for(task, timeout=5)
 
@@ -127,6 +131,32 @@ async def test_tray_is_attached_bounded_and_keeps_selected_result_visible() -> N
         assert not any(
             "Commands" in line or "Tab complete" in line for line in _screen_lines(prompt)
         )
+
+
+@pytest.mark.asyncio
+async def test_enter_submits_the_visibly_highlighted_automatic_completion() -> None:
+    async with _running_prompt() as prompt:
+        _complete(prompt, "/")
+        state = prompt.default_buffer.complete_state
+        assert state is not None and state.complete_index is None
+        assert any("› /integrations" in line for line in _screen_lines(prompt))
+
+        _press(prompt, Keys.ControlM)
+
+        assert prompt.app.future is not None
+        assert prompt.app.future.result() == "/integrations"
+
+
+@pytest.mark.asyncio
+async def test_modified_enter_keeps_newline_behavior_with_completions_open() -> None:
+    async with _running_prompt() as prompt:
+        _complete(prompt, "/")
+
+        prompt.app.key_processor.feed(KeyPress(Keys.ControlM, _SHIFT_ENTER_SEQUENCE))
+        prompt.app.key_processor.process_keys()
+
+        assert prompt.default_buffer.text == "/\n"
+        assert not prompt.app.is_done
 
 
 @pytest.mark.asyncio

@@ -11,7 +11,8 @@ opensre
 ```
 
 Type `/` to open the command tray attached to the input. Browse with the arrow
-keys, complete with Tab, and press Enter to run the command. Esc closes the tray
+keys and press Enter to run the highlighted suggestion, or Tab to complete it
+and edit before running. Esc closes the tray
 without clearing your draft or stopping running work. On narrow terminals, the
 highlighted command's description appears below the list.
 
@@ -41,6 +42,7 @@ highlighted command's description appears below the list.
 | --- | --- |
 | **Up/Down** | Browse suggestions while the command tray is open; otherwise recall persisted command history (when enabled) |
 | **Tab** | Complete the highlighted suggestion |
+| **Enter** | Run the highlighted suggestion, or submit the draft when the tray is closed |
 | **Esc** | Close the command tray first; otherwise stop running work or clear the draft |
 | **Ctrl+C** once | Cancel in-flight streaming work or interrupt the current prompt |
 | **Ctrl+C** twice within 2s | Exit the REPL (prints `/resume` hint) |
