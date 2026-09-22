@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import threading
+from collections.abc import Callable
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -27,6 +27,7 @@ class _FakeClient:
         self.posts: list[dict[str, Any]] = []
         self.edits: list[dict[str, Any]] = []
         self.answers: list[dict[str, Any]] = []
+        self.on_post: Callable[[], None] | None = None
 
     def send_message(
         self,
@@ -46,6 +47,8 @@ class _FakeClient:
         )
         if not self.post_ok:
             return False, "fail", ""
+        if self.on_post is not None:
+            self.on_post()
         return True, "", f"msg-{len(self.posts)}"
 
     def edit_message_text(
@@ -98,16 +101,18 @@ def _prompter(client: _FakeClient, broker: ApprovalBroker) -> TelegramApprovalPr
     return TelegramApprovalPrompter(client=client, broker=broker, chat_id="42")
 
 
-def _click_later(
+def _click_on_post(
     broker: ApprovalBroker,
     client: _FakeClient,
     *,
     action_id: str,
     user_id: str = "42",
 ) -> None:
+    """Deliver a click only once the prompt exists, without a timer race."""
+
     def _click() -> None:
         approval_id = _approval_id_from_markup(client.posts[-1]["reply_markup"])
-        handle_callback_query(
+        resolved = handle_callback_query(
             TelegramCallbackQuery(
                 update_id=1,
                 user_id=user_id,
@@ -119,15 +124,16 @@ def _click_later(
             client=client,  # type: ignore[arg-type]
             allowed_user_ids=["42"],
         )
+        assert resolved is True
 
-    threading.Timer(0.05, _click).start()
+    client.on_post = _click
 
 
 def test_approved_click_lets_the_tool_run() -> None:
     broker = ApprovalBroker()
     client = _FakeClient()
     hooks = approval_tool_hooks(_prompter(client, broker))
-    _click_later(broker, client, action_id=APPROVE_ACTION_ID)
+    _click_on_post(broker, client, action_id=APPROVE_ACTION_ID)
 
     result = hooks.before_tool_call(_request(_FakeTool()))
     assert result is not None
@@ -139,11 +145,12 @@ def test_denied_click_blocks_the_tool() -> None:
     broker = ApprovalBroker()
     client = _FakeClient()
     hooks = approval_tool_hooks(_prompter(client, broker))
-    _click_later(broker, client, action_id=DENY_ACTION_ID)
+    _click_on_post(broker, client, action_id=DENY_ACTION_ID)
 
     result = hooks.before_tool_call(_request(_FakeTool()))
     assert result is not None
     assert result.blocked is True
+    assert "decision by <@42>" in result.reason
 
 
 def test_failed_prompt_post_fails_closed() -> None:
