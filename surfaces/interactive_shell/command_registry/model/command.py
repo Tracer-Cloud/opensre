@@ -54,6 +54,11 @@ def _choose_provider_value(
     current_provider, _, _ = current_model_selection()
     choices = _provider_menu_choices()
     featured = {value for value, _ in choices}
+    current_bucket = (
+        current_provider
+        if current_provider in featured
+        else (OTHER_PROVIDER_SELECTION if current_provider else None)
+    )
     initial = initial_value or current_provider
     show_other = initial_value is not None and initial_value not in featured
     while True:
@@ -64,7 +69,7 @@ def _choose_provider_value(
                 choices=choices,
                 panel=True,
                 initial_value=initial if initial in featured else OTHER_PROVIDER_SELECTION,
-                current_value=current_provider,
+                current_value=current_bucket,
             )
             if provider_value != OTHER_PROVIDER_SELECTION:
                 return provider_value

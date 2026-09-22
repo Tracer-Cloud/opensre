@@ -10,7 +10,7 @@ from surfaces.shared.terminal.components.menu_panel import build_menu_panel
 from surfaces.shared.terminal.prompt_layout import prompt_text_width
 
 
-@pytest.mark.parametrize(("width", "height"), [(80, 20), (39, 12), (20, 6), (8, 3)])
+@pytest.mark.parametrize(("width", "height"), [(80, 20), (39, 12), (20, 6), (8, 3), (40, 3)])
 def test_panel_keeps_focused_choice_visible_and_within_terminal_cells(
     width: int, height: int
 ) -> None:
@@ -26,7 +26,7 @@ def test_panel_keeps_focused_choice_visible_and_within_terminal_cells(
     )
     plain = [re.sub(r"\x1b\[[0-9;]*m", "", line) for line in lines]
     assert len(lines) <= height
-    assert all(prompt_text_width(line) <= width for line in plain)
+    assert all(prompt_text_width(line) == width for line in plain)
     assert any("›" in line for line in plain)
     if width >= 20:
         assert any("Model 17" in line for line in plain)

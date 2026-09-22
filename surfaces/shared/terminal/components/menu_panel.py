@@ -28,6 +28,8 @@ def build_menu_panel(
     index = max(0, min(index, len(labels) - 1))
     if width < 12 or max_height < 5:
         text = clip_prompt_text(f"› {labels[index]}", width)
+        # Cleanup records the full paint width, including this reduced-height layout.
+        text += " " * (width - prompt_text_width(text))
         return [f"{ui_theme.MENU_SELECTION_ROW_ANSI}{text}{ui_theme.ANSI_RESET}"]
 
     inner = width - 2

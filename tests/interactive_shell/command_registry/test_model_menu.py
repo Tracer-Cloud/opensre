@@ -89,3 +89,24 @@ def test_cancel_custom_toolcall_returns_to_picker_without_mutation(
         "LLM provider",
     ]
     assert menu[2]["initial_value"] == "__custom__"
+
+
+def test_nonfeatured_current_provider_marks_both_bucket_and_provider(
+    monkeypatch: pytest.MonkeyPatch, menu: list[dict[str, Any]]
+) -> None:
+    monkeypatch.setattr(
+        command, "current_model_selection", lambda: ("anthropic", "active", "tools")
+    )
+    choices = iter([command.OTHER_PROVIDER_SELECTION, None, None])
+
+    def choose(**kwargs: Any) -> str | None:
+        menu.append(kwargs)
+        return next(choices)
+
+    monkeypatch.setattr(command, "repl_choose_one", choose)
+    assert (
+        command._choose_provider_value(title="Provider", breadcrumb="/model › Change model") is None
+    )
+    assert menu[0]["current_value"] == command.OTHER_PROVIDER_SELECTION
+    assert menu[1]["current_value"] == "anthropic"
+    assert menu[2]["current_value"] == command.OTHER_PROVIDER_SELECTION
