@@ -3,56 +3,60 @@ title: "Enterprise setup (OpenSRE Cloud)"
 description: "Set up OpenSRE for your organization in the hosted OpenSRE Cloud web app"
 ---
 
-This guide is for teams that manage OpenSRE from the hosted web app at [app.tracer.cloud](https://app.tracer.cloud).
+This guide is for teams using the hosted OpenSRE account and an optional
+organization-managed gateway at [app.opensre.com](https://app.opensre.com).
 
 ## 1) Create your organization account
 
-Sign up at [opensre.com](https://www.opensre.com) and continue in [app.tracer.cloud/sign-up](https://app.tracer.cloud/sign-up) to create or join your organization workspace.
+Sign up at [app.opensre.com](https://app.opensre.com) to create or join your
+organization workspace. The same account activates the hosted model when an
+engineer signs in from the CLI.
 
 ## 2) Complete workspace onboarding
 
-In the web app, complete onboarding to:
+In the web app, complete the available workspace onboarding to:
 
-- Define your workspace context (team name, default channels)
-- Connect your first integrations (start with observability + messaging)
-- Verify access and permissions for each connector
+- Confirm the organization and membership
+- Review account usage
+- Provision the organization-managed gateway, if your plan includes one
 
-## 3) Configure integrations for your org
+## 3) Run the local CLI
 
-Enterprise integrations are configured in the web app and shared across your organization. Use the integration catalog for credential requirements:
-
-- [Integrations overview](/integrations-overview) — local CLI and hosted setup paths
-- [Datadog](/datadog) — API key + application key (hosted flow in Option 3)
-- [Grafana](/grafana) — service account token + endpoint URL
-- [AWS](/aws) — cross-cloud infrastructure mapping
-- [Slack](/messaging/slack) — chat with OpenSRE from your channels
-
-<Frame>
-  ![Integrations](/images/integrations.png)
-</Frame>
-
-### Verification checklist
-
-After connecting each integration in the web app:
-
-1. Confirm the connector shows **connected** in **Integrations**
-2. Ask OpenSRE a test question that uses the connector (e.g. *what alerts fired in the last hour?*)
-3. Confirm the answer arrives in your configured Slack channel (see [Slack setup](/messaging/slack))
-
-For Slack-specific help, use **Support** in the app or follow the self-serve steps in [Slack integration](/messaging/slack).
-
-## 4) Chat with shared context
-
-After integrations are connected, every OpenSRE conversation uses the same organization-level connectors and policies. Engineers can also use the local CLI, which references the same integration catalog.
-
-## Local CLI users in enterprise teams
-
-If your engineers also use OpenSRE locally:
+Each engineer installs OpenSRE and signs in with the organization account:
 
 ```bash
+curl -fsSL https://install.opensre.com | bash
 opensre
-# inside the shell:
-onboard
 ```
 
-This configures local LLM credentials while org-wide connectors remain in the web app. See [Install locally](/install-local) for the full local path.
+The browser sign-in activates the account-hosted model. GitHub and production
+systems are still optional integrations; account sign-in does not connect them.
+
+## 4) Manage the organization gateway
+
+An organization admin provisions the gateway from
+[Agent Backend settings](https://app.opensre.com/settings/agent-backend). Once
+it exists, a signed-in shell user can ask OpenSRE to check its health. Admins
+can also ask the shell to start or stop it; both operations require approval.
+
+Stopping the gateway keeps its configuration and credentials. Remote loops and
+chat integrations remain stopped until an admin starts it again. See
+[Deployment](/deployment#opensre-cloud-managed-gateway).
+
+## 5) Configure integrations locally
+
+Organization-wide hosted connectors are not available in the current CLI
+release. Configure the integrations an engineer or self-hosted gateway needs on
+that machine:
+
+```bash
+opensre integrations setup <service>
+opensre integrations verify <service>
+```
+
+Start with [Integrations overview](/integrations-overview). For a local model or
+bring-your-own-provider setup, run `opensre onboard`; this is optional when the
+account-hosted model is sufficient.
+
+For a completely self-hosted gateway instead of the managed service, follow
+[Deployment](/deployment#self-hosted-container).

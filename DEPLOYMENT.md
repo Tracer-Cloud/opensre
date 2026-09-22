@@ -1,8 +1,11 @@
 ## Deployment
 
-OpenSRE has two primary AWS EC2 paths and a general hosted runtime option for
-ASGI-compatible platforms:
+OpenSRE has an OpenSRE Cloud managed gateway, an AWS EC2 path, and a general
+hosted runtime option for ASGI-compatible platforms:
 
+- **OpenSRE Cloud managed gateway** — an organization admin provisions it in
+  the web app. Signed-in shell users can check, start, or stop their
+  organization's gateway; start and stop require approval and admin access.
 - **Slack** — deployed and operated separately, not from this repo. The EC2
   path below never ships `SLACK_*` variables (Socket Mode is single-consumer —
   a second consumer would split events).
@@ -91,8 +94,13 @@ ECS, Vercel, or another ASGI-capable host.
     - `OPENROUTER_API_KEY` when `LLM_PROVIDER=openrouter`
     - `TRUSTEDROUTER_API_KEY` when `LLM_PROVIDER=trustedrouter`
     - `GEMINI_API_KEY` when `LLM_PROVIDER=gemini`
-3. Add `DATABASE_URI` and `REDIS_URI` for hosted layouts that need persistence.
-4. Add any additional environment variables required by your integrations.
+3. Set `DATABASE_URL` when the gateway needs shared Postgres-backed state. It
+   is required for Slack Events API unless you deliberately use the
+   single-replica local-dedup escape hatch.
+4. Put `OPENSRE_HOME` on a shared mount before running multiple processes that
+   need the same scheduler tasks. If `OPENSRE_CONTEXT_ROOT` is set, make that
+   root durable and shared for organization-bound sessions too.
+5. Add any additional environment variables required by your integrations.
 
 Minimum environment:
 
@@ -106,8 +114,12 @@ The full set of supported provider keys and optional model overrides is document
 
 ### Railway
 
-Ensure the Railway project has Postgres and Redis services, and that the OpenSRE service
-has `DATABASE_URI` and `REDIS_URI` set to those connection strings before deploying.
+Add Railway Postgres and set `DATABASE_URL` when you use Slack Events API or
+another layout that needs gateway records shared between replicas. Redis is
+not part of the gateway persistence path. Scheduler files still need a shared
+`OPENSRE_HOME` mount. Organization-bound sessions use `OPENSRE_CONTEXT_ROOT`
+when set and otherwise fall back to `OPENSRE_HOME`; make both durable when they
+differ.
 
 For telemetry labeling, set `OPENSRE_DEPLOYMENT_METHOD=railway` on the Railway service.
 

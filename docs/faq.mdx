@@ -27,16 +27,18 @@ description: "Common questions about OpenSRE."
   <Accordion title="Which deployment path should I use?">
     Most users start with the local CLI (`curl` install, then
     `opensre` to sign in, plus `opensre integrations setup` for the
-    tools you want OpenSRE to query). For organization-wide hosted connectors, use
+    tools you want OpenSRE to query). For an organization-managed runtime, use
     [Enterprise setup](/install-enterprise) at
-    [app.tracer.cloud](https://app.tracer.cloud).
+    [app.opensre.com](https://app.opensre.com). Hosted organization-wide
+    connectors are still coming soon, so integrations remain local today.
 
-    Self-hosted gateway deployment is covered in [Deployment](/deployment).
+    Managed and self-hosted gateway options are covered in
+    [Deployment](/deployment).
   </Accordion>
 
   <Accordion title="Can I self-host OpenSRE?">
-    Yes. Deploy the gateway as a FastAPI application using the repository
-    Dockerfile or your host’s Python workflow. Set `LLM_PROVIDER` and the
+    Yes. Deploy the repository Docker image in `web`, `gateway`, or `scheduler`
+    mode. Set `LLM_PROVIDER` and the
     matching provider API key (for example `ANTHROPIC_API_KEY` when
     `LLM_PROVIDER=anthropic`). See [Deployment](/deployment) and
     [Environment variables](/configuration/environment-variables).

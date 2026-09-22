@@ -118,15 +118,15 @@ expecting them to be remembered — the memory ingestion path blocks obvious
 tokens, passwords, private keys, and credential-shaped values, and redacts
 matching spans before the extraction LLM call.
 
-## Gateway (Slack / Telegram / Discord)
+## Gateway (Slack / Telegram / Discord / Buzz)
 
-On Slack and Discord, when org scope is bound, memory is **per-user scoped** —
-each member's facts live under their own `users/<id>/memory/` folder inside the
-org volume, so one user's memories cannot appear in another's prompts or
-channel replies. Telegram turns are unbound and stay **host-global**.
+On Slack, Discord, and Buzz, when org scope is bound, memory is **per-user
+scoped** — each member's facts live under their own `users/<id>/memory/` folder
+inside the org volume, so one user's memories cannot appear in another's
+prompts or channel replies. Telegram turns are unbound and stay **host-global**.
 
 Because Telegram is host-global (and to keep memory off by default on shared
 hosts), the **Slack and Telegram** gateway path is **off by default**; opt in
-with `OPENSRE_MEMORY_GATEWAY_ENABLED=1`. Discord uses the same actor-scoped
-storage layout when scoped; it is not gated by that opt-in flag today — use
-`OPENSRE_MEMORY_DISABLED=1` if you need memory off there.
+with `OPENSRE_MEMORY_GATEWAY_ENABLED=1`. Discord and Buzz use the same
+actor-scoped storage layout when scoped; they are not gated by that opt-in flag
+today — use `OPENSRE_MEMORY_DISABLED=1` if you need memory off there.

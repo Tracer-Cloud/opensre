@@ -351,6 +351,7 @@ Want credentials only from the environment, never on disk? Set `OPENSRE_DISABLE_
 | `OPENSRE_DISABLE_KEYRING` | `0` | Disable local credential storage; credentials must come from the environment |
 | `OPENSRE_ACCOUNT_TOKEN` |  | Personal OpenSRE account token; with `OPENSRE_DISABLE_KEYRING=1`, also set `OPENSRE_APP_URL` |
 | `OPENSRE_APP_URL` | `https://app.opensre.com` | OpenSRE app origin; set it explicitly with an environment-only account token |
+| `OPENSRE_ACCOUNT_LLM_MODEL` | `gpt-5.6-sol` | Model-family hint for a non-interactive hosted gateway using the account LLM route; override only when the web app's hosted model changes family |
 | `OPENSRE_LLM_AUTH_METADATA_PATH` | `~/.opensre/llm-auth.json` | Non-secret LLM auth metadata path used by prompt-safe status checks |
 
 ## Telemetry & Monitoring
@@ -418,10 +419,10 @@ tokens, `password`/`token` fields) are masked before a span leaves the process.
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `OPENSRE_HOME` | `~/.opensre` | Root directory for local OpenSRE state |
+| `OPENSRE_HOME` | `~/.opensre` | Host root for scheduler files, gateway state, local configuration, and sessions when no organization context root is set |
 | `OPENSRE_PROJECT_ENV_PATH` | `PROJECT_ROOT/.env` | Path to project-level `.env` file |
 | `OPENSRE_WIZARD_STORE_PATH` | `~/.opensre/opensre.json` | Path to the local wizard/provider selection store |
-| `OPENSRE_CONTEXT_ROOT` |  | Override OpenSRE home/context root |
+| `OPENSRE_CONTEXT_ROOT` |  | Mounted organization-scoped root for context and sessions; requires `ORGANIZATION_ID` |
 | `OPENSRE_INTEGRATIONS_STORE_PATH` |  | Override integrations store path |
 
 
@@ -469,6 +470,20 @@ Mirror conversation history and memory to a user-owned object store. Details: [R
 | `HELM_KUBECONFIG` |  | kubeconfig path for Helm |
 | `HELM_NAMESPACE` |  | Default Helm namespace |
 | `OPENSRE_RELEASES_API_URL` | GitHub releases API | Override releases API endpoint |
+
+## Gateway and scheduler runtime
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `MODE` | `web` | Container entrypoint: `web`, `gateway`, or `scheduler` |
+| `PORT` | `8000` | HTTP port for the web surface |
+| `OPENSRE_HOME` | `~/.opensre` | Host root for scheduler files, gateway state, local configuration, and sessions when `OPENSRE_CONTEXT_ROOT` is unset |
+| `DATABASE_URL` |  | Postgres connection for gateway records shared across replicas; required for Slack Events API unless the single-replica local-dedup escape hatch is enabled |
+| `OPENSRE_SIZE_PROFILE` | `SMALL` | Deployment size profile; default turn caps are `SMALL=1`, `MEDIUM=2`, `LARGE=4` |
+| `OPENSRE_MAX_CONCURRENT_TURNS` | size-profile limit | Override the process-wide concurrent-turn cap with a positive integer |
+| `OPENSRE_SCHEDULER_MAX_CONCURRENT_RUNS` | `2` | Maximum scheduled callbacks executing at once; agent turns also need a process-wide turn permit |
+| `OPENSRE_GATEWAY_HOST_SCHEDULER` | `1` | Run the scheduler inside the gateway; set `0` when a dedicated `MODE=scheduler` service owns it |
+| `OPENSRE_SESSION_FILE_LOCK` | `0` | Serialize session-file writes with an OS lock; a shared mount is still required across processes |
 
 ## Integration credentials
 
@@ -584,6 +599,7 @@ Mirror conversation history and memory to a user-owned object store. Details: [R
 | `SLACK_SIGNING_SECRET` |  | Request-signature secret. Required for `events_api_http` |
 | `SLACK_GATEWAY_HTTP_PORT` | `3000` | Port the `events_api_http` listener binds |
 | `SLACK_GATEWAY_ALLOW_LOCAL_DEDUP` |  | Accept process-local event dedup when `DATABASE_URL` is unset. Single replica only |
+| `SLACK_GATEWAY_MAX_CONCURRENT` | size-profile limit | Parallel Slack turns before the process-wide cap is applied |
 | `SLACK_ALLOWED_USERS` |  | Comma-separated Slack user IDs allowed to talk to the bot |
 | `SLACK_ALLOW_OPEN_WORKSPACE` |  | Allow any workspace user (`1` for dogfood) |
 | `SLACK_ACCESS_TOKEN` |  | Slack user token |
@@ -594,9 +610,18 @@ Mirror conversation history and memory to a user-owned object store. Details: [R
 | `DISCORD_DEFAULT_CHANNEL_ID` |  | Default Discord channel |
 | `DISCORD_ALLOWED_USERS` |  | Comma-separated Discord user IDs allowed to talk to the bot |
 | `DISCORD_ALLOW_OPEN_GUILD` |  | Allow any guild member (`1` for dogfood) |
+| `DISCORD_GATEWAY_MAX_CONCURRENT` | size-profile limit | Parallel Discord turns before the process-wide cap is applied |
 | `TELEGRAM_BOT_TOKEN` |  | Telegram bot token |
 | `TELEGRAM_DEFAULT_CHAT_ID` |  | Default Telegram chat ID |
 | `TELEGRAM_ALLOWED_USERS` |  | Comma-separated Telegram user IDs allowed to talk to the bot |
+| `TELEGRAM_GATEWAY_MAX_CONCURRENT` | size-profile limit | Parallel Telegram turns before the process-wide cap is applied |
+| `BUZZ_PRIVATE_KEY` |  | Nostr private key used by the Buzz integration and gateway |
+| `BUZZ_RELAY_URL` | `http://localhost:3000` | Buzz relay URL |
+| `BUZZ_DEFAULT_CHANNEL` |  | Default Buzz channel UUID for delivery |
+| `BUZZ_AUTH_TAG` |  | Optional NIP-OA owner-attestation JSON |
+| `BUZZ_PATH` | `buzz` | Path to the Buzz CLI |
+| `BUZZ_ALLOWED_PUBKEYS` |  | Comma-separated 64-character hex pubkeys allowed to talk to the gateway |
+| `BUZZ_GATEWAY_MAX_CONCURRENT` | `4` | Parallel Buzz turns before the process-wide cap is applied |
 | `ROCKETCHAT_SERVER_URL` |  | Rocket.Chat server base URL |
 | `ROCKETCHAT_AUTH_TOKEN` |  | Rocket.Chat personal access token |
 | `ROCKETCHAT_USER_ID` |  | Rocket.Chat user ID for the token |

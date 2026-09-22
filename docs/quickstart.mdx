@@ -80,7 +80,8 @@ opensre uninstall --yes
 
 ## Troubleshooting
 
-- **Docker is not running**: Start Docker Desktop, OrbStack, or Colima before running `opensre`.
+- **`opensre` is not found**: Open a new terminal, or add the bin directory printed by the installer to `PATH`.
+- **The Linux binary does not start**: Prebuilt binaries require glibc 2.35 or newer; use a supported distribution or the [Docker guide](/environments/docker).
 - **`make` is missing**: See the [development setup guide](https://github.com/Tracer-Cloud/opensre/blob/main/SETUP.md) if you are working from source.
 - **The shell does not open after login**: Run `opensre account status`. The webapp must be reachable and the stored account token and metadata must both be valid.
 - **You want to stay signed out**: Choose **Exit and stay signed out** at startup. Commands such as `opensre account`, `opensre doctor`, and `opensre integrations` remain available, but the interactive shell stays closed.

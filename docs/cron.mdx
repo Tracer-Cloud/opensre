@@ -277,8 +277,8 @@ durable pending store and reserve recovery control work from user execution.
 The capacity baseline records these terms consistently:
 
 - **Durable pending count** and **oldest pending age**: `pending` rows and the
-  elapsed time since their durable admission. The benchmark reads this directly
-  until `opensre cron status` exposes it.
+  elapsed time since their durable admission. Read them with `opensre cron
+  status`; the benchmark reads the same stores directly.
 - **In-memory callbacks**: callbacks submitted to the current worker executor
   that have not completed. This is the current overload signal, not a durable
   queue limit.

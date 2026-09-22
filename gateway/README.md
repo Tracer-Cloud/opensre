@@ -2,7 +2,7 @@
 
 Standalone inbound messaging gateway for chat platforms: Telegram DM text chat
 via long polling, Slack mentions/DMs via **Socket Mode** (default) or **Events API
-HTTP**, and Discord via Gateway WebSocket.
+HTTP**, Discord via Gateway WebSocket, and Buzz mentions via relay polling.
 
 The gateway is a separate surface. Transports receive an injected turn runner;
 agent startup and integration loading run through the shared harness, not
@@ -40,7 +40,7 @@ gateway.core.lifecycle.controller.GatewayController.start_gateway
         ├── start_surfaces()  →  gateway.startup.start_gateway
         │     ├── web/web_server  →  web/webapp:app
         │     └── transports/startup.start_transports
-        │           (telegram / slack / discord startup)
+        │           (telegram / slack / discord / buzz startup)
         └── start_scheduler()   # hosts infrastructure.scheduling.scheduler; not a gateway surface
 ```
 
@@ -57,9 +57,9 @@ there are three: the interactive shell (`surfaces/interactive_shell`), the
 CLI one-shot (`surfaces/cli`), and the gateway (`gateway/`, chat apps).
 
 The gateway is the always-on process that connects a chat app to the agent.
-It speaks Telegram (long poll), Slack (Socket Mode or Events API HTTP), and
-Discord (Gateway WebSocket). Slack's two inbound modes share the same turn
-stack; only how the payload arrives differs
+It speaks Telegram (long poll), Slack (Socket Mode or Events API HTTP), Discord
+(Gateway WebSocket), and Buzz (relay polling). Slack's two inbound modes share
+the same turn stack; only how the payload arrives differs
 (`gateway/transports/slack/transport/`).
 
 Integrations and tools are the outbound / teammate side: the agent reading
@@ -79,6 +79,7 @@ Inbound and outbound are independent per platform:
 | **Telegram** | Yes — `gateway/transports/telegram/` | Yes — integration + `telegram_send_message` |
 | **Slack** | Yes — `gateway/transports/slack/` (Socket Mode by default; Events API HTTP optional; each thread is a conversation) | Yes — webhook + bot-token tools |
 | **Discord** | Yes — `gateway/transports/discord/` (DMs, mentions, threads) | Delivery + slash registration |
+| **Buzz** | Yes — `gateway/transports/buzz/` (mentions and channel follow-ups) | Yes — integration + `buzz_send_message` |
 
 **One core for every surface.** Shell, CLI, and the gateway transports all hand the
 message to the same place: a session-scoped `HeadlessAgent`
@@ -111,9 +112,9 @@ integration store as fallback; allowed users from the integration store
 (written by `opensre messaging allow`) first with the `*_ALLOWED_USERS` env
 var as fallback.
 
-DM your bot from Telegram, mention/DM it in Slack, or chat in Discord (see
-`docs/messaging/` for app setup). Slack Socket Mode needs no public URL; Events
-API HTTP needs a reachable URL and `SLACK_SIGNING_SECRET`.
+DM your bot from Telegram, mention/DM it in Slack, chat in Discord, or mention
+the agent in Buzz (see `docs/messaging/` for app setup). Slack Socket Mode needs
+no public URL; Events API HTTP needs a reachable URL and `SLACK_SIGNING_SECRET`.
 
 ## Environment variables
 
@@ -121,7 +122,7 @@ API HTTP needs a reachable URL and `SLACK_SIGNING_SECRET`.
 |----------|---------|
 | `TELEGRAM_BOT_TOKEN` | Telegram bot token |
 | `TELEGRAM_ALLOWED_USERS` | Comma-separated Telegram user ids |
-| `TELEGRAM_GATEWAY_MAX_CONCURRENT` | Parallel turns across chats (default 4) |
+| `TELEGRAM_GATEWAY_MAX_CONCURRENT` | Parallel turns across chats (defaults to the `OPENSRE_SIZE_PROFILE` limit: SMALL=1, MEDIUM=2, LARGE=4) |
 | `SLACK_BOT_TOKEN` | Slack bot token (`xoxb-…`) |
 | `SLACK_APP_TOKEN` | Slack app-level token for Socket Mode (`xapp-…`) |
 | `SLACK_SIGNING_SECRET` | Slack signing secret for Events API HTTP request verification |
@@ -133,6 +134,10 @@ API HTTP needs a reachable URL and `SLACK_SIGNING_SECRET`.
 | `DISCORD_BOT_TOKEN` | Discord bot token |
 | `DISCORD_ALLOWED_USERS` | Comma-separated Discord user snowflakes |
 | `DISCORD_ALLOW_OPEN_GUILD` | `1` allows any guild member (dogfood only) |
+| `BUZZ_PRIVATE_KEY` | Nostr private key for the agent identity |
+| `BUZZ_RELAY_URL` | Buzz relay URL (default `http://localhost:3000`) |
+| `BUZZ_ALLOWED_PUBKEYS` | Comma-separated 64-character hex pubkeys allowed to talk to the agent |
+| `BUZZ_GATEWAY_MAX_CONCURRENT` | Parallel Buzz turns (default 4) |
 
 Pairing via `opensre messaging pair` uses the same integration-store policy as the gateway.
 

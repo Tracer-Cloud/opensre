@@ -19,14 +19,17 @@ order every time:
 
 1. **Load the environment** — read configuration and secrets.
 2. **Start error reporting** — so failures later in startup are still
-   captured.
-3. **Register adapters** — connect the agent to the integrations and tools it
+   captured when the selected profile owns Sentry.
+3. **Initialize optional LLM tracing** — enable Langfuse only when its keys are
+   configured; otherwise this is a no-op.
+4. **Register adapters** — connect the agent to the integrations and tools it
    can use.
-4. **Register the scheduler's task runners** — so scheduled work (digests,
-   reports, cron jobs) knows how to run.
-5. **Log capability warnings** — flag anything the sandbox can't do in this
+5. **Register scheduled-delivery adapters** — bind outbound delivery for
+   scheduled work. Agent runners are constructed by the scheduler host at
+   startup rather than stored globally.
+6. **Log capability warnings** — flag anything the sandbox can't do in this
    environment.
-6. **Preload the LLM client modules** — so a long-running process doesn't end
+7. **Preload the LLM client modules** — so a long-running process doesn't end
    up mixing old and new versions of those modules after a later code
    change.
 
@@ -40,11 +43,11 @@ that's already started is a harmless no-op.
 
 | Profile | What it sets up | Used by |
 | --- | --- | --- |
-| CLI | Just the environment. | The `opensre` command |
-| Gateway | Environment, error reporting, adapters, capability warnings, LLM preload. | The gateway daemon (chat channels) |
-| Web | Environment, error reporting, adapters. | The gateway's standalone web app |
-| Scheduler worker | Environment, error reporting, adapters, scheduler task runners. | The `opensre cron start` daemon |
-| Scheduled command | Environment, adapters, scheduler task runners. | One-off CLI commands that create, run, or dispatch scheduled work |
+| CLI | Environment and optional LLM tracing. | The `opensre` command |
+| Gateway | Environment, error reporting, optional LLM tracing, adapters, capability warnings, LLM preload. | The gateway daemon (chat channels) |
+| Web | Environment, error reporting, optional LLM tracing, adapters. | The gateway's standalone web app |
+| Scheduler worker | Environment, error reporting, optional LLM tracing, adapters, scheduled-delivery adapters. | The `opensre cron start` daemon |
+| Scheduled command | Environment, adapters, scheduled-delivery adapters. | One-off CLI commands that create, run, or dispatch scheduled work |
 | Embedded | Environment, adapters. | Driving the agent from another Python program |
 
 ## Where each surface calls it
@@ -67,7 +70,9 @@ that's already started is a harmless no-op.
   [`surfaces/interactive_shell/command_registry/loops_cmds.py`](https://github.com/Tracer-Cloud/opensre/blob/main/surfaces/interactive_shell/command_registry/loops_cmds.py).
 - **Gateway daemon** — [`gateway/core/lifecycle/controller.py`](https://github.com/Tracer-Cloud/opensre/blob/main/gateway/core/lifecycle/controller.py)
   sets up its own logging, readiness state, and credentials first, then runs
-  the gateway profile before connecting chat channels and the scheduler.
+  the gateway profile before connecting chat channels. When it also hosts the
+  scheduler, the controller installs the scheduled-delivery adapters and
+  constructs the gated scheduler runners at that later lifecycle stage.
 - **Gateway web app** — [`gateway/web/webapp.py`](https://github.com/Tracer-Cloud/opensre/blob/main/gateway/web/webapp.py)
   runs the web profile as soon as the module loads, so both the in-process
   gateway and a standalone web server have everything they need before

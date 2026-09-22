@@ -1,19 +1,48 @@
 ---
 title: "Deployment"
 slug: "deployment"
-description: "Deploy OpenSRE as a hosted FastAPI app or run the local gateway."
+description: "Run an organization-managed gateway or deploy the OpenSRE gateway yourself."
 ---
 
-OpenSRE deploys as a standard Python FastAPI application. Use the repository
-`Dockerfile` with Railway, EC2, ECS, Vercel, or another ASGI-capable host. For
-local containers, see [Docker](/environments/docker).
+Choose an OpenSRE Cloud managed gateway when your organization wants OpenSRE to
+operate the runtime, or deploy the repository `Dockerfile` when you want to own
+the process and storage. For local containers, see [Docker](/environments/docker).
+
+## OpenSRE Cloud managed gateway
+
+An organization admin provisions the managed gateway from
+[Agent Backend settings](https://app.opensre.com/settings/agent-backend). The
+gateway belongs to the organization associated with the account used by the
+local shell; users never enter an organization or gateway ID.
+
+After signing in with `opensre`, ask the shell naturally:
+
+```text
+Check whether my organization's hosted gateway is running.
+Start my organization's hosted gateway.
+Stop my organization's hosted gateway.
+```
+
+The health check is read-only. Starting or stopping requires an organization
+admin and an explicit approval in the shell. Stopping preserves the gateway's
+configuration and credentials, but its remote loops and chat integrations do
+not run until it is started again.
+
+These requests control the organization-managed gateway. The `opensre gateway
+start|status|stop` commands below control a separate daemon on the current
+machine.
+
+## Self-hosted container
+
+Use the repository `Dockerfile` with Railway, EC2, ECS, Vercel, or another
+container host.
 
 The image supports three values of `MODE`:
 
 | `MODE` | Runtime |
 | --- | --- |
 | `web` (default) | HTTP API — health checks and alert intake |
-| `gateway` | Messaging gateway (Slack / Telegram) and related services |
+| `gateway` | Web app, configured chat transports, and the scheduler |
 | `scheduler` | Dedicated cron/loop scheduler service (no gateway or web) |
 
 ## Environment setup
@@ -44,8 +73,12 @@ ANTHROPIC_API_KEY=...
 Provider keys and optional model overrides are listed in `.env.example` and
 [Environment variables](/configuration/environment-variables).
 
-For hosted deployments that need persistent storage, set `DATABASE_URI` and
-`REDIS_URI`. See [HTTP API](/api) for the route reference.
+Set `DATABASE_URL` when gateway records must be shared through Postgres. Slack
+Events API requires it unless you explicitly enable the single-replica local
+deduplication escape hatch. Scheduler state remains file-backed under
+`OPENSRE_HOME`. Organization-bound sessions use `OPENSRE_CONTEXT_ROOT` when it
+is set and otherwise fall back to `OPENSRE_HOME`; make both roots durable when
+they differ. See [HTTP API](/api) for the route reference.
 
 ## Local gateway
 
@@ -93,18 +126,21 @@ Complete route reference: [HTTP API](/api).
 
 ## Railway
 
-1. Provision Postgres and Redis in the Railway project.
-2. Set `DATABASE_URI` and `REDIS_URI` on the OpenSRE service to those connection
-   strings.
+1. Add Railway Postgres and set `DATABASE_URL` when you use Slack Events API or
+   another layout that needs gateway records shared between replicas.
+2. Add a shared `OPENSRE_HOME` volume when more than one process needs the same
+   scheduler tasks. If `OPENSRE_CONTEXT_ROOT` is set, make that root durable and
+   shared for organization-bound sessions too.
 3. Optionally set `OPENSRE_DEPLOYMENT_METHOD=railway` for telemetry labeling.
-4. Deploy the service through your Railway project.
+4. Deploy the service through your Railway project. Redis is not used for
+   gateway persistence.
 
 ## Horizontal scale-out
 
 Run **one** gateway task and leave `OPENSRE_SESSION_FILE_LOCK` off. More than
-one gateway task sharing `OPENSRE_HOME` is not supported yet. Follow
-[#5474](https://github.com/Tracer-Cloud/opensre/issues/5474) and add a second
-task only after that lands.
+one gateway task sharing a file-backed session store is not supported yet.
+Follow [#5474](https://github.com/Tracer-Cloud/opensre/issues/5474) and add a
+second task only after that lands.
 
 To serve more concurrent conversations today, raise concurrency on that single
 task (next section). After #5474, put every task on the same session store — a
