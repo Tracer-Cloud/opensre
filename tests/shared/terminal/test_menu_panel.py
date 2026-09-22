@@ -15,7 +15,7 @@ def test_panel_keeps_focused_choice_visible_and_within_terminal_cells(
     width: int, height: int
 ) -> None:
     labels = [f"Model {i} 界界" for i in range(20)]
-    lines = build_menu_panel(
+    panel = build_menu_panel(
         title="Choose model",
         breadcrumb="/model › Provider",
         labels=labels,
@@ -24,6 +24,7 @@ def test_panel_keeps_focused_choice_visible_and_within_terminal_cells(
         max_height=height,
         note="Current provider",
     )
+    lines = panel.lines
     plain = [re.sub(r"\x1b\[[0-9;]*m", "", line) for line in lines]
     assert len(lines) <= height
     assert all(prompt_text_width(line) == width for line in plain)
@@ -34,7 +35,7 @@ def test_panel_keeps_focused_choice_visible_and_within_terminal_cells(
 
 
 def test_panel_distinguishes_current_value_from_focus_and_strips_controls() -> None:
-    lines = build_menu_panel(
+    panel = build_menu_panel(
         title="Theme",
         breadcrumb="/theme",
         labels=["Original", "\x1b[2JNew\nTheme"],
@@ -43,6 +44,7 @@ def test_panel_distinguishes_current_value_from_focus_and_strips_controls() -> N
         width=80,
         max_height=20,
     )
+    lines = panel.lines
     plain = "\n".join(re.sub(r"\x1b\[[0-9;]*m", "", line) for line in lines)
     assert "1 Original" in plain and "✓" in plain.split("1 Original")[1].split("\n")[0]
     assert "› 2 [2JNewTheme" in plain
@@ -51,7 +53,7 @@ def test_panel_distinguishes_current_value_from_focus_and_strips_controls() -> N
     assert "Esc close" in plain
 
 
-@pytest.mark.parametrize("action,expected", [("enter", 12), ("cancel", None), ("2", 1)])
+@pytest.mark.parametrize("action,expected", [("enter", 12), ("cancel", None), ("2", 10)])
 def test_panel_picker_returns_original_index_and_erases_actual_height(
     monkeypatch: pytest.MonkeyPatch, action: str, expected: int | None
 ) -> None:
@@ -75,7 +77,7 @@ def test_panel_picker_returns_original_index_and_erases_actual_height(
     )
     assert result == expected
     rendered = output.getvalue()
-    assert "13 Model 12" in rendered
+    assert "4 Model 12" in rendered
     assert "\x1b[9A" in rendered and "\x1b[9M" in rendered
     assert rendered.count("\n") == 9
 
@@ -103,3 +105,25 @@ def test_panel_erases_reflowed_rows_when_dismissed_after_width_shrink(
     )
     assert "\x1b[12A" in output.getvalue()
     assert "\x1b[12M" in output.getvalue()
+
+
+@pytest.mark.parametrize("shortcut", ["1", "2"])
+def test_tiny_panel_shortcuts_cannot_select_hidden_choices(
+    monkeypatch: pytest.MonkeyPatch, shortcut: str
+) -> None:
+    from surfaces.shared.terminal.components import choice_menu
+
+    actions = iter([shortcut, "enter"])
+    monkeypatch.setattr(choice_menu, "_cols", lambda: 40)
+    monkeypatch.setattr(choice_menu, "_viewport_rows", lambda: 4)
+    monkeypatch.setattr(choice_menu, "_read_action", lambda: next(actions))
+    assert (
+        choice_menu._pick(
+            title="Models",
+            crumb="/model",
+            labels=[f"Model {i}" for i in range(20)],
+            initial_index=12,
+            panel=True,
+        )
+        == 12
+    )

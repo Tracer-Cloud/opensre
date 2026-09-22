@@ -44,6 +44,8 @@ def test_toolcall_escape_returns_to_reasoning_choice_then_provider(
     ]
     assert menu[3]["initial_value"] == "selected-model"
     assert menu[3]["current_value"] == "active"
+    assert ("active", "active") in menu[3]["choices"]
+    assert ("tools", "tools") in menu[2]["choices"]
     assert menu[4]["initial_value"] == "openai"
     assert all(call["panel"] for call in menu)
 

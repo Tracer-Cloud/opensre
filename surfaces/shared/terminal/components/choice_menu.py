@@ -472,6 +472,7 @@ def _pick(
     first = True
     paint_width = _menu_paint_width()
     lines: list[str] = []
+    visible_choices = range(len(labels))
     checked: set[int] = set()
     custom_index = labels.index(custom_label) if custom_label in labels else -1
     row_count = len(labels) + (1 if multi_select else 0)
@@ -484,7 +485,7 @@ def _pick(
             if not first:
                 _erase_menu_block(height)
             paint_width = _menu_paint_width()
-            lines = build_menu_panel(
+            panel_content = build_menu_panel(
                 title=title,
                 breadcrumb=crumb,
                 labels=display,
@@ -495,6 +496,8 @@ def _pick(
                 current_index=current_index,
                 numbered=numbered,
             )
+            lines = panel_content.lines
+            visible_choices = panel_content.choice_indices
             for line in lines:
                 write_menu_line(line)
             sys.stdout.flush()
@@ -597,6 +600,10 @@ def _pick(
             if on_custom
             else _option_index_from_key(action, letter_keys=letter_keys, numbered=numbered)
         )
+        if panel and select_index is not None:
+            select_index = (
+                visible_choices[select_index] if 0 <= select_index < len(visible_choices) else None
+            )
         if select_index is not None:
             if 0 <= select_index < len(labels):
                 if select_index == custom_index:

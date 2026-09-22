@@ -87,7 +87,21 @@ def _choose_provider_value(
         show_other = False
 
 
-def _reasoning_model_menu_choices(provider: object) -> list[tuple[str, str]]:
+def _with_current_model(
+    provider: object, choices: list[tuple[str, str]], current: str | None
+) -> list[tuple[str, str]]:
+    if (
+        current
+        and _provider_allows_custom_models(provider)
+        and current not in {value for value, _ in choices}
+    ):
+        return [(current, current), *choices]
+    return choices
+
+
+def _reasoning_model_menu_choices(
+    provider: object, *, current: str | None = None
+) -> list[tuple[str, str]]:
     model_options = list(getattr(provider, "models", ()))
     choices: list[tuple[str, str]] = [
         ("__provider_default__", "Use provider default"),
@@ -98,10 +112,12 @@ def _reasoning_model_menu_choices(provider: object) -> list[tuple[str, str]]:
         choices.append((value, display))
     if _provider_allows_custom_models(provider):
         choices.append(("__custom__", "Enter a custom model ID…"))
-    return choices
+    return _with_current_model(provider, choices, current)
 
 
-def _toolcall_model_menu_choices(provider: object) -> list[tuple[str, str]]:
+def _toolcall_model_menu_choices(
+    provider: object, *, current: str | None = None
+) -> list[tuple[str, str]]:
     model_options = list(getattr(provider, "models", ()))
     choices: list[tuple[str, str]] = [
         ("__keep__", "Keep current tool-call model"),
@@ -113,7 +129,7 @@ def _toolcall_model_menu_choices(provider: object) -> list[tuple[str, str]]:
         choices.append((value, display))
     if _provider_allows_custom_models(provider):
         choices.append(("__custom__", "Enter a custom model ID…"))
-    return choices
+    return _with_current_model(provider, choices, current)
 
 
 def _prompt_custom_model_id(console: Console, provider_value: str = "provider") -> str | None:
@@ -160,7 +176,7 @@ def _interactive_set_provider(console: Console) -> bool | None:
             reasoning_choices = model_menu_choices(
                 provider,
                 console,
-                fallback=_reasoning_model_menu_choices(provider),
+                fallback=_reasoning_model_menu_choices(provider, current=active_reasoning),
             )
             if reasoning_choices is None:
                 break
@@ -194,7 +210,7 @@ def _interactive_set_provider(console: Console) -> bool | None:
                     toolcall_value = repl_choose_one(
                         title="Tool-call model",
                         breadcrumb=crumb_tc,
-                        choices=_toolcall_model_menu_choices(provider),
+                        choices=_toolcall_model_menu_choices(provider, current=active_toolcall),
                         panel=True,
                         initial_value=active_toolcall,
                         current_value=active_toolcall,
@@ -262,7 +278,7 @@ def _interactive_set_toolcall(console: Console) -> bool | None:
             model_value = repl_choose_one(
                 title="Tool-call model",
                 breadcrumb=f"{crumb_tc}{CRUMB_SEP}{provider_value}",
-                choices=_toolcall_model_menu_choices(provider),
+                choices=_toolcall_model_menu_choices(provider, current=active),
                 panel=True,
                 initial_value=initial,
                 current_value=active,

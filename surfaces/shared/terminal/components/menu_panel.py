@@ -3,11 +3,20 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import dataclass
 
 import infrastructure.terminal.theme as ui_theme
 from surfaces.shared.terminal.prompt_layout import clip_prompt_text, prompt_text_width
 
 _MAX_VISIBLE_CHOICES = 6
+
+
+@dataclass(frozen=True)
+class MenuPanel:
+    """A painted viewport and the choice indexes its numbered shortcuts address."""
+
+    lines: list[str]
+    choice_indices: range
 
 
 def build_menu_panel(
@@ -21,16 +30,20 @@ def build_menu_panel(
     note: str = "",
     current_index: int | None = None,
     numbered: bool = True,
-) -> list[str]:
+) -> MenuPanel:
     """Return physical rows, keeping the focused choice visible within the viewport."""
     if not labels or width < 1 or max_height < 1:
-        return []
+        return MenuPanel([], range(0))
     index = max(0, min(index, len(labels) - 1))
     if width < 12 or max_height < 5:
-        text = clip_prompt_text(f"› {labels[index]}", width)
+        number = "1 " if numbered else ""
+        text = clip_prompt_text(f"› {number}{labels[index]}", width)
         # Cleanup records the full paint width, including this reduced-height layout.
         text += " " * (width - prompt_text_width(text))
-        return [f"{ui_theme.MENU_SELECTION_ROW_ANSI}{text}{ui_theme.ANSI_RESET}"]
+        return MenuPanel(
+            [f"{ui_theme.MENU_SELECTION_ROW_ANSI}{text}{ui_theme.ANSI_RESET}"],
+            range(index, index + 1),
+        )
 
     inner = width - 2
     metadata = [text for text in (breadcrumb if "›" in breadcrumb else "", note) if text]
@@ -56,7 +69,7 @@ def build_menu_panel(
     lines.extend(row(text, style=ui_theme.DIM_ANSI) for text in metadata)
     for item in range(start, start + count):
         marker = "›" if item == index else " "
-        number = f"{item + 1} " if numbered else ""
+        number = f"{item - start + 1} " if numbered else ""
         suffix = "✓" if item == current_index else ""
         style = ui_theme.MENU_SELECTION_ROW_ANSI if item == index else ui_theme.TEXT_ANSI
         lines.append(row(f"{marker} {number}{labels[item]}", style=style, suffix=suffix))
@@ -66,9 +79,10 @@ def build_menu_panel(
     if inner < 34:
         hint = f"↑↓ Enter Esc {cancel}"
     if numbered and inner >= 58:
-        hint += f"  1–{min(9, len(labels))} select"
+        keys = "1" if count == 1 else f"1–{count}"
+        hint += f"  {keys} select"
     if current_index is not None and prompt_text_width(hint) + 12 <= inner:
         hint += "  ✓ current"
     lines.append(row(hint, style=ui_theme.DIM_ANSI))
     lines.append(f"{frame}╰{'─' * inner}╯{reset}")
-    return lines
+    return MenuPanel(lines, range(start, start + count))
