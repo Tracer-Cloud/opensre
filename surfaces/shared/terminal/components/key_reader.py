@@ -41,8 +41,10 @@ def flush_pending_input() -> None:
             msvcrt.getwch()  # type: ignore[attr-defined]
 
 
-def _raw_input_mode(fd: int) -> None:
+def _raw_input_mode(fd: int, *, preserve_input: bool = False) -> None:
     """Raw keystrokes with output left cooked: a line feed still returns the carriage.
+
+    Search preserves queued typing instead of flushing it on every key read.
 
     ``tty.setraw`` also clears OPOST. A termios snapshot taken while a key read
     is in flight restores that later, and everything painted after it walks
@@ -51,7 +53,7 @@ def _raw_input_mode(fd: int) -> None:
     import termios
     import tty
 
-    tty.setraw(fd)  # type: ignore[attr-defined]
+    tty.setraw(fd, when=termios.TCSANOW if preserve_input else termios.TCSAFLUSH)  # type: ignore[attr-defined]
     attrs = termios.tcgetattr(fd)  # type: ignore[attr-defined]
     attrs[1] |= termios.OPOST  # type: ignore[attr-defined]
     termios.tcsetattr(fd, termios.TCSANOW, attrs)  # type: ignore[attr-defined]
@@ -229,8 +231,12 @@ def read_typing_key() -> str:
     return _read_typing_key_unix()
 
 
-def read_menu_or_char(*, allow_chars: bool = False, alpha_keys: bool = False) -> str:
+def read_menu_or_char(
+    *, allow_chars: bool = False, alpha_keys: bool = False, unicode_input: bool = False
+) -> str:
     """Menu navigation keys, optionally plus printable chars / backspace.
+
+    ``unicode_input`` enables Unicode text for search without changing custom-answer input.
 
     When ``allow_chars`` is True (custom option row focused), typing inserts
     on that row in place; arrows/tab still move between options. When
@@ -238,18 +244,24 @@ def read_menu_or_char(*, allow_chars: bool = False, alpha_keys: bool = False) ->
     ``(A)``/``(B)`` letter instead of a digit.
     """
     if os.name == "nt":
-        return _read_menu_or_char_windows(allow_chars=allow_chars, alpha_keys=alpha_keys)
-    return _read_menu_or_char_unix(allow_chars=allow_chars, alpha_keys=alpha_keys)
+        return _read_menu_or_char_windows(
+            allow_chars=allow_chars, alpha_keys=alpha_keys, unicode_input=unicode_input
+        )
+    return _read_menu_or_char_unix(
+        allow_chars=allow_chars, alpha_keys=alpha_keys, unicode_input=unicode_input
+    )
 
 
-def _read_menu_or_char_unix(*, allow_chars: bool, alpha_keys: bool = False) -> str:
+def _read_menu_or_char_unix(
+    *, allow_chars: bool, alpha_keys: bool = False, unicode_input: bool = False
+) -> str:
     import select as _sel
     import termios
 
     fd = sys.stdin.fileno()
     old = termios.tcgetattr(fd)  # type: ignore[attr-defined]
     try:
-        _raw_input_mode(fd)
+        _raw_input_mode(fd, preserve_input=unicode_input)
         ch = os.read(fd, 1)
         if not ch:
             return "eof"
@@ -302,15 +314,54 @@ def _read_menu_or_char_unix(*, allow_chars: bool, alpha_keys: bool = False) -> s
             return " "
         if allow_chars and 32 <= b <= 126:
             return chr(b)
+        if allow_chars and unicode_input and b >= 128:
+            size = (
+                2
+                if 0xC2 <= b <= 0xDF
+                else 3
+                if 0xE0 <= b <= 0xEF
+                else 4
+                if 0xF0 <= b <= 0xF4
+                else 0
+            )
+            if not size:
+                return "ignore"
+            data = bytearray(ch)
+            for _ in range(size - 1):
+                if not _sel.select([fd], [], [], 0.1)[0]:
+                    return "ignore"
+                chunk = os.read(fd, 1)
+                if not chunk:
+                    return "eof"
+                data.extend(chunk)
+            try:
+                text = data.decode("utf-8")
+            except UnicodeDecodeError:
+                return "ignore"
+            return text if text.isprintable() else "ignore"
         return "ignore"
     finally:
         termios.tcsetattr(fd, termios.TCSADRAIN, old)  # type: ignore[attr-defined]
 
 
-def _read_menu_or_char_windows(*, allow_chars: bool, alpha_keys: bool = False) -> str:
+def _read_menu_or_char_windows(
+    *, allow_chars: bool, alpha_keys: bool = False, unicode_input: bool = False
+) -> str:
     import msvcrt  # type: ignore[import,attr-defined]
 
-    ch = msvcrt.getch()  # type: ignore[attr-defined]
+    if unicode_input and allow_chars:
+        text = msvcrt.getwch()  # type: ignore[attr-defined]
+        if text not in ("\x00", "\xe0") and ord(text) >= 128:
+            if 0xD800 <= ord(text) <= 0xDBFF:
+                text += msvcrt.getwch()  # type: ignore[attr-defined]
+                try:
+                    text = text.encode("utf-16", "surrogatepass").decode("utf-16")
+                except UnicodeDecodeError:
+                    return "ignore"
+            return text if text.isprintable() else "ignore"
+        ch = bytes([ord(text)])
+    else:
+        ch = msvcrt.getch()  # type: ignore[attr-defined]
     if ch in (b"\x03",):
         return "cancel"
     if ch in (b"\r", b"\n"):
@@ -334,7 +385,11 @@ def _read_menu_or_char_windows(*, allow_chars: bool, alpha_keys: bool = False) -
     if not alpha_keys and not allow_chars and ch in (b"q", b"Q"):
         return "cancel"
     if ch in (b"\xe0", b"\x00"):
-        ch2 = msvcrt.getch()  # type: ignore[attr-defined]
+        ch2 = (
+            bytes([ord(msvcrt.getwch())])  # type: ignore[attr-defined]
+            if unicode_input and allow_chars
+            else msvcrt.getch()  # type: ignore[attr-defined]
+        )
         if ch2 == b"H":
             return "up"
         if ch2 == b"P":

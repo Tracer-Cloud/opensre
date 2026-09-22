@@ -64,7 +64,7 @@ def _drive_read_key_unix(monkeypatch: pytest.MonkeyPatch, byte: bytes, *, alpha_
     monkeypatch.setattr(key_reader.os, "read", lambda _fd, _n: byte)
     monkeypatch.setattr(termios, "tcgetattr", lambda _fd: [0, 0, 0, 0, 0, 0, []])
     monkeypatch.setattr(termios, "tcsetattr", lambda _fd, _when, _attrs: None)
-    monkeypatch.setattr(tty, "setraw", lambda _fd: None)
+    monkeypatch.setattr(tty, "setraw", lambda _fd, **_kwargs: None)
     return key_reader.read_key_unix(alpha_keys=alpha_keys)
 
 

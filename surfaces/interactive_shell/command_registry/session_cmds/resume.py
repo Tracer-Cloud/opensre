@@ -70,6 +70,7 @@ def _interactive_resume_menu(session: Session, console: Console) -> bool:
         breadcrumb="/resume",
         choices=choices,
         panel=True,
+        searchable=True,
         choice_notes=notes,
         note="Enter resumes the selected session.",
     )

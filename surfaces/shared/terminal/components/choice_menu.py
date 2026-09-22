@@ -14,7 +14,7 @@ import os
 import shutil
 import sys
 import textwrap
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from typing import Literal
 
 from rich.console import Console
@@ -24,6 +24,7 @@ import infrastructure.terminal.theme as ui_theme
 from infrastructure.safety.terminal_output import strip_terminal_controls
 from surfaces.shared.terminal.components.key_reader import read_key_unix, read_key_windows
 from surfaces.shared.terminal.components.menu_panel import build_menu_panel
+from surfaces.shared.terminal.components.menu_search import matching_indices, searchable_text
 
 _HINT = "↑↓ Navigate • Enter/1-9 Select • Esc cancel"
 _HINT_MULTI = "↑↓ Navigate • Space/Enter/1-9 Toggle • Submit to confirm • Esc cancel"
@@ -439,6 +440,7 @@ def _pick(
     labels: list[str],
     initial_index: int = 0,
     panel: bool = False,
+    searchable: bool = False,
     current_index: int | None = None,
     choice_notes: list[str] | None = None,
     custom_label: str | None = None,
@@ -473,13 +475,16 @@ def _pick(
     first = True
     paint_width = _menu_paint_width()
     lines: list[str] = []
-    visible_choices = range(len(labels))
+    visible_choices: Sequence[int] = range(len(labels))
+    search_query: str | None = None
+    search_texts = searchable_text(labels, choice_notes) if searchable else []
+    matches = list(range(len(labels)))
     checked: set[int] = set()
     custom_index = labels.index(custom_label) if custom_label in labels else -1
     row_count = len(labels) + (1 if multi_select else 0)
     while True:
         on_custom = custom_label is not None and idx < len(labels) and labels[idx] == custom_label
-        display = list(labels)
+        display = [labels[index] for index in matches] if searchable else list(labels)
         if on_custom:
             display[idx] = f"{draft}█"
         if panel:
@@ -490,15 +495,33 @@ def _pick(
                 title=title,
                 breadcrumb=crumb,
                 labels=display,
-                index=idx,
+                index=matches.index(idx) if searchable and matches else idx,
                 width=paint_width,
                 max_height=_viewport_rows() - 1,
-                note=choice_notes[idx] if choice_notes is not None else note,
-                current_index=current_index,
-                numbered=numbered,
+                note=(
+                    ""
+                    if searchable and not matches
+                    else choice_notes[idx]
+                    if choice_notes is not None
+                    else note
+                ),
+                current_index=(
+                    matches.index(current_index)
+                    if searchable and current_index in matches
+                    else None
+                    if searchable
+                    else current_index
+                ),
+                numbered=numbered and search_query is None,
+                searchable=searchable,
+                search_query=search_query,
             )
             lines = panel_content.lines
-            visible_choices = panel_content.choice_indices
+            visible_choices = (
+                [matches[index] for index in panel_content.choice_indices]
+                if searchable
+                else panel_content.choice_indices
+            )
             for line in lines:
                 write_menu_line(line)
             sys.stdout.flush()
@@ -521,7 +544,9 @@ def _pick(
                 crumb, display, multi_select=multi_select, header=header, note=note
             )
         first = False
-        if on_custom:
+        if searchable:
+            action = read_menu_or_char(allow_chars=True, unicode_input=True)
+        elif on_custom:
             action = read_menu_or_char(allow_chars=True)
         elif multi_select:
             action = read_menu_or_char(allow_chars=False, alpha_keys=letter_keys)
@@ -534,6 +559,56 @@ def _pick(
             # Count those rows before either redraw or dismissal, not just the old height.
             columns = max(1, _cols())
             height = len(lines) * ((paint_width + columns - 1) // columns)
+        if searchable:
+            if action == "eof":
+                _erase_menu(crumb, labels, drawn_height=height)
+                return None
+            if search_query is None:
+                if action == "/":
+                    search_query = ""
+                    continue
+                action = {
+                    "j": "down",
+                    "J": "down",
+                    "k": "up",
+                    "K": "up",
+                    "q": "cancel",
+                    "Q": "cancel",
+                    " ": "enter",
+                    "right": "enter",
+                    "tab": "down",
+                }.get(action, action)
+            else:
+                if action == "cancel":
+                    search_query = None
+                    matches = list(range(len(labels)))
+                    continue
+                if action == "backspace":
+                    search_query = search_query[:-1]
+                elif len(action) == 1 and action.isprintable():
+                    search_query += action
+                elif action not in {"up", "down", "tab", "enter"}:
+                    continue
+                else:
+                    action = "down" if action == "tab" else action
+                    if action == "enter" and not matches:
+                        continue
+                    if action in {"up", "down"}:
+                        if matches:
+                            position = matches.index(idx)
+                            idx = matches[
+                                (position + (1 if action == "down" else -1)) % len(matches)
+                            ]
+                        continue
+                    # Enter applies a real match, never the empty-state row.
+                    _erase_menu(crumb, labels, drawn_height=height)
+                    if on_answer is not None:
+                        on_answer((idx,), None)
+                    return idx
+                matches = matching_indices(search_texts, search_query)
+                if matches and idx not in matches:
+                    idx = matches[0]
+                continue
         if on_custom and action == "backspace":
             draft = draft[:-1]
             if multi_select and custom_index >= 0 and not draft.strip():
@@ -648,6 +723,7 @@ def repl_choose_one(
     breadcrumb: str = "",
     initial_value: str | None = None,
     panel: bool = False,
+    searchable: bool = False,
     current_value: str | None = None,
     choice_notes: Mapping[str, str] | None = None,
     custom_label: str | None = None,
@@ -662,6 +738,7 @@ def repl_choose_one(
     """Show an inline erasing arrow-key menu; return selected value or None on Esc.
 
     ``panel`` opts a simple single-choice menu into bounded framed presentation.
+    ``searchable`` enables / to filter labels and metadata; Esc clears search first.
     ``current_value`` marks the active value independently of keyboard focus.
     ``choice_notes`` supplies panel metadata keyed by choice value; missing keys use ``note``.
     Agent questions, multi-select, and inline custom answers keep the plain menu.
@@ -686,6 +763,8 @@ def repl_choose_one(
     """
     from surfaces.shared.terminal.components.cpr_stdin import drain_stale_cpr_bytes
 
+    if searchable and not panel:
+        raise ValueError("Search requires panel presentation")
     if choice_notes is not None and not panel:
         raise ValueError("Choice metadata requires panel presentation")
     if panel and (multi_select or custom_label is not None or letter_keys or header):
@@ -711,6 +790,7 @@ def repl_choose_one(
             labels=labels,
             initial_index=initial_index,
             panel=panel,
+            searchable=searchable,
             choice_notes=(
                 [choice_notes.get(value, note) for value in values]
                 if choice_notes is not None

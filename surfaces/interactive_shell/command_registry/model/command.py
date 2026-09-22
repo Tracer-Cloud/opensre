@@ -69,6 +69,7 @@ def _choose_provider_value(
                 breadcrumb=breadcrumb,
                 choices=choices,
                 panel=True,
+                searchable=True,
                 initial_value=initial if initial in featured else OTHER_PROVIDER_SELECTION,
                 current_value=current_bucket,
             )
@@ -79,6 +80,7 @@ def _choose_provider_value(
             breadcrumb=f"{breadcrumb}{CRUMB_SEP}Other providers",
             choices=_other_provider_menu_choices(),
             panel=True,
+            searchable=True,
             initial_value=initial,
             current_value=current_provider,
         )
@@ -190,6 +192,7 @@ def _interactive_set_provider(console: Console) -> bool | None:
                 breadcrumb=crumb_model,
                 choices=reasoning_choices,
                 panel=True,
+                searchable=True,
                 initial_value=reasoning_initial,
                 current_value=active_reasoning,
             )
@@ -218,6 +221,7 @@ def _interactive_set_provider(console: Console) -> bool | None:
                         breadcrumb=crumb_tc,
                         choices=_toolcall_model_menu_choices(provider, current=active_toolcall),
                         panel=True,
+                        searchable=True,
                         initial_value=active_toolcall,
                         current_value=active_toolcall,
                     )
@@ -286,6 +290,7 @@ def _interactive_set_toolcall(console: Console) -> bool | None:
                 breadcrumb=f"{crumb_tc}{CRUMB_SEP}{provider_value}",
                 choices=_toolcall_model_menu_choices(provider, current=active),
                 panel=True,
+                searchable=True,
                 initial_value=initial,
                 current_value=active,
             )

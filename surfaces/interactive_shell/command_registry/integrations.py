@@ -125,6 +125,7 @@ def _handle_remove(
                     breadcrumb=f"{root}{CRUMB_SEP}{action}",
                     choices=choices,
                     panel=True,
+                    searchable=True,
                     initial_value=initial,
                 )
                 if svc is None:
@@ -430,6 +431,7 @@ def _browse_integration_details(session: Session, console: Console) -> None:
             return
         svc = repl_choose_one(
             title="Integration details",
+            searchable=True,
             breadcrumb=f"{_ROOT_INTEGRATIONS}{CRUMB_SEP}Details",
             panel=True,
             choices=choices,

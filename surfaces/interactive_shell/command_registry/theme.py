@@ -79,6 +79,7 @@ def _cmd_theme(session: Session, console: Console, args: list[str]) -> bool:
     picked = repl_choose_one(
         title="Theme",
         panel=True,
+        searchable=True,
         current_value=current,
         note=f"Current: {current} · Enter applies and saves",
         breadcrumb="/theme",

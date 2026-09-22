@@ -43,6 +43,7 @@ def show_loop(session: Session, console: Console, args: list[str]) -> bool:
             breadcrumb="/loops show",
             choices=[(loop.id, " ".join(loop.name.split())) for loop in loops],
             panel=True,
+            searchable=True,
             choice_notes={loop.id: f"Loop {loop.id} · Enter opens the report" for loop in loops},
         )
         if chosen is None:
