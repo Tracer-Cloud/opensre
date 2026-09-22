@@ -76,6 +76,25 @@ def test_refusals_become_stable_codes(method: str, status: int, code: str) -> No
     assert _TOKEN not in str(excinfo.value)
 
 
+def test_an_id_that_is_not_a_prompt_id_never_reaches_the_network() -> None:
+    # Arrange
+    requests: list[httpx.Request] = []
+
+    def record(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return httpx.Response(200, json={"ok": True})
+
+    client = _client(httpx.MockTransport(record))
+
+    # Act
+    with pytest.raises(HostedGatewayError) as excinfo:
+        client.prompt_result("../health")
+
+    # Assert
+    assert excinfo.value.code == ERR_UNKNOWN_PROMPT
+    assert requests == []
+
+
 class _App:
     """A fake signed-in client whose gateway settles after a given number of polls."""
 

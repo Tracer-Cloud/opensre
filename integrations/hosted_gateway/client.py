@@ -8,6 +8,7 @@ organization or a gateway, so a caller can only ever reach its own.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from http import HTTPStatus
 from types import TracebackType
@@ -42,6 +43,9 @@ ERR_NOT_RUNNING = "not_running"
 # The prompt id names nothing the gateway still holds.
 ERR_UNKNOWN_PROMPT = "unknown_prompt"
 ERR_PROMPT_TOO_LARGE = "prompt_too_large"
+
+#: A prompt id as the gateway mints it; anything else never becomes part of a URL.
+_PROMPT_ID = re.compile(r"^p_[0-9a-f]{32}$")
 
 #: Failures of the account or its setup, not of the service: nothing to report as an incident.
 EXPECTED_ERRORS = frozenset(
@@ -170,7 +174,9 @@ class HostedGatewayClient:
         return _prompt_record(payload)
 
     def prompt_result(self, prompt_id: str) -> PromptRecord:
-        """Read one prompt's state; ``unknown_prompt`` once the gateway forgot it."""
+        """Read one prompt's state; ``unknown_prompt`` for an id the gateway does not hold."""
+        if not _PROMPT_ID.fullmatch(prompt_id):
+            raise HostedGatewayError(ERR_UNKNOWN_PROMPT)
         payload = self._request(
             "GET", f"{HOSTED_GATEWAY_PROMPTS_PATH}/{prompt_id}", _PROMPT_RESULT_REFUSALS
         )
