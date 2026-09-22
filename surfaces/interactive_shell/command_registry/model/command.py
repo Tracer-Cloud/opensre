@@ -87,7 +87,7 @@ def _choose_provider_value(
         show_other = False
 
 
-def _with_current_model(
+def _with_model_choice(
     provider: object, choices: list[tuple[str, str]], current: str | None
 ) -> list[tuple[str, str]]:
     if (
@@ -112,7 +112,7 @@ def _reasoning_model_menu_choices(
         choices.append((value, display))
     if _provider_allows_custom_models(provider):
         choices.append(("__custom__", "Enter a custom model ID…"))
-    return _with_current_model(provider, choices, current)
+    return _with_model_choice(provider, choices, current)
 
 
 def _toolcall_model_menu_choices(
@@ -129,7 +129,7 @@ def _toolcall_model_menu_choices(
         choices.append((value, display))
     if _provider_allows_custom_models(provider):
         choices.append(("__custom__", "Enter a custom model ID…"))
-    return _with_current_model(provider, choices, current)
+    return _with_model_choice(provider, choices, current)
 
 
 def _prompt_custom_model_id(console: Console, provider_value: str = "provider") -> str | None:
@@ -176,7 +176,11 @@ def _interactive_set_provider(console: Console) -> bool | None:
             reasoning_choices = model_menu_choices(
                 provider,
                 console,
-                fallback=_reasoning_model_menu_choices(provider, current=active_reasoning),
+                fallback=_with_model_choice(
+                    provider,
+                    _reasoning_model_menu_choices(provider, current=active_reasoning),
+                    reasoning_initial,
+                ),
             )
             if reasoning_choices is None:
                 break
@@ -197,6 +201,7 @@ def _interactive_set_provider(console: Console) -> bool | None:
                 if custom is None:
                     continue
                 reasoning_choice = custom
+            reasoning_initial = reasoning_choice
 
             model_choice = (
                 None if reasoning_choice == "__provider_default__" else str(reasoning_choice)

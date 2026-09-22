@@ -200,7 +200,11 @@ def switch_llm_provider(
             f"[{DIM}]to refresh metadata if the next LLM request fails.[/]"
         )
 
-    selected_model = _normalize_model_id(model) if model else _resolve_omitted_model(provider)
+    if model == "" and any(option.value == "" for option in provider.models):
+        # An explicit CLI-managed default differs from an omitted provider default.
+        selected_model = ""
+    else:
+        selected_model = _normalize_model_id(model) if model else _resolve_omitted_model(provider)
     if is_custom_provider(provider.value) and not selected_model:
         # Custom gateways require a model; refuse rather than persist a blank one
         # (which would break the next config load), mirroring the base-URL guard.
