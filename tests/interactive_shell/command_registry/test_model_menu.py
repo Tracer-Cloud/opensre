@@ -112,3 +112,39 @@ def test_nonfeatured_current_provider_marks_both_bucket_and_provider(
     assert menu[0]["current_value"] == command.OTHER_PROVIDER_SELECTION
     assert menu[1]["current_value"] == "anthropic"
     assert menu[2]["current_value"] == command.OTHER_PROVIDER_SELECTION
+
+
+@pytest.mark.parametrize("configured_model", ["", "custom-cli-model"])
+def test_cli_model_selection_uses_configured_value_not_display_label(
+    monkeypatch: pytest.MonkeyPatch, configured_model: str
+) -> None:
+    from types import SimpleNamespace
+
+    from surfaces.interactive_shell.command_registry.model import presentation
+
+    monkeypatch.setenv("CLAUDE_CODE_MODEL", configured_model)
+
+    def settings() -> SimpleNamespace:
+        return SimpleNamespace(provider="claude-code")
+
+    monkeypatch.setattr(presentation.repl_data, "load_llm_settings", settings)
+    selected: list[str | None] = []
+
+    def choose(**kwargs: Any) -> str | None:
+        if kwargs["title"] == "Reasoning model":
+            values = [value for value, _ in kwargs["choices"]]
+            assert "CLI default" not in values
+            assert kwargs["current_value"] == configured_model
+            assert kwargs["initial_value"] == configured_model
+            assert configured_model in values
+            return configured_model
+        return "claude-code"
+
+    def switch(_provider: str, _console: Console, **kwargs: Any) -> bool:
+        selected.append(kwargs["model"])
+        return True
+
+    monkeypatch.setattr(command, "repl_choose_one", choose)
+    monkeypatch.setattr(command, "switch_llm_provider", switch)
+    assert command._interactive_set_provider(Console(file=StringIO())) is True
+    assert selected == [configured_model]

@@ -310,7 +310,11 @@ def _interactive_model_menu(session: Session, console: Console) -> bool:
             title="Model",
             panel=True,
             initial_value=initial,
-            note=f"Current: {provider} · {reasoning}" if provider else "No model configured",
+            note=(
+                f"Current: {provider} · {reasoning or 'Provider default'}"
+                if provider
+                else "No model configured"
+            ),
             breadcrumb=f"{_ROOT}",
             choices=[
                 ("set", "Change model ›"),

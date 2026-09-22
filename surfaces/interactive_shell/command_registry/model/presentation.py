@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import os
+
 from rich.console import Console
 
 import surfaces.interactive_shell.command_registry.repl_data as repl_data
+from config.llm_auth.provider_catalog import provider_spec
 from surfaces.interactive_shell.ui import render_models_table, resolve_provider_models
 
 
@@ -23,6 +26,11 @@ def current_model_selection() -> tuple[str, str, str]:
     if settings is None:
         return ("", "", "")
     provider = str(settings.provider)
+    spec = provider_spec(provider)
+    if spec is not None and spec.cli_model_env:
+        # Empty is a selectable CLI default; the display label is not a model ID.
+        model = os.getenv(spec.cli_model_env, "").strip()
+        return (provider, model, model)
     reasoning, toolcall = resolve_provider_models(settings, provider)
     return (provider, reasoning, toolcall)
 
