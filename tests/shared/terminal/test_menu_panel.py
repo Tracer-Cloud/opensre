@@ -157,9 +157,9 @@ def test_details_wrap_and_scroll_without_losing_model_text(width: int, height: i
     assert model in "".join(line.strip(" │") for line in seen)
 
 
-@pytest.mark.parametrize("dismiss", ["enter", "cancel"])
+@pytest.mark.parametrize("dismiss", ["enter", "cancel", "eof"])
 @pytest.mark.parametrize(("paint_width", "columns", "reflow"), [(39, 20, 2), (120, 60, 1)])
-def test_details_dismiss_and_erase_on_enter_or_escape(
+def test_details_dismiss_and_erase_on_enter_escape_or_eof(
     monkeypatch: pytest.MonkeyPatch, dismiss: str, paint_width: int, columns: int, reflow: int
 ) -> None:
     import io
@@ -175,7 +175,8 @@ def test_details_dismiss_and_erase_on_enter_or_escape(
     monkeypatch.setattr(choice_menu, "_menu_paint_width", lambda: paint_width)
     monkeypatch.setattr(choice_menu, "_viewport_rows", lambda: 20)
     monkeypatch.setattr(choice_menu, "_cols", lambda: columns)
-    monkeypatch.setattr(choice_menu, "_read_action", lambda: dismiss)
+    actions = iter([dismiss])
+    monkeypatch.setattr(choice_menu, "_read_action", lambda: next(actions))
     erased: list[int] = []
     left: list[bool] = []
     monkeypatch.setattr(choice_menu, "_erase_menu_block", lambda n, **_: erased.append(n))

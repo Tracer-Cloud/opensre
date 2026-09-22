@@ -124,7 +124,7 @@ def repl_show_details(*, title: str, fields: Sequence[tuple[str, str]], note: st
                 len(lines) * ((width + columns - 1) // columns), delete=True
             )
             sys.stdout.flush()
-            if action in ("enter", "cancel"):
+            if action in ("enter", "cancel", "eof"):
                 return
             if action == "up":
                 offset = max(0, offset - 1)
