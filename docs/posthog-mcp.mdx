@@ -144,7 +144,7 @@ Example — every Monday at 08:00 London time to Telegram:
 
 ```bash
 opensre posthog report schedule add \
-  --cron "0 8 * * 1" \
+  --cron "0 8 * * mon" \
   --tz Europe/London \
   --provider telegram \
   --chat-id "-1001234567890" \
@@ -155,7 +155,7 @@ Example — same schedule to a Slack channel (`C…` member/channel id):
 
 ```bash
 opensre posthog report schedule add \
-  --cron "0 8 * * 1" \
+  --cron "0 8 * * mon" \
   --tz Europe/London \
   --provider slack \
   --chat-id C0123ABCD \

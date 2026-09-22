@@ -11,14 +11,23 @@
 
 Release availability is separate from default CI coverage. Use the install path for your platform below, then follow the matching install guide for the first-run flow. The [Quickstart](docs/quickstart.mdx) has the same flow with screenshots.
 
-| OS | Architecture | Install paths | Notes |
-| --- | --- | --- | --- |
-| macOS | arm64, x86_64 | [curl installer](https://install.opensre.com), [Homebrew](https://github.com/tracer-cloud/homebrew-tap), binaries: [arm64](https://github.com/Tracer-Cloud/opensre/releases/download/main-build/opensre_main_darwin-arm64.tar.gz), [x86_64](https://github.com/Tracer-Cloud/opensre/releases/download/main-build/opensre_main_darwin-x64.tar.gz) | See the [macOS install steps](https://www.opensre.com/docs/quickstart#install-opensre-macos). |
-| Linux | x86_64, arm64 | [curl installer](https://install.opensre.com), [Homebrew](https://github.com/tracer-cloud/homebrew-tap), binaries: [x86_64](https://github.com/Tracer-Cloud/opensre/releases/download/main-build/opensre_main_linux-x64.tar.gz), [arm64](https://github.com/Tracer-Cloud/opensre/releases/download/main-build/opensre_main_linux-arm64.tar.gz) | Prebuilt binaries require glibc 2.35+ (Ubuntu 22.04+ or comparable); Alpine/musl and older systems should [install from source](docs/environments/linux-local.mdx#binary-compatibility). See the [Linux install steps](https://www.opensre.com/docs/quickstart#install-opensre-linux). |
-| Windows | x64 | [PowerShell installer](https://install.opensre.com), binary: [x64 ZIP](https://github.com/Tracer-Cloud/opensre/releases/download/main-build/opensre_main_windows-x64.zip) | See the [Windows install steps](https://www.opensre.com/docs/quickstart#install-opensre-windows). |
-| Windows | arm64 | — | **Unsupported.** It is not in the default release matrix because `cryptography` does not publish Windows arm64 wheels; source installs are best effort only. |
+Install the published CLI with curl, then run `opensre`:
 
-The binary links above are the rolling `main` build — the same channel `install.opensre.com` uses by default. For a pinned version, download the matching `opensre_<version>_<target>` asset from the [releases page](https://github.com/Tracer-Cloud/opensre/releases/latest). Each archive ships a `.sha256` file next to it.
+```bash
+curl -fsSL https://install.opensre.com | bash
+```
+
+```bash
+opensre
+```
+
+| OS | Architecture | Install guide | Notes |
+| --- | --- | --- | --- |
+| macOS | arm64, x86_64 | [macOS](https://www.opensre.com/docs/environments/macos) | The installer selects the matching binary. |
+| Linux | x86_64, arm64 | [Linux](https://www.opensre.com/docs/environments/linux-local) | Requires glibc 2.35+ (Ubuntu 22.04+ or comparable); Alpine/musl is unsupported. |
+| Windows (WSL) | x86_64, arm64 | [Windows with WSL](https://www.opensre.com/docs/environments/windows-local) | Run the curl installer inside a supported Linux distribution. |
+
+The curl installer uses the rolling `main` build by default. The steps below are for contributors working from a source checkout.
 
 Main CI runs mostly on `ubuntu-latest`. Windows CI is optional and runs only when a PR has the `ci:windows` label, so it is useful signal rather than a guarantee that every platform is covered by default.
 
@@ -156,7 +165,7 @@ Boot logs non-fatal warnings when a `PATH` tool is missing or a sandbox probe fa
 
 | Boot warning | Cause | Impact | What to do |
 | :--- | :--- | :--- | :--- |
-| **`curl is not on PATH`** | `curl` is not on `PATH`. | The agent is told not to shell out to `curl`. | **macOS:** `brew install curl`<br />**Linux:** `sudo apt-get install -y curl`<br />**Windows:** `winget install cURL.cURL` |
+| **`curl is not on PATH`** | `curl` is not on `PATH`. | The agent is told not to shell out to `curl`. | **macOS:** use the built-in `/usr/bin/curl`<br />**Linux:** `sudo apt-get install -y curl`<br />**Windows:** `winget install cURL.cURL` |
 | **`no interactive shell (bash/sh) on PATH`** | Neither `bash` nor `sh` is on `PATH`. | The agent is told it cannot run shell commands. | **Linux:** `sudo apt-get install -y bash`<br />**macOS:** keep `/bin` on `PATH`.<br />**Windows:** Git Bash (`winget install Git.Git`) or WSL. |
 | **`network egress is blocked for sandboxed code by default`** | Default sandbox policy blocks outbound sockets. | Sandboxed Python cannot open raw sockets. | Expected. Ignore it. Use configured integrations for outbound HTTP. Do **not** set `OPENSRE_ALLOW_NETWORK=1` — that only hides the warning. |
 | **`network requests is unavailable in this environment`** | The sandbox network probe uses the same default block. | Same as the previous row. | Expected. Same as the previous row. |

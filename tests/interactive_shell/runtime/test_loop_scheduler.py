@@ -14,7 +14,7 @@ from infrastructure.scheduling.scheduler.runners import SchedulerRunners
 
 class _Scheduler:
     def shutdown(self, wait: bool = False) -> None:
-        del wait
+        """No scheduler resources are created by this fake."""
 
 
 @pytest.fixture

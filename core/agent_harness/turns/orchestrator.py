@@ -30,6 +30,8 @@ from core.agent_harness.turns.turn_results import (
     TurnResult,
 )
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
+from infrastructure.analytics.prompt_log.lifecycle import record_prompt_turn
+from infrastructure.analytics.prompt_log.recorder import PromptRecorder
 from infrastructure.observability.trace.observations import (
     TraceAttributes,
     is_observation_sink_active,
@@ -52,6 +54,9 @@ def stage_turn_error(session: Any, kind: str, message: str) -> None:
     setter = getattr(terminal, "set_pending_turn_error", None)
     if callable(setter):
         setter(kind, message)
+    recorder = PromptRecorder.current()
+    if recorder is not None:
+        recorder.set_error(kind, message)
 
 
 def stage_turn_llm_failure(session: Any, *, client: Any | None = None) -> None:
@@ -64,12 +69,15 @@ def stage_turn_llm_failure(session: Any, *, client: Any | None = None) -> None:
 
     terminal = getattr(session, "terminal", None)
     setter = getattr(terminal, "set_pending_turn_llm", None)
-    if not callable(setter):
-        return
     model = resolve_model_name(client) if client is not None else None
     provider = resolve_provider_name(client) if client is not None else None
     if model or provider:
-        setter(LlmRunInfo(model=model, provider=provider))
+        run = LlmRunInfo(model=model, provider=provider)
+        if callable(setter):
+            setter(run)
+        recorder = PromptRecorder.current()
+        if recorder is not None:
+            recorder.set_run(run)
 
 
 def _cancelled_turn_result(
@@ -118,6 +126,7 @@ def run_turn(
     tool driving a headless turn) inherits it rather than stamping its own.
     """
     with (
+        record_prompt_turn(text, session, surface=surface) as recorder,
         inherit_trace_session(getattr(session, "session_id", None)) as trace_session,
         observe_span(
             _TURN_OBSERVATION_NAME,
@@ -139,6 +148,11 @@ def run_turn(
             output=result.primary_response_text or None,
             metadata=_turn_outcome_metadata(result),
         )
+        if recorder is not None:
+            if result.cancelled:
+                recorder.set_error("cancelled", "Agent execution cancelled.")
+            else:
+                recorder.set_response(result.primary_response_text)
         return result
 
 

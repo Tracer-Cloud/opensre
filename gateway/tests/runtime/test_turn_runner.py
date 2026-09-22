@@ -16,6 +16,7 @@ from core.agent_harness.session import SessionCore
 from core.agent_harness.session.persistence.memory import InMemorySessionStore
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
 from infrastructure.turn_host.session_agents import SessionAgentPool
+from infrastructure.turn_host.session_lock import session_execution_lock
 from infrastructure.turn_host.turn_runner import TurnRunner
 from tests.core.agent.orchestration.cross_surface_parity_harness import (
     RecordingTurnOutput,
@@ -588,6 +589,62 @@ def test_run_returns_none_and_says_at_capacity_when_the_gate_refuses(monkeypatch
     assert sink.finalized == AT_CAPACITY_MESSAGE
     admission_check.assert_not_called()
     factory.assert_not_called()
+
+
+def test_waiting_on_session_lease_does_not_consume_global_capacity(
+    monkeypatch: Any,
+    tmp_path: Any,
+) -> None:
+    """A resumed session waiting elsewhere leaves the sole slot for another turn."""
+    from infrastructure.turn_host.concurrency import TurnConcurrencyGate
+
+    monkeypatch.setattr(
+        "infrastructure.turn_host.session_lock.sessions_dir",
+        lambda: tmp_path,
+    )
+    handler = TurnRunner(console=Console(force_terminal=False), gate=TurnConcurrencyGate(1))
+    blocked_session = SessionCore(store=InMemorySessionStore())
+    available_session = SessionCore(store=InMemorySessionStore())
+    blocked_attempted = threading.Event()
+    available_dispatched = threading.Event()
+    errors: list[Exception] = []
+
+    def _run_turn(*_args: Any, **_kwargs: Any) -> TurnResult:
+        available_dispatched.set()
+        return _empty_turn_result()
+
+    monkeypatch.setattr(handler, "_run_turn", _run_turn)
+
+    def _run_blocked() -> None:
+        try:
+            blocked_attempted.set()
+            handler.run(
+                "blocked",
+                blocked_session,
+                RecordingTurnOutput(),
+                logging.getLogger("test.waiting-session-lease"),
+            )
+        except Exception as exc:
+            errors.append(exc)
+
+    with session_execution_lock(blocked_session.session_id):
+        thread = threading.Thread(target=_run_blocked)
+        thread.start()
+        assert blocked_attempted.wait(timeout=1)
+        assert not available_dispatched.wait(timeout=0.2)
+
+        result = handler.run(
+            "available",
+            available_session,
+            RecordingTurnOutput(),
+            logging.getLogger("test.waiting-session-lease"),
+        )
+
+    thread.join(timeout=5)
+    assert not thread.is_alive()
+    assert not errors, errors
+    assert result is not None
+    assert available_dispatched.is_set()
 
 
 def test_run_rejected_by_admission_never_starts_agent_work(monkeypatch: Any) -> None:

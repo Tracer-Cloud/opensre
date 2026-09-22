@@ -40,6 +40,7 @@ from surfaces.cli.telemetry import (
     capture_exception,
     capture_first_run_if_needed,
     load_structured_error_type,
+    record_install_marker_state,
     render_landing,
     render_structured_error,
     report_exception,
@@ -87,6 +88,8 @@ def _capture_accepted_cli_invocation(ctx: click.Context) -> None:
     if ctx.obj.get(_CLI_ANALYTICS_CAPTURED, False):
         return
     ctx.obj[_CLI_ANALYTICS_CAPTURED] = True
+    if ctx.obj.get(_RECORD_INSTALL_ONLY, False):
+        record_install_marker_state()
     capture_first_run_if_needed()
     if ctx.obj.get(_RECORD_INSTALL_ONLY, False):
         return

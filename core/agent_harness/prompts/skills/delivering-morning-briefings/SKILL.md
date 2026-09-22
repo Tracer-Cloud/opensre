@@ -133,7 +133,7 @@ Example after Slack webhook delivery:
 ```text
 propose_scheduled_delivery(kind="recurring_skill", skill_name="delivering-morning-briefings",
     city="<city used for the weather fetch>",
-    cron="0 8 * * 1-5", timezone="UTC", provider="slack",
+    cron="0 8 * * mon-fri", timezone="UTC", provider="slack",
     briefing_text="<FULL composed weather + headlines briefing>")
 ```
 

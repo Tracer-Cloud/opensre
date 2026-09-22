@@ -1,26 +1,23 @@
-"""Prompt/response recorder for interactive-shell turns."""
+"""Prompt/response capture through the session, local log, and analytics sinks."""
 
 from __future__ import annotations
 
 import contextlib
 import time
 import uuid
+from contextvars import ContextVar
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Protocol
 
+from config.prompt_log import PromptLogConfig
 from config.version import get_opensre_version
-from core.agent_harness.spi.accounting import LlmRunInfo
 from core.llm_invoke_errors import LLM_PROVIDER_FAILURE_KINDS, classify_provider_error_kind
-from infrastructure.analytics.provider import JsonValue
-from surfaces.interactive_shell.prompt_history.policy import redact_text
-from surfaces.interactive_shell.telemetry.config import PromptLogConfig
-from surfaces.interactive_shell.telemetry.integration_snapshot import (
-    build_turn_integration_snapshot,
-)
-from surfaces.interactive_shell.telemetry.sinks.local_jsonl import (
+from infrastructure.analytics.prompt_log.sinks.local_jsonl import (
     append_prompt_log_record,
 )
-from surfaces.interactive_shell.telemetry.sinks.posthog_ai import capture_ai_generation
+from infrastructure.analytics.prompt_log.sinks.posthog_ai import capture_ai_generation
+from infrastructure.analytics.provider import JsonValue
+from infrastructure.safety.secret_redaction import redact_text
 
 _SUPPORTED_TURN_KINDS = frozenset({"agent", "follow_up", "new_alert", "background_task"})
 
@@ -64,6 +61,30 @@ def _fallback_terminal_response(*, prompt: str) -> str:
     return "terminal turn handled"
 
 
+class _RunInfo(Protocol):
+    """Read-only run metadata accepted without depending on harness accounting."""
+
+    @property
+    def model(self) -> str | None:
+        """Resolved model name, when available."""
+
+    @property
+    def provider(self) -> str | None:
+        """Resolved provider name, when available."""
+
+    @property
+    def latency_ms(self) -> int | None:
+        """Elapsed run time in milliseconds, when available."""
+
+    @property
+    def input_tokens(self) -> int | None:
+        """Provider-reported input usage, when available."""
+
+    @property
+    def output_tokens(self) -> int | None:
+        """Provider-reported output usage, when available."""
+
+
 class PromptRecorder:
     """Captures one `(prompt, response)` pair and flushes to configured sinks."""
 
@@ -75,7 +96,8 @@ class PromptRecorder:
         session_id: str,
         turn_id: str,
         prompt: str,
-        session: Any | None = None,
+        session: Any,
+        surface: str = "interactive_shell",
     ) -> None:
         self._config = config
         self._turn_kind = turn_kind
@@ -83,6 +105,8 @@ class PromptRecorder:
         self._turn_id = turn_id
         self._prompt = prompt
         self._session = session
+        self._surface = surface
+        self._properties: dict[str, JsonValue] = {}
         self._response: str = ""
         self._error_kind: str = ""
         self._error_message: str = ""
@@ -93,6 +117,24 @@ class PromptRecorder:
         self._output_tokens: int | None = None
         self._start = time.monotonic()
         self._flushed = False
+
+    @staticmethod
+    def current() -> PromptRecorder | None:
+        """Return the recorder owned by the current turn."""
+        return current_recorder.get()
+
+    def set_properties(self, properties: dict[str, JsonValue]) -> None:
+        """Attach host-specific analytics metadata."""
+        self._properties.update(properties)
+
+    def set_run(self, run: _RunInfo) -> None:
+        """Attach the model and provider-reported usage of the agent run."""
+        self._model = run.model or self._model
+        self._provider = run.provider or self._provider
+        if run.input_tokens is not None:
+            self._input_tokens = run.input_tokens
+        if run.output_tokens is not None:
+            self._output_tokens = run.output_tokens
 
     @property
     def turn_id(self) -> str:
@@ -106,6 +148,7 @@ class PromptRecorder:
         session: Any,
         text: str,
         turn_kind: str,
+        surface: str = "interactive_shell",
     ) -> PromptRecorder | None:
         config = PromptLogConfig.load()
         if not config.enabled or turn_kind not in _SUPPORTED_TURN_KINDS:
@@ -122,6 +165,7 @@ class PromptRecorder:
             turn_id=str(uuid.uuid4()),
             prompt=_sanitize_text(text, config=config),
             session=session,
+            surface=surface,
         )
 
     @classmethod
@@ -168,7 +212,7 @@ class PromptRecorder:
         self._error_kind = kind or "error"
         self._error_message = _sanitize_text(message, config=self._config)
 
-    def set_response(self, text: str, run: LlmRunInfo | None = None) -> None:
+    def set_response(self, text: str, run: _RunInfo | None = None) -> None:
         cleaned = _sanitize_text(text, config=self._config)
         if not cleaned.strip():
             cleaned = ""
@@ -176,11 +220,8 @@ class PromptRecorder:
         if run is None:
             self._latency_ms = int((time.monotonic() - self._start) * 1000)
             return
-        self._model = run.model
-        self._provider = run.provider
+        self.set_run(run)
         self._latency_ms = run.latency_ms or int((time.monotonic() - self._start) * 1000)
-        self._input_tokens = run.input_tokens
-        self._output_tokens = run.output_tokens
 
     def _response_for_emit(self) -> str:
         """Resolve the assistant text written to sinks at flush time."""
@@ -216,10 +257,8 @@ class PromptRecorder:
 
         # Also write enriched turn to the session file so /resume can restore context.
         with contextlib.suppress(Exception):
-            from core.agent_harness.spi.defaults import default_session_store
-
             session_kind = _TURN_TO_SESSION_KIND.get(self._turn_kind, self._turn_kind)
-            default_session_store().append_turn_detail(
+            self._session.store.append_turn_detail(
                 self._session_id,
                 session_kind,
                 self._prompt,
@@ -238,12 +277,11 @@ class PromptRecorder:
                 # sentinel when the attempted model could not be resolved.
                 llm_provider_failed = self._error_kind in LLM_PROVIDER_FAILURE_KINDS
                 fallback_label = UNKNOWN_LLM if llm_provider_failed else NO_CONVERSATIONAL_AGENT
-                integration_snapshot = build_turn_integration_snapshot(self._session)
                 posthog_properties: dict[str, JsonValue] = {
                     "$ai_trace_id": self._turn_id,
                     "$ai_session_id": self._session_id,
                     "$ai_span_id": self._turn_id,
-                    "$ai_span_name": f"surfaces.interactive_shell.{self._turn_kind}",
+                    "$ai_span_name": f"surfaces.{self._surface}.{self._turn_kind}",
                     "$ai_model": self._model or fallback_label,
                     "$ai_provider": self._provider or fallback_label,
                     "$ai_input": [{"role": "user", "content": self._prompt}],
@@ -253,16 +291,14 @@ class PromptRecorder:
                             "content": response_text,
                         }
                     ],
-                    "$ai_latency": (
-                        round((self._latency_ms or 0) / 1000.0, 3) if self._latency_ms else 0.0
-                    ),
+                    "$ai_latency": (round(latency_ms / 1000.0, 3)),
                     "$ai_input_tokens": self._input_tokens or 0,
                     "$ai_output_tokens": self._output_tokens or 0,
                     "cli_turn_kind": self._turn_kind,
                     "cli_session_id": self._session_id,
                     "cli_turn_id": self._turn_id,
                     "opensre_version": get_opensre_version(),
-                    **integration_snapshot,
+                    **self._properties,
                 }
                 slash_outcome = _latest_slash_outcome(self._session)
                 if slash_outcome:
@@ -294,3 +330,6 @@ def _session_id(session: Any) -> str:
     with contextlib.suppress(AttributeError):
         session._prompt_log_session_id = sid
     return sid
+
+
+current_recorder: ContextVar[PromptRecorder | None] = ContextVar("prompt_recorder", default=None)

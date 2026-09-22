@@ -6,6 +6,7 @@ from typing import Any
 
 from core.agent_harness.accounting.token_accounting import LlmRunInfo
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
+from infrastructure.analytics.prompt_log.recorder import PromptRecorder
 from surfaces.interactive_shell.runtime.core.turn_accounting import ShellTurnAccounting
 from surfaces.interactive_shell.session import Session
 
@@ -22,8 +23,11 @@ class _FakeRecorder:
     def set_response(self, text: str, run: Any | None = None) -> None:
         self.responses.append((text, run))
 
-    def flush(self) -> None:
-        self.flushed += 1
+    def set_run(self, run: Any) -> None:
+        self.run = run
+
+    def set_properties(self, properties: dict[str, Any]) -> None:
+        self.properties = properties
 
 
 def _result(*, text: str = "done") -> TurnResult:
@@ -40,27 +44,29 @@ def _result(*, text: str = "done") -> TurnResult:
     )
 
 
-def test_finalize_applies_pending_turn_llm_when_no_conversational_run() -> None:
+def test_finalize_applies_pending_turn_llm_when_no_conversational_run(monkeypatch) -> None:
     session = Session()
     pending = LlmRunInfo(model="claude-sonnet-4-5", provider="anthropic", input_tokens=100)
     session.terminal.set_pending_turn_llm(pending)
     recorder = _FakeRecorder()
-    accounting = ShellTurnAccounting(session=session, text="/status", recorder=recorder)  # type: ignore[arg-type]
+    monkeypatch.setattr(PromptRecorder, "current", lambda: recorder)
+    accounting = ShellTurnAccounting(session=session, text="/status")
 
     accounting.finalize(_result())
 
-    assert recorder.responses == [("done", pending)]
-    assert recorder.flushed == 1
+    assert recorder.run == pending
+    assert recorder.properties["integration_snapshot_source"] == "runtime_config"
     assert session.terminal.pop_pending_turn_llm() is None
 
 
-def test_finalize_does_not_duplicate_early_cli_agent_history() -> None:
+def test_finalize_does_not_duplicate_early_cli_agent_history(monkeypatch) -> None:
     """ActionRenderObserver records once; finalize must not append again."""
     session = Session()
     prompt = "Use the MySQL tool to query active connections."
     session.record("cli_agent", prompt)
     recorder = _FakeRecorder()
-    accounting = ShellTurnAccounting(session=session, text=prompt, recorder=recorder)  # type: ignore[arg-type]
+    monkeypatch.setattr(PromptRecorder, "current", lambda: recorder)
+    accounting = ShellTurnAccounting(session=session, text=prompt)
 
     accounting.finalize(_result())
 
@@ -69,11 +75,12 @@ def test_finalize_does_not_duplicate_early_cli_agent_history() -> None:
     assert cli_rows[0]["text"] == prompt
 
 
-def test_finalize_sets_structured_error_from_pending_turn_error() -> None:
+def test_finalize_sets_structured_error_from_pending_turn_error(monkeypatch) -> None:
     session = Session()
     session.terminal.set_pending_turn_error("config", "ANTHROPIC_API_KEY not set")
     recorder = _FakeRecorder()
-    accounting = ShellTurnAccounting(session=session, text="/status", recorder=recorder)  # type: ignore[arg-type]
+    monkeypatch.setattr(PromptRecorder, "current", lambda: recorder)
+    accounting = ShellTurnAccounting(session=session, text="/status")
 
     accounting.finalize(_result(text="investigation_failed"))
 
@@ -85,7 +92,7 @@ def test_finalize_consumes_pending_state_even_without_recorder() -> None:
     session = Session()
     session.terminal.set_pending_turn_llm(LlmRunInfo(model="m"))
     session.terminal.set_pending_turn_error("llm", "boom")
-    accounting = ShellTurnAccounting(session=session, text="hi", recorder=None)
+    accounting = ShellTurnAccounting(session=session, text="hi")
 
     accounting.finalize(_result())
 

@@ -9,6 +9,12 @@ class Event(StrEnum):
     # Lifecycle
     CLI_INVOKED = "cli_invoked"
     ACCOUNT_AUTHENTICATED = "account_authenticated"
+    # Mandatory interactive-shell sign-in gate: exposure, then one explicit
+    # choice per menu round. Choosing sign-in is intent only; the account link
+    # is ``account_authenticated``.
+    SIGN_IN_PROMPTED = "sign_in_prompted"
+    SIGN_IN_SELECTED = "sign_in_selected"
+    STAY_SIGNED_OUT_SELECTED = "stay_signed_out_selected"
     REPL_EXECUTION_POLICY_DECISION = "repl_execution_policy_decision"
     INSTALL_DETECTED = "install_detected"
     USER_ID_LOAD_FAILED = "user_id_load_failed"

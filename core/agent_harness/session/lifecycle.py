@@ -40,6 +40,7 @@ from core.agent_harness.session.persistence.contracts import (
     SessionRepo,
     SessionStore,
 )
+from core.agent_harness.session.persistence.wal_recovery import format_recovery_note
 
 # Import from submodules (not the package __init__) so the session package can
 # re-export SessionManager without a circular import.
@@ -218,6 +219,9 @@ class SessionManager:
         self._flush(session)
         self._schedule_memory_extraction(session)
         session.clear()
+        from infrastructure.turn_host.session_lock import retain_session_execution_lock
+
+        retain_session_execution_lock(session.session_id, timeout=0)
         self._store.open_session(session)
         return session
 
@@ -285,9 +289,32 @@ class SessionManager:
             from core.agent_harness.task_plan.persist import apply_task_plan_state
 
             apply_task_plan_state(session, plan_state)
+        choice_state = data.get(RestoreContextKey.PENDING_USER_CHOICE_STATE)
+        if choice_state is not None:
+            from core.agent_harness.session.pending_choice import (
+                apply_pending_user_choice_state,
+            )
+
+            apply_pending_user_choice_state(session, choice_state)
         history = data.get(RestoreContextKey.HISTORY)
         if isinstance(history, list):
             session.history = [dict(item) for item in history if isinstance(item, dict)]
+        raw_dangling_intents = data.get("dangling_tool_intents")
+        dangling_intents = raw_dangling_intents if isinstance(raw_dangling_intents, list) else []
+        recovery_note = format_recovery_note(dangling_intents)
+        session.pending_recovery_note = recovery_note
+        return session
+
+    def refresh_from_storage(self, session: _S) -> _S:
+        """Refresh persisted state on a live handle without recreating its ports.
+
+        A gateway may resolve a session before waiting for another host's
+        whole-turn lease. Once it acquires that lease, refresh the transcript
+        and resumable workflow state before the next turn mutates or flushes it.
+        """
+        data = self._repo.load_session(session.session_id)
+        if data is not None:
+            self.restore_context(session, data)
         return session
 
     def close(

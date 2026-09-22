@@ -218,7 +218,7 @@ Configure Telegram first (setup + verify — the gateway is **not** required).
 #### Cron (recurring reports)
 
 ```bash
-opensre cron add --kind github_pr_sweep --cron "0 9 * * 1-5" \
+opensre cron add --kind github_pr_sweep --cron "0 9 * * mon-fri" \
   --tz Asia/Kolkata --provider telegram --chat-id <chat_id>
 ```
 

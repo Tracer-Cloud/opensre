@@ -43,6 +43,7 @@ from infrastructure.analytics.destination import (
     resolve_analytics_destination,
 )
 from infrastructure.analytics.events import Event
+from infrastructure.analytics.install_state import read_install_marker_state
 from infrastructure.analytics.usage_context import (
     ORGANIZATION_GROUP_TYPE,
     merge_usage_enrichment,
@@ -131,12 +132,17 @@ class _CompositeFingerprint:
     components: str
 
 
+@dataclass
+class _InstallCaptureState:
+    attempted: bool = False
+
+
 _anonymous_id_lock = threading.Lock()
 _cached_anonymous_id: str | None = None
 _cached_identity_persistence = "unknown"
 _first_run_marker_created_this_process = False
 _install_capture_lock = threading.Lock()
-_install_capture_attempted = False
+_install_capture_state = _InstallCaptureState()
 _pending_user_id_load_failures: list[Properties] = []
 _ONE_TIME_EVENTS: Final[frozenset[str]] = frozenset({Event.INSTALL_DETECTED.value})
 
@@ -782,6 +788,10 @@ class Analytics:
         self._shutdown = False
         self._worker_alive = not self._disabled
         self._persistent_properties: Properties = {}
+        if (install_marker_state := read_install_marker_state(_CONFIG_DIR)) is not None:
+            self._persistent_properties["install_marker_state_before_install"] = (
+                install_marker_state
+            )
         self._identified_organization_groups: set[str] = set()
         self._org_group_lock = threading.Lock()
         self._destination: AnalyticsDestination | None = None
@@ -1105,13 +1115,12 @@ def analytics_needs_flush() -> bool:
 
 def capture_install_detected_if_needed(properties: Properties | None = None) -> bool:
     """Attempt install capture once per process until delivery is persisted."""
-    global _install_capture_attempted
     with _install_capture_lock:
-        if _install_capture_attempted or _path_exists(_FIRST_RUN_PATH):
+        if _install_capture_state.attempted or _path_exists(_FIRST_RUN_PATH):
             return False
         analytics = get_analytics()
         analytics.capture(Event.INSTALL_DETECTED, properties)
-        _install_capture_attempted = True
+        _install_capture_state.attempted = True
         return True
 
 

@@ -19,7 +19,10 @@ from bootstrap.process import WEB_PROFILE, configure_process
 from config.environment import get_environment
 from config.llm_settings import LLMSettings
 from config.version import get_opensre_version
+from gateway.core.process.component_status import read_component_status
 from gateway.core.process.readiness import is_gateway_ready
+from gateway.core.process.shutdown_record import PREVIOUS_SHUTDOWN_COMPONENT
+from gateway.core.process.state_counts import read_state_counts
 from infrastructure.alert_intake import router as alert_router
 from infrastructure.request_body_limit import RequestBodyLimitMiddleware
 
@@ -33,6 +36,12 @@ class HealthResponse(BaseModel):
     version: str
     llm_configured: bool
     env: str
+    #: State on the volume, so a start can be compared with the stop before it.
+    sessions: int
+    memory_notes: int
+    scheduled_tasks: int
+    #: How the previous gateway process ended; empty outside a gateway process.
+    previous_shutdown: str
 
 
 app = FastAPI()
@@ -50,11 +59,18 @@ def get_health_response() -> HealthResponse:
     except ValidationError:
         llm_configured = False
 
+    counts = read_state_counts()
+    components = read_component_status()
+    previous_shutdown = components.get(PREVIOUS_SHUTDOWN_COMPONENT, "")
     return HealthResponse(
         ok=llm_configured,
         version=get_opensre_version(),
         llm_configured=llm_configured,
         env=get_environment().value,
+        sessions=counts.sessions,
+        memory_notes=counts.memory_notes,
+        scheduled_tasks=counts.scheduled_tasks,
+        previous_shutdown=previous_shutdown,
     )
 
 

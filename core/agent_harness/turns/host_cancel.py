@@ -20,7 +20,8 @@ Scheduled ticks write that same Event when the stored task is disabled or
 removed (:class:`PredicateCancelConsole`). Do not invent a second cancel
 channel.
 
-Shell cancel stays on ``StreamingConsole``; it never needs ``turn_cancel``.
+The shell sink shares its ``StreamingConsole.cancel_event`` as ``turn_cancel``
+so cancelling the UI and the worker signals the same turn.
 """
 
 from __future__ import annotations

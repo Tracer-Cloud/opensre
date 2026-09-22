@@ -24,6 +24,7 @@ import logging
 import threading
 import time
 from collections.abc import Callable
+from contextlib import nullcontext
 
 from rich.console import Console
 
@@ -51,6 +52,10 @@ from infrastructure.process.turn_capacity import turn_slot
 from infrastructure.turn_host.cancel_console import CancelConsole
 from infrastructure.turn_host.concurrency import AT_CAPACITY_MESSAGE, TurnConcurrencyGate
 from infrastructure.turn_host.session_agents import SessionAgentPool
+from infrastructure.turn_host.session_lock import (
+    retained_session_execution_locks,
+    session_execution_lock,
+)
 from infrastructure.turn_host.status_messages import EMPTY_RESPONSE_MESSAGE
 from infrastructure.turn_host.turn_memory import log_turn_memory, resident_memory_bytes
 from infrastructure.turn_host.turn_output import TurnOutput
@@ -133,7 +138,15 @@ class TurnRunner:
         admission hook rejected it. Only the first finalizes anything here — a
         cancelling host and a rejecting hook each own their user-facing response.
         """
-        with turn_slot(self._gate) as running:
+        session_id = str(getattr(session, "session_id", "") or "")
+        # A session already being resumed elsewhere must not consume the process
+        # turn budget while it waits.  The pool takes this same reentrant lease
+        # around agent binding, preserving safety for direct pool callers.
+        lease = session_execution_lock(session_id) if session_id else nullcontext()
+        # /resume may non-blockingly claim a second session while this turn is
+        # running. Keep that target protected until _run_turn has flushed its
+        # rebound state, then release it together with this turn's source lease.
+        with lease, retained_session_execution_locks(), turn_slot(self._gate) as running:
             if not running:
                 output.finalize(self._busy_message)
                 return None

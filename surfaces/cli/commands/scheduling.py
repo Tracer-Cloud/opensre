@@ -35,7 +35,7 @@ def validate_cron_and_timezone(cron_expr: str, timezone: str) -> None:
     if len(cron_expr.split()) not in (CRON_FIELD_COUNT, CRON_FIELD_COUNT_WITH_SECONDS):
         _console.print(f"[red]Error: {CRON_FIELD_COUNT_ERROR}.[/red]")
         _console.print(f"  Format: {CRON_FORMAT_HELP}")
-        _console.print("  Example: 0 9 * * 1-5  (weekdays at 09:00)")
+        _console.print("  Example: 0 9 * * mon-fri  (weekdays at 09:00)")
         _console.print("  Example: */30 * * * * *  (every 30 seconds)")
         raise SystemExit(1)
 

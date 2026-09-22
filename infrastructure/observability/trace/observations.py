@@ -119,7 +119,7 @@ class _NoopObservation:
         level: ObservationLevel | None = None,
         status_message: str | None = None,
     ) -> None:
-        del output, metadata, usage, level, status_message
+        """Ignore updates when no observation backend is active."""
 
 
 #: Shared inert observation; sinks hand it back when a backend call fails.

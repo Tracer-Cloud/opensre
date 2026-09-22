@@ -56,7 +56,7 @@ Recurring check-ins:
 
 ```bash
 opensre work schedule-checkin \
-  --cron "0 9 * * 1-5" \
+  --cron "0 9 * * mon-fri" \
   --tz Europe/London \
   --target slack:C0123ABCD \
   --target telegram:-100123456 \

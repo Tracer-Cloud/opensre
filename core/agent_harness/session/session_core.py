@@ -168,9 +168,8 @@ class SessionCore:
 
     A question the user has settled must not be asked again later in the
     session, whether it comes back through a skill's entry hook or because the
-    model calls the menu tool itself. Session-scoped on purpose: ``/new`` starts
-    clean, and a ``/resume`` may ask again, since the answer's effect is not
-    restored either.
+    model calls the menu tool itself. ``/new`` starts clean; resume restores the
+    keys so a multi-round workflow does not repeat an earlier blocker.
     """
 
     skill_question_keys: dict[str, set[str]] = field(default_factory=dict)

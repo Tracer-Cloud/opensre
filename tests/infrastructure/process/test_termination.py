@@ -11,6 +11,43 @@ from infrastructure.process import termination as termination_module
 from infrastructure.process.termination import terminate_process_tree
 
 
+def test_wait_failure_still_kills_and_reaps_the_entire_tree(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    killed: list[int] = []
+    waits: list[tuple[list[int], float]] = []
+    child = SimpleNamespace(
+        pid=124,
+        suspend=lambda: None,
+        terminate=lambda: None,
+        kill=lambda: killed.append(124),
+        children=lambda **_kwargs: [],
+    )
+    root = SimpleNamespace(
+        pid=123,
+        suspend=lambda: None,
+        terminate=lambda: None,
+        kill=lambda: killed.append(123),
+        children=lambda **_kwargs: [child],
+    )
+
+    def wait_procs(
+        processes: list[SimpleNamespace], *, timeout: float
+    ) -> tuple[list[SimpleNamespace], list[SimpleNamespace]]:
+        waits.append(([process.pid for process in processes], timeout))
+        if len(waits) == 1:
+            raise psutil.AccessDenied(pid=123)
+        return processes, []
+
+    monkeypatch.setattr(psutil, "Process", lambda _pid: root)
+    monkeypatch.setattr(psutil, "wait_procs", wait_procs)
+
+    terminate_process_tree(123, grace_seconds=10, force_wait_seconds=5)
+
+    assert killed == [124, 123]
+    assert waits == [([124, 123], 10), ([124, 123], 5)]
+
+
 def test_terminate_process_tree_freezes_root_and_collects_late_descendants(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

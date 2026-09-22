@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from config.constants.scheduler import WEEKDAY_CRON_FIELD
 from core.agent_harness import pin_recurring_skill
 from infrastructure.scheduling.scheduler.credentials import (
     resolve_slack_credentials,
@@ -142,7 +143,7 @@ STARTER_LOOPS: tuple[StarterLoop, ...] = (
         name="Morning report",
         description="Weekday weather and news briefing.",
         kind=TaskKind.RECURRING_SKILL,
-        cron="0 8 * * 1-5",
+        cron=f"0 8 * * {WEEKDAY_CRON_FIELD}",
         timezone="UTC",
         window_hours=24,
         skill_name="delivering-morning-briefings",
@@ -152,7 +153,7 @@ STARTER_LOOPS: tuple[StarterLoop, ...] = (
         name="Weekly alert audit",
         description="Monday review of noisy and actionable alert patterns.",
         kind=TaskKind.MANUAL_LOOP,
-        cron="0 9 * * 1",
+        cron="0 9 * * mon",
         timezone="UTC",
         window_hours=168,
         prompt=(
@@ -165,7 +166,7 @@ STARTER_LOOPS: tuple[StarterLoop, ...] = (
         name="PR sweep",
         description="Weekday standup digest for stale, blocked, or ready pull requests.",
         kind=TaskKind.GITHUB_PR_SWEEP,
-        cron="0 9 * * 1-5",
+        cron=f"0 9 * * {WEEKDAY_CRON_FIELD}",
         timezone="UTC",
         window_hours=24,
     ),
@@ -231,7 +232,7 @@ def loop_time_label(cron: str) -> str:
 def cron_for_time(time_text: str, *, weekdays: bool = False) -> str:
     """Build a daily or weekday cron expression from a human time string."""
     hour, minute = parse_loop_time(time_text)
-    day_of_week = "1-5" if weekdays else "*"
+    day_of_week = WEEKDAY_CRON_FIELD if weekdays else "*"
     return f"{minute} {hour} * * {day_of_week}"
 
 

@@ -116,13 +116,16 @@ def _select_runtime_request_input(text: str, source: Any) -> Any | None:
 
 
 def _interactive_choice_available(session: Any, surface: str | None) -> bool:
-    """True when this turn can open the Ask User / ``/choose`` picker.
+    """True when this turn can accept an Ask User choice.
 
-    Gateway and headless sessions have no terminal facet. An interactive-shell
-    session with a terminal facet can queue the menu (the tool still checks TTY).
+    The interactive shell queues its picker. A headless CLI host instead
+    persists the choice for a later invocation. Gateway cannot do either.
     """
     if surface == "gateway":
         return False
+    if surface == "headless_cli":
+        capabilities = getattr(session, "available_capabilities", {})
+        return "deferred" in capabilities.get("ask_user_choice", ())
     if surface not in (None, "interactive_shell"):
         return False
     return getattr(session, "terminal", None) is not None

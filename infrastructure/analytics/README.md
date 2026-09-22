@@ -84,6 +84,7 @@ Every product event includes:
 | `is_ci`, `is_container`, `container_runtime` | Filters for human vs automated usage. |
 | `composite_fingerprint` | One-way local fingerprint used only when no account identity exists. |
 | `identity_persistence` | Whether the anonymous ID was persisted to disk. |
+| `install_marker_state_before_install` | `present`, `absent`, or `unknown` at the start of the most recent recorded installer run. |
 | `surface` | `cli`, `slack`, `telegram`, `discord`, or `buzz`, when known. |
 | `session_id` | OpenSRE session correlation ID, when known. |
 | `organization_id` | Server-resolved for personal requests; a bearer-authenticated runtime assertion for silos; untrusted on anonymous requests. |
@@ -93,11 +94,29 @@ Every product event includes:
 downstream PostHog compatibility. The first-party account user ID belongs in a
 server-owned column resolved from the bearer token.
 
+The shell and PowerShell installers, and `make install`, snapshot `installed`
+before installation work begins, resolving its directory the same way as the
+runtime's `get_store_path()`: `OPENSRE_WIZARD_STORE_PATH`'s parent when set,
+otherwise `OPENSRE_HOME`, otherwise `~/.opensre`. After a successful
+install, the record-only path saves that snapshot in `install_marker_state`
+beside the marker. Subsequent product events carry it, including when an
+existing marker suppresses `install_detected`; reinstalling does not manufacture
+another first-install event or a CLI usage event.
+
+`present` is evidence of prior installation state. `absent` means only that no
+marker was found: deleting local state can produce the same result as a new
+installation. `unknown` means the check could not establish presence or absence.
+When no installer snapshot has been recorded, the property is omitted. The
+value describes the most recent recorded installer run, not
+necessarily the first installation or the current invocation. Do not map
+`absent` to “first-ever install.”
+
 ## Event inventory
 
 | Area | Events | Important properties / question answered |
 | --- | --- | --- |
 | Acquisition | `install_detected`, `account_authenticated`, `cli_invoked` | Install source/channel/distribution, login conversion, entrypoint, command names, and boolean flags; never raw argument values. Official installers invoke the hidden record-only path immediately after installation. |
+| Sign-in gate | `sign_in_prompted`, `sign_in_selected`, `stay_signed_out_selected` | The interactive shell's mandatory sign-in screen: one exposure per signed-out launch, then one event per menu round with `choice_label` and `method` (`menu` for a picked option, `dismissed` when the menu was closed without one — Esc, `q`, Ctrl-C, Ctrl-D, or EOF are not distinguished). `sign_in_selected` is recorded before the browser flow starts and is intent only; `account_authenticated` reports the outcome. Already signed-in, non-interactive, and test runs emit none of these. |
 | Runtime health | `user_id_load_failed`, `sentry_init_skipped` | Identity persistence and telemetry setup failures. |
 | Onboarding | `onboard_started`, `onboard_completed`, `onboard_failed` | Funnel conversion, wizard mode, target, provider, and model. |
 | Integrations | `integration_setup_started`, `integration_setup_completed`, `integration_verified`, `integration_removed`, `integrations_listed` | Integration adoption and setup/verification conversion by service. |
@@ -105,7 +124,7 @@ server-owned column resolved from the bearer token.
 | Agent loop | `react_turn_completed` | Phase, iterations, cap hits, stop reason, tool-call count, latency, provider, and model. |
 | Agent tool calls | `agent_tool_call_completed` | Tool/source/role, whether execution occurred, outcome, latency, error state, and termination; never tool arguments or results. |
 | Ask User | `ask_user_prompt_rendered`, `ask_user_prompt_answered`, `ask_user_prompt_dismissed` | Linked prompt exposure, bounded credential-redacted question/option text, selected option indexes, bounded custom answers, and dismissals. Listed answers send indexes only. |
-| Shell and browser | `interactive_shell_rendered`, `browser_open_requested` | Successful shell first paint and application-requested browser-open outcome by safe target label. Terminals do not expose whether a manually rendered link was clicked. |
+| Shell and browser | `interactive_shell_rendered`, `browser_open_requested` | First interactive-shell chrome, including the sign-in screen. Not recorded for `--resume`, an auto-launch after `opensre onboard`, or CLI subcommands. `browser_open_requested` is an application-requested browser-open outcome by safe target label. Terminals do not expose whether a manually rendered link was clicked. |
 | Agent workflows | `skill_executed`, `opensre_commit_created` | Successful skill entry and commits produced by supported OpenSRE repair workflows. |
 | AI turn | `$ai_generation` | Turn/session IDs, turn kind, model/provider, latency, tokens, integration snapshot, outcome, and error category. It also contains redacted prompt and response text in `$ai_input` and `$ai_output_choices`. |
 | Gateway | `gateway_turn_started`, `gateway_turn_completed`, `gateway_turn_failed` | Surface, answer rate, final intent, latency bucket, and exception type. No message body is included. |

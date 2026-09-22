@@ -15,6 +15,7 @@ from core.tool import RegisteredTool, SideEffectLevel
 from core.tool_framework.utils import object_schema, string_property
 from tools.interactive_shell.action_names import ActionToolName
 from tools.interactive_shell.actions.skill_entry import enter_skill
+from tools.registry_skill_guidance import tool_guidance_tools
 
 
 def _view_skill_reference(name: str, reference: str) -> dict[str, Any]:
@@ -53,7 +54,27 @@ def execute_skill_view_tool(args: dict[str, Any], ctx: ActionToolScope) -> dict[
     reference = str(args.get("reference", "")).strip()
     if reference:
         return _view_skill_reference(name, reference)
+    if not any(skill.name == name for skill in list_action_skills()):
+        guided_tools = tool_guidance_tools(name)
+        if guided_tools:
+            return _already_loaded_guidance(name, guided_tools)
     return enter_skill(name, ctx, from_model=True)
+
+
+def _already_loaded_guidance(name: str, guided_tools: tuple[str, ...]) -> dict[str, Any]:
+    """Guidance attached to tool descriptions has nothing to open; say so without failing."""
+    listed = ", ".join(guided_tools)
+    return {
+        "ok": True,
+        "name": name,
+        "already_loaded": True,
+        "tools": list(guided_tools),
+        "summary": f"{name} is tool guidance, already loaded",
+        "content": (
+            f"{name} is guidance attached to these tools: {listed}. There is no separate "
+            "skill to open: call the tool that fits the request."
+        ),
+    }
 
 
 def run_skill_view(*, name: str, reference: str = "", context: Any) -> dict[str, Any]:

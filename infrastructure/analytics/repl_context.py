@@ -46,6 +46,11 @@ def reset_cli_session_id(token: Token[str | None]) -> None:
     _CLI_SESSION_ID.reset(token)
 
 
+def reset_prompt_turn_id(token: Token[str | None]) -> None:
+    """Restore the enclosing turn's correlation id."""
+    _PROMPT_TURN_ID.reset(token)
+
+
 @contextlib.contextmanager
 def bound_repl_turn_context(
     *,

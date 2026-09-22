@@ -18,6 +18,16 @@ metadata:
 
 # Remote managed service (not yet available)
 
+**objective** 
+- Is to connect to a managed fargate container that spins up a ci-cd-repair loop: core/agent_harness/prompts/skills/repair-github-ci
+- This is seperate from skill core/agent_harness/prompts/skills/onboarding-github-ci/d-connecting-slack
+
+-------
+
+What this task should not do:
+- improving the cicd fix skill itself because we will reuse the existing one: core/agent_harness/prompts/skills/repair-github-ci
+
+
 This option is not implemented yet.
 
 Reply in two sentences and stop. Say the managed-service onboarding is comingsoon, then name what does work now: analysing a repository's CI/CD performance, or setting up a recurring CI repair agent. A viewer who picked this option must leave with something to try, not a dead end.

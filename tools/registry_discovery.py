@@ -51,6 +51,7 @@ INTEGRATION_TOOL_PACKAGES: tuple[str, ...] = (
     "integrations.groundcover.tools",
     "integrations.helm.tools",
     "integrations.honeycomb.tools",
+    "integrations.hosted_gateway.tools",
     "integrations.incident_io.tools",
     "integrations.jenkins.tools",
     "integrations.jira.tools",

@@ -1,57 +1,37 @@
 ---
 title: "Windows"
-description: "Install OpenSRE on Windows with PowerShell, or use WSL if you prefer Linux tools."
+description: "Install OpenSRE on Windows using the curl installer inside WSL."
 ---
 
-OpenSRE installs on Windows with PowerShell. You can also run the Linux install inside WSL if that's how you usually work.
+Use [WSL](https://learn.microsoft.com/en-us/windows/wsl/install) to run OpenSRE in a Linux terminal on Windows. Open your WSL distribution and change to your code project before continuing.
 
-## Option 1: Native Windows (PowerShell)
+## 1. Install and start OpenSRE
 
-### 1. Install
-
-Open PowerShell and run:
-
-```powershell
-irm https://install.opensre.com | iex
+```bash
+curl -fsSL https://install.opensre.com | bash
 ```
 
-If a new window doesn't see `opensre`, close and reopen PowerShell so PATH updates apply.
+```bash
+opensre
+```
 
-### 2. Set things up
+Create an OpenSRE account or sign in to activate the hosted model and open the interactive shell.
 
-```powershell
-opensre onboard
+The [Linux guide](/environments/linux-local#binary-compatibility) lists supported distributions. If `opensre` is not found, follow the PATH instructions printed by the installer or open a new terminal.
+
+## 2. Connect tools
+
+```bash
 opensre integrations setup <service>
 opensre integrations verify
 ```
 
-### 3. Ask the agent
+## 3. Ask the agent
 
-Start the interactive shell:
-
-```powershell
-opensre
-```
-
-Ask: *why is checkout latency spiking?*
-
-GIFs for Windows install and onboard are on the [Quickstart](/quickstart).
-
-## Option 2: WSL (Linux on Windows)
-
-Prefer a Linux shell?
-
-1. Install [WSL](https://learn.microsoft.com/en-us/windows/wsl/install) and open your Ubuntu (or other) distro.
-2. Follow the [Linux](/environments/linux-local) install guide inside that terminal.
-
-## Stuck?
-
-- **Command not found** — new terminal, or check that the install directory is on PATH
-- **Onboard can't reach the LLM** — check the API key and network; you can save and retry later
-- More tips: [Quickstart troubleshooting](/quickstart#troubleshooting)
+Ask in the interactive shell: *why is checkout latency spiking?*
 
 ## Next
 
-- [Install OpenSRE](/install) — short overview
-- [Install locally](/install-local) — more detail for self-hosted setups
-- [Integrations overview](/integrations-overview)
+- [Quickstart](/quickstart) — install, sign in, and ask your first question
+- [Install locally](/install-local) — PATH and account troubleshooting
+- [Integrations overview](/integrations-overview) — connect more tools

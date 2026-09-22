@@ -183,7 +183,7 @@ def _execute_claimed_task(
         return False
     if _skip_cancelled_schedule(claim, task, fire_time):
         return False
-    if isinstance(message, TaskReport) and message.stop_schedule:
+    if message.stop_schedule or message.outcome.terminal_block:
         current = get_task(task.id)
         if current is not None and current.enabled:
             current.enabled = False

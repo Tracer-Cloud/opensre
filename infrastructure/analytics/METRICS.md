@@ -18,6 +18,7 @@ remaining metrics require queries over `analytics_product_events`.
 | Installations | Distinct non-CI `analytics_id` values with `install_detected`. |
 | Install-to-signup conversion | Installations linked to a Clerk signup created between `install_detected` and the first authenticated link, divided by installations. |
 | Authenticated installations | Distinct non-CI installations with any later personal-bearer event. `account_authenticated` is the normal first link, but the metric does not depend on that single event being delivered. |
+| Sign-in gate conversion | Distinct non-CI installations with `sign_in_selected`, and distinct installations with `stay_signed_out_selected`, each divided separately by distinct installations with `sign_in_prompted`. Slice `stay_signed_out_selected` by `method` to separate the explicit exit option (`menu`) from a closed menu (`dismissed`). A `sign_in_selected` without a later `account_authenticated` is an abandoned or failed browser login. |
 | Onboarding conversion | Distinct non-CI installations completing onboarding, and distinct installations failing onboarding, each divided separately by distinct installations that started. |
 | Personal activation | Server-resolved users whose linked installation completes onboarding and later records a non-error `$ai_generation`. |
 | Gateway activation | Organizations with an authenticated `gateway_turn_completed` where `answered=true`. Keep this separate from personal activation because a gateway actor is not a Clerk user. |

@@ -72,12 +72,12 @@ THEME_REGISTRY: dict[str, CliTheme] = {
     ),
     "blue": CliTheme(
         name="blue",
-        HIGHLIGHT="#E0CC9C",
-        BRAND="#B2935B",
-        TEXT="#D0D0D0",
-        SECONDARY="#B0A898",
+        HIGHLIGHT="#B7D4F0",
+        BRAND="#81A4C6",
+        TEXT="#B6BAC2",
+        SECONDARY="#A6A6A6",
         DIM="#6E6E6E",
-        WARNING="#E0B466",
+        WARNING="#D8B06F",
         ERROR="#CF6B63",
         BG="#15161A",
         # Lifted plate for the composer (Droid/Claude/Cursor-style). Must read

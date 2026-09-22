@@ -9,6 +9,7 @@ import os
 import tempfile
 import time
 from collections.abc import Mapping
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -29,6 +30,15 @@ logger = logging.getLogger(__name__)
 _STORE_FILENAME = "scheduler_tasks.json"
 
 
+@dataclass(frozen=True, slots=True)
+class TaskStoreSnapshot:
+    """Validated tasks plus read completeness and known source absence."""
+
+    tasks: tuple[ScheduledTask, ...]
+    complete: bool
+    missing: bool = False
+
+
 def default_task_store_path() -> Path:
     """Return the scheduler task-store path under the OpenSRE home."""
     return OPENSRE_HOME_DIR / _STORE_FILENAME
@@ -38,24 +48,25 @@ def _lock_path(store_path: Path) -> Path:
     return store_path.with_suffix(".lock")
 
 
-def _read_raw(store_path: Path) -> tuple[list[dict[str, object]], bool]:
-    """Load the raw task list; the flag reports whether the file was readable.
+def _read_raw(store_path: Path) -> tuple[list[dict[str, object]], bool, bool]:
+    """Load raw tasks, reporting read completeness and known file absence.
 
-    A missing store is readable and empty. A store that will not parse is
-    ``([], False)`` -- callers about to write must not treat that as "no
-    tasks" and silently overwrite it.
+    A missing store is readable and empty, but remains distinguishable from an
+    explicitly stored empty list. A store that will not parse is incomplete --
+    callers about to write must not treat that as "no tasks" and silently
+    overwrite it.
     """
-    if not store_path.exists():
-        return [], True
     try:
         data = json.loads(store_path.read_text(encoding="utf-8"))
-    except (json.JSONDecodeError, OSError) as exc:
+    except FileNotFoundError:
+        return [], True, True
+    except (json.JSONDecodeError, UnicodeDecodeError, OSError) as exc:
         logger.warning("Failed to read scheduler store: %s", exc)
-        return [], False
+        return [], False, False
     if not isinstance(data, list):
         logger.warning("Scheduler store is not a JSON list; treating it as unreadable")
-        return [], False
-    return data, True  # type: ignore[return-value]
+        return [], False, False
+    return data, True, False  # type: ignore[return-value]
 
 
 def _load_raw(store_path: Path) -> list[dict[str, object]]:
@@ -120,7 +131,7 @@ def _load_for_write(store_path: Path) -> list[dict[str, object]]:
     An unreadable store is moved aside first, so the write lands on a fresh
     file and the damaged one stays on disk for recovery.
     """
-    raw, readable = _read_raw(store_path)
+    raw, readable, _missing = _read_raw(store_path)
     if not readable:
         _quarantine_unreadable(store_path)
     return raw
@@ -156,13 +167,16 @@ def _save_raw(store_path: Path, data: list[dict[str, object]]) -> None:
         raise
 
 
-def list_tasks(store_path: Path | None = None) -> list[ScheduledTask]:
-    """Return all persisted scheduled tasks."""
+def get_task_store_snapshot(
+    store_path: Path | None = None, *, lock_timeout_seconds: float | None = None
+) -> TaskStoreSnapshot:
+    """Return validated tasks, optionally bounding the task-store lock wait."""
     path = store_path or default_task_store_path()
-    lock = FileLock(_lock_path(path))
+    lock_timeout = -1 if lock_timeout_seconds is None else lock_timeout_seconds
+    lock = FileLock(_lock_path(path), timeout=lock_timeout)
     with lock:
-        raw = _load_raw(path)
-        if migrate_legacy_task_entries(raw):
+        raw, complete, missing = _read_raw(path)
+        if complete and migrate_legacy_task_entries(raw):
             try:
                 _save_raw(path, raw)
             except OSError:
@@ -178,7 +192,13 @@ def list_tasks(store_path: Path | None = None) -> list[ScheduledTask]:
             tasks.append(ScheduledTask.model_validate(entry))
         except Exception as exc:  # noqa: BLE001
             logger.warning("Skipping invalid task entry: %s", exc)
-    return tasks
+            complete = False
+    return TaskStoreSnapshot(tasks=tuple(tasks), complete=complete, missing=missing)
+
+
+def list_tasks(store_path: Path | None = None) -> list[ScheduledTask]:
+    """Return all valid persisted scheduled tasks, skipping unreadable content."""
+    return list(get_task_store_snapshot(store_path).tasks)
 
 
 def get_task(task_id: str, store_path: Path | None = None) -> ScheduledTask | None:
@@ -325,9 +345,11 @@ def record_task_success(task_id: str, store_path: Path | None = None) -> bool:
 
 
 __all__ = [
+    "TaskStoreSnapshot",
     "add_task",
     "default_task_store_path",
     "get_task",
+    "get_task_store_snapshot",
     "list_tasks",
     "record_task_success",
     "remove_task",

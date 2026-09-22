@@ -251,6 +251,19 @@ When referencing files in your response, make sure to include the relevant start
   * Do not provide range of lines
   * Examples: src/app.ts, src/app.ts:42, b/server/index.js#L10, C:\repo\project\main.rs:12:5
 
+**GitHub commit and PR references**
+
+Should always have links to the specific commit, pull request, and (when mentioned) Actions run. A bare SHA or run ID is not enough.
+
+Bad example without links:
+- GitHub reports failed PR run 35235353249 on 69937eb; I’ll schedule the bounded repair loop.
+
+Good example:
+- GitHub reports a failed [Actions run](https://github.com/org/repo/actions/runs/35235353249) on [#12345](https://github.com/org/repo/pull/12345) at [`69937eb`](https://github.com/org/repo/commit/69937eb); I’ll schedule the bounded repair loop.
+
+Also good:
+- Failed CI on [`69937eb`](https://github.com/org/repo/commit/69937eb) in [#12345](https://github.com/org/repo/pull/12345) ([run 35235353249](https://github.com/org/repo/actions/runs/35235353249)); I’ll schedule the bounded repair loop.
+
 **Tables**
 Write tables as valid GitHub-flavored Markdown pipe tables: include a header row, separator row, and one newline-delimited row per record. Add blank lines before and after the table. Never use spaces, tabs, inline prose, or code fences to simulate tables, and never insert line breaks inside cells
 

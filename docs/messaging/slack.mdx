@@ -191,16 +191,16 @@ Copy the channel id (`C…`) from Slack channel details. During `opensre integra
 
 ```bash
 opensre sentry digest schedule add \
-  --cron "0 8 * * 1-5" --tz Europe/London \
+  --cron "0 8 * * mon-fri" --tz Europe/London \
   --provider slack --chat-id C0123ABCD
 
 # Webhook: omit --chat-id
-opensre cron add --kind github_pr_sweep --cron "0 9 * * 1-5" \
+opensre cron add --kind github_pr_sweep --cron "0 9 * * mon-fri" \
   --tz Europe/London --provider slack
 
 # Bot token: default channel or explicit --chat-id
 export SLACK_DEFAULT_CHAT_ID=C0123ABCD
-opensre cron add --kind github_pr_sweep --cron "0 9 * * 1-5" \
+opensre cron add --kind github_pr_sweep --cron "0 9 * * mon-fri" \
   --tz Europe/London --provider slack --chat-id C0123ABCD
 ```
 

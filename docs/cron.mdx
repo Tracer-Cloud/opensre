@@ -23,42 +23,45 @@ Every interactive launch (`opensre`) asks which demo to run. The recommended opt
 
 ```bash
 # Add a free-form recurring ops digest to Telegram at 09:00 IST on weekdays
-opensre cron add --kind manual_loop --cron "0 9 * * 1-5" \
+opensre cron add --kind manual_loop --cron "0 9 * * mon-fri" \
   --name "Ops digest" --prompt "Check open incidents and summarize production risk" \
   --tz Asia/Kolkata --provider telegram --chat-id <chat_id>
 
 # Same kind to Slack via incoming webhook (omit --chat-id; webhook is channel-bound)
-opensre cron add --kind manual_loop --cron "0 9 * * 1-5" \
+opensre cron add --kind manual_loop --cron "0 9 * * mon-fri" \
   --prompt "Check open incidents and summarize production risk" \
   --tz Europe/London --provider slack
 
 # Slack bot token: omit --chat-id when SLACK_DEFAULT_CHAT_ID is set
-opensre cron add --kind manual_loop --cron "0 9 * * 1-5" \
+opensre cron add --kind manual_loop --cron "0 9 * * mon-fri" \
   --prompt "Check open incidents and summarize production risk" \
   --tz Europe/London --provider slack
 
 # GitHub PR sweep standup digest → Slack
-opensre cron add --kind github_pr_sweep --cron "0 9 * * 1-5" \
+opensre cron add --kind github_pr_sweep --cron "0 9 * * mon-fri" \
   --tz Europe/London --provider slack --chat-id C0123ABCD
 
 # Read-only CI health for one repository and branch → Slack
 opensre cron add --kind recurring_skill --skill reporting-github-ci-failures \
-  --cron "0 8 * * 1-5" \
+  --cron "0 8 * * mon-fri" \
   --tz Europe/London --provider slack --owner Tracer-Cloud --repo opensre \
   --branch main
 
 # Morning-report skill with its previewed city → local inbox
 opensre cron add --kind recurring_skill --skill delivering-morning-briefings \
-  --cron "0 8 * * 1-5" --tz Asia/Kolkata \
+  --cron "0 8 * * mon-fri" --tz Asia/Kolkata \
   --provider interactive_shell --city "New Delhi"
 
 # Local interactive-shell inbox delivery, useful for debugging
-opensre cron add --kind manual_loop --cron "0 9 * * 1-5" \
+opensre cron add --kind manual_loop --cron "0 9 * * mon-fri" \
   --name "Local ops digest" --prompt "Check open incidents and summarize production risk" \
   --provider interactive_shell
 
 # List configured tasks
 opensre cron list
+
+# Inspect durable backlog pressure
+opensre cron status
 
 # Run a task immediately (for debugging)
 opensre cron run <task_id>
@@ -98,6 +101,19 @@ Display all configured scheduled tasks in a table, including the loop name, enab
 
 Remove a scheduled task by its ID. Its run history remains available through
 `opensre cron logs <task_id>`.
+
+### `opensre cron status`
+
+Show the number of durable runs waiting for execution, including expired claims
+awaiting recovery. Age starts at admission for pending runs and at lease expiry
+for interrupted runs; live claims are excluded. Waiting work remains visible
+across scheduler restarts and while a task is paused or disabled. Deleted tasks
+are excluded. Use `--json` for structured
+output suitable for monitoring and runbooks. JSON output includes `status: ok`;
+if the task store or run database cannot be read (including storage access or
+lock failures), the command exits unsuccessfully and reports `status: unknown`
+with null metrics instead of returning a misleading empty backlog. The JSON
+`error` field identifies `task_store_unreadable` or `run_store_unreadable`.
 
 ### `opensre cron run <task_id>`
 
@@ -164,12 +180,22 @@ Standard 5-field cron expressions:
 
 **Weekday numbering:** OpenSRE uses APScheduler 3.x `CronTrigger`, where
 **`0` = Monday** and **`6` = Sunday** (not the Unix cron convention where
-`0` is Sunday). Prefer `1-5` for weekdays to avoid confusion.
+`0` is Sunday). Prefer `mon-fri` for weekdays to avoid confusion.
+
+Older weekday loops may still contain `1-5`, which runs Tuesday–Saturday.
+Check `/loops next <loop_id>`. To correct one, record its settings, stop it with
+`/loops stop <loop_id>`, then recreate it through the original scheduling command
+with the same settings and `--cron "0 9 * * mon-fri"` for weekdays at 09:00.
+For `/loops add`, you can also use `--time 09:00 --weekdays`.
+For an old Monday-only schedule, replace the final `1` with `mon` when recreating it.
+Delete the old loop with `/loops delete <loop_id>` after verifying the replacement.
+Existing schedules are not changed automatically. For a CI reliability loop,
+delete the old loop before scheduling it again; that flow reuses existing loops.
 
 Examples:
 
-- `0 9 * * 1-5` — weekdays at 09:00
-- `0 8 * * 1` — Mondays at 08:00
+- `0 9 * * mon-fri` — weekdays at 09:00
+- `0 8 * * mon` — Mondays at 08:00
 - `*/30 * * * *` — every 30 minutes
 - `0 0 1 * *` — first day of each month at midnight
 
@@ -224,6 +250,58 @@ This prevents concurrent duplicate claims and recovers ticks after worker
 crashes. A crash after an external provider accepts a message but before the
 completion is recorded can still result in a duplicate on reclaim; preventing
 that case requires provider-specific idempotency support.
+
+## Capacity and overload
+
+Each admitted cron tick is first written as a durable `pending` row in
+`scheduler.db`. It is not silently dropped because workers are busy. The
+default scheduler concurrency remains **2**; a scheduled agent turn also needs
+a permit from the shared process turn gate, so the effective agent-turn
+concurrency can be lower.
+
+The current scheduler bounds active workers, but its executor can still retain
+more submitted callbacks in memory while those workers are busy. A large burst
+therefore remains recoverable from SQLite, but is not yet a bounded in-memory
+queue. Use the baseline below to size an installation rather than raising the
+default to absorb a burst. A later scheduler change will move overflow to the
+durable pending store and reserve recovery control work from user execution.
+
+| Boundary | Owns | Does not own |
+| --- | --- | --- |
+| Task store | Task definitions and enabled state | Execution history |
+| Run store | Durable admissions, claims, leases, recovery candidates, and completion fencing | Worker scheduling |
+| Scheduler runner | Cron submission, recovery sweep, and task lookup | LLM or provider delivery |
+| Scheduler executor | The currently submitted worker callbacks | Durable recovery state |
+| Shared turn gate | Process-wide concurrent agent turns | Scheduler admission or persistence |
+
+The capacity baseline records these terms consistently:
+
+- **Durable pending count** and **oldest pending age**: `pending` rows and the
+  elapsed time since their durable admission. The benchmark reads this directly
+  until `opensre cron status` exposes it.
+- **In-memory callbacks**: callbacks submitted to the current worker executor
+  that have not completed. This is the current overload signal, not a durable
+  queue limit.
+- **Throughput and drain time**: successful fake deliveries per second and the
+  elapsed time to finish admitted work.
+- **Recovery query latency and plan**: time and SQLite plan used to find
+  pending or expired work. Completed history must not expand the candidate
+  scan.
+- **SQLite lock failures** and **RSS**: lock errors plus current and peak
+  process resident memory sampled by the benchmark host.
+
+Run the deterministic baseline before changing
+`OPENSRE_SCHEDULER_MAX_CONCURRENT_RUNS`:
+
+```bash
+uv run python -m tests.benchmarks.scheduler.capacity_benchmark
+```
+
+It makes no LLM, provider, or network calls. The checked-in JSON report at
+`docs/benchmarks/scheduler-capacity-baseline.json` records the exact workload,
+host metadata, SQLite version, and observed values. Restart recovery uses the
+production shape: one recovery callback iterates its durable candidates
+serially.
 
 ## Credential Resolution
 

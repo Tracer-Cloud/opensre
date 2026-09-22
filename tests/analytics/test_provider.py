@@ -8,6 +8,7 @@ import threading
 import time
 import uuid
 from collections.abc import Iterator
+from concurrent.futures import ThreadPoolExecutor
 from http import HTTPStatus
 from pathlib import Path
 from typing import NoReturn
@@ -15,7 +16,7 @@ from typing import NoReturn
 import httpx
 import pytest
 
-from infrastructure.analytics import install, provider
+from infrastructure.analytics import install, install_state, provider
 from infrastructure.analytics.destination import AnalyticsDestination
 from infrastructure.analytics.events import Event
 
@@ -28,7 +29,7 @@ def _reset_anonymous_id_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -
     provider._cached_anonymous_id = None
     provider._cached_identity_persistence = "unknown"
     provider._first_run_marker_created_this_process = False
-    monkeypatch.setattr(provider, "_install_capture_attempted", False)
+    monkeypatch.setattr(provider, "_install_capture_state", provider._InstallCaptureState())
     provider._pending_user_id_load_failures.clear()
     monkeypatch.setattr(provider, "_event_log_state", provider._EventLogState())
     monkeypatch.setattr(provider, "_FIRST_RUN_PATH", tmp_path / "installed")
@@ -95,6 +96,51 @@ def test_capture_install_detected_if_needed_captures_once(monkeypatch, tmp_path:
     ]
 
 
+@pytest.mark.parametrize("prior_marker", [False, True])
+def test_installer_snapshot_survives_until_runtime_events_without_recounting_installs(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path, prior_marker: bool
+) -> None:
+    marker = tmp_path / "installed"
+    if prior_marker:
+        marker.touch()
+    monkeypatch.setattr(provider, "_CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(provider, "_ANONYMOUS_ID_PATH", tmp_path / "anonymous_id")
+    (tmp_path / "anonymous_id").write_text(str(uuid.uuid4()))
+    monkeypatch.setattr(install, "get_store_path", lambda: tmp_path / "opensre.json")
+    monkeypatch.setenv(
+        "OPENSRE_INSTALL_MARKER_STATE", install_state.snapshot_install_marker(tmp_path)
+    )
+    monkeypatch.delenv("OPENSRE_ANALYTICS_DISABLED", raising=False)
+    monkeypatch.delenv("DO_NOT_TRACK", raising=False)
+    monkeypatch.setattr(
+        provider,
+        "resolve_analytics_destination",
+        lambda: AnalyticsDestination("https://app.opensre.test/api/analytics/events"),
+    )
+    posted = _stub_httpx_client(monkeypatch)
+
+    assert install.main() == 0
+    # A new CLI process no longer has the installer's scoped environment.
+    monkeypatch.delenv("OPENSRE_INSTALL_MARKER_STATE")
+    provider._instance = None
+    provider._install_capture_state = provider._InstallCaptureState()
+    provider.capture_install_detected_if_needed()
+    provider.get_analytics().capture(Event.CLI_INVOKED)
+    provider.shutdown_analytics(flush=True, timeout=2)
+
+    payloads = [request["json"] for request in posted]
+    assert [payload["event"] for payload in payloads] == (
+        [Event.CLI_INVOKED.value]
+        if prior_marker
+        else [Event.INSTALL_DETECTED.value, Event.CLI_INVOKED.value]
+    )
+    assert all(
+        payload["properties"]["install_marker_state_before_install"]
+        == ("present" if prior_marker else "absent")
+        for payload in payloads
+    )
+
+
 def test_capture_first_run_if_needed_uses_same_install_guard(monkeypatch, tmp_path: Path) -> None:
     stub = _StubAnalytics()
 
@@ -105,6 +151,24 @@ def test_capture_first_run_if_needed_uses_same_install_guard(monkeypatch, tmp_pa
     provider.capture_first_run_if_needed()
 
     assert stub.events == [(Event.INSTALL_DETECTED, None)]
+
+
+def test_concurrent_install_capture_attempts_emit_one_event(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    stub = _StubAnalytics()
+    start = threading.Barrier(8, timeout=10)
+    monkeypatch.setattr(provider, "get_analytics", lambda: stub)
+
+    def capture(_index: int) -> bool:
+        start.wait()
+        return provider.capture_install_detected_if_needed({"install_source": "make_install"})
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        results = list(pool.map(capture, range(8)))
+
+    assert results.count(True) == 1
+    assert stub.events == [(Event.INSTALL_DETECTED, {"install_source": "make_install"})]
 
 
 def test_capture_install_detected_initializes_identity_before_install_marker(
@@ -178,13 +242,13 @@ def test_failed_install_delivery_remains_retryable_on_the_next_cli_run(
 
     # A new CLI process retries with the same stable event ID; success alone consumes the guard.
     monkeypatch.setattr(provider, "_instance", None)
-    monkeypatch.setattr(provider, "_install_capture_attempted", False)
+    monkeypatch.setattr(provider, "_install_capture_state", provider._InstallCaptureState())
     provider.capture_first_run_if_needed()
     provider.shutdown_analytics(flush=True, timeout=5)
     assert (tmp_path / "installed").exists()
     assert len(attempts) == 2
     assert attempts[0]["event_id"] == attempts[1]["event_id"]
-    monkeypatch.setattr(provider, "_install_capture_attempted", False)
+    monkeypatch.setattr(provider, "_install_capture_state", provider._InstallCaptureState())
     assert provider.capture_install_detected_if_needed() is False
 
 

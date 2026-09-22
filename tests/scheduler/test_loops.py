@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
 
 from infrastructure.scheduling.scheduler import loops as loop_mod
+from infrastructure.scheduling.scheduler.cron_expression import build_cron_trigger
 from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_CHANNELS_PARAM,
     LOOP_DESCRIPTION_PARAM,
@@ -22,6 +24,52 @@ _LEGACY_MORNING_REPORT_PROMPT = (
     "Summarize the reliability picture for the last 24 hours: notable "
     "alerts, error spikes, and anything on-call should know this morning."
 )
+
+
+def _next_fire_dates(cron: str, count: int) -> list[str]:
+    trigger = build_cron_trigger(cron, "UTC")
+    now = datetime(2026, 9, 20, tzinfo=UTC)  # Sunday
+    previous = None
+    dates: list[str] = []
+    for _ in range(count):
+        fire = trigger.get_next_fire_time(previous, now)
+        assert fire is not None
+        dates.append(fire.date().isoformat())
+        previous = now = fire
+    return dates
+
+
+def test_generated_weekdays_include_monday_and_skip_the_weekend() -> None:
+    cron = loop_mod.cron_for_time("09:00", weekdays=True)
+
+    assert _next_fire_dates(cron, 6) == [
+        "2026-09-21",
+        "2026-09-22",
+        "2026-09-23",
+        "2026-09-24",
+        "2026-09-25",
+        "2026-09-28",
+    ]
+
+
+@pytest.mark.parametrize(
+    ("slug", "expected_dates"),
+    [
+        (
+            "morning-report",
+            ["2026-09-21", "2026-09-22", "2026-09-23", "2026-09-24", "2026-09-25", "2026-09-28"],
+        ),
+        (
+            "pr-sweep",
+            ["2026-09-21", "2026-09-22", "2026-09-23", "2026-09-24", "2026-09-25", "2026-09-28"],
+        ),
+        ("weekly-alert-audit", ["2026-09-21", "2026-09-28"]),
+    ],
+)
+def test_starter_schedule_matches_its_description(slug: str, expected_dates: list[str]) -> None:
+    starter = next(starter for starter in loop_mod.STARTER_LOOPS if starter.slug == slug)
+
+    assert _next_fire_dates(starter.cron, len(expected_dates)) == expected_dates
 
 
 def test_morning_report_starter_is_a_pinned_recurring_skill(

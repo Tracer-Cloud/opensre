@@ -17,6 +17,36 @@ from tools.interactive_shell.actions.propose_scheduled_delivery import (
 )
 
 
+def test_pending_offer_labels_named_weekdays() -> None:
+    offer = PendingScheduleOffer(
+        kind="recurring_skill",
+        skill_name="delivering-morning-briefings",
+        cron="0 8 * * mon-fri",
+        timezone="UTC",
+        provider="slack",
+    )
+
+    assert (
+        offer.want_me_to_body()
+        == "schedule this as a recurring delivering-morning-briefings every weekday at 8am to slack"
+    )
+
+
+def test_pending_offer_does_not_mislabel_numeric_weekdays() -> None:
+    offer = PendingScheduleOffer(
+        kind="recurring_skill",
+        skill_name="delivering-morning-briefings",
+        cron="0 8 * * 1-5",
+        timezone="UTC",
+        provider="slack",
+    )
+
+    assert (
+        offer.want_me_to_body()
+        == "schedule this as a recurring delivering-morning-briefings on cron 0 8 * * 1-5 to slack"
+    )
+
+
 def test_pending_recurring_skill_offer_includes_skill_flag() -> None:
     offer = PendingScheduleOffer(
         kind="recurring_skill",

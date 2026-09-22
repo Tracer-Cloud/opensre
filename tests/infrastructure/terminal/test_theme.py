@@ -166,8 +166,10 @@ def test_reply_block_paints_accent_label_and_themed_body() -> None:
     highlight = get_theme("blue").HIGHLIGHT.lstrip("#")
     r, g, b = (int(highlight[i : i + 2], 16) for i in (0, 2, 4))
     assert f"38;2;{r};{g};{b}m" in output
-    # Body uses the palette's primary agent grey (#D0D0D0).
-    assert "38;2;208;208;208m" in output
+    # Body uses the active palette's primary text colour.
+    text = get_theme("blue").TEXT.lstrip("#")
+    r, g, b = (int(text[i : i + 2], 16) for i in (0, 2, 4))
+    assert f"38;2;{r};{g};{b}m" in output
 
 
 def test_palette_registry_keys_match_the_config_vocabulary() -> None:
@@ -182,6 +184,14 @@ def test_palette_registry_keys_match_the_config_vocabulary() -> None:
     from infrastructure.terminal.theme import THEME_REGISTRY
 
     assert tuple(THEME_REGISTRY.keys()) == THEME_NAMES
+
+
+def test_blue_theme_uses_blue_accents() -> None:
+    """Blue must not regress to the amber palette while retaining its name."""
+    blue = get_theme("blue")
+
+    assert blue.HIGHLIGHT == "#B7D4F0"
+    assert blue.BRAND == "#81A4C6"
 
 
 def test_markdown_theme_reserves_bold_for_structure() -> None:

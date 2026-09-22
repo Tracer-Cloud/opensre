@@ -75,12 +75,19 @@ def run_sign_in_gate(
     *,
     is_signed_in: Callable[[], bool],
     login: Callable[[], bool],
+    on_prompted: Callable[[], None] | None = None,
+    on_choice: Callable[[SignInChoice | None], None] | None = None,
 ) -> bool:
     """Gate the REPL behind sign-in; return ``True`` to proceed, ``False`` to exit.
 
     Returns immediately when already signed in. Otherwise renders the sign-in
     screen and loops the sign-in/stay-signed-out menu. On non-interactive stdin
     the gate fails closed and prints the command that can establish an account.
+
+    ``on_prompted`` fires once when the screen is shown; ``on_choice`` fires for
+    every menu round with the pick, or ``None`` when the menu was dismissed
+    without one (Esc, ``q``, Ctrl-C, Ctrl-D, or EOF). Neither fires for an
+    already signed-in or non-interactive run.
     """
     if is_signed_in():
         return True
@@ -91,8 +98,12 @@ def run_sign_in_gate(
         console.print("Run [bold]opensre account login[/bold] from an interactive terminal.")
         return False
     render_sign_in_screen(console)
+    if on_prompted is not None:
+        on_prompted()
     while True:
         choice = prompt_login_or_exit()
+        if on_choice is not None:
+            on_choice(choice)
         if choice is SignInChoice.LOGIN:
             if login():
                 return True

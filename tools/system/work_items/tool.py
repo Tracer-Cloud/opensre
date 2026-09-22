@@ -535,7 +535,7 @@ def work_task_prioritize(
         "properties": {
             "cron": {
                 "type": "string",
-                "description": "Five-field cron expression, e.g. 0 9 * * 1-5.",
+                "description": "Five-field cron expression, e.g. 0 9 * * mon-fri for weekdays.",
             },
             "timezone": {"type": "string", "default": "UTC"},
             "provider": {

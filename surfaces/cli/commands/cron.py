@@ -12,6 +12,7 @@ from rich.console import Console
 from rich.table import Table
 
 from core.agent_harness import pin_recurring_skill, validate_skill_inputs
+from infrastructure.process.runtime_flags import is_json_output
 from infrastructure.scheduling.scheduler.credentials import requires_explicit_chat_id
 from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_MODE_AGENT,
@@ -38,6 +39,21 @@ _CRON_ADD_SUPPORTED_KINDS: tuple[TaskKind, ...] = tuple(
 )
 _KIND_CHOICES = [k.value for k in _CRON_ADD_SUPPORTED_KINDS]
 _PROVIDER_CHOICES = [p.value for p in Provider]
+_STATUS_STORAGE_TIMEOUT_SECONDS = 1.0
+
+
+def _format_duration(seconds: float | None) -> str:
+    """Render an operational age without false precision."""
+    if seconds is None:
+        return "—"
+    total_seconds = int(seconds)
+    if total_seconds < 60:
+        return f"{total_seconds}s"
+    minutes, remaining_seconds = divmod(total_seconds, 60)
+    if minutes < 60:
+        return f"{minutes}m {remaining_seconds}s"
+    hours, remaining_minutes = divmod(minutes, 60)
+    return f"{hours}h {remaining_minutes}m"
 
 
 def _reject_generic_work_item_reminder(
@@ -346,6 +362,81 @@ def cron_list() -> None:
             _console.print(
                 f"[yellow]Task {loop.id[:12]} requires action:[/yellow] {loop.schedule_error}"
             )
+
+
+def _unknown_backlog_status(as_json: bool, error: str) -> click.exceptions.Exit:
+    """Render unavailable backlog metrics and return the failure exit."""
+    import json
+
+    if as_json:
+        _console.print_json(
+            json.dumps(
+                {
+                    "status": "unknown",
+                    "pending_count": None,
+                    "oldest_pending_at": None,
+                    "oldest_pending_age_seconds": None,
+                    "error": error,
+                }
+            )
+        )
+    else:
+        _console.print(
+            "[red]Error: scheduler storage is unreadable; backlog status is unknown.[/red]"
+        )
+    return click.exceptions.Exit(1)
+
+
+@cron_command.command(name="status")
+@click.option("--json", "as_json", is_flag=True, help="Return structured backlog state.")
+def cron_status(as_json: bool) -> None:
+    """Show durable scheduler backlog pressure."""
+    import json
+    import sqlite3
+
+    from infrastructure.scheduling.scheduler.storage import (
+        BacklogStatusRunStoreError,
+        get_backlog_snapshot,
+        get_task_store_snapshot,
+    )
+
+    as_json = as_json or is_json_output()
+    try:
+        task_store = get_task_store_snapshot(lock_timeout_seconds=_STATUS_STORAGE_TIMEOUT_SECONDS)
+    except BacklogStatusRunStoreError:
+        raise _unknown_backlog_status(as_json, "run_store_unreadable") from None
+    except OSError:
+        raise _unknown_backlog_status(as_json, "task_store_unreadable") from None
+    if not task_store.complete:
+        raise _unknown_backlog_status(as_json, "task_store_unreadable")
+
+    try:
+        snapshot = get_backlog_snapshot(eligible_task_ids={task.id for task in task_store.tasks})
+    except (OSError, sqlite3.Error):
+        raise _unknown_backlog_status(as_json, "run_store_unreadable") from None
+    oldest_pending_at = (
+        snapshot.oldest_pending_at.isoformat() if snapshot.oldest_pending_at is not None else None
+    )
+    if as_json:
+        _console.print_json(
+            json.dumps(
+                {
+                    "status": "ok",
+                    "pending_count": snapshot.pending_count,
+                    "oldest_pending_at": oldest_pending_at,
+                    "oldest_pending_age_seconds": snapshot.oldest_pending_age_seconds,
+                }
+            )
+        )
+        return
+
+    table = Table(show_header=False)
+    table.add_column("Metric", style="bold")
+    table.add_column("Value")
+    table.add_row("Pending runs", str(snapshot.pending_count))
+    table.add_row("Oldest pending", oldest_pending_at or "—")
+    table.add_row("Oldest pending age", _format_duration(snapshot.oldest_pending_age_seconds))
+    _console.print(table)
 
 
 @cron_command.command(name="remove")

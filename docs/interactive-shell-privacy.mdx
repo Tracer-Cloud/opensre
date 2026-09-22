@@ -91,14 +91,18 @@ interactive:
 
 ## Prompt and response logging
 
-Separately from typed-command history, the interactive shell records each LLM
-turn — the full prompt sent and the full response received — for chat and
-follow-up routes. This log is richer than command history (it includes model
+Separately from typed-command history, OpenSRE records each agent turn — the
+submitted prompt and final response — in the interactive shell,
+`opensre ask`, gateway chat, and scheduled or embedded agent runs. Failures and
+cancellations retain the prompt and available error details. Each continuation
+is recorded separately. This log is richer than command history (it includes model
 output, not just what you typed) and is used for two purposes:
 
 1. **Local debugging / `/resume`**: appended as JSON Lines to
    `~/.opensre/prompt_log.jsonl`, and folded into the session file so `/resume`
-   can restore conversation context.
+   can restore conversation context. Gateway logs use the organization and user
+   conversation directory rather than the host-wide default. An explicit
+   `OPENSRE_PROMPT_LOG_PATH` overrides that location.
 2. **Product analytics**: forwarded through the first-party OpenSRE app endpoint
    as an `$ai_generation` event
    (model, provider, latency, token counts, and the prompt/response text) so

@@ -762,8 +762,34 @@ def _runbook_guidance_case() -> ToolFailureCase:
     )
 
 
+def _hosted_gateway_case(tool_name: str) -> ToolFailureCase:
+    def patch(mp: pytest.MonkeyPatch) -> None:
+        from integrations.hosted_gateway import HostedGatewayClient, HostedGatewayError
+
+        mp.setattr(
+            HostedGatewayClient,
+            "from_account",
+            MagicMock(side_effect=HostedGatewayError("unreachable")),
+        )
+
+    def invoke() -> dict[str, Any]:
+        from integrations.hosted_gateway.tools import gateway_health, gateway_lifecycle
+
+        tools = {
+            "check_hosted_gateway": gateway_health.check_hosted_gateway,
+            "start_hosted_gateway": gateway_lifecycle.start_hosted_gateway,
+            "stop_hosted_gateway": gateway_lifecycle.stop_hosted_gateway,
+        }
+        return tools[tool_name]()
+
+    return ToolFailureCase(tool_name, patch, invoke, tool_name, "opensre")
+
+
 _TOOL_FAILURE_CASES: list[ToolFailureCase] = [
     _azure_case(),
+    _hosted_gateway_case("check_hosted_gateway"),
+    _hosted_gateway_case("start_hosted_gateway"),
+    _hosted_gateway_case("stop_hosted_gateway"),
     _ci_repair_case("schedule_ci_repair_loop"),
     _ci_repair_case("get_ci_repair_loop"),
     _openobserve_case(),
@@ -969,6 +995,9 @@ _MIGRATED_TOOL_NAMES: frozenset[str] = frozenset(
         "scan_github_ci_health",
         "schedule_ci_repair_loop",
         "get_ci_repair_loop",
+        "check_hosted_gateway",
+        "start_hosted_gateway",
+        "stop_hosted_gateway",
         # EKS — enumerated in #1463
         "list_eks_clusters",
         "describe_eks_cluster",

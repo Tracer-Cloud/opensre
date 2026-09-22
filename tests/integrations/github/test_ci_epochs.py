@@ -5,52 +5,53 @@ import json
 import pytest
 
 import integrations.github.ci_epochs as ci_epochs
-from integrations.github.ci_epochs import Commit, build_epochs, commit_author, workflow_results
 
 
 def test_red_streak_closes_at_first_green_and_next_red_is_disjoint():
     commits = [
-        Commit(str(i), "opensre", result)
+        ci_epochs.Commit(str(i), "opensre", result)
         for i, result in enumerate(["red", "red", "green", "green", "red", "green"])
     ]
-    epochs = build_epochs("owner/repo", 1, commits)
+    epochs = ci_epochs.build_epochs("owner/repo", 1, commits)
     assert [[c.sha for c in e.commits] for e in epochs] == [["0", "1", "2"], ["4", "5"]]
     assert [e.fixing_commit.sha for e in epochs] == ["2", "5"]
     assert [e.outcome for e in epochs] == ["agent_fixed", "agent_fixed"]
-    assert build_epochs("owner/repo", 1, commits) == epochs
+    assert ci_epochs.build_epochs("owner/repo", 1, commits) == epochs
     assert len({e.id for e in epochs}) == 2
 
 
 def test_green_only_and_unresolved_histories():
-    assert build_epochs("owner/repo", 1, [Commit("a", "user", "green")]) == []
-    epoch = build_epochs("owner/repo", 1, [Commit("a", "user", "red"), Commit("b", "user", "red")])[
-        0
-    ]
+    assert ci_epochs.build_epochs("owner/repo", 1, [ci_epochs.Commit("a", "user", "green")]) == []
+    epoch = ci_epochs.build_epochs(
+        "owner/repo",
+        1,
+        [ci_epochs.Commit("a", "user", "red"), ci_epochs.Commit("b", "user", "red")],
+    )[0]
     assert epoch.fixing_commit is None
     assert epoch.outcome == "unresolved"
 
 
 def test_missing_ci_does_not_prove_an_agent_fix():
-    epoch = build_epochs(
+    epoch = ci_epochs.build_epochs(
         "owner/repo",
         1,
         [
-            Commit("a", "user", "red"),
-            Commit("b", "user", "unknown"),
-            Commit("c", "opensre", "green"),
+            ci_epochs.Commit("a", "user", "red"),
+            ci_epochs.Commit("b", "user", "unknown"),
+            ci_epochs.Commit("c", "opensre", "green"),
         ],
     )[0]
     assert epoch.outcome == "incomplete"
 
 
 def test_only_the_first_green_author_gets_credit():
-    epoch = build_epochs(
+    epoch = ci_epochs.build_epochs(
         "owner/repo",
         1,
         [
-            Commit("a", "opensre", "red"),
-            Commit("b", "user", "green"),
-            Commit("c", "opensre", "green"),
+            ci_epochs.Commit("a", "opensre", "red"),
+            ci_epochs.Commit("b", "user", "green"),
+            ci_epochs.Commit("c", "opensre", "green"),
         ],
     )[0]
     assert epoch.outcome == "other_fixed"
@@ -66,12 +67,12 @@ def test_coauthor_identity_and_untrusted_display_name():
             "message": "Repair calculator\n\nCo-authored-by: OpenSRE Agent <opensreagent@opensre.com>",
         },
     }
-    assert commit_author(commit) == "opensre"
+    assert ci_epochs.commit_author(commit) == "opensre"
     commit["commit"]["message"] = (
         "Mention Co-authored-by: OpenSRE Agent <opensreagent@opensre.com> in documentation"
     )
     commit["commit"]["author"]["name"] = "OpenSRE Agent"
-    assert commit_author(commit) == "davincios"
+    assert ci_epochs.commit_author(commit) == "davincios"
 
 
 def test_latest_workflow_attempt_pending_and_skipped_are_not_green():
@@ -94,7 +95,7 @@ def test_latest_workflow_attempt_pending_and_skipped_are_not_green():
         run(3, "b", None, status="in_progress", attempt=2),
         run(4, "c", "skipped"),
     ]
-    result = workflow_results(rows)
+    result = ci_epochs.workflow_results(rows)
     assert result["a"][0] == "green"
     assert result["b"][0] == "pending"
     assert result["c"][0] == "unknown"
@@ -264,7 +265,9 @@ def test_publishing_keeps_stable_identity_and_limits_credit_to_this_repair(obser
     assert observer.publish(fixing_sha="3") == 1
     assert captured[1] == captured[0]  # Consumer deduplicates replayed repair identities.
     assert observer.publish(fixing_sha="4") == 0  # Later green commits are not new fixes.
-    observer.epochs = build_epochs("owner/repo", 1, [Commit("x", "opensre", "red")])
+    observer.epochs = ci_epochs.build_epochs(
+        "owner/repo", 1, [ci_epochs.Commit("x", "opensre", "red")]
+    )
     assert observer.publish() == 0
 
 

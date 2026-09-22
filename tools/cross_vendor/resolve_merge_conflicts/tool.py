@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Callable
-from typing import Any
+from typing import Any, Final
 
 from rich.markup import escape
 
@@ -24,8 +24,6 @@ from core.tool import BaseTool, SideEffectLevel
 from integrations.git import GitCommandError, merge_in_progress, unmerged_paths
 from integrations.github import checkout_pull_request
 from tools.cross_vendor.resolve_merge_conflicts.runner import (
-    ALL_FILES_OPTIONS,
-    ALL_FILES_TITLE,
     SOURCE,
     FileChoice,
     failure_output,
@@ -36,6 +34,14 @@ from tools.interactive_shell.shared import allow_tool
 _MERGE_PUSH_TOOL_TYPE = "merge_push"
 _CHOOSE_COMMAND = "/choose"
 _MENU_HEADER = "Resolve merge conflicts"
+
+ALL_FILES_TITLE: Final = "Resolve all conflicted files"
+ALL_FILES_OPTIONS: Final = (
+    "Combine all with the coding agent",
+    "Keep ours for all",
+    "Take theirs for all",
+    "Decide file by file",
+)
 
 
 def _menu_available(scope: ActionToolScope | None) -> bool:

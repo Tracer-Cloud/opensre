@@ -96,6 +96,27 @@ def capture_account_authenticated() -> None:
         capture_exception(exc)
 
 
+def capture_sign_in_prompted() -> None:
+    """Exposure event: the mandatory sign-in screen was rendered to a signed-out user."""
+    _capture(Event.SIGN_IN_PROMPTED, {"entrypoint": "sign_in_gate"})
+
+
+def capture_sign_in_selected(*, choice_label: str) -> None:
+    """User picked sign-in on the gate; ``account_authenticated`` reports the outcome."""
+    _capture(
+        Event.SIGN_IN_SELECTED,
+        {"choice_label": choice_label, "method": "menu", "entrypoint": "sign_in_gate"},
+    )
+
+
+def capture_stay_signed_out_selected(*, choice_label: str, method: str) -> None:
+    """User left the gate signed out: ``menu`` picked the exit option, ``dismissed`` closed the menu."""
+    _capture(
+        Event.STAY_SIGNED_OUT_SELECTED,
+        {"choice_label": choice_label, "method": method, "entrypoint": "sign_in_gate"},
+    )
+
+
 def capture_gateway_turn_started(*, surface: str) -> None:
     """Mark the start of one Slack/Telegram gateway agent turn."""
     _capture(Event.GATEWAY_TURN_STARTED, {"surface": surface})
@@ -306,6 +327,7 @@ def capture_agent_tool_call_completed(
     is_error: bool,
     terminate: bool,
     duration_ms: int,
+    work_status: str = "",
 ) -> None:
     """Record the privacy-safe outcome of one model-requested tool call."""
     _capture(
@@ -321,6 +343,7 @@ def capture_agent_tool_call_completed(
             "terminate": terminate,
             "duration_ms": duration_ms,
             "duration_bucket": _bucket_duration_ms(duration_ms),
+            "work_status": work_status,
         },
     )
 
@@ -439,7 +462,11 @@ def capture_ask_user_prompt_dismissed(
 
 
 def capture_interactive_shell_rendered(*, entrypoint: str) -> None:
-    """Record successful first paint of the interactive shell chrome."""
+    """Record first interactive-shell chrome, including the sign-in screen.
+
+    The REPL entrypoint suppresses this for ``--resume`` and for an auto-launch
+    after ``opensre onboard``. CLI subcommands never call it.
+    """
     _capture(Event.INTERACTIVE_SHELL_RENDERED, {"entrypoint": entrypoint})
 
 

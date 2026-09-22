@@ -10,12 +10,13 @@ package binds.
 
 from __future__ import annotations
 
+import importlib
 import sys
 from types import ModuleType
 
 import pytest
 
-import core.agent_harness.prompts.skills  # noqa: F401  (eager import is the fix)
+importlib.import_module("core.agent_harness.prompts.skills")
 
 _GUARDED_PACKAGE = "core.agent_harness.prompts"
 

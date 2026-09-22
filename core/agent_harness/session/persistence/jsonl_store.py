@@ -418,8 +418,11 @@ class JsonlSessionStore:
             return
         trailing_leaf = records[-1].get("type") == "leaf"
         if not trailing_leaf and not self._has_turns(records):
-            path.unlink(missing_ok=True)
-            return
+            from core.agent_harness.session.pending_choice import PendingUserChoice
+
+            if not isinstance(getattr(session, "pending_user_choice", None), PendingUserChoice):
+                path.unlink(missing_ok=True)
+                return
         # Trailing ``leaf``: still append changed session-goal state so
         # mid-session ``/goal pause`` survives the next ``resolve``. Do not
         # write another leaf (end-of-session flush stays idempotent).
@@ -463,6 +466,21 @@ class JsonlSessionStore:
                     session.session_id,
                     custom_type=TASK_PLAN_STATE_CUSTOM_TYPE,
                     content=plan_state or {},
+                    display=False,
+                )
+        if hasattr(session, "pending_user_choice"):
+            from core.agent_harness.session.pending_choice import (
+                PENDING_USER_CHOICE_STATE_CUSTOM_TYPE,
+                pending_user_choice_state_snapshot,
+                should_persist_pending_user_choice_state,
+            )
+
+            choice_state = pending_user_choice_state_snapshot(session)
+            if should_persist_pending_user_choice_state(choice_state, prior_records=records):
+                self.append_custom_message(
+                    session.session_id,
+                    custom_type=PENDING_USER_CHOICE_STATE_CUSTOM_TYPE,
+                    content=choice_state or {},
                     display=False,
                 )
         if trailing_leaf:

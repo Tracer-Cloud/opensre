@@ -35,6 +35,35 @@ _RUN_COLUMNS = (
     "task_id, fire_time, started_at, finished_at, status, posted_message_id, "
     "error, provider, targets, attempt, id, report, report_summary, work_outcome"
 )
+_RECOVERABLE_RUNS_QUERY = """
+    WITH recovery_candidates AS (
+        SELECT task_id, fire_time, attempt, started_at
+        FROM task_runs
+        WHERE status = ?
+        UNION ALL
+        SELECT task_id, fire_time, attempt, started_at
+        FROM task_runs
+        WHERE status = ? AND lease_expires_at != '' AND lease_expires_at < ?
+    )
+    SELECT current.task_id, current.fire_time
+    FROM recovery_candidates AS current
+    WHERE NOT EXISTS (
+        SELECT 1
+        FROM task_runs AS live
+        WHERE live.task_id = current.task_id
+        AND live.status = ?
+        AND live.lease_expires_at >= ?
+    )
+    AND (? IS NULL OR current.task_id IN (SELECT value FROM json_each(?)))
+    AND current.attempt = (
+        SELECT MAX(latest.attempt)
+        FROM task_runs AS latest
+        WHERE latest.task_id = current.task_id
+        AND latest.fire_time = current.fire_time
+    )
+    ORDER BY current.started_at, current.task_id, current.fire_time
+    LIMIT ?
+"""
 
 
 @dataclass(frozen=True, slots=True)
@@ -56,6 +85,68 @@ class RecoverableRun:
 
     task_id: str
     fire_time: str
+
+
+@dataclass(frozen=True, slots=True)
+class BacklogSnapshot:
+    """Durable waiting work, including expired claims awaiting recovery."""
+
+    pending_count: int
+    oldest_pending_at: datetime | None
+    oldest_pending_age_seconds: float | None
+
+
+def get_backlog_snapshot(
+    db_path: Path | None = None,
+    *,
+    eligible_task_ids: Collection[str] | None = None,
+    now: datetime | None = None,
+) -> BacklogSnapshot:
+    """Count latest waiting ticks; age starts at admission or claim expiry."""
+    if eligible_task_ids is not None and not eligible_task_ids:
+        return BacklogSnapshot(0, None, None)
+    observed_at = now or datetime.now(UTC)
+    if observed_at.tzinfo is None:
+        observed_at = observed_at.replace(tzinfo=UTC)
+    else:
+        observed_at = observed_at.astimezone(UTC)
+
+    task_ids_json = json.dumps(list(eligible_task_ids)) if eligible_task_ids is not None else None
+    with database.connection(db_path) as conn:
+        row = conn.execute(
+            "SELECT COUNT(*), MIN(waiting_since) FROM ("
+            "SELECT task_id, fire_time, attempt, started_at AS waiting_since "
+            "FROM task_runs WHERE status = ? "
+            "UNION ALL "
+            "SELECT task_id, fire_time, attempt, lease_expires_at AS waiting_since "
+            "FROM task_runs WHERE status = ? "
+            "AND lease_expires_at != '' AND lease_expires_at < ?"
+            ") AS candidate "
+            "WHERE (? IS NULL OR task_id IN (SELECT value FROM json_each(?))) "
+            "AND attempt = (SELECT MAX(latest.attempt) FROM task_runs AS latest "
+            "WHERE latest.task_id = candidate.task_id "
+            "AND latest.fire_time = candidate.fire_time)",
+            (
+                TaskStatus.PENDING.value,
+                TaskStatus.RUNNING.value,
+                observed_at.isoformat(),
+                task_ids_json,
+                task_ids_json,
+            ),
+        ).fetchone()
+
+    pending_count = int(row[0])
+    oldest_pending_at = _parse_datetime(row[1])
+    oldest_pending_age_seconds = (
+        max(0.0, (observed_at - oldest_pending_at).total_seconds())
+        if oldest_pending_at is not None
+        else None
+    )
+    return BacklogSnapshot(
+        pending_count=pending_count,
+        oldest_pending_at=oldest_pending_at,
+        oldest_pending_age_seconds=oldest_pending_age_seconds,
+    )
 
 
 def try_queue_run(task_id: str, fire_time: str, db_path: Path | None = None) -> bool:
@@ -248,17 +339,7 @@ def get_recoverable_runs(
     with database.connection(db_path) as conn:
         now_text = datetime.now(UTC).isoformat()
         rows = conn.execute(
-            "SELECT task_id, fire_time FROM task_runs AS current "
-            "WHERE (current.status = ? OR (current.status = ? "
-            "AND current.lease_expires_at != '' AND current.lease_expires_at < ?)) "
-            "AND NOT EXISTS (SELECT 1 FROM task_runs AS live "
-            "WHERE live.task_id = current.task_id AND live.status = ? "
-            "AND live.lease_expires_at >= ?) "
-            "AND (? IS NULL OR current.task_id IN (SELECT value FROM json_each(?))) "
-            "AND current.attempt = (SELECT MAX(latest.attempt) FROM task_runs AS latest "
-            "WHERE latest.task_id = current.task_id "
-            "AND latest.fire_time = current.fire_time) "
-            "ORDER BY current.started_at, current.task_id, current.fire_time LIMIT ?",
+            _RECOVERABLE_RUNS_QUERY,
             (
                 TaskStatus.PENDING.value,
                 TaskStatus.RUNNING.value,
@@ -576,9 +657,11 @@ def delete_runs(task_id: str, db_path: Path | None = None) -> int:
 
 
 __all__ = [
+    "BacklogSnapshot",
     "claim_renewal_interval_seconds",
     "complete_run",
     "delete_runs",
+    "get_backlog_snapshot",
     "RecoverableRun",
     "ExecutionClaim",
     "get_recoverable_runs",

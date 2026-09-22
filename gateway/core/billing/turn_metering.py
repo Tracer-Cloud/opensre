@@ -7,6 +7,7 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 from dataclasses import dataclass
 
+from config.account import account_llm_route
 from gateway.core.billing.credits_client import CreditsOutcome, consume_credits
 
 
@@ -61,6 +62,12 @@ def admit_metered_turn() -> bool:
     request = _CURRENT_REQUEST.get()
     if request is None:
         raise RuntimeError("gateway turn has no bound metering request")
+    if account_llm_route() is not None:
+        # Every LLM call of this turn goes through the webapp's hosted routes,
+        # which reserve and settle credits per token and answer 402 when the
+        # organization has none. A per-turn charge on top would bill the same
+        # work twice, so the token metering is the admission.
+        return True
     outcome = consume_credits(
         request.organization_id,
         reason=request.reason,

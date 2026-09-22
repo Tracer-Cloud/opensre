@@ -13,7 +13,6 @@ Production code must not import this. The shell reaches the agent through
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import Any
 
 from rich.console import Console
 
@@ -41,7 +40,6 @@ def run_harness_turn(
     session: Session,
     console: Console,
     *,
-    recorder: Any = None,
     confirm_fn: Callable[[str], str] | None = None,
     is_tty: bool | None = None,
     request_exit: Callable[[], None] | None = None,
@@ -81,7 +79,7 @@ def run_harness_turn(
             print_repl_text(console, rendered, markup=False)
 
     def _accounting(message: str) -> ShellTurnAccounting:
-        return ShellTurnAccounting(session=session, text=message, recorder=recorder)
+        return ShellTurnAccounting(session=session, text=message)
 
     return agent.handle(
         text,

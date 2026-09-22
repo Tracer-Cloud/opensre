@@ -93,3 +93,27 @@ def test_onboarding_success_respects_click_no_interactive(
 
     assert exc.value.code == 0
     assert launched == []
+
+
+def test_onboard_auto_launch_suppresses_shell_render_capture(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: list[bool] = []
+
+    def _launch(
+        _config: object,
+        _resume: object,
+        _after: object,
+        capture_shell_rendered: bool = True,
+    ) -> int:
+        captured.append(capture_shell_rendered)
+        return 0
+
+    ctx = SimpleNamespace(find_root=lambda: SimpleNamespace(obj={}))
+    monkeypatch.setattr(
+        "surfaces.cli.host.cli_host",
+        lambda _ctx: SimpleNamespace(launch_shell=_launch),
+    )
+
+    assert onboard_module._launch_interactive_shell(ctx) == 0
+    assert captured == [False]

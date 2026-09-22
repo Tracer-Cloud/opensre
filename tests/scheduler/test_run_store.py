@@ -4,17 +4,21 @@ from __future__ import annotations
 
 import sqlite3
 import threading
+import time
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 import pytest
 
 from infrastructure.scheduling.scheduler.storage import database, migrations
 from infrastructure.scheduling.scheduler.storage.run_store import (
+    _RECOVERABLE_RUNS_QUERY,
     ExecutionClaim,
     RecoverableRun,
     complete_run,
     delete_runs,
+    get_backlog_snapshot,
     get_latest_finished_run,
     get_latest_run_for_fire_time,
     get_latest_targeted_run,
@@ -25,6 +29,47 @@ from infrastructure.scheduling.scheduler.storage.run_store import (
     try_queue_run,
 )
 from infrastructure.scheduling.scheduler.types import DeliveryOutcome, Provider, TaskStatus
+
+_RECOVERY_REFERENCE_QUERY = """
+    SELECT task_id, fire_time
+    FROM task_runs AS current
+    WHERE (current.status = ? OR (
+        current.status = ? AND current.lease_expires_at != '' AND current.lease_expires_at < ?
+    ))
+    AND NOT EXISTS (
+        SELECT 1
+        FROM task_runs AS live
+        WHERE live.task_id = current.task_id
+        AND live.status = ?
+        AND live.lease_expires_at >= ?
+    )
+    AND (? IS NULL OR current.task_id IN (SELECT value FROM json_each(?)))
+    AND current.attempt = (
+        SELECT MAX(latest.attempt)
+        FROM task_runs AS latest
+        WHERE latest.task_id = current.task_id
+        AND latest.fire_time = current.fire_time
+    )
+    ORDER BY current.started_at, current.task_id, current.fire_time
+    LIMIT ?
+"""
+
+
+def _recovery_query_arguments(now: str, limit: int) -> tuple[str | None | int, ...]:
+    return (
+        TaskStatus.PENDING.value,
+        TaskStatus.RUNNING.value,
+        now,
+        TaskStatus.RUNNING.value,
+        now,
+        None,
+        None,
+        limit,
+    )
+
+
+def _recovery_index_names(conn: sqlite3.Connection) -> set[str]:
+    return {str(row[1]) for row in conn.execute("PRAGMA index_list(task_runs)")}
 
 
 @pytest.fixture()
@@ -67,6 +112,101 @@ class _AlterFailsConnection:
 
 
 class TestClaimStore:
+    def test_backlog_snapshot_tracks_oldest_durable_pending_run(self, db_path: Path) -> None:
+        with database.transaction(db_path, immediate=True) as conn:
+            conn.executemany(
+                "INSERT INTO task_runs (task_id, fire_time, started_at, status) "
+                "VALUES (?, ?, ?, ?)",
+                [
+                    (
+                        f"task-{index}",
+                        f"tick-{index}",
+                        (
+                            "2026-01-01T09:00:00+00:00"
+                            if index == 0
+                            else "2026-01-01T10:00:00+00:00"
+                        ),
+                        TaskStatus.PENDING.value,
+                    )
+                    for index in range(1_000)
+                ],
+            )
+
+        snapshot = get_backlog_snapshot(
+            db_path,
+            now=datetime(2026, 1, 1, 10, 30, tzinfo=UTC),
+        )
+
+        assert snapshot.pending_count == 1_000
+        assert snapshot.oldest_pending_at == datetime(2026, 1, 1, 9, 0, tzinfo=UTC)
+        assert snapshot.oldest_pending_age_seconds == 5_400
+
+    def test_backlog_snapshot_survives_reopen_and_excludes_claimed_work(
+        self, db_path: Path
+    ) -> None:
+        assert try_queue_run("waiting", "2026-01-01T09:00Z", db_path=db_path)
+        assert try_queue_run("removed", "2026-01-01T09:00Z", db_path=db_path)
+        assert try_queue_run("active", "2026-01-01T09:00Z", db_path=db_path)
+        assert try_claim("active", "2026-01-01T09:00Z", db_path=db_path) is not None
+
+        snapshot = get_backlog_snapshot(db_path, eligible_task_ids={"waiting", "active"})
+
+        assert snapshot.pending_count == 1
+
+    def test_backlog_snapshot_with_no_eligible_tasks_ignores_retained_history(
+        self, db_path: Path
+    ) -> None:
+        assert try_queue_run("removed", "2026-01-01T09:00Z", db_path=db_path)
+
+        snapshot = get_backlog_snapshot(db_path, eligible_task_ids=set())
+
+        assert snapshot.pending_count == 0
+        assert snapshot.oldest_pending_at is None
+
+    def test_backlog_counts_latest_expired_claims_but_not_live_or_deleted_work(
+        self, db_path: Path
+    ) -> None:
+        now = datetime(2026, 1, 1, 10, 30, tzinfo=UTC)
+        expired_at = "2026-01-01T10:00:00+00:00"
+        with database.transaction(db_path, immediate=True) as conn:
+            conn.executemany(
+                "INSERT INTO task_runs "
+                "(task_id, fire_time, attempt, started_at, status, lease_expires_at) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                [
+                    (task_id, "tick", attempt, "2026-01-01T09:00:00+00:00", status, lease)
+                    for task_id, attempt, status, lease in [
+                        ("expired", 1, "running", expired_at),
+                        ("removed", 1, "running", expired_at),
+                        ("live", 1, "running", now.isoformat()),
+                        ("no-lease", 1, "running", ""),
+                        ("superseded", 1, "running", expired_at),
+                        ("superseded", 2, "success", ""),
+                    ]
+                ],
+            )
+
+        snapshot = get_backlog_snapshot(
+            db_path,
+            eligible_task_ids={"expired", "live", "no-lease", "superseded"},
+            now=now,
+        )
+
+        assert snapshot.pending_count == 1
+        assert snapshot.oldest_pending_at == datetime(2026, 1, 1, 10, tzinfo=UTC)
+        assert snapshot.oldest_pending_age_seconds == 1_800
+
+        # A pending tick still waits even when another tick owns the task.
+        assert try_queue_run("live", "next-tick", db_path=db_path)
+        assert get_backlog_snapshot(db_path, eligible_task_ids={"live"}, now=now).pending_count == 1
+
+    def test_empty_backlog_snapshot_has_no_synthetic_age(self, db_path: Path) -> None:
+        snapshot = get_backlog_snapshot(db_path)
+
+        assert snapshot.pending_count == 0
+        assert snapshot.oldest_pending_at is None
+        assert snapshot.oldest_pending_age_seconds is None
+
     def test_first_claim_succeeds(self, db_path: Path) -> None:
         assert try_claim("task1", "2026-01-01T09:00", db_path=db_path) is not None
 
@@ -803,3 +943,187 @@ def test_pending_claim_keeps_explicit_delivery_scope_through_recovery(db_path: P
     _expire_claim(db_path, "task", "tick")
     recovered = _claimed(db_path, "task", "tick")
     assert recovered.target_filter == scope
+
+
+def test_recovery_query_matches_the_pre_index_semantics(db_path: Path) -> None:
+    now = datetime.now(UTC).isoformat()
+    started = datetime(2026, 1, 1, tzinfo=UTC)
+    with database.connection(db_path) as conn:
+        conn.executemany(
+            "INSERT INTO task_runs "
+            "(task_id, fire_time, attempt, started_at, status, lease_expires_at) "
+            "VALUES (?, ?, ?, ?, ?, ?)",
+            (
+                ("pending-old", "tick", 1, started.isoformat(), TaskStatus.PENDING.value, ""),
+                (
+                    "pending-new",
+                    "tick",
+                    1,
+                    (started + timedelta(minutes=1)).isoformat(),
+                    TaskStatus.PENDING.value,
+                    "",
+                ),
+                (
+                    "expired",
+                    "tick",
+                    1,
+                    (started + timedelta(minutes=2)).isoformat(),
+                    TaskStatus.RUNNING.value,
+                    "2020-01-01T00:00:00+00:00",
+                ),
+                (
+                    "superseded",
+                    "tick",
+                    1,
+                    (started + timedelta(minutes=3)).isoformat(),
+                    TaskStatus.PENDING.value,
+                    "",
+                ),
+                (
+                    "superseded",
+                    "tick",
+                    2,
+                    (started + timedelta(minutes=4)).isoformat(),
+                    TaskStatus.SUCCESS.value,
+                    "",
+                ),
+                (
+                    "owned",
+                    "pending-tick",
+                    1,
+                    (started + timedelta(minutes=5)).isoformat(),
+                    TaskStatus.PENDING.value,
+                    "",
+                ),
+                (
+                    "owned",
+                    "running-tick",
+                    1,
+                    (started + timedelta(minutes=6)).isoformat(),
+                    TaskStatus.RUNNING.value,
+                    "2099-01-01T00:00:00+00:00",
+                ),
+            ),
+        )
+        expected = conn.execute(
+            _RECOVERY_REFERENCE_QUERY,
+            _recovery_query_arguments(now, limit=100),
+        ).fetchall()
+        conn.commit()
+
+    actual = get_recoverable_runs(limit=100, db_path=db_path)
+
+    assert [(run.task_id, run.fire_time) for run in actual] == expected
+
+
+def test_recovery_query_uses_partial_indexes_without_scanning_completed_history(
+    db_path: Path,
+) -> None:
+    started = datetime(2026, 1, 1, tzinfo=UTC)
+    with database.connection(db_path) as conn:
+        completed = tuple(
+            (
+                f"completed-{index}",
+                "tick",
+                (started + timedelta(seconds=index)).isoformat(),
+                TaskStatus.SUCCESS.value,
+            )
+            for index in range(10_000)
+        )
+        conn.executemany(
+            "INSERT INTO task_runs (task_id, fire_time, started_at, status) VALUES (?, ?, ?, ?)",
+            completed,
+        )
+        conn.executemany(
+            "INSERT INTO task_runs "
+            "(task_id, fire_time, started_at, status, lease_expires_at) VALUES (?, ?, ?, ?, ?)",
+            (
+                (
+                    "pending",
+                    "tick",
+                    started.isoformat(),
+                    TaskStatus.PENDING.value,
+                    "",
+                ),
+                (
+                    "expired",
+                    "tick",
+                    (started + timedelta(seconds=1)).isoformat(),
+                    TaskStatus.RUNNING.value,
+                    "2020-01-01T00:00:00+00:00",
+                ),
+            ),
+        )
+        details = [
+            str(row[3])
+            for row in conn.execute(
+                f"EXPLAIN QUERY PLAN {_RECOVERABLE_RUNS_QUERY}",
+                _recovery_query_arguments(datetime.now(UTC).isoformat(), limit=100),
+            )
+        ]
+        conn.commit()
+
+    assert any("idx_task_runs_recovery_pending_order" in detail for detail in details)
+    assert any("idx_task_runs_recovery_expired" in detail for detail in details)
+    assert any("idx_task_runs_live_owner" in detail for detail in details)
+    assert not any(
+        detail.startswith("SCAN task_runs") and "USING" not in detail for detail in details
+    )
+
+
+def test_missing_recovery_indexes_are_added_once_under_concurrent_startup(db_path: Path) -> None:
+    with database.connection(db_path) as conn:
+        for index_name in migrations._RECOVERY_INDEX_NAMES:
+            conn.execute(f"DROP INDEX {index_name}")
+        conn.commit()
+
+    ready = threading.Barrier(3)
+
+    def _migrate() -> None:
+        with sqlite3.connect(db_path, timeout=5) as conn:
+            ready.wait(timeout=5)
+            migrations.apply_migrations(conn)
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(_migrate) for _ in range(2)]
+        ready.wait(timeout=5)
+        for future in futures:
+            future.result()
+
+    with sqlite3.connect(db_path) as conn:
+        assert _recovery_index_names(conn) >= migrations._RECOVERY_INDEX_NAMES
+
+
+def test_recovery_index_migration_retries_a_lock_longer_than_busy_timeout(db_path: Path) -> None:
+    """A losing startup waits for an in-flight index build to finish."""
+    with database.connection(db_path) as conn:
+        for index_name in migrations._RECOVERY_INDEX_NAMES:
+            conn.execute(f"DROP INDEX {index_name}")
+        conn.commit()
+
+    holder = sqlite3.connect(db_path)
+    holder.execute("BEGIN IMMEDIATE")
+    started = threading.Event()
+
+    def _migrate_after_lock() -> None:
+        with sqlite3.connect(db_path, timeout=0.001) as conn:
+            conn.execute("PRAGMA busy_timeout = 1")
+            started.set()
+            migrations.apply_migrations(conn)
+
+    try:
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            future = pool.submit(_migrate_after_lock)
+            assert started.wait(timeout=5)
+            # This exceeds the contender's 1ms SQLite busy timeout, forcing
+            # the migration-level retry that covers a slow index build.
+            time.sleep(0.05)
+            holder.commit()
+            future.result(timeout=5)
+    finally:
+        if holder.in_transaction:
+            holder.rollback()
+        holder.close()
+
+    with sqlite3.connect(db_path) as conn:
+        assert _recovery_index_names(conn) >= migrations._RECOVERY_INDEX_NAMES

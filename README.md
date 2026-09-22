@@ -44,10 +44,40 @@
 
 ---
 
+## Before you begin
+
+Make sure you have:
+
+- A terminal open in a code project
+- A Git repository (recommended for the full workflow demonstration)
+
+## Step 1: Install and start opensre
+
+```bash
+curl -fsSL https://install.opensre.com | bash
+```
+
+Then start OpenSRE:
+
+```bash
+opensre
+```
+
+![OpenSRE CLI welcome screen with the sign-in prompt](docs/images/opensre-welcome.png)
+
+Use a macOS or Linux terminal. On Windows, use [WSL](docs/environments/windows-local.mdx).
+
+The installer fetches the latest build from `main` without requiring sudo. If `opensre` is not found, follow the PATH instructions printed by the installer or open a new terminal.
+
+For supported platforms and troubleshooting, see [Install locally](https://www.opensre.com/docs/install-local).
+
+---
+
 ## Table of Contents
 
+- [Before you begin](#before-you-begin)
+- [Install and start opensre](#step-1-install-and-start-opensre)
 - [Why OpenSRE?](#why-opensre)
-- [Install](#install)
 - [Quick Start](#quick-start)
 - [Deployment](#deployment)
 - [How OpenSRE Works](#how-opensre-works)
@@ -84,65 +114,19 @@ Our mission is to build AI SRE agents on top of this, scale it to thousands of r
 
 ---
 
-## Install
-
-The root installer URL auto-detects Unix shell vs PowerShell and installs the latest build from `main`. OpenSRE moves quickly, so `main` is the latest stable version for normal installs.
-
-Before installing, check the [supported platforms and architectures](SETUP.md#supported-platforms-and-architectures) table for release availability and CI coverage.
-
-macOS / Linux:
-
-```bash
-curl -fsSL https://install.opensre.com | bash
-```
-
-The macOS/Linux installer does not require sudo. If no writable bin directory is already on `PATH`, it installs to `~/.local/bin` and prints the shell command to apply the PATH update.
-
-Prebuilt Linux binaries require **glibc 2.35+** (Ubuntu 22.04+ or a comparable distribution) and do not run on Alpine Linux. On an older or musl-based Linux system, [install from source](docs/environments/linux-local.mdx#binary-compatibility) instead.
-
-Equivalent explicit main-channel form:
-
-```bash
-curl -fsSL https://install.opensre.com | bash -s -- --main
-```
-
-Homebrew:
-
-```bash
-brew tap tracer-cloud/tap
-brew install tracer-cloud/tap/opensre
-```
-
-Windows (PowerShell):
-
-```powershell
-irm https://install.opensre.com | iex
-```
-
-<!--
-```bash
-pipx install opensre
-``` -->
-
----
-
 ## Quick Start
 
 Contributors: start at [`main.py`](main.py) for the process entrypoint map.
 
-Create or sign in to your OpenSRE account once. Setup activates the hosted model:
+Run `opensre` to sign in and get started. The first launch activates the hosted model.
 
 ```bash
-opensre setup
+opensre
 ```
 
 Webapp contributors can run `opensre setup --dev` to authenticate through `http://localhost:3000`.
 
 **Interactive shell** — with no subcommand, `opensre` validates your account and starts a REPL (TTY required). You can exit and stay signed out, but the shell only opens for an active account. Describe incidents in plain language, watch the agent work, and use slash commands for session control (`/help`, `/status`, `/cost`, `/sessions`, `/resume`, `/compact`, `/new`, `/exit`), integrations (`/integrations list`, `/integrations verify`), and local agent fleet monitoring (`/agents`). Ctrl+C cancels an in-flight turn without losing session state. See **[interactive shell commands](https://www.opensre.com/docs/interactive-shell-commands)** for the full reference.
-
-```bash
-opensre
-```
 
 **Headless CLI** — run one agent turn non-interactively from a terminal, script, or CI job:
 

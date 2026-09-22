@@ -2,8 +2,16 @@
 
 from __future__ import annotations
 
+import math
+import os
 import time
 from collections.abc import Callable
+
+from config.constants.gateway import (
+    DEFAULT_STOP_TIMEOUT_SECONDS,
+    GATEWAY_STOP_TIMEOUT_SECONDS_ENV,
+    MAX_STOP_TIMEOUT_SECONDS,
+)
 
 
 class ShutdownBudget:
@@ -43,4 +51,18 @@ class ShutdownBudget:
         self._remaining = max(0.0, self._remaining - max(0.0, elapsed))
 
 
-__all__ = ["ShutdownBudget"]
+def stop_timeout_from_environment() -> float:
+    """The SIGTERM budget: the default unless the environment sets a valid one."""
+    raw = os.getenv(GATEWAY_STOP_TIMEOUT_SECONDS_ENV, "").strip()
+    if not raw:
+        return DEFAULT_STOP_TIMEOUT_SECONDS
+    try:
+        seconds = float(raw)
+    except ValueError:
+        return DEFAULT_STOP_TIMEOUT_SECONDS
+    if not math.isfinite(seconds) or seconds <= 0:
+        return DEFAULT_STOP_TIMEOUT_SECONDS
+    return min(seconds, MAX_STOP_TIMEOUT_SECONDS)
+
+
+__all__ = ["ShutdownBudget", "stop_timeout_from_environment"]
