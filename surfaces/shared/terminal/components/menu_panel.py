@@ -60,6 +60,12 @@ def build_menu_panel(
         return f"{frame}│{reset}{style}{content}{reset}{frame}│{reset}"
 
     counter = f"{index + 1}/{len(labels)}"
+    if count < len(labels):
+        counter = (
+            ("↑ " if start else "")
+            + f"{start + 1}–{start + count}/{len(labels)}"
+            + (" ↓" if start + count < len(labels) else "")
+        )
     heading = clip_prompt_text(title, max(0, inner - len(counter) - 5))
     top = f"─ {heading} "
     top += "─" * max(0, inner - prompt_text_width(top) - len(counter) - 2)
@@ -75,7 +81,8 @@ def build_menu_panel(
         lines.append(row(f"{marker} {number}{labels[item]}", style=style, suffix=suffix))
     lines.append(f"{frame}├{'─' * inner}┤{reset}")
     cancel = "back" if "›" in breadcrumb else "close"
-    hint = f"↑↓ move  Enter select  Esc {cancel}"
+    motion = "scroll" if count < len(labels) else "move"
+    hint = f"↑↓ {motion}  Enter select  Esc {cancel}"
     if inner < 34:
         hint = f"↑↓ Enter Esc {cancel}"
     if numbered and inner >= 58:

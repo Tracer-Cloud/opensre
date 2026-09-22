@@ -231,3 +231,31 @@ def test_resource_metadata_follows_focus_and_strips_terminal_controls(
     text = output.getvalue()
     assert "first-id" in text and "second-id" in text
     assert "\x1b[2J" not in text
+
+
+def test_panel_identifies_hidden_choices_before_and_after_viewport() -> None:
+    panel = build_menu_panel(
+        title="Resume",
+        breadcrumb="/resume",
+        labels=["/choose"] * 12,
+        index=7,
+        width=80,
+        max_height=20,
+    )
+    plain = "\n".join(re.sub(r"\x1b\[[0-9;]*m", "", row) for row in panel.lines)
+    assert "↑ 3–8/12 ↓" in plain
+    assert "↑↓ scroll" in plain
+
+
+def test_details_preserve_multiline_command_boundaries_without_terminal_controls() -> None:
+    from surfaces.shared.terminal.components.detail_panel import build_detail_panel
+
+    rows, _, _ = build_detail_panel(
+        "History",
+        [("1", "echo first\necho second\x1b[2J")],
+        width=60,
+        height=20,
+    )
+    assert any("echo first" in row and "echo second" not in row for row in rows)
+    assert any("echo second" in row and "echo first" not in row for row in rows)
+    assert "\x1b[2J" not in "".join(rows)

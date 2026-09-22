@@ -207,7 +207,7 @@ def test_picker_disambiguates_duplicate_names_and_noninteractive_show_gives_a_co
         choices = kwargs["choices"]
         assert {choice[0] for choice in choices} == {"first-task", "second-task"}
         assert all(choice[0] in kwargs["choice_notes"][choice[0]] for choice in choices)
-        assert all(choice[1] == "Same name" for choice in choices)
+        assert all(choice[0] in choice[1] and "Same name" in choice[1] for choice in choices)
         assert kwargs["panel"]
         return "second-task"
 

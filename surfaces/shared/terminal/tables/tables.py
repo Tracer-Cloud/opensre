@@ -144,16 +144,28 @@ def _integration_row(r: dict[str, str]) -> tuple[str | Text, ...]:
 _CONNECTED_STATUSES = frozenset({"ok", "configured", "passed"})
 
 
-def render_integrations_table(console: Console, results: list[dict[str, str]]) -> None:
+def integration_display_rows(
+    results: list[dict[str, str]], *, mcp: bool = False
+) -> list[dict[str, str]]:
+    """Order connection results consistently across tables and interactive panels."""
+    if mcp:
+        return sorted(
+            (r for r in results if r.get("service") in MCP_INTEGRATION_SERVICES),
+            key=lambda r: r.get("service", ""),
+        )
     # Connected integrations first (so the few a user has actually set up
     # aren't buried among 50+ "missing" rows), alphabetical within each group.
-    rows = sorted(
+    return sorted(
         results,
         key=lambda r: (
             r.get("status") not in _CONNECTED_STATUSES,
             r.get("service", ""),
         ),
     )
+
+
+def render_integrations_table(console: Console, results: list[dict[str, str]]) -> None:
+    rows = integration_display_rows(results)
     if not rows:
         repl_print(
             console,
@@ -164,10 +176,7 @@ def render_integrations_table(console: Console, results: list[dict[str, str]]) -
 
 
 def render_mcp_table(console: Console, results: list[dict[str, str]]) -> None:
-    rows = sorted(
-        (r for r in results if r.get("service") in MCP_INTEGRATION_SERVICES),
-        key=lambda r: r.get("service", ""),
-    )
+    rows = integration_display_rows(results, mcp=True)
     if not rows:
         repl_print(console, f"[{DIM}]no MCP servers configured.[/]")
         return
@@ -280,6 +289,7 @@ __all__ = [
     "COMMAND_OUTPUT_GUTTER_WIDTH",
     "ColumnDef",
     "MCP_INTEGRATION_SERVICES",
+    "integration_display_rows",
     "print_command_output",
     "render_integrations_table",
     "render_mcp_table",

@@ -60,8 +60,8 @@ def _interactive_resume_menu(session: Session, console: Console) -> bool:
         short_id = sid[:8]
         name = entry.get("name") or f"[{short_id}]"
         started_str = format_repl_timestamp(entry.get("started_at"), style="compact")
-        choices.append((sid, name))
-        notes[sid] = f"{started_str} · {short_id}"
+        choices.append((sid, f"{short_id} · {name} · {started_str}"))
+        notes[sid] = f"{started_str} · {sid} · {name}"
     choices.append(("done", "Cancel"))
     notes["done"] = "Enter cancels without resuming a session."
 
