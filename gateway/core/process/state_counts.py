@@ -4,8 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from filelock import Timeout
+
+from config.constants.gateway import HEALTH_TASK_STORE_LOCK_TIMEOUT_SECONDS
 from config.constants.paths import get_memory_dir, get_sessions_dir
-from infrastructure.scheduling.scheduler.storage import default_task_store_path, list_tasks
+from infrastructure.scheduling.scheduler.storage import (
+    default_task_store_path,
+    get_task_store_snapshot,
+)
 
 
 @dataclass(frozen=True)
@@ -46,9 +52,15 @@ def _count_memory_notes() -> int:
 
 
 def _count_scheduled_tasks() -> int:
+    """Bounded wait for the task-store lock; a held lock counts as zero rather than blocking."""
     store_path = default_task_store_path()
-    tasks = list_tasks(store_path)
-    return len(tasks)
+    try:
+        snapshot = get_task_store_snapshot(
+            store_path, lock_timeout_seconds=HEALTH_TASK_STORE_LOCK_TIMEOUT_SECONDS
+        )
+    except Timeout:
+        return 0
+    return len(snapshot.tasks)
 
 
 __all__ = ["StateCounts", "read_state_counts"]

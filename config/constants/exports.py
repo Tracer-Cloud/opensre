@@ -145,6 +145,7 @@ EXPORTS: dict[str, str] = {
     "DEFAULT_MAX_CONVERSATION_LOCKS": "gateway",
     "DEFAULT_STOP_TIMEOUT_SECONDS": "gateway",
     "GATEWAY_STOP_TIMEOUT_SECONDS_ENV": "gateway",
+    "HEALTH_TASK_STORE_LOCK_TIMEOUT_SECONDS": "gateway",
     "MAX_STOP_TIMEOUT_SECONDS": "gateway",
     "SCHEDULER_STOP_BUDGET_SHARE": "gateway",
     "NEW_SESSION_MESSAGE": "gateway",

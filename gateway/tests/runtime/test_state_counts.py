@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 
 import pytest
+from filelock import FileLock
 
 from gateway.core.process.state_counts import read_state_counts
 
@@ -15,6 +17,26 @@ def _no_task_store(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         "gateway.core.process.state_counts.default_task_store_path",
         lambda: tmp_path / "scheduled_tasks.json",
     )
+
+
+def test_a_held_task_store_lock_makes_the_count_zero_instead_of_blocking(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Arrange: a writer holds the task-store lock for longer than the health check will wait
+    store = tmp_path / "scheduler_tasks.json"
+    monkeypatch.setattr("gateway.core.process.state_counts.default_task_store_path", lambda: store)
+    monkeypatch.setattr(
+        "gateway.core.process.state_counts.HEALTH_TASK_STORE_LOCK_TIMEOUT_SECONDS", 0.2
+    )
+    with FileLock(store.with_suffix(".lock")):
+        # Act
+        started = time.monotonic()
+        counts = read_state_counts()
+        waited = time.monotonic() - started
+
+    # Assert
+    assert counts.scheduled_tasks == 0
+    assert waited < 2.0
 
 
 def test_counts_are_zero_when_nothing_has_been_written_yet(

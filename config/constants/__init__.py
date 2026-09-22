@@ -339,6 +339,9 @@ if TYPE_CHECKING:
         GATEWAY_STOP_TIMEOUT_SECONDS_ENV as GATEWAY_STOP_TIMEOUT_SECONDS_ENV,
     )
     from config.constants.gateway import (
+        HEALTH_TASK_STORE_LOCK_TIMEOUT_SECONDS as HEALTH_TASK_STORE_LOCK_TIMEOUT_SECONDS,
+    )
+    from config.constants.gateway import (
         MAX_STOP_TIMEOUT_SECONDS as MAX_STOP_TIMEOUT_SECONDS,
     )
     from config.constants.gateway import (

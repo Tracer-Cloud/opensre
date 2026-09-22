@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 import os
 import time
 from collections.abc import Callable
@@ -59,7 +60,7 @@ def stop_timeout_from_environment() -> float:
         seconds = float(raw)
     except ValueError:
         return DEFAULT_STOP_TIMEOUT_SECONDS
-    if seconds <= 0:
+    if not math.isfinite(seconds) or seconds <= 0:
         return DEFAULT_STOP_TIMEOUT_SECONDS
     return min(seconds, MAX_STOP_TIMEOUT_SECONDS)
 

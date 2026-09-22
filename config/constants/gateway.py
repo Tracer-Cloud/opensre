@@ -9,6 +9,8 @@ DEFAULT_STOP_TIMEOUT_SECONDS = 8.0
 GATEWAY_STOP_TIMEOUT_SECONDS_ENV = "OPENSRE_GATEWAY_STOP_TIMEOUT_SECONDS"
 #: Ceiling for the override: the longest ``stopTimeout`` Fargate allows.
 MAX_STOP_TIMEOUT_SECONDS = 120.0
+#: How long a health check waits for the scheduler task-store lock before counting zero.
+HEALTH_TASK_STORE_LOCK_TIMEOUT_SECONDS = 1.0
 #: Share of the remaining budget that running scheduled jobs may use to finish.
 SCHEDULER_STOP_BUDGET_SHARE = 0.5
 #: Web is a thread join, not a network drain, so it keeps a smaller slice.
@@ -36,6 +38,7 @@ __all__ = [
     "DEFAULT_MAX_CONVERSATION_LOCKS",
     "DEFAULT_STOP_TIMEOUT_SECONDS",
     "GATEWAY_STOP_TIMEOUT_SECONDS_ENV",
+    "HEALTH_TASK_STORE_LOCK_TIMEOUT_SECONDS",
     "MAX_STOP_TIMEOUT_SECONDS",
     "NEW_SESSION_MESSAGE",
     "ROTATE_SESSION",

@@ -153,6 +153,8 @@ def test_a_torn_record_reads_as_unclean_instead_of_clean() -> None:
         ("0", DEFAULT_STOP_TIMEOUT_SECONDS),
         ("-5", DEFAULT_STOP_TIMEOUT_SECONDS),
         ("soon", DEFAULT_STOP_TIMEOUT_SECONDS),
+        ("nan", DEFAULT_STOP_TIMEOUT_SECONDS),
+        ("inf", DEFAULT_STOP_TIMEOUT_SECONDS),
     ],
 )
 def test_the_stop_budget_comes_from_the_environment_within_the_fargate_ceiling(
