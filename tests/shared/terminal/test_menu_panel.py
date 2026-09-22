@@ -146,7 +146,7 @@ def test_details_wrap_and_scroll_without_losing_model_text(width: int, height: i
         )
         plain = [re.sub(r"\x1b\[[0-9;]*m", "", line) for line in lines]
         assert len(lines) <= height
-        assert all(prompt_text_width(line) == width for line in plain)
+        assert all(prompt_text_width(line) == min(width, 60) for line in plain)
         if offset == 0:
             seen.extend(plain[1:-3] if width >= 12 and height >= 5 else plain)
         elif actual == offset:
@@ -158,8 +158,9 @@ def test_details_wrap_and_scroll_without_losing_model_text(width: int, height: i
 
 
 @pytest.mark.parametrize("dismiss", ["enter", "cancel"])
+@pytest.mark.parametrize(("paint_width", "columns", "reflow"), [(39, 20, 2), (120, 60, 1)])
 def test_details_dismiss_and_erase_on_enter_or_escape(
-    monkeypatch: pytest.MonkeyPatch, dismiss: str
+    monkeypatch: pytest.MonkeyPatch, dismiss: str, paint_width: int, columns: int, reflow: int
 ) -> None:
     import io
     import sys
@@ -171,14 +172,32 @@ def test_details_dismiss_and_erase_on_enter_or_escape(
     monkeypatch.setattr(choice_menu, "repl_tty_interactive", lambda: True)
     monkeypatch.setattr(choice_menu, "_clear_prompt_toolkit_paint", lambda: None)
     monkeypatch.setattr(detail_panel, "drain_stale_cpr_bytes", lambda: None)
-    monkeypatch.setattr(choice_menu, "_menu_paint_width", lambda: 39)
+    monkeypatch.setattr(choice_menu, "_menu_paint_width", lambda: paint_width)
     monkeypatch.setattr(choice_menu, "_viewport_rows", lambda: 20)
-    monkeypatch.setattr(choice_menu, "_cols", lambda: 20)
+    monkeypatch.setattr(choice_menu, "_cols", lambda: columns)
     monkeypatch.setattr(choice_menu, "_read_action", lambda: dismiss)
     erased: list[int] = []
     left: list[bool] = []
     monkeypatch.setattr(choice_menu, "_erase_menu_block", lambda n, **_: erased.append(n))
     monkeypatch.setattr(choice_menu, "leave_inline_menu", lambda: left.append(True))
     detail_panel.repl_show_details(title="Configuration", fields=[("Provider", "OpenAI")])
-    assert erased == [output.getvalue().count("\n") * 2]
+    assert erased == [output.getvalue().count("\n") * reflow]
     assert left == [True]
+
+
+def test_details_use_compact_columns_and_secondary_metadata() -> None:
+    import infrastructure.terminal.theme as theme
+    from surfaces.shared.terminal.components.detail_panel import build_detail_panel
+
+    rows, offset, limit = build_detail_panel(
+        "Model › Configuration",
+        [("Provider", "OpenAI"), ("Reasoning", "gpt-5.6-sol"), ("Tool calls", "gpt-5.6-sol")],
+        note="Managed by OpenSRE account",
+        width=160,
+        height=40,
+    )
+    assert len(rows) == 9
+    assert offset == limit == 0
+    assert all(prompt_text_width(re.sub(r"\x1b\[[0-9;]*m", "", row)) == 60 for row in rows)
+    assert f"{theme.DIM_ANSI}Provider" in rows[1]
+    assert f"{theme.TEXT_ANSI}OpenAI" in rows[1]

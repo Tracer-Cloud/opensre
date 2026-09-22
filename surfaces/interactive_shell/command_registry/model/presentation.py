@@ -50,15 +50,10 @@ def show_model_configuration() -> None:
                 if spec is not None
                 else provider or "Not configured",
             ),
-            ("Reasoning model", reasoning or "Provider default"),
-            ("Tool-call model", toolcall or "Provider default"),
-            ("Configuration source", source),
+            ("Reasoning", reasoning or "Provider default"),
+            ("Tool calls", toolcall or "Provider default"),
         ],
-        note=(
-            "Model settings are managed by your OpenSRE account."
-            if source == "OpenSRE webapp"
-            else ""
-        ),
+        note=("Managed by OpenSRE account" if source == "OpenSRE webapp" else f"Source: {source}"),
     )
 
 

@@ -14,6 +14,8 @@ from surfaces.shared.terminal.components import choice_menu
 from surfaces.shared.terminal.components.cpr_stdin import drain_stale_cpr_bytes
 from surfaces.shared.terminal.prompt_layout import clip_prompt_text, prompt_text_width
 
+_DETAIL_MAX_WIDTH = 60
+
 
 def build_detail_panel(
     title: str,
@@ -25,32 +27,39 @@ def build_detail_panel(
     offset: int = 0,
 ) -> tuple[list[str], int, int]:
     """Return padded rows, clamped scroll offset, and the final scroll offset."""
-    width, height = max(1, width), max(1, height)
+    width, height = min(_DETAIL_MAX_WIDTH, max(1, width)), max(1, height)
     framed = width >= 12 and height >= 5
     content_width = max(1, width - 4) if framed else width
     console = Console(width=content_width)
-    content: list[str] = []
+    content: list[tuple[str, int]] = []
     label_width = max((prompt_text_width(label) for label, _ in fields), default=0)
+    columns = content_width >= label_width + 18
     for label, value in fields:
         label = strip_terminal_controls(label)
         value = strip_terminal_controls(value)
-        if content_width >= label_width + 24:
-            text = label + " " * (label_width - prompt_text_width(label) + 2) + value
-        else:
-            text = f"{label}\n{value}"
-        content.extend(
-            line.plain for line in Text(text).wrap(console, content_width, overflow="fold")
-        )
-        content.append("")
+        prefix = label + " " * (label_width - prompt_text_width(label) + 2) if columns else ""
+        if not columns:
+            content.extend(
+                (line.plain, len(line.plain))
+                for line in Text(label).wrap(console, content_width, overflow="fold")
+            )
+        value_width = content_width - prompt_text_width(prefix)
+        wrapped = Text(value).wrap(console, value_width, overflow="fold")
+        for index, line in enumerate(wrapped):
+            lead = prefix if index == 0 else " " * prompt_text_width(prefix)
+            content.append((lead + line.plain, len(lead)))
+        if not columns:
+            content.append(("", 0))
+    if content and not content[-1][0]:
+        content.pop()
     if note:
+        content.append(("", 0))
         content.extend(
-            line.plain
+            (line.plain, len(line.plain))
             for line in Text(strip_terminal_controls(note)).wrap(
                 console, content_width, overflow="fold"
             )
         )
-    elif content:
-        content.pop()
     capacity = max(1, height - 4) if framed else height
     limit = max(0, len(content) - capacity)
     offset = min(max(0, offset), limit)
@@ -62,17 +71,21 @@ def build_detail_panel(
         return text + " " * (size - prompt_text_width(text))
 
     if not framed:
-        return [pad(line, width) for line in visible], offset, limit
+        return [pad(line, width) for line, _ in visible], offset, limit
     inner = width - 2
-    heading = f" {title} "
-    rows = [f"{frame}╭{pad(heading, inner)}╮{reset}"]
-    rows.extend(
-        f"{frame}│{reset}{ui_theme.TEXT_ANSI} {pad(line, content_width)} {reset}{frame}│{reset}"
-        for line in visible
-    )
+    heading = clip_prompt_text(f"─ {title} ", inner)
+    rows = [f"{frame}╭{heading}{'─' * (inner - prompt_text_width(heading))}╮{reset}"]
+    for text, dim_prefix in visible:
+        padded = pad(text, content_width)
+        styled = (
+            f"{ui_theme.DIM_ANSI}{padded[:dim_prefix]}{ui_theme.TEXT_ANSI}{padded[dim_prefix:]}"
+        )
+        rows.append(f"{frame}│{reset} {styled} {reset}{frame}│{reset}")
     hint = "Enter / Esc back"
     if limit:
         hint = "↑↓ scroll · " + hint
+    if prompt_text_width(hint) > content_width:
+        hint = "↑↓ ↵/Esc" if limit else "↵/Esc back"
     rows.extend(
         [
             f"{frame}├{'─' * inner}┤{reset}",
@@ -93,7 +106,7 @@ def repl_show_details(*, title: str, fields: Sequence[tuple[str, str]], note: st
     offset = 0
     try:
         while True:
-            width = choice_menu._menu_paint_width()
+            width = min(_DETAIL_MAX_WIDTH, choice_menu._menu_paint_width())
             lines, offset, limit = build_detail_panel(
                 title,
                 fields,
