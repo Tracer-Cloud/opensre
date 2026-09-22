@@ -183,17 +183,35 @@ def _execute_claimed_task(
         return False
     if _skip_cancelled_schedule(claim, task, fire_time):
         return False
+    paused_for_outcome = False
     if message.stop_schedule or message.outcome.terminal_block:
         current = get_task(task.id)
         if current is not None and current.enabled:
             current.enabled = False
             update_task(current)
+            paused_for_outcome = True
+
+    def _user_cancelled_this_tick() -> bool:
+        """True when the user removed or disabled the task during this tick.
+
+        A pause this tick applied for a terminal outcome is not a user cancel:
+        the report for that outcome still has to be delivered.
+        """
+        reason = schedule_cancel_reason(task.id)
+        if reason is None:
+            return False
+        return not (paused_for_outcome and reason == "disabled")
+
+    def _abort_user_cancel() -> bool:
+        if not _user_cancelled_this_tick():
+            return False
+        return _skip_cancelled_schedule(claim, task, fire_time)
 
     work_status = TaskStatus.SUCCESS if message.outcome.completed else TaskStatus.FAILED
 
     # Quiet ticks (e.g. uptime watch with no transitions) skip delivery.
     if not message.strip():
-        if _skip_cancelled_schedule(claim, task, fire_time):
+        if _abort_user_cancel():
             return False
         if not complete_run(
             claim,
@@ -215,7 +233,7 @@ def _execute_claimed_task(
         return message.outcome.completed
 
     def _can_deliver() -> bool:
-        return ownership.valid() and schedule_cancel_reason(task.id) is None
+        return ownership.valid() and not _user_cancelled_this_tick()
 
     # Fan out to every destination the task resolves to, concurrently.
     result = _deliver_all(
@@ -224,7 +242,21 @@ def _execute_claimed_task(
         target_filter=claim.target_filter,
         can_deliver=_can_deliver,
     )
-    if _skip_cancelled_schedule(claim, task, fire_time):
+    if _user_cancelled_this_tick():
+        reason = schedule_cancel_reason(task.id) or "cancelled"
+        if any(outcome.ok for outcome in result.outcomes):
+            # A destination may already have the message. Keep that history
+            # instead of replacing the row with an empty skipped run.
+            complete_run(
+                claim,
+                status=TaskStatus.SKIPPED,
+                posted_message_id=result.message_id(),
+                error=reason,
+                provider=_run_provider_label(task),
+                targets=result.outcomes,
+            )
+            return False
+        _skip_cancelled_schedule(claim, task, fire_time)
         return False
     if not ownership.valid():
         logger.warning(

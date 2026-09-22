@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from core.agent_harness.turns.work_outcome import (
     ExecutedToolOutcome,
+    last_work_classified,
     last_work_ok,
     last_work_tool_failed,
     tap_executed_tool_outcomes,
@@ -57,6 +58,21 @@ def test_bookkeeping_only_is_not_a_failed_work_stop() -> None:
     assert last_work_tool_failed([plan]) is False
     assert last_work_ok([plan]) is None
     assert last_work_tool_failed([]) is False
+
+
+def test_classified_repair_outcome_is_a_finished_report() -> None:
+    blocked = _outcome(
+        "fix_github_pr_ci",
+        details={
+            "success": False,
+            "error_kind": "pr_not_open",
+            "work_outcome": {"status": "blocked", "error_kind": "pr_not_open"},
+        },
+    )
+    assert last_work_tool_failed([blocked]) is True
+    assert last_work_classified([blocked]) is True
+    unfinished = _outcome("shell_run", details={"ok": False, "exit_code": 1})
+    assert last_work_classified([unfinished]) is False
 
 
 def test_execution_error_counts_as_failed_work() -> None:

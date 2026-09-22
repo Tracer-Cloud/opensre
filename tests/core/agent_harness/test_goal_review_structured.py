@@ -427,6 +427,34 @@ def test_goal_reviewer_accepts_after_a_failed_curl_is_retried_successfully() -> 
     assert llm.invokes == 0
 
 
+def test_goal_reviewer_accepts_a_classified_blocked_repair() -> None:
+    """A repair tool that already classified the target may end and report it."""
+    from core.agent_harness.turns.work_outcome import ExecutedToolOutcome
+
+    llm = _ScriptedLLM('{"verdict": "GOAL_REACHED"}')
+    outcomes = [
+        ExecutedToolOutcome(
+            name="fix_github_pr_ci",
+            arguments={},
+            is_error=False,
+            details={
+                "success": False,
+                "error_kind": "repo_mismatch",
+                "work_outcome": {"status": "blocked", "error_kind": "repo_mismatch"},
+            },
+        )
+    ]
+    goal = build_goal_reviewer(
+        llm,
+        "repair the failing checks",
+        executed_tool_names=["fix_github_pr_ci"],
+        executed_outcomes=outcomes,
+    )
+    assert goal.verify is not None
+    assert goal.verify(_obs()) is True
+    assert llm.invokes == 0
+
+
 def test_goal_reviewer_lets_the_user_be_asked_after_a_failed_tool() -> None:
     """A closing question is how a real blocker is resolved; do not flail past it."""
     from core.agent_harness.turns.work_outcome import ExecutedToolOutcome

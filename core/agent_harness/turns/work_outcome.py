@@ -68,6 +68,27 @@ def last_work_tool_failed(outcomes: Sequence[ExecutedToolOutcome]) -> bool:
     return last_work_ok(outcomes) is False
 
 
+_CLASSIFIED_WORK_STATUSES = frozenset({"succeeded", "noop", "blocked", "failed"})
+
+
+def last_work_classified(outcomes: Sequence[ExecutedToolOutcome]) -> bool:
+    """True when the last work tool already published a finished ``work_outcome``.
+
+    A failed curl has no outcome and must keep the turn open. A repair that
+    classified the target (blocked, failed, noop, or succeeded) has finished,
+    so the turn may report that result instead of retrying it.
+    """
+    for outcome in reversed(outcomes):
+        if not is_plan_work_name(outcome.name, outcome.arguments):
+            continue
+        details = outcome.details if isinstance(outcome.details, Mapping) else None
+        raw = details.get("work_outcome") if isinstance(details, Mapping) else None
+        if not isinstance(raw, Mapping):
+            return False
+        return str(raw.get("status") or "") in _CLASSIFIED_WORK_STATUSES
+    return False
+
+
 _REVIEW_PAYLOAD_CHARS = 400
 
 
@@ -88,6 +109,7 @@ def format_outcomes_for_review(outcomes: Sequence[ExecutedToolOutcome]) -> str:
 __all__ = [
     "ExecutedToolOutcome",
     "format_outcomes_for_review",
+    "last_work_classified",
     "last_work_ok",
     "last_work_tool_failed",
     "tap_executed_tool_outcomes",

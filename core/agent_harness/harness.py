@@ -193,14 +193,8 @@ class AgentSession:
         sink = output if output is not None else BufferOutputSink()
         bound_console = console
         if cancel_requested is not None:
-            from io import StringIO
-
-            from rich.console import Console
-
             from core.agent_harness.turns.host_cancel import bind_cancel_predicate
 
-            if bound_console is None:
-                bound_console = Console(force_terminal=False, file=StringIO())
             bound_console = bind_cancel_predicate(sink, cancel_requested, console=bound_console)
         agent_session._attach_default_headless(
             session=startup.session,

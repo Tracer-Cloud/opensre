@@ -19,6 +19,7 @@ from filelock import FileLock
 from config.constants import OPENSRE_HOME_DIR
 from config.constants.work_items import WORK_ITEM_REMINDER_RUN_AT_PARAM
 from infrastructure.scheduling.scheduler import reload_signal
+from infrastructure.scheduling.scheduler.storage.database import run_database_path
 from infrastructure.scheduling.scheduler.storage.legacy_task_migration import (
     migrate_legacy_task_entries,
 )
@@ -42,6 +43,11 @@ class TaskStoreSnapshot:
 def default_task_store_path() -> Path:
     """Return the scheduler task-store path under the OpenSRE home."""
     return OPENSRE_HOME_DIR / _STORE_FILENAME
+
+
+def _run_database_for_store(store_path: Path) -> Path:
+    """Run database paired with ``store_path``: ``<store dir>/scheduler.db``."""
+    return run_database_path(store_path.parent)
 
 
 def _lock_path(store_path: Path) -> Path:
@@ -276,7 +282,7 @@ def remove_task(task_id: str, store_path: Path | None = None) -> bool:
 
     # The schedule changed: wake any running scheduler so it stops firing this.
     reload_signal.request_scheduler_reload()
-    skip_queued_runs(task_id, reason="missing_task")
+    skip_queued_runs(task_id, reason="missing_task", db_path=_run_database_for_store(path))
 
     return True
 
@@ -301,7 +307,7 @@ def update_task(task: ScheduledTask, store_path: Path | None = None) -> bool:
         # Enable/disable/schedule edits must drop or replace the live APScheduler job.
         reload_signal.request_scheduler_reload()
     if not task.enabled:
-        skip_queued_runs(task.id, reason="disabled")
+        skip_queued_runs(task.id, reason="disabled", db_path=_run_database_for_store(path))
     return True
 
 

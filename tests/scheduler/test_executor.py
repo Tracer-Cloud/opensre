@@ -443,6 +443,46 @@ class TestExecutor:
             assert stored.params == {"loop_prompt": "new prompt"}
             assert stored.last_run is None
 
+    def test_cancel_during_delivery_keeps_successful_destination_history(self) -> None:
+        from infrastructure.scheduling.scheduler.storage import get_task, update_task
+
+        task = add_task(
+            ScheduledTask(
+                kind=TaskKind.MANUAL_LOOP,
+                cron="0 9 * * *",
+                provider=Provider.SLACK,
+                chat_id="C-partial",
+            )
+        )
+
+        class _DeliverThenDisable:
+            def __init__(self) -> None:
+                self.calls: list[tuple[ScheduledTask, str]] = []
+
+            def deliver(self, scheduled: ScheduledTask, message: str) -> tuple[bool, str, str]:
+                self.calls.append((scheduled, message))
+                current = get_task(scheduled.id)
+                assert current is not None
+                current.enabled = False
+                assert update_task(current)
+                return True, "", "msg-kept"
+
+        adapter = _DeliverThenDisable()
+        delivery_bundle.ScheduledDeliveryAdapters({Provider.SLACK: adapter}).install()
+        with patch(
+            "infrastructure.scheduling.scheduler.executor.build_message",
+            return_value="report that already went out",
+        ):
+            assert (
+                scheduler_executor.execute_task(task, "2026-01-15T09:00Z", real_runners()) is False
+            )
+        runs = run_store.get_runs(task.id)
+        assert runs and runs[0].status is TaskStatus.SKIPPED
+        assert runs[0].error == "disabled"
+        assert runs[0].posted_message_id == "msg-kept"
+        assert runs[0].targets and runs[0].targets[0].ok
+        assert runs[0].targets[0].message_id == "msg-kept"
+
     def test_execute_task_does_not_deliver_after_the_task_is_disabled(self) -> None:
         from infrastructure.scheduling.scheduler.storage import update_task
 

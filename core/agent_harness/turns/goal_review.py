@@ -43,6 +43,7 @@ from core.agent_harness.turns.gather_discovery_budget import (
 from core.agent_harness.turns.work_outcome import (
     ExecutedToolOutcome,
     format_outcomes_for_review,
+    last_work_classified,
     last_work_ok,
     last_work_tool_failed,
 )
@@ -278,7 +279,9 @@ class _LLMGoalReviewer:
         ):
             self.skill_load_rejections += 1
             return self._decision(observation, False, "skill_loaded_only")
-        if last_work_tool_failed(self.executed_outcomes):
+        if last_work_tool_failed(self.executed_outcomes) and not last_work_classified(
+            self.executed_outcomes
+        ):
             return self._decision(observation, False, "work_tool_failed")
         if self.reject_discovery_only and _gather_ran_only_discovery(self.executed_tool_calls):
             return self._decision(observation, False, "discovery_only")
@@ -377,6 +380,8 @@ def build_goal_reviewer(
 
     ``executed_outcomes`` rejects a conclusion whose last work tool failed
     (nonzero shell exit, ``ok: false``) so a failed curl cannot end the turn.
+    A tool that already published a finished ``work_outcome`` may stop: that
+    result is the report, not an unfinished attempt.
     """
     outcomes = executed_outcomes if executed_outcomes is not None else []
     reviewer = _LLMGoalReviewer(
@@ -393,7 +398,7 @@ def build_goal_reviewer(
     def _nudge(observation: GoalObservation) -> str:
         if skill_load_only is not None and skill_load_only():
             return _SKILL_LOAD_ONLY_NUDGE
-        if last_work_tool_failed(outcomes):
+        if last_work_tool_failed(outcomes) and not last_work_classified(outcomes):
             return _FAILED_WORK_NUDGE
         if (
             blocked_needs_user is not None
