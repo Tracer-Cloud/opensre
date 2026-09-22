@@ -94,6 +94,28 @@ def test_a_scheduled_job_that_outlasts_the_budget_makes_the_stop_unclean_but_not
     assert describe_previous_shutdown() == UNCLEAN_SCHEDULED_JOBS
 
 
+def test_a_second_signal_during_a_slow_stop_keeps_the_first_result() -> None:
+    # Arrange: the first stop timed out on a scheduled job
+    controller = GatewayController()
+    stuck_scheduler = _SchedulerWithARunningJob()
+    controller.scheduler = stuck_scheduler
+    surfaces = MagicMock()
+    surfaces.stop.return_value = True
+    controller.surfaces = surfaces
+    try:
+        first = controller.stop(timeout=0.4)
+    finally:
+        stuck_scheduler.job_released.set()
+
+    # Act: another SIGTERM arrives and calls stop again
+    second = controller.stop(timeout=0.4)
+
+    # Assert: same answer, nothing stopped twice, and the record still says what was cut.
+    assert first is True and second is True
+    surfaces.stop.assert_called_once()
+    assert describe_previous_shutdown() == UNCLEAN_SCHEDULED_JOBS
+
+
 def test_chat_workers_that_did_not_stop_in_time_make_the_stop_unclean() -> None:
     # Arrange
     controller = GatewayController()

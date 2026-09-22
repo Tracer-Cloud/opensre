@@ -98,6 +98,8 @@ class GatewayController:
         else:
             self.turn_gate = process_turn_gate()
         self._stopped = threading.Event()
+        # A second signal must not rerun the stop and overwrite its record.
+        self._stop_result: bool | None = None
 
     def start_gateway(self, *, wait: bool = True) -> GatewayController:
         """Credential hydrate, shared process boot, then channels + scheduler."""
@@ -182,7 +184,10 @@ class GatewayController:
         """Shut down all components and return whether the chat workers stopped.
 
         ``timeout`` defaults to the budget the environment gives this process.
+        Only the first call stops anything; a repeated call returns its result.
         """
+        if self._stopped.is_set():
+            return bool(self._stop_result)
         seconds = stop_timeout_from_environment() if timeout is None else timeout
         budget = ShutdownBudget(seconds)
         set_ready(False)
@@ -210,6 +215,7 @@ class GatewayController:
             chat_workers_stopped=stopped,
             scheduled_jobs_finished=scheduled_jobs_finished,
         )
+        self._stop_result = stopped
         return stopped
 
     def _note_previous_shutdown(self, logger: logging.Logger) -> None:
