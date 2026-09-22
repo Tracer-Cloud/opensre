@@ -89,11 +89,65 @@ opensre ask \
   "correlate the alert with the recent deployment"
 ```
 
+### Worked example
+
+Given `alert.json`:
+
+```json
+{
+  "alert": "CheckoutLatencyHigh",
+  "service": "checkout-api",
+  "started_at": "2026-09-22T09:15:00Z",
+  "p95_latency_ms": 2410,
+  "baseline_p95_latency_ms": 420,
+  "error_rate_percent": 8.2
+}
+```
+
+And `deployment.md`:
+
+```markdown
+# Recent deployment
+
+- Service: checkout-api
+- Version: 2026.09.22-rc3
+- Completed: 2026-09-22T09:12:00Z
+- Change: Enabled the payment-routing client with a 3-second upstream timeout.
+```
+
+Run:
+
+```bash
+opensre ask \
+  -i alert.json \
+  -i deployment.md \
+  "Correlate the alert with the recent deployment"
+```
+
+Response wording varies by model, but the result should use facts from both
+files. For example:
+
+```text
+The deployment is a strong likely trigger for the alert:
+
+- checkout-api rc3 completed at 09:12 UTC; the alert began three minutes later.
+- P95 latency rose from 420 ms to 2,410 ms, about 5.7x baseline, with an 8.2%
+  error rate.
+- The observed latency is consistent with requests waiting near the new
+  3-second upstream timeout.
+
+Next action: disable the new client or roll back rc3, then verify whether
+latency and errors return to baseline.
+```
+
 Attach up to 16 files. Files are treated as untrusted context, not operator
 instructions. Each file may contain up to 64 KiB, with a combined limit of 128
 KiB. Empty, binary, and non-UTF-8 files are rejected before the agent starts.
 The combined limit also applies after JSON encoding, so content dominated by
 control characters, quotes, or backslashes may reach it earlier.
+
+Review attachments for secrets before running the command. Their contents are
+sent to the configured LLM provider as part of the prompt.
 
 When a resumed session is waiting for a numbered choice, submit that answer
 without context files. Attach files in the following turn instead.
