@@ -179,7 +179,13 @@ def compose_tool_execution_hooks(
             current = callback(request)
             if current is None:
                 continue
-            decision = current
+            # A later auditing hook may attach metadata without making a new
+            # authorization decision. Do not discard an earlier explicit grant.
+            decision = (
+                replace(current, approved=True)
+                if decision is not None and decision.approved and not current.blocked
+                else current
+            )
             if current.blocked:
                 return current
         return decision

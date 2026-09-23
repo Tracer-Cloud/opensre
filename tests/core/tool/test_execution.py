@@ -148,6 +148,29 @@ def test_approval_required_tool_fails_closed_without_an_approving_hook() -> None
     assert calls == ["ok"]
 
 
+def test_composed_hooks_preserve_explicit_approval_from_an_earlier_hook() -> None:
+    tool = RegisteredTool(
+        name="requires_approval_fixture",
+        description="approval fixture",
+        input_schema=_schema(["value"]),
+        source="knowledge",
+        run=lambda value: {"value": value},
+        requires_approval=True,
+    )
+    hooks = compose_tool_execution_hooks(
+        ToolExecutionHooks(
+            before_tool_call=lambda _request: BeforeToolCallResult(approved=True)
+        ),
+        ToolExecutionHooks(
+            before_tool_call=lambda _request: BeforeToolCallResult(metadata={"audit": True})
+        ),
+    )
+
+    result = execute_tool_calls([_call("requires_approval_fixture")], [tool], {}, hooks=hooks)[0]
+
+    assert result.is_error is False
+
+
 def test_composed_before_hooks_stop_at_first_block() -> None:
     seen: list[str] = []
 
