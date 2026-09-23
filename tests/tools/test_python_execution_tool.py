@@ -71,6 +71,7 @@ class TestPythonExecutionToolMetadata:
 
     def test_not_advertised_without_a_python_interpreter(self, monkeypatch) -> None:
         monkeypatch.setenv(OPENSRE_PYTHON_EXECUTION_ENABLED_ENV, "1")
+
         def _unavailable() -> str:
             raise FileNotFoundError("Python 3 is not available on PATH")
 

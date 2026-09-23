@@ -37,7 +37,7 @@ class PythonExecutionTool(BaseTool):
     source = "knowledge"
     evidence_mapper = map_execute_python_code
     # Generated code executes with the OpenSRE user's host privileges. The
-    # Python API patches in the runner cannot contain subprocesses or egress.
+    # Python API patches in the runner cannot reliably contain subprocesses or egress.
     side_effect_level = SideEffectLevel.MUTATING
     requires_approval = True
     approval_reason = (
@@ -71,7 +71,7 @@ class PythonExecutionTool(BaseTool):
     anti_examples = [
         _RUNTIME_FACTS_ANTI_EXAMPLE,
         "Changing local files or shelling out to other processes",
-        f"Calling {', '.join(BLOCKED_INTROSPECTION_COMMANDS)} (all blocked by the sandbox)",
+        f"Calling {', '.join(BLOCKED_INTROSPECTION_COMMANDS)} instead of using runtime facts",
         "Probing cloud instance metadata over the network (use the injected cloud facts)",
         "Using allow_network for arbitrary host/port reachability probes or scanning (allow_network is unrestricted once enabled — only for approved API-backed analysis)",
         "Long-running jobs, crawlers, or broad external scans",
