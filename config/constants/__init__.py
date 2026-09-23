@@ -523,6 +523,9 @@ if TYPE_CHECKING:
         HOSTED_GATEWAY_HTTP_TIMEOUT_SECONDS as HOSTED_GATEWAY_HTTP_TIMEOUT_SECONDS,
     )
     from config.constants.hosted_gateway import (
+        HOSTED_GATEWAY_INTEGRATIONS_PATH as HOSTED_GATEWAY_INTEGRATIONS_PATH,
+    )
+    from config.constants.hosted_gateway import (
         HOSTED_GATEWAY_LOOPBACK_HOSTS as HOSTED_GATEWAY_LOOPBACK_HOSTS,
     )
     from config.constants.hosted_gateway import (

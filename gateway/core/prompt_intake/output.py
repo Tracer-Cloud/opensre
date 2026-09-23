@@ -6,6 +6,7 @@ import logging
 import threading
 from collections.abc import Iterable
 
+from core.tool import ToolExecutionHooks
 from infrastructure.turn_host.status_messages import EMPTY_RESPONSE_MESSAGE
 
 logger = logging.getLogger("gateway")
@@ -15,7 +16,7 @@ class CollectingTurnOutput:
     """The ``TurnOutput`` surface with no chat behind it: text is collected, not sent."""
 
     def __init__(self) -> None:
-        self.tool_hooks = None
+        self.tool_hooks: ToolExecutionHooks | None = None
         self.turn_cancel: threading.Event | None = None
         self.answer = ""
         self.failed = False

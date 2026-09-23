@@ -206,3 +206,37 @@ def test_the_tool_is_external_takes_no_identifier_and_refuses_an_empty_request()
     assert tool.side_effect_level == "external"
     assert set(tool.input_schema["properties"]) == {"prompt", "context", "prompt_id"}
     assert out["success"] is False and "Give the hosted gateway a prompt" in out["response_text"]
+
+
+def test_a_failed_integration_on_the_gateway_points_the_user_to_the_integrations_page(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange
+    app = _App([PromptRecord(_ID, "done", answer="16 open PRs", failed_integrations=("github",))])
+    _signed_in_with(monkeypatch, app)
+
+    # Act
+    out = ask_hosted_gateway(prompt="count open PRs")
+
+    # Assert
+    assert out["failed_integrations"] == ["github"]
+    assert out["response_text"].startswith("16 open PRs")
+    assert "returned errors on the hosted gateway: github" in out["response_text"]
+    assert "https://app.test/integrations" in out["response_text"]
+
+
+def test_the_client_reads_failed_integrations_from_the_record() -> None:
+    # Arrange
+    payload = {
+        "prompt_id": _ID,
+        "state": "done",
+        "answer": "x",
+        "failed_integrations": ["github", 3, ""],
+    }
+    client = _client(httpx.MockTransport(lambda _r: httpx.Response(200, json=payload)))
+
+    # Act
+    record = client.prompt_result(_ID)
+
+    # Assert: only well-formed names survive
+    assert record.failed_integrations == ("github",)

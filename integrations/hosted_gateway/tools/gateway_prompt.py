@@ -6,6 +6,7 @@ import time
 from typing import Any
 
 from config.constants.hosted_gateway import (
+    HOSTED_GATEWAY_INTEGRATIONS_PATH,
     HOSTED_GATEWAY_PROMPT_POLL_SECONDS,
     HOSTED_GATEWAY_PROMPT_WAIT_SECONDS,
 )
@@ -36,6 +37,12 @@ _STATE_TEXT = {
 _STILL_RUNNING = (
     "The hosted gateway is still working on prompt {prompt_id} after "
     "{waited} seconds. Ask again later with that id to read the result."
+)
+_FAILED_INTEGRATIONS = (
+    "\n\nTools of these integrations returned errors on the hosted gateway: {vendors}. The "
+    "gateway uses the organization's integrations, not this machine's credentials. If the "
+    "organization has not set them up for the gateway, an admin can do so at {url}; "
+    "otherwise the answer above describes the failure."
 )
 
 
@@ -95,6 +102,7 @@ _STILL_RUNNING = (
         "state": "queued, running, done, needs_input or failed",
         "answer": "The gateway's answer when the state is done",
         "question": "What the gateway would have asked when the state is needs_input",
+        "failed_integrations": "Integrations whose tools failed on the gateway, e.g. github",
         "response_text": "Plain-language result for the user",
     },
 )
@@ -112,9 +120,10 @@ def ask_hosted_gateway(
                 client, prompt.strip(), dict(context or {}), prompt_id.strip()
             )
             record, waited = _wait_until_settled(client, record)
+            integrations_url = f"{client.app_url}{HOSTED_GATEWAY_INTEGRATIONS_PATH}"
     except HostedGatewayError as exc:
         return failure_output(exc, tool_name=TOOL_NAME, component=_COMPONENT)
-    return _outcome(record, waited)
+    return _outcome(record, waited, integrations_url)
 
 
 def _submit_or_lookup(
@@ -140,19 +149,23 @@ def _wait_until_settled(
     return current, time.monotonic() - started
 
 
-def _outcome(record: PromptRecord, waited: float) -> dict[str, Any]:
+def _outcome(record: PromptRecord, waited: float, integrations_url: str) -> dict[str, Any]:
     if record.state == "done":
         text = record.answer
     elif record.state in _STATE_TEXT:
         text = _STATE_TEXT[record.state].format(question=record.question, error=record.error)
     else:
         text = _STILL_RUNNING.format(prompt_id=record.prompt_id, waited=int(waited))
+    if record.failed_integrations:
+        vendors = ", ".join(record.failed_integrations)
+        text = text + _FAILED_INTEGRATIONS.format(vendors=vendors, url=integrations_url)
     return {
         "success": record.settled,
         "prompt_id": record.prompt_id,
         "state": record.state,
         "answer": record.answer,
         "question": record.question,
+        "failed_integrations": list(record.failed_integrations),
         "response_text": text,
     }
 

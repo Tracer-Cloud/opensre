@@ -102,6 +102,8 @@ class PromptRecord:
     answer: str = ""
     question: str = ""
     error: str = ""
+    #: Integrations whose tools failed on the gateway during this prompt, by vendor name.
+    failed_integrations: tuple[str, ...] = ()
 
     @property
     def settled(self) -> bool:
@@ -248,7 +250,14 @@ def _prompt_record(payload: dict[str, Any]) -> PromptRecord:
         answer=_text(payload.get("answer")),
         question=_text(payload.get("question")),
         error=_text(payload.get("error")),
+        failed_integrations=_names(payload.get("failed_integrations")),
     )
+
+
+def _names(value: object) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        return ()
+    return tuple(item for item in value if isinstance(item, str) and item)
 
 
 def _gateway_health(payload: dict[str, Any]) -> GatewayHealth:

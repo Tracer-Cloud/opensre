@@ -39,6 +39,8 @@ class PromptJob:
     error_code: str = ""
     finished_at: float | None = None
     session_id: str = ""
+    #: Integrations whose tools failed during the turn, by vendor name (e.g. ``github``).
+    failed_integrations: tuple[str, ...] = ()
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     @property
@@ -57,6 +59,8 @@ class PromptJob:
                 record["error"] = self.error_code
             if self.finished_at is not None:
                 record["finished_at"] = self.finished_at
+            if self.failed_integrations:
+                record["failed_integrations"] = list(self.failed_integrations)
             return record
 
 
@@ -112,14 +116,24 @@ class PromptQueue:
             self._forget_expired()
             return self._jobs.get(prompt_id)
 
-    def finish(self, job: PromptJob, answer: str) -> None:
-        self._settle(job, PromptState.DONE, answer=answer)
+    def finish(
+        self, job: PromptJob, answer: str, *, failed_integrations: tuple[str, ...] = ()
+    ) -> None:
+        self._settle(job, PromptState.DONE, answer=answer, failed_integrations=failed_integrations)
 
-    def needs_input(self, job: PromptJob, question: str) -> None:
-        self._settle(job, PromptState.NEEDS_INPUT, question=question)
+    def needs_input(
+        self, job: PromptJob, question: str, *, failed_integrations: tuple[str, ...] = ()
+    ) -> None:
+        self._settle(
+            job, PromptState.NEEDS_INPUT, question=question, failed_integrations=failed_integrations
+        )
 
-    def fail(self, job: PromptJob, error_code: str) -> None:
-        self._settle(job, PromptState.FAILED, error_code=error_code)
+    def fail(
+        self, job: PromptJob, error_code: str, *, failed_integrations: tuple[str, ...] = ()
+    ) -> None:
+        self._settle(
+            job, PromptState.FAILED, error_code=error_code, failed_integrations=failed_integrations
+        )
 
     def queued_count(self) -> int:
         with self._lock:
@@ -133,12 +147,14 @@ class PromptQueue:
         answer: str = "",
         question: str = "",
         error_code: str = "",
+        failed_integrations: tuple[str, ...] = (),
     ) -> None:
         with job._lock:
             job.state = state
             job.answer = answer
             job.question = question
             job.error_code = error_code
+            job.failed_integrations = failed_integrations
             job.finished_at = self._clock()
 
     def _forget_expired(self) -> None:

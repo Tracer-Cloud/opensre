@@ -11,11 +11,13 @@ from config.constants.organization import organization_id
 from config.principal import Actor, Principal, StorageScope
 from config.scope_context import bound_storage_scope
 from core.agent_harness import SessionCore, TurnResult
+from core.tool import ToolExecutionHooks, ToolExecutionRequest, ToolExecutionResult
 from gateway.core.billing.turn_metering import bound_turn_metering
 from gateway.core.prompt_intake.jobs import PromptJob, PromptQueue
 from gateway.core.prompt_intake.output import CollectingTurnOutput
 from infrastructure.analytics.usage_context import UsageSurface, bound_usage_context
 from infrastructure.turn_host.unattended_session import UnattendedSessions
+from tools.registry import integration_of_tool
 
 ERROR_CREDITS_DENIED = "credits_denied"
 ERROR_NOT_ADMITTED = "not_admitted"
@@ -83,6 +85,8 @@ class PromptWorker:
         session = self._sessions.open()
         job.session_id = session.session_id
         output = CollectingTurnOutput()
+        failures = _IntegrationFailures()
+        output.tool_hooks = ToolExecutionHooks(after_tool_call=failures.after_tool_call)
         denial = _Denial()
         org = organization_id()
         try:
@@ -91,20 +95,40 @@ class PromptWorker:
         finally:
             self._sessions.close(session)
 
+        failed = failures.vendors()
         pending = getattr(session, "pending_user_choice", None)
         if pending is not None:
-            self._queue.needs_input(job, _question_text(pending))
+            self._queue.needs_input(job, _question_text(pending), failed_integrations=failed)
             return
         if denial.credits_denied:
-            self._queue.fail(job, ERROR_CREDITS_DENIED)
+            self._queue.fail(job, ERROR_CREDITS_DENIED, failed_integrations=failed)
             return
         if result is None:
-            self._queue.fail(job, ERROR_NOT_ADMITTED)
+            self._queue.fail(job, ERROR_NOT_ADMITTED, failed_integrations=failed)
             return
         if output.failed:
-            self._queue.fail(job, ERROR_TURN_FAILED)
+            self._queue.fail(job, ERROR_TURN_FAILED, failed_integrations=failed)
             return
-        self._queue.finish(job, output.answer)
+        self._queue.finish(job, output.answer, failed_integrations=failed)
+
+
+class _IntegrationFailures:
+    """Collects the integrations whose tools returned an error during the turn."""
+
+    def __init__(self) -> None:
+        # Insertion-ordered set: first failure decides the reporting order.
+        self._vendors: dict[str, None] = {}
+
+    def after_tool_call(self, request: ToolExecutionRequest, result: ToolExecutionResult) -> None:
+        if not result.is_error:
+            return None
+        vendor = integration_of_tool(request.tool_call.name)
+        if vendor is not None:
+            self._vendors.setdefault(vendor, None)
+        return None
+
+    def vendors(self) -> tuple[str, ...]:
+        return tuple(self._vendors)
 
 
 class _Denial:
