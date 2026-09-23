@@ -119,6 +119,14 @@ class PromptChoice:
 
 
 @dataclass(frozen=True)
+class PromptProgress:
+    """One progress line the gateway reported while working on a prompt."""
+
+    index: int
+    text: str
+
+
+@dataclass(frozen=True)
 class PromptRecord:
     """One prompt on the organization's gateway, as the app reports it."""
 
@@ -130,6 +138,9 @@ class PromptRecord:
     #: Integrations whose tools failed on the gateway during this prompt, by vendor name.
     failed_integrations: tuple[str, ...] = ()
     choice: PromptChoice | None = None
+    #: The newest progress lines; ``index`` grows over the prompt's life, so a poller
+    #: prints each line once.
+    progress: tuple[PromptProgress, ...] = ()
 
     @property
     def settled(self) -> bool:
@@ -314,7 +325,21 @@ def _prompt_record(payload: dict[str, Any]) -> PromptRecord:
         error=_text(payload.get("error")),
         failed_integrations=_names(payload.get("failed_integrations")),
         choice=_choice(payload.get("choice")),
+        progress=_progress(payload.get("progress")),
     )
+
+
+def _progress(value: object) -> tuple[PromptProgress, ...]:
+    if not isinstance(value, list):
+        return ()
+    lines: list[PromptProgress] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        index, text = item.get("index"), item.get("text")
+        if isinstance(index, int) and not isinstance(index, bool) and isinstance(text, str):
+            lines.append(PromptProgress(index=index, text=text))
+    return tuple(lines)
 
 
 def _choice(value: object) -> PromptChoice | None:

@@ -27,6 +27,7 @@ from infrastructure.observability.trace.redaction import redact_sensitive
 from infrastructure.safety.terminal_output import strip_terminal_controls
 from infrastructure.terminal.theme import (
     BOLD_SKILL,
+    DIM,
     ERROR,
     TEXT,
 )
@@ -415,6 +416,7 @@ class ActionRenderObserver:
                     update=data.get("update"),
                     tool_call_id=str(data.get("id") or "") or None,
                 )
+            self._render_progress_update(data.get("update"))
             return
         if kind == "tool_end":
             # Discriminate by how the start registered the call: skill entries
@@ -512,6 +514,19 @@ class ActionRenderObserver:
     def _has_active_action(self) -> bool:
         spinner = get_turn_spinner()
         return bool(spinner is not None and spinner.active_action)
+
+    def _render_progress_update(self, update: Any) -> None:
+        """Draw a tool's own progress line (remote work reporting what it is doing now)."""
+        if not isinstance(update, dict):
+            return
+        progress = update.get("progress")
+        if not isinstance(progress, str) or not progress.strip():
+            return
+        text = strip_terminal_controls(progress).strip()
+        line = Text()
+        line.append("  ↳ ", style=str(DIM))
+        line.append(text, style=str(DIM))
+        self.console.print(line)
 
     def _render_intermediate_message(self, data: dict[str, Any]) -> None:
         """Render the model's commentary preceding this iteration's tool calls.

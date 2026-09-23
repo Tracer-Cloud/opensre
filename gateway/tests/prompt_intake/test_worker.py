@@ -351,3 +351,34 @@ def test_an_answered_question_is_gone_from_the_store_before_the_resumed_turn_run
     # Assert: a fresh load during the turn sees no question, so nothing re-asks it
     assert reloading.reloaded_pending == [None]
     assert follow_up.state is PromptState.DONE
+
+
+class _NoisyHandler(_Handler):
+    """A turn that reports tool progress the way the pooled agent's observer does."""
+
+    def run(self, text: str, _session: SessionCore, output: Any, _logger: Any) -> Any:
+        self.seen_text = text
+        output.set_tool_status("Reading workflow runs…")
+        output.render_response_header("Assistant")
+        output.set_tool_status("Checking out the branch…")
+        output.finalize(self.answer)
+        return self.result
+
+
+def test_tool_progress_reaches_the_job_while_it_runs() -> None:
+    # Arrange
+    handler = _NoisyHandler(answer="done")
+    worker, queue = _worker(handler)
+    job = queue.submit("fix ci", context={}, actor="u")
+    assert job is not None
+
+    # Act
+    worker.run_one(job)
+
+    # Assert: every status line is recorded in order, and the record still settles as done
+    assert [item["text"] for item in job.view()["progress"]] == [
+        "Reading workflow runs…",
+        "Assistant",
+        "Checking out the branch…",
+    ]
+    assert job.state is PromptState.DONE

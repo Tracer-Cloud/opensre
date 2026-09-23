@@ -19,6 +19,7 @@ from integrations.hosted_gateway.client import (
     HostedGatewayClient,
     HostedGatewayError,
     PromptChoice,
+    PromptProgress,
     PromptQuestion,
     PromptRecord,
 )
@@ -42,6 +43,7 @@ __all__ = [
     "HostedGatewayClient",
     "HostedGatewayError",
     "PromptChoice",
+    "PromptProgress",
     "PromptQuestion",
     "PromptRecord",
 ]

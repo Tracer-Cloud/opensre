@@ -151,7 +151,7 @@ def ask_hosted_gateway(
             record = _submit_or_continue(
                 client, prompt.strip(), dict(facts or {}), prompt_id.strip(), scope
             )
-            record, waited = _wait_until_settled(client, record)
+            record, waited = _wait_until_settled(client, record, _ProgressRelay(context))
             integrations_url = f"{client.app_url}{HOSTED_GATEWAY_INTEGRATIONS_PATH}"
     except HostedGatewayError as exc:
         return failure_output(exc, tool_name=TOOL_NAME, component=_COMPONENT)
@@ -199,18 +199,37 @@ def _answer_from_turn(scope: ActionToolScope | None, choice: PromptChoice) -> st
 
 
 def _wait_until_settled(
-    client: HostedGatewayClient, record: PromptRecord
+    client: HostedGatewayClient, record: PromptRecord, relay: _ProgressRelay
 ) -> tuple[PromptRecord, float]:
     """Poll the app until the gateway settles the prompt or the wait budget is spent."""
     started = time.monotonic()
     current = record
+    relay.show(current)
     while not current.settled:
         waited = time.monotonic() - started
         if waited >= HOSTED_GATEWAY_PROMPT_WAIT_SECONDS:
             return current, waited
         time.sleep(HOSTED_GATEWAY_PROMPT_POLL_SECONDS)
         current = client.prompt_result(record.prompt_id)
+        relay.show(current)
     return current, time.monotonic() - started
+
+
+class _ProgressRelay:
+    """Hands each new progress line of the gateway to the shell, once, as a tool update."""
+
+    def __init__(self, context: Any) -> None:
+        self._emit = getattr(context, "emit_update", None)
+        self._last_index = -1
+
+    def show(self, record: PromptRecord) -> None:
+        if self._emit is None:
+            return
+        for line in record.progress:
+            if line.index <= self._last_index:
+                continue
+            self._last_index = line.index
+            self._emit({"progress": line.text})
 
 
 def _outcome(

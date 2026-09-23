@@ -126,3 +126,23 @@ def test_a_prompt_that_is_not_asking_refuses_an_answer_and_a_reopened_one_takes_
     # Assert
     assert refused.value.code == NOT_WAITING
     assert first is not None and second is not None and second.id != first.id
+
+
+def test_progress_keeps_the_newest_lines_with_growing_indices() -> None:
+    # Arrange
+    queue = PromptQueue(clock=_Clock())
+    job = queue.submit("fix ci", context={}, actor="a")
+    assert job is not None
+    job.progress = __import__("collections").deque(maxlen=2)
+
+    # Act
+    queue.note(job, "  Reading the workflow run  ")
+    queue.note(job, "")
+    queue.note(job, "Checking out the branch")
+    queue.note(job, "x" * 500)
+
+    # Assert: blank lines are dropped, long lines cut, only the newest kept, indices keep growing
+    progress = job.view()["progress"]
+    assert [item["index"] for item in progress] == [1, 2]
+    assert progress[0]["text"] == "Checking out the branch"
+    assert len(progress[1]["text"]) == 200

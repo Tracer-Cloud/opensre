@@ -10,7 +10,12 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any
 
-from config.constants.gateway import PROMPT_QUEUE_MAX, PROMPT_RESULT_RETENTION_SECONDS
+from config.constants.gateway import (
+    PROMPT_PROGRESS_LINE_MAX_CHARS,
+    PROMPT_PROGRESS_MAX_LINES,
+    PROMPT_QUEUE_MAX,
+    PROMPT_RESULT_RETENTION_SECONDS,
+)
 
 
 class AnswerRefused(Exception):
@@ -59,6 +64,11 @@ class PromptJob:
     parent_id: str = ""
     #: For a prompt that asked: the follow-up job carrying the answer.
     answered_by: str = ""
+    #: Newest progress lines as ``(index, text)``; the index lets a poller print each once.
+    progress: deque[tuple[int, str]] = field(
+        default_factory=lambda: deque(maxlen=PROMPT_PROGRESS_MAX_LINES), repr=False
+    )
+    progress_count: int = 0
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     @property
@@ -81,6 +91,10 @@ class PromptJob:
                 record["finished_at"] = self.finished_at
             if self.failed_integrations:
                 record["failed_integrations"] = list(self.failed_integrations)
+            if self.progress:
+                record["progress"] = [
+                    {"index": index, "text": text} for index, text in self.progress
+                ]
             return record
 
 
@@ -204,6 +218,15 @@ class PromptQueue:
         self._settle(
             job, PromptState.FAILED, error_code=error_code, failed_integrations=failed_integrations
         )
+
+    def note(self, job: PromptJob, text: str) -> None:
+        """Append one progress line to the running job; older lines fall off the end."""
+        line = text.strip()[:PROMPT_PROGRESS_LINE_MAX_CHARS]
+        if not line:
+            return
+        with job._lock:
+            job.progress.append((job.progress_count, line))
+            job.progress_count += 1
 
     def take_forgotten(self) -> list[PromptJob]:
         """Jobs dropped by retention since the last call, so their sessions can be retired."""

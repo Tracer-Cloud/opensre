@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from types import TracebackType
+from typing import Any
 
 import httpx
 import pytest
@@ -20,6 +21,7 @@ from integrations.hosted_gateway import (
     HostedGatewayClient,
     HostedGatewayError,
     PromptChoice,
+    PromptProgress,
     PromptQuestion,
     PromptRecord,
 )
@@ -393,3 +395,44 @@ def test_a_needs_input_record_carries_the_structured_choice() -> None:
         ),
         custom_answer=False,
     )
+
+
+def test_progress_lines_are_relayed_to_the_shell_once_each(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange: three polls; the second repeats a line the first already carried
+    first = PromptRecord(_ID, "running", progress=(PromptProgress(0, "Reading runs…"),))
+    second = PromptRecord(
+        _ID,
+        "running",
+        progress=(PromptProgress(0, "Reading runs…"), PromptProgress(1, "Checking out…")),
+    )
+    app = _App([PromptRecord(_ID, "queued"), first, second, PromptRecord(_ID, "done", answer="ok")])
+    _signed_in_with(monkeypatch, app)
+    updates: list[Any] = []
+    context = AgentToolContext(resolved_integrations={}, resources={}, _emit_update=updates.append)
+
+    # Act
+    out = ask_hosted_gateway(prompt="fix ci", context=context)
+
+    # Assert
+    assert out["state"] == "done"
+    assert updates == [{"progress": "Reading runs…"}, {"progress": "Checking out…"}]
+
+
+def test_a_record_carries_its_progress_lines() -> None:
+    # Arrange
+    def answer(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "prompt_id": _ID,
+                "state": "running",
+                "progress": [{"index": 3, "text": "Reading runs…"}, {"index": "x", "text": "bad"}],
+            },
+        )
+
+    # Act
+    with _client(httpx.MockTransport(answer)) as client:
+        record = client.prompt_result(_ID)
+
+    # Assert: well-formed lines are kept in order, malformed ones dropped
+    assert record.progress == (PromptProgress(3, "Reading runs…"),)

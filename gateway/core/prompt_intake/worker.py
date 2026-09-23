@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Callable
 from contextlib import ExitStack
 from typing import Any, Protocol
 
@@ -142,7 +143,7 @@ class PromptWorker:
             session = self._sessions.open()
             job.session_id = session.session_id
             text = _render_prompt(job)
-        output = CollectingTurnOutput()
+        output = CollectingTurnOutput(on_status=self._progress_writer(job))
         failures = _IntegrationFailures()
         approvals = _Approvals(session, self._approved.get(session.session_id, set()))
         output.tool_hooks = ToolExecutionHooks(
@@ -179,6 +180,14 @@ class PromptWorker:
             self._queue.fail(job, ERROR_TURN_FAILED, failed_integrations=failed)
             return
         self._queue.finish(job, output.answer, failed_integrations=failed)
+
+    def _progress_writer(self, job: PromptJob) -> Callable[[str], None]:
+        """A callback that records one status line on ``job``."""
+
+        def note(text: str) -> None:
+            self._queue.note(job, text)
+
+        return note
 
     def _answer_text(self, job: PromptJob, session: SessionCore) -> str | None:
         """The resumed turn's user message; ``None`` after settling an answer that did not fit."""
