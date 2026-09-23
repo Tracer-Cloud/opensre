@@ -269,7 +269,10 @@ def test_reading_an_earlier_prompt_sends_nothing_new(monkeypatch: pytest.MonkeyP
 
     # Assert
     assert app.sent == [] and app.polled == [_ID]
-    assert out["state"] == "failed" and "(turn_failed)" in out["response_text"]
+    assert out["state"] == "failed"
+    assert out["response_text"].startswith(
+        "The hosted gateway hit an error while running the prompt"
+    )
 
 
 def test_the_wait_budget_hands_back_the_prompt_id(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -473,3 +476,16 @@ def test_a_record_carries_its_progress_lines() -> None:
 
     # Assert: well-formed lines are kept in order, malformed ones dropped
     assert record.progress == (PromptProgress(3, "Reading runs…"),)
+
+
+def test_a_busy_gateway_is_explained_in_plain_words(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    app = _App([PromptRecord(_ID, "failed", error="not_admitted")])
+    _signed_in_with(monkeypatch, app)
+
+    # Act
+    out = ask_hosted_gateway(prompt="which tasks run?")
+
+    # Assert
+    assert out["response_text"].startswith("The hosted gateway was busy with another conversation")
+    assert "not_admitted" not in out["response_text"]

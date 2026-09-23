@@ -12,6 +12,7 @@ from collections.abc import Callable
 from contextlib import ExitStack
 from typing import Any, Protocol
 
+from config.constants.gateway import PROMPT_SLOT_WAIT_SECONDS
 from config.constants.organization import organization_id
 from config.principal import Actor, Principal, StorageScope
 from config.scope_context import bound_storage_scope
@@ -64,8 +65,13 @@ class PromptTurnRunner(Protocol):
         session: SessionCore,
         output: Any,
         logger: logging.Logger,
+        *,
+        slot_wait_seconds: float | None = None,
     ) -> TurnResult | None:
-        """Run one turn and return its result, or ``None`` when a gate refused it."""
+        """Run one turn and return its result, or ``None`` when a gate refused it.
+
+        ``slot_wait_seconds`` is how long the turn may wait for a free slot first.
+        """
 
     def drop_session(self, session_id: str) -> None:
         """Release what the runner pooled for ``session_id``."""
@@ -154,7 +160,9 @@ class PromptWorker:
         org = organization_id()
         try:
             with _turn_context(org, job, session, denial):
-                result = self._runner.run(text, session, output, self._logger)
+                result = self._runner.run(
+                    text, session, output, self._logger, slot_wait_seconds=PROMPT_SLOT_WAIT_SECONDS
+                )
         finally:
             self._sessions.close(session)
 

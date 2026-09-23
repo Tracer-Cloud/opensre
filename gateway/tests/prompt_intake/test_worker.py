@@ -7,6 +7,7 @@ from typing import Any
 
 import pytest
 
+from config.constants.gateway import PROMPT_SLOT_WAIT_SECONDS
 from core.agent_harness import SessionCore, SessionManager
 from core.agent_harness.session import InMemorySessionStore
 from core.agent_harness.session.pending_choice import PendingUserChoice
@@ -35,8 +36,9 @@ class _Handler:
         self.result: Any = object()
         self.dropped: list[str] = []
 
-    def run(self, text: str, session: SessionCore, output: Any, _logger: Any) -> Any:
+    def run(self, text: str, session: SessionCore, output: Any, _logger: Any, **kwargs: Any) -> Any:
         self.seen_text = text
+        self.seen_kwargs = dict(kwargs)
         self.seen_capabilities = dict(session.available_capabilities)
         if self.asks is not None:
             session.pending_user_choice = self.asks
@@ -84,6 +86,8 @@ def test_a_remote_turn_cannot_ask_or_switch_runtime_and_gets_the_context_as_fact
     assert handler.seen_capabilities["cli_commands"] == ()
     assert handler.seen_capabilities["hosted_gateway"] == ()
     assert handler.seen_text.endswith("Known context:\n- repository: Tracer-Cloud/opensre")
+    # Accepted work waits for a turn slot instead of failing the moment a chat turn runs.
+    assert handler.seen_kwargs == {"slot_wait_seconds": PROMPT_SLOT_WAIT_SECONDS}
 
 
 def test_a_question_ends_the_turn_as_needs_input_with_the_question_as_text() -> None:
@@ -159,7 +163,9 @@ def test_a_failing_integration_tool_is_named_on_the_settled_job() -> None:
     handler = _Handler(answer="could not read the repository")
     seen_hooks: list[Any] = []
 
-    def run_and_fail_tools(_text: str, _session: SessionCore, output: Any, _logger: Any) -> Any:
+    def run_and_fail_tools(
+        _text: str, _session: SessionCore, output: Any, _logger: Any, **_kwargs: Any
+    ) -> Any:
         seen_hooks.append(output.tool_hooks)
         for name in ("github_cli", "shell_run", "github_cli"):
             request = ToolExecutionRequest(
@@ -214,7 +220,9 @@ class _ApprovalHandler(_Handler):
         self.pr_numbers = pr_numbers
         self.verdicts: list[Any] = []
 
-    def run(self, text: str, _session: SessionCore, output: Any, _logger: Any) -> Any:
+    def run(
+        self, text: str, _session: SessionCore, output: Any, _logger: Any, **_kwargs: Any
+    ) -> Any:
         self.seen_text = text
         for pr_number in self.pr_numbers:
             verdict = output.tool_hooks.before_tool_call(_approval_request(pr_number))
@@ -320,7 +328,9 @@ class _ReloadingHandler(_Handler):
         super().__init__(answer="Tracer-Cloud/opensre it is.")
         self.reloaded_pending: list[Any] = []
 
-    def run(self, text: str, session: SessionCore, output: Any, _logger: Any) -> Any:
+    def run(
+        self, text: str, session: SessionCore, output: Any, _logger: Any, **_kwargs: Any
+    ) -> Any:
         self.seen_text = text
         reloaded = SessionManager().resolve(session.session_id, warm_integrations=False)
         self.reloaded_pending.append(reloaded.pending_user_choice)
@@ -356,7 +366,9 @@ def test_an_answered_question_is_gone_from_the_store_before_the_resumed_turn_run
 class _NoisyHandler(_Handler):
     """A turn that reports tool progress the way the pooled agent's observer does."""
 
-    def run(self, text: str, _session: SessionCore, output: Any, _logger: Any) -> Any:
+    def run(
+        self, text: str, _session: SessionCore, output: Any, _logger: Any, **_kwargs: Any
+    ) -> Any:
         self.seen_text = text
         output.set_tool_status("Reading workflow runs…")
         output.render_response_header("Assistant")
