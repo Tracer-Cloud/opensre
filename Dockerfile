@@ -27,7 +27,37 @@ RUN apt-get update \
         build-essential \
         ca-certificates \
         curl \
+        git \
+        xz-utils \
     && rm -rf /var/lib/apt/lists/*
+
+# What the CI repair loop shells out to: the GitHub CLI for pull-request reads
+# and pushes, and the Codex CLI (on Node) as the coding agent. Pinned and
+# checksum-verified; the hosted account token becomes Codex's OpenAI key.
+ARG GH_VERSION=2.101.0
+ARG NODE_VERSION=22.23.2
+ARG CODEX_VERSION=0.156.1
+RUN set -eux; \
+    arch="$(dpkg --print-architecture)"; \
+    case "$arch" in \
+        amd64) node_arch=x64 ;; \
+        arm64) node_arch=arm64 ;; \
+        *) echo "unsupported architecture: $arch" >&2; exit 1 ;; \
+    esac; \
+    cd /tmp; \
+    gh_deb="gh_${GH_VERSION}_linux_${arch}.deb"; \
+    curl -fsSLO "https://github.com/cli/cli/releases/download/v${GH_VERSION}/${gh_deb}"; \
+    curl -fsSLO "https://github.com/cli/cli/releases/download/v${GH_VERSION}/gh_${GH_VERSION}_checksums.txt"; \
+    grep " ${gh_deb}$" "gh_${GH_VERSION}_checksums.txt" | sha256sum -c -; \
+    dpkg -i "${gh_deb}"; \
+    node_tar="node-v${NODE_VERSION}-linux-${node_arch}.tar.xz"; \
+    curl -fsSLO "https://nodejs.org/dist/v${NODE_VERSION}/${node_tar}"; \
+    curl -fsSLO "https://nodejs.org/dist/v${NODE_VERSION}/SHASUMS256.txt"; \
+    grep " ${node_tar}$" SHASUMS256.txt | sha256sum -c -; \
+    tar -xJf "${node_tar}" -C /usr/local --strip-components=1 --no-same-owner; \
+    npm install -g "@openai/codex@${CODEX_VERSION}"; \
+    rm -rf /tmp/* /root/.npm; \
+    git --version; gh --version; node --version; codex --version
 
 COPY . /app
 
