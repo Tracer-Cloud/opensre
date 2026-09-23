@@ -6,9 +6,17 @@ import importlib.metadata
 import json
 import os
 
+import pytest
+
+from config.constants.tooling import OPENSRE_PYTHON_EXECUTION_ENABLED_ENV
 from config.runtime_metadata import RUNTIME_INPUTS_KEY
 from config.version import get_opensre_version
 from tools.system.python_execution_tool import execute_python_code
+
+
+@pytest.fixture(autouse=True)
+def _enable_python_for_runtime_inputs(monkeypatch) -> None:
+    monkeypatch.setenv(OPENSRE_PYTHON_EXECUTION_ENABLED_ENV, "1")
 
 
 def test_reports_version_via_injected_runtime_inputs() -> None:

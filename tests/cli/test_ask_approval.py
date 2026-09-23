@@ -10,6 +10,7 @@ from surfaces.cli.ask.approval import (
     approval_required,
     build_approval_hooks,
 )
+from tools.registry import get_registered_tool_map
 
 
 def _tool(
@@ -57,6 +58,19 @@ def test_requires_approval_overrides_read_only_metadata() -> None:
     assert approval_required(
         _tool(side_effect_level=SideEffectLevel.READ_ONLY, requires_approval=True)
     )
+
+
+def test_python_execution_is_denied_without_an_explicit_allowlist() -> None:
+    tool = get_registered_tool_map("chat")["execute_python_code"]
+    tracker = ApprovalTracker()
+    hooks = build_approval_hooks(allowed_tools=(), bypass_approvals=False, tracker=tracker)
+
+    assert hooks.before_tool_call is not None
+    decision = hooks.before_tool_call(_request(tool))
+
+    assert approval_required(tool) is True
+    assert decision is not None and decision.blocked is True
+    assert tracker.denied_tools == ("execute_python_code",)
 
 
 def test_default_policy_denies_and_records_tool() -> None:

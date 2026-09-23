@@ -6,6 +6,7 @@ import re
 
 from rich.console import Console
 
+from config.constants.tooling import OPENSRE_PYTHON_EXECUTION_ENABLED_ENV
 from core.agent_harness.tools.action_tools import (
     get_action_tool,
     get_action_tools_from_integrations_view,
@@ -225,6 +226,18 @@ def test_registry_agent_tools_exclude_unavailable_tool() -> None:
     ctx = ActionToolScope(session=session, console=Console(force_terminal=False))
     names = {tool.name for tool in get_action_tools_from_integrations_view(ctx)}
     assert "slash_invoke" not in names
+
+
+def test_generated_python_hidden_from_agent_until_operator_opt_in(monkeypatch) -> None:
+    monkeypatch.setattr(
+        "tools.system.python_execution_tool.python_interpreter_available",
+        lambda: True,
+    )
+    monkeypatch.delenv(OPENSRE_PYTHON_EXECUTION_ENABLED_ENV, raising=False)
+    assert "execute_python_code" not in {tool.name for tool in _action_tools(Session())}
+
+    monkeypatch.setenv(OPENSRE_PYTHON_EXECUTION_ENABLED_ENV, "1")
+    assert "execute_python_code" in {tool.name for tool in _action_tools(Session())}
 
 
 def test_session_goal_control_tool_is_registered() -> None:

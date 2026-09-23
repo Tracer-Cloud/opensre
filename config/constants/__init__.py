@@ -1234,6 +1234,9 @@ if TYPE_CHECKING:
     from config.constants.tooling import (
         DEFAULT_APPROVAL_EXPIRY_SECONDS as DEFAULT_APPROVAL_EXPIRY_SECONDS,
     )
+    from config.constants.tooling import (
+        OPENSRE_PYTHON_EXECUTION_ENABLED_ENV as OPENSRE_PYTHON_EXECUTION_ENABLED_ENV,
+    )
     from config.constants.tracer import (
         TRACER_BASE_URL_DEV as TRACER_BASE_URL_DEV,
     )

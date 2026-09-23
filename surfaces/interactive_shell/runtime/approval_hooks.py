@@ -1,4 +1,4 @@
-"""Tool hooks that make the shell ask before an organization-wide tool runs."""
+"""Tool hooks that make the shell ask before an always-ask tool runs."""
 
 from __future__ import annotations
 

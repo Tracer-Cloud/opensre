@@ -5,11 +5,20 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import patch
 
+import pytest
+
+from config.constants.tooling import OPENSRE_PYTHON_EXECUTION_ENABLED_ENV
+from core.tool import SideEffectLevel
 from infrastructure.safety.sandbox.runner import SandboxResult
 from tests.tools.conftest import BaseToolContract
 from tools.registry import clear_tool_registry_cache, get_registered_tool_map
 from tools.system.python_execution_tool import execute_python_code
 from tools.system.python_execution_tool._evidence import map_execute_python_code
+
+
+@pytest.fixture
+def python_execution_enabled(monkeypatch) -> None:
+    monkeypatch.setenv(OPENSRE_PYTHON_EXECUTION_ENABLED_ENV, "1")
 
 
 class TestPythonExecutionToolContract(BaseToolContract):
@@ -25,8 +34,43 @@ class TestPythonExecutionToolMetadata:
         clear_tool_registry_cache()
         registered = get_registered_tool_map("chat")["execute_python_code"]
         assert "chat" in registered.surfaces
+        assert registered.side_effect_level is SideEffectLevel.MUTATING
+        assert registered.requires_approval is True
+
+    def test_unavailable_by_default_even_with_python_installed(self, monkeypatch) -> None:
+        monkeypatch.delenv(OPENSRE_PYTHON_EXECUTION_ENABLED_ENV, raising=False)
+        monkeypatch.setattr(
+            "tools.system.python_execution_tool.python_interpreter_available",
+            lambda: True,
+        )
+        clear_tool_registry_cache()
+        registered = get_registered_tool_map("chat")["execute_python_code"]
+
+        assert execute_python_code.is_available({}) is False
+        assert registered.is_available({}) is False
+
+    def test_only_explicit_opt_in_exposes_the_tool(self, monkeypatch) -> None:
+        monkeypatch.setattr(
+            "tools.system.python_execution_tool.python_interpreter_available",
+            lambda: True,
+        )
+        clear_tool_registry_cache()
+        registered = get_registered_tool_map("chat")["execute_python_code"]
+
+        monkeypatch.setenv(OPENSRE_PYTHON_EXECUTION_ENABLED_ENV, "true")
+        assert registered.is_available({}) is False
+        monkeypatch.setenv(OPENSRE_PYTHON_EXECUTION_ENABLED_ENV, "1")
+        assert registered.is_available({}) is True
+
+    def test_direct_run_refuses_without_opt_in(self, monkeypatch) -> None:
+        monkeypatch.delenv(OPENSRE_PYTHON_EXECUTION_ENABLED_ENV, raising=False)
+        with patch("tools.system.python_execution_tool.runner.run_python_sandbox") as mock_run:
+            with pytest.raises(PermissionError, match="Python execution is disabled"):
+                execute_python_code.run(code="print('hello')")
+        mock_run.assert_not_called()
 
     def test_not_advertised_without_a_python_interpreter(self, monkeypatch) -> None:
+        monkeypatch.setenv(OPENSRE_PYTHON_EXECUTION_ENABLED_ENV, "1")
         def _unavailable() -> str:
             raise FileNotFoundError("Python 3 is not available on PATH")
 
@@ -86,6 +130,7 @@ class TestPythonExecutionToolMetadata:
         assert marker in registered.description
 
 
+@pytest.mark.usefixtures("python_execution_enabled")
 class TestPythonExecutionToolExecution:
     def test_successful_execution_returns_stdout(self) -> None:
         result = execute_python_code.run(code="print('hello world')")
@@ -132,6 +177,7 @@ class TestPythonExecutionToolExecution:
             assert kwargs["timeout"] <= 60
 
 
+@pytest.mark.usefixtures("python_execution_enabled")
 class TestPythonExecutionToolRestrictions:
     def test_network_access_blocked_by_default(self) -> None:
         result = execute_python_code.run(code="import socket; socket.socket()")
@@ -163,6 +209,7 @@ class TestPythonExecutionToolRestrictions:
         assert "PermissionError" in result["stderr"] or "PermissionError" in result["stdout"]
 
 
+@pytest.mark.usefixtures("python_execution_enabled")
 class TestPythonExecutionToolCredentials:
     def test_github_token_from_env_is_available_and_redacted(self, monkeypatch) -> None:
         monkeypatch.setenv("GITHUB_TOKEN", "ghp_secret_token")

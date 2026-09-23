@@ -486,6 +486,7 @@ EXPORTS: dict[str, str] = {
     "INTEGRATIONS_STORE_PATH_ENV": "tenancy",
     # tooling
     "DEFAULT_APPROVAL_EXPIRY_SECONDS": "tooling",
+    "OPENSRE_PYTHON_EXECUTION_ENABLED_ENV": "tooling",
     # tracer
     "TRACER_BASE_URL_DEV": "tracer",
     "TRACER_BASE_URL_ENV": "tracer",

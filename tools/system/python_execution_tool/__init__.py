@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any
 
+from config.constants.tooling import OPENSRE_PYTHON_EXECUTION_ENABLED_ENV
 from config.runtime_metadata import (
     BLOCKED_INTROSPECTION_COMMANDS,
     LIVE_FACT_KEYS,
@@ -34,14 +36,21 @@ class PythonExecutionTool(BaseTool):
     display_name = "Python execution"
     source = "knowledge"
     evidence_mapper = map_execute_python_code
-    side_effect_level = SideEffectLevel.READ_ONLY
+    # Generated code executes with the OpenSRE user's host privileges. The
+    # Python API patches in the runner cannot contain subprocesses or egress.
+    side_effect_level = SideEffectLevel.MUTATING
+    requires_approval = True
+    approval_reason = (
+        "Runs generated Python with this host's privileges. Review the code before approving; "
+        "the Python restrictions are not a security isolation boundary."
+    )
     surfaces = (ToolSurface.CHAT,)
     injected_params = ["github_token"]
     description = (
-        "Execute generated Python code in a restricted subprocess, capture stdout, stderr, "
-        "exceptions, and timeout state, and return the result to the agent. Network access is "
-        "blocked by default; opt in only for approved API-backed analysis. Subprocess spawning "
-        "is always blocked. Runtime facts "
+        "Execute generated Python code with host privileges after operator opt-in and per-call "
+        "approval. Capture stdout, stderr, exceptions, and timeout state. The Python-level "
+        "network, filesystem, and subprocess restrictions are not security isolation; "
+        "opt in to network access only for approved API-backed analysis. Runtime facts "
         f"({_RUNTIME_FACT_KEYS}) are already stated in the conversation's environment block — "
         "answer them from there directly and never call this tool just to re-read them; code "
         "already running for another reason can reuse them via `inputs['opensre_runtime']` "
@@ -49,7 +58,7 @@ class PythonExecutionTool(BaseTool):
         "`pathlib.Path(...).iterdir()` to list directories and "
         "`Path('/etc/hostname').read_text()` for the pod name. "
         f"Never run {_NEVER_RUN}, never probe cloud instance metadata over the network, "
-        "and never use any other `subprocess` call. When workflow guidance lists skills, "
+        "and never use any `subprocess` call. When workflow guidance lists skills, "
         "read each skill description and follow the one that matches the user's request."
     )
     use_cases = [
@@ -94,7 +103,7 @@ class PythonExecutionTool(BaseTool):
                 "type": "boolean",
                 "description": (
                     "Allow outbound network calls for approved API-backed analysis. Defaults to "
-                    "false; subprocess execution and filesystem write restrictions still apply."
+                    "false; Python-level restrictions are not a security boundary."
                 ),
                 "nullable": True,
             },
@@ -116,8 +125,11 @@ class PythonExecutionTool(BaseTool):
     }
 
     def is_available(self, _sources: dict[str, dict]) -> bool:
-        """Return whether the sandbox has a Python interpreter to execute."""
-        return python_interpreter_available()
+        """Expose host Python execution only after explicit operator opt-in."""
+        return (
+            os.environ.get(OPENSRE_PYTHON_EXECUTION_ENABLED_ENV) == "1"
+            and python_interpreter_available()
+        )
 
     def extract_params(self, sources: dict[str, dict]) -> dict[str, Any]:
         """Inject approved credentials from resolved integration sources."""
@@ -141,6 +153,11 @@ class PythonExecutionTool(BaseTool):
         preserving the previous behavior. Callers that hold a session can
         pass ``session.runtime_metadata`` directly.
         """
+        if os.environ.get(OPENSRE_PYTHON_EXECUTION_ENABLED_ENV) != "1":
+            raise PermissionError(
+                f"Python execution is disabled. Set {OPENSRE_PYTHON_EXECUTION_ENABLED_ENV}=1 "
+                "in the OpenSRE process to enable it."
+            )
         from config.runtime_metadata import merge_runtime_into_inputs
 
         with component_span("runtime_metadata:sandbox"):

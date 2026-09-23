@@ -74,9 +74,11 @@ AUTO_LEVEL_ASK_TOOL_TYPES: Final[dict[AutoLevel, frozenset[str] | None]] = {
     AutoLevel.OFF: None,  # ask every tool type
 }
 
-# Registered tools that ask at every level, High included: their effect reaches
-# the whole organization, not only this user's machine or session.
-ASK_AT_EVERY_AUTO_LEVEL_TOOL_NAMES: Final[frozenset[str]] = frozenset({"stop_hosted_gateway"})
+# Registered tools that ask at every level, High included: organization-wide
+# actions and generated code that runs with the OpenSRE user's host privileges.
+ASK_AT_EVERY_AUTO_LEVEL_TOOL_NAMES: Final[frozenset[str]] = frozenset(
+    {"stop_hosted_gateway", "execute_python_code"}
+)
 
 
 def parse_auto_level(raw: str) -> AutoLevel | None:

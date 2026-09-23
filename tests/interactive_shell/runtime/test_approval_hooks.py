@@ -1,4 +1,4 @@
-"""Tests for the shell's approval hook: organization-wide tools ask at every ``/auto`` level."""
+"""Tests for tools requiring shell approval at every ``/auto`` level."""
 
 from __future__ import annotations
 
@@ -106,6 +106,21 @@ def test_without_a_terminal_stop_is_blocked_instead_of_running_unasked() -> None
 
     # Assert
     assert decision is not None and decision.blocked is True
+
+
+def test_python_execution_asks_even_when_auto_allows_everything() -> None:
+    session = Session()
+    console, printed = _console()
+    hooks = with_shell_approval(
+        None, session=session, console=console, confirm_fn=lambda _prompt: "n", is_tty=True
+    )
+    assert hooks.before_tool_call is not None
+
+    decision = hooks.before_tool_call(_request("execute_python_code"))
+
+    assert session.terminal.auto_level == AutoLevel.HIGH
+    assert decision is not None and decision.blocked is True
+    assert "host's privileges" in printed.getvalue()
 
 
 def test_other_tools_are_not_asked_about() -> None:
