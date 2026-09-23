@@ -120,10 +120,15 @@ class PromptWorker:
             self.retire_forgotten()
 
     def retire_forgotten(self) -> None:
-        """Release the sessions of prompts the queue dropped while they waited for an answer."""
+        """Release a session once the queue holds none of its prompts any more.
+
+        A follow-up may still be asking on the session its expired parent opened;
+        the session stays until that newer prompt is forgotten too.
+        """
         for forgotten in self._queue.take_forgotten():
-            if forgotten.session_id in self._asked:
-                self._forget(forgotten.session_id)
+            session_id = forgotten.session_id
+            if session_id in self._asked and not self._queue.holds_session(session_id):
+                self._forget(session_id)
 
     def _run_job(self, job: PromptJob) -> None:
         if job.parent_id:

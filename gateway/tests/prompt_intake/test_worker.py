@@ -251,8 +251,8 @@ def test_an_approval_covers_exactly_the_previewed_call_once() -> None:
     assert "Approve" in handler.seen_text and "schedule_ci_repair_loop" in handler.seen_text
 
 
-def test_a_prompt_the_queue_forgot_while_asking_has_its_session_retired() -> None:
-    # Arrange: a question nobody answers, then the retention window passes
+def test_a_session_is_retired_only_when_the_queue_holds_none_of_its_prompts() -> None:
+    # Arrange: a parent that asked, then a follow-up that asks again on the same session
     class _Clock:
         now = 1_000.0
 
@@ -260,22 +260,31 @@ def test_a_prompt_the_queue_forgot_while_asking_has_its_session_retired() -> Non
             return self.now
 
     clock = _Clock()
-    pending = PendingUserChoice(title="Which branch?", options=("main", "release"))
-    handler = _Handler(asks=pending)
+    branch = PendingUserChoice(title="Which branch?", options=("main", "release"))
+    handler = _Handler(asks=branch)
     queue = PromptQueue(retention_seconds=60.0, clock=clock)
     sessions = UnattendedSessions(SessionManager(store=InMemorySessionStore()))
     worker = PromptWorker(queue, handler, logger=_LOGGER, sessions=sessions)
-    asked = queue.submit("fix ci", context={}, actor="u")
-    assert asked is not None
-    worker.run_one(asked)
+    parent = queue.submit("fix ci", context={}, actor="u")
+    assert parent is not None
+    worker.run_one(parent)
+    clock.now += 30.0
+    follow_up = queue.answer(parent, "main")
+    assert follow_up is not None
+    handler.asks = PendingUserChoice(title="Force push?", options=("yes", "no"))
+    worker.run_one(follow_up)
 
-    # Act
-    clock.now += 61.0
+    # Act: the parent expires first, the follow-up 30 seconds later
+    clock.now += 31.0
+    worker.retire_forgotten()
+    dropped_after_parent = list(handler.dropped)
+    clock.now += 30.0
     worker.retire_forgotten()
 
-    # Assert: the pooled agent is released and the id no longer resolves
-    assert handler.dropped == [asked.session_id]
-    assert queue.get(asked.id) is None
+    # Assert: the follow-up's question survives its parent; the session goes when both are gone
+    assert follow_up.state is PromptState.NEEDS_INPUT
+    assert dropped_after_parent == [] and queue.get(parent.id) is None
+    assert handler.dropped == [parent.session_id]
 
 
 def test_an_answer_that_fits_no_option_fails_the_follow_up_and_reopens_the_question() -> None:

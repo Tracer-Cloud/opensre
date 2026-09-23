@@ -213,6 +213,11 @@ class PromptQueue:
             self._forgotten.clear()
             return forgotten
 
+    def holds_session(self, session_id: str) -> bool:
+        """Whether any retained job, settled or not, still belongs to ``session_id``."""
+        with self._lock:
+            return any(job.session_id == session_id for job in self._jobs.values())
+
     def queued_count(self) -> int:
         with self._lock:
             return len(self._pending)
