@@ -97,6 +97,27 @@ def test_run_gh_blocks_extension_install_after_global_flags() -> None:
     run_mock.assert_not_called()
 
 
+@pytest.mark.parametrize(
+    "args",
+    [
+        ["alias", "set", "shortcut", "--shell", "echo example"],
+        ["--hostname", "github.com", "alias", "list"],
+        ["custom-alias", "argument"],
+        ["--repo", "acme/widgets", "custom-extension", "argument"],
+    ],
+)
+def test_run_gh_blocks_aliases_and_unknown_extension_commands_before_spawn(args: list[str]) -> None:
+    with (
+        patch("integrations.github.tools.github_cli.runner.resolve_github_token") as resolve_mock,
+        patch("integrations.github.tools.github_cli.runner.subprocess.run") as run_mock,
+    ):
+        result = run_gh(args=args)
+    assert result["ok"] is False
+    assert result["error_type"] == "policy_error"
+    resolve_mock.assert_not_called()
+    run_mock.assert_not_called()
+
+
 def test_help_flag_does_not_mask_blocked_command() -> None:
     """``-h`` is ``--help``, not a value flag; must not skip the next token."""
     assert denied_gh_command(["-h", "auth", "token"]) == "auth"

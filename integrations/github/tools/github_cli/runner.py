@@ -33,6 +33,18 @@ _DENIED_TOP_LEVEL_COMMANDS = frozenset(
         "ssh-key",
         "gpg-key",
         "config",
+        "alias",  # gh alias set --shell can register commands executed by gh.
+    }
+)
+
+# gh can resolve user-defined aliases and installed extensions as top-level
+# commands. Never dispatch an unknown name under injected credentials: either
+# one could launch a local process before the ordinary command checks run.
+_ALLOWED_TOP_LEVEL_COMMANDS = frozenset(
+    {
+        "api", "attestation", "browse", "cache", "completion", "gist", "help",
+        "issue", "label", "org", "pr", "project", "release", "repo", "ruleset",
+        "run", "search", "status", "variable", "workflow", "version",
     }
 )
 
@@ -115,6 +127,8 @@ def denied_gh_command(args: list[str] | tuple[str, ...]) -> str | None:
         return None
     command = positionals[0].lower()
     if command in _DENIED_TOP_LEVEL_COMMANDS:
+        return command
+    if command not in _ALLOWED_TOP_LEVEL_COMMANDS:
         return command
     denied_subs = _DENIED_SUBCOMMANDS.get(command)
     if denied_subs is None:
