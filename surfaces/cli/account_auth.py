@@ -350,6 +350,8 @@ def login_account(
         if open_browser:
             try:
                 opened = bool(browser_open(authorization_url))
+            except Exception:
+                opened = False
             finally:
                 from infrastructure.analytics.capture import capture_browser_open_requested
 

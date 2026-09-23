@@ -144,6 +144,35 @@ def test_login_uses_state_and_pkce_without_putting_tokens_in_browser_url(
     assert len(query["state"][0]) >= 32
 
 
+def test_login_shows_manual_link_when_browser_launcher_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _StopWaiting(Exception):
+        pass
+
+    def fail_to_open(_url: str) -> bool:
+        raise OSError("browser unavailable")
+
+    def stop_waiting(*_args: object, **_kwargs: object) -> account_auth._CallbackResult:
+        raise _StopWaiting
+
+    browser_events: list[tuple[str, bool]] = []
+    progress = _RecordingProgress()
+    monkeypatch.setattr(account_auth, "_wait_for_callback", stop_waiting)
+    monkeypatch.setattr(
+        "infrastructure.analytics.capture.capture_browser_open_requested",
+        lambda *, target, opened: browser_events.append((target, opened)),
+    )
+
+    with pytest.raises(_StopWaiting):
+        account_auth.login_account(browser_open=fail_to_open, progress=progress)
+
+    assert progress.events == ["prompt"]
+    assert progress.urls[0].startswith("https://app.opensre.com/")
+    assert progress.opened == [False]
+    assert browser_events == [("account_login", False)]
+
+
 def test_exchange_accepts_email_account_without_github() -> None:
     payload = {
         "access_token": "osre_pat_secret",
