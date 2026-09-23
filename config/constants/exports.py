@@ -11,6 +11,7 @@ EXPORTS: dict[str, str] = {
     "CI_REPAIR_WORKER_COMMAND": "ci_repair",
     "CI_REPAIR_SECONDS": "ci_repair",
     "CI_REPAIR_FINISH_RESERVE_SECONDS": "ci_repair",
+    "CI_REPAIR_MAX_ATTEMPTS": "ci_repair",
     "CI_REPAIR_POLL_SECONDS": "ci_repair",
     "CI_REPAIR_DIRECTORY": "ci_repair",
     "CI_REPAIR_REPORT_BUILDER": "ci_repair",

@@ -244,6 +244,9 @@ if TYPE_CHECKING:
     from config.constants.ci_repair import (
         CI_REPAIR_FINISH_RESERVE_SECONDS as CI_REPAIR_FINISH_RESERVE_SECONDS,
     )
+    from config.constants.ci_repair import (
+        CI_REPAIR_MAX_ATTEMPTS as CI_REPAIR_MAX_ATTEMPTS,
+    )
     from config.constants.ci_repair import CI_REPAIR_POLL_SECONDS as CI_REPAIR_POLL_SECONDS
     from config.constants.ci_repair import CI_REPAIR_REPORT_BUILDER as CI_REPAIR_REPORT_BUILDER
     from config.constants.ci_repair import CI_REPAIR_SECONDS as CI_REPAIR_SECONDS

@@ -10,7 +10,7 @@ from http import HTTPStatus
 from pathlib import Path
 from typing import Any
 
-from config.constants.ci_repair import CI_REPAIR_FINISH_RESERVE_SECONDS
+from config.constants.ci_repair import CI_REPAIR_FINISH_RESERVE_SECONDS, CI_REPAIR_MAX_ATTEMPTS
 from infrastructure.analytics.provider import shutdown_analytics
 from infrastructure.process.tree import start_watchdog
 from integrations.coding_agent import verify_coding_agent
@@ -157,6 +157,10 @@ def _repair(run: RepairRun, store: RepairStore, token: str) -> None:
         store.save(run)
         if error not in {"checks_failed", "execution_error", "timeout", "no_changes"}:
             run.status = RepairStatus.FAILED
+            return
+        if run.attempts >= CI_REPAIR_MAX_ATTEMPTS:
+            run.status = RepairStatus.FAILED
+            run.reason = f"Stopped after {CI_REPAIR_MAX_ATTEMPTS} failed repair attempts."
             return
         time.sleep(1)
     run.status, run.reason = RepairStatus.TIMED_OUT, "The demo reached its time budget."

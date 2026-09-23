@@ -16,7 +16,11 @@ import psutil
 import pytest
 from filelock import FileLock
 
-from config.constants.ci_repair import CI_REPAIR_CRON, CI_REPAIR_FINISH_RESERVE_SECONDS
+from config.constants.ci_repair import (
+    CI_REPAIR_CRON,
+    CI_REPAIR_FINISH_RESERVE_SECONDS,
+    CI_REPAIR_MAX_ATTEMPTS,
+)
 from config.constants.github import GITHUB_CI_DEMO_REPOSITORY
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
 from integrations.github.client import GitHubApiError
@@ -382,12 +386,12 @@ def test_worker_retries_then_cleans_only_the_verified_head(
         nonlocal calls
         calls += 1
         assert kwargs["allowed_paths"] == frozenset({"calculator.py"})
-        if calls <= 4:
+        if calls < CI_REPAIR_MAX_ATTEMPTS:
             return {"success": False, "error_kind": "checks_failed"}
         return {"success": True, "checks_state": "passed", "fix_head_sha": "fixed"}
 
     def pr(_run: RepairRun, _token: str) -> dict[str, Any]:
-        finished = calls == 5
+        finished = calls == CI_REPAIR_MAX_ATTEMPTS
         return {
             "state": "OPEN",
             "headRefOid": "someone-else" if finished and changed_head else "fixed",
@@ -402,7 +406,7 @@ def test_worker_retries_then_cleans_only_the_verified_head(
     monkeypatch.setattr(worker, "run_ci_fix", repair)
     monkeypatch.setattr(worker, "_read_pr", pr)
     worker.execute_repair(run, store)
-    assert run.attempts == 5  # No old three-attempt ceiling.
+    assert run.attempts == CI_REPAIR_MAX_ATTEMPTS
     if changed_head:
         assert run.status is RepairStatus.FAILED and not run.checks_passed
         assert api.prs[0]["state"] == "open" and run.branch in api.refs
@@ -412,6 +416,45 @@ def test_worker_retries_then_cleans_only_the_verified_head(
         assert run.fixed_sha == "fixed" and run.passed_run_url
         assert api.prs[0]["state"] == "closed" and run.branch not in api.refs
         assert not Path(run.workspace).exists()
+
+
+def test_repair_stops_after_three_failed_attempts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from integrations.github.tools.ci_repair_loop import worker
+
+    store = RepairStore(tmp_path)
+    run = _run(pr_number=7)
+    store.directory(run.id).mkdir()
+    calls = 0
+
+    def repair(**_kwargs: Any) -> dict[str, Any]:
+        nonlocal calls
+        calls += 1
+        return {"success": False, "error_kind": "checks_failed"}
+
+    monkeypatch.setattr(worker, "run_ci_fix", repair)
+    monkeypatch.setattr(worker, "record_ci_fix_outcome", lambda _output: None)
+    monkeypatch.setattr(worker.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(
+        worker,
+        "_read_pr",
+        lambda *_args: {
+            "state": "OPEN",
+            "headRefOid": "broken",
+            "statusCheckRollup": [
+                {
+                    "conclusion": "FAILURE",
+                    "detailsUrl": "https://github.com/alice/demo/actions/runs/1",
+                }
+            ],
+        },
+    )
+    worker._repair(run, store, "test-token")
+    assert calls == CI_REPAIR_MAX_ATTEMPTS
+    assert run.attempts == CI_REPAIR_MAX_ATTEMPTS
+    assert run.status is RepairStatus.FAILED
+    assert run.reason == f"Stopped after {CI_REPAIR_MAX_ATTEMPTS} failed repair attempts."
 
 
 def test_account_change_stops_before_any_remote_write(
