@@ -221,14 +221,14 @@ def test_detect_gh_logged_in_via_token_line_fine_grained_pat(
 @patch("integrations.llm_cli.copilot.shutil.which")
 @patch("integrations.llm_cli.copilot.subprocess.run")
 @patch("integrations.llm_cli.binary_resolver.shutil.which")
-def test_detect_gh_logged_out_yields_false(
+def test_detect_gh_logged_out_keeps_copilot_auth_unknown(
     mock_which: MagicMock,
     mock_run: MagicMock,
     mock_copilot_which: MagicMock,
     monkeypatch: pytest.MonkeyPatch,
     tmp_path: Path,
 ) -> None:
-    """When gh auth status clearly says not logged in, logged_in=False (hard negative)."""
+    """A logged-out gh session cannot disprove a separate Copilot CLI login."""
     mock_copilot_which.return_value = "/usr/bin/copilot"
     mock_which.return_value = "/usr/bin/gh"
 
@@ -245,8 +245,8 @@ def test_detect_gh_logged_out_yields_false(
     probe = CopilotAdapter().detect()
 
     assert probe.installed is True
-    assert probe.logged_in is False
-    assert "not logged in" in probe.detail.lower() or "gh auth login" in probe.detail.lower()
+    assert probe.logged_in is None
+    assert "Could not verify" in probe.detail
 
 
 @patch("integrations.llm_cli.copilot.shutil.which")

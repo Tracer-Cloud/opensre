@@ -2,15 +2,18 @@ from __future__ import annotations
 
 import json
 import os
+from dataclasses import replace
 from unittest.mock import MagicMock
 
 import pytest
 
 from config import setup_store as wizard_store
 from config.secrets.store import SecretSaveResult
+from integrations.llm_cli.base import CLIProbe
 from surfaces.cli.wizard import azure_openai, components, flow, llm_credential
 from surfaces.cli.wizard.probes import ProbeResult
 from surfaces.shared.llm_setup.env_sync import sync_provider_env
+from surfaces.shared.llm_setup.catalog import PROVIDER_BY_VALUE
 from surfaces.shared.llm_setup.validation import ValidationResult
 from tests.integrations.llm_cli.testing_helpers import write_fake_runnable_cli_bin
 
@@ -18,6 +21,26 @@ from tests.integrations.llm_cli.testing_helpers import write_fake_runnable_cli_b
 # answer that question too — a stub returning ``None`` would make every wizard
 # run look like it had fallen back to on-disk storage.
 _KEYRING_SAVE = SecretSaveResult("fallback", "stored in the local credentials file.")
+
+
+def test_copilot_onboarding_can_continue_when_gh_auth_is_unknown(monkeypatch) -> None:
+    class _Adapter:
+        name = "copilot"
+        binary_env_key = "COPILOT_BIN"
+        install_hint = "install copilot"
+        auth_hint = "copilot login"
+
+        def detect(self) -> CLIProbe:
+            return CLIProbe(True, "1.0.0", None, "copilot", "Could not verify login")
+
+    provider = replace(PROVIDER_BY_VALUE["copilot"], adapter_factory=_Adapter)
+
+    def _choose(_prompt, choices, **_kwargs):
+        assert [choice.value for choice in choices] == ["retry", "continue", "repick"]
+        return "continue"
+
+    monkeypatch.setattr(flow, "choose", _choose)
+    assert flow._run_cli_llm_onboarding(provider) == "ok"
 
 
 def _stub_save(*_args: object, **_kwargs: object) -> SecretSaveResult:

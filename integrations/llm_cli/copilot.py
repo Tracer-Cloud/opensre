@@ -25,9 +25,10 @@ We classify auth in this order (cheap probes only — no Copilot network call):
    whose prefix is a Copilot-supported token type per GitHub docs: ``gho_``,
    ``github_pat_``, ``ghu_`` — **not** ``ghp_``). If ``COPILOT_GH_HOST`` or
    ``GH_HOST`` targets a non-default host, we run ``gh auth status --hostname …``
-   as documented for GitHub Enterprise / data residency. Clearly logged-out
-   phrasing → ``False``; spawn error / timeout / ambiguous → ``None``.
-   Plaintext ``config.json`` under ``$COPILOT_HOME`` is **not** read: it is easy
+   as documented for GitHub Enterprise / data residency. A logged-out ``gh``
+   session, spawn error, timeout, or ambiguous output → ``None`` because
+   ``copilot login`` may have its own session. Plaintext ``config.json`` under
+   ``$COPILOT_HOME`` is **not** read: it is easy
    to mis-classify and keychain-backed logins omit it anyway.
    This matches Copilot's documented **GitHub CLI fallback**. **BYOK /
    ``COPILOT_OFFLINE``**: no GitHub token may be required; probe may still return
@@ -140,9 +141,8 @@ def _classify_gh_auth_status() -> tuple[bool | None, str]:
 
     Returns ``(logged_in, detail)`` where:
     - ``True``  — ``gh`` clearly reports an active session.
-    - ``False`` — ``gh`` clearly reports no accounts / not logged in.
-    - ``None``  — ``gh`` not on PATH, spawn failed, timed out, or output is
-                  ambiguous (auth then resolved as unknown if no token env).
+    - ``None``  — ``gh`` reports no accounts, is missing, fails, times out, or
+                  returns ambiguous output; Copilot may have its own session.
 
     Timeouts and errors map to ``None`` (not ``False``) per AGENTS.md: the
     user may be on a flaky network and should not be forced to re-authenticate.
@@ -169,9 +169,9 @@ def _classify_gh_auth_status() -> tuple[bool | None, str]:
 
     combined = f"{proc.stdout}\n{proc.stderr}".lower()
 
-    # Check negative phrases first to avoid substring false-positives.
+    # A missing gh session does not imply a missing Copilot CLI session.
     if any(phrase in combined for phrase in _GH_LOGGED_OUT_PHRASES):
-        return False, "gh auth status: not logged in. Run `gh auth login` or set a token env var."
+        return None, ""
 
     if _gh_output_indicates_logged_in(proc.stdout or "", proc.stderr or ""):
         return True, "Authenticated via `gh` CLI session (gh auth status)."
