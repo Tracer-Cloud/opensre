@@ -53,6 +53,10 @@ class UnattendedSessions:
         restrict_to_unattended(session)
         return session
 
+    def flush(self, session: SessionCore) -> None:
+        """Persist the session's state now, so a reload during the turn sees it."""
+        self._manager.flush(session)
+
     def close(self, session: SessionCore) -> None:
         self._manager.close(session, wait_for_memory_extraction=False)
 

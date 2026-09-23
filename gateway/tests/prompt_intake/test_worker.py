@@ -311,3 +311,43 @@ def test_an_answer_that_fits_no_option_fails_the_follow_up_and_reopens_the_quest
     assert wrong.view()["error"] == ERROR_INVALID_ANSWER
     assert right.state is PromptState.DONE
     assert handler.seen_text.startswith("1. Which branch?") and '"release"' in handler.seen_text
+
+
+class _ReloadingHandler(_Handler):
+    """A turn that, like the real runner, loads the session again from its store."""
+
+    def __init__(self) -> None:
+        super().__init__(answer="Tracer-Cloud/opensre it is.")
+        self.reloaded_pending: list[Any] = []
+
+    def run(self, text: str, session: SessionCore, output: Any, _logger: Any) -> Any:
+        self.seen_text = text
+        reloaded = SessionManager().resolve(session.session_id, warm_integrations=False)
+        self.reloaded_pending.append(reloaded.pending_user_choice)
+        output.finalize(self.answer)
+        return self.result
+
+
+def test_an_answered_question_is_gone_from_the_store_before_the_resumed_turn_runs() -> None:
+    # Arrange: the real on-disk store, a question parked by the first turn
+    handler = _Handler(asks=PendingUserChoice(title="Which repository?", options=("a/b", "c/d")))
+    queue = PromptQueue()
+    sessions = UnattendedSessions(SessionManager())
+    worker = PromptWorker(queue, handler, logger=_LOGGER, sessions=sessions)
+    asked = queue.submit("schedule a loop", context={}, actor="u")
+    assert asked is not None
+    worker.run_one(asked)
+    reloading = _ReloadingHandler()
+    worker = PromptWorker(queue, reloading, logger=_LOGGER, sessions=sessions)
+    worker._asked[asked.session_id] = PendingUserChoice(
+        title="Which repository?", options=("a/b", "c/d")
+    )
+
+    # Act
+    follow_up = queue.answer(asked, "1")
+    assert follow_up is not None
+    worker.run_one(follow_up)
+
+    # Assert: a fresh load during the turn sees no question, so nothing re-asks it
+    assert reloading.reloaded_pending == [None]
+    assert follow_up.state is PromptState.DONE

@@ -193,6 +193,8 @@ class PromptWorker:
             return None
         if granted is not None:
             self._approved.setdefault(session.session_id, set()).add(granted)
+        # The answered question must not come back from the store during the turn.
+        self._sessions.flush(session)
         return text
 
     def _forget(self, session_id: str) -> None:
