@@ -369,6 +369,12 @@ if TYPE_CHECKING:
         PROMPT_MAX_CHARS as PROMPT_MAX_CHARS,
     )
     from config.constants.gateway import (
+        PROMPT_PROGRESS_LINE_MAX_CHARS as PROMPT_PROGRESS_LINE_MAX_CHARS,
+    )
+    from config.constants.gateway import (
+        PROMPT_PROGRESS_MAX_LINES as PROMPT_PROGRESS_MAX_LINES,
+    )
+    from config.constants.gateway import (
         PROMPT_QUEUE_MAX as PROMPT_QUEUE_MAX,
     )
     from config.constants.gateway import (
@@ -376,6 +382,9 @@ if TYPE_CHECKING:
     )
     from config.constants.gateway import (
         PROMPT_ROUTE_PATH as PROMPT_ROUTE_PATH,
+    )
+    from config.constants.gateway import (
+        PROMPT_SLOT_WAIT_SECONDS as PROMPT_SLOT_WAIT_SECONDS,
     )
     from config.constants.gateway import (
         PROMPT_WORKER_STOP_TIMEOUT_SECONDS as PROMPT_WORKER_STOP_TIMEOUT_SECONDS,
