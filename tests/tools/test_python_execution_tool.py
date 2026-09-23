@@ -64,9 +64,11 @@ class TestPythonExecutionToolMetadata:
 
     def test_direct_run_refuses_without_opt_in(self, monkeypatch) -> None:
         monkeypatch.delenv(OPENSRE_PYTHON_EXECUTION_ENABLED_ENV, raising=False)
-        with patch("tools.system.python_execution_tool.runner.run_python_sandbox") as mock_run:
-            with pytest.raises(PermissionError, match="Python execution is disabled"):
-                execute_python_code.run(code="print('hello')")
+        with (
+            patch("tools.system.python_execution_tool.runner.run_python_sandbox") as mock_run,
+            pytest.raises(PermissionError, match="Python execution is disabled"),
+        ):
+            execute_python_code.run(code="print('hello')")
         mock_run.assert_not_called()
 
     def test_not_advertised_without_a_python_interpreter(self, monkeypatch) -> None:
