@@ -15,7 +15,10 @@ import pytest
 from config.constants import OPENSRE_OPERATIONS_LOG_PATH_ENV
 from config.constants.session_store import OPENSRE_SESSION_FILE_LOCK_ENV
 from core.agent_harness.session.persistence import jsonl_store
-from core.agent_harness.session.persistence.jsonl_store import JsonlSessionStore
+from core.agent_harness.session.persistence.jsonl_store import (
+    JsonlSessionStore,
+    SessionWriteUnavailable,
+)
 from core.agent_harness.session.persistence.paths import session_path
 from infrastructure.observability.operations_log import read_operations
 from tests.shared.session_file import assert_session_file_integrity
@@ -58,7 +61,7 @@ def test_writes_take_no_lock_by_default(
     assert not Path(f"{path}.lock").exists()
 
 
-def test_enabled_lock_skips_a_write_another_holder_is_blocking(
+def test_enabled_lock_fails_a_write_another_holder_is_blocking(
     storage_home: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     # Arrange: enable the lock with a short timeout, and open a session.
@@ -76,12 +79,42 @@ def test_enabled_lock_skips_a_write_another_holder_is_blocking(
     held = FileLock(f"{path}.lock", timeout=0.2)
     held.acquire()
     try:
-        store.append_turn(session, "chat", "blocked")
+        with pytest.raises(SessionWriteUnavailable):
+            store.append_turn(session, "chat", "blocked")
     finally:
         held.release()
 
-    # Assert: the contended write was skipped (best-effort), never interleaved.
+    # Assert: the failed write was never interleaved.
     assert path.read_text(encoding="utf-8") == before
+
+
+@pytest.mark.parametrize("operation", ["open", "flush"])
+def test_enabled_lock_fails_other_write_paths_when_contended(
+    storage_home: Path, monkeypatch: pytest.MonkeyPatch, operation: str
+) -> None:
+    from filelock import FileLock
+
+    monkeypatch.setenv(OPENSRE_SESSION_FILE_LOCK_ENV, "1")
+    monkeypatch.setattr(jsonl_store, "_SESSION_LOCK_TIMEOUT_SECONDS", 0.2)
+    session = _session("sess-other-writes")
+    store = JsonlSessionStore()
+    store.open_session(session)
+    store.append_turn(session, "chat", "one")
+    path = session_path(session.session_id)
+    before = path.read_bytes()
+
+    held = FileLock(f"{path}.lock", timeout=0.2)
+    held.acquire()
+    try:
+        with pytest.raises(SessionWriteUnavailable):
+            if operation == "open":
+                store.open_session(session)
+            else:
+                store.flush(session)
+    finally:
+        held.release()
+
+    assert path.read_bytes() == before
 
 
 def test_flush_completes_with_the_lock_enabled(
@@ -151,7 +184,8 @@ def test_soak_contending_writers_record_plausible_wait_and_timeout_metrics(
     held = FileLock(f"{path}.lock", timeout=0.2)
     held.acquire()
     try:
-        store.append_turn(session, "chat", "blocked")
+        with pytest.raises(SessionWriteUnavailable):
+            store.append_turn(session, "chat", "blocked")
     finally:
         held.release()
 

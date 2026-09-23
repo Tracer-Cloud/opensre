@@ -1,4 +1,8 @@
-"""Append-only JSONL session-tree storage."""
+"""Append-only JSONL session-tree storage.
+
+When a session file lock times out, writes fail with ``SessionWriteUnavailable``
+so callers can fail the turn instead of silently losing its history.
+"""
 
 from __future__ import annotations
 
@@ -29,6 +33,10 @@ logger = logging.getLogger(__name__)
 # same-session turns are already serialized in-process, so real contention here
 # is only two tasks racing one session — rare, and pathological beyond this.
 _SESSION_LOCK_TIMEOUT_SECONDS: float = 10
+
+
+class SessionWriteUnavailable(RuntimeError):
+    """A session write could not acquire its cross-process lock."""
 
 
 def _session_file_lock_enabled() -> bool:
@@ -108,8 +116,7 @@ class JsonlSessionStore:
         the default (single-task) path free of the timing/recording below. Same-
         instance reentrancy lets ``flush`` hold the lock across its whole
         read-modify-append while inner appends re-enter cheaply; a per-path lock
-        means different sessions never contend. On timeout the caller's
-        best-effort ``suppress`` skips the write after a warning.
+        means different sessions never contend. A timeout fails the write.
 
         Every acquire (successful or not) records its wait time via the
         operations log, and a timeout is recorded under its own event —
@@ -138,15 +145,15 @@ class JsonlSessionStore:
                 "session_file_lock_timeout",
                 {"wait_ms": _elapsed_ms(started), "path": str(path)},
             )
-            logger.warning("session file lock timed out; skipping write: %s", path)
-            raise
+            logger.warning("session file lock timed out; write failed: %s", path)
+            raise SessionWriteUnavailable("session file lock timed out") from None
         finally:
             with self._write_locks_guard:
                 if not lock.is_locked:
                     self._write_locks.pop(key, None)
 
     def open_session(self, session: SessionPersistenceSource) -> None:
-        with contextlib.suppress(Exception):
+        try:
             path = session_path(session.session_id)
             with self._locked(path):
                 path.parent.mkdir(parents=True, exist_ok=True)
@@ -163,6 +170,10 @@ class JsonlSessionStore:
                 key = (session.session_id, str(path))
                 self._leaf_ids[key] = None
                 self._leaf_file_sig[key] = self._file_sig(path)
+        except SessionWriteUnavailable:
+            raise
+        except Exception:
+            logger.exception("could not open session file")
 
     def append_turn(self, session: SessionPersistenceSource, kind: str, text: str) -> None:
         self._append_entry(
@@ -399,12 +410,16 @@ class JsonlSessionStore:
         )
 
     def flush(self, session: SessionPersistenceSource) -> None:
-        with contextlib.suppress(Exception):
+        try:
             path = session_path(session.session_id)
             if not path.exists():
                 return
             with self._locked(path):
                 self._flush_locked(session, path)
+        except SessionWriteUnavailable:
+            raise
+        except Exception:
+            logger.exception("could not flush session file")
 
     def _flush_locked(self, session: SessionPersistenceSource, path: Path) -> None:
         """Read-modify-append leaf / goal / message records; runs under the write lock.
@@ -547,7 +562,7 @@ class JsonlSessionStore:
         becomes the tip, and the on-disk ``sidecar`` flag lets the cold tail
         scan skip it (same role the ``trace_span`` type plays).
         """
-        with contextlib.suppress(Exception):
+        try:
             path = session_path(session_id)
             if not path.exists():
                 return ""
@@ -585,6 +600,10 @@ class JsonlSessionStore:
                 # file grew, and a stale sig would force a cold rescan next append.
                 self._leaf_file_sig[(session_id, str(path))] = self._file_sig(path)
                 return entry_id
+        except SessionWriteUnavailable:
+            raise
+        except Exception:
+            logger.exception("could not append session entry")
         return ""
 
     def _remember_leaf(

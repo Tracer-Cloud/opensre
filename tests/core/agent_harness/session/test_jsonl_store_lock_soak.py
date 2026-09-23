@@ -516,12 +516,7 @@ def test_soak_write_after_a_torn_tail_is_not_swallowed(soak_home: Path, torn_tai
 def test_soak_lock_timeout_fails_cleanly_without_partial_append(
     soak_home: Path, spawn: Callable[[dict[str, Any]], subprocess.Popen[bytes]]
 ) -> None:
-    """Case 4: a write that cannot take the lock appends nothing at all.
-
-    The write being *dropped* rather than retried or surfaced is #5475; this
-    case pins the half that is not in dispute — whatever the caller is told, the
-    file must not gain a partial record.
-    """
+    """Case 4: a timed-out writer fails without appending a partial record."""
     session_id = "soak-timeout"
     path = _seed(session_id)
     before = path.read_bytes()
@@ -529,19 +524,18 @@ def test_soak_lock_timeout_fails_cleanly_without_partial_append(
     held = FileLock(f"{path}.lock", timeout=1.0)
     held.acquire()
     try:
-        _await(
-            [
-                spawn(
-                    {
-                        "worker_id": "blocked",
-                        "session_ids": [session_id],
-                        "turns": 3,
-                        "result_path": str(soak_home / "blocked.json"),
-                        "lock_timeout_seconds": 0.3,
-                    },
-                )
-            ]
+        blocked = spawn(
+            {
+                "worker_id": "blocked",
+                "session_ids": [session_id],
+                "turns": 3,
+                "result_path": str(soak_home / "blocked.json"),
+                "lock_timeout_seconds": 0.3,
+            }
         )
+        _stdout, stderr = blocked.communicate(timeout=_PROCESS_TIMEOUT_SECONDS)
+        assert blocked.returncode != 0
+        assert b"SessionWriteUnavailable" in stderr
     finally:
         held.release()
 
