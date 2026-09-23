@@ -133,3 +133,44 @@ def test_restriction_leaves_other_capabilities_alone() -> None:
 
     # Assert
     assert session.available_capabilities["something_else"] == ("on",)
+
+
+def test_a_failing_integration_tool_is_named_on_the_settled_job() -> None:
+    # Arrange: a turn in which a GitHub tool fails and a non-integration tool fails too
+    from core.llm.types import ToolCall
+    from core.tool import ToolExecutionRequest, ToolExecutionResult
+    from tools.registry import clear_tool_registry_cache, get_registered_tool_map
+
+    clear_tool_registry_cache()
+    registered = get_registered_tool_map()
+    handler = _Handler(answer="could not read the repository")
+    seen_hooks: list[Any] = []
+
+    def run_and_fail_tools(_text: str, _session: SessionCore, output: Any, _logger: Any) -> Any:
+        seen_hooks.append(output.tool_hooks)
+        for name in ("github_cli", "shell_run", "github_cli"):
+            request = ToolExecutionRequest(
+                tool_call=ToolCall(id="c", name=name, input={}),
+                tool=registered[name],
+                arguments={},
+                source="test",
+                resolved_integrations={},
+            )
+            output.tool_hooks.after_tool_call(
+                request, ToolExecutionResult(content="boom", is_error=True)
+            )
+        output.finalize(handler.answer)
+        return handler.result
+
+    handler.run = run_and_fail_tools  # type: ignore[method-assign, assignment]
+    worker, queue = _worker(handler)
+    job = queue.submit("count open PRs", context={}, actor="u")
+    assert job is not None
+
+    # Act
+    worker.run_one(job)
+
+    # Assert: only the integration vendor is reported, once, and it reaches the caller's view.
+    assert job.state is PromptState.DONE
+    assert job.failed_integrations == ("github",)
+    assert job.view()["failed_integrations"] == ["github"]

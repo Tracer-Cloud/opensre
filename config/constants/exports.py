@@ -178,6 +178,7 @@ EXPORTS: dict[str, str] = {
     "HOSTED_GATEWAY_START_PATH": "hosted_gateway",
     "HOSTED_GATEWAY_STOP_PATH": "hosted_gateway",
     "HOSTED_GATEWAY_PROMPTS_PATH": "hosted_gateway",
+    "HOSTED_GATEWAY_INTEGRATIONS_PATH": "hosted_gateway",
     "HOSTED_GATEWAY_PROMPT_POLL_SECONDS": "hosted_gateway",
     "HOSTED_GATEWAY_PROMPT_WAIT_SECONDS": "hosted_gateway",
     # github
