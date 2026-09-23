@@ -39,9 +39,10 @@ _STILL_RUNNING = (
     "{waited} seconds. Ask again later with that id to read the result."
 )
 _FAILED_INTEGRATIONS = (
-    "\n\nTools of these integrations failed on the hosted gateway: {vendors}. The gateway uses "
-    "the organization's integrations, not this machine's credentials; an organization admin "
-    "can configure them at {url}, then send the prompt again."
+    "\n\nTools of these integrations returned errors on the hosted gateway: {vendors}. The "
+    "gateway uses the organization's integrations, not this machine's credentials. If the "
+    "organization has not set them up for the gateway, an admin can do so at {url}; "
+    "otherwise the answer above describes the failure."
 )
 
 

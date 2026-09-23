@@ -17,17 +17,13 @@ from gateway.core.prompt_intake.jobs import PromptJob, PromptQueue
 from gateway.core.prompt_intake.output import CollectingTurnOutput
 from infrastructure.analytics.usage_context import UsageSurface, bound_usage_context
 from infrastructure.turn_host.unattended_session import UnattendedSessions
-from tools.registry_discovery import INTEGRATION_TOOL_PACKAGES
+from tools.registry import integration_of_tool
 
 ERROR_CREDITS_DENIED = "credits_denied"
 ERROR_NOT_ADMITTED = "not_admitted"
 ERROR_TURN_FAILED = "turn_failed"
 
 _POLL_SECONDS = 1.0
-
-#: Vendors whose tools live under ``integrations/<vendor>/tools``; a failure of one of
-#: their tools on the gateway usually means the organization has not configured it.
-_INTEGRATION_VENDORS = frozenset(package.split(".")[1] for package in INTEGRATION_TOOL_PACKAGES)
 
 
 class PromptTurnRunner(Protocol):
@@ -117,17 +113,18 @@ class PromptWorker:
 
 
 class _IntegrationFailures:
-    """Collects the vendors whose tools returned an error during the turn."""
+    """Collects the integrations whose tools returned an error during the turn."""
 
     def __init__(self) -> None:
-        self._vendors: list[str] = []
+        # Insertion-ordered set: first failure decides the reporting order.
+        self._vendors: dict[str, None] = {}
 
     def after_tool_call(self, request: ToolExecutionRequest, result: ToolExecutionResult) -> None:
         if not result.is_error:
             return None
-        vendor = str(getattr(request.tool, "source", "") or "")
-        if vendor in _INTEGRATION_VENDORS and vendor not in self._vendors:
-            self._vendors.append(vendor)
+        vendor = integration_of_tool(request.tool_call.name)
+        if vendor is not None:
+            self._vendors.setdefault(vendor, None)
         return None
 
     def vendors(self) -> tuple[str, ...]:

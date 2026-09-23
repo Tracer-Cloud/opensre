@@ -221,7 +221,7 @@ def test_a_failed_integration_on_the_gateway_points_the_user_to_the_integrations
     # Assert
     assert out["failed_integrations"] == ["github"]
     assert out["response_text"].startswith("16 open PRs")
-    assert "failed on the hosted gateway: github" in out["response_text"]
+    assert "returned errors on the hosted gateway: github" in out["response_text"]
     assert "https://app.test/integrations" in out["response_text"]
 
 
