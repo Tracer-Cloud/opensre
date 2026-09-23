@@ -18,12 +18,13 @@ from surfaces.interactive_shell.session import Session
 from tools.registry import clear_tool_registry_cache, get_registered_tool_map
 
 
-def _request(tool_name: str) -> ToolExecutionRequest:
+def _request(tool_name: str, arguments: dict | None = None) -> ToolExecutionRequest:
     clear_tool_registry_cache()
+    arguments = arguments or {}
     return ToolExecutionRequest(
-        tool_call=ToolCall(id="call-1", name=tool_name, input={}),
+        tool_call=ToolCall(id="call-1", name=tool_name, input=arguments),
         tool=get_registered_tool_map()[tool_name],
-        arguments={},
+        arguments=arguments,
         source="test",
         resolved_integrations={},
     )
@@ -116,11 +117,53 @@ def test_python_execution_asks_even_when_auto_allows_everything() -> None:
     )
     assert hooks.before_tool_call is not None
 
-    decision = hooks.before_tool_call(_request("execute_python_code"))
+    decision = hooks.before_tool_call(
+        _request("execute_python_code", {"code": "print('visible code')", "allow_network": False})
+    )
 
     assert session.terminal.auto_level == AutoLevel.HIGH
     assert decision is not None and decision.blocked is True
     assert "host's privileges" in printed.getvalue()
+    assert "print('visible code')" in printed.getvalue()
+    assert "Network access: False" in printed.getvalue()
+
+
+def test_python_execution_requires_consent_even_in_trust_mode() -> None:
+    session = Session()
+    session.terminal.trust_mode = True
+    console, printed = _console()
+    asked: list[str] = []
+
+    def confirm(prompt: str) -> str:
+        asked.append(prompt)
+        return "n"
+
+    hooks = with_shell_approval(
+        None, session=session, console=console, confirm_fn=confirm, is_tty=True
+    )
+    assert hooks.before_tool_call is not None
+
+    decision = hooks.before_tool_call(_request("execute_python_code", {"code": "print(42)"}))
+
+    assert decision is not None and decision.blocked is True
+    assert asked == ["Approve this action?"]
+    assert "print(42)" in printed.getvalue()
+
+
+def test_python_execution_without_tty_is_blocked_even_in_trust_mode() -> None:
+    session = Session()
+    session.terminal.trust_mode = True
+    console, printed = _console()
+    hooks = with_shell_approval(
+        None, session=session, console=console, confirm_fn=lambda _prompt: "y", is_tty=False
+    )
+    assert hooks.before_tool_call is not None
+
+    decision = hooks.before_tool_call(_request("execute_python_code", {"code": "print(42)"}))
+
+    assert decision is not None and decision.blocked is True
+    assert "rerun in a terminal" in printed.getvalue()
+    assert "enable trust mode" not in printed.getvalue()
 
 
 def test_other_tools_are_not_asked_about() -> None:

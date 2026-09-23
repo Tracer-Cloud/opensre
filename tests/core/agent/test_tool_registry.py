@@ -230,7 +230,7 @@ def test_registry_agent_tools_exclude_unavailable_tool() -> None:
 
 def test_generated_python_hidden_from_agent_until_operator_opt_in(monkeypatch) -> None:
     monkeypatch.setattr(
-        "tools.system.python_execution_tool.python_interpreter_available",
+        "tools.system.python_execution_tool.tool.python_interpreter_available",
         lambda: True,
     )
     monkeypatch.delenv(OPENSRE_PYTHON_EXECUTION_ENABLED_ENV, raising=False)

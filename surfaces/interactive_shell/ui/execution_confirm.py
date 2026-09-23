@@ -124,6 +124,7 @@ def execution_allowed(
     confirm_fn: Callable[[str], str] | None = None,
     is_tty: bool | None = None,
     action_already_listed: bool = False,
+    require_explicit_approval: bool = False,
 ) -> bool:
     """Print policy UX, emit analytics, and return whether execution should proceed.
 
@@ -138,7 +139,9 @@ def execution_allowed(
     plan_only_active = bool(getattr(session, "plan_only_until_authorized", False))
     result = apply_plan_only_gate(result, plan_only_active=plan_only_active)
 
-    plan = resolve_confirmation(result, trust_mode=trust_mode, is_tty=tty)
+    plan = resolve_confirmation(
+        result, trust_mode=trust_mode and not require_explicit_approval, is_tty=tty
+    )
 
     if plan.outcome == ConfirmationOutcome.DENY:
         _emit_decision(
@@ -171,10 +174,13 @@ def execution_allowed(
             trust_mode=trust_mode,
             reason=plan.analytics_reason,
         )
-        console.print(
-            f"[{WARNING}]confirmation required but stdin is not a TTY; "
-            f"enable trust mode with[/] [bold]/trust[/bold] [{WARNING}]or rerun in a terminal.[/]"
-        )
+        if require_explicit_approval:
+            console.print(f"[{WARNING}]confirmation required; rerun in a terminal.[/]")
+        else:
+            console.print(
+                f"[{WARNING}]confirmation required but stdin is not a TTY; "
+                f"enable trust mode with[/] [bold]/trust[/bold] [{WARNING}]or rerun in a terminal.[/]"
+            )
         console.print(f"[{DIM}]{escape(action_summary)}[/]")
         return False
 

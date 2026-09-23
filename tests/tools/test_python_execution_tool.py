@@ -40,7 +40,7 @@ class TestPythonExecutionToolMetadata:
     def test_unavailable_by_default_even_with_python_installed(self, monkeypatch) -> None:
         monkeypatch.delenv(OPENSRE_PYTHON_EXECUTION_ENABLED_ENV, raising=False)
         monkeypatch.setattr(
-            "tools.system.python_execution_tool.python_interpreter_available",
+            "tools.system.python_execution_tool.tool.python_interpreter_available",
             lambda: True,
         )
         clear_tool_registry_cache()
@@ -51,7 +51,7 @@ class TestPythonExecutionToolMetadata:
 
     def test_only_explicit_opt_in_exposes_the_tool(self, monkeypatch) -> None:
         monkeypatch.setattr(
-            "tools.system.python_execution_tool.python_interpreter_available",
+            "tools.system.python_execution_tool.tool.python_interpreter_available",
             lambda: True,
         )
         clear_tool_registry_cache()

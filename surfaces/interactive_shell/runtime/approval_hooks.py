@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass, replace
 
@@ -9,6 +10,9 @@ from rich.console import Console
 
 from config.constants.repl_autonomy import ASK_AT_EVERY_AUTO_LEVEL_TOOL_NAMES
 from core.tool import BeforeToolCallResult, ToolExecutionHooks, ToolExecutionRequest
+from infrastructure.observability.trace.redaction import redact_sensitive
+from infrastructure.safety.secret_redaction import redact_text
+from infrastructure.safety.terminal_output import strip_terminal_controls
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui.execution_confirm import execution_allowed
 from tools.interactive_shell.shared import ask_tool
@@ -64,7 +68,7 @@ class _ShellApproval:
 
         later_decision = self._later_decision(request)
         if later_decision is not None:
-            return later_decision
+            return replace(later_decision, approved=True) if not later_decision.blocked else later_decision
         return BeforeToolCallResult(approved=True)
 
     def _later_decision(self, request: ToolExecutionRequest) -> BeforeToolCallResult | None:
@@ -77,6 +81,21 @@ class _ShellApproval:
         tool_name = request.tool_call.name
         reason = str(getattr(tool, "approval_reason", "") or _DEFAULT_REASON)
         shown_name = str(getattr(tool, "display_name", "") or tool_name)
+        if tool_name == "execute_python_code":
+            code = request.arguments.get("code")
+            if not isinstance(code, str) or not code.strip():
+                return False
+            # The source must be visible before consent. Never truncate it; mask
+            # secrets and control characters before sending it to the terminal.
+            shown_code = strip_terminal_controls(redact_text(code), keep_whitespace=True)
+            shown_name += f"\nPython source (secrets redacted):\n{shown_code}"
+            model_inputs = request.tool_call.input.get("inputs")
+            if model_inputs is not None:
+                shown_inputs = json.dumps(redact_sensitive(model_inputs), default=str, indent=2)
+                shown_name += "\nInputs (secrets redacted):\n" + strip_terminal_controls(
+                    redact_text(shown_inputs), keep_whitespace=True
+                )
+            shown_name += f"\nNetwork access: {bool(request.arguments.get('allow_network'))}"
         verdict = ask_tool(tool_name, reason)
         approved = execution_allowed(
             verdict,
@@ -85,6 +104,7 @@ class _ShellApproval:
             action_summary=shown_name,
             confirm_fn=self.confirm_fn,
             is_tty=self.is_tty,
+            require_explicit_approval=tool_name == "execute_python_code",
         )
         return approved
 

@@ -15,7 +15,7 @@ TOOL_MODULES = (
     "agent_memory.tool",
     "file_count.tool",
     "fleet_monitoring",
-    "python_execution_tool",
+    "python_execution_tool.tool",
     "runbook_guidance_tool.tool",
     "sre_guidance_tool",
     "structured_file.tool",

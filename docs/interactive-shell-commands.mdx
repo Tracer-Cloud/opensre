@@ -18,8 +18,9 @@ highlighted command's description appears below the list.
 
 <Info>
   Confirmation prompts come from **`/auto`** (tool-approval autonomy) and from
-  elevated slash commands. Default `/auto` is **high** (alpha: no tool prompts).
-  `/trust on` skips approval prompts for the rest of the session. Outside a TTY,
+  elevated slash commands. Default `/auto` is **high** (no default tool prompts).
+  `/trust on` skips ordinary approval prompts for the rest of the session. Python
+  execution, if enabled, still requires approval for every call. Outside a TTY,
   actions that would ask are blocked.
 </Info>
 
@@ -325,14 +326,14 @@ Set how often the REPL asks before running agent tools. Shown on the status line
 
 | Level | Prompts before |
 | --- | --- |
-| `high` (default) | Nothing — alpha default; every tool runs immediately |
+| `high` (default) | `execute_python_code` (when enabled) and `stop_hosted_gateway`; other tools run immediately |
 | `med` | Mutating agent tools: shell, code agent, slash/CLI, synthetic tests, LLM provider switch, Sentry issue fix, … |
 | `low` | Everything `med` asks about, plus additional tool starts |
 | `off` | Every tool type |
 
 `/auto` is **not** a shell-command allowlist: under alpha, shell strings still run when approved (or when High skips the prompt). Lower levels only promote the existing `ask` confirmation hook by `tool_type`.
 
-**With `/trust`:** `/trust on` skips approval prompts even when `/auto` would ask. Turn trust off to restore `/auto` prompts.
+**With `/trust`:** `/trust on` skips ordinary `/auto` prompts. Python execution still asks on every call, showing the generated source and inputs with secrets redacted; it is blocked outside a TTY and in headless runners without an approval hook. Turn trust off to restore ordinary `/auto` prompts.
 
 Session preference only — not restored by `/resume`. Bare `/auto` prints the current level, the default, and each caption.
 
@@ -341,6 +342,7 @@ Session preference only — not restored by `/resume`. Bare `/auto` prints the c
 <Accordion title="/trust">
 
 Trust mode skips execution confirmation prompts for **elevated** commands (`/cancel`, `/uninstall`, integration remove, etc.).
+It does not skip the per-call approval for opted-in Python execution.
 
 ```text
 /trust on
@@ -1237,8 +1239,8 @@ Two controls decide whether the REPL prompts before an action:
 
 | Control | Role |
 | --- | --- |
-| `/auto` | Which **agent tool types** need approval (default **high** = none) |
-| `/trust` | Session override that **skips** approval prompts when `/auto` (or an elevated slash command) would ask |
+| `/auto` | Which **agent tool types** need ordinary approval (default **high** = none); enabled Python execution still asks |
+| `/trust` | Session override that **skips** ordinary approval prompts when `/auto` (or an elevated slash command) would ask; Python execution still asks |
 
 | Tier | Examples | Confirmation |
 | --- | --- | --- |
@@ -1250,8 +1252,8 @@ Non-TTY: actions that would ask **fail closed** (error message, no side effect).
 
 ```text
 /auto med   # ask before mutating agent tools
-/auto high  # alpha default — no tool prompts
-/trust on   # skip prompts for this session
+/auto high  # alpha default — no ordinary tool prompts
+/trust on   # skip ordinary prompts for this session
 /trust off  # restore /auto (and elevated) prompts
 ```
 

@@ -188,19 +188,23 @@ partial parser.
 Addendum — Aug 2026.
 
 **Decision:** the REPL exposes `/auto off|low|med|high` as session-scoped
-tool-approval autonomy. Default is **high** (alpha: no confirmation). Lower
+tool-approval autonomy. Default is **high** (alpha: no default tool confirmation). Lower
 levels promote a default-`allow` policy result to `ask` based on `tool_type`
 (`config/constants/repl_autonomy.py`), not a shell-command allowlist.
 
 | Level | Asks before |
 | --- | --- |
-| `high` | Nothing |
+| `high` | `execute_python_code` (when explicitly enabled) and `stop_hosted_gateway` |
 | `med` | Mutating agent tools (`shell`, `code_agent`, `slash`, `cli_command`, `opensre_cli`, `switch_llm_provider`, `synthetic_test`, `sentry_issue_fix`, …) |
 | `low` | Same as `med` |
 | `off` | Every tool type |
 
-**Interaction with `/trust`:** `trust_mode` still short-circuits `ask` to allow
-(skip the prompt). Non-TTY `ask` remains fail-closed.
+**Interaction with `/trust`:** trust mode skips the ordinary `/auto` prompt.
+Python execution requires explicit approval for every call, including under
+`/trust on`; it is blocked outside a TTY. Its prompt shows the generated source
+and inputs with secrets redacted. Headless runners without an explicit approval
+hook cannot execute it. Other non-TTY `ask` decisions retain the existing
+trust-mode behavior.
 
 **Still true:** there is no shell argv allowlist/deny floor under alpha. `/auto`
 only gates whether the existing confirmation UX runs before a tool launch.
