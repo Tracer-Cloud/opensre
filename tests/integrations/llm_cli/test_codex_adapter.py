@@ -241,6 +241,48 @@ def test_build_omits_env_without_openai_platform_vars(mock_which: MagicMock) -> 
 
 
 @patch("integrations.llm_cli.binary_resolver.shutil.which", return_value="/usr/bin/codex")
+def test_build_uses_the_hosted_account_route_when_no_openai_key_is_set(
+    mock_which: MagicMock,
+) -> None:
+    """On a hosted gateway the account token is Codex's key and the webapp its base URL."""
+    from config.account import AccountLLMRoute
+
+    base = {k: v for k, v in os.environ.items() if not k.startswith("OPENAI_")}
+    route = AccountLLMRoute(base_url="https://app.example/api/llm/v1", model="gpt-5.6-sol")
+    with (
+        patch.dict(os.environ, base, clear=True),
+        patch("integrations.llm_cli.codex.account_llm_route", return_value=route),
+        patch("integrations.llm_cli.codex.resolve_account_token", return_value="osre_gw_org.tok"),
+    ):
+        inv = CodexAdapter().build(prompt="p", model=None, workspace="")
+
+    mock_which.assert_called()
+    assert inv.env == {
+        "OPENAI_API_KEY": "osre_gw_org.tok",
+        "OPENAI_BASE_URL": "https://app.example/api/llm/v1",
+    }
+    idx = inv.argv.index("-m")
+    assert inv.argv[idx + 1] == "gpt-5.6-sol"
+
+
+@patch("integrations.llm_cli.binary_resolver.shutil.which", return_value="/usr/bin/codex")
+def test_build_prefers_explicit_openai_env_over_the_hosted_route(mock_which: MagicMock) -> None:
+    from config.account import AccountLLMRoute
+
+    route = AccountLLMRoute(base_url="https://app.example/api/llm/v1", model="gpt-5.6-sol")
+    with (
+        patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test"}, clear=False),
+        patch("integrations.llm_cli.codex.account_llm_route", return_value=route),
+    ):
+        inv = CodexAdapter().build(prompt="p", model=None, workspace="")
+
+    mock_which.assert_called()
+    assert inv.env is not None and inv.env["OPENAI_API_KEY"] == "sk-test"
+    assert "OPENAI_BASE_URL" not in inv.env
+    assert "-m" not in inv.argv
+
+
+@patch("integrations.llm_cli.binary_resolver.shutil.which", return_value="/usr/bin/codex")
 def test_build_adds_model_flag_when_not_default(mock_which: MagicMock) -> None:
     inv = CodexAdapter().build(prompt="p", model="o3", workspace="")
     assert inv.stdin == "p"
