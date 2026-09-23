@@ -26,6 +26,7 @@ from gateway.core.billing.turn_metering import bound_turn_metering
 from gateway.core.middleware.approvals import arguments_preview
 from gateway.core.prompt_intake.jobs import PromptJob, PromptQueue
 from gateway.core.prompt_intake.output import CollectingTurnOutput
+from gateway.core.session.thread_history import seed_session_history
 from infrastructure.analytics.usage_context import UsageSurface, bound_usage_context
 from infrastructure.turn_host.unattended_session import (
     AnswerRejected,
@@ -135,10 +136,14 @@ class PromptWorker:
         if job.parent_id:
             session = self._sessions.resume(job.session_id)
             session.pending_user_choice = self._asked.pop(session.session_id, None)
+            question = (
+                _question_text(session.pending_user_choice) if session.pending_user_choice else ""
+            )
             text = self._answer_text(job, session)
             if text is None:
                 self._sessions.close(session)
                 return
+            self._seed_parent_exchange(job, session, question)
         else:
             session = self._sessions.open()
             job.session_id = session.session_id
@@ -205,6 +210,22 @@ class PromptWorker:
         # The answered question must not come back from the store during the turn.
         self._sessions.flush(session)
         return text
+
+    def _seed_parent_exchange(self, job: PromptJob, session: SessionCore, question: str) -> None:
+        """Give a resumed turn the exchange it continues when the session holds none.
+
+        An unattended session keeps no transcript across close and resume, so
+        without this the answer arrives alone and the agent no longer knows what
+        it asked about. Seeds the parent's request and the question, never over
+        a transcript that is already there.
+        """
+        parent = self._queue.get(job.parent_id) if job.parent_id else None
+        if parent is None:
+            return
+        seed_session_history(
+            session,
+            [("user", _render_prompt(parent)), ("assistant", question)],
+        )
 
     def _forget(self, session_id: str) -> None:
         """The session is done with: release the pooled agent, the question and the grants."""

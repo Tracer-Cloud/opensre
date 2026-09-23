@@ -251,6 +251,43 @@ def test_an_approval_covers_exactly_the_previewed_call_once() -> None:
     assert "Approve" in handler.seen_text and "schedule_ci_repair_loop" in handler.seen_text
 
 
+class _HistoryHandler(_Handler):
+    """A turn that records the transcript the worker seeded before it ran."""
+
+    def __init__(self, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self.seen_history: list[tuple[str, str]] = []
+
+    def run(self, text: str, session: SessionCore, output: Any, logger: Any) -> Any:
+        self.seen_history = list(session.cli_agent_messages or [])
+        return super().run(text, session, output, logger)
+
+
+def test_a_resumed_turn_is_seeded_with_the_request_and_the_question() -> None:
+    # Arrange: a parent that asked; the unattended session keeps no transcript
+    asks = PendingUserChoice(title="Which PR?", options=("7", "8"))
+    handler = _HistoryHandler(answer="done", asks=asks)
+    worker, queue = _worker(handler)
+    parent = queue.submit("schedule the repair loop", context={"repo": "o/r"}, actor="u")
+    assert parent is not None
+    worker.run_one(parent)
+    assert parent.state is PromptState.NEEDS_INPUT
+
+    # Act: the answer resumes the session
+    handler.asks = None
+    follow_up = queue.answer(parent, "7")
+    assert follow_up is not None
+    worker.run_one(follow_up)
+
+    # Assert: the agent sees the request (with its facts), the question, then the answer
+    assert follow_up.state is PromptState.DONE
+    assert handler.seen_history[0][0] == "user"
+    assert "schedule the repair loop" in handler.seen_history[0][1]
+    assert "repo: o/r" in handler.seen_history[0][1]
+    assert handler.seen_history[1] == ("assistant", parent.question)
+    assert "7" in handler.seen_text
+
+
 def test_a_session_is_retired_only_when_the_queue_holds_none_of_its_prompts() -> None:
     # Arrange: a parent that asked, then a follow-up that asks again on the same session
     class _Clock:
