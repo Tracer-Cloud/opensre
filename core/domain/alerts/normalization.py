@@ -63,6 +63,8 @@ def _parse_tags(value: Any) -> dict[str, str]:
 def _coerce_pid(value: Any) -> int | None:
     if value is None:
         return None
+    if isinstance(value, bool):
+        return None
     if isinstance(value, int):
         return value if value >= 0 else None
     if isinstance(value, float) and value.is_integer():

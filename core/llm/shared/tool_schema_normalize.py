@@ -57,7 +57,7 @@ def _merge_all_of_subschemas(variants: list[Any]) -> dict[str, Any]:
                 if isinstance(props, dict):
                     props.update(value)
                 else:
-                    merged["properties"] = dict[Any, Any](value)
+                    merged["properties"] = dict(value)
             elif key == "required" and isinstance(value, list):
                 required = merged.setdefault("required", [])
                 if isinstance(required, list):
