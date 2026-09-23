@@ -192,7 +192,8 @@ def test_a_question_from_the_gateway_opens_this_shells_menu(
 
     # Assert: the question is parked as the shell's own menu, with the approval details
     parked = session.pending_user_choice
-    assert out["state"] == "needs_input" and "The menu opens now" in out["response_text"]
+    assert out["state"] == "needs_input" and "the menu opens now" in out["response_text"]
+    assert "Approve schedule_ci_repair_loop?" not in out["response_text"]
     assert parked is not None and parked.options == ("Approve", "Deny")
     assert parked.note == "Starts a background worker." and parked.custom_answer is False
     assert parked.interaction_id == f"hosted_prompt:{_ID}"
@@ -310,11 +311,12 @@ def test_a_failed_integration_on_the_gateway_points_the_user_to_the_integrations
     # Act
     out = ask_hosted_gateway(prompt="count open PRs")
 
-    # Assert
+    # Assert: the credential instruction comes first, in plain words, then the answer
     assert out["failed_integrations"] == ["github"]
-    assert out["response_text"].startswith("16 open PRs")
-    assert "returned errors on the hosted gateway: github" in out["response_text"]
-    assert "https://app.test/integrations" in out["response_text"]
+    text = out["response_text"]
+    assert text.startswith("The hosted gateway could not use the organization's github integration")
+    assert "https://app.test/integrations" in text
+    assert text.index("https://app.test/integrations") < text.index("16 open PRs")
 
 
 def test_the_client_reads_failed_integrations_from_the_record() -> None:

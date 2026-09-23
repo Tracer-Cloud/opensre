@@ -46,9 +46,9 @@ _STATE_TEXT = {
     "failed": "The hosted gateway could not run that prompt ({error}).",
 }
 _ASKING_IN_SHELL = (
-    "The hosted gateway stopped to ask: {question}\nThe menu opens now. Once the user has "
+    "The hosted gateway needs a decision from the user; the menu opens now. Once they have "
     "answered, call ask_hosted_gateway again with prompt_id={prompt_id}; their selection is "
-    "sent as the answer."
+    "sent as the answer. Do not repeat the question."
 )
 _ASKING_WITHOUT_SHELL = (
     "The hosted gateway stopped to ask: {question}\nAnswer it from the interactive shell "
@@ -59,10 +59,10 @@ _STILL_RUNNING = (
     "{waited} seconds. Ask again later with that id to read the result."
 )
 _FAILED_INTEGRATIONS = (
-    "\n\nTools of these integrations returned errors on the hosted gateway: {vendors}. The "
-    "gateway uses the organization's integrations, not this machine's credentials. If the "
-    "organization has not set them up for the gateway, an admin can do so at {url}; "
-    "otherwise the answer above describes the failure."
+    "The hosted gateway could not use the organization's {vendors} integration. It uses the "
+    "organization's credentials from {url}, not this machine's: an admin fixes or replaces "
+    "them there, the gateway restarts with the new ones, and the request can be retried. "
+    "Tell the user this first, in plain words.\n\n"
 )
 
 
@@ -244,7 +244,7 @@ def _outcome(
         text = _STILL_RUNNING.format(prompt_id=record.prompt_id, waited=int(waited))
     if record.failed_integrations:
         vendors = ", ".join(record.failed_integrations)
-        text = text + _FAILED_INTEGRATIONS.format(vendors=vendors, url=integrations_url)
+        text = _FAILED_INTEGRATIONS.format(vendors=vendors, url=integrations_url) + text
     return {
         "success": record.settled,
         "prompt_id": record.prompt_id,
