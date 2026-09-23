@@ -317,6 +317,41 @@ def test_a_failed_integration_on_the_gateway_points_the_user_to_the_integrations
     assert text.startswith("The hosted gateway could not use the organization's github integration")
     assert "https://app.test/integrations" in text
     assert text.index("https://app.test/integrations") < text.index("16 open PRs")
+    # A finished prompt is never re-sent whole: only the failed part may be asked again.
+    assert "ask again only for what the failed integration should have done" in text
+    assert "sent again" not in text
+
+
+def test_a_failed_integration_on_a_waiting_prompt_says_to_continue_it_not_resend(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange: the gateway parked a question after GitHub refused the token
+    choice = PromptChoice(
+        "Unblock CI repair", (PromptQuestion("Unblock CI repair", ("Retry", "Stop")),)
+    )
+    app = _App(
+        [
+            PromptRecord(
+                _ID,
+                "needs_input",
+                question="Unblock CI repair",
+                choice=choice,
+                failed_integrations=("github",),
+            )
+        ]
+    )
+    _signed_in_with(monkeypatch, app)
+
+    # Act
+    out = ask_hosted_gateway(prompt="schedule the loop", context=_tool_context(SessionCore(), ""))
+
+    # Assert: fix the credential, then continue through the menu; never a fresh prompt
+    text = out["response_text"]
+    assert text.startswith("The hosted gateway could not use the organization's github integration")
+    assert (
+        "continue this prompt through its menu" in text and "do not send the prompt again" in text
+    )
+    assert "the menu opens now" in text
 
 
 def test_the_client_reads_failed_integrations_from_the_record() -> None:

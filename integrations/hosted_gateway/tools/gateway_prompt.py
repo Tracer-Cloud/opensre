@@ -61,9 +61,21 @@ _STILL_RUNNING = (
 _FAILED_INTEGRATIONS = (
     "The hosted gateway could not use the organization's {vendors} integration. It uses the "
     "organization's credentials from {url}, not this machine's: an admin fixes or replaces "
-    "them there, the gateway restarts with the new ones, and the request can be retried. "
-    "Tell the user this first, in plain words.\n\n"
+    "them there and the gateway restarts with the new ones. {next_step} Tell the user this "
+    "first, in plain words.\n\n"
 )
+#: What may follow a fixed credential, by state: never a blind re-send of work already done.
+_FAILED_INTEGRATION_NEXT_STEP = {
+    "needs_input": (
+        "Then continue this prompt through its menu (it usually offers a retry); do not send "
+        "the prompt again, the gateway would start the work over."
+    ),
+    "failed": "Then the prompt can be sent again; nothing of it ran to completion.",
+    "done": (
+        "The answer above stands for what did run; ask again only for what the failed "
+        "integration should have done, not for the whole request."
+    ),
+}
 
 
 @tool(
@@ -244,7 +256,11 @@ def _outcome(
         text = _STILL_RUNNING.format(prompt_id=record.prompt_id, waited=int(waited))
     if record.failed_integrations:
         vendors = ", ".join(record.failed_integrations)
-        text = _FAILED_INTEGRATIONS.format(vendors=vendors, url=integrations_url) + text
+        next_step = _FAILED_INTEGRATION_NEXT_STEP.get(record.state, "")
+        hint = _FAILED_INTEGRATIONS.format(
+            vendors=vendors, url=integrations_url, next_step=next_step
+        )
+        text = hint + text
     return {
         "success": record.settled,
         "prompt_id": record.prompt_id,
