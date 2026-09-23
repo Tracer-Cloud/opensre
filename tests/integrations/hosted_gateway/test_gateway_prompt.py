@@ -8,6 +8,11 @@ from types import TracebackType
 import httpx
 import pytest
 
+from core.agent_harness import SessionCore
+from core.agent_harness.spi.handoff import AskUserQuestion, format_ask_user_answers
+from core.agent_harness.tools import ActionToolScope
+from core.agent_harness.tools.tool_context import ACTION_TOOL_CONTEXT_RESOURCE_KEY
+from core.tool import AgentToolContext
 from integrations.hosted_gateway import (
     ERR_ALREADY_ANSWERED,
     ERR_NOT_RUNNING,
@@ -133,6 +138,13 @@ class _App:
         return self._states.pop(0)
 
 
+def _tool_context(session: SessionCore, turn_user_message: str) -> AgentToolContext:
+    scope = ActionToolScope(session=session, console=None, turn_user_message=turn_user_message)
+    return AgentToolContext(
+        resolved_integrations={}, resources={ACTION_TOOL_CONTEXT_RESOURCE_KEY: scope}
+    )
+
+
 def _signed_in_with(monkeypatch: pytest.MonkeyPatch, app: _App) -> None:
     monkeypatch.setattr(gateway_prompt.HostedGatewayClient, "from_account", lambda: app)
     monkeypatch.setattr(gateway_prompt, "HOSTED_GATEWAY_PROMPT_POLL_SECONDS", 0.0)
@@ -150,7 +162,7 @@ def test_the_tool_waits_for_the_answer_and_returns_it(monkeypatch: pytest.Monkey
     _signed_in_with(monkeypatch, app)
 
     # Act
-    out = ask_hosted_gateway(prompt="which tasks run?", context={"repository": "o/r"})
+    out = ask_hosted_gateway(prompt="which tasks run?", facts={"repository": "o/r"})
 
     # Assert
     assert app.sent == [("which tasks run?", {"repository": "o/r"})]
@@ -159,20 +171,89 @@ def test_the_tool_waits_for_the_answer_and_returns_it(monkeypatch: pytest.Monkey
     assert out["response_text"] == "4 tasks; the CI repair loop is among them."
 
 
-def test_a_question_from_the_gateway_is_relayed_as_needs_input(
+def test_a_question_from_the_gateway_opens_this_shells_menu(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange: a shell session behind the tool, and a gateway that stopped on a question
+    choice = PromptChoice(
+        title="Approve schedule_ci_repair_loop?",
+        questions=(PromptQuestion("Approve schedule_ci_repair_loop?", ("Approve", "Deny")),),
+        custom_answer=False,
+        note="Starts a background worker.",
+    )
+    app = _App([PromptRecord(_ID, "needs_input", question="Approve?", choice=choice)])
+    _signed_in_with(monkeypatch, app)
+    session = SessionCore()
+
+    # Act
+    out = ask_hosted_gateway(prompt="schedule the loop", context=_tool_context(session, ""))
+
+    # Assert: the question is parked as the shell's own menu, with the approval details
+    parked = session.pending_user_choice
+    assert out["state"] == "needs_input" and "The menu opens now" in out["response_text"]
+    assert parked is not None and parked.options == ("Approve", "Deny")
+    assert parked.note == "Starts a background worker." and parked.custom_answer is False
+    assert parked.interaction_id == f"hosted_prompt:{_ID}"
+    assert out["choice"]["note"] == "Starts a background worker."
+
+
+def test_the_answer_comes_from_the_users_selection_never_from_the_model(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange: the same asked prompt, read twice: once in a turn the user answered, once not
+    question = PromptQuestion("Which branch?", ("main", "release"))
+    asked = PromptRecord(
+        _ID,
+        "needs_input",
+        question="Which branch?",
+        choice=PromptChoice("Which branch?", (question,)),
+    )
+    follow_up = PromptRecord("p_" + "b" * 32, "done", answer="Loop scheduled on release.")
+    app = _App([asked, asked, follow_up])
+    _signed_in_with(monkeypatch, app)
+    answered_turn = format_ask_user_answers(
+        (AskUserQuestion(label="", title="Which branch?", options=("main", "release")),),
+        ("release",),
+    )
+
+    # Act
+    unanswered = ask_hosted_gateway(prompt_id=_ID, context=_tool_context(SessionCore(), ""))
+    sent_without_a_pick = list(app.answered)
+    answered = ask_hosted_gateway(
+        prompt_id=_ID, context=_tool_context(SessionCore(), answered_turn)
+    )
+
+    # Assert: nothing is sent until the shell's own message carries the user's pick
+    assert unanswered["state"] == "needs_input" and sent_without_a_pick == []
+    assert answered["state"] == "done" and app.answered == [(_ID, "release")]
+
+
+def test_several_questions_go_back_as_one_json_object_keyed_by_title(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     # Arrange
-    app = _App([PromptRecord(_ID, "needs_input", question="Which branch?\nOptions: main, release")])
+    questions = (
+        PromptQuestion("Scope?", ("a", "b")),
+        PromptQuestion("Window?", ("1h", "24h")),
+    )
+    asked = PromptRecord(
+        _ID, "needs_input", question="Setup", choice=PromptChoice("Setup", questions)
+    )
+    app = _App([asked, PromptRecord("p_" + "c" * 32, "done", answer="ok")])
     _signed_in_with(monkeypatch, app)
+    turn = format_ask_user_answers(
+        (
+            AskUserQuestion(label="", title="Scope?", options=("a", "b")),
+            AskUserQuestion(label="", title="Window?", options=("1h", "24h")),
+        ),
+        ("b", "24h"),
+    )
 
     # Act
-    out = ask_hosted_gateway(prompt="fix ci")
+    ask_hosted_gateway(prompt_id=_ID, context=_tool_context(SessionCore(), turn))
 
     # Assert
-    assert out["success"] is True and out["state"] == "needs_input"
-    assert "stopped to ask: Which branch?" in out["response_text"]
-    assert f"prompt_id={_ID} and answer" in out["response_text"]
+    assert app.answered == [(_ID, json.dumps({"Scope?": "b", "Window?": "24h"}))]
 
 
 def test_reading_an_earlier_prompt_sends_nothing_new(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -212,7 +293,8 @@ def test_the_tool_is_external_takes_no_identifier_and_refuses_an_empty_request()
 
     # Assert
     assert tool.side_effect_level == "external"
-    assert set(tool.input_schema["properties"]) == {"prompt", "context", "prompt_id", "answer"}
+    assert set(tool.input_schema["properties"]) == {"prompt", "facts", "prompt_id"}
+    assert tool.accepts_runtime_context is True
     assert out["success"] is False and "Give the hosted gateway a prompt" in out["response_text"]
 
 
@@ -311,21 +393,3 @@ def test_a_needs_input_record_carries_the_structured_choice() -> None:
         ),
         custom_answer=False,
     )
-
-
-def test_the_tool_sends_an_answer_only_with_the_prompt_it_answers(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    # Arrange
-    follow_up = "p_" + "b" * 32
-    app = _App([PromptRecord(follow_up, "done", answer="Loop scheduled: task 12.")])
-    _signed_in_with(monkeypatch, app)
-
-    # Act
-    without_id = ask_hosted_gateway(prompt="x", answer="Approve")
-    out = ask_hosted_gateway(prompt_id=_ID, answer="Approve")
-
-    # Assert
-    assert without_id["success"] is False and "prompt_id" in without_id["response_text"]
-    assert app.answered == [(_ID, "Approve")] and app.sent == []
-    assert out["state"] == "done" and out["prompt_id"] == follow_up

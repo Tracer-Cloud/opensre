@@ -51,7 +51,7 @@ def test_a_settled_result_is_forgotten_after_the_retention_window() -> None:
     clock.now += 61.0
     view_after = queue.get(job.id)
 
-    # Assert
+    # Assert: the record is gone for callers and handed to whoever retires its session
     assert view_before is not None and view_before.view() == {
         "prompt_id": job.id,
         "state": "done",
@@ -59,6 +59,7 @@ def test_a_settled_result_is_forgotten_after_the_retention_window() -> None:
         "finished_at": 1_000.0,
     }
     assert view_after is None
+    assert queue.take_forgotten() == [job] and queue.take_forgotten() == []
 
 
 def test_the_view_shows_only_the_field_for_its_state() -> None:

@@ -30,9 +30,10 @@ from infrastructure.turn_host.unattended_session import (
     AnswerRejected,
     UnattendedSessions,
     answer_pending_choice,
+    approval_grant,
     approval_question,
-    approved_tool,
     choice_view,
+    invocation_key,
 )
 from tools.registry import integration_of_tool
 
@@ -84,7 +85,7 @@ class PromptWorker:
         self._runner = runner
         self._logger = logger
         self._sessions = sessions or UnattendedSessions()
-        #: Tools the caller approved, per session, so the resumed turn may run them.
+        #: Exact invocations the caller approved, per session; each grant is used once.
         self._approved: dict[str, set[str]] = {}
         #: The question each session stopped on, until its answer resumes the session.
         self._asked: dict[str, Any] = {}
@@ -99,6 +100,8 @@ class PromptWorker:
         self._stop.set()
         self._thread.join(timeout=timeout_seconds)
         ended = not self._thread.is_alive()
+        for session_id in list(self._asked):
+            self._forget(session_id)
         return ended
 
     def run_one(self, job: PromptJob) -> None:
@@ -114,6 +117,13 @@ class PromptWorker:
             job = self._queue.take(timeout_seconds=_POLL_SECONDS)
             if job is not None:
                 self.run_one(job)
+            self.retire_forgotten()
+
+    def retire_forgotten(self) -> None:
+        """Release the sessions of prompts the queue dropped while they waited for an answer."""
+        for forgotten in self._queue.take_forgotten():
+            if forgotten.session_id in self._asked:
+                self._forget(forgotten.session_id)
 
     def _run_job(self, job: PromptJob) -> None:
         if job.parent_id:
@@ -168,7 +178,7 @@ class PromptWorker:
     def _answer_text(self, job: PromptJob, session: SessionCore) -> str | None:
         """The resumed turn's user message; ``None`` after settling an answer that did not fit."""
         pending = session.pending_user_choice
-        granted = approved_tool(pending, job.prompt)
+        granted = approval_grant(pending, job.prompt)
         try:
             text = answer_pending_choice(session, job.prompt)
         except AnswerRejected:
@@ -181,7 +191,7 @@ class PromptWorker:
         return text
 
     def _forget(self, session_id: str) -> None:
-        """The session is settled for good: release the pooled agent and the approvals."""
+        """The session is done with: release the pooled agent, the question and the grants."""
         self._approved.pop(session_id, None)
         self._asked.pop(session_id, None)
         self._runner.drop_session(session_id)
@@ -196,15 +206,22 @@ class _Approvals:
 
     def before_tool_call(self, request: ToolExecutionRequest) -> BeforeToolCallResult | None:
         tool = request.tool
+        if not bool(getattr(tool, "requires_approval", False)):
+            return None
         name = request.tool_call.name
-        if not bool(getattr(tool, "requires_approval", False)) or name in self._approved:
+        key = invocation_key(name, request.arguments)
+        if key in self._approved:
+            # One grant covers exactly this call, once.
+            self._approved.discard(key)
             return None
         if self._session.pending_user_choice is not None:
-            return BeforeToolCallResult(blocked=True, reason=_ALREADY_WAITING)
+            return BeforeToolCallResult(blocked=True, terminate=True, reason=_ALREADY_WAITING)
         reason = str(getattr(tool, "approval_reason", "") or "")
         preview = arguments_preview(request.arguments)
-        self._session.pending_user_choice = approval_question(name, reason, preview)
-        return BeforeToolCallResult(blocked=True, reason=_APPROVAL_BLOCKED)
+        self._session.pending_user_choice = approval_question(
+            name, request.arguments, reason, preview
+        )
+        return BeforeToolCallResult(blocked=True, terminate=True, reason=_APPROVAL_BLOCKED)
 
 
 class _IntegrationFailures:
@@ -272,6 +289,9 @@ def _render_prompt(job: PromptJob) -> str:
 def _question_text(pending: Any) -> str:
     """The pending choice as plain text: the header, then each question with its options."""
     lines = [str(getattr(pending, "title", "") or "The agent needs an answer.")]
+    note = str(getattr(pending, "note", "") or "")
+    if note:
+        lines.append(note)
     questions = getattr(pending, "questions", ()) or ()
     options = getattr(pending, "options", ()) or ()
     if questions:

@@ -12,8 +12,10 @@ from core.agent_harness.spi.handoff import AskUserQuestion, question_key
 from infrastructure.turn_host.unattended_session import (
     AnswerRejected,
     answer_pending_choice,
+    approval_grant,
     approval_question,
-    approved_tool,
+    choice_view,
+    invocation_key,
 )
 
 
@@ -54,21 +56,39 @@ def test_several_questions_take_a_json_object_keyed_by_title_or_position() -> No
         ),
     )
 
+    strict = SessionCore()
+    strict.pending_user_choice = PendingUserChoice(
+        title="Setup",
+        options=("a", "b"),
+        questions=(AskUserQuestion(label="s", title="Scope?", options=("a", "b")),) * 2,
+        custom_answer=False,
+    )
+
     # Act
     text = answer_pending_choice(session, json.dumps({"Scope?": "b", "2": "24h"}))
+    with pytest.raises(AnswerRejected):
+        answer_pending_choice(strict, json.dumps({"1": "zzz", "2": "a"}))
 
-    # Assert
+    # Assert: positions and titles both address a question; free text obeys the choice's policy
     assert '"b"' in text and '"24h"' in text and "2. Window?" in text
 
 
-def test_an_approval_question_grants_the_tool_only_on_approve() -> None:
+def test_an_approval_question_grants_exactly_the_previewed_call_and_only_on_approve() -> None:
     # Arrange
-    pending = approval_question("schedule_ci_repair_loop", "Starts a worker.", '{"repo": "r"}')
+    arguments = {"repo": "r", "pr_number": 7}
+    pending = approval_question(
+        "schedule_ci_repair_loop", arguments, "Starts a worker.", '{"repo": "r"}'
+    )
     plain = PendingUserChoice(title="Which branch?", options=("main",))
 
-    # Act / Assert
+    # Act
+    granted = approval_grant(pending, "approve")
+    view = choice_view(pending)
+
+    # Assert: the grant names the tool and its exact arguments; the details reach the caller
+    assert granted == invocation_key("schedule_ci_repair_loop", arguments)
+    assert granted != invocation_key("schedule_ci_repair_loop", {"repo": "r", "pr_number": 8})
     assert pending.options == ("Approve", "Deny") and pending.custom_answer is False
-    assert "Starts a worker." in pending.note and '{"repo": "r"}' in pending.note
-    assert approved_tool(pending, "approve") == "schedule_ci_repair_loop"
-    assert approved_tool(pending, "Deny") is None
-    assert approved_tool(plain, "Approve") is None
+    assert view["note"] == 'Starts a worker.\n{"repo": "r"}'
+    assert approval_grant(pending, "Deny") is None
+    assert approval_grant(plain, "Approve") is None

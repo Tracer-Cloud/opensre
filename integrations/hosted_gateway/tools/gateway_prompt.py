@@ -1,7 +1,12 @@
-"""Tool: send one prompt to the organization's hosted gateway and wait for its answer."""
+"""Tool: send one prompt to the organization's hosted gateway and wait for its answer.
+
+When the gateway stops to ask, the question is parked on this shell's own menu and the
+user's selection, never a model argument, is what goes back as the answer.
+"""
 
 from __future__ import annotations
 
+import json
 import time
 from typing import Any
 
@@ -10,12 +15,20 @@ from config.constants.hosted_gateway import (
     HOSTED_GATEWAY_PROMPT_POLL_SECONDS,
     HOSTED_GATEWAY_PROMPT_WAIT_SECONDS,
 )
+from core.agent_harness.spi.handoff import AskUserQuestion, parse_ask_user_answers, question_key
+from core.agent_harness.spi.session_state import (
+    PendingUserChoice,
+    session_terminal,
+    set_auto_command,
+)
+from core.agent_harness.tools import ActionToolScope, action_context_from_agent_context
 from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from integrations.hosted_gateway.client import (
     HostedGatewayClient,
     HostedGatewayError,
+    PromptChoice,
     PromptRecord,
 )
 from integrations.hosted_gateway.tools.results import (
@@ -26,15 +39,21 @@ from integrations.hosted_gateway.tools.results import (
 
 TOOL_NAME = "ask_hosted_gateway"
 _COMPONENT = "integrations.hosted_gateway.tools.gateway_prompt.ask_hosted_gateway"
+_CHOOSE_COMMAND = "/choose"
+_HOSTED_PROMPT_INTERACTION_PREFIX = "hosted_prompt:"
 
 _STATE_TEXT = {
-    "needs_input": (
-        "The hosted gateway stopped to ask: {question}\nAsk the user with ask_user_choice "
-        "(same question, same options), then call ask_hosted_gateway again with "
-        "prompt_id={prompt_id} and answer set to their choice."
-    ),
     "failed": "The hosted gateway could not run that prompt ({error}).",
 }
+_ASKING_IN_SHELL = (
+    "The hosted gateway stopped to ask: {question}\nThe menu opens now. Once the user has "
+    "answered, call ask_hosted_gateway again with prompt_id={prompt_id}; their selection is "
+    "sent as the answer."
+)
+_ASKING_WITHOUT_SHELL = (
+    "The hosted gateway stopped to ask: {question}\nAnswer it from the interactive shell "
+    "(`opensre`) by asking about prompt {prompt_id} there."
+)
 _STILL_RUNNING = (
     "The hosted gateway is still working on prompt {prompt_id} after "
     "{waited} seconds. Ask again later with that id to read the result."
@@ -55,18 +74,19 @@ _FAILED_INTEGRATIONS = (
         "Send one prompt to the OpenSRE hosted gateway of the signed-in user's organization "
         "(the managed Fargate container that runs CI/CD repair loops remotely) and return its "
         "answer. The gateway runs the prompt unattended, so put every fact it needs into the "
-        "prompt or the context (repository, branch, task name). When it still needs a "
-        "decision, or a tool there needs approval, the result is needs_input with the "
-        "question: ask the user, then call this tool again with prompt_id and answer. Use it "
-        "to run or check work there, for example whether a scheduled CI repair task is "
-        "running. The OpenSRE app finds the gateway from the signed-in account; no "
-        "organization or gateway id is passed. Organization admins only."
+        "prompt or the facts (repository, branch, task name). When it still needs a decision, "
+        "or a tool there needs approval, the result is needs_input and the question opens as "
+        "a menu in this shell; after the user answers, call this tool again with the same "
+        "prompt_id and their selection is sent. Use it to run or check work there, for "
+        "example whether a scheduled CI repair task is running. The OpenSRE app finds the "
+        "gateway from the signed-in account; no organization or gateway id is passed. "
+        "Organization admins only."
     ),
     use_cases=[
         "Ask the hosted gateway which scheduled tasks it runs and whether the CI repair loop is active",
         "Ask the hosted gateway for the state of a repair it ran remotely",
         "Read the result of an earlier hosted gateway prompt by its prompt id",
-        "Answer a question the hosted gateway asked, or approve a tool it wants to run",
+        "Continue a hosted gateway prompt after the user answered its question in the menu",
     ],
     anti_examples=[
         "Questions this machine can answer locally (use the local tools)",
@@ -75,6 +95,7 @@ _FAILED_INTEGRATIONS = (
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.EXTERNAL,
     is_available=hosted_gateway_available,
+    accepts_runtime_context=True,
     input_schema={
         "type": "object",
         "properties": {
@@ -82,10 +103,10 @@ _FAILED_INTEGRATIONS = (
                 "type": "string",
                 "description": (
                     "The complete request for the remote gateway, with every fact it needs; "
-                    "it cannot ask follow-up questions."
+                    "it cannot ask follow-up questions in the same turn."
                 ),
             },
-            "context": {
+            "facts": {
                 "type": "object",
                 "description": (
                     "Facts resolved here so the gateway has nothing to ask, as short strings: "
@@ -95,13 +116,10 @@ _FAILED_INTEGRATIONS = (
             },
             "prompt_id": {
                 "type": "string",
-                "description": "Read the result of an earlier prompt instead of sending a new one.",
-            },
-            "answer": {
-                "type": "string",
                 "description": (
-                    "With prompt_id: the user's answer to the question that prompt stopped "
-                    "on (an option label or number; Approve or Deny for an approval)."
+                    "Read the result of an earlier prompt instead of sending a new one. When "
+                    "the user has just answered that prompt's question in the menu, their "
+                    "selection is sent along."
                 ),
             },
         },
@@ -113,46 +131,71 @@ _FAILED_INTEGRATIONS = (
         "state": "queued, running, done, needs_input or failed",
         "answer": "The gateway's answer when the state is done",
         "question": "What the gateway asked when the state is needs_input",
-        "choice": "The question as menu data (title, questions with options) when needs_input",
+        "choice": "The question as menu data (title, note, questions with options) when needs_input",
         "failed_integrations": "Integrations whose tools failed on the gateway, e.g. github",
         "response_text": "Plain-language result for the user",
     },
 )
 def ask_hosted_gateway(
     prompt: str = "",
-    context: dict[str, str] | None = None,
+    facts: dict[str, str] | None = None,
     prompt_id: str = "",
-    answer: str = "",
+    context: Any = None,
 ) -> dict[str, Any]:
-    """Submit the prompt, answer or look an earlier one up, then wait for the gateway to settle."""
+    """Submit the prompt or continue an earlier one, then wait for the gateway to settle."""
     if not prompt.strip() and not prompt_id.strip():
         return _refusal("Give the hosted gateway a prompt, or a prompt id to read.")
-    if answer.strip() and not prompt_id.strip():
-        return _refusal("An answer needs the prompt_id of the question it answers.")
+    scope = _shell_scope(context)
     try:
         with HostedGatewayClient.from_account() as client:
-            record = _submit_or_lookup(
-                client, prompt.strip(), dict(context or {}), prompt_id.strip(), answer.strip()
+            record = _submit_or_continue(
+                client, prompt.strip(), dict(facts or {}), prompt_id.strip(), scope
             )
             record, waited = _wait_until_settled(client, record)
             integrations_url = f"{client.app_url}{HOSTED_GATEWAY_INTEGRATIONS_PATH}"
     except HostedGatewayError as exc:
         return failure_output(exc, tool_name=TOOL_NAME, component=_COMPONENT)
-    return _outcome(record, waited, integrations_url)
+    return _outcome(record, waited, integrations_url, scope)
 
 
-def _submit_or_lookup(
+def _submit_or_continue(
     client: HostedGatewayClient,
     prompt: str,
-    context: dict[str, str],
+    facts: dict[str, str],
     prompt_id: str,
-    answer: str,
+    scope: ActionToolScope | None,
 ) -> PromptRecord:
-    if prompt_id and answer:
-        return client.answer_prompt(prompt_id, answer)
-    if prompt_id:
-        return client.prompt_result(prompt_id)
-    return client.send_prompt(prompt, context=context)
+    """Send a new prompt, or read an earlier one and pass the user's answer on if they gave one."""
+    if not prompt_id:
+        return client.send_prompt(prompt, context=facts)
+    record = client.prompt_result(prompt_id)
+    if record.state != "needs_input" or record.choice is None:
+        return record
+    answer = _answer_from_turn(scope, record.choice)
+    if answer is None:
+        return record
+    return client.answer_prompt(prompt_id, answer)
+
+
+def _answer_from_turn(scope: ActionToolScope | None, choice: PromptChoice) -> str | None:
+    """The user's selections for the gateway's questions, taken from this turn's message.
+
+    The shell writes that message from the menu the user answered, so the model cannot
+    supply an answer of its own. ``None`` until every question has a selection.
+    """
+    if scope is None:
+        return None
+    message = getattr(scope, "turn_user_message", "") or ""
+    given = {question_key(asked): answer for asked, answer in parse_ask_user_answers(message)}
+    answers: dict[str, str] = {}
+    for question in choice.questions:
+        answer = given.get(question_key(question.title))
+        if answer is None:
+            return None
+        answers[question.title] = answer
+    if len(answers) == 1:
+        return next(iter(answers.values()))
+    return json.dumps(answers, ensure_ascii=False)
 
 
 def _wait_until_settled(
@@ -170,13 +213,15 @@ def _wait_until_settled(
     return current, time.monotonic() - started
 
 
-def _outcome(record: PromptRecord, waited: float, integrations_url: str) -> dict[str, Any]:
+def _outcome(
+    record: PromptRecord, waited: float, integrations_url: str, scope: ActionToolScope | None
+) -> dict[str, Any]:
     if record.state == "done":
         text = record.answer
+    elif record.state == "needs_input":
+        text = _ask_here(record, scope)
     elif record.state in _STATE_TEXT:
-        text = _STATE_TEXT[record.state].format(
-            question=record.question, error=record.error, prompt_id=record.prompt_id
-        )
+        text = _STATE_TEXT[record.state].format(error=record.error)
     else:
         text = _STILL_RUNNING.format(prompt_id=record.prompt_id, waited=int(waited))
     if record.failed_integrations:
@@ -194,6 +239,45 @@ def _outcome(record: PromptRecord, waited: float, integrations_url: str) -> dict
     }
 
 
+def _ask_here(record: PromptRecord, scope: ActionToolScope | None) -> str:
+    """Park the gateway's question on this shell's menu so the user answers it, not the model."""
+    session = getattr(scope, "session", None)
+    if record.choice is None or session is None:
+        return _ASKING_WITHOUT_SHELL.format(question=record.question, prompt_id=record.prompt_id)
+    session.pending_user_choice = _local_choice(record.prompt_id, record.choice)
+    set_auto_command(session, _CHOOSE_COMMAND)
+    terminal = session_terminal(session)
+    if terminal is not None:
+        terminal.awaiting_handoff_answer = True
+    return _ASKING_IN_SHELL.format(question=record.question, prompt_id=record.prompt_id)
+
+
+def _local_choice(prompt_id: str, choice: PromptChoice) -> PendingUserChoice:
+    questions = tuple(
+        AskUserQuestion(label="", title=q.title, options=q.options, multi_select=q.multi_select)
+        for q in choice.questions
+    )
+    first = questions[0] if questions else None
+    return PendingUserChoice(
+        title=choice.title,
+        options=first.options if first is not None else (),
+        questions=questions if len(questions) > 1 else (),
+        multi_select=first.multi_select if first is not None else False,
+        note=choice.note,
+        custom_answer=choice.custom_answer,
+        interaction_id=f"{_HOSTED_PROMPT_INTERACTION_PREFIX}{prompt_id}",
+    )
+
+
+def _shell_scope(context: Any) -> ActionToolScope | None:
+    if context is None:
+        return None
+    try:
+        return action_context_from_agent_context(context)
+    except RuntimeError:
+        return None
+
+
 def _choice_data(record: PromptRecord) -> dict[str, Any] | None:
     if record.choice is None:
         return None
@@ -203,6 +287,7 @@ def _choice_data(record: PromptRecord) -> dict[str, Any] | None:
     ]
     return {
         "title": record.choice.title,
+        "note": record.choice.note,
         "questions": questions,
         "custom_answer": record.choice.custom_answer,
     }

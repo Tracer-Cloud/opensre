@@ -99,6 +99,8 @@ class PromptQueue:
         self._clock = clock
         self._pending: deque[PromptJob] = deque()
         self._jobs: dict[str, PromptJob] = {}
+        #: Settled jobs dropped by retention, kept until the worker retires their sessions.
+        self._forgotten: deque[PromptJob] = deque()
         self._lock = threading.Lock()
         self._available = threading.Condition(self._lock)
 
@@ -203,6 +205,14 @@ class PromptQueue:
             job, PromptState.FAILED, error_code=error_code, failed_integrations=failed_integrations
         )
 
+    def take_forgotten(self) -> list[PromptJob]:
+        """Jobs dropped by retention since the last call, so their sessions can be retired."""
+        with self._lock:
+            self._forget_expired()
+            forgotten = list(self._forgotten)
+            self._forgotten.clear()
+            return forgotten
+
     def queued_count(self) -> int:
         with self._lock:
             return len(self._pending)
@@ -236,7 +246,7 @@ class PromptQueue:
             if job.settled and job.finished_at is not None and job.finished_at < cutoff
         ]
         for job_id in expired:
-            del self._jobs[job_id]
+            self._forgotten.append(self._jobs.pop(job_id))
 
 
 __all__ = [

@@ -114,6 +114,8 @@ class PromptChoice:
     title: str
     questions: tuple[PromptQuestion, ...]
     custom_answer: bool = True
+    #: What is being decided: an approval's reason and redacted arguments, for example.
+    note: str = ""
 
 
 @dataclass(frozen=True)
@@ -333,6 +335,7 @@ def _choice(value: object) -> PromptChoice | None:
         title=title,
         questions=tuple(questions),
         custom_answer=value.get("custom_answer") is not False,
+        note=_text(value.get("note")),
     )
 
 

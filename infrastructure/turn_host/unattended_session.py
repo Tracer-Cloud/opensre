@@ -6,7 +6,9 @@ later, and the same session resumes with that answer as its next message.
 
 from __future__ import annotations
 
+import hashlib
 import json
+from collections.abc import Mapping
 from typing import Any
 
 from core.agent_harness import SessionCore, SessionManager
@@ -25,7 +27,8 @@ UNATTENDED_DISABLED_CAPABILITIES = (
 
 APPROVE_OPTION = "Approve"
 DENY_OPTION = "Deny"
-#: Interaction id prefix that marks a pending choice as an approval request for one tool.
+#: Interaction id prefix that marks a pending choice as an approval request for one
+#: exact tool invocation (name plus a digest of its arguments).
 _APPROVAL_INTERACTION_PREFIX = "approval:"
 
 
@@ -60,20 +63,30 @@ def restrict_to_unattended(session: SessionCore) -> None:
     session.available_capabilities["ask_user_choice"] = ("deferred",)
 
 
-def approval_question(tool_name: str, reason: str, arguments_preview: str) -> PendingUserChoice:
-    """The Approve/Deny choice that stands in for a chat approval button."""
+def invocation_key(tool_name: str, arguments: Mapping[str, Any]) -> str:
+    """Names one exact tool call: the tool plus a digest of its arguments."""
+    canonical = json.dumps(arguments, sort_keys=True, default=str, ensure_ascii=False)
+    digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    return f"{tool_name}:{digest}"
+
+
+def approval_question(
+    tool_name: str, arguments: Mapping[str, Any], reason: str, arguments_preview: str
+) -> PendingUserChoice:
+    """The Approve/Deny choice that stands in for a chat approval button, for one call."""
     details = [part for part in (reason.strip(), arguments_preview.strip()) if part]
+    key = invocation_key(tool_name, arguments)
     return PendingUserChoice(
         title=f"Approve {tool_name}?",
         options=(APPROVE_OPTION, DENY_OPTION),
         note="\n".join(details),
         custom_answer=False,
-        interaction_id=f"{_APPROVAL_INTERACTION_PREFIX}{tool_name}",
+        interaction_id=f"{_APPROVAL_INTERACTION_PREFIX}{key}",
     )
 
 
-def approved_tool(pending: PendingUserChoice | None, answer: str) -> str | None:
-    """The tool an Approve answer grants when ``pending`` is an approval question."""
+def approval_grant(pending: PendingUserChoice | None, answer: str) -> str | None:
+    """The invocation key an Approve answer grants when ``pending`` is an approval question."""
     if pending is None or not pending.interaction_id.startswith(_APPROVAL_INTERACTION_PREFIX):
         return None
     if answer.strip().lower() != APPROVE_OPTION.lower():
@@ -93,6 +106,7 @@ def choice_view(pending: PendingUserChoice) -> dict[str, Any]:
     ]
     return {
         "title": pending.title,
+        "note": pending.note,
         "questions": questions,
         "custom_answer": pending.custom_answer,
     }
@@ -114,7 +128,7 @@ def answer_pending_choice(session: SessionCore, answer: str) -> str:
     if len(questions) == 1:
         answers = (_selected_answer(questions[0], answer, allow_custom=pending.custom_answer),)
     else:
-        answers = _batch_answers(questions, answer)
+        answers = _batch_answers(questions, answer, allow_custom=pending.custom_answer)
     session.pending_user_choice = None
     session.questions_already_answered.update(
         question_key(question.title) for question in questions
@@ -122,7 +136,9 @@ def answer_pending_choice(session: SessionCore, answer: str) -> str:
     return format_ask_user_answers(questions, answers)
 
 
-def _batch_answers(questions: tuple[AskUserQuestion, ...], answer: str) -> tuple[str, ...]:
+def _batch_answers(
+    questions: tuple[AskUserQuestion, ...], answer: str, *, allow_custom: bool
+) -> tuple[str, ...]:
     try:
         supplied = json.loads(answer)
     except json.JSONDecodeError as exc:
@@ -135,7 +151,7 @@ def _batch_answers(questions: tuple[AskUserQuestion, ...], answer: str) -> tuple
         value = next((supplied[key] for key in candidates if key in supplied), None)
         if value is None:
             raise AnswerRejected(f"Missing answer for {question.title!r}.")
-        values.append(_selected_answer(question, str(value), allow_custom=True))
+        values.append(_selected_answer(question, str(value), allow_custom=allow_custom))
     return tuple(values)
 
 
@@ -173,8 +189,9 @@ __all__ = [
     "AnswerRejected",
     "UnattendedSessions",
     "answer_pending_choice",
+    "approval_grant",
     "approval_question",
-    "approved_tool",
     "choice_view",
+    "invocation_key",
     "restrict_to_unattended",
 ]
