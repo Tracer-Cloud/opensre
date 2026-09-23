@@ -2,7 +2,15 @@
 
 from __future__ import annotations
 
-from gateway.core.prompt_intake import PromptQueue, PromptState
+import pytest
+
+from gateway.core.prompt_intake import (
+    ALREADY_ANSWERED,
+    NOT_WAITING,
+    AnswerRefused,
+    PromptQueue,
+    PromptState,
+)
 
 
 class _Clock:
@@ -69,3 +77,51 @@ def test_the_view_shows_only_the_field_for_its_state() -> None:
         asked.view()["question"] == "Which branch? (main, release)" and "answer" not in asked.view()
     )
     assert failed.view()["error"] == "turn_failed" and "answer" not in failed.view()
+
+
+def test_an_answer_becomes_a_follow_up_on_the_parents_session_and_only_once() -> None:
+    # Arrange: a prompt that stopped to ask
+    queue = PromptQueue(clock=_Clock())
+    parent = queue.submit("fix ci", context={}, actor="a")
+    assert parent is not None
+    queue.take(timeout_seconds=0.01)
+    parent.session_id = "s-1"
+    queue.needs_input(parent, "Which branch?", choice={"title": "Which branch?"})
+
+    # Act
+    follow_up = queue.answer(parent, "main")
+    with pytest.raises(AnswerRefused) as second:
+        queue.answer(parent, "release")
+
+    # Assert: the follow-up carries the answer on the same session; the parent is answered once
+    assert follow_up is not None
+    assert (follow_up.prompt, follow_up.session_id, follow_up.parent_id) == (
+        "main",
+        "s-1",
+        parent.id,
+    )
+    assert follow_up.actor == "a" and follow_up.state is PromptState.QUEUED
+    assert parent.answered_by == follow_up.id
+    assert second.value.code == ALREADY_ANSWERED
+    assert queue.take(timeout_seconds=0.01) is follow_up
+
+
+def test_a_prompt_that_is_not_asking_refuses_an_answer_and_a_reopened_one_takes_another() -> None:
+    # Arrange
+    queue = PromptQueue(clock=_Clock())
+    done = queue.submit("a", context={}, actor="a")
+    asked = queue.submit("b", context={}, actor="a")
+    assert done is not None and asked is not None
+    queue.finish(done, "answered")
+    queue.needs_input(asked, "Which?")
+    first = queue.answer(asked, "1")
+
+    # Act
+    with pytest.raises(AnswerRefused) as refused:
+        queue.answer(done, "1")
+    queue.reopen(asked.id)
+    second = queue.answer(asked, "2")
+
+    # Assert
+    assert refused.value.code == NOT_WAITING
+    assert first is not None and second is not None and second.id != first.id

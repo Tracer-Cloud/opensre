@@ -1,4 +1,8 @@
-"""Runs queued remote prompts one at a time through the gateway's turn runner."""
+"""Runs queued remote prompts one at a time through the gateway's turn runner.
+
+A turn that needs the caller (a question, or a tool that requires approval) ends as
+``needs_input``; the answer comes back as a follow-up job that resumes the session.
+"""
 
 from __future__ import annotations
 
@@ -11,17 +15,40 @@ from config.constants.organization import organization_id
 from config.principal import Actor, Principal, StorageScope
 from config.scope_context import bound_storage_scope
 from core.agent_harness import SessionCore, TurnResult
-from core.tool import ToolExecutionHooks, ToolExecutionRequest, ToolExecutionResult
+from core.tool import (
+    BeforeToolCallResult,
+    ToolExecutionHooks,
+    ToolExecutionRequest,
+    ToolExecutionResult,
+)
 from gateway.core.billing.turn_metering import bound_turn_metering
+from gateway.core.middleware.approvals import arguments_preview
 from gateway.core.prompt_intake.jobs import PromptJob, PromptQueue
 from gateway.core.prompt_intake.output import CollectingTurnOutput
 from infrastructure.analytics.usage_context import UsageSurface, bound_usage_context
-from infrastructure.turn_host.unattended_session import UnattendedSessions
+from infrastructure.turn_host.unattended_session import (
+    AnswerRejected,
+    UnattendedSessions,
+    answer_pending_choice,
+    approval_question,
+    approved_tool,
+    choice_view,
+)
 from tools.registry import integration_of_tool
 
 ERROR_CREDITS_DENIED = "credits_denied"
 ERROR_NOT_ADMITTED = "not_admitted"
 ERROR_TURN_FAILED = "turn_failed"
+ERROR_INVALID_ANSWER = "invalid_answer"
+
+_APPROVAL_BLOCKED = (
+    "This tool needs the user's approval. The turn ends now and resumes with their "
+    "decision: do not retry it and do not call other tools; say in one sentence what "
+    "you wanted to do and why."
+)
+_ALREADY_WAITING = (
+    "The user is already being asked something; end the turn now and wait for the answer."
+)
 
 _POLL_SECONDS = 1.0
 
@@ -37,6 +64,9 @@ class PromptTurnRunner(Protocol):
         logger: logging.Logger,
     ) -> TurnResult | None:
         """Run one turn and return its result, or ``None`` when a gate refused it."""
+
+    def drop_session(self, session_id: str) -> None:
+        """Release what the runner pooled for ``session_id``."""
 
 
 class PromptWorker:
@@ -54,6 +84,10 @@ class PromptWorker:
         self._runner = runner
         self._logger = logger
         self._sessions = sessions or UnattendedSessions()
+        #: Tools the caller approved, per session, so the resumed turn may run them.
+        self._approved: dict[str, set[str]] = {}
+        #: The question each session stopped on, until its answer resumes the session.
+        self._asked: dict[str, Any] = {}
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, name="opensre-prompt-worker", daemon=True)
 
@@ -82,24 +116,44 @@ class PromptWorker:
                 self.run_one(job)
 
     def _run_job(self, job: PromptJob) -> None:
-        session = self._sessions.open()
-        job.session_id = session.session_id
+        if job.parent_id:
+            session = self._sessions.resume(job.session_id)
+            session.pending_user_choice = self._asked.pop(session.session_id, None)
+            text = self._answer_text(job, session)
+            if text is None:
+                self._sessions.close(session)
+                return
+        else:
+            session = self._sessions.open()
+            job.session_id = session.session_id
+            text = _render_prompt(job)
         output = CollectingTurnOutput()
         failures = _IntegrationFailures()
-        output.tool_hooks = ToolExecutionHooks(after_tool_call=failures.after_tool_call)
+        approvals = _Approvals(session, self._approved.get(session.session_id, set()))
+        output.tool_hooks = ToolExecutionHooks(
+            before_tool_call=approvals.before_tool_call,
+            after_tool_call=failures.after_tool_call,
+        )
         denial = _Denial()
         org = organization_id()
         try:
             with _turn_context(org, job, session, denial):
-                result = self._runner.run(_render_prompt(job), session, output, self._logger)
+                result = self._runner.run(text, session, output, self._logger)
         finally:
             self._sessions.close(session)
 
         failed = failures.vendors()
         pending = getattr(session, "pending_user_choice", None)
         if pending is not None:
-            self._queue.needs_input(job, _question_text(pending), failed_integrations=failed)
+            self._asked[session.session_id] = pending
+            self._queue.needs_input(
+                job,
+                _question_text(pending),
+                choice=choice_view(pending),
+                failed_integrations=failed,
+            )
             return
+        self._forget(session.session_id)
         if denial.credits_denied:
             self._queue.fail(job, ERROR_CREDITS_DENIED, failed_integrations=failed)
             return
@@ -110,6 +164,47 @@ class PromptWorker:
             self._queue.fail(job, ERROR_TURN_FAILED, failed_integrations=failed)
             return
         self._queue.finish(job, output.answer, failed_integrations=failed)
+
+    def _answer_text(self, job: PromptJob, session: SessionCore) -> str | None:
+        """The resumed turn's user message; ``None`` after settling an answer that did not fit."""
+        pending = session.pending_user_choice
+        granted = approved_tool(pending, job.prompt)
+        try:
+            text = answer_pending_choice(session, job.prompt)
+        except AnswerRejected:
+            self._asked[session.session_id] = pending
+            self._queue.reopen(job.parent_id)
+            self._queue.fail(job, ERROR_INVALID_ANSWER)
+            return None
+        if granted is not None:
+            self._approved.setdefault(session.session_id, set()).add(granted)
+        return text
+
+    def _forget(self, session_id: str) -> None:
+        """The session is settled for good: release the pooled agent and the approvals."""
+        self._approved.pop(session_id, None)
+        self._asked.pop(session_id, None)
+        self._runner.drop_session(session_id)
+
+
+class _Approvals:
+    """Turns ``requires_approval`` into an Approve/Deny question the caller answers later."""
+
+    def __init__(self, session: SessionCore, approved: set[str]) -> None:
+        self._session = session
+        self._approved = approved
+
+    def before_tool_call(self, request: ToolExecutionRequest) -> BeforeToolCallResult | None:
+        tool = request.tool
+        name = request.tool_call.name
+        if not bool(getattr(tool, "requires_approval", False)) or name in self._approved:
+            return None
+        if self._session.pending_user_choice is not None:
+            return BeforeToolCallResult(blocked=True, reason=_ALREADY_WAITING)
+        reason = str(getattr(tool, "approval_reason", "") or "")
+        preview = arguments_preview(request.arguments)
+        self._session.pending_user_choice = approval_question(name, reason, preview)
+        return BeforeToolCallResult(blocked=True, reason=_APPROVAL_BLOCKED)
 
 
 class _IntegrationFailures:
@@ -192,6 +287,7 @@ def _question_text(pending: Any) -> str:
 
 __all__ = [
     "ERROR_CREDITS_DENIED",
+    "ERROR_INVALID_ANSWER",
     "ERROR_NOT_ADMITTED",
     "ERROR_TURN_FAILED",
     "PromptTurnRunner",

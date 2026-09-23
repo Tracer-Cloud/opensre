@@ -2,12 +2,14 @@
 
 from integrations.hosted_gateway.client import (
     ERR_ADMIN_REQUIRED,
+    ERR_ALREADY_ANSWERED,
     ERR_INSECURE_APP_URL,
     ERR_INVALID_RESPONSE,
     ERR_NOT_PROVISIONED,
     ERR_NOT_RUNNING,
     ERR_NOT_SIGNED_IN,
     ERR_NOT_SUPPORTED,
+    ERR_NOT_WAITING,
     ERR_PROMPT_TOO_LARGE,
     ERR_UNAUTHORIZED,
     ERR_UNKNOWN_PROMPT,
@@ -16,15 +18,19 @@ from integrations.hosted_gateway.client import (
     GatewayHealth,
     HostedGatewayClient,
     HostedGatewayError,
+    PromptChoice,
+    PromptQuestion,
     PromptRecord,
 )
 
 __all__ = [
     "ERR_ADMIN_REQUIRED",
+    "ERR_ALREADY_ANSWERED",
     "ERR_INSECURE_APP_URL",
     "ERR_INVALID_RESPONSE",
     "ERR_NOT_PROVISIONED",
     "ERR_NOT_RUNNING",
+    "ERR_NOT_WAITING",
     "ERR_NOT_SIGNED_IN",
     "ERR_NOT_SUPPORTED",
     "ERR_PROMPT_TOO_LARGE",
@@ -35,5 +41,7 @@ __all__ = [
     "GatewayHealth",
     "HostedGatewayClient",
     "HostedGatewayError",
+    "PromptChoice",
+    "PromptQuestion",
     "PromptRecord",
 ]

@@ -43,6 +43,9 @@ ERR_NOT_RUNNING = "not_running"
 # The prompt id names nothing the gateway still holds.
 ERR_UNKNOWN_PROMPT = "unknown_prompt"
 ERR_PROMPT_TOO_LARGE = "prompt_too_large"
+#: The prompt is not waiting for an answer, or already took one.
+ERR_NOT_WAITING = "not_waiting"
+ERR_ALREADY_ANSWERED = "already_answered"
 
 #: A prompt id as the gateway mints it; anything else never becomes part of a URL.
 _PROMPT_ID = re.compile(r"^p_[0-9a-f]{32}$")
@@ -59,6 +62,8 @@ EXPECTED_ERRORS = frozenset(
         ERR_NOT_RUNNING,
         ERR_UNKNOWN_PROMPT,
         ERR_PROMPT_TOO_LARGE,
+        ERR_NOT_WAITING,
+        ERR_ALREADY_ANSWERED,
     }
 )
 
@@ -94,6 +99,24 @@ class GatewayHealth:
 
 
 @dataclass(frozen=True)
+class PromptQuestion:
+    """One question the gateway stopped on, with the options it offered."""
+
+    title: str
+    options: tuple[str, ...]
+    multi_select: bool = False
+
+
+@dataclass(frozen=True)
+class PromptChoice:
+    """The structured question behind a ``needs_input`` record, for a real menu."""
+
+    title: str
+    questions: tuple[PromptQuestion, ...]
+    custom_answer: bool = True
+
+
+@dataclass(frozen=True)
 class PromptRecord:
     """One prompt on the organization's gateway, as the app reports it."""
 
@@ -104,6 +127,7 @@ class PromptRecord:
     error: str = ""
     #: Integrations whose tools failed on the gateway during this prompt, by vendor name.
     failed_integrations: tuple[str, ...] = ()
+    choice: PromptChoice | None = None
 
     @property
     def settled(self) -> bool:
@@ -175,6 +199,19 @@ class HostedGatewayClient:
         )
         return _prompt_record(payload)
 
+    def answer_prompt(self, prompt_id: str, answer: str) -> PromptRecord:
+        """Answer a prompt that stopped to ask; the follow-up prompt's record comes back."""
+        if not _PROMPT_ID.fullmatch(prompt_id):
+            raise HostedGatewayError(ERR_UNKNOWN_PROMPT)
+        payload = self._request(
+            "POST",
+            f"{HOSTED_GATEWAY_PROMPTS_PATH}/{prompt_id}/answer",
+            _PROMPT_ANSWER_REFUSALS,
+            body={"answer": answer},
+            body_codes=_ANSWER_BODY_CODES,
+        )
+        return _prompt_record(payload)
+
     def prompt_result(self, prompt_id: str) -> PromptRecord:
         """Read one prompt's state; ``unknown_prompt`` for an id the gateway does not hold."""
         if not _PROMPT_ID.fullmatch(prompt_id):
@@ -191,6 +228,7 @@ class HostedGatewayClient:
         refusals: dict[int, str],
         *,
         body: dict[str, Any] | None = None,
+        body_codes: frozenset[str] = frozenset(),
     ) -> dict[str, Any]:
         try:
             response = self._http.request(method, path, json=body)
@@ -198,7 +236,8 @@ class HostedGatewayClient:
             raise HostedGatewayError(ERR_UNREACHABLE) from exc
         refusal = refusals.get(response.status_code)
         if refusal is not None:
-            raise HostedGatewayError(refusal, response.status_code)
+            code = _refusal_code(response, refusal, body_codes)
+            raise HostedGatewayError(code, response.status_code)
         if not response.is_success:
             raise HostedGatewayError(f"http_{response.status_code}", response.status_code)
         try:
@@ -239,6 +278,27 @@ _PROMPT_RESULT_REFUSALS: dict[int, str] = {
     HTTPStatus.CONFLICT: ERR_NOT_RUNNING,
 }
 
+#: Answering: a 409 is the gateway not running, or the prompt not waiting; the body says which.
+_PROMPT_ANSWER_REFUSALS: dict[int, str] = {
+    **_PROMPT_RESULT_REFUSALS,
+    HTTPStatus.REQUEST_ENTITY_TOO_LARGE: ERR_PROMPT_TOO_LARGE,
+}
+_ANSWER_BODY_CODES = frozenset({ERR_NOT_RUNNING, ERR_NOT_WAITING, ERR_ALREADY_ANSWERED})
+
+
+def _refusal_code(response: httpx.Response, default: str, body_codes: frozenset[str]) -> str:
+    """The app's own error code when it is one the caller distinguishes, else ``default``."""
+    if not body_codes:
+        return default
+    try:
+        payload = response.json()
+    except ValueError:
+        return default
+    code = payload.get("error") if isinstance(payload, dict) else None
+    if isinstance(code, str) and code in body_codes:
+        return code
+    return default
+
 
 def _prompt_record(payload: dict[str, Any]) -> PromptRecord:
     prompt_id, state = payload.get("prompt_id"), payload.get("state")
@@ -251,6 +311,28 @@ def _prompt_record(payload: dict[str, Any]) -> PromptRecord:
         question=_text(payload.get("question")),
         error=_text(payload.get("error")),
         failed_integrations=_names(payload.get("failed_integrations")),
+        choice=_choice(payload.get("choice")),
+    )
+
+
+def _choice(value: object) -> PromptChoice | None:
+    if not isinstance(value, dict):
+        return None
+    title = value.get("title")
+    raw_questions = value.get("questions")
+    if not isinstance(title, str) or not isinstance(raw_questions, list):
+        return None
+    questions: list[PromptQuestion] = []
+    for item in raw_questions:
+        if not isinstance(item, dict) or not isinstance(item.get("title"), str):
+            return None
+        options = _names(item.get("options"))
+        multi = item.get("multi_select") is True
+        questions.append(PromptQuestion(title=item["title"], options=options, multi_select=multi))
+    return PromptChoice(
+        title=title,
+        questions=tuple(questions),
+        custom_answer=value.get("custom_answer") is not False,
     )
 
 

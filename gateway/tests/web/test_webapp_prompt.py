@@ -119,3 +119,36 @@ def test_without_a_gateway_the_route_says_so_instead_of_failing(
     # Assert
     assert response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
     assert response.json()["error"] == "prompt_intake_unavailable"
+
+
+def test_an_answer_is_queued_as_a_follow_up_only_while_the_prompt_is_asking(
+    queue: PromptQueue,
+) -> None:
+    # Arrange: one prompt waiting for an answer, one that is not
+    client = TestClient(webapp.app, client=_LOOPBACK)
+    asked = queue.submit("fix ci", context={}, actor="u")
+    queue.take(timeout_seconds=0.01)
+    done = queue.submit("other", context={}, actor="u")
+    queue.take(timeout_seconds=0.01)
+    assert asked is not None and done is not None
+    queue.needs_input(asked, "Which branch?", choice={"title": "Which branch?"})
+    queue.finish(done, "fine")
+
+    # Act
+    answered = client.post(f"/v1/prompt/{asked.id}/answer", json={"answer": " main "})
+    again = client.post(f"/v1/prompt/{asked.id}/answer", json={"answer": "release"})
+    not_asking = client.post(f"/v1/prompt/{done.id}/answer", json={"answer": "x"})
+    unknown = client.post("/v1/prompt/p_nope/answer", json={"answer": "x"})
+    empty = client.post(f"/v1/prompt/{asked.id}/answer", json={"answer": " "})
+
+    # Assert
+    assert answered.status_code == HTTPStatus.ACCEPTED
+    follow_up = queue.get(answered.json()["prompt_id"])
+    assert follow_up is not None and follow_up.prompt == "main" and follow_up.parent_id == asked.id
+    assert (again.status_code, again.json()["error"]) == (HTTPStatus.CONFLICT, "already_answered")
+    assert (not_asking.status_code, not_asking.json()["error"]) == (
+        HTTPStatus.CONFLICT,
+        "not_waiting",
+    )
+    assert unknown.status_code == HTTPStatus.NOT_FOUND
+    assert (empty.status_code, empty.json()["error"]) == (HTTPStatus.BAD_REQUEST, "answer_required")

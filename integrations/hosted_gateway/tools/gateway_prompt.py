@@ -29,8 +29,9 @@ _COMPONENT = "integrations.hosted_gateway.tools.gateway_prompt.ask_hosted_gatewa
 
 _STATE_TEXT = {
     "needs_input": (
-        "The hosted gateway could not finish without an answer from you. It asked: "
-        "{question}\nSend the prompt again with that decided."
+        "The hosted gateway stopped to ask: {question}\nAsk the user with ask_user_choice "
+        "(same question, same options), then call ask_hosted_gateway again with "
+        "prompt_id={prompt_id} and answer set to their choice."
     ),
     "failed": "The hosted gateway could not run that prompt ({error}).",
 }
@@ -53,16 +54,19 @@ _FAILED_INTEGRATIONS = (
     description=(
         "Send one prompt to the OpenSRE hosted gateway of the signed-in user's organization "
         "(the managed Fargate container that runs CI/CD repair loops remotely) and return its "
-        "answer. The gateway runs the prompt unattended: it cannot ask the user anything, so "
-        "put every fact it needs into the prompt or the context (repository, branch, task "
-        "name). Use it to check what runs there, for example whether a scheduled CI repair "
-        "task is running. The OpenSRE app finds the gateway from the signed-in account; no "
+        "answer. The gateway runs the prompt unattended, so put every fact it needs into the "
+        "prompt or the context (repository, branch, task name). When it still needs a "
+        "decision, or a tool there needs approval, the result is needs_input with the "
+        "question: ask the user, then call this tool again with prompt_id and answer. Use it "
+        "to run or check work there, for example whether a scheduled CI repair task is "
+        "running. The OpenSRE app finds the gateway from the signed-in account; no "
         "organization or gateway id is passed. Organization admins only."
     ),
     use_cases=[
         "Ask the hosted gateway which scheduled tasks it runs and whether the CI repair loop is active",
         "Ask the hosted gateway for the state of a repair it ran remotely",
         "Read the result of an earlier hosted gateway prompt by its prompt id",
+        "Answer a question the hosted gateway asked, or approve a tool it wants to run",
     ],
     anti_examples=[
         "Questions this machine can answer locally (use the local tools)",
@@ -93,6 +97,13 @@ _FAILED_INTEGRATIONS = (
                 "type": "string",
                 "description": "Read the result of an earlier prompt instead of sending a new one.",
             },
+            "answer": {
+                "type": "string",
+                "description": (
+                    "With prompt_id: the user's answer to the question that prompt stopped "
+                    "on (an option label or number; Approve or Deny for an approval)."
+                ),
+            },
         },
         "additionalProperties": False,
     },
@@ -101,7 +112,8 @@ _FAILED_INTEGRATIONS = (
         "prompt_id": "The prompt's id on the gateway; use it to read the result later",
         "state": "queued, running, done, needs_input or failed",
         "answer": "The gateway's answer when the state is done",
-        "question": "What the gateway would have asked when the state is needs_input",
+        "question": "What the gateway asked when the state is needs_input",
+        "choice": "The question as menu data (title, questions with options) when needs_input",
         "failed_integrations": "Integrations whose tools failed on the gateway, e.g. github",
         "response_text": "Plain-language result for the user",
     },
@@ -110,14 +122,17 @@ def ask_hosted_gateway(
     prompt: str = "",
     context: dict[str, str] | None = None,
     prompt_id: str = "",
+    answer: str = "",
 ) -> dict[str, Any]:
-    """Submit the prompt (or look an earlier one up), then wait for the gateway to settle."""
+    """Submit the prompt, answer or look an earlier one up, then wait for the gateway to settle."""
     if not prompt.strip() and not prompt_id.strip():
         return _refusal("Give the hosted gateway a prompt, or a prompt id to read.")
+    if answer.strip() and not prompt_id.strip():
+        return _refusal("An answer needs the prompt_id of the question it answers.")
     try:
         with HostedGatewayClient.from_account() as client:
             record = _submit_or_lookup(
-                client, prompt.strip(), dict(context or {}), prompt_id.strip()
+                client, prompt.strip(), dict(context or {}), prompt_id.strip(), answer.strip()
             )
             record, waited = _wait_until_settled(client, record)
             integrations_url = f"{client.app_url}{HOSTED_GATEWAY_INTEGRATIONS_PATH}"
@@ -127,8 +142,14 @@ def ask_hosted_gateway(
 
 
 def _submit_or_lookup(
-    client: HostedGatewayClient, prompt: str, context: dict[str, str], prompt_id: str
+    client: HostedGatewayClient,
+    prompt: str,
+    context: dict[str, str],
+    prompt_id: str,
+    answer: str,
 ) -> PromptRecord:
+    if prompt_id and answer:
+        return client.answer_prompt(prompt_id, answer)
     if prompt_id:
         return client.prompt_result(prompt_id)
     return client.send_prompt(prompt, context=context)
@@ -153,7 +174,9 @@ def _outcome(record: PromptRecord, waited: float, integrations_url: str) -> dict
     if record.state == "done":
         text = record.answer
     elif record.state in _STATE_TEXT:
-        text = _STATE_TEXT[record.state].format(question=record.question, error=record.error)
+        text = _STATE_TEXT[record.state].format(
+            question=record.question, error=record.error, prompt_id=record.prompt_id
+        )
     else:
         text = _STILL_RUNNING.format(prompt_id=record.prompt_id, waited=int(waited))
     if record.failed_integrations:
@@ -165,8 +188,23 @@ def _outcome(record: PromptRecord, waited: float, integrations_url: str) -> dict
         "state": record.state,
         "answer": record.answer,
         "question": record.question,
+        "choice": _choice_data(record),
         "failed_integrations": list(record.failed_integrations),
         "response_text": text,
+    }
+
+
+def _choice_data(record: PromptRecord) -> dict[str, Any] | None:
+    if record.choice is None:
+        return None
+    questions = [
+        {"title": q.title, "options": list(q.options), "multi_select": q.multi_select}
+        for q in record.choice.questions
+    ]
+    return {
+        "title": record.choice.title,
+        "questions": questions,
+        "custom_answer": record.choice.custom_answer,
     }
 
 

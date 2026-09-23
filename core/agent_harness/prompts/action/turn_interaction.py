@@ -22,6 +22,14 @@ def turn_interaction_facts_block(turn_snapshot: TurnSnapshot) -> str:
     goal_lines = "".join(f"  {line}\n" for line in brief.splitlines()) if brief else ""
     credits_lines = _hosted_credits_lines()
     surface_rules = ""
+    if surface == "gateway" and turn_snapshot.interactive_choice_available:
+        surface_rules = (
+            "This is an unattended prompt on the hosted gateway: nobody watches this "
+            "turn, and it cannot wait for a reply. When required input or a decision "
+            "is missing, call ask_user_choice once with the exact question and its "
+            "options; the turn then ends and resumes with the answer. Otherwise "
+            "finish the work in this turn.\n"
+        )
     if surface == "headless_cli":
         if turn_snapshot.interactive_choice_available:
             surface_rules = (

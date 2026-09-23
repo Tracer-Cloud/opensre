@@ -9,10 +9,13 @@ import httpx
 import pytest
 
 from integrations.hosted_gateway import (
+    ERR_ALREADY_ANSWERED,
     ERR_NOT_RUNNING,
     ERR_UNKNOWN_PROMPT,
     HostedGatewayClient,
     HostedGatewayError,
+    PromptChoice,
+    PromptQuestion,
     PromptRecord,
 )
 from integrations.hosted_gateway.tools import gateway_prompt
@@ -104,6 +107,7 @@ class _App:
         self._states = list(states)
         self.sent: list[tuple[str, dict[str, str]]] = []
         self.polled: list[str] = []
+        self.answered: list[tuple[str, str]] = []
 
     def __enter__(self) -> _App:
         return self
@@ -122,6 +126,10 @@ class _App:
 
     def prompt_result(self, prompt_id: str) -> PromptRecord:
         self.polled.append(prompt_id)
+        return self._states.pop(0)
+
+    def answer_prompt(self, prompt_id: str, answer: str) -> PromptRecord:
+        self.answered.append((prompt_id, answer))
         return self._states.pop(0)
 
 
@@ -163,8 +171,8 @@ def test_a_question_from_the_gateway_is_relayed_as_needs_input(
 
     # Assert
     assert out["success"] is True and out["state"] == "needs_input"
-    assert "It asked: Which branch?" in out["response_text"]
-    assert "Send the prompt again" in out["response_text"]
+    assert "stopped to ask: Which branch?" in out["response_text"]
+    assert f"prompt_id={_ID} and answer" in out["response_text"]
 
 
 def test_reading_an_earlier_prompt_sends_nothing_new(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -204,7 +212,7 @@ def test_the_tool_is_external_takes_no_identifier_and_refuses_an_empty_request()
 
     # Assert
     assert tool.side_effect_level == "external"
-    assert set(tool.input_schema["properties"]) == {"prompt", "context", "prompt_id"}
+    assert set(tool.input_schema["properties"]) == {"prompt", "context", "prompt_id", "answer"}
     assert out["success"] is False and "Give the hosted gateway a prompt" in out["response_text"]
 
 
@@ -240,3 +248,84 @@ def test_the_client_reads_failed_integrations_from_the_record() -> None:
 
     # Assert: only well-formed names survive
     assert record.failed_integrations == ("github",)
+
+
+def test_answer_prompt_posts_to_the_answer_route_and_keeps_the_apps_refusal_code() -> None:
+    # Arrange
+    seen: list[httpx.Request] = []
+    follow_up = "p_" + "b" * 32
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        seen.append(request)
+        if len(seen) == 1:
+            return httpx.Response(202, json={"prompt_id": follow_up, "state": "queued"})
+        return httpx.Response(409, json={"error": "already_answered"})
+
+    # Act
+    with _client(httpx.MockTransport(answer)) as client:
+        record = client.answer_prompt(_ID, "Approve")
+        with pytest.raises(HostedGatewayError) as refused:
+            client.answer_prompt(_ID, "Approve")
+
+    # Assert
+    request = seen[0]
+    assert request.method == "POST"
+    assert request.url.path == f"/api/agent-backend/gateway/prompts/{_ID}/answer"
+    assert json.loads(request.content) == {"answer": "Approve"}
+    assert record == PromptRecord(prompt_id=follow_up, state="queued")
+    assert refused.value.args[0] == ERR_ALREADY_ANSWERED
+
+
+def test_a_needs_input_record_carries_the_structured_choice() -> None:
+    # Arrange
+    def answer(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={
+                "prompt_id": _ID,
+                "state": "needs_input",
+                "question": "Approve schedule_ci_repair_loop?",
+                "choice": {
+                    "title": "Approve schedule_ci_repair_loop?",
+                    "questions": [
+                        {
+                            "title": "Approve schedule_ci_repair_loop?",
+                            "options": ["Approve", "Deny"],
+                            "multi_select": False,
+                        }
+                    ],
+                    "custom_answer": False,
+                },
+            },
+        )
+
+    # Act
+    with _client(httpx.MockTransport(answer)) as client:
+        record = client.prompt_result(_ID)
+
+    # Assert
+    assert record.choice == PromptChoice(
+        title="Approve schedule_ci_repair_loop?",
+        questions=(
+            PromptQuestion(title="Approve schedule_ci_repair_loop?", options=("Approve", "Deny")),
+        ),
+        custom_answer=False,
+    )
+
+
+def test_the_tool_sends_an_answer_only_with_the_prompt_it_answers(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange
+    follow_up = "p_" + "b" * 32
+    app = _App([PromptRecord(follow_up, "done", answer="Loop scheduled: task 12.")])
+    _signed_in_with(monkeypatch, app)
+
+    # Act
+    without_id = ask_hosted_gateway(prompt="x", answer="Approve")
+    out = ask_hosted_gateway(prompt_id=_ID, answer="Approve")
+
+    # Assert
+    assert without_id["success"] is False and "prompt_id" in without_id["response_text"]
+    assert app.answered == [(_ID, "Approve")] and app.sent == []
+    assert out["state"] == "done" and out["prompt_id"] == follow_up
