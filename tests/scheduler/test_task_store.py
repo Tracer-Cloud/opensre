@@ -13,6 +13,8 @@ from core.domain.work_items import add_work_item
 from infrastructure.scheduling.scheduler.storage.run_store import get_runs, try_claim, try_queue_run
 from infrastructure.scheduling.scheduler.storage.task_store import (
     _quarantine_unreadable,
+    _remove_tasks_batch,
+    _update_tasks_batch,
     add_task,
     get_task,
     get_task_store_snapshot,
@@ -403,6 +405,105 @@ class TestReloadSignal:
         missing.id = "does-not-exist"
         assert update_task(missing, store_path) is False
         assert signals == []
+
+
+class TestBatchHelpers:
+    """Atomicity regression tests for the batch write helpers — issue #6368.
+
+    Each helper must abort with no write if any task ID in the request is
+    absent from the store at lock time.  Both helpers share this contract;
+    these tests exercise the real implementation (no mocking inside the helper).
+    """
+
+    @staticmethod
+    def _loop_task(cron_offset: int = 0) -> ScheduledTask:
+        return ScheduledTask(
+            kind=TaskKind.MANUAL_LOOP,
+            cron=f"{cron_offset} 8 * * 1-5",
+            provider=Provider.TELEGRAM,
+            chat_id="-100",
+        )
+
+    def test_remove_batch_missing_id_returns_not_found_and_leaves_store_unchanged(
+        self, store_path: Path
+    ) -> None:
+        """A phantom ID in the remove set aborts the whole batch.
+
+        Regression for #6368: the old per-task loop would have deleted task1
+        before discovering that the phantom does not exist.  The batch helper
+        must detect the missing ID inside the lock and return without writing.
+        """
+        task1 = self._loop_task(cron_offset=0)
+        task2 = self._loop_task(cron_offset=1)
+        add_task(task1, store_path)
+        add_task(task2, store_path)
+
+        removed, not_found = _remove_tasks_batch(
+            {task1.id, "phantom-id-does-not-exist"}, store_path
+        )
+
+        assert removed == []
+        assert not_found == ["phantom-id-does-not-exist"]
+
+        # Critical: both real tasks must still be in the store.
+        persisted_ids = {t.id for t in list_tasks(store_path)}
+        assert task1.id in persisted_ids, "task1 must not be partially deleted"
+        assert task2.id in persisted_ids, "task2 must still be present"
+        assert len(persisted_ids) == 2
+
+    def test_update_batch_missing_id_returns_not_found_and_leaves_store_unchanged(
+        self, store_path: Path
+    ) -> None:
+        """A phantom task in the update list aborts the whole batch.
+
+        Regression for #6368: the old per-task loop would have persisted the
+        first task's new state before discovering that the phantom is missing.
+        The batch helper must detect the missing ID inside the lock and return
+        without writing any changes.
+        """
+        task1 = ScheduledTask(
+            kind=TaskKind.MANUAL_LOOP,
+            cron="0 8 * * 1-5",
+            provider=Provider.TELEGRAM,
+            chat_id="-100",
+            enabled=False,
+        )
+        task2 = ScheduledTask(
+            kind=TaskKind.MANUAL_LOOP,
+            cron="1 8 * * 1-5",
+            provider=Provider.TELEGRAM,
+            chat_id="-100",
+            enabled=False,
+        )
+        add_task(task1, store_path)
+        add_task(task2, store_path)
+
+        # Build update objects: task1 (real, enabled=True) + phantom (not in store).
+        phantom = ScheduledTask(
+            id="phantom-id-does-not-exist",
+            kind=TaskKind.MANUAL_LOOP,
+            cron="2 8 * * 1-5",
+            provider=Provider.TELEGRAM,
+            enabled=True,
+        )
+        task1_updated = ScheduledTask(
+            id=task1.id,
+            kind=TaskKind.MANUAL_LOOP,
+            cron="0 8 * * 1-5",
+            provider=Provider.TELEGRAM,
+            chat_id="-100",
+            enabled=True,
+        )
+
+        updated, not_found = _update_tasks_batch([task1_updated, phantom], store_path)
+
+        assert updated == []
+        assert not_found == ["phantom-id-does-not-exist"]
+
+        # Critical: both tasks must still be disabled; no partial write occurred.
+        persisted = {t.id: t for t in list_tasks(store_path)}
+        assert persisted[task1.id].enabled is False, "task1 must not be partially updated"
+        assert persisted[task2.id].enabled is False, "task2 must remain disabled"
 
 
 class TestStoreSurvivesTornWrites:

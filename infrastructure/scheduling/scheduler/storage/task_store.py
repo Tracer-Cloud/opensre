@@ -334,6 +334,83 @@ def _job_registration_changed(previous: dict[str, object], updated: dict[str, ob
     )
 
 
+def _remove_tasks_batch(
+    task_ids: set[str], store_path: Path | None = None
+) -> tuple[list[str], list[str]]:
+    """Remove a set of task IDs in a single lock hold.
+
+    Returns ``(removed, not_found)`` where ``removed`` lists the IDs deleted
+    and ``not_found`` lists IDs absent from the store at write time.
+
+    Either all eligible tasks are removed in one atomic write, or — if any ID
+    is missing or ``_save_raw`` raises — no write occurs and the store is
+    left unchanged.  Empty ``task_ids`` is a safe no-op.
+    """
+    if not task_ids:
+        return [], []
+    path = store_path or default_task_store_path()
+    lock = FileLock(_lock_path(path))
+    with lock:
+        raw = _load_for_write(path)
+        ids_in_store = {str(entry.get("id", "")) for entry in raw}
+        not_found = sorted(task_ids - ids_in_store)
+        if not_found:
+            return [], not_found
+        new_raw = [entry for entry in raw if str(entry.get("id", "")) not in task_ids]
+        _save_raw(path, new_raw)
+    reload_signal.request_scheduler_reload()
+    db_path = _run_database_for_store(path)
+    for task_id in sorted(task_ids):
+        skip_queued_runs(task_id, reason="missing_task", db_path=db_path)
+    return sorted(task_ids), []
+
+
+def _update_tasks_batch(
+    tasks: list[ScheduledTask], store_path: Path | None = None
+) -> tuple[list[str], list[str]]:
+    """Update a list of tasks in a single lock hold.
+
+    Returns ``(updated, not_found)`` where ``updated`` lists the IDs replaced
+    and ``not_found`` lists IDs absent from the store at write time.
+
+    Either all replacements land in one atomic write, or — if any ID is
+    missing or ``_save_raw`` raises — no write occurs and the store is left
+    unchanged.  Empty ``tasks`` is a safe no-op.
+
+    When the store contains duplicate IDs, only the first matching entry per
+    ID is updated — consistent with ``update_task``.
+    """
+    if not tasks:
+        return [], []
+    path = store_path or default_task_store_path()
+    by_id = {task.id: task for task in tasks}
+    lock = FileLock(_lock_path(path))
+    should_reload = False
+    with lock:
+        raw = _load_for_write(path)
+        updated: list[str] = []
+        not_found_set = set(by_id)
+        for i, entry in enumerate(raw):
+            entry_id = str(entry.get("id", ""))
+            if entry_id in not_found_set:
+                new_entry = by_id[entry_id].model_dump(mode="json")
+                if not should_reload and _job_registration_changed(entry, new_entry):
+                    should_reload = True
+                raw[i] = new_entry
+                updated.append(entry_id)
+                not_found_set.discard(entry_id)
+        if not_found_set:
+            return [], sorted(not_found_set)
+        _save_raw(path, raw)
+    if should_reload:
+        reload_signal.request_scheduler_reload()
+    db_path = _run_database_for_store(path)
+    for task in tasks:
+        if not task.enabled:
+            skip_queued_runs(task.id, reason="disabled", db_path=db_path)
+    return updated, []
+
+
 def record_task_success(task_id: str, store_path: Path | None = None) -> bool:
     """Update completion fields on the latest task while preserving user edits."""
     path = store_path or default_task_store_path()

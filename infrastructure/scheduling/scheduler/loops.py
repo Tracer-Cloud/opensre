@@ -45,8 +45,11 @@ from infrastructure.scheduling.scheduler.runner import compute_next_run
 from infrastructure.scheduling.scheduler.storage import (
     add_task,
     list_tasks,
-    remove_task,
     update_task,
+)
+from infrastructure.scheduling.scheduler.storage.task_store import (
+    _remove_tasks_batch,
+    _update_tasks_batch,
 )
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
 
@@ -469,13 +472,17 @@ def set_loop_enabled(
     store_path: Path | None = None,
     now: datetime | None = None,
 ) -> tuple[LoopMutation | None, str]:
-    """Enable or disable all tasks that belong to one loop."""
+    """Enable or disable all tasks that belong to one loop atomically.
+
+    All tasks in the group are updated in a single store write so no split
+    enabled/disabled state can be left on disk if a later write would fail.
+    """
     loop, error = resolve_loop_summary(identifier, store_path=store_path, now=now)
     if loop is None:
         return None, error
 
     task_ids = set(loop.task_ids)
-    updated: list[str] = []
+    tasks_to_update: list[ScheduledTask] = []
     for task in list_tasks(store_path):
         if task.id not in task_ids:
             continue
@@ -487,12 +494,16 @@ def set_loop_enabled(
                 return None, str(exc)
         else:
             task.next_run = None
-        if not update_task(task, store_path):
-            return None, f"loop {loop.id!r} could not be updated"
-        updated.append(task.id)
+        tasks_to_update.append(task)
 
-    if not updated:
+    if not tasks_to_update:
         return None, f"loop {loop.id!r} has no persisted tasks"
+
+    updated, not_found = _update_tasks_batch(tasks_to_update, store_path)
+    if not_found:
+        ids = ", ".join(repr(t) for t in not_found)
+        return None, f"loop {loop.id!r}: task(s) {ids} could not be updated"
+
     refreshed_loop, _ = resolve_loop_summary(loop.id, store_path=store_path, now=now)
     mutation = LoopMutation(summary=refreshed_loop or loop, task_ids=tuple(updated))
     record_scheduler_loop_operation(
@@ -509,16 +520,20 @@ def delete_loop(
     store_path: Path | None = None,
     now: datetime | None = None,
 ) -> tuple[LoopMutation | None, str]:
-    """Delete all tasks that belong to one loop."""
+    """Delete all tasks that belong to one loop atomically.
+
+    All tasks in the group are removed in a single store write so no partial
+    deletion can be left on disk if a later remove would fail.
+    """
     loop, error = resolve_loop_summary(identifier, store_path=store_path, now=now)
     if loop is None:
         return None, error
 
-    removed: list[str] = []
-    for task_id in loop.task_ids:
-        if not remove_task(task_id, store_path):
-            return None, f"loop task {task_id!r} could not be removed"
-        removed.append(task_id)
+    removed, not_found = _remove_tasks_batch(set(loop.task_ids), store_path)
+    if not_found:
+        ids = ", ".join(repr(t) for t in not_found)
+        return None, f"loop task(s) {ids} could not be removed"
+
     mutation = LoopMutation(summary=loop, task_ids=tuple(removed))
     record_scheduler_loop_operation(
         "scheduled_loop_deleted",
