@@ -637,6 +637,30 @@ def test_evidence_links_require_the_reported_outcome() -> None:
     assert worker._run_link(rows, failed=False) == prefix + "passed"
 
 
+def test_hosted_scheduler_registers_without_an_os_service(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """On the hosted gateway there is no systemctl; the in-process scheduler takes the task."""
+    store = RepairStore(tmp_path)
+    tasks: dict[str, ScheduledTask] = {}
+    monkeypatch.setattr(schedule, "configured_token", lambda _token: "test-token")
+    monkeypatch.setattr(schedule, "GitHubRestClient", lambda _token: _GitHub())
+    monkeypatch.setattr(schedule, "get_task", tasks.get)
+    monkeypatch.setattr(schedule, "add_task", lambda task: tasks.setdefault(task.id, task))
+
+    def refuse(**_kwargs: Any) -> None:
+        raise AssertionError("the OS service must not be touched on a hosted gateway")
+
+    monkeypatch.setattr(schedule, "ensure_background_service", refuse)
+    monkeypatch.setattr(schedule, "scheduler_hosted_in_process", lambda: True)
+
+    run, reused, next_run = schedule.schedule_repair(demo=True, store=store)
+
+    assert not reused
+    assert run.id in tasks and next_run
+    assert store.get(run.id).registered
+
+
 def test_setup_exception_details_stay_out_of_persisted_reports(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

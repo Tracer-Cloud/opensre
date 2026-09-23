@@ -167,7 +167,10 @@ class GatewayController:
         from infrastructure.scheduling.scheduler.reload_signal import (
             consume_scheduler_reload_request,
         )
-        from infrastructure.scheduling.scheduler.runner import start_background_scheduler
+        from infrastructure.scheduling.scheduler.runner import (
+            mark_scheduler_hosted,
+            start_background_scheduler,
+        )
 
         # Multiplexed scheduled-agent runners (Sentry digest, etc.).
         # A scheduled run costs a turn, so it takes the same capacity gate chat
@@ -183,6 +186,9 @@ class GatewayController:
             self.scheduler = scheduler
             self.components["scheduler"] = f"running {task_count} scheduled task(s)"
         self._start_scheduler_reload_watcher(logger)
+        # Tools that schedule work (the CI repair loop) register with this
+        # process instead of installing an OS service the container cannot run.
+        mark_scheduler_hosted()
 
     def stop(self, *, timeout: float | None = None) -> bool:
         """Shut down all components and return whether the chat workers stopped.
