@@ -60,9 +60,11 @@ _FAILURE_TEXT = {
         "repeats, the gateway's logs have the detail."
     ),
     "invalid_answer": (
-        "That answer did not match the question's options. Answer again from the menu."
+        "That answer did not match the question's options. Ask again about the original "
+        "prompt id to reopen its menu, then answer from the menu."
     ),
 }
+_ANSWER_REJECTED = "That answer did not match the question's options; the question opens again. "
 _ASKING_IN_SHELL = (
     "The hosted gateway needs a decision from the user; the menu opens now. Once they have "
     "answered, call ask_hosted_gateway again with prompt_id={prompt_id}; their selection is "
@@ -181,10 +183,21 @@ def ask_hosted_gateway(
                 client, prompt.strip(), dict(facts or {}), prompt_id.strip(), scope
             )
             record, waited = _wait_until_settled(client, record, _ProgressRelay(context))
+            rejected = _answer_was_rejected(record) and bool(prompt_id.strip())
+            if rejected:
+                # The gateway reopened the question on the original prompt; show it again.
+                record = client.prompt_result(prompt_id.strip())
             integrations_url = f"{client.app_url}{HOSTED_GATEWAY_INTEGRATIONS_PATH}"
     except HostedGatewayError as exc:
         return failure_output(exc, tool_name=TOOL_NAME, component=_COMPONENT)
-    return _outcome(record, waited, integrations_url, scope)
+    outcome = _outcome(record, waited, integrations_url, scope)
+    if rejected and record.state == "needs_input":
+        outcome["response_text"] = _ANSWER_REJECTED + outcome["response_text"]
+    return outcome
+
+
+def _answer_was_rejected(record: PromptRecord) -> bool:
+    return record.state == "failed" and record.error == "invalid_answer"
 
 
 def _submit_or_continue(

@@ -489,3 +489,34 @@ def test_a_busy_gateway_is_explained_in_plain_words(monkeypatch: pytest.MonkeyPa
     # Assert
     assert out["response_text"].startswith("The hosted gateway was busy with another conversation")
     assert "not_admitted" not in out["response_text"]
+
+
+def test_a_rejected_answer_reopens_the_original_question_in_the_shell(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange: the parent asks; the user's pick fits no option; the gateway reopens the parent
+    question = PromptQuestion("Which branch?", ("main", "release"))
+    asked = PromptRecord(
+        _ID,
+        "needs_input",
+        question="Which branch?",
+        choice=PromptChoice("Which branch?", (question,)),
+    )
+    rejected = PromptRecord("p_" + "d" * 32, "failed", error="invalid_answer")
+    app = _App([asked, rejected, asked])
+    _signed_in_with(monkeypatch, app)
+    turn = format_ask_user_answers(
+        (AskUserQuestion(label="", title="Which branch?", options=("main", "release")),),
+        ("develop",),
+    )
+    session = SessionCore()
+
+    # Act
+    out = ask_hosted_gateway(prompt_id=_ID, context=_tool_context(session, turn))
+
+    # Assert: the menu is parked again on the original prompt, with a one-line reason first
+    assert app.answered == [(_ID, "develop")] and app.polled == [_ID, _ID]
+    assert out["state"] == "needs_input" and out["prompt_id"] == _ID
+    assert out["response_text"].startswith("That answer did not match the question's options")
+    parked = session.pending_user_choice
+    assert parked is not None and parked.options == ("main", "release")
