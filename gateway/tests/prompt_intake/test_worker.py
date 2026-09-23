@@ -244,7 +244,7 @@ def test_an_approval_covers_exactly_the_previewed_call_once() -> None:
     assert asked.view()["choice"]["questions"][0]["options"] == ["Approve", "Deny"]
     assert asked.question.startswith("Approve schedule_ci_repair_loop?")
     assert "pr_number" in asked.question
-    assert same is None
+    assert same is not None and same.approved is True
     assert again.blocked is True and other.blocked is True and other.terminate is True
     assert follow_up.state is PromptState.NEEDS_INPUT
     assert follow_up.session_id == asked.session_id

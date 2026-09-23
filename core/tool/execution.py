@@ -472,6 +472,18 @@ def _execute_one_tool_call(
                 metadata={"tool_name": tc.name, **before.metadata},
             )
 
+        if bool(getattr(tool, "requires_approval", False)) and not (
+            before is not None and before.approved
+        ):
+            mark_span_outcome(span_attrs, "blocked", error=True)
+            logger.debug("tool_call missing approval name=%s id=%s", tc.name, tc.id)
+            return ToolExecutionResult(
+                content=f"Approval required for {tc.name}; no approval was granted for this call.",
+                is_error=True,
+                terminate=True,
+                metadata={"tool_name": tc.name, "approval": "missing"},
+            )
+
         logger.debug("tool_call start name=%s id=%s source=%s", tc.name, tc.id, source)
         raw = _invoke_runtime_tool(
             tool,

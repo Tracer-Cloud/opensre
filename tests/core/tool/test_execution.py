@@ -112,6 +112,42 @@ def test_before_hook_can_block_with_structured_result() -> None:
     assert result.details == {"policy": "deny"}
 
 
+def test_approval_required_tool_fails_closed_without_an_approving_hook() -> None:
+    calls: list[str] = []
+
+    def run(value: str) -> dict[str, str]:
+        calls.append(value)
+        return {"value": value}
+
+    tool = RegisteredTool(
+        name="requires_approval_fixture",
+        description="approval fixture",
+        input_schema=_schema(["value"]),
+        source="knowledge",
+        run=run,
+        requires_approval=True,
+    )
+    call = _call("requires_approval_fixture")
+
+    without_hooks = execute_tool_calls([call], [tool], {})[0]
+    non_authorizing = execute_tool_calls(
+        [call], [tool], {}, hooks=ToolExecutionHooks(before_tool_call=lambda _request: None)
+    )[0]
+    approved = execute_tool_calls(
+        [call],
+        [tool],
+        {},
+        hooks=ToolExecutionHooks(
+            before_tool_call=lambda _request: BeforeToolCallResult(approved=True)
+        ),
+    )[0]
+
+    assert without_hooks.is_error and without_hooks.terminate
+    assert non_authorizing.is_error and non_authorizing.terminate
+    assert approved.is_error is False
+    assert calls == ["ok"]
+
+
 def test_composed_before_hooks_stop_at_first_block() -> None:
     seen: list[str] = []
 

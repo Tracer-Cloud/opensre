@@ -229,7 +229,7 @@ class _Approvals:
         if key in self._approved:
             # One grant covers exactly this call, once.
             self._approved.discard(key)
-            return None
+            return BeforeToolCallResult(approved=True)
         if self._session.pending_user_choice is not None:
             return BeforeToolCallResult(blocked=True, terminate=True, reason=_ALREADY_WAITING)
         reason = str(getattr(tool, "approval_reason", "") or "")
