@@ -183,10 +183,11 @@ def ask_hosted_gateway(
                 client, prompt.strip(), dict(facts or {}), prompt_id.strip(), scope
             )
             record, waited = _wait_until_settled(client, record, _ProgressRelay(context))
-            rejected = _answer_was_rejected(record) and bool(prompt_id.strip())
+            parent_id = record.parent_prompt_id or prompt_id.strip()
+            rejected = _answer_was_rejected(record) and bool(parent_id)
             if rejected:
                 # The gateway reopened the question on the original prompt; show it again.
-                record = client.prompt_result(prompt_id.strip())
+                record = client.prompt_result(parent_id)
             integrations_url = f"{client.app_url}{HOSTED_GATEWAY_INTEGRATIONS_PATH}"
     except HostedGatewayError as exc:
         return failure_output(exc, tool_name=TOOL_NAME, component=_COMPONENT)

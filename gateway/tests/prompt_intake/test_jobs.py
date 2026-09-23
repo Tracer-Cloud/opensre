@@ -101,6 +101,10 @@ def test_an_answer_becomes_a_follow_up_on_the_parents_session_and_only_once() ->
         "s-1",
         parent.id,
     )
+    assert (
+        follow_up.view()["parent_prompt_id"] == parent.id
+        and "parent_prompt_id" not in parent.view()
+    )
     assert follow_up.actor == "a" and follow_up.state is PromptState.QUEUED
     assert parent.answered_by == follow_up.id
     assert second.value.code == ALREADY_ANSWERED

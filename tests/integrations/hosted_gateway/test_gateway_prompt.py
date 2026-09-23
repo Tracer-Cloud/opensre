@@ -520,3 +520,49 @@ def test_a_rejected_answer_reopens_the_original_question_in_the_shell(
     assert out["response_text"].startswith("That answer did not match the question's options")
     parked = session.pending_user_choice
     assert parked is not None and parked.options == ("main", "release")
+
+
+def test_a_rejected_follow_up_read_by_its_own_id_still_reopens_the_parent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange: the caller polls the follow-up's id later; the record names its parent
+    follow_up_id = "p_" + "e" * 32
+    question = PromptQuestion("Which branch?", ("main", "release"))
+    parent = PromptRecord(
+        _ID,
+        "needs_input",
+        question="Which branch?",
+        choice=PromptChoice("Which branch?", (question,)),
+    )
+    rejected = PromptRecord(follow_up_id, "failed", error="invalid_answer", parent_prompt_id=_ID)
+    app = _App([rejected, parent])
+    _signed_in_with(monkeypatch, app)
+    session = SessionCore()
+
+    # Act
+    out = ask_hosted_gateway(prompt_id=follow_up_id, context=_tool_context(session, ""))
+
+    # Assert: the parent, not the follow-up, is re-read and its menu parked again
+    assert app.polled == [follow_up_id, _ID] and app.answered == []
+    assert out["state"] == "needs_input" and out["prompt_id"] == _ID
+    assert session.pending_user_choice is not None
+    assert session.pending_user_choice.options == ("main", "release")
+
+
+def test_the_client_reads_the_parent_prompt_id_of_a_follow_up() -> None:
+    # Arrange
+    def answer(_request: httpx.Request) -> httpx.Response:
+        body = {
+            "prompt_id": "p_" + "e" * 32,
+            "state": "failed",
+            "error": "invalid_answer",
+            "parent_prompt_id": _ID,
+        }
+        return httpx.Response(200, json=body)
+
+    # Act
+    with _client(httpx.MockTransport(answer)) as client:
+        record = client.prompt_result("p_" + "e" * 32)
+
+    # Assert
+    assert record.parent_prompt_id == _ID and record.error == "invalid_answer"

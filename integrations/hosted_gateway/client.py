@@ -141,6 +141,8 @@ class PromptRecord:
     #: The newest progress lines; ``index`` grows over the prompt's life, so a poller
     #: prints each line once.
     progress: tuple[PromptProgress, ...] = ()
+    #: For a follow-up carrying an answer: the prompt whose question it answered.
+    parent_prompt_id: str = ""
 
     @property
     def settled(self) -> bool:
@@ -326,6 +328,7 @@ def _prompt_record(payload: dict[str, Any]) -> PromptRecord:
         failed_integrations=_names(payload.get("failed_integrations")),
         choice=_choice(payload.get("choice")),
         progress=_progress(payload.get("progress")),
+        parent_prompt_id=_text(payload.get("parent_prompt_id")),
     )
 
 
