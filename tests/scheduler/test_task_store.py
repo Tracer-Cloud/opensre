@@ -18,7 +18,9 @@ from infrastructure.scheduling.scheduler.storage.task_store import (
     get_task_store_snapshot,
     list_tasks,
     remove_task,
+    remove_tasks,
     update_task,
+    update_tasks,
 )
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind, TaskStatus
 
@@ -403,6 +405,103 @@ class TestReloadSignal:
         missing.id = "does-not-exist"
         assert update_task(missing, store_path) is False
         assert signals == []
+
+
+class TestBatchMutations:
+    """remove_tasks/update_tasks apply to a whole group in one write.
+
+    Regression coverage for a bug where delete_loop/set_loop_enabled mutated
+    a multi-task loop group one task at a time: a failure partway through
+    left the group with only some tasks removed, or mismatched enabled
+    states, since each remove_task/update_task call was its own separate
+    read-modify-write.
+    """
+
+    @staticmethod
+    def _task(chat_id: str) -> ScheduledTask:
+        return ScheduledTask(
+            kind=TaskKind.MANUAL_LOOP,
+            cron="0 9 * * *",
+            provider=Provider.TELEGRAM,
+            chat_id=chat_id,
+        )
+
+    @staticmethod
+    def _fail_save(monkeypatch: pytest.MonkeyPatch) -> None:
+        def _boom(*_args: object, **_kwargs: object) -> None:
+            raise OSError("simulated write failure")
+
+        monkeypatch.setattr(
+            "infrastructure.scheduling.scheduler.storage.task_store._save_raw", _boom
+        )
+
+    def test_remove_tasks_removes_every_requested_id(self, store_path: Path) -> None:
+        a = add_task(self._task("-1"), store_path)
+        b = add_task(self._task("-2"), store_path)
+
+        removed = remove_tasks([a.id, b.id], store_path)
+
+        assert set(removed) == {a.id, b.id}
+        assert list_tasks(store_path) == []
+
+    def test_remove_tasks_reports_only_ids_that_existed(self, store_path: Path) -> None:
+        a = add_task(self._task("-1"), store_path)
+
+        removed = remove_tasks([a.id, "does-not-exist"], store_path)
+
+        assert removed == [a.id]
+        assert list_tasks(store_path) == []
+
+    def test_remove_tasks_leaves_the_group_untouched_if_the_write_fails(
+        self, store_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        a = add_task(self._task("-1"), store_path)
+        b = add_task(self._task("-2"), store_path)
+        self._fail_save(monkeypatch)
+
+        with pytest.raises(OSError):
+            remove_tasks([a.id, b.id], store_path)
+
+        monkeypatch.undo()
+        remaining = {task.id for task in list_tasks(store_path)}
+        assert remaining == {a.id, b.id}
+
+    def test_update_tasks_updates_every_requested_task(self, store_path: Path) -> None:
+        a = add_task(self._task("-1"), store_path)
+        b = add_task(self._task("-2"), store_path)
+        a.enabled = False
+        b.enabled = False
+
+        updated = update_tasks([a, b], store_path)
+
+        assert set(updated) == {a.id, b.id}
+        assert all(not task.enabled for task in list_tasks(store_path))
+
+    def test_update_tasks_reports_only_ids_that_existed(self, store_path: Path) -> None:
+        a = add_task(self._task("-1"), store_path)
+        a.enabled = False
+        missing = self._task("-2")
+        missing.id = "does-not-exist"
+        missing.enabled = False
+
+        updated = update_tasks([a, missing], store_path)
+
+        assert updated == [a.id]
+
+    def test_update_tasks_leaves_the_group_untouched_if_the_write_fails(
+        self, store_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        a = add_task(self._task("-1"), store_path)
+        b = add_task(self._task("-2"), store_path)
+        a.enabled = False
+        b.enabled = False
+        self._fail_save(monkeypatch)
+
+        with pytest.raises(OSError):
+            update_tasks([a, b], store_path)
+
+        monkeypatch.undo()
+        assert all(task.enabled for task in list_tasks(store_path))
 
 
 class TestStoreSurvivesTornWrites:

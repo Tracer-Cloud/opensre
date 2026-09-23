@@ -8,7 +8,7 @@ import logging
 import os
 import tempfile
 import time
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -287,6 +287,77 @@ def remove_task(task_id: str, store_path: Path | None = None) -> bool:
     return True
 
 
+def remove_tasks(task_ids: Sequence[str], store_path: Path | None = None) -> list[str]:
+    """Remove several schedules in one atomic write.
+
+    Unlike calling ``remove_task`` once per id, this reads, mutates, and saves
+    the store exactly once, so a multi-task group is either fully removed or
+    left completely untouched -- never left with only some tasks gone because
+    a later removal in the group failed.
+
+    Returns the subset of ``task_ids`` that were actually found and removed,
+    in the order they were requested.
+    """
+    path = store_path or default_task_store_path()
+    lock = FileLock(_lock_path(path))
+    with lock:
+        raw = _load_raw(path)
+        present = {entry.get("id") for entry in raw}
+        removed = [task_id for task_id in task_ids if task_id in present]
+        if not removed:
+            return []
+        removed_set = set(removed)
+        raw = [entry for entry in raw if entry.get("id") not in removed_set]
+        _save_raw(path, raw)
+
+    # The schedule changed: wake any running scheduler so it stops firing these.
+    reload_signal.request_scheduler_reload()
+    db_path = _run_database_for_store(path)
+    for task_id in removed:
+        skip_queued_runs(task_id, reason="missing_task", db_path=db_path)
+    return removed
+
+
+def update_tasks(tasks: Sequence[ScheduledTask], store_path: Path | None = None) -> list[str]:
+    """Update several existing tasks in one atomic write.
+
+    Unlike calling ``update_task`` once per task, this reads, mutates, and
+    saves the store exactly once, so a multi-task group's update is either
+    fully applied or left completely untouched -- never left with some tasks
+    updated and others not because a later update in the group failed.
+
+    Returns the ids of the tasks that were actually found and updated.
+    """
+    path = store_path or default_task_store_path()
+    by_id = {task.id: task for task in tasks}
+    should_reload = False
+    updated: list[str] = []
+    lock = FileLock(_lock_path(path))
+    with lock:
+        raw = _load_raw(path)
+        for index, entry in enumerate(raw):
+            task = by_id.get(entry.get("id"))  # type: ignore[arg-type]
+            if task is None:
+                continue
+            new_entry = task.model_dump(mode="json")
+            if _job_registration_changed(entry, new_entry):
+                should_reload = True
+            raw[index] = new_entry
+            updated.append(task.id)
+        if not updated:
+            return []
+        _save_raw(path, raw)
+
+    if should_reload:
+        # Enable/disable/schedule edits must drop or replace the live APScheduler job.
+        reload_signal.request_scheduler_reload()
+    db_path = _run_database_for_store(path)
+    for task_id in updated:
+        if not by_id[task_id].enabled:
+            skip_queued_runs(task_id, reason="disabled", db_path=db_path)
+    return updated
+
+
 def update_task(task: ScheduledTask, store_path: Path | None = None) -> bool:
     """Update an existing task in the store. Returns True if found and updated."""
     path = store_path or default_task_store_path()
@@ -359,5 +430,7 @@ __all__ = [
     "list_tasks",
     "record_task_success",
     "remove_task",
+    "remove_tasks",
     "update_task",
+    "update_tasks",
 ]

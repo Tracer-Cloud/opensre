@@ -45,8 +45,9 @@ from infrastructure.scheduling.scheduler.runner import compute_next_run
 from infrastructure.scheduling.scheduler.storage import (
     add_task,
     list_tasks,
-    remove_task,
+    remove_tasks,
     update_task,
+    update_tasks,
 )
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
 
@@ -475,7 +476,7 @@ def set_loop_enabled(
         return None, error
 
     task_ids = set(loop.task_ids)
-    updated: list[str] = []
+    tasks_to_update: list[ScheduledTask] = []
     for task in list_tasks(store_path):
         if task.id not in task_ids:
             continue
@@ -487,12 +488,16 @@ def set_loop_enabled(
                 return None, str(exc)
         else:
             task.next_run = None
-        if not update_task(task, store_path):
-            return None, f"loop {loop.id!r} could not be updated"
-        updated.append(task.id)
+        tasks_to_update.append(task)
 
-    if not updated:
+    if not tasks_to_update:
         return None, f"loop {loop.id!r} has no persisted tasks"
+
+    # One atomic write for the whole group: either every task in the loop is
+    # updated, or none are -- never left with mismatched enabled states.
+    updated = update_tasks(tasks_to_update, store_path)
+    if len(updated) != len(tasks_to_update):
+        return None, f"loop {loop.id!r} could not be updated"
     refreshed_loop, _ = resolve_loop_summary(loop.id, store_path=store_path, now=now)
     mutation = LoopMutation(summary=refreshed_loop or loop, task_ids=tuple(updated))
     record_scheduler_loop_operation(
@@ -514,11 +519,11 @@ def delete_loop(
     if loop is None:
         return None, error
 
-    removed: list[str] = []
-    for task_id in loop.task_ids:
-        if not remove_task(task_id, store_path):
-            return None, f"loop task {task_id!r} could not be removed"
-        removed.append(task_id)
+    # One atomic write for the whole group: either every task in the loop is
+    # removed, or none are -- never left with only some tasks gone.
+    removed = remove_tasks(loop.task_ids, store_path)
+    if len(removed) != len(loop.task_ids):
+        return None, f"loop {loop.id!r} could not be removed"
     mutation = LoopMutation(summary=loop, task_ids=tuple(removed))
     record_scheduler_loop_operation(
         "scheduled_loop_deleted",

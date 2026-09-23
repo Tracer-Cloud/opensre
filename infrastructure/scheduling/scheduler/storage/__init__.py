@@ -38,7 +38,9 @@ from infrastructure.scheduling.scheduler.storage.task_store import (
     list_tasks,
     record_task_success,
     remove_task,
+    remove_tasks,
     update_task,
+    update_tasks,
 )
 
 __all__ = [
@@ -67,6 +69,7 @@ __all__ = [
     "record_task_success",
     "record_run_report",
     "remove_task",
+    "remove_tasks",
     "renew_claims",
     "run_database_path",
     "skip_queued_runs",
@@ -74,4 +77,5 @@ __all__ = [
     "try_queue_run",
     "TaskStoreSnapshot",
     "update_task",
+    "update_tasks",
 ]
