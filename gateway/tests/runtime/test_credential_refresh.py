@@ -153,40 +153,6 @@ def test_the_watcher_reports_a_reload_and_survives_a_failed_check(
     assert outcomes == ["TimeoutError", "reloaded"]
 
 
-def test_the_store_is_written_under_the_organizations_scope(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Turns bind the organization's scope; the hydrated store must land where they read."""
-    # Arrange
-    from config.scope_context import current_scope
-
-    scopes_seen: list[str] = []
-
-    def record_scope(_secret_string: str) -> object:
-        scope = current_scope()
-        scopes_seen.append(scope.principal.id if scope is not None else "unbound")
-        return object()
-
-    monkeypatch.setattr(credential_hydration, "hydrate_integration_store_from_secret", record_scope)
-    secrets = _VersionedSecrets()
-    hydrator = GatewayCredentialHydrator(
-        config=CredentialHydrationConfig(
-            organization_id="org-a",
-            bootstrap_secret_arn=_BOOTSTRAP_ARN,
-            integrations_secret_arn=_INTEGRATIONS_ARN,
-        ),
-        secrets_client=secrets,
-    )
-
-    # Act
-    hydrator.hydrate()
-    secrets.rotate("token-two", "v2")
-    hydrator.refresh_if_changed()
-
-    # Assert: startup and refresh both write as organization org-a
-    assert scopes_seen == ["org-a", "org-a"]
-
-
 def test_a_reload_that_fails_to_report_does_not_end_the_watcher(
     hydrated: tuple[GatewayCredentialHydrator, _VersionedSecrets, list[str]],
 ) -> None:

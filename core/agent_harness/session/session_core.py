@@ -22,6 +22,7 @@ if TYPE_CHECKING:
 else:
     GroundingContext = Any
 
+from config.constants.paths import integrations_store_stamp
 from config.llm_reasoning_effort import ReasoningEffortChoice
 from core.agent_harness.accounting.token_usage import TokenUsage
 from core.agent_harness.session.integration_resolution import IntegrationState
@@ -331,6 +332,9 @@ class SessionCore:
     @resolved_integrations_cache.setter
     def resolved_integrations_cache(self, value: dict[str, Any] | None) -> None:
         self.integrations.resolved_cache = value
+        # Every writer stamps the store the cache came from, so a rewritten
+        # store invalidates it on the next turn no matter who filled it.
+        self.integrations.store_stamp = integrations_store_stamp() if value else None
 
     @property
     def vcs_repo_scopes(self) -> dict[str, tuple[str, ...]]:

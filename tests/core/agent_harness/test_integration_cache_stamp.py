@@ -47,6 +47,25 @@ def test_a_replaced_store_reaches_a_session_that_already_resolved(
     assert state["resolutions"] == 2
 
 
+def test_a_warmed_session_also_drops_its_cache_after_a_store_rewrite(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Gateway sessions warm the cache before the first turn; that path stamps it too."""
+    # Arrange: warmed at stamp 1, then the store is rewritten
+    state = _store_versions(monkeypatch)
+    session = SessionCore()
+    session.integrations.warm()
+    assert session.resolved_integrations_cache is not None
+    state.update(stamp=2, token="token-two")
+
+    # Act
+    resolved = resolve_and_cache_integrations(session)
+
+    # Assert: the warmed cache did not survive the rewrite
+    assert resolved["github"]["auth_token"] == "token-two"
+    assert state["resolutions"] == 2
+
+
 def test_an_unchanged_store_keeps_the_cache(monkeypatch: pytest.MonkeyPatch) -> None:
     # Arrange
     state = _store_versions(monkeypatch)

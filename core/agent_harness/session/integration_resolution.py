@@ -197,6 +197,7 @@ class IntegrationState:
             ):
                 return
             self.resolved_cache = merge_resolved_integrations(self.resolved_cache, resolved)
+            self.store_stamp = integrations_store_stamp()
 
     def get(self) -> IntegrationResolutionResult:
         """Return the session's integration configs as a typed snapshot (cache-aware).

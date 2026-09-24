@@ -37,14 +37,10 @@ from config.constants.tenancy import (
     CREDENTIALS_API_URL_ENV,
     CREDENTIALS_BOOTSTRAP_SECRET_ARN_ENV,
     INTEGRATIONS_SECRET_ARN_ENV,
+    INTEGRATIONS_STORE_PATH_ENV,
 )
-from config.principal import Actor, Principal, StorageScope
-from config.scope_context import bound_storage_scope
 from integrations.credentials_api import CredentialsApiClient, hydrate_integration_store
 from integrations.secrets_vault import hydrate_integration_store_from_secret
-
-#: The actor recorded for store writes the gateway makes on the organization's behalf.
-_HYDRATION_ACTOR = "gateway"
 
 
 class SecretsManagerClient(Protocol):
@@ -99,6 +95,11 @@ class CredentialHydrationConfig:
             raise ValueError("Credential hydration configuration is incomplete")
         if credentials_api_url and not credentials_api_url.lower().startswith("https://"):
             raise ValueError("Credentials API URL must use HTTPS")
+        # The secret is materialized as one file that transports (unscoped, at
+        # startup) and turns (under the organization's scope) both read; only an
+        # explicit path makes those two resolutions the same file.
+        if integrations_secret_arn and not os.getenv(INTEGRATIONS_STORE_PATH_ENV, "").strip():
+            raise ValueError("Credential hydration needs an explicit integrations store path")
         return cls(
             organization_id=organization,
             credentials_api_url=credentials_api_url or None,
@@ -161,17 +162,14 @@ class GatewayCredentialHydrator:
         return True
 
     def _replace_store(self, secret_string: str) -> None:
-        """Materialize the store where this organization's turns read it.
+        """Materialize the store at the silo's explicit path.
 
-        Turns bind the organization's storage scope, and the store path follows
-        that scope unless an explicit path is configured; hydrating under the
-        same scope keeps both on one file.
+        Transports read the store at startup without a scope and turns read it
+        under the organization's scope; the explicit path that hydration
+        requires (see :meth:`CredentialHydrationConfig.from_environment`) is the
+        one file both resolve to.
         """
-        scope = StorageScope(
-            principal=Principal.org(self._config.organization_id), actor=Actor(id=_HYDRATION_ACTOR)
-        )
-        with bound_storage_scope(scope):
-            hydrate_integration_store_from_secret(secret_string)
+        hydrate_integration_store_from_secret(secret_string)
 
     @classmethod
     def from_environment(cls) -> GatewayCredentialHydrator | None:
