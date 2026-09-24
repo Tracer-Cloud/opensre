@@ -67,19 +67,51 @@ def restrict_to_unattended(session: SessionCore) -> None:
     session.available_capabilities["ask_user_choice"] = ("deferred",)
 
 
-def invocation_key(tool_name: str, arguments: Mapping[str, Any]) -> str:
-    """Names one exact tool call: the tool plus a digest of its arguments."""
-    canonical = json.dumps(arguments, sort_keys=True, default=str, ensure_ascii=False)
+def invocation_key(
+    tool_name: str, arguments: Mapping[str, Any], *, schema: Mapping[str, Any] | None = None
+) -> str:
+    """Names one tool call: the tool plus a digest of the arguments that change what it does.
+
+    An argument left out, given as ``None`` or given as its schema default is the
+    same call as one that spells the default out, so a grant survives the model
+    restating the call in either form.
+    """
+    effective = _effective_arguments(arguments, schema)
+    canonical = json.dumps(effective, sort_keys=True, default=str, ensure_ascii=False)
     digest = hashlib.sha256(canonical.encode("utf-8")).hexdigest()
     return f"{tool_name}:{digest}"
 
 
+def _effective_arguments(
+    arguments: Mapping[str, Any], schema: Mapping[str, Any] | None
+) -> dict[str, Any]:
+    properties = schema.get("properties") if isinstance(schema, Mapping) else None
+    defaults: dict[str, Any] = {}
+    if isinstance(properties, Mapping):
+        for name, spec in properties.items():
+            if isinstance(spec, Mapping) and "default" in spec:
+                defaults[name] = spec["default"]
+    effective: dict[str, Any] = {}
+    for name, value in arguments.items():
+        if value is None:
+            continue
+        if name in defaults and value == defaults[name]:
+            continue
+        effective[name] = value
+    return effective
+
+
 def approval_question(
-    tool_name: str, arguments: Mapping[str, Any], reason: str, arguments_preview: str
+    tool_name: str,
+    arguments: Mapping[str, Any],
+    reason: str,
+    arguments_preview: str,
+    *,
+    schema: Mapping[str, Any] | None = None,
 ) -> PendingUserChoice:
     """The Approve/Deny choice that stands in for a chat approval button, for one call."""
     details = [part for part in (reason.strip(), arguments_preview.strip()) if part]
-    key = invocation_key(tool_name, arguments)
+    key = invocation_key(tool_name, arguments, schema=schema)
     return PendingUserChoice(
         title=f"Approve {tool_name}?",
         options=(APPROVE_OPTION, DENY_OPTION),

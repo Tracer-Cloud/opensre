@@ -222,6 +222,41 @@ def test_codex_backend_builds_workspace_write_argv(
     assert "Do NOT create a git commit or push changes" in argv[-1]
 
 
+@patch(_POPEN)
+@patch(_GIT_RUN, side_effect=_git_run_side_effect)
+@patch("integrations.coding_agent.codex_backend._resolve_binary")
+def test_codex_backend_hands_the_host_sandbox_to_codex_only_when_configured(
+    mock_resolve: MagicMock,
+    _mock_git: MagicMock,
+    mock_popen: MagicMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A container that cannot create namespaces (Fargate) is the boundary; Codex's sandbox is not."""
+    # Arrange
+    mock_resolve.return_value = "/usr/bin/codex"
+    mock_popen.return_value = _FakePopen()
+    monkeypatch.setenv("CODING_AGENT_SANDBOX", "host")
+
+    # Act
+    codex_backend.run("fix the bug", workspace=str(tmp_path), model=None, timeout_sec=60)
+
+    # Assert: the sandbox flag names full access, and nothing else in the call changes
+    argv = mock_popen.call_args.args[0]
+    assert argv[argv.index("-s") + 1] == "danger-full-access"
+    assert "workspace-write" not in argv
+
+
+def test_an_unknown_sandbox_setting_keeps_the_agents_own_sandbox() -> None:
+    # Arrange / Act
+    from integrations.coding_agent.config import coding_agent_sandbox
+
+    # Assert
+    assert coding_agent_sandbox({"CODING_AGENT_SANDBOX": "everything"}) == "agent"
+    assert coding_agent_sandbox({}) == "agent"
+    assert coding_agent_sandbox({"CODING_AGENT_SANDBOX": " HOST "}) == "host"
+
+
 @patch("integrations.coding_agent.codex_backend._resolve_binary", return_value=None)
 def test_codex_backend_binary_missing(_mock_resolve: MagicMock, tmp_path: Path) -> None:
     result = codex_backend.run("x", workspace=str(tmp_path), model=None, timeout_sec=60)

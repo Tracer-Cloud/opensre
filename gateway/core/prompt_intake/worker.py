@@ -274,7 +274,8 @@ class _Approvals:
         if not bool(getattr(tool, "requires_approval", False)):
             return None
         name = request.tool_call.name
-        key = invocation_key(name, request.arguments)
+        schema = getattr(tool, "input_schema", None)
+        key = invocation_key(name, request.arguments, schema=schema)
         if key in self._approved:
             # One grant covers exactly this call, once.
             self._approved.discard(key)
@@ -284,7 +285,7 @@ class _Approvals:
         reason = str(getattr(tool, "approval_reason", "") or "")
         preview = arguments_preview(request.arguments)
         self._session.pending_user_choice = approval_question(
-            name, request.arguments, reason, preview
+            name, request.arguments, reason, preview, schema=schema
         )
         return BeforeToolCallResult(blocked=True, terminate=True, reason=_APPROVAL_BLOCKED)
 

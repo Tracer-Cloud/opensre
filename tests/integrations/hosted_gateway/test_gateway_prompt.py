@@ -190,10 +190,15 @@ def test_a_question_from_the_gateway_opens_this_shells_menu(
     # Act
     out = ask_hosted_gateway(prompt="schedule the loop", context=_tool_context(session, ""))
 
-    # Assert: the question is parked as the shell's own menu, with the approval details
+    # Assert: the question is parked as the shell's own menu, with the approval details;
+    # the user reads one plain sentence, the model gets the continuation separately
     parked = session.pending_user_choice
     assert out["state"] == "needs_input" and "the menu opens now" in out["response_text"]
     assert "Approve schedule_ci_repair_loop?" not in out["response_text"]
+    # The resumed turn keeps only this line of the result, so the prompt id must be in it.
+    assert _ID in out["response_text"] and "call ask_hosted_gateway" not in out["response_text"]
+    assert f"prompt_id={_ID}" in out["instructions"]
+    assert "Do not repeat the question" in out["instructions"]
     assert parked is not None and parked.options == ("Approve", "Deny")
     assert parked.note == "Starts a background worker." and parked.custom_answer is False
     assert parked.interaction_id == f"hosted_prompt:{_ID}"
@@ -317,7 +322,7 @@ def test_a_failed_integration_on_the_gateway_points_the_user_to_the_integrations
     # Assert: the credential instruction comes first, in plain words, then the answer
     assert out["failed_integrations"] == ["github"]
     text = out["response_text"]
-    assert text.startswith("The hosted gateway could not use the organization's github integration")
+    assert text.startswith("The hosted gateway's github integration failed during this request")
     assert "https://app.test/integrations" in text
     assert text.index("https://app.test/integrations") < text.index("16 open PRs")
     # A finished prompt is never re-sent whole: only the failed part may be asked again.
@@ -350,7 +355,7 @@ def test_a_failed_integration_on_a_waiting_prompt_says_to_continue_it_not_resend
 
     # Assert: fix the credential, then continue through the menu; never a fresh prompt
     text = out["response_text"]
-    assert text.startswith("The hosted gateway could not use the organization's github integration")
+    assert text.startswith("The hosted gateway's github integration failed during this request")
     assert (
         "continue this prompt through its menu" in text and "do not send the prompt again" in text
     )
@@ -455,7 +460,10 @@ def test_progress_lines_are_relayed_to_the_shell_once_each(monkeypatch: pytest.M
 
     # Assert
     assert out["state"] == "done"
-    assert updates == [{"progress": "Reading runs…"}, {"progress": "Checking out…"}]
+    assert updates == [
+        {"progress": "on the gateway: Reading runs…"},
+        {"progress": "on the gateway: Checking out…"},
+    ]
 
 
 def test_a_record_carries_its_progress_lines() -> None:

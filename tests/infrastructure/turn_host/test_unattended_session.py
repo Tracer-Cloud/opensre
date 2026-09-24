@@ -92,3 +92,32 @@ def test_an_approval_question_grants_exactly_the_previewed_call_and_only_on_appr
     assert view["note"] == 'Starts a worker.\n{"repo": "r"}'
     assert approval_grant(pending, "Deny") is None
     assert approval_grant(plain, "Approve") is None
+
+
+def test_restating_a_call_with_its_defaults_spelled_out_is_the_same_call() -> None:
+    """After Approve the model re-called the tool without ``demo: false`` and was asked again."""
+    # Arrange
+    schema = {
+        "type": "object",
+        "properties": {
+            "demo": {"type": "boolean", "default": False},
+            "owner": {"type": "string"},
+            "repo": {"type": "string"},
+            "pr_number": {"type": "integer"},
+        },
+    }
+    spelled_out = {"demo": False, "owner": "o", "repo": "r", "pr_number": 7}
+    restated = {"owner": "o", "repo": "r", "pr_number": 7, "branch": None}
+
+    # Act
+    approved = invocation_key("schedule_ci_repair_loop", spelled_out, schema=schema)
+    again = invocation_key("schedule_ci_repair_loop", restated, schema=schema)
+    changed = invocation_key(
+        "schedule_ci_repair_loop", {**spelled_out, "demo": True}, schema=schema
+    )
+    unaware = invocation_key("schedule_ci_repair_loop", spelled_out)
+
+    # Assert: defaults and absent values do not change the call; a real change does
+    assert approved == again
+    assert approved != changed
+    assert unaware != approved

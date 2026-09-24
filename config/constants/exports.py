@@ -16,6 +16,10 @@ EXPORTS: dict[str, str] = {
     "CI_REPAIR_DIRECTORY": "ci_repair",
     "CI_REPAIR_REPORT_BUILDER": "ci_repair",
     "CI_REPAIR_CRON": "ci_repair",
+    # coding agent
+    "CODING_AGENT_SANDBOX_ENV": "coding_agent",
+    "CODING_AGENT_SANDBOX_AGENT": "coding_agent",
+    "CODING_AGENT_SANDBOX_HOST": "coding_agent",
     "ONBOARDING_SKILL_NAME": "skills",
     "SKILL_FILENAME": "skills",
     "SKILL_REPORT_SUFFIX": "skills",

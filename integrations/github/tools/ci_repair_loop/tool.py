@@ -81,6 +81,7 @@ def _result(run: RepairRun, store: RepairStore) -> dict[str, Any]:
         "properties": {
             "demo": {
                 "type": "boolean",
+                "default": False,
                 "description": "Use the reusable private demo repository; default false.",
             },
             "owner": {

@@ -41,6 +41,8 @@ TOOL_NAME = "ask_hosted_gateway"
 _COMPONENT = "integrations.hosted_gateway.tools.gateway_prompt.ask_hosted_gateway"
 _CHOOSE_COMMAND = "/choose"
 _HOSTED_PROMPT_INTERACTION_PREFIX = "hosted_prompt:"
+#: Progress lines come from the gateway's own tools, whose labels say "this machine".
+_GATEWAY_PROGRESS_PREFIX = "on the gateway: "
 
 _STATE_TEXT = {
     "failed": "The hosted gateway could not run that prompt ({error}).",
@@ -65,10 +67,16 @@ _FAILURE_TEXT = {
     ),
 }
 _ANSWER_REJECTED = "That answer did not match the question's options; the question opens again. "
+#: The prompt id stays in the user's line: it is all the resumed turn keeps of this result.
 _ASKING_IN_SHELL = (
-    "The hosted gateway needs a decision from the user; the menu opens now. Once they have "
-    "answered, call ask_hosted_gateway again with prompt_id={prompt_id}; their selection is "
-    "sent as the answer. Do not repeat the question."
+    "The hosted gateway needs your decision; the menu opens now. Your selection goes back "
+    "to its prompt {prompt_id}."
+)
+#: For the model only: how the parked question continues once the user has answered.
+_ASKING_IN_SHELL_INSTRUCTIONS = (
+    "The question is parked on the shell's menu; the user answers it there. Once they have "
+    "answered, call ask_hosted_gateway again with prompt_id={prompt_id} and no prompt; their "
+    "selection is sent as the answer. Do not repeat the question and do not answer it yourself."
 )
 _ASKING_WITHOUT_SHELL = (
     "The hosted gateway stopped to ask: {question}\nAnswer it from the interactive shell "
@@ -79,10 +87,15 @@ _STILL_RUNNING = (
     "{waited} seconds. Ask again later with that id to read the result."
 )
 _FAILED_INTEGRATIONS = (
-    "The hosted gateway could not use the organization's {vendors} integration. It uses the "
-    "organization's credentials from {url}, not this machine's: an admin fixes or replaces "
-    "them there and the gateway restarts with the new ones. {next_step} Tell the user this "
-    "first, in plain words.\n\n"
+    "The hosted gateway's {vendors} integration failed during this request. The gateway "
+    "uses the organization's {vendors} credential from {url}, not this machine's: if that "
+    "credential is invalid or cannot reach the repository, an admin updates it there and "
+    "the gateway restarts with the new one. {next_step}\n\n"
+)
+#: For the model only: the failed integration is the first thing the user hears about.
+_FAILED_INTEGRATIONS_INSTRUCTIONS = (
+    "Tell the user about the failed {vendors} integration first, in plain words, before "
+    "anything else in the answer."
 )
 #: What may follow a fixed credential, by state: never a blind re-send of work already done.
 _FAILED_INTEGRATION_NEXT_STEP = {
@@ -165,6 +178,7 @@ _FAILED_INTEGRATION_NEXT_STEP = {
         "choice": "The question as menu data (title, note, questions with options) when needs_input",
         "failed_integrations": "Integrations whose tools failed on the gateway, e.g. github",
         "response_text": "Plain-language result for the user",
+        "instructions": "What to do next with a parked question or a failed integration; not for the user",
     },
 )
 def ask_hosted_gateway(
@@ -272,16 +286,19 @@ class _ProgressRelay:
             if line.index <= self._last_index:
                 continue
             self._last_index = line.index
-            self._emit({"progress": line.text})
+            self._emit({"progress": _GATEWAY_PROGRESS_PREFIX + line.text})
 
 
 def _outcome(
     record: PromptRecord, waited: float, integrations_url: str, scope: ActionToolScope | None
 ) -> dict[str, Any]:
+    instructions: list[str] = []
     if record.state == "done":
         text = record.answer
     elif record.state == "needs_input":
-        text = _ask_here(record, scope)
+        text, parked = _ask_here(record, scope)
+        if parked:
+            instructions.append(_ASKING_IN_SHELL_INSTRUCTIONS.format(prompt_id=record.prompt_id))
     elif record.state in _STATE_TEXT:
         text = _failure_text(record.error)
     else:
@@ -293,6 +310,7 @@ def _outcome(
             vendors=vendors, url=integrations_url, next_step=next_step
         )
         text = hint + text
+        instructions.insert(0, _FAILED_INTEGRATIONS_INSTRUCTIONS.format(vendors=vendors))
     return {
         "success": record.settled,
         "prompt_id": record.prompt_id,
@@ -301,6 +319,7 @@ def _outcome(
         "choice": _choice_data(record),
         "failed_integrations": list(record.failed_integrations),
         "response_text": text,
+        "instructions": " ".join(instructions),
     }
 
 
@@ -311,17 +330,21 @@ def _failure_text(error: str) -> str:
     return _STATE_TEXT["failed"].format(error=error)
 
 
-def _ask_here(record: PromptRecord, scope: ActionToolScope | None) -> str:
-    """Park the gateway's question on this shell's menu so the user answers it, not the model."""
+def _ask_here(record: PromptRecord, scope: ActionToolScope | None) -> tuple[str, bool]:
+    """Park the gateway's question on this shell's menu so the user answers it, not the model.
+
+    Returns the words for the user and whether the question was parked.
+    """
     session = getattr(scope, "session", None)
     if record.choice is None or session is None:
-        return _ASKING_WITHOUT_SHELL.format(question=record.question, prompt_id=record.prompt_id)
+        text = _ASKING_WITHOUT_SHELL.format(question=record.question, prompt_id=record.prompt_id)
+        return text, False
     session.pending_user_choice = _local_choice(record.prompt_id, record.choice)
     set_auto_command(session, _CHOOSE_COMMAND)
     terminal = session_terminal(session)
     if terminal is not None:
         terminal.awaiting_handoff_answer = True
-    return _ASKING_IN_SHELL.format(question=record.question, prompt_id=record.prompt_id)
+    return _ASKING_IN_SHELL.format(prompt_id=record.prompt_id), True
 
 
 def _local_choice(prompt_id: str, choice: PromptChoice) -> PendingUserChoice:

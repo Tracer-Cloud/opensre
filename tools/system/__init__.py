@@ -17,6 +17,7 @@ TOOL_MODULES = (
     "fleet_monitoring",
     "python_execution_tool",
     "runbook_guidance_tool.tool",
+    "scheduled_loops.tool",
     "sre_guidance_tool",
     "structured_file.tool",
     "work_items.tool",

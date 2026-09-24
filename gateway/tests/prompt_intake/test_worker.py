@@ -195,7 +195,7 @@ def test_a_failing_integration_tool_is_named_on_the_settled_job() -> None:
     assert job.view()["failed_integrations"] == ["github"]
 
 
-def _approval_request(pr_number: int = 7) -> Any:
+def _approval_request(pr_number: int = 7, *, demo_spelled_out: bool = False) -> Any:
     from core.llm.types import ToolCall
     from core.tool import ToolExecutionRequest
     from tools.registry import clear_tool_registry_cache, get_registered_tool_map
@@ -203,10 +203,13 @@ def _approval_request(pr_number: int = 7) -> Any:
     clear_tool_registry_cache()
     tool = get_registered_tool_map()["schedule_ci_repair_loop"]
     assert tool.requires_approval
+    arguments: dict[str, Any] = {"owner": "o", "repo": "r", "pr_number": pr_number}
+    if demo_spelled_out:
+        arguments["demo"] = False
     return ToolExecutionRequest(
         tool_call=ToolCall(id="c", name="schedule_ci_repair_loop", input={}),
         tool=tool,
-        arguments={"owner": "o", "repo": "r", "pr_number": pr_number},
+        arguments=arguments,
         source="test",
         resolved_integrations={},
     )
@@ -218,6 +221,7 @@ class _ApprovalHandler(_Handler):
     def __init__(self, pr_numbers: list[int]) -> None:
         super().__init__(answer="scheduled")
         self.pr_numbers = pr_numbers
+        self.spell_out_demo = False
         self.verdicts: list[Any] = []
 
     def run(
@@ -225,7 +229,8 @@ class _ApprovalHandler(_Handler):
     ) -> Any:
         self.seen_text = text
         for pr_number in self.pr_numbers:
-            verdict = output.tool_hooks.before_tool_call(_approval_request(pr_number))
+            request = _approval_request(pr_number, demo_spelled_out=self.spell_out_demo)
+            verdict = output.tool_hooks.before_tool_call(request)
             self.verdicts.append(verdict)
         output.finalize(self.answer)
         return self.result
@@ -257,6 +262,29 @@ def test_an_approval_covers_exactly_the_previewed_call_once() -> None:
     assert follow_up.state is PromptState.NEEDS_INPUT
     assert follow_up.session_id == asked.session_id
     assert "Approve" in handler.seen_text and "schedule_ci_repair_loop" in handler.seen_text
+
+
+def test_an_approval_survives_the_model_restating_the_call_without_its_defaults() -> None:
+    """Live: Approve was answered, the resumed call dropped ``demo: false`` and asked again."""
+    # Arrange: the first turn spells the default out; the resumed turn leaves it out
+    handler = _ApprovalHandler([7])
+    handler.spell_out_demo = True
+    worker, queue = _worker(handler)
+    asked = queue.submit("schedule the repair loop for o/r#7", context={}, actor="u")
+    assert asked is not None
+
+    # Act
+    worker.run_one(asked)
+    handler.spell_out_demo = False
+    follow_up = queue.answer(asked, "Approve")
+    assert follow_up is not None
+    worker.run_one(follow_up)
+
+    # Assert: the restated call is the approved call; no second question is asked
+    first, resumed = handler.verdicts
+    assert first.blocked is True
+    assert resumed is None
+    assert follow_up.state is PromptState.DONE
 
 
 class _HistoryHandler(_Handler):

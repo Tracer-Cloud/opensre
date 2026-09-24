@@ -215,6 +215,12 @@ scheduler as its own single service instead:
 
 Run exactly one scheduler service, never one per gateway task.
 
+The gateway image sets `CODING_AGENT_SANDBOX=host`: Fargate denies the user
+namespaces that the coding agent's own sandbox needs, so the task itself is the
+isolation boundary and the agent gets the whole process. Unset it (or set
+`agent`) only where the agent's sandbox can start, such as a VM or a container
+that allows user namespaces.
+
 The scheduler service and every process that mutates tasks — the gateway,
 `opensre cron`, and `/loops` — must share the **same** task store: the same
 `OPENSRE_HOME` on a shared mount (S3 Files / EFS). The scheduler reconciles from

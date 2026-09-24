@@ -10,6 +10,11 @@ from __future__ import annotations
 import os
 from collections.abc import Mapping
 
+from config.constants import (
+    CODING_AGENT_SANDBOX_AGENT,
+    CODING_AGENT_SANDBOX_ENV,
+    CODING_AGENT_SANDBOX_HOST,
+)
 from integrations.llm_cli.timeout_utils import resolve_timeout_from_env
 
 _DEFAULT_PROVIDER = "auto"
@@ -26,6 +31,19 @@ def coding_agent_provider(env: Mapping[str, str] | None = None) -> str:
     """
     source = env if env is not None else os.environ
     return (source.get("CODING_AGENT") or _DEFAULT_PROVIDER).strip().lower() or _DEFAULT_PROVIDER
+
+
+def coding_agent_sandbox(env: Mapping[str, str] | None = None) -> str:
+    """Whose sandbox guards the agent's commands: ``agent`` (default) or ``host``.
+
+    ``host`` is for a process that already runs inside an isolated container
+    which cannot create the namespaces the agent's own sandbox needs.
+    """
+    source = env if env is not None else os.environ
+    value = (source.get(CODING_AGENT_SANDBOX_ENV) or "").strip().lower()
+    if value == CODING_AGENT_SANDBOX_HOST:
+        return CODING_AGENT_SANDBOX_HOST
+    return CODING_AGENT_SANDBOX_AGENT
 
 
 def coding_model(env: Mapping[str, str] | None = None) -> str | None:

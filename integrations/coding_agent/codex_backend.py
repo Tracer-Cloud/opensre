@@ -15,12 +15,14 @@ otherwise OpenAI Platform auth env keys are forwarded to the subprocess.
 from __future__ import annotations
 
 from config.account import account_llm_route
+from config.constants import CODING_AGENT_SANDBOX_HOST
 from integrations.coding_agent.backend_exec import (
     failure,
     resolve_workspace_dir,
     run_agentic_cli,
     workspace_error,
 )
+from integrations.coding_agent.config import coding_agent_sandbox
 from integrations.coding_agent.hosted_credentials import hosted_openai_subprocess_env
 from integrations.coding_agent.models import CodingResult, Progress
 from integrations.llm_cli.agent_exec import build_guarded_task_prompt
@@ -35,6 +37,14 @@ from integrations.llm_cli.subprocess_env import build_cli_subprocess_env
 
 _INSTALL_HINT = "npm i -g @openai/codex"
 _WRITE_SANDBOX = "workspace-write"
+#: Codex's own sandbox needs user namespaces; an isolated host that lacks them is the boundary instead.
+_HOST_SANDBOX = "danger-full-access"
+
+
+def _sandbox_mode() -> str:
+    if coding_agent_sandbox() == CODING_AGENT_SANDBOX_HOST:
+        return _HOST_SANDBOX
+    return _WRITE_SANDBOX
 
 
 def _resolve_binary() -> str | None:
@@ -83,7 +93,7 @@ def run(
         "exec",
         "--ephemeral",
         "-s",
-        _WRITE_SANDBOX,
+        _sandbox_mode(),
         "--color",
         "never",
         "-C",

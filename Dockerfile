@@ -75,6 +75,9 @@ RUN groupadd --gid 1000 opensre \
 ENV PORT=8000
 ENV MODE=web
 ENV HOME=/home/opensre
+# Fargate denies user namespaces, so the coding agent's own sandbox cannot start;
+# this task is the isolation boundary and the agent gets the whole process.
+ENV CODING_AGENT_SANDBOX=host
 # site-packages is root-owned; skip bytecode writes the non-root user can't make.
 ENV PYTHONDONTWRITEBYTECODE=1
 
