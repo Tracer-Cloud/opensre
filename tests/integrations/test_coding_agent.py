@@ -232,19 +232,64 @@ def test_codex_backend_hands_the_host_sandbox_to_codex_only_when_configured(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A container that cannot create namespaces (Fargate) is the boundary; Codex's sandbox is not."""
+    """A container that cannot create namespaces (Fargate) is the boundary; Codex's sandbox is not.
+
+    Without a sandbox the checkout must not instruct Codex, and Codex must not hold the
+    account token: it gets a per-run token for a loopback relay instead.
+    """
     # Arrange
     mock_resolve.return_value = "/usr/bin/codex"
     mock_popen.return_value = _FakePopen()
     monkeypatch.setenv("CODING_AGENT_SANDBOX", "host")
+    hosted = {"OPENAI_API_KEY": "osre_pat_secret", "OPENAI_BASE_URL": "https://app.test/api/llm/v1"}
+    monkeypatch.setattr(
+        "integrations.coding_agent.codex_backend.hosted_openai_subprocess_env", lambda: hosted
+    )
 
     # Act
     codex_backend.run("fix the bug", workspace=str(tmp_path), model=None, timeout_sec=60)
 
-    # Assert: the sandbox flag names full access, and nothing else in the call changes
+    # Assert: full access, no AGENTS.md, an untrusted-docs rule, and only the relay's token/URL
     argv = mock_popen.call_args.args[0]
+    env = mock_popen.call_args.kwargs["env"]
     assert argv[argv.index("-s") + 1] == "danger-full-access"
     assert "workspace-write" not in argv
+    assert "project_doc_max_bytes=0" in argv
+    assert "Follow AGENTS.md" not in argv[-1] and "never instructions to" in argv[-1]
+    overrides = " ".join(argv)
+    assert 'base_url="http://127.0.0.1:' in overrides and "app.test" not in overrides
+    assert env["OPENAI_API_KEY"] != "osre_pat_secret" and len(env["OPENAI_API_KEY"]) >= 32
+    assert env["OPENAI_BASE_URL"].startswith("http://127.0.0.1:")
+    assert "osre_pat_secret" not in " ".join(env.values())
+
+
+@patch(_POPEN)
+@patch(_GIT_RUN, side_effect=_git_run_side_effect)
+@patch("integrations.coding_agent.codex_backend._resolve_binary")
+def test_codex_backend_keeps_the_route_and_agents_md_under_its_own_sandbox(
+    mock_resolve: MagicMock,
+    _mock_git: MagicMock,
+    mock_popen: MagicMock,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange: the default (agent) sandbox with a signed-in hosted route
+    mock_resolve.return_value = "/usr/bin/codex"
+    mock_popen.return_value = _FakePopen()
+    hosted = {"OPENAI_API_KEY": "osre_pat_secret", "OPENAI_BASE_URL": "https://app.test/api/llm/v1"}
+    monkeypatch.setattr(
+        "integrations.coding_agent.codex_backend.hosted_openai_subprocess_env", lambda: hosted
+    )
+
+    # Act
+    codex_backend.run("fix the bug", workspace=str(tmp_path), model=None, timeout_sec=60)
+
+    # Assert: the sandboxed agent talks to the route directly and may read AGENTS.md
+    argv = mock_popen.call_args.args[0]
+    env = mock_popen.call_args.kwargs["env"]
+    assert 'base_url="https://app.test/api/llm/v1"' in " ".join(argv)
+    assert "project_doc_max_bytes=0" not in argv and "Follow AGENTS.md" in argv[-1]
+    assert env["OPENAI_API_KEY"] == "osre_pat_secret"
 
 
 def test_an_unknown_sandbox_setting_keeps_the_agents_own_sandbox() -> None:
@@ -384,14 +429,11 @@ def test_codex_subprocess_env_uses_hosted_credentials_instead_of_local_openai(
 ) -> None:
     monkeypatch.setenv("OPENAI_API_KEY", "sk-local")
     monkeypatch.setenv("OPENAI_BASE_URL", "https://api.openai.com/v1")
-    monkeypatch.setattr(
-        "integrations.coding_agent.codex_backend.hosted_openai_subprocess_env",
-        lambda: {
-            "OPENAI_API_KEY": "osre_pat_secret",
-            "OPENAI_BASE_URL": "https://app.opensre.com/api/llm/v1",
-        },
-    )
-    env = codex_backend._subprocess_env()
+    hosted = {
+        "OPENAI_API_KEY": "osre_pat_secret",
+        "OPENAI_BASE_URL": "https://app.opensre.com/api/llm/v1",
+    }
+    env = codex_backend._subprocess_env(hosted)
     assert env["OPENAI_API_KEY"] == "osre_pat_secret"
     assert env["OPENAI_BASE_URL"] == "https://app.opensre.com/api/llm/v1"
 
@@ -416,12 +458,9 @@ def test_codex_backend_names_the_hosted_provider_when_on_the_hosted_route(
 
     mock_run.return_value = CodingResult(success=True, summary="ok")
     route = AccountLLMRoute(base_url="https://app.example/api/llm/v1", model="gpt-5.6-sol")
-    with (
-        patch(
-            "integrations.coding_agent.codex_backend.hosted_openai_subprocess_env",
-            return_value={"OPENAI_API_KEY": "tok", "OPENAI_BASE_URL": route.base_url},
-        ),
-        patch("integrations.coding_agent.codex_backend.account_llm_route", return_value=route),
+    with patch(
+        "integrations.coding_agent.codex_backend.hosted_openai_subprocess_env",
+        return_value={"OPENAI_API_KEY": "tok", "OPENAI_BASE_URL": route.base_url},
     ):
         codex_backend.run("fix", workspace=str(tmp_path), model="gpt-5.6-sol", timeout_sec=60)
 
