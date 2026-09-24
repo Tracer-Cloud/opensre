@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import socket
 import threading
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Iterator
 from http import HTTPStatus
@@ -120,6 +122,35 @@ def test_anything_but_the_run_token_is_refused_before_reaching_the_route(
         HTTPStatus.UNAUTHORIZED,
     )
     assert outside == HTTPStatus.NOT_FOUND
+    assert upstream.requests == []
+
+
+def _raw_status(url: str, headers: list[str]) -> int:
+    """Send a hand-built request so the Content-Length header can say anything."""
+    parts = urllib.parse.urlsplit(url)
+    lines = [f"POST {parts.path} HTTP/1.1", f"Host: {parts.netloc}", *headers, "", ""]
+    with socket.create_connection((parts.hostname, parts.port), timeout=5) as sock:
+        sock.sendall("\r\n".join(lines).encode("ascii"))
+        status_line = sock.makefile("rb").readline().decode("ascii")
+    return int(status_line.split(" ")[1])
+
+
+def test_a_bad_content_length_is_refused_before_any_body_is_read(upstream: _Upstream) -> None:
+    """Content-Length: -1 passed the upper bound and read() waited for an endless body."""
+    # Arrange
+    relay = HostedRouteRelay(upstream.base_url, _ACCOUNT_TOKEN)
+
+    # Act
+    with relay:
+        url = f"{relay.base_url}/responses"
+        auth = f"Authorization: Bearer {relay.run_token}"
+        negative = _raw_status(url, [auth, "Content-Length: -1"])
+        garbled = _raw_status(url, [auth, "Content-Length: many"])
+        oversized = _raw_status(url, [auth, f"Content-Length: {17 * 1024 * 1024}"])
+
+    # Assert: each answered at once with a refusal; nothing reached the route
+    assert (negative, garbled) == (HTTPStatus.BAD_REQUEST, HTTPStatus.BAD_REQUEST)
+    assert oversized == HTTPStatus.REQUEST_ENTITY_TOO_LARGE
     assert upstream.requests == []
 
 

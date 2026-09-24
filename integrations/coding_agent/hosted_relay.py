@@ -80,7 +80,10 @@ class HostedRouteRelay:
                 if route_path is None:
                     self._reply_status(HTTPStatus.NOT_FOUND)
                     return
-                length = int(self.headers.get("content-length") or 0)
+                length = _declared_body_length(self.headers.get("content-length"))
+                if length is None:
+                    self._reply_status(HTTPStatus.BAD_REQUEST)
+                    return
                 if length > _MAX_BODY_BYTES:
                     self._reply_status(HTTPStatus.REQUEST_ENTITY_TOO_LARGE)
                     return
@@ -158,6 +161,23 @@ class HostedRouteRelay:
             self._thread.join(timeout=5.0)
         self._server = None
         self._thread = None
+
+
+def _declared_body_length(header: str | None) -> int | None:
+    """The Content-Length as a non-negative int; ``None`` when absent-but-garbled or negative.
+
+    A negative or malformed length would make ``read`` wait for the connection to
+    close while the body grows without bound, so it is refused before any read.
+    """
+    if header is None or not header.strip():
+        return 0
+    try:
+        length = int(header.strip())
+    except ValueError:
+        return None
+    if length < 0:
+        return None
+    return length
 
 
 def _route_path(request_path: str) -> str | None:
