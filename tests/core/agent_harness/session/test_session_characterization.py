@@ -82,18 +82,22 @@ class TestWarmCacheGeneration:
     def test_stale_generation_is_ignored(self) -> None:
         session = _session()
         session.integrations._warm_generation = 5
-        session.integrations._store({"datadog": {"connection_verified": True}}, generation=3)
+        session.integrations._store(
+            {"datadog": {"connection_verified": True}}, generation=3, stamp=0
+        )
         assert session.resolved_integrations_cache is None
 
     def test_empty_resolve_is_not_cached(self) -> None:
         session = _session()
-        session.integrations._store({}, generation=session.integrations._warm_generation)
+        session.integrations._store({}, generation=session.integrations._warm_generation, stamp=0)
         assert session.resolved_integrations_cache is None
 
     def test_current_generation_stores_the_cache(self) -> None:
         session = _session()
         gen = session.integrations._warm_generation
-        session.integrations._store({"datadog": {"connection_verified": True}}, generation=gen)
+        session.integrations._store(
+            {"datadog": {"connection_verified": True}}, generation=gen, stamp=0
+        )
         assert session.resolved_integrations_cache is not None
         assert "datadog" in session.resolved_integrations_cache
 

@@ -66,6 +66,36 @@ def test_a_warmed_session_also_drops_its_cache_after_a_store_rewrite(
     assert state["resolutions"] == 2
 
 
+@pytest.mark.parametrize("path", ["warm", "turn"])
+def test_a_store_rewritten_during_resolution_is_re_resolved_next_turn(
+    monkeypatch: pytest.MonkeyPatch, path: str
+) -> None:
+    """Credentials read from the old store must not carry the new store's stamp."""
+    # Arrange: the store is rewritten while the first resolution is in flight
+    state = _store_versions(monkeypatch)
+    session = SessionCore()
+    real_resolve = integration_resolution.resolve_integrations
+
+    def resolve_while_store_changes() -> dict[str, Any]:
+        resolved = real_resolve()
+        if state["resolutions"] == 1:
+            state.update(stamp=2, token="token-two")
+        return resolved
+
+    monkeypatch.setattr(integration_resolution, "resolve_integrations", resolve_while_store_changes)
+
+    # Act
+    if path == "warm":
+        session.integrations.warm()
+    else:
+        resolve_and_cache_integrations(session)
+    after_rewrite = resolve_and_cache_integrations(session)
+
+    # Assert: the in-flight result was stamped with the old store, so the next turn re-resolves
+    assert after_rewrite["github"]["auth_token"] == "token-two"
+    assert state["resolutions"] == 2
+
+
 def test_an_unchanged_store_keeps_the_cache(monkeypatch: pytest.MonkeyPatch) -> None:
     # Arrange
     state = _store_versions(monkeypatch)

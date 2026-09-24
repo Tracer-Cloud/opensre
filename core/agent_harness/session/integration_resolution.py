@@ -179,14 +179,18 @@ class IntegrationState:
         if generation is None:
             with self._warm_lock:
                 generation = self._warm_generation
+        # The stamp is read before resolving so it names the store these
+        # credentials came from; a store rewritten mid-resolution keeps the
+        # older stamp and is re-resolved on the next turn.
+        stamp = integrations_store_stamp()
         try:
             resolved = resolve_integrations()
         except Exception:
             # Best-effort warmup: leave cache unset so later turns can retry.
             return
-        self._store(resolved, generation=generation)
+        self._store(resolved, generation=generation, stamp=stamp)
 
-    def _store(self, resolved: dict[str, Any], *, generation: int) -> None:
+    def _store(self, resolved: dict[str, Any], *, generation: int, stamp: int) -> None:
         if not resolved:
             return
         with self._warm_lock:
@@ -197,7 +201,7 @@ class IntegrationState:
             ):
                 return
             self.resolved_cache = merge_resolved_integrations(self.resolved_cache, resolved)
-            self.store_stamp = integrations_store_stamp()
+            self.store_stamp = stamp
 
     def get(self) -> IntegrationResolutionResult:
         """Return the session's integration configs as a typed snapshot (cache-aware).
