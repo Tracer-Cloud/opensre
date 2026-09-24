@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from config.principal import PrincipalKind
+from config.scope_context import current_scope
 from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel
 from core.tool_framework import tool
@@ -11,7 +13,7 @@ from core.tool_framework.utils import tool_unavailable
 from infrastructure.scheduling.scheduler.loop_results import latest_loop_runs
 from infrastructure.scheduling.scheduler.loops import LoopSummary, summarize_loops
 from infrastructure.scheduling.scheduler.storage import get_task_store_snapshot
-from infrastructure.scheduling.scheduler.types import TaskRun
+from infrastructure.scheduling.scheduler.types import ScheduledTask, TaskRun
 
 TOOL_NAME = "list_scheduled_loops"
 _SOURCE = "system"
@@ -31,6 +33,19 @@ _INPUT_SCHEMA: dict[str, Any] = {
     },
     "additionalProperties": False,
 }
+
+
+def _visible_to_this_turn(task: ScheduledTask) -> bool:
+    """A turn bound to an organization sees that organization's tasks and no others.
+
+    Outside any organization scope (the operator's own shell) every task is
+    visible. A task without an owner is not shown to an organization: it may
+    belong to another one.
+    """
+    scope = current_scope()
+    if scope is None or scope.principal.kind != PrincipalKind.ORG:
+        return True
+    return task.organization == scope.principal.id
 
 
 def _loop_row(loop: LoopSummary, run: TaskRun | None) -> dict[str, Any]:
@@ -110,8 +125,10 @@ def list_scheduled_loops(include_disabled: bool = True, **_kwargs: Any) -> dict[
     if not snapshot.complete:
         # An unreadable store is not an empty schedule; say so instead of listing nothing.
         return tool_unavailable(_SOURCE, _STORE_UNREADABLE)
-    # One read: the rows come from the same validated snapshot the check looked at.
-    loops = summarize_loops(snapshot.tasks, include_disabled=include_disabled)
+    # One read: the rows come from the same validated snapshot the check looked at,
+    # narrowed to the organization this turn belongs to.
+    own_tasks = [task for task in snapshot.tasks if _visible_to_this_turn(task)]
+    loops = summarize_loops(own_tasks, include_disabled=include_disabled)
     runs = latest_loop_runs(loops)
     rows = [_loop_row(loop, runs.get(loop.id)) for loop in loops]
     return {

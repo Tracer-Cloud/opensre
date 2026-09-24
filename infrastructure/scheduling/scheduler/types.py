@@ -77,6 +77,8 @@ class ScheduledTask(BaseModel):
     timezone: str = "UTC"
     provider: Provider
     chat_id: str = ""
+    #: The organization whose turn created the task; "" for tasks made outside any org scope.
+    organization: str = ""
     window_hours: int = 24
     enabled: bool = True
     params: dict[str, str] = Field(default_factory=dict)

@@ -6,6 +6,8 @@ from typing import Any
 
 import pytest
 
+from config.principal import Actor, Principal, StorageScope
+from config.scope_context import bound_storage_scope
 from infrastructure.scheduling.scheduler.loops import LoopSummary
 from infrastructure.scheduling.scheduler.storage import TaskStoreSnapshot
 from infrastructure.scheduling.scheduler.types import (
@@ -64,7 +66,9 @@ def _store_reads(
         return TaskStoreSnapshot(tasks=stored_tasks, complete=complete, missing=missing)
 
     def summaries(tasks: Any, *, include_disabled: bool) -> list[LoopSummary]:
-        assert tasks == stored_tasks, "rows must come from the checked snapshot, not a second read"
+        assert list(tasks) == list(stored_tasks), (
+            "rows must come from the checked snapshot, not a second read"
+        )
         return loops if include_disabled else [loop for loop in loops if loop.enabled]
 
     def newest_runs(listed: list[LoopSummary]) -> dict[str, TaskRun]:
@@ -139,6 +143,35 @@ def test_no_store_yet_and_an_empty_store_read_differently(monkeypatch: pytest.Mo
     assert never_scheduled["response_text"].startswith("No scheduler task store exists here yet")
     assert emptied["store_missing"] is False
     assert emptied["response_text"] == "No scheduled loops are configured."
+
+
+def test_an_organization_sees_only_its_own_loops(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The store is process-wide; a turn bound to org A must not list org B's or unowned loops."""
+    # Arrange: three tasks in one store, then a turn bound to organization A
+    own = _SNAPSHOT_TASK.model_copy(update={"id": "own1", "organization": "org_A"})
+    other = _SNAPSHOT_TASK.model_copy(update={"id": "oth1", "organization": "org_B"})
+    unowned = _SNAPSHOT_TASK.model_copy(update={"id": "old1"})
+    received: list[list[str]] = []
+
+    def snapshot() -> TaskStoreSnapshot:
+        return TaskStoreSnapshot(tasks=(own, other, unowned), complete=True, missing=False)
+
+    def summaries(tasks: Any, *, include_disabled: bool) -> list[LoopSummary]:  # noqa: ARG001
+        received.append([task.id for task in tasks])
+        return []
+
+    monkeypatch.setattr(loops_tool, "get_task_store_snapshot", snapshot)
+    monkeypatch.setattr(loops_tool, "summarize_loops", summaries)
+    monkeypatch.setattr(loops_tool, "latest_loop_runs", lambda _loops: {})
+    scope = StorageScope(principal=Principal.org("org_A"), actor=Actor(id="u1"))
+
+    # Act
+    with bound_storage_scope(scope):
+        list_scheduled_loops()
+    list_scheduled_loops()
+
+    # Assert: bound, only org A's task is summarised; unbound (operator shell), all of them
+    assert received == [["own1"], ["own1", "oth1", "old1"]]
 
 
 def test_the_tool_is_registered_as_a_read_only_action_tool() -> None:

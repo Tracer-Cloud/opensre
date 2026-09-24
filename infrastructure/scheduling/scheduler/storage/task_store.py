@@ -18,6 +18,8 @@ from filelock import FileLock
 
 from config.constants import OPENSRE_HOME_DIR
 from config.constants.work_items import WORK_ITEM_REMINDER_RUN_AT_PARAM
+from config.principal import PrincipalKind
+from config.scope_context import current_scope
 from infrastructure.scheduling.scheduler import reload_signal
 from infrastructure.scheduling.scheduler.storage.database import run_database_path
 from infrastructure.scheduling.scheduler.storage.legacy_task_migration import (
@@ -237,6 +239,20 @@ def _schedule_identity(entry: Mapping[str, Any]) -> tuple[Any, ...]:
     )
 
 
+def _owned_by_bound_organization(task: ScheduledTask) -> ScheduledTask:
+    """Stamp the bound organization on a task created inside an org-scoped turn.
+
+    The store is process-wide; the stamp is what lets a reader show one
+    organization only its own loops. A task that already names its owner keeps it.
+    """
+    if task.organization:
+        return task
+    scope = current_scope()
+    if scope is None or scope.principal.kind != PrincipalKind.ORG:
+        return task
+    return task.model_copy(update={"organization": scope.principal.id})
+
+
 def add_task(task: ScheduledTask, store_path: Path | None = None) -> ScheduledTask:
     """Persist a scheduled task, or update the matching schedule's skill revision.
 
@@ -245,6 +261,7 @@ def add_task(task: ScheduledTask, store_path: Path | None = None) -> ScheduledTa
     ``daily_summary`` entries, none of which could deliver.
     """
     path = store_path or default_task_store_path()
+    task = _owned_by_bound_organization(task)
     lock = FileLock(_lock_path(path))
     with lock:
         raw = _load_for_write(path)
