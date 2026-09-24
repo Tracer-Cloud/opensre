@@ -38,8 +38,13 @@ from config.constants.tenancy import (
     CREDENTIALS_BOOTSTRAP_SECRET_ARN_ENV,
     INTEGRATIONS_SECRET_ARN_ENV,
 )
+from config.principal import Actor, Principal, StorageScope
+from config.scope_context import bound_storage_scope
 from integrations.credentials_api import CredentialsApiClient, hydrate_integration_store
 from integrations.secrets_vault import hydrate_integration_store_from_secret
+
+#: The actor recorded for store writes the gateway makes on the organization's behalf.
+_HYDRATION_ACTOR = "gateway"
 
 
 class SecretsManagerClient(Protocol):
@@ -151,9 +156,22 @@ class GatewayCredentialHydrator:
         )
         if version == self._integrations_version:
             return False
-        hydrate_integration_store_from_secret(secret_string)
+        self._replace_store(secret_string)
         self._integrations_version = version
         return True
+
+    def _replace_store(self, secret_string: str) -> None:
+        """Materialize the store where this organization's turns read it.
+
+        Turns bind the organization's storage scope, and the store path follows
+        that scope unless an explicit path is configured; hydrating under the
+        same scope keeps both on one file.
+        """
+        scope = StorageScope(
+            principal=Principal.org(self._config.organization_id), actor=Actor(id=_HYDRATION_ACTOR)
+        )
+        with bound_storage_scope(scope):
+            hydrate_integration_store_from_secret(secret_string)
 
     @classmethod
     def from_environment(cls) -> GatewayCredentialHydrator | None:
@@ -198,7 +216,7 @@ class GatewayCredentialHydrator:
         secret_string, version = self._read_secret(
             self._config.integrations_secret_arn, secret_name="Integrations"
         )
-        hydrate_integration_store_from_secret(secret_string)
+        self._replace_store(secret_string)
         self._integrations_version = version
 
     def _load_from_credentials_api(self, bootstrap: GatewayBootstrap) -> None:
@@ -227,17 +245,19 @@ def watch_credential_changes(
 ) -> None:
     """Reload the store whenever the organization's secret changes, until ``stop`` is set.
 
-    One failed check is reported and the next one still runs: a transient
-    Secrets Manager error must not leave the gateway on stale credentials for good.
+    One failed check, or a failed ``on_reload``, is reported and the next check
+    still runs: a transient error must not leave the gateway on stale
+    credentials for good. Nothing is reported once ``stop`` is set, so a read
+    that outlives shutdown cannot republish status afterwards.
     """
     while not stop.wait(interval_seconds):
         try:
             reloaded = hydrator.refresh_if_changed()
+            if reloaded and not stop.is_set():
+                on_reload()
         except Exception as exc:
-            on_error(exc)
-            continue
-        if reloaded:
-            on_reload()
+            if not stop.is_set():
+                on_error(exc)
 
 
 __all__ = [

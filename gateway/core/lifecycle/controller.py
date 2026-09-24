@@ -305,6 +305,8 @@ class GatewayController:
             return
 
         def _reloaded() -> None:
+            if self._stopped.is_set():
+                return
             self.components["credentials"] = "hydrated (reloaded)"
             logger.info("[gateway] integrations reloaded from the organization's secret")
             self._publish_status(logger)

@@ -16,6 +16,7 @@ import threading
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from config.constants.paths import integrations_store_stamp
 from infrastructure.harness_providers import (
     IntegrationResolutionResult,
     resolve_integrations,
@@ -82,15 +83,34 @@ def _has_usable_cache(cache: dict[str, Any] | None) -> bool:
 
 
 def resolve_and_cache_integrations(session: SessionState) -> dict[str, Any]:
-    """Resolve a session's integration configs, using and updating its cache."""
+    """Resolve a session's integration configs, using and updating its cache.
+
+    A cache built from an earlier version of the integrations store is dropped,
+    so a credential that reached this process after the session started is
+    picked up on the session's next turn. The store stamp lives on the session's
+    :class:`IntegrationState`; a session without one keeps the plain cache rule.
+    """
+    stamp = integrations_store_stamp()
+    state = getattr(session, "integrations", None)
     cached = session.resolved_integrations_cache
+    if cached and _built_from_another_store(state, stamp):
+        cached = None
+        session.resolved_integrations_cache = None
     if _has_usable_cache(cached):
         return dict(cached or {})
 
     resolved = resolve_integrations()
     if resolved:
         session.resolved_integrations_cache = merge_resolved_integrations(cached, resolved)
+        if isinstance(state, IntegrationState):
+            state.store_stamp = stamp
     return dict(session.resolved_integrations_cache or {})
+
+
+def _built_from_another_store(state: Any, stamp: int) -> bool:
+    if not isinstance(state, IntegrationState) or state.store_stamp is None:
+        return False
+    return state.store_stamp != stamp
 
 
 # ---------------------------------------------------------------------------
@@ -113,6 +133,8 @@ class IntegrationState:
     conversational assistant can call registered tools without
     waiting for the first user message to trigger a visible "Loading integrations"
     pass. Cleared by :meth:`refresh` when integrations change."""
+    store_stamp: int | None = None
+    """Stamp of the integrations store the resolved cache was built from."""
     vcs_repo_scopes: dict[str, tuple[str, ...]] = field(default_factory=dict)
     """Active per-vendor repo scopes used for unqualified VCS tool calls."""
     active_vcs_repositories: dict[str, str] = field(default_factory=dict)

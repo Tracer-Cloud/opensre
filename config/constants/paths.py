@@ -202,6 +202,19 @@ def integrations_store_path() -> Path:
     return opensre_home() / "integrations.json"
 
 
+def integrations_store_stamp() -> int:
+    """A value that changes whenever the integrations store file is rewritten (0 when absent).
+
+    Sessions keep resolved credentials in a cache; comparing this stamp tells
+    them the store behind that cache has been replaced, for example by a
+    credential saved in the web app reaching the gateway.
+    """
+    try:
+        return integrations_store_path().stat().st_mtime_ns
+    except OSError:
+        return 0
+
+
 def get_store_path() -> Path:
     override = os.getenv("OPENSRE_WIZARD_STORE_PATH", "").strip()
     if override:
@@ -256,6 +269,7 @@ __all__ = [
     "get_work_items_dir",
     "host_home",
     "integrations_store_path",
+    "integrations_store_stamp",
     "opensre_home",
     "session_home",
 ]
