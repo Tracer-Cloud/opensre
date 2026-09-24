@@ -37,9 +37,31 @@ def test_a_host_without_a_git_identity_commits_as_the_opensre_agent(
     # Act
     commit_paths(str(repo_without_identity), ["fix.py"], "fix: lint")
 
-    # Assert: the commit exists and names the agent, so a container needs no git config
+    # Assert: the commit exists and names the agent as author and committer alike
+    agent = "OpenSRE Agent <opensreagent@opensre.com>"
+    assert _git(repo_without_identity, "log", "-1", "--format=%an <%ae>") == agent
+    assert _git(repo_without_identity, "log", "-1", "--format=%cn <%ce>") == agent
+
+
+def test_an_identity_given_through_the_environment_is_kept(
+    repo_without_identity: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Arrange: no git config, but the caller names author and committer in the environment
+    monkeypatch.setenv("GIT_AUTHOR_NAME", "Env Author")
+    monkeypatch.setenv("GIT_AUTHOR_EMAIL", "author@example.com")
+    monkeypatch.setenv("GIT_COMMITTER_NAME", "Env Committer")
+    monkeypatch.setenv("GIT_COMMITTER_EMAIL", "committer@example.com")
+    (repo_without_identity / "fix.py").write_text("x = 1\n", encoding="utf-8")
+
+    # Act
+    commit_paths(str(repo_without_identity), ["fix.py"], "fix: lint")
+
+    # Assert: the caller's identity stands; the agent is not substituted for it
     assert _git(repo_without_identity, "log", "-1", "--format=%an <%ae>") == (
-        "OpenSRE Agent <opensreagent@opensre.com>"
+        "Env Author <author@example.com>"
+    )
+    assert _git(repo_without_identity, "log", "-1", "--format=%cn <%ce>") == (
+        "Env Committer <committer@example.com>"
     )
 
 
