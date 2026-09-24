@@ -258,7 +258,7 @@ Rules:
 ## Success criteria
 
 Every skill, workflow or tool-usage, has one or more verifiable success
-criteria in `catalog/success_criteria.py`. A criterion names an observable
+criteria in `config/constants/skill_success.py`. A criterion names an observable
 result — a tool field, a return value, or a fact in the reply — in backticks.
 The host appends a `## Success criteria` section when the card does not
 already contain one. Adding a skill without a criterion fails

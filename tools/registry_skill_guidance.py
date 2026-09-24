@@ -12,7 +12,7 @@ from dataclasses import replace
 from pathlib import Path
 
 from config.constants.paths import REPO_ROOT
-from core.agent_harness.prompts.skills.catalog.success_criteria import success_section
+from config.constants.skill_success import success_section
 from core.tool import RegisteredTool
 from core.tool_framework import format_tool_skill_guidance, load_tool_skill_guidance
 

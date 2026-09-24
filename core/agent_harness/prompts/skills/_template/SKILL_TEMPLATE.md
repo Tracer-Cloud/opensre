@@ -63,7 +63,7 @@ Complete when <the user has received the result>.
 
 - [ ] `<tool>` returns `<observable field>`, or the reply states `<the stopping fact>`.
 
-Register the same lines in `catalog/success_criteria.py` under this skill's `name`.
+Register the same lines in `config/constants/skill_success.py` under this skill's `name`.
 
 <!-- Authoring notes: copy to skills/<name>/SKILL.md, replace placeholders,
      set the actual unquoted change date, and remove these notes. Follow

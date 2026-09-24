@@ -6,6 +6,7 @@ import logging
 
 from pydantic import ValidationError
 
+from config.constants.skill_success import success_section
 from config.constants.skills import ONBOARDING_SKILL_NAME
 from core.agent_harness.prompts.skills.catalog.demo_menu import demo_handoffs
 from core.agent_harness.prompts.skills.catalog.registry import (
@@ -14,7 +15,6 @@ from core.agent_harness.prompts.skills.catalog.registry import (
     validate_skill_file,
 )
 from core.agent_harness.prompts.skills.catalog.schema import SkillCardError, parse_frontmatter
-from core.agent_harness.prompts.skills.catalog.success_criteria import success_section
 from core.agent_harness.prompts.skills.content.files import (
     append_report_template,
     append_skill_includes,

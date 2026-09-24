@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import core.agent_harness.prompts.skills as skills
-from core.agent_harness.prompts.skills.catalog.schema import parse_frontmatter
-from core.agent_harness.prompts.skills.catalog.success_criteria import (
+from config.constants.skill_success import (
     SUCCESS_CRITERIA,
     success_section,
 )
+from core.agent_harness.prompts.skills.catalog.schema import parse_frontmatter
 from tools.registry_skill_guidance import _skill_guidance_files
 
 
