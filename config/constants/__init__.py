@@ -348,6 +348,12 @@ if TYPE_CHECKING:
         ATTACHMENT_MAX_TOTAL_CHARS as ATTACHMENT_MAX_TOTAL_CHARS,
     )
     from config.constants.gateway import (
+        CREDENTIAL_REFRESH_INTERVAL_SECONDS as CREDENTIAL_REFRESH_INTERVAL_SECONDS,
+    )
+    from config.constants.gateway import (
+        CREDENTIAL_REFRESH_JOIN_TIMEOUT_SECONDS as CREDENTIAL_REFRESH_JOIN_TIMEOUT_SECONDS,
+    )
+    from config.constants.gateway import (
         CREDITS_DENIED_MESSAGE as CREDITS_DENIED_MESSAGE,
     )
     from config.constants.gateway import (

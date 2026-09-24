@@ -24,6 +24,8 @@ from typing import Any
 from rich.console import Console
 
 from config.constants.gateway import (
+    CREDENTIAL_REFRESH_INTERVAL_SECONDS,
+    CREDENTIAL_REFRESH_JOIN_TIMEOUT_SECONDS,
     SCHEDULER_RELOAD_JOIN_TIMEOUT_SECONDS,
     SCHEDULER_STOP_BUDGET_SHARE,
 )
@@ -35,6 +37,7 @@ from gateway.core.config.logging_config import configure_logging
 from gateway.core.lifecycle.credential_hydration import (
     GatewayBootstrap,
     GatewayCredentialHydrator,
+    watch_credential_changes,
 )
 from gateway.core.lifecycle.errors import GatewayConfigurationError
 from gateway.core.process.component_status import clear_component_status, write_component_status
@@ -88,6 +91,8 @@ class GatewayController:
         self.scheduler: Any = None
         self._scheduler_runners: Any = None
         self._scheduler_reload_thread: threading.Thread | None = None
+        self._credential_refresh_thread: threading.Thread | None = None
+        self._credential_hydrator: GatewayCredentialHydrator | None = None
         self.components: dict[str, str] = {}
         self._slash_ports_factory = slash_ports_factory
         self._credential_hydrator_factory = (
@@ -109,6 +114,7 @@ class GatewayController:
         logger = self.logger = configure_logging()
         set_ready(False)
         self._load_credentials(logger)
+        self._start_credential_refresh_watcher(logger)
         configure_process(GATEWAY_PROFILE, logger=logger)
         self._note_previous_shutdown(logger)
 
@@ -204,6 +210,13 @@ class GatewayController:
             )
             budget.consume(started)
             self._scheduler_reload_thread = None
+        if self._credential_refresh_thread is not None:
+            started = budget.mark()
+            self._credential_refresh_thread.join(
+                timeout=budget.take(CREDENTIAL_REFRESH_JOIN_TIMEOUT_SECONDS)
+            )
+            budget.consume(started)
+            self._credential_refresh_thread = None
         scheduled_jobs_finished = True
         if self.scheduler is not None:
             started = budget.mark()
@@ -238,6 +251,7 @@ class GatewayController:
                 self.components["credentials"] = "not configured"
                 return None
             bootstrap = hydrator.hydrate()
+            self._credential_hydrator = hydrator
         except Exception as exc:
             logger.error("gateway credential hydration failed (%s)", type(exc).__name__)
             self.components["credentials"] = "failed"
@@ -279,6 +293,37 @@ class GatewayController:
             daemon=True,
         )
         self._scheduler_reload_thread.start()
+
+    def _start_credential_refresh_watcher(self, logger: logging.Logger) -> None:
+        """Pick up a credential saved in the web app without a restart.
+
+        The web app writes it to the organization's secret; this watcher reloads
+        the local store when that secret gets a new version.
+        """
+        hydrator = self._credential_hydrator
+        if hydrator is None or not hydrator.refreshes or self._credential_refresh_thread:
+            return
+
+        def _reloaded() -> None:
+            self.components["credentials"] = "hydrated (reloaded)"
+            logger.info("[gateway] integrations reloaded from the organization's secret")
+            self._publish_status(logger)
+
+        def _watch() -> None:
+            watch_credential_changes(
+                hydrator,
+                self._stopped,
+                interval_seconds=CREDENTIAL_REFRESH_INTERVAL_SECONDS,
+                on_reload=_reloaded,
+                on_error=lambda exc: logger.warning(
+                    "[gateway] credential refresh failed (%s)", type(exc).__name__
+                ),
+            )
+
+        self._credential_refresh_thread = threading.Thread(
+            target=_watch, name="opensre-credential-refresh", daemon=True
+        )
+        self._credential_refresh_thread.start()
 
     def _reload_scheduler(self, logger: logging.Logger) -> None:
         """Resync the live scheduler (or start one) from the current task store."""

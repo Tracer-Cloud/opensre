@@ -17,6 +17,11 @@ SCHEDULER_STOP_BUDGET_SHARE = 0.5
 WEB_STOP_TIMEOUT_SECONDS = 5.0
 #: Reload watcher only polls a flag; cap the join so chat workers keep the rest.
 SCHEDULER_RELOAD_JOIN_TIMEOUT_SECONDS = 2.0
+#: How often a hosted gateway checks the organization's integrations secret for a
+#: new version, so a credential saved in the web app reaches it without a restart.
+CREDENTIAL_REFRESH_INTERVAL_SECONDS = 60.0
+#: The refresh watcher only sleeps between checks; cap its join on shutdown.
+CREDENTIAL_REFRESH_JOIN_TIMEOUT_SECONDS = 2.0
 DEFAULT_MAX_CONVERSATION_LOCKS = 1024
 NEW_SESSION_MESSAGE = "Started a new session."
 #: Inbound-decision reply sentinel: rotate the session instead of replying.

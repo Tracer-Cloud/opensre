@@ -27,6 +27,8 @@ from __future__ import annotations
 
 import json
 import os
+import threading
+from collections.abc import Callable
 from dataclasses import dataclass, replace
 from typing import Any, Protocol
 
@@ -127,6 +129,31 @@ class GatewayCredentialHydrator:
     ) -> None:
         self._config = config
         self._secrets_client = secrets_client
+        #: Version of the integrations secret the local store was last built from.
+        self._integrations_version: str | None = None
+
+    @property
+    def refreshes(self) -> bool:
+        """Whether this hydrator can pick up a changed secret while the gateway runs."""
+        return self._config.integrations_secret_arn is not None
+
+    def refresh_if_changed(self) -> bool:
+        """Reload the store when the organization's integrations secret has a new version.
+
+        The web app writes a credential saved on its Integrations page to that
+        secret; this is how the change reaches a running gateway. Returns whether
+        anything was reloaded. Only the secret route refreshes.
+        """
+        if self._config.integrations_secret_arn is None:
+            return False
+        secret_string, version = self._read_secret(
+            self._config.integrations_secret_arn, secret_name="Integrations"
+        )
+        if version == self._integrations_version:
+            return False
+        hydrate_integration_store_from_secret(secret_string)
+        self._integrations_version = version
+        return True
 
     @classmethod
     def from_environment(cls) -> GatewayCredentialHydrator | None:
@@ -140,9 +167,10 @@ class GatewayCredentialHydrator:
 
     def hydrate(self) -> GatewayBootstrap:
         """Read the bootstrap secret, then load integrations by one route."""
-        bootstrap = _parse_bootstrap_secret(
-            self._read_secret(self._config.bootstrap_secret_arn, secret_name="Bootstrap")
+        bootstrap_string, _version = self._read_secret(
+            self._config.bootstrap_secret_arn, secret_name="Bootstrap"
         )
+        bootstrap = _parse_bootstrap_secret(bootstrap_string)
         # The tenant's secret wins when both are configured: it is the route the
         # webapp maintains through the control plane, and the one deployed silos
         # run on. The credentials API stays as the staged fallback.
@@ -154,21 +182,24 @@ class GatewayCredentialHydrator:
             return bootstrap
         return replace(bootstrap, integrations_hydrated=True)
 
-    def _read_secret(self, secret_arn: str, *, secret_name: str) -> str:
-        """Read one pinned ARN. ``secret_name`` only names it in the error."""
+    def _read_secret(self, secret_arn: str, *, secret_name: str) -> tuple[str, str | None]:
+        """Read one pinned ARN: its string and version. ``secret_name`` only names it in the error."""
         response = self._secrets_client.get_secret_value(SecretId=secret_arn)
         secret_string = response.get("SecretString")
         if not isinstance(secret_string, str):
             raise ValueError(f"{secret_name} secret has no string value")
-        return secret_string
+        version = response.get("VersionId")
+        return secret_string, version if isinstance(version, str) else None
 
     def _load_from_integrations_secret(self) -> None:
         """Replace the local store from this tenant's Secrets Manager blob."""
         if self._config.integrations_secret_arn is None:
             raise ValueError("Integrations secret ARN is not configured")
-        hydrate_integration_store_from_secret(
-            self._read_secret(self._config.integrations_secret_arn, secret_name="Integrations")
+        secret_string, version = self._read_secret(
+            self._config.integrations_secret_arn, secret_name="Integrations"
         )
+        hydrate_integration_store_from_secret(secret_string)
+        self._integrations_version = version
 
     def _load_from_credentials_api(self, bootstrap: GatewayBootstrap) -> None:
         """Replace the local store from the webapp over HTTPS."""
@@ -186,9 +217,33 @@ class GatewayCredentialHydrator:
             )
 
 
+def watch_credential_changes(
+    hydrator: GatewayCredentialHydrator,
+    stop: threading.Event,
+    *,
+    interval_seconds: float,
+    on_reload: Callable[[], None],
+    on_error: Callable[[BaseException], None],
+) -> None:
+    """Reload the store whenever the organization's secret changes, until ``stop`` is set.
+
+    One failed check is reported and the next one still runs: a transient
+    Secrets Manager error must not leave the gateway on stale credentials for good.
+    """
+    while not stop.wait(interval_seconds):
+        try:
+            reloaded = hydrator.refresh_if_changed()
+        except Exception as exc:
+            on_error(exc)
+            continue
+        if reloaded:
+            on_reload()
+
+
 __all__ = [
     "CredentialHydrationConfig",
     "GatewayBootstrap",
     "GatewayCredentialHydrator",
     "SecretsManagerClient",
+    "watch_credential_changes",
 ]
