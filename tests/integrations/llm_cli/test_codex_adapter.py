@@ -267,6 +267,27 @@ def test_build_uses_the_hosted_account_route_when_no_openai_key_is_set(
 
 
 @patch("integrations.llm_cli.binary_resolver.shutil.which", return_value="/usr/bin/codex")
+def test_build_never_pairs_the_account_token_with_another_base_url(mock_which: MagicMock) -> None:
+    """A base URL of the user's own, without a key, gets no account token and no hosted model."""
+    from config.account import AccountLLMRoute
+
+    base = {k: v for k, v in os.environ.items() if not k.startswith("OPENAI_")}
+    base["OPENAI_BASE_URL"] = "https://proxy.example/v1"
+    route = AccountLLMRoute(base_url="https://app.example/api/llm/v1", model="gpt-5.6-sol")
+    with (
+        patch.dict(os.environ, base, clear=True),
+        patch("config.account.account_llm_route", return_value=route),
+        patch("integrations.llm_cli.codex.account_llm_route", return_value=route),
+        patch("config.account.resolve_account_token", return_value="osre_gw_org.tok"),
+    ):
+        inv = CodexAdapter().build(prompt="p", model=None, workspace="")
+
+    mock_which.assert_called()
+    assert inv.env == {"OPENAI_BASE_URL": "https://proxy.example/v1"}
+    assert "-m" not in inv.argv
+
+
+@patch("integrations.llm_cli.binary_resolver.shutil.which", return_value="/usr/bin/codex")
 def test_build_prefers_explicit_openai_env_over_the_hosted_route(mock_which: MagicMock) -> None:
     from config.account import AccountLLMRoute
 

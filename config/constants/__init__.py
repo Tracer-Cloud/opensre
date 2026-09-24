@@ -643,6 +643,12 @@ if TYPE_CHECKING:
         LLM_PROVIDER_ENV as LLM_PROVIDER_ENV,
     )
     from config.constants.llm import (
+        OPENAI_API_KEY_ENV as OPENAI_API_KEY_ENV,
+    )
+    from config.constants.llm import (
+        OPENAI_BASE_URL_ENV as OPENAI_BASE_URL_ENV,
+    )
+    from config.constants.llm import (
         OPENSRE_LLM_NATIVE_STRUCTURED_OUTPUT_ENV as OPENSRE_LLM_NATIVE_STRUCTURED_OUTPUT_ENV,
     )
     from config.constants.llm import (

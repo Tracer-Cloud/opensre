@@ -225,11 +225,13 @@ class CodexAdapter:
 
         oai = nonempty_env_values(OPENAI_PLATFORM_ENV_KEYS)
         hosted_route = None
-        if "OPENAI_API_KEY" not in oai:
-            # Explicit OPENAI_* variables win over the hosted route.
+        if not oai:
+            # Any explicit OPENAI_* variable means a route of the user's own: the
+            # account token is only ever paired with the hosted route, never with a
+            # base URL configured elsewhere.
             hosted = hosted_openai_env()
             if hosted is not None:
-                oai = {**hosted, **oai}
+                oai = dict(hosted)
                 hosted_route = account_llm_route()
         resolved_model = (model or "").strip()
         if not resolved_model and hosted_route is not None:

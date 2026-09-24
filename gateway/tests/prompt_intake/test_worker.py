@@ -431,3 +431,35 @@ def test_tool_progress_reaches_the_job_while_it_runs() -> None:
         "Checking out the branch…",
     ]
     assert job.state is PromptState.DONE
+
+
+def test_a_second_question_is_seeded_with_the_request_and_the_first_answer() -> None:
+    # Arrange: the store keeps no transcript; the agent asks twice before it finishes
+    first = PendingUserChoice(title="Which PR?", options=("7", "8"))
+    second = PendingUserChoice(title="Force push?", options=("yes", "no"))
+    handler = _HistoryHandler(answer="done", asks=first)
+    worker, queue = _worker(handler)
+    root = queue.submit("schedule the repair loop", context={"repo": "o/r"}, actor="u")
+    assert root is not None
+    worker.run_one(root)
+    handler.asks = second
+    answered_once = queue.answer(root, "7")
+    assert answered_once is not None
+    worker.run_one(answered_once)
+    assert answered_once.state is PromptState.NEEDS_INPUT
+
+    # Act: the second answer resumes the session
+    handler.asks = None
+    answered_twice = queue.answer(answered_once, "no")
+    assert answered_twice is not None
+    worker.run_one(answered_twice)
+
+    # Assert: request, first question, first answer, second question; the new answer is the turn
+    assert answered_twice.state is PromptState.DONE
+    history = list(handler.seen_history)
+    assert history[0][0] == "user" and "schedule the repair loop" in history[0][1]
+    assert history[1] == ("assistant", root.question)
+    assert history[2] == ("user", "7")
+    assert history[3] == ("assistant", answered_once.question)
+    assert len(history) == 4
+    assert "no" in handler.seen_text

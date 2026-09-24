@@ -258,6 +258,8 @@ EXPORTS: dict[str, str] = {
     "KUBECONFIG_PATH_ENV": "kubernetes",
     # llm
     "AZURE_OPENAI_API_KEY_ENV": "llm",
+    "OPENAI_API_KEY_ENV": "llm",
+    "OPENAI_BASE_URL_ENV": "llm",
     "AZURE_OPENAI_API_VERSION_ENV": "llm",
     "AZURE_OPENAI_BASE_URL_ENV": "llm",
     "LLM_AUTH_METHOD_ENV": "llm",
