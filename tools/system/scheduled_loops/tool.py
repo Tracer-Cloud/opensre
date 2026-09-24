@@ -9,7 +9,7 @@ from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from infrastructure.scheduling.scheduler.loop_results import latest_loop_runs
-from infrastructure.scheduling.scheduler.loops import LoopSummary, list_loop_summaries
+from infrastructure.scheduling.scheduler.loops import LoopSummary, summarize_loops
 from infrastructure.scheduling.scheduler.storage import get_task_store_snapshot
 from infrastructure.scheduling.scheduler.types import TaskRun
 
@@ -110,7 +110,8 @@ def list_scheduled_loops(include_disabled: bool = True, **_kwargs: Any) -> dict[
     if not snapshot.complete:
         # An unreadable store is not an empty schedule; say so instead of listing nothing.
         return tool_unavailable(_SOURCE, _STORE_UNREADABLE)
-    loops = list_loop_summaries(include_disabled=include_disabled)
+    # One read: the rows come from the same validated snapshot the check looked at.
+    loops = summarize_loops(snapshot.tasks, include_disabled=include_disabled)
     runs = latest_loop_runs(loops)
     rows = [_loop_row(loop, runs.get(loop.id)) for loop in loops]
     return {

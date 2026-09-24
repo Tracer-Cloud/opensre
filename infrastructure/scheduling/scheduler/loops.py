@@ -410,24 +410,35 @@ def summarize_loop(
     return _summarize_group((task,), now=now)
 
 
+def summarize_loops(
+    tasks: Sequence[ScheduledTask],
+    *,
+    include_disabled: bool = True,
+    now: datetime | None = None,
+) -> list[LoopSummary]:
+    """Group already-loaded tasks into loops, sorted with active loops first."""
+    task_groups: dict[str, list[ScheduledTask]] = {}
+    for task in tasks:
+        if not include_disabled and not task.enabled:
+            continue
+        task_groups.setdefault(_loop_group_id(task), []).append(task)
+
+    summaries = [_summarize_group(tuple(group), now=now) for group in task_groups.values()]
+    return sorted(
+        summaries,
+        key=lambda loop: (not loop.enabled, loop.name.casefold(), loop.id),
+    )
+
+
 def list_loop_summaries(
     *,
     include_disabled: bool = True,
     store_path: Path | None = None,
     now: datetime | None = None,
 ) -> list[LoopSummary]:
-    """Return configured loops, sorted with active loops first."""
-    task_groups: dict[str, list[ScheduledTask]] = {}
-    for task in list_tasks(store_path):
-        if not include_disabled and not task.enabled:
-            continue
-        task_groups.setdefault(_loop_group_id(task), []).append(task)
-
-    summaries = [_summarize_group(tuple(tasks), now=now) for tasks in task_groups.values()]
-    return sorted(
-        summaries,
-        key=lambda loop: (not loop.enabled, loop.name.casefold(), loop.id),
-    )
+    """Return configured loops from the store, sorted with active loops first."""
+    tasks = list_tasks(store_path)
+    return summarize_loops(tasks, include_disabled=include_disabled, now=now)
 
 
 def resolve_loop_summary(
@@ -760,6 +771,7 @@ __all__ = [
     "default_loop_channels",
     "delete_loop",
     "list_loop_summaries",
+    "summarize_loops",
     "loop_channels",
     "loop_description",
     "loop_name",

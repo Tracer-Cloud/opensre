@@ -8,10 +8,25 @@ import pytest
 
 from infrastructure.scheduling.scheduler.loops import LoopSummary
 from infrastructure.scheduling.scheduler.storage import TaskStoreSnapshot
-from infrastructure.scheduling.scheduler.types import Provider, TaskKind, TaskRun, TaskStatus
+from infrastructure.scheduling.scheduler.types import (
+    Provider,
+    ScheduledTask,
+    TaskKind,
+    TaskRun,
+    TaskStatus,
+)
 from tools.registry import clear_tool_registry_cache, get_registered_tool_map
 from tools.system.scheduled_loops import tool as loops_tool
 from tools.system.scheduled_loops.tool import TOOL_NAME, list_scheduled_loops
+
+_SNAPSHOT_TASK = ScheduledTask(
+    id="a8e1",
+    name="CI repair: o/r",
+    kind=TaskKind.MANUAL_LOOP,
+    cron="*/5 * * * *",
+    timezone="UTC",
+    provider=Provider.INTERACTIVE_SHELL,
+)
 
 
 def _loop(loop_id: str, name: str, *, enabled: bool) -> LoopSummary:
@@ -42,19 +57,21 @@ def _store_reads(
     complete: bool = True,
     missing: bool = False,
 ) -> None:
-    """Stand in for the task store: its snapshot, its loop summaries and their newest runs."""
+    """Stand in for the task store: one snapshot, summarised only from that snapshot's tasks."""
+    stored_tasks = (_SNAPSHOT_TASK,) if loops else ()
 
     def snapshot() -> TaskStoreSnapshot:
-        return TaskStoreSnapshot(tasks=(), complete=complete, missing=missing)
+        return TaskStoreSnapshot(tasks=stored_tasks, complete=complete, missing=missing)
 
-    def summaries(*, include_disabled: bool) -> list[LoopSummary]:
+    def summaries(tasks: Any, *, include_disabled: bool) -> list[LoopSummary]:
+        assert tasks == stored_tasks, "rows must come from the checked snapshot, not a second read"
         return loops if include_disabled else [loop for loop in loops if loop.enabled]
 
     def newest_runs(listed: list[LoopSummary]) -> dict[str, TaskRun]:
         return {loop.id: runs[loop.id] for loop in listed if loop.id in runs}
 
     monkeypatch.setattr(loops_tool, "get_task_store_snapshot", snapshot)
-    monkeypatch.setattr(loops_tool, "list_loop_summaries", summaries)
+    monkeypatch.setattr(loops_tool, "summarize_loops", summaries)
     monkeypatch.setattr(loops_tool, "latest_loop_runs", newest_runs)
 
 
