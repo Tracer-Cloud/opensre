@@ -467,36 +467,44 @@ def push_head_to_upstream(workspace: str, *, token: str | None = None) -> str:
     destination, remote_branch = _push_destination(workspace, branch)
     assert_not_protected(remote_branch)
     label = _push_label(destination, remote_branch)
-    env = None
-    if token:
-        base = (
-            _https_base(destination)
-            if _is_url(destination)
-            else _remote_https_base(workspace, destination)
-        )
-        if base:
-            env = _token_auth_env(token, base)
+    base = (
+        _https_base(destination)
+        if _is_url(destination)
+        else _remote_https_base(workspace, destination)
+    )
+    env = _token_auth_env(token, base) if token and base else None
     result = _run_git(workspace, "push", destination, f"HEAD:refs/heads/{remote_branch}", env=env)
     if result.returncode != 0:
-        raise GitCommandError(PUSH_FAILED, push_failure_message(label, result.stderr))
+        raise GitCommandError(PUSH_FAILED, push_failure_message(label, result.stderr, base))
     return label
 
 
 _PUSH_DENIED_MARKERS = ("error: 403", "permission to", "denied to")
-_PUSH_DENIED_HINT = (
-    "The GitHub credential is not allowed to push to this repository. It needs "
-    '"Contents: read and write" on this repository; a fine-grained token grants that '
-    "per selected repository."
-)
+#: What a refused push means per hosting service, keyed by the remote's host.
+_PUSH_DENIED_HINTS = {
+    "github.com": (
+        "The GitHub credential is not allowed to push to this repository. It needs "
+        '"Contents: read and write" on this repository; a fine-grained token grants that '
+        "per selected repository."
+    ),
+}
 
 
-def push_failure_message(label: str, stderr: str) -> str:
-    """The push error for the user; a refusal by GitHub says what the credential lacks."""
+def push_failure_message(label: str, stderr: str, https_base: str) -> str:
+    """The push error for the user; a refusal by a known host says what the credential lacks.
+
+    ``https_base`` is the remote's ``https://host/`` or "" for other transports;
+    only a host with a known hint gets one, so advice never names the wrong service.
+    """
     detail = stderr.strip()
     message = f"git push to {label} failed: {detail}"
+    host = urlsplit(https_base).hostname or ""
+    hint = _PUSH_DENIED_HINTS.get(host.lower())
+    if hint is None:
+        return message
     lowered = detail.lower()
     if any(marker in lowered for marker in _PUSH_DENIED_MARKERS):
-        return f"{message}\n{_PUSH_DENIED_HINT}"
+        return f"{message}\n{hint}"
     return message
 
 
@@ -559,13 +567,10 @@ def push_branch(
     """
     if not allow_protected:
         assert_not_protected(branch, protected_extra=base_default)
-    env = None
-    if token:
-        base = _remote_https_base(workspace, remote)
-        if base:
-            env = _token_auth_env(token, base)
+    base = _remote_https_base(workspace, remote)
+    env = _token_auth_env(token, base) if token and base else None
     result = _run_git(workspace, "push", "--set-upstream", remote, branch, env=env)
     if result.returncode != 0:
         raise GitCommandError(
-            PUSH_FAILED, push_failure_message(f"{remote}/{branch}", result.stderr)
+            PUSH_FAILED, push_failure_message(f"{remote}/{branch}", result.stderr, base)
         )
