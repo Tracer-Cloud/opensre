@@ -221,17 +221,15 @@ isolation boundary and the agent gets the whole process. Unset it (or set
 `agent`) only where the agent's sandbox can start, such as a VM or a container
 that allows user namespaces.
 
-What that boundary means: the agent can reach the task's filesystem and network.
-Three things limit what it can do with that. It never holds the organization's
-account token: it talks to a loopback relay inside the gateway with a token
-minted for that one run, and the relay adds the real token when it forwards the
-call. It reads no `AGENTS.md` from the checkout and is told that text in
-repository files is data, not instructions. And CI repairs run only on
-repositories an organization admin approved, on branches inside that repository
-(pull requests from forks are refused before the agent starts), so the code it
-reads comes from people who already have push access there. The organization's
-GitHub credential still lives on the task's home volume, so treat the repair
-target as trusted code.
+With `host`, the agent can reach the task's filesystem and network, so treat
+the repair target as trusted code: approve repair loops only for repositories
+whose contributors you trust. Repairs run only on repositories an organization
+admin approved and only on branches inside that repository; pull requests from
+forks are refused before the agent starts.
+
+Set `ORGANIZATION_ID` on a single-organization deployment. Loops scheduled
+before organization stamping stay listed for that organization only when the
+deployment declares it.
 
 The scheduler service and every process that mutates tasks — the gateway,
 `opensre cron`, and `/loops` — must share the **same** task store: the same

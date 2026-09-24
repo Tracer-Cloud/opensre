@@ -136,7 +136,7 @@ def _raw_status(url: str, headers: list[str]) -> int:
 
 
 def test_a_bad_content_length_is_refused_before_any_body_is_read(upstream: _Upstream) -> None:
-    """Content-Length: -1 passed the upper bound and read() waited for an endless body."""
+    """A negative, malformed or oversized Content-Length is refused before any body is read."""
     # Arrange
     relay = HostedRouteRelay(upstream.base_url, _ACCOUNT_TOKEN)
 

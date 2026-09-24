@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from config.constants.organization import organization_id
 from config.principal import PrincipalKind
 from config.scope_context import current_scope
 from core.domain.types.tools import ToolSurface
@@ -39,13 +40,14 @@ def _visible_to_this_turn(task: ScheduledTask) -> bool:
     """A turn bound to an organization sees that organization's tasks and no others.
 
     Outside any organization scope (the operator's own shell) every task is
-    visible. A task without an owner is not shown to an organization: it may
-    belong to another one.
+    visible. A task without an owner belongs to the deployment's declared
+    organization; on a deployment that declares none it is shown to no organization.
     """
     scope = current_scope()
     if scope is None or scope.principal.kind != PrincipalKind.ORG:
         return True
-    return task.organization == scope.principal.id
+    owner = task.organization or organization_id()
+    return owner == scope.principal.id
 
 
 def _loop_row(loop: LoopSummary, run: TaskRun | None) -> dict[str, Any]:

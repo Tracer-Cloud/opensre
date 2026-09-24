@@ -1,4 +1,4 @@
-"""Listing scheduled loops, where the gateway had no tool and read its own source instead."""
+"""Listing scheduled loops: rows from one validated store read, scoped to the caller's organization."""
 
 from __future__ import annotations
 
@@ -118,7 +118,7 @@ def test_every_loop_is_listed_with_its_schedule_and_newest_run(
 def test_an_unreadable_store_is_reported_not_shown_as_empty(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A store that will not parse looked like "no loops configured"."""
+    """An incomplete store read is reported as unavailable, never as an empty schedule."""
     # Arrange
     _store_reads(monkeypatch, loops=[], runs={}, complete=False)
 
@@ -172,6 +172,36 @@ def test_an_organization_sees_only_its_own_loops(monkeypatch: pytest.MonkeyPatch
 
     # Assert: bound, only org A's task is summarised; unbound (operator shell), all of them
     assert received == [["own1"], ["own1", "oth1", "old1"]]
+
+
+def test_a_declared_deployment_shows_its_organization_the_rows_stored_before_stamping(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange: an unowned row and org B's row, on a deployment that declares org A
+    unowned = _SNAPSHOT_TASK.model_copy(update={"id": "old1"})
+    other = _SNAPSHOT_TASK.model_copy(update={"id": "oth1", "organization": "org_B"})
+    received: list[list[str]] = []
+
+    def snapshot() -> TaskStoreSnapshot:
+        return TaskStoreSnapshot(tasks=(unowned, other), complete=True, missing=False)
+
+    def summaries(tasks: Any, *, include_disabled: bool) -> list[LoopSummary]:  # noqa: ARG001
+        received.append([task.id for task in tasks])
+        return []
+
+    monkeypatch.setattr(loops_tool, "get_task_store_snapshot", snapshot)
+    monkeypatch.setattr(loops_tool, "summarize_loops", summaries)
+    monkeypatch.setattr(loops_tool, "latest_loop_runs", lambda _loops: {})
+    monkeypatch.setenv("ORGANIZATION_ID", "org_A")
+
+    # Act
+    with bound_storage_scope(StorageScope(principal=Principal.org("org_A"), actor=Actor(id="u"))):
+        list_scheduled_loops()
+    with bound_storage_scope(StorageScope(principal=Principal.org("org_B"), actor=Actor(id="v"))):
+        list_scheduled_loops()
+
+    # Assert: the unowned row is org A's; org B still sees only its own
+    assert received == [["old1"], ["oth1"]]
 
 
 def test_the_tool_is_registered_as_a_read_only_action_tool() -> None:

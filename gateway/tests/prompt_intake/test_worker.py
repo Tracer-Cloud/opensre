@@ -265,7 +265,7 @@ def test_an_approval_covers_exactly_the_previewed_call_once() -> None:
 
 
 def test_an_approval_survives_the_model_restating_the_call_without_its_defaults() -> None:
-    """Live: Approve was answered, the resumed call dropped ``demo: false`` and asked again."""
+    """A grant covers the same call restated without its schema-default arguments."""
     # Arrange: the first turn spells the default out; the resumed turn leaves it out
     handler = _ApprovalHandler([7])
     handler.spell_out_demo = True

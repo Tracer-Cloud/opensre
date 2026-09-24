@@ -17,6 +17,7 @@ from typing import Any
 from filelock import FileLock
 
 from config.constants import OPENSRE_HOME_DIR
+from config.constants.organization import organization_id
 from config.constants.work_items import WORK_ITEM_REMINDER_RUN_AT_PARAM
 from config.principal import PrincipalKind
 from config.scope_context import current_scope
@@ -224,9 +225,11 @@ def _schedule_identity(entry: Mapping[str, Any]) -> tuple[Any, ...]:
     params are separate reports, and merging them would drop one the user asked
     for. Identity deliberately excludes ``id``, ``name``, skill revision, and the
     run bookkeeping (``created_at``, ``last_run``, ``next_run``), which differ
-    between two confirmations of the same schedule.
+    between two confirmations of the same schedule. The owning organization is
+    part of it: two organizations with the same schedule hold two rows.
     """
     return (
+        _owner_of(entry),
         entry.get("kind"),
         entry.get("cron"),
         entry.get("timezone"),
@@ -237,6 +240,18 @@ def _schedule_identity(entry: Mapping[str, Any]) -> tuple[Any, ...]:
         tuple(sorted((entry.get("skill_inputs") or {}).items())),
         tuple(sorted((entry.get("params") or {}).items())),
     )
+
+
+def _owner_of(entry: Mapping[str, Any]) -> str:
+    """The organization a row belongs to: its stamp, else the deployment's organization.
+
+    Rows written before stamps existed carry none; on a deployment that declares
+    its organization they are that organization's.
+    """
+    stamped = str(entry.get("organization") or "")
+    if stamped:
+        return stamped
+    return organization_id()
 
 
 def _owned_by_bound_organization(task: ScheduledTask) -> ScheduledTask:

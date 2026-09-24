@@ -95,7 +95,7 @@ def test_an_approval_question_grants_exactly_the_previewed_call_and_only_on_appr
 
 
 def test_restating_a_call_with_its_defaults_spelled_out_is_the_same_call() -> None:
-    """After Approve the model re-called the tool without ``demo: false`` and was asked again."""
+    """Absent, null and schema-default arguments do not change a call's approval key."""
     # Arrange
     schema = {
         "type": "object",
