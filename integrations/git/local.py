@@ -478,8 +478,26 @@ def push_head_to_upstream(workspace: str, *, token: str | None = None) -> str:
             env = _token_auth_env(token, base)
     result = _run_git(workspace, "push", destination, f"HEAD:refs/heads/{remote_branch}", env=env)
     if result.returncode != 0:
-        raise GitCommandError(PUSH_FAILED, f"git push to {label} failed: {result.stderr.strip()}")
+        raise GitCommandError(PUSH_FAILED, push_failure_message(label, result.stderr))
     return label
+
+
+_PUSH_DENIED_MARKERS = ("error: 403", "permission to", "denied to")
+_PUSH_DENIED_HINT = (
+    "The GitHub credential is not allowed to push to this repository. It needs "
+    '"Contents: read and write" on this repository; a fine-grained token grants that '
+    "per selected repository."
+)
+
+
+def push_failure_message(label: str, stderr: str) -> str:
+    """The push error for the user; a refusal by GitHub says what the credential lacks."""
+    detail = stderr.strip()
+    message = f"git push to {label} failed: {detail}"
+    lowered = detail.lower()
+    if any(marker in lowered for marker in _PUSH_DENIED_MARKERS):
+        return f"{message}\n{_PUSH_DENIED_HINT}"
+    return message
 
 
 def _push_destination(workspace: str, branch: str) -> tuple[str, str]:
@@ -549,5 +567,5 @@ def push_branch(
     result = _run_git(workspace, "push", "--set-upstream", remote, branch, env=env)
     if result.returncode != 0:
         raise GitCommandError(
-            PUSH_FAILED, f"git push to {remote}/{branch} failed: {result.stderr.strip()}"
+            PUSH_FAILED, push_failure_message(f"{remote}/{branch}", result.stderr)
         )
