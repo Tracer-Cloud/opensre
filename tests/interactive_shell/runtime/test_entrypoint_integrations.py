@@ -143,9 +143,9 @@ def test_stale_background_warm_does_not_overwrite_refreshed_cache() -> None:
     stale_generation = session.integrations._warm_generation
     session.integrations._warm_generation += 1
     session.integrations._store(
-        {"fresh": {"token": "new"}}, generation=session.integrations._warm_generation
+        {"fresh": {"token": "new"}}, generation=session.integrations._warm_generation, stamp=0
     )
-    session.integrations._store({"stale": {"token": "old"}}, generation=stale_generation)
+    session.integrations._store({"stale": {"token": "old"}}, generation=stale_generation, stamp=0)
     assert session.resolved_integrations_cache == {"fresh": {"token": "new"}}
 
 
