@@ -14,6 +14,7 @@ from core.agent_harness.prompts.skills.catalog.registry import (
     validate_skill_file,
 )
 from core.agent_harness.prompts.skills.catalog.schema import SkillCardError, parse_frontmatter
+from core.agent_harness.prompts.skills.catalog.success_criteria import success_section
 from core.agent_harness.prompts.skills.content.files import (
     append_report_template,
     append_skill_includes,
@@ -35,6 +36,9 @@ def load_skill_body(name: str) -> str:
         return ""
     body = append_skill_includes(skill.path, body, current.includes)
     body = append_report_template(skill.path, body)
+    section = success_section(skill.name)
+    if section and "## Success criteria" not in body:
+        body = f"{body}\n\n{section}"
     if skill.name == ONBOARDING_SKILL_NAME:
         body += demo_handoffs(list_action_skills())
     return body

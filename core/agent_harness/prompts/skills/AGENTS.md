@@ -255,6 +255,16 @@ Rules:
   the skipped plan items satisfied rather than delete them.
 - Tool-usage cards describe one call, not a flow, and do not carry a plan.
 
+## Success criteria
+
+Every skill, workflow or tool-usage, has one or more verifiable success
+criteria in `catalog/success_criteria.py`. A criterion names an observable
+result — a tool field, a return value, or a fact in the reply — in backticks.
+The host appends a `## Success criteria` section when the card does not
+already contain one. Adding a skill without a criterion fails
+`test_every_skill_has_verifiable_success_criteria`. Cards may carry the same
+section themselves; the host does not append a second copy.
+
 ## Colocated workflow tests
 
 Major skills that orchestrate a multi-step workflow must keep an end-to-end
