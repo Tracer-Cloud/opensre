@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
+from config.account import account_llm_route
 from integrations.coding_agent.claude_code_backend import run as _claude_code_run
 from integrations.coding_agent.claude_code_backend import verify as _claude_code_verify
 from integrations.coding_agent.codex_backend import run as _codex_run
@@ -67,6 +68,14 @@ def _auto_order() -> tuple[str, ...]:
     if hosted_openai_subprocess_env() is None:
         return _AUTO_ORDER
     return _HOSTED_AUTO_ORDER
+
+
+def _hosted_codex_model() -> str | None:
+    """The model the hosted route serves; Codex's own default is not among them."""
+    route = account_llm_route()
+    if route is None:
+        return None
+    return route.model
 
 
 def _codex_model(requested: str | None) -> str | None:
@@ -147,7 +156,7 @@ def run_coding_task(
     run, _verify = backend
     resolved_model = model
     if selected_name == "codex" and hosted_openai_subprocess_env() is not None:
-        resolved_model = _codex_model(model)
+        resolved_model = _codex_model(model) or _hosted_codex_model()
     return run(
         task,
         workspace=workspace,

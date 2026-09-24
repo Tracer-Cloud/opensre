@@ -368,3 +368,29 @@ def test_cursor_verify_unclear_auth_counts_as_available(mock_cls: MagicMock) -> 
     )
     available, _ = cursor_backend.verify()
     assert available is True
+
+
+@patch("integrations.coding_agent.codex_backend.run_agentic_cli")
+@patch(_GIT_RUN, side_effect=_git_run_side_effect)
+@patch("integrations.coding_agent.codex_backend._resolve_binary", return_value="/usr/bin/codex")
+def test_codex_backend_names_the_hosted_provider_when_on_the_hosted_route(
+    _mock_resolve: MagicMock, _mock_git: MagicMock, mock_run: MagicMock, tmp_path: Path
+) -> None:
+    """Codex ignores OPENAI_BASE_URL for its built-in provider; the hosted route is named."""
+    from config.account import AccountLLMRoute
+
+    mock_run.return_value = CodingResult(success=True, summary="ok")
+    route = AccountLLMRoute(base_url="https://app.example/api/llm/v1", model="gpt-5.6-sol")
+    with (
+        patch(
+            "integrations.coding_agent.codex_backend.hosted_openai_subprocess_env",
+            return_value={"OPENAI_API_KEY": "tok", "OPENAI_BASE_URL": route.base_url},
+        ),
+        patch("integrations.coding_agent.codex_backend.account_llm_route", return_value=route),
+    ):
+        codex_backend.run("fix", workspace=str(tmp_path), model="gpt-5.6-sol", timeout_sec=60)
+
+    argv = mock_run.call_args.args[0]
+    assert "model_provider=opensre" in argv
+    assert 'model_providers.opensre.base_url="https://app.example/api/llm/v1"' in argv
+    assert 'model_providers.opensre.wire_api="responses"' in argv

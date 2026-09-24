@@ -14,6 +14,7 @@ otherwise OpenAI Platform auth env keys are forwarded to the subprocess.
 
 from __future__ import annotations
 
+from config.account import account_llm_route
 from integrations.coding_agent.backend_exec import (
     failure,
     resolve_workspace_dir,
@@ -28,7 +29,7 @@ from integrations.llm_cli.binary_resolver import (
     default_cli_fallback_paths,
     resolve_cli_binary,
 )
-from integrations.llm_cli.codex import CodexAdapter
+from integrations.llm_cli.codex import CodexAdapter, hosted_provider_overrides
 from integrations.llm_cli.env_overrides import OPENAI_PLATFORM_ENV_KEYS, nonempty_env_values
 from integrations.llm_cli.subprocess_env import build_cli_subprocess_env
 
@@ -88,6 +89,10 @@ def run(
         "-C",
         ws,
     ]
+    if hosted_openai_subprocess_env() is not None:
+        route = account_llm_route()
+        if route is not None:
+            argv.extend(hosted_provider_overrides(route.base_url))
     resolved_model = (model or "").strip()
     if resolved_model:
         argv.extend(["-m", resolved_model])

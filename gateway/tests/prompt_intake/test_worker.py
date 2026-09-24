@@ -463,3 +463,29 @@ def test_a_second_question_is_seeded_with_the_request_and_the_first_answer() -> 
     assert history[3] == ("assistant", answered_once.question)
     assert len(history) == 4
     assert "no" in handler.seen_text
+
+
+def test_a_forgotten_original_request_still_leaves_the_parents_question_seeded() -> None:
+    # Arrange: two questions; the original request has expired from the queue
+    handler = _HistoryHandler(
+        answer="done", asks=PendingUserChoice(title="Which PR?", options=("7",))
+    )
+    worker, queue = _worker(handler)
+    root = queue.submit("schedule the repair loop", context={}, actor="u")
+    assert root is not None
+    worker.run_one(root)
+    handler.asks = PendingUserChoice(title="Force push?", options=("yes", "no"))
+    once = queue.answer(root, "7")
+    assert once is not None
+    worker.run_one(once)
+    del queue._jobs[root.id]  # the retention window dropped the original request
+
+    # Act
+    handler.asks = None
+    twice = queue.answer(once, "no")
+    assert twice is not None
+    worker.run_one(twice)
+
+    # Assert: the known part is seeded, starting at the parent's own question
+    assert twice.state is PromptState.DONE
+    assert handler.seen_history == [("assistant", once.question)]

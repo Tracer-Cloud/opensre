@@ -264,6 +264,10 @@ def test_build_uses_the_hosted_account_route_when_no_openai_key_is_set(
     }
     idx = inv.argv.index("-m")
     assert inv.argv[idx + 1] == "gpt-5.6-sol"
+    # Codex ignores OPENAI_BASE_URL for its built-in provider: a named provider is passed.
+    assert "model_provider=opensre" in inv.argv
+    assert 'model_providers.opensre.base_url="https://app.example/api/llm/v1"' in inv.argv
+    assert 'model_providers.opensre.env_key="OPENAI_API_KEY"' in inv.argv
 
 
 @patch("integrations.llm_cli.binary_resolver.shutil.which", return_value="/usr/bin/codex")
@@ -847,3 +851,24 @@ def test_parse_raises_on_empty_stdout_surfaces_stderr() -> None:
     adapter = CodexAdapter()
     with pytest.raises(RuntimeError, match="some stderr detail"):
         adapter.parse(stdout="", stderr="some stderr detail", returncode=0)
+
+
+def test_the_probe_and_the_build_agree_on_when_the_hosted_route_applies() -> None:
+    """With only OPENAI_BASE_URL set, neither the probe nor the build uses the account token."""
+    from config.account import AccountLLMRoute
+    from integrations.llm_cli import codex
+
+    route = AccountLLMRoute(base_url="https://app.example/api/llm/v1", model="gpt-5.6-sol")
+    base = {k: v for k, v in os.environ.items() if not k.startswith("OPENAI_")}
+    with (
+        patch.dict(os.environ, {**base, "OPENAI_BASE_URL": "https://proxy.example/v1"}, clear=True),
+        patch("config.account.account_llm_route", return_value=route),
+        patch("config.account.resolve_account_token", return_value="osre_gw_org.tok"),
+    ):
+        assert codex._hosted_route_applies() is False
+    with (
+        patch.dict(os.environ, base, clear=True),
+        patch("config.account.account_llm_route", return_value=route),
+        patch("config.account.resolve_account_token", return_value="osre_gw_org.tok"),
+    ):
+        assert codex._hosted_route_applies() is True

@@ -28,8 +28,7 @@ def test_repair_tools_are_discovered_without_inheriting_an_unselected_repo() -> 
             }
         }
     )
-    # Only the credential rides in; a host that does not record hosting the scheduler leaves it False.
-    assert injected == {"github_token": "test-token", "scheduler_in_process": False}
+    assert injected == {"github_token": "test-token"}
     assert schedule.is_available({"github": {"connection_verified": True}})
     assert not schedule.is_available({})
     clear_tool_registry_cache()

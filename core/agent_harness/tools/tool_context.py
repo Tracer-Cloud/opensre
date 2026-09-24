@@ -82,17 +82,13 @@ def capability_available_from_sources(
     return not (isinstance(capability_values, tuple) and capability_values == ())
 
 
-def capability_values_from_sources(
-    sources: dict[str, dict[str, Any]],
-    capability_name: str,
-) -> tuple[str, ...]:
-    """The values a host recorded for ``capability_name``; empty when it recorded none.
+def capability_values(session: Any, capability_name: str) -> tuple[str, ...]:
+    """The values a host recorded for ``capability_name`` on ``session``; empty when none.
 
-    Unlike :func:`capability_available_from_sources`, absence means "not offered":
+    Unlike :func:`capability_not_explicitly_disabled`, absence means "not offered":
     for a fact a host must state explicitly, such as hosting the scheduler.
     """
-    action_source = sources.get(_ACTION_SESSION_SOURCE) or {}
-    available_capabilities = action_source.get("available_capabilities")
+    available_capabilities = getattr(session, "available_capabilities", None)
     if not isinstance(available_capabilities, dict):
         return ()
     values = available_capabilities.get(capability_name)

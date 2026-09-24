@@ -227,9 +227,12 @@ class PromptWorker:
         is already there.
         """
         chain = self._chain(job)
-        if not chain:
+        if len(chain) < 2:
             return
-        exchange: list[tuple[str, str]] = [("user", _render_prompt(chain[0]))]
+        exchange: list[tuple[str, str]] = []
+        if not chain[0].parent_id:
+            # The original request is still known; an older follow-up starts at its question.
+            exchange.append(("user", _render_prompt(chain[0])))
         for asked, answered in zip(chain, chain[1:], strict=False):
             exchange.append(("assistant", asked.question))
             if answered is not job:
@@ -237,17 +240,16 @@ class PromptWorker:
         seed_session_history(session, exchange)
 
     def _chain(self, job: PromptJob) -> list[PromptJob]:
-        """The prompts from the original request down to ``job``, oldest first.
+        """The prompts the queue still holds from the oldest known one down to ``job``.
 
-        Empty when the queue no longer holds the original request: nothing
-        reliable is left to seed.
+        A forgotten ancestor ends the walk; what is still known is seeded.
         """
         chain: list[PromptJob] = [job]
         current = job
         while current.parent_id:
             parent = self._queue.get(current.parent_id)
             if parent is None:
-                return []
+                break
             chain.append(parent)
             current = parent
         chain.reverse()
