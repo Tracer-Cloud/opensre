@@ -45,10 +45,30 @@ _HOSTED_PROMPT_INTERACTION_PREFIX = "hosted_prompt:"
 _STATE_TEXT = {
     "failed": "The hosted gateway could not run that prompt ({error}).",
 }
+#: Plain words for the gateway's failure codes; anything else keeps the code.
+_FAILURE_TEXT = {
+    "not_admitted": (
+        "The hosted gateway was busy with another conversation for too long and did not "
+        "take the prompt. Send it again in a moment."
+    ),
+    "credits_denied": (
+        "The organization has no hosted credits left, so the gateway refused the prompt. "
+        "Top up in the OpenSRE app, then send it again."
+    ),
+    "turn_failed": (
+        "The hosted gateway hit an error while running the prompt. Send it again; if it "
+        "repeats, the gateway's logs have the detail."
+    ),
+    "invalid_answer": (
+        "That answer did not match the question's options. Ask again about the original "
+        "prompt id to reopen its menu, then answer from the menu."
+    ),
+}
+_ANSWER_REJECTED = "That answer did not match the question's options; the question opens again. "
 _ASKING_IN_SHELL = (
-    "The hosted gateway stopped to ask: {question}\nThe menu opens now. Once the user has "
+    "The hosted gateway needs a decision from the user; the menu opens now. Once they have "
     "answered, call ask_hosted_gateway again with prompt_id={prompt_id}; their selection is "
-    "sent as the answer."
+    "sent as the answer. Do not repeat the question."
 )
 _ASKING_WITHOUT_SHELL = (
     "The hosted gateway stopped to ask: {question}\nAnswer it from the interactive shell "
@@ -59,11 +79,23 @@ _STILL_RUNNING = (
     "{waited} seconds. Ask again later with that id to read the result."
 )
 _FAILED_INTEGRATIONS = (
-    "\n\nTools of these integrations returned errors on the hosted gateway: {vendors}. The "
-    "gateway uses the organization's integrations, not this machine's credentials. If the "
-    "organization has not set them up for the gateway, an admin can do so at {url}; "
-    "otherwise the answer above describes the failure."
+    "The hosted gateway could not use the organization's {vendors} integration. It uses the "
+    "organization's credentials from {url}, not this machine's: an admin fixes or replaces "
+    "them there and the gateway restarts with the new ones. {next_step} Tell the user this "
+    "first, in plain words.\n\n"
 )
+#: What may follow a fixed credential, by state: never a blind re-send of work already done.
+_FAILED_INTEGRATION_NEXT_STEP = {
+    "needs_input": (
+        "Then continue this prompt through its menu (it usually offers a retry); do not send "
+        "the prompt again, the gateway would start the work over."
+    ),
+    "failed": "Then the prompt can be sent again; nothing of it ran to completion.",
+    "done": (
+        "The answer that follows stands for what did run; ask again only for what the "
+        "failed integration should have done, not for the whole request."
+    ),
+}
 
 
 @tool(
@@ -129,7 +161,6 @@ _FAILED_INTEGRATIONS = (
         "success": "Whether the app accepted the request and the gateway reached a settled state",
         "prompt_id": "The prompt's id on the gateway; use it to read the result later",
         "state": "queued, running, done, needs_input or failed",
-        "answer": "The gateway's answer when the state is done",
         "question": "What the gateway asked when the state is needs_input",
         "choice": "The question as menu data (title, note, questions with options) when needs_input",
         "failed_integrations": "Integrations whose tools failed on the gateway, e.g. github",
@@ -152,10 +183,22 @@ def ask_hosted_gateway(
                 client, prompt.strip(), dict(facts or {}), prompt_id.strip(), scope
             )
             record, waited = _wait_until_settled(client, record, _ProgressRelay(context))
+            parent_id = record.parent_prompt_id or prompt_id.strip()
+            rejected = _answer_was_rejected(record) and bool(parent_id)
+            if rejected:
+                # The gateway reopened the question on the original prompt; show it again.
+                record = client.prompt_result(parent_id)
             integrations_url = f"{client.app_url}{HOSTED_GATEWAY_INTEGRATIONS_PATH}"
     except HostedGatewayError as exc:
         return failure_output(exc, tool_name=TOOL_NAME, component=_COMPONENT)
-    return _outcome(record, waited, integrations_url, scope)
+    outcome = _outcome(record, waited, integrations_url, scope)
+    if rejected and record.state == "needs_input":
+        outcome["response_text"] = _ANSWER_REJECTED + outcome["response_text"]
+    return outcome
+
+
+def _answer_was_rejected(record: PromptRecord) -> bool:
+    return record.state == "failed" and record.error == "invalid_answer"
 
 
 def _submit_or_continue(
@@ -240,22 +283,32 @@ def _outcome(
     elif record.state == "needs_input":
         text = _ask_here(record, scope)
     elif record.state in _STATE_TEXT:
-        text = _STATE_TEXT[record.state].format(error=record.error)
+        text = _failure_text(record.error)
     else:
         text = _STILL_RUNNING.format(prompt_id=record.prompt_id, waited=int(waited))
     if record.failed_integrations:
         vendors = ", ".join(record.failed_integrations)
-        text = text + _FAILED_INTEGRATIONS.format(vendors=vendors, url=integrations_url)
+        next_step = _FAILED_INTEGRATION_NEXT_STEP.get(record.state, "")
+        hint = _FAILED_INTEGRATIONS.format(
+            vendors=vendors, url=integrations_url, next_step=next_step
+        )
+        text = hint + text
     return {
         "success": record.settled,
         "prompt_id": record.prompt_id,
         "state": record.state,
-        "answer": record.answer,
         "question": record.question,
         "choice": _choice_data(record),
         "failed_integrations": list(record.failed_integrations),
         "response_text": text,
     }
+
+
+def _failure_text(error: str) -> str:
+    known = _FAILURE_TEXT.get(error)
+    if known is not None:
+        return known
+    return _STATE_TEXT["failed"].format(error=error)
 
 
 def _ask_here(record: PromptRecord, scope: ActionToolScope | None) -> str:
@@ -317,7 +370,6 @@ def _refusal(text: str) -> dict[str, Any]:
         "success": False,
         "prompt_id": "",
         "state": "",
-        "answer": "",
         "question": "",
         "error": text,
         "response_text": text,

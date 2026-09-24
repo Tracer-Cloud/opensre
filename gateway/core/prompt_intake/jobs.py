@@ -79,6 +79,8 @@ class PromptJob:
         """The caller-facing record: stable codes and text, never internals."""
         with self._lock:
             record: dict[str, Any] = {"prompt_id": self.id, "state": self.state.value}
+            if self.parent_id:
+                record["parent_prompt_id"] = self.parent_id
             if self.state is PromptState.DONE:
                 record["answer"] = self.answer
             if self.state is PromptState.NEEDS_INPUT:

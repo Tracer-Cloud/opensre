@@ -36,6 +36,8 @@ PROMPT_QUEUE_MAX = 8
 PROMPT_RESULT_RETENTION_SECONDS = 3_600.0
 #: Actor recorded for a remote prompt when the caller names none.
 PROMPT_DEFAULT_ACTOR = "remote-shell"
+#: How long a queued remote prompt waits for a free turn slot before it counts as refused.
+PROMPT_SLOT_WAIT_SECONDS = 300.0
 #: Progress lines a prompt record keeps (the newest), and the length each is cut to.
 PROMPT_PROGRESS_MAX_LINES = 20
 PROMPT_PROGRESS_LINE_MAX_CHARS = 200
@@ -68,6 +70,7 @@ __all__ = [
     "PROMPT_PROGRESS_MAX_LINES",
     "PROMPT_QUEUE_MAX",
     "PROMPT_RESULT_RETENTION_SECONDS",
+    "PROMPT_SLOT_WAIT_SECONDS",
     "PROMPT_ROUTE_PATH",
     "PROMPT_WORKER_STOP_TIMEOUT_SECONDS",
     "TURN_ERROR_MESSAGE",

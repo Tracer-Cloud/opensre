@@ -563,6 +563,35 @@ def test_run_without_caller_context_is_the_transport_path(monkeypatch: Any) -> N
     assert binding.confirm_fn is None
 
 
+def test_run_waits_for_a_slot_when_told_to_instead_of_refusing(monkeypatch: Any) -> None:
+    """A queued remote prompt queues behind a running turn; only a timeout refuses it."""
+    # Arrange: the only slot is taken and freed a moment later
+    import threading
+
+    from infrastructure.turn_host.concurrency import AT_CAPACITY_MESSAGE, TurnConcurrencyGate
+
+    factory = _patch_headless_agent(monkeypatch, _empty_turn_result())
+    gate = TurnConcurrencyGate(1)
+    assert gate.try_acquire() is True
+    threading.Timer(0.2, gate.release).start()
+    handler = TurnRunner(console=Console(force_terminal=False), gate=gate)
+    sink = RecordingTurnOutput()
+
+    # Act
+    returned = handler.run(
+        "hello",
+        SessionCore(store=InMemorySessionStore()),
+        sink,
+        logging.getLogger("t"),
+        slot_wait_seconds=2.0,
+    )
+
+    # Assert: the turn ran once the slot freed; nothing was finalized as "at capacity"
+    assert returned is not None
+    assert sink.finalized != AT_CAPACITY_MESSAGE
+    factory.assert_called_once()
+
+
 def test_run_returns_none_and_says_at_capacity_when_the_gate_refuses(monkeypatch: Any) -> None:
     """At capacity the caller gets ``None``, not a result it would treat as a turn."""
     # Arrange

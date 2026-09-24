@@ -54,6 +54,24 @@ def turn_slot(gate: TurnGate | None) -> Iterator[bool]:
 
 
 @contextmanager
+def waiting_turn_slot(gate: TurnGate | None, *, timeout_seconds: float) -> Iterator[bool]:
+    """Wait up to ``timeout_seconds`` for a slot, then hold it; yield whether one was had.
+
+    For work that was already accepted (a queued remote prompt) but must not
+    wait forever: the caller reports a refusal only after the wait.
+    """
+    if gate is None:
+        yield True
+        return
+    acquired = gate.acquire(timeout=timeout_seconds)
+    try:
+        yield acquired
+    finally:
+        if acquired:
+            gate.release()
+
+
+@contextmanager
 def queued_turn_slot(gate: TurnGate | None) -> Iterator[None]:
     """Wait for a slot, then hold it for the body.
 
@@ -69,4 +87,4 @@ def queued_turn_slot(gate: TurnGate | None) -> Iterator[None]:
         gate.release()
 
 
-__all__ = ["TurnGate", "queued_turn_slot", "turn_slot"]
+__all__ = ["TurnGate", "queued_turn_slot", "turn_slot", "waiting_turn_slot"]

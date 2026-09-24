@@ -93,10 +93,13 @@ def test_master_menu_matches_four_unique_children_and_preserves_specialists() ->
     assert "ask_user_choice" in fix_loop
     assert menu.allow_custom is False
     assert GETTING_STARTED_CUSTOM not in master
-    # Demo C is the one sanctioned placeholder: it explains, calls no tool, and exits.
+    # Demo C delegates to the hosted gateway through the hosted-gateway tools and never
+    # runs the repair itself. Its menu label keeps "(coming soon)" until the team has
+    # reviewed and tested the hosted flow.
     managed = skills.load_skill_body("delegating-github-ci-repairs")
-    assert "not implemented yet" in managed
-    assert "Do not call a tool" in managed
+    assert "check_hosted_gateway" in managed and "ask_hosted_gateway" in managed
+    assert "schedule_ci_repair_loop(" not in managed
+    assert "not implemented yet" not in managed
     catalog = skills.read_skill_catalog()
     assert catalog.diagnostics == ()
     discovered = catalog.skills
