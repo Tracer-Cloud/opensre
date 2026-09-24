@@ -251,8 +251,9 @@ def test_build_uses_the_hosted_account_route_when_no_openai_key_is_set(
     route = AccountLLMRoute(base_url="https://app.example/api/llm/v1", model="gpt-5.6-sol")
     with (
         patch.dict(os.environ, base, clear=True),
+        patch("config.account.account_llm_route", return_value=route),
         patch("integrations.llm_cli.codex.account_llm_route", return_value=route),
-        patch("integrations.llm_cli.codex.resolve_account_token", return_value="osre_gw_org.tok"),
+        patch("config.account.resolve_account_token", return_value="osre_gw_org.tok"),
     ):
         inv = CodexAdapter().build(prompt="p", model=None, workspace="")
 

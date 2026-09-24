@@ -5,6 +5,8 @@ from __future__ import annotations
 import time
 from typing import Any
 
+from config.constants.capabilities import SCHEDULER_HOST_CAPABILITY, SCHEDULER_HOST_IN_PROCESS
+from core.agent_harness.tools import capability_values_from_sources
 from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel, report_run_error
 from core.tool_framework import tool
@@ -23,7 +25,10 @@ from integrations.github.tools.ci_repair_loop.storage import RepairStore
 
 
 def _credentials(sources: dict[str, dict]) -> dict[str, Any]:
-    return github_creds(sources.get("github", {}))
+    params = github_creds(sources.get("github", {}))
+    hosts = capability_values_from_sources(sources, SCHEDULER_HOST_CAPABILITY)
+    params["scheduler_in_process"] = SCHEDULER_HOST_IN_PROCESS in hosts
+    return params
 
 
 def _result(run: RepairRun, store: RepairStore) -> dict[str, Any]:
@@ -91,6 +96,7 @@ def schedule_ci_repair_loop(
     repo: str = "",
     pr_number: int = 0,
     github_token: str | None = None,
+    scheduler_in_process: bool = False,
     **_kwargs: Any,
 ) -> dict[str, Any]:
     """Authorize exactly one bounded repair scope and return its durable identity."""
@@ -103,6 +109,7 @@ def schedule_ci_repair_loop(
             pr_number=pr_number,
             github_token=github_token,
             store=store,
+            scheduler_in_process=scheduler_in_process,
         )
     except (ValueError, RuntimeError, OSError, GitHubApiError) as exc:
         report_run_error(

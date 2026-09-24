@@ -7,18 +7,9 @@ through the child environment — never argv or logs.
 
 from __future__ import annotations
 
+from config.account import hosted_openai_env
+
 
 def hosted_openai_subprocess_env() -> dict[str, str] | None:
     """Return OpenAI-compatible env for the hosted route, or ``None`` if unsigned."""
-    from config.account import account_llm_route, resolve_account_token
-
-    route = account_llm_route()
-    if route is None:
-        return None
-    token = resolve_account_token()
-    if not token:
-        return None
-    return {
-        "OPENAI_API_KEY": token,
-        "OPENAI_BASE_URL": route.base_url,
-    }
+    return hosted_openai_env()

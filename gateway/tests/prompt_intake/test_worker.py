@@ -258,9 +258,9 @@ class _HistoryHandler(_Handler):
         super().__init__(**kwargs)
         self.seen_history: list[tuple[str, str]] = []
 
-    def run(self, text: str, session: SessionCore, output: Any, logger: Any) -> Any:
+    def run(self, text: str, session: SessionCore, output: Any, logger: Any, **kwargs: Any) -> Any:
         self.seen_history = list(session.cli_agent_messages or [])
-        return super().run(text, session, output, logger)
+        return super().run(text, session, output, logger, **kwargs)
 
 
 def test_a_resumed_turn_is_seeded_with_the_request_and_the_question() -> None:

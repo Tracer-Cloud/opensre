@@ -214,10 +214,10 @@ class PromptWorker:
     def _seed_parent_exchange(self, job: PromptJob, session: SessionCore, question: str) -> None:
         """Give a resumed turn the exchange it continues when the session holds none.
 
-        An unattended session keeps no transcript across close and resume, so
-        without this the answer arrives alone and the agent no longer knows what
-        it asked about. Seeds the parent's request and the question, never over
-        a transcript that is already there.
+        The on-disk store restores the transcript on resume, so this only fills
+        in when a store kept none: then the answer would arrive alone and the
+        agent would not know what it asked about. Never overwrites a transcript
+        that is already there.
         """
         parent = self._queue.get(job.parent_id) if job.parent_id else None
         if parent is None:

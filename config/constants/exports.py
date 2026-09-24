@@ -157,6 +157,8 @@ EXPORTS: dict[str, str] = {
     "PROMPT_MAX_CHARS": "gateway",
     "PROMPT_QUEUE_MAX": "gateway",
     "PROMPT_RESULT_RETENTION_SECONDS": "gateway",
+    "SCHEDULER_HOST_CAPABILITY": "capabilities",
+    "SCHEDULER_HOST_IN_PROCESS": "capabilities",
     "PROMPT_ROUTE_PATH": "gateway",
     "PROMPT_WORKER_STOP_TIMEOUT_SECONDS": "gateway",
     "NO_ACTIVE_TURN_MESSAGE": "gateway",

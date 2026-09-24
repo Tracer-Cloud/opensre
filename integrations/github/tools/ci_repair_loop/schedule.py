@@ -21,10 +21,7 @@ from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_REPORT_ARGS_PARAM,
     LOOP_REPORT_PARAM,
 )
-from infrastructure.scheduling.scheduler.runner import (
-    compute_next_run,
-    scheduler_hosted_in_process,
-)
+from infrastructure.scheduling.scheduler.runner import compute_next_run
 from infrastructure.scheduling.scheduler.storage import add_task, get_task
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
 from integrations.github.client import GitHubRestClient
@@ -51,8 +48,13 @@ def schedule_repair(
     pr_number: int = 0,
     github_token: str | None = None,
     store: RepairStore | None = None,
+    scheduler_in_process: bool = False,
 ) -> tuple[RepairRun, bool, str | None]:
-    """Schedule once per active target; repeated requests retain the original deadline."""
+    """Schedule once per active target; repeated requests retain the original deadline.
+
+    ``scheduler_in_process`` says the host's own scheduler picks the task up from the
+    store (the hosted gateway); otherwise the OS-level background service is ensured.
+    """
     started = time.time()
     token = configured_token(github_token)
     user = object_response(GitHubRestClient(token).request("GET", "user"))
@@ -102,10 +104,7 @@ def schedule_repair(
                 run = store.get(run.id)
             return run, True, None
         try:
-            # A long-lived host (the hosted gateway) runs the scheduler in this
-            # process and picks the task up from the store. Only a laptop needs
-            # the OS-level service, which must outlive the shell.
-            if not scheduler_hosted_in_process():
+            if not scheduler_in_process:
                 ensure_background_service(deadline=run.deadline)
             if time.time() >= run.deadline:
                 run.status, run.reason = (

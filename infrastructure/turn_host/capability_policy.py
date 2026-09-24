@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from config.constants.capabilities import SCHEDULER_HOST_CAPABILITY, SCHEDULER_HOST_IN_PROCESS
 from core.agent_harness.spi.session_state import withhold_capabilities
 
 UNSUPPORTED_GATEWAY_CAPABILITIES = (
@@ -20,9 +21,18 @@ UNSUPPORTED_GATEWAY_CAPABILITIES = (
 )
 
 
-def ensure_gateway_capability_policy(session: Any) -> None:
-    """Record the capabilities gateway chat withholds on ``session``."""
+def ensure_gateway_capability_policy(session: Any, *, hosts_scheduler: bool = False) -> None:
+    """Record what gateway chat withholds on ``session``, and whether it hosts the scheduler.
+
+    A gateway that runs the scheduler in-process says so: a scheduling tool then
+    registers its task with the store instead of installing an OS-level service
+    the container cannot run.
+    """
     withhold_capabilities(session, *UNSUPPORTED_GATEWAY_CAPABILITIES)
+    if hosts_scheduler:
+        capabilities = getattr(session, "available_capabilities", None)
+        if isinstance(capabilities, dict):
+            capabilities[SCHEDULER_HOST_CAPABILITY] = (SCHEDULER_HOST_IN_PROCESS,)
 
 
 __all__ = [

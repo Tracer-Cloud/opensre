@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 import subprocess
 
-from config.account import account_llm_route, resolve_account_token
+from config.account import account_llm_route, hosted_openai_env
 from integrations.llm_cli.base import CLIInvocation, CLIProbe
 from integrations.llm_cli.binary_resolver import (
     candidate_binary_names as _candidate_binary_names,
@@ -86,20 +86,6 @@ def _fallback_codex_paths() -> list[str]:
 
 def _has_openai_api_key() -> bool:
     return bool(os.environ.get("OPENAI_API_KEY", "").strip())
-
-
-def _hosted_openai_env() -> dict[str, str]:
-    """Codex's OpenAI platform env when this process holds an OpenSRE account token.
-
-    A hosted gateway never runs ``codex login``: the webapp meters its LLM calls
-    through the account token, so Codex gets that token as its API key and the
-    webapp's OpenAI-compatible route as its base URL. Explicit ``OPENAI_*``
-    variables in the environment win over it.
-    """
-    route = account_llm_route()
-    if route is None:
-        return {}
-    return {"OPENAI_API_KEY": resolve_account_token(), "OPENAI_BASE_URL": route.base_url}
 
 
 def _should_probe_codex_login_status() -> bool:
@@ -178,7 +164,9 @@ class CodexAdapter:
             # Allow API-key auth when ChatGPT/session login is absent or unclear.
             logged_in = True
             auth_detail = "Authenticated via OPENAI_API_KEY fallback."
-        elif logged_in is not True and _hosted_openai_env():
+        elif logged_in is not True and hosted_openai_env() is not None:
+            # A hosted gateway never runs ``codex login``: the account token is
+            # Codex's API key and the webapp's OpenAI-compatible route its base URL.
             logged_in = True
             auth_detail = "Authenticated via the hosted OpenSRE account route."
 
@@ -238,8 +226,9 @@ class CodexAdapter:
         oai = nonempty_env_values(OPENAI_PLATFORM_ENV_KEYS)
         hosted_route = None
         if "OPENAI_API_KEY" not in oai:
-            hosted = _hosted_openai_env()
-            if hosted:
+            # Explicit OPENAI_* variables win over the hosted route.
+            hosted = hosted_openai_env()
+            if hosted is not None:
                 oai = {**hosted, **oai}
                 hosted_route = account_llm_route()
         resolved_model = (model or "").strip()

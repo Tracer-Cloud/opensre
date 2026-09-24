@@ -421,24 +421,6 @@ def refresh_background_scheduler(
     return None, 0
 
 
-_HOSTED_IN_PROCESS = threading.Event()
-
-
-def mark_scheduler_hosted() -> None:
-    """Record that this long-lived process hosts the scheduler for its task store.
-
-    Only a host that outlives the caller may say so (the gateway does). A shell
-    that embeds a scheduler while it is open must not: a loop it registered
-    would stop with the shell, which is what the OS-level service exists for.
-    """
-    _HOSTED_IN_PROCESS.set()
-
-
-def scheduler_hosted_in_process() -> bool:
-    """Whether a scheduler in this process picks up tasks added to the store."""
-    return _HOSTED_IN_PROCESS.is_set()
-
-
 def start_background_scheduler(
     runners: SchedulerRunners,
     *,
@@ -643,8 +625,6 @@ def failed_retry_scope(task_id: str) -> frozenset[tuple[Provider, str]] | None:
 
 
 __all__ = [
-    "mark_scheduler_hosted",
-    "scheduler_hosted_in_process",
     "configured_scheduled_run_limit",
     "compute_next_run",
     "failed_retry_scope",

@@ -652,9 +652,10 @@ def test_hosted_scheduler_registers_without_an_os_service(
         raise AssertionError("the OS service must not be touched on a hosted gateway")
 
     monkeypatch.setattr(schedule, "ensure_background_service", refuse)
-    monkeypatch.setattr(schedule, "scheduler_hosted_in_process", lambda: True)
 
-    run, reused, next_run = schedule.schedule_repair(demo=True, store=store)
+    run, reused, next_run = schedule.schedule_repair(
+        demo=True, store=store, scheduler_in_process=True
+    )
 
     assert not reused
     assert run.id in tasks and next_run

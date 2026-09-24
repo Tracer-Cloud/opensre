@@ -227,6 +227,17 @@ def account_llm_route() -> AccountLLMRoute | None:
     )
 
 
+def hosted_openai_env() -> dict[str, str] | None:
+    """OpenAI-compatible env for a subprocess on the hosted route, or ``None`` if unsigned."""
+    route = account_llm_route()
+    if route is None:
+        return None
+    token = resolve_account_token()
+    if not token:
+        return None
+    return {"OPENAI_API_KEY": token, "OPENAI_BASE_URL": route.base_url}
+
+
 __all__ = [
     "AccountRecord",
     "AccountLLMRoute",
@@ -234,6 +245,7 @@ __all__ = [
     "account_metadata_path",
     "delete_account_record",
     "delete_account_token",
+    "hosted_openai_env",
     "load_account_record",
     "normalize_account_app_url",
     "resolve_account_token",
