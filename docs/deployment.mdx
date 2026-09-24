@@ -221,6 +221,13 @@ isolation boundary and the agent gets the whole process. Unset it (or set
 `agent`) only where the agent's sandbox can start, such as a VM or a container
 that allows user namespaces.
 
+What that boundary means: the agent can reach everything the task holds, which
+is one organization's credentials and its own home volume. What it works on is
+bounded too: CI repairs run only on repositories an organization admin approved,
+and only on branches inside that repository (pull requests from forks are
+refused before the agent starts), so the code the agent reads comes from people
+who already have push access to that repository.
+
 The scheduler service and every process that mutates tasks — the gateway,
 `opensre cron`, and `/loops` — must share the **same** task store: the same
 `OPENSRE_HOME` on a shared mount (S3 Files / EFS). The scheduler reconciles from

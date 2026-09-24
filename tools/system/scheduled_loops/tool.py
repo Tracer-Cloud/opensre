@@ -7,11 +7,18 @@ from typing import Any
 from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel
 from core.tool_framework import tool
+from core.tool_framework.utils import tool_unavailable
 from infrastructure.scheduling.scheduler.loop_results import latest_loop_runs
 from infrastructure.scheduling.scheduler.loops import LoopSummary, list_loop_summaries
+from infrastructure.scheduling.scheduler.storage import get_task_store_snapshot
 from infrastructure.scheduling.scheduler.types import TaskRun
 
 TOOL_NAME = "list_scheduled_loops"
+_SOURCE = "system"
+_STORE_UNREADABLE = (
+    "The scheduler task store could not be read completely, so the loops are unknown; "
+    "this is not an empty schedule. Check the store file under the OpenSRE home."
+)
 
 _INPUT_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -51,8 +58,10 @@ def _loop_row(loop: LoopSummary, run: TaskRun | None) -> dict[str, Any]:
     return row
 
 
-def _summary(rows: list[dict[str, Any]]) -> str:
+def _summary(rows: list[dict[str, Any]], *, store_missing: bool) -> str:
     if not rows:
+        if store_missing:
+            return "No scheduler task store exists here yet, so no loops are configured."
         return "No scheduled loops are configured."
     active = sum(1 for row in rows if row["enabled"])
     lines = [f"{len(rows)} scheduled loops, {active} active."]
@@ -88,6 +97,7 @@ def _summary(rows: list[dict[str, Any]]) -> str:
     outputs={
         "loops": "One row per loop: id, name, kind, cron, enabled, status, next_run, latest_run",
         "count": "How many loops were listed",
+        "store_missing": "True when no task store file exists yet (nothing was ever scheduled)",
         "response_text": "One line per loop with its status, schedule and last outcome",
     },
     surfaces=(ToolSurface.ACTION,),
@@ -96,15 +106,20 @@ def _summary(rows: list[dict[str, Any]]) -> str:
     tags=("safe",),
 )
 def list_scheduled_loops(include_disabled: bool = True, **_kwargs: Any) -> dict[str, Any]:
+    snapshot = get_task_store_snapshot()
+    if not snapshot.complete:
+        # An unreadable store is not an empty schedule; say so instead of listing nothing.
+        return tool_unavailable(_SOURCE, _STORE_UNREADABLE)
     loops = list_loop_summaries(include_disabled=include_disabled)
     runs = latest_loop_runs(loops)
     rows = [_loop_row(loop, runs.get(loop.id)) for loop in loops]
     return {
-        "source": "system",
+        "source": _SOURCE,
         "available": True,
+        "store_missing": snapshot.missing,
         "loops": rows,
         "count": len(rows),
-        "response_text": _summary(rows),
+        "response_text": _summary(rows, store_missing=snapshot.missing),
     }
 
 

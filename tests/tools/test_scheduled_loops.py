@@ -7,6 +7,7 @@ from typing import Any
 import pytest
 
 from infrastructure.scheduling.scheduler.loops import LoopSummary
+from infrastructure.scheduling.scheduler.storage import TaskStoreSnapshot
 from infrastructure.scheduling.scheduler.types import Provider, TaskKind, TaskRun, TaskStatus
 from tools.registry import clear_tool_registry_cache, get_registered_tool_map
 from tools.system.scheduled_loops import tool as loops_tool
@@ -33,6 +34,30 @@ def _loop(loop_id: str, name: str, *, enabled: bool) -> LoopSummary:
     )
 
 
+def _store_reads(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    loops: list[LoopSummary],
+    runs: dict[str, TaskRun],
+    complete: bool = True,
+    missing: bool = False,
+) -> None:
+    """Stand in for the task store: its snapshot, its loop summaries and their newest runs."""
+
+    def snapshot() -> TaskStoreSnapshot:
+        return TaskStoreSnapshot(tasks=(), complete=complete, missing=missing)
+
+    def summaries(*, include_disabled: bool) -> list[LoopSummary]:
+        return loops if include_disabled else [loop for loop in loops if loop.enabled]
+
+    def newest_runs(listed: list[LoopSummary]) -> dict[str, TaskRun]:
+        return {loop.id: runs[loop.id] for loop in listed if loop.id in runs}
+
+    monkeypatch.setattr(loops_tool, "get_task_store_snapshot", snapshot)
+    monkeypatch.setattr(loops_tool, "list_loop_summaries", summaries)
+    monkeypatch.setattr(loops_tool, "latest_loop_runs", newest_runs)
+
+
 def test_every_loop_is_listed_with_its_schedule_and_newest_run(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -45,15 +70,7 @@ def test_every_loop_is_listed_with_its_schedule_and_newest_run(
         status=TaskStatus.FAILED,
         error="Stopped after 3 failed repair attempts.",
     )
-
-    def summaries(*, include_disabled: bool) -> list[LoopSummary]:
-        return [repair, reminder] if include_disabled else [repair]
-
-    def newest_runs(loops: list[LoopSummary]) -> dict[str, TaskRun]:
-        return {"a8e1": failed_run} if any(loop.id == "a8e1" for loop in loops) else {}
-
-    monkeypatch.setattr(loops_tool, "list_loop_summaries", summaries)
-    monkeypatch.setattr(loops_tool, "latest_loop_runs", newest_runs)
+    _store_reads(monkeypatch, loops=[repair, reminder], runs={"a8e1": failed_run})
 
     # Act
     everything = list_scheduled_loops()
@@ -77,16 +94,34 @@ def test_every_loop_is_listed_with_its_schedule_and_newest_run(
     assert active_only["count"] == 1
 
 
-def test_no_loops_is_a_plain_sentence(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_an_unreadable_store_is_reported_not_shown_as_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A store that will not parse looked like "no loops configured"."""
     # Arrange
-    monkeypatch.setattr(loops_tool, "list_loop_summaries", lambda **_kw: [])
-    monkeypatch.setattr(loops_tool, "latest_loop_runs", lambda _loops: {})
+    _store_reads(monkeypatch, loops=[], runs={}, complete=False)
 
     # Act
     out = list_scheduled_loops()
 
     # Assert
-    assert out["count"] == 0 and out["response_text"] == "No scheduled loops are configured."
+    assert out["available"] is False
+    assert "could not be read completely" in out["error"]
+    assert "loops" not in out
+
+
+def test_no_store_yet_and_an_empty_store_read_differently(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange / Act
+    _store_reads(monkeypatch, loops=[], runs={}, missing=True)
+    never_scheduled = list_scheduled_loops()
+    _store_reads(monkeypatch, loops=[], runs={})
+    emptied = list_scheduled_loops()
+
+    # Assert
+    assert never_scheduled["count"] == 0 and never_scheduled["store_missing"] is True
+    assert never_scheduled["response_text"].startswith("No scheduler task store exists here yet")
+    assert emptied["store_missing"] is False
+    assert emptied["response_text"] == "No scheduled loops are configured."
 
 
 def test_the_tool_is_registered_as_a_read_only_action_tool() -> None:
