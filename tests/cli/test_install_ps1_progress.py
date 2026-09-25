@@ -289,11 +289,14 @@ def test_powershell_origin_reaches_binary_and_restores_environment(
     )
     recorded = tmp_path / "recorded.json"
     script = f"""
-        . '{str(INSTALL_PS1).replace("'", "''")}' -SkipMain -Channel release {tag}
+        $source = Get-Content -Raw -LiteralPath '{str(INSTALL_PS1).replace("'", "''")}'
+        $probe = @'
         $env:OPENSRE_INSTALL_ORIGIN = 'previous'
         Send-OpenSreInstallAnalytics -BinaryPath $env:OPENSRE_TEST_BINARY -Channel $Channel -Version test
         if ($env:OPENSRE_INSTALL_ORIGIN -ne 'previous') {{ throw 'Environment leaked' }}
         Write-Output 'ORIGIN_OK'
+'@
+        & ([scriptblock]::Create($source + "`n" + $probe)) -SkipMain -Channel release {tag}
     """
     result = subprocess.run(
         [shell, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],

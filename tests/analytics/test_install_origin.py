@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from collections.abc import Iterator
 from http import HTTPStatus
@@ -60,6 +61,10 @@ def test_retry_and_reinstall_keep_original_origin_including_unknown(
     deliveries: list[dict[str, Any]],
     original_origin: str,
 ) -> None:
+    def unsupported_hard_links(*_args: Any, **_kwargs: Any) -> None:
+        raise OSError("Hard links are unsupported on this configuration volume")
+
+    monkeypatch.setattr(os, "link", unsupported_hard_links)
     accepted_post = httpx.Client.post
 
     def failed_post(_client, url, *, content, **_kwargs):
