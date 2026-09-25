@@ -32,6 +32,7 @@ def finish_run(store: RepairStore, run: RepairRun) -> str:
     if not run.terminal:
         raise ValueError("An active repair cannot be finalized.")
     run.finished_at = run.finished_at or time.time()
+    store.discard_checkout(run)
     store.save(run)
     directory = store.directory(run.id)
     directory.mkdir(parents=True, exist_ok=True)

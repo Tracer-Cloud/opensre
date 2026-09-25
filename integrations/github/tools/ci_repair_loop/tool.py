@@ -18,7 +18,7 @@ from integrations.github.helpers import (
 )
 from integrations.github.tools.ci_repair_loop.credentials import account_id, configured_token
 from integrations.github.tools.ci_repair_loop.fixture import object_response
-from integrations.github.tools.ci_repair_loop.models import RepairRun
+from integrations.github.tools.ci_repair_loop.models import RepairRefused, RepairRun
 from integrations.github.tools.ci_repair_loop.report import render_report
 from integrations.github.tools.ci_repair_loop.schedule import schedule_repair
 from integrations.github.tools.ci_repair_loop.storage import RepairStore
@@ -125,6 +125,9 @@ def schedule_ci_repair_loop(
             store=store,
             scheduler_in_process=_scheduler_in_process(context),
         )
+    except RepairRefused as exc:
+        # Written for the user: which target to choose instead.
+        return {"ok": False, "error": str(exc), "response_text": str(exc)}
     except (ValueError, RuntimeError, OSError, GitHubApiError) as exc:
         report_run_error(
             exc,

@@ -410,13 +410,13 @@ def test_worker_retries_then_cleans_only_the_verified_head(
     if changed_head:
         assert run.status is RepairStatus.FAILED and not run.checks_passed
         assert api.prs[0]["state"] == "open" and run.branch in api.refs
-        # A finished run keeps its records, not its checkout, whatever the outcome.
-        assert not Path(run.workspace).exists()
     else:
         assert run.status is RepairStatus.SUCCEEDED and run.checks_passed
         assert run.fixed_sha == "fixed" and run.passed_run_url
         assert api.prs[0]["state"] == "closed" and run.branch not in api.refs
-        assert not Path(run.workspace).exists()
+    # A finished run keeps its records, not its checkout, whatever the outcome.
+    supervisor.finish_run(store, run)
+    assert not Path(run.workspace).exists()
 
 
 def test_repair_stops_after_three_failed_attempts(
@@ -837,23 +837,105 @@ def test_attempt_reasons_read_as_plain_sentences(error: str, expected: str) -> N
 
 def test_a_finished_run_drops_its_checkout_but_keeps_its_records(tmp_path: Path) -> None:
     """Each checkout is hundreds of megabytes on the shared volume; nothing reads it afterwards."""
-    from integrations.github.tools.ci_repair_loop import worker
+    from integrations.github.tools.ci_repair_loop.storage import CHECKOUT_REMOVED
 
-    # Arrange: a run directory with a checkout and its records
-    directory = tmp_path / "run"
+    # Arrange: a finished run whose directory holds a checkout and its records
+    store = RepairStore(tmp_path)
+    directory = store.directory("abcdefabcdef")
     checkout = directory / "checkout"
     (checkout / ".git").mkdir(parents=True)
     (directory / "attempt-1.json").write_text("{}", encoding="utf-8")
-    (directory / "result.md").write_text("report", encoding="utf-8")
-    run = _run(pr_number=6408).model_copy(update={"workspace": str(checkout), "demo": False})
+    run = _run(pr_number=6408).model_copy(
+        update={
+            "id": "abcdefabcdef",
+            "workspace": str(checkout),
+            "demo": False,
+            "status": RepairStatus.FAILED,
+        }
+    )
 
-    # Act
-    worker._discard_checkout(run)
+    # Act: the shared finish path every terminal outcome goes through
+    supervisor.finish_run(store, run)
 
     # Assert
     assert not checkout.exists()
     assert (directory / "attempt-1.json").exists() and (directory / "result.md").exists()
-    assert run.cleanup == "Checkout removed; report and attempt records retained."
+    assert run.cleanup == CHECKOUT_REMOVED
+
+
+def test_a_checkout_that_survives_removal_is_reported_as_retained(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from integrations.github.tools.ci_repair_loop import storage
+    from integrations.github.tools.ci_repair_loop.storage import CHECKOUT_RETAINED
+
+    # Arrange: removal silently does nothing, as on a permission error
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    monkeypatch.setattr(storage.shutil, "rmtree", lambda *_a, **_kw: None)
+    run = _run(pr_number=6408).model_copy(update={"workspace": str(checkout), "demo": False})
+
+    # Act
+    RepairStore(tmp_path).discard_checkout(run)
+
+    # Assert: the report never claims space that was not reclaimed
+    assert checkout.exists()
+    assert run.cleanup == CHECKOUT_RETAINED
+
+
+def test_the_scheduling_tool_returns_the_refusal_reason(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The user reads why the pull request was refused and what to choose instead."""
+    from integrations.github.tools.ci_repair_loop import tool as repair_tool
+    from integrations.github.tools.ci_repair_loop.models import RepairRefused
+
+    # Arrange
+    refusal = "PR #6408 comes from someone/opensre; choose a pull request from this repository."
+
+    def refuse(**_kwargs: Any) -> tuple[RepairRun, bool, str | None]:
+        raise RepairRefused(refusal)
+
+    monkeypatch.setattr(repair_tool, "schedule_repair", refuse)
+    monkeypatch.setattr(repair_tool, "RepairStore", lambda: None)
+
+    # Act
+    result = repair_tool.schedule_ci_repair_loop(
+        owner="Tracer-Cloud", repo="opensre", pr_number=6408, github_token="t"
+    )
+
+    # Assert
+    assert result["ok"] is False
+    assert result["response_text"] == refusal
+
+
+def test_an_active_run_is_reused_without_the_pull_request_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A PR that closes mid-run still returns the active run with its original deadline."""
+    from integrations.github.tools.ci_repair_loop import schedule
+
+    # Arrange: an active run for the target, and a GitHub that now reports the PR closed
+    store = RepairStore(tmp_path)
+    active = _run(pr_number=6408).model_copy(
+        update={"owner": "Tracer-Cloud", "repo": "opensre", "demo": False}
+    )
+    store.reserve(active)
+    api = _PullRequestApi(state="closed", head_full_name="Tracer-Cloud/opensre")
+    monkeypatch.setattr(schedule, "GitHubRestClient", lambda _token: api)
+    monkeypatch.setattr(schedule, "configured_token", lambda _token: "t", raising=False)
+    monkeypatch.setattr(schedule, "get_task", lambda _id: _EnabledTask())
+
+    # Act
+    run, reused, _next_run = schedule.schedule_repair(
+        demo=False, owner="Tracer-Cloud", repo="opensre", pr_number=6408, store=store
+    )
+
+    # Assert
+    assert reused and run.id == active.id
+
+
+class _EnabledTask:
+    enabled = True
+    next_run = "soon"
 
 
 def test_interrupted_registration_recovers_original_run(

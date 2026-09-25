@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import shutil
 import tempfile
 import time
 from pathlib import Path
@@ -14,6 +15,9 @@ from filelock import FileLock, Timeout
 from config.constants.ci_repair import CI_REPAIR_DIRECTORY
 from config.constants.paths import OPENSRE_HOME_DIR
 from integrations.github.tools.ci_repair_loop.models import RepairRun, RepairStatus
+
+CHECKOUT_REMOVED = "Checkout removed; report and attempt records retained."
+CHECKOUT_RETAINED = "Checkout could not be removed; report and attempt records retained."
 
 
 class RepairStore:
@@ -48,6 +52,16 @@ class RepairStore:
         finally:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
+
+    def has_active(self, candidate: RepairRun) -> bool:
+        """Whether an unexpired run already covers ``candidate``'s scope."""
+        now = time.time()
+        with self.lock:
+            runs = self._read()
+        return any(
+            run.identity[1:] == candidate.identity[1:] and not run.terminal and run.deadline > now
+            for run in runs.values()
+        )
 
     def reserve(self, candidate: RepairRun) -> tuple[RepairRun, bool]:
         """Return an active run for this scope without extending its deadline."""
@@ -115,6 +129,22 @@ class RepairStore:
                 raise ValueError("A completed CI repair cannot become active again.")
             runs[run.id] = run
             self._write(runs)
+
+    def discard_checkout(self, run: RepairRun) -> None:
+        """Remove a finished run's checkout; the report and attempt records stay.
+
+        A checkout of a real repository is hundreds of megabytes on the shared
+        volume and nothing reads it once the run is terminal. The recorded
+        cleanup says what actually happened to it.
+        """
+        if not run.workspace:
+            return
+        workspace = Path(run.workspace)
+        shutil.rmtree(workspace, ignore_errors=True)
+        if run.demo:
+            # A demo run already describes its own cleanup of the demo resources.
+            return
+        run.cleanup = CHECKOUT_RETAINED if workspace.exists() else CHECKOUT_REMOVED
 
     def directory(self, run_id: str) -> Path:
         if re.fullmatch(r"[0-9a-f]{12}", run_id) is None:

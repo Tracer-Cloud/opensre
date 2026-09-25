@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import json
 import logging
-import shutil
 import time
 from http import HTTPStatus
 from pathlib import Path
@@ -180,10 +179,7 @@ _REASON_TEXT = {
         "PR #{pr} comes from a fork; the loop only pushes to branches inside {repo}. "
         "Choose a pull request opened from a branch in this repository."
     ),
-    "push_failed": (
-        "The fix was made but the push was refused; the attempt report names the token "
-        "change to make."
-    ),
+    "push_failed": "The fix was made but the push was refused; the attempt report says why.",
     "checks_failed": "The fix was pushed but CI still failed on it.",
     "no_changes": "The coding agent made no change to the checkout.",
     "timeout": "The coding agent ran out of time.",
@@ -197,20 +193,6 @@ def _reason_for(error: str, run: RepairRun) -> str:
     if template is None:
         return f"{error}."
     return template.format(pr=run.pr_number, repo=f"{run.owner}/{run.repo}")
-
-
-def _discard_checkout(run: RepairRun) -> None:
-    """Remove a finished run's checkout; the report and attempt records stay.
-
-    A checkout of a real repository is hundreds of megabytes on the shared
-    volume and nothing reads it once the run is terminal.
-    """
-    if not run.workspace:
-        return
-    shutil.rmtree(run.workspace, ignore_errors=True)
-    if not run.demo:
-        # A demo run already describes its own cleanup of the demo resources.
-        run.cleanup = "Checkout removed; report and attempt records retained."
 
 
 def _green_after_repair(
@@ -272,8 +254,6 @@ def execute_repair(run: RepairRun, store: RepairStore) -> None:
     if run.checks_passed:
         cleanup_demo(client, run)
         run.status = RepairStatus.SUCCEEDED
-    if run.terminal:
-        _discard_checkout(run)
 
 
 def run_ci_repair_worker(store_directory: Path, run_id: str) -> None:
@@ -317,6 +297,8 @@ def run_ci_repair_worker(store_directory: Path, run_id: str) -> None:
                     RepairStatus.FAILED,
                     f"Repair stopped: {type(exc).__name__}.",
                 )
+        if run.terminal:
+            store.discard_checkout(run)
         run.finished_at = time.time()
         store.save(run)
     finally:

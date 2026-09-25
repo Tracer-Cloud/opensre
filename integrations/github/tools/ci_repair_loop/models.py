@@ -7,6 +7,10 @@ from enum import StrEnum
 from pydantic import BaseModel, Field
 
 
+class RepairRefused(ValueError):
+    """A scheduling refusal whose message is written for the user."""
+
+
 class RepairStatus(StrEnum):
     QUEUED = "queued"
     RUNNING = "running"
