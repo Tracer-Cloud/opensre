@@ -25,7 +25,8 @@ def main() -> int:
         build_cli_invoked_properties(
             entrypoint=_ENTRYPOINT,
             command_parts=["wizard"],
-        )
+        ),
+        ["onboard"],
     )
 
     try:

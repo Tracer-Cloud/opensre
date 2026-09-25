@@ -72,6 +72,9 @@ if TYPE_CHECKING:
         ANALYTICS_DISABLED_ENV as ANALYTICS_DISABLED_ENV,
     )
     from config.constants.analytics import (
+        ANALYTICS_ENV_ENV as ANALYTICS_ENV_ENV,
+    )
+    from config.constants.analytics import (
         ANALYTICS_EVENT_SCHEMA_VERSION as ANALYTICS_EVENT_SCHEMA_VERSION,
     )
     from config.constants.analytics import (
@@ -103,6 +106,9 @@ if TYPE_CHECKING:
     )
     from config.constants.analytics import (
         ANALYTICS_SOURCE as ANALYTICS_SOURCE,
+    )
+    from config.constants.analytics import (
+        ANALYTICS_TEST_ENV as ANALYTICS_TEST_ENV,
     )
     from config.constants.analytics import (
         ANALYTICS_TIMESTAMP_HEADER as ANALYTICS_TIMESTAMP_HEADER,

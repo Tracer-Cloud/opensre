@@ -44,7 +44,7 @@ the event body or source distribution. Production origins require HTTPS.
   "occurred_at": "2026-09-08T12:34:56.789+00:00",
   "source": "opensre_runtime",
   "anonymous_id": "4d892bf3-7204-4410-9f03-f84190f8a936",
-  "event": "cli_invoked",
+  "event": "cli_command_opensre_integrations_verify",
   "properties": {
     "entrypoint": "opensre",
     "command_family": "integrations"
@@ -67,8 +67,9 @@ the event body or source distribution. Production origins require HTTPS.
 - A successful ingest should return `202 Accepted`. The server should dedupe on
   `(source, event_id)` and reject unknown schema versions or event names.
 
-The accepted event names are the `Event` enum in `events.py`, plus the internal
-identity controls `$identify` and `$groupidentify`. The webapp may translate
+The accepted event names are the `Event` enum in `events.py`, the dynamic
+`cli_command_opensre` family, and the internal identity controls `$identify`
+and `$groupidentify`. The webapp may translate
 those controls into its analytics store instead of storing them as product
 activity.
 
@@ -82,6 +83,8 @@ Every product event includes:
 | `os_family`, `os_version` | Coarse platform support. |
 | `execution_environment` | `local`, `ci`, `container`, or `ci_container`. |
 | `is_ci`, `is_container`, `container_runtime` | Filters for human vs automated usage. |
+| `distribution` | `source_checkout`, `editable_package`, `installed_package`, `frozen_binary`, or `unknown`, based on the code loaded by this process. |
+| `is_test` | Explicit `OPENSRE_IS_TEST=1` (also `true`/`yes`), a detected test runner, or CI. Independent of distribution. |
 | `composite_fingerprint` | One-way local fingerprint used only when no account identity exists. |
 | `identity_persistence` | Whether the anonymous ID was persisted to disk. |
 | `install_marker_state_before_install` | `present`, `absent`, or `unknown` at the start of the most recent recorded installer run. |
@@ -111,11 +114,33 @@ value describes the most recent recorded installer run, not
 necessarily the first installation or the current invocation. Do not map
 `absent` to “first-ever install.”
 
+## CLI invocation names and distribution
+
+Command names are generated from registered command tokens, with hyphens
+normalized to underscores: `opensre health --rate 5` emits
+`cli_command_opensre_health`; `opensre integrations verify slack` emits
+`cli_command_opensre_integrations_verify`. Bare `opensre` emits
+`cli_command_opensre`. These events record invocation, not completion or success.
+Arguments and option values never enter the name.
+
+Alternate Python entrypoints use the equivalent OpenSRE command name; the
+`entrypoint` property preserves how they were launched. Each invocation emits
+one command event, replacing `cli_invoked`. Readers must accept both historical
+`cli_invoked` records and the new family. Deploy the webapp's family validation
+before distributing a client that emits these names.
+
+`source_checkout` and `editable_package` identify local development code.
+`installed_package` and `frozen_binary` identify packaged code, including locally
+built packages; they do not establish publisher signing or official provenance.
+A packaged binary can still have `is_test=true`. `execution_environment=local`
+describes the computer, not the build origin. Missing historical distribution
+or test evidence must not be treated as proof of release or non-test usage.
+
 ## Event inventory
 
 | Area | Events | Important properties / question answered |
 | --- | --- | --- |
-| Acquisition | `install_detected`, `account_authenticated`, `cli_invoked` | Install source/channel/distribution, login conversion, entrypoint, command names, and boolean flags; never raw argument values. Official installers invoke the hidden record-only path immediately after installation. |
+| Acquisition | `install_detected`, `account_authenticated`, `cli_command_opensre…` | Install source/channel/distribution, login conversion, entrypoint, command names, and boolean flags; never raw argument values. Official installers invoke the hidden record-only path immediately after installation. |
 | Sign-in gate | `sign_in_prompted`, `sign_in_selected`, `stay_signed_out_selected` | The interactive shell's mandatory sign-in screen: one exposure per signed-out launch, then one event per menu round with `choice_label` and `method` (`menu` for a picked option, `dismissed` when the menu was closed without one — Esc, `q`, Ctrl-C, Ctrl-D, or EOF are not distinguished). `sign_in_selected` is recorded before the browser flow starts and is intent only; `account_authenticated` reports the outcome. Already signed-in, non-interactive, and test runs emit none of these. |
 | Runtime health | `user_id_load_failed`, `sentry_init_skipped` | Identity persistence and telemetry setup failures. |
 | Onboarding | `onboard_started`, `onboard_completed`, `onboard_failed` | Funnel conversion, wizard mode, target, provider, and model. |

@@ -64,12 +64,7 @@ _RECORD_INSTALL_ONLY = "record_install_only"
 _AFTER_BANNER = "after_banner"
 
 
-def _cli_invoked_properties(ctx: click.Context) -> Properties:
-    raw_argv = ctx.obj.get(_CLI_ARGV, []) if ctx.obj else []
-    command_parts = resolve_command_parts(
-        ctx.command,
-        raw_argv if isinstance(raw_argv, list) else [],
-    )
+def _cli_invoked_properties(ctx: click.Context, command_parts: list[str]) -> Properties:
     obj = ctx.obj if ctx.obj else {}
     return build_cli_invoked_properties(
         entrypoint="opensre",
@@ -93,7 +88,11 @@ def _capture_accepted_cli_invocation(ctx: click.Context) -> None:
     capture_first_run_if_needed()
     if ctx.obj.get(_RECORD_INSTALL_ONLY, False):
         return
-    capture_cli_invoked(_cli_invoked_properties(ctx))
+    raw_argv = ctx.obj.get(_CLI_ARGV, [])
+    command_parts = resolve_command_parts(
+        ctx.command, raw_argv if isinstance(raw_argv, list) else []
+    )
+    capture_cli_invoked(_cli_invoked_properties(ctx, command_parts), command_parts)
 
 
 def _repl_preference(

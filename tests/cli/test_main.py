@@ -60,9 +60,21 @@ def _stub_analytics_httpx(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, obj
 
 
 def test_main_runs_health_command(monkeypatch) -> None:
+    from infrastructure.analytics import capture
+
+    captured: list[str] = []
+
+    class Analytics:
+        def set_persistent_property(self, _key: str, _value: object) -> None:
+            pass
+
+        def capture(self, event: str, _properties: object = None) -> None:
+            captured.append(event)
+
+    analytics = Analytics()
+    monkeypatch.setattr(capture, "get_analytics", lambda: analytics)
     monkeypatch.setattr("surfaces.cli.app.capture_first_run_if_needed", lambda: None)
     monkeypatch.setattr("surfaces.cli.app.shutdown_analytics", lambda **_kw: None)
-    monkeypatch.setattr("surfaces.cli.app.capture_cli_invoked", lambda *_args: None)
 
     with (
         patch("integrations.verify.verify_integrations") as mock_verify,
@@ -85,6 +97,7 @@ def test_main_runs_health_command(monkeypatch) -> None:
         exit_code = main(["health"])
 
     assert exit_code == 0
+    assert captured == ["cli_command_opensre_health"]
 
 
 def test_main_does_not_capture_expected_usage_errors_to_sentry(
@@ -269,7 +282,7 @@ def test_main_fast_version_command_skips_first_run_setup(monkeypatch, capsys) ->
     )
     monkeypatch.setattr(
         "surfaces.cli.app.capture_cli_invoked",
-        lambda properties=None: captured.append(properties),
+        lambda properties=None, _command_parts=(): captured.append(properties),
     )
     monkeypatch.setattr("surfaces.cli.app.shutdown_analytics", lambda **_kw: None)
 
@@ -406,7 +419,7 @@ def test_main_emits_first_run_install_before_cli_invoked(
         analytics._worker.join(timeout=2.0)
     assert [payload["json"]["event"] for payload in posted_payloads] == [
         Event.INSTALL_DETECTED.value,
-        Event.CLI_INVOKED.value,
+        "cli_command_opensre",
     ]
     provider.shutdown_analytics(flush=False)
     provider._instance = None

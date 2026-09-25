@@ -12,12 +12,12 @@ from infrastructure.analytics.events import Event
 
 class _StubAnalytics:
     def __init__(self) -> None:
-        self.events: list[tuple[Event, dict[str, object] | None]] = []
+        self.events: list[tuple[str, dict[str, object] | None]] = []
         self.identified: list[dict[str, object]] = []
         self.persistent_properties: dict[str, object] = {}
         self.destination_refreshes = 0
 
-    def capture(self, event: Event, properties: dict[str, object] | None = None) -> None:
+    def capture(self, event: str, properties: dict[str, object] | None = None) -> None:
         self.events.append((event, properties))
 
     def identify(self, set_properties: dict[str, object]) -> None:
@@ -34,10 +34,10 @@ def test_capture_cli_invoked_uses_safe_capture(monkeypatch: pytest.MonkeyPatch) 
     stub = _StubAnalytics()
     monkeypatch.setattr(capture, "get_analytics", lambda: stub)
 
-    capture.capture_cli_invoked({"command_path": "opensre version"})
+    capture.capture_cli_invoked({"command_path": "opensre health"}, ["health"])
 
     assert stub.events == [
-        (Event.CLI_INVOKED, {"command_path": "opensre version"}),
+        ("cli_command_opensre_health", {"command_path": "opensre health"}),
     ]
 
 
@@ -62,7 +62,7 @@ def test_capture_account_authenticated_refreshes_credentials_before_link_event(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class _OrderCheckingAnalytics(_StubAnalytics):
-        def capture(self, event: Event, properties: dict[str, object] | None = None) -> None:
+        def capture(self, event: str, properties: dict[str, object] | None = None) -> None:
             assert self.destination_refreshes == 1
             super().capture(event, properties)
 
@@ -176,7 +176,7 @@ def test_build_install_detected_properties_keeps_installer_dimensions(
     monkeypatch.setenv("OPENSRE_INSTALL_SOURCE", "posix_installer")
     monkeypatch.setenv("OPENSRE_INSTALL_CHANNEL", "release")
     monkeypatch.setenv("OPENSRE_INSTALL_VERSION", "2026.9.14")
-    monkeypatch.setattr(event_properties.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(event_properties, "detect_distribution", lambda: "frozen_binary")
 
     properties = event_properties.build_install_detected_properties(entrypoint="opensre")
 

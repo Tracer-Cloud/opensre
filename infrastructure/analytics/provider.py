@@ -42,8 +42,10 @@ from infrastructure.analytics.destination import (
     AnalyticsDestination,
     resolve_analytics_destination,
 )
+from infrastructure.analytics.distribution import detect_distribution
 from infrastructure.analytics.events import Event
 from infrastructure.analytics.install_state import read_install_marker_state
+from infrastructure.analytics.source import is_test_run
 from infrastructure.analytics.usage_context import (
     ORGANIZATION_GROUP_TYPE,
     merge_usage_enrichment,
@@ -770,6 +772,7 @@ _BASE_PROPERTIES: Final[Properties] = {
     "is_ci": _ANALYTICS_RUNTIME.is_ci,
     "is_container": _ANALYTICS_RUNTIME.is_container,
     "container_runtime": _ANALYTICS_RUNTIME.container_runtime,
+    "distribution": detect_distribution(),
     "$process_person_profile": False,
 }
 
@@ -808,17 +811,18 @@ class Analytics:
             for properties in _pop_user_id_load_failures():
                 self.capture(Event.USER_ID_LOAD_FAILED, properties)
 
-    def capture(self, event: Event, properties: Properties | None = None) -> None:
+    def capture(self, event: str, properties: Properties | None = None) -> None:
         if self._disabled or self._shutdown:
             return
         merged = merge_usage_enrichment(
             _BASE_PROPERTIES
             | self._persistent_properties
-            | _coerce_properties(event.value, properties)
+            | _coerce_properties(event, properties)
+            | {"distribution": _BASE_PROPERTIES["distribution"], "is_test": is_test_run()}
         )
         self._ensure_organization_group(merged)
         envelope = _Envelope(
-            event=event.value,
+            event=event,
             properties=merged,
             destination=self._destination,
         )
