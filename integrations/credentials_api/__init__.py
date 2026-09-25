@@ -7,6 +7,7 @@ from integrations.credentials_api.client import (
     IntegrationRecordV2,
     IntegrationStoreV2,
     hydrate_integration_store,
+    materialize_integration_store,
     validate_integration_store_v2,
 )
 
@@ -17,5 +18,6 @@ __all__ = [
     "IntegrationRecordV2",
     "IntegrationStoreV2",
     "hydrate_integration_store",
+    "materialize_integration_store",
     "validate_integration_store_v2",
 ]

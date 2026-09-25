@@ -176,12 +176,17 @@ def hydrate_integration_store(
     organization_id: str,
 ) -> IntegrationStoreV2:
     """Retrieve credentials and atomically materialize the local v2 store."""
+    validated = client.fetch(organization_id)
+    materialize_integration_store(validated)
+    return validated
+
+
+def materialize_integration_store(validated: IntegrationStoreV2) -> None:
+    """Atomically replace the local v2 store with an already-fetched credential set."""
     from integrations.store import replace_integrations
 
-    validated = client.fetch(organization_id)
     store_data = validated.as_store_data()
     integrations = store_data["integrations"]
     if not isinstance(integrations, list):
         raise CredentialsApiError("Credentials API returned an invalid credential set")
     replace_integrations(integrations)
-    return validated

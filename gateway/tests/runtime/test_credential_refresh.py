@@ -14,6 +14,7 @@ from gateway.core.lifecycle.credential_hydration import (
     GatewayCredentialHydrator,
     watch_credential_changes,
 )
+from integrations.credentials_api import IntegrationStoreV2
 
 _BOOTSTRAP_ARN = "arn:aws:secretsmanager:us-east-1:1:secret:bootstrap"
 _INTEGRATIONS_ARN = "arn:aws:secretsmanager:us-east-1:1:secret:integrations"
@@ -28,7 +29,9 @@ def _store(token: str) -> str:
                     "id": "github-1",
                     "service": "github",
                     "status": "active",
-                    "instances": [{"config": {}, "credentials": {"auth_token": token}}],
+                    "instances": [
+                        {"name": "default", "tags": {}, "credentials": {"auth_token": token}}
+                    ],
                 }
             ],
         }
@@ -42,6 +45,7 @@ class _VersionedSecrets:
         self.version = "v1"
         self.value = _store("token-one")
         self.reads = 0
+        self.bootstrap = json.dumps({})
 
     def rotate(self, token: str, version: str) -> None:
         self.value = _store(token)
@@ -49,7 +53,7 @@ class _VersionedSecrets:
 
     def get_secret_value(self, *, SecretId: str) -> dict[str, Any]:
         if SecretId == _BOOTSTRAP_ARN:
-            return {"SecretString": json.dumps({}), "VersionId": "b1"}
+            return {"SecretString": self.bootstrap, "VersionId": "b1"}
         self.reads += 1
         return {"SecretString": self.value, "VersionId": self.version}
 
@@ -97,23 +101,66 @@ def test_the_store_reloads_only_when_the_secret_has_a_new_version(
     assert len(written) == 2 and "token-two" in written[1]
 
 
-def test_the_credentials_api_route_does_not_refresh(monkeypatch: pytest.MonkeyPatch) -> None:
-    # Arrange
-    monkeypatch.setattr(
-        credential_hydration, "hydrate_integration_store_from_secret", lambda _s: None
-    )
+class _RotatingApi:
+    """Credentials-API stand-in whose credential set can change between fetches."""
+
+    served: list[str] = ["token-one"]
+    fetches = 0
+
+    def __init__(self, *, bootstrap_credential: str, **_kwargs: object) -> None:
+        self.bootstrap_credential = bootstrap_credential
+
+    def __enter__(self) -> _RotatingApi:
+        return self
+
+    def __exit__(self, *_args: object) -> None:
+        return None
+
+    def fetch(self, organization_id: str) -> IntegrationStoreV2:
+        assert organization_id == "org-a"
+        type(self).fetches += 1
+        return IntegrationStoreV2.model_validate(json.loads(_store(type(self).served[0])))
+
+
+def test_the_credentials_api_route_reloads_only_when_the_fetched_set_changes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The hint promises a reload on every route; the API fallback keeps that promise."""
+    # Arrange: hydrated from the API, every store write recorded instead of persisted
+    written: list[IntegrationStoreV2] = []
+
+    def fetch_and_record(*, client: Any, organization_id: str) -> IntegrationStoreV2:
+        fetched = client.fetch(organization_id)
+        written.append(fetched)
+        return fetched
+
+    monkeypatch.setattr(credential_hydration, "CredentialsApiClient", _RotatingApi)
+    monkeypatch.setattr(credential_hydration, "hydrate_integration_store", fetch_and_record)
+    monkeypatch.setattr(credential_hydration, "materialize_integration_store", written.append)
+    _RotatingApi.served = ["token-one"]
+    _RotatingApi.fetches = 0
+    secrets = _VersionedSecrets()
+    secrets.bootstrap = json.dumps({"credentials_api_token": "bootstrap-token"})
     hydrator = GatewayCredentialHydrator(
         config=CredentialHydrationConfig(
             organization_id="org-a",
             bootstrap_secret_arn=_BOOTSTRAP_ARN,
-            credentials_api_url="https://app.example/api",
+            credentials_api_url="https://credentials.example.test",
         ),
-        secrets_client=_VersionedSecrets(),
+        secrets_client=secrets,
     )
+    hydrator.hydrate()
 
-    # Act / Assert
-    assert hydrator.refreshes is False
-    assert hydrator.refresh_if_changed() is False
+    # Act
+    unchanged = hydrator.refresh_if_changed()
+    _RotatingApi.served = ["token-two"]
+    changed = hydrator.refresh_if_changed()
+    again = hydrator.refresh_if_changed()
+
+    # Assert: the route refreshes; only the changed set is rewritten, with the new token
+    assert hydrator.refreshes and (unchanged, changed, again) == (False, True, False)
+    assert _RotatingApi.fetches == 4 and len(written) == 2
+    assert written[1].integrations[0].instances[0].credentials["auth_token"] == "token-two"
 
 
 def test_the_watcher_reports_a_reload_and_survives_a_failed_check(
