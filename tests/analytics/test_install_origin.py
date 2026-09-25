@@ -56,6 +56,28 @@ def restart(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(provider, "_install_capture_state", provider._InstallCaptureState())
 
 
+@pytest.mark.parametrize(
+    ("properties", "origin"),
+    [
+        (None, "cicd"),
+        ({"install_source": "make_install"}, "cicd"),
+        ({"install_origin": "documentation"}, "documentation"),
+    ],
+)
+def test_cicd_marker_applies_to_direct_and_wizard_install_captures(
+    monkeypatch: pytest.MonkeyPatch,
+    deliveries: list[dict[str, Any]],
+    properties: dict[str, Any] | None,
+    origin: str,
+) -> None:
+    monkeypatch.setenv("OPENSRE_CICD", "1")
+    assert provider.capture_install_detected_if_needed(properties)
+    restart(monkeypatch)
+    assert deliveries[0]["properties"]["install_origin"] == origin
+    assert deliveries[0]["properties"]["is_ci"] is True
+    assert deliveries[0]["properties"]["cicd_marker"] is True
+
+
 @pytest.mark.parametrize("original_origin", ["github", ""])
 def test_retry_and_reinstall_keep_original_origin_including_unknown(
     monkeypatch: pytest.MonkeyPatch,

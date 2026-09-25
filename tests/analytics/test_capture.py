@@ -173,7 +173,6 @@ def test_build_cli_invoked_properties_handles_root_invocation() -> None:
 def test_build_install_detected_properties_keeps_installer_dimensions(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    monkeypatch.delenv("OPENSRE_CICD", raising=False)
     monkeypatch.delenv("OPENSRE_INSTALL_ORIGIN", raising=False)
     monkeypatch.setenv("OPENSRE_INSTALL_SOURCE", "posix_installer")
     monkeypatch.setenv("OPENSRE_INSTALL_CHANNEL", "release")
@@ -334,7 +333,6 @@ def test_eval_and_terminal_kpi_queries_cover_core_metrics() -> None:
 def test_install_origin_is_allowlisted_and_independent_of_build_track(
     monkeypatch: pytest.MonkeyPatch, origin: str
 ) -> None:
-    monkeypatch.delenv("OPENSRE_CICD", raising=False)
     monkeypatch.setenv("OPENSRE_INSTALL_ORIGIN", origin)
     monkeypatch.setenv("OPENSRE_INSTALL_CHANNEL", "release")
     properties = event_properties.build_install_detected_properties(entrypoint="opensre")
@@ -343,18 +341,3 @@ def test_install_origin_is_allowlisted_and_independent_of_build_track(
         assert properties["install_origin"] == origin
     else:
         assert "install_origin" not in properties
-
-
-@pytest.mark.parametrize("marker", ["1", "true", "0", "false", ""])
-def test_cicd_marker_attributes_only_untagged_install_commands(
-    monkeypatch: pytest.MonkeyPatch, marker: str
-) -> None:
-    monkeypatch.setenv("OPENSRE_CICD", marker)
-    monkeypatch.delenv("OPENSRE_INSTALL_ORIGIN", raising=False)
-    properties = event_properties.build_install_detected_properties(entrypoint="opensre")
-    assert properties.get("install_origin") == ("cicd" if marker in {"1", "true"} else None)
-    monkeypatch.setenv("OPENSRE_INSTALL_ORIGIN", "documentation")
-    assert (
-        event_properties.build_install_detected_properties(entrypoint="opensre")["install_origin"]
-        == "documentation"
-    )

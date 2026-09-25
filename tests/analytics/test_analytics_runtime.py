@@ -30,7 +30,7 @@ def test_is_ci_environment_recognizes_generic_and_vendor_signals(
 
 
 def test_is_ci_environment_rejects_false_and_empty_values() -> None:
-    assert is_ci_environment({"CI": "false", "JENKINS_URL": ""}) is False
+    assert is_ci_environment({"OPENSRE_CICD": "false", "CI": "false", "JENKINS_URL": ""}) is False
 
 
 @pytest.mark.parametrize(

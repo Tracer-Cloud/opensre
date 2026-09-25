@@ -74,15 +74,20 @@ def installs(result: dict[str, Any]) -> list[dict[str, Any]]:
     return [r["payload"] for r in result["requests"] if r["payload"]["event"] == "install_detected"]
 
 
+@pytest.mark.parametrize("scenario", ["start", "late_cicd_marker"])
 def test_explicit_cicd_marker_classifies_a_fresh_process_without_vendor_signals(
     tmp_path: Path,
+    scenario: str,
 ) -> None:
-    result = run_process(tmp_path / "cicd", cicd=True)
+    result = run_process(tmp_path / "cicd", scenario, cicd=scenario == "start")
     properties = installs(result)[0]["properties"]
     assert properties["install_origin"] == "cicd"
-    assert properties["is_ci"] is True
-    assert properties["cicd_marker"] is True
-    record_evidence("explicit-cicd-marker", result)
+    for request in result["requests"]:
+        runtime = request["payload"]["properties"]
+        assert runtime["is_ci"] is True
+        assert runtime["cicd_marker"] is True
+        assert runtime["execution_environment"] in {"ci", "ci_container"}
+    record_evidence(f"explicit-cicd-marker-{scenario}", result)
 
 
 def record_evidence(name: str, evidence: object) -> None:
