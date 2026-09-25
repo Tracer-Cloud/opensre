@@ -657,6 +657,59 @@ def test_the_report_without_an_id_says_when_there_are_no_runs(
     assert report["ok"] is False and "no CI repair runs yet" in report["error"]
 
 
+def test_a_pushed_repair_counts_as_success_when_the_next_attempt_finds_nothing_to_fix(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A pushed repair that leaves nothing to fix is a verified success, not a failed attempt."""
+    from integrations.github.tools.ci_fix.verification import CheckState, CheckVerification
+    from integrations.github.tools.ci_repair_loop import worker
+
+    # Arrange: the PR still reads as failing at the tick, the fix runner then finds nothing to fix,
+    # and the pushed head verifies green
+    run = _run(pr_number=6404).model_copy(update={"initial_sha": "old-head", "attempts": 1})
+    store = RepairStore(tmp_path)
+    store.directory(run.id).mkdir(parents=True, exist_ok=True)
+
+    def verified_green(ctx: Any, **kwargs: Any) -> CheckVerification:  # noqa: ARG001
+        return CheckVerification(state=CheckState.PASSED, check_names=("quality",))
+
+    reads = iter(
+        [
+            {
+                "state": "OPEN",
+                "headRefOid": "new-head",
+                "statusCheckRollup": [{"conclusion": "FAILURE"}],
+            },
+            {
+                "state": "OPEN",
+                "headRefOid": "new-head",
+                "statusCheckRollup": [{"conclusion": "SUCCESS"}],
+            },
+            {
+                "state": "OPEN",
+                "headRefOid": "new-head",
+                "statusCheckRollup": [{"conclusion": "SUCCESS"}],
+            },
+        ]
+    )
+    monkeypatch.setattr(worker, "_read_pr", lambda *_args: next(reads))
+    monkeypatch.setattr(
+        worker, "run_ci_fix", lambda **_kw: {"success": True, "error_kind": "no_failing_checks"}
+    )
+    monkeypatch.setattr(worker, "record_ci_fix_outcome", lambda _output: None)
+    monkeypatch.setattr(worker, "wait_for_pr_checks", verified_green, raising=False)
+    monkeypatch.setattr(worker.time, "sleep", lambda _seconds: None)
+
+    # Act
+    worker._repair(run, store, "test-token")
+
+    # Assert: the run is a verified success on the pushed head, not a failed attempt
+    assert run.status is RepairStatus.SUCCEEDED
+    assert run.checks_passed is True and run.fixed_sha == "new-head"
+    assert run.reason == "The repair commit passed CI."
+    assert "no_failing_checks" not in run.attempt_errors
+
+
 def test_interrupted_registration_recovers_original_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

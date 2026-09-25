@@ -10,6 +10,7 @@ import json
 import time
 from typing import Any
 
+from config.constants.github import GITHUB_TOKEN_CHECKLIST
 from config.constants.hosted_gateway import (
     HOSTED_GATEWAY_INTEGRATIONS_PATH,
     HOSTED_GATEWAY_PROMPT_POLL_SECONDS,
@@ -45,6 +46,8 @@ _HOSTED_PROMPT_INTERACTION_PREFIX = "hosted_prompt:"
 #: Progress lines come from the gateway's own tools, whose labels say "this machine".
 _GATEWAY_PROGRESS_PREFIX = "on the gateway: "
 _QUEUED_NOTICE = "waiting for a free slot on the gateway (another conversation is using it)"
+#: The one vendor whose credential refusals have a known, ordered fix.
+_GITHUB_VENDOR = "github"
 
 _STATE_TEXT = {
     "failed": "The hosted gateway could not run that prompt ({error}).",
@@ -340,6 +343,8 @@ def _outcome(
         hint = _FAILED_INTEGRATIONS.format(
             vendors=vendors, url=integrations_url, next_step=next_step
         )
+        if _GITHUB_VENDOR in record.failed_integrations:
+            hint = f"{hint.rstrip()} {GITHUB_TOKEN_CHECKLIST}\n\n"
         text = hint + text
         instructions.insert(0, _FAILED_INTEGRATIONS_INSTRUCTIONS.format(vendors=vendors))
     return {

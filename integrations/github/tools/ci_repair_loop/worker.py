@@ -17,7 +17,7 @@ from integrations.coding_agent import verify_coding_agent
 from integrations.git import clone_repository
 from integrations.github.client import GitHubApiError, GitHubRestClient
 from integrations.github.tools.ci_fix.context import CiFixContext
-from integrations.github.tools.ci_fix.errors import GitHubCiFixError
+from integrations.github.tools.ci_fix.errors import ERR_NO_FAILING_CHECKS, GitHubCiFixError
 from integrations.github.tools.ci_fix.gh import run_gh_json
 from integrations.github.tools.ci_fix.ledger import record_ci_fix_outcome
 from integrations.github.tools.ci_fix.runner import run_ci_fix
@@ -152,6 +152,11 @@ def _repair(run: RepairRun, store: RepairStore, token: str) -> None:
             store.save(run)
             return
         error = str(output.get("error_kind") or "repair_failed")
+        # Nothing left to fix on the current head: the earlier push may have done
+        # the job while its checks were still being read as failing.
+        nothing_left = error == ERR_NO_FAILING_CHECKS and bool(run.initial_sha)
+        if nothing_left and _green_after_repair(run, store, token):
+            return
         run.attempt_errors.append(error)
         run.reason = f"Repair attempt {run.attempts}: {error}."
         store.save(run)
@@ -164,6 +169,26 @@ def _repair(run: RepairRun, store: RepairStore, token: str) -> None:
             return
         time.sleep(1)
     run.status, run.reason = RepairStatus.TIMED_OUT, "The demo reached its time budget."
+
+
+def _green_after_repair(run: RepairRun, store: RepairStore, token: str) -> bool:
+    """Confirm the pushed repair passed CI once the PR reports nothing left to fix.
+
+    True when the loop is finished (verified green, or the PR moved on); False
+    when verification did not settle, so the attempt is recorded as usual.
+    """
+    current = _read_pr(run, token)
+    head = str(current.get("headRefOid") or "")
+    if not head or head == run.initial_sha:
+        return False
+    if not _verify_green(run, current, token):
+        return False
+    if run.status is RepairStatus.SUCCEEDED:
+        run.fixed_sha = head
+        run.checks_passed = True
+        run.reason = "The repair commit passed CI."
+    store.save(run)
+    return True
 
 
 def execute_repair(run: RepairRun, store: RepairStore) -> None:

@@ -328,6 +328,9 @@ def test_a_failed_integration_on_the_gateway_points_the_user_to_the_integrations
     # A finished prompt is never re-sent whole: only the failed part may be asked again.
     assert "ask again only for what the failed integration should have done" in text
     assert "sent again" not in text
+    # GitHub refusals come with the ordered token checklist.
+    assert "Check the GitHub token in this order" in text
+    assert text.index("Check the GitHub token") < text.index("16 open PRs")
 
 
 def test_a_failed_integration_on_a_waiting_prompt_says_to_continue_it_not_resend(

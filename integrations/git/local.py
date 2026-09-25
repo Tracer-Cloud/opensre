@@ -24,6 +24,7 @@ from config.constants.git import (
     OPENSRE_COMMIT_COAUTHOR_NAME,
     OPENSRE_COMMIT_COAUTHOR_TRAILER,
 )
+from config.constants.github import GITHUB_TOKEN_CHECKLIST
 from integrations.git.errors import (
     BRANCH_FAILED,
     COMMIT_FAILED,
@@ -483,9 +484,7 @@ _PUSH_DENIED_MARKERS = ("error: 403", "permission to", "denied to")
 #: What a refused push means per hosting service, keyed by the remote's host.
 _PUSH_DENIED_HINTS = {
     "github.com": (
-        "The GitHub credential is not allowed to push to this repository. It needs "
-        '"Contents: read and write" on this repository; a fine-grained token grants that '
-        "per selected repository."
+        "The GitHub credential is not allowed to push to this repository. " + GITHUB_TOKEN_CHECKLIST
     ),
 }
 

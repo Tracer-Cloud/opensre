@@ -18,7 +18,7 @@ _DENIED = (
     "fatal: unable to access 'https://github.com/o/r.git/': The requested URL returned error: 403"
 )
 _REJECTED = " ! [rejected] feature -> feature (fetch first)\n"
-_HINT = '"Contents: read and write"'
+_HINT = "Check the GitHub token in this order"
 
 
 def _git(repo: Path, *args: str) -> None:

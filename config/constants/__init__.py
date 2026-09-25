@@ -471,6 +471,7 @@ if TYPE_CHECKING:
     from config.constants.github import (
         GITHUB_MCP_URL_ENV as GITHUB_MCP_URL_ENV,
     )
+    from config.constants.github import GITHUB_TOKEN_CHECKLIST as GITHUB_TOKEN_CHECKLIST
     from config.constants.github import (
         GITHUB_TOKEN_ENV as GITHUB_TOKEN_ENV,
     )
