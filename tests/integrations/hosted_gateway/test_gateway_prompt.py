@@ -519,6 +519,51 @@ def test_the_queue_notice_counts_from_when_the_prompt_was_sent(
     assert updates == [{"progress": gateway_prompt._QUEUED_NOTICE}]
 
 
+def test_a_slow_fetch_before_a_follow_up_answer_is_not_counted_as_queue_time(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Continuing a prompt reads it first; that read must not make the queue notice fire early."""
+    # Arrange: reading the parked prompt is slow, the answer is then queued briefly and finishes
+    import time
+
+    choice = PromptChoice("Pick", (PromptQuestion("Pick", ("Red", "Blue")),))
+
+    class _SlowRead(_App):
+        def prompt_result(self, prompt_id: str) -> PromptRecord:
+            record = super().prompt_result(prompt_id)
+            if record.state == "needs_input":
+                time.sleep(0.3)
+            return record
+
+    app = _SlowRead(
+        [
+            PromptRecord(_ID, "needs_input", question="Pick", choice=choice),
+            PromptRecord(_ID + "b", "queued", parent_prompt_id=_ID),
+            PromptRecord(_ID + "b", "done", answer="Blue"),
+        ]
+    )
+    _signed_in_with(monkeypatch, app)
+    monkeypatch.setattr(gateway_prompt, "HOSTED_GATEWAY_QUEUE_NOTICE_SECONDS", 0.2)
+    updates: list[Any] = []
+    session = SessionCore()
+    answered = format_ask_user_answers(
+        (AskUserQuestion(label="", title="Pick", options=("Red", "Blue")),), ("Blue",)
+    )
+    scope = ActionToolScope(session=session, console=None, turn_user_message=answered)
+    context = AgentToolContext(
+        resolved_integrations={},
+        resources={ACTION_TOOL_CONTEXT_RESOURCE_KEY: scope},
+        _emit_update=updates.append,
+    )
+
+    # Act
+    out = ask_hosted_gateway(prompt_id=_ID, context=context)
+
+    # Assert: the answer went through and no queue notice appeared for the read's duration
+    assert out["state"] == "done" and out["response_text"] == "Blue"
+    assert updates == []
+
+
 def test_a_record_carries_its_progress_lines() -> None:
     # Arrange
     def answer(_request: httpx.Request) -> httpx.Response:

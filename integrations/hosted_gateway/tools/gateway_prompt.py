@@ -195,8 +195,7 @@ def ask_hosted_gateway(
     scope = _shell_scope(context)
     try:
         with HostedGatewayClient.from_account() as client:
-            sent_at = time.monotonic()
-            record = _submit_or_continue(
+            record, sent_at = _submit_or_continue(
                 client, prompt.strip(), dict(facts or {}), prompt_id.strip(), scope
             )
             record, waited = _wait_until_settled(
@@ -226,17 +225,24 @@ def _submit_or_continue(
     facts: dict[str, str],
     prompt_id: str,
     scope: ActionToolScope | None,
-) -> PromptRecord:
-    """Send a new prompt, or read an earlier one and pass the user's answer on if they gave one."""
+) -> tuple[PromptRecord, float]:
+    """Send a new prompt, or read an earlier one and pass the user's answer on if they gave one.
+
+    Also returns when the request that could queue the prompt left this machine,
+    taken right before that call, so queue time excludes any reads before it.
+    """
     if not prompt_id:
-        return client.send_prompt(prompt, context=facts)
+        sent_at = time.monotonic()
+        return client.send_prompt(prompt, context=facts), sent_at
+    fetched_at = time.monotonic()
     record = client.prompt_result(prompt_id)
     if record.state != "needs_input" or record.choice is None:
-        return record
+        return record, fetched_at
     answer = _answer_from_turn(scope, record.choice)
     if answer is None:
-        return record
-    return client.answer_prompt(prompt_id, answer)
+        return record, fetched_at
+    sent_at = time.monotonic()
+    return client.answer_prompt(prompt_id, answer), sent_at
 
 
 def _answer_from_turn(scope: ActionToolScope | None, choice: PromptChoice) -> str | None:

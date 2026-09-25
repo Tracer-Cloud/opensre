@@ -59,14 +59,13 @@ _WHOSE = (
 def start_hosted_gateway() -> dict[str, Any]:
     """Ask the OpenSRE app to start the signed-in organization's gateway.
 
-    A gateway that is already running is reported as such without a start
-    request, so the reply says what actually happened.
+    The start is always requested, so the app's admin check and its refusals
+    apply. A health read beforehand only shapes the reply: a gateway that was
+    already running is told so. That read is best effort and never blocks the start.
     """
     try:
         with HostedGatewayClient.from_account() as client:
-            health = client.health()
-            if health.healthy:
-                return state_output(health, _already_running(health))
+            was_running = _was_running(client)
             health = client.start()
     except HostedGatewayError as exc:
         return failure_output(
@@ -74,7 +73,17 @@ def start_hosted_gateway() -> dict[str, Any]:
             tool_name=START_TOOL_NAME,
             component="integrations.hosted_gateway.tools.gateway_lifecycle.start_hosted_gateway",
         )
+    if was_running and health.healthy:
+        return state_output(health, _already_running(health))
     return state_output(health, _started(health))
+
+
+def _was_running(client: HostedGatewayClient) -> bool:
+    """Whether the gateway was healthy before the start; unknown reads as not running."""
+    try:
+        return client.health().healthy
+    except HostedGatewayError:
+        return False
 
 
 @tool(
