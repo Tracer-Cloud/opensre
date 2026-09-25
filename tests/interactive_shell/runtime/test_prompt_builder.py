@@ -35,6 +35,62 @@ def _terminal_output() -> Vt100_Output:
     )
 
 
+def test_resize_after_resume_preserves_rendered_transcript(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = Session()
+    session.history = [{"type": "slash", "text": "/resume target", "ok": True}]
+    builder = PromptBuilder(session, ReplState(), SpinnerState())
+    builder.pt_app = object()  # type: ignore[assignment]
+    clear_calls: list[bool] = []
+    assert session.terminal.submitted_turn_count == 0
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.runtime.core.prompt_builder.repl_clear_screen",
+        lambda: clear_calls.append(True),
+    )
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.runtime.core.prompt_builder.drain_stale_cpr_bytes",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.runtime.core.prompt_builder.render_launch_banner",
+        lambda *_args, **_kwargs: None,
+    )
+
+    rerendered = builder._rerender_banner_if_idle()
+
+    assert rerendered is False
+    assert clear_calls == []
+
+
+def test_resize_before_first_turn_rerenders_launch_banner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = Session()
+    builder = PromptBuilder(session, ReplState(), SpinnerState())
+    builder.pt_app = object()  # type: ignore[assignment]
+    clear_calls: list[bool] = []
+    banner_calls: list[bool] = []
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.runtime.core.prompt_builder.repl_clear_screen",
+        lambda: clear_calls.append(True),
+    )
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.runtime.core.prompt_builder.drain_stale_cpr_bytes",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.runtime.core.prompt_builder.render_launch_banner",
+        lambda *_args, **_kwargs: banner_calls.append(True),
+    )
+
+    rerendered = builder._rerender_banner_if_idle()
+
+    assert rerendered is True
+    assert clear_calls == [True]
+    assert banner_calls == [True]
+
+
 @pytest.mark.asyncio
 async def test_enter_submits_without_restarting_the_prompt_application(
     monkeypatch: pytest.MonkeyPatch,
