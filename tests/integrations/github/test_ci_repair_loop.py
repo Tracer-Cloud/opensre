@@ -714,6 +714,8 @@ def test_a_pushed_repair_counts_as_success_when_the_next_attempt_finds_nothing_t
     # The ledger sees the verified pass, not only the attempt with no check state
     assert recorded[-1]["success"] is True and recorded[-1]["checks_state"] == "passed"
     assert recorded[-1]["fix_head_sha"] == "new-head"
+    # Same ledger identity as the normal success path: the head the repair started from
+    assert recorded[-1]["source_head_sha"] == "old-head"
 
 
 def test_a_green_head_pushed_by_someone_else_is_not_credited(

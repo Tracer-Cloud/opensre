@@ -193,12 +193,15 @@ def _green_after_repair(
         run.fixed_sha = head
         run.checks_passed = True
         run.reason = "The repair commit passed CI."
-        # The ledger saw an attempt with no check state; record the verified pass.
+        # The ledger saw an attempt with no check state; record the verified pass
+        # under the head the repair started from, as the normal success path does,
+        # so one repair is one ledger entry.
         record_ci_fix_outcome(
             {
                 **output,
                 "success": True,
                 "checks_state": CheckState.PASSED.value,
+                "source_head_sha": run.initial_sha,
                 "fix_head_sha": head,
             }
         )
