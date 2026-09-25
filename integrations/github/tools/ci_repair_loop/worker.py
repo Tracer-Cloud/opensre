@@ -22,6 +22,7 @@ from integrations.github.tools.ci_fix.ledger import record_ci_fix_outcome
 from integrations.github.tools.ci_fix.runner import run_ci_fix
 from integrations.github.tools.ci_fix.verification import (
     CheckState,
+    all_checks_settled,
     check_failed,
     wait_for_pr_checks,
 )
@@ -107,16 +108,9 @@ def _repair(run: RepairRun, store: RepairStore, token: str) -> None:
         rows = pr.get("statusCheckRollup") or []
         failed = any(check_failed(row, expected_skips=set()) for row in rows)
         if not failed:
-            # A new fixture must first be observed failing. Empty or queued checks prove nothing.
-            if (
-                not run.demo
-                and rows
-                and all(
-                    str(row.get("conclusion") or row.get("state") or "").upper() == "SUCCESS"
-                    for row in rows
-                )
-                and _verify_green(run, pr, token)
-            ):
+            # A new fixture must first be observed failing. Empty or queued checks
+            # prove nothing; a settled rollup with skips is a candidate for green.
+            if not run.demo and all_checks_settled(rows) and _verify_green(run, pr, token):
                 return
             time.sleep(2)
             continue

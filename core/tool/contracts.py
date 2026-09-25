@@ -371,6 +371,9 @@ class BaseTool(ABC):
 
 
 REGISTERED_TOOL_ATTR = "__opensre_registered_tool__"
+#: ``error_kind`` of a result whose tool refused the request on its own rules.
+#: The integration behind such a tool is healthy; its credential needs no change.
+ERROR_KIND_REFUSED = "refused"
 
 _DEFAULT_SURFACES: tuple[ToolSurface, ...] = (ToolSurface.CHAT,)
 

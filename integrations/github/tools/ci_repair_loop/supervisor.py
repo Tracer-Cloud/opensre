@@ -87,9 +87,9 @@ def _supervise(store: RepairStore, run: RepairRun) -> str:
             RepairStatus.TIMED_OUT if time.time() >= cutoff else RepairStatus.FAILED
         )
         latest.reason = (
-            "Repair stopped at its original deadline; unfinished artifacts are retained."
+            "Repair stopped at its original deadline; its records are retained."
             if latest.status is RepairStatus.TIMED_OUT
-            else "The worker stopped; unfinished artifacts are retained."
+            else "The worker stopped; its records are retained."
         )
     return finish_run(store, latest)
 

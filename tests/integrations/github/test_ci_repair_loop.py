@@ -573,6 +573,36 @@ def test_existing_green_pr_still_waits_for_late_checks(
     assert run.status is RepairStatus.CANCELLED
 
 
+def test_a_green_pr_with_skipped_jobs_is_verified_not_waited_out(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Skipped jobs settle a rollup; they must not keep a green PR polling until the deadline."""
+    from integrations.github.tools.ci_fix.verification import CheckState, CheckVerification
+    from integrations.github.tools.ci_repair_loop import worker
+
+    # Arrange: a settled rollup of successes and skips, and a verification that passes
+    run = _run(pr_number=6054).model_copy(update={"demo": False})
+    pr = {
+        "state": "OPEN",
+        "headRefOid": "green-head",
+        "statusCheckRollup": [{"conclusion": "SUCCESS"}, {"conclusion": "SKIPPED"}],
+    }
+    monkeypatch.setattr(worker, "_read_pr", lambda *_args: pr)
+
+    def verify(_ctx: Any, **_kwargs: Any) -> CheckVerification:
+        return CheckVerification(state=CheckState.PASSED, check_names=())
+
+    monkeypatch.setattr(worker, "wait_for_pr_checks", verify, raising=False)
+    monkeypatch.setattr(worker.time, "sleep", lambda _seconds: None)
+
+    # Act
+    worker._repair(run, RepairStore(tmp_path), "test-token")
+
+    # Assert
+    assert run.status is RepairStatus.SUCCEEDED
+    assert run.reason == "The selected PR is already green; no repair was made."
+
+
 def test_reports_require_the_recorded_github_account(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -905,6 +935,7 @@ def test_the_scheduling_tool_returns_the_refusal_reason(monkeypatch: pytest.Monk
     # Assert
     assert result["ok"] is False
     assert result["response_text"] == refusal
+    assert result["error_kind"] == "refused"
 
 
 def test_an_active_run_is_reused_without_the_pull_request_check(

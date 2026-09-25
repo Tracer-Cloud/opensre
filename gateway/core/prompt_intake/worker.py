@@ -18,6 +18,7 @@ from config.principal import Actor, Principal, StorageScope
 from config.scope_context import bound_storage_scope
 from core.agent_harness import SessionCore, TurnResult
 from core.tool import (
+    ERROR_KIND_REFUSED,
     BeforeToolCallResult,
     ToolExecutionHooks,
     ToolExecutionRequest,
@@ -298,7 +299,7 @@ class _IntegrationFailures:
         self._vendors: dict[str, None] = {}
 
     def after_tool_call(self, request: ToolExecutionRequest, result: ToolExecutionResult) -> None:
-        if not result.is_error:
+        if not result.is_error or _refused(result):
             return None
         vendor = integration_of_tool(request.tool_call.name)
         if vendor is not None:
@@ -307,6 +308,12 @@ class _IntegrationFailures:
 
     def vendors(self) -> tuple[str, ...]:
         return tuple(self._vendors)
+
+
+def _refused(result: ToolExecutionResult) -> bool:
+    """A tool that declined on its own rules; the integration behind it is fine."""
+    details = result.details
+    return isinstance(details, dict) and details.get("error_kind") == ERROR_KIND_REFUSED
 
 
 class _Denial:

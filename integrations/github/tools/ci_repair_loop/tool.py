@@ -8,7 +8,7 @@ from typing import Any
 from config.constants.capabilities import SCHEDULER_HOST_CAPABILITY, SCHEDULER_HOST_IN_PROCESS
 from core.agent_harness.tools import action_context_from_agent_context, capability_values
 from core.domain.types.tools import ToolSurface
-from core.tool import SideEffectLevel, report_run_error
+from core.tool import ERROR_KIND_REFUSED, SideEffectLevel, report_run_error
 from core.tool_framework import tool
 from integrations.github.client import GitHubApiError, GitHubRestClient
 from integrations.github.helpers import (
@@ -130,7 +130,12 @@ def schedule_ci_repair_loop(
             scheduler_in_process=_scheduler_in_process(context),
         )
     except RepairRefused as exc:
-        return {"ok": False, "error": _REFUSED_ERROR, "response_text": exc.user_message}
+        return {
+            "ok": False,
+            "error": _REFUSED_ERROR,
+            "error_kind": ERROR_KIND_REFUSED,
+            "response_text": exc.user_message,
+        }
     except (ValueError, RuntimeError, OSError, GitHubApiError) as exc:
         report_run_error(
             exc,

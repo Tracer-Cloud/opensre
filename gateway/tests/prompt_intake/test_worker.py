@@ -195,6 +195,49 @@ def test_a_failing_integration_tool_is_named_on_the_settled_job() -> None:
     assert job.view()["failed_integrations"] == ["github"]
 
 
+def test_a_tool_refusal_is_not_a_failed_integration() -> None:
+    """A tool declining on its own rules must not send the user to the credential checklist."""
+    from core.llm.types import ToolCall
+    from core.tool import ERROR_KIND_REFUSED, ToolExecutionRequest, ToolExecutionResult
+    from tools.registry import clear_tool_registry_cache, get_registered_tool_map
+
+    # Arrange: one github tool refuses, another github tool really fails
+    clear_tool_registry_cache()
+    registered = get_registered_tool_map()
+    handler = _Handler(answer="the pull request was refused")
+
+    def run_with_a_refusal(
+        _text: str, _session: SessionCore, output: Any, _logger: Any, **_kwargs: Any
+    ) -> Any:
+        request = ToolExecutionRequest(
+            tool_call=ToolCall(id="c", name="github_cli", input={}),
+            tool=registered["github_cli"],
+            arguments={},
+            source="test",
+            resolved_integrations={},
+        )
+        refused = ToolExecutionResult(
+            content="refused",
+            details={"ok": False, "error": "refused", "error_kind": ERROR_KIND_REFUSED},
+            is_error=True,
+        )
+        output.tool_hooks.after_tool_call(request, refused)
+        output.finalize(handler.answer)
+        return handler.result
+
+    handler.run = run_with_a_refusal  # type: ignore[method-assign, assignment]
+    worker, queue = _worker(handler)
+    job = queue.submit("repair PR 6404", context={}, actor="u")
+    assert job is not None
+
+    # Act
+    worker.run_one(job)
+
+    # Assert
+    assert job.state is PromptState.DONE
+    assert job.failed_integrations == ()
+
+
 def _approval_request(pr_number: int = 7, *, demo_spelled_out: bool = False) -> Any:
     from core.llm.types import ToolCall
     from core.tool import ToolExecutionRequest

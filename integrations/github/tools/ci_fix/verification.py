@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import re
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
@@ -505,6 +505,12 @@ def check_failed(
     return conclusion in _FAILED_CONCLUSIONS or state in _FAILED_STATES
 
 
+def all_checks_settled(checks: Iterable[dict[str, Any]]) -> bool:
+    """Whether every check has concluded, skipped ones included; False for none."""
+    rows = list(checks)
+    return bool(rows) and all(_check_is_terminal(check) for check in rows)
+
+
 def _check_is_terminal(check: dict[str, Any]) -> bool:
     conclusion = str(check.get("conclusion") or "").strip().upper()
     state = str(check.get("state") or "").strip().upper()
@@ -520,6 +526,7 @@ def _check_is_terminal(check: dict[str, Any]) -> bool:
 __all__ = [
     "CheckState",
     "CheckVerification",
+    "all_checks_settled",
     "check_failed",
     "DEFAULT_CHECK_WAIT_SECONDS",
     "DEFAULT_HEAD_PROPAGATION_SECONDS",
