@@ -429,8 +429,9 @@ def test_wait_for_pr_checks_rejects_newly_skipped_check() -> None:
 
 def test_wait_for_pr_checks_accepts_a_new_skip_outside_the_repair_in_a_green_run() -> None:
     """A docs deployment that had nothing to deploy is skipped; that is not a failed repair."""
-    # Arrange: the targeted check passes, a check the repair never touched appears as skipped,
-    # and the workflow run for the commit concluded success
+    # Arrange: the targeted check passes; a deployment check outside Actions is skipped; a
+    # conditional job in a second, passing run is skipped while an earlier run of the same
+    # workflow failed (a rerun), which must not be held against it
     payload = {
         "headRefOid": "new-sha",
         "statusCheckRollup": [
@@ -439,16 +440,26 @@ def test_wait_for_pr_checks_accepts_a_new_skip_outside_the_repair_in_a_green_run
                 "conclusion": "SUCCESS",
                 "status": "COMPLETED",
                 "workflowName": "CI",
+                "detailsUrl": "https://github.com/o/r/actions/runs/2/job/20",
             },
             {
                 "name": "Mintlify Deployment",
                 "conclusion": "SKIPPED",
                 "status": "COMPLETED",
                 "workflowName": "",
+                "detailsUrl": "https://mintlify.example/deploy/1",
+            },
+            {
+                "name": "windows quality",
+                "conclusion": "SKIPPED",
+                "status": "COMPLETED",
+                "workflowName": "CI",
+                "detailsUrl": "https://github.com/o/r/actions/runs/2/job/21",
             },
         ],
         "runs": [
-            {"databaseId": 1, "status": "completed", "conclusion": "success", "workflowName": "CI"}
+            {"databaseId": 1, "status": "completed", "conclusion": "failure", "workflowName": "CI"},
+            {"databaseId": 2, "status": "completed", "conclusion": "success", "workflowName": "CI"},
         ],
     }
 
@@ -487,6 +498,7 @@ def test_wait_for_pr_checks_rejects_a_skip_caused_by_a_failed_workflow_run() -> 
                 "conclusion": "SKIPPED",
                 "status": "COMPLETED",
                 "workflowName": "CI",
+                "detailsUrl": "https://github.com/o/r/actions/runs/1/job/11",
             },
         ],
         "runs": [

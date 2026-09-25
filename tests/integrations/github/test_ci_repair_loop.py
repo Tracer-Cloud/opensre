@@ -666,7 +666,10 @@ def test_a_pushed_repair_counts_as_success_when_the_next_attempt_finds_nothing_t
 
     # Arrange: the PR still reads as failing at the tick, the fix runner then finds nothing to fix,
     # and the pushed head verifies green
-    run = _run(pr_number=6404).model_copy(update={"initial_sha": "old-head", "attempts": 1})
+    run = _run(pr_number=6404).model_copy(
+        update={"initial_sha": "old-head", "attempts": 1, "pushed_shas": ["new-head"]}
+    )
+    recorded: list[dict[str, Any]] = []
     store = RepairStore(tmp_path)
     store.directory(run.id).mkdir(parents=True, exist_ok=True)
 
@@ -696,7 +699,7 @@ def test_a_pushed_repair_counts_as_success_when_the_next_attempt_finds_nothing_t
     monkeypatch.setattr(
         worker, "run_ci_fix", lambda **_kw: {"success": True, "error_kind": "no_failing_checks"}
     )
-    monkeypatch.setattr(worker, "record_ci_fix_outcome", lambda _output: None)
+    monkeypatch.setattr(worker, "record_ci_fix_outcome", recorded.append)
     monkeypatch.setattr(worker, "wait_for_pr_checks", verified_green, raising=False)
     monkeypatch.setattr(worker.time, "sleep", lambda _seconds: None)
 
@@ -708,6 +711,51 @@ def test_a_pushed_repair_counts_as_success_when_the_next_attempt_finds_nothing_t
     assert run.checks_passed is True and run.fixed_sha == "new-head"
     assert run.reason == "The repair commit passed CI."
     assert "no_failing_checks" not in run.attempt_errors
+    # The ledger sees the verified pass, not only the attempt with no check state
+    assert recorded[-1]["success"] is True and recorded[-1]["checks_state"] == "passed"
+    assert recorded[-1]["fix_head_sha"] == "new-head"
+
+
+def test_a_green_head_pushed_by_someone_else_is_not_credited(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Only a head this run pushed may become the repair commit."""
+    from integrations.github.tools.ci_repair_loop import worker
+
+    # Arrange: the run pushed "mine", but the PR head is now a contributor's commit that is green
+    run = _run(pr_number=6404).model_copy(
+        update={"initial_sha": "old-head", "attempts": 1, "pushed_shas": ["mine"]}
+    )
+    store = RepairStore(tmp_path)
+    store.directory(run.id).mkdir(parents=True, exist_ok=True)
+    reads = iter(
+        [
+            {
+                "state": "OPEN",
+                "headRefOid": "theirs",
+                "statusCheckRollup": [{"conclusion": "FAILURE"}],
+            },
+            {
+                "state": "OPEN",
+                "headRefOid": "theirs",
+                "statusCheckRollup": [{"conclusion": "SUCCESS"}],
+            },
+        ]
+    )
+    monkeypatch.setattr(worker, "_read_pr", lambda *_args: next(reads))
+    monkeypatch.setattr(
+        worker, "run_ci_fix", lambda **_kw: {"success": True, "error_kind": "no_failing_checks"}
+    )
+    monkeypatch.setattr(worker, "record_ci_fix_outcome", lambda _output: None)
+    monkeypatch.setattr(worker.time, "sleep", lambda _seconds: None)
+
+    # Act
+    worker._repair(run, store, "test-token")
+
+    # Assert: no credit taken; the attempt is recorded as it was
+    assert run.fixed_sha == "" and run.checks_passed is False
+    assert run.status is RepairStatus.FAILED
+    assert run.attempt_errors[-1] == "no_failing_checks"
 
 
 def test_interrupted_registration_recovers_original_run(

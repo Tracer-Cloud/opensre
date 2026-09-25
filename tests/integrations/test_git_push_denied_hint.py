@@ -72,7 +72,8 @@ def test_both_push_paths_name_the_missing_permission_for_a_github_remote(
     # Assert: git's words first, then the permission to grant, on both paths
     for message in (upstream, branch):
         assert "failed: remote: Permission to o/r.git denied" in message
-        assert _HINT in message and "fine-grained token" in message
+        assert _HINT in message
+        assert "Fine-grained token:" in message and "Classic token:" in message
 
 
 def test_a_refusal_from_another_host_gets_no_github_advice(

@@ -46,6 +46,8 @@ class RepairRun(BaseModel):
     cleanup: str = "Temporary artifacts retained."
     reason: str = "Waiting for the scheduled tick."
     attempt_errors: list[str] = Field(default_factory=list)
+    #: Heads this run pushed; only one of them may be credited as the repair commit.
+    pushed_shas: list[str] = Field(default_factory=list)
 
     @property
     def terminal(self) -> bool:

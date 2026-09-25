@@ -137,6 +137,9 @@ def _repair(run: RepairRun, store: RepairStore, token: str) -> None:
         diagnostic = store.directory(run.id) / f"attempt-{run.attempts}.json"
         diagnostic.write_text(json.dumps(output, indent=2), encoding="utf-8")
         record_ci_fix_outcome(output)
+        pushed = str(output.get("fix_head_sha") or "")
+        if pushed and pushed not in run.pushed_shas:
+            run.pushed_shas.append(pushed)
         if output.get("success") and output.get("checks_state") == "passed":
             run.fixed_sha = str(output.get("fix_head_sha") or "")
             current = _read_pr(run, token)
@@ -154,8 +157,8 @@ def _repair(run: RepairRun, store: RepairStore, token: str) -> None:
         error = str(output.get("error_kind") or "repair_failed")
         # Nothing left to fix on the current head: the earlier push may have done
         # the job while its checks were still being read as failing.
-        nothing_left = error == ERR_NO_FAILING_CHECKS and bool(run.initial_sha)
-        if nothing_left and _green_after_repair(run, store, token):
+        nothing_left = error == ERR_NO_FAILING_CHECKS and bool(run.pushed_shas)
+        if nothing_left and _green_after_repair(run, store, token, output):
             return
         run.attempt_errors.append(error)
         run.reason = f"Repair attempt {run.attempts}: {error}."
@@ -171,15 +174,18 @@ def _repair(run: RepairRun, store: RepairStore, token: str) -> None:
     run.status, run.reason = RepairStatus.TIMED_OUT, "The demo reached its time budget."
 
 
-def _green_after_repair(run: RepairRun, store: RepairStore, token: str) -> bool:
-    """Confirm the pushed repair passed CI once the PR reports nothing left to fix.
+def _green_after_repair(
+    run: RepairRun, store: RepairStore, token: str, output: dict[str, Any]
+) -> bool:
+    """Confirm a head this run pushed passed CI once the PR reports nothing left to fix.
 
-    True when the loop is finished (verified green, or the PR moved on); False
-    when verification did not settle, so the attempt is recorded as usual.
+    A head pushed by someone else is never credited. True when the loop is
+    finished (verified green, or the PR moved on); False when verification did
+    not settle, so the attempt is recorded as usual.
     """
     current = _read_pr(run, token)
     head = str(current.get("headRefOid") or "")
-    if not head or head == run.initial_sha:
+    if head not in run.pushed_shas:
         return False
     if not _verify_green(run, current, token):
         return False
@@ -187,6 +193,15 @@ def _green_after_repair(run: RepairRun, store: RepairStore, token: str) -> bool:
         run.fixed_sha = head
         run.checks_passed = True
         run.reason = "The repair commit passed CI."
+        # The ledger saw an attempt with no check state; record the verified pass.
+        record_ci_fix_outcome(
+            {
+                **output,
+                "success": True,
+                "checks_state": CheckState.PASSED.value,
+                "fix_head_sha": head,
+            }
+        )
     store.save(run)
     return True
 

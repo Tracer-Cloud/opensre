@@ -48,6 +48,10 @@ _GATEWAY_PROGRESS_PREFIX = "on the gateway: "
 _QUEUED_NOTICE = "waiting for a free slot on the gateway (another conversation is using it)"
 #: The one vendor whose credential refusals have a known, ordered fix.
 _GITHUB_VENDOR = "github"
+_GITHUB_REFUSAL_LEAD = (
+    "Only if GitHub refused the credential (HTTP 401 or 403; a rate limit or an unavailable "
+    "repository needs no token change): "
+)
 
 _STATE_TEXT = {
     "failed": "The hosted gateway could not run that prompt ({error}).",
@@ -344,7 +348,9 @@ def _outcome(
             vendors=vendors, url=integrations_url, next_step=next_step
         )
         if _GITHUB_VENDOR in record.failed_integrations:
-            hint = f"{hint.rstrip()} {GITHUB_TOKEN_CHECKLIST}\n\n"
+            # The gateway reports the vendor, not the error kind; only a refusal
+            # (401 or 403) calls for token changes, so the checklist says so.
+            hint = f"{hint.rstrip()} {_GITHUB_REFUSAL_LEAD}{GITHUB_TOKEN_CHECKLIST}\n\n"
         text = hint + text
         instructions.insert(0, _FAILED_INTEGRATIONS_INSTRUCTIONS.format(vendors=vendors))
     return {

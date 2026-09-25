@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -20,6 +21,8 @@ DEFAULT_HEAD_PROPAGATION_SECONDS = 30
 _PR_CHECK_FIELDS = "headRefOid,mergeStateStatus,statusCheckRollup"
 _WORKFLOW_RUN_FIELDS = "databaseId,status,conclusion,workflowName"
 _WORKFLOW_RUNS_KEY = "runs"
+#: An Actions check's details link names the workflow run it belongs to.
+_RUN_ID_IN_DETAILS_URL = re.compile(r"/actions/runs/(\d+)")
 _WORKFLOW_RUN_COMPLETED = "completed"
 _FAILED_CONCLUSIONS = frozenset(
     {
@@ -148,11 +151,11 @@ def wait_for_pr_checks(
                 if terminal_since is not None and now - terminal_since >= max(0, settle_seconds):
                     # A skip the repair cannot explain is judged by its workflow run's
                     # verdict; that lookup happens once, at decision time.
-                    failed_workflows: frozenset[str] = frozenset()
+                    failed_run_ids: frozenset[str] = frozenset()
                     if _unexplained_skips(
                         checks, expected_skips=expected_skips, targeted_checks=targeted_checks
                     ):
-                        failed_workflows = _failed_workflow_names(
+                        failed_run_ids = _failed_run_ids(
                             repo=repo,
                             github_token=github_token,
                             expected_head_sha=expected_head_sha,
@@ -164,7 +167,7 @@ def wait_for_pr_checks(
                             check,
                             expected_skips=expected_skips,
                             targeted_checks=targeted_checks,
-                            failed_workflows=failed_workflows,
+                            failed_run_ids=failed_run_ids,
                         )
                     )
                     return CheckVerification(
@@ -405,10 +408,10 @@ def _workflow_runs_state(
     return complete, signature
 
 
-def _failed_workflow_names(
+def _failed_run_ids(
     *, repo: str, github_token: str | None, expected_head_sha: str
 ) -> frozenset[str]:
-    """Names of the commit's workflow runs that concluded as failures."""
+    """Ids of the commit's workflow runs that concluded as failures."""
     payload = run_gh_json(
         [
             "run",
@@ -427,10 +430,16 @@ def _failed_workflow_names(
     )
     runs = _check_rows(payload.get(_WORKFLOW_RUNS_KEY))
     return frozenset(
-        str(run.get("workflowName") or "")
+        str(run.get("databaseId") or "")
         for run in runs
         if str(run.get("conclusion") or "").strip().upper() in _FAILED_CONCLUSIONS
     )
+
+
+def _run_id_of(check: dict[str, Any]) -> str:
+    """The workflow run a check belongs to, read from its details link; "" for non-Actions checks."""
+    match = _RUN_ID_IN_DETAILS_URL.search(str(check.get("detailsUrl") or ""))
+    return match.group(1) if match else ""
 
 
 def _unexplained_skips(
@@ -473,14 +482,15 @@ def check_failed(
     *,
     expected_skips: set[str],
     targeted_checks: frozenset[str] = frozenset(),
-    failed_workflows: frozenset[str] = frozenset(),
+    failed_run_ids: frozenset[str] = frozenset(),
 ) -> bool:
     """Classify a GitHub check or commit status.
 
     A skipped check fails the verification only when it was one of the checks
-    the repair set out to fix (skipped is not fixed) or when its workflow run
-    failed (a job skipped because an earlier job failed). Any other skip, such
-    as a deployment that had nothing to deploy, is not a failure.
+    the repair set out to fix (skipped is not fixed) or when the workflow run
+    it belongs to failed (a job skipped because an earlier job failed). A skip
+    in a run that passed, or by a check outside Actions such as a deployment
+    with nothing to deploy, is not a failure.
     """
     conclusion = str(check.get("conclusion") or "").strip().upper()
     state = str(check.get("state") or "").strip().upper()
@@ -490,7 +500,8 @@ def check_failed(
             return False
         if name in targeted_checks:
             return True
-        return str(check.get("workflowName") or "") in failed_workflows
+        run_id = _run_id_of(check)
+        return bool(run_id) and run_id in failed_run_ids
     return conclusion in _FAILED_CONCLUSIONS or state in _FAILED_STATES
 
 
