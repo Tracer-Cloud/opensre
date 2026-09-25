@@ -19,6 +19,7 @@ from infrastructure.analytics.destination import AnalyticsDestination
 
 @pytest.fixture
 def deliveries(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[list[dict[str, Any]]]:
+    monkeypatch.delenv("OPENSRE_CICD", raising=False)
     provider.shutdown_analytics(flush=True)
     for name in ("OPENSRE_NO_TELEMETRY", "OPENSRE_ANALYTICS_DISABLED", "DO_NOT_TRACK"):
         monkeypatch.delenv(name, raising=False)

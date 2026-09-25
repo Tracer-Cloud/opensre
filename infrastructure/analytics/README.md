@@ -115,7 +115,11 @@ necessarily the first installation or the current invocation. Do not map
 
 Installer tags `-lp`, `-dc`, and `-gh` set `install_origin` to `landing_page`,
 `documentation`, and `github`. Pass Bash arguments with `bash -s -- -lp`; native
-PowerShell accepts the same tags. Untagged commands omit origin. `install_source`
+PowerShell accepts the same tags. Untagged commands omit origin unless the
+pipeline explicitly sets `OPENSRE_CICD=1`, which records `cicd`. This marker also
+sets `is_ci=true` and `cicd_marker=true` on runtime events, independently of vendor
+environment detection. An explicit command tag still takes precedence for origin.
+The marker is a reported classification, not verified runner identity. `install_source`
 still identifies the installer mechanism, and `install_channel` still identifies
 the requested `main`/`release` build track.
 

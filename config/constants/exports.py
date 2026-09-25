@@ -7,6 +7,7 @@ from config.package_exports import bind_package_exports
 # Re-exported name -> leaf module. Importing this package must not load
 # those modules; ``__getattr__`` loads one leaf the first time a name is used.
 EXPORTS: dict[str, str] = {
+    "ANALYTICS_CICD_ENV": "analytics",
     "GITHUB_CI_DEMO_REPOSITORY": "github",
     "CI_REPAIR_WORKER_COMMAND": "ci_repair",
     "CI_REPAIR_SECONDS": "ci_repair",

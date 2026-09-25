@@ -33,6 +33,7 @@ concurrency:
   cancel-in-progress: true
 
 env:
+  OPENSRE_CICD: "1"
   OPENSRE_NO_TELEMETRY: "1"
   OPENSRE_SENTRY_DISABLED: "1"
   OPENSRE_LANGFUSE_DISABLED: "1"

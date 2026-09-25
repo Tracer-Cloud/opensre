@@ -14,6 +14,7 @@ from config.constants.analytics import (
     ANALYTICS_INSTALL_SOURCE_ENV,
     ANALYTICS_INSTALL_VERSION_ENV,
 )
+from infrastructure.analytics.analytics_runtime import has_cicd_marker
 from infrastructure.analytics.provider import Properties
 from infrastructure.analytics.repl_context import get_cli_session_id
 from infrastructure.safety.secret_redaction import redact_text
@@ -114,6 +115,8 @@ def build_install_detected_properties(*, entrypoint: str) -> Properties:
     if channel := _optional_install_dimension(os.getenv(ANALYTICS_INSTALL_CHANNEL_ENV, "")):
         properties["install_channel"] = channel
     origin = os.getenv(ANALYTICS_INSTALL_ORIGIN_ENV, "")
+    if not origin and has_cicd_marker():
+        origin = "cicd"
     if origin in ANALYTICS_INSTALL_ORIGINS:
         properties["install_origin"] = origin
     if version := _optional_install_dimension(os.getenv(ANALYTICS_INSTALL_VERSION_ENV, "")):

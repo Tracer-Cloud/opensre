@@ -14,6 +14,7 @@ from infrastructure.analytics.analytics_runtime import (
 @pytest.mark.parametrize(
     ("key", "value"),
     [
+        ("OPENSRE_CICD", "1"),
         ("CI", "true"),
         ("GITHUB_ACTIONS", "1"),
         ("GITLAB_CI", "yes"),

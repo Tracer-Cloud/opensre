@@ -16,7 +16,7 @@ _REPO = Path(__file__).resolve().parents[2]
 
 
 def run_process(
-    root: Path, scenario: str = "start", *, ci: bool = False, silo: bool = False
+    root: Path, scenario: str = "start", *, ci: bool = False, silo: bool = False, cicd: bool = False
 ) -> dict[str, Any]:
     # Keep OS process-launch variables, but never inherit developer credentials,
     # analytics destinations, or home-store overrides into this subprocess.
@@ -46,6 +46,8 @@ def run_process(
     )
     if ci:
         env["GITHUB_ACTIONS"] = "true"
+    if cicd:
+        env["OPENSRE_CICD"] = "1"
     if silo:
         env.update(
             {
@@ -70,6 +72,17 @@ def run_process(
 
 def installs(result: dict[str, Any]) -> list[dict[str, Any]]:
     return [r["payload"] for r in result["requests"] if r["payload"]["event"] == "install_detected"]
+
+
+def test_explicit_cicd_marker_classifies_a_fresh_process_without_vendor_signals(
+    tmp_path: Path,
+) -> None:
+    result = run_process(tmp_path / "cicd", cicd=True)
+    properties = installs(result)[0]["properties"]
+    assert properties["install_origin"] == "cicd"
+    assert properties["is_ci"] is True
+    assert properties["cicd_marker"] is True
+    record_evidence("explicit-cicd-marker", result)
 
 
 def record_evidence(name: str, evidence: object) -> None:

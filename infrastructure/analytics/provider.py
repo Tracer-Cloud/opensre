@@ -36,6 +36,7 @@ from config.version import get_opensre_version
 from infrastructure.analytics.analytics_runtime import (
     detect_analytics_runtime,
     detect_container_runtime,
+    has_cicd_marker,
     is_ci_environment,
 )
 from infrastructure.analytics.destination import (
@@ -770,6 +771,7 @@ _BASE_PROPERTIES: Final[Properties] = {
     "composite_fingerprint_components": _COMPOSITE_FINGERPRINT.components,
     "execution_environment": _ANALYTICS_RUNTIME.execution_environment,
     "is_ci": _ANALYTICS_RUNTIME.is_ci,
+    "cicd_marker": has_cicd_marker(),
     "is_container": _ANALYTICS_RUNTIME.is_container,
     "container_runtime": _ANALYTICS_RUNTIME.container_runtime,
     "$process_person_profile": False,
