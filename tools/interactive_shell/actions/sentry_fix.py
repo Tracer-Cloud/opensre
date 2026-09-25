@@ -114,6 +114,10 @@ fix_sentry_issue_start_tool = RegisteredTool(
         "Do NOT use for diagnose/analyze-only requests (answer with the read-only "
         "Sentry tools), for non-Sentry URLs, or when no Sentry issue URL is provided."
     ),
+    use_cases=[
+        "User asks to fix, patch, or open a pull request for a Sentry issue and gives its URL",
+        "User asks to ship a code fix for a linked Sentry issue",
+    ],
     input_schema=object_schema(
         properties={
             "sentry_url": string_property(

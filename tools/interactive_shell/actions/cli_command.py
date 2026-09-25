@@ -37,6 +37,10 @@ cli_exec_tool = RegisteredTool(
         "integrations for a skill, and never run `health` unless the user asked for a "
         "health check; it prints every integration on the machine."
     ),
+    use_cases=[
+        "User explicitly asks to run an opensre CLI subcommand, such as listing or showing integrations",
+        "User asks for a health or synthetic check by name",
+    ],
     input_schema=object_schema(
         properties={
             "payload": string_property(

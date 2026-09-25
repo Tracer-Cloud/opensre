@@ -61,9 +61,6 @@ _MIN_REGISTRY_SIZE = 265
 #: issue #5498; rewriting descriptions is out of scope for that issue.
 _DESCRIPTION_CONTRACT_ALLOWLIST: frozenset[str] = frozenset(
     {
-        "cli_exec",
-        "code_implement",
-        "fix_sentry_issue_start",
         "get_dagster_run_logs",
         "get_mariadb_global_status",
         "get_mariadb_innodb_status",
@@ -85,15 +82,10 @@ _DESCRIPTION_CONTRACT_ALLOWLIST: frozenset[str] = frozenset(
         "list_dagster_runs",
         "list_dagster_schedule_ticks",
         "list_dagster_sensor_ticks",
-        "llm_set_provider",
         "memory_forget",
         "memory_recall",
         "redeploy_railway_service",
         "replay_slack_thread_locally",
-        "shell_run",
-        "skill_view",
-        "slash_invoke",
-        "task_cancel",
         "work_task_complete",
         "work_task_list",
         "work_task_prioritize",
