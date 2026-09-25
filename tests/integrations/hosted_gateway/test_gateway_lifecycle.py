@@ -99,12 +99,24 @@ class _Client:
     def __exit__(self, *_exc: object) -> None:
         return None
 
+    calls: list[str] = []
+
     def _answer(self) -> GatewayHealth:
         if isinstance(self._outcome, HostedGatewayError):
             raise self._outcome
         return self._outcome
 
-    start = stop = _answer
+    def health(self) -> GatewayHealth:
+        type(self).calls.append("health")
+        return self._answer()
+
+    def start(self) -> GatewayHealth:
+        type(self).calls.append("start")
+        return self._answer()
+
+    def stop(self) -> GatewayHealth:
+        type(self).calls.append("stop")
+        return self._answer()
 
 
 def _signed_in_with(
@@ -143,13 +155,35 @@ def test_start_reports_that_the_gateway_is_still_coming_up(
         monkeypatch,
         GatewayHealth(True, False, gateway_id="org-gateway", actual_state="provisioning"),
     )
+    _Client.calls = []
+
+    # Act
+    out = start_hosted_gateway()
+
+    # Assert: not running, so a start was requested and the reply says it is coming up
+    assert _Client.calls == ["health", "start"]
+    assert out["success"] is True and out["actual_state"] == "provisioning"
+    assert "is provisioning now. Check it again in a minute." in out["response_text"]
+
+
+def test_starting_a_running_gateway_requests_nothing_and_says_so(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The reply must describe what happened: nothing was started."""
+    # Arrange
+    _signed_in_with(
+        monkeypatch,
+        GatewayHealth(True, True, gateway_id="org-gateway", actual_state="running"),
+    )
+    _Client.calls = []
 
     # Act
     out = start_hosted_gateway()
 
     # Assert
-    assert out["success"] is True and out["actual_state"] == "provisioning"
-    assert "is provisioning now. Check it again in a minute." in out["response_text"]
+    assert _Client.calls == ["health"]
+    assert out["success"] is True and out["healthy"] is True
+    assert out["response_text"].endswith("is already running; nothing to start.")
 
 
 def test_a_member_is_told_an_admin_is_needed_and_it_is_not_an_incident(

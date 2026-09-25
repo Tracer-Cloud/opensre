@@ -57,9 +57,16 @@ _WHOSE = (
     outputs=STATE_OUTPUTS,
 )
 def start_hosted_gateway() -> dict[str, Any]:
-    """Ask the OpenSRE app to start the signed-in organization's gateway."""
+    """Ask the OpenSRE app to start the signed-in organization's gateway.
+
+    A gateway that is already running is reported as such without a start
+    request, so the reply says what actually happened.
+    """
     try:
         with HostedGatewayClient.from_account() as client:
+            health = client.health()
+            if health.healthy:
+                return state_output(health, _already_running(health))
             health = client.start()
     except HostedGatewayError as exc:
         return failure_output(
@@ -109,10 +116,15 @@ def stop_hosted_gateway() -> dict[str, Any]:
     return state_output(health, _stopped(health))
 
 
+def _already_running(health: GatewayHealth) -> str:
+    name = gateway_name(health)
+    return f"Your organization's hosted gateway{name} is already running; nothing to start."
+
+
 def _started(health: GatewayHealth) -> str:
     name = gateway_name(health)
     if health.healthy:
-        return f"Your organization's hosted gateway{name} is already running; nothing to start."
+        return f"Your organization's hosted gateway{name} is running."
     return (
         f"Asked your organization's hosted gateway{name} to start; it is "
         f"{health.actual_state or 'starting'} now. Check it again in a minute."

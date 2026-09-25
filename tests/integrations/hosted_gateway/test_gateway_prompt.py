@@ -493,6 +493,32 @@ def test_a_queued_prompt_tells_the_user_they_are_waiting_for_a_slot_once(
     assert updates == [{"progress": gateway_prompt._QUEUED_NOTICE}]
 
 
+def test_the_queue_notice_counts_from_when_the_prompt_was_sent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A slow submission must not add its own duration to the ten-second wait for the notice."""
+    # Arrange: the prompt left this machine long ago; the gateway still reports it queued
+    import time
+
+    app = _App([PromptRecord(_ID, "queued"), PromptRecord(_ID, "done", answer="pong")])
+    monkeypatch.setattr(gateway_prompt, "HOSTED_GATEWAY_PROMPT_POLL_SECONDS", 0.0)
+    monkeypatch.setattr(gateway_prompt, "HOSTED_GATEWAY_QUEUE_NOTICE_SECONDS", 10.0)
+    updates: list[Any] = []
+    relay = gateway_prompt._ProgressRelay(
+        AgentToolContext(resolved_integrations={}, resources={}, _emit_update=updates.append)
+    )
+    sent_at = time.monotonic() - 30.0
+
+    # Act
+    record, _waited = gateway_prompt._wait_until_settled(
+        app, PromptRecord(_ID, "queued"), relay, sent_at=sent_at
+    )
+
+    # Assert: the notice appears on the first poll instead of ten seconds later
+    assert record.state == "done"
+    assert updates == [{"progress": gateway_prompt._QUEUED_NOTICE}]
+
+
 def test_a_record_carries_its_progress_lines() -> None:
     # Arrange
     def answer(_request: httpx.Request) -> httpx.Response:

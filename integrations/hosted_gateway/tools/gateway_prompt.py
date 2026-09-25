@@ -195,10 +195,13 @@ def ask_hosted_gateway(
     scope = _shell_scope(context)
     try:
         with HostedGatewayClient.from_account() as client:
+            sent_at = time.monotonic()
             record = _submit_or_continue(
                 client, prompt.strip(), dict(facts or {}), prompt_id.strip(), scope
             )
-            record, waited = _wait_until_settled(client, record, _ProgressRelay(context))
+            record, waited = _wait_until_settled(
+                client, record, _ProgressRelay(context), sent_at=sent_at
+            )
             parent_id = record.parent_prompt_id or prompt_id.strip()
             rejected = _answer_was_rejected(record) and bool(parent_id)
             if rejected:
@@ -258,10 +261,19 @@ def _answer_from_turn(scope: ActionToolScope | None, choice: PromptChoice) -> st
 
 
 def _wait_until_settled(
-    client: HostedGatewayClient, record: PromptRecord, relay: _ProgressRelay
+    client: HostedGatewayClient,
+    record: PromptRecord,
+    relay: _ProgressRelay,
+    *,
+    sent_at: float | None = None,
 ) -> tuple[PromptRecord, float]:
-    """Poll the app until the gateway settles the prompt or the wait budget is spent."""
+    """Poll the app until the gateway settles the prompt or the wait budget is spent.
+
+    ``sent_at`` is when the prompt left this machine; the queue notice counts
+    from there, so a slow submission does not delay it.
+    """
     started = time.monotonic()
+    queued_since = started if sent_at is None else sent_at
     current = record
     relay.show(current)
     queue_noticed = False
@@ -269,7 +281,8 @@ def _wait_until_settled(
         waited = time.monotonic() - started
         if waited >= HOSTED_GATEWAY_PROMPT_WAIT_SECONDS:
             return current, waited
-        still_queued = current.state == "queued" and waited >= HOSTED_GATEWAY_QUEUE_NOTICE_SECONDS
+        in_queue = time.monotonic() - queued_since
+        still_queued = current.state == "queued" and in_queue >= HOSTED_GATEWAY_QUEUE_NOTICE_SECONDS
         if still_queued and not queue_noticed:
             relay.note(_QUEUED_NOTICE)
             queue_noticed = True
