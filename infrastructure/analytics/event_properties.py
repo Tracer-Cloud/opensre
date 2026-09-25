@@ -9,6 +9,8 @@ from typing import Final
 
 from config.constants.analytics import (
     ANALYTICS_INSTALL_CHANNEL_ENV,
+    ANALYTICS_INSTALL_ORIGIN_ENV,
+    ANALYTICS_INSTALL_ORIGINS,
     ANALYTICS_INSTALL_SOURCE_ENV,
     ANALYTICS_INSTALL_VERSION_ENV,
 )
@@ -111,6 +113,9 @@ def build_install_detected_properties(*, entrypoint: str) -> Properties:
     }
     if channel := _optional_install_dimension(os.getenv(ANALYTICS_INSTALL_CHANNEL_ENV, "")):
         properties["install_channel"] = channel
+    origin = os.getenv(ANALYTICS_INSTALL_ORIGIN_ENV, "")
+    if origin in ANALYTICS_INSTALL_ORIGINS:
+        properties["install_origin"] = origin
     if version := _optional_install_dimension(os.getenv(ANALYTICS_INSTALL_VERSION_ENV, "")):
         properties["installed_version"] = version
     return properties

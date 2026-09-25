@@ -69,6 +69,9 @@ if TYPE_CHECKING:
         ALERTMANAGER_USERNAME_ENV as ALERTMANAGER_USERNAME_ENV,
     )
     from config.constants.analytics import (
+        ANALYTICS_CICD_ENV as ANALYTICS_CICD_ENV,
+    )
+    from config.constants.analytics import (
         ANALYTICS_DISABLED_ENV as ANALYTICS_DISABLED_ENV,
     )
     from config.constants.analytics import (
@@ -82,6 +85,12 @@ if TYPE_CHECKING:
     )
     from config.constants.analytics import (
         ANALYTICS_INSTALL_MARKER_STATE_ENV as ANALYTICS_INSTALL_MARKER_STATE_ENV,
+    )
+    from config.constants.analytics import (
+        ANALYTICS_INSTALL_ORIGIN_ENV as ANALYTICS_INSTALL_ORIGIN_ENV,
+    )
+    from config.constants.analytics import (
+        ANALYTICS_INSTALL_ORIGINS as ANALYTICS_INSTALL_ORIGINS,
     )
     from config.constants.analytics import (
         ANALYTICS_INSTALL_SOURCE_ENV as ANALYTICS_INSTALL_SOURCE_ENV,

@@ -34,6 +34,7 @@ def test_is_test_run_true_for_auto_detected_env(
 
 
 def test_is_test_run_false_without_signals(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("OPENSRE_CICD", raising=False)
     monkeypatch.delenv("OPENSRE_IS_TEST", raising=False)
     monkeypatch.delenv("PYTEST_CURRENT_TEST", raising=False)
     monkeypatch.delenv("GITHUB_ACTIONS", raising=False)

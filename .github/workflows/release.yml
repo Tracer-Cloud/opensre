@@ -26,6 +26,9 @@ permissions:
   contents: read
   actions: read
 
+env:
+  OPENSRE_CICD: "1"
+
 concurrency:
   group: release-${{ github.event_name == 'workflow_run' && 'main' || (github.event_name == 'workflow_dispatch' && inputs.channel == 'main' && 'main') || 'stable' }}
   cancel-in-progress: true

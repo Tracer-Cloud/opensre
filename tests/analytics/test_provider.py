@@ -33,6 +33,7 @@ def _reset_anonymous_id_cache(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -
     provider._pending_user_id_load_failures.clear()
     monkeypatch.setattr(provider, "_event_log_state", provider._EventLogState())
     monkeypatch.setattr(provider, "_FIRST_RUN_PATH", tmp_path / "installed")
+    monkeypatch.setattr(provider, "_CONFIG_DIR", tmp_path)
     yield
     provider.shutdown_analytics(flush=False)
     provider._instance = None

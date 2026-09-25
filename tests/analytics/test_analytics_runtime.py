@@ -14,6 +14,7 @@ from infrastructure.analytics.analytics_runtime import (
 @pytest.mark.parametrize(
     ("key", "value"),
     [
+        ("OPENSRE_CICD", "1"),
         ("CI", "true"),
         ("GITHUB_ACTIONS", "1"),
         ("GITLAB_CI", "yes"),
@@ -29,7 +30,7 @@ def test_is_ci_environment_recognizes_generic_and_vendor_signals(
 
 
 def test_is_ci_environment_rejects_false_and_empty_values() -> None:
-    assert is_ci_environment({"CI": "false", "JENKINS_URL": ""}) is False
+    assert is_ci_environment({"OPENSRE_CICD": "false", "CI": "false", "JENKINS_URL": ""}) is False
 
 
 @pytest.mark.parametrize(

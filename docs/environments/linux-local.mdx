@@ -8,7 +8,7 @@ Install OpenSRE on Linux (laptop, desktop, or a local VM), sign in to your accou
 ## 1. Install
 
 ```bash
-curl -fsSL https://install.opensre.com | bash
+curl -fsSL https://install.opensre.com | bash -s -- -dc
 ```
 
 You usually don't need `sudo`. If `opensre` isn't found after install, open a new terminal or add the bin directory the installer printed (often `~/.local/bin`) to your PATH.

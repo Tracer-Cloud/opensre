@@ -81,6 +81,9 @@ def _write_fake_opensre(binary: Path, *, version_line: str) -> None:
             if [ "${{1:-}}" = "--record-install" ] && [ -n "${{OPENSRE_TEST_MARKER_LOG:-}}" ]; then
               printf '%s\\n' "${{OPENSRE_INSTALL_MARKER_STATE:-unset}}" > "$OPENSRE_TEST_MARKER_LOG"
             fi
+            if [ "${{1:-}}" = "--record-install" ] && [ -n "${{OPENSRE_TEST_ORIGIN_LOG:-}}" ]; then
+              printf '%s\\n' "${{OPENSRE_INSTALL_ORIGIN:-}}" "${{OPENSRE_INSTALL_CHANNEL:-}}" "${{OPENSRE_INSTALL_SOURCE:-}}" > "$OPENSRE_TEST_ORIGIN_LOG"
+            fi
             printf 'opensre-stub\\n'
             exit 0
             """
@@ -171,6 +174,7 @@ def _run_install_sh(
     tmp_path: Path,
     *args: str,
     env_extra: dict[str, str] | None = None,
+    piped: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     plat, arch = _host_platform_arch()
     home = tmp_path / "home"
@@ -234,9 +238,16 @@ def _run_install_sh(
     if env_extra:
         env.update(env_extra)
 
-    cmd = ["bash", str(INSTALL_SH), "--install-dir", str(install_dir), *args]
+    cmd = [
+        "bash",
+        *(["-s", "--"] if piped else [str(INSTALL_SH)]),
+        "--install-dir",
+        str(install_dir),
+        *args,
+    ]
     return subprocess.run(
         cmd,
+        input=INSTALL_SH.read_text() if piped else None,
         cwd=str(tmp_path),
         env=env,
         capture_output=True,
@@ -255,7 +266,7 @@ def _run_install_sh(
         (
             README,
             (
-                "curl -fsSL https://install.opensre.com | bash",
+                "curl -fsSL https://install.opensre.com | bash -s -- -gh",
                 "## Before you begin",
                 "## Step 1: Install and start opensre",
                 "opensre\n",
@@ -265,7 +276,7 @@ def _run_install_sh(
         (
             QUICKSTART,
             (
-                "curl -fsSL https://install.opensre.com | bash",
+                "curl -fsSL https://install.opensre.com | bash -s -- -dc",
                 "## Before you begin",
                 "## Step 1: Install and start opensre",
                 "opensre\n",
@@ -275,7 +286,7 @@ def _run_install_sh(
         (
             INSTALL_MDX,
             (
-                "curl -fsSL https://install.opensre.com | bash",
+                "curl -fsSL https://install.opensre.com | bash -s -- -dc",
                 "## Before you begin",
                 "## Step 1: Install and start opensre",
                 "opensre\n",
@@ -286,7 +297,7 @@ def _run_install_sh(
         (
             INSTALL_LOCAL,
             (
-                "curl -fsSL https://install.opensre.com | bash",
+                "curl -fsSL https://install.opensre.com | bash -s -- -dc",
                 "## Before you begin",
                 "## Step 1: Install and start opensre",
                 "opensre\n",
@@ -321,13 +332,13 @@ def test_install_docs_list_every_process(path: Path, needles: tuple[str, ...]) -
 
 
 def test_windows_install_docs_use_powershell_installer() -> None:
-    command = "irm https://install.opensre.com/install.ps1 | iex"
+    command = "& ([scriptblock]::Create((irm https://install.opensre.com/install.ps1)))"
     windows = (REPO_ROOT / "docs" / "environments" / "windows-local.mdx").read_text(
         encoding="utf-8"
     )
     readme = README.read_text(encoding="utf-8")
-    assert command in windows
-    assert command in readme
+    assert f"{command} -dc" in windows
+    assert f"{command} -gh" in readme
     assert "WSL" not in windows
 
 
@@ -585,3 +596,33 @@ def test_homebrew_formula_resolvable_when_brew_present() -> None:
     assert formulae, "brew info returned no formulae"
     name = formulae[0].get("name") or formulae[0].get("full_name")
     assert name and "opensre" in str(name)
+
+
+@pytest.mark.parametrize(
+    ("tag", "origin"),
+    [("-lp", "landing_page"), ("-gh", "github"), ("-dc", "documentation"), (None, "")],
+)
+@pytest.mark.parametrize("track", ["main", "release"])
+def test_piped_installer_keeps_origin_separate_from_build_track(
+    tmp_path: Path, tag: str | None, origin: str, track: str
+) -> None:
+    recorded = tmp_path / "origin-observation"
+    args = [f"--{track}", *([tag] if tag else [])]
+    result = _run_install_sh(
+        tmp_path,
+        *args,
+        piped=True,
+        env_extra={
+            "OPENSRE_TEST_ORIGIN_LOG": str(recorded),
+            "OPENSRE_INSTALL_ORIGIN": "inherited-value-must-not-attribute-an-untagged-command",
+        },
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert recorded.read_text().splitlines() == [origin, track, "posix_installer"]
+
+
+def test_installer_rejects_conflicting_origin_tags_before_installing(tmp_path: Path) -> None:
+    result = _run_install_sh(tmp_path, "-lp", "-gh", piped=True)
+    assert result.returncode != 0
+    assert "only one installation origin" in result.stderr
+    assert not (tmp_path / "opt" / "bin" / "opensre").exists()
