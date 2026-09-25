@@ -410,7 +410,8 @@ def test_worker_retries_then_cleans_only_the_verified_head(
     if changed_head:
         assert run.status is RepairStatus.FAILED and not run.checks_passed
         assert api.prs[0]["state"] == "open" and run.branch in api.refs
-        assert Path(run.workspace).exists()
+        # A finished run keeps its records, not its checkout, whatever the outcome.
+        assert not Path(run.workspace).exists()
     else:
         assert run.status is RepairStatus.SUCCEEDED and run.checks_passed
         assert run.fixed_sha == "fixed" and run.passed_run_url
@@ -758,6 +759,101 @@ def test_a_green_head_pushed_by_someone_else_is_not_credited(
     assert run.fixed_sha == "" and run.checks_passed is False
     assert run.status is RepairStatus.FAILED
     assert run.attempt_errors[-1] == "no_failing_checks"
+
+
+class _PullRequestApi:
+    """REST stand-in: the signed-in user plus one pull request with a chosen head repository."""
+
+    def __init__(self, *, state: str, head_full_name: str) -> None:
+        self._pull = {"state": state, "head": {"repo": {"full_name": head_full_name}}}
+
+    def request(self, _method: str, path: str, **_kwargs: Any) -> dict[str, Any]:
+        if path == "user":
+            return {"login": "alice", "id": 123}
+        assert path == "repos/Tracer-Cloud/opensre/pulls/6408", path
+        return self._pull
+
+
+@pytest.mark.parametrize(
+    ("state", "head", "expected"),
+    [
+        ("open", "someone/opensre", "comes from someone/opensre"),
+        ("closed", "Tracer-Cloud/opensre", "PR #6408 is closed"),
+    ],
+)
+def test_scheduling_refuses_a_fork_or_closed_pull_request_up_front(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, state: str, head: str, expected: str
+) -> None:
+    """A target the loop could never push to is refused before anything is scheduled."""
+    from integrations.github.tools.ci_repair_loop import schedule
+
+    # Arrange
+    api = _PullRequestApi(state=state, head_full_name=head)
+    monkeypatch.setattr(schedule, "GitHubRestClient", lambda _token: api)
+    monkeypatch.setattr(schedule, "configured_token", lambda _token: "t", raising=False)
+    store = RepairStore(tmp_path)
+
+    # Act / Assert: refused with the reason and what to choose instead; nothing reserved
+    with pytest.raises(ValueError, match=expected):
+        schedule.schedule_repair(
+            demo=False, owner="Tracer-Cloud", repo="opensre", pr_number=6408, store=store
+        )
+    assert not (tmp_path / "runs.json").exists()
+
+
+def test_a_same_repository_open_pull_request_passes_the_scheduling_check(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from integrations.github.tools.ci_repair_loop import schedule
+
+    # Arrange
+    api = _PullRequestApi(state="open", head_full_name="Tracer-Cloud/opensre")
+
+    # Act / Assert: no refusal from the check itself
+    schedule._require_repairable(api, "Tracer-Cloud", "opensre", 6408)
+
+
+@pytest.mark.parametrize(
+    ("error", "expected"),
+    [
+        (
+            "unsupported_pr_branch",
+            "PR #6408 comes from a fork; the loop only pushes to branches inside Tracer-Cloud/opensre",
+        ),
+        ("push_failed", "the push was refused"),
+        ("no_changes", "made no change"),
+        ("something_new", "something_new."),
+    ],
+)
+def test_attempt_reasons_read_as_plain_sentences(error: str, expected: str) -> None:
+    from integrations.github.tools.ci_repair_loop import worker
+
+    # Arrange
+    run = _run(pr_number=6408).model_copy(update={"owner": "Tracer-Cloud", "repo": "opensre"})
+
+    # Act / Assert
+    assert expected in worker._reason_for(error, run)
+
+
+def test_a_finished_run_drops_its_checkout_but_keeps_its_records(tmp_path: Path) -> None:
+    """Each checkout is hundreds of megabytes on the shared volume; nothing reads it afterwards."""
+    from integrations.github.tools.ci_repair_loop import worker
+
+    # Arrange: a run directory with a checkout and its records
+    directory = tmp_path / "run"
+    checkout = directory / "checkout"
+    (checkout / ".git").mkdir(parents=True)
+    (directory / "attempt-1.json").write_text("{}", encoding="utf-8")
+    (directory / "result.md").write_text("report", encoding="utf-8")
+    run = _run(pr_number=6408).model_copy(update={"workspace": str(checkout), "demo": False})
+
+    # Act
+    worker._discard_checkout(run)
+
+    # Assert
+    assert not checkout.exists()
+    assert (directory / "attempt-1.json").exists() and (directory / "result.md").exists()
+    assert run.cleanup == "Checkout removed; report and attempt records retained."
 
 
 def test_interrupted_registration_recovers_original_run(

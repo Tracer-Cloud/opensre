@@ -8,6 +8,7 @@ import re
 import subprocess
 import time
 import uuid
+from typing import Any
 
 from filelock import FileLock, Timeout
 
@@ -40,6 +41,40 @@ def _component(value: str) -> str:
     return value
 
 
+def _head_repository_name(pull: dict[str, Any]) -> str:
+    """The ``owner/name`` the pull request's head branch lives in, or empty."""
+    head = pull.get("head")
+    if not isinstance(head, dict):
+        return ""
+    head_repo = head.get("repo")
+    if not isinstance(head_repo, dict):
+        return ""
+    return str(head_repo.get("full_name") or "")
+
+
+def _require_repairable(client: GitHubRestClient, owner: str, repo: str, pr_number: int) -> None:
+    """Refuse, in plain words, a pull request the loop could never push to.
+
+    Checked before anything is reserved or scheduled, so the user learns at once
+    that a fork or a closed pull request is not a target and what to choose instead.
+    """
+    pull = object_response(client.request("GET", f"repos/{owner}/{repo}/pulls/{pr_number}"))
+    state = str(pull.get("state") or "").lower()
+    if state != "open":
+        raise ValueError(
+            f"PR #{pr_number} is {state or 'unavailable'}; only an open pull request can be "
+            "repaired. Choose an open one."
+        )
+    head_full_name = _head_repository_name(pull)
+    if head_full_name.lower() != f"{owner}/{repo}".lower():
+        origin = head_full_name or "a fork"
+        raise ValueError(
+            f"PR #{pr_number} comes from {origin}; the repair loop only pushes to branches "
+            f"inside {owner}/{repo}. Choose a pull request opened from a branch in this "
+            "repository, or ask its author to open one."
+        )
+
+
 def schedule_repair(
     *,
     demo: bool,
@@ -70,6 +105,8 @@ def schedule_repair(
     elif pr_number <= 0:
         raise ValueError("Select a PR number or request demo=true.")
     repo = _component(repo.strip())
+    if not demo:
+        _require_repairable(GitHubRestClient(token), owner, repo, pr_number)
     store = store or RepairStore()
     with FileLock(str(store.root / "schedule.lock"), timeout=30):
         run, reused = store.reserve(
