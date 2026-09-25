@@ -56,6 +56,10 @@ def _result(run: RepairRun, store: RepairStore) -> dict[str, Any]:
     }
 
 
+#: The tool's error line when the target itself was refused; the reply says which to choose.
+_REFUSED_ERROR = "Could not schedule CI repair: the pull request was refused."
+
+
 @tool(
     name="schedule_ci_repair_loop",
     source="github",
@@ -126,8 +130,7 @@ def schedule_ci_repair_loop(
             scheduler_in_process=_scheduler_in_process(context),
         )
     except RepairRefused as exc:
-        # Written for the user: which target to choose instead.
-        return {"ok": False, "error": str(exc), "response_text": str(exc)}
+        return {"ok": False, "error": _REFUSED_ERROR, "response_text": exc.user_message}
     except (ValueError, RuntimeError, OSError, GitHubApiError) as exc:
         report_run_error(
             exc,
