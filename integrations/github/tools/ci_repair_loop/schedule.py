@@ -25,7 +25,7 @@ from infrastructure.scheduling.scheduler.loop_constants import (
 from infrastructure.scheduling.scheduler.runner import compute_next_run
 from infrastructure.scheduling.scheduler.storage import add_task, get_task
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
-from integrations.github.client import GitHubRestClient
+from integrations.github.client import GitHubApiError, GitHubRestClient
 from integrations.github.tools.ci_repair_loop.credentials import account_id, configured_token
 from integrations.github.tools.ci_repair_loop.fixture import object_response
 from integrations.github.tools.ci_repair_loop.models import RepairRefused, RepairRun, RepairStatus
@@ -77,11 +77,14 @@ def _require_repairable(client: GitHubRestClient, owner: str, repo: str, pr_numb
 
 def _refusal_for(
     client: GitHubRestClient, owner: str, repo: str, pr_number: int
-) -> RepairRefused | None:
-    """The refusal a fresh reservation of this pull request would get, or ``None``."""
+) -> Exception | None:
+    """What a fresh reservation of this pull request would raise, or ``None``.
+
+    A failed lookup counts too: it stops a new run, never the reuse of one.
+    """
     try:
         _require_repairable(client, owner, repo, pr_number)
-    except RepairRefused as refusal:
+    except (RepairRefused, GitHubApiError, ValueError) as refusal:
         return refusal
     return None
 

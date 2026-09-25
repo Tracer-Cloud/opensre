@@ -938,6 +938,40 @@ class _EnabledTask:
     next_run = "soon"
 
 
+class _PullRequestLookupDown:
+    """REST stand-in: the signed-in user answers, the pull request lookup fails."""
+
+    def request(self, _method: str, path: str, **_kwargs: Any) -> dict[str, Any]:
+        if path == "user":
+            return {"login": "alice", "id": 123}
+        raise GitHubApiError("GitHub API request failed: timed out", path=path)
+
+
+def test_a_failed_pull_request_lookup_still_returns_the_active_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Reuse never waits on GitHub; only a fresh reservation needs the lookup."""
+    from integrations.github.tools.ci_repair_loop import schedule
+
+    # Arrange
+    store = RepairStore(tmp_path)
+    active = _run(pr_number=6408).model_copy(
+        update={"owner": "Tracer-Cloud", "repo": "opensre", "demo": False}
+    )
+    store.reserve(active)
+    monkeypatch.setattr(schedule, "GitHubRestClient", lambda _token: _PullRequestLookupDown())
+    monkeypatch.setattr(schedule, "configured_token", lambda _token: "t", raising=False)
+    monkeypatch.setattr(schedule, "get_task", lambda _id: _EnabledTask())
+
+    # Act
+    run, reused, _next_run = schedule.schedule_repair(
+        demo=False, owner="Tracer-Cloud", repo="opensre", pr_number=6408, store=store
+    )
+
+    # Assert
+    assert reused and run.id == active.id
+
+
 def test_interrupted_registration_recovers_original_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
