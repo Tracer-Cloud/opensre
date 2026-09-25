@@ -44,6 +44,7 @@ from infrastructure.analytics.destination import (
 )
 from infrastructure.analytics.events import Event
 from infrastructure.analytics.install_state import read_install_marker_state
+from infrastructure.analytics.runner_provenance import execution_evidence
 from infrastructure.analytics.usage_context import (
     ORGANIZATION_GROUP_TYPE,
     merge_usage_enrichment,
@@ -1017,6 +1018,12 @@ class Analytics:
             "$lib": "opensre-cli",
             "identity_persistence": self._identity_persistence,
         }
+        execution_properties, execution_headers = execution_evidence(
+            self._anonymous_id,
+            is_ci=properties.get("is_ci") is True,
+            is_container=properties.get("is_container") is True,
+        )
+        properties.update(execution_properties)
         insert_id = _event_insert_id(item.event, self._anonymous_id)
         if insert_id is not None:
             properties["$insert_id"] = insert_id
@@ -1049,7 +1056,7 @@ class Analytics:
             response = client.post(
                 destination.endpoint_url,
                 content=body,
-                headers=destination.headers(body),
+                headers=destination.headers(body) | execution_headers,
             )
             if response.status_code != HTTPStatus.ACCEPTED:
                 raise httpx.HTTPStatusError(

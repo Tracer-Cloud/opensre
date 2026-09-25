@@ -43,7 +43,14 @@ def main() -> None:
             assert request.headers[ANALYTICS_SIGNATURE_HEADER] == f"v1={expected}"
             assert token.encode() not in request.content
         payload = json.loads(request.content)
-        captured.append({"payload": payload, "auth_kind": kind, "signature_valid": bool(auth)})
+        captured.append(
+            {
+                "payload": payload,
+                "auth_kind": kind,
+                "signature_valid": bool(auth),
+                "runner_token_present": bool(request.headers.get("X-OpenSRE-Runner-Token")),
+            }
+        )
         status = HTTPStatus.SERVICE_UNAVAILABLE if scenario == "reject" else HTTPStatus.ACCEPTED
         return httpx.Response(status, json={"accepted": status == HTTPStatus.ACCEPTED})
 

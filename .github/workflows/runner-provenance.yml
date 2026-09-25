@@ -1,0 +1,75 @@
+name: Runner provenance
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - infrastructure/analytics/**
+      - config/constants/analytics.py
+      - .github/workflows/runner-provenance.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: runner-provenance-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  production-proof:
+    if: github.repository == 'Tracer-Cloud/opensre'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      OPENSRE_DISABLE_KEYRING: "1"
+      OPENSRE_SENTRY_DISABLED: "1"
+      OPENSRE_LANGFUSE_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v10.0.1
+        with:
+          enable-cache: true
+      - run: uv sync --frozen --extra dev
+      - name: Build the production runtime image
+        run: docker build -t opensre-provenance:${{ github.sha }} .
+      - name: Native runner delivery
+        run: >-
+          uv run python -m infrastructure.analytics.runner_launcher
+          --manifest evidence/native.json --test --require-delivery
+          -- uv run opensre --record-install
+      - name: Child container delivery without forwarding CI variables
+        run: >-
+          uv run python -m infrastructure.analytics.runner_launcher
+          --docker opensre-provenance:${{ github.sha }}
+          --manifest evidence/container.json --test --require-delivery
+          -- opensre --record-install
+      - name: Unattributed container negative control
+        shell: bash
+        run: |
+          set -euo pipefail
+          control_home="$RUNNER_TEMP/opensre-provenance-control"
+          mkdir -p "$control_home" evidence
+          python3 - "$control_home" <<'PY'
+          import json, sys, uuid
+          from pathlib import Path
+          identity = str(uuid.uuid4())
+          Path(sys.argv[1], "anonymous_id").write_text(identity)
+          Path("evidence/control.json").write_text(json.dumps({"analytics_id": identity, "expected": "unknown"}))
+          PY
+          docker run --rm --user "$(id -u):$(id -g)" \
+            --mount "type=bind,source=$control_home,target=/opensre-home" \
+            --env OPENSRE_HOME=/opensre-home \
+            --env OPENSRE_INSTALL_CHANNEL=runner-provenance-e2e \
+            --env OPENSRE_SENTRY_DISABLED=1 --env OPENSRE_LANGFUSE_DISABLED=1 \
+            opensre-provenance:${{ github.sha }} opensre --record-install
+          test -f "$control_home/installed"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: runner-provenance-identities
+          path: evidence/*.json
+          if-no-files-found: error

@@ -81,7 +81,8 @@ Every product event includes:
 | `cli_version`, `python_version` | Client compatibility and release adoption. |
 | `os_family`, `os_version` | Coarse platform support. |
 | `execution_environment` | `local`, `ci`, `container`, or `ci_container`. |
-| `is_ci`, `is_container`, `container_runtime` | Filters for human vs automated usage. |
+| `is_ci`, `is_container`, `container_runtime` | Observed CI and container signals; absence does not establish human usage. |
+| `automation_status`, `execution_origin` | Reported automation or unknown origin; ingestion upgrades authenticated runner evidence to `confirmed`. |
 | `composite_fingerprint` | One-way local fingerprint used only when no account identity exists. |
 | `identity_persistence` | Whether the anonymous ID was persisted to disk. |
 | `install_marker_state_before_install` | `present`, `absent`, or `unknown` at the start of the most recent recorded installer run. |
@@ -164,7 +165,7 @@ must be calculated from `analytics_product_events`.
 | Scheduled-work reliability | Completed vs failed scheduled tasks by task kind and provider. |
 | Feature adoption | Personal users by CLI/AI feature and organizations by gateway surface, without combining identity grains. |
 
-Exclude `is_ci=true` from human acquisition and retention dashboards, but keep
+Separate verified/reported automation from unknown-origin installation observations, and keep
 it available for automation usage reporting.
 
 ## Privacy and failure behavior

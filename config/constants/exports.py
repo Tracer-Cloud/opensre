@@ -57,6 +57,10 @@ EXPORTS: dict[str, str] = {
     "ANALYTICS_SIGNATURE_VERSION": "analytics",
     "ANALYTICS_SOURCE": "analytics",
     "ANALYTICS_TIMESTAMP_HEADER": "analytics",
+    "ANALYTICS_RUNNER_TOKEN_HEADER": "analytics",
+    "ANALYTICS_EXECUTION_CONTEXT_ENV": "analytics",
+    "ANALYTICS_EXECUTION_CONTEXT_PATH": "analytics",
+    "ANALYTICS_RUNNER_AUDIENCE": "analytics",
     # alertmanager
     "ALERTMANAGER_BEARER_TOKEN_ENV": "alertmanager",
     "ALERTMANAGER_PASSWORD_ENV": "alertmanager",
@@ -333,6 +337,7 @@ EXPORTS: dict[str, str] = {
     "CONTEXT_ROOT_ENV": "paths",
     "OPENSRE_HOME_DIR": "paths",
     "OPENSRE_HOME_ENV": "paths",
+    "WIZARD_STORE_PATH_ENV": "paths",
     "OPENSRE_TMP_DIR": "paths",
     "ORGS_DIR_NAME": "paths",
     "USERS_DIR_NAME": "paths",

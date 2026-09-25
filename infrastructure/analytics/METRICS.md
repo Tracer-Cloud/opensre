@@ -46,7 +46,8 @@ remaining metrics require queries over `analytics_product_events`.
 | Scheduled-work reliability | Completed versus failed scheduled tasks by task kind and provider. |
 | Latency | p50/p95 for gateway, ReAct, and AI-generation duration by surface, model, and provider. |
 
-Exclude `is_ci=true` from human acquisition and retention. Anonymous install
+Separate confirmed/reported automation from unknown-origin observations. `is_ci=false`
+does not establish a human operator. Anonymous install
 and onboarding counts are directional because a public open-source client
 cannot keep a signing secret from its machine owner. Use personal-bearer linkage
 for trusted user metrics, and never substitute a gateway actor ID for a Clerk
