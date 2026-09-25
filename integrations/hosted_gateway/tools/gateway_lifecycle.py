@@ -112,7 +112,7 @@ def stop_hosted_gateway() -> dict[str, Any]:
 def _started(health: GatewayHealth) -> str:
     name = gateway_name(health)
     if health.healthy:
-        return f"Your organization's hosted gateway{name} is running."
+        return f"Your organization's hosted gateway{name} is already running; nothing to start."
     return (
         f"Asked your organization's hosted gateway{name} to start; it is "
         f"{health.actual_state or 'starting'} now. Check it again in a minute."

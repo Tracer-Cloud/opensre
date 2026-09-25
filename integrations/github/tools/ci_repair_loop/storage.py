@@ -99,6 +99,14 @@ class RepairStore:
             raise ValueError("Unknown CI repair run.")
         return run
 
+    def newest_for(self, actor_id: int) -> RepairRun | None:
+        """The most recently started run of one GitHub account, or ``None`` when it has none."""
+        with self.lock:
+            runs = [run for run in self._read().values() if run.actor_id == actor_id]
+        if not runs:
+            return None
+        return max(runs, key=lambda run: run.started_at)
+
     def save(self, run: RepairRun) -> None:
         with self.lock:
             runs = self._read()

@@ -193,6 +193,7 @@ EXPORTS: dict[str, str] = {
     "HOSTED_GATEWAY_INTEGRATIONS_PATH": "hosted_gateway",
     "HOSTED_GATEWAY_PROMPT_POLL_SECONDS": "hosted_gateway",
     "HOSTED_GATEWAY_PROMPT_WAIT_SECONDS": "hosted_gateway",
+    "HOSTED_GATEWAY_QUEUE_NOTICE_SECONDS": "hosted_gateway",
     # github
     "GH_TOKEN_ENV": "github",
     "GITHUB_API_BASE_URL": "github",

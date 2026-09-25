@@ -15,6 +15,11 @@ LOOP_MODE_REPORT = "report"
 LOOP_MODE_AGENT = "agent"
 LOOP_MODES = (LOOP_MODE_REPORT, LOOP_MODE_AGENT)
 
+#: What a loop summary reports as its status.
+LOOP_STATUS_ACTIVE = "active"
+LOOP_STATUS_PAUSED = "paused"
+LOOP_STATUS_DRAFT = "draft"
+
 LOOP_PROMPT_PARAM = "loop_prompt"
 LOOP_REPORT_PARAM = "loop_report"
 """Name of a deterministic report builder that replaces the model turn for this loop."""

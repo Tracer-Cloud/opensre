@@ -14,6 +14,7 @@ from config.constants.hosted_gateway import (
     HOSTED_GATEWAY_INTEGRATIONS_PATH,
     HOSTED_GATEWAY_PROMPT_POLL_SECONDS,
     HOSTED_GATEWAY_PROMPT_WAIT_SECONDS,
+    HOSTED_GATEWAY_QUEUE_NOTICE_SECONDS,
 )
 from core.agent_harness.spi.handoff import AskUserQuestion, parse_ask_user_answers, question_key
 from core.agent_harness.spi.session_state import (
@@ -43,6 +44,7 @@ _CHOOSE_COMMAND = "/choose"
 _HOSTED_PROMPT_INTERACTION_PREFIX = "hosted_prompt:"
 #: Progress lines come from the gateway's own tools, whose labels say "this machine".
 _GATEWAY_PROGRESS_PREFIX = "on the gateway: "
+_QUEUED_NOTICE = "waiting for a free slot on the gateway (another conversation is using it)"
 
 _STATE_TEXT = {
     "failed": "The hosted gateway could not run that prompt ({error}).",
@@ -262,10 +264,15 @@ def _wait_until_settled(
     started = time.monotonic()
     current = record
     relay.show(current)
+    queue_noticed = False
     while not current.settled:
         waited = time.monotonic() - started
         if waited >= HOSTED_GATEWAY_PROMPT_WAIT_SECONDS:
             return current, waited
+        still_queued = current.state == "queued" and waited >= HOSTED_GATEWAY_QUEUE_NOTICE_SECONDS
+        if still_queued and not queue_noticed:
+            relay.note(_QUEUED_NOTICE)
+            queue_noticed = True
         time.sleep(HOSTED_GATEWAY_PROMPT_POLL_SECONDS)
         current = client.prompt_result(record.prompt_id)
         relay.show(current)
@@ -287,6 +294,11 @@ class _ProgressRelay:
                 continue
             self._last_index = line.index
             self._emit({"progress": _GATEWAY_PROGRESS_PREFIX + line.text})
+
+    def note(self, text: str) -> None:
+        """A line about the wait itself, not relayed from the gateway."""
+        if self._emit is not None:
+            self._emit({"progress": text})
 
 
 def _outcome(

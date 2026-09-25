@@ -34,6 +34,9 @@ from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_SLACK_CHAT_ID_PARAM,
     LOOP_SLUG_PARAM,
     LOOP_SOURCE_PARAM,
+    LOOP_STATUS_ACTIVE,
+    LOOP_STATUS_DRAFT,
+    LOOP_STATUS_PAUSED,
     LOOP_TELEGRAM_CHAT_ID_PARAM,
     LOOP_TIME_PARAM,
 )
@@ -117,7 +120,10 @@ class LoopSummary:
 
     @property
     def status(self) -> str:
-        return "active" if self.enabled else "draft"
+        """Active while enabled; a disabled loop that has run is paused, one that never ran a draft."""
+        if self.enabled:
+            return LOOP_STATUS_ACTIVE
+        return LOOP_STATUS_PAUSED if self.last_run else LOOP_STATUS_DRAFT
 
     @property
     def time(self) -> str:

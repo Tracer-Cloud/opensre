@@ -11,6 +11,8 @@ HOSTED_GATEWAY_INTEGRATIONS_PATH = "/integrations"
 #: How long the prompt tool waits for the remote turn before handing back the prompt id.
 HOSTED_GATEWAY_PROMPT_WAIT_SECONDS = 600.0
 HOSTED_GATEWAY_PROMPT_POLL_SECONDS = 3.0
+#: After this long in the gateway's queue the user is told they are waiting for a free slot.
+HOSTED_GATEWAY_QUEUE_NOTICE_SECONDS = 10.0
 # Where an organization admin provisions and inspects the gateway in the app.
 HOSTED_GATEWAY_SETTINGS_PATH = "/settings/agent-backend"
 HOSTED_GATEWAY_HTTP_TIMEOUT_SECONDS = 30.0
@@ -27,5 +29,6 @@ __all__ = [
     "HOSTED_GATEWAY_PROMPTS_PATH",
     "HOSTED_GATEWAY_PROMPT_POLL_SECONDS",
     "HOSTED_GATEWAY_PROMPT_WAIT_SECONDS",
+    "HOSTED_GATEWAY_QUEUE_NOTICE_SECONDS",
     "HOSTED_GATEWAY_STOP_PATH",
 ]

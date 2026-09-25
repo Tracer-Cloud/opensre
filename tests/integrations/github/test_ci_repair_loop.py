@@ -602,6 +602,61 @@ def test_reports_require_the_recorded_github_account(
     assert not tool.get_ci_repair_loop(run.id)["ok"]
 
 
+def test_the_report_without_an_id_is_this_accounts_newest_run(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """ "What did the last repair do?" needs no run id."""
+    from integrations.github.tools.ci_repair_loop import tool
+
+    # Arrange: two runs of this account (the newer started later) and one of another account
+    store = RepairStore(tmp_path)
+    older = _run(run_id="b" * 12, pr_number=1)
+    newer = _run(run_id="c" * 12, pr_number=2).model_copy(
+        update={"started_at": older.started_at + 60}
+    )
+    foreign = _run(run_id="d" * 12, pr_number=3).model_copy(
+        update={"actor_id": 999, "started_at": older.started_at + 120}
+    )
+    for run in (older, newer, foreign):
+        store.save(run)
+    monkeypatch.setattr(tool, "RepairStore", lambda: store)
+    monkeypatch.setattr(tool, "configured_token", lambda _token: "request-token", raising=False)
+
+    class Reader:
+        def request(self, *_args: Any) -> dict[str, Any]:
+            return {"login": "alice", "id": 123}
+
+    monkeypatch.setattr(tool, "GitHubRestClient", lambda _token: Reader(), raising=False)
+
+    # Act
+    report = tool.get_ci_repair_loop()
+
+    # Assert: the newest of this account's runs, never another account's
+    assert report["ok"] and report["pr_url"] == newer.pr_url
+
+
+def test_the_report_without_an_id_says_when_there_are_no_runs(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from integrations.github.tools.ci_repair_loop import tool
+
+    # Arrange: an empty store
+    monkeypatch.setattr(tool, "RepairStore", lambda: RepairStore(tmp_path))
+    monkeypatch.setattr(tool, "configured_token", lambda _token: "request-token", raising=False)
+
+    class Reader:
+        def request(self, *_args: Any) -> dict[str, Any]:
+            return {"login": "alice", "id": 123}
+
+    monkeypatch.setattr(tool, "GitHubRestClient", lambda _token: Reader(), raising=False)
+
+    # Act
+    report = tool.get_ci_repair_loop()
+
+    # Assert
+    assert report["ok"] is False and "no CI repair runs yet" in report["error"]
+
+
 def test_interrupted_registration_recovers_original_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -40,6 +40,9 @@ def _scheduler_in_process(context: Any) -> bool:
     return SCHEDULER_HOST_IN_PROCESS in hosts
 
 
+_NO_RUNS_YET = "This GitHub account has no CI repair runs yet, so there is nothing to report."
+
+
 def _result(run: RepairRun, store: RepairStore) -> dict[str, Any]:
     return {
         "ok": True,
@@ -146,7 +149,11 @@ def schedule_ci_repair_loop(
         "Observe an active CI repair run",
         "Retrieve a completed repair report and its evidence links",
     ],
-    description="Read the linked summary of a CI repair run. Optionally wait up to sixty seconds for completion; never starts another repair.",
+    description=(
+        "Read the linked summary of a CI repair run: what it did, how it ended and why. "
+        "Omit task_id for this account's most recent run. Optionally wait up to sixty seconds "
+        "for completion; never starts another repair."
+    ),
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.READ_ONLY,
     is_available=github_source_available,
@@ -157,7 +164,9 @@ def schedule_ci_repair_loop(
         "properties": {
             "task_id": {
                 "type": "string",
-                "description": "Run id returned by schedule_ci_repair_loop.",
+                "description": (
+                    "Run id returned by schedule_ci_repair_loop; omit it for the most recent run."
+                ),
             },
             "wait_seconds": {
                 "type": "integer",
@@ -166,12 +175,14 @@ def schedule_ci_repair_loop(
                 "description": "Seconds to wait for a terminal result; default zero.",
             },
         },
-        "required": ["task_id"],
         "additionalProperties": False,
     },
 )
 def get_ci_repair_loop(
-    task_id: str, wait_seconds: int = 0, github_token: str | None = None, **_kwargs: Any
+    task_id: str = "",
+    wait_seconds: int = 0,
+    github_token: str | None = None,
+    **_kwargs: Any,
 ) -> dict[str, Any]:
     """Retrieve the same report while the shell is open or after returning later."""
     until = time.monotonic() + min(60, max(0, wait_seconds))
@@ -180,8 +191,14 @@ def get_ci_repair_loop(
         token = configured_token(github_token)
         user = object_response(GitHubRestClient(token).request("GET", "user"))
         actor_id = account_id(user)
+        run_id = task_id.strip()
+        if not run_id:
+            newest = store.newest_for(actor_id)
+            if newest is None:
+                return {"ok": False, "error": _NO_RUNS_YET}
+            run_id = newest.id
         while True:
-            run = store.get(task_id)
+            run = store.get(run_id)
             if not run.actor_id or run.actor_id != actor_id:
                 return {"ok": False, "error": "This repair belongs to a different GitHub account."}
             if run.terminal or time.monotonic() >= until:

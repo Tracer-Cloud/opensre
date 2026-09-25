@@ -466,6 +466,33 @@ def test_progress_lines_are_relayed_to_the_shell_once_each(monkeypatch: pytest.M
     ]
 
 
+def test_a_queued_prompt_tells_the_user_they_are_waiting_for_a_slot_once(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A user queued behind another conversation saw nothing at all while waiting."""
+    # Arrange: the gateway keeps the prompt queued for three polls, then finishes it
+    app = _App(
+        [
+            PromptRecord(_ID, "queued"),
+            PromptRecord(_ID, "queued"),
+            PromptRecord(_ID, "queued"),
+            PromptRecord(_ID, "running"),
+            PromptRecord(_ID, "done", answer="pong"),
+        ]
+    )
+    _signed_in_with(monkeypatch, app)
+    monkeypatch.setattr(gateway_prompt, "HOSTED_GATEWAY_QUEUE_NOTICE_SECONDS", 0.0)
+    updates: list[Any] = []
+    context = AgentToolContext(resolved_integrations={}, resources={}, _emit_update=updates.append)
+
+    # Act
+    out = ask_hosted_gateway(prompt="ping", context=context)
+
+    # Assert: one notice while queued, none once running, and the answer arrives
+    assert out["state"] == "done" and out["response_text"] == "pong"
+    assert updates == [{"progress": gateway_prompt._QUEUED_NOTICE}]
+
+
 def test_a_record_carries_its_progress_lines() -> None:
     # Arrange
     def answer(_request: httpx.Request) -> httpx.Response:

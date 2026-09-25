@@ -571,6 +571,9 @@ if TYPE_CHECKING:
         HOSTED_GATEWAY_PROMPTS_PATH as HOSTED_GATEWAY_PROMPTS_PATH,
     )
     from config.constants.hosted_gateway import (
+        HOSTED_GATEWAY_QUEUE_NOTICE_SECONDS as HOSTED_GATEWAY_QUEUE_NOTICE_SECONDS,
+    )
+    from config.constants.hosted_gateway import (
         HOSTED_GATEWAY_SETTINGS_PATH as HOSTED_GATEWAY_SETTINGS_PATH,
     )
     from config.constants.hosted_gateway import (
