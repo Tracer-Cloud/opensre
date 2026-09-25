@@ -793,12 +793,12 @@ def test_scheduling_refuses_a_fork_or_closed_pull_request_up_front(
     monkeypatch.setattr(schedule, "configured_token", lambda _token: "t", raising=False)
     store = RepairStore(tmp_path)
 
-    # Act / Assert: refused with the reason and what to choose instead; nothing reserved
+    # Act / Assert: refused with the reason and what to choose instead; nothing stays reserved
     with pytest.raises(ValueError, match=expected):
         schedule.schedule_repair(
             demo=False, owner="Tracer-Cloud", repo="opensre", pr_number=6408, store=store
         )
-    assert not (tmp_path / "runs.json").exists()
+    assert store.newest_for(123) is None
 
 
 def test_a_same_repository_open_pull_request_passes_the_scheduling_check(

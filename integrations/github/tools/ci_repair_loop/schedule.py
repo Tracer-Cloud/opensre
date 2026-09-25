@@ -117,11 +117,16 @@ def schedule_repair(
         deadline=started + CI_REPAIR_SECONDS,
         pr_number=pr_number,
     )
-    if not demo and not store.has_active(candidate):
-        # An active run is returned as is, even if its PR has closed meanwhile.
-        _require_repairable(GitHubRestClient(token), owner, repo, pr_number)
     with FileLock(str(store.root / "schedule.lock"), timeout=30):
         run, reused = store.reserve(candidate)
+        if not reused and not demo:
+            # Checked under the reservation, so no run can slip in between.
+            # An active run is returned as is, even if its PR has closed meanwhile.
+            try:
+                _require_repairable(GitHubRestClient(token), owner, repo, pr_number)
+            except Exception:
+                store.withdraw(run.id)
+                raise
         existing = get_task(run.id)
         if reused and existing is not None and existing.enabled:
             return run, True, existing.next_run

@@ -53,15 +53,15 @@ class RepairStore:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
 
-    def has_active(self, candidate: RepairRun) -> bool:
-        """Whether an unexpired run already covers ``candidate``'s scope."""
-        now = time.time()
+    def withdraw(self, run_id: str) -> None:
+        """Drop a reservation that was refused before anything started on it."""
         with self.lock:
             runs = self._read()
-        return any(
-            run.identity[1:] == candidate.identity[1:] and not run.terminal and run.deadline > now
-            for run in runs.values()
-        )
+            run = runs.get(run_id)
+            if run is None or run.registered or run.status is not RepairStatus.QUEUED:
+                raise ValueError("Only an unstarted reservation can be withdrawn.")
+            del runs[run_id]
+            self._write(runs)
 
     def reserve(self, candidate: RepairRun) -> tuple[RepairRun, bool]:
         """Return an active run for this scope without extending its deadline."""
