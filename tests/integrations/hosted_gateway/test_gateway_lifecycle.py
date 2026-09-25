@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from http import HTTPStatus
+
 import httpx
 import pytest
 
@@ -200,7 +202,7 @@ def test_a_failed_health_read_does_not_stop_a_start(monkeypatch: pytest.MonkeyPa
         monkeypatch,
         GatewayHealth(True, False, gateway_id="org-gateway", actual_state="provisioning"),
     )
-    _Client.health_outcome = HostedGatewayError(ERR_NOT_PROVISIONED, 503)
+    _Client.health_outcome = HostedGatewayError(ERR_NOT_PROVISIONED, HTTPStatus.SERVICE_UNAVAILABLE)
     _Client.calls = []
 
     # Act
@@ -219,7 +221,7 @@ def test_a_member_cannot_start_a_running_gateway_either(
     # Arrange: health reads fine, the start itself is refused for a non-admin
     reported: list[BaseException] = []
     monkeypatch.setattr(results, "report_run_error", lambda exc, **_kw: reported.append(exc))
-    _signed_in_with(monkeypatch, HostedGatewayError(ERR_ADMIN_REQUIRED, 403))
+    _signed_in_with(monkeypatch, HostedGatewayError(ERR_ADMIN_REQUIRED, HTTPStatus.FORBIDDEN))
     _Client.health_outcome = GatewayHealth(
         True, True, gateway_id="org-gateway", actual_state="running"
     )
@@ -241,7 +243,7 @@ def test_a_member_is_told_an_admin_is_needed_and_it_is_not_an_incident(
     # Arrange
     reported: list[BaseException] = []
     monkeypatch.setattr(results, "report_run_error", lambda exc, **_kw: reported.append(exc))
-    _signed_in_with(monkeypatch, HostedGatewayError(ERR_ADMIN_REQUIRED, 403))
+    _signed_in_with(monkeypatch, HostedGatewayError(ERR_ADMIN_REQUIRED, HTTPStatus.FORBIDDEN))
 
     # Act
     out = stop_hosted_gateway()
