@@ -56,13 +56,13 @@ Make sure you have:
 macOS or Linux:
 
 ```bash
-curl -fsSL https://install.opensre.com | bash
+curl -fsSL https://install.opensre.com | bash -s -- -gh
 ```
 
 Windows (PowerShell):
 
 ```powershell
-irm https://install.opensre.com/install.ps1 | iex
+& ([scriptblock]::Create((irm https://install.opensre.com/install.ps1))) -gh
 ```
 
 Then start OpenSRE:

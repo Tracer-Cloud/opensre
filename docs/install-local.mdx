@@ -13,7 +13,7 @@ Make sure you have:
 ## Step 1: Install and start opensre
 
 ```bash
-curl -fsSL https://install.opensre.com | bash
+curl -fsSL https://install.opensre.com | bash -s -- -dc
 ```
 
 Then start OpenSRE:
@@ -27,7 +27,7 @@ opensre
 On Windows, open PowerShell and run:
 
 ```powershell
-irm https://install.opensre.com/install.ps1 | iex
+& ([scriptblock]::Create((irm https://install.opensre.com/install.ps1))) -dc
 ```
 
 See [Windows](/environments/windows-local).

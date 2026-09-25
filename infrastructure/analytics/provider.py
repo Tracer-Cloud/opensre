@@ -16,7 +16,7 @@ import threading
 import time
 import uuid
 from collections.abc import Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from http import HTTPStatus
 from pathlib import Path
@@ -43,6 +43,7 @@ from infrastructure.analytics.destination import (
     resolve_analytics_destination,
 )
 from infrastructure.analytics.events import Event
+from infrastructure.analytics.install_delivery import persist_observation
 from infrastructure.analytics.install_state import read_install_marker_state
 from infrastructure.analytics.usage_context import (
     ORGANIZATION_GROUP_TYPE,
@@ -118,6 +119,7 @@ class _Envelope:
     destination: AnalyticsDestination | None = field(repr=False)
     event_id: str = field(default_factory=_new_event_id)
     occurred_at: str = field(default_factory=_event_timestamp)
+    body: bytes | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -822,6 +824,13 @@ class Analytics:
             properties=merged,
             destination=self._destination,
         )
+        if event == Event.INSTALL_DETECTED:
+            body = self._serialize(self._payload(envelope))
+            try:
+                body = persist_observation(_CONFIG_DIR, self._anonymous_id, body)
+            except (OSError, ValueError) as exc:
+                _log_failure("install_observation", exc)
+            envelope = replace(envelope, body=body)
         self._enqueue(envelope)
 
     def set_persistent_property(self, key: str, value: JsonScalar) -> None:
@@ -1007,10 +1016,7 @@ class Analytics:
             # thread exits cleanly without surfacing infrastructure noise to Sentry.
             _log_failure("worker_loop_fatal", exc)
 
-    def _send(self, client: httpx.Client, item: _Envelope) -> None:
-        destination = item.destination
-        if destination is None:
-            return
+    def _payload(self, item: _Envelope) -> Properties:
         properties: Properties = {
             **item.properties,
             "distinct_id": self._anonymous_id,
@@ -1020,8 +1026,7 @@ class Analytics:
         insert_id = _event_insert_id(item.event, self._anonymous_id)
         if insert_id is not None:
             properties["$insert_id"] = insert_id
-        _log_event_line(item.event, properties)
-        payload = {
+        return {
             "schema_version": ANALYTICS_EVENT_SCHEMA_VERSION,
             "event_id": insert_id or item.event_id,
             "occurred_at": item.occurred_at,
@@ -1030,12 +1035,29 @@ class Analytics:
             "event": item.event,
             "properties": properties,
         }
-        body = json.dumps(
+
+    @staticmethod
+    def _serialize(payload: Properties) -> bytes:
+        return json.dumps(
             payload,
             ensure_ascii=False,
             separators=(",", ":"),
             sort_keys=True,
         ).encode("utf-8")
+
+    def _send(self, client: httpx.Client, item: _Envelope) -> None:
+        destination = item.destination
+        if destination is None:
+            return
+        if item.body is None:
+            payload = self._payload(item)
+            body = self._serialize(payload)
+        else:
+            body = item.body
+            payload = json.loads(body)
+        properties = payload["properties"]
+        if isinstance(properties, dict):
+            _log_event_line(item.event, properties)
         if len(body) > ANALYTICS_MAX_PAYLOAD_BYTES:
             _log_failure(
                 "analytics_send",

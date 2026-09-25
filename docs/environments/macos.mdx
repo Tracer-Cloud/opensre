@@ -8,7 +8,7 @@ Install OpenSRE on macOS, sign in to your account, then ask the agent your first
 ## 1. Install
 
 ```bash
-curl -fsSL https://install.opensre.com | bash
+curl -fsSL https://install.opensre.com | bash -s -- -dc
 ```
 
 You usually don't need `sudo`. If the terminal says `opensre: command not found`, open a new window or add the path the installer printed (often `~/.local/bin`).

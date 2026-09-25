@@ -25,13 +25,13 @@ opensre --version
 If `opensre` is missing, install it. On macOS or Linux:
 
 ```bash
-curl -fsSL https://install.opensre.com | bash
+curl -fsSL https://install.opensre.com | bash -s -- -dc
 ```
 
 On Windows, in PowerShell:
 
 ```powershell
-irm https://install.opensre.com/install.ps1 | iex
+& ([scriptblock]::Create((irm https://install.opensre.com/install.ps1))) -dc
 ```
 
 Windows details: [Windows](https://www.opensre.com/docs/environments/windows-local).

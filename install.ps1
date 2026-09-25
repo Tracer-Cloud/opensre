@@ -1,13 +1,21 @@
+[CmdletBinding(DefaultParameterSetName = "untagged")]
 param(
     [ValidateSet("release", "main")]
     [string]$Channel = $(if ($env:OPENSRE_INSTALL_CHANNEL) { $env:OPENSRE_INSTALL_CHANNEL } else { "main" }),
-    [switch]$SkipMain
+    [switch]$SkipMain,
+    [Parameter(ParameterSetName = "landing_page")]
+    [switch]$lp,
+    [Parameter(ParameterSetName = "github")]
+    [switch]$gh,
+    [Parameter(ParameterSetName = "documentation")]
+    [switch]$dc
 )
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $script:OpenSreProgressStep = 0
 $script:OpenSreChannelExplicit = $PSBoundParameters.ContainsKey("Channel") -or [bool]$env:OPENSRE_INSTALL_CHANNEL
+$script:OpenSreInstallOrigin = if ($lp) { "landing_page" } elseif ($gh) { "github" } elseif ($dc) { "documentation" } else { "" }
 
 function Test-OpenSreVerboseInstall {
     $value = [string]$env:OPENSRE_INSTALL_VERBOSE
@@ -1062,11 +1070,13 @@ function Send-OpenSreInstallAnalytics {
     )
 
     $previousSource = $env:OPENSRE_INSTALL_SOURCE
+    $previousOrigin = $env:OPENSRE_INSTALL_ORIGIN
     $previousChannel = $env:OPENSRE_INSTALL_CHANNEL
     $previousVersion = $env:OPENSRE_INSTALL_VERSION
     $previousMarkerState = $env:OPENSRE_INSTALL_MARKER_STATE
     try {
         $env:OPENSRE_INSTALL_SOURCE = "powershell_installer"
+        $env:OPENSRE_INSTALL_ORIGIN = $script:OpenSreInstallOrigin
         $env:OPENSRE_INSTALL_CHANNEL = $Channel
         $env:OPENSRE_INSTALL_VERSION = $Version
         $env:OPENSRE_INSTALL_MARKER_STATE = $InstallMarkerState
@@ -1076,6 +1086,12 @@ function Send-OpenSreInstallAnalytics {
         # Analytics is best-effort and must never fail installation.
     }
     finally {
+        if ($null -eq $previousOrigin) {
+            Remove-Item Env:OPENSRE_INSTALL_ORIGIN -ErrorAction SilentlyContinue
+        }
+        else {
+            $env:OPENSRE_INSTALL_ORIGIN = $previousOrigin
+        }
         if ($null -eq $previousSource) {
             Remove-Item Env:OPENSRE_INSTALL_SOURCE -ErrorAction SilentlyContinue
         }

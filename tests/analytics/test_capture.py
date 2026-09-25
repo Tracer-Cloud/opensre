@@ -324,3 +324,19 @@ def test_eval_and_terminal_kpi_queries_cover_core_metrics() -> None:
     assert expected_keys.issubset(capture.EVAL_AND_TERMINAL_KPI_QUERIES.keys())
     for query in capture.EVAL_AND_TERMINAL_KPI_QUERIES.values():
         assert "FROM events" in query
+
+
+@pytest.mark.parametrize(
+    "origin", ["landing_page", "documentation", "github", "", "main", "unsupported"]
+)
+def test_install_origin_is_allowlisted_and_independent_of_build_track(
+    monkeypatch: pytest.MonkeyPatch, origin: str
+) -> None:
+    monkeypatch.setenv("OPENSRE_INSTALL_ORIGIN", origin)
+    monkeypatch.setenv("OPENSRE_INSTALL_CHANNEL", "release")
+    properties = event_properties.build_install_detected_properties(entrypoint="opensre")
+    assert properties["install_channel"] == "release"
+    if origin in {"landing_page", "documentation", "github"}:
+        assert properties["install_origin"] == origin
+    else:
+        assert "install_origin" not in properties

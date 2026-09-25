@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 import shutil
 import subprocess
@@ -269,3 +270,69 @@ def test_install_ps1_dot_sources_when_powershell_available() -> None:
     assert "Unit progress step" in output
     assert "OK Unit progress step" in output
     assert "result-value" in output
+
+
+@pytest.mark.parametrize(
+    ("tag", "origin"),
+    [("-lp", "landing_page"), ("-gh", "github"), ("-dc", "documentation"), ("", "")],
+)
+def test_powershell_origin_reaches_binary_and_restores_environment(
+    tmp_path: Path, tag: str, origin: str
+) -> None:
+    shell = _powershell()
+    if shell is None:
+        pytest.skip("PowerShell is not installed in this environment.")
+    fake_binary = tmp_path / "binary.ps1"
+    fake_binary.write_text(
+        "@{ origin = [string]$env:OPENSRE_INSTALL_ORIGIN; track = $env:OPENSRE_INSTALL_CHANNEL; source = $env:OPENSRE_INSTALL_SOURCE } | ConvertTo-Json | Set-Content -LiteralPath $env:OPENSRE_TEST_ORIGIN_LOG\n"
+        "throw 'Telemetry failed'\n"
+    )
+    recorded = tmp_path / "recorded.json"
+    script = f"""
+        . '{str(INSTALL_PS1).replace("'", "''")}' -SkipMain -Channel release {tag}
+        $env:OPENSRE_INSTALL_ORIGIN = 'previous'
+        Send-OpenSreInstallAnalytics -BinaryPath $env:OPENSRE_TEST_BINARY -Channel $Channel -Version test
+        if ($env:OPENSRE_INSTALL_ORIGIN -ne 'previous') {{ throw 'Environment leaked' }}
+        Write-Output 'ORIGIN_OK'
+    """
+    result = subprocess.run(
+        [shell, "-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],
+        env=os.environ
+        | {"OPENSRE_TEST_BINARY": str(fake_binary), "OPENSRE_TEST_ORIGIN_LOG": str(recorded)},
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert "ORIGIN_OK" in result.stdout
+    assert json.loads(recorded.read_text(encoding="utf-8-sig")) == {
+        "origin": origin,
+        "track": "release",
+        "source": "powershell_installer",
+    }
+
+
+def test_powershell_rejects_conflicting_origins() -> None:
+    shell = _powershell()
+    if shell is None:
+        pytest.skip("PowerShell is not installed in this environment.")
+    result = subprocess.run(
+        [
+            shell,
+            "-NoLogo",
+            "-NoProfile",
+            "-NonInteractive",
+            "-File",
+            str(INSTALL_PS1),
+            "-SkipMain",
+            "-lp",
+            "-gh",
+        ],
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode != 0
+    assert "parameter set" in (result.stdout + result.stderr).lower()

@@ -113,9 +113,21 @@ necessarily the first installation or the current invocation. Do not map
 
 ## Event inventory
 
+Installer tags `-lp`, `-dc`, and `-gh` set `install_origin` to `landing_page`,
+`documentation`, and `github`. Pass Bash arguments with `bash -s -- -lp`; native
+PowerShell accepts the same tags. Untagged commands omit origin. `install_source`
+still identifies the installer mechanism, and `install_channel` still identifies
+the requested `main`/`release` build track.
+
+The first sanitized installation event is saved in `install-events-v1` before
+delivery and retained after acknowledgement. Retries reuse that complete event;
+a later tagged reinstall cannot replace its origin, including an unknown origin.
+The existing installation marker continues to suppress capture for previously
+recorded installations.
+
 | Area | Events | Important properties / question answered |
 | --- | --- | --- |
-| Acquisition | `install_detected`, `account_authenticated`, `cli_invoked` | Install source/channel/distribution, login conversion, entrypoint, command names, and boolean flags; never raw argument values. Official installers invoke the hidden record-only path immediately after installation. |
+| Acquisition | `install_detected`, `account_authenticated`, `cli_invoked` | Install source/origin/build channel/distribution, login conversion, entrypoint, command names, and boolean flags; never raw argument values. Official installers invoke the hidden record-only path immediately after installation. |
 | Sign-in gate | `sign_in_prompted`, `sign_in_selected`, `stay_signed_out_selected` | The interactive shell's mandatory sign-in screen: one exposure per signed-out launch, then one event per menu round with `choice_label` and `method` (`menu` for a picked option, `dismissed` when the menu was closed without one — Esc, `q`, Ctrl-C, Ctrl-D, or EOF are not distinguished). `sign_in_selected` is recorded before the browser flow starts and is intent only; `account_authenticated` reports the outcome. Already signed-in, non-interactive, and test runs emit none of these. |
 | Runtime health | `user_id_load_failed`, `sentry_init_skipped` | Identity persistence and telemetry setup failures. |
 | Onboarding | `onboard_started`, `onboard_completed`, `onboard_failed` | Funnel conversion, wizard mode, target, provider, and model. |

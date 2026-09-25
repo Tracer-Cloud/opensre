@@ -8,7 +8,7 @@ Open PowerShell. The installer does not need an elevated session.
 ## 1. Install and start OpenSRE
 
 ```powershell
-irm https://install.opensre.com/install.ps1 | iex
+& ([scriptblock]::Create((irm https://install.opensre.com/install.ps1))) -dc
 ```
 
 ```powershell
