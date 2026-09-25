@@ -519,3 +519,8 @@ def capture_agent_secret_detected(
         Event.AGENT_SECRET_DETECTED,
         {"rule_names": ",".join(rule_names), "count": count, "blocked": blocked},
     )
+
+
+def capture_hosted_gateway_task_submitted(prompt_id: str) -> None:
+    """A new prompt was accepted by the managed gateway; polls do not emit this."""
+    _capture(Event.HOSTED_GATEWAY_TASK_SUBMITTED, {"prompt_id": prompt_id})

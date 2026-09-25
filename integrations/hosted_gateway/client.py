@@ -26,6 +26,7 @@ from config.constants.hosted_gateway import (
     HOSTED_GATEWAY_START_PATH,
     HOSTED_GATEWAY_STOP_PATH,
 )
+from infrastructure.analytics.capture import capture_hosted_gateway_task_submitted
 
 ERR_NOT_SIGNED_IN = "not_signed_in"
 ERR_INSECURE_APP_URL = "insecure_app_url"
@@ -212,7 +213,9 @@ class HostedGatewayClient:
             _PROMPT_REFUSALS,
             body={"prompt": prompt, "context": context},
         )
-        return _prompt_record(payload)
+        record = _prompt_record(payload)
+        capture_hosted_gateway_task_submitted(record.prompt_id)
+        return record
 
     def answer_prompt(self, prompt_id: str, answer: str) -> PromptRecord:
         """Answer a prompt that stopped to ask; the follow-up prompt's record comes back."""

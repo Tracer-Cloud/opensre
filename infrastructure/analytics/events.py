@@ -39,6 +39,7 @@ class Event(StrEnum):
     REACT_TURN_COMPLETED = "react_turn_completed"
     AI_GENERATION = "$ai_generation"
     AGENT_TOOL_CALL_COMPLETED = "agent_tool_call_completed"
+    HOSTED_GATEWAY_TASK_SUBMITTED = "hosted_gateway_task_submitted"
     ASK_USER_PROMPT_RENDERED = "ask_user_prompt_rendered"
     ASK_USER_PROMPT_ANSWERED = "ask_user_prompt_answered"
     ASK_USER_PROMPT_DISMISSED = "ask_user_prompt_dismissed"
