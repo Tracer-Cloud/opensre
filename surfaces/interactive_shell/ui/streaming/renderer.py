@@ -12,6 +12,7 @@ from rich.text import Text
 import infrastructure.terminal.theme as ui_theme
 from core.agent_harness.spi.prompt_chrome import normalize_three_tier_spacing
 from infrastructure.safety.terminal_output import strip_terminal_controls
+from infrastructure.terminal.markdown import UnpaddedRows
 from infrastructure.text import looks_like_data_blob
 from surfaces.interactive_shell.ui.transcript import (
     TranscriptRole,
@@ -142,7 +143,7 @@ def render_markdown_block(console: Console, text: str) -> None:
     if not visible.strip():
         return
     with console.use_theme(ui_theme.MARKDOWN_THEME):
-        console.print(_build_markdown_block(visible))
+        console.print(UnpaddedRows(_build_markdown_block(visible)))
 
 
 # Reply rows stop short of the last column: a row padded to the full terminal
