@@ -90,7 +90,7 @@ _FAILED_INTEGRATIONS = (
     "The hosted gateway's {vendors} integration failed during this request. The gateway "
     "uses the organization's {vendors} credential from {url}, not this machine's: if that "
     "credential is invalid or cannot reach the repository, an admin updates it there and "
-    "the gateway restarts with the new one. {next_step}\n\n"
+    "the gateway picks the new one up within a minute. {next_step}\n\n"
 )
 #: For the model only: the failed integration is the first thing the user hears about.
 _FAILED_INTEGRATIONS_INSTRUCTIONS = (
