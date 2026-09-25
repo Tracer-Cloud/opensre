@@ -47,6 +47,10 @@ def _map_get_mariadb_slow_queries(
 @tool(
     name="get_mariadb_slow_queries",
     description="Retrieve top MariaDB queries by average execution time from performance_schema.events_statements_summary_by_digest.",
+    use_cases=[
+        "Find the MariaDB statements with the highest average execution time",
+        "Pick MariaDB queries to optimize after a latency alert",
+    ],
     source="mariadb",
     surfaces=(ToolSurface.CHAT,),
     is_available=mariadb_is_available,

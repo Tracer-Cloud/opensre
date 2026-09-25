@@ -45,6 +45,10 @@ def _map_get_mongodb_replica_status(
 @tool(
     name="get_mongodb_replica_status",
     description="Retrieve replica set status, member health, and oplog lag for a MongoDB instance.",
+    use_cases=[
+        "Check MongoDB replica set member health or oplog lag",
+        "Diagnose an unhealthy or lagging MongoDB secondary",
+    ],
     source="mongodb",
     surfaces=(ToolSurface.CHAT,),
     is_available=mongodb_is_available,

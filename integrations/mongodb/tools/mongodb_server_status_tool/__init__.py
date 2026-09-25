@@ -35,6 +35,10 @@ def _map_get_mongodb_server_status(
 @tool(
     name="get_mongodb_server_status",
     description="Retrieve high-level MongoDB server status including connections, memory usage, and operation counters.",
+    use_cases=[
+        "Get a high-level view of MongoDB connections, memory, and operation counters",
+        "Confirm MongoDB server-wide load before drilling into specific operations",
+    ],
     source="mongodb",
     surfaces=(ToolSurface.CHAT,),
     is_available=mongodb_is_available,

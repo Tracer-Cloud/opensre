@@ -16,6 +16,9 @@ from integrations.mongodb_atlas.tools._evidence import map_get_mongodb_atlas_ale
 @tool(
     name="get_mongodb_atlas_alerts",
     description="Retrieve open alerts for a MongoDB Atlas project including event type, metric, cluster, and current value.",
+    use_cases=[
+        "See which alerts are open for a MongoDB Atlas project",
+    ],
     source="mongodb_atlas",
     surfaces=(ToolSurface.CHAT,),
     is_available=atlas_is_available,

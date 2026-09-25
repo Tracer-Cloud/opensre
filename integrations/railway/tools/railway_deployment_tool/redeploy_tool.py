@@ -22,6 +22,9 @@ class RedeployRailwayServiceTool(BaseTool):
     requires_approval = True
     approval_reason = "Triggers a Railway redeploy of the selected service."
     description = "Request a Railway service redeploy after explicit confirmation."
+    use_cases = [
+        "User explicitly asks to redeploy a Railway service and confirms it",
+    ]
     input_schema = {
         "type": "object",
         "properties": {
