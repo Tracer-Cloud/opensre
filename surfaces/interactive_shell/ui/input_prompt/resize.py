@@ -16,9 +16,10 @@ screen holds only the banner, the host therefore clears the viewport, reprints
 the static banner, and redraws the prompt from a clean cursor position.
 
 Once a turn is on screen the transcript above must survive, so the host
-erases the live region from its top row before redrawing. Forgetting the
-previous frame without erasing it left a copy behind per resize signal, and a
-window drag sends several, stacking status, plan, and composer down the screen.
+erases only the live region before redrawing. A width shrink can reflow each
+old prompt row onto multiple physical rows, so prompt-toolkit's stored cursor
+offset is too small; erasing from that stale offset leaves one chrome copy per
+resize signal.
 """
 
 from __future__ import annotations
@@ -66,6 +67,41 @@ def _size_changed(previous: Size | None, current: Size) -> bool:
     return previous.rows != current.rows or previous.columns != current.columns
 
 
+def _screen_row_width(screen: Any, row: int) -> int:
+    data = getattr(screen, "data_buffer", {}).get(row, {})
+    return max(data, default=-1) + 1
+
+
+def _reflowed_rows_above_cursor(renderer: Any, *, columns: int) -> int | None:
+    """Return the physical row offset after the previous frame reflows."""
+    screen = getattr(renderer, "_last_screen", None)
+    cursor = getattr(renderer, "_cursor_pos", None)
+    if screen is None or cursor is None:
+        return None
+    rows = int(cursor.x) // columns
+    for row in range(cursor.y):
+        width = _screen_row_width(screen, row)
+        rows += max(1, (width + columns - 1) // columns)
+    return rows
+
+
+def _erase_reflowed_live_region(renderer: Any, output: Any) -> bool:
+    """Erase the prior prompt frame from its top row after terminal reflow."""
+    columns = max(1, output.get_size().columns)
+    rows_above = _reflowed_rows_above_cursor(renderer, columns=columns)
+    cursor = getattr(renderer, "_cursor_pos", None)
+    if rows_above is None or cursor is None:
+        return False
+    output.cursor_backward(int(cursor.x) % columns)
+    output.cursor_up(rows_above)
+    output.erase_down()
+    output.reset_attributes()
+    output.enable_autowrap()
+    output.flush()
+    renderer.reset(leave_alternate_screen=False)
+    return True
+
+
 def install_shrink_resize_guard(
     app: Application[Any],
     *,
@@ -77,7 +113,8 @@ def install_shrink_resize_guard(
     banner at the new size, returning True when it did so. Then resize skips
     prompt-toolkit's partial erase (which stacks Auto/composer ghosts) and
     redraws the live region from the cursor below the fresh banner. When it
-    returns False, a turn is on screen and the live region is erased in place.
+    returns False, a turn is on screen and the reflowed live region is erased
+    from its recalculated top row without touching transcript scrollback.
     """
     output = app.output
     renderer = app.renderer
@@ -115,10 +152,13 @@ def install_shrink_resize_guard(
             app._redraw()
             output.disable_autowrap()
             return
-        # A turn is on screen: prompt-toolkit's own path erases the live region
-        # from its top row (autowrap is off, so the row count is exact), then
-        # re-queries the cursor and redraws in place.
-        original_on_resize()
+        # A turn is on screen. Width changes may have reflowed old prompt rows,
+        # so erase from their recalculated top instead of the stale cursor row.
+        if _erase_reflowed_live_region(renderer, output):
+            app._request_absolute_cursor_position()
+            app._redraw()
+        else:
+            original_on_resize()
         output.disable_autowrap()
 
     renderer.report_absolute_cursor_row = report_absolute_cursor_row  # type: ignore[method-assign]

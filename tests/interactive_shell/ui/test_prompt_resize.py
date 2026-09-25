@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import io
 from dataclasses import dataclass
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -134,32 +135,43 @@ def test_resize_with_banner_hook_skips_partial_erase_and_redraws() -> None:
     assert renderer._last_screen is None
 
 
-def test_resize_during_a_turn_erases_the_live_region_instead_of_forgetting_it() -> None:
-    """Reset without erase left one stale frame per resize signal, stacking down the screen."""
+def test_resize_after_width_shrink_erases_reflowed_live_region() -> None:
+    """Erase from the reflowed top row instead of leaving stale prompt chrome."""
     terminal = io.StringIO()
     output = Vt100_Output(
         terminal,
-        get_size=lambda: Size(rows=30, columns=80),
+        get_size=lambda: Size(rows=30, columns=90),
         term="xterm-256color",
         enable_cpr=False,
     )
     app: Any = MagicMock()
     app.output = output
     renderer = MagicMock()
-    renderer._last_screen = _Screen(height=6)
+    renderer._cursor_pos = _Cursor(x=4, y=2)
+    renderer._last_screen = SimpleNamespace(
+        height=4,
+        data_buffer={row: dict.fromkeys(range(109)) for row in range(4)},
+    )
+    renderer._last_size = Size(rows=30, columns=110)
+    renderer._min_available_height = 0
+    renderer.render = MagicMock()
     renderer.reset = MagicMock()
     app.renderer = renderer
     original_on_resize = MagicMock()
     app._on_resize = original_on_resize
+    app._request_absolute_cursor_position = MagicMock()
     app._redraw = MagicMock()
 
     install_shrink_resize_guard(app, rerender_banner=lambda: False)
+    terminal.seek(0)
+    terminal.truncate(0)
     app._on_resize()
 
-    # prompt-toolkit's own resize path erases from the top row and redraws.
-    original_on_resize.assert_called_once()
-    renderer.reset.assert_not_called()
-    app._redraw.assert_not_called()
+    original_on_resize.assert_not_called()
+    assert "\x1b[4D\x1b[4A\x1b[J" in terminal.getvalue()
+    renderer.reset.assert_called_once_with(leave_alternate_screen=False)
+    app._request_absolute_cursor_position.assert_called_once()
+    app._redraw.assert_called_once()
 
 
 def test_shrink_resize_guard_disables_autowrap_after_render() -> None:
