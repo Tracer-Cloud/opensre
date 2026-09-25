@@ -75,6 +75,17 @@ def _require_repairable(client: GitHubRestClient, owner: str, repo: str, pr_numb
         )
 
 
+def _refusal_for(
+    client: GitHubRestClient, owner: str, repo: str, pr_number: int
+) -> RepairRefused | None:
+    """The refusal a fresh reservation of this pull request would get, or ``None``."""
+    try:
+        _require_repairable(client, owner, repo, pr_number)
+    except RepairRefused as refusal:
+        return refusal
+    return None
+
+
 def schedule_repair(
     *,
     demo: bool,
@@ -117,16 +128,11 @@ def schedule_repair(
         deadline=started + CI_REPAIR_SECONDS,
         pr_number=pr_number,
     )
+    # Looked up before any lock; an active run is still returned as is, even if
+    # its PR has closed meanwhile, and a refused PR is never written to the store.
+    refusal = None if demo else _refusal_for(GitHubRestClient(token), owner, repo, pr_number)
     with FileLock(str(store.root / "schedule.lock"), timeout=30):
-        run, reused = store.reserve(candidate)
-        if not reused and not demo:
-            # Checked under the reservation, so no run can slip in between.
-            # An active run is returned as is, even if its PR has closed meanwhile.
-            try:
-                _require_repairable(GitHubRestClient(token), owner, repo, pr_number)
-            except Exception:
-                store.withdraw(run.id)
-                raise
+        run, reused = store.reserve(candidate, refusal=refusal)
         existing = get_task(run.id)
         if reused and existing is not None and existing.enabled:
             return run, True, existing.next_run

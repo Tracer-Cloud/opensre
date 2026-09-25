@@ -53,18 +53,14 @@ class RepairStore:
             if temporary is not None:
                 temporary.unlink(missing_ok=True)
 
-    def withdraw(self, run_id: str) -> None:
-        """Drop a reservation that was refused before anything started on it."""
-        with self.lock:
-            runs = self._read()
-            run = runs.get(run_id)
-            if run is None or run.registered or run.status is not RepairStatus.QUEUED:
-                raise ValueError("Only an unstarted reservation can be withdrawn.")
-            del runs[run_id]
-            self._write(runs)
+    def reserve(
+        self, candidate: RepairRun, *, refusal: Exception | None = None
+    ) -> tuple[RepairRun, bool]:
+        """Return an active run for this scope without extending its deadline.
 
-    def reserve(self, candidate: RepairRun) -> tuple[RepairRun, bool]:
-        """Return an active run for this scope without extending its deadline."""
+        ``refusal`` is raised instead of reserving ``candidate`` when no active
+        run covers its scope, so a refused target is never written.
+        """
         with self.lock:
             runs = self._read()
             for run in runs.values():
@@ -81,6 +77,8 @@ class RepairStore:
                             "Another GitHub account already has an active repair for this target."
                         )
                     return run, True
+            if refusal is not None:
+                raise refusal
             runs[candidate.id] = candidate
             self._write(runs)
             return candidate, False
