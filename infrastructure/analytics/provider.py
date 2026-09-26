@@ -378,27 +378,52 @@ def _identity_persistence() -> str:
     return _cached_identity_persistence
 
 
-def _event_insert_id(event: str, distinct_id: str) -> str | None:
+def _event_insert_id(event: str, distinct_id: str, *, install_recovery: bool = False) -> str | None:
     if event not in _ONE_TIME_EVENTS:
         return None
+    if install_recovery:
+        # A legacy event may already exist. Preserve its occurrence time and
+        # properties instead of replacing it with this later observation.
+        return f"{event}:{distinct_id}:delivery-v1"
     return f"{event}:{distinct_id}"
+
+
+def _install_delivery_path(anonymous_id: str, destination: AnalyticsDestination) -> Path:
+    scope = f"{anonymous_id}\n{destination.endpoint_url}"
+    receipt_key = hashlib.sha256(scope.encode("utf-8")).hexdigest()
+    return _CONFIG_DIR / "install-deliveries-v1" / receipt_key
+
+
+def _create_marker(path: Path) -> bool:
+    """Create ``path`` exclusively; ``False`` when it already exists, ``OSError`` otherwise."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with path.open("x", encoding="utf-8") as fh:
+            fh.flush()
+            os.fsync(fh.fileno())
+    except FileExistsError:
+        return False
+    _fsync_parent_dir(path)
+    return True
 
 
 def _touch_once(path: Path) -> bool:
     global _first_run_marker_created_this_process
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("x", encoding="utf-8") as fh:
-            fh.flush()
-            os.fsync(fh.fileno())
-        _fsync_parent_dir(path)
-        if path == _FIRST_RUN_PATH:
-            _first_run_marker_created_this_process = True
-        return True
-    except FileExistsError:
-        return False
+        created = _create_marker(path)
     except OSError:
         return False
+    if created and path == _FIRST_RUN_PATH:
+        _first_run_marker_created_this_process = True
+    return created
+
+
+def _record_install_delivery(path: Path) -> None:
+    """Persist the server's acknowledgement; a lost receipt resends an accepted install."""
+    try:
+        _create_marker(path)
+    except OSError as exc:
+        _log_failure("install_receipt", exc, path=str(path))
 
 
 def _cli_version() -> str:
@@ -813,6 +838,11 @@ class Analytics:
             for properties in _pop_user_id_load_failures():
                 self.capture(Event.USER_ID_LOAD_FAILED, properties)
 
+    def _install_delivery_confirmed(self) -> bool:
+        return self._destination is not None and _path_exists(
+            _install_delivery_path(self._anonymous_id, self._destination)
+        )
+
     def capture(self, event: Event, properties: Properties | None = None) -> None:
         if self._disabled or self._shutdown:
             return
@@ -1039,7 +1069,11 @@ class Analytics:
             "$lib": "opensre-cli",
             "identity_persistence": self._identity_persistence,
         }
-        insert_id = _event_insert_id(item.event, self._anonymous_id)
+        insert_id = _event_insert_id(
+            item.event,
+            self._anonymous_id,
+            install_recovery=properties.get("install_detection_reason") == "unverified_marker",
+        )
         if insert_id is not None:
             properties["$insert_id"] = insert_id
         return {
@@ -1115,6 +1149,7 @@ class Analytics:
             _capture_sentry_failure(exc)
         else:
             if item.event == Event.INSTALL_DETECTED.value:
+                _record_install_delivery(_install_delivery_path(self._anonymous_id, destination))
                 _touch_once(_FIRST_RUN_PATH)
 
     def _mark_done(self) -> None:
@@ -1154,9 +1189,13 @@ def analytics_needs_flush() -> bool:
 def capture_install_detected_if_needed(properties: Properties | None = None) -> bool:
     """Attempt install capture once per process until delivery is persisted."""
     with _install_capture_lock:
-        if _install_capture_state.attempted or _path_exists(_FIRST_RUN_PATH):
+        if _install_capture_state.attempted:
             return False
         analytics = get_analytics()
+        if analytics._install_delivery_confirmed():
+            return False
+        if _path_exists(_FIRST_RUN_PATH):
+            properties = {**(properties or {}), "install_detection_reason": "unverified_marker"}
         analytics.capture(Event.INSTALL_DETECTED, properties)
         _install_capture_state.attempted = True
         return True
