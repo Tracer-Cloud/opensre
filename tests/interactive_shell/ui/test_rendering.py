@@ -17,6 +17,7 @@ from surfaces.shared.terminal.components.rendering import (
     print_repl_json,
     print_repl_renderable,
     print_repl_text,
+    repl_clear_screen,
     repl_print,
     repl_table,
 )
@@ -29,6 +30,33 @@ from surfaces.shared.terminal.tables import (
 def test_repl_table_minimal_box() -> None:
     t = repl_table(title="T")
     assert t.title == "T"
+
+
+def test_repl_clear_screen_erases_scrollback_and_viewport(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _FakeStdout:
+        def __init__(self) -> None:
+            self.writes: list[str] = []
+            self.flushed = False
+
+        def write(self, text: str) -> int:
+            self.writes.append(text)
+            return len(text)
+
+        def flush(self) -> None:
+            self.flushed = True
+
+        def isatty(self) -> bool:
+            return True
+
+    fake = _FakeStdout()
+    monkeypatch.setattr("surfaces.shared.terminal.components.rendering.sys.stdout", fake)
+
+    repl_clear_screen()
+
+    assert fake.writes == ["\x1b[3J\x1b[2J\x1b[H"]
+    assert fake.flushed is True
 
 
 def test_print_repl_json_tty_uses_single_buffered_write(monkeypatch: pytest.MonkeyPatch) -> None:

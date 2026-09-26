@@ -17,7 +17,6 @@ from dataclasses import dataclass
 from rich.align import Align
 from rich.cells import cell_len
 from rich.console import Console, Group, RenderableType
-from rich.padding import Padding
 from rich.text import Text
 
 from config.constants import (
@@ -28,6 +27,7 @@ from config.constants import (
 )
 from config.version import get_opensre_version
 from infrastructure.terminal import theme as ui_theme
+from infrastructure.terminal.markdown import UnpaddedRows
 from infrastructure.terminal.theme import (
     BOLD_SKILL,
     BRAND,
@@ -104,9 +104,9 @@ class WordmarkSpinFrame:
     back_facing: bool
 
 
-def _center(renderable: RenderableType) -> Align:
+def _center(renderable: RenderableType, *, width: int) -> Align:
     """Center one row/block on its own — do not bundle unequal-width lines."""
-    return Align.center(renderable)
+    return Align.center(renderable, width=width)
 
 
 def _braille_dot_columns(row: str) -> list[int]:
@@ -359,8 +359,10 @@ def build_launch_banner(
         None,
         _build_capabilities(status, max_width=line_width),
     ]
-    body: RenderableType = Group(*(Text() if row is None else _center(row) for row in rows))
-    return Padding(body, (_BANNER_VERTICAL_PADDING, 0))
+    body_rows: list[RenderableType] = [Text() for _ in range(_BANNER_VERTICAL_PADDING)]
+    body_rows.extend(Text() if row is None else _center(row, width=line_width) for row in rows)
+    body_rows.extend(Text() for _ in range(_BANNER_VERTICAL_PADDING))
+    return UnpaddedRows(Group(*body_rows))
 
 
 def render_launch_banner(

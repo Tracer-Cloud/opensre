@@ -282,7 +282,7 @@ def repl_clear_screen() -> None:
     """Clear the terminal scrollback when the REPL runs under patch_stdout."""
     if not sys.stdout.isatty():
         return
-    sys.stdout.write("\x1b[2J\x1b[H")
+    sys.stdout.write("\x1b[3J\x1b[2J\x1b[H")
     sys.stdout.flush()
 
 
