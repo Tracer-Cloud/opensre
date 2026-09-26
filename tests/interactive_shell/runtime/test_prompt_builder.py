@@ -115,7 +115,7 @@ def test_resize_after_internal_picker_history_rerenders_launch_banner(
     rerendered = builder._rerender_banner_if_idle()
 
     assert rerendered is True
-    assert clear_calls == [True]
+    assert clear_calls == [False]
     assert banner_calls == [True]
     assert replayed == ["Selection cancelled — type a reply instead."]
 

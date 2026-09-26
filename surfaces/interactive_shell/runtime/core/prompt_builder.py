@@ -140,7 +140,7 @@ class PromptBuilder:
             or self.pt_app is None
         ):
             return False
-        repl_clear_screen(scrollback=True)
+        repl_clear_screen()
         drain_stale_cpr_bytes()
         console = Console(
             highlight=False,
