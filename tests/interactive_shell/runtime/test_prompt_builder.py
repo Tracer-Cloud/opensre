@@ -145,6 +145,39 @@ def test_resize_does_not_duplicate_banner_when_idle_ui_exceeds_viewport(
     assert clear_calls == []
 
 
+def test_resize_uses_compact_banner_when_full_banner_exceeds_viewport(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = Session()
+    builder = PromptBuilder(session, ReplState(), SpinnerState())
+    builder.pt_app = _idle_prompt_app(rows=7)  # type: ignore[assignment]
+    clear_calls: list[bool] = []
+    banner_modes: list[bool] = []
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.runtime.core.prompt_builder.repl_clear_screen",
+        lambda *, scrollback=False: clear_calls.append(scrollback),
+    )
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.runtime.core.prompt_builder.drain_stale_cpr_bytes",
+        lambda: None,
+    )
+
+    def _build_banner(*_args: object, compact: bool = False, **_kwargs: object) -> Text:
+        banner_modes.append(compact)
+        return Text("full\nbanner\nrows\nthat\ndo\nnot\nfit" if not compact else "compact")
+
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.runtime.core.prompt_builder.build_launch_banner",
+        _build_banner,
+    )
+
+    rerendered = builder._rerender_banner_if_idle()
+
+    assert rerendered is True
+    assert banner_modes == [False, True]
+    assert clear_calls == [False]
+
+
 def test_resize_measures_idle_replay_at_repl_output_width(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

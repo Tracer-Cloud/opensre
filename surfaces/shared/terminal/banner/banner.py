@@ -257,10 +257,15 @@ def animate_launch_wordmark(
         stream.flush()
 
 
+def _build_compact_wordmark() -> Text:
+    """Return the one-row wordmark used when the ring cannot fit."""
+    return Text(PRODUCT_DISPLAY_NAME, style=f"bold {HIGHLIGHT}", no_wrap=True)
+
+
 def _build_wordmark(*, console_width: int) -> Text:
     """Return the bold ring "loops" mark, or a compact title on narrow terminals."""
     if console_width < _WORDMARK_MIN_WIDTH:
-        return Text(PRODUCT_DISPLAY_NAME, style=f"bold {HIGHLIGHT}", no_wrap=True)
+        return _build_compact_wordmark()
     return Text("\n".join(_WORDMARK_ROWS), style=f"bold {HIGHLIGHT}", no_wrap=True)
 
 
@@ -333,8 +338,9 @@ def build_launch_banner(
     console: Console | None = None,
     *,
     session: object = None,
+    compact: bool = False,
 ) -> RenderableType:
-    """Build the centered, borderless OpenSRE launch banner."""
+    """Build the centered launch banner, optionally without tall logo spacing."""
     del session  # Reserved for future session-scoped launch indicators.
     console = console or Console(
         highlight=False,
@@ -349,16 +355,25 @@ def build_launch_banner(
     # Rows top-to-bottom (``None`` is a blank spacer). Each is centered on its
     # own axis in the loop below — one Align.center over a multi-line block
     # would left-align the short lines inside the widest one.
-    rows: list[RenderableType | None] = [
-        _build_wordmark(console_width=width),
-        None,
-        _build_version_line(),
-        None,
-        _build_welcome_title(),
-        _build_welcome_paragraph(),
-        None,
-        _build_capabilities(status, max_width=line_width),
-    ]
+    if compact:
+        rows: list[RenderableType | None] = [
+            _build_compact_wordmark(),
+            _build_version_line(),
+            _build_welcome_title(),
+            _build_welcome_paragraph(),
+            _build_capabilities(status, max_width=line_width),
+        ]
+    else:
+        rows = [
+            _build_wordmark(console_width=width),
+            None,
+            _build_version_line(),
+            None,
+            _build_welcome_title(),
+            _build_welcome_paragraph(),
+            None,
+            _build_capabilities(status, max_width=line_width),
+        ]
     body_rows: list[RenderableType] = [Text() for _ in range(_BANNER_VERTICAL_PADDING)]
     body_rows.extend(Text() if row is None else _center(row, width=line_width) for row in rows)
     body_rows.extend(Text() for _ in range(_BANNER_VERTICAL_PADDING))

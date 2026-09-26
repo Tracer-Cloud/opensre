@@ -186,6 +186,21 @@ def test_launch_banner_falls_back_to_title_on_narrow_terminals(monkeypatch: obje
     assert "⣿⣿" not in output  # braille ring omitted below its min width
 
 
+def test_compact_launch_banner_omits_ring_and_spacer_rows(monkeypatch: object) -> None:
+    monkeypatch.setattr(banner_module, "load_launch_status", _fixed_status)
+    console = Console(record=True, force_terminal=False, highlight=False, width=120)
+
+    banner = banner_module.build_launch_banner(console, compact=True)
+    console.print(banner)
+
+    output = console.export_text(styles=False)
+    assert PRODUCT_DISPLAY_NAME in output
+    assert "⣿⣿" not in output
+    assert len(console.render_lines(banner, pad=False)) < len(
+        console.render_lines(banner_module.build_launch_banner(console), pad=False)
+    )
+
+
 def test_launch_banner_uses_active_theme_palette(monkeypatch: object) -> None:
     from infrastructure.terminal.theme import THEME_REGISTRY, set_active_theme
 

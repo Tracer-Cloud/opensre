@@ -171,7 +171,10 @@ class PromptBuilder:
             size.rows,
         ).preferred
         if banner_rows + replay_rows + live_rows > size.rows:
-            return False
+            banner = build_launch_banner(console, session=self.session, compact=True)
+            banner_rows = len(console.render_lines(banner, pad=False))
+            if banner_rows + replay_rows + live_rows > size.rows:
+                return False
 
         repl_clear_screen()
         drain_stale_cpr_bytes()
