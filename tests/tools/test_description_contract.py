@@ -4,11 +4,13 @@ A tool's description is the model's primary signal for choosing it among the
 ~290 tools offered together. This suite pins a minimum quality bar so a tool
 cannot enter the registry with an unusable description.
 
-Existing violators are quarantined in a shrink-only allowlist (issue #5498).
-The allowlist is compared exactly against the live violator set: a tool that
-gets fixed MUST be removed (the ratchet test fails on a stale entry), and a
-new violator fails immediately. Rewriting descriptions is explicitly out of
-scope — the allowlist is the measured backlog.
+``use_cases`` remains optional registry metadata: the single-agent runtime's
+provider schemas expose the description and input schema, not that field.
+
+Known violations can be quarantined in a shrink-only allowlist while an open
+ticket tracks the fix. The allowlist is compared exactly against the live
+violator set: a tool that gets fixed MUST be removed (the ratchet test fails on
+a stale entry), and a new violator fails immediately.
 """
 
 from __future__ import annotations
@@ -54,52 +56,9 @@ _SECRET_RE = re.compile(
 # floor fails loud when the registry shrinks; raise it when the registry grows.
 _MIN_REGISTRY_SIZE = 265
 
-#: Tools that currently violate at least one description-contract rule.
-#: Compared exactly against the live violator set — a fixed tool MUST be removed
-#: (the ratchet test fails on a stale entry), and a new violator MUST be fixed,
-#: never appended. Each entry is per-integration backlog work tracked under
-#: issue #5498; rewriting descriptions is out of scope for that issue.
-_DESCRIPTION_CONTRACT_ALLOWLIST: frozenset[str] = frozenset(
-    {
-        "cli_exec",
-        "code_implement",
-        "fix_sentry_issue_start",
-        "get_dagster_run_logs",
-        "get_mariadb_global_status",
-        "get_mariadb_innodb_status",
-        "get_mariadb_process_list",
-        "get_mariadb_replication_status",
-        "get_mariadb_slow_queries",
-        "get_mongodb_atlas_alerts",
-        "get_mongodb_atlas_cluster_events",
-        "get_mongodb_atlas_cluster_metrics",
-        "get_mongodb_atlas_clusters",
-        "get_mongodb_atlas_performance_advisor",
-        "get_mongodb_collection_stats",
-        "get_mongodb_current_ops",
-        "get_mongodb_profiler_data",
-        "get_mongodb_replica_status",
-        "get_mongodb_server_status",
-        "inspect_railway_deployment",
-        "list_dagster_assets",
-        "list_dagster_runs",
-        "list_dagster_schedule_ticks",
-        "list_dagster_sensor_ticks",
-        "llm_set_provider",
-        "memory_forget",
-        "memory_recall",
-        "redeploy_railway_service",
-        "replay_slack_thread_locally",
-        "shell_run",
-        "skill_view",
-        "slash_invoke",
-        "task_cancel",
-        "work_task_complete",
-        "work_task_list",
-        "work_task_prioritize",
-        "work_task_update",
-    }
-)
+#: Tools temporarily exempted under an open tracking ticket.
+#: Compared exactly against the live violator set so fixed entries cannot linger.
+_DESCRIPTION_CONTRACT_ALLOWLIST: frozenset[str] = frozenset()
 
 
 def _production_tool_names() -> tuple[str, ...]:
@@ -136,23 +95,7 @@ def _clean_production_registry() -> Iterator[None]:
     registry_module.clear_tool_registry_cache()
 
 
-def _sources_with_siblings(tools: tuple[RegisteredTool, ...]) -> frozenset[str]:
-    """Source values that back more than one tool — those tools are siblings.
-
-    When a source has siblings the model needs ``use_cases`` to disambiguate
-    which one to pick, so a single-tool source is exempt from that rule.
-    """
-    counts: dict[str, int] = {}
-    for tool in tools:
-        counts[str(tool.source)] = counts.get(str(tool.source), 0) + 1
-    return frozenset(src for src, count in counts.items() if count > 1)
-
-
-def _description_contract_violations(
-    tool: RegisteredTool,
-    *,
-    sibling_sources: frozenset[str],
-) -> list[str]:
+def _description_contract_violations(tool: RegisteredTool) -> list[str]:
     """Human-readable rule violations for one tool; empty list means clean."""
     reasons: list[str] = []
     description = (tool.description or "").strip()
@@ -169,9 +112,6 @@ def _description_contract_violations(
 
     if _SECRET_RE.search(description):
         reasons.append("description may contain a secret or credential")
-
-    if str(tool.source) in sibling_sources and not tool.use_cases:
-        reasons.append("use_cases is empty despite siblings in the same source")
 
     guidance = tool.skill_guidance or ""
     if len(guidance) > _MAX_TOOL_SKILL_GUIDANCE_CHARS:
@@ -196,14 +136,13 @@ def test_description_contract(tool_name: str) -> None:
     snapshot = registry_module._load_registry_snapshot()
     tools_by_name = {tool.name: tool for tool in snapshot}
     tool = tools_by_name[tool_name]
-    sibling_sources = _sources_with_siblings(snapshot)
-    violations = _description_contract_violations(tool, sibling_sources=sibling_sources)
+    violations = _description_contract_violations(tool)
 
     if not violations:
         return  # clean
 
     if tool.name in _DESCRIPTION_CONTRACT_ALLOWLIST:
-        pytest.skip(f"{tool.name} quarantined under #5498: {'; '.join(violations)}")
+        pytest.skip(f"{tool.name} has a tracked quarantine: {'; '.join(violations)}")
 
     pytest.fail(
         f"{tool.name} violates the description contract: "
@@ -214,12 +153,7 @@ def test_description_contract(tool_name: str) -> None:
 
 def test_description_contract_allowlist_ratchets() -> None:
     snapshot = registry_module._load_registry_snapshot()
-    sibling_sources = _sources_with_siblings(snapshot)
-    violators = {
-        tool.name
-        for tool in snapshot
-        if _description_contract_violations(tool, sibling_sources=sibling_sources)
-    }
+    violators = {tool.name for tool in snapshot if _description_contract_violations(tool)}
 
     allowlist = _DESCRIPTION_CONTRACT_ALLOWLIST
     new_violators = sorted(violators - allowlist)
