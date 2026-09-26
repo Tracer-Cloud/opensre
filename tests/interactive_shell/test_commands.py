@@ -144,6 +144,16 @@ class TestDispatchSlash:
         assert "/help" in output
         assert "/tools" in output
 
+    def test_choose_output_is_kept_for_idle_banner_resize(self) -> None:
+        session = Session()
+        console, buf = _capture()
+
+        assert dispatch_slash("/choose", session, console) is True
+
+        output = buf.getvalue().strip()
+        assert "No selection menu is pending" in output
+        assert session.terminal.idle_output_replay == [output]
+
     def test_help_command_detail_shows_usage(self) -> None:
         session = Session()
         console, buf = _capture()

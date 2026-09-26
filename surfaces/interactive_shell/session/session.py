@@ -54,6 +54,7 @@ class Session(SessionCore):
         self.alerts.clear()
         self.terminal.metrics.reset()
         self.terminal.submitted_turn_count = 0
+        self.terminal.idle_output_replay.clear()
         self.terminal.pending_prompt_default = None
         self.terminal.pending_prompt_autosubmit = False
         self.terminal.pending_prompt_plain_turn = False

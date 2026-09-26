@@ -33,6 +33,11 @@ COLLAPSED_STASH_MAX_CHARS = 32_000
 INLINE_EXPAND_MAX_CHARS = 8_000
 INLINE_EXPAND_MAX_LINES = 120
 
+# Shell-only output before the first user turn is replayed when an idle banner
+# is redrawn after resize. Keep it bounded even if /choose is invoked repeatedly.
+IDLE_OUTPUT_REPLAY_MAX_ENTRIES = 8
+IDLE_OUTPUT_REPLAY_MAX_CHARS = 8_000
+
 
 @dataclass
 class ActionLogEntry:
@@ -195,6 +200,9 @@ class TerminalSession:
     append many history rows (shell commands, tool executions), but it occupies
     exactly one numbered prompt line."""
 
+    idle_output_replay: list[str] = field(default_factory=list)
+    """Bounded shell-only output repainted with the idle banner after resize."""
+
     _turn_outcome_hint: str | None = field(default=None, repr=False, compare=False)
     """Optional structured outcome set by a terminal handler for analytics."""
 
@@ -212,8 +220,19 @@ class TerminalSession:
 
     def claim_turn_number(self) -> int:
         """Advance and return the 1-based ``[N]`` number for a just-submitted prompt."""
+        self.idle_output_replay.clear()
         self.submitted_turn_count += 1
         return self.submitted_turn_count
+
+    def remember_idle_output(self, text: str) -> None:
+        """Keep bounded pre-turn output so an idle banner redraw does not erase it."""
+        body = text.strip()
+        if not body:
+            return
+        self.idle_output_replay.append(body[:IDLE_OUTPUT_REPLAY_MAX_CHARS])
+        overflow = len(self.idle_output_replay) - IDLE_OUTPUT_REPLAY_MAX_ENTRIES
+        if overflow > 0:
+            del self.idle_output_replay[:overflow]
 
     def has_collapsed_tool_output(self) -> bool:
         """True when Ctrl+O can expand at least one stashed peek."""

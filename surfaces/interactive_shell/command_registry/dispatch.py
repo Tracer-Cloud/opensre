@@ -47,6 +47,8 @@ def _attach_slash_analytics(
     *,
     captured_output: str,
 ) -> None:
+    if session.terminal.submitted_turn_count == 0:
+        session.terminal.remember_idle_output(captured_output)
     latest = _latest_slash_record(session)
     ok = _latest_record_ok(session, "slash")
     if latest is not None and latest.get("slash_outcome"):

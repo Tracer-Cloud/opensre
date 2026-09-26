@@ -37,7 +37,7 @@ from surfaces.interactive_shell.ui.prompt_visibility import typing_box_hidden
 from surfaces.interactive_shell.ui.terminal_ui import render_prompt_region
 from surfaces.shared.terminal.banner import render_launch_banner
 from surfaces.shared.terminal.components.cpr_stdin import drain_stale_cpr_bytes
-from surfaces.shared.terminal.components.rendering import repl_clear_screen
+from surfaces.shared.terminal.components.rendering import print_repl_text, repl_clear_screen
 
 # Brief pause so a CPR reply still in flight lands in the stdin buffer before the
 # non-blocking drain runs; without it the reply leaks into this prompt as literal bytes.
@@ -120,10 +120,10 @@ class PromptBuilder:
         """Clear the viewport and reprint the launch banner at the new width; True when done.
 
         The banner is static scrollback laid out for the width it was printed
-        at; a resize reflows it into sliced / wrapped garbage. While nothing
-        has been submitted the screen holds only the banner and the prompt, so
-        it is safe to clear and redraw both. Once a turn exists the banner sits
-        in scrollback above the conversation and is left alone.
+        at; a resize reflows it into sliced / wrapped garbage. Before a user
+        turn, the screen holds the banner, prompt, and bounded shell-only
+        notices, so all three can be cleared and redrawn. Once conversation
+        context exists the banner sits above that transcript and is left alone.
 
         No startup spin here — SIGWINCH must stay instant.
         """
@@ -148,6 +148,8 @@ class PromptBuilder:
             legacy_windows=False,
         )
         render_launch_banner(console, session=self.session, animate=False)
+        for output in self.session.terminal.idle_output_replay:
+            print_repl_text(console, output)
         return True
 
     def _expand_collapsed_output(self, text: str) -> None:

@@ -69,10 +69,12 @@ def test_resize_after_internal_picker_history_rerenders_launch_banner(
 ) -> None:
     session = Session()
     session.history = [{"type": "slash", "text": "/choose", "ok": True}]
+    session.terminal.remember_idle_output("Selection cancelled — type a reply instead.")
     builder = PromptBuilder(session, ReplState(), SpinnerState())
     builder.pt_app = object()  # type: ignore[assignment]
     clear_calls: list[bool] = []
     banner_calls: list[bool] = []
+    replayed: list[str] = []
     monkeypatch.setattr(
         "surfaces.interactive_shell.runtime.core.prompt_builder.repl_clear_screen",
         lambda *, scrollback=False: clear_calls.append(scrollback),
@@ -85,12 +87,17 @@ def test_resize_after_internal_picker_history_rerenders_launch_banner(
         "surfaces.interactive_shell.runtime.core.prompt_builder.render_launch_banner",
         lambda *_args, **_kwargs: banner_calls.append(True),
     )
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.runtime.core.prompt_builder.print_repl_text",
+        lambda _console, text: replayed.append(text),
+    )
 
     rerendered = builder._rerender_banner_if_idle()
 
     assert rerendered is True
     assert clear_calls == [True]
     assert banner_calls == [True]
+    assert replayed == ["Selection cancelled — type a reply instead."]
 
 
 @pytest.mark.asyncio
