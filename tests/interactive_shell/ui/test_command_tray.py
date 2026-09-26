@@ -150,9 +150,9 @@ async def test_enter_submits_the_visibly_highlighted_automatic_completion() -> N
 
 
 @pytest.mark.asyncio
-async def test_rendered_cursor_tracks_display_columns_after_wide_text() -> None:
+async def test_rendered_cursor_tracks_character_index_after_wide_text() -> None:
     async with _running_prompt() as prompt:
-        prompt.default_buffer.document = Document("你a", 1)
+        prompt.default_buffer.document = Document("你ab", 2)
         _screen_lines(prompt)
         screen = prompt.app.renderer._last_screen
         assert screen is not None
@@ -165,7 +165,20 @@ async def test_rendered_cursor_tracks_display_columns_after_wide_text() -> None:
         ]
 
         assert len(cursor_cells) == 1
-        assert cursor_cells[0].char == "a"
+        assert cursor_cells[0].char == "b"
+
+        prompt.default_buffer.cursor_position = 3
+        _screen_lines(prompt)
+        screen = prompt.app.renderer._last_screen
+        assert screen is not None
+        cursor_cells = [
+            cell
+            for row in screen.data_buffer.values()
+            for cell in row.values()
+            if "class:composer-cursor" in cell.style
+        ]
+        assert len(cursor_cells) == 1
+        assert cursor_cells[0].char == " "
 
 
 @pytest.mark.asyncio
