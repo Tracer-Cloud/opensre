@@ -1,4 +1,4 @@
-"""Live prompt region stays compact; resize resets chrome instead of partial erase."""
+"""Live prompt region stays anchored and redraws cleanly across resize."""
 
 from __future__ import annotations
 
@@ -38,6 +38,14 @@ class _Screen:
 def _row(text: str, *, width: int) -> dict[int, Any]:
     """A rendered frame row: *text*, padded out to *width* the way the UI pads."""
     return {column: SimpleNamespace(char=char) for column, char in enumerate(text.ljust(width))}
+
+
+def _styled_row(text: str, *, width: int) -> dict[int, Any]:
+    """A row whose padding carries a visible prompt-toolkit style."""
+    return {
+        column: SimpleNamespace(char=char, style="class:status")
+        for column, char in enumerate(text.ljust(width))
+    }
 
 
 def test_prompt_root_hsplit_is_top_aligned_not_justify() -> None:
@@ -138,14 +146,49 @@ def test_resize_with_banner_hook_skips_partial_erase_and_redraws() -> None:
     assert banner_calls == [1]
     original_on_resize.assert_not_called()
     renderer.reset.assert_called_once_with(leave_alternate_screen=False)
-    app._request_absolute_cursor_position.assert_called_once()
+    app._request_absolute_cursor_position.assert_not_called()
     app._redraw.assert_called_once()
     assert renderer._min_available_height == 0
     assert renderer._last_screen is None
 
 
+def test_resize_uses_prompt_toolkit_path_for_a_visible_hardware_cursor() -> None:
+    """Search and system controls keep their native cursor and resize handling."""
+    output = Vt100_Output(
+        io.StringIO(),
+        get_size=lambda: Size(rows=30, columns=80),
+        term="xterm-256color",
+        enable_cpr=False,
+    )
+    app: Any = MagicMock()
+    app.output = output
+    renderer = MagicMock()
+    renderer._cursor_pos = _Cursor(x=1, y=1)
+    renderer._last_size = Size(rows=30, columns=80)
+    renderer._last_screen = SimpleNamespace(
+        height=2,
+        show_cursor=True,
+        data_buffer={0: _row("search", width=79), 1: _row("input", width=79)},
+    )
+    renderer._min_available_height = 0
+    renderer.report_absolute_cursor_row = MagicMock()
+    renderer.render = MagicMock()
+    renderer.erase = MagicMock()
+    app.renderer = renderer
+    original_on_resize = MagicMock()
+    app._on_resize = original_on_resize
+    app._running_in_terminal = False
+
+    install_shrink_resize_guard(app)
+    renderer.render(app, Layout(Window(height=2)))
+    app._on_resize()
+
+    original_on_resize.assert_called_once_with()
+    app._redraw.assert_not_called()
+
+
 def _painted_resize_app() -> tuple[Any, Any, io.StringIO]:
-    """An app whose live region was painted at 110 columns, now shown at 90."""
+    """An app whose live region is painted with its terminal cursor anchored."""
     terminal = io.StringIO()
     output = Vt100_Output(
         terminal,
@@ -157,10 +200,19 @@ def _painted_resize_app() -> tuple[Any, Any, io.StringIO]:
     app.output = output
     renderer = MagicMock()
     renderer._min_available_height = 0
-    renderer._last_size = Size(rows=30, columns=90)
+    renderer._last_size = Size(rows=30, columns=110)
     renderer._last_screen = None
-    renderer.render = MagicMock()
     renderer.reset = MagicMock()
+
+    def _render(*_args: object, **_kwargs: object) -> None:
+        renderer._cursor_pos = _Cursor(x=4, y=2)
+        renderer._last_screen = SimpleNamespace(
+            height=4,
+            show_cursor=False,
+            data_buffer={row: _row("x" * 109, width=109) for row in range(4)},
+        )
+
+    renderer.render = _render
     app.renderer = renderer
     app._on_resize = MagicMock()
     app._request_absolute_cursor_position = MagicMock()
@@ -171,38 +223,44 @@ def _painted_resize_app() -> tuple[Any, Any, io.StringIO]:
     install_shrink_resize_guard(app, rerender_banner=lambda: False)
     # Paint a frame — only then is there a live region to erase.
     renderer.render(app, Layout(Window(height=3)))
-    # That frame went out at 110 columns; the window has since shrunk to 90.
-    renderer._cursor_pos = _Cursor(x=4, y=2)
-    renderer._last_screen = SimpleNamespace(
-        height=4,
-        data_buffer={row: _row("x" * 109, width=109) for row in range(4)},
-    )
-    renderer._last_size = Size(rows=30, columns=110)
     terminal.seek(0)
     terminal.truncate(0)
     return app, renderer, terminal
 
 
-def test_resize_after_width_shrink_erases_reflowed_live_region() -> None:
-    """Erase from the reflowed top row instead of leaving stale prompt chrome."""
+def test_resize_erases_from_parked_live_region_anchor() -> None:
+    """The resize erase starts at prompt top without moving into transcript."""
     app, renderer, terminal = _painted_resize_app()
 
     app._on_resize()
 
-    # Each 109-cell row reflows onto two rows at 90 columns, so the frame top
-    # is four rows above the cursor, not the two prompt-toolkit recorded.
-    assert "\x1b[4D\x1b[4A\x1b[J" in terminal.getvalue()
+    emitted = terminal.getvalue()
+    assert "\x1b[J" in emitted
+    assert "\x1b[A" not in emitted
+    assert "\x1b[2A" not in emitted
     renderer.reset.assert_called_once_with(leave_alternate_screen=False)
-    app._request_absolute_cursor_position.assert_called_once()
+    app._request_absolute_cursor_position.assert_not_called()
     app._redraw.assert_called_once()
 
 
-def test_resize_burst_erases_once_per_painted_frame() -> None:
-    """Dragging an edge sends several signals before the CPR-gated repaint runs.
+def test_prompt_toolkit_erase_uses_parked_live_region_anchor() -> None:
+    """Background output must not restore then erase through transcript rows."""
+    _app, renderer, terminal = _painted_resize_app()
 
-    Only the first has a frame to erase. Erasing again would start from the
-    cursor that first erase reset — below the frame still on screen, which it
-    would strand as one Auto/composer ghost per signal.
+    renderer.erase(leave_alternate_screen=False)
+
+    emitted = terminal.getvalue()
+    assert "\x1b[J" in emitted
+    assert "\x1b[A" not in emitted
+    assert "\x1b[B" not in emitted
+    renderer.reset.assert_called_once_with(leave_alternate_screen=False)
+
+
+def test_resize_burst_erases_once_per_painted_frame() -> None:
+    """Dragging an edge can send several signals before a repaint runs.
+
+    Only the first has a parked frame to erase. Erasing again would remove
+    whatever output now follows the cleared live-region anchor.
     """
     app, _renderer, terminal = _painted_resize_app()
 
@@ -264,7 +322,7 @@ def test_resize_restores_the_terminal_when_the_repaint_raises() -> None:
     assert terminal.getvalue().endswith("\x1b[?2026l")
 
 
-def test_shrink_resize_guard_disables_autowrap_after_render() -> None:
+def test_shrink_resize_guard_parks_and_hides_hardware_cursor_after_render() -> None:
     terminal = io.StringIO()
     output = Vt100_Output(
         terminal,
@@ -272,21 +330,25 @@ def test_shrink_resize_guard_disables_autowrap_after_render() -> None:
         term="xterm-256color",
         enable_cpr=False,
     )
-    disabled: list[bool] = []
-    real_disable = output.disable_autowrap
+    hidden: list[bool] = []
+    real_hide = output.hide_cursor
 
-    def _spy_disable() -> None:
-        disabled.append(True)
-        real_disable()
+    def _spy_hide() -> None:
+        hidden.append(True)
+        real_hide()
 
-    output.disable_autowrap = _spy_disable  # type: ignore[method-assign]
+    output.hide_cursor = _spy_hide  # type: ignore[method-assign]
 
     app: Any = MagicMock()
     app.output = output
     renderer = MagicMock()
     renderer._cursor_pos = _Cursor(x=0, y=1)
     renderer._min_available_height = 0
-    renderer._last_screen = None
+    renderer._last_screen = SimpleNamespace(
+        height=2,
+        show_cursor=False,
+        data_buffer={0: _row("status", width=79), 1: _row("input", width=79)},
+    )
     renderer._last_size = Size(rows=24, columns=80)
     renderer.report_absolute_cursor_row = MagicMock()
     calls: list[str] = []
@@ -303,18 +365,18 @@ def test_shrink_resize_guard_disables_autowrap_after_render() -> None:
     app._running_in_terminal = False
 
     install_shrink_resize_guard(app)
-    disabled.clear()
+    hidden.clear()
     app.renderer.render(app, Layout(Window()))
     assert calls == ["render"]
-    assert disabled
+    assert hidden == [True]
+    assert "\x1b[?25l\x1b[?2026l" in terminal.getvalue()
 
 
 def test_reflow_count_ignores_the_padding_prompt_toolkit_writes() -> None:
     """A terminal reflows a row by its content, not by its trailing blanks.
 
-    A row of trailing spaces stays one physical row however far the window
-    shrinks. Counting that padding predicts rows the shrink never created, and
-    the erase then starts above the frame and takes transcript with it.
+    Restoring the hardware cursor from its parked anchor must move through the
+    physical rows the terminal actually created, not prompt-toolkit padding.
     """
     # Arrange: a 189-wide frame — a full status row, then a blank row that is
     # padded to the same width — with the cursor on the third row.
@@ -335,3 +397,21 @@ def test_reflow_count_ignores_the_padding_prompt_toolkit_writes() -> None:
     # The status row really does wrap onto two rows at 100 columns; the blank
     # one does not wrap at all. Counting its padding would say four.
     assert rows == 3
+
+
+def test_reflow_count_includes_styled_trailing_blanks() -> None:
+    """Painted padding is terminal content and gains physical rows on shrink."""
+    renderer = SimpleNamespace(
+        _last_screen=SimpleNamespace(
+            data_buffer={
+                0: _styled_row("Auto (High) · Allow all", width=119),
+                1: _row("╭" + "─" * 117 + "╮", width=119),
+            }
+        ),
+        _cursor_pos=_Cursor(x=1, y=2),
+        _style_string_has_style={"class:status": True},
+    )
+
+    rows = _reflowed_rows_above_cursor(renderer, columns=80)
+
+    assert rows == 4
