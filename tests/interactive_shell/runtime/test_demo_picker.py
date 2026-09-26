@@ -39,10 +39,31 @@ _NOTE = ""
 
 def _offerable(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(demo_picker, "is_test_run", lambda: False)
+    monkeypatch.setattr(demo_picker, "is_onboarding_enabled", lambda: True)
     monkeypatch.setattr(demo_picker, "repl_tty_interactive", lambda: True)
     monkeypatch.setattr(demo_picker, "capture_onboarding_demo_prompted", lambda: None)
     monkeypatch.setattr(choice_prompt, "repl_tty_interactive", lambda: True)
     monkeypatch.setattr(slash_adapter, "repl_tty_interactive", lambda: True)
+
+
+def test_startup_demo_is_suppressed_when_onboarding_is_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(demo_picker, "is_test_run", lambda: False)
+    monkeypatch.setattr(demo_picker, "is_onboarding_enabled", lambda: False)
+    monkeypatch.setattr(demo_picker, "repl_tty_interactive", lambda: True)
+
+    assert demo_picker.should_offer_demo() is False
+
+
+def test_explicit_demo_still_opens_when_startup_onboarding_is_disabled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _offerable(monkeypatch)
+    monkeypatch.setattr(demo_picker, "is_onboarding_enabled", lambda: False)
+    session = Session()
+
+    assert demo_picker.offer_demo(session, force=True)
 
 
 def _take_prompt(session: Session) -> str:
