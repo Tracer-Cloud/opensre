@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+from contextlib import redirect_stdout
 from types import SimpleNamespace
 
 import pytest
@@ -42,49 +43,44 @@ def _idle_prompt_app(*, rows: int = 30, columns: int = 80) -> SimpleNamespace:
     container = SimpleNamespace(
         preferred_height=lambda _columns, _rows: SimpleNamespace(preferred=4)
     )
+    writes: list[str] = []
+    erase_calls: list[bool] = []
+    cursor_positions: list[tuple[int, int]] = []
     return SimpleNamespace(
-        output=SimpleNamespace(get_size=lambda: Size(rows=rows, columns=columns)),
+        output=SimpleNamespace(
+            get_size=lambda: Size(rows=rows, columns=columns),
+            erase_screen=lambda: erase_calls.append(True),
+            cursor_goto=lambda row, column: cursor_positions.append((row, column)),
+            write_raw=writes.append,
+            flush=lambda: None,
+            writes=writes,
+            erase_calls=erase_calls,
+            cursor_positions=cursor_positions,
+        ),
         layout=SimpleNamespace(container=container),
     )
 
 
-def test_resize_after_resume_preserves_rendered_transcript(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_resize_after_resume_preserves_rendered_transcript() -> None:
     session = Session()
     session.history = [{"type": "slash", "text": "/resume target", "ok": True}]
     session.agent.messages = [{"role": "user", "content": "restored prompt"}]
     builder = PromptBuilder(session, ReplState(), SpinnerState())
     builder.pt_app = object()  # type: ignore[assignment]
-    clear_calls: list[bool] = []
     assert session.terminal.submitted_turn_count == 0
-    monkeypatch.setattr(
-        "surfaces.interactive_shell.runtime.core.prompt_builder.repl_clear_screen",
-        lambda *, scrollback=False: clear_calls.append(scrollback),
-    )
     rerendered = builder._rerender_banner_if_idle()
 
     assert rerendered is False
-    assert clear_calls == []
 
 
-def test_resize_after_pre_turn_alert_preserves_rendered_transcript(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_resize_after_pre_turn_alert_preserves_rendered_transcript() -> None:
     session = Session()
     session.record_incoming_alert(IncomingAlert(text="database latency is high"))
     builder = PromptBuilder(session, ReplState(), SpinnerState())
     builder.pt_app = object()  # type: ignore[assignment]
-    clear_calls: list[bool] = []
-    monkeypatch.setattr(
-        "surfaces.interactive_shell.runtime.core.prompt_builder.repl_clear_screen",
-        lambda *, scrollback=False: clear_calls.append(scrollback),
-    )
-
     rerendered = builder._rerender_banner_if_idle()
 
     assert rerendered is False
-    assert clear_calls == []
 
 
 def test_resize_after_internal_picker_history_rerenders_launch_banner(
@@ -94,14 +90,9 @@ def test_resize_after_internal_picker_history_rerenders_launch_banner(
     session.history = [{"type": "slash", "text": "/choose", "ok": True}]
     session.terminal.remember_idle_output("Selection cancelled — type a reply instead.")
     builder = PromptBuilder(session, ReplState(), SpinnerState())
-    builder.pt_app = _idle_prompt_app()  # type: ignore[assignment]
-    clear_calls: list[bool] = []
+    app = _idle_prompt_app()
+    builder.pt_app = app  # type: ignore[assignment]
     banner_calls: list[bool] = []
-    replayed: list[str] = []
-    monkeypatch.setattr(
-        "surfaces.interactive_shell.runtime.core.prompt_builder.repl_clear_screen",
-        lambda *, scrollback=False: clear_calls.append(scrollback),
-    )
     monkeypatch.setattr(
         "surfaces.interactive_shell.runtime.core.prompt_builder.drain_stale_cpr_bytes",
         lambda: None,
@@ -110,17 +101,39 @@ def test_resize_after_internal_picker_history_rerenders_launch_banner(
         "surfaces.interactive_shell.runtime.core.prompt_builder.build_launch_banner",
         lambda *_args, **_kwargs: banner_calls.append(True) or Text("banner"),
     )
-    monkeypatch.setattr(
-        "surfaces.interactive_shell.runtime.core.prompt_builder.print_repl_text",
-        lambda _console, text: replayed.append(text),
-    )
-
     rerendered = builder._rerender_banner_if_idle()
 
     assert rerendered is True
-    assert clear_calls == [False]
     assert banner_calls == [True]
-    assert replayed == ["Selection cancelled — type a reply instead."]
+    assert app.output.erase_calls == [True]
+    assert app.output.cursor_positions == [(0, 0)]
+    assert "banner\r\nSelection cancelled — type a reply instead." in "".join(app.output.writes)
+
+
+def test_resize_banner_bypasses_prompt_toolkit_stdout_proxy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The SIGWINCH transaction must own the clear and replacement writes."""
+    session = Session()
+    builder = PromptBuilder(session, ReplState(), SpinnerState())
+    app = _idle_prompt_app()
+    builder.pt_app = app  # type: ignore[assignment]
+    process_stdout = io.StringIO()
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.runtime.core.prompt_builder.drain_stale_cpr_bytes",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.runtime.core.prompt_builder.build_launch_banner",
+        lambda *_args, **_kwargs: Text("banner"),
+    )
+
+    with redirect_stdout(process_stdout):
+        rerendered = builder._rerender_banner_if_idle()
+
+    assert rerendered is True
+    assert process_stdout.getvalue() == ""
+    assert "banner" in "".join(app.output.writes)
 
 
 def test_resize_does_not_duplicate_banner_when_idle_ui_exceeds_viewport(
@@ -128,12 +141,8 @@ def test_resize_does_not_duplicate_banner_when_idle_ui_exceeds_viewport(
 ) -> None:
     session = Session()
     builder = PromptBuilder(session, ReplState(), SpinnerState())
-    builder.pt_app = _idle_prompt_app(rows=5)  # type: ignore[assignment]
-    clear_calls: list[bool] = []
-    monkeypatch.setattr(
-        "surfaces.interactive_shell.runtime.core.prompt_builder.repl_clear_screen",
-        lambda *, scrollback=False: clear_calls.append(scrollback),
-    )
+    app = _idle_prompt_app(rows=5)
+    builder.pt_app = app  # type: ignore[assignment]
     monkeypatch.setattr(
         "surfaces.interactive_shell.runtime.core.prompt_builder.build_launch_banner",
         lambda *_args, **_kwargs: Text("banner\nrows"),
@@ -142,7 +151,7 @@ def test_resize_does_not_duplicate_banner_when_idle_ui_exceeds_viewport(
     rerendered = builder._rerender_banner_if_idle()
 
     assert rerendered is False
-    assert clear_calls == []
+    assert app.output.erase_calls == []
 
 
 def test_resize_uses_compact_banner_when_full_banner_exceeds_viewport(
@@ -150,21 +159,17 @@ def test_resize_uses_compact_banner_when_full_banner_exceeds_viewport(
 ) -> None:
     session = Session()
     builder = PromptBuilder(session, ReplState(), SpinnerState())
-    builder.pt_app = _idle_prompt_app(rows=7)  # type: ignore[assignment]
-    clear_calls: list[bool] = []
-    banner_modes: list[bool] = []
-    monkeypatch.setattr(
-        "surfaces.interactive_shell.runtime.core.prompt_builder.repl_clear_screen",
-        lambda *, scrollback=False: clear_calls.append(scrollback),
-    )
+    app = _idle_prompt_app(rows=7)
+    builder.pt_app = app  # type: ignore[assignment]
+    banner_densities: list[str] = []
     monkeypatch.setattr(
         "surfaces.interactive_shell.runtime.core.prompt_builder.drain_stale_cpr_bytes",
         lambda: None,
     )
 
-    def _build_banner(*_args: object, compact: bool = False, **_kwargs: object) -> Text:
-        banner_modes.append(compact)
-        return Text("full\nbanner\nrows\nthat\ndo\nnot\nfit" if not compact else "compact")
+    def _build_banner(*_args: object, density: str = "full", **_kwargs: object) -> Text:
+        banner_densities.append(density)
+        return Text("full\nbanner\nrows\nthat\ndo\nnot\nfit" if density == "full" else "compact")
 
     monkeypatch.setattr(
         "surfaces.interactive_shell.runtime.core.prompt_builder.build_launch_banner",
@@ -174,8 +179,37 @@ def test_resize_uses_compact_banner_when_full_banner_exceeds_viewport(
     rerendered = builder._rerender_banner_if_idle()
 
     assert rerendered is True
-    assert banner_modes == [False, True]
-    assert clear_calls == [False]
+    assert banner_densities == ["full", "compact"]
+    assert app.output.erase_calls == [True]
+
+
+def test_resize_uses_minimal_banner_when_compact_banner_exceeds_viewport(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = Session()
+    builder = PromptBuilder(session, ReplState(), SpinnerState())
+    app = _idle_prompt_app(rows=6)
+    builder.pt_app = app  # type: ignore[assignment]
+    banner_densities: list[str] = []
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.runtime.core.prompt_builder.drain_stale_cpr_bytes",
+        lambda: None,
+    )
+
+    def _build_banner(*_args: object, density: str = "full", **_kwargs: object) -> Text:
+        banner_densities.append(density)
+        return Text("banner\nrows" if density != "minimal" else "OpenSRE")
+
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.runtime.core.prompt_builder.build_launch_banner",
+        _build_banner,
+    )
+
+    rerendered = builder._rerender_banner_if_idle()
+
+    assert rerendered is True
+    assert banner_densities == ["full", "compact", "minimal"]
+    assert app.output.erase_calls == [True]
 
 
 def test_resize_measures_idle_replay_at_repl_output_width(
@@ -184,12 +218,8 @@ def test_resize_measures_idle_replay_at_repl_output_width(
     session = Session()
     session.terminal.remember_idle_output("x" * 120)
     builder = PromptBuilder(session, ReplState(), SpinnerState())
-    builder.pt_app = _idle_prompt_app(rows=7, columns=120)  # type: ignore[assignment]
-    clear_calls: list[bool] = []
-    monkeypatch.setattr(
-        "surfaces.interactive_shell.runtime.core.prompt_builder.repl_clear_screen",
-        lambda *, scrollback=False: clear_calls.append(scrollback),
-    )
+    app = _idle_prompt_app(rows=7, columns=120)
+    builder.pt_app = app  # type: ignore[assignment]
     monkeypatch.setattr(
         "surfaces.interactive_shell.runtime.core.prompt_builder.build_launch_banner",
         lambda *_args, **_kwargs: Text("banner\nrows"),
@@ -202,7 +232,7 @@ def test_resize_measures_idle_replay_at_repl_output_width(
     rerendered = builder._rerender_banner_if_idle()
 
     assert rerendered is False
-    assert clear_calls == []
+    assert app.output.erase_calls == []
 
 
 @pytest.mark.asyncio

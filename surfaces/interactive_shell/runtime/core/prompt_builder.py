@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import io
 from collections.abc import Callable
 
 from prompt_toolkit import PromptSession
@@ -32,15 +33,16 @@ from surfaces.interactive_shell.ui.input_prompt.key_bindings import (
     install_session_key_bindings,
 )
 from surfaces.interactive_shell.ui.input_prompt.refresh import wire_prompt_refresh
-from surfaces.interactive_shell.ui.input_prompt.resize import install_shrink_resize_guard
+from surfaces.interactive_shell.ui.input_prompt.resize import (
+    install_shrink_resize_guard,
+    live_region_height_cap,
+)
 from surfaces.interactive_shell.ui.input_prompt.style import refresh_prompt_theme
 from surfaces.interactive_shell.ui.prompt_visibility import typing_box_hidden
 from surfaces.interactive_shell.ui.terminal_ui import render_prompt_region
 from surfaces.shared.terminal.banner import build_launch_banner
 from surfaces.shared.terminal.components.cpr_stdin import drain_stale_cpr_bytes
 from surfaces.shared.terminal.components.rendering import (
-    print_repl_text,
-    repl_clear_screen,
     repl_output_width,
 )
 
@@ -146,14 +148,16 @@ class PromptBuilder:
         ):
             return False
         size = self.pt_app.output.get_size()
+        rendered = io.StringIO()
         console = Console(
+            file=rendered,
             highlight=False,
             force_terminal=True,
             color_system="truecolor",
             legacy_windows=False,
             width=size.columns,
         )
-        banner = build_launch_banner(console, session=self.session)
+        banner = build_launch_banner(console, session=self.session, density="full")
         banner_rows = len(console.render_lines(banner, pad=False))
         replay_console = Console(
             highlight=False,
@@ -166,21 +170,34 @@ class PromptBuilder:
             len(replay_console.render_lines(Text(output), pad=False))
             for output in self.session.terminal.idle_output_replay
         )
-        live_rows = self.pt_app.layout.container.preferred_height(
-            size.columns,
-            size.rows,
+        preferred_live_rows = self.pt_app.layout.container.preferred_height(
+            size.columns, size.rows
         ).preferred
+        live_rows = live_region_height_cap(preferred_live_rows)
         if banner_rows + replay_rows + live_rows > size.rows:
-            banner = build_launch_banner(console, session=self.session, compact=True)
+            banner = build_launch_banner(console, session=self.session, density="compact")
             banner_rows = len(console.render_lines(banner, pad=False))
             if banner_rows + replay_rows + live_rows > size.rows:
-                return False
+                banner = build_launch_banner(console, session=self.session, density="minimal")
+                banner_rows = len(console.render_lines(banner, pad=False))
+                if banner_rows + replay_rows + live_rows > size.rows:
+                    return False
 
-        repl_clear_screen()
-        drain_stale_cpr_bytes()
+        # ``start_interactive_shell`` wraps stdout in prompt-toolkit's async
+        # proxy. Writing the replacement banner through that proxy schedules a
+        # later ``run_in_terminal`` for every SIGWINCH; during a resize drag
+        # those queued clears race one another and strand reflowed banner rows.
+        # Keep this repaint in the resize transaction by buffering Rich output
+        # and sending it through the application's Output object directly.
         console.print(banner)
         for output in self.session.terminal.idle_output_replay:
-            print_repl_text(console, output)
+            console.print(Text(output))
+        terminal_output = self.pt_app.output
+        terminal_output.erase_screen()
+        terminal_output.cursor_goto(0, 0)
+        terminal_output.write_raw(rendered.getvalue().replace("\n", "\r\n"))
+        terminal_output.flush()
+        drain_stale_cpr_bytes()
         return True
 
     def _expand_collapsed_output(self, text: str) -> None:

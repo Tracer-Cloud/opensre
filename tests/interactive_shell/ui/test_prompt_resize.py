@@ -50,6 +50,25 @@ class _NativeOutput:
         self.flush_count += 1
 
 
+class _TimerHandle:
+    def __init__(self, callback: Any) -> None:
+        self.callback = callback
+        self.cancelled = False
+
+    def cancel(self) -> None:
+        self.cancelled = True
+
+
+class _TimerLoop:
+    def __init__(self) -> None:
+        self.handles: list[_TimerHandle] = []
+
+    def call_later(self, _delay: float, callback: Any) -> _TimerHandle:
+        handle = _TimerHandle(callback)
+        self.handles.append(handle)
+        return handle
+
+
 def _row(text: str, *, width: int) -> dict[int, Any]:
     """A rendered frame row: *text*, padded out to *width* the way the UI pads."""
     return {column: SimpleNamespace(char=char) for column, char in enumerate(text.ljust(width))}
@@ -181,6 +200,7 @@ def test_resize_with_banner_hook_skips_partial_erase_and_redraws() -> None:
     app._request_absolute_cursor_position = MagicMock()
     app._redraw = MagicMock()
     app._running_in_terminal = False
+    app.loop = None
 
     banner_calls: list[int] = []
 
@@ -195,9 +215,50 @@ def test_resize_with_banner_hook_skips_partial_erase_and_redraws() -> None:
     original_on_resize.assert_not_called()
     renderer.reset.assert_called_once_with(leave_alternate_screen=False)
     app._request_absolute_cursor_position.assert_not_called()
-    app._redraw.assert_called_once()
+    assert app._redraw.call_count == 2
     assert renderer._min_available_height == 0
     assert renderer._last_screen is None
+
+
+def test_resize_burst_coalesces_static_banner_repaint() -> None:
+    """A drag repaints the banner once, at the final terminal dimensions."""
+    terminal = io.StringIO()
+    output = Vt100_Output(
+        terminal,
+        get_size=lambda: Size(rows=30, columns=80),
+        term="xterm-256color",
+        enable_cpr=False,
+    )
+    app: Any = MagicMock()
+    app.output = output
+    renderer = MagicMock()
+    renderer._min_available_height = 0
+    renderer._last_screen = None
+    renderer.render = MagicMock()
+    renderer.reset = MagicMock()
+    app.renderer = renderer
+    app._on_resize = MagicMock()
+    app._redraw = MagicMock()
+    app._running_in_terminal = False
+    app.loop = _TimerLoop()
+    banner_calls: list[int] = []
+
+    install_shrink_resize_guard(
+        app,
+        rerender_banner=lambda: banner_calls.append(1) or True,
+    )
+    app._on_resize()
+    app._on_resize()
+
+    first, final = app.loop.handles
+    assert first.cancelled is True
+    assert final.cancelled is False
+    assert banner_calls == []
+
+    final.callback()
+
+    assert banner_calls == [1]
+    renderer.reset.assert_called_once_with(leave_alternate_screen=False)
 
 
 def test_resize_uses_prompt_toolkit_path_for_a_visible_hardware_cursor() -> None:

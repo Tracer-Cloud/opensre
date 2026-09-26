@@ -190,7 +190,7 @@ def test_compact_launch_banner_omits_ring_and_spacer_rows(monkeypatch: object) -
     monkeypatch.setattr(banner_module, "load_launch_status", _fixed_status)
     console = Console(record=True, force_terminal=False, highlight=False, width=120)
 
-    banner = banner_module.build_launch_banner(console, compact=True)
+    banner = banner_module.build_launch_banner(console, density="compact")
     console.print(banner)
 
     output = console.export_text(styles=False)
@@ -199,6 +199,19 @@ def test_compact_launch_banner_omits_ring_and_spacer_rows(monkeypatch: object) -
     assert len(console.render_lines(banner, pad=False)) < len(
         console.render_lines(banner_module.build_launch_banner(console), pad=False)
     )
+
+
+def test_minimal_launch_banner_keeps_identity_on_one_row(monkeypatch: object) -> None:
+    monkeypatch.setattr(banner_module, "load_launch_status", _fixed_status)
+    monkeypatch.setattr(banner_module, "get_opensre_version", lambda: "0.1.test")
+    console = Console(record=True, force_terminal=False, highlight=False, width=120)
+
+    banner = banner_module.build_launch_banner(console, density="minimal")
+    console.print(banner)
+
+    output = console.export_text(styles=False)
+    assert "OpenSRE · v0.1.test" in output
+    assert len(console.render_lines(banner, pad=False)) == 1
 
 
 def test_launch_banner_uses_active_theme_palette(monkeypatch: object) -> None:

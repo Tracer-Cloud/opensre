@@ -19,6 +19,7 @@ Invariants the resize path depends on:
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from typing import Any
 
@@ -33,6 +34,10 @@ from surfaces.interactive_shell.ui.input_prompt.synchronized import synchronized
 _LIVE_REGION_HEIGHT_PAD = 1
 # Absolute ceiling; never paint a live Screen taller than this.
 _LIVE_REGION_HARD_MAX = 12
+# A window drag can deliver dozens of SIGWINCH callbacks before the user lets
+# go. Repainting the static banner for every intermediate width moves whole
+# screens through VTE's reflow buffer; wait for the final dimensions instead.
+_BANNER_RESIZE_SETTLE_SECONDS = 0.08
 
 
 def live_region_height_cap(preferred: int) -> int:
@@ -122,6 +127,7 @@ def install_shrink_resize_guard(
     painted = False
     parked = False
     frame_active = False
+    banner_resize_handle: asyncio.TimerHandle | None = None
 
     def _restore_cursor() -> None:
         """Move from the live-region anchor to prompt-toolkit's logical cursor."""
@@ -218,17 +224,69 @@ def install_shrink_resize_guard(
         painted = False
         parked = False
 
+    def _finish_banner_resize() -> None:
+        """Replace the reflowed idle banner once a resize burst settles."""
+        nonlocal banner_resize_handle, frame_active, painted, parked
+        banner_resize_handle = None
+        loop = getattr(app, "loop", None)
+        if loop is not None and not bool(getattr(app, "is_running", False)):
+            return
+        if getattr(app, "_running_in_terminal", False):
+            _schedule_banner_resize()
+            return
+        framed = not frame_active
+        if framed:
+            frame_active = True
+        try:
+            with synchronized_output(output, enabled=framed):
+                output.disable_autowrap()
+                renderer._min_available_height = 0
+                if rerender_banner is not None and rerender_banner():
+                    renderer._last_screen = None
+                    renderer.reset(leave_alternate_screen=False)
+                    painted = False
+                    parked = False
+                    app._redraw()
+        finally:
+            if framed:
+                frame_active = False
+            output.disable_autowrap()
+
+    def _schedule_banner_resize() -> None:
+        """Coalesce rapid width changes around one final static repaint."""
+        nonlocal banner_resize_handle
+        if rerender_banner is None:
+            return
+        if banner_resize_handle is not None:
+            banner_resize_handle.cancel()
+        loop = getattr(app, "loop", None)
+        if loop is None:
+            _finish_banner_resize()
+            return
+        banner_resize_handle = loop.call_later(
+            _BANNER_RESIZE_SETTLE_SECONDS,
+            _finish_banner_resize,
+        )
+
+    def _cancel_banner_resize() -> None:
+        nonlocal banner_resize_handle
+        if banner_resize_handle is not None:
+            banner_resize_handle.cancel()
+            banner_resize_handle = None
+
     def _on_resize() -> None:
         nonlocal frame_active, painted, parked
         # Search/system controls still use prompt-toolkit's real cursor. Keep
         # its stock resize path while one of those transient controls is active.
         if painted and not parked:
+            _cancel_banner_resize()
             original_on_resize()
             return
         # ``run_in_terminal`` enabled wrapping so external output can use the
         # terminal normally. Its exit path resets and redraws the prompt, so a
         # resize while it owns the terminal must not emit prompt-mode bytes.
         if getattr(app, "_running_in_terminal", False):
+            _cancel_banner_resize()
             renderer._min_available_height = 0
             app._redraw()
             return
@@ -242,18 +300,10 @@ def install_shrink_resize_guard(
             with synchronized_output(output, enabled=framed):
                 output.disable_autowrap()
                 renderer._min_available_height = 0
-                if rerender_banner is not None and rerender_banner():
-                    # Full chrome reset: clear + static banner, then redraw the
-                    # live region only. Do not call prompt-toolkit's own erase
-                    # here — it leaves ghosts.
-                    renderer._last_screen = None
-                    renderer.reset(leave_alternate_screen=False)
-                    painted = False
-                    parked = False
-                else:
-                    if painted and parked:
-                        _erase_from_anchor(leave_alternate_screen=False)
+                if painted and parked:
+                    _erase_from_anchor(leave_alternate_screen=False)
                 app._redraw()
+                _schedule_banner_resize()
         finally:
             if framed:
                 frame_active = False

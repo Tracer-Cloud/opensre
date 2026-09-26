@@ -13,6 +13,7 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
+from typing import Literal
 
 from rich.align import Align
 from rich.cells import cell_len
@@ -262,6 +263,14 @@ def _build_compact_wordmark() -> Text:
     return Text(PRODUCT_DISPLAY_NAME, style=f"bold {HIGHLIGHT}", no_wrap=True)
 
 
+def _build_identity_line() -> Text:
+    """Return the minimum one-row identity retained in very short viewports."""
+    identity = _build_compact_wordmark()
+    identity.append(" · ", style=DIM)
+    identity.append(_build_version_line())
+    return identity
+
+
 def _build_wordmark(*, console_width: int) -> Text:
     """Return the bold ring "loops" mark, or a compact title on narrow terminals."""
     if console_width < _WORDMARK_MIN_WIDTH:
@@ -338,9 +347,9 @@ def build_launch_banner(
     console: Console | None = None,
     *,
     session: object = None,
-    compact: bool = False,
+    density: Literal["full", "compact", "minimal"] = "full",
 ) -> RenderableType:
-    """Build the centered launch banner, optionally without tall logo spacing."""
+    """Build the centered launch banner at the requested vertical density."""
     del session  # Reserved for future session-scoped launch indicators.
     console = console or Console(
         highlight=False,
@@ -355,8 +364,11 @@ def build_launch_banner(
     # Rows top-to-bottom (``None`` is a blank spacer). Each is centered on its
     # own axis in the loop below — one Align.center over a multi-line block
     # would left-align the short lines inside the widest one.
-    if compact:
-        rows: list[RenderableType | None] = [
+    rows: list[RenderableType | None]
+    if density == "minimal":
+        rows = [_build_identity_line()]
+    elif density == "compact":
+        rows = [
             _build_compact_wordmark(),
             _build_version_line(),
             _build_welcome_title(),
@@ -374,9 +386,10 @@ def build_launch_banner(
             None,
             _build_capabilities(status, max_width=line_width),
         ]
-    body_rows: list[RenderableType] = [Text() for _ in range(_BANNER_VERTICAL_PADDING)]
+    vertical_padding = 0 if density == "minimal" else _BANNER_VERTICAL_PADDING
+    body_rows: list[RenderableType] = [Text() for _ in range(vertical_padding)]
     body_rows.extend(Text() if row is None else _center(row, width=line_width) for row in rows)
-    body_rows.extend(Text() for _ in range(_BANNER_VERTICAL_PADDING))
+    body_rows.extend(Text() for _ in range(vertical_padding))
     return UnpaddedRows(Group(*body_rows))
 
 
