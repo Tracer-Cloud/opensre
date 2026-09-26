@@ -40,6 +40,7 @@ def test_resize_after_resume_preserves_rendered_transcript(
 ) -> None:
     session = Session()
     session.history = [{"type": "slash", "text": "/resume target", "ok": True}]
+    session.agent.messages = [{"role": "user", "content": "restored prompt"}]
     builder = PromptBuilder(session, ReplState(), SpinnerState())
     builder.pt_app = object()  # type: ignore[assignment]
     clear_calls: list[bool] = []
@@ -63,10 +64,11 @@ def test_resize_after_resume_preserves_rendered_transcript(
     assert clear_calls == []
 
 
-def test_resize_before_first_turn_rerenders_launch_banner(
+def test_resize_after_internal_picker_history_rerenders_launch_banner(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     session = Session()
+    session.history = [{"type": "slash", "text": "/choose", "ok": True}]
     builder = PromptBuilder(session, ReplState(), SpinnerState())
     builder.pt_app = object()  # type: ignore[assignment]
     clear_calls: list[bool] = []

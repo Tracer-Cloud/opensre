@@ -127,11 +127,15 @@ class PromptBuilder:
 
         No startup spin here — SIGWINCH must stay instant.
         """
-        # /resume restores persisted history after resetting the local turn
-        # counter, and clearing here would discard that rendered scrollback.
+        # /resume restores conversation context after resetting the local turn
+        # counter, and clearing here would discard its rendered scrollback.
+        # Shell-only history (for example the internal /choose used by the
+        # startup picker) is not conversation context and must not prevent the
+        # still-idle banner from being repaired after a shrink.
         if (
             self.session.terminal.submitted_turn_count > 0
-            or self.session.history
+            or self.session.agent.messages
+            or self.session.accumulated_context
             or self.pt_app is None
         ):
             return False
