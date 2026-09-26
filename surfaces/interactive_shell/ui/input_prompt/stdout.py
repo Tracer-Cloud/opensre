@@ -11,8 +11,10 @@ from typing import TextIO, cast
 from prompt_toolkit.application import Application, run_in_terminal
 from prompt_toolkit.patch_stdout import StdoutProxy
 
-_SYNCED_OUTPUT_START = "\x1b[?2026h"
-_SYNCED_OUTPUT_END = "\x1b[?2026l"
+from surfaces.interactive_shell.ui.input_prompt.synchronized import (
+    SYNCED_OUTPUT_END,
+    SYNCED_OUTPUT_START,
+)
 
 
 class _AppBoundStdoutProxy(StdoutProxy):
@@ -46,12 +48,12 @@ class _AppBoundStdoutProxy(StdoutProxy):
             # and redraw transaction off-screen until the composer is complete.
             # Unsupported terminals safely ignore these private-mode toggles.
             async with self._redraw_lock:
-                self._output.write_raw(_SYNCED_OUTPUT_START)
+                self._output.write_raw(SYNCED_OUTPUT_START)
                 self._output.flush()
                 try:
                     await run_in_terminal(write_and_flush, in_executor=False)
                 finally:
-                    self._output.write_raw(_SYNCED_OUTPUT_END)
+                    self._output.write_raw(SYNCED_OUTPUT_END)
                     self._output.flush()
 
         if loop is None:

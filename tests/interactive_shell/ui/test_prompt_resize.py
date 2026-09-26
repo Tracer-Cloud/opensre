@@ -135,8 +135,8 @@ def test_resize_with_banner_hook_skips_partial_erase_and_redraws() -> None:
     assert renderer._last_screen is None
 
 
-def test_resize_after_width_shrink_erases_reflowed_live_region() -> None:
-    """Erase from the reflowed top row instead of leaving stale prompt chrome."""
+def _painted_resize_app() -> tuple[Any, Any, io.StringIO]:
+    """An app whose live region was painted at 110 columns, now shown at 90."""
     terminal = io.StringIO()
     output = Vt100_Output(
         terminal,
@@ -147,31 +147,77 @@ def test_resize_after_width_shrink_erases_reflowed_live_region() -> None:
     app: Any = MagicMock()
     app.output = output
     renderer = MagicMock()
+    renderer._min_available_height = 0
+    renderer._last_size = Size(rows=30, columns=90)
+    renderer._last_screen = None
+    renderer.render = MagicMock()
+    renderer.reset = MagicMock()
+    app.renderer = renderer
+    app._on_resize = MagicMock()
+    app._request_absolute_cursor_position = MagicMock()
+    app._redraw = MagicMock()
+
+    install_shrink_resize_guard(app, rerender_banner=lambda: False)
+    # Paint a frame — only then is there a live region to erase.
+    renderer.render(app, Layout(Window(height=3)))
+    # That frame went out at 110 columns; the window has since shrunk to 90.
     renderer._cursor_pos = _Cursor(x=4, y=2)
     renderer._last_screen = SimpleNamespace(
         height=4,
         data_buffer={row: dict.fromkeys(range(109)) for row in range(4)},
     )
     renderer._last_size = Size(rows=30, columns=110)
-    renderer._min_available_height = 0
-    renderer.render = MagicMock()
-    renderer.reset = MagicMock()
-    app.renderer = renderer
-    original_on_resize = MagicMock()
-    app._on_resize = original_on_resize
-    app._request_absolute_cursor_position = MagicMock()
-    app._redraw = MagicMock()
-
-    install_shrink_resize_guard(app, rerender_banner=lambda: False)
     terminal.seek(0)
     terminal.truncate(0)
+    return app, renderer, terminal
+
+
+def test_resize_after_width_shrink_erases_reflowed_live_region() -> None:
+    """Erase from the reflowed top row instead of leaving stale prompt chrome."""
+    app, renderer, terminal = _painted_resize_app()
+
     app._on_resize()
 
-    original_on_resize.assert_not_called()
+    # Each 109-cell row reflows onto two rows at 90 columns, so the frame top
+    # is four rows above the cursor, not the two prompt-toolkit recorded.
     assert "\x1b[4D\x1b[4A\x1b[J" in terminal.getvalue()
     renderer.reset.assert_called_once_with(leave_alternate_screen=False)
     app._request_absolute_cursor_position.assert_called_once()
     app._redraw.assert_called_once()
+
+
+def test_resize_burst_erases_once_per_painted_frame() -> None:
+    """Dragging an edge sends several signals before the CPR-gated repaint runs.
+
+    Only the first has a frame to erase. Erasing again would start from the
+    cursor that first erase reset — below the frame still on screen, which it
+    would strand as one Auto/composer ghost per signal.
+    """
+    app, _renderer, terminal = _painted_resize_app()
+
+    app._on_resize()
+    terminal.seek(0)
+    terminal.truncate(0)
+    app._on_resize()
+
+    # Second signal: no repaint happened in between, so nothing to erase.
+    assert "\x1b[J" not in terminal.getvalue()
+    assert app._redraw.call_count == 2
+
+
+def test_resize_repaint_is_presented_as_one_synchronized_frame() -> None:
+    """Erase-then-draw is two visible states unless the terminal holds them."""
+    app, _renderer, terminal = _painted_resize_app()
+
+    app._on_resize()
+
+    emitted = terminal.getvalue()
+    start, erase, end = (
+        emitted.find("\x1b[?2026h"),
+        emitted.find("\x1b[J"),
+        emitted.find("\x1b[?2026l"),
+    )
+    assert -1 < start < erase < end
 
 
 def test_shrink_resize_guard_disables_autowrap_after_render() -> None:
