@@ -41,6 +41,10 @@ _COMPOSER_MIN_FRAME_ROWS = 3
 _LIVE_REGION_MAX_WIDTH = 60
 
 
+def _live_region_width() -> int:
+    return min(prompt_line_width(), _LIVE_REGION_MAX_WIDTH)
+
+
 def _limit_editable_height(main_input: HSplit) -> HSplit:
     """Return the editable prompt body sized to its text, capped to a chat viewport."""
     editable_children = main_input.children[1:]
@@ -105,7 +109,7 @@ def _install_prompt_frame(
         composer_container = to_container(composer)
 
         def _current_composer_rows() -> int:
-            width = prompt_line_width()
+            width = _live_region_width()
             screen_rows = session.app.output.get_size().rows
             outside_rows = sum(
                 to_container(child).preferred_height(width, screen_rows).preferred
@@ -133,7 +137,7 @@ def _install_prompt_frame(
     # normal shrink does not reflow this transient chrome into scrollback.
     chrome = HSplit(
         [before_input, *box_rows],
-        width=lambda: min(prompt_line_width(), _LIVE_REGION_MAX_WIDTH),
+        width=_live_region_width,
         align=VerticalAlign.TOP,
     )
     framed_input = FloatContainer(

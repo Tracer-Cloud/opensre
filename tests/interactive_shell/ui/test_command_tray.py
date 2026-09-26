@@ -186,6 +186,18 @@ async def test_resize_and_confirmation_keep_composer_and_tray_together() -> None
         return hidden
 
     async with _running_prompt(hide_composer=_hide_composer) as prompt:
+        # A long input wraps against the capped live-region width. Its hidden
+        # replacement must reserve exactly the same rows or fragments remain.
+        prompt.default_buffer.text = "x" * 180
+        chrome = prompt.layout.container.children[0].content.children[0]
+        visible_composer = chrome.children[1].content
+        hidden_pad = chrome.children[2].content
+        visible_height = visible_composer.preferred_height(60, 30).preferred
+        hidden = True
+        assert hidden_pad.preferred_height(60, 30).preferred == visible_height
+        assert _screen_lines(prompt) == ["Working"]
+        hidden = False
+
         _complete(prompt, "/effort ")
         _press(prompt, Keys.Down)
         output = prompt.app.output
