@@ -21,5 +21,6 @@ def sync_runtime_flags_from_click(ctx: click.Context | None = None) -> None:
         verbose=bool(obj.get("verbose")),
         debug=bool(obj.get("debug")),
         yes=bool(obj.get("yes")),
+        onboarding=not bool(obj.get("skip_onboarding")),
         interactive=bool(obj.get("interactive", True)),
     )

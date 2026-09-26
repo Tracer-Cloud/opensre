@@ -1,4 +1,4 @@
-"""Process-wide CLI runtime flags (json, verbose, yes, interactive).
+"""Process-wide CLI runtime flags (json, verbose, yes, onboarding, interactive).
 
 Lives in ``infrastructure.process`` so integrations and tools can read the same flag
 contract without importing the CLI package. The CLI root callback populates
@@ -16,6 +16,7 @@ class RuntimeFlags:
     verbose: bool = False
     debug: bool = False
     yes: bool = False
+    onboarding: bool = True
     interactive: bool = True
 
 
@@ -28,6 +29,7 @@ def configure_runtime_flags(
     verbose: bool | None = None,
     debug: bool | None = None,
     yes: bool | None = None,
+    onboarding: bool | None = None,
     interactive: bool | None = None,
 ) -> None:
     """Replace one or more runtime flags (used by the CLI click bridge)."""
@@ -41,6 +43,8 @@ def configure_runtime_flags(
         updates["debug"] = debug
     if yes is not None:
         updates["yes"] = yes
+    if onboarding is not None:
+        updates["onboarding"] = onboarding
     if interactive is not None:
         updates["interactive"] = interactive
     if updates:
@@ -70,3 +74,8 @@ def is_debug() -> bool:
 def is_yes() -> bool:
     """True when the user passed ``--yes`` / ``-y``."""
     return _flags.yes
+
+
+def is_onboarding_enabled() -> bool:
+    """True unless the user passed ``--skip-onboarding``."""
+    return _flags.onboarding

@@ -51,7 +51,8 @@ highlighted command's description appears below the list.
 Every launch starts guided onboarding and asks which demo to run. The four
 choices cover repository analysis, recurring CI/CD checks, the upcoming managed
 service, and Slack setup. Escape skips onboarding; "Or type your own answer..."
-lets you submit a different request. Type `/demo` to start again.
+lets you submit a different request. Run `opensre --skip-onboarding` to open
+the shell without the startup picker. Type `/demo` to start it later.
 See [CI/CD analytics demo](/cicd-analytics-demo).
 
 The banner and prompt show **CI/CD fixes**: distinct GitHub repairs whose pushed
@@ -1300,7 +1301,7 @@ Compound requests ("health then integrations") execute as an ordered sequence of
 /model show
 ```
 
-Run `opensre` to sign in before this workflow is reachable. Every launch opens the demo picker — Escape continues to the prompt. The recommended option analyzes CI/CD performance; see [CI/CD analytics demo](/cicd-analytics-demo).
+Run `opensre` to sign in before this workflow is reachable. Every launch opens the demo picker — Escape continues to the prompt. Run `opensre --skip-onboarding` to bypass it. The recommended option analyzes CI/CD performance; see [CI/CD analytics demo](/cicd-analytics-demo).
 
 ### Incident triage (local)
 
