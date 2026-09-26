@@ -19,8 +19,13 @@ def _build_prompt_style() -> Style:
     return Style.from_dict(
         {
             "prompt-frame-line": f"bold {theme.HIGHLIGHT}",
-            "": text_fg,
+            # Keep prompt-toolkit's transparent filler truly unstyled. Giving
+            # the base style a foreground makes its blank cells visible to the
+            # renderer, which writes every row to the terminal edge; a width
+            # shrink then reflows those invisible cells into scrollback.
+            "": "",
             "default": text_fg,
+            "composer-cursor": "reverse",
             "placeholder": f"{theme.DIM} {surface}",
             "repl-slash-command": f"bold {theme.HIGHLIGHT} {surface}",
             "frame": surface,

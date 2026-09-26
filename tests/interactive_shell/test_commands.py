@@ -13,6 +13,7 @@ import pytest
 from prompt_toolkit.history import FileHistory
 from rich.console import Console
 
+from core.domain.alerts.inbox import IncomingAlert
 from surfaces.interactive_shell.command_registry import SLASH_COMMANDS, dispatch_slash
 from surfaces.interactive_shell.command_registry import repl_data as repl_data_module
 from surfaces.interactive_shell.command_registry.tasks_cmds import _validate_cancel_args
@@ -144,6 +145,16 @@ class TestDispatchSlash:
         assert "/help" in output
         assert "/tools" in output
 
+    def test_choose_output_is_kept_for_idle_banner_resize(self) -> None:
+        session = Session()
+        console, buf = _capture()
+
+        assert dispatch_slash("/choose", session, console) is True
+
+        output = buf.getvalue().strip()
+        assert "No selection menu is pending" in output
+        assert session.terminal.idle_output_replay == [output]
+
     def test_help_command_detail_shows_usage(self) -> None:
         session = Session()
         console, buf = _capture()
@@ -194,6 +205,18 @@ class TestDispatchSlash:
         assert "/help" in output
         assert "/tools" in output
         assert "unknown command" not in output
+
+    def test_clear_discards_idle_output_replay(self) -> None:
+        session = Session()
+        session.terminal.remember_idle_output("Selection cancelled — type a reply instead.")
+        session.record_incoming_alert(IncomingAlert(text="database latency is high"))
+        console, _buf = _capture()
+
+        assert dispatch_slash("/clear", session, console) is True
+
+        assert session.terminal.idle_output_replay == []
+        assert session.terminal.idle_transcript_visible is False
+        assert [alert.text for alert in session.alerts.entries] == ["database latency is high"]
 
     def test_trust_toggle(self) -> None:
         session = Session()

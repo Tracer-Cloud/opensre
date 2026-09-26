@@ -203,6 +203,11 @@ def test_build_prompt_session_installs_growing_bordered_composer() -> None:
     default_buffer_slot = editable_body.children[0]
     assert default_buffer_slot.content.height.min == 1
     assert default_buffer_slot.content.height.max == 8
+    assert default_buffer_slot.content.always_hide_cursor()
+    assert any(
+        processor.__class__.__name__ == "ComposerCaret"
+        for processor in default_buffer_slot.content.content.input_processors
+    )
     assert chrome.preferred_width(80).preferred == 79
 
 
@@ -462,6 +467,24 @@ def test_build_prompt_style_tracks_active_theme() -> None:
         and teal_attrs.color.lower() == THEME_REGISTRY["teal"].HIGHLIGHT.lstrip("#").lower()
     )
     assert amber_attrs.color != teal_attrs.color
+
+
+def test_prompt_style_keeps_transparent_filler_unstyled() -> None:
+    style = _build_prompt_style()
+    filler = style.get_attrs_for_style_str("")
+    default = style.get_attrs_for_style_str("class:default")
+
+    assert not any(
+        (
+            filler.color,
+            filler.bgcolor,
+            filler.underline,
+            filler.strike,
+            filler.blink,
+            filler.reverse,
+        )
+    )
+    assert default.color
 
 
 def test_command_tray_current_item_uses_highlight_style() -> None:

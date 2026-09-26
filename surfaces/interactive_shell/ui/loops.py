@@ -13,6 +13,7 @@ from rich.text import Text
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_MODE_REPORT
 from infrastructure.scheduling.scheduler.loops import LoopSummary
 from infrastructure.scheduling.scheduler.types import TaskRun, TaskStatus
+from infrastructure.terminal.markdown import UnpaddedRows
 from infrastructure.terminal.theme import BOLD_BRAND, DIM, ERROR, HIGHLIGHT, WARNING
 from surfaces.shared.terminal.components.rendering import (
     print_repl_renderable,
@@ -187,7 +188,7 @@ def render_loop_details(
         if selected.finished_at:
             console.print(Text(f"Finished: {_exact_time(selected.finished_at)}", style=DIM))
         if selected.report and selected.report.strip():
-            print_repl_renderable(console, Markdown(selected.report))
+            print_repl_renderable(console, UnpaddedRows(Markdown(selected.report)))
         else:
             console.print(Text(_finding(selected), style=DIM))
         if selected.error:

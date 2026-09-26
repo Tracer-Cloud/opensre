@@ -46,6 +46,8 @@ class Session(SessionCore):
         self.history.append({"type": "incoming_alert", "text": alert.text, "ok": True})
         self.store.append_turn(self, "incoming_alert", alert.text)
         self.alerts.add(alert)
+        if self.terminal.submitted_turn_count == 0:
+            self.terminal.idle_transcript_visible = True
 
     def clear(self, *, rotate_identity: bool = True) -> None:
         """Reset the session — core state plus the shell facets — for /new and /resume."""
@@ -54,6 +56,8 @@ class Session(SessionCore):
         self.alerts.clear()
         self.terminal.metrics.reset()
         self.terminal.submitted_turn_count = 0
+        self.terminal.idle_output_replay.clear()
+        self.terminal.idle_transcript_visible = False
         self.terminal.pending_prompt_default = None
         self.terminal.pending_prompt_autosubmit = False
         self.terminal.pending_prompt_plain_turn = False

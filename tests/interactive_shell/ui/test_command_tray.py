@@ -150,6 +150,57 @@ async def test_enter_submits_the_visibly_highlighted_automatic_completion() -> N
 
 
 @pytest.mark.asyncio
+async def test_rendered_cursor_tracks_character_index_after_wide_text() -> None:
+    async with _running_prompt() as prompt:
+        prompt.default_buffer.document = Document("你ab", 2)
+        _screen_lines(prompt)
+        screen = prompt.app.renderer._last_screen
+        assert screen is not None
+
+        cursor_cells = [
+            cell
+            for row in screen.data_buffer.values()
+            for cell in row.values()
+            if "class:composer-cursor" in cell.style
+        ]
+
+        assert len(cursor_cells) == 1
+        assert cursor_cells[0].char == "b"
+
+        prompt.default_buffer.cursor_position = 3
+        _screen_lines(prompt)
+        screen = prompt.app.renderer._last_screen
+        assert screen is not None
+        cursor_cells = [
+            cell
+            for row in screen.data_buffer.values()
+            for cell in row.values()
+            if "class:composer-cursor" in cell.style
+        ]
+        assert len(cursor_cells) == 1
+        assert cursor_cells[0].char == " "
+
+
+@pytest.mark.asyncio
+async def test_rendered_cursor_is_hidden_while_history_search_has_focus() -> None:
+    async with _running_prompt() as prompt:
+        _press(prompt, Keys.ControlR)
+        _screen_lines(prompt)
+        screen = prompt.app.renderer._last_screen
+        assert screen is not None
+
+        cursor_cells = [
+            cell
+            for row in screen.data_buffer.values()
+            for cell in row.values()
+            if "class:composer-cursor" in cell.style
+        ]
+
+        assert prompt.app.layout.current_control.__class__.__name__ == "SearchBufferControl"
+        assert cursor_cells == []
+
+
+@pytest.mark.asyncio
 async def test_modified_enter_keeps_newline_behavior_with_completions_open() -> None:
     async with _running_prompt() as prompt:
         _complete(prompt, "/")
@@ -186,6 +237,18 @@ async def test_resize_and_confirmation_keep_composer_and_tray_together() -> None
         return hidden
 
     async with _running_prompt(hide_composer=_hide_composer) as prompt:
+        # A long input wraps against the live-region width. Its hidden
+        # replacement must reserve exactly the same rows or fragments remain.
+        prompt.default_buffer.text = "x" * 180
+        chrome = prompt.layout.container.children[0].content.children[0]
+        visible_composer = chrome.children[1].content
+        hidden_pad = chrome.children[2].content
+        visible_height = visible_composer.preferred_height(79, 30).preferred
+        hidden = True
+        assert hidden_pad.preferred_height(79, 30).preferred == visible_height
+        assert _screen_lines(prompt) == ["Working"]
+        hidden = False
+
         _complete(prompt, "/effort ")
         _press(prompt, Keys.Down)
         output = prompt.app.output

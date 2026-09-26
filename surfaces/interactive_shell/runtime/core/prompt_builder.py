@@ -11,6 +11,7 @@ from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.formatted_text import ANSI, FormattedText
 from rich.console import Console
+from rich.text import Text
 
 from surfaces.interactive_shell.runtime.core.state import (
     PROMPT_REFRESH_INTERVAL_S,
@@ -35,9 +36,13 @@ from surfaces.interactive_shell.ui.input_prompt.resize import install_shrink_res
 from surfaces.interactive_shell.ui.input_prompt.style import refresh_prompt_theme
 from surfaces.interactive_shell.ui.prompt_visibility import typing_box_hidden
 from surfaces.interactive_shell.ui.terminal_ui import render_prompt_region
-from surfaces.shared.terminal.banner import render_launch_banner
+from surfaces.shared.terminal.banner import build_launch_banner
 from surfaces.shared.terminal.components.cpr_stdin import drain_stale_cpr_bytes
-from surfaces.shared.terminal.components.rendering import repl_clear_screen
+from surfaces.shared.terminal.components.rendering import (
+    print_repl_text,
+    repl_clear_screen,
+    repl_output_width,
+)
 
 # Brief pause so a CPR reply still in flight lands in the stdin buffer before the
 # non-blocking drain runs; without it the reply leaks into this prompt as literal bytes.
@@ -120,24 +125,59 @@ class PromptBuilder:
         """Clear the viewport and reprint the launch banner at the new width; True when done.
 
         The banner is static scrollback laid out for the width it was printed
-        at; a resize reflows it into sliced / wrapped garbage. While nothing
-        has been submitted the screen holds only the banner and the prompt, so
-        it is safe to clear and redraw both. Once a turn exists the banner sits
-        in scrollback above the conversation and is left alone.
+        at; a resize reflows it into sliced / wrapped garbage. Before a user
+        turn, the screen holds the banner, prompt, and bounded shell-only
+        notices, so all three can be cleared and redrawn. Once conversation
+        context exists the banner sits above that transcript and is left alone.
 
         No startup spin here — SIGWINCH must stay instant.
         """
-        if self.session.terminal.submitted_turn_count > 0 or self.pt_app is None:
+        # /resume restores conversation context after resetting the local turn
+        # counter, and clearing here would discard its rendered scrollback.
+        # Shell-only history (for example the internal /choose used by the
+        # startup picker) is not conversation context and must not prevent the
+        # still-idle banner from being repaired after a shrink.
+        if (
+            self.session.terminal.submitted_turn_count > 0
+            or self.session.agent.messages
+            or self.session.accumulated_context
+            or self.session.terminal.idle_transcript_visible
+            or self.pt_app is None
+        ):
             return False
-        repl_clear_screen()
-        drain_stale_cpr_bytes()
+        size = self.pt_app.output.get_size()
         console = Console(
             highlight=False,
             force_terminal=True,
             color_system="truecolor",
             legacy_windows=False,
+            width=size.columns,
         )
-        render_launch_banner(console, session=self.session, animate=False)
+        banner = build_launch_banner(console, session=self.session)
+        banner_rows = len(console.render_lines(banner, pad=False))
+        replay_console = Console(
+            highlight=False,
+            force_terminal=True,
+            color_system="truecolor",
+            legacy_windows=False,
+            width=repl_output_width(console),
+        )
+        replay_rows = sum(
+            len(replay_console.render_lines(Text(output), pad=False))
+            for output in self.session.terminal.idle_output_replay
+        )
+        live_rows = self.pt_app.layout.container.preferred_height(
+            size.columns,
+            size.rows,
+        ).preferred
+        if banner_rows + replay_rows + live_rows > size.rows:
+            return False
+
+        repl_clear_screen()
+        drain_stale_cpr_bytes()
+        console.print(banner)
+        for output in self.session.terminal.idle_output_replay:
+            print_repl_text(console, output)
         return True
 
     def _expand_collapsed_output(self, text: str) -> None:

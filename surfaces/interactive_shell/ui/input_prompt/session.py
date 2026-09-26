@@ -17,11 +17,13 @@ from prompt_toolkit.layout.containers import (
     Window,
     to_container,
 )
+from prompt_toolkit.layout.controls import BufferControl
 from prompt_toolkit.layout.dimension import Dimension
 from prompt_toolkit.layout.menus import CompletionsMenu, MultiColumnCompletionsMenu
 
 from surfaces.interactive_shell.prompt_history import load_prompt_history
 from surfaces.interactive_shell.runtime import Session
+from surfaces.interactive_shell.ui.input_prompt.caret import ComposerCaret
 from surfaces.interactive_shell.ui.input_prompt.command_tray import CommandTrayControl
 from surfaces.interactive_shell.ui.input_prompt.completion import ShellCompleter
 from surfaces.interactive_shell.ui.input_prompt.frame import rounded_composer_frame
@@ -53,6 +55,15 @@ def _limit_editable_height(main_input: HSplit) -> HSplit:
     # it changed). Window stores a Filter, not a raw bool — assign via to_filter.
     default_buffer_slot.content.height = Dimension(min=1, max=_COMPOSER_MAX_EDIT_ROWS)
     default_buffer_slot.content.dont_extend_height = to_filter(True)
+    default_buffer_slot.content.always_hide_cursor = to_filter(True)
+    buffer_control = default_buffer_slot.content.content
+    if not isinstance(buffer_control, BufferControl):
+        raise RuntimeError("prompt-toolkit input window is missing its buffer control")
+    processors = buffer_control.input_processors
+    if processors is None:
+        buffer_control.input_processors = [ComposerCaret()]
+    else:
+        processors.append(ComposerCaret())
     return HSplit(editable_children)
 
 
@@ -81,6 +92,10 @@ def _install_prompt_frame(
 
     before_input = main_input.content.children[0]
     editable_body = _limit_editable_height(main_input.content)
+
+    def _live_region_width() -> int:
+        return prompt_line_width(session.app.output.get_size().columns)
+
     # Inner surface so the editable rows share INPUT_SURFACE with the border
     # (otherwise the frame looks hollow against the terminal bg).
     surface_body: AnyContainer = HSplit([editable_body], style="class:composer-body")
@@ -102,7 +117,7 @@ def _install_prompt_frame(
         composer_container = to_container(composer)
 
         def _current_composer_rows() -> int:
-            width = prompt_line_width()
+            width = _live_region_width()
             screen_rows = session.app.output.get_size().rows
             outside_rows = sum(
                 to_container(child).preferred_height(width, screen_rows).preferred
@@ -126,11 +141,11 @@ def _install_prompt_frame(
                 filter=~shown,
             ),
         ]
-    # Pack status + composer at the top of the live region (no JUSTIFY gap
-    # between Auto and the input box). Last column stays empty for wrap safety.
+    # Pack status + composer at the full prompt width. Last column stays empty
+    # for wrap safety.
     chrome = HSplit(
         [before_input, *box_rows],
-        width=prompt_line_width,
+        width=_live_region_width,
         align=VerticalAlign.TOP,
     )
     framed_input = FloatContainer(

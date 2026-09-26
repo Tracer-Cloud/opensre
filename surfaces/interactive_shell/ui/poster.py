@@ -69,7 +69,7 @@ def refresh_welcome_poster(
     session: object = None,
     theme_notice: str | None = None,
 ) -> None:
-    """Clear scrollback and redraw the welcome panel with the active theme."""
+    """Clear the viewport and redraw the welcome panel with the active theme."""
     from surfaces.shared.terminal.components.cpr_stdin import drain_stale_cpr_bytes
 
     repl_clear_screen()

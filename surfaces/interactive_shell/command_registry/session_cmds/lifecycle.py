@@ -12,6 +12,8 @@ from surfaces.interactive_shell.ui import DIM, HIGHLIGHT
 def _cmd_clear(session: Session, console: Console, _args: list[str]) -> bool:
     from surfaces.interactive_shell.ui import render_launch_banner
 
+    session.terminal.idle_output_replay.clear()
+    session.terminal.idle_transcript_visible = False
     console.clear()
     render_launch_banner(console, session=session)
     return True
