@@ -11,10 +11,7 @@ from typing import TextIO, cast
 from prompt_toolkit.application import Application, run_in_terminal
 from prompt_toolkit.patch_stdout import StdoutProxy
 
-from surfaces.interactive_shell.ui.input_prompt.synchronized import (
-    SYNCED_OUTPUT_END,
-    SYNCED_OUTPUT_START,
-)
+from surfaces.interactive_shell.ui.input_prompt.synchronized import synchronized_output
 
 
 class _AppBoundStdoutProxy(StdoutProxy):
@@ -44,17 +41,12 @@ class _AppBoundStdoutProxy(StdoutProxy):
             self._output.flush()
 
         async def write_above_prompt() -> None:
-            # Terminals that support synchronized output keep the erase, write,
-            # and redraw transaction off-screen until the composer is complete.
-            # Unsupported terminals safely ignore these private-mode toggles.
+            # VT terminals keep the erase, write, and redraw transaction
+            # off-screen until the composer is complete. Native Win32 runs
+            # the same transaction without DEC private-mode bytes.
             async with self._redraw_lock:
-                self._output.write_raw(SYNCED_OUTPUT_START)
-                self._output.flush()
-                try:
+                with synchronized_output(self._output):
                     await run_in_terminal(write_and_flush, in_executor=False)
-                finally:
-                    self._output.write_raw(SYNCED_OUTPUT_END)
-                    self._output.flush()
 
         if loop is None:
             write_and_flush()

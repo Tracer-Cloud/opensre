@@ -22,6 +22,7 @@ from surfaces.interactive_shell.ui.input_prompt.resize import (
     live_region_height_cap,
     prepare_live_region_height,
 )
+from surfaces.interactive_shell.ui.input_prompt.synchronized import synchronized_output
 
 
 @dataclass
@@ -33,6 +34,20 @@ class _Cursor:
 @dataclass
 class _Screen:
     height: int
+
+
+class _NativeOutput:
+    """Minimal non-VT output matching native Win32 write behavior."""
+
+    def __init__(self) -> None:
+        self.writes: list[str] = []
+        self.flush_count = 0
+
+    def write_raw(self, text: str) -> None:
+        self.writes.append(text)
+
+    def flush(self) -> None:
+        self.flush_count += 1
 
 
 def _row(text: str, *, width: int) -> dict[int, Any]:
@@ -61,6 +76,17 @@ def test_prompt_root_hsplit_is_top_aligned_not_justify() -> None:
 def test_live_region_height_cap_is_tight() -> None:
     assert live_region_height_cap(5) == 6
     assert live_region_height_cap(20) == 12
+
+
+def test_synchronized_output_skips_private_mode_bytes_for_non_vt_output() -> None:
+    output = _NativeOutput()
+
+    with synchronized_output(output):
+        output.write_raw("frame")
+        output.flush()
+
+    assert output.writes == ["frame"]
+    assert output.flush_count == 1
 
 
 def test_prepare_live_region_height_zeros_cpr_and_drops_tall_last_screen() -> None:
