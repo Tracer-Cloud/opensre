@@ -32,7 +32,7 @@ def test_repl_table_minimal_box() -> None:
     assert t.title == "T"
 
 
-def test_repl_clear_screen_erases_scrollback_and_viewport(
+def test_repl_clear_screen_preserves_scrollback_by_default(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class _FakeStdout:
@@ -54,6 +54,14 @@ def test_repl_clear_screen_erases_scrollback_and_viewport(
     monkeypatch.setattr("surfaces.shared.terminal.components.rendering.sys.stdout", fake)
 
     repl_clear_screen()
+
+    assert fake.writes == ["\x1b[2J\x1b[H"]
+    assert fake.flushed is True
+
+    fake.writes.clear()
+    fake.flushed = False
+
+    repl_clear_screen(scrollback=True)
 
     assert fake.writes == ["\x1b[3J\x1b[2J\x1b[H"]
     assert fake.flushed is True

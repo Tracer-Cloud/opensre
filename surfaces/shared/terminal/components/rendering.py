@@ -278,11 +278,12 @@ def _repl_write_buffer(rendered: str) -> None:
         _REPL_OUTPUT_PREPARED.reset(token)
 
 
-def repl_clear_screen() -> None:
-    """Clear the terminal scrollback when the REPL runs under patch_stdout."""
+def repl_clear_screen(*, scrollback: bool = False) -> None:
+    """Clear the viewport and optionally saved scrollback under ``patch_stdout``."""
     if not sys.stdout.isatty():
         return
-    sys.stdout.write("\x1b[3J\x1b[2J\x1b[H")
+    erase_scrollback = "\x1b[3J" if scrollback else ""
+    sys.stdout.write(f"{erase_scrollback}\x1b[2J\x1b[H")
     sys.stdout.flush()
 
 

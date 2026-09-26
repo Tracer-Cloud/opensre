@@ -46,7 +46,7 @@ def test_resize_after_resume_preserves_rendered_transcript(
     assert session.terminal.submitted_turn_count == 0
     monkeypatch.setattr(
         "surfaces.interactive_shell.runtime.core.prompt_builder.repl_clear_screen",
-        lambda: clear_calls.append(True),
+        lambda *, scrollback=False: clear_calls.append(scrollback),
     )
     monkeypatch.setattr(
         "surfaces.interactive_shell.runtime.core.prompt_builder.drain_stale_cpr_bytes",
@@ -73,7 +73,7 @@ def test_resize_before_first_turn_rerenders_launch_banner(
     banner_calls: list[bool] = []
     monkeypatch.setattr(
         "surfaces.interactive_shell.runtime.core.prompt_builder.repl_clear_screen",
-        lambda: clear_calls.append(True),
+        lambda *, scrollback=False: clear_calls.append(scrollback),
     )
     monkeypatch.setattr(
         "surfaces.interactive_shell.runtime.core.prompt_builder.drain_stale_cpr_bytes",
