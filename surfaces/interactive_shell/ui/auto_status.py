@@ -25,13 +25,11 @@ def auto_status_ansi(session: Session, *, quiet: bool = False, max_width: int | 
     title_end = clipped.find(" · ")
     title = clipped if title_end < 0 else clipped[:title_end]
     rest = "" if title_end < 0 else clipped[title_end:]
-    pad = max(0, width - len(clipped))
     title_ansi = ui_theme.DIM_ANSI if quiet else ui_theme.BOLD_REPLY_MARKER_ANSI
-    return (
-        f"{title_ansi}{title}{ui_theme.ANSI_RESET}"
-        f"{ui_theme.DIM_ANSI}{rest}{ui_theme.ANSI_RESET}"
-        f"{' ' * pad}"
-    )
+    # Keep live content shorter than the terminal. Internal padding before the
+    # CI chip turns this into a full-width row that reflows into scrollback on
+    # a shrink before the resize callback can replace it.
+    return f"{title_ansi}{title}{ui_theme.ANSI_RESET}{ui_theme.DIM_ANSI}{rest}{ui_theme.ANSI_RESET}"
 
 
 __all__ = ["auto_status_ansi"]

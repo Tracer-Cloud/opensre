@@ -86,6 +86,7 @@ def test_zero_chip_is_dim_and_live_line_fits_narrow_terminals(
 
         plain = fragment_list_to_text(to_formatted_text(ANSI(rendered)))
         assert cell_len(plain) <= width
+        assert plain == plain.rstrip()
         assert "✗" not in plain
         if width >= 40:
             assert f"{theme.DIM_ANSI}CI/CD fixes (0)" in rendered

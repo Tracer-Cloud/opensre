@@ -203,7 +203,9 @@ def test_build_prompt_session_installs_growing_bordered_composer() -> None:
     default_buffer_slot = editable_body.children[0]
     assert default_buffer_slot.content.height.min == 1
     assert default_buffer_slot.content.height.max == 8
-    assert chrome.preferred_width(80).preferred == 79
+    # Full-width transient rows reflow into scrollback before SIGWINCH can
+    # erase them, so the live region leaves headroom in an 80-column terminal.
+    assert chrome.preferred_width(80).preferred == 60
 
 
 @pytest.mark.asyncio

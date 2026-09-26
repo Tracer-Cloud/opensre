@@ -36,6 +36,9 @@ from surfaces.interactive_shell.ui.input_prompt.style import _build_prompt_style
 
 _COMPOSER_MAX_EDIT_ROWS = 8
 _COMPOSER_MIN_FRAME_ROWS = 3
+# Headroom keeps live rows out of terminal scrollback during ordinary width
+# changes; once reflow commits a prompt row there, cursor erasure cannot remove it.
+_LIVE_REGION_MAX_WIDTH = 60
 
 
 def _limit_editable_height(main_input: HSplit) -> HSplit:
@@ -126,11 +129,11 @@ def _install_prompt_frame(
                 filter=~shown,
             ),
         ]
-    # Pack status + composer at the top of the live region (no JUSTIFY gap
-    # between Auto and the input box). Last column stays empty for wrap safety.
+    # Pack status + composer at the top with enough horizontal headroom that a
+    # normal shrink does not reflow this transient chrome into scrollback.
     chrome = HSplit(
         [before_input, *box_rows],
-        width=prompt_line_width,
+        width=lambda: min(prompt_line_width(), _LIVE_REGION_MAX_WIDTH),
         align=VerticalAlign.TOP,
     )
     framed_input = FloatContainer(
