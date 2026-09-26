@@ -136,6 +136,7 @@ class PromptBuilder:
             self.session.terminal.submitted_turn_count > 0
             or self.session.agent.messages
             or self.session.accumulated_context
+            or self.session.alerts.entries
             or self.pt_app is None
         ):
             return False

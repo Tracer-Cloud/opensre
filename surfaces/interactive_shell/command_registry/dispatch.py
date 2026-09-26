@@ -48,7 +48,8 @@ def _attach_slash_analytics(
     captured_output: str,
 ) -> None:
     terminal = session_terminal(session)
-    if terminal is not None and terminal.submitted_turn_count == 0:
+    slash_root = command_line.strip().partition(" ")[0].lower()
+    if terminal is not None and terminal.submitted_turn_count == 0 and slash_root != "/clear":
         terminal.remember_idle_output(captured_output)
     latest = _latest_slash_record(session)
     ok = _latest_record_ok(session, "slash")

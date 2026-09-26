@@ -205,6 +205,15 @@ class TestDispatchSlash:
         assert "/tools" in output
         assert "unknown command" not in output
 
+    def test_clear_discards_idle_output_replay(self) -> None:
+        session = Session()
+        session.terminal.remember_idle_output("Selection cancelled — type a reply instead.")
+        console, _buf = _capture()
+
+        assert dispatch_slash("/clear", session, console) is True
+
+        assert session.terminal.idle_output_replay == []
+
     def test_trust_toggle(self) -> None:
         session = Session()
         console, _ = _capture()

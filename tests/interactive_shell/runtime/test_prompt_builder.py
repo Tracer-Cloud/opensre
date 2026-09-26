@@ -11,6 +11,7 @@ from prompt_toolkit.input.defaults import create_pipe_input
 from prompt_toolkit.output.base import Size
 from prompt_toolkit.output.vt100 import Vt100_Output
 
+from core.domain.alerts.inbox import IncomingAlert
 from surfaces.interactive_shell.runtime.core.prompt_builder import PromptBuilder
 from surfaces.interactive_shell.runtime.core.state import ReplState, SpinnerState
 from surfaces.interactive_shell.session import Session
@@ -56,6 +57,25 @@ def test_resize_after_resume_preserves_rendered_transcript(
     monkeypatch.setattr(
         "surfaces.interactive_shell.runtime.core.prompt_builder.render_launch_banner",
         lambda *_args, **_kwargs: None,
+    )
+
+    rerendered = builder._rerender_banner_if_idle()
+
+    assert rerendered is False
+    assert clear_calls == []
+
+
+def test_resize_after_pre_turn_alert_preserves_rendered_transcript(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = Session()
+    session.record_incoming_alert(IncomingAlert(text="database latency is high"))
+    builder = PromptBuilder(session, ReplState(), SpinnerState())
+    builder.pt_app = object()  # type: ignore[assignment]
+    clear_calls: list[bool] = []
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.runtime.core.prompt_builder.repl_clear_screen",
+        lambda *, scrollback=False: clear_calls.append(scrollback),
     )
 
     rerendered = builder._rerender_banner_if_idle()
