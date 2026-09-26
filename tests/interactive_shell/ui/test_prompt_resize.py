@@ -16,6 +16,7 @@ from prompt_toolkit.output.vt100 import Vt100_Output
 
 from surfaces.interactive_shell.ui.input_prompt import build_prompt_session
 from surfaces.interactive_shell.ui.input_prompt.resize import (
+    _reflowed_rows_above_cursor,
     install_shrink_resize_guard,
     live_region_height_cap,
     prepare_live_region_height,
@@ -31,6 +32,11 @@ class _Cursor:
 @dataclass
 class _Screen:
     height: int
+
+
+def _row(text: str, *, width: int) -> dict[int, Any]:
+    """A rendered frame row: *text*, padded out to *width* the way the UI pads."""
+    return {column: SimpleNamespace(char=char) for column, char in enumerate(text.ljust(width))}
 
 
 def test_prompt_root_hsplit_is_top_aligned_not_justify() -> None:
@@ -164,7 +170,7 @@ def _painted_resize_app() -> tuple[Any, Any, io.StringIO]:
     renderer._cursor_pos = _Cursor(x=4, y=2)
     renderer._last_screen = SimpleNamespace(
         height=4,
-        data_buffer={row: dict.fromkeys(range(109)) for row in range(4)},
+        data_buffer={row: _row("x" * 109, width=109) for row in range(4)},
     )
     renderer._last_size = Size(rows=30, columns=110)
     terminal.seek(0)
@@ -261,3 +267,31 @@ def test_shrink_resize_guard_disables_autowrap_after_render() -> None:
     app.renderer.render(app, Layout(Window()))
     assert calls == ["render"]
     assert disabled
+
+
+def test_reflow_count_ignores_the_padding_prompt_toolkit_writes() -> None:
+    """A terminal reflows a row by its content, not by its trailing blanks.
+
+    A row of trailing spaces stays one physical row however far the window
+    shrinks. Counting that padding predicts rows the shrink never created, and
+    the erase then starts above the frame and takes transcript with it.
+    """
+    # Arrange: a 189-wide frame — a full status row, then a blank row that is
+    # padded to the same width — with the cursor on the third row.
+    renderer = SimpleNamespace(
+        _last_screen=SimpleNamespace(
+            data_buffer={
+                0: _row(
+                    "Auto (High) \u00b7 Allow all".ljust(172) + "\u00b7 CI/CD fixes (0)", width=189
+                ),
+                1: _row("", width=189),
+            }
+        ),
+        _cursor_pos=_Cursor(x=0, y=2),
+    )
+
+    rows = _reflowed_rows_above_cursor(renderer, columns=100)
+
+    # The status row really does wrap onto two rows at 100 columns; the blank
+    # one does not wrap at all. Counting its padding would say four.
+    assert rows == 3

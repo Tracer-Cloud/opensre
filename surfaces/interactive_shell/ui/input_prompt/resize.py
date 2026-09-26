@@ -80,8 +80,21 @@ def _size_changed(previous: Size | None, current: Size) -> bool:
 
 
 def _screen_row_width(screen: Any, row: int) -> int:
+    """Cells of *row* a terminal will reflow, ignoring trailing blanks.
+
+    prompt-toolkit pads a frame row out to the region width, but a terminal
+    reflows a row by its content: a row of trailing spaces stays one physical
+    row however far the window shrinks (verified against tmux). Counting that
+    padding predicts rows the shrink never created, and the erase then starts
+    above the frame and takes transcript with it.
+    """
     data = getattr(screen, "data_buffer", {}).get(row, {})
-    return max(data, default=-1) + 1
+    last = -1
+    for column, char in data.items():
+        text = getattr(char, "char", char)
+        if isinstance(text, str) and text.strip():
+            last = max(last, column)
+    return last + 1
 
 
 def _reflowed_rows_above_cursor(renderer: Any, *, columns: int) -> int | None:
