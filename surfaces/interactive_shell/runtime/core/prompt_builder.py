@@ -38,7 +38,11 @@ from surfaces.interactive_shell.ui.prompt_visibility import typing_box_hidden
 from surfaces.interactive_shell.ui.terminal_ui import render_prompt_region
 from surfaces.shared.terminal.banner import build_launch_banner
 from surfaces.shared.terminal.components.cpr_stdin import drain_stale_cpr_bytes
-from surfaces.shared.terminal.components.rendering import print_repl_text, repl_clear_screen
+from surfaces.shared.terminal.components.rendering import (
+    print_repl_text,
+    repl_clear_screen,
+    repl_output_width,
+)
 
 # Brief pause so a CPR reply still in flight lands in the stdin buffer before the
 # non-blocking drain runs; without it the reply leaks into this prompt as literal bytes.
@@ -151,8 +155,15 @@ class PromptBuilder:
         )
         banner = build_launch_banner(console, session=self.session)
         banner_rows = len(console.render_lines(banner, pad=False))
+        replay_console = Console(
+            highlight=False,
+            force_terminal=True,
+            color_system="truecolor",
+            legacy_windows=False,
+            width=repl_output_width(console),
+        )
         replay_rows = sum(
-            len(console.render_lines(Text(output), pad=False))
+            len(replay_console.render_lines(Text(output), pad=False))
             for output in self.session.terminal.idle_output_replay
         )
         live_rows = self.pt_app.layout.container.preferred_height(

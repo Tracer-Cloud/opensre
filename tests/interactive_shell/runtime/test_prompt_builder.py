@@ -145,6 +145,33 @@ def test_resize_does_not_duplicate_banner_when_idle_ui_exceeds_viewport(
     assert clear_calls == []
 
 
+def test_resize_measures_idle_replay_at_repl_output_width(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = Session()
+    session.terminal.remember_idle_output("x" * 120)
+    builder = PromptBuilder(session, ReplState(), SpinnerState())
+    builder.pt_app = _idle_prompt_app(rows=7, columns=120)  # type: ignore[assignment]
+    clear_calls: list[bool] = []
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.runtime.core.prompt_builder.repl_clear_screen",
+        lambda *, scrollback=False: clear_calls.append(scrollback),
+    )
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.runtime.core.prompt_builder.build_launch_banner",
+        lambda *_args, **_kwargs: Text("banner\nrows"),
+    )
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.runtime.core.prompt_builder.repl_output_width",
+        lambda _console: 119,
+    )
+
+    rerendered = builder._rerender_banner_if_idle()
+
+    assert rerendered is False
+    assert clear_calls == []
+
+
 @pytest.mark.asyncio
 async def test_enter_submits_without_restarting_the_prompt_application(
     monkeypatch: pytest.MonkeyPatch,
