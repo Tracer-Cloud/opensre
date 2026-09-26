@@ -1,35 +1,20 @@
 """Keep the live prompt region compact; reset chrome cleanly on resize.
 
-Root cause
-----------
-prompt-toolkit sizes a non-fullscreen Screen as::
+Invariants the resize path depends on:
 
-    height = max(_min_available_height, last_height, preferred_height)
-
-After CPR, ``_min_available_height`` is "rows below the cursor" (the rest of the
-terminal under the launch banner). That tall Screen scrolls the banner away,
-and ``last_height`` sticks so later paints stay hollow.
-
-Partial ``erase`` on SIGWINCH cannot keep scrollback chrome and the live
-region aligned — soft-wrap and reflow leave Auto/composer ghosts. While the
-screen holds only the banner, the host therefore clears the viewport, reprints
-the static banner, and redraws the prompt from a clean cursor position.
-
-Once a turn is on screen the transcript above must survive, so the host
-erases only the live region before redrawing. Two things make that erase miss.
-
-A width shrink reflows each old prompt row onto multiple physical rows — a
-terminal rewraps a row that fills the width even when it was painted with
-autowrap off — so prompt-toolkit's stored cursor offset is too small and
-erasing from it strands the top of the frame.
-
-Dragging a window edge then delivers a *burst* of resize signals, and the
-repaint between them is gated on a cursor-position report. The first signal
-erases the frame and resets the cursor and last screen; a second erase has no
-frame to measure, falls back to prompt-toolkit's own path, and erases from
-that reset cursor — far below the frame still on screen, which it leaves
-behind. Either way the result is one status/composer copy per signal, so the
-host erases exactly once per painted frame.
+* prompt-toolkit sizes a non-fullscreen Screen as ``max(_min_available_height,
+  last_height, preferred_height)``. After CPR ``_min_available_height`` is the
+  rows below the cursor, so it is forced to zero on every paint; left alone it
+  sizes a Screen tall enough to scroll the banner away, and ``last_height``
+  then keeps later paints hollow.
+* A terminal rewraps a row by its content, including rows painted with
+  autowrap off, so a width shrink moves the frame relative to prompt-toolkit's
+  stored cursor offset. The erase recomputes that offset rather than trusting
+  it; erasing from the stale one strands frame rows above the cursor.
+* Only a painted frame may be erased. Erasing resets the cursor and last
+  screen, so a second erase before the next paint has nothing to measure and
+  would start below the frame still on screen.
+* The transcript above a turn is scrollback and must survive every erase.
 """
 
 from __future__ import annotations
@@ -82,11 +67,9 @@ def _size_changed(previous: Size | None, current: Size) -> bool:
 def _screen_row_width(screen: Any, row: int) -> int:
     """Cells of *row* a terminal will reflow, ignoring trailing blanks.
 
-    prompt-toolkit pads a frame row out to the region width, but a terminal
-    reflows a row by its content: a row of trailing spaces stays one physical
-    row however far the window shrinks (verified against tmux). Counting that
-    padding predicts rows the shrink never created, and the erase then starts
-    above the frame and takes transcript with it.
+    prompt-toolkit pads a frame row out to the region width, but a row of
+    trailing spaces stays one physical row however far the window shrinks, so
+    counting that padding would over-predict the rows a shrink creates.
     """
     data = getattr(screen, "data_buffer", {}).get(row, {})
     last = -1

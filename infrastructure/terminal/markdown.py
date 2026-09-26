@@ -5,15 +5,12 @@ ellipsis; a reply table here wraps every cell and draws minimal column rules
 under a heavy header rule. Lives beside the theme so every tier that paints a
 reply (surfaces, integrations) renders markdown the same way.
 
-Reply rows must also reach the terminal with no trailing padding. A reply is
-scrollback: once written it belongs to the terminal, and a width change
-reflows it with no chance to re-render. Padding is invisible at the width it
-was written for, but after a shrink the row no longer fits on one physical
-row, so the terminal wraps the run of padding spaces onto a second, blank
-row — every reply then reads as double spaced. Rich pads because ``Markdown``
-forces ``justify="left"`` on each paragraph and ``Lines.justify`` left-justifies
-by truncating with ``pad=True``. :class:`UnpaddedRows` undoes that for any
-renderable bound for scrollback.
+Rows bound for scrollback must also carry no trailing padding. The terminal
+owns them once written and reflows them on a width change, and padding that
+is invisible at the width it was written for wraps onto a second, blank row
+after a shrink. Rich pads because ``Markdown`` forces ``justify="left"``,
+which left-justifies by truncating with ``pad=True``; :class:`UnpaddedRows`
+undoes that for any renderable.
 """
 
 from __future__ import annotations

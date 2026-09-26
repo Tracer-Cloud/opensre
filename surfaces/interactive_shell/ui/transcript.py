@@ -1,21 +1,9 @@
 """Aligned semantic labels for interactive-shell transcript rows.
 
-Rows must reach the terminal with no trailing padding
-------------------------------------------------------
-Transcript rows are scrollback: once written they belong to the terminal, and
-a width change reflows them with no chance to re-render. A row padded out to
-the render width is invisible at the width it was written for, but after a
-shrink it no longer fits on one physical row, so the terminal wraps the run of
-padding spaces onto a second, blank row. Every reply then reads as double
-spaced, and any row whose real text overflows breaks mid-word.
-
-Rich pads from two directions here, so ``_GutterRow`` renders the body with
-``pad=False`` and trims what is left via :func:`trim_row_padding`:
-
-* ``Table.grid`` — the gutter this module used to build — pads each cell out
-  to its column width, and the body column is as wide as the widest body line.
-* ``Markdown`` forces ``justify="left"`` on every paragraph, and
-  ``Lines.justify`` left-justifies by truncating with ``pad=True``.
+Rows go to scrollback, which the terminal reflows on a width change, so they
+must carry no trailing padding — see :mod:`infrastructure.terminal.markdown`.
+``Table.grid`` pads each cell out to its column width, so the gutter renders
+its body with ``pad=False`` and trims what is left via :func:`trim_row_padding`.
 """
 
 from __future__ import annotations

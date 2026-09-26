@@ -1,13 +1,9 @@
 """Synchronized terminal output (DECSET 2026) for multi-step repaints.
 
-A repaint that erases before it draws is two visible states, not one: the
-terminal shows the gap. On a resize burst that reads as the Auto bar and the
-composer flickering once per signal.
-
-Terminals that implement synchronized output hold every write between the
-begin and end markers off-screen and present them as one frame. Terminals
-that do not simply ignore both private-mode toggles, so the repaint stays
-correct and only loses the flicker-free presentation.
+A terminal that implements the mode holds every write between the begin and
+end markers off-screen and presents them as one frame, so an erase and the
+redraw that replaces it never show as two states. Terminals without support
+ignore both toggles, leaving the repaint correct but unframed.
 
 The mode does not nest: a second end marker presents whatever has been
 written, whoever wrote it. Only one writer may hold a frame at a time, and it
