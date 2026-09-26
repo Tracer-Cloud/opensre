@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
 
+import pytest
 from prompt_toolkit.layout.containers import HSplit, VerticalAlign, Window
 from prompt_toolkit.layout.layout import Layout
 from prompt_toolkit.output.base import Size
@@ -93,6 +94,8 @@ def test_cpr_report_discards_fill_to_floor() -> None:
     app._on_resize = MagicMock()
     app._request_absolute_cursor_position = MagicMock()
     app._redraw = MagicMock()
+    # A MagicMock would hand back a truthy stand-in for this flag.
+    app._running_in_terminal = False
 
     install_shrink_resize_guard(app)
     renderer.report_absolute_cursor_row(5)
@@ -162,6 +165,8 @@ def _painted_resize_app() -> tuple[Any, Any, io.StringIO]:
     app._on_resize = MagicMock()
     app._request_absolute_cursor_position = MagicMock()
     app._redraw = MagicMock()
+    # A MagicMock would hand back a truthy stand-in for this flag.
+    app._running_in_terminal = False
 
     install_shrink_resize_guard(app, rerender_banner=lambda: False)
     # Paint a frame — only then is there a live region to erase.
@@ -211,27 +216,52 @@ def test_resize_burst_erases_once_per_painted_frame() -> None:
     assert app._redraw.call_count == 2
 
 
-def test_resize_holds_the_frame_open_until_the_repaint_lands() -> None:
+def test_resize_erase_and_repaint_are_one_synchronized_frame() -> None:
     """Erase-then-draw is two visible states unless the terminal holds them.
 
-    A repaint can wait on a cursor-position report, so ``_redraw`` returns
-    before the replacement prompt exists. Closing the frame then would present
-    the erased gap — the flicker the frame exists to remove.
+    ``_redraw`` paints inline, so the replacement prompt exists before the
+    frame closes and the gap never reaches the screen.
     """
-    app, renderer, terminal = _painted_resize_app()
+    app, _renderer, terminal = _painted_resize_app()
 
     app._on_resize()
 
     emitted = terminal.getvalue()
-    assert "\x1b[?2026h" in emitted, "resize must open a synchronized frame"
-    assert emitted.index("\x1b[?2026h") < emitted.index("\x1b[J"), "erase belongs inside it"
-    # The mocked redraw paints nothing, so the frame must still be held open.
+    start, erase, end = (
+        emitted.find("\x1b[?2026h"),
+        emitted.find("\x1b[J"),
+        emitted.find("\x1b[?2026l"),
+    )
+    assert -1 < start < erase < end
+
+
+def test_resize_during_background_output_opens_no_frame() -> None:
+    """The stdout proxy owns the same private mode, and it does not nest.
+
+    While the app runs something in the terminal, ``_redraw`` paints nothing
+    and the proxy drives the very same toggles — a frame opened here would be
+    closed by the proxy's end marker, presenting the bare erase.
+    """
+    app, _renderer, terminal = _painted_resize_app()
+    app._running_in_terminal = True
+
+    app._on_resize()
+
+    emitted = terminal.getvalue()
+    assert "\x1b[?2026h" not in emitted
     assert "\x1b[?2026l" not in emitted
 
-    # The render that finally paints closes it, presenting erase + draw as one.
-    renderer.render(app, Layout(Window(height=3)))
 
-    assert "\x1b[?2026l" in terminal.getvalue()
+def test_resize_restores_the_terminal_when_the_repaint_raises() -> None:
+    """A frame left open would hold the display until the terminal times out."""
+    app, _renderer, terminal = _painted_resize_app()
+    app._redraw.side_effect = RuntimeError("repaint failed")
+
+    with pytest.raises(RuntimeError):
+        app._on_resize()
+
+    # The frame is closed on the way out, so the display is never left held.
+    assert terminal.getvalue().endswith("\x1b[?2026l")
 
 
 def test_shrink_resize_guard_disables_autowrap_after_render() -> None:
@@ -269,6 +299,8 @@ def test_shrink_resize_guard_disables_autowrap_after_render() -> None:
     app._on_resize = MagicMock()
     app._request_absolute_cursor_position = MagicMock()
     app._redraw = MagicMock()
+    # A MagicMock would hand back a truthy stand-in for this flag.
+    app._running_in_terminal = False
 
     install_shrink_resize_guard(app)
     disabled.clear()

@@ -9,39 +9,39 @@ begin and end markers off-screen and present them as one frame. Terminals
 that do not simply ignore both private-mode toggles, so the repaint stays
 correct and only loses the flicker-free presentation.
 
-The frame is opened and closed by separate calls rather than a context
-manager because the two ends belong to different callbacks: a resize opens
-it, and the render that finally paints closes it. A repaint can wait on a
-cursor-position report, so the redraw call returns before the replacement
-prompt exists — closing the frame there would present the erased gap, which
-is the flicker this exists to remove. The private mode carries an
-implementation timeout for exactly this reason, so a frame that is never
-closed resolves itself instead of freezing the display.
+The mode does not nest: a second end marker presents whatever has been
+written, whoever wrote it. Only one writer may hold a frame at a time, and it
+must close its own — hence a block that restores the mode on every exit.
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+from contextlib import contextmanager
 from typing import Any
 
 SYNCED_OUTPUT_START = "\x1b[?2026h"
 SYNCED_OUTPUT_END = "\x1b[?2026l"
 
 
-def begin_synchronized_frame(output: Any) -> None:
-    """Start holding writes back until the matching end call."""
+@contextmanager
+def synchronized_output(output: Any, *, enabled: bool = True) -> Iterator[None]:
+    """Present everything written inside the block as a single frame.
+
+    ``enabled=False`` runs the block unframed, for callers that cannot finish
+    the repaint inside it — a frame closed over a half-done repaint presents
+    the gap it was meant to hide.
+    """
+    if not enabled:
+        yield
+        return
     output.write_raw(SYNCED_OUTPUT_START)
     output.flush()
+    try:
+        yield
+    finally:
+        output.write_raw(SYNCED_OUTPUT_END)
+        output.flush()
 
 
-def end_synchronized_frame(output: Any) -> None:
-    """Present everything written since the matching begin call."""
-    output.write_raw(SYNCED_OUTPUT_END)
-    output.flush()
-
-
-__all__ = [
-    "SYNCED_OUTPUT_END",
-    "SYNCED_OUTPUT_START",
-    "begin_synchronized_frame",
-    "end_synchronized_frame",
-]
+__all__ = ["SYNCED_OUTPUT_END", "SYNCED_OUTPUT_START", "synchronized_output"]

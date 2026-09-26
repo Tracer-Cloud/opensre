@@ -41,10 +41,7 @@ from prompt_toolkit.application import Application
 from prompt_toolkit.layout.layout import Layout
 from prompt_toolkit.output.base import Size
 
-from surfaces.interactive_shell.ui.input_prompt.synchronized import (
-    begin_synchronized_frame,
-    end_synchronized_frame,
-)
+from surfaces.interactive_shell.ui.input_prompt.synchronized import synchronized_output
 
 # Soft-wrap headroom above preferred Auto + composer. Keep tiny — blank Screen
 # rows below the composer become a hollow band and invite ghost stacking.
@@ -156,15 +153,13 @@ def install_shrink_resize_guard(
     # Whether a live-region frame is on screen and therefore erasable. Only the
     # first signal of a resize burst has one; see the module docstring.
     painted = False
-    # Whether a resize opened a synchronized frame that no render has closed.
-    holding_frame = False
 
     def report_absolute_cursor_row(row: int) -> None:
         original_report(row)
         renderer._min_available_height = 0
 
     def _render(pt_app: Any, layout: Layout, is_done: bool = False) -> None:
-        nonlocal painted, holding_frame
+        nonlocal painted
         size = output.get_size()
         if _size_changed(getattr(renderer, "_last_size", None), size):
             renderer._last_screen = None
@@ -179,44 +174,37 @@ def install_shrink_resize_guard(
         # ``is_done`` hands the rows to scrollback, leaving nothing to erase.
         painted = not is_done
         output.disable_autowrap()
-        # The replacement prompt now exists, so a resize frame can be shown.
-        if holding_frame:
-            holding_frame = False
-            end_synchronized_frame(output)
 
     def _on_resize() -> None:
-        nonlocal painted, holding_frame
-        output.disable_autowrap()
-        renderer._min_available_height = 0
-        if rerender_banner is not None and rerender_banner():
-            # Full chrome reset: clear + static banner, then redraw the live
-            # region only. Do not call original erase — it leaves ghosts.
-            renderer._last_screen = None
-            renderer.reset(leave_alternate_screen=False)
-            painted = False
-            if not holding_frame:
-                holding_frame = True
-                begin_synchronized_frame(output)
-            app._request_absolute_cursor_position()
-            app._redraw()
+        nonlocal painted
+        # ``_redraw`` paints synchronously unless the app is running something
+        # in the terminal. The stdout proxy that does so drives this same
+        # private mode, which does not nest — its end marker would present our
+        # erase on its own — and the repaint would not land inside our frame
+        # anyway. Both reasons say the same thing: do not open one.
+        framed = not getattr(app, "_running_in_terminal", False)
+        try:
+            with synchronized_output(output, enabled=framed):
+                output.disable_autowrap()
+                renderer._min_available_height = 0
+                if rerender_banner is not None and rerender_banner():
+                    # Full chrome reset: clear + static banner, then redraw the
+                    # live region only. Do not call prompt-toolkit's own erase
+                    # here — it leaves ghosts.
+                    renderer._last_screen = None
+                    renderer.reset(leave_alternate_screen=False)
+                    painted = False
+                else:
+                    # A turn is on screen: erase the frame in place, but only
+                    # while one is painted, so the rest of a resize burst cannot
+                    # erase from the cursor that first erase already reset and
+                    # strand the frame it meant to remove.
+                    if painted and _erase_reflowed_live_region(renderer, output):
+                        painted = False
+                app._request_absolute_cursor_position()
+                app._redraw()
+        finally:
             output.disable_autowrap()
-            return
-        # A turn is on screen. Width changes reflow the old prompt rows, so
-        # erase from their recalculated top instead of the stale cursor row —
-        # and only while a frame is painted, so the rest of a resize burst
-        # cannot erase from the cursor that first erase already reset.
-        # Hold the erase and the repaint in one frame, so the gap between them
-        # never reaches the screen as a flicker of the Auto bar and the box.
-        # ``_render`` closes it: a repaint can wait on a cursor-position report,
-        # and closing here would present the erased gap this exists to remove.
-        if not holding_frame:
-            holding_frame = True
-            begin_synchronized_frame(output)
-        if painted and _erase_reflowed_live_region(renderer, output):
-            painted = False
-        app._request_absolute_cursor_position()
-        app._redraw()
-        output.disable_autowrap()
 
     renderer.report_absolute_cursor_row = report_absolute_cursor_row  # type: ignore[method-assign]
     renderer.render = _render  # type: ignore[method-assign, assignment]
