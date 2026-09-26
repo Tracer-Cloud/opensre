@@ -225,12 +225,17 @@ def install_shrink_resize_guard(
         if painted and not parked:
             original_on_resize()
             return
+        # ``run_in_terminal`` enabled wrapping so external output can use the
+        # terminal normally. Its exit path resets and redraws the prompt, so a
+        # resize while it owns the terminal must not emit prompt-mode bytes.
+        if getattr(app, "_running_in_terminal", False):
+            renderer._min_available_height = 0
+            app._redraw()
+            return
         # ``_redraw`` paints synchronously unless the app is running something
-        # in the terminal. The stdout proxy that does so drives this same
-        # private mode, which does not nest — its end marker would present our
-        # erase on its own — and the repaint would not land inside our frame
-        # anyway. Both reasons say the same thing: do not open one.
-        framed = not frame_active and not getattr(app, "_running_in_terminal", False)
+        # in the terminal. That case returned above, so every resize transaction
+        # here can use one synchronized frame.
+        framed = not frame_active
         if framed:
             frame_active = True
         try:

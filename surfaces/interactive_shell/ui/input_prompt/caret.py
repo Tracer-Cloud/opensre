@@ -14,7 +14,12 @@ class ComposerCaret(Processor):
     """Paint the buffer cursor because the hardware cursor anchors the live region."""
 
     def apply_transformation(self, ti: TransformationInput) -> Transformation:
-        if get_app().is_done or ti.document.cursor_position_row != ti.lineno:
+        app = get_app()
+        if (
+            app.is_done
+            or app.layout.current_control is not ti.buffer_control
+            or ti.document.cursor_position_row != ti.lineno
+        ):
             return Transformation(ti.fragments)
 
         cursor_index = ti.source_to_display(ti.document.cursor_position_col)

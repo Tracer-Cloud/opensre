@@ -182,6 +182,25 @@ async def test_rendered_cursor_tracks_character_index_after_wide_text() -> None:
 
 
 @pytest.mark.asyncio
+async def test_rendered_cursor_is_hidden_while_history_search_has_focus() -> None:
+    async with _running_prompt() as prompt:
+        _press(prompt, Keys.ControlR)
+        _screen_lines(prompt)
+        screen = prompt.app.renderer._last_screen
+        assert screen is not None
+
+        cursor_cells = [
+            cell
+            for row in screen.data_buffer.values()
+            for cell in row.values()
+            if "class:composer-cursor" in cell.style
+        ]
+
+        assert prompt.app.layout.current_control.__class__.__name__ == "SearchBufferControl"
+        assert cursor_cells == []
+
+
+@pytest.mark.asyncio
 async def test_modified_enter_keeps_newline_behavior_with_completions_open() -> None:
     async with _running_prompt() as prompt:
         _complete(prompt, "/")

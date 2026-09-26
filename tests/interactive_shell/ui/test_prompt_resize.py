@@ -159,6 +159,7 @@ def test_resize_with_banner_hook_skips_partial_erase_and_redraws() -> None:
     app._on_resize = original_on_resize
     app._request_absolute_cursor_position = MagicMock()
     app._redraw = MagicMock()
+    app._running_in_terminal = False
 
     banner_calls: list[int] = []
 
@@ -334,6 +335,8 @@ def test_resize_during_background_output_opens_no_frame() -> None:
     emitted = terminal.getvalue()
     assert "\x1b[?2026h" not in emitted
     assert "\x1b[?2026l" not in emitted
+    assert "\x1b[?7l" not in emitted
+    assert "\x1b[J" not in emitted
 
 
 def test_resize_restores_the_terminal_when_the_repaint_raises() -> None:

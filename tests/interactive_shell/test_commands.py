@@ -13,6 +13,7 @@ import pytest
 from prompt_toolkit.history import FileHistory
 from rich.console import Console
 
+from core.domain.alerts.inbox import IncomingAlert
 from surfaces.interactive_shell.command_registry import SLASH_COMMANDS, dispatch_slash
 from surfaces.interactive_shell.command_registry import repl_data as repl_data_module
 from surfaces.interactive_shell.command_registry.tasks_cmds import _validate_cancel_args
@@ -208,11 +209,14 @@ class TestDispatchSlash:
     def test_clear_discards_idle_output_replay(self) -> None:
         session = Session()
         session.terminal.remember_idle_output("Selection cancelled — type a reply instead.")
+        session.record_incoming_alert(IncomingAlert(text="database latency is high"))
         console, _buf = _capture()
 
         assert dispatch_slash("/clear", session, console) is True
 
         assert session.terminal.idle_output_replay == []
+        assert session.terminal.idle_transcript_visible is False
+        assert [alert.text for alert in session.alerts.entries] == ["database latency is high"]
 
     def test_trust_toggle(self) -> None:
         session = Session()
