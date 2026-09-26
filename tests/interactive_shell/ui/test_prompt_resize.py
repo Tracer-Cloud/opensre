@@ -211,19 +211,27 @@ def test_resize_burst_erases_once_per_painted_frame() -> None:
     assert app._redraw.call_count == 2
 
 
-def test_resize_repaint_is_presented_as_one_synchronized_frame() -> None:
-    """Erase-then-draw is two visible states unless the terminal holds them."""
-    app, _renderer, terminal = _painted_resize_app()
+def test_resize_holds_the_frame_open_until_the_repaint_lands() -> None:
+    """Erase-then-draw is two visible states unless the terminal holds them.
+
+    A repaint can wait on a cursor-position report, so ``_redraw`` returns
+    before the replacement prompt exists. Closing the frame then would present
+    the erased gap — the flicker the frame exists to remove.
+    """
+    app, renderer, terminal = _painted_resize_app()
 
     app._on_resize()
 
     emitted = terminal.getvalue()
-    start, erase, end = (
-        emitted.find("\x1b[?2026h"),
-        emitted.find("\x1b[J"),
-        emitted.find("\x1b[?2026l"),
-    )
-    assert -1 < start < erase < end
+    assert "\x1b[?2026h" in emitted, "resize must open a synchronized frame"
+    assert emitted.index("\x1b[?2026h") < emitted.index("\x1b[J"), "erase belongs inside it"
+    # The mocked redraw paints nothing, so the frame must still be held open.
+    assert "\x1b[?2026l" not in emitted
+
+    # The render that finally paints closes it, presenting erase + draw as one.
+    renderer.render(app, Layout(Window(height=3)))
+
+    assert "\x1b[?2026l" in terminal.getvalue()
 
 
 def test_shrink_resize_guard_disables_autowrap_after_render() -> None:

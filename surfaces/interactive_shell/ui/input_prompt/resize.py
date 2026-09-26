@@ -41,7 +41,10 @@ from prompt_toolkit.application import Application
 from prompt_toolkit.layout.layout import Layout
 from prompt_toolkit.output.base import Size
 
-from surfaces.interactive_shell.ui.input_prompt.synchronized import synchronized_output
+from surfaces.interactive_shell.ui.input_prompt.synchronized import (
+    begin_synchronized_frame,
+    end_synchronized_frame,
+)
 
 # Soft-wrap headroom above preferred Auto + composer. Keep tiny — blank Screen
 # rows below the composer become a hollow band and invite ghost stacking.
@@ -153,13 +156,15 @@ def install_shrink_resize_guard(
     # Whether a live-region frame is on screen and therefore erasable. Only the
     # first signal of a resize burst has one; see the module docstring.
     painted = False
+    # Whether a resize opened a synchronized frame that no render has closed.
+    holding_frame = False
 
     def report_absolute_cursor_row(row: int) -> None:
         original_report(row)
         renderer._min_available_height = 0
 
     def _render(pt_app: Any, layout: Layout, is_done: bool = False) -> None:
-        nonlocal painted
+        nonlocal painted, holding_frame
         size = output.get_size()
         if _size_changed(getattr(renderer, "_last_size", None), size):
             renderer._last_screen = None
@@ -174,9 +179,13 @@ def install_shrink_resize_guard(
         # ``is_done`` hands the rows to scrollback, leaving nothing to erase.
         painted = not is_done
         output.disable_autowrap()
+        # The replacement prompt now exists, so a resize frame can be shown.
+        if holding_frame:
+            holding_frame = False
+            end_synchronized_frame(output)
 
     def _on_resize() -> None:
-        nonlocal painted
+        nonlocal painted, holding_frame
         output.disable_autowrap()
         renderer._min_available_height = 0
         if rerender_banner is not None and rerender_banner():
@@ -185,22 +194,28 @@ def install_shrink_resize_guard(
             renderer._last_screen = None
             renderer.reset(leave_alternate_screen=False)
             painted = False
-            with synchronized_output(output):
-                app._request_absolute_cursor_position()
-                app._redraw()
+            if not holding_frame:
+                holding_frame = True
+                begin_synchronized_frame(output)
+            app._request_absolute_cursor_position()
+            app._redraw()
             output.disable_autowrap()
             return
         # A turn is on screen. Width changes reflow the old prompt rows, so
         # erase from their recalculated top instead of the stale cursor row —
         # and only while a frame is painted, so the rest of a resize burst
         # cannot erase from the cursor that first erase already reset.
-        # Erase and redraw inside one synchronized frame, so the gap between
-        # them never reaches the screen as a flicker of the Auto bar and box.
-        with synchronized_output(output):
-            if painted and _erase_reflowed_live_region(renderer, output):
-                painted = False
-            app._request_absolute_cursor_position()
-            app._redraw()
+        # Hold the erase and the repaint in one frame, so the gap between them
+        # never reaches the screen as a flicker of the Auto bar and the box.
+        # ``_render`` closes it: a repaint can wait on a cursor-position report,
+        # and closing here would present the erased gap this exists to remove.
+        if not holding_frame:
+            holding_frame = True
+            begin_synchronized_frame(output)
+        if painted and _erase_reflowed_live_region(renderer, output):
+            painted = False
+        app._request_absolute_cursor_position()
+        app._redraw()
         output.disable_autowrap()
 
     renderer.report_absolute_cursor_row = report_absolute_cursor_row  # type: ignore[method-assign]
