@@ -42,9 +42,6 @@ from surfaces.interactive_shell.ui.prompt_visibility import typing_box_hidden
 from surfaces.interactive_shell.ui.terminal_ui import render_prompt_region
 from surfaces.shared.terminal.banner import build_launch_banner
 from surfaces.shared.terminal.components.cpr_stdin import drain_stale_cpr_bytes
-from surfaces.shared.terminal.components.rendering import (
-    repl_output_width,
-)
 
 # Brief pause so a CPR reply still in flight lands in the stdin buffer before the
 # non-blocking drain runs; without it the reply leaks into this prompt as literal bytes.
@@ -159,17 +156,12 @@ class PromptBuilder:
         )
         banner = build_launch_banner(console, session=self.session, density="full")
         banner_rows = len(console.render_lines(banner, pad=False))
-        replay_console = Console(
-            highlight=False,
-            force_terminal=True,
-            color_system="truecolor",
-            legacy_windows=False,
-            width=repl_output_width(console),
-        )
-        replay_rows = sum(
-            len(replay_console.render_lines(Text(output), pad=False))
+        replay_lines = [
+            line
             for output in self.session.terminal.idle_output_replay
-        )
+            for line in Text(output).wrap(console, max(size.columns, 1), overflow="fold")
+        ]
+        replay_rows = len(replay_lines)
         preferred_live_rows = self.pt_app.layout.container.preferred_height(
             size.columns, size.rows
         ).preferred
@@ -190,8 +182,8 @@ class PromptBuilder:
         # Keep this repaint in the resize transaction by buffering Rich output
         # and sending it through the application's Output object directly.
         console.print(banner)
-        for output in self.session.terminal.idle_output_replay:
-            console.print(Text(output))
+        for line in replay_lines:
+            console.print(line)
         terminal_output = self.pt_app.output
         terminal_output.erase_screen()
         terminal_output.cursor_goto(0, 0)

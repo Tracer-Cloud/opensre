@@ -212,21 +212,17 @@ def test_resize_uses_minimal_banner_when_compact_banner_exceeds_viewport(
     assert app.output.erase_calls == [True]
 
 
-def test_resize_measures_idle_replay_at_repl_output_width(
+def test_resize_measures_idle_replay_at_physical_terminal_width(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     session = Session()
-    session.terminal.remember_idle_output("x" * 120)
+    session.terminal.remember_idle_output("x" * 65)
     builder = PromptBuilder(session, ReplState(), SpinnerState())
-    app = _idle_prompt_app(rows=7, columns=120)
+    app = _idle_prompt_app(rows=9, columns=30)
     builder.pt_app = app  # type: ignore[assignment]
     monkeypatch.setattr(
         "surfaces.interactive_shell.runtime.core.prompt_builder.build_launch_banner",
         lambda *_args, **_kwargs: Text("banner\nrows"),
-    )
-    monkeypatch.setattr(
-        "surfaces.interactive_shell.runtime.core.prompt_builder.repl_output_width",
-        lambda _console: 119,
     )
 
     rerendered = builder._rerender_banner_if_idle()

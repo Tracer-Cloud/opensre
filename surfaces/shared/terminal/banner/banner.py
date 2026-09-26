@@ -263,11 +263,12 @@ def _build_compact_wordmark() -> Text:
     return Text(PRODUCT_DISPLAY_NAME, style=f"bold {HIGHLIGHT}", no_wrap=True)
 
 
-def _build_identity_line() -> Text:
+def _build_identity_line(*, max_width: int) -> Text:
     """Return the minimum one-row identity retained in very short viewports."""
     identity = _build_compact_wordmark()
     identity.append(" · ", style=DIM)
     identity.append(_build_version_line())
+    identity.truncate(max_width, overflow="ellipsis")
     return identity
 
 
@@ -366,7 +367,7 @@ def build_launch_banner(
     # would left-align the short lines inside the widest one.
     rows: list[RenderableType | None]
     if density == "minimal":
-        rows = [_build_identity_line()]
+        rows = [_build_identity_line(max_width=line_width)]
     elif density == "compact":
         rows = [
             _build_compact_wordmark(),

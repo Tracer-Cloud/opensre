@@ -214,6 +214,24 @@ def test_minimal_launch_banner_keeps_identity_on_one_row(monkeypatch: object) ->
     assert len(console.render_lines(banner, pad=False)) == 1
 
 
+def test_minimal_launch_banner_clips_identity_to_narrow_viewport(monkeypatch: object) -> None:
+    monkeypatch.setattr(banner_module, "load_launch_status", _fixed_status)
+    monkeypatch.setattr(
+        banner_module,
+        "get_opensre_version",
+        lambda: "0.1.2026.9.26+main.b2b7bcd",
+    )
+    console = Console(record=True, force_terminal=False, highlight=False, width=30)
+
+    banner = banner_module.build_launch_banner(console, density="minimal")
+    console.print(banner)
+
+    output = console.export_text(styles=False).strip()
+    assert output.endswith("…")
+    assert len(output) <= 29
+    assert len(console.render_lines(banner, pad=False)) == 1
+
+
 def test_launch_banner_uses_active_theme_palette(monkeypatch: object) -> None:
     from infrastructure.terminal.theme import THEME_REGISTRY, set_active_theme
 
