@@ -11,6 +11,7 @@ from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.formatted_text import ANSI, FormattedText
 from rich.console import Console
+from rich.text import Text
 
 from surfaces.interactive_shell.runtime.core.state import (
     PROMPT_REFRESH_INTERVAL_S,
@@ -35,7 +36,7 @@ from surfaces.interactive_shell.ui.input_prompt.resize import install_shrink_res
 from surfaces.interactive_shell.ui.input_prompt.style import refresh_prompt_theme
 from surfaces.interactive_shell.ui.prompt_visibility import typing_box_hidden
 from surfaces.interactive_shell.ui.terminal_ui import render_prompt_region
-from surfaces.shared.terminal.banner import render_launch_banner
+from surfaces.shared.terminal.banner import build_launch_banner
 from surfaces.shared.terminal.components.cpr_stdin import drain_stale_cpr_bytes
 from surfaces.shared.terminal.components.rendering import print_repl_text, repl_clear_screen
 
@@ -140,15 +141,30 @@ class PromptBuilder:
             or self.pt_app is None
         ):
             return False
-        repl_clear_screen()
-        drain_stale_cpr_bytes()
+        size = self.pt_app.output.get_size()
         console = Console(
             highlight=False,
             force_terminal=True,
             color_system="truecolor",
             legacy_windows=False,
+            width=size.columns,
         )
-        render_launch_banner(console, session=self.session, animate=False)
+        banner = build_launch_banner(console, session=self.session)
+        banner_rows = len(console.render_lines(banner, pad=False))
+        replay_rows = sum(
+            len(console.render_lines(Text(output), pad=False))
+            for output in self.session.terminal.idle_output_replay
+        )
+        live_rows = self.pt_app.layout.container.preferred_height(
+            size.columns,
+            size.rows,
+        ).preferred
+        if banner_rows + replay_rows + live_rows > size.rows:
+            return False
+
+        repl_clear_screen()
+        drain_stale_cpr_bytes()
+        console.print(banner)
         for output in self.session.terminal.idle_output_replay:
             print_repl_text(console, output)
         return True

@@ -89,6 +89,27 @@ def test_synchronized_output_skips_private_mode_bytes_for_non_vt_output() -> Non
     assert output.flush_count == 1
 
 
+def test_synchronized_output_coalesces_nested_frames() -> None:
+    terminal = io.StringIO()
+    output = Vt100_Output(
+        terminal,
+        get_size=lambda: Size(rows=30, columns=80),
+        term="xterm-256color",
+        enable_cpr=False,
+    )
+
+    with synchronized_output(output):
+        output.write_raw("outer")
+        with synchronized_output(output):
+            output.write_raw("inner")
+
+    emitted = terminal.getvalue()
+    assert emitted.count("\x1b[?2026h") == 1
+    assert emitted.count("\x1b[?2026l") == 1
+    assert emitted.index("\x1b[?2026h") < emitted.index("outer")
+    assert emitted.index("inner") < emitted.index("\x1b[?2026l")
+
+
 def test_prepare_live_region_height_zeros_cpr_and_drops_tall_last_screen() -> None:
     layout = Layout(Window(height=5))
     renderer = MagicMock()

@@ -5,9 +5,9 @@ end markers off-screen and presents them as one frame, so an erase and the
 redraw that replaces it never show as two states. Only VT-capable outputs
 receive the markers; native Win32 output would print them as text.
 
-The mode does not nest: a second end marker presents whatever has been
-written, whoever wrote it. Only one writer may hold a frame at a time, and it
-must close its own — hence a block that restores the mode on every exit.
+The terminal mode itself does not nest: a second end marker presents whatever
+has been written, whoever wrote it. This wrapper coalesces overlapping callers
+on the same output into one frame so only the final caller emits the end marker.
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ from prompt_toolkit.output.vt100 import Vt100_Output
 
 SYNCED_OUTPUT_START = "\x1b[?2026h"
 SYNCED_OUTPUT_END = "\x1b[?2026l"
+_FRAME_DEPTH_ATTRIBUTE = "_opensre_synchronized_output_depth"
 
 
 def supports_synchronized_output(output: Any) -> bool:
@@ -40,13 +41,19 @@ def synchronized_output(output: Any, *, enabled: bool = True) -> Iterator[None]:
     if not enabled or not supports_synchronized_output(output):
         yield
         return
-    output.write_raw(SYNCED_OUTPUT_START)
-    output.flush()
+    depth = int(getattr(output, _FRAME_DEPTH_ATTRIBUTE, 0))
+    setattr(output, _FRAME_DEPTH_ATTRIBUTE, depth + 1)
+    if depth == 0:
+        output.write_raw(SYNCED_OUTPUT_START)
+        output.flush()
     try:
         yield
     finally:
-        output.write_raw(SYNCED_OUTPUT_END)
-        output.flush()
+        remaining = max(int(getattr(output, _FRAME_DEPTH_ATTRIBUTE, 1)) - 1, 0)
+        setattr(output, _FRAME_DEPTH_ATTRIBUTE, remaining)
+        if remaining == 0:
+            output.write_raw(SYNCED_OUTPUT_END)
+            output.flush()
 
 
 __all__ = [

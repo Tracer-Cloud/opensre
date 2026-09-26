@@ -4,12 +4,14 @@ from __future__ import annotations
 
 import asyncio
 import io
+from types import SimpleNamespace
 
 import pytest
 from prompt_toolkit.application import create_app_session
 from prompt_toolkit.input.defaults import create_pipe_input
 from prompt_toolkit.output.base import Size
 from prompt_toolkit.output.vt100 import Vt100_Output
+from rich.text import Text
 
 from core.domain.alerts.inbox import IncomingAlert
 from surfaces.interactive_shell.runtime.core.prompt_builder import PromptBuilder
@@ -36,6 +38,16 @@ def _terminal_output() -> Vt100_Output:
     )
 
 
+def _idle_prompt_app(*, rows: int = 30, columns: int = 80) -> SimpleNamespace:
+    container = SimpleNamespace(
+        preferred_height=lambda _columns, _rows: SimpleNamespace(preferred=4)
+    )
+    return SimpleNamespace(
+        output=SimpleNamespace(get_size=lambda: Size(rows=rows, columns=columns)),
+        layout=SimpleNamespace(container=container),
+    )
+
+
 def test_resize_after_resume_preserves_rendered_transcript(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -50,15 +62,6 @@ def test_resize_after_resume_preserves_rendered_transcript(
         "surfaces.interactive_shell.runtime.core.prompt_builder.repl_clear_screen",
         lambda *, scrollback=False: clear_calls.append(scrollback),
     )
-    monkeypatch.setattr(
-        "surfaces.interactive_shell.runtime.core.prompt_builder.drain_stale_cpr_bytes",
-        lambda: None,
-    )
-    monkeypatch.setattr(
-        "surfaces.interactive_shell.runtime.core.prompt_builder.render_launch_banner",
-        lambda *_args, **_kwargs: None,
-    )
-
     rerendered = builder._rerender_banner_if_idle()
 
     assert rerendered is False
@@ -91,7 +94,7 @@ def test_resize_after_internal_picker_history_rerenders_launch_banner(
     session.history = [{"type": "slash", "text": "/choose", "ok": True}]
     session.terminal.remember_idle_output("Selection cancelled — type a reply instead.")
     builder = PromptBuilder(session, ReplState(), SpinnerState())
-    builder.pt_app = object()  # type: ignore[assignment]
+    builder.pt_app = _idle_prompt_app()  # type: ignore[assignment]
     clear_calls: list[bool] = []
     banner_calls: list[bool] = []
     replayed: list[str] = []
@@ -104,8 +107,8 @@ def test_resize_after_internal_picker_history_rerenders_launch_banner(
         lambda: None,
     )
     monkeypatch.setattr(
-        "surfaces.interactive_shell.runtime.core.prompt_builder.render_launch_banner",
-        lambda *_args, **_kwargs: banner_calls.append(True),
+        "surfaces.interactive_shell.runtime.core.prompt_builder.build_launch_banner",
+        lambda *_args, **_kwargs: banner_calls.append(True) or Text("banner"),
     )
     monkeypatch.setattr(
         "surfaces.interactive_shell.runtime.core.prompt_builder.print_repl_text",
@@ -118,6 +121,28 @@ def test_resize_after_internal_picker_history_rerenders_launch_banner(
     assert clear_calls == [False]
     assert banner_calls == [True]
     assert replayed == ["Selection cancelled — type a reply instead."]
+
+
+def test_resize_does_not_duplicate_banner_when_idle_ui_exceeds_viewport(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = Session()
+    builder = PromptBuilder(session, ReplState(), SpinnerState())
+    builder.pt_app = _idle_prompt_app(rows=5)  # type: ignore[assignment]
+    clear_calls: list[bool] = []
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.runtime.core.prompt_builder.repl_clear_screen",
+        lambda *, scrollback=False: clear_calls.append(scrollback),
+    )
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.runtime.core.prompt_builder.build_launch_banner",
+        lambda *_args, **_kwargs: Text("banner\nrows"),
+    )
+
+    rerendered = builder._rerender_banner_if_idle()
+
+    assert rerendered is False
+    assert clear_calls == []
 
 
 @pytest.mark.asyncio
