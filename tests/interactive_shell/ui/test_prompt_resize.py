@@ -206,7 +206,7 @@ def test_empty_shell_resize_uses_existing_banner_repaint_hook() -> None:
 
     install_shrink_resize_guard(
         app,
-        rerender_banner=lambda: repaint_calls.append(True) or "banner\n",
+        rerender_banner=lambda: repaint_calls.append(True) or "banner row one\nbanner row two\n",
     )
     output.stdout.seek(0)
     output.stdout.truncate(0)
@@ -216,7 +216,7 @@ def test_empty_shell_resize_uses_existing_banner_repaint_hook() -> None:
     emitted = output.stdout.getvalue()
     frame_start = emitted.find("\x1b[?2026h")
     clear = emitted.find("\x1b[2J")
-    banner = emitted.find("banner")
+    banner = emitted.find("banner row one\r\nbanner row two\r\n")
     prompt = emitted.find("prompt")
     frame_end = emitted.find("\x1b[?2026l")
     assert -1 < frame_start < clear < banner < prompt < frame_end

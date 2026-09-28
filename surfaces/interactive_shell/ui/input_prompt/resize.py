@@ -72,6 +72,11 @@ def _size_changed(previous: Size | None, current: Size) -> bool:
     return previous.rows != current.rows or previous.columns != current.columns
 
 
+def _raw_terminal_text(text: str) -> str:
+    """Normalize line endings for direct terminal output."""
+    return text.replace("\r\n", "\n").replace("\n", "\r\n")
+
+
 def _screen_row_width(
     screen: Any,
     row: int,
@@ -167,7 +172,7 @@ def install_shrink_resize_guard(
             with synchronized_output(output):
                 output.erase_screen()
                 output.cursor_goto(0, 0)
-                output.write_raw(banner)
+                output.write_raw(_raw_terminal_text(banner))
                 output.flush()
                 renderer._last_screen = None
                 renderer.reset(leave_alternate_screen=False)
