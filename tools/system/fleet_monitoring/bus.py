@@ -3,7 +3,7 @@
 Carries the same shape as ``core/state/models.py``'s ``evidence`` records so
 findings published by one agent (claude-code, cursor, aider, ...) can later be
 lifted into ``AgentState.evidence`` without re-mapping fields. See
-``docs/fleet.mdx`` for the on-the-wire schema.
+``docs/platform/fleet.mdx`` for the on-the-wire schema.
 
 Topology is a self-electing broker: the first ``publish`` or ``subscribe`` call
 that finds no live socket binds it and runs an in-process daemon thread that

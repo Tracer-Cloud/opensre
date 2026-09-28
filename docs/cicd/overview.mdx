@@ -11,16 +11,16 @@ machine or on your organization's hosted gateway.
 ## Pick a starting point
 
 <CardGroup cols={2}>
-  <Card title="Measure CI reliability" icon="chart-line" href="/cicd-analytics-demo">
+  <Card title="Measure CI reliability" icon="chart-line" href="/cicd/cicd-analytics-demo">
     A 30-day report for one repository: failure rate, CI-caused versus code-caused failures, developer hours lost, red time on the default branch. The recommended first demo.
   </Card>
-  <Card title="Fix failing CI on a PR" icon="wrench" href="/github-ci-fix">
+  <Card title="Fix failing CI on a PR" icon="wrench" href="/cicd/github-ci-fix">
     Read the failing checks, apply a fix with a coding agent, push to the PR branch, and wait for the new checks.
   </Card>
   <Card title="Keep CI green with an agent" icon="robot" href="/cicd/ci-repair-agent">
     A recurring reliability report, a bounded repair loop for one PR, or the managed service that runs repairs for your organization.
   </Card>
-  <Card title="Find every red PR" icon="magnifying-glass" href="/github-ci-health-scan">
+  <Card title="Find every red PR" icon="magnifying-glass" href="/cicd/github-ci-health-scan">
     One read-only scan across all repositories your token can see: which PRs and branches are failing, and on which checks.
   </Card>
 </CardGroup>
@@ -38,7 +38,7 @@ machine or on your organization's hosted gateway.
     opensre integrations setup github
     ```
 
-    Choose **Authorize in browser**, or paste a token that can read Actions history. Fixing and pushing needs Contents and Pull requests write access on the repository. See [GitHub](/github).
+    Choose **Authorize in browser**, or paste a token that can read Actions history. Fixing and pushing needs Contents and Pull requests write access on the repository. See [GitHub](/integrations/code/github).
   </Step>
   <Step title="Pick the demo, or ask directly">
     Start `opensre` and choose **A** in the demo picker, or type any of the prompts below.
@@ -65,9 +65,9 @@ set up an agent that improves CI/CD reliability for Tracer-Cloud/opensre
 
 | Capability | Reads | Writes | Runs where |
 | --- | --- | --- | --- |
-| [CI reliability analysis](/cicd-analytics-demo) | 30 days of Actions runs for one repository | A report in the shell | Your machine |
-| [Health scan](/github-ci-health-scan) | Open PRs and branch heads across your organizations | Nothing | Your machine |
-| [Fix a PR](/github-ci-fix) | Failing checks and logs of one PR or branch | A commit on the PR branch, or a fresh repair branch | Your machine |
+| [CI reliability analysis](/cicd/cicd-analytics-demo) | 30 days of Actions runs for one repository | A report in the shell | Your machine |
+| [Health scan](/cicd/github-ci-health-scan) | Open PRs and branch heads across your organizations | Nothing | Your machine |
+| [Fix a PR](/cicd/github-ci-fix) | Failing checks and logs of one PR or branch | A commit on the PR branch, or a fresh repair branch | Your machine |
 | [Reliability agent](/cicd/ci-repair-agent#the-reliability-agent) | The last 7 days, every weekday morning | A report in the shell inbox | Your machine, as a scheduled loop |
 | [Repair loop](/cicd/ci-repair-agent#the-repair-loop) | One PR's failing checks | Up to three repair pushes within ten minutes | Your machine, or the hosted gateway |
 
@@ -99,7 +99,7 @@ Each `--allowed-tool` covers one tool; a task that needs two takes the flag
 twice.
 
 A machine that is not signed in needs `LLM_PROVIDER` and a provider key plus a
-GitHub token in the environment. See [Headless CLI](/headless-cli) for
+GitHub token in the environment. See [Headless CLI](/guides/headless-cli) for
 `--allowed-tool`, `--json` output and exit codes.
 
 ## Where the results go

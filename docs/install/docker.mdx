@@ -1,0 +1,82 @@
+---
+title: "Docker"
+description: "Run OpenSRE in Docker for a repeatable local or server setup."
+---
+
+Use Docker when you want OpenSRE in a container — same image on your laptop or a server. For day-to-day CLI use on your machine, the normal [install](/install) is simpler.
+
+## Prerequisites
+
+Install Docker first:
+
+<CardGroup cols={2}>
+  <Card title="Docker Desktop (Mac)" href="https://docs.docker.com/desktop/install/mac-install/" icon="apple">
+    Install Docker Desktop on macOS.
+  </Card>
+  <Card title="Docker Engine (Ubuntu)" href="https://docs.docker.com/engine/install/ubuntu/" icon="linux">
+    Install Docker Engine on Ubuntu.
+  </Card>
+</CardGroup>
+
+Aim for a machine with enough CPU and RAM for your LLM calls and any tools you connect (roughly 4 cores / 8GB is a comfortable start).
+
+## 1. Build the image
+
+From a clone of the OpenSRE repo:
+
+```bash
+docker build -t opensre:latest .
+```
+
+The image can run in two modes via `MODE`:
+
+- **`web`** (default) — HTTP API for health checks
+- **`gateway`** — messaging gateway (Slack / Telegram / Discord / Buzz) plus related services
+
+## 2. Run web mode
+
+Put your LLM keys (and any integration secrets) in a `.env` file — see `.env.example` in the repo — then:
+
+```bash
+docker run --rm -p 8000:8000 --env-file .env opensre:latest
+```
+
+Check it's up:
+
+```bash
+curl http://localhost:8000/health
+```
+
+Minimum env for an LLM (example):
+
+```bash
+LLM_PROVIDER=anthropic
+ANTHROPIC_API_KEY=...
+```
+
+## 3. Run gateway mode (optional)
+
+If you want Slack Socket Mode, Telegram, Discord, and/or Buzz on the gateway:
+
+```bash
+docker run --rm -e MODE=gateway --env-file .env opensre:latest
+```
+
+You'll need the usual LLM vars plus the matching messaging tokens. Details: [Deployment](/guides/deployment) and [Messaging](/integrations/messaging).
+
+## Prefer the CLI instead?
+
+On the host (not in Docker):
+
+```bash
+curl -fsSL https://install.opensre.com | bash -s -- -dc
+opensre
+```
+
+See [Install](/install) and [Quickstart](/getting-started/quickstart).
+
+## Next
+
+- [Deployment](/guides/deployment) — hosting, gateway commands, health checks
+- [Environment variables](/install/environment-variables) — full config list
+- [HTTP API](/guides/api) — health and status endpoints

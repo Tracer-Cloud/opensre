@@ -2,7 +2,7 @@
 
 One markdown file per memory under ``~/.opensre/memory/`` (with an environment
 override), plus a generated ``MEMORY.md`` index. See
-``docs/memory.mdx`` for the user-facing behavior.
+``docs/platform/memory.mdx`` for the user-facing behavior.
 """
 
 from __future__ import annotations

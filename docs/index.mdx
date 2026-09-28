@@ -1,118 +1,98 @@
 ---
-title: "OpenSRE"
-description: "An agentic SRE for production systems."
+title: "Welcome to OpenSRE"
+description: "Install OpenSRE, run your first CI/CD demo, and scale from a single laptop to a managed gateway for your organization."
 ---
 
-<div className="index-hero index-page">
-  <div className="index-hero-lockup">
-    <img
-      src="/images/opensre-mark.svg"
-      alt=""
-      className="index-hero-mark"
-      aria-hidden="true"
-    />
-    <span className="index-hero-name">OpenSRE</span>
-  </div>
-
-  <blockquote className="index-hero-quote">
-    <p>Ask before you get paged.</p>
-  </blockquote>
-
-  <p className="index-hero-lead">
-    An agentic SRE that answers production questions autonomously —
-    so your on-call rotation doesn't have to start cold.
-  </p>
-
-  <p className="index-hero-dek">
-    Point it at the tools your team already uses — Datadog, Grafana, Slack,
-    PagerDuty, and 60+ others. It pulls the logs and metrics that matter,
-    figures out what happened, and answers in plain English.
-  </p>
+<div className="index-actions">
+  <a className="index-action" href="/getting-started/quickstart">Quickstart guide →</a>
+  <a className="index-action index-action-secondary" href="https://app.opensre.com">Create an account →</a>
 </div>
 
-## Get started
+## Choose a path
 
-<CardGroup cols={2}>
-  <Card title="Install OpenSRE" icon="download" href="/install">
-    One command on macOS or Linux, then run `opensre` to get started.
+Start with a CI/CD outcome, an incident question, or a rollout for your organization. Pick the one that matches your goal.
+
+<CardGroup cols={3}>
+  <Card title="Measure and fix CI" icon="code-branch" href="/cicd/overview">
+    A 30-day reliability report for a repository, fixes for failing checks, and an agent that keeps pull requests green.
+
+    **Run the CI/CD demo →**
   </Card>
-  <Card title="Create your account" icon="wand-magic-sparkles" href="/quickstart">
-    Run `opensre` to sign in and activate the hosted model.
+  <Card title="Investigate an incident" icon="magnifying-glass-chart" href="/getting-started/quickstart">
+    Paste an alert or describe what is wrong. OpenSRE reads logs, metrics and deploys from your connected tools and answers in plain English.
+
+    **Run the quickstart →**
   </Card>
-  <Card title="Connect your tools" icon="plug" href="/integrations-overview">
-    Datadog, Grafana, PagerDuty, Slack, Kubernetes, and more.
-  </Card>
-  <Card title="Open the shell" icon="terminal" href="/interactive-shell-commands">
-    Paste in an alert, or just describe what's going on.
-  </Card>
-</CardGroup>
+  <Card title="Roll it out to your team" icon="building" href="/install/install-enterprise">
+    One account for the organization and a managed gateway that keeps running repairs after the laptop closes. Slack and other integrations are configured on each engineer's machine.
 
-## What is OpenSRE?
-
-OpenSRE is an open-source agent that answers production questions for you. When an alert comes in — or you just tell it something's wrong — it goes and checks: recent deploys, logs, metrics, whatever's connected. Then it tells you what it found.
-
-**Who's it for?** Anyone on call who's tired of starting from a blank tab at 3am. It's built for engineers who want a head start on the cause, not a black box that hides how it got there.
-
-**Why people like it:**
-
-- It works with what you already have — no need to rip out your existing stack
-- You can run it locally, in your terminal, or hook it into a hosted setup for your whole team
-- It's open source, so you can see exactly what it's doing and change it if you need to
-
-**What do you need to get going?** An OpenSRE account, access to the tools you want to connect, and about five minutes. The [Quickstart](/quickstart) walks through it.
-
-## What you can do with it
-
-<CardGroup cols={2}>
-  <Card title="Measure and fix your CI" icon="code-branch" href="/cicd/overview">
-    A 30-day reliability report for any repository, fixes for failing checks, and an agent that keeps CI green.
-  </Card>
-  <Card title="Chat with it" icon="terminal" href="/interactive-shell-commands">
-    Describe an incident in plain language, or use commands like `/health` and `/verify`.
-  </Card>
-  <Card title="Set a goal" icon="flag" href="/goals">
-    Give it a finish line and let it keep working across turns until it gets there.
-  </Card>
-  <Card title="Connect 60+ tools" icon="plug" href="/integrations-overview">
-    Monitoring, incident management, cloud, code, chat, databases — most of what you already run.
-  </Card>
-  <Card title="Keep sensitive data out" icon="shield" href="/masking">
-    Secrets and personal data get redacted before anything leaves your environment.
+    **Review the enterprise setup →**
   </Card>
 </CardGroup>
 
-## Try it now
+## Start with a surface
 
-<Steps>
-  <Step title="Install">
-    One command and you're done — no dependencies to wrangle first.
+The same `opensre` binary runs everywhere. Pick a surface, install it, and start your first session.
+
+<Tabs>
+  <Tab title="Interactive shell">
+    Install with one command, sign in, and pick a demo or type a request.
 
     ```bash
     curl -fsSL https://install.opensre.com | bash -s -- -dc
-    ```
-  </Step>
-  <Step title="Get started">
-    Run `opensre` to sign in and start the shell. Create an account or sign in using email or another enabled provider; OpenSRE then activates the hosted model. The first prompt offers a demo: pick the CI/CD analysis of a repository on your machine, or skip it. Then describe what's going on in your own words — or paste the alert body straight in. Add tools later with `opensre integrations setup <service>` when you want it to query GitHub, Datadog, Grafana, Slack, or another system.
-
-    ```bash
     opensre
     ```
-  </Step>
-</Steps>
+
+    Windows uses PowerShell; see [Install](/install). The first prompt offers the CI/CD analysis of a repository on your machine, or skip it with **E**.
+
+    <Frame>
+      ![The CI/CD reliability report the first demo produces](/images/onboarding-ci-analysis-report.png)
+    </Frame>
+  </Tab>
+  <Tab title="Headless CLI">
+    One agent turn from a script or a CI job, with JSON output and exit codes.
+
+    ```bash
+    opensre --json ask "how many PRs currently have failing CI in Tracer-Cloud?"
+    ```
+
+    See [Headless CLI](/guides/headless-cli) for `--allowed-tool` and stdin prompts.
+  </Tab>
+  <Tab title="Slack">
+    Mention OpenSRE in a channel or DM it, and hand off DevOps chores to the team's agent.
+
+    Demo option **D** in the shell connects Slack; see [Slack](/integrations/messaging/slack).
+  </Tab>
+  <Tab title="Managed gateway">
+    An organization admin provisions a hosted gateway at app.opensre.com; repairs and scheduled loops run there with the organization's credentials.
+
+    See [Keep CI green with an agent](/cicd/ci-repair-agent#the-managed-service) and [Deployment](/guides/deployment#opensre-cloud-managed-gateway).
+  </Tab>
+</Tabs>
 
 <Tip>
-  Something not working? [Quickstart troubleshooting](/quickstart#troubleshooting) covers install issues.
+  Follow the [Quickstart](/getting-started/quickstart) to install, sign in and run your first demo in a few minutes.
 </Tip>
+
+## Explore the docs
+
+- [Get started](/getting-started/quickstart): install on macOS, Linux, Windows or Docker, sign in, and the enterprise setup.
+- [CI/CD](/cicd/overview): the reliability report, fixing failing checks, the repair agent, and the organization-wide health scan.
+- [Using the shell](/getting-started/interactive-shell-commands): every slash command, how prompts map to tools, and goals that run across turns.
+- [Run it anywhere](/guides/deployment): the gateway daemon, headless CLI, HTTP and Python APIs, and the managed gateway.
+- [Platform](/platform/llm-providers): LLM providers, masking, sessions, memory, scheduled loops, and closed-loop learning.
+- [Integrations](/integrations): 60+ tools across monitoring, incidents, cloud, code, chat, databases and workflows.
+- [Community](/guides/bi-weekly-giveaway): the showcase giveaway and the pull request review flow.
 
 ## How a turn runs
 
-Say an alert fires and you paste it in. Here's roughly what happens next:
+Say an alert fires and you paste it in:
 
-1. OpenSRE reads the alert and figures out what kind of problem it's looking at
-2. It gathers context — who owns the service, what changed recently, what's normal
-3. It goes and checks the tools you've connected for logs, metrics, and traces
-4. It keeps digging and testing ideas until it can answer
-5. It answers in the shell, and sends the result wherever you asked — Slack, Telegram, a file
+1. OpenSRE reads the alert and decides what kind of problem it is looking at.
+2. It gathers context: who owns the service, what changed recently, what is normal.
+3. It checks the tools you connected for logs, metrics and traces.
+4. It keeps digging and testing ideas until it can answer.
+5. It answers in the shell and sends the result where you asked: Slack, Telegram, a file.
 
 <div className="index-diagram-frame">
   <div className="index-diagram-kicker">Agent workflow</div>
@@ -123,19 +103,4 @@ Say an alert fires and you paste it in. Here's roughly what happens next:
   />
 </div>
 
-## Keep exploring
-
-<CardGroup cols={2}>
-  <Card title="Showcase" icon="photo-film" href="/showcase">
-    See real output from sample runs.
-  </Card>
-  <Card title="Features" icon="list-check" href="/features">
-    A rundown of everything OpenSRE can do today.
-  </Card>
-  <Card title="Shell command" icon="terminal" href="/interactive-shell-commands">
-    Every slash command the interactive shell understands.
-  </Card>
-  <Card title="FAQ" icon="circle-question" href="/faq">
-    Quick answers to common setup and usage questions.
-  </Card>
-</CardGroup>
+OpenSRE is open source. It works with the stack you already have, runs locally or hosted for a whole team, and shows how it reached every answer. The [FAQ](/guides/faq) has the short answers.

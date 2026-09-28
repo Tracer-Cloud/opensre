@@ -26,7 +26,7 @@ agent loop. Subprocess-backed LLM CLIs live under `integrations/llm_cli/`.
 | `surfaces/shared/llm_setup/catalog.py` | Onboarding metadata (`SUPPORTED_PROVIDERS`) and model choices. |
 | `surfaces/shared/llm_setup/env_sync.py` | `.env` synchronization when provider/model choices change. |
 
-User-facing setup and env var tables: [`docs/llm-providers.mdx`](../../docs/llm-providers.mdx).
+User-facing setup and env var tables: [`docs/platform/llm-providers.mdx`](../../docs/platform/llm-providers.mdx).
 
 ## Transport: native SDK vs LiteLLM
 

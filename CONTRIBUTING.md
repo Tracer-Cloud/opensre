@@ -173,7 +173,7 @@ Use the **[PR template](.github/PULL_REQUEST_TEMPLATE.md)** (automatically provi
 We use [Greptile](https://greptile.com) for automated code review. Before a PR can be merged it must reach a **5/5 confidence score** with zero unresolved comments.
 
 **How Greptile, human review, and CI fit together:** see the public
-[Pull request review flow](docs/pr-review-flow.mdx) guide.
+[Pull request review flow](docs/guides/pr-review-flow.mdx) guide.
 
 **Trigger a review** by posting this comment on your PR:
 
