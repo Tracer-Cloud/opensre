@@ -19,6 +19,7 @@ from prompt_toolkit.output.vt100 import Vt100_Output
 from surfaces.interactive_shell.ui.input_prompt import build_prompt_session
 from surfaces.interactive_shell.ui.input_prompt.resize import (
     _reflowed_rows_above_cursor,
+    _tail_within_width,
     install_shrink_resize_guard,
     live_region_height_cap,
     prepare_live_region_height,
@@ -100,6 +101,11 @@ def test_prompt_root_hsplit_is_top_aligned_not_justify() -> None:
 def test_live_region_height_cap_is_tight() -> None:
     assert live_region_height_cap(5) == 6
     assert live_region_height_cap(20) == 12
+
+
+def test_deferred_input_tail_uses_terminal_cell_width() -> None:
+    assert _tail_within_width("ab界", 3) == "b界"
+    assert _tail_within_width("ab界", 2) == "界"
 
 
 def test_synchronized_output_skips_private_mode_bytes_for_non_vt_output() -> None:
@@ -281,10 +287,11 @@ def test_resize_erases_from_reflowed_live_region_top() -> None:
     app._on_resize()
 
     emitted = terminal.getvalue()
-    backward = emitted.find("\x1b[4D")
+    carriage_return = emitted.find("\r")
     upward = emitted.find("\x1b[4A")
     erase = emitted.find("\x1b[J")
-    assert -1 < backward < upward < erase
+    assert -1 < carriage_return < upward < erase
+    assert "\x1b[4D" not in emitted
     assert "\x1b[5A" not in emitted
     renderer.reset.assert_called_once_with(leave_alternate_screen=False)
     app._request_absolute_cursor_position.assert_not_called()
@@ -365,6 +372,21 @@ def test_resize_defers_repaint_until_live_region_is_cursor_addressable() -> None
 
     assert terminal.getvalue().count("\x1b[J") == 1
     assert renderer._original_render_count == initial_render_count + 1
+
+
+def test_deferred_resize_keeps_the_editable_line_responsive() -> None:
+    """A too-short viewport still shows buffer edits instead of looking hung."""
+    size_state = [Size(rows=30, columns=90)]
+    app, renderer, terminal = _painted_resize_app(size_state)
+    app.current_buffer.document.current_line_before_cursor = "typed while tiny"
+    initial_render_count = renderer._original_render_count
+
+    size_state[0] = Size(rows=3, columns=20)
+    app._on_resize()
+    renderer.render(app, Layout(Window(height=3)))
+
+    assert "> typed while tiny▌" in terminal.getvalue()
+    assert renderer._original_render_count == initial_render_count
 
 
 def test_resize_erase_and_repaint_are_one_synchronized_frame() -> None:

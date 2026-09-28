@@ -27,6 +27,7 @@ from typing import Any
 from prompt_toolkit.application import Application
 from prompt_toolkit.layout.layout import Layout
 from prompt_toolkit.output.base import Size
+from prompt_toolkit.utils import get_cwidth
 
 from surfaces.interactive_shell.ui.input_prompt.synchronized import (
     supports_synchronized_output,
@@ -75,6 +76,21 @@ def _size_changed(previous: Size | None, current: Size) -> bool:
 def _raw_terminal_text(text: str) -> str:
     """Normalize line endings for direct terminal output."""
     return text.replace("\r\n", "\n").replace("\n", "\r\n")
+
+
+def _tail_within_width(text: str, width: int) -> str:
+    """Return the longest suffix of ``text`` that fits ``width`` cells."""
+    if width <= 0:
+        return ""
+    cells = 0
+    suffix: list[str] = []
+    for char in reversed(text):
+        char_width = get_cwidth(char)
+        if cells + char_width > width:
+            break
+        suffix.append(char)
+        cells += char_width
+    return "".join(reversed(suffix))
 
 
 def _screen_row_width(
@@ -139,6 +155,30 @@ def install_shrink_resize_guard(
         original_report(row)
         renderer._min_available_height = 0
 
+    def _render_deferred_input(pt_app: Any) -> None:
+        """Show buffer edits on the cursor row while full chrome cannot fit."""
+        cursor = getattr(renderer, "_cursor_pos", None)
+        if cursor is None:
+            return
+        columns = max(1, output.get_size().columns)
+        caret = "▌"
+        line_width = max(0, columns - 1)
+        label = "> " if line_width >= get_cwidth("> ") + get_cwidth(caret) else ""
+        content_width = max(0, line_width - get_cwidth(label) - get_cwidth(caret))
+        before_cursor = pt_app.current_buffer.document.current_line_before_cursor
+        visible_input = _tail_within_width(before_cursor, content_width)
+        compact_line = f"{label}{visible_input}{caret}" if line_width else ""
+        with synchronized_output(output):
+            output.write_raw("\r")
+            output.erase_end_of_line()
+            output.write(compact_line)
+            # Keep the hardware cursor at prompt-toolkit's last logical
+            # position so a later terminal reflow has a stable vertical anchor.
+            output.write_raw("\r")
+            output.cursor_forward(int(cursor.x) % columns)
+            output.flush()
+        output.disable_autowrap()
+
     def _render(pt_app: Any, layout: Layout, is_done: bool = False) -> None:
         nonlocal resize_deferred, resize_handle
         if is_done and resize_handle is not None:
@@ -147,6 +187,7 @@ def install_shrink_resize_guard(
         if is_done:
             resize_deferred = False
         elif resize_deferred:
+            _render_deferred_input(pt_app)
             return
         size = output.get_size()
         size_changed = _size_changed(getattr(renderer, "_last_size", None), size)
@@ -209,8 +250,8 @@ def install_shrink_resize_guard(
                 original_on_resize()
             elif rows_above >= size.rows:
                 # The old live-region top has moved above the addressable
-                # viewport. Leave the terminal's reflowed frame untouched and
-                # keep buffer updates off-screen until a later resize makes the
+                # viewport. Leave the full frame untouched and show edits on a
+                # compact cursor-row fallback until a later resize makes the
                 # whole region reachable again; erasing here would strand old
                 # prompt chrome inside transcript scrollback.
                 resize_deferred = True
@@ -218,7 +259,10 @@ def install_shrink_resize_guard(
             else:
                 resize_deferred = False
                 with synchronized_output(output):
-                    output.cursor_backward(int(cursor.x) % max(1, size.columns))
+                    # Reflow can change the terminal's real column independently
+                    # of renderer._cursor_pos. A carriage return is the only
+                    # reliable way to anchor the erase at column zero.
+                    output.write_raw("\r")
                     output.cursor_up(rows_above)
                     output.erase_down()
                     output.flush()
