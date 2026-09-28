@@ -524,3 +524,82 @@ def capture_agent_secret_detected(
 def capture_hosted_gateway_task_submitted(prompt_id: str) -> None:
     """A new prompt was accepted by the managed gateway; polls do not emit this."""
     _capture(Event.HOSTED_GATEWAY_TASK_SUBMITTED, {"prompt_id": prompt_id})
+
+
+def capture_hosted_gateway_started(
+    *, gateway_id: str, actual_state: str, already_running: bool
+) -> None:
+    """The app accepted a start of the organization's hosted gateway; it may still be coming up."""
+    _capture(
+        Event.HOSTED_GATEWAY_STARTED,
+        {
+            "gateway_id": gateway_id,
+            "actual_state": actual_state,
+            "already_running": already_running,
+        },
+    )
+
+
+def capture_hosted_gateway_healthy(*, gateway_id: str, tool_name: str) -> None:
+    """A health read found the organization's hosted gateway running with nothing pending."""
+    _capture(Event.HOSTED_GATEWAY_HEALTHY, {"gateway_id": gateway_id, "tool_name": tool_name})
+
+
+def _ci_repair_properties(
+    repair_run_id: str, repository: str, pr_number: int, demo: bool
+) -> Properties:
+    # ``repair_run_id`` joins the repair's events across the shell, gateway, and worker.
+    properties: Properties = {
+        "repair_run_id": repair_run_id,
+        "repository": repository,
+        "demo": demo,
+    }
+    if pr_number:
+        properties["pr_number"] = pr_number
+    return properties
+
+
+def capture_remote_ci_monitoring_started(
+    *, repair_run_id: str, repository: str, pr_number: int, demo: bool
+) -> None:
+    """A gateway's own scheduler registered a CI repair loop, so it runs without the shell."""
+    _capture(
+        Event.REMOTE_CI_MONITORING_STARTED,
+        _ci_repair_properties(repair_run_id, repository, pr_number, demo),
+    )
+
+
+def capture_test_ci_failure_triggered(
+    *, repair_run_id: str, repository: str, pr_number: int, demo: bool, remote: bool
+) -> None:
+    """The repair demo opened its pull request with a failing test; ``remote`` names the host."""
+    properties = _ci_repair_properties(repair_run_id, repository, pr_number, demo)
+    properties["remote"] = remote
+    _capture(Event.TEST_CI_FAILURE_TRIGGERED, properties)
+
+
+def capture_remote_ci_failure_detected(
+    *, repair_run_id: str, repository: str, pr_number: int, demo: bool
+) -> None:
+    """A remote repair loop saw its pull request fail CI and started its first repair attempt."""
+    _capture(
+        Event.REMOTE_CI_FAILURE_DETECTED,
+        _ci_repair_properties(repair_run_id, repository, pr_number, demo),
+    )
+
+
+def capture_remote_ci_repair_succeeded(
+    *,
+    repair_run_id: str,
+    repository: str,
+    pr_number: int,
+    demo: bool,
+    attempts: int,
+    duration_ms: float,
+) -> None:
+    """A remote repair loop's own commit passed CI; ``duration_ms`` counts from scheduling."""
+    properties = _ci_repair_properties(repair_run_id, repository, pr_number, demo)
+    properties["attempts"] = attempts
+    properties["duration_ms"] = round(duration_ms)
+    properties["duration_bucket"] = _bucket_duration_ms(duration_ms)
+    _capture(Event.REMOTE_CI_REPAIR_SUCCEEDED, properties)

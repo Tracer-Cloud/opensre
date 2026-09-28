@@ -79,3 +79,13 @@ class Event(StrEnum):
     ONBOARDING_DEMO_PROMPTED = "onboarding_demo_prompted"
     ONBOARDING_DEMO_SELECTED = "onboarding_demo_selected"
     ONBOARDING_DEMO_SKIPPED = "onboarding_demo_skipped"
+
+    # Remote CI repair activation (delegating-github-ci-repairs). The gateway
+    # events come from the signed-in shell; the CI events from the gateway that
+    # runs the repair loop, except the test failure, which either host records.
+    HOSTED_GATEWAY_STARTED = "hosted_gateway_started"
+    HOSTED_GATEWAY_HEALTHY = "hosted_gateway_healthy"
+    REMOTE_CI_MONITORING_STARTED = "remote_ci_monitoring_started"
+    TEST_CI_FAILURE_TRIGGERED = "test_ci_failure_triggered"
+    REMOTE_CI_FAILURE_DETECTED = "remote_ci_failure_detected"
+    REMOTE_CI_REPAIR_SUCCEEDED = "remote_ci_repair_succeeded"

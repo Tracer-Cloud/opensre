@@ -9,12 +9,12 @@ demo_order: 3
 metadata:
   owner: Vincent
   last_changed_by: Jan
-  last_changed_at: 2026-09-14
+  last_changed_at: 2026-09-28
   usecases:
     - For users asking whether OpenSRE can run CI/CD repairs for them as a managed service.
   requires:
     - Nothing; this skill only reports that the option is not available yet.
-  version: "1.0"
+  version: "2.1"
 ---
 
 # Setup Delegation to Remote managed service 
