@@ -1,35 +1,80 @@
 ---
 name: delegating-github-ci-repairs
 description: >-
-  Delegates CI/CD repairs to the hosted OpenSRE managed service. Not yet
-  available; when loaded, say the option is coming soon and exit the flow.
-getting_started: Run CI/CD improvements with a managed service (coming soon)
+  Deploys GitHub CI repair monitoring to the OpenSRE managed service so repairs
+  continue without the user's machine. Use when the user wants remote,
+  scheduled, or always-on CI/CD repair.
+getting_started: Run CI/CD repairs remotely
 demo_order: 3
 metadata:
   owner: Vincent
   last_changed_by: Jan
-  last_changed_at: 2026-09-14
+  last_changed_at: 2026-09-28
   usecases:
     - For users asking whether OpenSRE can run CI/CD repairs for them as a managed service.
   requires:
     - Nothing; this skill only reports that the option is not available yet.
-  version: "1.0"
+  version: "2.1"
 ---
 
-# Remote managed service (not yet available)
+# Setup Delegation to Remote managed service 
+Deploy the existing GitHub CI repair workflow to the OpenSRE managed service.
 
-**objective** 
-- Is to connect to a managed fargate container that spins up a ci-cd-repair loop: core/agent_harness/prompts/skills/repair-github-ci
-- This is seperate from skill core/agent_harness/prompts/skills/onboarding-github-ci/d-connecting-slack
+This skill helps you setup OpenSRE as a remote managed cloud service to enable the agent to do work without your machine, and ensure that OpenSRE automatically keeps your CI green.
 
--------
-
-What this task should not do:
-- improving the cicd fix skill itself because we will reuse the existing one: core/agent_harness/prompts/skills/repair-github-ci
+## Pre-Requisites 
+- This skill is running in the interactive shell. 
+- The opensre back-end is responding correctly 
 
 
-This option is not implemented yet.
+## Skill plan 
+After reading this skill, use `update_plan` to create the live plan from the workflow headings below:
 
-Reply in two sentences and stop. Say the managed-service onboarding is comingsoon, then name what does work now: analysing a repository's CI/CD performance, or setting up a recurring CI repair agent. A viewer who picked this option must leave with something to try, not a dead end.
+- [ ] Check account and hosted gateway state.
+- [ ] If needed, sign in with `/account login`.
+- [ ] Start or provision the hosted gateway.
+- [ ] Verify the gateway is healthy.
+- [ ] Send a message to the gateway and ensure you receive one in return.
+- [ ] Verify the configured repository is monitored remotely.
+- [ ] Check if Gateway has the required permissions and GitHub access to monitor to the target repository. If not help the user to set it up correctly. 
+- [ ] Trigger a test CI failure on a demo or test repository.
+- [ ] Confirm the remote agent detects and repairs it.
+- [ ] Respond with the outcome report as Markdown.
+- [ ] After the report is shown, offer the follow-up with ask_user_choice.
 
-Do not call a tool, do not reopen the demo menu, and do not load another child skill. If the user then asks for one of those, follow that request.
+If validation fails, diagnose the deployment or monitoring configuration and retry verification. 
+
+## Success criteria
+
+The workflow succeeds only when:
+
+1. The hosted gateway responds to prompts from the interactive shell and they are returned back.
+2. Scheduled loop is configured with the following skill core/agent_harness/prompts/skills/repair-github-ci.
+3. A CI failure triggered after deployment is detected remotely.
+4. The remote repair loop fixes the failure without the local shell remaining active.
+
+## Configure remote gateway Github access 
+In order to use this skill correctly, you need to configure the remote GitHub integrations correctly. To do that you need to enter you GitHub integration here:
+
+https://app.opensre.com/dashboard/github
+
+# Verification 
+What needs to be verified in the remote:
+- Does remote storage work 
+- Does GitHub token work 
+
+## Step #final - Ask user choice 
+After successful validation, use `ask_user_choice`:
+
+- Configure Slack or Telegram
+- Add more scheduled tasks
+- Exit to interactive shell 
+
+## Relevant Tools 
+You can use all tools, including the following tools that are used to communicate from the interactive shell to the gateway, but should not be used inside the gateway:
+
+- `check_hosted_gateway()` — check whether it exists and is running.
+- `ask_hosted_gateway(prompt, facts)` — send work to the managed gateway.
+- `ask_hosted_gateway(prompt_id=...)` — continue a request awaiting input or retrieve its result.
+- `start_hosted_gateway()` - start control the gateway lifecycle.
+- `stop_hosted_gateway()`- stop control the gateway lifecycle.

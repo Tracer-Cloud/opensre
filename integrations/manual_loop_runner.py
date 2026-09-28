@@ -17,6 +17,7 @@ from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_REPORT_ARGS_PARAM,
     LOOP_REPORT_PARAM,
 )
+from infrastructure.scheduling.scheduler.schedule_cancel import cancel_requested_for_payload
 from infrastructure.scheduling.scheduler.types import TaskReport
 from integrations.scheduled_outcomes import ScheduledOutcomes
 
@@ -111,6 +112,7 @@ def run_manual_prompt_loop(payload: AgentPayload) -> TaskReport:
         logger=logger,
         is_tty=False,
         tool_hooks=ToolExecutionHooks(after_tool_call=outcomes.observe),
+        cancel_requested=cancel_requested_for_payload(payload),
     )
     report = result.primary_response_text
     if not result.answered or not report:

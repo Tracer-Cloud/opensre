@@ -370,7 +370,113 @@ def test_blocked_steps_await_the_user_until_a_question_is_queued() -> None:
     assert blocked_steps_await_the_user(session) is False
 
 
-def test_goal_reviewer_rejects_an_answer_turn_that_only_loaded_a_skill_once() -> None:
+def test_goal_reviewer_rejects_a_turn_that_stopped_after_a_failed_curl() -> None:
+    """A nonzero shell/curl is an observation, not completion of the user's ask."""
+    from core.agent_harness.turns.work_outcome import ExecutedToolOutcome
+
+    llm = _ScriptedLLM('{"verdict": "GOAL_REACHED"}')
+    outcomes = [
+        ExecutedToolOutcome(
+            name="shell_run",
+            arguments={"command": "curl https://api.github.com/repos/facebook/react"},
+            is_error=False,
+            details={"ok": False, "exit_code": 1, "stderr": "Could not resolve host"},
+        )
+    ]
+    goal = build_goal_reviewer(
+        llm,
+        "how many stars does facebook/react have",
+        executed_tool_names=["shell_run"],
+        executed_outcomes=outcomes,
+    )
+    assert goal.verify is not None and goal.nudge is not None
+    assert goal.verify(_obs()) is False
+    assert llm.invokes == 0
+    assert "failed" in goal.nudge(_obs()).lower()
+    # Keep rejecting until a later work tool succeeds — one failed curl is
+    # not a budget that then lets the model stop.
+    assert goal.verify(_obs()) is False
+
+
+def test_goal_reviewer_accepts_after_a_failed_curl_is_retried_successfully() -> None:
+    from core.agent_harness.turns.work_outcome import ExecutedToolOutcome
+
+    llm = _ScriptedLLM('{"verdict": "GOAL_REACHED"}')
+    outcomes = [
+        ExecutedToolOutcome(
+            name="shell_run",
+            arguments={"command": "curl …"},
+            is_error=False,
+            details={"ok": False, "exit_code": 1},
+        ),
+        ExecutedToolOutcome(
+            name="get_github_repository",
+            arguments={"owner": "facebook", "repo": "react"},
+            is_error=False,
+            details={"ok": True, "stargazers_count": 42},
+        ),
+    ]
+    goal = build_goal_reviewer(
+        llm,
+        "how many stars does facebook/react have",
+        executed_tool_names=["shell_run", "get_github_repository"],
+        executed_outcomes=outcomes,
+    )
+    assert goal.verify is not None
+    assert goal.verify(_obs()) is True
+    assert llm.invokes == 0
+
+
+def test_goal_reviewer_accepts_a_classified_blocked_repair() -> None:
+    """A repair tool that already classified the target may end and report it."""
+    from core.agent_harness.turns.work_outcome import ExecutedToolOutcome
+
+    llm = _ScriptedLLM('{"verdict": "GOAL_REACHED"}')
+    outcomes = [
+        ExecutedToolOutcome(
+            name="fix_github_pr_ci",
+            arguments={},
+            is_error=False,
+            details={
+                "success": False,
+                "error_kind": "repo_mismatch",
+                "work_outcome": {"status": "blocked", "error_kind": "repo_mismatch"},
+            },
+        )
+    ]
+    goal = build_goal_reviewer(
+        llm,
+        "repair the failing checks",
+        executed_tool_names=["fix_github_pr_ci"],
+        executed_outcomes=outcomes,
+    )
+    assert goal.verify is not None
+    assert goal.verify(_obs()) is True
+    assert llm.invokes == 0
+
+
+def test_goal_reviewer_lets_the_user_be_asked_after_a_failed_tool() -> None:
+    """A closing question is how a real blocker is resolved; do not flail past it."""
+    from core.agent_harness.turns.work_outcome import ExecutedToolOutcome
+
+    llm = _ScriptedLLM('{"verdict": "GOAL_REACHED"}')
+    outcomes = [
+        ExecutedToolOutcome(
+            name="shell_run",
+            arguments={"command": "curl"},
+            is_error=False,
+            details={"ok": False, "exit_code": 1},
+        )
+    ]
+    goal = build_goal_reviewer(
+        llm,
+        "how many stars",
+        executed_tool_names=["shell_run"],
+        executed_outcomes=outcomes,
+    )
+    assert goal.verify is not None
+    assert goal.verify(_obs(text="GitHub returned 401. Do you have a token I can use?")) is True
+
     """Live: demo A was picked, the skill loaded, and the turn ended on "Next, I'll scan"."""
     # Arrange: the gate says the turn stalled on a skill load.
     llm = _ScriptedLLM('{"verdict": "GOAL_REACHED"}')

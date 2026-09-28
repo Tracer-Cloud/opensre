@@ -72,12 +72,12 @@ THEME_REGISTRY: dict[str, CliTheme] = {
     ),
     "blue": CliTheme(
         name="blue",
-        HIGHLIGHT="#E0CC9C",
-        BRAND="#B2935B",
-        TEXT="#D0D0D0",
-        SECONDARY="#B0A898",
+        HIGHLIGHT="#B7D4F0",
+        BRAND="#81A4C6",
+        TEXT="#B6BAC2",
+        SECONDARY="#A6A6A6",
         DIM="#6E6E6E",
-        WARNING="#E0B466",
+        WARNING="#D8B06F",
         ERROR="#CF6B63",
         BG="#15161A",
         # Lifted plate for the composer (Droid/Claude/Cursor-style). Must read
@@ -463,6 +463,23 @@ def get_active_theme_name() -> str:
     return _ACTIVE_THEME.name
 
 
+def menu_selection_hex() -> str:
+    """Return an accent-tinted selection surface for the active composer palette."""
+    rgb = _mix_rgb(
+        _parse_hex_color(_ACTIVE_THEME.INPUT_SURFACE),
+        _parse_hex_color(_ACTIVE_THEME.HIGHLIGHT),
+        0.16,
+    )
+    return "#" + "".join(f"{channel:02x}" for channel in rgb)
+
+
+def prominent_menu_selection_ansi() -> str:
+    """Return a filled accent row with contrasting text for a focused menu item."""
+    accent = _parse_hex_color(_ACTIVE_THEME.HIGHLIGHT)
+    background = _parse_hex_color(_ACTIVE_THEME.BG)
+    return f"\x1b[1;48;2;{accent[0]};{accent[1]};{accent[2]}m{_fg(background)}"
+
+
 def _apply_theme(theme: CliTheme) -> None:
     global HIGHLIGHT_ANSI, BRAND_ANSI, TEXT_ANSI, SECONDARY_ANSI, DIM_ANSI, BOLD_BRAND_ANSI
     global PROMPT_ACCENT_ANSI, PROMPT_FRAME_ANSI, DIM_COUNTER_ANSI, SURFACE_BG_ANSI
@@ -612,6 +629,8 @@ __all__ = [
     "TEXT",
     "TEXT_ANSI",
     "WARNING",
+    "menu_selection_hex",
+    "prominent_menu_selection_ansi",
     "reply_marker_hex",
     "reply_marker_style",
 ]

@@ -17,6 +17,7 @@ from config.account import (
     resolve_account_token,
     save_account_record,
 )
+from config.account_credits import AccountCredits, parse_credit_balance_payload
 from config.constants.account import (
     OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS,
     OPENSRE_ACCOUNT_SESSION_PATH,
@@ -40,6 +41,7 @@ class AccountStatus:
     state: AccountSessionState
     record: AccountRecord | None
     detail: str
+    credits: AccountCredits | None = None
 
     @property
     def authenticated(self) -> bool:
@@ -144,9 +146,10 @@ def account_status(*, app_url: str | None = None) -> AccountStatus:
             "The OpenSRE app could not validate this login.",
         )
     try:
-        refreshed_record = _refreshed_record(response.json(), record)
+        payload = response.json()
     except (json.JSONDecodeError, UnicodeDecodeError):
-        refreshed_record = None
+        payload = None
+    refreshed_record = _refreshed_record(payload, record)
     if refreshed_record is None:
         return AccountStatus(
             AccountSessionState.INVALID,
@@ -167,7 +170,8 @@ def account_status(*, app_url: str | None = None) -> AccountStatus:
         AccountSessionState.ACTIVE,
         refreshed_record,
         f"Authenticated with OpenSRE; LLM provider: {provider}.",
+        parse_credit_balance_payload(payload),
     )
 
 
-__all__ = ["AccountSessionState", "AccountStatus", "account_status"]
+__all__ = ["AccountCredits", "AccountSessionState", "AccountStatus", "account_status"]

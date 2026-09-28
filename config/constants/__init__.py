@@ -15,6 +15,9 @@ from config.constants.exports import __getattr__ as __getattr__
 if TYPE_CHECKING:
     # Static re-exports so mypy sees real types; runtime stays lazy (``__getattr__``).
     from config.constants.account import (
+        OPENSRE_ACCOUNT_CREDITS_PATH as OPENSRE_ACCOUNT_CREDITS_PATH,
+    )
+    from config.constants.account import (
         OPENSRE_ACCOUNT_FILENAME as OPENSRE_ACCOUNT_FILENAME,
     )
     from config.constants.account import (
@@ -66,6 +69,9 @@ if TYPE_CHECKING:
         ALERTMANAGER_USERNAME_ENV as ALERTMANAGER_USERNAME_ENV,
     )
     from config.constants.analytics import (
+        ANALYTICS_CICD_ENV as ANALYTICS_CICD_ENV,
+    )
+    from config.constants.analytics import (
         ANALYTICS_DISABLED_ENV as ANALYTICS_DISABLED_ENV,
     )
     from config.constants.analytics import (
@@ -82,6 +88,12 @@ if TYPE_CHECKING:
     )
     from config.constants.analytics import (
         ANALYTICS_INSTALL_MARKER_STATE_ENV as ANALYTICS_INSTALL_MARKER_STATE_ENV,
+    )
+    from config.constants.analytics import (
+        ANALYTICS_INSTALL_ORIGIN_ENV as ANALYTICS_INSTALL_ORIGIN_ENV,
+    )
+    from config.constants.analytics import (
+        ANALYTICS_INSTALL_ORIGINS as ANALYTICS_INSTALL_ORIGINS,
     )
     from config.constants.analytics import (
         ANALYTICS_INSTALL_SOURCE_ENV as ANALYTICS_INSTALL_SOURCE_ENV,
@@ -233,6 +245,12 @@ if TYPE_CHECKING:
     from config.constants.buzz import (
         BUZZ_RELAY_URL_ENV as BUZZ_RELAY_URL_ENV,
     )
+    from config.constants.capabilities import (
+        SCHEDULER_HOST_CAPABILITY as SCHEDULER_HOST_CAPABILITY,
+    )
+    from config.constants.capabilities import (
+        SCHEDULER_HOST_IN_PROCESS as SCHEDULER_HOST_IN_PROCESS,
+    )
     from config.constants.ci_fixes import (
         CI_FIX_COUNT_LABEL as CI_FIX_COUNT_LABEL,
     )
@@ -247,6 +265,9 @@ if TYPE_CHECKING:
     from config.constants.ci_repair import (
         CI_REPAIR_FINISH_RESERVE_SECONDS as CI_REPAIR_FINISH_RESERVE_SECONDS,
     )
+    from config.constants.ci_repair import (
+        CI_REPAIR_MAX_ATTEMPTS as CI_REPAIR_MAX_ATTEMPTS,
+    )
     from config.constants.ci_repair import CI_REPAIR_POLL_SECONDS as CI_REPAIR_POLL_SECONDS
     from config.constants.ci_repair import CI_REPAIR_REPORT_BUILDER as CI_REPAIR_REPORT_BUILDER
     from config.constants.ci_repair import CI_REPAIR_SECONDS as CI_REPAIR_SECONDS
@@ -256,6 +277,15 @@ if TYPE_CHECKING:
     )
     from config.constants.clerk import (
         CLERK_JWKS_URL_ENV as CLERK_JWKS_URL_ENV,
+    )
+    from config.constants.coding_agent import (
+        CODING_AGENT_SANDBOX_AGENT as CODING_AGENT_SANDBOX_AGENT,
+    )
+    from config.constants.coding_agent import (
+        CODING_AGENT_SANDBOX_ENV as CODING_AGENT_SANDBOX_ENV,
+    )
+    from config.constants.coding_agent import (
+        CODING_AGENT_SANDBOX_HOST as CODING_AGENT_SANDBOX_HOST,
     )
     from config.constants.coralogix import (
         CORALOGIX_API_KEY_ENV as CORALOGIX_API_KEY_ENV,
@@ -333,6 +363,12 @@ if TYPE_CHECKING:
         ATTACHMENT_MAX_TOTAL_CHARS as ATTACHMENT_MAX_TOTAL_CHARS,
     )
     from config.constants.gateway import (
+        CREDENTIAL_REFRESH_INTERVAL_SECONDS as CREDENTIAL_REFRESH_INTERVAL_SECONDS,
+    )
+    from config.constants.gateway import (
+        CREDENTIAL_REFRESH_JOIN_TIMEOUT_SECONDS as CREDENTIAL_REFRESH_JOIN_TIMEOUT_SECONDS,
+    )
+    from config.constants.gateway import (
         CREDITS_DENIED_MESSAGE as CREDITS_DENIED_MESSAGE,
     )
     from config.constants.gateway import (
@@ -342,13 +378,58 @@ if TYPE_CHECKING:
         DEFAULT_STOP_TIMEOUT_SECONDS as DEFAULT_STOP_TIMEOUT_SECONDS,
     )
     from config.constants.gateway import (
+        GATEWAY_STOP_TIMEOUT_SECONDS_ENV as GATEWAY_STOP_TIMEOUT_SECONDS_ENV,
+    )
+    from config.constants.gateway import (
+        HEALTH_TASK_STORE_LOCK_TIMEOUT_SECONDS as HEALTH_TASK_STORE_LOCK_TIMEOUT_SECONDS,
+    )
+    from config.constants.gateway import (
+        MAX_STOP_TIMEOUT_SECONDS as MAX_STOP_TIMEOUT_SECONDS,
+    )
+    from config.constants.gateway import (
         NEW_SESSION_MESSAGE as NEW_SESSION_MESSAGE,
     )
     from config.constants.gateway import (
         NO_ACTIVE_TURN_MESSAGE as NO_ACTIVE_TURN_MESSAGE,
     )
     from config.constants.gateway import (
+        PROMPT_CONTEXT_MAX_ITEMS as PROMPT_CONTEXT_MAX_ITEMS,
+    )
+    from config.constants.gateway import (
+        PROMPT_CONTEXT_VALUE_MAX_CHARS as PROMPT_CONTEXT_VALUE_MAX_CHARS,
+    )
+    from config.constants.gateway import (
+        PROMPT_DEFAULT_ACTOR as PROMPT_DEFAULT_ACTOR,
+    )
+    from config.constants.gateway import (
+        PROMPT_MAX_CHARS as PROMPT_MAX_CHARS,
+    )
+    from config.constants.gateway import (
+        PROMPT_PROGRESS_LINE_MAX_CHARS as PROMPT_PROGRESS_LINE_MAX_CHARS,
+    )
+    from config.constants.gateway import (
+        PROMPT_PROGRESS_MAX_LINES as PROMPT_PROGRESS_MAX_LINES,
+    )
+    from config.constants.gateway import (
+        PROMPT_QUEUE_MAX as PROMPT_QUEUE_MAX,
+    )
+    from config.constants.gateway import (
+        PROMPT_RESULT_RETENTION_SECONDS as PROMPT_RESULT_RETENTION_SECONDS,
+    )
+    from config.constants.gateway import (
+        PROMPT_ROUTE_PATH as PROMPT_ROUTE_PATH,
+    )
+    from config.constants.gateway import (
+        PROMPT_SLOT_WAIT_SECONDS as PROMPT_SLOT_WAIT_SECONDS,
+    )
+    from config.constants.gateway import (
+        PROMPT_WORKER_STOP_TIMEOUT_SECONDS as PROMPT_WORKER_STOP_TIMEOUT_SECONDS,
+    )
+    from config.constants.gateway import (
         SCHEDULER_RELOAD_JOIN_TIMEOUT_SECONDS as SCHEDULER_RELOAD_JOIN_TIMEOUT_SECONDS,
+    )
+    from config.constants.gateway import (
+        SCHEDULER_STOP_BUDGET_SHARE as SCHEDULER_STOP_BUDGET_SHARE,
     )
     from config.constants.gateway import (
         TURN_ERROR_MESSAGE as TURN_ERROR_MESSAGE,
@@ -405,6 +486,7 @@ if TYPE_CHECKING:
     from config.constants.github import (
         GITHUB_MCP_URL_ENV as GITHUB_MCP_URL_ENV,
     )
+    from config.constants.github import GITHUB_TOKEN_CHECKLIST as GITHUB_TOKEN_CHECKLIST
     from config.constants.github import (
         GITHUB_TOKEN_ENV as GITHUB_TOKEN_ENV,
     )
@@ -490,10 +572,31 @@ if TYPE_CHECKING:
         HOSTED_GATEWAY_HTTP_TIMEOUT_SECONDS as HOSTED_GATEWAY_HTTP_TIMEOUT_SECONDS,
     )
     from config.constants.hosted_gateway import (
+        HOSTED_GATEWAY_INTEGRATIONS_PATH as HOSTED_GATEWAY_INTEGRATIONS_PATH,
+    )
+    from config.constants.hosted_gateway import (
         HOSTED_GATEWAY_LOOPBACK_HOSTS as HOSTED_GATEWAY_LOOPBACK_HOSTS,
     )
     from config.constants.hosted_gateway import (
+        HOSTED_GATEWAY_PROMPT_POLL_SECONDS as HOSTED_GATEWAY_PROMPT_POLL_SECONDS,
+    )
+    from config.constants.hosted_gateway import (
+        HOSTED_GATEWAY_PROMPT_WAIT_SECONDS as HOSTED_GATEWAY_PROMPT_WAIT_SECONDS,
+    )
+    from config.constants.hosted_gateway import (
+        HOSTED_GATEWAY_PROMPTS_PATH as HOSTED_GATEWAY_PROMPTS_PATH,
+    )
+    from config.constants.hosted_gateway import (
+        HOSTED_GATEWAY_QUEUE_NOTICE_SECONDS as HOSTED_GATEWAY_QUEUE_NOTICE_SECONDS,
+    )
+    from config.constants.hosted_gateway import (
         HOSTED_GATEWAY_SETTINGS_PATH as HOSTED_GATEWAY_SETTINGS_PATH,
+    )
+    from config.constants.hosted_gateway import (
+        HOSTED_GATEWAY_START_PATH as HOSTED_GATEWAY_START_PATH,
+    )
+    from config.constants.hosted_gateway import (
+        HOSTED_GATEWAY_STOP_PATH as HOSTED_GATEWAY_STOP_PATH,
     )
     from config.constants.http import (
         MAX_REQUEST_BODY_BYTES as MAX_REQUEST_BODY_BYTES,
@@ -572,6 +675,12 @@ if TYPE_CHECKING:
     )
     from config.constants.llm import (
         LLM_PROVIDER_ENV as LLM_PROVIDER_ENV,
+    )
+    from config.constants.llm import (
+        OPENAI_API_KEY_ENV as OPENAI_API_KEY_ENV,
+    )
+    from config.constants.llm import (
+        OPENAI_BASE_URL_ENV as OPENAI_BASE_URL_ENV,
     )
     from config.constants.llm import (
         OPENSRE_LLM_NATIVE_STRUCTURED_OUTPUT_ENV as OPENSRE_LLM_NATIVE_STRUCTURED_OUTPUT_ENV,
@@ -747,6 +856,9 @@ if TYPE_CHECKING:
     )
     from config.constants.paths import (
         get_memory_dir as get_memory_dir,
+    )
+    from config.constants.paths import (
+        get_sessions_dir as get_sessions_dir,
     )
     from config.constants.paths import (
         get_store_path as get_store_path,
@@ -969,6 +1081,9 @@ if TYPE_CHECKING:
     )
     from config.constants.scheduler import (
         OPENSRE_GATEWAY_HOST_SCHEDULER_ENV as OPENSRE_GATEWAY_HOST_SCHEDULER_ENV,
+    )
+    from config.constants.scheduler import (
+        WEEKDAY_CRON_FIELD as WEEKDAY_CRON_FIELD,
     )
     from config.constants.secrets import (
         CREDENTIAL_FALLBACK_FILENAME as CREDENTIAL_FALLBACK_FILENAME,

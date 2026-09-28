@@ -87,12 +87,12 @@ def emit_react_turn_completed(
     result: AgentRunResult | None,
     iteration_cap: int,
     duration_ms: int,
-    llm: Any,
+    llm: Any | None,
     session: SessionState | None = None,
     error: BaseException | None = None,
     cancelled: bool = False,
 ) -> None:
-    """Emit one ``react_turn_completed`` lifecycle event for an Agent.run."""
+    """Emit one lifecycle event; ``llm=None`` identifies deterministic dispatch."""
     tool_calls_executed = len(result.executed) if result is not None else 0
     llm_iterations_used = result.llm_iterations_used if result is not None else 0
     hit_iteration_cap = bool(result.hit_iteration_cap) if result is not None else False
@@ -107,7 +107,11 @@ def emit_react_turn_completed(
     cli_turn_kind = get_cli_turn_kind() or "agent"
 
     recorder = PromptRecorder.current()
-    if recorder is not None:
+    if recorder is not None and llm is None:
+        recorder.set_llm_attempted(False)
+        if error is not None:
+            recorder.set_error("cancelled" if cancelled else "action_error", str(error))
+    elif recorder is not None:
         recorder.set_run(
             LlmRunInfo(
                 model=resolve_model_name(llm),
@@ -139,10 +143,10 @@ def run_react_agent_with_telemetry(
     *,
     phase: ReactPhase,
     iteration_cap: int,
-    llm: Any,
+    llm: Any | None,
     session: SessionState | None = None,
 ) -> AgentRunResult:
-    """Run ``agent.run`` and emit exactly one ``react_turn_completed`` event."""
+    """Run with one completion event, using ``llm=None`` for deterministic dispatch."""
     started = time.monotonic()
     result: AgentRunResult | None = None
     try:

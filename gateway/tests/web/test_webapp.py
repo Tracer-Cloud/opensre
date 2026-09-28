@@ -37,6 +37,8 @@ def test_health_response_returns_known_fields() -> None:
     assert hasattr(response, "version")
     assert hasattr(response, "llm_configured")
     assert hasattr(response, "env")
+    assert response.sessions >= 0 and response.scheduled_tasks >= 0
+    assert isinstance(response.previous_shutdown, str)
 
 
 def test_ok_route_is_registered() -> None:

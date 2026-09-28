@@ -10,7 +10,7 @@ import pytest
 
 from config.constants.work_items import WORK_ITEM_REMINDER_RUN_AT_PARAM
 from core.domain.work_items import add_work_item
-from infrastructure.scheduling.scheduler.storage.run_store import get_runs, try_claim
+from infrastructure.scheduling.scheduler.storage.run_store import get_runs, try_claim, try_queue_run
 from infrastructure.scheduling.scheduler.storage.task_store import (
     _quarantine_unreadable,
     add_task,
@@ -20,7 +20,7 @@ from infrastructure.scheduling.scheduler.storage.task_store import (
     remove_task,
     update_task,
 )
-from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
+from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind, TaskStatus
 
 
 @pytest.fixture()
@@ -145,6 +145,39 @@ class TestStore:
 
         assert len(get_runs("task-a", db_path=db_path)) == 1
         assert len(get_runs("task-b", db_path=db_path)) == 1
+
+    @pytest.mark.parametrize("mutation", ["remove", "disable"])
+    def test_cancel_skips_queued_runs_only_in_the_paired_database(
+        self, tmp_path: Path, mutation: str
+    ) -> None:
+        store_path = tmp_path / "custom" / "scheduler_tasks.json"
+        other_db = tmp_path / "other" / "scheduler.db"
+        task = add_task(
+            ScheduledTask(
+                kind=TaskKind.MANUAL_LOOP,
+                cron="0 9 * * *",
+                provider=Provider.SLACK,
+                chat_id="C-paired",
+            ),
+            store_path,
+        )
+        paired_db = _db_path(store_path)
+        assert try_queue_run(task.id, "2026-01-01T09:00Z", db_path=paired_db)
+        assert try_queue_run(task.id, "2026-01-01T09:00Z", db_path=other_db)
+
+        if mutation == "remove":
+            assert remove_task(task.id, store_path) is True
+            expected_error = "missing_task"
+        else:
+            task.enabled = False
+            assert update_task(task, store_path) is True
+            expected_error = "disabled"
+
+        paired = get_runs(task.id, db_path=paired_db)
+        other = get_runs(task.id, db_path=other_db)
+        assert paired and paired[0].status is TaskStatus.SKIPPED
+        assert paired[0].error == expected_error
+        assert other and other[0].status is TaskStatus.PENDING
 
     def test_remove_nonexistent(self, store_path: Path) -> None:
         assert remove_task("nonexistent", store_path) is False
@@ -344,6 +377,31 @@ class TestReloadSignal:
     ) -> None:
         signals = self._capture(monkeypatch)
         assert remove_task("does-not-exist", store_path) is False
+        assert signals == []
+
+    def test_update_signals_reload(self, store_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        added = add_task(self._task(), store_path)
+        signals = self._capture(monkeypatch)
+        added.enabled = False
+        assert update_task(added, store_path) is True
+        assert signals == [True]
+
+    def test_next_run_update_does_not_signal_reload(
+        self, store_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        added = add_task(self._task(), store_path)
+        signals = self._capture(monkeypatch)
+        added.next_run = "2026-01-15T09:00:00+00:00"
+        assert update_task(added, store_path) is True
+        assert signals == []
+
+    def test_update_missing_does_not_signal(
+        self, store_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        signals = self._capture(monkeypatch)
+        missing = self._task()
+        missing.id = "does-not-exist"
+        assert update_task(missing, store_path) is False
         assert signals == []
 
 
@@ -591,6 +649,7 @@ class TestLegacyTaskMigration:
             "timezone": "Asia/Kolkata",
             "provider": "interactive_shell",
             "chat_id": "local-session",
+            "organization": "",
             "window_hours": 12,
             "enabled": True,
             "params": {

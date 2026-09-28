@@ -9,13 +9,15 @@ with these methods can drive the loop. ``Agent`` is the usual one.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from typing import Any, Protocol
 
 from core.events import RuntimeEvent
+from core.llm.types import ToolCall
 from core.messages import ProviderMessage, RuntimeMessage
 from core.provider import ProviderRequest
 from core.tool.contracts import RuntimeTool
-from core.tool.execution import ToolExecutionHooks
+from core.tool.execution import ToolExecutionHooks, ToolExecutionResult
 
 
 class LoopHost[RuntimeToolT: RuntimeTool](Protocol):
@@ -50,6 +52,7 @@ class LoopHost[RuntimeToolT: RuntimeTool](Protocol):
         evidence_count: int,
         iteration: int,
         final_text: str = "",
+        tool_results: Sequence[tuple[ToolCall, ToolExecutionResult]] = (),
     ) -> tuple[bool, str | None]:
         """Whether a no-tool reply may end the turn.
 

@@ -66,6 +66,7 @@ _AFTER_BANNER = "after_banner"
 
 def _cli_invoked_properties(ctx: click.Context, command_parts: list[str]) -> Properties:
     obj = ctx.obj if ctx.obj else {}
+    interactive_option = obj.get("interactive")
     return build_cli_invoked_properties(
         entrypoint="opensre",
         command_parts=command_parts,
@@ -73,7 +74,12 @@ def _cli_invoked_properties(ctx: click.Context, command_parts: list[str]) -> Pro
         verbose=bool(obj.get("verbose", False)),
         debug=bool(obj.get("debug", False)),
         yes=bool(obj.get("yes", False)),
-        interactive=bool(obj.get("interactive", True)),
+        interactive=interactive_option if isinstance(interactive_option, bool) else None,
+        interactive_option_source=(
+            source.name.lower()
+            if (source := ctx.get_parameter_source("interactive"))
+            else "unknown"
+        ),
     )
 
 
@@ -175,6 +181,12 @@ def _run_without_subcommand(
 @click.option("--debug", is_flag=True, help="Print debug-level logs and traces.")
 @click.option("--yes", "-y", is_flag=True, help="Auto-confirm all interactive prompts.")
 @click.option(
+    "--skip-onboarding",
+    "skip_onboarding",
+    is_flag=True,
+    help="Skip the startup demo questions (run /demo to open them later).",
+)
+@click.option(
     "--interactive/--no-interactive",
     default=True,
     help="Disable the interactive shell and print the landing page instead.",
@@ -218,6 +230,7 @@ def cli(
     verbose: bool,
     debug: bool,
     yes: bool,
+    skip_onboarding: bool,
     interactive: bool,
     resume_session_id: str | None,
     sync_on_exit: bool,
@@ -231,6 +244,7 @@ def cli(
     ctx.obj["verbose"] = verbose
     ctx.obj["debug"] = debug
     ctx.obj["yes"] = yes
+    ctx.obj["skip_onboarding"] = skip_onboarding
     ctx.obj["interactive"] = interactive
     ctx.obj[_RECORD_INSTALL_ONLY] = record_install
 

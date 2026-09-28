@@ -423,6 +423,56 @@ def test_push_ci_fix_returns_exact_committed_head_sha() -> None:
     head_sha.assert_called_once_with("/workspace")
 
 
+def test_push_ci_fix_records_a_commit_the_coding_agent_already_created(tmp_path: Path) -> None:
+    import subprocess
+
+    work = tmp_path / "repo"
+    work.mkdir()
+
+    def git(*args: str) -> str:
+        return subprocess.run(
+            ["git", *args], cwd=work, check=True, capture_output=True, text=True
+        ).stdout.strip()
+
+    git("init", "-b", "feat/fix-ci")
+    git("config", "user.email", "t@example.com")
+    git("config", "user.name", "Tester")
+    (work / "README.md").write_text("hello\n")
+    git("add", "README.md")
+    git("commit", "-m", "init")
+    parent = git("rev-parse", "HEAD")
+    (work / "app.py").write_text("fixed = True\n")
+    git("add", "app.py")
+    git("commit", "-m", "agent fix")
+    captured: list[dict[str, object]] = []
+    ctx = replace(_CTX, head_sha=parent, head_branch="feat/fix-ci")
+
+    with (
+        patch("integrations.github.tools.ci_fix.ship.resolve_github_token", return_value="tok"),
+        patch(
+            "integrations.github.tools.ci_fix.ship.remote_branch_sha",
+            return_value=parent,
+        ),
+        patch("integrations.github.tools.ci_fix.ship.push_branch"),
+        patch(
+            "infrastructure.analytics.capture.capture_opensre_commit_created",
+            lambda **properties: captured.append(properties),
+        ),
+    ):
+        result = push_ci_fix(
+            str(work),
+            ctx=ctx,
+            result=CodingResult(success=True, summary="Fixed CI.", changed_files=["app.py"]),
+            github_token="tok",
+        )
+
+    assert result.changed_files == []
+    assert result.head_sha == git("rev-parse", "HEAD")
+    assert captured == [
+        {"workflow": "github_ci_fix", "commit_kind": "content", "changed_file_count": 1}
+    ]
+
+
 def test_with_push_output_reports_superseded_commit() -> None:
     output = {
         "owner": "Tracer-Cloud",
@@ -1105,6 +1155,7 @@ def test_run_ci_fix_merges_base_before_fixing_a_conflicted_pr(
     assert order == ["merge", "fix"]
     assert "merging main into it and resolving conflicts" in prompts[0]
     assert mock_push.call_args.kwargs["already_committed"] is True
+    assert mock_push.call_args.kwargs["recorded_through"] == "merge-sha"
     assert result["merged_base_branch"] == "main"
     assert result["resolved_conflicts"] == ["package.json"]
     assert result["response_text"] == (
@@ -1160,6 +1211,7 @@ def test_run_ci_fix_pushes_a_merge_only_repair_without_running_the_fix_agent(
     # Assert
     mock_run_fix.assert_not_called()
     mock_push.assert_called_once()
+    assert mock_push.call_args.kwargs["recorded_through"] == "merge-sha"
     assert result["success"] is True
     assert result["summary"] == "merged main"
 
@@ -1336,6 +1388,7 @@ def test_run_ci_fix_merges_base_and_reverifies_when_the_pushed_fix_conflicts(
     second_push = mock_push.call_args_list[1].kwargs
     assert second_push["ctx"].head_sha == "new-sha"
     assert second_push["already_committed"] is True
+    assert second_push["recorded_through"] == "merge-sha"
     assert [c.kwargs["expected_head_sha"] for c in mock_wait.call_args_list] == [
         "new-sha",
         "merge-sha",

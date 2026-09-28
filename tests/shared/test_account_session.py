@@ -76,6 +76,34 @@ def test_webapp_validation_activates_account_and_hosted_model(
     assert status.state is AccountSessionState.ACTIVE
     assert status.authenticated is True
     assert "gpt-5.4-mini" in status.detail
+    assert status.credits is None
+
+
+def test_webapp_session_credits_are_attached_to_active_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    payload = _session_payload()
+    payload["credits"] = {
+        "total": 100_000,
+        "monthly": 80_000,
+        "monthly_limit": 100_000,
+        "top_up": 20_000,
+        "resets_at": "2026-10-01T00:00:00.000Z",
+        "plan_id": "team",
+    }
+    monkeypatch.setattr(account_session, "load_account_record", _record)
+    monkeypatch.setattr(account_session, "resolve_account_token", lambda: "token")
+    monkeypatch.setattr(
+        account_session.httpx,
+        "get",
+        lambda *_args, **_kwargs: httpx.Response(HTTPStatus.OK, json=payload),
+    )
+
+    status = account_session.account_status()
+
+    assert status.state is AccountSessionState.ACTIVE
+    assert status.credits is not None
+    assert status.credits.total == 100_000
 
 
 def test_webapp_model_change_updates_the_route_before_shell_start(

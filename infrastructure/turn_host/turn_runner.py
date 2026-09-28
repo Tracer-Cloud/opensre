@@ -48,7 +48,7 @@ from infrastructure.analytics.usage_context import (
     get_surface,
 )
 from infrastructure.observability.trace.spans import traced_session
-from infrastructure.process.turn_capacity import turn_slot
+from infrastructure.process.turn_capacity import turn_slot, waiting_turn_slot
 from infrastructure.turn_host.cancel_console import CancelConsole
 from infrastructure.turn_host.concurrency import AT_CAPACITY_MESSAGE, TurnConcurrencyGate
 from infrastructure.turn_host.session_agents import SessionAgentPool
@@ -123,8 +123,13 @@ class TurnRunner:
         is_tty: bool | None = False,
         accounting_factory: Callable[[str], TurnAccounting] | None = None,
         on_progress: Callable[[SessionGoal], None] | None = None,
+        slot_wait_seconds: float | None = None,
     ) -> TurnResult | None:
         """Run one admitted turn, or return ``None`` when a gate rejects it.
+
+        ``slot_wait_seconds`` makes the turn wait that long for a free slot before
+        it counts as refused: a queued remote prompt is already accepted work, so
+        it queues behind a chat turn instead of failing the moment one is running.
 
         Same turn as :meth:`__call__` — one capacity gate, one agent pool, one
         ``handle`` call. The keywords carry a caller's terminal context; every
@@ -146,7 +151,12 @@ class TurnRunner:
         # /resume may non-blockingly claim a second session while this turn is
         # running. Keep that target protected until _run_turn has flushed its
         # rebound state, then release it together with this turn's source lease.
-        with lease, retained_session_execution_locks(), turn_slot(self._gate) as running:
+        slot = (
+            turn_slot(self._gate)
+            if slot_wait_seconds is None
+            else waiting_turn_slot(self._gate, timeout_seconds=slot_wait_seconds)
+        )
+        with lease, retained_session_execution_locks(), slot as running:
             if not running:
                 output.finalize(self._busy_message)
                 return None

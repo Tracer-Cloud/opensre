@@ -327,6 +327,15 @@ def _clear_prompt_toolkit_paint() -> None:
             app.invalidate()
 
 
+def enter_inline_menu() -> None:
+    """Prepare the terminal for a raw-key inline menu."""
+    from surfaces.shared.terminal.components.cpr_stdin import drain_stale_cpr_bytes
+
+    _clear_prompt_toolkit_paint()
+    drain_stale_cpr_bytes()
+    hide_terminal_cursor()
+
+
 def _draw_menu(
     *,
     title: str,
@@ -636,13 +645,9 @@ def repl_choose_one(
     newline-joined string of selected **values** (``choices[i][0]``).
     ``on_answer`` receives listed row indexes and the separate custom text.
     """
-    from surfaces.shared.terminal.components.cpr_stdin import drain_stale_cpr_bytes
-
     if not choices or not repl_tty_interactive():
         return None
-    _clear_prompt_toolkit_paint()
-    drain_stale_cpr_bytes()
-    hide_terminal_cursor()
+    enter_inline_menu()
     try:
         crumb = breadcrumb
         labels = [label for _value, label in choices]

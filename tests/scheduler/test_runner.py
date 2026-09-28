@@ -34,6 +34,19 @@ from infrastructure.scheduling.scheduler.types import (
 from tests.scheduler._bundle import real_runners
 
 
+@pytest.fixture(autouse=True)
+def _schedule_cancel_follows_runner_lookup(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Keep in-flight cancel checks on the same ``get_task`` the runner tests stub."""
+    import infrastructure.scheduling.scheduler.runner as runner
+    import infrastructure.scheduling.scheduler.schedule_cancel as schedule_cancel
+
+    monkeypatch.setattr(
+        schedule_cancel,
+        "get_task",
+        lambda task_id: runner.get_task(task_id),
+    )
+
+
 class TestMakeTrigger:
     def test_valid_cron(self) -> None:
         task = ScheduledTask(

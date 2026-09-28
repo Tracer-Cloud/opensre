@@ -1,6 +1,9 @@
-"""Scheduler-process environment variable names."""
+"""Scheduler environment names and shared schedule constants."""
 
 from __future__ import annotations
+
+WEEKDAY_CRON_FIELD = "mon-fri"
+"""Named weekdays avoid APScheduler/Unix cron numbering differences."""
 
 # Whether the gateway process co-hosts the scheduler loop in-process. On by
 # default (single-process deployment). Set false to run the scheduler as its own
@@ -14,4 +17,8 @@ OPENSRE_GATEWAY_HOST_SCHEDULER_ENV = "OPENSRE_GATEWAY_HOST_SCHEDULER"
 # restores legacy rows without ``retryable`` agree on the list.
 NON_RETRYABLE_WORK_ERROR_KINDS: frozenset[str] = frozenset({"unsupported_pr_branch", "pr_not_open"})
 
-__all__ = ["NON_RETRYABLE_WORK_ERROR_KINDS", "OPENSRE_GATEWAY_HOST_SCHEDULER_ENV"]
+__all__ = [
+    "NON_RETRYABLE_WORK_ERROR_KINDS",
+    "OPENSRE_GATEWAY_HOST_SCHEDULER_ENV",
+    "WEEKDAY_CRON_FIELD",
+]

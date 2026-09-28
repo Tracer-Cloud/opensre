@@ -561,16 +561,39 @@ class OpenAIAgentClient:
         api_key_default: str = "",
         credential_resolver: Callable[[str], str] | None = None,
     ) -> None:
-        from openai import OpenAI
-
         from config.llm_credentials import resolve_env_credential
 
         resolver = credential_resolver or resolve_env_credential
-        api_key = resolver(api_key_env) or api_key_default
-        self._client = OpenAI(api_key=api_key, base_url=base_url, timeout=AGENT_CLIENT_TIMEOUT_SEC)
+        self._credential_resolver = resolver
+        self._api_key_default = api_key_default
+        self._base_url = base_url
+        self._api_key_env = api_key_env
+        self._api_key = ""
+        self._client: Any = None
         self._model = model
         self._max_tokens = max_tokens
-        self._api_key_env = api_key_env
+        self._ensure_client()
+
+    def _ensure_client(self) -> None:
+        """Refresh the SDK client when the account token rotates."""
+        from openai import OpenAI
+
+        resolver = getattr(self, "_credential_resolver", None)
+        if resolver is None:
+            return
+        api_key = resolver(self._api_key_env) or self._api_key_default
+        if not api_key:
+            raise RuntimeError(
+                "Missing LLM credentials. Sign in with `opensre account login` "
+                f"or set {self._api_key_env}."
+            )
+        if self._client is None or api_key != self._api_key:
+            self._api_key = api_key
+            self._client = OpenAI(
+                api_key=api_key,
+                base_url=self._base_url,
+                timeout=AGENT_CLIENT_TIMEOUT_SEC,
+            )
 
     @property
     def model_id(self) -> str | None:
@@ -599,6 +622,10 @@ class OpenAIAgentClient:
         """Return a text description of an image via this provider's vision model."""
         import base64
 
+        from core.llm.hosted_credits import admit_hosted_credits
+
+        admit_hosted_credits()
+        self._ensure_client()
         data_url = f"data:{mimetype};base64,{base64.b64encode(image_bytes).decode('ascii')}"
         messages: Any = [
             {
@@ -625,6 +652,9 @@ class OpenAIAgentClient:
         system: str | None = None,
         tools: list[dict[str, Any]] | None = None,
     ) -> AgentLLMResponse:
+        from core.llm.hosted_credits import admit_hosted_credits
+
+        admit_hosted_credits()
         from openai import (
             AuthenticationError,
             BadRequestError,
@@ -633,6 +663,7 @@ class OpenAIAgentClient:
             RateLimitError,
         )
 
+        self._ensure_client()
         msgs = strip_internal_message_markers(messages)
         if system:
             msgs = [{"role": "system", "content": system}] + msgs

@@ -18,6 +18,10 @@ from surfaces.cli.app import cli
 def test_frozen_child_command_is_parseable_and_obeys_the_saved_deadline(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    import threading
+
+    from integrations.github.tools.ci_repair_loop import worker
+
     store = RepairStore(tmp_path)
     run = RepairRun(
         id="a" * 12,
@@ -31,6 +35,7 @@ def test_frozen_child_command_is_parseable_and_obeys_the_saved_deadline(
     store.save(run)
     monkeypatch.setattr(entrypoint.sys, "frozen", True, raising=False)
     monkeypatch.setattr(entrypoint.sys, "executable", "/Applications/opensre")
+    monkeypatch.setattr(worker, "start_watchdog", lambda _deadline: threading.Event())
     command = entrypoint.opensre_command(CI_REPAIR_WORKER_COMMAND, str(tmp_path), run.id)
     assert command[:2] == ["/Applications/opensre", CI_REPAIR_WORKER_COMMAND]
     result = CliRunner().invoke(cli, command[1:])

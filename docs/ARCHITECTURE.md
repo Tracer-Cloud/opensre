@@ -129,24 +129,20 @@ responsibility:
   integration-local helpers. One folder per vendor (`integrations/datadog`,
   `integrations/grafana`, `integrations/github`, …) plus cross-cutting pieces
   like `integrations/llm_cli`.
-- **`tools/`** — the **agent-callable** boundary: every `@tool(...)` function
-  and `BaseTool` subclass, the tool registry, framework subsystems
-  (`tools/interactive_shell`), `tools/system/` for
-  tools with no vendor in their domain purpose (`fleet_monitoring`,
-  `python_execution_tool`, `sre_guidance_tool`), and
-  `tools/cross_vendor/` for tools whose logic spans 2+ vendor integrations
-  (`fix_sentry_issue`). See
-  [tool-placement-policy.md](tool-placement-policy.md) for the full decision
-  rule, including when a tool belongs under `integrations/<vendor>/tools/`
-  instead. A tool is what the planner selects and the runtime executes.
+- **`tools/`** — the **vendor-neutral agent-callable** boundary: the registry,
+  interactive-shell tool framework, `tools/system/` for capabilities with no
+  vendor in their domain purpose, and the narrow `tools/cross_vendor/` bucket
+  for capabilities that genuinely span vendors. A tool tied to one vendor
+  belongs under `integrations/<vendor>/tools/`, beside that vendor's client and
+  configuration. See [tool-placement-policy.md](tool-placement-policy.md).
 
-The import rule between them is one-directional: `integrations` must never
-import `tools` (or `surfaces`), so a vendor client never depends on the agent
-layer and stays reusable on its own. The reverse edge is allowed and common — a
-tool reaches an integration's client for external data — so `integrations`
-effectively sits one step below `tools` in the dependency graph. Do **not**
-reintroduce top-level `vendors/` or `services/` packages — external-system code
-belongs in `integrations/`, agent-callable code in `tools/`.
+`tools` and `integrations` are peers, so neither may import the other in new
+code. The exceptions in `.importlinter.strict` are tracked migration debt, not
+precedent: they cover the existing cross-vendor tools and a few incidental
+credential/client edges. Single-vendor tools avoid the peer edge entirely by
+living inside their owning `integrations/<vendor>/` package. `bootstrap`
+discovers and registers both tool families into the `core.tool` registry.
+Do **not** reintroduce top-level `vendors/` or `services/` packages.
 
 ### Tier 4 — `core` and `infrastructure`
 
@@ -183,8 +179,9 @@ imported anywhere without dragging runtime along.
 
 ## Cross-layer flows
 
-Two worked examples showing how control descends the stack and results flow back
-up. Arrows only ever cross a boundary downward.
+Two worked examples showing runtime control flow and how results return to the
+host. Dashed registry-dispatch arrows are callbacks installed by `bootstrap`;
+they do not represent static imports from `core` into capability packages.
 
 ### A chat turn from the interactive shell
 
@@ -192,19 +189,24 @@ up. Arrows only ever cross a boundary downward.
 flowchart LR
     A["surfaces/interactive_shell\n user question"] --> B["core/agent_harness\n session + turn orchestration"]
     B --> C["core/agent\n ReAct loop, context budget, LLM"]
-    C --> D["tools\n registry + agent-callable tools"]
-    D --> E["integrations\n vendor clients + credentials"]
-    C --> F["infrastructure\n guardrails, masking, observability"]
+    C --> D["core/tool\n runtime registry"]
+    D -. "dispatch registered callable" .-> E["tools\n vendor-neutral tools"]
+    D -. "dispatch registered callable" .-> F["integrations/vendor/tools\n vendor-owned tools + clients"]
+    C --> G["infrastructure\n guardrails, masking, observability"]
 ```
 
 1. The shell (or a gateway transport) hands the message to the shared agent
    harness in `core/agent_harness` — the surface never runs agent logic itself.
 2. The harness runs the ReAct agent (`core/agent`): think → call tools →
    observe, under the context budget.
-3. Tools selected by the agent reach `integrations` for vendor clients and
-   resolved credentials; `infrastructure` supplies guardrails and masking
-   around every call.
-4. The answer flows back up to the surface, which owns how it is presented or
+3. `bootstrap` has already registered vendor-neutral tools from `tools` and
+   vendor-owned tools from `integrations/<vendor>/tools` behind the registry's
+   `core` contract. Dispatch through that registry is a runtime callback, not a
+   forbidden `core` import of either capability package.
+4. Vendor-owned tools use the client and resolved credentials in their own
+   integration package; `infrastructure` supplies guardrails, masking, and
+   observability around calls.
+5. The answer flows back up to the surface, which owns how it is presented or
    delivered.
 
 ### An inbound gateway message
@@ -212,14 +214,13 @@ flowchart LR
 ```mermaid
 flowchart LR
     A["gateway/transports\n inbound chat message"] --> B["gateway/core session + storage\n resolve conversation state"]
-    B --> C["tools + core\n run the requested capability"]
+    B --> C["core registry\n dispatch the requested capability"]
     C --> D["infrastructure\n notifications, observability"]
 ```
 
 `gateway` receives a message, resolves session state from its own storage, then
-composes the same tier-3 capability code a surface would (after shared
-`bootstrap` process boot) — without ever importing `surfaces`, since the two
-are independent tier-1 peers.
+uses the same boot-registered tier-3 capabilities as a surface — without ever
+importing `surfaces`, since the two are independent tier-1 peers.
 
 ## Related docs
 

@@ -35,6 +35,8 @@ class UsageSurface(StrEnum):
     TELEGRAM = "telegram"
     DISCORD = "discord"
     BUZZ = "buzz"
+    #: A prompt sent to the hosted gateway from a signed-in shell.
+    PROMPT = "prompt"
 
 
 CANONICAL_SURFACES: Final[frozenset[str]] = frozenset(member.value for member in UsageSurface)
@@ -48,6 +50,8 @@ _ORGANIZATION_ID: ContextVar[str | None] = ContextVar("analytics_organization_id
 # Process-scoped fallback for one-shot CLI workloads
 # that never enter a REPL session. Bound ContextVar / REPL session_id always win.
 _PROCESS_SESSION_ID: str | None = None
+# Compared by value, so resetting ``_PROCESS_SESSION_ID`` also releases the claim.
+_CLAIMED_PROCESS_SESSION_ID: str | None = None
 _PROCESS_SESSION_ID_LOCK = threading.Lock()
 
 
@@ -59,6 +63,22 @@ def ensure_process_session_id() -> str:
             if _PROCESS_SESSION_ID is None:
                 _PROCESS_SESSION_ID = str(uuid4())
     return _PROCESS_SESSION_ID
+
+
+def claim_process_session_id() -> str | None:
+    """Return the process session id to its first claimant and ``None`` to every later one.
+
+    The interactive shell and ``opensre ask`` claim it for the session they open
+    first, so ``cli_invoked`` and that session's turns share one id. Gateway and
+    unattended hosts bind their own id per turn and must never claim it.
+    """
+    global _CLAIMED_PROCESS_SESSION_ID
+    session_id = ensure_process_session_id()
+    with _PROCESS_SESSION_ID_LOCK:
+        if session_id == _CLAIMED_PROCESS_SESSION_ID:
+            return None
+        _CLAIMED_PROCESS_SESSION_ID = session_id
+    return session_id
 
 
 def get_surface() -> str | None:
@@ -144,15 +164,17 @@ def build_usage_enrichment() -> Properties:
     return props
 
 
-def merge_usage_enrichment(properties: Properties) -> Properties:
-    """Fill missing usage keys; caller-provided values win."""
+def merge_usage_enrichment(
+    properties: Properties, *, defaults: Properties | None = None
+) -> Properties:
+    """Prefer explicit event properties over bound context over process defaults."""
     enrichment = build_usage_enrichment()
-    merged = dict(properties)
+    merged = dict(defaults or {})
     for key, value in enrichment.items():
         if key == "$groups":
             continue
-        if key not in merged:
-            merged[key] = value
+        merged[key] = value
+    merged.update(properties)
 
     org = merged.get("organization_id")
     if isinstance(org, str) and org.strip():

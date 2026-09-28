@@ -18,7 +18,10 @@ if TYPE_CHECKING:
 
 
 def _launch_shell(
-    config: ReplConfig, resume_session_id: str | None, after_banner: AfterBanner
+    config: ReplConfig,
+    resume_session_id: str | None,
+    after_banner: AfterBanner,
+    capture_shell_rendered: bool = True,
 ) -> int:
     from surfaces.cli.app import cli
     from surfaces.interactive_shell import run_repl
@@ -28,6 +31,7 @@ def _launch_shell(
         resume_session_id=resume_session_id,
         cli_command_group=cli,
         after_banner=after_banner,
+        capture_shell_rendered=capture_shell_rendered and not resume_session_id,
     )
 
 

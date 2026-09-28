@@ -102,6 +102,9 @@ def test_plain_http_is_allowed_only_to_this_machine(app_url: str) -> None:
         (httpx.Response(401, json={"error": "unauthorized"}), ERR_UNAUTHORIZED),
         (httpx.Response(404, text="<html>no such route</html>"), ERR_NOT_SUPPORTED),
         (httpx.Response(502, json={"error": "gateway_lookup_failed"}), "http_502"),
+        # Health has no admin or provisioning refusal: these are unexpected, reportable failures.
+        (httpx.Response(403, text="<html>blocked</html>"), "http_403"),
+        (httpx.Response(409, json={"error": "conflict"}), "http_409"),
         (httpx.Response(200, text="<html>not json</html>"), ERR_INVALID_RESPONSE),
         (httpx.Response(200, json={"provisioned": "yes", "healthy": True}), ERR_INVALID_RESPONSE),
         (httpx.Response(200, json=["not", "an", "object"]), ERR_INVALID_RESPONSE),
@@ -168,3 +171,28 @@ def test_without_a_sign_in_no_client_is_built(monkeypatch: pytest.MonkeyPatch) -
 
     # Assert
     assert excinfo.value.code == ERR_NOT_SIGNED_IN
+
+
+def test_submission_telemetry_requires_new_accepted_prompt(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Polling, answering, and refused submissions must not count as new tasks."""
+    from integrations.hosted_gateway import client as client_module
+
+    captured: list[str] = []
+    monkeypatch.setattr(client_module, "capture_hosted_gateway_task_submitted", captured.append)
+    prompt_id = "p_" + "a" * 32
+
+    def answer(request: httpx.Request) -> httpx.Response:
+        if b"refuse-this-task" in request.content:
+            return httpx.Response(409, json={"error": "not_running"})
+        return httpx.Response(
+            200 if request.method == "GET" else 202,
+            json={"prompt_id": prompt_id, "state": "queued"},
+        )
+
+    with _client(httpx.MockTransport(answer)) as client:
+        client.send_prompt("new task", context={})
+        client.prompt_result(prompt_id)
+        client.answer_prompt(prompt_id, "continue")
+        with pytest.raises(HostedGatewayError):
+            client.send_prompt("refuse-this-task", context={})
+    assert captured == [prompt_id]

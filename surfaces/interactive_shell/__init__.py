@@ -21,6 +21,7 @@ def run_repl(
     console: Console | None = None,
     cli_command_group: click.Command | None = None,
     after_banner: Callable[[], None] | None = None,
+    capture_shell_rendered: bool = True,
 ) -> int:
     """Run the interactive shell and return its exit code.
 
@@ -40,6 +41,7 @@ def run_repl(
         console=console,
         cli_command_group=cli_command_group,
         after_banner=after_banner,
+        capture_shell_rendered=capture_shell_rendered,
     )
 
 

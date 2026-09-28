@@ -137,7 +137,11 @@ def test_identify_github_username_reports_failures_to_sentry(
     assert captured_errors == [expected_error]
 
 
-def test_build_cli_invoked_properties_includes_full_command_path() -> None:
+def test_build_cli_invoked_properties_includes_full_command_path(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    monkeypatch.setattr("sys.stdin", SimpleNamespace(isatty=lambda: False))
+    monkeypatch.setattr("sys.stdout", SimpleNamespace(isatty=lambda: False))
     properties = event_properties.build_cli_invoked_properties(
         entrypoint="opensre",
         command_parts=["remote", "ops", "status"],
@@ -152,7 +156,8 @@ def test_build_cli_invoked_properties_includes_full_command_path() -> None:
         "verbose": False,
         "debug": True,
         "yes": False,
-        "interactive": True,
+        "stdin_is_tty": False,
+        "stdout_is_tty": False,
         "subcommand": "ops",
         "command_leaf": "status",
     }
@@ -173,6 +178,7 @@ def test_build_cli_invoked_properties_handles_root_invocation() -> None:
 def test_build_install_detected_properties_keeps_installer_dimensions(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    monkeypatch.delenv("OPENSRE_INSTALL_ORIGIN", raising=False)
     monkeypatch.setenv("OPENSRE_INSTALL_SOURCE", "posix_installer")
     monkeypatch.setenv("OPENSRE_INSTALL_CHANNEL", "release")
     monkeypatch.setenv("OPENSRE_INSTALL_VERSION", "2026.9.14")
@@ -316,6 +322,76 @@ def test_capture_ask_user_answered_keeps_bounded_custom_text(
     assert "[REDACTED:github_pat]" in str(detail["answer"])
 
 
+def test_remote_ci_repair_events_name_the_run_and_omit_an_unknown_pull_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange
+    stub = _StubAnalytics()
+    monkeypatch.setattr(capture, "get_analytics", lambda: stub)
+    run_id, repository = "a" * 12, "alice/opensre-ci-demo"
+
+    # Act: scheduled before the demo PR exists, then repaired on PR 7
+    capture.capture_remote_ci_monitoring_started(
+        repair_run_id=run_id, repository=repository, pr_number=0, demo=True
+    )
+    capture.capture_test_ci_failure_triggered(
+        repair_run_id=run_id, repository=repository, pr_number=7, demo=True, remote=True
+    )
+    capture.capture_remote_ci_failure_detected(
+        repair_run_id=run_id, repository=repository, pr_number=7, demo=True
+    )
+    capture.capture_remote_ci_repair_succeeded(
+        repair_run_id=run_id,
+        repository=repository,
+        pr_number=7,
+        demo=True,
+        attempts=2,
+        duration_ms=1234.6,
+    )
+
+    # Assert
+    run = {"repair_run_id": run_id, "repository": repository, "demo": True}
+    on_pr = {**run, "pr_number": 7}
+    assert stub.events == [
+        (Event.REMOTE_CI_MONITORING_STARTED, run),
+        (Event.TEST_CI_FAILURE_TRIGGERED, {**on_pr, "remote": True}),
+        (Event.REMOTE_CI_FAILURE_DETECTED, on_pr),
+        (Event.REMOTE_CI_REPAIR_SUCCEEDED, {**on_pr, "attempts": 2, "duration_ms": 1235}),
+    ]
+
+
+def test_hosted_gateway_events_name_the_gateway_and_what_observed_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange
+    stub = _StubAnalytics()
+    monkeypatch.setattr(capture, "get_analytics", lambda: stub)
+
+    # Act
+    capture.capture_hosted_gateway_started(
+        gateway_id="org-gateway", actual_state="provisioning", already_running=False
+    )
+    capture.capture_hosted_gateway_healthy(
+        gateway_id="org-gateway", tool_name="check_hosted_gateway"
+    )
+
+    # Assert
+    assert stub.events == [
+        (
+            Event.HOSTED_GATEWAY_STARTED,
+            {
+                "gateway_id": "org-gateway",
+                "actual_state": "provisioning",
+                "already_running": False,
+            },
+        ),
+        (
+            Event.HOSTED_GATEWAY_HEALTHY,
+            {"gateway_id": "org-gateway", "tool_name": "check_hosted_gateway"},
+        ),
+    ]
+
+
 def test_eval_and_terminal_kpi_queries_cover_core_metrics() -> None:
     expected_keys = {
         "terminal_action_execution_success_rate",
@@ -324,3 +400,19 @@ def test_eval_and_terminal_kpi_queries_cover_core_metrics() -> None:
     assert expected_keys.issubset(capture.EVAL_AND_TERMINAL_KPI_QUERIES.keys())
     for query in capture.EVAL_AND_TERMINAL_KPI_QUERIES.values():
         assert "FROM events" in query
+
+
+@pytest.mark.parametrize(
+    "origin", ["landing_page", "documentation", "github", "cicd", "", "main", "unsupported"]
+)
+def test_install_origin_is_allowlisted_and_independent_of_build_track(
+    monkeypatch: pytest.MonkeyPatch, origin: str
+) -> None:
+    monkeypatch.setenv("OPENSRE_INSTALL_ORIGIN", origin)
+    monkeypatch.setenv("OPENSRE_INSTALL_CHANNEL", "release")
+    properties = event_properties.build_install_detected_properties(entrypoint="opensre")
+    assert properties["install_channel"] == "release"
+    if origin in {"landing_page", "documentation", "github", "cicd"}:
+        assert properties["install_origin"] == origin
+    else:
+        assert "install_origin" not in properties

@@ -211,6 +211,11 @@ def allow_tool(tool_type: str) -> ExecutionPolicyResult:
     return ExecutionPolicyResult(verdict="allow", tool_type=tool_type, reason=None)
 
 
+def ask_tool(tool_type: str, reason: str) -> ExecutionPolicyResult:
+    """Ask verdict for a tool launch: the user confirms at every ``/auto`` level."""
+    return ExecutionPolicyResult(verdict="ask", tool_type=tool_type, reason=reason)
+
+
 def plan_foreground_tool(
     tool_type: str,
     classification: str | None = None,
@@ -234,6 +239,7 @@ __all__ = [
     "allow_tool",
     "apply_auto_level",
     "apply_plan_only_gate",
+    "ask_tool",
     "is_mutating_tool_type",
     "plan_foreground_tool",
     "resolve_confirmation",

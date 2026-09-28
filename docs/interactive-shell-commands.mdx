@@ -10,7 +10,11 @@ opensre
 /help
 ```
 
-When you type `/` and browse with the arrow keys, the hint line above the prompt shows the highlighted command's description.
+Type `/` to open the command tray attached to the input. Browse with the arrow
+keys and press Enter to run the highlighted suggestion, or Tab to complete it
+and edit before running. Esc closes the tray
+without clearing your draft or stopping running work. On narrow terminals, the
+highlighted command's description appears below the list.
 
 <Info>
   Confirmation prompts come from **`/auto`** (tool-approval autonomy) and from
@@ -36,16 +40,20 @@ When you type `/` and browse with the arrow keys, the hint line above the prompt
 
 | Key | Effect |
 | --- | --- |
-| **Up/Down** | Recall persisted command history (when enabled); during `/` completion browse, preview the highlighted command description in the hint line above the prompt |
+| **Up/Down** | Browse suggestions while the command tray is open; otherwise recall persisted command history (when enabled) |
+| **Tab** | Complete the highlighted suggestion |
+| **Enter** | Run the highlighted suggestion, or submit the draft when the tray is closed |
+| **Esc** | Close the command tray first; otherwise stop running work or clear the draft |
 | **Ctrl+C** once | Cancel in-flight streaming work or interrupt the current prompt |
 | **Ctrl+C** twice within 2s | Exit the REPL (prints `/resume` hint) |
 | **Ctrl+D** | Exit when the prompt is empty (same resume hint as `/exit`) |
 
-Every launch starts guided onboarding and asks which demo to run. The four
-choices cover repository analysis, recurring CI/CD checks, the upcoming managed
-service, and Slack setup. Escape skips onboarding; "Or type your own answer..."
-lets you submit a different request. Type `/demo` to start again.
-See [CI/CD analytics demo](/cicd-analytics-demo).
+Every launch asks which demo to run: **A** repository CI/CD analysis
+(recommended), **B** a recurring CI/CD reliability agent, **C** remote CI/CD
+repairs, **D** Slack setup, **E** skip the demo and open the shell.
+Escape also skips it. Run `opensre --skip-onboarding` to open the shell without
+the picker. Type `/demo` to start it later. See
+[CI/CD analytics demo](/cicd-analytics-demo).
 
 The banner and prompt show **CI/CD fixes**: distinct GitHub repairs whose pushed
 checks passed, including merge-conflict repairs. A repair can count before it is
@@ -64,6 +72,7 @@ the total is best-effort and can decrease after restarting if a save failed.
 | `/?` | Shortcut for `/help` |
 | `/exit` | Leave the interactive shell |
 | `/quit` | Alias for `/exit` |
+| `/demo` | Open the guided demo picker (CI/CD analysis, reliability agent, managed service, Slack) |
 
 ### Session
 
@@ -101,6 +110,7 @@ the total is best-effort and can decrease after restarting if a save failed.
 | --- | --- |
 | `/history` | Show or manage persisted command history |
 | `/privacy` | History persistence, redaction status, and threat model |
+| `/memory` | List and manage the agent's long-term memory |
 
 ### Tasks and background work
 
@@ -128,6 +138,8 @@ These commands delegate to the same Click CLI you would run outside the REPL.
 | Command | What it does |
 | --- | --- |
 | `/account` | Sign in to OpenSRE, inspect the local account, or sign out |
+| `/credits` | Remaining hosted credits for the signed-in account (same as `opensre credits`) |
+| `/setup` | First-run setup: account sign-in, hosted model, then the shell (same as `opensre setup`) |
 | `/auth` | Log in to LLM providers, show provider auth status, or clear credentials |
 | `/login` | Shortcut for `/auth login` (`/login openai`, `/login anthropic`, `/login deepseek`) |
 | `/onboard` | Interactive onboarding wizard |
@@ -881,11 +893,23 @@ These spawn `opensre …` subprocesses. Output is captured into the REPL buffer 
 /account
 /account login
 /account status
+/account credits
 /account usage
 /account logout
 ```
 
-Sign in to a personal OpenSRE account, inspect the local login, open the credits and top-up page (`/account usage`, opens your browser; from a chat it replies with the link), or sign out. Same as `opensre account`. The browser opens the OpenSRE sign-up page, where you can use email or any enabled sign-in provider. The shell starts only for an `active` account state. `/account logout` revokes the saved session, invalidates the hosted-model route, and closes the shell before another turn. If `OPENSRE_ACCOUNT_TOKEN` is set in the environment, it overrides the token saved by login until you unset it.
+Sign in to a personal OpenSRE account, inspect the local login, show remaining hosted credits (`/account credits` or `/credits`, same as `opensre credits`), open the credits and top-up page (`/account usage`, opens your browser; from a chat it replies with the link), or sign out. Same as `opensre account`. The browser opens the OpenSRE sign-up page, where you can use email or any enabled sign-in provider. The shell starts only for an `active` account state. `/account logout` revokes the saved session, invalidates the hosted-model route, and closes the shell before another turn. If `OPENSRE_ACCOUNT_TOKEN` is set in the environment, it overrides the token saved by login until you unset it.
+
+</Accordion>
+
+<Accordion title="/credits">
+
+```text
+/credits
+/credits --dev
+```
+
+Show remaining OpenSRE hosted credits for the signed-in account. Same as `opensre credits` and `/account credits`. Requires an active login. A fetch or auth failure is reported as unavailable — it is never shown as a zero balance.
 
 </Accordion>
 
@@ -1281,7 +1305,7 @@ Compound requests ("health then integrations") execute as an ordered sequence of
 /model show
 ```
 
-Run `opensre` to sign in before this workflow is reachable. Every launch opens the demo picker — Escape continues to the prompt. The recommended option analyzes CI/CD performance; see [CI/CD analytics demo](/cicd-analytics-demo).
+Run `opensre` to sign in before this workflow is reachable. Every launch opens the demo picker; choose **E** or press Escape to continue to the prompt, or run `opensre --skip-onboarding` to bypass it. The recommended option analyzes CI/CD performance; see [CI/CD analytics demo](/cicd-analytics-demo).
 
 ### Incident triage (local)
 
@@ -1349,6 +1373,18 @@ Continue chatting, then optionally:
 - [Agents](/fleet) — fleet dashboard, bus, trace, budgets
 - [Cron](/cron) — `/cron` scheduled deliveries
 - [Sync to your own object store](/configuration/remote-sync) — `/remote-sync`
+
+<Accordion title="/demo">
+
+Open the demo picker that every launch shows: CI/CD analysis of a repository on this machine (recommended), the recurring CI/CD reliability agent, remote CI/CD repairs, or Slack setup. Menus need an interactive terminal.
+
+```text
+/demo
+```
+
+See [CI/CD with OpenSRE](/cicd/overview).
+
+</Accordion>
 
 ## Scheduled CI repair demo
 

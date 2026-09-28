@@ -555,7 +555,9 @@ class JsonlSessionStore:
                 entry_id = _new_id()
                 parent = parent_id
                 if parent is None and resolve_parent and not sidecar:
-                    parent = self._current_leaf_id(session_id, path)
+                    parent, needs_separator = self._current_leaf_id(session_id, path)
+                else:
+                    needs_separator = self._tail_needs_separator(path)
                 record = {
                     "id": entry_id,
                     "parent_id": parent,
@@ -565,6 +567,8 @@ class JsonlSessionStore:
                     **{key: value for key, value in payload.items() if value is not None},
                 }
                 with path.open("a", encoding="utf-8") as fh:
+                    if needs_separator:
+                        fh.write("\n")
                     fh.write(json.dumps(record, ensure_ascii=False, default=str) + "\n")
                     if durable:
                         fh.flush()
@@ -604,7 +608,7 @@ class JsonlSessionStore:
         self._leaf_ids[key] = entry_id
 
     @staticmethod
-    def _loads_record(line: str, *, path: Path | None = None) -> dict[str, Any] | None:
+    def _loads_record(line: bytes, *, path: Path | None = None) -> dict[str, Any] | None:
         """Parse one JSONL line into a record dict, or ``None`` if unusable.
 
         A decode failure here is a torn tail or truncation on the read side —
@@ -612,8 +616,8 @@ class JsonlSessionStore:
         different failure modes on either end of the same file.
         """
         try:
-            rec = json.loads(line)
-        except json.JSONDecodeError:
+            rec = json.loads(line.decode("utf-8"))
+        except (json.JSONDecodeError, UnicodeDecodeError):
             record_operation(
                 "session_jsonl_decode_failed",
                 {"line_chars": len(line), "path": str(path) if path else ""},
@@ -624,21 +628,29 @@ class JsonlSessionStore:
     @staticmethod
     def _read_records(path: Path) -> list[dict[str, Any]]:
         records: list[dict[str, Any]] = []
-        for line in path.read_text(encoding="utf-8").splitlines():
+        for line in path.read_bytes().splitlines():
             rec = JsonlSessionStore._loads_record(line, path=path)
             if rec is not None:
                 records.append(rec)
         return records
 
-    def _current_leaf_id(self, session_id: str, path: Path) -> str | None:
+    @staticmethod
+    def _tail_needs_separator(path: Path) -> bool:
+        if path.stat().st_size <= 0:
+            return False
+        with path.open("rb") as fh:
+            fh.seek(-1, os.SEEK_END)
+            return fh.read(1) != b"\n"
+
+    def _current_leaf_id(self, session_id: str, path: Path) -> tuple[str | None, bool]:
         key = (session_id, str(path))
         sig = self._file_sig(path)
         if key in self._leaf_ids and self._leaf_file_sig.get(key) == sig:
-            return self._leaf_ids[key]
-        leaf = self._scan_leaf_id(path)
+            return self._leaf_ids[key], self._tail_needs_separator(path)
+        leaf, needs_separator = self._scan_leaf_id(path)
         self._leaf_ids[key] = leaf
         self._leaf_file_sig[key] = sig
-        return leaf
+        return leaf, needs_separator
 
     @staticmethod
     def _tip_id_from_record(rec: dict[str, Any]) -> tuple[bool, str | None]:
@@ -664,7 +676,7 @@ class JsonlSessionStore:
         entry_id = rec.get("id")
         return True, str(entry_id) if entry_id else None
 
-    def _scan_leaf_id(self, path: Path) -> str | None:
+    def _scan_leaf_id(self, path: Path) -> tuple[str | None, bool]:
         """Cold-path tip resolve, reading the file tail backwards in deltas.
 
         Each loop iteration reads only the bytes not yet seen (one chunk,
@@ -673,23 +685,27 @@ class JsonlSessionStore:
         entry. Lines are scanned newest-first and each complete line is parsed
         at most once. Peak memory is the buffered tail, bounded by the file.
 
-        Tip rules (first matching record from the end):
+        Returns the resolved tip and whether a separator is needed before the
+        next append. Tip rules (first matching record from the end):
         - ``trace_span`` / ``sidecar``-flagged / ``session``: skip (sidecar / header)
         - ``leaf``: tip is that marker's ``parent_id``
         - anything else: tip is that record's ``id``
         """
         size = path.stat().st_size
         if size <= 0:
-            return None
+            return None, False
         with path.open("rb") as fh:
             buffer = b""
             start = size
+            needs_separator = False
             scanned_low: int | None = None  # buffer offset of oldest scanned line
             while True:
                 if start > 0:
                     new_start = max(0, start - _TAIL_SCAN_CHUNK_BYTES)
                     fh.seek(new_start)
                     delta = fh.read(start - new_start)
+                    if not buffer:
+                        needs_separator = not delta.endswith(b"\n")
                     buffer = delta + buffer
                     if scanned_low is not None:
                         scanned_low += len(delta)
@@ -705,7 +721,7 @@ class JsonlSessionStore:
                 region_end = scanned_low if scanned_low is not None else len(buffer)
                 if region_start < region_end:
                     region = buffer[region_start:region_end]
-                    for line in reversed(region.decode("utf-8").splitlines()):
+                    for line in reversed(region.splitlines()):
                         if not line.strip():
                             continue
                         rec = self._loads_record(line, path=path)
@@ -713,10 +729,10 @@ class JsonlSessionStore:
                             continue
                         resolved, tip = self._tip_id_from_record(rec)
                         if resolved:
-                            return tip
+                            return tip, needs_separator
                     scanned_low = region_start
                 if start == 0:
-                    return None
+                    return None, needs_separator
 
     @staticmethod
     def _has_turns(records: list[dict[str, Any]]) -> bool:

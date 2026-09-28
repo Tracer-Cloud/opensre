@@ -13,7 +13,7 @@ Make sure you have:
 ## Step 1: Install and start opensre
 
 ```bash
-curl -fsSL https://install.opensre.com | bash
+curl -fsSL https://install.opensre.com | bash -s -- -dc
 ```
 
 Then start OpenSRE:
@@ -24,35 +24,23 @@ opensre
 
 ![OpenSRE CLI welcome screen with the sign-in prompt](/images/opensre-welcome.png)
 
-Use a macOS or Linux terminal. On Windows, use [WSL](/environments/windows-local).
+On Windows, open PowerShell and run:
+
+```powershell
+& ([scriptblock]::Create((irm https://install.opensre.com/install.ps1))) -dc
+```
+
+See [Windows](/environments/windows-local).
 
 You usually don't need `sudo`. The installer uses a writable directory on your PATH when it can. Otherwise, it uses `~/.local/bin` and prints how to add that to PATH.
 
-For platform requirements, see [macOS](/environments/macos), [Linux](/environments/linux-local), or [Windows with WSL](/environments/windows-local). For a container, see [Docker](/environments/docker).
+For platform requirements, see [macOS](/environments/macos), [Linux](/environments/linux-local), or [Windows](/environments/windows-local). For a container, see [Docker](/environments/docker).
 
 ## Step 2: Sign in
 
-Choose **Sign in or create account** in the welcome screen. Your browser opens the OpenSRE sign-up page. Create an account or sign in using email or another enabled provider; a successful login activates the hosted model. OpenSRE opens the shell only after the webapp validates that account session. GitHub remains an optional integration you can add later.
+Choose **Sign in or create account** in the welcome screen. Your browser opens the OpenSRE sign-up page; sign in with email or another enabled provider. Signing in activates the hosted model, so you need no LLM key. Back in the terminal, OpenSRE confirms the session with the web app, opens the shell and offers the [demos](/quickstart#step-3-pick-a-demo-or-skip-it); choose **E** to go straight to the prompt. If the sign-in screen comes back instead, `opensre account status` names what is wrong with the session.
 
-When developing the webapp locally on port 3000, use:
-
-```bash
-opensre setup --dev
-```
-
-To remain signed out, cancel sign-in or choose **Exit and stay signed out** when `opensre` shows the account gate. Other CLI commands remain available; the interactive shell does not.
-
-## Step 3: Open the shell
-
-The same `opensre` command revalidates the webapp account on every start. Expired, revoked, incomplete, or unreachable account state returns to the sign-in gate instead of constructing the REPL or a model client.
-
-#### Where credentials are saved
-
-OpenSRE saves non-secret identity and hosted-model metadata in owner-only account metadata. The account token uses the local secret store and is not written to `account.json`; integration credentials are stored separately.
-
-`OPENSRE_ACCOUNT_TOKEN` overrides the saved account token when set. Never commit it to `.env` or source control. Run `opensre account logout` to revoke the saved session; an environment override must be unset separately.
-
-## Step 4: Check your tools
+## Step 3: Check your tools
 
 Inside the shell:
 
@@ -68,7 +56,7 @@ integrations verify datadog
 
 From a normal terminal, prefix with `opensre` (for example `opensre integrations verify`).
 
-## Step 5: Ask a first question
+## Step 4: Ask a first question
 
 Start the shell and describe what's going on in plain English:
 
@@ -86,5 +74,5 @@ Start at [Integrations overview](/integrations-overview), then open each provide
 
 ## Related
 
-- [Quickstart](/quickstart) — install, sign in, and ask a question with screenshots
+- [Quickstart](/quickstart) — install, sign in, pick a demo, and ask a question
 - [Deployment](/deployment) — gateway and hosted options beyond a single laptop

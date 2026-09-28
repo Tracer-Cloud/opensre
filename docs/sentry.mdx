@@ -161,7 +161,7 @@ Example — weekdays at 08:00 London time to Telegram:
 
 ```bash
 opensre sentry digest schedule add \
-  --cron "0 8 * * 1-5" \
+  --cron "0 8 * * mon-fri" \
   --tz Europe/London \
   --provider telegram \
   --chat-id "-1001234567890"
@@ -171,7 +171,7 @@ Example — Slack channel (`C…` member/channel id):
 
 ```bash
 opensre sentry digest schedule add \
-  --cron "0 8 * * 1-5" \
+  --cron "0 8 * * mon-fri" \
   --tz Europe/London \
   --provider slack \
   --chat-id C0123ABCD
@@ -183,7 +183,7 @@ an explicit `--chat-id`):
 
 ```bash
 opensre sentry digest schedule add \
-  --cron "0 8 * * 1-5" \
+  --cron "0 8 * * mon-fri" \
   --tz Europe/London \
   --provider rocketchat \
   --chat-id "#alerts"

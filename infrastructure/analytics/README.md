@@ -81,8 +81,10 @@ Every product event includes:
 | --- | --- |
 | `cli_version`, `python_version` | Client compatibility and release adoption. |
 | `os_family`, `os_version` | Coarse platform support. |
-| `execution_environment` | `local`, `ci`, `container`, or `ci_container`. |
-| `is_ci`, `is_container`, `container_runtime` | Filters for human vs automated usage. |
+| `analytics_properties_version` | Property evidence contract version; currently `2`, independent of envelope schema `1`. |
+| `execution_environment` | `local`, `ci`, `container`, `ci_container`, or `unknown`; a detector classification. |
+| `is_ci`, `is_container`, `container_runtime` | Recognized runtime signals, not human verification. Unknown measurements are omitted. |
+| `ci_detection_status`, `container_detection_status` | `detected`, `not_detected`, or `unknown`. |
 | `distribution` | `source_checkout`, `editable_package`, `installed_package`, `frozen_binary`, or `unknown`, based on the code loaded by this process. |
 | `is_test` | Explicit `OPENSRE_IS_TEST=1` (also `true`/`yes`), a detected test runner, or CI. Independent of distribution. |
 | `composite_fingerprint` | One-way local fingerprint used only when no account identity exists. |
@@ -96,6 +98,17 @@ Every product event includes:
 `$groups`, `$process_person_profile`, `$lib`, and `distinct_id` are retained for
 downstream PostHog compatibility. The first-party account user ID belongs in a
 server-owned column resolved from the bearer token.
+
+For `cli_invoked`, `interactive_option` is configuration, with its source in
+`interactive_option_source`. `stdin_is_tty` and `stdout_is_tty` measure terminal
+state. Use `interactive_shell_rendered` for an observed shell launch.
+
+Prompt events include `turn_outcome`, `response_source`, and `llm_attempted`
+when known. The event name alone does not establish AI success: static terminal
+dispatch and synthetic fallback text are also logged. Missing token usage is
+omitted and described by `token_usage_status`. Integration snapshots use
+`integration_snapshot_status`; unavailable inventories do not emit empty lists
+or zero counts. Action rates without executed actions are omitted.
 
 The shell and PowerShell installers, and `make install`, snapshot `installed`
 before installation work begins, resolving its directory the same way as the
@@ -138,9 +151,25 @@ or test evidence must not be treated as proof of release or non-test usage.
 
 ## Event inventory
 
+Installer tags `-lp`, `-dc`, and `-gh` set `install_origin` to `landing_page`,
+`documentation`, and `github`. Pass Bash arguments with `bash -s -- -lp`; native
+PowerShell accepts the same tags. Untagged commands omit origin unless the
+pipeline explicitly sets `OPENSRE_CICD=1`, which records `cicd`. This marker also
+sets `is_ci=true` and `cicd_marker=true` on runtime events, independently of vendor
+environment detection. An explicit command tag still takes precedence for origin.
+The marker is a reported classification, not verified runner identity. `install_source`
+still identifies the installer mechanism, and `install_channel` still identifies
+the requested `main`/`release` build track.
+
+The first sanitized installation event is saved in `install-events-v1` before
+delivery and retained after acknowledgement. Retries reuse that complete event;
+a later tagged reinstall cannot replace its origin, including an unknown origin.
+The existing installation marker continues to suppress capture for previously
+recorded installations.
+
 | Area | Events | Important properties / question answered |
 | --- | --- | --- |
-| Acquisition | `install_detected`, `account_authenticated`, `cli_command_opensre…` | Install source/channel/distribution, login conversion, entrypoint, command names, and boolean flags; never raw argument values. Official installers invoke the hidden record-only path immediately after installation. |
+| Acquisition | `install_detected`, `account_authenticated`, `cli_command_opensre…` | Install source/origin/build channel/distribution, login conversion, entrypoint, command names, and boolean flags; never raw argument values. Official installers invoke the hidden record-only path immediately after installation. Historical `cli_invoked` records remain valid. |
 | Sign-in gate | `sign_in_prompted`, `sign_in_selected`, `stay_signed_out_selected` | The interactive shell's mandatory sign-in screen: one exposure per signed-out launch, then one event per menu round with `choice_label` and `method` (`menu` for a picked option, `dismissed` when the menu was closed without one — Esc, `q`, Ctrl-C, Ctrl-D, or EOF are not distinguished). `sign_in_selected` is recorded before the browser flow starts and is intent only; `account_authenticated` reports the outcome. Already signed-in, non-interactive, and test runs emit none of these. |
 | Runtime health | `user_id_load_failed`, `sentry_init_skipped` | Identity persistence and telemetry setup failures. |
 | Onboarding | `onboard_started`, `onboard_completed`, `onboard_failed` | Funnel conversion, wizard mode, target, provider, and model. |
@@ -149,7 +178,7 @@ or test evidence must not be treated as proof of release or non-test usage.
 | Agent loop | `react_turn_completed` | Phase, iterations, cap hits, stop reason, tool-call count, latency, provider, and model. |
 | Agent tool calls | `agent_tool_call_completed` | Tool/source/role, whether execution occurred, outcome, latency, error state, and termination; never tool arguments or results. |
 | Ask User | `ask_user_prompt_rendered`, `ask_user_prompt_answered`, `ask_user_prompt_dismissed` | Linked prompt exposure, bounded credential-redacted question/option text, selected option indexes, bounded custom answers, and dismissals. Listed answers send indexes only. |
-| Shell and browser | `interactive_shell_rendered`, `browser_open_requested` | Successful shell first paint and application-requested browser-open outcome by safe target label. Terminals do not expose whether a manually rendered link was clicked. |
+| Shell and browser | `interactive_shell_rendered`, `browser_open_requested` | First interactive-shell chrome, including the sign-in screen. Not recorded for `--resume`, an auto-launch after `opensre onboard`, or CLI subcommands. `browser_open_requested` is an application-requested browser-open outcome by safe target label. Terminals do not expose whether a manually rendered link was clicked. |
 | Agent workflows | `skill_executed`, `opensre_commit_created` | Successful skill entry and commits produced by supported OpenSRE repair workflows. |
 | AI turn | `$ai_generation` | Turn/session IDs, turn kind, model/provider, latency, tokens, integration snapshot, outcome, and error category. It also contains redacted prompt and response text in `$ai_input` and `$ai_output_choices`. |
 | Gateway | `gateway_turn_started`, `gateway_turn_completed`, `gateway_turn_failed` | Surface, answer rate, final intent, latency bucket, and exception type. No message body is included. |
@@ -158,6 +187,7 @@ or test evidence must not be treated as proof of release or non-test usage.
 | Local-agent safety | `agent_secret_detected`, `agent_killed`, `agent_kill_failed` | Rule names, count, blocked state, agent type, and result; never the detected secret. |
 | Suggested loops | `loop_suggestion_prompted`, `loop_suggestion_selected`, `loop_suggestion_skipped` | Picker exposure and selected use case. |
 | Onboarding demo | `onboarding_demo_prompted`, `onboarding_demo_selected`, `onboarding_demo_skipped` | Demo exposure, selected option, and whether it was custom. |
+| Remote CI repair | `hosted_gateway_started`, `hosted_gateway_healthy`, `remote_ci_monitoring_started`, `test_ci_failure_triggered`, `remote_ci_failure_detected`, `remote_ci_repair_succeeded` | The `delegating-github-ci-repairs` activation path. The signed-in shell records an accepted hosted-gateway start (`already_running`) and every health read that finds the gateway running (`tool_name`). A gateway whose own scheduler runs the repair loop records its registration, the pull request's first CI failure, and a repair commit that passed CI (`attempts`, `duration_ms` since scheduling); the same loop scheduled from the shell records none of them. The demo's failing pull request records `test_ci_failure_triggered` on either host, with `remote`. CI events carry `repair_run_id`, which joins a worker's events to the registration and its prompting `user_id`, plus `repository`, `demo`, and `pr_number` once known. |
 | Execution policy | `repl_execution_policy_decision` | Policy stage, outcome, reason, and planned action count. |
 
 ## Product metrics
@@ -172,7 +202,7 @@ must be calculated from `analytics_product_events`.
 | Metric | Definition |
 | --- | --- |
 | Install-to-signup conversion | Non-CI installations whose first server-verified account link resolves to a Clerk signup created between install and first authentication, divided by all non-CI installations. |
-| Personal activation | Server-resolved users whose linked installation reaches `onboard_completed`, then records a non-error `$ai_generation`. |
+| Personal activation | Server-resolved users whose linked installation reaches `onboard_completed`, then records a completed, captured AI response with an observed LLM attempt and no error. Legacy events require a real model/provider and non-synthetic output. |
 | Gateway activation | Authenticated organizations with an answered `gateway_turn_completed`; do not count gateway actor IDs as users. |
 | Onboarding conversion | Distinct non-CI installations completed, and distinct installations failed, each divided separately by distinct installations started. |
 | Personal DAU / WAU / MAU | Distinct server-resolved users with personal-bearer `cli_invoked` or `$ai_generation` events in the window. |
@@ -189,8 +219,10 @@ must be calculated from `analytics_product_events`.
 | Scheduled-work reliability | Completed vs failed scheduled tasks by task kind and provider. |
 | Feature adoption | Personal users by CLI/AI feature and organizations by gateway surface, without combining identity grains. |
 
-Exclude `is_ci=true` from human acquisition and retention dashboards, but keep
-it available for automation usage reporting.
+Report CI detection independently from actor identity. A non-CI metric requires
+an explicitly recorded Boolean `is_ci=false`; missing evidence stays unknown.
+An audience may deliberately include unknown traffic, but neither inclusion
+nor a negative detector result proves that a human initiated the run.
 
 ## Privacy and failure behavior
 

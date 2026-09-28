@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import time
 import uuid
 from contextvars import ContextVar
@@ -40,11 +41,11 @@ _TURN_TO_SESSION_KIND: dict[str, str] = {
 }
 
 
-def _latest_slash_outcome(session: Any) -> str | None:
+def _latest_slash_outcome(session: Any, *, start: int = 0) -> str | None:
     history = getattr(session, "history", None)
     if not isinstance(history, list):
         return None
-    for entry in reversed(history):
+    for entry in reversed(history[start:]):
         if not isinstance(entry, dict) or entry.get("type") != "slash":
             continue
         outcome = entry.get("slash_outcome")
@@ -105,6 +106,8 @@ class PromptRecorder:
         self._turn_id = turn_id
         self._prompt = prompt
         self._session = session
+        history = getattr(session, "history", None)
+        self._history_start = len(history) if isinstance(history, list) else 0
         self._surface = surface
         self._properties: dict[str, JsonValue] = {}
         self._response: str = ""
@@ -115,6 +118,10 @@ class PromptRecorder:
         self._latency_ms: int | None = None
         self._input_tokens: int | None = None
         self._output_tokens: int | None = None
+        self._llm_attempted: bool | None = None
+        self._model_system = ""
+        self._model_skill = ""
+        self._model_context = ""
         self._start = time.monotonic()
         self._flushed = False
 
@@ -127,14 +134,38 @@ class PromptRecorder:
         """Attach host-specific analytics metadata."""
         self._properties.update(properties)
 
+    def set_model_prompt(self, *, system: str = "", skill: str = "", context: str = "") -> None:
+        """Attach the system prompt, skill body, and other context the model received.
+
+        The literal user text stays in ``$ai_input``. These three fields are what
+        the action turn added around it: the cached system prompt, skill bodies
+        loaded for the turn, and the ephemeral context (conversation, plan, facts).
+        Each is redacted and capped so the analytics event still fits the payload
+        limit. Empty values are omitted at flush.
+        """
+        self._model_system = _bound_model_text(
+            system, config=self._config, limit=_SYSTEM_PROMPT_MAX_CHARS
+        )
+        self._model_skill = _bound_model_text(
+            skill, config=self._config, limit=_SKILL_PROMPT_MAX_CHARS
+        )
+        self._model_context = _bound_model_text(
+            context, config=self._config, limit=_CONTEXT_MAX_CHARS
+        )
+
     def set_run(self, run: _RunInfo) -> None:
         """Attach the model and provider-reported usage of the agent run."""
+        self._llm_attempted = True
         self._model = run.model or self._model
         self._provider = run.provider or self._provider
         if run.input_tokens is not None:
             self._input_tokens = run.input_tokens
         if run.output_tokens is not None:
             self._output_tokens = run.output_tokens
+
+    def set_llm_attempted(self, attempted: bool) -> None:
+        """Record whether dispatch used a provider or a deterministic tool call."""
+        self._llm_attempted = attempted
 
     @property
     def turn_id(self) -> str:
@@ -211,6 +242,8 @@ class PromptRecorder:
             return
         self._error_kind = kind or "error"
         self._error_message = _sanitize_text(message, config=self._config)
+        if self._error_kind in LLM_PROVIDER_FAILURE_KINDS:
+            self._llm_attempted = True
 
     def set_response(self, text: str, run: _RunInfo | None = None) -> None:
         cleaned = _sanitize_text(text, config=self._config)
@@ -221,7 +254,11 @@ class PromptRecorder:
             self._latency_ms = int((time.monotonic() - self._start) * 1000)
             return
         self.set_run(run)
-        self._latency_ms = run.latency_ms or int((time.monotonic() - self._start) * 1000)
+        self._latency_ms = (
+            run.latency_ms
+            if run.latency_ms is not None
+            else int((time.monotonic() - self._start) * 1000)
+        )
 
     def _response_for_emit(self) -> str:
         """Resolve the assistant text written to sinks at flush time."""
@@ -236,7 +273,11 @@ class PromptRecorder:
             return
         self._flushed = True
         response_text = self._response_for_emit()
-        latency_ms = self._latency_ms or int((time.monotonic() - self._start) * 1000)
+        latency_ms = (
+            self._latency_ms
+            if self._latency_ms is not None
+            else int((time.monotonic() - self._start) * 1000)
+        )
         record = {
             "ts": datetime.now(UTC).isoformat(),
             "session_id": self._session_id,
@@ -251,6 +292,12 @@ class PromptRecorder:
             "output_tokens": self._output_tokens,
             "opensre_version": get_opensre_version(),
         }
+        if self._model_system:
+            record["model_system_prompt"] = self._model_system
+        if self._model_skill:
+            record["model_skill_prompt"] = self._model_skill
+        if self._model_context:
+            record["model_context"] = self._model_context
         if self._config.local_enabled:
             with contextlib.suppress(OSError):
                 append_prompt_log_record(path=self._config.log_path, record=record)
@@ -276,8 +323,29 @@ class PromptRecorder:
                 # action. Fall back to "unknown" instead of the terminal
                 # sentinel when the attempted model could not be resolved.
                 llm_provider_failed = self._error_kind in LLM_PROVIDER_FAILURE_KINDS
-                fallback_label = UNKNOWN_LLM if llm_provider_failed else NO_CONVERSATIONAL_AGENT
+                fallback_label = (
+                    NO_CONVERSATIONAL_AGENT if self._llm_attempted is False else UNKNOWN_LLM
+                )
+                response_source = (
+                    "captured"
+                    if self._response.strip()
+                    else "error"
+                    if self._error_message.strip()
+                    else "synthetic"
+                )
+                turn_outcome = (
+                    "cancelled"
+                    if self._error_kind == "cancelled"
+                    else "error"
+                    if self._error_kind
+                    else "completed"
+                    if response_source == "captured"
+                    else "unknown"
+                )
                 posthog_properties: dict[str, JsonValue] = {
+                    "turn_outcome": turn_outcome,
+                    "response_source": response_source,
+                    "$ai_is_error": bool(self._error_kind),
                     "$ai_trace_id": self._turn_id,
                     "$ai_session_id": self._session_id,
                     "$ai_span_id": self._turn_id,
@@ -292,15 +360,26 @@ class PromptRecorder:
                         }
                     ],
                     "$ai_latency": (round(latency_ms / 1000.0, 3)),
-                    "$ai_input_tokens": self._input_tokens or 0,
-                    "$ai_output_tokens": self._output_tokens or 0,
                     "cli_turn_kind": self._turn_kind,
                     "cli_session_id": self._session_id,
                     "cli_turn_id": self._turn_id,
                     "opensre_version": get_opensre_version(),
                     **self._properties,
                 }
-                slash_outcome = _latest_slash_outcome(self._session)
+                if self._llm_attempted is not None:
+                    posthog_properties["llm_attempted"] = self._llm_attempted
+                reported = 0
+                for key, value in (
+                    ("$ai_input_tokens", self._input_tokens),
+                    ("$ai_output_tokens", self._output_tokens),
+                ):
+                    if value is not None:
+                        posthog_properties[key] = value
+                        reported += 1
+                posthog_properties["token_usage_status"] = (
+                    "complete" if reported == 2 else "partial" if reported else "unavailable"
+                )
+                slash_outcome = _latest_slash_outcome(self._session, start=self._history_start)
                 if slash_outcome:
                     posthog_properties["slash_outcome"] = slash_outcome
                 if self._error_kind:
@@ -311,7 +390,67 @@ class PromptRecorder:
                         posthog_properties["ai_error_kind"] = classify_provider_error_kind(
                             self._error_message or self._error_kind
                         )
+                if self._model_system:
+                    posthog_properties["model_system_prompt"] = self._model_system
+                if self._model_skill:
+                    posthog_properties["model_skill_prompt"] = self._model_skill
+                if self._model_context:
+                    posthog_properties["model_context"] = self._model_context
+                _fit_model_prompt(posthog_properties)
                 capture_ai_generation(posthog_properties)
+
+
+# Caps leave room for the user prompt, the response, and the rest of the event
+# under the 256KiB analytics payload limit. The fitter below shrinks further
+# when redaction or escaping still blows the budget.
+_SYSTEM_PROMPT_MAX_CHARS = 80_000
+_SKILL_PROMPT_MAX_CHARS = 24_000
+_CONTEXT_MAX_CHARS = 48_000
+_MODEL_PROMPT_BUDGET_BYTES = 160_000
+_TRUNCATED = "\n\n[truncated]"
+_MODEL_PROMPT_KEYS = ("model_context", "model_system_prompt", "model_skill_prompt")
+
+
+def _bound_model_text(text: str, *, config: PromptLogConfig, limit: int) -> str:
+    cleaned = text.strip()
+    if not cleaned:
+        return ""
+    if config.redact:
+        cleaned = redact_text(cleaned)
+    return _truncate(cleaned, limit)
+
+
+def _truncate(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    keep = max(0, limit - len(_TRUNCATED))
+    return text[:keep].rstrip() + _TRUNCATED
+
+
+def _fit_model_prompt(properties: dict[str, JsonValue]) -> None:
+    """Shrink the model-prompt fields until they fit, leaving the user prompt intact."""
+    while True:
+        encoded = json.dumps(
+            {key: properties[key] for key in _MODEL_PROMPT_KEYS if key in properties},
+            ensure_ascii=False,
+        ).encode("utf-8")
+        if len(encoded) <= _MODEL_PROMPT_BUDGET_BYTES:
+            return
+        key = next(
+            (
+                name
+                for name in _MODEL_PROMPT_KEYS
+                if isinstance(properties.get(name), str) and properties[name]
+            ),
+            None,
+        )
+        if key is None:
+            return
+        text = str(properties[key])
+        if len(text) < 2_000:
+            properties.pop(key)
+            continue
+        properties[key] = _truncate(text, len(text) // 2)
 
 
 def _sanitize_text(text: str, *, config: PromptLogConfig) -> str:

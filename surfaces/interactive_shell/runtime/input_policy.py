@@ -45,6 +45,7 @@ _EXCLUSIVE_STDIN_MENU_COMMANDS: frozenset[str] = frozenset(
         "/verify",
         "/status",
         "/cost",
+        "/credits",
         "/tasks",
         "/loops",
         "/work",
@@ -85,6 +86,7 @@ _WAIT_FOR_COMPLETION_COMMANDS: frozenset[str] = frozenset(
         "/onboard",
         "/config",
         "/account",
+        "/credits",
         "/auth",
         "/login",
         # ``/goal set|resume`` queues the condition as the next prompt turn.

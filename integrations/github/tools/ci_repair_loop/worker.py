@@ -4,28 +4,29 @@ from __future__ import annotations
 
 import json
 import logging
-import shutil
 import time
 from http import HTTPStatus
 from pathlib import Path
 from typing import Any
 
-from config.constants.ci_repair import CI_REPAIR_FINISH_RESERVE_SECONDS
+from config.constants.ci_repair import CI_REPAIR_FINISH_RESERVE_SECONDS, CI_REPAIR_MAX_ATTEMPTS
 from infrastructure.analytics.provider import shutdown_analytics
 from infrastructure.process.tree import start_watchdog
 from integrations.coding_agent import verify_coding_agent
 from integrations.git import clone_repository
 from integrations.github.client import GitHubApiError, GitHubRestClient
 from integrations.github.tools.ci_fix.context import CiFixContext
-from integrations.github.tools.ci_fix.errors import GitHubCiFixError
+from integrations.github.tools.ci_fix.errors import ERR_NO_FAILING_CHECKS, GitHubCiFixError
 from integrations.github.tools.ci_fix.gh import run_gh_json
 from integrations.github.tools.ci_fix.ledger import record_ci_fix_outcome
 from integrations.github.tools.ci_fix.runner import run_ci_fix
 from integrations.github.tools.ci_fix.verification import (
     CheckState,
+    all_checks_settled,
     check_failed,
     wait_for_pr_checks,
 )
+from integrations.github.tools.ci_repair_loop import telemetry
 from integrations.github.tools.ci_repair_loop.credentials import account_id, configured_token
 from integrations.github.tools.ci_repair_loop.fixture import (
     DemoRepositoryMismatch,
@@ -108,16 +109,9 @@ def _repair(run: RepairRun, store: RepairStore, token: str) -> None:
         rows = pr.get("statusCheckRollup") or []
         failed = any(check_failed(row, expected_skips=set()) for row in rows)
         if not failed:
-            # A new fixture must first be observed failing. Empty or queued checks prove nothing.
-            if (
-                not run.demo
-                and rows
-                and all(
-                    str(row.get("conclusion") or row.get("state") or "").upper() == "SUCCESS"
-                    for row in rows
-                )
-                and _verify_green(run, pr, token)
-            ):
+            # A new fixture must first be observed failing. Empty or queued checks
+            # prove nothing; a settled rollup with skips is a candidate for green.
+            if not run.demo and all_checks_settled(rows) and _verify_green(run, pr, token):
                 return
             time.sleep(2)
             continue
@@ -126,6 +120,8 @@ def _repair(run: RepairRun, store: RepairStore, token: str) -> None:
         run.attempts += 1
         run.reason = f"Repair attempt {run.attempts} is running."
         store.save(run)
+        if run.attempts == 1:
+            telemetry.failure_detected(run)
         output = run_ci_fix(
             owner=run.owner,
             repo=run.repo,
@@ -137,6 +133,9 @@ def _repair(run: RepairRun, store: RepairStore, token: str) -> None:
         diagnostic = store.directory(run.id) / f"attempt-{run.attempts}.json"
         diagnostic.write_text(json.dumps(output, indent=2), encoding="utf-8")
         record_ci_fix_outcome(output)
+        pushed = str(output.get("fix_head_sha") or "")
+        if pushed and pushed not in run.pushed_shas:
+            run.pushed_shas.append(pushed)
         if output.get("success") and output.get("checks_state") == "passed":
             run.fixed_sha = str(output.get("fix_head_sha") or "")
             current = _read_pr(run, token)
@@ -152,14 +151,80 @@ def _repair(run: RepairRun, store: RepairStore, token: str) -> None:
             store.save(run)
             return
         error = str(output.get("error_kind") or "repair_failed")
+        # Nothing left to fix on the current head: the earlier push may have done
+        # the job while its checks were still being read as failing.
+        nothing_left = error == ERR_NO_FAILING_CHECKS and bool(run.pushed_shas)
+        if nothing_left and _green_after_repair(run, store, token, output):
+            return
         run.attempt_errors.append(error)
-        run.reason = f"Repair attempt {run.attempts}: {error}."
+        run.reason = f"Repair attempt {run.attempts}: {_reason_for(error, run)}"
         store.save(run)
         if error not in {"checks_failed", "execution_error", "timeout", "no_changes"}:
             run.status = RepairStatus.FAILED
             return
+        if run.attempts >= CI_REPAIR_MAX_ATTEMPTS:
+            run.status = RepairStatus.FAILED
+            run.reason = f"Stopped after {CI_REPAIR_MAX_ATTEMPTS} failed repair attempts."
+            return
         time.sleep(1)
     run.status, run.reason = RepairStatus.TIMED_OUT, "The demo reached its time budget."
+
+
+#: What an attempt's error kind means for the person reading the run, in plain words.
+_REASON_TEXT = {
+    "unsupported_pr_branch": (
+        "PR #{pr} comes from a fork; the loop only pushes to branches inside {repo}. "
+        "Choose a pull request opened from a branch in this repository."
+    ),
+    "push_failed": "The fix was made but the push was refused; the attempt report says why.",
+    "checks_failed": "The fix was pushed but CI still failed on it.",
+    "no_changes": "The coding agent made no change to the checkout.",
+    "timeout": "The coding agent ran out of time.",
+    "execution_error": "The coding agent could not run.",
+}
+
+
+def _reason_for(error: str, run: RepairRun) -> str:
+    """The run's reason line for one attempt outcome; unknown kinds keep their code."""
+    template = _REASON_TEXT.get(error)
+    if template is None:
+        return f"{error}."
+    return template.format(pr=run.pr_number, repo=f"{run.owner}/{run.repo}")
+
+
+def _green_after_repair(
+    run: RepairRun, store: RepairStore, token: str, output: dict[str, Any]
+) -> bool:
+    """Confirm a head this run pushed passed CI once the PR reports nothing left to fix.
+
+    A head pushed by someone else is never credited. True when the loop is
+    finished (verified green, or the PR moved on); False when verification did
+    not settle, so the attempt is recorded as usual.
+    """
+    current = _read_pr(run, token)
+    head = str(current.get("headRefOid") or "")
+    if head not in run.pushed_shas:
+        return False
+    if not _verify_green(run, current, token):
+        return False
+    if run.status is RepairStatus.SUCCEEDED:
+        run.fixed_sha = head
+        run.checks_passed = True
+        run.reason = "The repair commit passed CI."
+        # The ledger saw an attempt with no check state; record the verified pass
+        # under the head the repair started from, as the normal success path does,
+        # so one repair is one ledger entry.
+        record_ci_fix_outcome(
+            {
+                **output,
+                "success": True,
+                "checks_state": CheckState.PASSED.value,
+                "source_head_sha": run.initial_sha,
+                "fix_head_sha": head,
+            }
+        )
+    store.save(run)
+    return True
 
 
 def execute_repair(run: RepairRun, store: RepairStore) -> None:
@@ -185,9 +250,8 @@ def execute_repair(run: RepairRun, store: RepairStore) -> None:
         _repair(run, store, token)
     if run.checks_passed:
         cleanup_demo(client, run)
-        if run.demo:
-            shutil.rmtree(workspace, ignore_errors=True)
         run.status = RepairStatus.SUCCEEDED
+        telemetry.repair_succeeded(run)
 
 
 def run_ci_repair_worker(store_directory: Path, run_id: str) -> None:
@@ -231,6 +295,8 @@ def run_ci_repair_worker(store_directory: Path, run_id: str) -> None:
                     RepairStatus.FAILED,
                     f"Repair stopped: {type(exc).__name__}.",
                 )
+        if run.terminal:
+            store.discard_checkout(run)
         run.finished_at = time.time()
         store.save(run)
     finally:
