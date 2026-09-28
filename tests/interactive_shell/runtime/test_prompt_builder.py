@@ -6,6 +6,7 @@ import asyncio
 import io
 from contextlib import redirect_stdout
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 from prompt_toolkit.application import create_app_session
@@ -134,6 +135,49 @@ def test_resize_banner_bypasses_prompt_toolkit_stdout_proxy(
     assert rerendered is True
     assert process_stdout.getvalue() == ""
     assert "banner" in "".join(app.output.writes)
+
+
+def test_resize_banner_strips_ansi_for_native_output(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Native Win32 output writes escape bytes literally instead of styling them."""
+    session = Session()
+    builder = PromptBuilder(session, ReplState(), SpinnerState())
+    app = _idle_prompt_app()
+    builder.pt_app = app  # type: ignore[assignment]
+    banner = Text("banner", style="bold red")
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.runtime.core.prompt_builder.build_launch_banner",
+        lambda *_args, **_kwargs: banner,
+    )
+
+    rerendered = builder._rerender_banner_if_idle()
+
+    assert rerendered is True
+    emitted = "".join(app.output.writes)
+    assert "banner" in emitted
+    assert "\x1b" not in emitted
+
+
+def test_resize_banner_does_not_drain_active_prompt_input(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A resize repaint must leave unread keystrokes for prompt-toolkit."""
+    session = Session()
+    builder = PromptBuilder(session, ReplState(), SpinnerState())
+    builder.pt_app = _idle_prompt_app()  # type: ignore[assignment]
+    drain = MagicMock()
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.runtime.core.prompt_builder.drain_stale_cpr_bytes",
+        drain,
+    )
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.runtime.core.prompt_builder.build_launch_banner",
+        lambda *_args, **_kwargs: Text("banner"),
+    )
+
+    assert builder._rerender_banner_if_idle() is True
+    drain.assert_not_called()
 
 
 def test_resize_does_not_duplicate_banner_when_idle_ui_exceeds_viewport(

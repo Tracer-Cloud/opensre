@@ -261,6 +261,49 @@ def test_resize_burst_coalesces_static_banner_repaint() -> None:
     renderer.reset.assert_called_once_with(leave_alternate_screen=False)
 
 
+def test_suspended_prompt_retries_pending_banner_repaint_after_resume() -> None:
+    """Suspending during the debounce window must not discard the final repaint."""
+    output = Vt100_Output(
+        io.StringIO(),
+        get_size=lambda: Size(rows=30, columns=80),
+        term="xterm-256color",
+        enable_cpr=False,
+    )
+    app: Any = MagicMock()
+    app.output = output
+    renderer = MagicMock()
+    renderer._min_available_height = 0
+    renderer._last_screen = None
+    renderer.render = MagicMock()
+    renderer.reset = MagicMock()
+    app.renderer = renderer
+    app._on_resize = MagicMock()
+    app._redraw = MagicMock()
+    app._running_in_terminal = False
+    app.is_running = True
+    app.loop = _TimerLoop()
+    banner_calls: list[int] = []
+
+    install_shrink_resize_guard(
+        app,
+        rerender_banner=lambda: banner_calls.append(1) or True,
+    )
+    app._on_resize()
+    initial = app.loop.handles[-1]
+
+    app.is_running = False
+    initial.callback()
+    assert banner_calls == []
+
+    app.is_running = True
+    renderer.render(app, Layout(Window(height=2)))
+    retry = app.loop.handles[-1]
+    assert retry is not initial
+
+    retry.callback()
+    assert banner_calls == [1]
+
+
 def test_resize_uses_prompt_toolkit_path_for_a_visible_hardware_cursor() -> None:
     """Search and system controls keep their native cursor and resize handling."""
     output = Vt100_Output(

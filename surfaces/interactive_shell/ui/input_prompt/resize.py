@@ -128,6 +128,7 @@ def install_shrink_resize_guard(
     parked = False
     frame_active = False
     banner_resize_handle: asyncio.TimerHandle | None = None
+    banner_resize_pending = False
 
     def _restore_cursor() -> None:
         """Move from the live-region anchor to prompt-toolkit's logical cursor."""
@@ -208,6 +209,13 @@ def install_shrink_resize_guard(
                     painted = not is_done
                     if painted:
                         _park_cursor()
+                    if (
+                        painted
+                        and banner_resize_pending
+                        and banner_resize_handle is None
+                        and not getattr(app, "_running_in_terminal", False)
+                    ):
+                        _schedule_banner_resize()
                 finally:
                     output.flush = real_flush  # type: ignore[method-assign]
                     real_flush()
@@ -226,14 +234,15 @@ def install_shrink_resize_guard(
 
     def _finish_banner_resize() -> None:
         """Replace the reflowed idle banner once a resize burst settles."""
-        nonlocal banner_resize_handle, frame_active, painted, parked
+        nonlocal banner_resize_handle, banner_resize_pending, frame_active, painted, parked
         banner_resize_handle = None
         loop = getattr(app, "loop", None)
         if loop is not None and not bool(getattr(app, "is_running", False)):
             return
         if getattr(app, "_running_in_terminal", False):
-            _schedule_banner_resize()
+            _defer_banner_resize()
             return
+        banner_resize_pending = False
         framed = not frame_active
         if framed:
             frame_active = True
@@ -254,9 +263,10 @@ def install_shrink_resize_guard(
 
     def _schedule_banner_resize() -> None:
         """Coalesce rapid width changes around one final static repaint."""
-        nonlocal banner_resize_handle
+        nonlocal banner_resize_handle, banner_resize_pending
         if rerender_banner is None:
             return
+        banner_resize_pending = True
         if banner_resize_handle is not None:
             banner_resize_handle.cancel()
         loop = getattr(app, "loop", None)
@@ -268,11 +278,22 @@ def install_shrink_resize_guard(
             _finish_banner_resize,
         )
 
-    def _cancel_banner_resize() -> None:
-        nonlocal banner_resize_handle
+    def _defer_banner_resize() -> None:
+        """Remember a repaint until prompt-toolkit owns the terminal again."""
+        nonlocal banner_resize_handle, banner_resize_pending
+        if rerender_banner is None:
+            return
         if banner_resize_handle is not None:
             banner_resize_handle.cancel()
             banner_resize_handle = None
+        banner_resize_pending = True
+
+    def _cancel_banner_resize() -> None:
+        nonlocal banner_resize_handle, banner_resize_pending
+        if banner_resize_handle is not None:
+            banner_resize_handle.cancel()
+            banner_resize_handle = None
+        banner_resize_pending = False
 
     def _on_resize() -> None:
         nonlocal frame_active, painted, parked
@@ -286,7 +307,7 @@ def install_shrink_resize_guard(
         # terminal normally. Its exit path resets and redraws the prompt, so a
         # resize while it owns the terminal must not emit prompt-mode bytes.
         if getattr(app, "_running_in_terminal", False):
-            _cancel_banner_resize()
+            _defer_banner_resize()
             renderer._min_available_height = 0
             app._redraw()
             return

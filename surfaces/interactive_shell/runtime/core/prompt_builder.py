@@ -11,6 +11,7 @@ from prompt_toolkit.application import Application, run_in_terminal
 from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.formatted_text import ANSI, FormattedText
+from prompt_toolkit.formatted_text.utils import to_plain_text
 from rich.console import Console
 from rich.text import Text
 
@@ -38,6 +39,9 @@ from surfaces.interactive_shell.ui.input_prompt.resize import (
     live_region_height_cap,
 )
 from surfaces.interactive_shell.ui.input_prompt.style import refresh_prompt_theme
+from surfaces.interactive_shell.ui.input_prompt.synchronized import (
+    supports_synchronized_output,
+)
 from surfaces.interactive_shell.ui.prompt_visibility import typing_box_hidden
 from surfaces.interactive_shell.ui.terminal_ui import render_prompt_region
 from surfaces.shared.terminal.banner import build_launch_banner
@@ -187,9 +191,11 @@ class PromptBuilder:
         terminal_output = self.pt_app.output
         terminal_output.erase_screen()
         terminal_output.cursor_goto(0, 0)
-        terminal_output.write_raw(rendered.getvalue().replace("\n", "\r\n"))
+        replacement = rendered.getvalue().replace("\n", "\r\n")
+        if not supports_synchronized_output(terminal_output):
+            replacement = to_plain_text(ANSI(replacement))
+        terminal_output.write_raw(replacement)
         terminal_output.flush()
-        drain_stale_cpr_bytes()
         return True
 
     def _expand_collapsed_output(self, text: str) -> None:
