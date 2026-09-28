@@ -380,9 +380,7 @@ once, following these rules, and treat a rename as a breaking change.
 4. **Only implemented workflows are discoverable.** Keep roadmap placeholders
    outside the skill catalog and selectable demo menu. Demo C,
    `delegating-github-ci-repairs`, delegates through `check_hosted_gateway` and
-   `ask_hosted_gateway`; its menu label keeps "(coming soon)" until the team
-   has reviewed and tested the hosted flow, and only that label may say so. Do
-   not add a new placeholder.
+   `ask_hosted_gateway`. Do not add a placeholder.
 5. **Disambiguate siblings by verb, not by qualifier.** Two skills over the
    same object must differ in what they do: `reporting-github-ci-failures`
    (what is red now) vs `analyzing-github-ci-performance` (trend over a
@@ -436,7 +434,7 @@ Current collection:
 | `onboarding-github-ci` | workflow (master menu) | `skills/onboarding-github-ci/` | — |
 | `analyzing-github-ci-performance` | workflow (demo A) | `skills/onboarding-github-ci/a-…/` | — |
 | `scheduling-github-ci-repairs` | workflow (demo B) | `skills/onboarding-github-ci/b-…/` | — |
-| `delegating-github-ci-repairs` | workflow (demo C, labelled coming soon until team review) | `skills/onboarding-github-ci/c-…/` | — |
+| `delegating-github-ci-repairs` | workflow (demo C) | `skills/onboarding-github-ci/c-…/` | — |
 | `connecting-slack` | workflow (demo D) | `skills/onboarding-github-ci/d-…/` | — |
 | `operating-github-cli` | tool usage | `integrations/github/tools/github_cli/` | `github_cli` |
 | `operating-github-ci-fixer` | tool usage | `integrations/github/tools/ci_fix/` | `fix_github_pr_ci` |

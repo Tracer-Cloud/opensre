@@ -27,12 +27,6 @@ This skill helps you setup OpenSRE as a remote managed cloud service to enable t
 - Is to connect to a managed fargate container that spins up a ci-cd-repair loop: core/agent_harness/prompts/skills/repair-github-ci
 - This is seperate from skill core/agent_harness/prompts/skills/onboarding-github-ci/d-connecting-slack
 
-## Tools to use 
-- `check_hosted_gateway()` — check whether it exists and is running.
-- `ask_hosted_gateway(prompt, facts)` — send work to the managed gateway.
-- `ask_hosted_gateway(prompt_id=...)` — continue a request awaiting input or retrieve its result.
-- `start_hosted_gateway()` - start control the gateway lifecycle.
-- `stop_hosted_gateway()`- stop control the gateway lifecycle.
 
 ## Pre-Requisites 
 - This skill is running in the interactive shell. 
@@ -46,6 +40,7 @@ After reading this skill, use `update_plan` to create the live plan from the wor
 - [ ] If needed, sign in with `/account login`.
 - [ ] Start or provision the hosted gateway.
 - [ ] Verify the gateway is healthy.
+- [ ] Send a message to the gateway and ensure you receive one in return.
 - [ ] Verify the configured repository is monitored remotely.
 - [ ] Check if Gateway has the required permissions and GitHub access to monitor to the target repository. If not help the user to set it up correctly. 
 - [ ] Trigger a test CI failure on a demo or test repository.
@@ -85,13 +80,11 @@ After successful validation, use `ask_user_choice`:
 - Add more scheduled tasks
 - Exit to interactive shell 
 
-## Add analytics into the analytics back-end application (they should work both remotely and locally)
+## Relevant Tools 
+You can use all tools, but including the following:
 
-Record:
-
-- `hosted_gateway_started`
-- `hosted_gateway_healthy`
-- `remote_ci_monitoring_started`
-- `test_ci_failure_triggered`
-- `remote_ci_failure_detected`
-- `remote_ci_repair_succeeded`
+- `check_hosted_gateway()` — check whether it exists and is running.
+- `ask_hosted_gateway(prompt, facts)` — send work to the managed gateway.
+- `ask_hosted_gateway(prompt_id=...)` — continue a request awaiting input or retrieve its result.
+- `start_hosted_gateway()` - start control the gateway lifecycle.
+- `stop_hosted_gateway()`- stop control the gateway lifecycle.
