@@ -48,8 +48,8 @@ If validation fails, diagnose the deployment or monitoring configuration and ret
 
 The workflow succeeds only when:
 
-1. The hosted gateway is healthy.
-2. Scheduled loop is configured with the following skill core/agent_harness/prompts/skills/repair-github-ci
+1. The hosted gateway responds to prompts from the interactive shell and they are returned back.
+2. Scheduled loop is configured with the following skill core/agent_harness/prompts/skills/repair-github-ci.
 3. A CI failure triggered after deployment is detected remotely.
 4. The remote repair loop fixes the failure without the local shell remaining active.
 
