@@ -120,14 +120,12 @@ class PromptBuilder:
         """Repaint the existing launch banner only before visible history exists."""
         if (
             self.session.terminal.submitted_turn_count > 0
-            or self.session.history
             or self.session.agent.messages
             or self.session.accumulated_context
             or self.pt_app is None
         ):
             return False
         repl_clear_screen()
-        drain_stale_cpr_bytes()
         console = Console(
             highlight=False,
             force_terminal=True,

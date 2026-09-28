@@ -36,13 +36,17 @@ def _terminal_output() -> Vt100_Output:
     )
 
 
-def test_idle_banner_repaint_preserves_visible_transcript() -> None:
+def test_internal_picker_history_does_not_block_idle_banner_repaint(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     session = Session()
-    session.history = [{"type": "slash", "text": "/resume target", "ok": True}]
+    session.history = [{"type": "slash", "text": "/choose", "ok": True}]
     builder = PromptBuilder(session, ReplState(), SpinnerState())
     builder.pt_app = object()  # type: ignore[assignment]
+    monkeypatch.setattr(prompt_builder_module, "repl_clear_screen", lambda: None)
+    monkeypatch.setattr(prompt_builder_module, "render_launch_banner", lambda *_a, **_kw: None)
 
-    assert builder._rerender_banner_if_idle() is False
+    assert builder._rerender_banner_if_idle() is True
 
 
 def test_idle_banner_repaint_preserves_restored_messages_without_history() -> None:
@@ -87,6 +91,25 @@ def test_empty_shell_can_repaint_the_existing_banner(
     assert builder._rerender_banner_if_idle() is True
     assert clear_calls == [True]
     assert banner_calls == [True]
+
+
+def test_idle_banner_repaint_does_not_drain_active_prompt_input(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = Session()
+    builder = PromptBuilder(session, ReplState(), SpinnerState())
+    builder.pt_app = object()  # type: ignore[assignment]
+    drain_calls: list[bool] = []
+    monkeypatch.setattr(prompt_builder_module, "repl_clear_screen", lambda: None)
+    monkeypatch.setattr(
+        prompt_builder_module,
+        "drain_stale_cpr_bytes",
+        lambda: drain_calls.append(True),
+    )
+    monkeypatch.setattr(prompt_builder_module, "render_launch_banner", lambda *_a, **_kw: None)
+
+    assert builder._rerender_banner_if_idle() is True
+    assert drain_calls == []
 
 
 @pytest.mark.asyncio
