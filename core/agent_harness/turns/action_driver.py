@@ -36,6 +36,7 @@ from core.agent_harness.ports import (
     ToolProvider,
 )
 from core.agent_harness.prompts import (
+    action_prompt_skill_and_context,
     build_action_system_prompt_envelope,
     build_action_user_message,
 )
@@ -84,6 +85,7 @@ from core.events import runtime_event_callback_from_observer
 from core.llm.types import AgentLLMResponse, SchemaDescribedTool, ToolCall
 from core.tool.execution import ToolExecutionHooks, public_tool_input
 from core.tool_framework.tags import SUMMARIZE_OBSERVATION_TAG
+from infrastructure.analytics.prompt_log.model_prompt import record_action_model_prompt
 from infrastructure.analytics.react_turn import run_react_agent_with_telemetry
 from infrastructure.observability.trace.decisions import record_decision
 from infrastructure.observability.trace.prompts import persist_turn_system_prompt
@@ -120,6 +122,9 @@ class ActionTurnPlan:
     # Replies the plan gate deferred and the sink already painted mid-turn.
     # They join ``response_text`` for history but are never streamed again.
     deferred_replies: list[str] = field(default_factory=list)
+    # Active skill body and the other ephemeral context sent with the user message.
+    prompt_skill: str = ""
+    prompt_context: str = ""
 
 
 def _deferred_reply_presenter(
@@ -566,6 +571,8 @@ def _build_action_agent(
     executed_tool_names: list[str] = []
     executed_outcomes: list[ExecutedToolOutcome] = []
     deferred_replies: list[str] = []
+    prompt_skill = ""
+    prompt_context = ""
 
     if bang_command is not None:
         # Explicit `!` shell escape: dispatch the verbatim text as a shell_run call.
@@ -598,6 +605,7 @@ def _build_action_agent(
         # prior-action-facts) rides with the user message so Anthropic's system
         # cache_control breakpoint is not invalidated every turn.
         system = envelope.render_cached()
+        prompt_skill, prompt_context = action_prompt_skill_and_context(envelope)
         user_message = build_action_user_message(message, prefix=envelope.render_ephemeral())
         # ReAct goal: host gates (unfinished plan) reject stop. Same-LLM
         # review is opt-in. The verifier reads executed tool names from the
@@ -663,6 +671,8 @@ def _build_action_agent(
         llm=llm,
         max_iterations=_MAX_TOOL_CALLING_ITERATIONS,
         deferred_replies=deferred_replies,
+        prompt_skill=prompt_skill,
+        prompt_context=prompt_context,
     )
 
 
@@ -1080,6 +1090,9 @@ def _run_action_turn(
             session,
             phase="action_agent",
             system_prompt=result.final_system_prompt,
+        )
+        record_action_model_prompt(
+            result, skill=built.prompt_skill, context=built.prompt_context
         )
     except Exception as exc:
         from core.llm.shared.llm_retry import LLMCreditExhaustedError

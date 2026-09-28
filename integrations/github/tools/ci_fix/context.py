@@ -535,6 +535,7 @@ def build_fix_task(ctx: CiFixContext, *, base_merged: bool) -> str:
             "",
             "Make the smallest repository change that addresses the observed CI failure.",
             "Do not silence CI, skip tests, or weaken checks unless the log proves the check itself is wrong.",
+            "Do not commit or push. Leave the repair in the working tree; OpenSRE commits and pushes it.",
             "Preserve unrelated user changes. Run the smallest relevant local verification command when practical.",
             "Finish with a concise summary of files changed and verification performed.",
         ]

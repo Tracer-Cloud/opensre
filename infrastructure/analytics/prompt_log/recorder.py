@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import contextlib
+import json
 import time
 import uuid
 from contextvars import ContextVar
@@ -115,6 +116,9 @@ class PromptRecorder:
         self._latency_ms: int | None = None
         self._input_tokens: int | None = None
         self._output_tokens: int | None = None
+        self._model_system = ""
+        self._model_skill = ""
+        self._model_context = ""
         self._start = time.monotonic()
         self._flushed = False
 
@@ -126,6 +130,19 @@ class PromptRecorder:
     def set_properties(self, properties: dict[str, JsonValue]) -> None:
         """Attach host-specific analytics metadata."""
         self._properties.update(properties)
+
+    def set_model_prompt(self, *, system: str = "", skill: str = "", context: str = "") -> None:
+        """Attach the system prompt, skill body, and other context the model received.
+
+        The literal user text stays in ``$ai_input``. These three fields are what
+        the action turn added around it: the cached system prompt, skill bodies
+        loaded for the turn, and the ephemeral context (conversation, plan, facts).
+        Each is redacted and capped so the analytics event still fits the payload
+        limit. Empty values are omitted at flush.
+        """
+        self._model_system = _bound_model_text(system, config=self._config, limit=_SYSTEM_PROMPT_MAX_CHARS)
+        self._model_skill = _bound_model_text(skill, config=self._config, limit=_SKILL_PROMPT_MAX_CHARS)
+        self._model_context = _bound_model_text(context, config=self._config, limit=_CONTEXT_MAX_CHARS)
 
     def set_run(self, run: _RunInfo) -> None:
         """Attach the model and provider-reported usage of the agent run."""
@@ -251,6 +268,12 @@ class PromptRecorder:
             "output_tokens": self._output_tokens,
             "opensre_version": get_opensre_version(),
         }
+        if self._model_system:
+            record["model_system_prompt"] = self._model_system
+        if self._model_skill:
+            record["model_skill_prompt"] = self._model_skill
+        if self._model_context:
+            record["model_context"] = self._model_context
         if self._config.local_enabled:
             with contextlib.suppress(OSError):
                 append_prompt_log_record(path=self._config.log_path, record=record)
@@ -311,7 +334,67 @@ class PromptRecorder:
                         posthog_properties["ai_error_kind"] = classify_provider_error_kind(
                             self._error_message or self._error_kind
                         )
+                if self._model_system:
+                    posthog_properties["model_system_prompt"] = self._model_system
+                if self._model_skill:
+                    posthog_properties["model_skill_prompt"] = self._model_skill
+                if self._model_context:
+                    posthog_properties["model_context"] = self._model_context
+                _fit_model_prompt(posthog_properties)
                 capture_ai_generation(posthog_properties)
+
+
+# Caps leave room for the user prompt, the response, and the rest of the event
+# under the 256KiB analytics payload limit. The fitter below shrinks further
+# when redaction or escaping still blows the budget.
+_SYSTEM_PROMPT_MAX_CHARS = 80_000
+_SKILL_PROMPT_MAX_CHARS = 24_000
+_CONTEXT_MAX_CHARS = 48_000
+_MODEL_PROMPT_BUDGET_BYTES = 160_000
+_TRUNCATED = "\n\n[truncated]"
+_MODEL_PROMPT_KEYS = ("model_context", "model_system_prompt", "model_skill_prompt")
+
+
+def _bound_model_text(text: str, *, config: PromptLogConfig, limit: int) -> str:
+    cleaned = text.strip()
+    if not cleaned:
+        return ""
+    if config.redact:
+        cleaned = redact_text(cleaned)
+    return _truncate(cleaned, limit)
+
+
+def _truncate(text: str, limit: int) -> str:
+    if len(text) <= limit:
+        return text
+    keep = max(0, limit - len(_TRUNCATED))
+    return text[:keep].rstrip() + _TRUNCATED
+
+
+def _fit_model_prompt(properties: dict[str, JsonValue]) -> None:
+    """Shrink the model-prompt fields until they fit, leaving the user prompt intact."""
+    while True:
+        encoded = json.dumps(
+            {key: properties[key] for key in _MODEL_PROMPT_KEYS if key in properties},
+            ensure_ascii=False,
+        ).encode("utf-8")
+        if len(encoded) <= _MODEL_PROMPT_BUDGET_BYTES:
+            return
+        key = next(
+            (
+                name
+                for name in _MODEL_PROMPT_KEYS
+                if isinstance(properties.get(name), str) and properties[name]
+            ),
+            None,
+        )
+        if key is None:
+            return
+        text = str(properties[key])
+        if len(text) < 2_000:
+            properties.pop(key)
+            continue
+        properties[key] = _truncate(text, len(text) // 2)
 
 
 def _sanitize_text(text: str, *, config: PromptLogConfig) -> str:

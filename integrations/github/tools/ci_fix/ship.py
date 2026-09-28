@@ -15,6 +15,7 @@ from integrations.git import (
     changed_since_baseline,
     checkout_branch,
     commit_paths,
+    committed_paths_since,
     current_branch,
     ensure_git_repo,
     fetch_local_branch,
@@ -76,11 +77,14 @@ def push_ci_fix(
     baseline: Mapping[str, str] | None = None,
     github_token: str | None = None,
     already_committed: bool = False,
+    recorded_through: str | None = None,
 ) -> PushResult:
     """Commit files changed by the fix run and push the repair or PR branch.
 
     ``already_committed`` lets a run whose only change is a base-branch merge
-    commit push without new file changes.
+    commit push without new file changes. ``recorded_through`` is the last
+    commit whose creation was already reported; a coding agent that committed
+    past it is recorded here instead of being treated as an empty repair.
     """
     token = resolve_github_token(github_token)
     pushed_head_sha = ""
@@ -98,12 +102,6 @@ def push_ci_fix(
                 )
             checkout_target_branch(workspace, ctx, token=token)
         changed = changed_since_baseline(workspace, baseline=baseline)
-        if not changed and not already_committed:
-            raise GitHubCiFixError(
-                ERR_NO_CHANGES,
-                f"CI fix for {ctx.target_label} produced no file changes; no push was made.",
-                branch_name=ctx.head_branch,
-            )
         if changed:
             commit_paths(
                 workspace,
@@ -111,6 +109,20 @@ def push_ci_fix(
                 _commit_message(ctx, result.summary),
                 analytics_workflow="github_ci_fix",
             )
+        else:
+            # A coding agent may commit the repair itself. Those commits are not
+            # dirty files, so commit_paths never sees them and would otherwise
+            # drop the run as "no changes" without an analytics event.
+            known = recorded_through or ctx.head_sha
+            current = head_sha(workspace)
+            if current == known and not already_committed:
+                raise GitHubCiFixError(
+                    ERR_NO_CHANGES,
+                    f"CI fix for {ctx.target_label} produced no file changes; no push was made.",
+                    branch_name=ctx.head_branch,
+                )
+            if current != known:
+                _capture_existing_commit(workspace, known)
         pushed_head_sha = head_sha(workspace)
         source_branch = ctx.target_branch if ctx.is_branch_target else ctx.head_branch
         if remote_branch_sha(workspace, source_branch, token=token) != ctx.head_sha:
@@ -139,6 +151,16 @@ def push_ci_fix(
         branch_name=ctx.head_branch,
         head_sha=pushed_head_sha,
         changed_files=changed,
+    )
+
+
+def _capture_existing_commit(workspace: str, since: str) -> None:
+    from infrastructure.analytics.capture import capture_opensre_commit_created
+
+    capture_opensre_commit_created(
+        workflow="github_ci_fix",
+        commit_kind="content",
+        changed_file_count=len(set(committed_paths_since(workspace, since))),
     )
 
 
