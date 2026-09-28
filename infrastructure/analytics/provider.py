@@ -1195,7 +1195,13 @@ def capture_install_detected_if_needed(properties: Properties | None = None) -> 
         if analytics._install_delivery_confirmed():
             return False
         if _path_exists(_FIRST_RUN_PATH):
-            properties = {**(properties or {}), "install_detection_reason": "unverified_marker"}
+            # A later tagged command must not invent the original installation origin.
+            properties = {
+                key: value
+                for key, value in (properties or {}).items()
+                if key != "install_origin"
+            }
+            properties["install_detection_reason"] = "unverified_marker"
         analytics.capture(Event.INSTALL_DETECTED, properties)
         _install_capture_state.attempted = True
         return True

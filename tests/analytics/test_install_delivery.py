@@ -117,14 +117,17 @@ def test_unwritable_receipt_is_logged_and_the_accepted_install_is_resent(
     failures = (tmp_path / "analytics_errors.log").read_text()
     assert 'stage="install_receipt"' in failures
     assert "install-deliveries-v1" in failures
-    # The legacy marker still lands, so the retry is a recovery, not a first install.
+    # The accepted install still records the legacy marker, but the receipt does not.
     assert (tmp_path / "installed").exists()
 
     restart(monkeypatch)
     assert provider.capture_install_detected_if_needed()
     provider.shutdown_analytics(flush=True, timeout=5)
     assert [event["event"] for event in deliveries] == ["install_detected", "install_detected"]
-    assert deliveries[1]["properties"]["install_detection_reason"] == "unverified_marker"
+    # The first accepted body is frozen, so a lost receipt resends that observation
+    # instead of minting a second recovery identity.
+    assert deliveries[1] == deliveries[0]
+    assert "install_detection_reason" not in deliveries[1]["properties"]
 
 
 @pytest.mark.parametrize("change", ["identity", "destination"])
