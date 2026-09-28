@@ -152,7 +152,7 @@ def test_shell_turns_join_the_cli_invoked_session_until_new(
     capture_cli_invoked({"entrypoint": "opensre"})
     assert asyncio.run(main_entrypoint.run_repl_async(console=console)) == 0
 
-    [invoked] = analytics.session_ids(Event.CLI_INVOKED)
+    [invoked] = analytics.session_ids("cli_command_opensre")
     first, after_new = session_ids
     assert first == invoked
     assert after_new != invoked
@@ -166,7 +166,7 @@ def test_ask_turn_joins_the_cli_invoked_session(analytics: _Analytics) -> None:
 
     outcome = service.run_ask("Explain the outage", allowed_tools=(), bypass_approvals=False)
 
-    [invoked] = analytics.session_ids(Event.CLI_INVOKED)
+    [invoked] = analytics.session_ids("cli_command_opensre")
     assert outcome.status is service.AskStatus.SUCCESS
     assert outcome.session_id == invoked
     assert analytics.session_ids(Event.REACT_TURN_COMPLETED) == [invoked]
@@ -178,7 +178,7 @@ def test_gateway_turn_keeps_its_bound_session_in_a_cli_started_process(
 ) -> None:
     # ``opensre gateway start`` enters through the CLI, so the process id exists.
     capture_cli_invoked({"entrypoint": "opensre"})
-    [process_session_id] = analytics.session_ids(Event.CLI_INVOKED)
+    [process_session_id] = analytics.session_ids("cli_command_opensre")
     session = SessionCore(store=InMemorySessionStore())
     session.resolved_integrations_cache = {}
     handler = TurnRunner(console=Console(file=io.StringIO(), force_terminal=False))

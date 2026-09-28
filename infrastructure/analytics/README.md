@@ -44,7 +44,7 @@ the event body or source distribution. Production origins require HTTPS.
   "occurred_at": "2026-09-08T12:34:56.789+00:00",
   "source": "opensre_runtime",
   "anonymous_id": "4d892bf3-7204-4410-9f03-f84190f8a936",
-  "event": "cli_invoked",
+  "event": "cli_command_opensre_integrations_verify",
   "properties": {
     "entrypoint": "opensre",
     "command_family": "integrations"
@@ -76,8 +76,9 @@ the event body or source distribution. Production origins require HTTPS.
   keyed by a hash of the installation ID and endpoint URL. The older `installed`
   marker is retained for older clients, but cannot establish first-party delivery.
 
-The accepted event names are the `Event` enum in `events.py`, plus the internal
-identity controls `$identify` and `$groupidentify`. The webapp may translate
+The accepted event names are the `Event` enum in `events.py`, the dynamic
+`cli_command_opensre` family, and the internal identity controls `$identify`
+and `$groupidentify`. The webapp may translate
 those controls into its analytics store instead of storing them as product
 activity.
 
@@ -94,6 +95,8 @@ Every product event includes:
 | `is_ci`, `is_container`, `container_runtime` | Recognized runtime signals, not human verification. Unknown measurements are omitted. |
 | `ci_detection_status`, `container_detection_status` | `detected`, `not_detected`, or `unknown`. |
 | `automation_status`, `execution_origin` | Reported automation or unknown origin; ingestion upgrades authenticated runner evidence to `confirmed`. |
+| `distribution` | `source_checkout`, `editable_package`, `installed_package`, `frozen_binary`, or `unknown`, based on the code loaded by this process. |
+| `is_test` | Explicit `OPENSRE_IS_TEST=1` (also `true`/`yes`), a detected test runner, or CI. Independent of distribution. |
 | `composite_fingerprint` | One-way local fingerprint used only when no account identity exists. |
 | `identity_persistence` | Whether the anonymous ID was persisted to disk. |
 | `install_marker_state_before_install` | `present`, `absent`, or `unknown` at the start of the most recent recorded installer run. |
@@ -134,6 +137,28 @@ value describes the most recent recorded installer run, not
 necessarily the first installation or the current invocation. Do not map
 `absent` to “first-ever install.”
 
+## CLI invocation names and distribution
+
+Command names are generated from registered command tokens, with hyphens
+normalized to underscores: `opensre health --rate 5` emits
+`cli_command_opensre_health`; `opensre integrations verify slack` emits
+`cli_command_opensre_integrations_verify`. Bare `opensre` emits
+`cli_command_opensre`. These events record invocation, not completion or success.
+Arguments and option values never enter the name.
+
+Alternate Python entrypoints use the equivalent OpenSRE command name; the
+`entrypoint` property preserves how they were launched. Each invocation emits
+one command event, replacing `cli_invoked`. Readers must accept both historical
+`cli_invoked` records and the new family. Deploy the webapp's family validation
+before distributing a client that emits these names.
+
+`source_checkout` and `editable_package` identify local development code.
+`installed_package` and `frozen_binary` identify packaged code, including locally
+built packages; they do not establish publisher signing or official provenance.
+A packaged binary can still have `is_test=true`. `execution_environment=local`
+describes the computer, not the build origin. Missing historical distribution
+or test evidence must not be treated as proof of release or non-test usage.
+
 ## Event inventory
 
 Installer tags `-lp`, `-dc`, and `-gh` set `install_origin` to `landing_page`,
@@ -154,7 +179,7 @@ recorded installations.
 
 | Area | Events | Important properties / question answered |
 | --- | --- | --- |
-| Acquisition | `install_detected`, `account_authenticated`, `cli_invoked` | Install source/origin/build channel/distribution, login conversion, entrypoint, command names, and boolean flags; never raw argument values. Official installers invoke the hidden record-only path immediately after installation. |
+| Acquisition | `install_detected`, `account_authenticated`, `cli_command_opensre…` | Install source/origin/build channel/distribution, login conversion, entrypoint, command names, and boolean flags; never raw argument values. Official installers invoke the hidden record-only path immediately after installation. Historical `cli_invoked` records remain valid. |
 | Sign-in gate | `sign_in_prompted`, `sign_in_selected`, `stay_signed_out_selected` | The interactive shell's mandatory sign-in screen: one exposure per signed-out launch, then one event per menu round with `choice_label` and `method` (`menu` for a picked option, `dismissed` when the menu was closed without one — Esc, `q`, Ctrl-C, Ctrl-D, or EOF are not distinguished). `sign_in_selected` is recorded before the browser flow starts and is intent only; `account_authenticated` reports the outcome. Already signed-in, non-interactive, and test runs emit none of these. |
 | Runtime health | `user_id_load_failed`, `sentry_init_skipped` | Identity persistence and telemetry setup failures. |
 | Onboarding | `onboard_started`, `onboard_completed`, `onboard_failed` | Funnel conversion, wizard mode, target, provider, and model. |
@@ -196,7 +221,7 @@ must be calculated from `analytics_product_events`.
 | Personal activation | Server-resolved users whose linked installation reaches `onboard_completed`, then records a completed, captured AI response with an observed LLM attempt and no error. Legacy events require a real model/provider and non-synthetic output. |
 | Gateway activation | Authenticated organizations with an answered `gateway_turn_completed`; do not count gateway actor IDs as users. |
 | Onboarding conversion | Distinct eligible installation observations completed, and distinct installations failed, each divided separately by distinct installations started. |
-| Personal DAU / WAU / MAU | Distinct server-resolved users with personal-bearer `cli_invoked` or `$ai_generation` events in the window. |
+| Personal DAU / WAU / MAU | Distinct server-resolved users with a personal-bearer `cli_command_opensre…` (historically `cli_invoked`) or `$ai_generation` in the requested window. |
 | Organization DAU / WAU / MAU | Distinct authenticated organizations with gateway activity in the window, reported separately. |
 | D1 / D7 / D30 retention | Personally activated users with another qualifying personal event on the target day/window; compute organization retention separately. |
 | Answer rate | Completed gateway turns with `answered=true` divided by completed gateway turns. |

@@ -44,6 +44,7 @@ from infrastructure.analytics.destination import (
     AnalyticsDestination,
     resolve_analytics_destination,
 )
+from infrastructure.analytics.distribution import detect_distribution
 from infrastructure.analytics.events import Event
 from infrastructure.analytics.install_delivery import persist_observation
 from infrastructure.analytics.install_state import read_install_marker_state
@@ -807,6 +808,7 @@ _BASE_PROPERTIES: Final[Properties] = {
         else {}
     ),
     "container_runtime": _ANALYTICS_RUNTIME.container_runtime,
+    "distribution": detect_distribution(),
     "ci_detection_status": _ANALYTICS_RUNTIME.ci_detection_status,
     "container_detection_status": _ANALYTICS_RUNTIME.container_detection_status,
     "$process_person_profile": False,
@@ -852,11 +854,11 @@ class Analytics:
             _install_delivery_path(self._anonymous_id, self._destination)
         )
 
-    def capture(self, event: Event, properties: Properties | None = None) -> None:
+    def capture(self, event: str, properties: Properties | None = None) -> None:
         if self._disabled or self._shutdown:
             return
         merged = merge_usage_enrichment(
-            _coerce_properties(event.value, properties),
+            _coerce_properties(event, properties),
             defaults=_BASE_PROPERTIES | self._persistent_properties,
         )
         # Startup may load a project environment after this module was imported.
@@ -874,11 +876,15 @@ class Analytics:
             merged["execution_environment"] = "ci" if is_ci else "local"
         else:
             merged["execution_environment"] = "ci" if is_ci else "unknown"
+        # Loaded distribution and test traffic are process facts. Event payloads
+        # cannot relabel them.
+        merged["distribution"] = _BASE_PROPERTIES["distribution"]
+        merged["is_test"] = is_test_run()
         if event == Event.INSTALL_DETECTED and cicd_marker and not merged.get("install_origin"):
             merged["install_origin"] = "cicd"
         self._ensure_organization_group(merged)
         envelope = _Envelope(
-            event=event.value,
+            event=event,
             properties=merged,
             destination=self._destination,
         )

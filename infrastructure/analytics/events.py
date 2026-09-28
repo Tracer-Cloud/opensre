@@ -2,12 +2,24 @@
 
 from __future__ import annotations
 
+import re
+from collections.abc import Sequence
 from enum import StrEnum
+
+
+def cli_command_event_name(command_parts: Sequence[str]) -> str:
+    """Name an invocation from registered command tokens, excluding all operands."""
+    tokens = [part.lower().replace("-", "_") for part in command_parts]
+    if any(re.fullmatch(r"[a-z0-9]+(?:_[a-z0-9]+)*", token) is None for token in tokens):
+        raise ValueError("CLI analytics requires registered command names")
+    name = "_".join(("cli_command_opensre", *tokens))
+    if len(name) > 128:
+        raise ValueError("CLI analytics event name exceeds 128 characters")
+    return name
 
 
 class Event(StrEnum):
     # Lifecycle
-    CLI_INVOKED = "cli_invoked"
     ACCOUNT_AUTHENTICATED = "account_authenticated"
     # Mandatory interactive-shell sign-in gate: exposure, then one explicit
     # choice per menu round. Choosing sign-in is intent only; the account link
