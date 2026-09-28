@@ -23,6 +23,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import Callable
 from typing import Any
+from unicodedata import category
 
 from prompt_toolkit.application import Application
 from prompt_toolkit.layout.layout import Layout
@@ -78,19 +79,94 @@ def _raw_terminal_text(text: str) -> str:
     return text.replace("\r\n", "\n").replace("\n", "\r\n")
 
 
+def _terminal_safe_text(text: str) -> str:
+    """Replace terminal control characters with visible, inert glyphs."""
+    safe: list[str] = []
+    for char in text:
+        codepoint = ord(char)
+        if codepoint < 0x20:
+            safe.append(chr(0x2400 + codepoint))
+        elif codepoint == 0x7F:
+            safe.append("␡")
+        elif category(char) == "Cc":
+            safe.append("�")
+        else:
+            safe.append(char)
+    return "".join(safe)
+
+
+def _display_clusters(text: str) -> list[str]:
+    """Group characters that must stay together when clipping terminal text."""
+    clusters: list[str] = []
+    for char in text:
+        codepoint = ord(char)
+        joins_previous = bool(
+            clusters
+            and (
+                get_cwidth(char) == 0
+                or clusters[-1].endswith("\u200d")
+                or 0x1F3FB <= codepoint <= 0x1F3FF
+                or (
+                    0x1F1E6 <= codepoint <= 0x1F1FF
+                    and len(clusters[-1]) == 1
+                    and 0x1F1E6 <= ord(clusters[-1]) <= 0x1F1FF
+                )
+            )
+        )
+        if joins_previous:
+            clusters[-1] += char
+        elif get_cwidth(char) == 0:
+            clusters.append(f"◌{char}")
+        else:
+            clusters.append(char)
+    return clusters
+
+
+def _cluster_width(cluster: str) -> int:
+    """Return the display width of one grapheme-like terminal cluster."""
+    return max((get_cwidth(char) for char in cluster), default=0)
+
+
+def _prefix_clusters_within_width(clusters: list[str], width: int) -> tuple[str, int]:
+    selected: list[str] = []
+    cells = 0
+    for cluster in clusters:
+        cluster_width = _cluster_width(cluster)
+        if cells + cluster_width > width:
+            break
+        selected.append(cluster)
+        cells += cluster_width
+    return "".join(selected), cells
+
+
+def _suffix_clusters_within_width(clusters: list[str], width: int) -> tuple[str, int]:
+    selected: list[str] = []
+    cells = 0
+    for cluster in reversed(clusters):
+        cluster_width = _cluster_width(cluster)
+        if cells + cluster_width > width:
+            break
+        selected.append(cluster)
+        cells += cluster_width
+    return "".join(reversed(selected)), cells
+
+
 def _tail_within_width(text: str, width: int) -> str:
     """Return the longest suffix of ``text`` that fits ``width`` cells."""
     if width <= 0:
         return ""
-    cells = 0
-    suffix: list[str] = []
-    for char in reversed(text):
-        char_width = get_cwidth(char)
-        if cells + char_width > width:
-            break
-        suffix.append(char)
-        cells += char_width
-    return "".join(reversed(suffix))
+    suffix, _cells = _suffix_clusters_within_width(_display_clusters(text), width)
+    return suffix
+
+
+def _compact_input_window(before_cursor: str, after_cursor: str, width: int) -> str:
+    """Return a safe, clipped editor window with text around the caret."""
+    before = _display_clusters(_terminal_safe_text(before_cursor))
+    after = _display_clusters(_terminal_safe_text(after_cursor))
+    right, right_width = _prefix_clusters_within_width(after, width // 2)
+    left, left_width = _suffix_clusters_within_width(before, width - right_width)
+    right, _right_width = _prefix_clusters_within_width(after, width - left_width)
+    return f"{left}▌{right}"
 
 
 def _screen_row_width(
@@ -165,9 +241,13 @@ def install_shrink_resize_guard(
         line_width = max(0, columns - 1)
         label = "> " if line_width >= get_cwidth("> ") + get_cwidth(caret) else ""
         content_width = max(0, line_width - get_cwidth(label) - get_cwidth(caret))
-        before_cursor = pt_app.current_buffer.document.current_line_before_cursor
-        visible_input = _tail_within_width(before_cursor, content_width)
-        compact_line = f"{label}{visible_input}{caret}" if line_width else ""
+        document = pt_app.current_buffer.document
+        editor = _compact_input_window(
+            document.current_line_before_cursor,
+            document.current_line_after_cursor,
+            content_width,
+        )
+        compact_line = f"{label}{editor}" if line_width else ""
         with synchronized_output(output):
             output.write_raw("\r")
             output.erase_end_of_line()
@@ -185,6 +265,14 @@ def install_shrink_resize_guard(
             resize_handle.cancel()
             resize_handle = None
         if is_done:
+            if resize_deferred:
+                _render_deferred_input(pt_app)
+                resize_deferred = False
+                output.write_raw("\r\n")
+                output.reset_attributes()
+                output.enable_autowrap()
+                output.flush()
+                return
             resize_deferred = False
         elif resize_deferred:
             _render_deferred_input(pt_app)

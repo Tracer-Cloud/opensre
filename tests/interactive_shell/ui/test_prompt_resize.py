@@ -106,6 +106,8 @@ def test_live_region_height_cap_is_tight() -> None:
 def test_deferred_input_tail_uses_terminal_cell_width() -> None:
     assert _tail_within_width("ab界", 3) == "b界"
     assert _tail_within_width("ab界", 2) == "界"
+    assert _tail_within_width("x界́", 2) == "界́"
+    assert _tail_within_width("x界́", 1) == ""
 
 
 def test_synchronized_output_skips_private_mode_bytes_for_non_vt_output() -> None:
@@ -379,6 +381,7 @@ def test_deferred_resize_keeps_the_editable_line_responsive() -> None:
     size_state = [Size(rows=30, columns=90)]
     app, renderer, terminal = _painted_resize_app(size_state)
     app.current_buffer.document.current_line_before_cursor = "typed while tiny"
+    app.current_buffer.document.current_line_after_cursor = ""
     initial_render_count = renderer._original_render_count
 
     size_state[0] = Size(rows=3, columns=20)
@@ -387,6 +390,54 @@ def test_deferred_resize_keeps_the_editable_line_responsive() -> None:
 
     assert "> typed while tiny▌" in terminal.getvalue()
     assert renderer._original_render_count == initial_render_count
+
+
+def test_deferred_resize_shows_text_on_both_sides_of_the_caret() -> None:
+    size_state = [Size(rows=30, columns=90)]
+    app, renderer, terminal = _painted_resize_app(size_state)
+    app.current_buffer.document.current_line_before_cursor = "ab"
+    app.current_buffer.document.current_line_after_cursor = "c"
+
+    size_state[0] = Size(rows=3, columns=20)
+    app._on_resize()
+    renderer.render(app, Layout(Window(height=3)))
+
+    assert "> ab▌c" in terminal.getvalue()
+
+
+def test_deferred_resize_renders_control_characters_as_text() -> None:
+    size_state = [Size(rows=30, columns=90)]
+    app, renderer, terminal = _painted_resize_app(size_state)
+    app.current_buffer.document.current_line_before_cursor = "a\tb\x07"
+    app.current_buffer.document.current_line_after_cursor = ""
+
+    size_state[0] = Size(rows=3, columns=20)
+    app._on_resize()
+    renderer.render(app, Layout(Window(height=3)))
+
+    emitted = terminal.getvalue()
+    assert "a␉b␇▌" in emitted
+    assert "\t" not in emitted
+    assert "\x07" not in emitted
+
+
+def test_deferred_final_render_restores_modes_without_full_repaint() -> None:
+    size_state = [Size(rows=30, columns=90)]
+    app, renderer, terminal = _painted_resize_app(size_state)
+    app.current_buffer.document.current_line_before_cursor = "draft"
+    app.current_buffer.document.current_line_after_cursor = ""
+    initial_render_count = renderer._original_render_count
+
+    size_state[0] = Size(rows=3, columns=20)
+    app._on_resize()
+    renderer.render(app, Layout(Window(height=3)), is_done=True)
+
+    emitted = terminal.getvalue()
+    assert renderer._original_render_count == initial_render_count
+    compact_line = emitted.find("> draft▌")
+    assert compact_line >= 0
+    assert emitted.find("\r\n", compact_line) > compact_line
+    assert emitted.rfind("\x1b[?7h") > emitted.rfind("\x1b[?7l")
 
 
 def test_resize_erase_and_repaint_are_one_synchronized_frame() -> None:
