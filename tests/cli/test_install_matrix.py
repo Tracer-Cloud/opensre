@@ -291,7 +291,6 @@ def _run_install_sh(
                 "## Step 1: Install and start opensre",
                 "opensre\n",
                 "images/opensre-welcome.png",
-                "opensre onboard",
             ),
         ),
         (
