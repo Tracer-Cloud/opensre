@@ -11,9 +11,9 @@ from pathlib import Path
 
 import pytest
 
-import infrastructure.scheduling.scheduler.storage.run_store as run_store
 from infrastructure.scheduling.scheduler.storage import database, migrations
 from infrastructure.scheduling.scheduler.storage.run_store import (
+    _RECOVERABLE_RUNS_QUERY,
     ExecutionClaim,
     RecoverableRun,
     complete_run,
@@ -1057,7 +1057,7 @@ def test_recovery_query_uses_partial_indexes_without_scanning_completed_history(
         details = [
             str(row[3])
             for row in conn.execute(
-                f"EXPLAIN QUERY PLAN {run_store._RECOVERABLE_RUNS_QUERY}",
+                f"EXPLAIN QUERY PLAN {_RECOVERABLE_RUNS_QUERY}",
                 _recovery_query_arguments(datetime.now(UTC).isoformat(), limit=100),
             )
         ]

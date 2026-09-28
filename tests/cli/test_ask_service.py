@@ -360,6 +360,7 @@ def test_run_ask_leases_a_fresh_persisted_session_before_its_first_turn(monkeypa
 
     monkeypatch.setattr(service, "_ask_session_lock", _lock)
     monkeypatch.setattr(service, "_run_agent_turn", run_turn)
+    monkeypatch.setattr(service, "claim_process_session_id", lambda: None)
     monkeypatch.setattr(service, "uuid4", lambda: "fresh-session-id")
 
     service.run_ask("prompt", allowed_tools=(), bypass_approvals=False)

@@ -88,6 +88,8 @@ def _build_prompt_key_bindings() -> KeyBindings:
         if event.data in _MODIFIED_ENTER_SEQUENCES:
             event.current_buffer.newline(copy_margin=False)
             return
+        if event.current_buffer.complete_state is not None:
+            _tab_expand_or_menu(event.current_buffer)
         event.current_buffer.validate_and_handle()
 
     @bindings.add("c-j")
@@ -104,19 +106,31 @@ def _build_prompt_key_bindings() -> KeyBindings:
     def _shift_tab_complete(event: object) -> None:
         buff = event.current_buffer  # type: ignore[attr-defined]
         if buff.complete_state:
-            buff.complete_previous()
+            _move_completion(buff, -1)
         else:
             buff.start_completion(select_first=False)
 
     @bindings.add("down", filter=has_completions)
-    def _next_completion(event: object) -> None:
-        event.current_buffer.complete_next()  # type: ignore[attr-defined]
+    def _next_completion(event: KeyPressEvent) -> None:
+        _move_completion(event.current_buffer, 1)
 
     @bindings.add("up", filter=has_completions)
-    def _previous_completion(event: object) -> None:
-        event.current_buffer.complete_previous()  # type: ignore[attr-defined]
+    def _previous_completion(event: KeyPressEvent) -> None:
+        _move_completion(event.current_buffer, -1)
+
+    @bindings.add("escape", filter=has_completions, eager=True)
+    def _close_completions(event: KeyPressEvent) -> None:
+        event.current_buffer.cancel_completion()
 
     return bindings
+
+
+def _move_completion(buffer: Buffer, direction: int) -> None:
+    """Navigate from the visibly highlighted first row without an unselected stop."""
+    state = buffer.complete_state
+    if state is not None and state.completions:
+        index = (state.complete_index or 0) + direction
+        buffer.go_to_completion(max(0, min(index, len(state.completions) - 1)))
 
 
 def build_cancel_key_bindings(state: _DispatchCancelState) -> KeyBindings:
@@ -144,6 +158,9 @@ def build_cancel_key_bindings(state: _DispatchCancelState) -> KeyBindings:
 
     @kb.add("escape", eager=True)
     def _on_escape(event: KeyPressEvent) -> None:
+        if event.current_buffer.complete_state is not None:
+            event.current_buffer.cancel_completion()
+            return
         if state.is_dispatch_running():
             state.cancel_current_dispatch()
             return

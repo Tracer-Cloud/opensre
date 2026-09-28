@@ -13,6 +13,7 @@ from rich.table import Table
 
 from bootstrap.process import SCHEDULED_COMMAND_PROFILE, configure_process
 from infrastructure.scheduling.scheduler.delivery import SUPPORTED_DELIVERY_PROVIDERS
+from infrastructure.scheduling.scheduler.sources import CLI_SENTRY_MORNING_DIGEST
 from infrastructure.terminal.theme import GLYPH_ERROR, GLYPH_SUCCESS
 from surfaces.cli.commands.scheduling import add_task_and_echo, validate_cron_and_timezone
 
@@ -275,7 +276,7 @@ def sentry_digest_run(project_slug: str) -> None:
 
     configure_process(SCHEDULED_COMMAND_PROFILE)
     payload: dict[str, str] = {
-        "source": "cli_sentry_morning_digest",
+        "source": CLI_SENTRY_MORNING_DIGEST,
         "stats_period": "24h",
         "query": "is:unresolved",
     }

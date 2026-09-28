@@ -4,20 +4,32 @@ from __future__ import annotations
 
 from typing import Any
 
+from core.agent_harness.tools import capability_available_from_sources
 from core.tool import report_run_error
 from integrations.hosted_gateway.client import (
     ERR_ADMIN_REQUIRED,
     ERR_INSECURE_APP_URL,
     ERR_NOT_PROVISIONED,
+    ERR_NOT_RUNNING,
     ERR_NOT_SIGNED_IN,
     ERR_NOT_SUPPORTED,
+    ERR_PROMPT_TOO_LARGE,
     ERR_UNAUTHORIZED,
+    ERR_UNKNOWN_PROMPT,
     EXPECTED_ERRORS,
     GatewayHealth,
     HostedGatewayError,
 )
 
 SOURCE = "opensre"
+
+#: Withheld where there is no signed-in account to act for: on the hosted gateway itself.
+HOSTED_GATEWAY_CAPABILITY = "hosted_gateway"
+
+
+def hosted_gateway_available(sources: dict[str, dict[str, Any]]) -> bool:
+    return capability_available_from_sources(sources, HOSTED_GATEWAY_CAPABILITY)
+
 
 _SIGN_IN = "opensre account login"
 _FAILURE_TEXT = {
@@ -26,6 +38,9 @@ _FAILURE_TEXT = {
     ERR_NOT_SUPPORTED: "The OpenSRE app you are signed in to does not offer this yet.",
     ERR_ADMIN_REQUIRED: "Only an organization admin can start or stop the hosted gateway.",
     ERR_NOT_PROVISIONED: "Your organization has no hosted gateway to start or stop yet.",
+    ERR_NOT_RUNNING: "Your organization's hosted gateway is not running, so it cannot take a prompt.",
+    ERR_UNKNOWN_PROMPT: "The hosted gateway no longer holds that prompt; send it again.",
+    ERR_PROMPT_TOO_LARGE: "That prompt is too long for the hosted gateway; shorten it.",
     ERR_INSECURE_APP_URL: (
         "The OpenSRE app URL of this sign-in is not https, so the account token was not "
         f"sent. Sign in again with `{_SIGN_IN}`."
@@ -82,4 +97,12 @@ def gateway_name(health: GatewayHealth) -> str:
     return f" {health.gateway_id}" if health.gateway_id else ""
 
 
-__all__ = ["SOURCE", "STATE_OUTPUTS", "failure_output", "gateway_name", "state_output"]
+__all__ = [
+    "HOSTED_GATEWAY_CAPABILITY",
+    "SOURCE",
+    "STATE_OUTPUTS",
+    "failure_output",
+    "gateway_name",
+    "hosted_gateway_available",
+    "state_output",
+]

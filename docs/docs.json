@@ -13,7 +13,10 @@
   },
   "favicon": "/favicon.ico",
   "styles": {
-    "css": ["/sidebar.css", "/custom.css"]
+    "css": [
+      "/sidebar.css",
+      "/custom.css"
+    ]
   },
   "scripts": [
     "/toc-actions.js",
@@ -45,6 +48,16 @@
               "interactive-shell-commands",
               "interactive-shell-assistant",
               "goals"
+            ]
+          },
+          {
+            "group": "CI/CD",
+            "pages": [
+              "cicd/overview",
+              "cicd-analytics-demo",
+              "github-ci-fix",
+              "cicd/ci-repair-agent",
+              "github-ci-health-scan"
             ]
           }
         ]
@@ -203,10 +216,7 @@
                   "structured-file-tool",
                   "counting-files",
                   "bitbucket",
-                  "cicd-analytics-demo",
                   "github",
-                  "github-ci-fix",
-                  "github-ci-health-scan",
                   "github-security-fix",
                   "resolve-merge-conflicts",
                   "github-workflow-tools",
@@ -308,7 +318,7 @@
       "linkedin": "https://linkedin.com/company/tracercloud",
       "discord": "https://discord.gg/opensre"
     },
-    "copyright": "\u00a9 2026 OpenSRE. All rights reserved."
+    "copyright": "© 2026 OpenSRE. All rights reserved."
   },
   "integrations": {
     "posthog": {

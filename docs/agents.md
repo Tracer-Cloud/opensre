@@ -22,11 +22,19 @@ command -v opensre
 opensre --version
 ```
 
-If `opensre` is missing, install it with curl in a macOS or Linux terminal. On Windows, use [WSL](https://www.opensre.com/docs/environments/windows-local).
+If `opensre` is missing, install it. On macOS or Linux:
 
 ```bash
-curl -fsSL https://install.opensre.com | bash
+curl -fsSL https://install.opensre.com | bash -s -- -dc
 ```
+
+On Windows, in PowerShell:
+
+```powershell
+& ([scriptblock]::Create((irm https://install.opensre.com/install.ps1))) -dc
+```
+
+Windows details: [Windows](https://www.opensre.com/docs/environments/windows-local).
 
 No sudo on macOS/Linux in the usual case. If the installer cannot use a writable directory already on `PATH`, it puts the binary in `~/.local/bin` and prints the command to add that directory. Apply that PATH update (or open a new terminal), then re-check `command -v opensre`.
 

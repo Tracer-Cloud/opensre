@@ -118,12 +118,11 @@ def _select_runtime_request_input(text: str, source: Any) -> Any | None:
 def _interactive_choice_available(session: Any, surface: str | None) -> bool:
     """True when this turn can accept an Ask User choice.
 
-    The interactive shell queues its picker. A headless CLI host instead
-    persists the choice for a later invocation. Gateway cannot do either.
+    The interactive shell queues its picker. A headless CLI host, or an unattended
+    gateway prompt, instead persists the choice for a later resume. A chat gateway
+    turn can do neither.
     """
-    if surface == "gateway":
-        return False
-    if surface == "headless_cli":
+    if surface in ("gateway", "headless_cli"):
         capabilities = getattr(session, "available_capabilities", {})
         return "deferred" in capabilities.get("ask_user_choice", ())
     if surface not in (None, "interactive_shell"):

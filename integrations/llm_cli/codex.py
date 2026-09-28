@@ -10,6 +10,8 @@ from __future__ import annotations
 import os
 import subprocess
 
+from config.account import account_llm_route, hosted_openai_env
+from config.constants.llm import OPENAI_API_KEY_ENV
 from integrations.llm_cli.base import CLIInvocation, CLIProbe
 from integrations.llm_cli.binary_resolver import (
     candidate_binary_names as _candidate_binary_names,
@@ -85,6 +87,34 @@ def _fallback_codex_paths() -> list[str]:
 
 def _has_openai_api_key() -> bool:
     return bool(os.environ.get("OPENAI_API_KEY", "").strip())
+
+
+#: Codex ignores OPENAI_BASE_URL for its built-in provider; a named provider with
+#: an explicit base URL is what makes it call the hosted route.
+_HOSTED_PROVIDER = "opensre"
+
+
+def hosted_provider_overrides(base_url: str) -> list[str]:
+    """``-c`` overrides that point Codex at the hosted route as its model provider."""
+    return [
+        "-c",
+        f"model_provider={_HOSTED_PROVIDER}",
+        "-c",
+        f'model_providers.{_HOSTED_PROVIDER}.name="OpenSRE"',
+        "-c",
+        f'model_providers.{_HOSTED_PROVIDER}.base_url="{base_url}"',
+        "-c",
+        f'model_providers.{_HOSTED_PROVIDER}.env_key="{OPENAI_API_KEY_ENV}"',
+        "-c",
+        f'model_providers.{_HOSTED_PROVIDER}.wire_api="responses"',
+    ]
+
+
+def _hosted_route_applies() -> bool:
+    """Hosted credentials stand in only when no OPENAI_* variable names a route of the user's own."""
+    if nonempty_env_values(OPENAI_PLATFORM_ENV_KEYS):
+        return False
+    return hosted_openai_env() is not None
 
 
 def _should_probe_codex_login_status() -> bool:
@@ -163,6 +193,11 @@ class CodexAdapter:
             # Allow API-key auth when ChatGPT/session login is absent or unclear.
             logged_in = True
             auth_detail = "Authenticated via OPENAI_API_KEY fallback."
+        elif logged_in is not True and _hosted_route_applies():
+            # A hosted gateway never runs ``codex login``: the account token is
+            # Codex's API key and the webapp's OpenAI-compatible route its base URL.
+            logged_in = True
+            auth_detail = "Authenticated via the hosted OpenSRE account route."
 
         detail = auth_detail + upgrade_note
         return CLIProbe(
@@ -217,7 +252,19 @@ class CodexAdapter:
         if skip_git:
             argv.append("--skip-git-repo-check")
 
+        oai = nonempty_env_values(OPENAI_PLATFORM_ENV_KEYS)
+        hosted_route = None
+        if _hosted_route_applies():
+            # The same rule the probe applies: the account token is only ever paired
+            # with the hosted route, never with a base URL configured elsewhere.
+            oai = dict(hosted_openai_env() or {})
+            hosted_route = account_llm_route()
         resolved_model = (model or "").strip()
+        if hosted_route is not None:
+            argv.extend(hosted_provider_overrides(hosted_route.base_url))
+            if not resolved_model:
+                # Codex's own default model is not what the hosted route serves.
+                resolved_model = hosted_route.model
         if resolved_model:
             argv.extend(["-m", resolved_model])
         if reasoning_effort:
@@ -225,7 +272,6 @@ class CodexAdapter:
 
         argv.append("-")
 
-        oai = nonempty_env_values(OPENAI_PLATFORM_ENV_KEYS)
         return CLIInvocation(
             argv=tuple(argv),
             stdin=prompt,

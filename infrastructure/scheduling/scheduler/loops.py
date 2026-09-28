@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
+from config.constants.scheduler import WEEKDAY_CRON_FIELD
 from core.agent_harness import pin_recurring_skill
 from infrastructure.scheduling.scheduler.credentials import (
     resolve_slack_credentials,
@@ -33,6 +34,9 @@ from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_SLACK_CHAT_ID_PARAM,
     LOOP_SLUG_PARAM,
     LOOP_SOURCE_PARAM,
+    LOOP_STATUS_ACTIVE,
+    LOOP_STATUS_DRAFT,
+    LOOP_STATUS_PAUSED,
     LOOP_TELEGRAM_CHAT_ID_PARAM,
     LOOP_TIME_PARAM,
 )
@@ -116,7 +120,10 @@ class LoopSummary:
 
     @property
     def status(self) -> str:
-        return "active" if self.enabled else "draft"
+        """Active while enabled; a disabled loop that has run is paused, one that never ran a draft."""
+        if self.enabled:
+            return LOOP_STATUS_ACTIVE
+        return LOOP_STATUS_PAUSED if self.last_run else LOOP_STATUS_DRAFT
 
     @property
     def time(self) -> str:
@@ -142,7 +149,7 @@ STARTER_LOOPS: tuple[StarterLoop, ...] = (
         name="Morning report",
         description="Weekday weather and news briefing.",
         kind=TaskKind.RECURRING_SKILL,
-        cron="0 8 * * 1-5",
+        cron=f"0 8 * * {WEEKDAY_CRON_FIELD}",
         timezone="UTC",
         window_hours=24,
         skill_name="delivering-morning-briefings",
@@ -152,7 +159,7 @@ STARTER_LOOPS: tuple[StarterLoop, ...] = (
         name="Weekly alert audit",
         description="Monday review of noisy and actionable alert patterns.",
         kind=TaskKind.MANUAL_LOOP,
-        cron="0 9 * * 1",
+        cron="0 9 * * mon",
         timezone="UTC",
         window_hours=168,
         prompt=(
@@ -165,7 +172,7 @@ STARTER_LOOPS: tuple[StarterLoop, ...] = (
         name="PR sweep",
         description="Weekday standup digest for stale, blocked, or ready pull requests.",
         kind=TaskKind.GITHUB_PR_SWEEP,
-        cron="0 9 * * 1-5",
+        cron=f"0 9 * * {WEEKDAY_CRON_FIELD}",
         timezone="UTC",
         window_hours=24,
     ),
@@ -231,7 +238,7 @@ def loop_time_label(cron: str) -> str:
 def cron_for_time(time_text: str, *, weekdays: bool = False) -> str:
     """Build a daily or weekday cron expression from a human time string."""
     hour, minute = parse_loop_time(time_text)
-    day_of_week = "1-5" if weekdays else "*"
+    day_of_week = WEEKDAY_CRON_FIELD if weekdays else "*"
     return f"{minute} {hour} * * {day_of_week}"
 
 
@@ -409,24 +416,35 @@ def summarize_loop(
     return _summarize_group((task,), now=now)
 
 
+def summarize_loops(
+    tasks: Sequence[ScheduledTask],
+    *,
+    include_disabled: bool = True,
+    now: datetime | None = None,
+) -> list[LoopSummary]:
+    """Group already-loaded tasks into loops, sorted with active loops first."""
+    task_groups: dict[str, list[ScheduledTask]] = {}
+    for task in tasks:
+        if not include_disabled and not task.enabled:
+            continue
+        task_groups.setdefault(_loop_group_id(task), []).append(task)
+
+    summaries = [_summarize_group(tuple(group), now=now) for group in task_groups.values()]
+    return sorted(
+        summaries,
+        key=lambda loop: (not loop.enabled, loop.name.casefold(), loop.id),
+    )
+
+
 def list_loop_summaries(
     *,
     include_disabled: bool = True,
     store_path: Path | None = None,
     now: datetime | None = None,
 ) -> list[LoopSummary]:
-    """Return configured loops, sorted with active loops first."""
-    task_groups: dict[str, list[ScheduledTask]] = {}
-    for task in list_tasks(store_path):
-        if not include_disabled and not task.enabled:
-            continue
-        task_groups.setdefault(_loop_group_id(task), []).append(task)
-
-    summaries = [_summarize_group(tuple(tasks), now=now) for tasks in task_groups.values()]
-    return sorted(
-        summaries,
-        key=lambda loop: (not loop.enabled, loop.name.casefold(), loop.id),
-    )
+    """Return configured loops from the store, sorted with active loops first."""
+    tasks = list_tasks(store_path)
+    return summarize_loops(tasks, include_disabled=include_disabled, now=now)
 
 
 def resolve_loop_summary(
@@ -759,6 +777,7 @@ __all__ = [
     "default_loop_channels",
     "delete_loop",
     "list_loop_summaries",
+    "summarize_loops",
     "loop_channels",
     "loop_description",
     "loop_name",

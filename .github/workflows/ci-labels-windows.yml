@@ -12,6 +12,7 @@ permissions:
   contents: read
 
 env:
+  OPENSRE_CICD: "1"
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   # Keep in sync with ci.yml — single source of truth for lint/typecheck/coverage targets.
   PYTHON_SOURCE_PATHS: "bootstrap config core integrations infrastructure surfaces tools"

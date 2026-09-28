@@ -16,7 +16,7 @@ import threading
 import time
 import uuid
 from collections.abc import Iterator
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from http import HTTPStatus
 from pathlib import Path
@@ -30,12 +30,14 @@ from config.constants.analytics import (
     ANALYTICS_EVENT_SCHEMA_VERSION,
     ANALYTICS_LOG_EVENTS_ENV,
     ANALYTICS_MAX_PAYLOAD_BYTES,
+    ANALYTICS_PROPERTIES_VERSION,
     ANALYTICS_SOURCE,
 )
 from config.version import get_opensre_version
 from infrastructure.analytics.analytics_runtime import (
     detect_analytics_runtime,
     detect_container_runtime,
+    has_cicd_marker,
     is_ci_environment,
 )
 from infrastructure.analytics.destination import (
@@ -43,8 +45,10 @@ from infrastructure.analytics.destination import (
     resolve_analytics_destination,
 )
 from infrastructure.analytics.events import Event
+from infrastructure.analytics.install_delivery import persist_observation
 from infrastructure.analytics.install_state import read_install_marker_state
 from infrastructure.analytics.runner_provenance import execution_evidence
+from infrastructure.analytics.source import is_test_run
 from infrastructure.analytics.usage_context import (
     ORGANIZATION_GROUP_TYPE,
     merge_usage_enrichment,
@@ -119,6 +123,7 @@ class _Envelope:
     destination: AnalyticsDestination | None = field(repr=False)
     event_id: str = field(default_factory=_new_event_id)
     occurred_at: str = field(default_factory=_event_timestamp)
+    body: bytes | None = field(default=None, repr=False)
 
 
 @dataclass(frozen=True, slots=True)
@@ -760,6 +765,7 @@ _COMPOSITE_FINGERPRINT = _build_composite_fingerprint()
 _ANALYTICS_RUNTIME = detect_analytics_runtime()
 
 _BASE_PROPERTIES: Final[Properties] = {
+    "analytics_properties_version": ANALYTICS_PROPERTIES_VERSION,
     "cli_version": _cli_version(),
     "python_version": platform.python_version(),
     "os_family": platform.system().lower(),
@@ -769,8 +775,15 @@ _BASE_PROPERTIES: Final[Properties] = {
     "composite_fingerprint_components": _COMPOSITE_FINGERPRINT.components,
     "execution_environment": _ANALYTICS_RUNTIME.execution_environment,
     "is_ci": _ANALYTICS_RUNTIME.is_ci,
-    "is_container": _ANALYTICS_RUNTIME.is_container,
+    "is_test": is_test_run(),
+    **(
+        {"is_container": _ANALYTICS_RUNTIME.is_container}
+        if _ANALYTICS_RUNTIME.is_container is not None
+        else {}
+    ),
     "container_runtime": _ANALYTICS_RUNTIME.container_runtime,
+    "ci_detection_status": _ANALYTICS_RUNTIME.ci_detection_status,
+    "container_detection_status": _ANALYTICS_RUNTIME.container_detection_status,
     "$process_person_profile": False,
 }
 
@@ -813,16 +826,38 @@ class Analytics:
         if self._disabled or self._shutdown:
             return
         merged = merge_usage_enrichment(
-            _BASE_PROPERTIES
-            | self._persistent_properties
-            | _coerce_properties(event.value, properties)
+            _coerce_properties(event.value, properties),
+            defaults=_BASE_PROPERTIES | self._persistent_properties,
         )
+        # Startup may load a project environment after this module was imported.
+        # Recheck cheap CI signals without repeating container filesystem probes.
+        is_ci = is_ci_environment()
+        cicd_marker = has_cicd_marker()
+        merged["is_ci"] = is_ci
+        merged["cicd_marker"] = cicd_marker
+        merged["ci_detection_status"] = "detected" if is_ci else "not_detected"
+        container = _ANALYTICS_RUNTIME.is_container
+        if container is True:
+            merged["execution_environment"] = "ci_container" if is_ci else "container"
+        elif container is False:
+            merged["execution_environment"] = "ci" if is_ci else "local"
+        else:
+            merged["execution_environment"] = "ci" if is_ci else "unknown"
+        if event == Event.INSTALL_DETECTED and cicd_marker and not merged.get("install_origin"):
+            merged["install_origin"] = "cicd"
         self._ensure_organization_group(merged)
         envelope = _Envelope(
             event=event.value,
             properties=merged,
             destination=self._destination,
         )
+        if event == Event.INSTALL_DETECTED:
+            body = self._serialize(self._payload(envelope))
+            try:
+                body = persist_observation(_CONFIG_DIR, self._anonymous_id, body)
+            except (OSError, ValueError) as exc:
+                _log_failure("install_observation", exc)
+            envelope = replace(envelope, body=body)
         self._enqueue(envelope)
 
     def set_persistent_property(self, key: str, value: JsonScalar) -> None:
@@ -1009,19 +1044,17 @@ class Analytics:
             # thread exits cleanly without surfacing infrastructure noise to Sentry.
             _log_failure("worker_loop_fatal", exc)
 
-    def _send(self, client: httpx.Client, item: _Envelope) -> None:
-        destination = item.destination
-        if destination is None:
-            return
+    def _payload(self, item: _Envelope) -> Properties:
         properties: Properties = {
             **item.properties,
             "distinct_id": self._anonymous_id,
             "$lib": "opensre-cli",
             "identity_persistence": self._identity_persistence,
         }
-        execution_properties, execution_headers = execution_evidence(
+        endpoint_url = item.destination.endpoint_url if item.destination is not None else ""
+        execution_properties, _execution_headers = execution_evidence(
             self._anonymous_id,
-            endpoint_url=destination.endpoint_url,
+            endpoint_url=endpoint_url,
             is_ci=properties.get("is_ci") is True,
             is_container=properties.get("is_container") is True,
         )
@@ -1029,8 +1062,7 @@ class Analytics:
         insert_id = _event_insert_id(item.event, self._anonymous_id)
         if insert_id is not None:
             properties["$insert_id"] = insert_id
-        _log_event_line(item.event, properties)
-        payload = {
+        return {
             "schema_version": ANALYTICS_EVENT_SCHEMA_VERSION,
             "event_id": insert_id or item.event_id,
             "occurred_at": item.occurred_at,
@@ -1039,12 +1071,37 @@ class Analytics:
             "event": item.event,
             "properties": properties,
         }
-        body = json.dumps(
+
+    @staticmethod
+    def _serialize(payload: Properties) -> bytes:
+        return json.dumps(
             payload,
             ensure_ascii=False,
             separators=(",", ":"),
             sort_keys=True,
         ).encode("utf-8")
+
+    def _send(self, client: httpx.Client, item: _Envelope) -> None:
+        destination = item.destination
+        if destination is None:
+            return
+        if item.body is None:
+            payload = self._payload(item)
+            body = self._serialize(payload)
+        else:
+            body = item.body
+            payload = json.loads(body)
+        properties = payload["properties"]
+        if isinstance(properties, dict):
+            _log_event_line(item.event, properties)
+        else:
+            properties = {}
+        _, execution_headers = execution_evidence(
+            self._anonymous_id,
+            endpoint_url=destination.endpoint_url,
+            is_ci=properties.get("is_ci") is True,
+            is_container=properties.get("is_container") is True,
+        )
         if len(body) > ANALYTICS_MAX_PAYLOAD_BYTES:
             _log_failure(
                 "analytics_send",

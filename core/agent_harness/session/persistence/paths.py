@@ -18,9 +18,9 @@ _NAME_MAX_CHARS = 50
 
 
 def sessions_dir() -> Path:
-    from config.constants.paths import session_home
+    from config.constants.paths import get_sessions_dir
 
-    return session_home() / "sessions"
+    return get_sessions_dir()
 
 
 def session_path(session_id: str) -> Path:

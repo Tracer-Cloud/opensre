@@ -21,6 +21,7 @@ def run_process(
     *,
     ci: bool = False,
     silo: bool = False,
+    cicd: bool = False,
     execution_context: Path | None = None,
     app_url: str = "https://integrity.invalid",
 ) -> dict[str, Any]:
@@ -54,6 +55,8 @@ def run_process(
         env["GITHUB_ACTIONS"] = "true"
     if execution_context is not None:
         env["OPENSRE_EXECUTION_CONTEXT_PATH"] = str(execution_context)
+    if cicd:
+        env["OPENSRE_CICD"] = "1"
     if silo:
         env.update(
             {
@@ -112,6 +115,22 @@ def test_runner_context_survives_stripped_ci_environment(tmp_path: Path) -> None
 
 def installs(result: dict[str, Any]) -> list[dict[str, Any]]:
     return [r["payload"] for r in result["requests"] if r["payload"]["event"] == "install_detected"]
+
+
+@pytest.mark.parametrize("scenario", ["start", "late_cicd_marker"])
+def test_explicit_cicd_marker_classifies_a_fresh_process_without_vendor_signals(
+    tmp_path: Path,
+    scenario: str,
+) -> None:
+    result = run_process(tmp_path / "cicd", scenario, cicd=scenario == "start")
+    properties = installs(result)[0]["properties"]
+    assert properties["install_origin"] == "cicd"
+    for request in result["requests"]:
+        runtime = request["payload"]["properties"]
+        assert runtime["is_ci"] is True
+        assert runtime["cicd_marker"] is True
+        assert runtime["execution_environment"] in {"ci", "ci_container"}
+    record_evidence(f"explicit-cicd-marker-{scenario}", result)
 
 
 def record_evidence(name: str, evidence: object) -> None:

@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from infrastructure.scheduling.scheduler.tasks import build_message
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
 from tests.scheduler._bundle import runners_with_agent
@@ -55,29 +57,43 @@ def test_github_ci_health_recurring_skill_preserves_repository_scope() -> None:
     ]
 
 
-def test_scheduled_agent_routes_github(monkeypatch) -> None:
-    from integrations.scheduled_agent_bootstrap import run_scheduled_agent_digest
+def test_scheduled_agent_runs_the_runner_registered_for_the_source(monkeypatch) -> None:
+    from infrastructure.scheduling.scheduler.sources import (
+        SCHEDULED_GITHUB_PR_SWEEP,
+        SCHEDULED_RECURRING_SKILL,
+        SCHEDULED_SENTRY_MORNING_DIGEST,
+        SCHEDULED_SENTRY_UPTIME_WATCH,
+    )
+    from integrations.scheduled_agent_bootstrap import (
+        RUNNERS,
+        ScheduledRunner,
+        run_scheduled_agent_digest,
+    )
 
-    monkeypatch.setattr(
-        "integrations.scheduled_agent_bootstrap.run_github_pr_sweep",
-        lambda _payload: "gh",
-    )
-    monkeypatch.setattr(
-        "integrations.scheduled_agent_bootstrap.run_scheduled_recurring_skill",
-        lambda _payload: "ci-health",
-    )
-    monkeypatch.setattr(
-        "integrations.scheduled_agent_bootstrap.run_sentry_morning_digest",
-        lambda _payload: "sentry",
-    )
+    # Arrange
+    for source, reply in (
+        (SCHEDULED_GITHUB_PR_SWEEP, "gh"),
+        (SCHEDULED_RECURRING_SKILL, "ci-health"),
+        (SCHEDULED_SENTRY_MORNING_DIGEST, "sentry"),
+    ):
+        monkeypatch.setitem(RUNNERS, source, ScheduledRunner(lambda _p, reply=reply: reply))
     monkeypatch.setattr(
         "integrations.scheduled_agent_bootstrap.run_uptime_watch_tick",
         lambda **_kwargs: "uptime",
     )
-    assert run_scheduled_agent_digest({"source": "scheduled_github_pr_sweep"}) == "gh"
-    assert run_scheduled_agent_digest({"source": "scheduled_recurring_skill"}) == "ci-health"
-    assert run_scheduled_agent_digest({"source": "scheduled_sentry_morning_digest"}) == "sentry"
+
+    # Act / Assert
+    assert run_scheduled_agent_digest({"source": SCHEDULED_GITHUB_PR_SWEEP}) == "gh"
+    assert run_scheduled_agent_digest({"source": SCHEDULED_RECURRING_SKILL}) == "ci-health"
+    assert run_scheduled_agent_digest({"source": SCHEDULED_SENTRY_MORNING_DIGEST}) == "sentry"
     assert (
-        run_scheduled_agent_digest({"source": "scheduled_sentry_uptime_watch", "task_id": "t1"})
+        run_scheduled_agent_digest({"source": SCHEDULED_SENTRY_UPTIME_WATCH, "task_id": "t1"})
         == "uptime"
     )
+
+
+def test_an_unregistered_source_is_refused_not_guessed() -> None:
+    from integrations.scheduled_agent_bootstrap import run_scheduled_agent_digest
+
+    with pytest.raises(RuntimeError, match="No scheduled runner"):
+        run_scheduled_agent_digest({"source": "something_new"})

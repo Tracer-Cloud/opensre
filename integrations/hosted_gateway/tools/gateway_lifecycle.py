@@ -7,6 +7,10 @@ from typing import Any
 from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel
 from core.tool_framework import tool
+from infrastructure.analytics.capture import (
+    capture_hosted_gateway_healthy,
+    capture_hosted_gateway_started,
+)
 from integrations.hosted_gateway.client import (
     GatewayHealth,
     HostedGatewayClient,
@@ -17,6 +21,7 @@ from integrations.hosted_gateway.tools.results import (
     STATE_OUTPUTS,
     failure_output,
     gateway_name,
+    hosted_gateway_available,
     state_output,
 )
 
@@ -51,13 +56,20 @@ _WHOSE = (
         "Starts the organization's hosted gateway on Fargate; it runs, and is billed, until "
         "it is stopped."
     ),
+    is_available=hosted_gateway_available,
     input_schema=_NO_INPUT,
     outputs=STATE_OUTPUTS,
 )
 def start_hosted_gateway() -> dict[str, Any]:
-    """Ask the OpenSRE app to start the signed-in organization's gateway."""
+    """Ask the OpenSRE app to start the signed-in organization's gateway.
+
+    The start is always requested, so the app's admin check and its refusals
+    apply. A health read beforehand only shapes the reply: a gateway that was
+    already running is told so. That read is best effort and never blocks the start.
+    """
     try:
         with HostedGatewayClient.from_account() as client:
+            was_running = _was_running(client)
             health = client.start()
     except HostedGatewayError as exc:
         return failure_output(
@@ -65,7 +77,25 @@ def start_hosted_gateway() -> dict[str, Any]:
             tool_name=START_TOOL_NAME,
             component="integrations.hosted_gateway.tools.gateway_lifecycle.start_hosted_gateway",
         )
+    already_running = was_running and health.healthy
+    capture_hosted_gateway_started(
+        gateway_id=health.gateway_id,
+        actual_state=health.actual_state,
+        already_running=already_running,
+    )
+    if health.healthy:
+        capture_hosted_gateway_healthy(gateway_id=health.gateway_id, tool_name=START_TOOL_NAME)
+    if already_running:
+        return state_output(health, _already_running(health))
     return state_output(health, _started(health))
+
+
+def _was_running(client: HostedGatewayClient) -> bool:
+    """Whether the gateway was healthy before the start; unknown reads as not running."""
+    try:
+        return client.health().healthy
+    except HostedGatewayError:
+        return False
 
 
 @tool(
@@ -89,6 +119,7 @@ def start_hosted_gateway() -> dict[str, Any]:
         "Stops the organization's hosted gateway: the loops and chat integrations it serves "
         "for the whole organization stop until it is started again."
     ),
+    is_available=hosted_gateway_available,
     input_schema=_NO_INPUT,
     outputs=STATE_OUTPUTS,
 )
@@ -104,6 +135,11 @@ def stop_hosted_gateway() -> dict[str, Any]:
             component="integrations.hosted_gateway.tools.gateway_lifecycle.stop_hosted_gateway",
         )
     return state_output(health, _stopped(health))
+
+
+def _already_running(health: GatewayHealth) -> str:
+    name = gateway_name(health)
+    return f"Your organization's hosted gateway{name} is already running; nothing to start."
 
 
 def _started(health: GatewayHealth) -> str:

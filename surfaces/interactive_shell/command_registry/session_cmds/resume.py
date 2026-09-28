@@ -18,11 +18,16 @@ from surfaces.interactive_shell.command_registry.session_cmds.resume_rendering i
 )
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.ui import DIM, ERROR, HIGHLIGHT, WARNING
+from surfaces.interactive_shell.ui.resume_picker import (
+    ResumeMenuItem,
+    choose_resume_session,
+)
 from surfaces.shared.terminal.components.choice_menu import (
-    repl_choose_one,
+    prepare_repl_output_line,
     repl_tty_interactive,
 )
-from surfaces.shared.terminal.components.time_format import format_repl_timestamp
+
+_RECENT_CONVERSATION_LIMIT = 200
 
 
 def _record_resume_slash(
@@ -43,30 +48,37 @@ def _record_resume_slash(
 
 
 def _interactive_resume_menu(session: Session, console: Console) -> bool:
-    """Show a numbered list of recent sessions and resume the selected one."""
-    from core.agent_harness.spi.defaults import default_session_repo
-
-    entries = [
-        e for e in default_session_repo().load_recent(10) if e["session_id"] != session.session_id
-    ]
-    if not entries:
-        console.print(f"[{DIM}]No previous sessions to resume.[/]")
-        return True
-
-    choices: list[tuple[str, str]] = []
-    for entry in entries:
+    """Show recent conversations and resume the selected one."""
+    repo = default_session_repo()
+    items: list[ResumeMenuItem] = []
+    for entry in repo.load_recent(
+        _RECENT_CONVERSATION_LIMIT + 1,
+        require_conversation=True,
+    ):
         sid = entry["session_id"]
-        short_id = sid[:8]
-        name = entry.get("name") or f"[{short_id}]"
-        started_str = format_repl_timestamp(entry.get("started_at"), style="compact")
-        label = f"{name[:40]:<40}  {short_id}  {started_str}"
-        choices.append((sid, label))
-    choices.append(("done", "done"))
-
-    picked = repl_choose_one(title="resume session", breadcrumb="/resume", choices=choices)
-    if picked is None or picked == "done":
+        if sid == session.session_id:
+            continue
+        title = entry.get("conversation_title") or ""
+        if not title:
+            continue
+        items.append(
+            ResumeMenuItem(
+                session_id=sid,
+                title=title,
+                activity_at=entry.get("activity_at") or entry.get("started_at"),
+            )
+        )
+        if len(items) >= _RECENT_CONVERSATION_LIMIT:
+            break
+    if not items:
+        console.print(f"[{DIM}]No previous conversations to resume.[/]")
         return True
 
+    picked = choose_resume_session(items)
+    if picked is None:
+        return True
+
+    prepare_repl_output_line()
     slash_command = f"/resume {picked[:8]}"
     if not _do_resume(picked, session, console, slash_command=slash_command):
         _record_resume_slash(session, [], picked_id=picked, ok=False)

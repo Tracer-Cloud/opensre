@@ -467,6 +467,7 @@ def run_ci_fix(
                 baseline=baseline,
                 github_token=github_token,
                 already_committed=merge is not None or committed,
+                recorded_through=merge.commit_sha if merge is not None else ctx.head_sha,
             )
         except GitHubCiFixError as exc:
             return push_error_output(output, exc)
@@ -593,6 +594,7 @@ def _merge_after_conflicted_push(
             baseline=pre_coding_changes(workspace),
             github_token=github_token,
             already_committed=True,
+            recorded_through=merge.commit_sha,
         )
     except GitHubCiFixError as exc:
         base_branch = ctx.base_branch or "the base branch"

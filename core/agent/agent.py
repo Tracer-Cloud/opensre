@@ -20,11 +20,11 @@ from core.agent.provider_hooks import ProviderHookDelegate
 from core.agent.react_loop import run_react_loop
 from core.agent.run_io import AgentRunInput, AgentRunResult
 from core.events import RuntimeEventCallback, TupleEventCallback
-from core.llm.types import AgentLLMClient
+from core.llm.types import AgentLLMClient, ToolCall
 from core.messages import ProviderMessage, RuntimeMessage, RuntimeMessageLike
 from core.provider import ProviderHooks, ProviderRequest
 from core.tool.contracts import RuntimeTool
-from core.tool.execution import ToolExecutionHooks
+from core.tool.execution import ToolExecutionHooks, ToolExecutionResult
 
 if TYPE_CHECKING:
     from core.agent.goals import Goal
@@ -144,6 +144,7 @@ class Agent[RuntimeToolT: RuntimeTool](EventEmitterMixin, ToolFilterMixin, Steer
         evidence_count: int,
         iteration: int,
         final_text: str = "",
+        tool_results: Sequence[tuple[ToolCall, ToolExecutionResult]] = (),
     ) -> tuple[bool, str | None]:
         """Hook: decide what to do when the LLM stops requesting tools.
 
@@ -175,6 +176,7 @@ class Agent[RuntimeToolT: RuntimeTool](EventEmitterMixin, ToolFilterMixin, Steer
             evidence_count=evidence_count,
             iteration=iteration,
             max_iterations=self._effective_max_iterations,
+            tool_results=tool_results,
         )
 
     # Thin forwarders to ``self._hooks`` (a ProviderHookDelegate). Kept as

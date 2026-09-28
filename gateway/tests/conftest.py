@@ -7,6 +7,7 @@ from pathlib import Path
 
 import pytest
 
+from config.constants import OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV
 from config.constants.billing import MACHINE_SECRET_ENV, USAGE_SECRET_ENV, WEBAPP_URL_ENV
 from gateway.core.process import component_status, supervision
 
@@ -22,10 +23,15 @@ def _isolate_opensre_home(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> No
     credential lookup miss ``integrations.json`` and fall through to the OS
     keychain, which blocks on a GUI prompt, so the pair must move together the
     way ``tests/conftest.py`` keeps them.
+
+    Session-end memory extraction stays off too: a recorded turn would start a
+    daemon thread that calls the real LLM with the CI key from inside the test
+    worker, outliving the test that recorded it.
     """
     from config.constants import paths
 
     monkeypatch.setenv("OPENSRE_DISABLE_KEYRING", "1")
+    monkeypatch.setenv(OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV, "1")
     monkeypatch.setattr(paths, "OPENSRE_HOME_DIR", tmp_path / "opensre-home")
 
 

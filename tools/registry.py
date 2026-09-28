@@ -164,6 +164,7 @@ def clear_tool_registry_cache() -> None:
     _load_registry_snapshot.cache_clear()
     _load_registry_tool_map.cache_clear()
     _load_surface_snapshot.cache_clear()
+    _integration_by_tool_name.cache_clear()
     from tools.registry_index import clear_descriptor_index_cache
 
     clear_descriptor_index_cache()
@@ -183,6 +184,28 @@ def get_registered_tool(tool_name: str) -> RegisteredTool | None:
     linear scan of it (``get_registered_tools``).
     """
     return _load_registry_tool_map().get(tool_name)
+
+
+@lru_cache(maxsize=1)
+def _integration_by_tool_name() -> dict[str, str]:
+    """Tool name -> the integration whose package defines it, from the descriptor index."""
+    from tools.registry_index import build_descriptor_index
+
+    owners: dict[str, str] = {}
+    for name, descriptor in build_descriptor_index().items():
+        parts = descriptor.module.split(".")
+        if len(parts) > 2 and parts[0] == "integrations":
+            owners[name] = parts[1]
+    return owners
+
+
+def integration_of_tool(tool_name: str) -> str | None:
+    """The integration that owns ``tool_name`` (``github``, ``s3``, ...), or ``None``.
+
+    Decided by where the registry discovered the tool, not by its evidence
+    ``source``, which vendors set independently.
+    """
+    return _integration_by_tool_name().get(tool_name)
 
 
 def describe_registered_tool(tool_name: str) -> tuple[str, ...]:

@@ -16,6 +16,10 @@ Event on the concrete sink before the turn; retargetable output adapters
 forward ``turn_cancel`` so the harness output port and the transport share
 one signal.
 
+Scheduled ticks write that same Event when the stored task is disabled or
+removed (:class:`PredicateCancelConsole`). Do not invent a second cancel
+channel.
+
 The shell sink shares its ``StreamingConsole.cancel_event`` as ``turn_cancel``
 so cancelling the UI and the worker signals the same turn.
 """
@@ -87,9 +91,62 @@ def cancel_tool_resources(is_cancelled: Callable[[], bool] | None) -> dict[str, 
     }
 
 
+_PREDICATE_OWN_ATTRIBUTES = frozenset({"_inner", "_event", "_is_cancelled"})
+
+
+class PredicateCancelConsole:
+    """Console that writes the host cancel Event when ``is_cancelled`` is true.
+
+    Readers still use ``event`` / ``cancel_requested`` — this is a writer, not
+    a second channel.
+    """
+
+    def __init__(
+        self,
+        inner: Any,
+        event: threading.Event,
+        is_cancelled: Callable[[], bool],
+    ) -> None:
+        self._inner = inner
+        self._event = event
+        self._is_cancelled = is_cancelled
+
+    @property
+    def cancel_requested(self) -> bool:
+        if not self._event.is_set() and self._is_cancelled():
+            self._event.set()
+        return self._event.is_set()
+
+    def print(self, *args: Any, **kwargs: Any) -> None:
+        self._inner.print(*args, **kwargs)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self._inner, name)
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        if name in _PREDICATE_OWN_ATTRIBUTES:
+            super().__setattr__(name, value)
+            return
+        setattr(self._inner, name, value)
+
+
+def bind_cancel_predicate(
+    output: Any,
+    is_cancelled: Callable[[], bool],
+    *,
+    console: Any | None = None,
+) -> PredicateCancelConsole:
+    """Attach the host cancel Event and a console that writes it from ``is_cancelled``."""
+    event = ensure_turn_cancel(output)
+    inner = console if console is not None else CancelProbeConsole(is_cancelled=is_cancelled)
+    return PredicateCancelConsole(inner, event, is_cancelled)
+
+
 __all__ = [
     "CancelProbeConsole",
     "CancelProbeContext",
+    "PredicateCancelConsole",
+    "bind_cancel_predicate",
     "cancel_tool_resources",
     "ensure_turn_cancel",
     "host_cancel_requested",

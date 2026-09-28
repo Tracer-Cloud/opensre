@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from core.agent_harness.prompts.action import (
     _SYSTEM_PROMPT_BASE,
+    action_prompt_skill_and_context,
     build_action_system_prompt,
     build_action_system_prompt_envelope,
     build_action_user_message,
@@ -57,6 +58,7 @@ __all__ = [
     "PromptSurface",
     "PromptTier",
     "SurfaceProfile",
+    "action_prompt_skill_and_context",
     "build_action_system_prompt",
     "profile_for",
     "build_action_system_prompt_envelope",

@@ -10,7 +10,7 @@ OpenSRE can inspect failing GitHub Actions checks on a pull request or named bra
 It can also fix failing CI on a branch with no PR — say "fix the CI on main" and OpenSRE inspects the failing workflow runs on that branch's head commit, applies a fix in a linked worktree, and pushes a fresh repair branch.
 
 <Warning>
-This is mutating. OpenSRE asks before checking out or creating a worktree, editing files, committing, and pushing.
+This is mutating: OpenSRE checks out the branch, edits files, commits, and pushes. At the default autonomy level (`/auto high`) those steps run without prompts; set `/auto med` to be asked before each mutating step. See [Trust mode and `/auto`](/interactive-shell-commands#trust-mode-auto-and-confirmations).
 </Warning>
 
 ## Prerequisites
@@ -106,12 +106,12 @@ older commit.
 | **Fork PR refused** | Only same-repository PR head branches are supported |
 | **No push when checks are green** | Expected — OpenSRE does not push when nothing is failing |
 | **"blocked on N file(s) a person must decide"** | The coding agent could not resolve those merge conflicts. The merge was aborted; resolve the listed files by hand, push, and run the fix again. If the message starts with "Pushed a CI fix", the fix commit is already on the branch and only the base merge is missing |
-| **Approval prompts** | Mutating path requires confirmation before checkout/edit/commit/push |
+| **Approval prompts** | Appear at `/auto med` or lower; the default `/auto high` runs the repair without them |
 | **gh / checks unavailable** | Install GitHub CLI and ensure the token can read Actions checks |
 
 ## Security
 
-- Requires explicit confirmation before mutating the working tree or pushing.
+- Asks before mutating the working tree or pushing when the autonomy level is `/auto med` or lower.
 - Pushes only to the existing PR head branch in the same repository.
 - For branch targets, creates and pushes a fresh repair branch instead of pushing directly to `main`.
 - Store tokens in `.env` or your secret manager — not in source control.

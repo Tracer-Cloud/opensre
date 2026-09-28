@@ -5,7 +5,9 @@ from __future__ import annotations
 from typing import Final
 
 ANALYTICS_DISABLED_ENV: Final[str] = "OPENSRE_ANALYTICS_DISABLED"
+ANALYTICS_CICD_ENV: Final[str] = "OPENSRE_CICD"
 ANALYTICS_EVENT_SCHEMA_VERSION: Final[int] = 1
+ANALYTICS_PROPERTIES_VERSION: Final[int] = 2
 ANALYTICS_INGEST_PATH: Final[str] = "/api/analytics/events"
 
 # Installer-provided dimensions consumed by the hidden, non-interactive
@@ -13,6 +15,10 @@ ANALYTICS_INGEST_PATH: Final[str] = "/api/analytics/events"
 # safe defaults when an installer did not provide them.
 ANALYTICS_INSTALL_SOURCE_ENV: Final[str] = "OPENSRE_INSTALL_SOURCE"
 ANALYTICS_INSTALL_CHANNEL_ENV: Final[str] = "OPENSRE_INSTALL_CHANNEL"
+ANALYTICS_INSTALL_ORIGIN_ENV: Final[str] = "OPENSRE_INSTALL_ORIGIN"
+ANALYTICS_INSTALL_ORIGINS: Final[frozenset[str]] = frozenset(
+    {"landing_page", "documentation", "github", "cicd"}
+)
 ANALYTICS_INSTALL_MARKER_STATE_ENV: Final[str] = "OPENSRE_INSTALL_MARKER_STATE"
 ANALYTICS_INSTALL_VERSION_ENV: Final[str] = "OPENSRE_INSTALL_VERSION"
 ANALYTICS_LOG_EVENTS_ENV: Final[str] = "OPENSRE_ANALYTICS_LOG_EVENTS"
@@ -28,10 +34,14 @@ ANALYTICS_RUNNER_INGEST_URL: Final[str] = "https://app.opensre.com/api/analytics
 ANALYTICS_RUNNER_AUDIENCE: Final[str] = "https://app.opensre.com/analytics/runner/"
 
 __all__ = [
+    "ANALYTICS_CICD_ENV",
     "ANALYTICS_DISABLED_ENV",
     "ANALYTICS_EVENT_SCHEMA_VERSION",
+    "ANALYTICS_PROPERTIES_VERSION",
     "ANALYTICS_INGEST_PATH",
     "ANALYTICS_INSTALL_CHANNEL_ENV",
+    "ANALYTICS_INSTALL_ORIGIN_ENV",
+    "ANALYTICS_INSTALL_ORIGINS",
     "ANALYTICS_INSTALL_MARKER_STATE_ENV",
     "ANALYTICS_INSTALL_SOURCE_ENV",
     "ANALYTICS_INSTALL_VERSION_ENV",

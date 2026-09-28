@@ -34,7 +34,7 @@ step instead.
 |---------|------|
 | `kernel/` | `PromptEnvelope` / tiers / `SurfaceProfile` — no agent-path knowledge |
 | `grounding/` | Prompt-side grounding providers (`DefaultPromptContextProvider`) that feed assemblers — distinct from harness `grounding/` caches |
-| `action/` | Tool-calling agent prompt assembly and policies |
+| `action/` | Tool-calling agent prompt assembly and policies (`goal_kernel.py` is the host-owned goal rule; skills cannot override it) |
 | `memory/` | Conversation window + prior-investigation recall |
 | `runtime_facts/` | Runtime-metadata fact lines for prompts |
 | `skills/` | Progressive skill index + markdown bodies (`catalog/` + `content/` + workflow Markdown) |

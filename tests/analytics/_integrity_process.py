@@ -16,6 +16,7 @@ import httpx
 
 from config.account import AccountRecord, save_account_record, save_account_token
 from config.constants.analytics import (
+    ANALYTICS_CICD_ENV,
     ANALYTICS_RUNNER_TOKEN_HEADER,
     ANALYTICS_SIGNATURE_HEADER,
     ANALYTICS_TIMESTAMP_HEADER,
@@ -30,6 +31,8 @@ _SILO_TOKEN = "integrity_fixture_silo_not_a_real_secret"
 
 def main() -> None:
     scenario = sys.argv[1]
+    if scenario == "late_cicd_marker":
+        os.environ[ANALYTICS_CICD_ENV] = "1"
     captured: list[dict[str, object]] = []
 
     def receive(request: httpx.Request) -> httpx.Response:

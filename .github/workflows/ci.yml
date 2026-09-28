@@ -16,6 +16,7 @@ permissions:
   pull-requests: read
 
 env:
+  OPENSRE_CICD: "1"
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
   PYTHON_SOURCE_PATHS: "bootstrap config core gateway integrations infrastructure surfaces tools"
 

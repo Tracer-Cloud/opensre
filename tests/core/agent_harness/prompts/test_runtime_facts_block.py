@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from core.agent_harness.prompts.grounding import build_environment_block
 
 
@@ -231,3 +233,29 @@ def test_environment_block_stays_empty_without_runtime_facts() -> None:
     'not detected' line rendered from an empty mapping would break that.
     """
     assert _env_block({}) == "" or "cloud" not in _env_block({})
+
+
+def test_environment_block_quotes_hosted_credits(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from config.account_credits import AccountCredits, HostedCreditsKindValue, HostedCreditsRead
+
+    def _hosted_read() -> HostedCreditsRead:
+        return HostedCreditsRead(
+            HostedCreditsKindValue.OK,
+            AccountCredits(
+                total=12_500,
+                monthly=12_500,
+                monthly_limit=100_000,
+                top_up=0,
+                resets_at=None,
+                plan_id="team",
+            ),
+            "OpenSRE hosted credits.",
+        )
+
+    monkeypatch.setattr("core.llm.hosted_credits.account_llm_route", lambda: object())
+    monkeypatch.setattr("core.llm.hosted_credits.cached_hosted_credits", _hosted_read)
+    block = _env_block({"opensre_version": "0.1"})
+    assert "OpenSRE hosted credits remaining are 12,500" in block
+    assert "Hosted LLM requests are allowed." in block

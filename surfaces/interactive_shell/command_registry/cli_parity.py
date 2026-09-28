@@ -262,6 +262,10 @@ def _cmd_setup(session: Session, console: Console, args: list[str]) -> bool:  # 
     return run_cli_command(console, ["setup", *args], capture_output=False, session=session)
 
 
+def _cmd_credits(session: Session, console: Console, args: list[str]) -> bool:  # noqa: ARG001
+    return run_cli_command(console, ["credits", *args], capture_output=True, session=session)
+
+
 def _cmd_account(session: Session, console: Console, args: list[str]) -> bool:  # noqa: ARG001
     subcommand = args[0].lower() if args else "status"
     if session_terminal(session) is None and subcommand == "login":
@@ -277,7 +281,7 @@ def _cmd_account(session: Session, console: Console, args: list[str]) -> bool:  
     if subcommand == "usage" and session_terminal(session) is None and "--no-browser" not in args:
         # A chat user cannot use a browser opened on the server; give them the URL.
         cli_args.append("--no-browser")
-    capture_output = subcommand in {"status", "usage", "logout"}
+    capture_output = subcommand in {"status", "usage", "logout", "credits"}
     handled = run_cli_command(
         console, ["account", *cli_args], capture_output=capture_output, session=session
     )
@@ -368,9 +372,23 @@ COMMANDS: list[SlashCommand] = [
             "/account",
             "/account login",
             "/account status",
+            "/account credits",
             "/account usage",
             "/account logout",
         ),
+        first_arg_completions=(
+            ("login", "Sign in"),
+            ("status", "Show login"),
+            ("credits", "Show hosted credits"),
+            ("usage", "Open top-up page"),
+            ("logout", "Sign out"),
+        ),
+    ),
+    SlashCommand(
+        "/credits",
+        "Show remaining OpenSRE hosted credits for the signed-in account.",
+        _cmd_credits,
+        usage=("/credits", "/credits --dev"),
     ),
     SlashCommand(
         "/auth",

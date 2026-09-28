@@ -24,6 +24,7 @@ from config.constants.account import (
     OPENSRE_GATEWAY_LLM_MODEL_DEFAULT,
 )
 from config.constants.billing import WEBAPP_URL_ENV
+from config.constants.llm import OPENAI_API_KEY_ENV, OPENAI_BASE_URL_ENV
 from config.constants.paths import host_home
 from config.secrets.store import (
     delete_secret,
@@ -227,6 +228,17 @@ def account_llm_route() -> AccountLLMRoute | None:
     )
 
 
+def hosted_openai_env() -> dict[str, str] | None:
+    """OpenAI-compatible env for a subprocess on the hosted route, or ``None`` if unsigned."""
+    route = account_llm_route()
+    if route is None:
+        return None
+    token = resolve_account_token()
+    if not token:
+        return None
+    return {OPENAI_API_KEY_ENV: token, OPENAI_BASE_URL_ENV: route.base_url}
+
+
 __all__ = [
     "AccountRecord",
     "AccountLLMRoute",
@@ -234,6 +246,7 @@ __all__ = [
     "account_metadata_path",
     "delete_account_record",
     "delete_account_token",
+    "hosted_openai_env",
     "load_account_record",
     "normalize_account_app_url",
     "resolve_account_token",

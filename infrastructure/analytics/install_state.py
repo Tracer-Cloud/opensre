@@ -57,7 +57,8 @@ def record_install_marker_state(config_dir: Path) -> None:
             output.write(f"{state}\n")
         temporary.replace(config_dir / _STATE_FILENAME)
     except OSError:
-        pass
+        # Best-effort: a marker write failure must not block installation.
+        return
     finally:
         if temporary is not None:
             with contextlib.suppress(OSError):
