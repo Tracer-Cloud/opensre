@@ -1205,6 +1205,24 @@ def test_a_remote_loop_records_the_failure_it_saw_and_the_repair_that_passed(
     assert isinstance(duration_ms, int) and duration_ms >= 0
 
 
+def test_a_remote_loop_does_not_record_success_when_demo_cleanup_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recorded: _RecordedEvents
+) -> None:
+    from integrations.github.tools.ci_repair_loop import worker
+
+    def fail(_client: object, _run: RepairRun) -> None:
+        raise GitHubApiError("close failed", status_code=HTTPStatus.BAD_GATEWAY)
+
+    monkeypatch.setattr(worker, "cleanup_demo", fail)
+    run = _run(remote=True)
+
+    with pytest.raises(GitHubApiError):
+        _repair_the_demo_on_the_second_attempt(tmp_path, monkeypatch, run)
+
+    assert run.status is not RepairStatus.SUCCEEDED
+    assert "remote_ci_repair_succeeded" not in recorded.names()
+
+
 def test_a_loop_scheduled_from_the_shell_records_only_the_test_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recorded: _RecordedEvents
 ) -> None:

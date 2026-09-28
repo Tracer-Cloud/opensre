@@ -249,9 +249,9 @@ def execute_repair(run: RepairRun, store: RepairStore) -> None:
     if not run.checks_passed:
         _repair(run, store, token)
     if run.checks_passed:
-        telemetry.repair_succeeded(run)
         cleanup_demo(client, run)
         run.status = RepairStatus.SUCCEEDED
+        telemetry.repair_succeeded(run)
 
 
 def run_ci_repair_worker(store_directory: Path, run_id: str) -> None:
