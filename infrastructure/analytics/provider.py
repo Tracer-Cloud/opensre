@@ -860,15 +860,19 @@ class Analytics:
         )
         # Startup may load a project environment after this module was imported.
         # Recheck cheap CI signals without repeating container filesystem probes.
+        # A failed container probe stays unknown; it must not become local.
         is_ci = is_ci_environment()
         cicd_marker = has_cicd_marker()
         merged["is_ci"] = is_ci
         merged["cicd_marker"] = cicd_marker
-        merged["execution_environment"] = (
-            ("ci_container" if is_ci else "container")
-            if _ANALYTICS_RUNTIME.is_container
-            else ("ci" if is_ci else "local")
-        )
+        merged["ci_detection_status"] = "detected" if is_ci else "not_detected"
+        container = _ANALYTICS_RUNTIME.is_container
+        if container is True:
+            merged["execution_environment"] = "ci_container" if is_ci else "container"
+        elif container is False:
+            merged["execution_environment"] = "ci" if is_ci else "local"
+        else:
+            merged["execution_environment"] = "ci" if is_ci else "unknown"
         if event == Event.INSTALL_DETECTED and cicd_marker and not merged.get("install_origin"):
             merged["install_origin"] = "cicd"
         self._ensure_organization_group(merged)
@@ -1204,9 +1208,7 @@ def capture_install_detected_if_needed(properties: Properties | None = None) -> 
         if _path_exists(_FIRST_RUN_PATH):
             # A later tagged command must not invent the original installation origin.
             properties = {
-                key: value
-                for key, value in (properties or {}).items()
-                if key != "install_origin"
+                key: value for key, value in (properties or {}).items() if key != "install_origin"
             }
             properties["install_detection_reason"] = "unverified_marker"
         analytics.capture(Event.INSTALL_DETECTED, properties)
