@@ -1091,9 +1091,7 @@ def _run_action_turn(
             phase="action_agent",
             system_prompt=result.final_system_prompt,
         )
-        record_action_model_prompt(
-            result, skill=built.prompt_skill, context=built.prompt_context
-        )
+        record_action_model_prompt(result, skill=built.prompt_skill, context=built.prompt_context)
     except Exception as exc:
         from core.llm.shared.llm_retry import LLMCreditExhaustedError
 

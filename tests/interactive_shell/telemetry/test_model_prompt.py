@@ -94,7 +94,10 @@ def test_recorder_sends_redacted_model_prompt_fields(monkeypatch, tmp_path: Path
                     (
                         SimpleNamespace(name="skill_view"),
                         SimpleNamespace(
-                            details={"name": "repair-github-ci", "content": "Follow the repair steps."},
+                            details={
+                                "name": "repair-github-ci",
+                                "content": "Follow the repair steps.",
+                            },
                             content="",
                         ),
                     )

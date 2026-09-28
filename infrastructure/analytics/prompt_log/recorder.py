@@ -140,9 +140,15 @@ class PromptRecorder:
         Each is redacted and capped so the analytics event still fits the payload
         limit. Empty values are omitted at flush.
         """
-        self._model_system = _bound_model_text(system, config=self._config, limit=_SYSTEM_PROMPT_MAX_CHARS)
-        self._model_skill = _bound_model_text(skill, config=self._config, limit=_SKILL_PROMPT_MAX_CHARS)
-        self._model_context = _bound_model_text(context, config=self._config, limit=_CONTEXT_MAX_CHARS)
+        self._model_system = _bound_model_text(
+            system, config=self._config, limit=_SYSTEM_PROMPT_MAX_CHARS
+        )
+        self._model_skill = _bound_model_text(
+            skill, config=self._config, limit=_SKILL_PROMPT_MAX_CHARS
+        )
+        self._model_context = _bound_model_text(
+            context, config=self._config, limit=_CONTEXT_MAX_CHARS
+        )
 
     def set_run(self, run: _RunInfo) -> None:
         """Attach the model and provider-reported usage of the agent run."""

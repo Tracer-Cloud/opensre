@@ -245,8 +245,11 @@ def test_seeded_check_shapes_stay_unfinished_until_a_real_failure() -> None:
     assert not check_is_terminal(running)
     assert not check_failed(success, expected_skips=set())
     assert check_is_terminal(success)
-    assert check_failed(_demo_check(conclusion="SKIPPED"), expected_skips=set())
-    assert not check_failed(_demo_check(conclusion="SKIPPED"), expected_skips={"test"})
+    skipped = _demo_check(conclusion="SKIPPED")
+    assert not check_failed(skipped, expected_skips=set())
+    assert not check_failed(skipped, expected_skips={"test"})
+    assert check_failed(skipped, expected_skips=set(), targeted_checks=frozenset({"test"}))
+    assert check_failed(skipped, expected_skips=set(), failed_run_ids=frozenset({"99"}))
 
 
 def test_branch_poll_keeps_waiting_while_the_newer_pull_request_run_is_open(
