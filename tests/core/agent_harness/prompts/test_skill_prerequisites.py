@@ -1,9 +1,10 @@
-"""Onboarding skills tell a fresh install how to connect GitHub before their tools."""
+"""Onboarding skills tell a fresh install how to open GitHub setup."""
 
 from __future__ import annotations
 
 import core.agent_harness.prompts.skills as skills
-from config.constants.skill_prerequisites import CONNECT_INTEGRATIONS_HEADING
+from config.constants import CONNECT_INTEGRATIONS_HEADING
+from config.constants.github import GITHUB_SETUP_SLASH_INVOKE
 from config.constants.skills import (
     ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME,
     CONNECTING_SLACK_SKILL_NAME,
@@ -13,29 +14,31 @@ from config.constants.skills import (
 )
 
 
-def test_local_github_onboarding_checks_the_integration_before_its_tools() -> None:
+def test_local_github_onboarding_opens_setup_without_waiting_on_mcp() -> None:
     for name in (
         ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME,
         SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME,
     ):
         body = skills.load_skill_body(name)
         assert body.startswith(CONNECT_INTEGRATIONS_HEADING)
-        assert "integrations verify github" in body
-        assert "slash_invoke" in body
-        assert "/integrations setup github" in body
-        assert "/integrations setup <service>" in body
+        assert GITHUB_SETUP_SLASH_INVOKE in body
+        assert "does not block them" in body
+        assert "only after verify reports" not in body
+        assert "slash_invoke with `/integrations setup github`" not in body
+        assert 'args=["setup", "<service>"]' in body
 
 
-def test_analysis_step_retries_the_chosen_repository_after_setup() -> None:
+def test_analysis_card_is_not_contradicted_by_the_prepended_check() -> None:
     body = skills.load_skill_body(ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME)
-    resume = body.split("### 3. Collect and compute the metrics", 1)[0]
 
-    assert "analyze_github_ci_reliability" in resume
-    assert "opensre integrations setup github" in resume
-    assert "same owner, repo, and days" in resume
-    assert "not a coverage gap" in resume
+    assert "not a coverage gap" not in body
+    assert "same owner, repo, and days" not in body
     scheduling = skills.load_skill_body(SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME)
     assert "analyze_github_ci_reliability" not in scheduling
+
+
+def test_connect_heading_is_exported_from_config_constants() -> None:
+    assert CONNECT_INTEGRATIONS_HEADING == "## Connect integrations first"
 
 
 def test_other_onboarding_skills_keep_their_own_setup_path() -> None:

@@ -11,6 +11,7 @@ from rich.markup import escape
 from config.constants.github import (
     GITHUB_INTEGRATION_SETUP_CLI,
     GITHUB_INTEGRATION_SETUP_SLASH,
+    GITHUB_SETUP_SLASH_INVOKE,
 )
 from core.agent_harness.tools import action_context_from_agent_context
 from core.domain.types.evidence import record_evidence_entry
@@ -223,9 +224,9 @@ def scan_github_ci_health(
     if not token:
         message = (
             "A GitHub token is required to scan repositories. "
-            f"Call slash_invoke with `{GITHUB_INTEGRATION_SETUP_SLASH}` and end the turn "
-            "so the user can connect GitHub in this shell. After they finish, retry. "
-            f"The same wizard is `{GITHUB_INTEGRATION_SETUP_CLI}`."
+            f"Run `{GITHUB_INTEGRATION_SETUP_CLI}`. "
+            f"Open the wizard with `{GITHUB_SETUP_SLASH_INVOKE}` and end the turn. "
+            "After they finish, call this tool again."
         )
         return tool_unavailable(
             _SOURCE,

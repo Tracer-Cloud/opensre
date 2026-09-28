@@ -13,6 +13,7 @@ from rich.markup import escape
 from config.constants.github import (
     GITHUB_INTEGRATION_SETUP_CLI,
     GITHUB_INTEGRATION_SETUP_SLASH,
+    GITHUB_SETUP_SLASH_INVOKE,
 )
 from core.agent_harness.tools import action_context_from_agent_context
 from core.domain.types.evidence import record_evidence_entry
@@ -71,8 +72,7 @@ def _missing_token_message(repository: str) -> str:
     return (
         f"A GitHub token is required to read the Actions history of {repository}. "
         f"Run `{GITHUB_INTEGRATION_SETUP_CLI}`. "
-        f"Call slash_invoke with `{GITHUB_INTEGRATION_SETUP_SLASH}` and end the turn "
-        "so the user can connect GitHub in this shell. "
+        f"Open the wizard with `{GITHUB_SETUP_SLASH_INVOKE}` and end the turn. "
         f"After they finish, call analyze_github_ci_reliability again for {repository}. "
         "Do not leave the analysis blocked and do not ask them to retry in a new session."
     )

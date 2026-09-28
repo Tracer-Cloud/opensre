@@ -1540,7 +1540,9 @@ def test_tool_names_the_setup_command_when_no_token_is_available() -> None:
 
     assert result["available"] is False
     assert result["setup_command"] == "/integrations setup github"
-    assert "slash_invoke" in result["response_text"]
+    assert (
+        'slash_invoke(command="/integrations", args=["setup", "github"])' in result["response_text"]
+    )
     assert "opensre integrations setup github" in result["response_text"]
     assert "call analyze_github_ci_reliability again for o/r" in result["response_text"]
     assert "leave the analysis blocked" in result["response_text"]

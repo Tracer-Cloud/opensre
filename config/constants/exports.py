@@ -8,9 +8,11 @@ from config.package_exports import bind_package_exports
 # those modules; ``__getattr__`` loads one leaf the first time a name is used.
 EXPORTS: dict[str, str] = {
     "ANALYTICS_CICD_ENV": "analytics",
+    "CONNECT_INTEGRATIONS_HEADING": "skill_prerequisites",
     "GITHUB_CI_DEMO_REPOSITORY": "github",
     "GITHUB_INTEGRATION_SETUP_CLI": "github",
     "GITHUB_INTEGRATION_SETUP_SLASH": "github",
+    "GITHUB_SETUP_SLASH_INVOKE": "github",
     "GITHUB_TOKEN_CHECKLIST": "github",
     "CI_REPAIR_WORKER_COMMAND": "ci_repair",
     "CI_REPAIR_SECONDS": "ci_repair",

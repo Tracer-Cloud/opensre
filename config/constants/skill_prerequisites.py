@@ -1,16 +1,13 @@
 """Host-owned setup check shown before local GitHub onboarding skills.
 
 The cards stay human-owned. This block is prepended when a skill is loaded,
-the same way success criteria are appended, so a fresh install is told to
-connect GitHub before it calls a tool that needs a token.
+the same way success criteria are appended. It tells the agent how to open
+GitHub setup without blocking CI tools that already have a REST token.
 """
 
 from __future__ import annotations
 
-from config.constants.github import (
-    GITHUB_INTEGRATION_SETUP_CLI,
-    GITHUB_INTEGRATION_SETUP_SLASH,
-)
+from config.constants.github import GITHUB_SETUP_SLASH_INVOKE
 from config.constants.skills import (
     ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME,
     SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME,
@@ -18,7 +15,7 @@ from config.constants.skills import (
 
 CONNECT_INTEGRATIONS_HEADING = "## Connect integrations first"
 
-#: Onboarding skills whose first GitHub call fails closed on a machine with no token.
+#: Onboarding skills that call GitHub before a token may exist.
 GITHUB_ONBOARDING_SKILLS: frozenset[str] = frozenset(
     {
         ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME,
@@ -29,38 +26,30 @@ GITHUB_ONBOARDING_SKILLS: frozenset[str] = frozenset(
 _SECTION = (
     f"{CONNECT_INTEGRATIONS_HEADING}\n"
     "\n"
-    "Do this before any other tool in this skill.\n"
+    "CI tools in this skill read GitHub with a token (the integration token, "
+    "`GITHUB_TOKEN`, or `GH_TOKEN`). `integrations verify github` checks the "
+    "GitHub MCP endpoint, which these tools do not use. A verify result other "
+    "than `passed` does not block them.\n"
     "\n"
-    "1. Call `cli_exec` with `integrations verify github`.\n"
-    "2. When the status is not `passed`, call `slash_invoke` with command "
-    f"`{GITHUB_INTEGRATION_SETUP_SLASH}` and end the turn. The shell opens the wizard. "
-    "Wait until the user finishes. Do not ask them to leave the shell and type the "
-    "command by hand.\n"
-    "3. On the next turn, verify again. Continue this skill only after verify reports "
-    "`passed`.\n"
+    "Call the skill's GitHub tool. If it reports a missing token, call "
+    f"`{GITHUB_SETUP_SLASH_INVOKE}` and end the turn so the shell opens setup. "
+    "After setup finishes, call that tool again. Do not wait for MCP "
+    "verification to pass first.\n"
     "\n"
-    "Use the same two calls for any other integration this skill needs: "
-    "`integrations verify <service>`, then `slash_invoke` with `/integrations setup <service>`.\n"
-)
-
-# Step 3 of the analysis card still says to file a missing token as a coverage gap.
-# That is what stopped the report after the user connected GitHub. This paragraph
-# is prepended only on that skill so the loaded instructions resume the same repo.
-_ANALYSIS_RESUME = (
-    "\n"
-    "Step 3 calls `analyze_github_ci_reliability` for the repository already chosen. "
-    f"If it reports a missing token, show `{GITHUB_INTEGRATION_SETUP_CLI}` and open it "
-    "with the `slash_invoke` call above. After setup finishes, call "
-    "`analyze_github_ci_reliability` again with the same owner, repo, and days. "
-    "A missing token is not a coverage gap. Do not ask the user to retry in a new "
-    "session or leave the analysis blocked.\n"
+    "For any other integration, call "
+    '`slash_invoke(command="/integrations", args=["setup", "<service>"])`.\n'
 )
 
 
 def prerequisite_section(name: str) -> str:
-    """Markdown the host prepends so onboarding connects GitHub before its tools."""
+    """Markdown the host prepends so onboarding can open GitHub setup."""
     if name not in GITHUB_ONBOARDING_SKILLS:
         return ""
-    if name == ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME:
-        return _SECTION + _ANALYSIS_RESUME
     return _SECTION
+
+
+__all__ = [
+    "CONNECT_INTEGRATIONS_HEADING",
+    "GITHUB_ONBOARDING_SKILLS",
+    "prerequisite_section",
+]
