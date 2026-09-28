@@ -81,11 +81,22 @@ opensre --json ask "how many PRs currently have failing CI in Tracer-Cloud?"
 ```
 
 Fixing a PR or scheduling an agent uses tools that need approval, and a
-headless run has nobody to approve. Authorize the tool for that run:
+headless run has nobody to approve. Authorize the tool the task uses, for that
+run only:
 
 ```bash
+# fix a pull request
 opensre ask --allowed-tool fix_github_pr_ci "fix failing checks on Tracer-Cloud/opensre#4597"
+
+# schedule the reliability agent
+opensre ask --allowed-tool schedule_ci_reliability_loop "set up an agent that improves CI/CD reliability for Tracer-Cloud/opensre"
+
+# schedule a bounded repair loop for one pull request
+opensre ask --allowed-tool schedule_ci_repair_loop "schedule a CI repair loop for Tracer-Cloud/opensre pull request 6054"
 ```
+
+Each `--allowed-tool` covers one tool; a task that needs two takes the flag
+twice.
 
 A machine that is not signed in needs `LLM_PROVIDER` and a provider key plus a
 GitHub token in the environment. See [Headless CLI](/headless-cli) for
