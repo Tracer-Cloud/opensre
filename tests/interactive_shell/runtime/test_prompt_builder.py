@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import io
 from types import SimpleNamespace
+from unittest.mock import MagicMock
 
 import pytest
 from prompt_toolkit.application import create_app_session
@@ -124,6 +125,19 @@ def test_idle_banner_repaint_does_not_drain_active_prompt_input(
 
     assert builder._rerender_banner_if_idle() is not None
     assert drain_calls == []
+
+
+@pytest.mark.asyncio
+async def test_close_restores_autowrap_after_prompt_cancellation() -> None:
+    builder = PromptBuilder(Session(), ReplState(), SpinnerState())
+    output = MagicMock()
+    builder.pt_app = SimpleNamespace(output=output)  # type: ignore[assignment]
+    builder._prompt_task = asyncio.create_task(asyncio.sleep(60))
+
+    await builder.close()
+
+    output.enable_autowrap.assert_called_once_with()
+    output.flush.assert_called_once_with()
 
 
 @pytest.mark.asyncio

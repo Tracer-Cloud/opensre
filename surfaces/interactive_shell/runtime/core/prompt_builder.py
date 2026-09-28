@@ -216,26 +216,41 @@ class PromptBuilder:
             self._prompt_task = task
         return task
 
+    def _restore_terminal_autowrap(self) -> None:
+        """Restore the terminal mode owned by the live prompt."""
+        if self.pt_app is None:
+            return
+        self.pt_app.output.enable_autowrap()
+        self.pt_app.output.flush()
+
     async def suspend(self) -> None:
         """Release stdin while an exclusive picker or wizard is running."""
         task = self._prompt_task
         if task is None:
+            self._restore_terminal_autowrap()
             return
-        if not task.done() and self.pt_app is not None and self.pt_app.is_running:
-            self.pt_app.exit(result="")
-        await asyncio.gather(task, return_exceptions=True)
-        if self._prompt_task is task:
-            self._prompt_task = None
+        try:
+            if not task.done() and self.pt_app is not None and self.pt_app.is_running:
+                self.pt_app.exit(result="")
+            await asyncio.gather(task, return_exceptions=True)
+            if self._prompt_task is task:
+                self._prompt_task = None
+        finally:
+            self._restore_terminal_autowrap()
 
     async def close(self) -> None:
         """Stop the persistent prompt application during shell shutdown."""
         task = self._prompt_task
         self._prompt_task = None
         if task is None:
+            self._restore_terminal_autowrap()
             return
-        if not task.done():
-            task.cancel()
-        await asyncio.gather(task, return_exceptions=True)
+        try:
+            if not task.done():
+                task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+        finally:
+            self._restore_terminal_autowrap()
 
     async def read_prompt_text(self) -> str:
         if self.pt_session is None:

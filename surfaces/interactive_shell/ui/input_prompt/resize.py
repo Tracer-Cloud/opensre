@@ -161,7 +161,11 @@ def install_shrink_resize_guard(
             rows=size.rows,
         )
         original_render(pt_app, layout, is_done)
-        output.disable_autowrap()
+        if is_done:
+            output.enable_autowrap()
+            output.flush()
+        else:
+            output.disable_autowrap()
 
     def _apply_resize() -> None:
         nonlocal resize_deferred

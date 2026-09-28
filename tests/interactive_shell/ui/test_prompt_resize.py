@@ -335,6 +335,16 @@ def test_render_waits_while_resize_dimensions_are_unstable(
     assert terminal.getvalue().count("\x1b[J") == 1
 
 
+def test_final_render_restores_terminal_autowrap() -> None:
+    app, renderer, terminal = _painted_resize_app()
+
+    renderer.render(app, Layout(Window(height=3)), is_done=True)
+    app.output.flush()
+
+    emitted = terminal.getvalue()
+    assert emitted.rfind("\x1b[?7h") > emitted.rfind("\x1b[?7l")
+
+
 def test_resize_defers_repaint_until_live_region_is_cursor_addressable() -> None:
     """A live region taller than the viewport cannot be erased from its top."""
     size_state = [Size(rows=30, columns=90)]
