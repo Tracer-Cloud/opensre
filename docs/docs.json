@@ -28,64 +28,26 @@
   },
   "navigation": {
     "directory": "card",
-    "tabs": [
+    "groups": [
       {
-        "tab": "Getting Started",
-        "icon": "rocket",
-        "groups": [
-          {
-            "group": "Overview",
-            "pages": [
-              "index",
-              "getting-started/showcase",
-              "getting-started/features"
-            ]
-          },
-          {
-            "group": "First steps",
-            "pages": [
-              "getting-started/quickstart",
-              "getting-started/interactive-shell-commands",
-              "getting-started/interactive-shell-assistant",
-              "getting-started/goals"
-            ]
-          },
-          {
-            "group": "CI/CD",
-            "pages": [
-              "cicd/overview",
-              "cicd/cicd-analytics-demo",
-              "cicd/github-ci-fix",
-              "cicd/ci-repair-agent",
-              "cicd/github-ci-health-scan"
-            ]
-          }
+        "group": "Welcome",
+        "pages": [
+          "index",
+          "getting-started/showcase",
+          "getting-started/features",
+          "guides/faq"
         ]
       },
       {
-        "tab": "Installation",
-        "icon": "download",
-        "groups": [
+        "group": "Get started",
+        "pages": [
+          "getting-started/quickstart",
+          "install/index",
+          "install/install-local",
+          "install/install-enterprise",
           {
-            "group": "Overview",
-            "pages": [
-              "install/index"
-            ]
-          },
-          {
-            "group": "Local",
-            "pages": [
-              "install/install-local"
-            ]
-          },
-          {
-            "group": "Enterprise",
-            "pages": [
-              "install/install-enterprise"
-            ]
-          },
-          {
-            "group": "Environment guides",
+            "group": "Platforms",
+            "expanded": false,
             "pages": [
               "install/macos",
               "install/linux-local",
@@ -93,196 +55,195 @@
               "install/docker"
             ]
           },
-          {
-            "group": "Configuration",
-            "pages": [
-              "install/environment-variables",
-              "install/remote-sync"
-            ]
-          }
+          "install/environment-variables",
+          "install/remote-sync"
         ]
       },
       {
-        "tab": "Guides",
-        "icon": "book-open",
-        "groups": [
+        "group": "CI/CD",
+        "pages": [
+          "cicd/overview",
+          "cicd/cicd-analytics-demo",
+          "cicd/github-ci-fix",
+          "cicd/ci-repair-agent",
+          "cicd/github-ci-health-scan"
+        ]
+      },
+      {
+        "group": "Using the shell",
+        "pages": [
+          "getting-started/interactive-shell-commands",
+          "getting-started/interactive-shell-assistant",
+          "getting-started/goals"
+        ]
+      },
+      {
+        "group": "Run it anywhere",
+        "pages": [
+          "guides/deployment",
+          "guides/headless-cli",
+          "guides/api",
+          "guides/python-api",
+          "guides/hosting-the-agent"
+        ]
+      },
+      {
+        "group": "Platform",
+        "pages": [
+          "platform/llm-providers",
+          "platform/multi-instance-integrations",
+          "platform/masking",
+          "platform/interactive-shell-privacy",
+          "platform/sessions",
+          "platform/principal-scoped-storage",
+          "platform/memory",
+          "platform/work-management",
+          "platform/fleet",
+          "platform/cron",
+          "platform/closed-loop-learning"
+        ]
+      },
+      {
+        "group": "Integrations",
+        "pages": [
+          "integrations/index",
           {
-            "group": "Deploy and APIs",
+            "group": "Monitoring",
+            "expanded": false,
             "pages": [
-              "guides/deployment",
-              "guides/headless-cli",
-              "guides/api",
-              "guides/python-api",
-              "guides/hosting-the-agent"
+              "integrations/monitoring/azure-monitor",
+              "integrations/monitoring/betterstack",
+              "integrations/monitoring/coralogix",
+              "integrations/monitoring/datadog",
+              "integrations/monitoring/grafana",
+              "integrations/monitoring/grafana_annotations",
+              "integrations/monitoring/groundcover",
+              "integrations/monitoring/honeycomb",
+              "integrations/monitoring/new_relic",
+              "integrations/monitoring/openobserve",
+              "integrations/monitoring/posthog",
+              "integrations/monitoring/posthog-mcp",
+              "integrations/monitoring/signoz",
+              "integrations/monitoring/splunk",
+              "integrations/monitoring/tempo",
+              "integrations/monitoring/victoria_logs",
+              "integrations/monitoring/x-mcp"
             ]
           },
           {
-            "group": "Community",
+            "group": "Incidents",
+            "expanded": false,
             "pages": [
-              "guides/faq",
-              "guides/bi-weekly-giveaway",
-              "guides/pr-review-flow"
+              "integrations/incidents/alertmanager",
+              "integrations/incidents/runbook-guided-investigations",
+              "integrations/incidents/incident_io",
+              "integrations/incidents/opsgenie",
+              "integrations/incidents/pagerduty",
+              "integrations/incidents/sentry",
+              "integrations/incidents/sentry-mcp",
+              "integrations/incidents/servicenow",
+              "integrations/incidents/fix-sentry-issue"
+            ]
+          },
+          {
+            "group": "Cloud",
+            "expanded": false,
+            "pages": [
+              "integrations/cloud/argocd",
+              "integrations/cloud/aws",
+              "integrations/cloud/aws_lambda",
+              "integrations/cloud/cloudtrail_events",
+              "integrations/cloud/ec2",
+              "integrations/cloud/elb",
+              "integrations/cloud/helm",
+              "integrations/cloud/kubernetes",
+              "integrations/cloud/yandex-cloud",
+              "integrations/cloud/railway",
+              "integrations/cloud/s3",
+              "integrations/cloud/sqs_queues",
+              "integrations/cloud/vercel"
+            ]
+          },
+          {
+            "group": "Code and CI",
+            "expanded": false,
+            "pages": [
+              "integrations/code/architecture-audit-tool",
+              "integrations/code/structured-file-tool",
+              "integrations/code/counting-files",
+              "integrations/code/bitbucket",
+              "integrations/code/github",
+              "integrations/code/github-security-fix",
+              "integrations/code/resolve-merge-conflicts",
+              "integrations/code/github-workflow-tools",
+              "integrations/code/github-actions",
+              "integrations/code/gitlab",
+              "integrations/code/jenkins",
+              "integrations/code/pi-coding"
+            ]
+          },
+          {
+            "group": "Collaboration",
+            "expanded": false,
+            "pages": [
+              "integrations/collaboration/google-docs",
+              "integrations/collaboration/jira",
+              "integrations/collaboration/trello"
+            ]
+          },
+          {
+            "group": "Messaging",
+            "expanded": false,
+            "pages": [
+              "integrations/messaging/index",
+              "integrations/messaging/smtp",
+              "integrations/messaging/buzz",
+              "integrations/messaging/slack",
+              "integrations/messaging/discord",
+              "integrations/messaging/telegram",
+              "integrations/messaging/rocketchat",
+              "integrations/messaging/whatsapp",
+              "integrations/messaging/twilio-sms"
+            ]
+          },
+          {
+            "group": "Databases",
+            "expanded": false,
+            "pages": [
+              "integrations/databases/azure-sql",
+              "integrations/databases/clickhouse",
+              "integrations/databases/elasticsearch",
+              "integrations/databases/mariadb",
+              "integrations/databases/mongodb",
+              "integrations/databases/mongodb-atlas",
+              "integrations/databases/mysql",
+              "integrations/databases/opensearch",
+              "integrations/databases/postgresql",
+              "integrations/databases/rds",
+              "integrations/databases/redis",
+              "integrations/databases/snowflake",
+              "integrations/databases/supabase"
+            ]
+          },
+          {
+            "group": "Workflows",
+            "expanded": false,
+            "pages": [
+              "integrations/workflows/airflow",
+              "integrations/workflows/dagster",
+              "integrations/workflows/kafka",
+              "integrations/workflows/prefect",
+              "integrations/workflows/rabbitmq",
+              "integrations/workflows/temporal"
             ]
           }
         ]
       },
       {
-        "tab": "Integrations",
-        "icon": "plug",
-        "groups": [
-          {
-            "group": "Overview",
-            "pages": [
-              "integrations/index",
-              "platform/multi-instance-integrations",
-              "platform/llm-providers",
-              {
-                "group": "Platform",
-                "expanded": false,
-                "pages": [
-                  "platform/masking",
-                  "platform/interactive-shell-privacy",
-                  "platform/sessions",
-                  "platform/principal-scoped-storage",
-                  "platform/memory",
-                  "platform/work-management",
-                  "platform/fleet",
-                  "platform/cron",
-                  "platform/closed-loop-learning"
-                ]
-              },
-              {
-                "group": "Monitoring",
-                "expanded": false,
-                "pages": [
-                  "integrations/monitoring/azure-monitor",
-                  "integrations/monitoring/betterstack",
-                  "integrations/monitoring/coralogix",
-                  "integrations/monitoring/datadog",
-                  "integrations/monitoring/grafana",
-                  "integrations/monitoring/grafana_annotations",
-                  "integrations/monitoring/groundcover",
-                  "integrations/monitoring/honeycomb",
-                  "integrations/monitoring/new_relic",
-                  "integrations/monitoring/openobserve",
-                  "integrations/monitoring/posthog",
-                  "integrations/monitoring/posthog-mcp",
-                  "integrations/monitoring/signoz",
-                  "integrations/monitoring/splunk",
-                  "integrations/monitoring/tempo",
-                  "integrations/monitoring/victoria_logs",
-                  "integrations/monitoring/x-mcp"
-                ]
-              },
-              {
-                "group": "Incidents",
-                "expanded": false,
-                "pages": [
-                  "integrations/incidents/alertmanager",
-                  "integrations/incidents/runbook-guided-investigations",
-                  "integrations/incidents/incident_io",
-                  "integrations/incidents/opsgenie",
-                  "integrations/incidents/pagerduty",
-                  "integrations/incidents/sentry",
-                  "integrations/incidents/sentry-mcp",
-                  "integrations/incidents/servicenow",
-                  "integrations/incidents/fix-sentry-issue"
-                ]
-              },
-              {
-                "group": "Cloud",
-                "expanded": false,
-                "pages": [
-                  "integrations/cloud/argocd",
-                  "integrations/cloud/aws",
-                  "integrations/cloud/aws_lambda",
-                  "integrations/cloud/cloudtrail_events",
-                  "integrations/cloud/ec2",
-                  "integrations/cloud/elb",
-                  "integrations/cloud/helm",
-                  "integrations/cloud/kubernetes",
-                  "integrations/cloud/yandex-cloud",
-                  "integrations/cloud/railway",
-                  "integrations/cloud/s3",
-                  "integrations/cloud/sqs_queues",
-                  "integrations/cloud/vercel"
-                ]
-              },
-              {
-                "group": "Code and CI",
-                "expanded": false,
-                "pages": [
-                  "integrations/code/architecture-audit-tool",
-                  "integrations/code/structured-file-tool",
-                  "integrations/code/counting-files",
-                  "integrations/code/bitbucket",
-                  "integrations/code/github",
-                  "integrations/code/github-security-fix",
-                  "integrations/code/resolve-merge-conflicts",
-                  "integrations/code/github-workflow-tools",
-                  "integrations/code/github-actions",
-                  "integrations/code/gitlab",
-                  "integrations/code/jenkins",
-                  "integrations/code/pi-coding"
-                ]
-              },
-              {
-                "group": "Collaboration",
-                "expanded": false,
-                "pages": [
-                  "integrations/collaboration/google-docs",
-                  "integrations/collaboration/jira",
-                  "integrations/collaboration/trello"
-                ]
-              },
-              {
-                "group": "Messaging",
-                "expanded": false,
-                "pages": [
-                  "integrations/messaging/index",
-                  "integrations/messaging/smtp",
-                  "integrations/messaging/buzz",
-                  "integrations/messaging/slack",
-                  "integrations/messaging/discord",
-                  "integrations/messaging/telegram",
-                  "integrations/messaging/rocketchat",
-                  "integrations/messaging/whatsapp",
-                  "integrations/messaging/twilio-sms"
-                ]
-              },
-              {
-                "group": "Databases",
-                "expanded": false,
-                "pages": [
-                  "integrations/databases/azure-sql",
-                  "integrations/databases/clickhouse",
-                  "integrations/databases/elasticsearch",
-                  "integrations/databases/mariadb",
-                  "integrations/databases/mongodb",
-                  "integrations/databases/mongodb-atlas",
-                  "integrations/databases/mysql",
-                  "integrations/databases/opensearch",
-                  "integrations/databases/postgresql",
-                  "integrations/databases/rds",
-                  "integrations/databases/redis",
-                  "integrations/databases/snowflake",
-                  "integrations/databases/supabase"
-                ]
-              },
-              {
-                "group": "Workflows",
-                "expanded": false,
-                "pages": [
-                  "integrations/workflows/airflow",
-                  "integrations/workflows/dagster",
-                  "integrations/workflows/kafka",
-                  "integrations/workflows/prefect",
-                  "integrations/workflows/rabbitmq",
-                  "integrations/workflows/temporal"
-                ]
-              }
-            ]
-          }
+        "group": "Community",
+        "pages": [
+          "guides/bi-weekly-giveaway",
+          "guides/pr-review-flow"
         ]
       }
     ]
