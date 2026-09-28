@@ -335,6 +335,28 @@ def test_render_waits_while_resize_dimensions_are_unstable(
     assert terminal.getvalue().count("\x1b[J") == 1
 
 
+def test_resize_defers_repaint_until_live_region_is_cursor_addressable() -> None:
+    """A live region taller than the viewport cannot be erased from its top."""
+    size_state = [Size(rows=30, columns=90)]
+    app, renderer, terminal = _painted_resize_app(size_state)
+    initial_render_count = renderer._original_render_count
+
+    size_state[0] = Size(rows=5, columns=20)
+    app._on_resize()
+    renderer.render(app, Layout(Window(height=3)))
+
+    assert "\x1b[J" not in terminal.getvalue()
+    assert renderer._original_render_count == initial_render_count
+    app._redraw.assert_not_called()
+
+    size_state[0] = Size(rows=30, columns=90)
+    app._redraw.side_effect = lambda: renderer.render(app, Layout(Window(height=3)))
+    app._on_resize()
+
+    assert terminal.getvalue().count("\x1b[J") == 1
+    assert renderer._original_render_count == initial_render_count + 1
+
+
 def test_resize_erase_and_repaint_are_one_synchronized_frame() -> None:
     """Erase-then-draw is two visible states unless the terminal holds them.
 

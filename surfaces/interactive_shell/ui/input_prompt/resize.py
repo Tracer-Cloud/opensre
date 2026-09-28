@@ -133,16 +133,21 @@ def install_shrink_resize_guard(
     original_render = renderer.render
     original_report = renderer.report_absolute_cursor_row
     resize_handle: asyncio.TimerHandle | None = None
+    resize_deferred = False
 
     def report_absolute_cursor_row(row: int) -> None:
         original_report(row)
         renderer._min_available_height = 0
 
     def _render(pt_app: Any, layout: Layout, is_done: bool = False) -> None:
-        nonlocal resize_handle
+        nonlocal resize_deferred, resize_handle
         if is_done and resize_handle is not None:
             resize_handle.cancel()
             resize_handle = None
+        if is_done:
+            resize_deferred = False
+        elif resize_deferred:
+            return
         size = output.get_size()
         size_changed = _size_changed(getattr(renderer, "_last_size", None), size)
         if resize_handle is not None and size_changed and not is_done:
@@ -159,6 +164,7 @@ def install_shrink_resize_guard(
         output.disable_autowrap()
 
     def _apply_resize() -> None:
+        nonlocal resize_deferred
         renderer._min_available_height = 0
         if getattr(app, "_running_in_terminal", False):
             app._redraw()
@@ -166,6 +172,7 @@ def install_shrink_resize_guard(
         output.disable_autowrap()
         banner = rerender_banner() if rerender_banner is not None else None
         if banner is not None:
+            resize_deferred = False
             # Full chrome reset: clear + static banner + live region are one
             # terminal transaction. Writing via app.output avoids patched
             # stdout scheduling each piece as a separate run_in_terminal task.
@@ -184,6 +191,7 @@ def install_shrink_resize_guard(
         # while VTE reflows. Once dimensions settle, measure how the old frame
         # wraps at the new width and move to its top for one bounded erase.
         if not supports_synchronized_output(output):
+            resize_deferred = False
             original_on_resize()
         else:
             size = output.get_size()
@@ -193,8 +201,18 @@ def install_shrink_resize_guard(
             )
             cursor = getattr(renderer, "_cursor_pos", None)
             if rows_above is None or cursor is None:
+                resize_deferred = False
                 original_on_resize()
+            elif rows_above >= size.rows:
+                # The old live-region top has moved above the addressable
+                # viewport. Leave the terminal's reflowed frame untouched and
+                # keep buffer updates off-screen until a later resize makes the
+                # whole region reachable again; erasing here would strand old
+                # prompt chrome inside transcript scrollback.
+                resize_deferred = True
+                return
             else:
+                resize_deferred = False
                 with synchronized_output(output):
                     output.cursor_backward(int(cursor.x) % max(1, size.columns))
                     output.cursor_up(rows_above)
