@@ -12,9 +12,24 @@ Make sure you have:
 
 ## Step 1: Install and start opensre
 
-```bash
-curl -fsSL https://install.opensre.com | bash -s -- -dc
-```
+<Tabs>
+  <Tab title="macOS and Linux">
+    ```bash
+    curl -fsSL https://install.opensre.com | bash -s -- -dc
+    ```
+
+    Prebuilt Linux binaries need glibc 2.35 or newer (Ubuntu 22.04 or comparable); see [Linux](/environments/linux-local).
+  </Tab>
+  <Tab title="Windows">
+    Open PowerShell and run:
+
+    ```powershell
+    & ([scriptblock]::Create((irm https://install.opensre.com/install.ps1))) -dc
+    ```
+
+    See [Windows](/environments/windows-local).
+  </Tab>
+</Tabs>
 
 Then start OpenSRE:
 
@@ -23,14 +38,6 @@ opensre
 ```
 
 ![OpenSRE CLI welcome screen with the sign-in prompt](/images/opensre-welcome.png)
-
-On Windows, open PowerShell and run:
-
-```powershell
-& ([scriptblock]::Create((irm https://install.opensre.com/install.ps1))) -dc
-```
-
-See [Windows](/environments/windows-local).
 
 For PATH troubleshooting and platform requirements, see [Install locally](/install-local).
 
