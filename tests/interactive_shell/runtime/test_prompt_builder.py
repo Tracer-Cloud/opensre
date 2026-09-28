@@ -45,6 +45,19 @@ def test_idle_banner_repaint_preserves_visible_transcript() -> None:
     assert builder._rerender_banner_if_idle() is False
 
 
+def test_idle_banner_repaint_preserves_restored_messages_without_history() -> None:
+    session = Session()
+    session.agent.messages = [
+        ("user", "What changed?"),
+        ("assistant", "The deployment rolled back."),
+    ]
+    builder = PromptBuilder(session, ReplState(), SpinnerState())
+    builder.pt_app = object()  # type: ignore[assignment]
+
+    assert session.history == []
+    assert builder._rerender_banner_if_idle() is False
+
+
 def test_empty_shell_can_repaint_the_existing_banner(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
