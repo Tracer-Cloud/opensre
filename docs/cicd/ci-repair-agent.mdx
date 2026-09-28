@@ -1,0 +1,93 @@
+---
+title: "Keep CI green with an agent"
+description: "A recurring reliability report, a bounded repair loop for one pull request, or the managed service that repairs CI for your organization."
+---
+
+Three ways to let OpenSRE keep working on your CI after the first report. All
+of them start from the demo picker (`opensre`, or `/demo` in the shell) or from
+a plain request.
+
+## The reliability agent
+
+Demo option **B**, "Set up an agent that improves CI/CD reliability over time",
+turns the [CI reliability analysis](/cicd-analytics-demo) into a recurring
+check for one repository.
+
+```text
+set up an agent that improves CI/CD reliability for Tracer-Cloud/opensre
+```
+
+- It analyzes the repository now, then schedules the report for weekdays at 08:00 local time. Later runs cover the last 7 days.
+- Reports land in the shell inbox: `/loops messages`. The agent never posts to Slack or another chat channel.
+- Manage it with `/loops list`, `/loops run <id>`, `/loops stop <id>` and `/loops delete <id>`.
+- The loop fires while the shell is open. `/loops service install` keeps it running after you close the terminal (launchd on macOS, systemd on Linux; Windows uses `opensre cron start --service` from Task Scheduler).
+
+## The repair loop
+
+A repair loop watches one pull request, edits, tests and pushes fixes for its
+failing GitHub Actions checks, and stops on its own:
+
+| Rule | Value |
+| --- | --- |
+| Trigger | Every 30 seconds while active |
+| Attempts | At most three failed repair attempts |
+| Time budget | Ten minutes from scheduling |
+| Target | An open pull request whose branch lives in the same repository |
+
+Ask for it with the repository and the PR number:
+
+```text
+schedule a CI repair loop for Tracer-Cloud/opensre pull request 6054
+```
+
+OpenSRE asks for approval before the loop starts, because it will push to the
+PR branch. A pull request that is closed, or opened from a fork, is refused
+before anything is scheduled, with the reason and what to choose instead.
+
+While it runs and after it finishes:
+
+```text
+/loops show <task-id>     the report: outcome, attempts, evidence links
+/loops stop <task-id>     stop an active repair
+what did the most recent CI repair run do
+```
+
+A finished run keeps its report and attempt records and removes its checkout.
+Asking for the same PR again while a loop is active returns that loop with its
+original deadline.
+
+<Note>
+  Want to see the loop end to end without touching a real PR? Ask for the demo repair: OpenSRE creates a small private repository named `opensre-onboarding-ci-repair-demo` with a failing check, repairs it, and closes the demo PR when the pushed checks pass. It needs a GitHub token that may create a private repository and a signed-in coding agent.
+</Note>
+
+## The managed service (coming soon)
+
+Demo option **C**, "Run CI/CD improvements with a managed service", runs the
+same repair loop on your organization's hosted gateway instead of your
+machine, so it keeps running after the shell closes and uses the
+organization's GitHub credential rather than yours.
+
+What you need:
+
+- An organization on [app.opensre.com](https://app.opensre.com) with the managed gateway provisioned from [Agent Backend settings](https://app.opensre.com/settings/agent-backend).
+- The organization's GitHub token connected on the web app's Integrations page. The gateway picks up a changed token within a minute.
+- Your account must be an organization admin to start work there.
+
+Then, in the shell:
+
+```text
+Check whether my organization's hosted gateway is running.
+run the CI repair loop for Tracer-Cloud/opensre pull request 6054 on my org's hosted gateway
+what did the most recent CI repair run on the gateway do
+```
+
+The gateway asks for approval through the shell before a loop starts, and
+answers questions about its loops while a repair is running. See
+[Deployment](/deployment#opensre-cloud-managed-gateway) for starting and
+stopping the gateway.
+
+## Related
+
+- [Fix GitHub CI](/github-ci-fix) — a one-off repair from the shell, no loop
+- [CI/CD analytics demo](/cicd-analytics-demo) — the report the reliability agent repeats
+- [Shell commands](/interactive-shell-commands) — everything `/loops` can do

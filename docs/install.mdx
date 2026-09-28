@@ -12,9 +12,24 @@ Make sure you have:
 
 ## Step 1: Install and start opensre
 
-```bash
-curl -fsSL https://install.opensre.com | bash -s -- -dc
-```
+<Tabs>
+  <Tab title="macOS and Linux">
+    ```bash
+    curl -fsSL https://install.opensre.com | bash -s -- -dc
+    ```
+
+    Prebuilt Linux binaries need glibc 2.35 or newer (Ubuntu 22.04 or comparable); see [Linux](/environments/linux-local).
+  </Tab>
+  <Tab title="Windows">
+    Open PowerShell and run:
+
+    ```powershell
+    & ([scriptblock]::Create((irm https://install.opensre.com/install.ps1))) -dc
+    ```
+
+    See [Windows](/environments/windows-local).
+  </Tab>
+</Tabs>
 
 Then start OpenSRE:
 
@@ -24,59 +39,54 @@ opensre
 
 ![OpenSRE CLI welcome screen with the sign-in prompt](/images/opensre-welcome.png)
 
-On Windows, open PowerShell and run:
-
-```powershell
-& ([scriptblock]::Create((irm https://install.opensre.com/install.ps1))) -dc
-```
-
-See [Windows](/environments/windows-local).
-
 For PATH troubleshooting and platform requirements, see [Install locally](/install-local).
 
 ## Step 2: Sign in
 
-Choose **Sign in or create account** in the welcome screen. Your browser opens the OpenSRE sign-up page. Create an account or sign in using email or another enabled provider; a successful login activates the hosted model, so no separate LLM key is required. Add GitHub later as an optional integration if you want OpenSRE to work with repositories.
+Choose **Sign in or create account** in the welcome screen. Your browser opens the OpenSRE sign-up page; sign in with email or another enabled provider. Signing in activates the hosted model, so you need no LLM key. Back in the terminal, OpenSRE confirms the session with the web app and opens the shell.
 
-When that finishes, OpenSRE opens the interactive shell. Add tools later, when you need them:
+## Step 3: Pick a demo, or skip it
+
+The first shell prompt asks which demo to run:
+
+```text
+Which demo would you like me to run?
+  (A) Explore a repo and analyze its CI/CD performance (recommended)
+  (B) Set up an agent that improves CI/CD reliability over time
+  (C) Run CI/CD improvements with a managed service (coming soon)
+  (D) Connect OpenSRE to Slack and hand off DevOps chores for your team
+  (E) Skip the demo and open the shell
+```
+
+<Frame>
+  ![The startup demo picker with its five options](/images/onboarding-demo-picker.png)
+</Frame>
+
+Choose **A** to see what OpenSRE does with a real repository on your machine: it
+reads the last 30 days of GitHub Actions history and reports how reliable your
+CI is and how much developer time it costs. It needs GitHub access: connect it
+first with `opensre integrations setup github` (authorize in the browser, or
+paste a token). Without it the demo stops and names that command. See
+[CI/CD analytics demo](/cicd-analytics-demo).
+
+Choose **E** to go straight to the prompt. Type `/demo` to open the menu again at
+any time, or start with `opensre --skip-onboarding` to skip it.
+
+## Step 4: Ask your first question
+
+Describe what's going on in plain English:
+
+```text
+why is checkout latency spiking?
+```
+
+Connect the tools OpenSRE should read when you need them, from the shell (`/integrations setup github`) or the terminal:
 
 ```bash
 opensre integrations setup <service>
 ```
 
-For the guided integration and optional local-model wizard, run:
-
-```bash
-opensre onboard
-```
-
-To inspect or end the account session later:
-
-```bash
-opensre account status
-opensre account credits
-opensre account logout
-```
-
-`opensre credits` and `/credits` in the shell show the same hosted balance.
-
-Then check that the tools you connected work:
-
-```bash
-opensre integrations verify
-```
-
-## Step 3: Ask your first question
-
-Open the shell and describe what's going on:
-
-```bash
-opensre
-```
-
-Ask: *why is checkout latency spiking?*
-
-Full walkthrough with screenshots: [Quickstart](/quickstart).
+Full walkthrough: [Quickstart](/quickstart).
 
 ## Environment-specific guides
 
@@ -90,7 +100,7 @@ Full walkthrough with screenshots: [Quickstart](/quickstart).
 ## Stuck?
 
 - **Command not found** — open a new terminal, or add the bin directory the installer printed to your PATH
-- **The shell keeps asking you to sign in** — run `opensre account status`; expired, revoked, incomplete, or unreachable sessions do not open the shell
-- **Docker / `make` missing** — see [Quickstart troubleshooting](/quickstart#troubleshooting)
+- **The sign-in screen comes back after you signed in** — run `opensre account status`; it names what is wrong with the session
+- **Anything else** — see [Quickstart troubleshooting](/quickstart#troubleshooting)
 
 Need deploy options beyond a laptop binary? See [Deployment](/deployment).

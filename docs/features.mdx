@@ -6,6 +6,9 @@ description: "What OpenSRE can do today — tools, shell, privacy, and more."
 ## Highlights
 
 <CardGroup cols={2}>
+  <Card title="CI/CD" icon="code-branch" href="/cicd/overview">
+    Measure CI reliability, fix failing checks, and keep pull requests green with an agent.
+  </Card>
   <Card title="Interactive shell" icon="terminal" href="/interactive-shell-commands">
     Describe incidents in plain English, or drive everything with slash commands.
   </Card>
@@ -27,6 +30,13 @@ description: "What OpenSRE can do today — tools, shell, privacy, and more."
 </CardGroup>
 
 ## Full list
+
+**CI/CD:**
+
+- 30-day CI reliability report for one repository, with developer hours lost and a comparison to two open-source projects — [CI/CD analytics demo](/cicd-analytics-demo)
+- Fix failing GitHub Actions checks on a pull request or branch and push the repair — [Fix GitHub CI](/github-ci-fix)
+- A recurring reliability agent, a bounded repair loop for one PR, and the managed service for organizations — [Keep CI green with an agent](/cicd/ci-repair-agent)
+- One read-only scan for every failing PR and branch across your organizations — [Scan CI health](/github-ci-health-scan)
 
 **Integrations:**
 
@@ -71,7 +81,7 @@ description: "What OpenSRE can do today — tools, shell, privacy, and more."
     See a first run and sample output.
   </Card>
   <Card title="Quickstart" icon="rocket" href="/quickstart">
-    Install, onboard, and ask your first question in a few minutes.
+    Install, sign in, and ask your first question in a few minutes.
   </Card>
   <Card title="Hosting the agent" icon="server" href="/hosting-the-agent">
     Embed the agent with your own sink, tools, and prompts.

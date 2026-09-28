@@ -7,13 +7,18 @@ Want to know what OpenSRE actually looks like when you run it? Here's a walkthro
 
 ## Watch a first run
 
-Install, set things up, and ask your first question. Most people are done in under ten minutes.
+Install, sign in, and ask your first question. Most people are done in under ten minutes.
 
 ```bash
 curl -fsSL https://install.opensre.com | bash -s -- -dc
-opensre onboard
 opensre
 ```
+
+The first prompt offers a demo: the recommended one analyzes a repository on your machine and reports CI/CD reliability and the developer time lost to it. Skip it with **E** to go straight to the prompt.
+
+<Frame>
+  ![The CI/CD reliability report the recommended demo produces](/images/onboarding-ci-analysis-report.png)
+</Frame>
 
 Ask: *Why is the payments-api pod in production crash-looping?* The agent calls your connected tools and answers in the shell.
 

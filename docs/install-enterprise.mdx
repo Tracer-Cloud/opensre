@@ -54,9 +54,10 @@ opensre integrations setup <service>
 opensre integrations verify <service>
 ```
 
-Start with [Integrations overview](/integrations-overview). For a local model or
-bring-your-own-provider setup, run `opensre onboard`; this is optional when the
-account-hosted model is sufficient.
+Start with [Integrations overview](/integrations-overview). The signed-in shell
+uses the account-hosted model. A bring-your-own provider is needed only where
+nobody is signed in: self-hosted gateways and headless `opensre ask` jobs on CI
+machines, see [LLM providers](/llm-providers).
 
 For a completely self-hosted gateway instead of the managed service, follow
 [Deployment](/deployment#self-hosted-container).

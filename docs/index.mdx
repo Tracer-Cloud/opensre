@@ -64,6 +64,9 @@ OpenSRE is an open-source agent that answers production questions for you. When 
 ## What you can do with it
 
 <CardGroup cols={2}>
+  <Card title="Measure and fix your CI" icon="code-branch" href="/cicd/overview">
+    A 30-day reliability report for any repository, fixes for failing checks, and an agent that keeps CI green.
+  </Card>
   <Card title="Chat with it" icon="terminal" href="/interactive-shell-commands">
     Describe an incident in plain language, or use commands like `/health` and `/verify`.
   </Card>
@@ -89,7 +92,7 @@ OpenSRE is an open-source agent that answers production questions for you. When 
     ```
   </Step>
   <Step title="Get started">
-    Run `opensre` to sign in and start the shell. Create an account or sign in using email or another enabled provider; OpenSRE then activates the hosted model. Describe what's going on in your own words — or paste the alert body straight in. Add tools later with `opensre integrations setup <service>` when you want it to query GitHub, Datadog, Grafana, Slack, or another system.
+    Run `opensre` to sign in and start the shell. Create an account or sign in using email or another enabled provider; OpenSRE then activates the hosted model. The first prompt offers a demo: pick the CI/CD analysis of a repository on your machine, or skip it. Then describe what's going on in your own words — or paste the alert body straight in. Add tools later with `opensre integrations setup <service>` when you want it to query GitHub, Datadog, Grafana, Slack, or another system.
 
     ```bash
     opensre
@@ -98,7 +101,7 @@ OpenSRE is an open-source agent that answers production questions for you. When 
 </Steps>
 
 <Tip>
-  Something not working? [Quickstart troubleshooting](/quickstart#troubleshooting) covers account validation and install issues.
+  Something not working? [Quickstart troubleshooting](/quickstart#troubleshooting) covers install issues.
 </Tip>
 
 ## How a turn runs
