@@ -64,8 +64,16 @@ The workflow succeeds only when:
 3. The remote repair loop fixes the failure without the local shell remaining active.
 
 ## Configure remote gateway Github access 
-We need to give users their GitHub access token 
+In order to use this skill correctly, you need to configure the remote GitHub integrations correctly. To do that you need to enter you GitHub integration here:
 
+https://app.opensre.com/dashboard/github
+
+Specifically users need to confiugre a github pat token with:
+
+Contents  -- read and write
+Pull reqequests -- read and write
+
+# Verification 
 What needs to be verified in the remote:
 - Does remote storage work 
 - Does GitHub token work 
@@ -77,7 +85,7 @@ After successful validation, use `ask_user_choice`:
 - Add more scheduled tasks
 - Exit to interactive shell 
 
-## Analytics
+## Add analytics into the analytics back-end application (they should work both remotely and locally)
 
 Record:
 
