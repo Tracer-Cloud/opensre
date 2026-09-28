@@ -51,9 +51,15 @@ Which demo would you like me to run?
   (E) Skip the demo and open the shell
 ```
 
+<Frame>
+  ![The startup demo picker with its five options](/images/onboarding-demo-picker.png)
+</Frame>
+
 Choose **A** to see what OpenSRE does with a real repository on your machine: it
 reads the last 30 days of GitHub Actions history and reports how reliable your
-CI is and how much developer time it costs. See [CI/CD analytics demo](/cicd-analytics-demo).
+CI is and how much developer time it costs. It needs GitHub access; when GitHub
+is not connected yet, the demo opens the GitHub setup first (authorize in the
+browser, or paste a token). See [CI/CD analytics demo](/cicd-analytics-demo).
 
 Choose **E** to go straight to the prompt. Type `/demo` to open the menu again at
 any time, or start with `opensre --skip-onboarding` to skip it.

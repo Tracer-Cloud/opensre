@@ -53,9 +53,15 @@ Which demo would you like me to run?
   (E) Skip the demo and open the shell
 ```
 
+<Frame>
+  ![The startup demo picker with its five options](/images/onboarding-demo-picker.png)
+</Frame>
+
 Choose **A** to see what OpenSRE does with a real repository on your machine: it
 reads the last 30 days of GitHub Actions history and reports how reliable your
-CI is and how much developer time it costs. See [CI/CD analytics demo](/cicd-analytics-demo).
+CI is and how much developer time it costs. It needs GitHub access; when GitHub
+is not connected yet, the demo opens the GitHub setup first (authorize in the
+browser, or paste a token). See [CI/CD analytics demo](/cicd-analytics-demo).
 
 Choose **E** to go straight to the prompt. Type `/demo` to open the menu again at
 any time, or start with `opensre --skip-onboarding` to skip it.
@@ -111,4 +117,5 @@ opensre uninstall --yes
 - **`opensre` is not found**: Open a new terminal, or add the bin directory printed by the installer to `PATH`.
 - **The Linux binary does not start**: Prebuilt binaries require glibc 2.35 or newer; use a supported distribution or the [Docker guide](/environments/docker).
 - **`make` is missing**: See the [development setup guide](https://github.com/Tracer-Cloud/opensre/blob/main/SETUP.md) if you are working from source.
-- **The demo menu did not appear**: It needs an interactive terminal. Type `/demo` in the shell to open it.
+- **The demo menu did not appear**: Menus need an interactive terminal. Run `opensre` in a terminal window rather than through a pipe or a CI job, then type `/demo`.
+- **The sign-in screen comes back after you signed in**: Run `opensre account status`; it names what is wrong with the session (expired, revoked, or the web app unreachable).
