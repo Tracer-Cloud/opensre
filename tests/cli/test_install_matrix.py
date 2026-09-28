@@ -332,9 +332,7 @@ def test_install_docs_list_every_process(path: Path, needles: tuple[str, ...]) -
 
 def test_windows_install_docs_use_powershell_installer() -> None:
     command = "& ([scriptblock]::Create((irm https://install.opensre.com/install.ps1)))"
-    windows = (REPO_ROOT / "docs" / "install" / "windows-local.mdx").read_text(
-        encoding="utf-8"
-    )
+    windows = (REPO_ROOT / "docs" / "install" / "windows-local.mdx").read_text(encoding="utf-8")
     readme = README.read_text(encoding="utf-8")
     assert f"{command} -dc" in windows
     assert f"{command} -gh" in readme
