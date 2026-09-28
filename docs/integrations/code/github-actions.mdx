@@ -1,0 +1,113 @@
+---
+title: "GitHub Actions"
+description: "Trace incidents back to failing GitHub Actions workflow runs, jobs, and step logs"
+---
+
+## Overview
+
+OpenSRE’s GitHub Actions tools help you trace incidents back to the workflow run that caused them. They are designed for situations where a failed deploy, a flaky test, or a broken secret rotation explains a production problem.
+
+This is **not** a separate integration id — it uses the same GitHub MCP credentials as [GitHub](/integrations/code/github). For mutating CI fixes, see [Fix GitHub CI](/cicd/github-ci-fix).
+
+## Prerequisites
+
+- GitHub connected via [GitHub integration](/integrations/code/github)
+- MCP toolsets that include `actions` (default: `repos,issues,pull_requests,actions`)
+- Token access to the repositories whose workflows you want to inspect
+
+## Setup
+
+```bash
+opensre integrations setup github
+opensre integrations verify github
+```
+
+Ensure the GitHub MCP toolsets include `actions`.
+
+| Variable | Required | Description |
+| --- | --- | --- |
+| `GITHUB_MCP_AUTH_TOKEN` | Yes\* | GitHub token (or browser sign-in via setup) |
+| `GITHUB_MCP_URL` | No | Custom MCP endpoint (default `https://api.githubcopilot.com/mcp/`) |
+| `GITHUB_MCP_MODE` / `GITHUB_MCP_COMMAND` / `GITHUB_MCP_ARGS` | No | For stdio-based MCP setups |
+
+\*Unless you authorized in the browser during `opensre integrations setup github`.
+
+If no token is configured, GitHub Actions tools report that the GitHub integration is unavailable.
+
+## Credentials
+
+Use the same token and scopes as [GitHub](/integrations/code/github). For private repos, the token needs access to that repository. Confirm verify output mentions Actions tools.
+
+## Tools
+
+| Tool | What it does |
+| --- | --- |
+| `list_github_actions_workflow_runs` | Recent workflow runs for a repository, including status and trigger |
+| `list_github_actions_active_runs` | Queued and in-progress runs |
+| `list_github_actions_run_jobs` | Jobs and step outcomes for a run |
+| `get_github_actions_step_log` | Log output for a failed job step |
+
+### Examples
+
+```json
+{
+  "owner": "Tracer-Cloud",
+  "repo": "opensre",
+  "per_page": 10
+}
+```
+
+```json
+{
+  "owner": "Tracer-Cloud",
+  "repo": "opensre",
+  "run_id": 123456789,
+  "job_id": 987654321,
+  "step_name": "Deploy"
+}
+```
+
+### Typical workflow
+
+1. Find the workflow run that happened right before the incident.
+2. Open the job list and identify the failed job or step.
+3. Pull the failed step log and look for the exact deployment/test error.
+4. Use the run metadata to correlate the failure with commits, pull requests, or a secret/config change.
+
+### Example RCA usage
+
+A failed deployment workflow often shows up as:
+
+- a run with `conclusion: failure`
+- a job named `deploy`, `release`, or `rollout`
+- a step such as `Deploy`, `Apply manifests`, or `Run migrations`
+
+That context is usually enough to connect the incident to a recent workflow change.
+
+## Verify
+
+```bash
+opensre integrations verify github
+```
+
+Confirm the verify output mentions Actions tools. Then test from the REPL:
+
+```text
+> list recent failed workflow runs for Tracer-Cloud/opensre
+```
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **GitHub integration unavailable** | Run `opensre integrations setup github` and verify token scopes include `repo` |
+| **No workflow runs returned** | Confirm `owner`/`repo` match the repository; check token access to private repos |
+| **Step log empty** | Use `job_id` and exact `step_name` from `list_github_actions_run_jobs` |
+| **MCP connection failed** | Verify `GITHUB_MCP_URL` is reachable; see [GitHub troubleshooting](/integrations/code/github#troubleshooting) |
+| **Actions tools missing** | Ensure `GITHUB_MCP_TOOLSETS` includes `actions` |
+
+## Security
+
+- Prefer a least-privilege token scoped to the repositories you investigate.
+- These tools are read-only; mutating CI fixes go through [GitHub CI fix](/cicd/github-ci-fix) with explicit confirmation.
+- Store tokens in `.env`, not in source code.

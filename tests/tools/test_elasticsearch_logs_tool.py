@@ -15,7 +15,7 @@ class TestElasticsearchLogsToolContract(BaseToolContract):
 
 def test_is_available_requires_connection_verified() -> None:
     # Shares the "opensearch" source (same client, same credentials) — see
-    # docs/opensearch.mdx: configuring OpenSearch/Elasticsearch once enables
+    # docs/integrations/databases/opensearch.mdx: configuring OpenSearch/Elasticsearch once enables
     # both the analytics tool and this log-search tool.
     tool = ElasticsearchLogsTool()
     assert tool.is_available({"opensearch": {"connection_verified": True}}) is True

@@ -1,0 +1,111 @@
+---
+title: "AWS EC2"
+description: "Discover EC2 instances by tag, tier, or VPC to map application tiers and investigate non-Kubernetes issues"
+---
+
+## Overview
+
+OpenSRE uses AWS EC2 to discover virtual machine instances, filter them by tag (such as `tier`), instance IDs, or VPC, and group instances into application tiers (such as web or worker). This helps answer questions like "which application tier(s) plausibly drive load on this RDS?" when investigating non-Kubernetes alerts or bridging load balancers (ELB) and databases (RDS).
+
+All EC2 API calls are read-only and routed through the shared `aws_sdk_client` allowlist, so the integration cannot mutate your EC2 resources.
+
+## Prerequisites
+
+- AWS credentials configured per the [AWS integration](/integrations/cloud/aws) (role ARN recommended for verify; ambient credentials for tool calls)
+- An EC2 environment with tagged instances, explicit instance IDs, or a VPC you want OpenSRE to inspect
+- IAM permissions for `ec2:DescribeInstances`
+
+## Setup
+
+EC2 has no separate setup target. Configure the [AWS integration](/integrations/cloud/aws), then ensure alerts resolve an `ec2` source with the fields the tool needs.
+
+### Environment variables
+
+```bash
+AWS_REGION=us-east-1
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `AWS_REGION` | `us-east-1` | AWS region the EC2 instances live in |
+
+The tool accepts parameter hints from the resolved `ec2` source:
+
+- `tiers`: List of tier names in the resolved `ec2` source (for example `["web"]` or `["web", "worker"]`). The parameter extractor maps a single item to the singular `tier` tool argument, or leaves `tier` empty when multiple tiers are in scope so instances across all tiers are enumerated and returned grouped in `by_tier`.
+- `instance_ids`: List of explicit EC2 instance IDs.
+- `vpc_id`: VPC ID filter to limit discovery to a specific network.
+- `region`: AWS region override (defaults to `AWS_REGION` or `us-east-1`).
+
+## Credentials
+
+EC2 uses the same AWS account as the [AWS integration](/integrations/cloud/aws). Tool calls use the ambient boto3 credential chain (environment keys, shared credentials profile, or attached instance/task role). They do **not** assume `AWS_ROLE_ARN` for the API call.
+
+### IAM permissions
+
+The integration only needs read-only EC2 describe permissions:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "ec2:DescribeInstances"
+      ],
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+Attach this policy to the identity the OpenSRE process runs as (and to the role used by `opensre integrations verify aws` if you use assume-role). If you already use the AWS managed `ReadOnlyAccess` policy, `ec2:DescribeInstances` is included.
+
+## Tools
+
+| Tool | AWS API call | What it returns |
+| --- | --- | --- |
+| `ec2_instances_by_tag` | `ec2:DescribeInstances` | Active EC2 instances filtered by `tier` tag, instance IDs, or `vpc_id`. Returns per-instance metadata (ID, tier, ASG, private IP, VPC, subnet, AZ, state, instance type, security groups), a `by_tier` mapping of tier name to instance IDs, `tiers_detected`, and a precomputed summary (counts by tier, total active instances, primary tier, VPCs in scope, AZs in scope). |
+
+The tool becomes available to the planner whenever `tiers`, `instance_ids`, `vpc_id`, or `_backend` is present in the resolved `ec2` sources.
+
+### Use cases
+
+- Discovering EC2 application tiers when investigating a non-Kubernetes issue
+- Mapping a tier name (`web`, `worker`, etc.) to its active instance IDs
+- Bridging EC2 → RDS when answering "which application tier drives database load"
+
+### Gotcha
+
+Terminated or stopped EC2 instances (`terminated`, `stopped`, `stopping`, `shutting-down`) are automatically excluded from the tool's results so they do not distort load-attribution or topology analysis. If an expected instance does not appear in the returned list, verify that the instance is in the `running` state and properly tagged with `tier` or `Tier`. Additionally, at least one filter (`tier`, `instance_ids`, or `vpc_id`) must be provided in the tool call or resolved sources, or the tool will return an unavailable status.
+
+## Verify
+
+```bash
+opensre integrations verify aws
+```
+
+EC2 shares the AWS integration's credential check — there is no separate `ec2` verify target. A successful AWS verify confirms your AWS credentials are valid; the EC2 tool becomes available whenever `tiers`, `instance_ids`, `vpc_id`, or `_backend` is present in the resolved `ec2` source.
+
+Expected output:
+
+```
+Service: aws
+Status: passed
+Detail: Authenticated via assume-role in us-east-1 as arn:aws:iam::123456789012:role/OpenSREReadOnly (account 123456789012)
+```
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **Tool never selected** | Ensure the alert's resolved `ec2` source includes `tiers`, `instance_ids`, `vpc_id`, or `_backend` |
+| **Expected instance missing** | Confirm the instance is `running` and tagged with `tier` / `Tier`; stopped and terminated instances are excluded |
+| **AccessDenied on DescribeInstances** | Attach `ec2:DescribeInstances` to the ambient identity OpenSRE runs as |
+| **Wrong region** | Set `AWS_REGION` or pass `region` on the resolved source |
+
+## Security
+
+- All EC2 API calls are read-only.
+- Prefer a least-privilege IAM policy with only `ec2:DescribeInstances` if you do not need broader AWS access.
+- Store AWS credentials in `.env` or your secret manager — not in source control.

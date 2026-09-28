@@ -323,7 +323,7 @@ class AttachSession:
                 # EOF for now while the PID is still alive: we poll below until
                 # new bytes arrive or the process exits. A quiet writer leaves
                 # the rendered view unchanged; see trace limitations in
-                # docs/fleet.mdx.
+                # docs/platform/fleet.mdx.
                 #
                 # The only *exit* trigger here is PID death — we deliberately
                 # do NOT check ``self.target.path.exists()`` once the fd is

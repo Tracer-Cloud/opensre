@@ -95,7 +95,7 @@ def test_release_builds_and_publishes_the_validated_source_sha() -> None:
 
 def test_release_path_classifier_preserves_the_previous_push_filters() -> None:
     assert not _requires_release(
-        "docs/quickstart.mdx",
+        "docs/getting-started/quickstart.mdx",
         "tests/cli/test_smoke.py",
         "README.md",
         ".claude/settings.json",
