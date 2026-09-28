@@ -363,6 +363,36 @@ def test_resize_during_background_output_opens_no_frame() -> None:
     assert "\x1b[J" not in emitted
 
 
+def test_native_output_uses_prompt_toolkit_resize_instead_of_vt_reflow_math() -> None:
+    """Native consoles use screen-buffer coordinates, not VT row reflow."""
+    output = MagicMock()
+    output.get_size.return_value = Size(rows=30, columns=90)
+    app: Any = MagicMock()
+    app.output = output
+    renderer = MagicMock()
+    renderer._min_available_height = 0
+    renderer._last_screen = SimpleNamespace(
+        height=2,
+        data_buffer={0: _row("status", width=109)},
+    )
+    renderer._cursor_pos = _Cursor(x=4, y=1)
+    renderer.report_absolute_cursor_row = MagicMock()
+    renderer.render = MagicMock()
+    app.renderer = renderer
+    original_on_resize = MagicMock()
+    app._on_resize = original_on_resize
+    app._running_in_terminal = False
+
+    install_shrink_resize_guard(app)
+    output.reset_mock()
+    app._on_resize()
+
+    original_on_resize.assert_called_once_with()
+    output.cursor_backward.assert_not_called()
+    output.cursor_up.assert_not_called()
+    output.erase_down.assert_not_called()
+
+
 def test_resize_restores_the_terminal_when_the_repaint_raises() -> None:
     """A frame left open would hold the display until the terminal times out."""
     app, _renderer, terminal = _painted_resize_app()

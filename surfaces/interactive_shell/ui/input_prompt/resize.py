@@ -28,7 +28,10 @@ from prompt_toolkit.application import Application
 from prompt_toolkit.layout.layout import Layout
 from prompt_toolkit.output.base import Size
 
-from surfaces.interactive_shell.ui.input_prompt.synchronized import synchronized_output
+from surfaces.interactive_shell.ui.input_prompt.synchronized import (
+    supports_synchronized_output,
+    synchronized_output,
+)
 
 # Soft-wrap headroom above preferred Auto + composer. Keep tiny — blank Screen
 # rows below the composer become a hollow band and invite ghost stacking.
@@ -166,22 +169,25 @@ def install_shrink_resize_guard(
         # Keep the hardware cursor at prompt-toolkit's logical input position
         # while VTE reflows. Once dimensions settle, measure how the old frame
         # wraps at the new width and move to its top for one bounded erase.
-        size = output.get_size()
-        rows_above = _reflowed_rows_above_cursor(
-            renderer,
-            columns=max(1, size.columns),
-        )
-        cursor = getattr(renderer, "_cursor_pos", None)
-        if rows_above is None or cursor is None:
+        if not supports_synchronized_output(output):
             original_on_resize()
         else:
-            with synchronized_output(output):
-                output.cursor_backward(int(cursor.x) % max(1, size.columns))
-                output.cursor_up(rows_above)
-                output.erase_down()
-                output.flush()
-                renderer.reset(leave_alternate_screen=False)
-                app._redraw()
+            size = output.get_size()
+            rows_above = _reflowed_rows_above_cursor(
+                renderer,
+                columns=max(1, size.columns),
+            )
+            cursor = getattr(renderer, "_cursor_pos", None)
+            if rows_above is None or cursor is None:
+                original_on_resize()
+            else:
+                with synchronized_output(output):
+                    output.cursor_backward(int(cursor.x) % max(1, size.columns))
+                    output.cursor_up(rows_above)
+                    output.erase_down()
+                    output.flush()
+                    renderer.reset(leave_alternate_screen=False)
+                    app._redraw()
         output.disable_autowrap()
 
     def _apply_pending_resize() -> None:
