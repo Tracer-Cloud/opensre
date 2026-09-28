@@ -73,15 +73,23 @@ set up an agent that improves CI/CD reliability for Tracer-Cloud/opensre
 
 ## From a script or a CI job
 
-`opensre ask` runs one turn and exits, so any of the prompts above can run headless:
+`opensre ask` runs one turn and exits. The read-only tasks, analysis and the
+health scan, run headless as they are:
 
 ```bash
 opensre --json ask "how many PRs currently have failing CI in Tracer-Cloud?"
 ```
 
+Fixing a PR or scheduling an agent uses tools that need approval, and a
+headless run has nobody to approve. Authorize the tool for that run:
+
+```bash
+opensre ask --allowed-tool fix_github_pr_ci "fix failing checks on Tracer-Cloud/opensre#4597"
+```
+
 A machine that is not signed in needs `LLM_PROVIDER` and a provider key plus a
-GitHub token in the environment. See [Headless CLI](/headless-cli) for tool
-approvals, `--json` output and exit codes.
+GitHub token in the environment. See [Headless CLI](/headless-cli) for
+`--allowed-tool`, `--json` output and exit codes.
 
 ## Where the results go
 
