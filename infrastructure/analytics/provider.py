@@ -30,6 +30,7 @@ from config.constants.analytics import (
     ANALYTICS_EVENT_SCHEMA_VERSION,
     ANALYTICS_LOG_EVENTS_ENV,
     ANALYTICS_MAX_PAYLOAD_BYTES,
+    ANALYTICS_PROPERTIES_VERSION,
     ANALYTICS_SOURCE,
 )
 from config.version import get_opensre_version
@@ -788,6 +789,7 @@ _COMPOSITE_FINGERPRINT = _build_composite_fingerprint()
 _ANALYTICS_RUNTIME = detect_analytics_runtime()
 
 _BASE_PROPERTIES: Final[Properties] = {
+    "analytics_properties_version": ANALYTICS_PROPERTIES_VERSION,
     "cli_version": _cli_version(),
     "python_version": platform.python_version(),
     "os_family": platform.system().lower(),
@@ -798,8 +800,14 @@ _BASE_PROPERTIES: Final[Properties] = {
     "execution_environment": _ANALYTICS_RUNTIME.execution_environment,
     "is_ci": _ANALYTICS_RUNTIME.is_ci,
     "is_test": is_test_run(),
-    "is_container": _ANALYTICS_RUNTIME.is_container,
+    **(
+        {"is_container": _ANALYTICS_RUNTIME.is_container}
+        if _ANALYTICS_RUNTIME.is_container is not None
+        else {}
+    ),
     "container_runtime": _ANALYTICS_RUNTIME.container_runtime,
+    "ci_detection_status": _ANALYTICS_RUNTIME.ci_detection_status,
+    "container_detection_status": _ANALYTICS_RUNTIME.container_detection_status,
     "$process_person_profile": False,
 }
 
@@ -847,9 +855,8 @@ class Analytics:
         if self._disabled or self._shutdown:
             return
         merged = merge_usage_enrichment(
-            _BASE_PROPERTIES
-            | self._persistent_properties
-            | _coerce_properties(event.value, properties)
+            _coerce_properties(event.value, properties),
+            defaults=_BASE_PROPERTIES | self._persistent_properties,
         )
         # Startup may load a project environment after this module was imported.
         # Recheck cheap CI signals without repeating container filesystem probes.

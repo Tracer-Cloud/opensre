@@ -137,7 +137,11 @@ def test_identify_github_username_reports_failures_to_sentry(
     assert captured_errors == [expected_error]
 
 
-def test_build_cli_invoked_properties_includes_full_command_path() -> None:
+def test_build_cli_invoked_properties_includes_full_command_path(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    monkeypatch.setattr("sys.stdin", SimpleNamespace(isatty=lambda: False))
+    monkeypatch.setattr("sys.stdout", SimpleNamespace(isatty=lambda: False))
     properties = event_properties.build_cli_invoked_properties(
         entrypoint="opensre",
         command_parts=["remote", "ops", "status"],
@@ -152,7 +156,8 @@ def test_build_cli_invoked_properties_includes_full_command_path() -> None:
         "verbose": False,
         "debug": True,
         "yes": False,
-        "interactive": True,
+        "stdin_is_tty": False,
+        "stdout_is_tty": False,
         "subcommand": "ops",
         "command_leaf": "status",
     }
