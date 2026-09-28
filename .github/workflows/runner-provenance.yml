@@ -12,6 +12,9 @@ on:
 permissions:
   contents: read
 
+env:
+  OPENSRE_CICD: "1"
+
 concurrency:
   group: runner-provenance-${{ github.ref }}
   cancel-in-progress: false
