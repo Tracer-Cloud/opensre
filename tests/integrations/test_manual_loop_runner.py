@@ -216,3 +216,19 @@ def test_unknown_builder_name_falls_back_to_the_model_turn(monkeypatch: pytest.M
     )
 
     assert report == "fallback"
+
+
+def test_only_a_loop_with_a_report_builder_runs_without_a_model_turn() -> None:
+    from config.constants.ci_repair import CI_REPAIR_REPORT_BUILDER
+    from infrastructure.scheduling.scheduler.loop_constants import LOOP_REPORT_PARAM
+    from integrations.scheduled_agent_bootstrap import runs_model_turn
+
+    # Arrange
+    supervised = {"source": "scheduled_manual_loop", LOOP_REPORT_PARAM: CI_REPAIR_REPORT_BUILDER}
+    prompted = {"source": "scheduled_manual_loop", "loop_prompt": "Summarise CI"}
+    digest = {"source": "sentry_digest"}
+
+    # Act / Assert
+    assert runs_model_turn(supervised) is False
+    assert runs_model_turn(prompted) is True
+    assert runs_model_turn(digest) is True

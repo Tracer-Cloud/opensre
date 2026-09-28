@@ -5,11 +5,16 @@ from __future__ import annotations
 from infrastructure.scheduling.scheduler.agent_runner import AgentPayload
 from infrastructure.scheduling.scheduler.types import TaskReport
 from integrations.github.pr_sweep_runner import run_github_pr_sweep
-from integrations.manual_loop_runner import run_manual_prompt_loop
+from integrations.manual_loop_runner import report_builder, run_manual_prompt_loop
 from integrations.posthog.report_runner import run_posthog_report
 from integrations.scheduled_skill_runner import run_scheduled_recurring_skill
 from integrations.sentry.morning_digest_runner import run_sentry_morning_digest
 from integrations.sentry.uptime import run_uptime_watch_tick
+
+
+def runs_model_turn(payload: AgentPayload) -> bool:
+    """Whether the run costs a turn: everything but a loop's deterministic report builder."""
+    return report_builder(payload) is None
 
 
 def run_scheduled_agent_digest(payload: AgentPayload) -> TaskReport:
@@ -33,4 +38,4 @@ def run_scheduled_agent_digest(payload: AgentPayload) -> TaskReport:
     return run_sentry_morning_digest(payload)
 
 
-__all__ = ["run_scheduled_agent_digest"]
+__all__ = ["run_scheduled_agent_digest", "runs_model_turn"]
