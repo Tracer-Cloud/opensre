@@ -120,12 +120,17 @@ def slash_invoke_tool_description(specs: list[SlashCommandSpec] | None = None) -
     header = (
         "Run a slash command in the OpenSRE interactive shell. "
         "Use this only for explicit slash-command operations: literal /command "
-        "text, requests that explicitly ask to run a slash command, or "
+        "text, requests that explicitly ask to run a slash command, requests to configure "
+        "or connect an integration, or "
         "operation/discovery cases that the system prompt explicitly maps to a "
         "slash command. Do not use this as a natural-language router for "
         "ordinary informational, how-to, capability, or status questions merely "
         "because a slash command can display related information; answer those "
         "directly unless a prompt rule names a read-only discovery exception. "
+        "For requests such as Can you configure Telegram/GitHub/PostHog for me, "
+        'call slash_invoke(command="/integrations", args=["setup", "telegram"/"github"/"posthog"]). '
+        "The guided flow explains each human action, collects secrets privately, discovers IDs, "
+        "and verifies the result. Do not ask for tokens in chat or use cli_exec for interactive setup. "
         "Supply positional args in the args array. This tool covers "
         "only the slash-command clause of a request. For compound requests, "
         "still emit a separate tool call for every other actionable clause in "

@@ -25,14 +25,13 @@ opensre integrations setup telegram
 
 Interactive shell: `/integrations setup telegram`.
 
-The setup prompts for:
+You can also ask: “Can you configure Telegram for me?”
 
-- **Bot token** (required) — stored as `TELEGRAM_BOT_TOKEN` in `.env` and `~/.opensre/credentials.json`
-- **Default chat ID or `@channelname`** (required) — written to `.env` as `TELEGRAM_DEFAULT_CHAT_ID`
+1. **Connect your bot.** Setup links to [BotFather](https://t.me/BotFather) and explains how to create a bot or retrieve an existing token before asking you to paste it into a hidden input.
+2. **Choose a chat.** Press Start in your bot's private chat, or add it to your group and send the command shown by setup. OpenSRE finds recent chats and lets you choose by name. For a public channel, you can also enter its `@name`.
+3. **Verify and save.** OpenSRE checks the bot and selected chat, saves the connection, and shows a verified summary. Failed checks can be retried without starting over. Press Ctrl+C to cancel.
 
-Credentials are also saved to `~/.opensre/integrations.json` via `upsert_integration("telegram", ...)`.
-
-Both answers are checked before anything is saved, so a wrong token or a chat the bot was never added to fails here rather than silently at the first alert.
+If chat discovery finds nothing, send a new message and choose **look again**. If the bot already uses a webhook, setup keeps it active; use a public `@channelname` or an existing chat ID instead.
 
 <Note>
 Setup confirms the bot can *see* the chat, not that it may post there. For a channel the bot still needs the **Post Messages** permission.

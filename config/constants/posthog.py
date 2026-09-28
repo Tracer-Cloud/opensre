@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Final
 
-POSTHOG_HOST: Final[str] = "https://us.i.posthog.com"
+POSTHOG_HOST: Final[str] = "https://us.posthog.com"
 
 DEFAULT_POSTHOG_URL: Final[str] = POSTHOG_HOST
 DEFAULT_POSTHOG_TIMEOUT_SECONDS: Final[float] = 15.0

@@ -51,7 +51,6 @@ _ALLOWED: dict[str, frozenset[str]] = {
         {
             "integrations.betterstack.setup",
             "integrations.dagster.setup",
-            "integrations.github.setup",
             "integrations.jenkins.setup",
             "integrations.posthog.report_prerequisites",
             "integrations.posthog.setup",

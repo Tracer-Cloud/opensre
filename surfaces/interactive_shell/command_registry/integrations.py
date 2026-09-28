@@ -472,6 +472,8 @@ def _interactive_mcp_menu(session: Session, console: Console) -> bool:
 
 
 _INTEGRATIONS_FIRST_ARGS: tuple[tuple[str, str], ...] = (
+    ("setup", "guided setup for an integration"),
+    ("remove", "remove a configured integration"),
     ("list", "list all configured integrations"),
     ("ls", "alias for list"),
     ("verify", "run health checks on all integrations"),
@@ -498,10 +500,12 @@ COMMANDS: list[SlashCommand] = [
         _cmd_integrations,
         usage=(
             "/integrations",
+            "/integrations setup <service>",
             "/integrations list",
             "/integrations verify",
             "/integrations verify <service>",
             "/integrations show <service>",
+            "/integrations remove <service>",
         ),
         notes=("In a TTY, bare /integrations opens an interactive menu.",),
         first_arg_completions=_INTEGRATIONS_FIRST_ARGS,

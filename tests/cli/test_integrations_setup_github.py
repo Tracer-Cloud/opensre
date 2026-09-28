@@ -1,4 +1,4 @@
-"""Tests for legacy `opensre integrations setup github` flow."""
+"""Tests for the guided ``opensre integrations setup github`` flow."""
 
 from __future__ import annotations
 
@@ -10,7 +10,8 @@ from click.testing import CliRunner
 
 import integrations.setup_flow as setup_flow
 from config.constants import INTEGRATIONS_STORE_PATH_ENV
-from integrations.cli import _github_browser_auth_token, _setup_github, cmd_setup
+from integrations.cli import cmd_setup
+from integrations.github.cli_setup import _github_browser_auth_token, setup_github
 from integrations.github.mcp import GitHubMCPValidationResult
 from surfaces.cli.app import cli
 
@@ -36,7 +37,15 @@ def _mock_github_setup_path(monkeypatch: pytest.MonkeyPatch, *, customize: bool)
             return "any"
         raise AssertionError(f"Unexpected select prompt: {message}")
 
-    monkeypatch.setattr("integrations.cli._select", _select)
+    monkeypatch.setattr("integrations.github.cli_setup._select", _select)
+
+
+@pytest.fixture(autouse=True)
+def _cancel_retry_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _cancel(*_args: object, **_kwargs: object) -> str:
+        raise KeyboardInterrupt
+
+    monkeypatch.setattr("integrations.github.cli_setup.TerminalSetupUI.choose", _cancel)
 
 
 def _patch_apply_setup(monkeypatch: pytest.MonkeyPatch, fake: object) -> None:
@@ -48,8 +57,8 @@ def test_github_browser_auth_falls_back_to_manual_token(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    monkeypatch.setattr("integrations.cli._github_browser_authorize", lambda: None)
-    monkeypatch.setattr("integrations.cli._p", lambda *_args, **_kwargs: "ghp_manual")
+    monkeypatch.setattr("integrations.github.cli_setup._github_browser_authorize", lambda: None)
+    monkeypatch.setattr("integrations.github.cli_setup._p", lambda *_args, **_kwargs: "ghp_manual")
 
     assert _github_browser_auth_token() == "ghp_manual"
     assert "Falling back to manual token entry" in capsys.readouterr().out
@@ -59,10 +68,10 @@ def test_setup_github_can_cancel_at_connection_choice(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    monkeypatch.setattr("integrations.cli._select", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr("integrations.github.cli_setup._select", lambda *_args, **_kwargs: None)
 
     with pytest.raises(SystemExit) as exc:
-        _setup_github()
+        setup_github()
 
     assert exc.value.code == 1
     assert "Aborted." in capsys.readouterr().out
@@ -72,17 +81,21 @@ def test_setup_github_prints_connected_and_saves_on_validation_success(
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    """_setup_github validates before saving and prints identity + detail on success."""
+    """GitHub setup validates before saving and prints identity + detail on success."""
 
     answers = iter(["https://api.githubcopilot.com/mcp/", "repos,issues"])
 
     def fake_p(_label: str, default: str = "", secret: bool = False) -> str:
         return next(answers)
 
-    monkeypatch.setattr("integrations.cli._p", fake_p)
+    monkeypatch.setattr("integrations.github.cli_setup._p", fake_p)
     _mock_github_setup_path(monkeypatch, customize=True)
-    monkeypatch.setattr("integrations.cli._setup_github_auth_token", lambda _mode: "ghp_x")
-    monkeypatch.setattr("integrations.cli._prompt_github_repo_report_level", lambda: "full")
+    monkeypatch.setattr(
+        "integrations.github.cli_setup._setup_github_auth_token", lambda _mode: "ghp_x"
+    )
+    monkeypatch.setattr(
+        "integrations.github.cli_setup._prompt_github_repo_report_level", lambda: "full"
+    )
 
     monkeypatch.setattr(
         "integrations.github.mcp.validate_github_mcp_config",
@@ -108,7 +121,7 @@ def test_setup_github_prints_connected_and_saves_on_validation_success(
 
     _patch_apply_setup(monkeypatch, _fake_apply)
 
-    _setup_github()
+    setup_github()
 
     out = capsys.readouterr().out
     assert "Validating GitHub MCP integration" in out
@@ -139,16 +152,20 @@ def test_setup_github_simple_path_uses_hosted_defaults(
     def _no_level_prompt() -> str:
         raise AssertionError("simple path should not prompt for repo detail level")
 
-    monkeypatch.setattr("integrations.cli._p", fake_p)
+    monkeypatch.setattr("integrations.github.cli_setup._p", fake_p)
     setup_choices: list[tuple[str, list[object], str]] = []
 
     def _select(message: str, choices: list[object], *, default: str) -> str:
         setup_choices.append((message, choices, default))
         return "recommended"
 
-    monkeypatch.setattr("integrations.cli._select", _select)
-    monkeypatch.setattr("integrations.cli._github_browser_authorize", lambda: "gho_browser")
-    monkeypatch.setattr("integrations.cli._prompt_github_repo_report_level", _no_level_prompt)
+    monkeypatch.setattr("integrations.github.cli_setup._select", _select)
+    monkeypatch.setattr(
+        "integrations.github.cli_setup._github_browser_authorize", lambda: "gho_browser"
+    )
+    monkeypatch.setattr(
+        "integrations.github.cli_setup._prompt_github_repo_report_level", _no_level_prompt
+    )
     monkeypatch.setattr(
         "integrations.github.mcp.validate_github_mcp_config",
         lambda _c, **_kwargs: GitHubMCPValidationResult(
@@ -171,7 +188,7 @@ def test_setup_github_simple_path_uses_hosted_defaults(
 
     _patch_apply_setup(monkeypatch, _fake_apply)
 
-    _setup_github()
+    setup_github()
 
     out = capsys.readouterr().out
     assert out.count("Validating GitHub MCP integration") == 1
@@ -206,9 +223,9 @@ def test_setup_github_exits_without_save_on_validation_failure(
     def fake_p(_label: str, default: str = "", secret: bool = False) -> str:
         return next(answers)
 
-    monkeypatch.setattr("integrations.cli._p", fake_p)
+    monkeypatch.setattr("integrations.github.cli_setup._p", fake_p)
     _mock_github_setup_path(monkeypatch, customize=True)
-    monkeypatch.setattr("integrations.cli._setup_github_auth_token", lambda _mode: "")
+    monkeypatch.setattr("integrations.github.cli_setup._setup_github_auth_token", lambda _mode: "")
     monkeypatch.setattr(
         "integrations.github.mcp.validate_github_mcp_config",
         lambda _c, **_kwargs: GitHubMCPValidationResult(
@@ -224,13 +241,65 @@ def test_setup_github_exits_without_save_on_validation_failure(
     _patch_apply_setup(monkeypatch, _apply_should_not_run)
 
     with pytest.raises(SystemExit) as exc:
-        _setup_github()
+        setup_github()
     assert exc.value.code == 1
 
     out = capsys.readouterr().out
     assert "Configuration validation: failed" in out
     assert "Failure type:" in out
     assert "authentication failed" in out
+
+
+def test_setup_github_retries_validation_without_repeating_sign_in(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A temporary check failure retries with the accepted browser credential."""
+    _mock_github_setup_path(monkeypatch, customize=False)
+    auth_calls: list[int] = []
+
+    def _authorize() -> str:
+        auth_calls.append(1)
+        return "gho_browser"
+
+    monkeypatch.setattr("integrations.github.cli_setup._github_browser_authorize", _authorize)
+    results = iter(
+        [
+            GitHubMCPValidationResult(
+                ok=False,
+                detail="Temporary connectivity failure",
+                failure_category="connectivity",
+            ),
+            GitHubMCPValidationResult(
+                ok=True,
+                detail="OK @u; repos=1; owners=acme; examples=acme/a; mcp_tools=5",
+                authenticated_user="u",
+                repo_access_count=1,
+                repo_access_scope_owners=("acme",),
+                repo_access_samples=("acme/a",),
+            ),
+        ]
+    )
+    monkeypatch.setattr(
+        "integrations.github.mcp.validate_github_mcp_config",
+        lambda _config, **_kwargs: next(results),
+    )
+    monkeypatch.setattr(
+        "integrations.github.cli_setup.TerminalSetupUI.choose",
+        lambda *_args, **_kwargs: "retry",
+    )
+    monkeypatch.setattr(
+        setup_flow,
+        "apply_setup",
+        lambda *_args, **_kwargs: setup_flow.SetupOutcome(
+            ok=True,
+            detail="ok",
+            env_path=Path("/tmp/.env"),
+        ),
+    )
+
+    setup_github()
+
+    assert auth_calls == [1]
 
 
 def test_cmd_setup_github_skips_saved_line_on_validation_failure(
@@ -244,9 +313,9 @@ def test_cmd_setup_github_skips_saved_line_on_validation_failure(
     def fake_p(_label: str, default: str = "", secret: bool = False) -> str:
         return next(answers)
 
-    monkeypatch.setattr("integrations.cli._p", fake_p)
+    monkeypatch.setattr("integrations.github.cli_setup._p", fake_p)
     _mock_github_setup_path(monkeypatch, customize=True)
-    monkeypatch.setattr("integrations.cli._setup_github_auth_token", lambda _mode: "x")
+    monkeypatch.setattr("integrations.github.cli_setup._setup_github_auth_token", lambda _mode: "x")
     monkeypatch.setattr(
         "integrations.github.mcp.validate_github_mcp_config",
         lambda _c, **_kwargs: GitHubMCPValidationResult(
@@ -284,10 +353,14 @@ def test_cmd_setup_github_prints_saved_after_success(
     def fake_p(_label: str, default: str = "", secret: bool = False) -> str:
         return next(answers)
 
-    monkeypatch.setattr("integrations.cli._p", fake_p)
+    monkeypatch.setattr("integrations.github.cli_setup._p", fake_p)
     _mock_github_setup_path(monkeypatch, customize=True)
-    monkeypatch.setattr("integrations.cli._setup_github_auth_token", lambda _mode: "tok")
-    monkeypatch.setattr("integrations.cli._prompt_github_repo_report_level", lambda: "standard")
+    monkeypatch.setattr(
+        "integrations.github.cli_setup._setup_github_auth_token", lambda _mode: "tok"
+    )
+    monkeypatch.setattr(
+        "integrations.github.cli_setup._prompt_github_repo_report_level", lambda: "standard"
+    )
     monkeypatch.setattr(
         "integrations.github.mcp.validate_github_mcp_config",
         lambda _c, **_kwargs: GitHubMCPValidationResult(

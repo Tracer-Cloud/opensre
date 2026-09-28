@@ -112,7 +112,7 @@ _SUBMITTED: dict[str, dict[str, str]] = {
         "project_slug": "checkout-api",
     },
     "posthog": {
-        "base_url": "https://eu.i.posthog.com",
+        "base_url": "https://eu.posthog.com",
         "project_id": "40182",
         "personal_api_key": "phx-posthog-key",
     },

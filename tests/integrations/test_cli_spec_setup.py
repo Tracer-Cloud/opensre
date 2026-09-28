@@ -103,7 +103,7 @@ _ANSWERS: dict[str, dict[str, str]] = {
         "project_slug": "checkout-api",
     },
     "posthog": {
-        "base_url": "https://eu.i.posthog.com",
+        "base_url": "https://eu.posthog.com",
         "project_id": "40182",
         "personal_api_key": "phx-posthog-key",
     },
@@ -381,7 +381,7 @@ def _install(
         state.verified.append(dict(config))
         return {"status": state.verify_status, "detail": state.verify_detail}
 
-    spec = dataclasses.replace(getattr(module, attr), verify=_fake_verify)
+    spec = dataclasses.replace(getattr(module, attr), guide=None, verify=_fake_verify)
     monkeypatch.setattr(module, attr, spec)
 
     answers = _ANSWERS[spec.service]
@@ -488,7 +488,7 @@ def test_blank_required_field_is_asked_again_not_fatal(
         run.verified.append(dict(config))
         return {"status": "passed", "detail": "ok"}
 
-    monkeypatch.setattr(module, attr, dataclasses.replace(spec, verify=_fake_verify))
+    monkeypatch.setattr(module, attr, dataclasses.replace(spec, guide=None, verify=_fake_verify))
     answers = _ANSWERS[spec.service]
     queue: list[str] = []
     for field in prompted:
@@ -542,7 +542,7 @@ def _drive_picker(
         run.verified.append(dict(config))
         return {"status": run.verify_status, "detail": run.verify_detail}
 
-    spec = dataclasses.replace(getattr(module, attr), verify=_fake_verify)
+    spec = dataclasses.replace(getattr(module, attr), guide=None, verify=_fake_verify)
     monkeypatch.setattr(module, attr, spec)
     if stored is not None:
         monkeypatch.setattr(

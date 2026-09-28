@@ -30,14 +30,38 @@ where each value lands is decided here, once.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Protocol
 
 from config.env_file import is_sensitive_env_key, sync_env_secret, sync_env_values
 from integrations.store import upsert_integration
 from integrations.verification import VerifierFn
 from integrations.webapp_vault import push_webapp_org_integration
+
+
+class SetupUI(Protocol):
+    """Human interaction surface used by vendor-specific setup guides."""
+
+    def say(self, message: str) -> None:
+        """Show guidance without exposing credentials."""
+
+    def step(self, number: str, title: str) -> None:
+        """Announce one bounded setup stage."""
+
+    def choose(self, message: str, choices: Sequence[tuple[str, str]]) -> str:
+        """Ask the human to select one setup action."""
+
+    def value(self, message: str, *, default: str = "", secret: bool = False) -> str:
+        """Collect one value, masking it when it is secret."""
+
+
+class GuideFn(Protocol):
+    """Collect vendor credentials after explaining each required human action."""
+
+    def __call__(self, ui: SetupUI, saved: Mapping[str, str]) -> dict[str, str]:
+        """Return values ready for verification and persistence."""
 
 
 @dataclass(frozen=True)
@@ -215,6 +239,9 @@ class IntegrationSetupSpec:
     returns a note for the success detail and a failure is surfaced there rather
     than rolling back the save.
     """
+
+    guide: GuideFn | None = None
+    """Optional vendor guide for human hand-offs and discovery before verification."""
 
     def is_required(self, field: SetupField, mode: str | None) -> bool:
         """Whether *field* must be non-empty: spec-required, or required by *mode*."""

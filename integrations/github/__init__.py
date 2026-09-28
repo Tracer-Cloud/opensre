@@ -15,6 +15,7 @@ from integrations.github.client import GitHubApiError, GitHubRestClient, resolve
 
 #: Public name -> the submodule that defines it, imported on first access.
 _LAZY_EXPORTS: dict[str, str] = {
+    "setup_github": "integrations.github.cli_setup",
     "run_ci_repair_worker": "integrations.github.tools.ci_repair_loop.worker",
     "count_ci_fixes": "integrations.github.tools.ci_fix.ledger",
     "get_ci_fix_counter": "integrations.github.tools.ci_fix.ledger",
@@ -72,6 +73,7 @@ def __getattr__(name: str) -> object:
 
 
 if TYPE_CHECKING:
+    from integrations.github.cli_setup import setup_github
     from integrations.github.helpers import github_creds
     from integrations.github.identity import saved_github_username
     from integrations.github.login import GitHubLoginResult, authenticate_and_configure_github
@@ -125,6 +127,7 @@ if TYPE_CHECKING:
 
 
 __all__ = [
+    "setup_github",
     "PullRequestCheckout",
     "checkout_pull_request",
     "parse_pull_request",

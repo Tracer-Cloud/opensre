@@ -119,23 +119,14 @@ def test_command_dispatch_table_is_the_known_set() -> None:
     )
 
 
-def test_setup_dispatches_through_table_and_may_verify(monkeypatch) -> None:
+def test_setup_does_not_repeat_verification(monkeypatch) -> None:
     captured = _captures(monkeypatch)
     monkeypatch.setattr("sys.argv", ["python -m integrations", "setup", "slack"])
-
     with (
         patch.object(integrations_main, "cmd_setup", return_value="slack") as cmd_setup,
-        patch.object(integrations_main, "cmd_verify", return_value=0) as cmd_verify,
-        patch.object(
-            integrations_main,
-            "SUPPORTED_VERIFY_SERVICES",
-            frozenset({"slack"}),
-        ),
-        pytest.raises(SystemExit) as excinfo,
+        patch.object(integrations_main, "cmd_verify") as cmd_verify,
     ):
         integrations_main.main()
-
-    assert excinfo.value.code == 0
     cmd_setup.assert_called_once_with("slack")
-    cmd_verify.assert_called_once_with("slack")
-    assert captured  # analytics still fired before the handler ran
+    cmd_verify.assert_not_called()
+    assert captured

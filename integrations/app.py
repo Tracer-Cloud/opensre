@@ -46,10 +46,7 @@ def _run_remove(svc: str | None, _options: set[str]) -> None:
 
 
 def _run_setup(svc: str | None, _options: set[str]) -> None:
-    resolved_service = cmd_setup(svc)
-    if resolved_service in SUPPORTED_VERIFY_SERVICES:
-        print(f"  Verifying {resolved_service}...\n")
-        raise SystemExit(cmd_verify(resolved_service))
+    cmd_setup(svc)
 
 
 def _run_verify(svc: str | None, options: set[str]) -> None:

@@ -13,27 +13,34 @@ from __future__ import annotations
 import json
 import sys
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, NoReturn, cast
+from typing import TYPE_CHECKING, Any
 
 import questionary
 
-from infrastructure.terminal.prompt_support import (
-    QUESTIONARY_QMARK,
-    questionary_prompt_style,
-)
 from infrastructure.terminal.theme import (
     ANSI_BOLD,
     ANSI_DIM,
     ANSI_RESET,
-    DEVICE_CODE_ANSI,
     GLYPH_SUCCESS,
 )
 
 if TYPE_CHECKING:
-    from integrations.github.mcp import GitHubMcpDisplayDetailLevel
     from integrations.setup_flow import IntegrationSetupSpec
 
+from integrations.github import setup_github
 from integrations.registry import SUPPORTED_SETUP_SERVICES, resolve_management_service
+from integrations.setup import (
+    confirm as _confirm,
+)
+from integrations.setup import (
+    die as _die,
+)
+from integrations.setup import (
+    prompt_value as _p,
+)
+from integrations.setup import (
+    select as _select,
+)
 from integrations.store import (
     get_integration,
     list_integrations,
@@ -74,71 +81,6 @@ _SECRET_KEYS = frozenset(
         "connection_string",
     }
 )
-
-
-def _select(message: str, choices: list[Any], **kwargs: Any) -> Any:
-    return questionary.select(
-        message,
-        choices=choices,
-        qmark=QUESTIONARY_QMARK,
-        style=questionary_prompt_style(),
-        **kwargs,
-    ).ask()
-
-
-def _confirm(message: str, **kwargs: Any) -> Any:
-    return questionary.confirm(
-        message, qmark=QUESTIONARY_QMARK, style=questionary_prompt_style(), **kwargs
-    ).ask()
-
-
-def _p(label: str, default: str = "", secret: bool = False) -> str:
-    try:
-        if secret:
-            result = questionary.password(
-                label, qmark=QUESTIONARY_QMARK, style=questionary_prompt_style()
-            ).ask()
-        else:
-            result = questionary.text(
-                label, default=default, qmark=QUESTIONARY_QMARK, style=questionary_prompt_style()
-            ).ask()
-    except (EOFError, KeyboardInterrupt):
-        print("\nAborted.")
-        sys.exit(1)
-    if result is None:
-        print("\nAborted.")
-        sys.exit(1)
-    return result.strip() or default
-
-
-def _die(msg: str) -> NoReturn:
-    print(f"  error: {msg}", file=sys.stderr)
-    sys.exit(1)
-
-
-def _prompt_github_repo_report_level() -> GitHubMcpDisplayDetailLevel:
-    """Ask how much repository access detail to print after a successful validation."""
-
-    try:
-        sel = _select(
-            "How much repository detail should we show?",
-            choices=[
-                questionary.Choice("Brief (recommended) — no repo names", value="summary"),
-                questionary.Choice("Standard — scope summary only", value="standard"),
-                questionary.Choice("Expanded — include repo names", value="full"),
-            ],
-            default="summary",
-        )
-    except (EOFError, KeyboardInterrupt):
-        print("\nAborted.")
-        sys.exit(1)
-    if sel is None:
-        return "summary"
-    if sel in ("summary", "standard", "full"):
-        from integrations.github.mcp import GitHubMcpDisplayDetailLevel as _Detail
-
-        return cast(_Detail, sel)
-    return "summary"
 
 
 def _parse_port(raw: str, default: int = 3306) -> int:
@@ -296,238 +238,6 @@ def _setup_incident_io() -> None:
     _run_spec_setup(INCIDENT_IO_SETUP)
 
 
-def _github_browser_authorize() -> str | None:
-    """Run GitHub device-flow browser authorization.
-
-    Returns the access token, or ``None`` when the flow is unavailable so the
-    caller can fall back to manual token entry.
-    """
-    from integrations.github.mcp_oauth import (
-        GitHubDeviceCode,
-        GitHubDeviceFlowError,
-        authorize_github_via_device_flow,
-    )
-
-    def _show(code: GitHubDeviceCode) -> None:
-        print()
-        print(f"  1. Your browser will open {code.verification_uri}")
-        print("     (if it doesn't open automatically, visit that URL yourself).")
-        print(
-            f"  2. Enter this one-time code when GitHub asks: {DEVICE_CODE_ANSI}{code.user_code}{_R}"
-        )
-        print("  3. Approve the request for OpenSRE.")
-        print()
-        print(f"  {_DIM}Waiting for you to approve in the browser… (Ctrl-C to cancel){_R}")
-
-    print()
-    print("  Sign in to GitHub in your browser (device authorization):")
-    print(f"  {_DIM}Requesting a one-time code from GitHub…{_R}")
-    try:
-        token = authorize_github_via_device_flow(on_prompt=_show)
-    except GitHubDeviceFlowError as err:
-        print(f"  Browser authorization unavailable: {err}", file=sys.stderr)
-        return None
-    except (EOFError, KeyboardInterrupt):
-        print("\nAborted.")
-        sys.exit(1)
-    except Exception as err:  # network/transport issues
-        print(f"  Browser authorization failed: {err}", file=sys.stderr)
-        return None
-    print(f"  {_B}Authorized.{_R} Saved a GitHub token from the browser sign-in.")
-    return token.access_token
-
-
-def _github_browser_auth_token() -> str:
-    """Authorize in the browser, falling back to manual token entry."""
-    token = _github_browser_authorize()
-    if token:
-        return token
-    print("  Falling back to manual token entry.")
-    return _p("GitHub PAT / auth token", secret=True)
-
-
-def _setup_github_auth_token(mode: str) -> str:
-    """Resolve a GitHub MCP auth token, offering browser sign-in for remote modes."""
-    if mode == "stdio":
-        return _p(
-            "GitHub PAT / auth token (optional if the server authenticates upstream)",
-            secret=True,
-        )
-
-    auth_method = _select(
-        "How do you want to connect OpenSRE to GitHub?",
-        choices=[
-            questionary.Choice(
-                "Sign in with GitHub in your browser (opens a page, enter a one-time code)",
-                value="browser",
-            ),
-            questionary.Choice("Paste a personal access token (PAT)", value="token"),
-            questionary.Choice("Skip — the MCP server authenticates upstream", value="none"),
-        ],
-        default="browser",
-    )
-    if auth_method is None:
-        print("\nAborted.")
-        sys.exit(1)
-    if auth_method == "none":
-        return ""
-    if auth_method == "browser":
-        return _github_browser_auth_token()
-    return _p("GitHub PAT / auth token", secret=True)
-
-
-def _github_advanced_setup(credentials: dict[str, Any]) -> tuple[str, str]:
-    """Prompt the advanced GitHub MCP knobs and return (repo_view, repo_visibility).
-
-    Mutates ``credentials`` in place with mode/url/command/args/auth_token/toolsets.
-    """
-    from integrations.github.mcp import (
-        DEFAULT_GITHUB_MCP_TOOLSETS,
-        DEFAULT_GITHUB_MCP_URL,
-    )
-
-    # Transport is fixed to Streamable HTTP. In practice it is the only mode anyone
-    # selects, and SSE/stdio are deprecated for the hosted GitHub MCP server. The
-    # transport prompt was removed on purpose — do NOT reintroduce a transport
-    # selection or a stdio branch here.
-    mode = "streamable-http"
-    credentials["mode"] = mode
-    url = _p("MCP URL", default=DEFAULT_GITHUB_MCP_URL)
-    if not url:
-        _die("url is required for remote MCP modes.")
-    credentials["url"] = url
-    credentials["auth_token"] = _setup_github_auth_token(mode)
-    toolsets = _p("Toolsets", default=",".join(DEFAULT_GITHUB_MCP_TOOLSETS))
-    credentials["toolsets"] = [part.strip() for part in toolsets.split(",") if part.strip()]
-
-    repo_view = _select(
-        "Which repository view should we use to verify access?",
-        choices=[
-            questionary.Choice("Auto (recommended)", value="auto"),
-            questionary.Choice("Your repositories", value="user"),
-            questionary.Choice("Accessible repositories", value="accessible"),
-            questionary.Choice("Starred repositories", value="starred"),
-            questionary.Choice("Search: user:<your_login>", value="search_user"),
-        ],
-        default="auto",
-    )
-    if repo_view is None:
-        print("\nAborted.")
-        sys.exit(1)
-    repo_visibility = _select(
-        "Filter repositories by visibility (best-effort)",
-        choices=[
-            questionary.Choice("Any (recommended)", value="any"),
-            questionary.Choice("Public only", value="public"),
-            questionary.Choice("Private only", value="private"),
-        ],
-        default="any",
-    )
-    if repo_visibility is None:
-        print("\nAborted.")
-        sys.exit(1)
-    return repo_view, repo_visibility
-
-
-def _setup_github() -> str | None:
-    """Configure + validate + save the GitHub MCP integration.
-
-    Returns the authenticated GitHub login on success (``None`` if the validated
-    result carried no login), so callers like the first-launch gate can propagate
-    the username. Exits the process on validation failure.
-
-    Collection stays custom (browser OAuth + optional repo-scope probes). Persist
-    goes through :func:`integrations.setup_flow.apply_setup` so the token lands
-    in the keyring and the non-secrets in ``.env``, not just the store.
-    """
-    import dataclasses
-
-    from integrations.github.mcp import (
-        DEFAULT_GITHUB_MCP_MODE,
-        DEFAULT_GITHUB_MCP_TOOLSETS,
-        DEFAULT_GITHUB_MCP_URL,
-        GitHubMcpDisplayDetailLevel,
-        GitHubMcpRepoView,
-        GitHubMcpRepoVisibilityFilter,
-        build_github_mcp_config,
-        format_github_mcp_validation_cli_report,
-        print_github_mcp_validation_report,
-        validate_github_mcp_config,
-    )
-    from integrations.github.setup import GITHUB_SETUP
-    from integrations.setup_flow import apply_setup
-
-    print("  Connect OpenSRE to your GitHub repositories.")
-    setup_path = _select(
-        "How would you like to connect?",
-        choices=[
-            questionary.Choice("Sign in with GitHub (recommended)", value="recommended"),
-            questionary.Choice("Customize connection", value="customize"),
-        ],
-        default="recommended",
-    )
-    if setup_path is None:
-        print("\nAborted.")
-        sys.exit(1)
-    customize = setup_path == "customize"
-
-    credentials: dict[str, Any] = {}
-    repo_view: str = "auto"
-    repo_visibility: str = "any"
-
-    if customize:
-        repo_view, repo_visibility = _github_advanced_setup(credentials)
-    else:
-        credentials["mode"] = DEFAULT_GITHUB_MCP_MODE
-        credentials["url"] = DEFAULT_GITHUB_MCP_URL
-        credentials["auth_token"] = _github_browser_auth_token()
-        credentials["toolsets"] = list(DEFAULT_GITHUB_MCP_TOOLSETS)
-
-    print("\n  Validating GitHub MCP integration...")
-    mcp_config = build_github_mcp_config(credentials)
-    result = validate_github_mcp_config(
-        mcp_config,
-        repo_view=cast(GitHubMcpRepoView, repo_view),
-        repo_visibility=cast(GitHubMcpRepoVisibilityFilter, repo_visibility),
-    )
-    if result.ok:
-        # The simple path stays concise: identity + tool availability, no repo dump.
-        # Only the advanced path offers the verbose repo listing.
-        level = (
-            _prompt_github_repo_report_level()
-            if customize
-            else cast(GitHubMcpDisplayDetailLevel, "summary")
-        )
-        print()
-        print_github_mcp_validation_report(result, detail_level=level)
-    else:
-        for line in format_github_mcp_validation_cli_report(result).splitlines():
-            print(f"  {line}")
-        sys.exit(1)
-
-    toolsets = credentials.get("toolsets") or []
-    if isinstance(toolsets, str):
-        toolsets_value = toolsets
-    else:
-        toolsets_value = ",".join(str(part).strip() for part in toolsets if str(part).strip())
-
-    # Already verified above (with optional repo-scope probes). Skip the spec's
-    # simpler probe so we do not hit the hosted server twice.
-    outcome = apply_setup(
-        dataclasses.replace(GITHUB_SETUP, verify=None),
-        {
-            "mode": str(credentials.get("mode") or DEFAULT_GITHUB_MCP_MODE),
-            "url": str(credentials.get("url") or DEFAULT_GITHUB_MCP_URL),
-            "auth_token": str(credentials.get("auth_token") or ""),
-            "toolsets": toolsets_value,
-            "username": result.authenticated_user or "",
-        },
-    )
-    if not outcome.ok:
-        _die(outcome.detail)
-    return result.authenticated_user
-
-
 def _setup_gitlab() -> None:
     from integrations.gitlab.setup import GITLAB_SETUP
 
@@ -582,6 +292,16 @@ def _run_spec_setup(
     """
     from integrations.setup_flow import apply_setup
     from integrations.store import get_integration
+
+    if spec.guide is not None:
+        from integrations.setup import run_guided_setup
+
+        try:
+            run_guided_setup(spec)
+        except (EOFError, KeyboardInterrupt):
+            print("\nSetup cancelled.")
+            sys.exit(1)
+        return
 
     stored = (get_integration(spec.service) or {}).get("credentials") or {}
 
@@ -798,7 +518,7 @@ _HANDLERS: dict[str, Any] = {
     "tracer": _setup_tracer,
     "vercel": _setup_vercel,
     "railway": _setup_railway,
-    "github": _setup_github,
+    "github": setup_github,
     "gitlab": _setup_gitlab,
     "sentry": _setup_sentry,
     "posthog": _setup_posthog,

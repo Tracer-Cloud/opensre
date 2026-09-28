@@ -34,7 +34,11 @@ Once GitHub is connected, the interactive-shell **action agent** uses **`github_
 opensre integrations setup github
 ```
 
-Select **Authorize in browser** when prompted. OpenSRE opens GitHub's device authorization page and prints a one-time code — approve it in your browser and the token is captured automatically. No personal access token is required.
+In the interactive shell, use `/integrations setup github` or ask “Can you configure GitHub for me?”
+
+1. Choose **Sign in with GitHub**. OpenSRE opens GitHub's device authorization page and prints a one-time code. Enter the code and approve OpenSRE; no personal access token is required.
+2. OpenSRE discovers your account and checks repository access. If GitHub or your organization has not granted access yet, approve it and retry the check without restarting setup.
+3. OpenSRE saves the verified connection and reports the signed-in account and repository access. Press Ctrl+C to cancel at any point.
 
 This uses GitHub's OAuth device flow, which has no client secret. The public OAuth App client id ships with OpenSRE; override it with `OPENSRE_GITHUB_OAUTH_CLIENT_ID` if you register your own app.
 
@@ -85,10 +89,10 @@ GITHUB_MCP_TOOLSETS=repos,issues,pull_requests,actions  # default
 
 ### Creating a personal access token
 
-1. In GitHub, go to **Settings** → **Developer settings** → **Personal access tokens** → **Tokens (classic)**
-2. Click **Generate new token**
-3. Select the following scopes: `repo`, `read:org` (add write scopes if you want chat mutations via `github_cli`)
-4. Copy the token
+1. Open [New fine-grained personal access token](https://github.com/settings/personal-access-tokens/new).
+2. Name it **OpenSRE**, choose an expiry, and select the owner and repositories OpenSRE may use.
+3. Grant read access to Contents, Metadata, Issues, Pull requests, and Actions. Add write access only for operations you want OpenSRE to perform.
+4. Generate and copy the token. If your organization requires approval, approve the token before retrying setup.
 
 <Info>
 For GitHub Enterprise Server, set `GITHUB_MCP_URL` to your enterprise MCP endpoint.

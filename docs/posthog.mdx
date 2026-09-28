@@ -29,20 +29,20 @@ This REST integration does **not** register agent tools. For agent tools (analyt
 opensre integrations setup posthog
 ```
 
-You will be prompted for:
+In the interactive shell, use `/integrations setup posthog` or ask “Can you configure PostHog for me?”
 
-- **Project ID** — from PostHog project settings
-- **Personal API key** (`phx_...`) — [Personal API keys](https://posthog.com/docs/api/personal-api-keys) with read access
-- **API base URL** — defaults to US SaaS (`https://us.i.posthog.com`); use `https://eu.i.posthog.com` for EU
+1. Choose US Cloud, EU Cloud, or your self-hosted app address. Setup links directly to that account's personal API key settings and explains the required read permissions before asking for a key.
+2. Choose your project by name. OpenSRE discovers the project ID for you. If it is not listed, you can retry, change the key or region, or enter the ID from project settings.
+3. OpenSRE verifies project access, saves the connection, and shows a summary. Failed checks can be retried in place; Ctrl+C cancels.
 
-On success, credentials are saved to your integration store and synced to `.env`.
+Use a **personal API key** (`phx_...`) with `project:read` for setup and `query:read` for analytics queries. A project capture key (`phc_...`) cannot read your analytics.
 
 ### Option 2: Environment variables
 
 ```bash
 POSTHOG_PROJECT_ID=your_project_id
 POSTHOG_PERSONAL_API_KEY=phx_your_personal_api_key
-POSTHOG_BASE_URL=https://us.i.posthog.com           # optional — US SaaS default
+POSTHOG_BASE_URL=https://us.posthog.com             # optional — US Cloud
 POSTHOG_TIMEOUT_SECONDS=15.0                        # optional
 ```
 
@@ -52,7 +52,7 @@ POSTHOG_TIMEOUT_SECONDS=15.0                        # optional
 | --- | --- | --- |
 | `POSTHOG_PROJECT_ID` | — | **Required.** Your PostHog project ID |
 | `POSTHOG_PERSONAL_API_KEY` | — | **Required.** Personal API key for the project |
-| `POSTHOG_BASE_URL` | `https://us.i.posthog.com` | API base URL (`https://eu.i.posthog.com` for EU, or your self-hosted origin) |
+| `POSTHOG_BASE_URL` | `https://us.posthog.com` | App URL (`https://eu.posthog.com` for EU, or your self-hosted origin) |
 | `POSTHOG_TIMEOUT_SECONDS` | `15.0` | HTTP timeout in seconds |
 
 Get the **project ID** from PostHog project settings. Create a **personal API key** (`phx_...`) with read access — see [PostHog personal API keys](https://posthog.com/docs/api/personal-api-keys).

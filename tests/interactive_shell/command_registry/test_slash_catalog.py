@@ -54,6 +54,14 @@ def test_slash_invoke_description_is_not_a_natural_language_router() -> None:
     assert "read-only discovery" in description
 
 
+def test_slash_invoke_routes_natural_language_integration_setup() -> None:
+    description = slash_invoke_tool_description().lower()
+
+    assert "can you configure telegram/github/posthog for me" in description
+    assert 'args=["setup", "telegram"/"github"/"posthog"]' in description
+    assert "do not ask for tokens in chat" in description
+
+
 def test_slash_invoke_schema_enum_matches_slash_commands() -> None:
     schema = slash_invoke_input_schema()
     command = schema["properties"]["command"]
