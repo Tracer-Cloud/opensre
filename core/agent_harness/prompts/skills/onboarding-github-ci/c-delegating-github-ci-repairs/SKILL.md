@@ -58,11 +58,6 @@ In order to use this skill correctly, you need to configure the remote GitHub in
 
 https://app.opensre.com/dashboard/github
 
-Specifically users need to confiugre a github pat token with:
-
-Contents  -- read and write
-Pull reqequests -- read and write
-
 # Verification 
 What needs to be verified in the remote:
 - Does remote storage work 
@@ -76,7 +71,7 @@ After successful validation, use `ask_user_choice`:
 - Exit to interactive shell 
 
 ## Relevant Tools 
-You can use all tools, but including the following:
+You can use all tools, including the following tools that are used to communicate from the interactive shell to the gateway, but should not be used inside the gateway:
 
 - `check_hosted_gateway()` — check whether it exists and is running.
 - `ask_hosted_gateway(prompt, facts)` — send work to the managed gateway.
