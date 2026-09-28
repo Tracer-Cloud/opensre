@@ -1892,3 +1892,44 @@ html:not(.dark) #navigation-items .sidebar-group a:not([aria-current="page"]):no
     margin-top: 0.25rem !important;
     margin-bottom: 0.5rem !important;
 }
+
+/* Start page — action buttons under the title */
+.index-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin: 0.5rem 0 2.5rem;
+}
+
+.index-action {
+    display: inline-block;
+    padding: 0.6rem 1.1rem;
+    border: 1px solid #171717;
+    border-radius: 0.375rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.8rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    text-decoration: none !important;
+    color: #171717;
+    background: transparent;
+}
+
+.index-action:first-child {
+    background: #171717;
+    color: #ffffff;
+}
+
+html.dark .index-action {
+    border-color: #f5f5f5;
+    color: #f5f5f5;
+}
+
+html.dark .index-action:first-child {
+    background: #f5f5f5;
+    color: #111111;
+}
+
+.index-action:hover {
+    opacity: 0.85;
+}

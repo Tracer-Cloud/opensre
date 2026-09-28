@@ -1,27 +1,11 @@
 ---
-title: "Start here"
-description: "An agentic SRE for production systems: measure and fix CI, investigate incidents, run it for your team."
+title: "Welcome to OpenSRE"
+description: "Install OpenSRE, run your first CI/CD demo, and scale from a single laptop to a managed gateway for your organization."
 ---
 
-<div className="index-hero index-page">
-  <div className="index-hero-lockup">
-    <img
-      src="/images/opensre-mark.svg"
-      alt=""
-      className="index-hero-mark"
-      aria-hidden="true"
-    />
-    <span className="index-hero-name">OpenSRE</span>
-  </div>
-
-  <blockquote className="index-hero-quote">
-    <p>Ask before you get paged.</p>
-  </blockquote>
-
-  <p className="index-hero-lead">
-    An agentic SRE that measures your CI, fixes what breaks, and answers
-    production questions from the tools you already run.
-  </p>
+<div className="index-actions">
+  <a className="index-action" href="/getting-started/quickstart">Quickstart guide →</a>
+  <a className="index-action index-action-secondary" href="https://app.opensre.com">Create an account →</a>
 </div>
 
 ## Choose a path
@@ -60,6 +44,10 @@ The same `opensre` binary runs everywhere. Pick a surface, install it, and start
     ```
 
     Windows uses PowerShell; see [Install](/install). The first prompt offers the CI/CD analysis of a repository on your machine, or skip it with **E**.
+
+    <Frame>
+      ![The CI/CD reliability report the first demo produces](/images/onboarding-ci-analysis-report.png)
+    </Frame>
   </Tab>
   <Tab title="Headless CLI">
     One agent turn from a script or a CI job, with JSON output and exit codes.
@@ -78,32 +66,23 @@ The same `opensre` binary runs everywhere. Pick a surface, install it, and start
   <Tab title="Managed gateway">
     An organization admin provisions a hosted gateway at app.opensre.com; repairs and scheduled loops run there with the organization's credentials.
 
-    See [Keep CI green with an agent](/cicd/ci-repair-agent#the-managed-service-coming-soon) and [Deployment](/guides/deployment#opensre-cloud-managed-gateway).
+    See [Keep CI green with an agent](/cicd/ci-repair-agent#the-managed-service) and [Deployment](/guides/deployment#opensre-cloud-managed-gateway).
   </Tab>
 </Tabs>
 
+<Tip>
+  Follow the [Quickstart](/getting-started/quickstart) to install, sign in and run your first demo in a few minutes.
+</Tip>
+
 ## Explore the docs
 
-<CardGroup cols={2}>
-  <Card title="Quickstart" icon="rocket" href="/getting-started/quickstart">
-    Install, sign in, pick a demo, ask your first question.
-  </Card>
-  <Card title="CI/CD with OpenSRE" icon="code-branch" href="/cicd/overview">
-    Every CI/CD capability, what it reads and writes, and the prompts to try.
-  </Card>
-  <Card title="Shell commands" icon="terminal" href="/getting-started/interactive-shell-commands">
-    Every slash command the interactive shell understands.
-  </Card>
-  <Card title="Integrations" icon="plug" href="/integrations">
-    60+ tools across monitoring, incidents, cloud, code, chat, databases and workflows.
-  </Card>
-  <Card title="Deployment" icon="server" href="/guides/deployment">
-    Laptop, gateway daemon, container, or the managed gateway.
-  </Card>
-  <Card title="Showcase" icon="photo-film" href="/getting-started/showcase">
-    Real output from a first run.
-  </Card>
-</CardGroup>
+- [Get started](/getting-started/quickstart): install on macOS, Linux, Windows or Docker, sign in, and the enterprise setup.
+- [CI/CD](/cicd/overview): the reliability report, fixing failing checks, the repair agent, and the organization-wide health scan.
+- [Using the shell](/getting-started/interactive-shell-commands): every slash command, how prompts map to tools, and goals that run across turns.
+- [Run it anywhere](/guides/deployment): the gateway daemon, headless CLI, HTTP and Python APIs, and the managed gateway.
+- [Platform](/platform/llm-providers): LLM providers, masking, sessions, memory, scheduled loops, and closed-loop learning.
+- [Integrations](/integrations): 60+ tools across monitoring, incidents, cloud, code, chat, databases and workflows.
+- [Community](/guides/bi-weekly-giveaway): the showcase giveaway and the pull request review flow.
 
 ## How a turn runs
 
