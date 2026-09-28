@@ -162,6 +162,17 @@ def _is_opted_out() -> bool:
     )
 
 
+def analytics_delivery_unavailable() -> bool:
+    """True when telemetry should flow but no destination resolves.
+
+    ``resolve_analytics_destination`` fails closed on explicit misconfiguration
+    (for example a silo URL without ``AGENT_USAGE_SECRET``), which silently
+    drops every product event this process emits. An explicit opt-out is a
+    decision, not a failure, so it never counts as unavailable.
+    """
+    return not _is_opted_out() and resolve_analytics_destination() is None
+
+
 def _path_exists(path: Path) -> bool:
     try:
         return path.exists()

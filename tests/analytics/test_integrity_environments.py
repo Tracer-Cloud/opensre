@@ -24,6 +24,7 @@ def run_process(
     cicd: bool = False,
     execution_context: Path | None = None,
     app_url: str = "https://integrity.invalid",
+    gateway_token: bool = False,
 ) -> dict[str, Any]:
     # Keep OS process-launch variables, but never inherit developer credentials,
     # analytics destinations, or home-store overrides into this subprocess.
@@ -65,6 +66,10 @@ def run_process(
                 "ORGANIZATION_ID": "org_integrity_fixture",
             }
         )
+    if gateway_token:
+        # The webapp-minted LLM credential a Fargate task also carries. It must
+        # never displace the silo analytics destination or sign analytics events.
+        env["OPENSRE_ACCOUNT_TOKEN"] = "osre_gw_org_integrity_fixture." + "a" * 43
     completed = subprocess.run(
         [sys.executable, str(_REPO / "tests/analytics/_integrity_process.py"), scenario],
         cwd=_REPO,
@@ -174,6 +179,22 @@ def test_fresh_storage_counts_runtime_instances_even_when_disk_persistence_is_re
         for request in run["requests"]
     )
     record_evidence("fresh-storage-is-runtime-instances-not-people", runs)
+
+
+def test_fargate_silo_delivers_remote_prompt_turns_with_silo_authority(tmp_path: Path) -> None:
+    """A Fargate-like environment (webapp URL + usage secret + gateway account
+    token) chooses the silo analytics destination, and one remote prompt turn's
+    events carry the prompt surface, its session, and the organization."""
+    result = run_process(tmp_path, "remote_prompt", silo=True, gateway_token=True)
+    assert all(r["auth_kind"] == "silo" for r in result["requests"])
+    assert all(r["signature_valid"] for r in result["requests"])
+    events = {r["payload"]["event"]: r["payload"]["properties"] for r in result["requests"]}
+    for event_name in ("react_turn_completed", "gateway_turn_completed"):
+        properties = events[event_name]
+        assert properties["surface"] == "prompt"
+        assert properties["session_id"] == "session_integrity_remote"
+        assert properties["organization_id"] == "org_integrity_fixture"
+    record_evidence("fargate-silo-remote-prompt", result)
 
 
 def test_failed_delivery_retries_the_same_install_event_id(tmp_path: Path) -> None:
