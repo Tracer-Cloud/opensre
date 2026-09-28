@@ -24,6 +24,7 @@ ANALYTICS_TIMESTAMP_HEADER: Final[str] = "X-OpenSRE-Timestamp"
 ANALYTICS_RUNNER_TOKEN_HEADER: Final[str] = "X-OpenSRE-Runner-Token"
 ANALYTICS_EXECUTION_CONTEXT_ENV: Final[str] = "OPENSRE_EXECUTION_CONTEXT_PATH"
 ANALYTICS_EXECUTION_CONTEXT_PATH: Final[str] = "/run/opensre/execution-context.json"
+ANALYTICS_RUNNER_INGEST_URL: Final[str] = "https://app.opensre.com/api/analytics/events"
 ANALYTICS_RUNNER_AUDIENCE: Final[str] = "https://app.opensre.com/analytics/runner/"
 
 __all__ = [
@@ -44,4 +45,5 @@ __all__ = [
     "ANALYTICS_EXECUTION_CONTEXT_ENV",
     "ANALYTICS_EXECUTION_CONTEXT_PATH",
     "ANALYTICS_RUNNER_AUDIENCE",
+    "ANALYTICS_RUNNER_INGEST_URL",
 ]

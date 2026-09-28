@@ -981,6 +981,7 @@ class Analytics:
             with httpx.Client(
                 timeout=_SEND_TIMEOUT,
                 trust_env=False,
+                follow_redirects=False,
             ) as client:
                 while True:
                     item = self._queue.get()
@@ -1020,6 +1021,7 @@ class Analytics:
         }
         execution_properties, execution_headers = execution_evidence(
             self._anonymous_id,
+            endpoint_url=destination.endpoint_url,
             is_ci=properties.get("is_ci") is True,
             is_container=properties.get("is_container") is True,
         )

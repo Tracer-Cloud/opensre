@@ -138,6 +138,12 @@ necessarily the first installation or the current invocation. Do not map
 
 ## Product metrics
 
+Eligible installation observations exclude synthetic/test identities and every
+identity with confirmed or reported automation in retained runtime history.
+Remaining identities have unknown origin: these are observed installations, not
+a measured human acquisition denominator. Report their conversion separately
+from verified account metrics and show automation counts alongside them.
+
 The first dashboard should keep personal-user and gateway-organization grains
 separate. Anonymous IDs are a fallback only for pre-login acquisition:
 
@@ -147,10 +153,10 @@ must be calculated from `analytics_product_events`.
 
 | Metric | Definition |
 | --- | --- |
-| Install-to-signup conversion | Non-CI installations whose first server-verified account link resolves to a Clerk signup created between install and first authentication, divided by all non-CI installations. |
+| Install-to-signup conversion | Eligible installation observations whose first server-verified account link resolves to a Clerk signup created between install and first authentication, divided by all eligible installation observations. |
 | Personal activation | Server-resolved users whose linked installation reaches `onboard_completed`, then records a non-error `$ai_generation`. |
 | Gateway activation | Authenticated organizations with an answered `gateway_turn_completed`; do not count gateway actor IDs as users. |
-| Onboarding conversion | Distinct non-CI installations completed, and distinct installations failed, each divided separately by distinct installations started. |
+| Onboarding conversion | Distinct eligible installation observations completed, and distinct installations failed, each divided separately by distinct installations started. |
 | Personal DAU / WAU / MAU | Distinct server-resolved users with personal-bearer `cli_invoked` or `$ai_generation` events in the window. |
 | Organization DAU / WAU / MAU | Distinct authenticated organizations with gateway activity in the window, reported separately. |
 | D1 / D7 / D30 retention | Personally activated users with another qualifying personal event on the target day/window; compute organization retention separately. |

@@ -15,7 +15,11 @@ from unittest.mock import patch
 import httpx
 
 from config.account import AccountRecord, save_account_record, save_account_token
-from config.constants.analytics import ANALYTICS_SIGNATURE_HEADER, ANALYTICS_TIMESTAMP_HEADER
+from config.constants.analytics import (
+    ANALYTICS_RUNNER_TOKEN_HEADER,
+    ANALYTICS_SIGNATURE_HEADER,
+    ANALYTICS_TIMESTAMP_HEADER,
+)
 from infrastructure.analytics.capture import capture_account_authenticated, capture_cli_invoked
 from infrastructure.analytics.provider import shutdown_analytics
 from surfaces.cli.telemetry import capture_first_run_if_needed
@@ -29,7 +33,7 @@ def main() -> None:
     captured: list[dict[str, object]] = []
 
     def receive(request: httpx.Request) -> httpx.Response:
-        assert str(request.url) == "https://integrity.invalid/api/analytics/events"
+        assert str(request.url) == os.environ["OPENSRE_APP_URL"] + "/api/analytics/events"
         auth = request.headers.get("Authorization", "")
         kind = "anonymous"
         if auth:
@@ -48,7 +52,7 @@ def main() -> None:
                 "payload": payload,
                 "auth_kind": kind,
                 "signature_valid": bool(auth),
-                "runner_token_present": bool(request.headers.get("X-OpenSRE-Runner-Token")),
+                "runner_token_present": bool(request.headers.get(ANALYTICS_RUNNER_TOKEN_HEADER)),
             }
         )
         status = HTTPStatus.SERVICE_UNAVAILABLE if scenario == "reject" else HTTPStatus.ACCEPTED

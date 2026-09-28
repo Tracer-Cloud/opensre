@@ -22,6 +22,7 @@ def run_process(
     ci: bool = False,
     silo: bool = False,
     execution_context: Path | None = None,
+    app_url: str = "https://integrity.invalid",
 ) -> dict[str, Any]:
     # Keep OS process-launch variables, but never inherit developer credentials,
     # analytics destinations, or home-store overrides into this subprocess.
@@ -43,7 +44,7 @@ def run_process(
             "OPENSRE_HOME": str(root),
             "OPENSRE_WIZARD_STORE_PATH": str(root / "opensre.json"),
             "OPENSRE_ACCOUNT_METADATA_PATH": str(root / "account.json"),
-            "OPENSRE_APP_URL": "https://integrity.invalid",
+            "OPENSRE_APP_URL": app_url,
             "OPENSRE_DISABLE_KEYRING": "0",
             "OPENSRE_SENTRY_DISABLED": "1",
             "OPENSRE_LANGFUSE_DISABLED": "1",
@@ -91,7 +92,7 @@ def test_runner_context_survives_stripped_ci_environment(tmp_path: Path) -> None
             }
         )
     )
-    result = run_process(root, execution_context=context)
+    result = run_process(root, execution_context=context, app_url="https://app.opensre.com")
     for request in result["requests"]:
         properties = request["payload"]["properties"]
         assert properties["is_ci"] is True
@@ -99,6 +100,8 @@ def test_runner_context_survives_stripped_ci_environment(tmp_path: Path) -> None
         assert properties["execution_origin"] == "github_actions"
         assert request["runner_token_present"] is True
         assert "fixture_token" not in json.dumps(request["payload"])
+    custom = run_process(root, execution_context=context)
+    assert not any(r["runner_token_present"] for r in custom["requests"])
     context.unlink()
     restarted = run_process(root, execution_context=context)
     assert all(

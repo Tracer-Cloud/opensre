@@ -11,6 +11,7 @@ from pathlib import Path
 from config.constants.analytics import (
     ANALYTICS_EXECUTION_CONTEXT_ENV,
     ANALYTICS_EXECUTION_CONTEXT_PATH,
+    ANALYTICS_RUNNER_INGEST_URL,
     ANALYTICS_RUNNER_TOKEN_HEADER,
 )
 
@@ -59,7 +60,7 @@ def read_runner_provenance(
 
 
 def execution_evidence(
-    analytics_id: str, *, is_ci: bool, is_container: bool
+    analytics_id: str, *, endpoint_url: str, is_ci: bool, is_container: bool
 ) -> tuple[dict[str, str | bool], dict[str, str]]:
     """Return public evidence and private transport headers for this identity."""
     context = read_runner_provenance()
@@ -79,6 +80,6 @@ def execution_evidence(
             ci_detection_status="detected",
             execution_environment="ci_container" if is_container else "ci",
         )
-        if context.token:
+        if context.token and endpoint_url == ANALYTICS_RUNNER_INGEST_URL:
             headers[ANALYTICS_RUNNER_TOKEN_HEADER] = context.token
     return properties, headers

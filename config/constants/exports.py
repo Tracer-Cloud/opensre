@@ -55,6 +55,7 @@ EXPORTS: dict[str, str] = {
     "ANALYTICS_EXECUTION_CONTEXT_ENV": "analytics",
     "ANALYTICS_EXECUTION_CONTEXT_PATH": "analytics",
     "ANALYTICS_RUNNER_AUDIENCE": "analytics",
+    "ANALYTICS_RUNNER_INGEST_URL": "analytics",
     # alertmanager
     "ALERTMANAGER_BEARER_TOKEN_ENV": "alertmanager",
     "ALERTMANAGER_PASSWORD_ENV": "alertmanager",

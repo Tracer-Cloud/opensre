@@ -100,6 +100,9 @@ if TYPE_CHECKING:
     )
     from config.constants.analytics import ANALYTICS_RUNNER_AUDIENCE as ANALYTICS_RUNNER_AUDIENCE
     from config.constants.analytics import (
+        ANALYTICS_RUNNER_INGEST_URL as ANALYTICS_RUNNER_INGEST_URL,
+    )
+    from config.constants.analytics import (
         ANALYTICS_RUNNER_TOKEN_HEADER as ANALYTICS_RUNNER_TOKEN_HEADER,
     )
     from config.constants.analytics import (
