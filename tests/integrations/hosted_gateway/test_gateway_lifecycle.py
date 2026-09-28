@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from http import HTTPStatus
+from typing import Any
 
 import httpx
 import pytest
@@ -235,6 +237,99 @@ def test_a_member_cannot_start_a_running_gateway_either(
     assert _Client.calls == ["health", "start"]
     assert out["success"] is False and out["error_kind"] == "admin_required"
     assert reported == []
+
+
+def _record_gateway_events(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, dict[str, object]]]:
+    events: list[tuple[str, dict[str, object]]] = []
+    monkeypatch.setattr(
+        gateway_lifecycle,
+        "capture_hosted_gateway_started",
+        lambda **kw: events.append(("started", kw)),
+    )
+    monkeypatch.setattr(
+        gateway_lifecycle,
+        "capture_hosted_gateway_healthy",
+        lambda **kw: events.append(("healthy", kw)),
+    )
+    return events
+
+
+@pytest.mark.parametrize(
+    ("before", "after", "expected"),
+    [
+        (
+            GatewayHealth(True, False, gateway_id="org-gateway", actual_state="stopped"),
+            GatewayHealth(True, False, gateway_id="org-gateway", actual_state="provisioning"),
+            [
+                (
+                    "started",
+                    {
+                        "gateway_id": "org-gateway",
+                        "actual_state": "provisioning",
+                        "already_running": False,
+                    },
+                )
+            ],
+        ),
+        (
+            GatewayHealth(True, True, gateway_id="org-gateway", actual_state="running"),
+            GatewayHealth(True, True, gateway_id="org-gateway", actual_state="running"),
+            [
+                (
+                    "started",
+                    {
+                        "gateway_id": "org-gateway",
+                        "actual_state": "running",
+                        "already_running": True,
+                    },
+                ),
+                ("healthy", {"gateway_id": "org-gateway", "tool_name": "start_hosted_gateway"}),
+            ],
+        ),
+    ],
+    ids=["coming-up", "already-running"],
+)
+def test_an_accepted_start_is_recorded_and_healthy_only_once_it_serves(
+    monkeypatch: pytest.MonkeyPatch,
+    before: GatewayHealth,
+    after: GatewayHealth,
+    expected: list[tuple[str, dict[str, object]]],
+) -> None:
+    # Arrange
+    events = _record_gateway_events(monkeypatch)
+    _signed_in_with(monkeypatch, after)
+    monkeypatch.setattr(_Client, "health_outcome", before)
+
+    # Act
+    start_hosted_gateway()
+
+    # Assert
+    assert events == expected
+
+
+@pytest.mark.parametrize(
+    ("call", "outcome"),
+    [
+        (start_hosted_gateway, HostedGatewayError(ERR_ADMIN_REQUIRED, HTTPStatus.FORBIDDEN)),
+        (stop_hosted_gateway, GatewayHealth(True, False, actual_state="stopped")),
+    ],
+    ids=["refused-start", "stop"],
+)
+def test_a_refused_start_and_a_stop_record_no_gateway_milestone(
+    monkeypatch: pytest.MonkeyPatch,
+    call: Callable[[], dict[str, Any]],
+    outcome: GatewayHealth | HostedGatewayError,
+) -> None:
+    # Arrange
+    events = _record_gateway_events(monkeypatch)
+    monkeypatch.setattr(results, "report_run_error", lambda _exc, **_kw: None)
+    _signed_in_with(monkeypatch, outcome)
+
+    # Act
+    call()
+
+    # Assert
+    assert events == []
 
 
 def test_a_member_is_told_an_admin_is_needed_and_it_is_not_an_incident(

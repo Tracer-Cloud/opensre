@@ -80,7 +80,7 @@ def _check_buzz_cli() -> tuple[bool, str]:
         return True, f"buzz CLI found ({path})"
     return False, (
         "Buzz is configured but the buzz CLI is not on PATH — install with "
-        "`cargo install --path crates/buzz-cli` (see docs/messaging/buzz)"
+        "`cargo install --path crates/buzz-cli` (see docs/integrations/messaging/buzz)"
     )
 
 

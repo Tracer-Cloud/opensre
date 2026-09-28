@@ -46,7 +46,7 @@ def test_master_menu_matches_four_unique_children_and_preserves_specialists() ->
     assert GETTING_STARTED_OPTIONS == (
         "Explore a repo and analyze its CI/CD performance (recommended)",
         "Set up an agent that improves CI/CD reliability over time",
-        "Run CI/CD improvements with a managed service (coming soon)",
+        "Run CI/CD repairs remotely",
         "Connect OpenSRE to Slack and hand off DevOps chores for your team",
     )
     master = skills.load_skill_body(ONBOARDING_SKILL_NAME)
@@ -94,8 +94,7 @@ def test_master_menu_matches_four_unique_children_and_preserves_specialists() ->
     assert menu.allow_custom is False
     assert GETTING_STARTED_CUSTOM not in master
     # Demo C delegates to the hosted gateway through the hosted-gateway tools and never
-    # runs the repair itself. Its menu label keeps "(coming soon)" until the team has
-    # reviewed and tested the hosted flow.
+    # runs the repair itself.
     managed = skills.load_skill_body("delegating-github-ci-repairs")
     assert "check_hosted_gateway" in managed and "ask_hosted_gateway" in managed
     assert "schedule_ci_repair_loop(" not in managed

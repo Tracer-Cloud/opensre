@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Any
 import click
 
 if TYPE_CHECKING:
-    from collections.abc import Mapping
+    from collections.abc import Mapping, Sequence
 
     from infrastructure.analytics.provider import Properties
     from infrastructure.errors import OpenSREError
@@ -33,10 +33,12 @@ def record_install_marker_state() -> None:
     _record(get_store_path().parent)
 
 
-def capture_cli_invoked(properties: Properties | None = None) -> None:
+def capture_cli_invoked(
+    properties: Properties | None = None, command_parts: Sequence[str] = ()
+) -> None:
     from infrastructure.analytics.capture import capture_cli_invoked as _capture
 
-    _capture(properties)
+    _capture(properties, command_parts)
 
 
 def capture_account_authenticated() -> None:
@@ -68,7 +70,8 @@ def build_cli_invoked_properties(
     verbose: bool,
     debug: bool,
     yes: bool,
-    interactive: bool,
+    interactive: bool | None,
+    interactive_option_source: str = "caller",
 ) -> Properties:
     from infrastructure.analytics.event_properties import build_cli_invoked_properties as _build
 
@@ -80,6 +83,7 @@ def build_cli_invoked_properties(
         debug=debug,
         yes=yes,
         interactive=interactive,
+        interactive_option_source=interactive_option_source,
     )
 
 

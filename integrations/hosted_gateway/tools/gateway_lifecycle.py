@@ -7,6 +7,10 @@ from typing import Any
 from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel
 from core.tool_framework import tool
+from infrastructure.analytics.capture import (
+    capture_hosted_gateway_healthy,
+    capture_hosted_gateway_started,
+)
 from integrations.hosted_gateway.client import (
     GatewayHealth,
     HostedGatewayClient,
@@ -73,7 +77,15 @@ def start_hosted_gateway() -> dict[str, Any]:
             tool_name=START_TOOL_NAME,
             component="integrations.hosted_gateway.tools.gateway_lifecycle.start_hosted_gateway",
         )
-    if was_running and health.healthy:
+    already_running = was_running and health.healthy
+    capture_hosted_gateway_started(
+        gateway_id=health.gateway_id,
+        actual_state=health.actual_state,
+        already_running=already_running,
+    )
+    if health.healthy:
+        capture_hosted_gateway_healthy(gateway_id=health.gateway_id, tool_name=START_TOOL_NAME)
+    if already_running:
         return state_output(health, _already_running(health))
     return state_output(health, _started(health))
 

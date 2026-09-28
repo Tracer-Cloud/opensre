@@ -1063,6 +1063,176 @@ def test_hosted_scheduler_registers_without_an_os_service(
     assert store.get(run.id).registered
 
 
+class _RecordedEvents:
+    """Stands in for the analytics client so each milestone's event and properties are seen."""
+
+    def __init__(self) -> None:
+        self.events: list[tuple[str, dict[str, object]]] = []
+
+    def capture(self, event: str, properties: dict[str, object] | None = None) -> None:
+        self.events.append((str(event), dict(properties or {})))
+
+    def names(self) -> list[str]:
+        return [name for name, _ in self.events]
+
+
+@pytest.fixture
+def recorded(monkeypatch: pytest.MonkeyPatch) -> _RecordedEvents:
+    from infrastructure.analytics import capture
+
+    events = _RecordedEvents()
+    monkeypatch.setattr(capture, "get_analytics", lambda: events)
+    return events
+
+
+_DEMO_REPOSITORY = f"alice/{GITHUB_CI_DEMO_REPOSITORY}"
+
+
+@pytest.mark.parametrize("remote", [True, False], ids=["gateway", "shell"])
+def test_only_a_gateway_scheduled_loop_records_that_remote_monitoring_started(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recorded: _RecordedEvents, remote: bool
+) -> None:
+    # Arrange
+    store = RepairStore(tmp_path)
+    tasks: dict[str, ScheduledTask] = {}
+    monkeypatch.setattr(schedule, "configured_token", lambda _token: "test-token")
+    monkeypatch.setattr(schedule, "GitHubRestClient", lambda _token: _GitHub())
+    monkeypatch.setattr(schedule, "get_task", tasks.get)
+    monkeypatch.setattr(schedule, "add_task", lambda task: tasks.setdefault(task.id, task))
+    monkeypatch.setattr(schedule, "ensure_background_service", lambda **_kw: None)
+
+    # Act: the second request reuses the active run, so monitoring did not start again
+    run, _, _ = schedule.schedule_repair(demo=True, store=store, scheduler_in_process=remote)
+    schedule.schedule_repair(demo=True, store=store, scheduler_in_process=remote)
+
+    # Assert
+    assert store.get(run.id).remote is remote
+    started = (
+        "remote_ci_monitoring_started",
+        {"repair_run_id": run.id, "repository": _DEMO_REPOSITORY, "demo": True},
+    )
+    assert recorded.events == ([started] if remote else [])
+
+
+@pytest.mark.parametrize("remote", [True, False], ids=["gateway", "shell"])
+def test_the_demo_records_its_failing_pull_request_once_on_either_host(
+    tmp_path: Path, recorded: _RecordedEvents, remote: bool
+) -> None:
+    # Arrange
+    api = _GitHub()
+    store = RepairStore(tmp_path)
+    run = _run(remote=remote)
+
+    # Act: a restarted worker recovers the same pull request
+    fixture.prepare_demo(api, run, store)
+    fixture.prepare_demo(api, store.get(run.id), store)
+
+    # Assert
+    assert recorded.events == [
+        (
+            "test_ci_failure_triggered",
+            {
+                "repair_run_id": run.id,
+                "repository": _DEMO_REPOSITORY,
+                "demo": True,
+                "pr_number": 1,
+                "remote": remote,
+            },
+        )
+    ]
+
+
+def _repair_the_demo_on_the_second_attempt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, run: RepairRun
+) -> None:
+    """Run the worker on the demo: the first attempt leaves CI red, the second one's commit passes."""
+    from integrations.github.tools.ci_repair_loop import worker
+
+    store = RepairStore(tmp_path)
+    monkeypatch.setattr(worker, "configured_token", lambda: "test-token")
+    monkeypatch.setattr(worker, "verify_coding_agent", lambda: (True, "ready"))
+    monkeypatch.setattr(worker, "GitHubRestClient", lambda _token: _GitHub())
+    monkeypatch.setattr(
+        worker, "clone_repository", lambda _url, workspace, **_kw: Path(workspace).mkdir()
+    )
+    monkeypatch.setattr(worker.time, "sleep", lambda _seconds: None)
+    monkeypatch.setattr(worker, "record_ci_fix_outcome", lambda _output: None)
+    attempts = 0
+
+    def repair(**_kwargs: Any) -> dict[str, Any]:
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            return {"success": False, "error_kind": "checks_failed"}
+        return {"success": True, "checks_state": "passed", "fix_head_sha": "fixed"}
+
+    def pr(_run: RepairRun, _token: str) -> dict[str, Any]:
+        conclusion = "SUCCESS" if attempts == 2 else "FAILURE"
+        link = run.repository_url + "/actions/runs/1"
+        return {
+            "state": "OPEN",
+            "headRefOid": "fixed",
+            "statusCheckRollup": [{"conclusion": conclusion, "detailsUrl": link}],
+        }
+
+    monkeypatch.setattr(worker, "run_ci_fix", repair)
+    monkeypatch.setattr(worker, "_read_pr", pr)
+    worker.execute_repair(run, store)
+    assert run.status is RepairStatus.SUCCEEDED
+
+
+def test_a_remote_loop_records_the_failure_it_saw_and_the_repair_that_passed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recorded: _RecordedEvents
+) -> None:
+    # Arrange
+    run = _run(remote=True)
+
+    # Act
+    _repair_the_demo_on_the_second_attempt(tmp_path, monkeypatch, run)
+
+    # Assert: one detection for two red reads, then the passing repair
+    assert recorded.names() == [
+        "test_ci_failure_triggered",
+        "remote_ci_failure_detected",
+        "remote_ci_repair_succeeded",
+    ]
+    on_pr = {"repair_run_id": run.id, "repository": _DEMO_REPOSITORY, "demo": True, "pr_number": 1}
+    _, detected = recorded.events[1]
+    _, succeeded = recorded.events[2]
+    assert detected == on_pr
+    duration_ms = succeeded.pop("duration_ms")
+    assert succeeded == {**on_pr, "attempts": 2}
+    assert isinstance(duration_ms, int) and duration_ms >= 0
+
+
+def test_a_remote_loop_does_not_record_success_when_demo_cleanup_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recorded: _RecordedEvents
+) -> None:
+    from integrations.github.tools.ci_repair_loop import worker
+
+    def fail(_client: object, _run: RepairRun) -> None:
+        raise GitHubApiError("close failed", status_code=HTTPStatus.BAD_GATEWAY)
+
+    monkeypatch.setattr(worker, "cleanup_demo", fail)
+    run = _run(remote=True)
+
+    with pytest.raises(GitHubApiError):
+        _repair_the_demo_on_the_second_attempt(tmp_path, monkeypatch, run)
+
+    assert run.status is not RepairStatus.SUCCEEDED
+    assert "remote_ci_repair_succeeded" not in recorded.names()
+
+
+def test_a_loop_scheduled_from_the_shell_records_only_the_test_failure(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recorded: _RecordedEvents
+) -> None:
+    # Act
+    _repair_the_demo_on_the_second_attempt(tmp_path, monkeypatch, _run())
+
+    # Assert
+    assert recorded.names() == ["test_ci_failure_triggered"]
+
+
 def test_setup_exception_details_stay_out_of_persisted_reports(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

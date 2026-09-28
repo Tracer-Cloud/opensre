@@ -16,7 +16,15 @@ _REPO = Path(__file__).resolve().parents[2]
 
 
 def run_process(
-    root: Path, scenario: str = "start", *, ci: bool = False, silo: bool = False, cicd: bool = False
+    root: Path,
+    scenario: str = "start",
+    *,
+    ci: bool = False,
+    silo: bool = False,
+    cicd: bool = False,
+    execution_context: Path | None = None,
+    app_url: str = "https://integrity.invalid",
+    gateway_token: bool = False,
 ) -> dict[str, Any]:
     # Keep OS process-launch variables, but never inherit developer credentials,
     # analytics destinations, or home-store overrides into this subprocess.
@@ -38,7 +46,7 @@ def run_process(
             "OPENSRE_HOME": str(root),
             "OPENSRE_WIZARD_STORE_PATH": str(root / "opensre.json"),
             "OPENSRE_ACCOUNT_METADATA_PATH": str(root / "account.json"),
-            "OPENSRE_APP_URL": "https://integrity.invalid",
+            "OPENSRE_APP_URL": app_url,
             "OPENSRE_DISABLE_KEYRING": "0",
             "OPENSRE_SENTRY_DISABLED": "1",
             "OPENSRE_LANGFUSE_DISABLED": "1",
@@ -46,6 +54,8 @@ def run_process(
     )
     if ci:
         env["GITHUB_ACTIONS"] = "true"
+    if execution_context is not None:
+        env["OPENSRE_EXECUTION_CONTEXT_PATH"] = str(execution_context)
     if cicd:
         env["OPENSRE_CICD"] = "1"
     if silo:
@@ -56,6 +66,10 @@ def run_process(
                 "ORGANIZATION_ID": "org_integrity_fixture",
             }
         )
+    if gateway_token:
+        # The webapp-minted LLM credential a Fargate task also carries. It must
+        # never displace the silo analytics destination or sign analytics events.
+        env["OPENSRE_ACCOUNT_TOKEN"] = "osre_gw_org_integrity_fixture." + "a" * 43
     completed = subprocess.run(
         [sys.executable, str(_REPO / "tests/analytics/_integrity_process.py"), scenario],
         cwd=_REPO,
@@ -68,6 +82,40 @@ def run_process(
     result: dict[str, Any] = json.loads(completed.stdout)
     assert result["requests"], completed.stderr
     return result
+
+
+def test_runner_context_survives_stripped_ci_environment(tmp_path: Path) -> None:
+    root = tmp_path / "profile"
+    root.mkdir()
+    identity = "84f31ef1-8334-4a04-993b-6bc090635fcf"
+    (root / "anonymous_id").write_text(identity)
+    context = tmp_path / "execution-context.json"
+    context.write_text(
+        json.dumps(
+            {
+                "version": 1,
+                "analytics_id": identity,
+                "execution_origin": "github_actions",
+                "token": "fixture_token",
+            }
+        )
+    )
+    result = run_process(root, execution_context=context, app_url="https://app.opensre.com")
+    for request in result["requests"]:
+        properties = request["payload"]["properties"]
+        assert properties["is_ci"] is True
+        assert properties["automation_status"] == "reported"
+        assert properties["execution_origin"] == "github_actions"
+        assert request["runner_token_present"] is True
+        assert "fixture_token" not in json.dumps(request["payload"])
+    custom = run_process(root, execution_context=context)
+    assert not any(r["runner_token_present"] for r in custom["requests"])
+    context.unlink()
+    restarted = run_process(root, execution_context=context)
+    assert all(
+        r["payload"]["properties"]["automation_status"] == "unknown" for r in restarted["requests"]
+    )
+    assert not any(r["runner_token_present"] for r in restarted["requests"])
 
 
 def installs(result: dict[str, Any]) -> list[dict[str, Any]]:
@@ -118,7 +166,11 @@ def test_fresh_storage_counts_runtime_instances_even_when_disk_persistence_is_re
     assert len({event["anonymous_id"] for event in events}) == 3
     assert {event["properties"]["identity_persistence"] for event in events} == {"disk"}
     assert {event["properties"]["install_source"] for event in events} == {"first_cli_invocation"}
-    assert {event["properties"]["distribution"] for event in events} == {"python_package"}
+    assert {event["properties"]["distribution"] for event in events} <= {
+        "source_checkout",
+        "editable_package",
+        "installed_package",
+    }
     assert len({event["properties"]["composite_fingerprint"] for event in events}) == 1
     assert all(request["auth_kind"] == "silo" for run in runs for request in run["requests"])
     assert not any(
@@ -127,6 +179,22 @@ def test_fresh_storage_counts_runtime_instances_even_when_disk_persistence_is_re
         for request in run["requests"]
     )
     record_evidence("fresh-storage-is-runtime-instances-not-people", runs)
+
+
+def test_fargate_silo_delivers_remote_prompt_turns_with_silo_authority(tmp_path: Path) -> None:
+    """A Fargate-like environment (webapp URL + usage secret + gateway account
+    token) chooses the silo analytics destination, and one remote prompt turn's
+    events carry the prompt surface, its session, and the organization."""
+    result = run_process(tmp_path, "remote_prompt", silo=True, gateway_token=True)
+    assert all(r["auth_kind"] == "silo" for r in result["requests"])
+    assert all(r["signature_valid"] for r in result["requests"])
+    events = {r["payload"]["event"]: r["payload"]["properties"] for r in result["requests"]}
+    for event_name in ("react_turn_completed", "gateway_turn_completed"):
+        properties = events[event_name]
+        assert properties["surface"] == "prompt"
+        assert properties["session_id"] == "session_integrity_remote"
+        assert properties["organization_id"] == "org_integrity_fixture"
+    record_evidence("fargate-silo-remote-prompt", result)
 
 
 def test_failed_delivery_retries_the_same_install_event_id(tmp_path: Path) -> None:

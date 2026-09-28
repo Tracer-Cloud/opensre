@@ -144,6 +144,13 @@ def _merge_finished_by_agent(
 ) -> BaseMergeResult:
     """Accept a merge the coding agent committed itself on the PR branch; refuse one it abandoned."""
     if merge_committed_by_resolver(workspace, conflicts, merging):
+        from infrastructure.analytics.capture import capture_opensre_commit_created
+
+        capture_opensre_commit_created(
+            workflow="github_ci_fix",
+            commit_kind="merge",
+            changed_file_count=len(conflicts.names),
+        )
         return BaseMergeResult(
             base_branch=ctx.base_branch,
             commit_sha=head_sha(workspace),

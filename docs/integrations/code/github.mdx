@@ -1,0 +1,154 @@
+---
+title: "GitHub"
+description: "Connect GitHub so OpenSRE can read and write issues/PRs, search code, inspect commits, and correlate changes with incidents"
+---
+
+## Overview
+
+OpenSRE connects to GitHub so the agent can work with issues, pull requests, repositories, Actions, and code — and correlate recent commits with incidents.
+
+Once GitHub is connected, the interactive-shell **action agent** uses **`github_cli`** (authenticated `gh`) for flexible reads and writes — create/list/view issues and PRs, assign, label, comment, merge, search, releases, workflow runs, and `gh api` — without a separate approval gate. Prefer this over shell `gh` / `!gh`. These requests stay on the action path (not the conversational gather/answer loop).
+
+| Area | How OpenSRE does it |
+| --- | --- |
+| Ad-hoc issues, PRs, repos, search, API | `github_cli` (action agent) |
+| Engineering digests, PR readiness, security alerts | [GitHub workflow tools](/integrations/code/github-workflow-tools) |
+| Security and quality fixes and PRs | [GitHub security and quality fix](/integrations/code/github-security-fix) |
+| Failing CI fixes and branch pushes | [GitHub CI fix](/cicd/github-ci-fix) |
+| Slack → GitHub issue create/update/close | Propose + approve via workflow mutation tools |
+| Code, commits, files, issue search | Dedicated GitHub tools |
+| Failed deploys / workflow runs | [GitHub Actions tools](/integrations/code/github-actions) |
+| Organization-owned incident runbooks | [Runbook-guided investigations](/integrations/incidents/runbook-guided-investigations) |
+
+## Prerequisites
+
+- GitHub account with repository access
+- One of: browser sign-in (recommended), a personal access token, or GitHub Copilot MCP access
+- For chat `github_cli`: the `gh` binary on `PATH` (OpenSRE supplies the token). If it is missing, follow the [GitHub CLI installation guide](https://cli.github.com/).
+
+## Setup
+
+### Option 1: Interactive CLI (browser sign-in)
+
+```bash
+opensre integrations setup github
+```
+
+In the interactive shell, use `/integrations setup github` or ask “Can you configure GitHub for me?”
+
+1. Choose **Sign in with GitHub**. OpenSRE opens GitHub's device authorization page and prints a one-time code. Enter the code and approve OpenSRE; no personal access token is required.
+2. OpenSRE discovers your account and checks repository access. If GitHub or your organization has not granted access yet, approve it and retry the check without restarting setup.
+3. OpenSRE saves the verified connection and reports the signed-in account and repository access. Press Ctrl+C to cancel at any point.
+
+This uses GitHub's OAuth device flow, which has no client secret. The public OAuth App client id ships with OpenSRE; override it with `OPENSRE_GITHUB_OAUTH_CLIENT_ID` if you register your own app.
+
+If you prefer, the same prompt lets you **paste a token (PAT)** instead.
+
+### Option 2: Environment variables
+
+```bash
+GITHUB_MCP_AUTH_TOKEN=ghp_your_personal_access_token
+GITHUB_MCP_URL=https://api.githubcopilot.com/mcp/   # default
+GITHUB_MCP_MODE=streamable-http                      # default
+GITHUB_MCP_TOOLSETS=repos,issues,pull_requests,actions  # default
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `GITHUB_MCP_AUTH_TOKEN` | — | GitHub personal access token. Required unless you authorize in the browser (Option 1) |
+| `GITHUB_TOKEN` / `GH_TOKEN` | — | Alternate token env names also accepted by `github_cli` and some workflow tools |
+| `GITHUB_MCP_URL` | `https://api.githubcopilot.com/mcp/` | GitHub MCP server URL |
+| `GITHUB_MCP_MODE` | `streamable-http` | Transport mode: `streamable-http`, `sse`, or `stdio` |
+| `GITHUB_MCP_TOOLSETS` | `repos,issues,pull_requests,actions` | Comma-separated toolsets to enable |
+| `GITHUB_MCP_COMMAND` | — | Command to run (required for `stdio` mode only) |
+| `GITHUB_MCP_ARGS` | — | Space-separated args for `stdio` mode |
+| `OPENSRE_GITHUB_OAUTH_CLIENT_ID` | _(built-in)_ | OAuth App client id for browser sign-in (device flow). Override to use your own app |
+
+### Option 3: Persistent store
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "github-prod",
+      "service": "github",
+      "status": "active",
+      "credentials": {
+        "url": "https://api.githubcopilot.com/mcp/",
+        "mode": "streamable-http",
+        "auth_token": "ghp_your_token",
+        "toolsets": ["repos", "issues", "pull_requests", "actions"]
+      }
+    }
+  ]
+}
+```
+
+## Credentials
+
+### Creating a personal access token
+
+1. Open [New fine-grained personal access token](https://github.com/settings/personal-access-tokens/new).
+2. Name it **OpenSRE**, choose an expiry, and select the owner and repositories OpenSRE may use.
+3. Grant read access to Contents, Metadata, Issues, Pull requests, and Actions. Add write access only for operations you want OpenSRE to perform.
+4. Generate and copy the token. If your organization requires approval, approve the token before retrying setup.
+
+<Info>
+For GitHub Enterprise Server, set `GITHUB_MCP_URL` to your enterprise MCP endpoint.
+</Info>
+
+### Transport modes
+
+| Mode | When to use |
+| --- | --- |
+| `streamable-http` | Default. Works with GitHub Copilot MCP and most hosted instances |
+| `sse` | For older MCP servers using Server-Sent Events |
+| `stdio` | For running a local MCP server process (`npx @modelcontextprotocol/server-github`) |
+
+## Tools
+
+| Tool / area | What it does |
+| --- | --- |
+| `github_cli` | Authenticated `gh` for ad-hoc issues, PRs, search, API (action agent) |
+| `search_github_issues` | Search issues |
+| `list_github_commits` | List recent commits |
+| `search_github_code` | Search code |
+| `get_github_file_contents` | Read a file from a repository |
+| `get_github_repository` | Repository metadata |
+| `get_github_repository_tree` | Repository tree |
+| `get_github_star_history` | Star history |
+| `get_git_deploy_timeline` | Deploy / git timeline signals |
+| Actions / workflow / fix tools | See [GitHub Actions](/integrations/code/github-actions), [workflow tools](/integrations/code/github-workflow-tools), [CI fix](/cicd/github-ci-fix), [security fix](/integrations/code/github-security-fix) |
+
+## Verify
+
+```bash
+opensre integrations verify github
+```
+
+Expected output:
+
+```
+Service: github
+Status: passed
+Detail: GitHub MCP validated for your-username; discovered 18 tools including repository source helpers
+```
+
+Inside the REPL: `/integrations verify github` or `/verify github`. Alias: `github_mcp`.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **Authentication failed** | Check that the token has `repo` scope and is not expired |
+| **Required tools missing** | Ensure toolsets include `repos` — it provides `get_file_contents`, `list_commits`, etc. |
+| **`github_cli` fails / gh not found** | Install [GitHub CLI](https://cli.github.com/) so `gh` is on `PATH`; confirm token via verify |
+| **Connection refused** | Verify `GITHUB_MCP_URL` is reachable and the MCP server is running |
+| **Browser sign-in unavailable** | Set `OPENSRE_GITHUB_OAUTH_CLIENT_ID` to a device-flow-enabled OAuth App, or fall back to pasting a PAT |
+
+## Security
+
+- Prefer the **least privilege** that matches how you use OpenSRE (read-only if you only ask questions; write scopes if you want chat to create/edit issues and PRs).
+- Limit token scope to the repositories OpenSRE needs.
+- Store the token in `.env`, not in source code.

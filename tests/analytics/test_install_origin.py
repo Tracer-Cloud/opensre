@@ -121,9 +121,14 @@ def test_legacy_installation_cannot_be_attributed_by_a_tagged_reinstall(
     tmp_path: Path, deliveries: list[dict[str, Any]]
 ) -> None:
     (tmp_path / "installed").touch()
-    assert provider.capture_install_detected_if_needed({"install_origin": "github"}) is False
-    assert deliveries == []
-    assert not (tmp_path / "install-events-v1").exists()
+    assert provider.capture_install_detected_if_needed({"install_origin": "github"}) is True
+    provider.shutdown_analytics(flush=True, timeout=5)
+    installs = [event for event in deliveries if event["event"] == "install_detected"]
+    assert len(installs) == 1
+    event = installs[0]
+    assert event["properties"]["install_detection_reason"] == "unverified_marker"
+    assert "install_origin" not in event["properties"]
+    assert event["event_id"].endswith(":delivery-v1")
 
 
 def test_concurrent_processes_publish_one_complete_observation(tmp_path: Path) -> None:

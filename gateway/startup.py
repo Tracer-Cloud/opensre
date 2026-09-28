@@ -18,6 +18,7 @@ from config.constants.gateway import (
     PROMPT_WORKER_STOP_TIMEOUT_SECONDS,
     WEB_STOP_TIMEOUT_SECONDS,
 )
+from config.constants.organization import organization_id
 from gateway.core.process.shutdown_budget import ShutdownBudget
 from gateway.core.prompt_intake import PromptQueue, PromptTurnRunner, PromptWorker
 from gateway.transports.names import TransportName
@@ -28,10 +29,12 @@ from gateway.transports.startup import (
 )
 from gateway.web.startup import start_web_server
 from gateway.web.web_server import WebAppServerHandle
+from infrastructure.analytics.provider import analytics_delivery_unavailable
 from infrastructure.turn_host.turn_callback import TurnCallback
 
 _WEB_COMPONENT = "web"
 _PROMPT_COMPONENT = "remote prompts"
+_ANALYTICS_COMPONENT = "analytics"
 
 
 @dataclass
@@ -83,6 +86,12 @@ def start_gateway(
     statuses[_WEB_COMPONENT] = web.status
     for name, status in chat.statuses.items():
         statuses[name] = status
+    # A silo whose analytics destination fails closed (for example a webapp URL
+    # without AGENT_USAGE_SECRET) silently drops every product event, so none of
+    # its remote sessions ever reach the dashboard. Local runs keep the anonymous
+    # fallback destination and never trip this.
+    if organization_id() and analytics_delivery_unavailable():
+        statuses[_ANALYTICS_COMPONENT] = "failed"
     return StartedGateway(
         web_server=web.server,
         transports={handle.name: handle for handle in chat.handles},

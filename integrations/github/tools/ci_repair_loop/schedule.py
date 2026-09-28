@@ -26,6 +26,7 @@ from infrastructure.scheduling.scheduler.runner import compute_next_run
 from infrastructure.scheduling.scheduler.storage import add_task, get_task
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
 from integrations.github.client import GitHubApiError, GitHubRestClient
+from integrations.github.tools.ci_repair_loop import telemetry
 from integrations.github.tools.ci_repair_loop.credentials import account_id, configured_token
 from integrations.github.tools.ci_repair_loop.fixture import object_response
 from integrations.github.tools.ci_repair_loop.models import RepairRefused, RepairRun, RepairStatus
@@ -127,6 +128,7 @@ def schedule_repair(
         actor=actor,
         actor_id=actor_id,
         demo=demo,
+        remote=scheduler_in_process,
         started_at=started,
         deadline=started + CI_REPAIR_SECONDS,
         pr_number=pr_number,
@@ -182,6 +184,7 @@ def schedule_repair(
                 task.next_run = compute_next_run(task)
                 existing = add_task(task)
                 run = store.mark_registered(run.id)
+                telemetry.monitoring_started(run)
         except (ValueError, RuntimeError, OSError, subprocess.SubprocessError):
             logger.exception("CI repair registration failed")
             run.status, run.reason = (

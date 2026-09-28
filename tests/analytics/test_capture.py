@@ -12,12 +12,12 @@ from infrastructure.analytics.events import Event
 
 class _StubAnalytics:
     def __init__(self) -> None:
-        self.events: list[tuple[Event, dict[str, object] | None]] = []
+        self.events: list[tuple[str, dict[str, object] | None]] = []
         self.identified: list[dict[str, object]] = []
         self.persistent_properties: dict[str, object] = {}
         self.destination_refreshes = 0
 
-    def capture(self, event: Event, properties: dict[str, object] | None = None) -> None:
+    def capture(self, event: str, properties: dict[str, object] | None = None) -> None:
         self.events.append((event, properties))
 
     def identify(self, set_properties: dict[str, object]) -> None:
@@ -34,10 +34,10 @@ def test_capture_cli_invoked_uses_safe_capture(monkeypatch: pytest.MonkeyPatch) 
     stub = _StubAnalytics()
     monkeypatch.setattr(capture, "get_analytics", lambda: stub)
 
-    capture.capture_cli_invoked({"command_path": "opensre version"})
+    capture.capture_cli_invoked({"command_path": "opensre health"}, ["health"])
 
     assert stub.events == [
-        (Event.CLI_INVOKED, {"command_path": "opensre version"}),
+        ("cli_command_opensre_health", {"command_path": "opensre health"}),
     ]
 
 
@@ -62,7 +62,7 @@ def test_capture_account_authenticated_refreshes_credentials_before_link_event(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     class _OrderCheckingAnalytics(_StubAnalytics):
-        def capture(self, event: Event, properties: dict[str, object] | None = None) -> None:
+        def capture(self, event: str, properties: dict[str, object] | None = None) -> None:
             assert self.destination_refreshes == 1
             super().capture(event, properties)
 
@@ -137,7 +137,11 @@ def test_identify_github_username_reports_failures_to_sentry(
     assert captured_errors == [expected_error]
 
 
-def test_build_cli_invoked_properties_includes_full_command_path() -> None:
+def test_build_cli_invoked_properties_includes_full_command_path(monkeypatch) -> None:
+    from types import SimpleNamespace
+
+    monkeypatch.setattr("sys.stdin", SimpleNamespace(isatty=lambda: False))
+    monkeypatch.setattr("sys.stdout", SimpleNamespace(isatty=lambda: False))
     properties = event_properties.build_cli_invoked_properties(
         entrypoint="opensre",
         command_parts=["remote", "ops", "status"],
@@ -152,7 +156,8 @@ def test_build_cli_invoked_properties_includes_full_command_path() -> None:
         "verbose": False,
         "debug": True,
         "yes": False,
-        "interactive": True,
+        "stdin_is_tty": False,
+        "stdout_is_tty": False,
         "subcommand": "ops",
         "command_leaf": "status",
     }
@@ -177,7 +182,7 @@ def test_build_install_detected_properties_keeps_installer_dimensions(
     monkeypatch.setenv("OPENSRE_INSTALL_SOURCE", "posix_installer")
     monkeypatch.setenv("OPENSRE_INSTALL_CHANNEL", "release")
     monkeypatch.setenv("OPENSRE_INSTALL_VERSION", "2026.9.14")
-    monkeypatch.setattr(event_properties.sys, "frozen", True, raising=False)
+    monkeypatch.setattr(event_properties, "detect_distribution", lambda: "frozen_binary")
 
     properties = event_properties.build_install_detected_properties(entrypoint="opensre")
 
@@ -315,6 +320,76 @@ def test_capture_ask_user_answered_keeps_bounded_custom_text(
     assert detail["selected_option_indices"] == [1]
     assert "ghp_" not in str(detail["answer"])
     assert "[REDACTED:github_pat]" in str(detail["answer"])
+
+
+def test_remote_ci_repair_events_name_the_run_and_omit_an_unknown_pull_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange
+    stub = _StubAnalytics()
+    monkeypatch.setattr(capture, "get_analytics", lambda: stub)
+    run_id, repository = "a" * 12, "alice/opensre-ci-demo"
+
+    # Act: scheduled before the demo PR exists, then repaired on PR 7
+    capture.capture_remote_ci_monitoring_started(
+        repair_run_id=run_id, repository=repository, pr_number=0, demo=True
+    )
+    capture.capture_test_ci_failure_triggered(
+        repair_run_id=run_id, repository=repository, pr_number=7, demo=True, remote=True
+    )
+    capture.capture_remote_ci_failure_detected(
+        repair_run_id=run_id, repository=repository, pr_number=7, demo=True
+    )
+    capture.capture_remote_ci_repair_succeeded(
+        repair_run_id=run_id,
+        repository=repository,
+        pr_number=7,
+        demo=True,
+        attempts=2,
+        duration_ms=1234.6,
+    )
+
+    # Assert
+    run = {"repair_run_id": run_id, "repository": repository, "demo": True}
+    on_pr = {**run, "pr_number": 7}
+    assert stub.events == [
+        (Event.REMOTE_CI_MONITORING_STARTED, run),
+        (Event.TEST_CI_FAILURE_TRIGGERED, {**on_pr, "remote": True}),
+        (Event.REMOTE_CI_FAILURE_DETECTED, on_pr),
+        (Event.REMOTE_CI_REPAIR_SUCCEEDED, {**on_pr, "attempts": 2, "duration_ms": 1235}),
+    ]
+
+
+def test_hosted_gateway_events_name_the_gateway_and_what_observed_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange
+    stub = _StubAnalytics()
+    monkeypatch.setattr(capture, "get_analytics", lambda: stub)
+
+    # Act
+    capture.capture_hosted_gateway_started(
+        gateway_id="org-gateway", actual_state="provisioning", already_running=False
+    )
+    capture.capture_hosted_gateway_healthy(
+        gateway_id="org-gateway", tool_name="check_hosted_gateway"
+    )
+
+    # Assert
+    assert stub.events == [
+        (
+            Event.HOSTED_GATEWAY_STARTED,
+            {
+                "gateway_id": "org-gateway",
+                "actual_state": "provisioning",
+                "already_running": False,
+            },
+        ),
+        (
+            Event.HOSTED_GATEWAY_HEALTHY,
+            {"gateway_id": "org-gateway", "tool_name": "check_hosted_gateway"},
+        ),
+    ]
 
 
 def test_eval_and_terminal_kpi_queries_cover_core_metrics() -> None:

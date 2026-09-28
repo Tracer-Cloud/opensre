@@ -33,6 +33,7 @@ PROJECT_ROOT = REPO_ROOT
 SYNTHETIC_SCENARIOS_DIR = REPO_ROOT / "tests" / "synthetic" / "rds_postgres"
 
 OPENSRE_HOME_ENV = "OPENSRE_HOME"
+WIZARD_STORE_PATH_ENV = "OPENSRE_WIZARD_STORE_PATH"
 
 
 def _resolve_opensre_home() -> Path:
@@ -216,7 +217,7 @@ def integrations_store_stamp() -> int:
 
 
 def get_store_path() -> Path:
-    override = os.getenv("OPENSRE_WIZARD_STORE_PATH", "").strip()
+    override = os.getenv(WIZARD_STORE_PATH_ENV, "").strip()
     if override:
         return Path(override).expanduser()
     return OPENSRE_HOME_DIR / "opensre.json"
@@ -252,6 +253,7 @@ __all__ = [
     "CONTEXT_ROOT_ENV",
     "OPENSRE_HOME_DIR",
     "OPENSRE_HOME_ENV",
+    "WIZARD_STORE_PATH_ENV",
     "OPENSRE_TMP_DIR",
     "ORGS_DIR_NAME",
     "USERS_DIR_NAME",

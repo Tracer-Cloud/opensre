@@ -78,7 +78,7 @@ owning area rather than adding more logic to the caller.
   command substitution all run once approved (or immediately at High). The `!`
   prefix is honored but optional. The only shell input still rejected is
   genuinely empty input (a bare `!` or whitespace). Document levels and
-  `/trust` interaction in `docs/interactive-shell-commands.mdx` (`/auto`) and
+  `/trust` interaction in `docs/getting-started/interactive-shell-commands.mdx` (`/auto`) and
   `docs/interactive-shell-action-policy.md`. Do **not** re-add a shell allowlist
   or deny floor while in alpha — gate stricter policy in `execution_policy.py`
   (the `ask` verdict, confirmation UX, `trust_mode`, and `/auto` are the hooks),

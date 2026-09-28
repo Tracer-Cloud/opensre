@@ -1,0 +1,201 @@
+---
+title: "Session History"
+description: "Browse recent sessions, resume a conversation, compact long context, or start fresh."
+---
+
+## Commands at a glance
+
+| Command | What it does |
+| --- | --- |
+| `/sessions` | List recent REPL sessions (name, duration, turns) |
+| `/resume <id>` | Restore a past session so you can continue asking questions |
+| `/resume <id>:<entry>` | Restore a specific branch point by entry ID prefix |
+| `/compact` | Summarize older context into a replayable compaction entry |
+| `/new` | Start a fresh session file while keeping the current conversation context |
+
+---
+
+## Browsing past sessions — `/sessions`
+
+```
+/sessions
+```
+
+```
+  Recent sessions
+
+   #  Session ID  Name                           Started            Duration  Turns
+   ───────────────────────────────────────────────────────────────────────────────────
+   1  3f8a1c2d    (current)                      2024-01-15 10:00   42m       8
+   2  9b2e4f7a    why is CPU spiking on prod-api  2024-01-14 14:30   1h 5m    15
+   3  c1d3e8f2    who restarted checkout-api      2024-01-13 09:10   12m       3
+```
+
+Up to 20 sessions are shown, newest first. The current session updates its elapsed time live. **Turns** is the total turn count.
+
+---
+
+## Resuming a past session — `/resume`
+
+Use `/resume` with the first characters of the session ID from `/sessions`:
+
+```
+/resume 9b2e4f7a
+```
+
+From outside the REPL, pass the same ID or name substring to the CLI launcher (for example `opensre --resume 9b2e4f7a`, or `o --resume OOM` when `o` is your shell alias):
+
+```bash
+opensre --resume <uuid>
+```
+
+In a TTY, bare `/resume` opens an interactive picker of recent sessions. New turns after a resume append to that same session file — `/resume` does not create a duplicate entry in `/sessions`.
+
+To resume a specific branch point, append an entry ID prefix after the session ID:
+
+```
+/resume 9b2e4f7a:abc123
+```
+
+When the branch contains a compaction entry, replay inserts the saved summary before the kept messages so the assistant has the compacted context.
+
+OpenSRE restores the conversation, shows the past exchanges, then lets you continue:
+
+```
+resumed session 9b2e4f7a · why is CPU spiking on prod-api (14 messages)
+─── conversation history ────────────────────────────────────
+❯ why is CPU spiking on prod-api?
+● assistant
+The root cause is a connection pool leak in the orders service...
+─────────────────────────────────────────────────────────────
+```
+
+**What gets restored:**
+
+| | Restored by `/resume` |
+| --- | --- |
+| Full conversation context (what you asked, what the assistant said) | Yes |
+| Infra context (service name, cluster, region learned mid-session) | Yes |
+| Trust mode, reasoning effort | No — these are per-session preferences |
+
+You can also search by name instead of ID:
+
+```
+/resume redis        # resumes the session whose name contains "redis"
+/resume cpu spike    # matches by name substring
+```
+
+If the prefix matches more than one session, OpenSRE asks you to be more specific.
+
+---
+
+## When you exit
+
+When you leave the REPL, OpenSRE prints your session ID so you can resume later:
+
+| Exit path | Behavior |
+| --- | --- |
+| `/exit` or `/quit` | Prints `Resume this session with:`, `/resume <session-id>`, and `opensre --resume <session-id>`, then goodbye |
+| **Ctrl+C** twice within 2 seconds | Same resume hint, then exits |
+| **Ctrl+D** (EOF) | Same resume hint when no dispatch is running |
+
+Example:
+
+```
+Resume this session with:
+/resume 3f8a1c2d-…
+opensre --resume 3f8a1c2d-…
+Goodbye!
+```
+
+Copy the `/resume …` or `opensre --resume …` line from the terminal, or find the session later with `/sessions`.
+
+---
+
+## Starting fresh with context — `/new`
+
+`/new` closes the current session and opens a new one, but carries the conversation forward:
+
+```
+/new
+```
+
+```
+new session started — conversation context carried forward.
+  14 messages in context · type to continue
+```
+
+Use `/new` after a long session to keep `/sessions` tidy without losing your place in the conversation.
+
+---
+
+## Compacting long sessions — `/compact`
+
+`/compact` summarizes older conversation context, keeps the recent turns, and writes a durable compaction entry into the session file:
+
+```
+/compact
+```
+
+OpenSRE also compacts automatically before a shell turn when the replayed branch context grows past the runtime threshold. The compaction entry stores the summary, the first kept entry ID, and before/after size estimates so future `/resume` calls can replay the compacted branch.
+
+**`/new` vs `/clear`:**
+
+| Command | What it does |
+| --- | --- |
+| `/clear` | Clears the terminal screen only — session and context unchanged |
+| `/new` | Opens a new session file; conversation context carried forward |
+
+---
+
+## What OpenSRE saves
+
+Each session records:
+
+- When it started and ended, and how long it ran
+- Every message you sent and every response from the assistant
+- Tool calls, tool updates, tool results, model/tool changes, labels, custom messages, and compaction summaries
+- Infra context discovered while working (service names, cluster names, regions)
+- Turn counts
+
+Sessions are stored as files under `~/.opensre/sessions/`. Each file is plain text and human-readable.
+
+## Inspecting a turn's decisions
+
+Local session traces record the model's original closing, the reason a stop was
+accepted or rejected, the plan and pending questions, and the displayed and saved
+answers separately. These diagnostic records stay out of resumed conversation
+context. Known credential patterns are redacted; ordinary conversation text is retained.
+
+Run `/sessions` to find the session ID, then use `jq` in your terminal. Replace
+`3f8a1c2d` with the ID prefix shown for your session:
+
+```bash
+jq 'select(.type == "trace_span" and .span_kind == "decision")' \
+  ~/.opensre/sessions/3f8a1c2d*.jsonl
+```
+
+Look for `goal_review` and `conclusion` to understand stopping, `agent_finished`
+for the original closing, `response_composition` for display filtering, and
+`response_displayed` / `assistant_persisted` for the two outputs. Rejected closing
+attempts appear as `model_conclusion` records. The records include the prompt turn
+ID when available; `assistant_persisted.message_id` identifies the saved message.
+
+These records are added on new runs; older traces cannot recover text that was
+never recorded.
+
+---
+
+## Privacy and what is not saved
+
+- **Secrets or credentials** — known token shapes are redacted from the prompt log by default (set `OPENSRE_PROMPT_LOG_REDACT=0` to store raw text instead)
+- **Token usage** — tracked in `~/.opensre/prompt_log.jsonl` when prompt logging is enabled
+
+See [Interactive Shell Privacy](/platform/interactive-shell-privacy) for redaction controls.
+
+---
+
+## Related
+
+- [Interactive Shell Privacy](/platform/interactive-shell-privacy) — command history, prompt/response logging, and redaction settings
+- [Environment variables](/install/environment-variables) — full prompt/response logging configuration

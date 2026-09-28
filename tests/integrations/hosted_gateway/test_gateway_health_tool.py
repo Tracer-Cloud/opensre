@@ -103,6 +103,27 @@ def test_every_other_state_says_what_it_is_and_where_to_go(
     assert out["response_text"].endswith(expected)
 
 
+def test_only_a_read_that_finds_the_gateway_serving_records_it_healthy(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange
+    recorded: list[dict[str, object]] = []
+    monkeypatch.setattr(
+        gateway_health, "capture_hosted_gateway_healthy", lambda **kw: recorded.append(kw)
+    )
+
+    # Act
+    for health in (
+        GatewayHealth(True, False, gateway_id="org-gateway", actual_state="provisioning"),
+        GatewayHealth(True, True, gateway_id="org-gateway", actual_state="running"),
+    ):
+        _signed_in_with(monkeypatch, health)
+        check_hosted_gateway()
+
+    # Assert
+    assert recorded == [{"gateway_id": "org-gateway", "tool_name": "check_hosted_gateway"}]
+
+
 def test_not_signed_in_tells_the_user_to_sign_in_and_is_not_an_incident(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

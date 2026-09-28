@@ -425,6 +425,21 @@ def build_action_user_message(text: str, *, prefix: str = "") -> str:
     return "".join((body, "\n", prefix))
 
 
+def action_prompt_skill_and_context(envelope: PromptEnvelope) -> tuple[str, str]:
+    """Split the per-turn half into the active skill body and the other context.
+
+    The cached system prompt is recorded separately. The active skill rides in
+    the ephemeral half only while the user is answering that skill; everything
+    else in that half (conversation, plan, facts) is the model context.
+    """
+    skill = envelope.block(PromptBlockId.ACTIVE_SKILL)
+    skill_text = skill.render().strip() if skill is not None else ""
+    context = envelope.render_ephemeral()
+    if skill_text:
+        context = context.replace(skill_text, "", 1)
+    return skill_text, context.strip()
+
+
 def sanitize_action_text(text: str) -> str:
     """Remove control characters and envelope delimiters; budgeting owns truncation."""
     sanitised = re.sub(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]", "", text)
@@ -434,6 +449,7 @@ def sanitize_action_text(text: str) -> str:
 __all__ = [
     "build_action_system_prompt_envelope",
     "build_action_system_prompt",
+    "action_prompt_skill_and_context",
     "build_action_user_message",
     "connected_integrations_block",
     "interrupted_turn_recovery_block",

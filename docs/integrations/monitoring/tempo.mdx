@@ -1,0 +1,208 @@
+---
+title: "Grafana Tempo"
+description: "Connect Grafana Tempo so OpenSRE can query distributed traces during incidents"
+---
+
+## Overview
+
+OpenSRE uses Grafana Tempo to investigate trace-related alerts — searching spans by service,
+fetching full traces by ID, listing instrumented services, and filtering by error status or
+latency.
+
+This integration talks to Tempo **directly** via its HTTP API. It does not require a Grafana
+instance or datasource proxy. If you run the full Grafana stack, the [Grafana](/integrations/monitoring/grafana)
+integration already surfaces Tempo through the datasource proxy — use this integration when
+you run Tempo standalone.
+
+## Prerequisites
+
+- Grafana Tempo 1.4+
+- Network access from the OpenSRE environment to your Tempo instance
+- Auth credentials only if your deployment requires them (many run without auth behind a gateway)
+
+## Setup
+
+### Option 1: Interactive CLI
+
+```bash
+opensre integrations setup tempo
+```
+
+You will be prompted for the Tempo URL and optional auth. Leave auth fields blank if Tempo
+runs without authentication.
+
+### Option 2: Environment variables
+
+Add to your `.env`:
+
+```bash
+TEMPO_URL=http://localhost:3200
+TEMPO_API_KEY=<bearer-token>       # optional
+TEMPO_USERNAME=<username>          # optional (basic auth)
+TEMPO_PASSWORD=<token>             # optional (basic auth)
+TEMPO_ORG_ID=<tenant-id>           # optional (X-Scope-OrgID for multi-tenant)
+```
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `TEMPO_URL` | — | **Required.** Tempo HTTP API base URL |
+| `TEMPO_API_KEY` | _(empty)_ | Bearer token for auth |
+| `TEMPO_USERNAME` | _(empty)_ | Username for basic auth |
+| `TEMPO_PASSWORD` | _(empty)_ | Password for basic auth |
+| `TEMPO_ORG_ID` | _(empty)_ | Tenant ID sent as `X-Scope-OrgID` for multi-tenant deployments |
+
+### Option 3: Persistent store
+
+Integrations are persisted to `~/.opensre/integrations.json`:
+
+```json
+{
+  "version": 1,
+  "integrations": [
+    {
+      "id": "tempo-prod",
+      "service": "tempo",
+      "status": "active",
+      "credentials": {
+        "url": "http://localhost:3200",
+        "api_key": ""
+      }
+    }
+  ]
+}
+```
+
+## Credentials
+
+Auth is optional. Many Tempo deployments run without authentication behind a gateway.
+
+When auth is required, supply one of:
+
+- Bearer token → `TEMPO_API_KEY`
+- Basic auth → `TEMPO_USERNAME` / `TEMPO_PASSWORD`
+- Multi-tenant → `TEMPO_ORG_ID` as `X-Scope-OrgID`
+
+Create tokens or accounts in your Tempo / gateway identity provider according to your
+deployment. Leave auth fields blank in setup if Tempo runs without authentication.
+
+## Tools
+
+OpenSRE exposes a single `query_tempo` tool with an `action` parameter:
+
+| Action | Use it for |
+| --- | --- |
+| `search` | Search traces by service, span name, duration, and tags (TraceQL); one summary row per trace |
+| `get_trace` | Fetch a full trace by ID and flatten its spans |
+| `list_services` | List services registered in Tempo |
+| `list_span_names` | List span names registered in Tempo |
+
+### search
+
+```text
+query_tempo(action="search", service="checkout-service", min_duration_ms=500)
+query_tempo(action="search", tags={"http.status_code": "500"})
+```
+
+| Parameter | Description |
+| --- | --- |
+| `service` | Filter by `resource.service.name` |
+| `span_name` | Filter by span name |
+| `min_duration_ms` | Minimum trace duration |
+| `max_duration_ms` | Maximum trace duration |
+| `tags` | Key/value span attributes |
+| `time_range_minutes` | Lookback window (default 60) |
+| `limit` | Max traces to return (default 20) |
+
+### get_trace
+
+```text
+query_tempo(action="get_trace", trace_id="4f8c...e21")
+```
+
+### list_services
+
+```text
+query_tempo(action="list_services")
+```
+
+### list_span_names
+
+```text
+query_tempo(action="list_span_names")
+```
+
+## Verify
+
+```bash
+opensre integrations verify tempo
+```
+
+Expected output:
+
+```
+Service: tempo
+Status:  passed
+Detail:  Connected to Grafana Tempo HTTP API (/api/search/tags).
+```
+
+### Local Docker verification
+
+Start a disposable all-in-one Tempo using the repository's local configuration:
+
+```bash
+docker run --rm --detach --name opensre-tempo \
+  --publish 127.0.0.1:3200:3200 \
+  --publish 127.0.0.1:4318:4318 \
+  --volume "$PWD/tests/e2e/tempo/tempo-local.yaml:/etc/tempo.yaml:ro" \
+  grafana/tempo:2.7.2 -config.file=/etc/tempo.yaml
+until curl --fail --silent http://127.0.0.1:3200/ready; do sleep 1; done
+```
+
+Seed a recent two-second checkout error trace through OTLP/HTTP:
+
+```bash
+uv run python -m tests.e2e.tempo.local_seed
+```
+
+From a source checkout, run `uv run opensre integrations setup tempo`. Enter
+`http://127.0.0.1:3200` as the URL and leave the bearer token, username,
+password, and tenant prompts blank. Then verify the connection:
+
+```bash
+uv run opensre integrations verify tempo
+```
+
+The verifier should report a successful connection to the search API. Exercise
+the search, tag-listing, and trace-fetch actions through one agent turn:
+
+```bash
+uv run opensre ask --allowed-tool query_tempo \
+  "Use query_tempo to list services, list span names, search the last 60 minutes for checkout-service, and fetch the full trace returned by the search. Report the trace ID, root span, duration, HTTP status, and span status."
+```
+
+The result should report `checkout-service`, `POST /checkout`, a two-second
+duration, HTTP status `500`, and an error span. Stop the disposable instance
+when finished:
+
+```bash
+docker stop opensre-tempo
+```
+
+This instance has no authentication or TLS. Both ports bind only to loopback,
+and all trace data is discarded with the container.
+
+## Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| **Connection refused** | Check the URL and port. Default Tempo HTTP port is `3200`. |
+| **HTTP 401** | Set `TEMPO_API_KEY` or `TEMPO_USERNAME`/`TEMPO_PASSWORD` if your deployment requires auth. |
+| **HTTP 404 on verify** | Check Tempo version — `/api/search/tags` requires Tempo 1.4+. |
+| **No traces returned** | Confirm services send traces to Tempo and the time range covers the period of interest. |
+| **Multi-tenant 400** | Set `TEMPO_ORG_ID` to the correct tenant ID. |
+
+## Security
+
+- Use a **read-only** token or service account if Tempo supports auth.
+- Store credentials in `.env`, never in code.
+- Restrict network access to Tempo — OpenSRE only needs the HTTP API port (`3200` by default).

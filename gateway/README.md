@@ -68,9 +68,9 @@ and posting on a platform. Slack's shared client is
 `slack_send_message` (webhook), `slack_reply_message` (bot token, any
 channel), `slack_read_messages` (history / thread),
 `slack_list_team_members` (roster), plus search / join / react helpers
-under `integrations/slack/tools/`. See `docs/messaging/slack.mdx` for
+under `integrations/slack/tools/`. See `docs/integrations/messaging/slack.mdx` for
 OAuth scopes. Telegram has `telegram_send_message`; Discord is gateway
-chat plus delivery today (see `docs/messaging/discord.mdx`).
+chat plus delivery today (see `docs/integrations/messaging/discord.mdx`).
 
 Inbound and outbound are independent per platform:
 
@@ -113,7 +113,7 @@ integration store as fallback; allowed users from the integration store
 var as fallback.
 
 DM your bot from Telegram, mention/DM it in Slack, chat in Discord, or mention
-the agent in Buzz (see `docs/messaging/` for app setup). Slack Socket Mode needs
+the agent in Buzz (see `docs/integrations/messaging/` for app setup). Slack Socket Mode needs
 no public URL; Events API HTTP needs a reachable URL and `SLACK_SIGNING_SECRET`.
 
 ## Environment variables

@@ -7,6 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from config.constants.billing import ORGANIZATION_ID_ENV, USAGE_SECRET_ENV, WEBAPP_URL_ENV
 from config.constants.gateway import WEB_STOP_TIMEOUT_SECONDS
 from gateway.core.process.shutdown_budget import ShutdownBudget
 from gateway.startup import StartedGateway, start_gateway
@@ -62,6 +63,77 @@ def test_start_gateway_boots_web_and_transports(monkeypatch: pytest.MonkeyPatch)
     assert channels.statuses[TransportName.TELEGRAM] == "polling for messages"
     assert captured["logger"] is logger
     assert captured["handler"] is handler
+
+
+def _start_stubbed_gateway(monkeypatch: pytest.MonkeyPatch) -> StartedGateway:
+    def _start_web_server(**_: object) -> WebStartup:
+        return WebStartup(server=MagicMock(name="web"), status="serving")
+
+    def _start_transports(**_: object) -> ChatStartup:
+        return ChatStartup(handles=[], statuses={})
+
+    monkeypatch.setattr("gateway.startup.start_web_server", _start_web_server)
+    monkeypatch.setattr("gateway.startup.start_transports", _start_transports)
+    return start_gateway(logger=logging.getLogger("test.analytics"), handler=MagicMock())
+
+
+def _allow_telemetry(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The test session opts the whole process out of telemetry; these tests
+    assert the not-opted-out behavior, so lift it for their duration."""
+    for name in ("OPENSRE_NO_TELEMETRY", "OPENSRE_ANALYTICS_DISABLED", "DO_NOT_TRACK"):
+        monkeypatch.delenv(name, raising=False)
+
+
+def test_a_silo_without_a_resolvable_analytics_destination_reports_a_failed_component(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A silo URL without AGENT_USAGE_SECRET fails delivery closed: every product
+    event is dropped and the organization's remote sessions never reach the
+    dashboard, so startup must say so instead of staying silent."""
+    _allow_telemetry(monkeypatch)
+    monkeypatch.setenv(ORGANIZATION_ID_ENV, "org_startup_fixture")
+    monkeypatch.setenv(WEBAPP_URL_ENV, "https://webapp.internal.example")
+    monkeypatch.delenv(USAGE_SECRET_ENV, raising=False)
+
+    channels = _start_stubbed_gateway(monkeypatch)
+
+    assert channels.statuses["analytics"] == "failed"
+
+
+def test_a_silo_with_a_complete_analytics_destination_reports_no_analytics_component(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _allow_telemetry(monkeypatch)
+    monkeypatch.setenv(ORGANIZATION_ID_ENV, "org_startup_fixture")
+    monkeypatch.setenv(WEBAPP_URL_ENV, "https://webapp.internal.example")
+    monkeypatch.setenv(USAGE_SECRET_ENV, "startup_fixture_not_a_real_secret")
+
+    channels = _start_stubbed_gateway(monkeypatch)
+
+    assert "analytics" not in channels.statuses
+
+
+def test_a_silo_that_opted_out_of_telemetry_is_not_an_analytics_failure(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv(ORGANIZATION_ID_ENV, "org_startup_fixture")
+    monkeypatch.setenv(WEBAPP_URL_ENV, "https://webapp.internal.example")
+    monkeypatch.delenv(USAGE_SECRET_ENV, raising=False)
+    monkeypatch.setenv("OPENSRE_NO_TELEMETRY", "1")
+
+    channels = _start_stubbed_gateway(monkeypatch)
+
+    assert "analytics" not in channels.statuses
+
+
+def test_an_unbound_local_gateway_reports_no_analytics_component(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.delenv(ORGANIZATION_ID_ENV, raising=False)
+
+    channels = _start_stubbed_gateway(monkeypatch)
+
+    assert "analytics" not in channels.statuses
 
 
 def test_channels_handle_stop_stops_web_and_transports(

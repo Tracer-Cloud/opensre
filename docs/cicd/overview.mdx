@@ -1,0 +1,109 @@
+---
+title: "CI/CD with OpenSRE"
+description: "Measure how reliable your CI is, fix failing checks, and keep pull requests green with a scheduled agent."
+---
+
+OpenSRE reads your GitHub Actions history, tells you what unreliable CI costs
+your team, fixes failing checks on a pull request, and can keep doing that on a
+schedule. Everything runs against the repositories you already have, on your
+machine or on your organization's hosted gateway.
+
+## Pick a starting point
+
+<CardGroup cols={2}>
+  <Card title="Measure CI reliability" icon="chart-line" href="/cicd/cicd-analytics-demo">
+    A 30-day report for one repository: failure rate, CI-caused versus code-caused failures, developer hours lost, red time on the default branch. The recommended first demo.
+  </Card>
+  <Card title="Fix failing CI on a PR" icon="wrench" href="/cicd/github-ci-fix">
+    Read the failing checks, apply a fix with a coding agent, push to the PR branch, and wait for the new checks.
+  </Card>
+  <Card title="Keep CI green with an agent" icon="robot" href="/cicd/ci-repair-agent">
+    A recurring reliability report, a bounded repair loop for one PR, or the managed service that runs repairs for your organization.
+  </Card>
+  <Card title="Find every red PR" icon="magnifying-glass" href="/cicd/github-ci-health-scan">
+    One read-only scan across all repositories your token can see: which PRs and branches are failing, and on which checks.
+  </Card>
+</CardGroup>
+
+## Before you begin
+
+<Steps>
+  <Step title="Install and sign in">
+    Follow [Install](/install). Signing in activates the hosted model; no LLM key is needed.
+  </Step>
+  <Step title="Connect GitHub">
+    The demo offers this when GitHub is not connected yet. To do it yourself:
+
+    ```bash
+    opensre integrations setup github
+    ```
+
+    Choose **Authorize in browser**, or paste a token that can read Actions history. Fixing and pushing needs Contents and Pull requests write access on the repository. See [GitHub](/integrations/code/github).
+  </Step>
+  <Step title="Pick the demo, or ask directly">
+    Start `opensre` and choose **A** in the demo picker, or type any of the prompts below.
+  </Step>
+</Steps>
+
+## Your first CI/CD tasks
+
+Type these in the shell, with your own repository:
+
+```text
+analyze Tracer-Cloud/opensre CI/CD performance for the last 30 days
+how much developer time does flaky CI cost us
+how many PRs and branches currently have failing CI across all my orgs?
+fix failing checks on Tracer-Cloud/opensre#4597
+set up an agent that improves CI/CD reliability for Tracer-Cloud/opensre
+```
+
+<Tip>
+  Analysis and the health scan are read-only. Fixing and repair loops push commits; they refuse pull requests opened from forks and never push directly to a protected branch such as `main`.
+</Tip>
+
+## What each capability does
+
+| Capability | Reads | Writes | Runs where |
+| --- | --- | --- | --- |
+| [CI reliability analysis](/cicd/cicd-analytics-demo) | 30 days of Actions runs for one repository | A report in the shell | Your machine |
+| [Health scan](/cicd/github-ci-health-scan) | Open PRs and branch heads across your organizations | Nothing | Your machine |
+| [Fix a PR](/cicd/github-ci-fix) | Failing checks and logs of one PR or branch | A commit on the PR branch, or a fresh repair branch | Your machine |
+| [Reliability agent](/cicd/ci-repair-agent#the-reliability-agent) | The last 7 days, every weekday morning | A report in the shell inbox | Your machine, as a scheduled loop |
+| [Repair loop](/cicd/ci-repair-agent#the-repair-loop) | One PR's failing checks | Up to three repair pushes within ten minutes | Your machine, or the hosted gateway |
+
+## From a script or a CI job
+
+`opensre ask` runs one turn and exits. The read-only tasks, analysis and the
+health scan, run headless as they are:
+
+```bash
+opensre --json ask "how many PRs currently have failing CI in Tracer-Cloud?"
+```
+
+Fixing a PR or scheduling an agent uses tools that need approval, and a
+headless run has nobody to approve. Authorize the tool the task uses, for that
+run only:
+
+```bash
+# fix a pull request
+opensre ask --allowed-tool fix_github_pr_ci "fix failing checks on Tracer-Cloud/opensre#4597"
+
+# schedule the reliability agent
+opensre ask --allowed-tool schedule_ci_reliability_loop "set up an agent that improves CI/CD reliability for Tracer-Cloud/opensre"
+
+# schedule a bounded repair loop for one pull request
+opensre ask --allowed-tool schedule_ci_repair_loop "schedule a CI repair loop for Tracer-Cloud/opensre pull request 6054"
+```
+
+Each `--allowed-tool` covers one tool; a task that needs two takes the flag
+twice.
+
+A machine that is not signed in needs `LLM_PROVIDER` and a provider key plus a
+GitHub token in the environment. See [Headless CLI](/guides/headless-cli) for
+`--allowed-tool`, `--json` output and exit codes.
+
+## Where the results go
+
+- Analysis reports print in the shell; the scheduled agent also saves the raw figures under `~/.opensre/ci_reliability_reports/`.
+- A repair pushes to the pull request's own branch and reports the commit and the check results. `/loops show <task-id>` prints a finished repair's report with its evidence links.
+- The banner's **CI/CD fixes** counter shows how many distinct repairs pushed checks that passed.

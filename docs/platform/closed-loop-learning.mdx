@@ -1,0 +1,20 @@
+---
+title: "Closed-Loop Learning"
+description: "How the agent carries lessons from one session into the next"
+---
+
+# Closed-Loop Learning
+
+OpenSRE learns across sessions through [long-term memory](/platform/memory). When a
+conversation surfaces a durable fact — a root cause worth remembering, a
+known-flaky service, a naming convention, a preference — the agent stores it
+as a local memory file, and the memory index grounds every future
+conversation.
+
+There is nothing to configure: memories accrue as you work. Review what the
+agent has learned with `/memory`, inspect one entry with `/memory show
+<name>`, and correct course by deleting stale entries with `/memory forget
+<name>` or by simply telling the agent the updated fact.
+
+See [Long-Term Memory](/platform/memory) for storage locations, gateway scoping, and
+how to turn memory off.

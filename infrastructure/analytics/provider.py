@@ -30,6 +30,7 @@ from config.constants.analytics import (
     ANALYTICS_EVENT_SCHEMA_VERSION,
     ANALYTICS_LOG_EVENTS_ENV,
     ANALYTICS_MAX_PAYLOAD_BYTES,
+    ANALYTICS_PROPERTIES_VERSION,
     ANALYTICS_SOURCE,
 )
 from config.version import get_opensre_version
@@ -43,9 +44,11 @@ from infrastructure.analytics.destination import (
     AnalyticsDestination,
     resolve_analytics_destination,
 )
+from infrastructure.analytics.distribution import detect_distribution
 from infrastructure.analytics.events import Event
 from infrastructure.analytics.install_delivery import persist_observation
 from infrastructure.analytics.install_state import read_install_marker_state
+from infrastructure.analytics.runner_provenance import execution_evidence
 from infrastructure.analytics.source import is_test_run
 from infrastructure.analytics.usage_context import (
     ORGANIZATION_GROUP_TYPE,
@@ -157,6 +160,17 @@ def _is_opted_out() -> bool:
         or os.getenv(ANALYTICS_DISABLED_ENV, "0") == "1"
         or os.getenv("DO_NOT_TRACK", "0") == "1"
     )
+
+
+def analytics_delivery_unavailable() -> bool:
+    """True when telemetry should flow but no destination resolves.
+
+    ``resolve_analytics_destination`` fails closed on explicit misconfiguration
+    (for example a silo URL without ``AGENT_USAGE_SECRET``), which silently
+    drops every product event this process emits. An explicit opt-out is a
+    decision, not a failure, so it never counts as unavailable.
+    """
+    return not _is_opted_out() and resolve_analytics_destination() is None
 
 
 def _path_exists(path: Path) -> bool:
@@ -378,27 +392,52 @@ def _identity_persistence() -> str:
     return _cached_identity_persistence
 
 
-def _event_insert_id(event: str, distinct_id: str) -> str | None:
+def _event_insert_id(event: str, distinct_id: str, *, install_recovery: bool = False) -> str | None:
     if event not in _ONE_TIME_EVENTS:
         return None
+    if install_recovery:
+        # A legacy event may already exist. Preserve its occurrence time and
+        # properties instead of replacing it with this later observation.
+        return f"{event}:{distinct_id}:delivery-v1"
     return f"{event}:{distinct_id}"
+
+
+def _install_delivery_path(anonymous_id: str, destination: AnalyticsDestination) -> Path:
+    scope = f"{anonymous_id}\n{destination.endpoint_url}"
+    receipt_key = hashlib.sha256(scope.encode("utf-8")).hexdigest()
+    return _CONFIG_DIR / "install-deliveries-v1" / receipt_key
+
+
+def _create_marker(path: Path) -> bool:
+    """Create ``path`` exclusively; ``False`` when it already exists, ``OSError`` otherwise."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        with path.open("x", encoding="utf-8") as fh:
+            fh.flush()
+            os.fsync(fh.fileno())
+    except FileExistsError:
+        return False
+    _fsync_parent_dir(path)
+    return True
 
 
 def _touch_once(path: Path) -> bool:
     global _first_run_marker_created_this_process
     try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with path.open("x", encoding="utf-8") as fh:
-            fh.flush()
-            os.fsync(fh.fileno())
-        _fsync_parent_dir(path)
-        if path == _FIRST_RUN_PATH:
-            _first_run_marker_created_this_process = True
-        return True
-    except FileExistsError:
-        return False
+        created = _create_marker(path)
     except OSError:
         return False
+    if created and path == _FIRST_RUN_PATH:
+        _first_run_marker_created_this_process = True
+    return created
+
+
+def _record_install_delivery(path: Path) -> None:
+    """Persist the server's acknowledgement; a lost receipt resends an accepted install."""
+    try:
+        _create_marker(path)
+    except OSError as exc:
+        _log_failure("install_receipt", exc, path=str(path))
 
 
 def _cli_version() -> str:
@@ -763,6 +802,7 @@ _COMPOSITE_FINGERPRINT = _build_composite_fingerprint()
 _ANALYTICS_RUNTIME = detect_analytics_runtime()
 
 _BASE_PROPERTIES: Final[Properties] = {
+    "analytics_properties_version": ANALYTICS_PROPERTIES_VERSION,
     "cli_version": _cli_version(),
     "python_version": platform.python_version(),
     "os_family": platform.system().lower(),
@@ -773,8 +813,15 @@ _BASE_PROPERTIES: Final[Properties] = {
     "execution_environment": _ANALYTICS_RUNTIME.execution_environment,
     "is_ci": _ANALYTICS_RUNTIME.is_ci,
     "is_test": is_test_run(),
-    "is_container": _ANALYTICS_RUNTIME.is_container,
+    **(
+        {"is_container": _ANALYTICS_RUNTIME.is_container}
+        if _ANALYTICS_RUNTIME.is_container is not None
+        else {}
+    ),
     "container_runtime": _ANALYTICS_RUNTIME.container_runtime,
+    "distribution": detect_distribution(),
+    "ci_detection_status": _ANALYTICS_RUNTIME.ci_detection_status,
+    "container_detection_status": _ANALYTICS_RUNTIME.container_detection_status,
     "$process_person_profile": False,
 }
 
@@ -813,30 +860,42 @@ class Analytics:
             for properties in _pop_user_id_load_failures():
                 self.capture(Event.USER_ID_LOAD_FAILED, properties)
 
-    def capture(self, event: Event, properties: Properties | None = None) -> None:
+    def _install_delivery_confirmed(self) -> bool:
+        return self._destination is not None and _path_exists(
+            _install_delivery_path(self._anonymous_id, self._destination)
+        )
+
+    def capture(self, event: str, properties: Properties | None = None) -> None:
         if self._disabled or self._shutdown:
             return
         merged = merge_usage_enrichment(
-            _BASE_PROPERTIES
-            | self._persistent_properties
-            | _coerce_properties(event.value, properties)
+            _coerce_properties(event, properties),
+            defaults=_BASE_PROPERTIES | self._persistent_properties,
         )
         # Startup may load a project environment after this module was imported.
         # Recheck cheap CI signals without repeating container filesystem probes.
+        # A failed container probe stays unknown; it must not become local.
         is_ci = is_ci_environment()
         cicd_marker = has_cicd_marker()
         merged["is_ci"] = is_ci
         merged["cicd_marker"] = cicd_marker
-        merged["execution_environment"] = (
-            ("ci_container" if is_ci else "container")
-            if _ANALYTICS_RUNTIME.is_container
-            else ("ci" if is_ci else "local")
-        )
+        merged["ci_detection_status"] = "detected" if is_ci else "not_detected"
+        container = _ANALYTICS_RUNTIME.is_container
+        if container is True:
+            merged["execution_environment"] = "ci_container" if is_ci else "container"
+        elif container is False:
+            merged["execution_environment"] = "ci" if is_ci else "local"
+        else:
+            merged["execution_environment"] = "ci" if is_ci else "unknown"
+        # Loaded distribution and test traffic are process facts. Event payloads
+        # cannot relabel them.
+        merged["distribution"] = _BASE_PROPERTIES["distribution"]
+        merged["is_test"] = is_test_run()
         if event == Event.INSTALL_DETECTED and cicd_marker and not merged.get("install_origin"):
             merged["install_origin"] = "cicd"
         self._ensure_organization_group(merged)
         envelope = _Envelope(
-            event=event.value,
+            event=event,
             properties=merged,
             destination=self._destination,
         )
@@ -1005,6 +1064,7 @@ class Analytics:
             with httpx.Client(
                 timeout=_SEND_TIMEOUT,
                 trust_env=False,
+                follow_redirects=False,
             ) as client:
                 while True:
                     item = self._queue.get()
@@ -1039,7 +1099,19 @@ class Analytics:
             "$lib": "opensre-cli",
             "identity_persistence": self._identity_persistence,
         }
-        insert_id = _event_insert_id(item.event, self._anonymous_id)
+        endpoint_url = item.destination.endpoint_url if item.destination is not None else ""
+        execution_properties, _execution_headers = execution_evidence(
+            self._anonymous_id,
+            endpoint_url=endpoint_url,
+            is_ci=properties.get("is_ci") is True,
+            is_container=properties.get("is_container") is True,
+        )
+        properties.update(execution_properties)
+        insert_id = _event_insert_id(
+            item.event,
+            self._anonymous_id,
+            install_recovery=properties.get("install_detection_reason") == "unverified_marker",
+        )
         if insert_id is not None:
             properties["$insert_id"] = insert_id
         return {
@@ -1074,6 +1146,14 @@ class Analytics:
         properties = payload["properties"]
         if isinstance(properties, dict):
             _log_event_line(item.event, properties)
+        else:
+            properties = {}
+        _, execution_headers = execution_evidence(
+            self._anonymous_id,
+            endpoint_url=destination.endpoint_url,
+            is_ci=properties.get("is_ci") is True,
+            is_container=properties.get("is_container") is True,
+        )
         if len(body) > ANALYTICS_MAX_PAYLOAD_BYTES:
             _log_failure(
                 "analytics_send",
@@ -1087,7 +1167,7 @@ class Analytics:
             response = client.post(
                 destination.endpoint_url,
                 content=body,
-                headers=destination.headers(body),
+                headers=destination.headers(body) | execution_headers,
             )
             if response.status_code != HTTPStatus.ACCEPTED:
                 raise httpx.HTTPStatusError(
@@ -1115,6 +1195,7 @@ class Analytics:
             _capture_sentry_failure(exc)
         else:
             if item.event == Event.INSTALL_DETECTED.value:
+                _record_install_delivery(_install_delivery_path(self._anonymous_id, destination))
                 _touch_once(_FIRST_RUN_PATH)
 
     def _mark_done(self) -> None:
@@ -1154,9 +1235,17 @@ def analytics_needs_flush() -> bool:
 def capture_install_detected_if_needed(properties: Properties | None = None) -> bool:
     """Attempt install capture once per process until delivery is persisted."""
     with _install_capture_lock:
-        if _install_capture_state.attempted or _path_exists(_FIRST_RUN_PATH):
+        if _install_capture_state.attempted:
             return False
         analytics = get_analytics()
+        if analytics._install_delivery_confirmed():
+            return False
+        if _path_exists(_FIRST_RUN_PATH):
+            # A later tagged command must not invent the original installation origin.
+            properties = {
+                key: value for key, value in (properties or {}).items() if key != "install_origin"
+            }
+            properties["install_detection_reason"] = "unverified_marker"
         analytics.capture(Event.INSTALL_DETECTED, properties)
         _install_capture_state.attempted = True
         return True

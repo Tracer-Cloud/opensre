@@ -44,7 +44,7 @@ the event body or source distribution. Production origins require HTTPS.
   "occurred_at": "2026-09-08T12:34:56.789+00:00",
   "source": "opensre_runtime",
   "anonymous_id": "4d892bf3-7204-4410-9f03-f84190f8a936",
-  "event": "cli_invoked",
+  "event": "cli_command_opensre_integrations_verify",
   "properties": {
     "entrypoint": "opensre",
     "command_family": "integrations"
@@ -54,6 +54,12 @@ the event body or source distribution. Production origins require HTTPS.
 
 - `event_id` is a UUID for recurring events. `install_detected` uses the stable
   `install_detected:{anonymous_id}` key so the server can deduplicate installs.
+  Recovery of an unverified `installed` marker uses
+  `install_detected:{anonymous_id}:delivery-v1` and sets
+  `install_detection_reason=unverified_marker`. This is a current detection,
+  not a reconstruction of the original installation. The separate key preserves
+  any earlier event already stored by the server; `METRICS.md` (Installations)
+  defines how consumers collapse the two into one installation.
 - `occurred_at` is assigned when the event enters the local queue, not when the
   network request finishes.
 - `anonymous_id` is the random installation ID stored in
@@ -66,9 +72,13 @@ the event body or source distribution. Production origins require HTTPS.
   does not permanently lose the association.
 - A successful ingest should return `202 Accepted`. The server should dedupe on
   `(source, event_id)` and reject unknown schema versions or event names.
+  Only that acknowledgement creates a receipt under `install-deliveries-v1/`,
+  keyed by a hash of the installation ID and endpoint URL. The older `installed`
+  marker is retained for older clients, but cannot establish first-party delivery.
 
-The accepted event names are the `Event` enum in `events.py`, plus the internal
-identity controls `$identify` and `$groupidentify`. The webapp may translate
+The accepted event names are the `Event` enum in `events.py`, the dynamic
+`cli_command_opensre` family, and the internal identity controls `$identify`
+and `$groupidentify`. The webapp may translate
 those controls into its analytics store instead of storing them as product
 activity.
 
@@ -80,8 +90,13 @@ Every product event includes:
 | --- | --- |
 | `cli_version`, `python_version` | Client compatibility and release adoption. |
 | `os_family`, `os_version` | Coarse platform support. |
-| `execution_environment` | `local`, `ci`, `container`, or `ci_container`. |
-| `is_ci`, `is_container`, `container_runtime` | Filters for human vs automated usage. |
+| `analytics_properties_version` | Property evidence contract version; currently `2`, independent of envelope schema `1`. |
+| `execution_environment` | `local`, `ci`, `container`, `ci_container`, or `unknown`; a detector classification. |
+| `is_ci`, `is_container`, `container_runtime` | Recognized runtime signals, not human verification. Unknown measurements are omitted. |
+| `ci_detection_status`, `container_detection_status` | `detected`, `not_detected`, or `unknown`. |
+| `automation_status`, `execution_origin` | Reported automation or unknown origin; ingestion upgrades authenticated runner evidence to `confirmed`. |
+| `distribution` | `source_checkout`, `editable_package`, `installed_package`, `frozen_binary`, or `unknown`, based on the code loaded by this process. |
+| `is_test` | Explicit `OPENSRE_IS_TEST=1` (also `true`/`yes`), a detected test runner, or CI. Independent of distribution. |
 | `composite_fingerprint` | One-way local fingerprint used only when no account identity exists. |
 | `identity_persistence` | Whether the anonymous ID was persisted to disk. |
 | `install_marker_state_before_install` | `present`, `absent`, or `unknown` at the start of the most recent recorded installer run. |
@@ -93,6 +108,17 @@ Every product event includes:
 `$groups`, `$process_person_profile`, `$lib`, and `distinct_id` are retained for
 downstream PostHog compatibility. The first-party account user ID belongs in a
 server-owned column resolved from the bearer token.
+
+For `cli_invoked`, `interactive_option` is configuration, with its source in
+`interactive_option_source`. `stdin_is_tty` and `stdout_is_tty` measure terminal
+state. Use `interactive_shell_rendered` for an observed shell launch.
+
+Prompt events include `turn_outcome`, `response_source`, and `llm_attempted`
+when known. The event name alone does not establish AI success: static terminal
+dispatch and synthetic fallback text are also logged. Missing token usage is
+omitted and described by `token_usage_status`. Integration snapshots use
+`integration_snapshot_status`; unavailable inventories do not emit empty lists
+or zero counts. Action rates without executed actions are omitted.
 
 The shell and PowerShell installers, and `make install`, snapshot `installed`
 before installation work begins, resolving its directory the same way as the
@@ -110,6 +136,28 @@ When no installer snapshot has been recorded, the property is omitted. The
 value describes the most recent recorded installer run, not
 necessarily the first installation or the current invocation. Do not map
 `absent` to “first-ever install.”
+
+## CLI invocation names and distribution
+
+Command names are generated from registered command tokens, with hyphens
+normalized to underscores: `opensre health --rate 5` emits
+`cli_command_opensre_health`; `opensre integrations verify slack` emits
+`cli_command_opensre_integrations_verify`. Bare `opensre` emits
+`cli_command_opensre`. These events record invocation, not completion or success.
+Arguments and option values never enter the name.
+
+Alternate Python entrypoints use the equivalent OpenSRE command name; the
+`entrypoint` property preserves how they were launched. Each invocation emits
+one command event, replacing `cli_invoked`. Readers must accept both historical
+`cli_invoked` records and the new family. Deploy the webapp's family validation
+before distributing a client that emits these names.
+
+`source_checkout` and `editable_package` identify local development code.
+`installed_package` and `frozen_binary` identify packaged code, including locally
+built packages; they do not establish publisher signing or official provenance.
+A packaged binary can still have `is_test=true`. `execution_environment=local`
+describes the computer, not the build origin. Missing historical distribution
+or test evidence must not be treated as proof of release or non-test usage.
 
 ## Event inventory
 
@@ -131,7 +179,7 @@ recorded installations.
 
 | Area | Events | Important properties / question answered |
 | --- | --- | --- |
-| Acquisition | `install_detected`, `account_authenticated`, `cli_invoked` | Install source/origin/build channel/distribution, login conversion, entrypoint, command names, and boolean flags; never raw argument values. Official installers invoke the hidden record-only path immediately after installation. |
+| Acquisition | `install_detected`, `account_authenticated`, `cli_command_opensre…` | Install source/origin/build channel/distribution, login conversion, entrypoint, command names, and boolean flags; never raw argument values. Official installers invoke the hidden record-only path immediately after installation. Historical `cli_invoked` records remain valid. |
 | Sign-in gate | `sign_in_prompted`, `sign_in_selected`, `stay_signed_out_selected` | The interactive shell's mandatory sign-in screen: one exposure per signed-out launch, then one event per menu round with `choice_label` and `method` (`menu` for a picked option, `dismissed` when the menu was closed without one — Esc, `q`, Ctrl-C, Ctrl-D, or EOF are not distinguished). `sign_in_selected` is recorded before the browser flow starts and is intent only; `account_authenticated` reports the outcome. Already signed-in, non-interactive, and test runs emit none of these. |
 | Runtime health | `user_id_load_failed`, `sentry_init_skipped` | Identity persistence and telemetry setup failures. |
 | Onboarding | `onboard_started`, `onboard_completed`, `onboard_failed` | Funnel conversion, wizard mode, target, provider, and model. |
@@ -149,9 +197,16 @@ recorded installations.
 | Local-agent safety | `agent_secret_detected`, `agent_killed`, `agent_kill_failed` | Rule names, count, blocked state, agent type, and result; never the detected secret. |
 | Suggested loops | `loop_suggestion_prompted`, `loop_suggestion_selected`, `loop_suggestion_skipped` | Picker exposure and selected use case. |
 | Onboarding demo | `onboarding_demo_prompted`, `onboarding_demo_selected`, `onboarding_demo_skipped` | Demo exposure, selected option, and whether it was custom. |
+| Remote CI repair | `hosted_gateway_started`, `hosted_gateway_healthy`, `remote_ci_monitoring_started`, `test_ci_failure_triggered`, `remote_ci_failure_detected`, `remote_ci_repair_succeeded` | The `delegating-github-ci-repairs` activation path. The signed-in shell records an accepted hosted-gateway start (`already_running`) and every health read that finds the gateway running (`tool_name`). A gateway whose own scheduler runs the repair loop records its registration, the pull request's first CI failure, and a repair commit that passed CI (`attempts`, `duration_ms` since scheduling); the same loop scheduled from the shell records none of them. The demo's failing pull request records `test_ci_failure_triggered` on either host, with `remote`. CI events carry `repair_run_id`, which joins a worker's events to the registration and its prompting `user_id`, plus `repository`, `demo`, and `pr_number` once known. |
 | Execution policy | `repl_execution_policy_decision` | Policy stage, outcome, reason, and planned action count. |
 
 ## Product metrics
+
+Eligible installation observations exclude synthetic/test identities and every
+identity with confirmed or reported automation in retained runtime history.
+Remaining identities have unknown origin: these are observed installations, not
+a measured human acquisition denominator. Report their conversion separately
+from verified account metrics and show automation counts alongside them.
 
 The first dashboard should keep personal-user and gateway-organization grains
 separate. Anonymous IDs are a fallback only for pre-login acquisition:
@@ -162,11 +217,11 @@ must be calculated from `analytics_product_events`.
 
 | Metric | Definition |
 | --- | --- |
-| Install-to-signup conversion | Non-CI installations whose first server-verified account link resolves to a Clerk signup created between install and first authentication, divided by all non-CI installations. |
-| Personal activation | Server-resolved users whose linked installation reaches `onboard_completed`, then records a non-error `$ai_generation`. |
+| Install-to-signup conversion | Eligible installation observations whose first server-verified account link resolves to a Clerk signup created between install and first authentication, divided by all eligible installation observations. |
+| Personal activation | Server-resolved users whose linked installation reaches `onboard_completed`, then records a completed, captured AI response with an observed LLM attempt and no error. Legacy events require a real model/provider and non-synthetic output. |
 | Gateway activation | Authenticated organizations with an answered `gateway_turn_completed`; do not count gateway actor IDs as users. |
-| Onboarding conversion | Distinct non-CI installations completed, and distinct installations failed, each divided separately by distinct installations started. |
-| Personal DAU / WAU / MAU | Distinct server-resolved users with personal-bearer `cli_invoked` or `$ai_generation` events in the window. |
+| Onboarding conversion | Distinct eligible installation observations completed, and distinct installations failed, each divided separately by distinct installations started. |
+| Personal DAU / WAU / MAU | Distinct server-resolved users with a personal-bearer `cli_command_opensre…` (historically `cli_invoked`) or `$ai_generation` in the requested window. |
 | Organization DAU / WAU / MAU | Distinct authenticated organizations with gateway activity in the window, reported separately. |
 | D1 / D7 / D30 retention | Personally activated users with another qualifying personal event on the target day/window; compute organization retention separately. |
 | Answer rate | Completed gateway turns with `answered=true` divided by completed gateway turns. |
@@ -180,8 +235,12 @@ must be calculated from `analytics_product_events`.
 | Scheduled-work reliability | Completed vs failed scheduled tasks by task kind and provider. |
 | Feature adoption | Personal users by CLI/AI feature and organizations by gateway surface, without combining identity grains. |
 
-Exclude `is_ci=true` from human acquisition and retention dashboards, but keep
-it available for automation usage reporting.
+Separate verified/reported automation from unknown-origin installation observations, and keep
+it available for automation usage reporting. Report CI detection independently
+from actor identity. A non-CI metric requires an explicitly recorded Boolean
+`is_ci=false`; missing evidence stays unknown. An audience may deliberately
+include unknown traffic, but neither inclusion nor a negative detector result
+proves that a human initiated the run.
 
 ## Privacy and failure behavior
 

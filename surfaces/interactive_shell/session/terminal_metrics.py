@@ -28,7 +28,7 @@ class TerminalMetricsSnapshot(StrictConfigModel):
 
     turn_index: int
     fallback_count: int
-    action_success_percent: float
+    action_success_percent: float | None
     fallback_rate_percent: float
 
 
@@ -62,7 +62,7 @@ class TerminalMetrics:
         action_success_percent = (
             100.0 * self.actions_success_count / self.actions_executed_count
             if self.actions_executed_count > 0
-            else 0.0
+            else None
         )
         fallback_rate_percent = 100.0 * self.fallback_count / self.turn_count
         return TerminalMetricsSnapshot(

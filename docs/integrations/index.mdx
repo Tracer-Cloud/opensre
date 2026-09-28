@@ -1,0 +1,67 @@
+---
+title: "Integrations overview"
+description: "Connect observability, cloud, data, and messaging tools for the agent."
+---
+
+OpenSRE answers production questions by querying the same tools your team
+already uses. Connect an integration so OpenSRE can pull logs and metrics,
+check recent deploys, and deliver findings to your channels.
+
+There are 60+ supported integrations. Connect your stack so OpenSRE can pull
+logs, check recent deploys, and deliver findings where your team already works.
+
+## Two setup paths
+
+| Path | Best for | How to configure |
+| --- | --- | --- |
+| Local CLI | Self-hosted `opensre` on your laptop or server | `opensre integrations setup`, plus env vars |
+| Hosted (OpenSRE Cloud) | Org-wide connectors shared across users | Coming soon |
+
+Most users start with the local CLI path. You need credentials for the tools
+you want to connect and permission to create API keys.
+
+## Local CLI
+
+```bash
+opensre integrations setup
+```
+
+You can also set environment variables; OpenSRE picks them up on the next run.
+See each integration’s page for the required variables, or
+[Environment variables](/install/environment-variables).
+
+### Verify
+
+```bash
+opensre integrations verify
+opensre integrations verify datadog
+```
+
+In the interactive shell: `/integrations list`, `/integrations verify <name>`,
+`/verify`, and `/health`.
+
+To register more than one instance of the same provider (for example prod and
+staging Grafana), see [Multi-instance integrations](/platform/multi-instance-integrations).
+
+## Catalog
+
+Browse by category in the sidebar, or use the links below. Model providers are
+configured separately under [LLM providers](/platform/llm-providers).
+
+| Category | Integrations |
+| --- | --- |
+| **Monitoring** | [Azure Monitor](/integrations/monitoring/azure-monitor), [Better Stack](/integrations/monitoring/betterstack), [Coralogix](/integrations/monitoring/coralogix), [Datadog](/integrations/monitoring/datadog), [Grafana](/integrations/monitoring/grafana), [Groundcover](/integrations/monitoring/groundcover), [Honeycomb](/integrations/monitoring/honeycomb), [New Relic](/integrations/monitoring/new_relic), [OpenObserve](/integrations/monitoring/openobserve), [PostHog](/integrations/monitoring/posthog), [SignOz](/integrations/monitoring/signoz), [Splunk](/integrations/monitoring/splunk), [Tempo](/integrations/monitoring/tempo), [Victoria Logs](/integrations/monitoring/victoria_logs) |
+| **Incidents** | [Alertmanager](/integrations/incidents/alertmanager), [Incident.io](/integrations/incidents/incident_io), [OpsGenie](/integrations/incidents/opsgenie), [PagerDuty](/integrations/incidents/pagerduty), [Sentry](/integrations/incidents/sentry), [ServiceNow](/integrations/incidents/servicenow) |
+| **Cloud** | [Argo CD](/integrations/cloud/argocd), [AWS](/integrations/cloud/aws), [Helm](/integrations/cloud/helm), [Kubernetes](/integrations/cloud/kubernetes), [Railway](/integrations/cloud/railway), [SQS](/integrations/cloud/sqs_queues), [Vercel](/integrations/cloud/vercel), [Yandex Cloud](/integrations/cloud/yandex-cloud) |
+| **Code and CI** | [Bitbucket](/integrations/code/bitbucket), [GitHub](/integrations/code/github), [GitHub Actions](/integrations/code/github-actions), [GitLab](/integrations/code/gitlab), [Jenkins](/integrations/code/jenkins) |
+| **Collaboration** | [Google Docs](/integrations/collaboration/google-docs), [Jira](/integrations/collaboration/jira), [Trello](/integrations/collaboration/trello) |
+| **Messaging** | [Slack](/integrations/messaging/slack), [Discord](/integrations/messaging/discord), [Telegram](/integrations/messaging/telegram), [Rocket.Chat](/integrations/messaging/rocketchat), [Buzz](/integrations/messaging/buzz), [WhatsApp](/integrations/messaging/whatsapp), [Twilio SMS](/integrations/messaging/twilio-sms), [SMTP](/integrations/messaging/smtp) |
+| **Databases** | [Azure SQL](/integrations/databases/azure-sql), [ClickHouse](/integrations/databases/clickhouse), [Elasticsearch](/integrations/databases/elasticsearch), [MariaDB](/integrations/databases/mariadb), [MongoDB](/integrations/databases/mongodb), [MongoDB Atlas](/integrations/databases/mongodb-atlas), [MySQL](/integrations/databases/mysql), [OpenSearch](/integrations/databases/opensearch), [PostgreSQL](/integrations/databases/postgresql), [RDS](/integrations/databases/rds), [Redis](/integrations/databases/redis), [Snowflake](/integrations/databases/snowflake), [Supabase](/integrations/databases/supabase) |
+| **Workflows** | [Airflow](/integrations/workflows/airflow), [Dagster](/integrations/workflows/dagster), [Kafka](/integrations/workflows/kafka), [Prefect](/integrations/workflows/prefect), [RabbitMQ](/integrations/workflows/rabbitmq), [Temporal](/integrations/workflows/temporal) |
+
+## Hosted (OpenSRE Cloud)
+
+<Info>
+Hosted OpenSRE Cloud is **coming soon**. Organization-wide connectors will be
+configured in the hosted web app. Until then, use the local CLI path above.
+</Info>

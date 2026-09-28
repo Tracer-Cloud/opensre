@@ -14,6 +14,7 @@ from config.constants.analytics import (
     ANALYTICS_INSTALL_SOURCE_ENV,
     ANALYTICS_INSTALL_VERSION_ENV,
 )
+from infrastructure.analytics.distribution import detect_distribution
 from infrastructure.analytics.provider import Properties
 from infrastructure.analytics.repl_context import get_cli_session_id
 from infrastructure.safety.secret_redaction import redact_text
@@ -105,11 +106,7 @@ def build_install_detected_properties(*, entrypoint: str) -> Properties:
     properties: Properties = {
         "entrypoint": entrypoint,
         "install_source": source or "first_cli_invocation",
-        "distribution": (
-            "frozen_binary"
-            if bool(getattr(sys, "frozen", False) or getattr(sys, "_MEIPASS", None))
-            else "python_package"
-        ),
+        "distribution": detect_distribution(),
     }
     if channel := _optional_install_dimension(os.getenv(ANALYTICS_INSTALL_CHANNEL_ENV, "")):
         properties["install_channel"] = channel
@@ -121,6 +118,16 @@ def build_install_detected_properties(*, entrypoint: str) -> Properties:
     return properties
 
 
+def _terminal_properties() -> Properties:
+    properties: Properties = {}
+    for name, stream in (("stdin_is_tty", sys.stdin), ("stdout_is_tty", sys.stdout)):
+        try:
+            properties[name] = bool(stream.isatty())
+        except (AttributeError, OSError, ValueError):
+            continue
+    return properties
+
+
 def build_cli_invoked_properties(
     *,
     entrypoint: str,
@@ -129,9 +136,10 @@ def build_cli_invoked_properties(
     verbose: bool = False,
     debug: bool = False,
     yes: bool = False,
-    interactive: bool = True,
+    interactive: bool | None = None,
+    interactive_option_source: str = "caller",
 ) -> Properties:
-    """Build a structured ``cli_invoked`` payload for any CLI surface.
+    """Build structured invocation properties for any CLI surface.
 
     Used by ``opensre`` (Click-driven) and the ``python -m app.*`` entrypoints
     so all three end up with the same property names. Records command names
@@ -145,8 +153,11 @@ def build_cli_invoked_properties(
         "verbose": verbose,
         "debug": debug,
         "yes": yes,
-        "interactive": interactive,
+        **_terminal_properties(),
     }
+    if interactive is not None:
+        properties["interactive_option"] = interactive
+        properties["interactive_option_source"] = interactive_option_source
     if len(command_parts) > 1:
         properties["subcommand"] = command_parts[1]
     if command_parts:

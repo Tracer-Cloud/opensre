@@ -1,6 +1,6 @@
 """Developer journey: create and drive your own agent on the Python API.
 
-Pins the documented ladder in ``docs/python-api.mdx`` — two-line start, custom
+Pins the documented ladder in ``docs/guides/python-api.mdx`` — two-line start, custom
 sink, custom grounding, multi-turn reuse — without a live LLM provider.
 """
 
