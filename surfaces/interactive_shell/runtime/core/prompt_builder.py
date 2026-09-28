@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import io
 from collections.abc import Callable
 
 from prompt_toolkit import PromptSession
@@ -33,11 +34,11 @@ from surfaces.interactive_shell.ui.input_prompt.key_bindings import (
 from surfaces.interactive_shell.ui.input_prompt.refresh import wire_prompt_refresh
 from surfaces.interactive_shell.ui.input_prompt.resize import install_shrink_resize_guard
 from surfaces.interactive_shell.ui.input_prompt.style import refresh_prompt_theme
+from surfaces.interactive_shell.ui.input_prompt.synchronized import supports_synchronized_output
 from surfaces.interactive_shell.ui.prompt_visibility import typing_box_hidden
 from surfaces.interactive_shell.ui.terminal_ui import render_prompt_region
 from surfaces.shared.terminal.banner import render_launch_banner
 from surfaces.shared.terminal.components.cpr_stdin import drain_stale_cpr_bytes
-from surfaces.shared.terminal.components.rendering import repl_clear_screen
 
 # Brief pause so a CPR reply still in flight lands in the stdin buffer before the
 # non-blocking drain runs; without it the reply leaks into this prompt as literal bytes.
@@ -116,24 +117,30 @@ class PromptBuilder:
         )
         install_session_key_bindings(self.pt_session, output_kb)
 
-    def _rerender_banner_if_idle(self) -> bool:
-        """Repaint the existing launch banner only before visible history exists."""
+    def _rerender_banner_if_idle(self) -> str | None:
+        """Return a resized launch banner only before visible history exists."""
         if (
             self.session.terminal.submitted_turn_count > 0
+            or self.session.terminal.history_generation > 0
             or self.session.agent.messages
             or self.session.accumulated_context
+            or self.session.alerts.entries
             or self.pt_app is None
         ):
-            return False
-        repl_clear_screen()
+            return None
+        output = self.pt_app.output
+        supports_vt = supports_synchronized_output(output)
+        buffer = io.StringIO()
         console = Console(
+            file=buffer,
+            width=max(1, output.get_size().columns),
             highlight=False,
-            force_terminal=True,
-            color_system="truecolor",
+            force_terminal=supports_vt,
+            color_system="truecolor" if supports_vt else None,
             legacy_windows=False,
         )
         render_launch_banner(console, session=self.session, animate=False)
-        return True
+        return buffer.getvalue()
 
     def _expand_collapsed_output(self, text: str) -> None:
         """Suspend the prompt and expand the next folded tool result (Ctrl+O).

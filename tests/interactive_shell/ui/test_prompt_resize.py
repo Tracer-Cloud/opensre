@@ -12,6 +12,7 @@ from unittest.mock import MagicMock
 import pytest
 from prompt_toolkit.layout.containers import HSplit, VerticalAlign, Window
 from prompt_toolkit.layout.layout import Layout
+from prompt_toolkit.layout.screen import Char
 from prompt_toolkit.output.base import Size
 from prompt_toolkit.output.vt100 import Vt100_Output
 
@@ -199,17 +200,26 @@ def test_empty_shell_resize_uses_existing_banner_repaint_hook() -> None:
     original_on_resize = MagicMock()
     app._on_resize = original_on_resize
     app._request_absolute_cursor_position = MagicMock()
-    app._redraw = MagicMock()
+    app._redraw = MagicMock(side_effect=lambda: output.write_raw("prompt"))
     app._running_in_terminal = False
     repaint_calls: list[bool] = []
 
     install_shrink_resize_guard(
         app,
-        rerender_banner=lambda: repaint_calls.append(True) or True,
+        rerender_banner=lambda: repaint_calls.append(True) or "banner\n",
     )
+    output.stdout.seek(0)
+    output.stdout.truncate(0)
     app._on_resize()
 
     assert repaint_calls == [True]
+    emitted = output.stdout.getvalue()
+    frame_start = emitted.find("\x1b[?2026h")
+    clear = emitted.find("\x1b[2J")
+    banner = emitted.find("banner")
+    prompt = emitted.find("prompt")
+    frame_end = emitted.find("\x1b[?2026l")
+    assert -1 < frame_start < clear < banner < prompt < frame_end
     original_on_resize.assert_not_called()
     renderer.reset.assert_called_once_with(leave_alternate_screen=False)
     app._request_absolute_cursor_position.assert_called_once_with()
@@ -498,3 +508,21 @@ def test_reflow_count_includes_styled_trailing_blanks() -> None:
     rows = _reflowed_rows_above_cursor(renderer, columns=80)
 
     assert rows == 4
+
+
+def test_reflow_count_includes_wide_glyph_continuation_cell() -> None:
+    renderer = SimpleNamespace(
+        _last_screen=SimpleNamespace(
+            data_buffer={
+                0: {
+                    79: Char("界"),
+                    80: Char(""),
+                }
+            }
+        ),
+        _cursor_pos=_Cursor(x=0, y=1),
+    )
+
+    rows = _reflowed_rows_above_cursor(renderer, columns=80)
+
+    assert rows == 2

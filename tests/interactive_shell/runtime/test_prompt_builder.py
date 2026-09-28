@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import io
+from types import SimpleNamespace
 
 import pytest
 from prompt_toolkit.application import create_app_session
@@ -11,6 +12,7 @@ from prompt_toolkit.input.defaults import create_pipe_input
 from prompt_toolkit.output.base import Size
 from prompt_toolkit.output.vt100 import Vt100_Output
 
+from core.domain.alerts.inbox import IncomingAlert
 from surfaces.interactive_shell.runtime.core import prompt_builder as prompt_builder_module
 from surfaces.interactive_shell.runtime.core.prompt_builder import PromptBuilder
 from surfaces.interactive_shell.runtime.core.state import ReplState, SpinnerState
@@ -42,11 +44,10 @@ def test_internal_picker_history_does_not_block_idle_banner_repaint(
     session = Session()
     session.history = [{"type": "slash", "text": "/choose", "ok": True}]
     builder = PromptBuilder(session, ReplState(), SpinnerState())
-    builder.pt_app = object()  # type: ignore[assignment]
-    monkeypatch.setattr(prompt_builder_module, "repl_clear_screen", lambda: None)
+    builder.pt_app = SimpleNamespace(output=_terminal_output())  # type: ignore[assignment]
     monkeypatch.setattr(prompt_builder_module, "render_launch_banner", lambda *_a, **_kw: None)
 
-    assert builder._rerender_banner_if_idle() is True
+    assert builder._rerender_banner_if_idle() is not None
 
 
 def test_idle_banner_repaint_preserves_restored_messages_without_history() -> None:
@@ -59,38 +60,52 @@ def test_idle_banner_repaint_preserves_restored_messages_without_history() -> No
     builder.pt_app = object()  # type: ignore[assignment]
 
     assert session.history == []
-    assert builder._rerender_banner_if_idle() is False
+    assert builder._rerender_banner_if_idle() is None
 
 
-def test_empty_shell_can_repaint_the_existing_banner(
+def test_empty_shell_builds_banner_repaint_without_writing_stdout(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     session = Session()
     builder = PromptBuilder(session, ReplState(), SpinnerState())
-    builder.pt_app = object()  # type: ignore[assignment]
-    clear_calls: list[bool] = []
-    banner_calls: list[bool] = []
+    output = _terminal_output()
+    builder.pt_app = SimpleNamespace(output=output)  # type: ignore[assignment]
     monkeypatch.setattr(
         prompt_builder_module,
         "repl_clear_screen",
-        lambda: clear_calls.append(True),
+        lambda: pytest.fail("banner preparation must not write through patched stdout"),
         raising=False,
-    )
-    monkeypatch.setattr(
-        prompt_builder_module,
-        "drain_stale_cpr_bytes",
-        lambda: None,
     )
     monkeypatch.setattr(
         prompt_builder_module,
         "render_launch_banner",
-        lambda *_args, **_kwargs: banner_calls.append(True),
+        lambda console, **_kwargs: console.print("banner"),
         raising=False,
     )
 
-    assert builder._rerender_banner_if_idle() is True
-    assert clear_calls == [True]
-    assert banner_calls == [True]
+    rendered = builder._rerender_banner_if_idle()
+
+    assert rendered is not None
+    assert "banner" in rendered
+    assert output.stdout.getvalue() == ""
+
+
+def test_pre_turn_alert_blocks_idle_banner_repaint() -> None:
+    session = Session()
+    session.record_incoming_alert(IncomingAlert(text="database latency"))
+    builder = PromptBuilder(session, ReplState(), SpinnerState())
+    builder.pt_app = object()  # type: ignore[assignment]
+
+    assert builder._rerender_banner_if_idle() is None
+
+
+def test_rotated_session_notice_blocks_idle_banner_repaint() -> None:
+    session = Session()
+    session.terminal.history_generation = 1
+    builder = PromptBuilder(session, ReplState(), SpinnerState())
+    builder.pt_app = object()  # type: ignore[assignment]
+
+    assert builder._rerender_banner_if_idle() is None
 
 
 def test_idle_banner_repaint_does_not_drain_active_prompt_input(
@@ -98,9 +113,8 @@ def test_idle_banner_repaint_does_not_drain_active_prompt_input(
 ) -> None:
     session = Session()
     builder = PromptBuilder(session, ReplState(), SpinnerState())
-    builder.pt_app = object()  # type: ignore[assignment]
+    builder.pt_app = SimpleNamespace(output=_terminal_output())  # type: ignore[assignment]
     drain_calls: list[bool] = []
-    monkeypatch.setattr(prompt_builder_module, "repl_clear_screen", lambda: None)
     monkeypatch.setattr(
         prompt_builder_module,
         "drain_stale_cpr_bytes",
@@ -108,7 +122,7 @@ def test_idle_banner_repaint_does_not_drain_active_prompt_input(
     )
     monkeypatch.setattr(prompt_builder_module, "render_launch_banner", lambda *_a, **_kw: None)
 
-    assert builder._rerender_banner_if_idle() is True
+    assert builder._rerender_banner_if_idle() is not None
     assert drain_calls == []
 
 

@@ -91,7 +91,8 @@ def _screen_row_width(
             and style_string_has_style[style]
         )
         if isinstance(text, str) and (text.strip() or painted_blank):
-            last = max(last, column)
+            cell_width = max(int(getattr(char, "width", 1) or 0), 1)
+            last = max(last, column + cell_width - 1)
     return last + 1
 
 
@@ -112,13 +113,14 @@ def _reflowed_rows_above_cursor(renderer: Any, *, columns: int) -> int | None:
 def install_shrink_resize_guard(
     app: Application[Any],
     *,
-    rerender_banner: Callable[[], bool] | None = None,
+    rerender_banner: Callable[[], str | None] | None = None,
 ) -> None:
     """Install compact-height and settled-resize guards for the live prompt.
 
-    ``rerender_banner`` clears the viewport and reprints the static launch
-    banner at the new size, returning True when it did so. Once transcript is
-    present, only the measured live region is erased and repainted.
+    ``rerender_banner`` returns the static launch banner at the new size only
+    while the shell is empty. The resize transaction writes it synchronously
+    with the live prompt; once transcript exists, only the measured live region
+    is erased and repainted.
     """
     output = app.output
     renderer = app.renderer
@@ -157,14 +159,21 @@ def install_shrink_resize_guard(
             app._redraw()
             return
         output.disable_autowrap()
-        if rerender_banner is not None and rerender_banner():
-            # Full chrome reset: clear + static banner, then redraw the live
-            # region only. Do not call original erase — it leaves ghosts.
-            renderer._last_screen = None
-            renderer.reset(leave_alternate_screen=False)
-            app._request_absolute_cursor_position()
-            app._redraw()
-            output.disable_autowrap()
+        banner = rerender_banner() if rerender_banner is not None else None
+        if banner is not None:
+            # Full chrome reset: clear + static banner + live region are one
+            # terminal transaction. Writing via app.output avoids patched
+            # stdout scheduling each piece as a separate run_in_terminal task.
+            with synchronized_output(output):
+                output.erase_screen()
+                output.cursor_goto(0, 0)
+                output.write_raw(banner)
+                output.flush()
+                renderer._last_screen = None
+                renderer.reset(leave_alternate_screen=False)
+                app._request_absolute_cursor_position()
+                app._redraw()
+                output.disable_autowrap()
             return
         # Keep the hardware cursor at prompt-toolkit's logical input position
         # while VTE reflows. Once dimensions settle, measure how the old frame
