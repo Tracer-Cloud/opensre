@@ -317,6 +317,76 @@ def test_capture_ask_user_answered_keeps_bounded_custom_text(
     assert "[REDACTED:github_pat]" in str(detail["answer"])
 
 
+def test_remote_ci_repair_events_name_the_run_and_omit_an_unknown_pull_request(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange
+    stub = _StubAnalytics()
+    monkeypatch.setattr(capture, "get_analytics", lambda: stub)
+    run_id, repository = "a" * 12, "alice/opensre-ci-demo"
+
+    # Act: scheduled before the demo PR exists, then repaired on PR 7
+    capture.capture_remote_ci_monitoring_started(
+        repair_run_id=run_id, repository=repository, pr_number=0, demo=True
+    )
+    capture.capture_test_ci_failure_triggered(
+        repair_run_id=run_id, repository=repository, pr_number=7, demo=True, remote=True
+    )
+    capture.capture_remote_ci_failure_detected(
+        repair_run_id=run_id, repository=repository, pr_number=7, demo=True
+    )
+    capture.capture_remote_ci_repair_succeeded(
+        repair_run_id=run_id,
+        repository=repository,
+        pr_number=7,
+        demo=True,
+        attempts=2,
+        duration_ms=1234.6,
+    )
+
+    # Assert
+    run = {"repair_run_id": run_id, "repository": repository, "demo": True}
+    on_pr = {**run, "pr_number": 7}
+    assert stub.events == [
+        (Event.REMOTE_CI_MONITORING_STARTED, run),
+        (Event.TEST_CI_FAILURE_TRIGGERED, {**on_pr, "remote": True}),
+        (Event.REMOTE_CI_FAILURE_DETECTED, on_pr),
+        (Event.REMOTE_CI_REPAIR_SUCCEEDED, {**on_pr, "attempts": 2, "duration_ms": 1235}),
+    ]
+
+
+def test_hosted_gateway_events_name_the_gateway_and_what_observed_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange
+    stub = _StubAnalytics()
+    monkeypatch.setattr(capture, "get_analytics", lambda: stub)
+
+    # Act
+    capture.capture_hosted_gateway_started(
+        gateway_id="org-gateway", actual_state="provisioning", already_running=False
+    )
+    capture.capture_hosted_gateway_healthy(
+        gateway_id="org-gateway", tool_name="check_hosted_gateway"
+    )
+
+    # Assert
+    assert stub.events == [
+        (
+            Event.HOSTED_GATEWAY_STARTED,
+            {
+                "gateway_id": "org-gateway",
+                "actual_state": "provisioning",
+                "already_running": False,
+            },
+        ),
+        (
+            Event.HOSTED_GATEWAY_HEALTHY,
+            {"gateway_id": "org-gateway", "tool_name": "check_hosted_gateway"},
+        ),
+    ]
+
+
 def test_eval_and_terminal_kpi_queries_cover_core_metrics() -> None:
     expected_keys = {
         "terminal_action_execution_success_rate",

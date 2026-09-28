@@ -149,6 +149,7 @@ recorded installations.
 | Local-agent safety | `agent_secret_detected`, `agent_killed`, `agent_kill_failed` | Rule names, count, blocked state, agent type, and result; never the detected secret. |
 | Suggested loops | `loop_suggestion_prompted`, `loop_suggestion_selected`, `loop_suggestion_skipped` | Picker exposure and selected use case. |
 | Onboarding demo | `onboarding_demo_prompted`, `onboarding_demo_selected`, `onboarding_demo_skipped` | Demo exposure, selected option, and whether it was custom. |
+| Remote CI repair | `hosted_gateway_started`, `hosted_gateway_healthy`, `remote_ci_monitoring_started`, `test_ci_failure_triggered`, `remote_ci_failure_detected`, `remote_ci_repair_succeeded` | The `delegating-github-ci-repairs` activation path. The signed-in shell records an accepted hosted-gateway start (`already_running`) and every health read that finds the gateway running (`tool_name`). A gateway whose own scheduler runs the repair loop records its registration, the pull request's first CI failure, and a repair commit that passed CI (`attempts`, `duration_ms` since scheduling); the same loop scheduled from the shell records none of them. The demo's failing pull request records `test_ci_failure_triggered` on either host, with `remote`. CI events carry `repair_run_id`, which joins a worker's events to the registration and its prompting `user_id`, plus `repository`, `demo`, and `pr_number` once known. |
 | Execution policy | `repl_execution_policy_decision` | Policy stage, outcome, reason, and planned action count. |
 
 ## Product metrics

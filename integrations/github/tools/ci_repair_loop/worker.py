@@ -26,6 +26,7 @@ from integrations.github.tools.ci_fix.verification import (
     check_failed,
     wait_for_pr_checks,
 )
+from integrations.github.tools.ci_repair_loop import telemetry
 from integrations.github.tools.ci_repair_loop.credentials import account_id, configured_token
 from integrations.github.tools.ci_repair_loop.fixture import (
     DemoRepositoryMismatch,
@@ -119,6 +120,8 @@ def _repair(run: RepairRun, store: RepairStore, token: str) -> None:
         run.attempts += 1
         run.reason = f"Repair attempt {run.attempts} is running."
         store.save(run)
+        if run.attempts == 1:
+            telemetry.failure_detected(run)
         output = run_ci_fix(
             owner=run.owner,
             repo=run.repo,
@@ -246,6 +249,7 @@ def execute_repair(run: RepairRun, store: RepairStore) -> None:
     if not run.checks_passed:
         _repair(run, store, token)
     if run.checks_passed:
+        telemetry.repair_succeeded(run)
         cleanup_demo(client, run)
         run.status = RepairStatus.SUCCEEDED
 

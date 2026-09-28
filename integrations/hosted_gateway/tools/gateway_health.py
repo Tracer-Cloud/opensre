@@ -8,6 +8,7 @@ from config.constants.hosted_gateway import HOSTED_GATEWAY_SETTINGS_PATH
 from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel
 from core.tool_framework import tool
+from infrastructure.analytics.capture import capture_hosted_gateway_healthy
 from integrations.hosted_gateway.client import (
     GatewayHealth,
     HostedGatewayClient,
@@ -58,6 +59,8 @@ def check_hosted_gateway() -> dict[str, Any]:
             settings_url = f"{client.app_url}{HOSTED_GATEWAY_SETTINGS_PATH}"
     except HostedGatewayError as exc:
         return failure_output(exc, tool_name=TOOL_NAME, component=_COMPONENT)
+    if health.healthy:
+        capture_hosted_gateway_healthy(gateway_id=health.gateway_id, tool_name=TOOL_NAME)
     return state_output(health, _describe(health, settings_url))
 
 

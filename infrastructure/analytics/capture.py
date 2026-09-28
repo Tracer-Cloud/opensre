@@ -601,5 +601,4 @@ def capture_remote_ci_repair_succeeded(
     properties = _ci_repair_properties(repair_run_id, repository, pr_number, demo)
     properties["attempts"] = attempts
     properties["duration_ms"] = round(duration_ms)
-    properties["duration_bucket"] = _bucket_duration_ms(duration_ms)
     _capture(Event.REMOTE_CI_REPAIR_SUCCEEDED, properties)

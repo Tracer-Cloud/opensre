@@ -8,6 +8,7 @@ from http import HTTPStatus
 from typing import Any
 
 from integrations.github.client import GitHubApiError, GitHubRestClient
+from integrations.github.tools.ci_repair_loop import telemetry
 from integrations.github.tools.ci_repair_loop.models import RepairRun
 from integrations.github.tools.ci_repair_loop.storage import RepairStore
 
@@ -218,6 +219,7 @@ def prepare_demo(client: GitHubRestClient, run: RepairRun, store: RepairStore) -
         )
         run.pr_number = int(object_response(pr)["number"])
         store.save(run)
+        telemetry.demo_failure_triggered(run)
 
 
 def cleanup_demo(client: GitHubRestClient, run: RepairRun) -> None:
