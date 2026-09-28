@@ -226,6 +226,7 @@ def install_shrink_resize_guard(
     original_report = renderer.report_absolute_cursor_row
     resize_handle: asyncio.TimerHandle | None = None
     resize_deferred = False
+    deferred_cursor_wrap_rows: int | None = None
 
     def report_absolute_cursor_row(row: int) -> None:
         original_report(row)
@@ -260,7 +261,7 @@ def install_shrink_resize_guard(
         output.disable_autowrap()
 
     def _render(pt_app: Any, layout: Layout, is_done: bool = False) -> None:
-        nonlocal resize_deferred, resize_handle
+        nonlocal deferred_cursor_wrap_rows, resize_deferred, resize_handle
         if is_done and resize_handle is not None:
             resize_handle.cancel()
             resize_handle = None
@@ -268,12 +269,14 @@ def install_shrink_resize_guard(
             if resize_deferred:
                 _render_deferred_input(pt_app)
                 resize_deferred = False
+                deferred_cursor_wrap_rows = None
                 output.write_raw("\r\n")
                 output.reset_attributes()
                 output.enable_autowrap()
                 output.flush()
                 return
             resize_deferred = False
+            deferred_cursor_wrap_rows = None
         elif resize_deferred:
             _render_deferred_input(pt_app)
             return
@@ -297,7 +300,7 @@ def install_shrink_resize_guard(
             output.disable_autowrap()
 
     def _apply_resize() -> None:
-        nonlocal resize_deferred
+        nonlocal deferred_cursor_wrap_rows, resize_deferred
         renderer._min_available_height = 0
         if getattr(app, "_running_in_terminal", False):
             app._redraw()
@@ -306,6 +309,7 @@ def install_shrink_resize_guard(
         banner = rerender_banner() if rerender_banner is not None else None
         if banner is not None:
             resize_deferred = False
+            deferred_cursor_wrap_rows = None
             # Full chrome reset: clear + static banner + live region are one
             # terminal transaction. Writing via app.output avoids patched
             # stdout scheduling each piece as a separate run_in_terminal task.
@@ -325,6 +329,7 @@ def install_shrink_resize_guard(
         # wraps at the new width and move to its top for one bounded erase.
         if not supports_synchronized_output(output):
             resize_deferred = False
+            deferred_cursor_wrap_rows = None
             original_on_resize()
         else:
             size = output.get_size()
@@ -335,17 +340,32 @@ def install_shrink_resize_guard(
             cursor = getattr(renderer, "_cursor_pos", None)
             if rows_above is None or cursor is None:
                 resize_deferred = False
+                deferred_cursor_wrap_rows = None
                 original_on_resize()
-            elif rows_above >= size.rows:
+            else:
+                cursor_wrap_rows = int(cursor.x) // max(1, size.columns)
+                if resize_deferred and deferred_cursor_wrap_rows is not None:
+                    # Direct compact output turns the cursor's soft-wrapped
+                    # continuation into an independent terminal row. Preserve
+                    # that physical offset when a wider viewport would
+                    # otherwise collapse the logical prompt row again.
+                    rows_above = max(
+                        0,
+                        rows_above + deferred_cursor_wrap_rows - cursor_wrap_rows,
+                    )
+            if rows_above is not None and cursor is not None and rows_above >= size.rows:
                 # The old live-region top has moved above the addressable
                 # viewport. Leave the full frame untouched and show edits on a
                 # compact cursor-row fallback until a later resize makes the
                 # whole region reachable again; erasing here would strand old
                 # prompt chrome inside transcript scrollback.
+                if not resize_deferred:
+                    deferred_cursor_wrap_rows = int(cursor.x) // max(1, size.columns)
                 resize_deferred = True
                 return
-            else:
+            if rows_above is not None and cursor is not None:
                 resize_deferred = False
+                deferred_cursor_wrap_rows = None
                 with synchronized_output(output):
                     # Reflow can change the terminal's real column independently
                     # of renderer._cursor_pos. A carriage return is the only

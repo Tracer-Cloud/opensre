@@ -392,6 +392,38 @@ def test_deferred_resize_keeps_the_editable_line_responsive() -> None:
     assert renderer._original_render_count == initial_render_count
 
 
+def test_deferred_compact_row_keeps_wrapped_cursor_offset_on_regrow() -> None:
+    """Recovery erases chrome above a compact row born on a soft wrap."""
+    size_state = [Size(rows=30, columns=95)]
+    app, renderer, terminal = _painted_resize_app(size_state)
+    renderer._cursor_pos = _Cursor(x=34, y=2)
+    renderer._last_size = Size(rows=30, columns=95)
+    renderer._style_string_has_style = {"": False}
+    renderer._last_screen = SimpleNamespace(
+        height=4,
+        show_cursor=False,
+        data_buffer={
+            0: _row("Auto (High) · Allow all · CI/CD fixes (0)", width=94),
+            1: _row("╭" + "─" * 92 + "╮", width=94),
+            2: _row("│ > long draft with a wrapped cursor".ljust(93) + "│", width=94),
+        },
+    )
+    app.current_buffer.document.current_line_before_cursor = "long draft with a wrapped cursor"
+    app.current_buffer.document.current_line_after_cursor = ""
+
+    size_state[0] = Size(rows=3, columns=33)
+    app._on_resize()
+    renderer.render(app, Layout(Window(height=3)))
+
+    size_state[0] = Size(rows=9, columns=80)
+    app._redraw.side_effect = lambda: renderer.render(app, Layout(Window(height=3)))
+    app._on_resize()
+
+    emitted = terminal.getvalue()
+    assert "\x1b[4A" in emitted
+    assert "\x1b[3A" not in emitted
+
+
 def test_deferred_resize_shows_text_on_both_sides_of_the_caret() -> None:
     size_state = [Size(rows=30, columns=90)]
     app, renderer, terminal = _painted_resize_app(size_state)
