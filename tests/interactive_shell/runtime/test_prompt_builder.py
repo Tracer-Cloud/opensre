@@ -11,6 +11,7 @@ from prompt_toolkit.input.defaults import create_pipe_input
 from prompt_toolkit.output.base import Size
 from prompt_toolkit.output.vt100 import Vt100_Output
 
+from surfaces.interactive_shell.runtime.core import prompt_builder as prompt_builder_module
 from surfaces.interactive_shell.runtime.core.prompt_builder import PromptBuilder
 from surfaces.interactive_shell.runtime.core.state import ReplState, SpinnerState
 from surfaces.interactive_shell.session import Session
@@ -33,6 +34,46 @@ def _terminal_output() -> Vt100_Output:
         term="xterm-256color",
         enable_cpr=False,
     )
+
+
+def test_idle_banner_repaint_preserves_visible_transcript() -> None:
+    session = Session()
+    session.history = [{"type": "slash", "text": "/resume target", "ok": True}]
+    builder = PromptBuilder(session, ReplState(), SpinnerState())
+    builder.pt_app = object()  # type: ignore[assignment]
+
+    assert builder._rerender_banner_if_idle() is False
+
+
+def test_empty_shell_can_repaint_the_existing_banner(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = Session()
+    builder = PromptBuilder(session, ReplState(), SpinnerState())
+    builder.pt_app = object()  # type: ignore[assignment]
+    clear_calls: list[bool] = []
+    banner_calls: list[bool] = []
+    monkeypatch.setattr(
+        prompt_builder_module,
+        "repl_clear_screen",
+        lambda: clear_calls.append(True),
+        raising=False,
+    )
+    monkeypatch.setattr(
+        prompt_builder_module,
+        "drain_stale_cpr_bytes",
+        lambda: None,
+    )
+    monkeypatch.setattr(
+        prompt_builder_module,
+        "render_launch_banner",
+        lambda *_args, **_kwargs: banner_calls.append(True),
+        raising=False,
+    )
+
+    assert builder._rerender_banner_if_idle() is True
+    assert clear_calls == [True]
+    assert banner_calls == [True]
 
 
 @pytest.mark.asyncio

@@ -19,6 +19,7 @@ Invariants the resize path depends on:
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from typing import Any
 
 from prompt_toolkit.application import Application
@@ -100,7 +101,11 @@ def _reflowed_rows_above_cursor(renderer: Any, *, columns: int) -> int | None:
     return rows
 
 
-def install_shrink_resize_guard(app: Application[Any]) -> None:
+def install_shrink_resize_guard(
+    app: Application[Any],
+    *,
+    rerender_banner: Callable[[], bool] | None = None,
+) -> None:
     """Install height and repaint guards that preserve transcript scrollback."""
     output = app.output
     renderer = app.renderer
@@ -209,6 +214,17 @@ def install_shrink_resize_guard(app: Application[Any]) -> None:
 
     def _on_resize() -> None:
         nonlocal frame_active, painted, parked
+        output.disable_autowrap()
+        renderer._min_available_height = 0
+        if rerender_banner is not None and rerender_banner():
+            renderer._last_screen = None
+            renderer.reset(leave_alternate_screen=False)
+            painted = False
+            parked = False
+            app._request_absolute_cursor_position()
+            app._redraw()
+            output.disable_autowrap()
+            return
         # Search/system controls still use prompt-toolkit's real cursor. Keep
         # its stock resize path while one of those transient controls is active.
         if painted and not parked:

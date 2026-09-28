@@ -158,6 +158,41 @@ def test_cpr_report_discards_fill_to_floor() -> None:
     assert renderer._min_available_height == 0
 
 
+def test_empty_shell_resize_uses_existing_banner_repaint_hook() -> None:
+    output = Vt100_Output(
+        io.StringIO(),
+        get_size=lambda: Size(rows=30, columns=80),
+        term="xterm-256color",
+        enable_cpr=False,
+    )
+    app: Any = MagicMock()
+    app.output = output
+    renderer = MagicMock()
+    renderer._min_available_height = 0
+    renderer._last_screen = None
+    renderer.render = MagicMock()
+    renderer.reset = MagicMock()
+    app.renderer = renderer
+    original_on_resize = MagicMock()
+    app._on_resize = original_on_resize
+    app._request_absolute_cursor_position = MagicMock()
+    app._redraw = MagicMock()
+    app._running_in_terminal = False
+    repaint_calls: list[bool] = []
+
+    install_shrink_resize_guard(
+        app,
+        rerender_banner=lambda: repaint_calls.append(True) or True,
+    )
+    app._on_resize()
+
+    assert repaint_calls == [True]
+    original_on_resize.assert_not_called()
+    renderer.reset.assert_called_once_with(leave_alternate_screen=False)
+    app._request_absolute_cursor_position.assert_called_once_with()
+    app._redraw.assert_called_once_with()
+
+
 def test_resize_uses_prompt_toolkit_path_for_a_visible_hardware_cursor() -> None:
     """Search and system controls keep their native cursor and resize handling."""
     output = Vt100_Output(

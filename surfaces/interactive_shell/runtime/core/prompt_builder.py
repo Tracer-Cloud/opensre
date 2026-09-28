@@ -35,7 +35,9 @@ from surfaces.interactive_shell.ui.input_prompt.resize import install_shrink_res
 from surfaces.interactive_shell.ui.input_prompt.style import refresh_prompt_theme
 from surfaces.interactive_shell.ui.prompt_visibility import typing_box_hidden
 from surfaces.interactive_shell.ui.terminal_ui import render_prompt_region
+from surfaces.shared.terminal.banner import render_launch_banner
 from surfaces.shared.terminal.components.cpr_stdin import drain_stale_cpr_bytes
+from surfaces.shared.terminal.components.rendering import repl_clear_screen
 
 # Brief pause so a CPR reply still in flight lands in the stdin buffer before the
 # non-blocking drain runs; without it the reply leaks into this prompt as literal bytes.
@@ -83,7 +85,7 @@ class PromptBuilder:
         install_session_key_bindings(self.pt_session, cancel_kb)
 
         self.pt_app = self.pt_session.app
-        install_shrink_resize_guard(self.pt_app)
+        install_shrink_resize_guard(self.pt_app, rerender_banner=self._rerender_banner_if_idle)
         self.pt_session.default_buffer.accept_handler = self._accept_prompt_buffer
         # While the Yes/No gate owns the keyboard the composer is hidden but its
         # buffer still receives unbound keys unless it is read-only. Lock it so
@@ -113,6 +115,25 @@ class PromptBuilder:
             self._expand_collapsed_output,
         )
         install_session_key_bindings(self.pt_session, output_kb)
+
+    def _rerender_banner_if_idle(self) -> bool:
+        """Repaint the existing launch banner only before visible history exists."""
+        if (
+            self.session.terminal.submitted_turn_count > 0
+            or self.session.history
+            or self.pt_app is None
+        ):
+            return False
+        repl_clear_screen()
+        drain_stale_cpr_bytes()
+        console = Console(
+            highlight=False,
+            force_terminal=True,
+            color_system="truecolor",
+            legacy_windows=False,
+        )
+        render_launch_banner(console, session=self.session, animate=False)
+        return True
 
     def _expand_collapsed_output(self, text: str) -> None:
         """Suspend the prompt and expand the next folded tool result (Ctrl+O).
