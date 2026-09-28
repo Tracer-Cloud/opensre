@@ -118,7 +118,11 @@ def test_fresh_storage_counts_runtime_instances_even_when_disk_persistence_is_re
     assert len({event["anonymous_id"] for event in events}) == 3
     assert {event["properties"]["identity_persistence"] for event in events} == {"disk"}
     assert {event["properties"]["install_source"] for event in events} == {"first_cli_invocation"}
-    assert {event["properties"]["distribution"] for event in events} == {"python_package"}
+    assert {event["properties"]["distribution"] for event in events} <= {
+        "source_checkout",
+        "editable_package",
+        "installed_package",
+    }
     assert len({event["properties"]["composite_fingerprint"] for event in events}) == 1
     assert all(request["auth_kind"] == "silo" for run in runs for request in run["requests"])
     assert not any(

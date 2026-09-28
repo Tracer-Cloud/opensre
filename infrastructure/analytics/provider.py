@@ -845,6 +845,10 @@ class Analytics:
             merged["execution_environment"] = "ci" if is_ci else "local"
         else:
             merged["execution_environment"] = "ci" if is_ci else "unknown"
+        # Loaded distribution and test traffic are process facts. Event payloads
+        # cannot relabel them.
+        merged["distribution"] = _BASE_PROPERTIES["distribution"]
+        merged["is_test"] = is_test_run()
         if event == Event.INSTALL_DETECTED and cicd_marker and not merged.get("install_origin"):
             merged["install_origin"] = "cicd"
         self._ensure_organization_group(merged)
