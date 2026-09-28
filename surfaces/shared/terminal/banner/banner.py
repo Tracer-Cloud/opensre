@@ -13,11 +13,11 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
-from typing import Literal
 
 from rich.align import Align
 from rich.cells import cell_len
 from rich.console import Console, Group, RenderableType
+from rich.padding import Padding
 from rich.text import Text
 
 from config.constants import (
@@ -28,7 +28,6 @@ from config.constants import (
 )
 from config.version import get_opensre_version
 from infrastructure.terminal import theme as ui_theme
-from infrastructure.terminal.markdown import UnpaddedRows
 from infrastructure.terminal.theme import (
     BOLD_SKILL,
     BRAND,
@@ -105,9 +104,9 @@ class WordmarkSpinFrame:
     back_facing: bool
 
 
-def _center(renderable: RenderableType, *, width: int) -> Align:
+def _center(renderable: RenderableType) -> Align:
     """Center one row/block on its own — do not bundle unequal-width lines."""
-    return Align.center(renderable, width=width)
+    return Align.center(renderable)
 
 
 def _braille_dot_columns(row: str) -> list[int]:
@@ -258,24 +257,10 @@ def animate_launch_wordmark(
         stream.flush()
 
 
-def _build_compact_wordmark() -> Text:
-    """Return the one-row wordmark used when the ring cannot fit."""
-    return Text(PRODUCT_DISPLAY_NAME, style=f"bold {HIGHLIGHT}", no_wrap=True)
-
-
-def _build_identity_line(*, max_width: int) -> Text:
-    """Return the minimum one-row identity retained in very short viewports."""
-    identity = _build_compact_wordmark()
-    identity.append(" · ", style=DIM)
-    identity.append(_build_version_line())
-    identity.truncate(max_width, overflow="ellipsis")
-    return identity
-
-
 def _build_wordmark(*, console_width: int) -> Text:
     """Return the bold ring "loops" mark, or a compact title on narrow terminals."""
     if console_width < _WORDMARK_MIN_WIDTH:
-        return _build_compact_wordmark()
+        return Text(PRODUCT_DISPLAY_NAME, style=f"bold {HIGHLIGHT}", no_wrap=True)
     return Text("\n".join(_WORDMARK_ROWS), style=f"bold {HIGHLIGHT}", no_wrap=True)
 
 
@@ -348,9 +333,8 @@ def build_launch_banner(
     console: Console | None = None,
     *,
     session: object = None,
-    density: Literal["full", "compact", "minimal"] = "full",
 ) -> RenderableType:
-    """Build the centered launch banner at the requested vertical density."""
+    """Build the centered, borderless OpenSRE launch banner."""
     del session  # Reserved for future session-scoped launch indicators.
     console = console or Console(
         highlight=False,
@@ -365,33 +349,18 @@ def build_launch_banner(
     # Rows top-to-bottom (``None`` is a blank spacer). Each is centered on its
     # own axis in the loop below — one Align.center over a multi-line block
     # would left-align the short lines inside the widest one.
-    rows: list[RenderableType | None]
-    if density == "minimal":
-        rows = [_build_identity_line(max_width=line_width)]
-    elif density == "compact":
-        rows = [
-            _build_compact_wordmark(),
-            _build_version_line(),
-            _build_welcome_title(),
-            _build_welcome_paragraph(),
-            _build_capabilities(status, max_width=line_width),
-        ]
-    else:
-        rows = [
-            _build_wordmark(console_width=width),
-            None,
-            _build_version_line(),
-            None,
-            _build_welcome_title(),
-            _build_welcome_paragraph(),
-            None,
-            _build_capabilities(status, max_width=line_width),
-        ]
-    vertical_padding = 0 if density == "minimal" else _BANNER_VERTICAL_PADDING
-    body_rows: list[RenderableType] = [Text() for _ in range(vertical_padding)]
-    body_rows.extend(Text() if row is None else _center(row, width=line_width) for row in rows)
-    body_rows.extend(Text() for _ in range(vertical_padding))
-    return UnpaddedRows(Group(*body_rows))
+    rows: list[RenderableType | None] = [
+        _build_wordmark(console_width=width),
+        None,
+        _build_version_line(),
+        None,
+        _build_welcome_title(),
+        _build_welcome_paragraph(),
+        None,
+        _build_capabilities(status, max_width=line_width),
+    ]
+    body: RenderableType = Group(*(Text() if row is None else _center(row) for row in rows))
+    return Padding(body, (_BANNER_VERTICAL_PADDING, 0))
 
 
 def render_launch_banner(

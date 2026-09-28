@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import io
 from collections.abc import Callable
 
 from prompt_toolkit import PromptSession
@@ -11,9 +10,7 @@ from prompt_toolkit.application import Application, run_in_terminal
 from prompt_toolkit.buffer import Buffer
 from prompt_toolkit.filters import Condition
 from prompt_toolkit.formatted_text import ANSI, FormattedText
-from prompt_toolkit.formatted_text.utils import to_plain_text
 from rich.console import Console
-from rich.text import Text
 
 from surfaces.interactive_shell.runtime.core.state import (
     PROMPT_REFRESH_INTERVAL_S,
@@ -34,17 +31,10 @@ from surfaces.interactive_shell.ui.input_prompt.key_bindings import (
     install_session_key_bindings,
 )
 from surfaces.interactive_shell.ui.input_prompt.refresh import wire_prompt_refresh
-from surfaces.interactive_shell.ui.input_prompt.resize import (
-    install_shrink_resize_guard,
-    live_region_height_cap,
-)
+from surfaces.interactive_shell.ui.input_prompt.resize import install_shrink_resize_guard
 from surfaces.interactive_shell.ui.input_prompt.style import refresh_prompt_theme
-from surfaces.interactive_shell.ui.input_prompt.synchronized import (
-    supports_synchronized_output,
-)
 from surfaces.interactive_shell.ui.prompt_visibility import typing_box_hidden
 from surfaces.interactive_shell.ui.terminal_ui import render_prompt_region
-from surfaces.shared.terminal.banner import build_launch_banner
 from surfaces.shared.terminal.components.cpr_stdin import drain_stale_cpr_bytes
 
 # Brief pause so a CPR reply still in flight lands in the stdin buffer before the
@@ -93,7 +83,7 @@ class PromptBuilder:
         install_session_key_bindings(self.pt_session, cancel_kb)
 
         self.pt_app = self.pt_session.app
-        install_shrink_resize_guard(self.pt_app, rerender_banner=self._rerender_banner_if_idle)
+        install_shrink_resize_guard(self.pt_app)
         self.pt_session.default_buffer.accept_handler = self._accept_prompt_buffer
         # While the Yes/No gate owns the keyboard the composer is hidden but its
         # buffer still receives unbound keys unless it is read-only. Lock it so
@@ -123,80 +113,6 @@ class PromptBuilder:
             self._expand_collapsed_output,
         )
         install_session_key_bindings(self.pt_session, output_kb)
-
-    def _rerender_banner_if_idle(self) -> bool:
-        """Clear the viewport and reprint the launch banner at the new width; True when done.
-
-        The banner is static scrollback laid out for the width it was printed
-        at; a resize reflows it into sliced / wrapped garbage. Before a user
-        turn, the screen holds the banner, prompt, and bounded shell-only
-        notices, so all three can be cleared and redrawn. Once conversation
-        context exists the banner sits above that transcript and is left alone.
-
-        No startup spin here — SIGWINCH must stay instant.
-        """
-        # /resume restores conversation context after resetting the local turn
-        # counter, and clearing here would discard its rendered scrollback.
-        # Shell-only history (for example the internal /choose used by the
-        # startup picker) is not conversation context and must not prevent the
-        # still-idle banner from being repaired after a shrink.
-        if (
-            self.session.terminal.submitted_turn_count > 0
-            or self.session.agent.messages
-            or self.session.accumulated_context
-            or self.session.terminal.idle_transcript_visible
-            or self.pt_app is None
-        ):
-            return False
-        size = self.pt_app.output.get_size()
-        rendered = io.StringIO()
-        console = Console(
-            file=rendered,
-            highlight=False,
-            force_terminal=True,
-            color_system="truecolor",
-            legacy_windows=False,
-            width=size.columns,
-        )
-        banner = build_launch_banner(console, session=self.session, density="full")
-        banner_rows = len(console.render_lines(banner, pad=False))
-        replay_lines = [
-            line
-            for output in self.session.terminal.idle_output_replay
-            for line in Text(output).wrap(console, max(size.columns, 1), overflow="fold")
-        ]
-        replay_rows = len(replay_lines)
-        preferred_live_rows = self.pt_app.layout.container.preferred_height(
-            size.columns, size.rows
-        ).preferred
-        live_rows = live_region_height_cap(preferred_live_rows)
-        if banner_rows + replay_rows + live_rows > size.rows:
-            banner = build_launch_banner(console, session=self.session, density="compact")
-            banner_rows = len(console.render_lines(banner, pad=False))
-            if banner_rows + replay_rows + live_rows > size.rows:
-                banner = build_launch_banner(console, session=self.session, density="minimal")
-                banner_rows = len(console.render_lines(banner, pad=False))
-                if banner_rows + replay_rows + live_rows > size.rows:
-                    return False
-
-        # ``start_interactive_shell`` wraps stdout in prompt-toolkit's async
-        # proxy. Writing the replacement banner through that proxy schedules a
-        # later ``run_in_terminal`` for every SIGWINCH; during a resize drag
-        # those queued clears race one another and strand reflowed banner rows.
-        # Keep this repaint in the resize transaction by buffering Rich output
-        # and sending it through the application's Output object directly.
-        console.print(banner)
-        for line in replay_lines:
-            console.print(line)
-        terminal_output = self.pt_app.output
-        terminal_output.erase_screen()
-        terminal_output.cursor_goto(0, 0)
-        replacement = rendered.getvalue().replace("\n", "\r\n")
-        if not supports_synchronized_output(terminal_output):
-            replacement = to_plain_text(ANSI(replacement))
-        terminal_output.write_raw(replacement)
-        terminal_output.flush()
-        return True
 
     def _expand_collapsed_output(self, text: str) -> None:
         """Suspend the prompt and expand the next folded tool result (Ctrl+O).

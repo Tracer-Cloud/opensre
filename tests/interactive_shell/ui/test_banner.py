@@ -95,21 +95,6 @@ def test_launch_banner_centers_each_row_independently(monkeypatch: object) -> No
         assert abs(center - mid) <= 2.0, (body, center, mid)
 
 
-def test_launch_banner_does_not_pad_rows_to_terminal_edge(monkeypatch: object) -> None:
-    """Trailing filler becomes soft-wrapped garbage while the terminal resizes."""
-    monkeypatch.setattr(banner_module, "load_launch_status", _fixed_status)
-    width = 120
-    console_file = io.StringIO()
-    console = Console(file=console_file, force_terminal=False, highlight=False, width=width)
-
-    banner_module.render_launch_banner(console, animate=False)
-
-    lines = console_file.getvalue().splitlines()
-    assert lines
-    assert all(len(line) < width for line in lines)
-    assert all(not line.endswith(" ") for line in lines)
-
-
 def test_launch_banner_draws_ring_logo_on_wide_terminals(monkeypatch: object) -> None:
     monkeypatch.setattr(banner_module, "load_launch_status", _fixed_status)
     console = Console(record=True, force_terminal=False, highlight=False, width=120)
@@ -184,52 +169,6 @@ def test_launch_banner_falls_back_to_title_on_narrow_terminals(monkeypatch: obje
     output = console.export_text(styles=False)
     assert "OpenSRE" in output
     assert "⣿⣿" not in output  # braille ring omitted below its min width
-
-
-def test_compact_launch_banner_omits_ring_and_spacer_rows(monkeypatch: object) -> None:
-    monkeypatch.setattr(banner_module, "load_launch_status", _fixed_status)
-    console = Console(record=True, force_terminal=False, highlight=False, width=120)
-
-    banner = banner_module.build_launch_banner(console, density="compact")
-    console.print(banner)
-
-    output = console.export_text(styles=False)
-    assert PRODUCT_DISPLAY_NAME in output
-    assert "⣿⣿" not in output
-    assert len(console.render_lines(banner, pad=False)) < len(
-        console.render_lines(banner_module.build_launch_banner(console), pad=False)
-    )
-
-
-def test_minimal_launch_banner_keeps_identity_on_one_row(monkeypatch: object) -> None:
-    monkeypatch.setattr(banner_module, "load_launch_status", _fixed_status)
-    monkeypatch.setattr(banner_module, "get_opensre_version", lambda: "0.1.test")
-    console = Console(record=True, force_terminal=False, highlight=False, width=120)
-
-    banner = banner_module.build_launch_banner(console, density="minimal")
-    console.print(banner)
-
-    output = console.export_text(styles=False)
-    assert "OpenSRE · v0.1.test" in output
-    assert len(console.render_lines(banner, pad=False)) == 1
-
-
-def test_minimal_launch_banner_clips_identity_to_narrow_viewport(monkeypatch: object) -> None:
-    monkeypatch.setattr(banner_module, "load_launch_status", _fixed_status)
-    monkeypatch.setattr(
-        banner_module,
-        "get_opensre_version",
-        lambda: "0.1.2026.9.26+main.b2b7bcd",
-    )
-    console = Console(record=True, force_terminal=False, highlight=False, width=30)
-
-    banner = banner_module.build_launch_banner(console, density="minimal")
-    console.print(banner)
-
-    output = console.export_text(styles=False).strip()
-    assert output.endswith("…")
-    assert len(output) <= 29
-    assert len(console.render_lines(banner, pad=False)) == 1
 
 
 def test_launch_banner_uses_active_theme_palette(monkeypatch: object) -> None:
