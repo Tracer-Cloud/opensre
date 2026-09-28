@@ -22,12 +22,6 @@ Deploy the existing GitHub CI repair workflow to the OpenSRE managed service.
 
 This skill helps you setup OpenSRE as a remote managed cloud service to enable the agent to do work without your machine, and ensure that OpenSRE automatically keeps your CI green.
 
-
-## Objective 
-- Is to connect to a managed fargate container that spins up a ci-cd-repair loop: core/agent_harness/prompts/skills/repair-github-ci
-- This is seperate from skill core/agent_harness/prompts/skills/onboarding-github-ci/d-connecting-slack
-
-
 ## Pre-Requisites 
 - This skill is running in the interactive shell. 
 - The opensre back-end is responding correctly 
@@ -55,8 +49,9 @@ If validation fails, diagnose the deployment or monitoring configuration and ret
 The workflow succeeds only when:
 
 1. The hosted gateway is healthy.
-2. A CI failure triggered after deployment is detected remotely.
-3. The remote repair loop fixes the failure without the local shell remaining active.
+2. Scheduled loop is configured with the following skill core/agent_harness/prompts/skills/repair-github-ci
+3. A CI failure triggered after deployment is detected remotely.
+4. The remote repair loop fixes the failure without the local shell remaining active.
 
 ## Configure remote gateway Github access 
 In order to use this skill correctly, you need to configure the remote GitHub integrations correctly. To do that you need to enter you GitHub integration here:
