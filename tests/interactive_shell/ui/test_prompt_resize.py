@@ -50,6 +50,29 @@ class _NativeOutput:
         self.flush_count += 1
 
 
+class _ScheduledResize:
+    """Deterministic stand-in for an asyncio resize timer."""
+
+    def __init__(self, callback: Any) -> None:
+        self.callback = callback
+        self.cancelled = False
+
+    def cancel(self) -> None:
+        self.cancelled = True
+
+
+class _ResizeLoop:
+    """Collect delayed callbacks without sleeping in resize tests."""
+
+    def __init__(self) -> None:
+        self.scheduled: list[_ScheduledResize] = []
+
+    def call_later(self, _delay: float, callback: Any) -> _ScheduledResize:
+        scheduled = _ScheduledResize(callback)
+        self.scheduled.append(scheduled)
+        return scheduled
+
+
 def _row(text: str, *, width: int) -> dict[int, Any]:
     """A rendered frame row: *text*, padded out to *width* the way the UI pads."""
     return {column: SimpleNamespace(char=char) for column, char in enumerate(text.ljust(width))}
@@ -193,47 +216,16 @@ def test_empty_shell_resize_uses_existing_banner_repaint_hook() -> None:
     app._redraw.assert_called_once_with()
 
 
-def test_resize_uses_prompt_toolkit_path_for_a_visible_hardware_cursor() -> None:
-    """Search and system controls keep their native cursor and resize handling."""
-    output = Vt100_Output(
-        io.StringIO(),
-        get_size=lambda: Size(rows=30, columns=80),
-        term="xterm-256color",
-        enable_cpr=False,
-    )
-    app: Any = MagicMock()
-    app.output = output
-    renderer = MagicMock()
-    renderer._cursor_pos = _Cursor(x=1, y=1)
-    renderer._last_size = Size(rows=30, columns=80)
-    renderer._last_screen = SimpleNamespace(
-        height=2,
-        show_cursor=True,
-        data_buffer={0: _row("search", width=79), 1: _row("input", width=79)},
-    )
-    renderer._min_available_height = 0
-    renderer.report_absolute_cursor_row = MagicMock()
-    renderer.render = MagicMock()
-    renderer.erase = MagicMock()
-    app.renderer = renderer
-    original_on_resize = MagicMock()
-    app._on_resize = original_on_resize
-    app._running_in_terminal = False
-
-    install_shrink_resize_guard(app)
-    renderer.render(app, Layout(Window(height=2)))
-    app._on_resize()
-
-    original_on_resize.assert_called_once_with()
-    app._redraw.assert_not_called()
-
-
-def _painted_resize_app() -> tuple[Any, Any, io.StringIO]:
-    """An app whose live region is painted with its terminal cursor anchored."""
+def _painted_resize_app(
+    size_state: list[Size] | None = None,
+) -> tuple[Any, Any, io.StringIO]:
+    """Return an app with one painted live frame and mutable terminal size."""
+    if size_state is None:
+        size_state = [Size(rows=30, columns=90)]
     terminal = io.StringIO()
     output = Vt100_Output(
         terminal,
-        get_size=lambda: Size(rows=30, columns=90),
+        get_size=lambda: size_state[0],
         term="xterm-256color",
         enable_cpr=False,
     )
@@ -244,9 +236,12 @@ def _painted_resize_app() -> tuple[Any, Any, io.StringIO]:
     renderer._last_size = Size(rows=30, columns=110)
     renderer._last_screen = None
     renderer.reset = MagicMock()
+    renderer._original_render_count = 0
 
     def _render(*_args: object, **_kwargs: object) -> None:
+        renderer._original_render_count += 1
         renderer._cursor_pos = _Cursor(x=4, y=2)
+        renderer._last_size = output.get_size()
         renderer._last_screen = SimpleNamespace(
             height=4,
             show_cursor=False,
@@ -269,50 +264,65 @@ def _painted_resize_app() -> tuple[Any, Any, io.StringIO]:
     return app, renderer, terminal
 
 
-def test_resize_erases_from_parked_live_region_anchor() -> None:
-    """The resize erase starts at prompt top without moving into transcript."""
+def test_resize_erases_from_reflowed_live_region_top() -> None:
+    """The settled erase moves only through the reflowed live frame."""
     app, renderer, terminal = _painted_resize_app()
 
     app._on_resize()
 
     emitted = terminal.getvalue()
-    assert "\x1b[J" in emitted
-    assert "\x1b[A" not in emitted
-    assert "\x1b[2A" not in emitted
+    backward = emitted.find("\x1b[4D")
+    upward = emitted.find("\x1b[4A")
+    erase = emitted.find("\x1b[J")
+    assert -1 < backward < upward < erase
+    assert "\x1b[5A" not in emitted
     renderer.reset.assert_called_once_with(leave_alternate_screen=False)
     app._request_absolute_cursor_position.assert_not_called()
     app._redraw.assert_called_once()
 
 
-def test_prompt_toolkit_erase_uses_parked_live_region_anchor() -> None:
-    """Background output must not restore then erase through transcript rows."""
-    _app, renderer, terminal = _painted_resize_app()
-
-    renderer.erase(leave_alternate_screen=False)
-
-    emitted = terminal.getvalue()
-    assert "\x1b[J" in emitted
-    assert "\x1b[A" not in emitted
-    assert "\x1b[B" not in emitted
-    renderer.reset.assert_called_once_with(leave_alternate_screen=False)
-
-
-def test_resize_burst_erases_once_per_painted_frame() -> None:
-    """Dragging an edge can send several signals before a repaint runs.
-
-    Only the first has a parked frame to erase. Erasing again would remove
-    whatever output now follows the cleared live-region anchor.
-    """
+def test_resize_burst_waits_for_dimensions_to_settle(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A window drag must repaint once, after its final resize signal."""
     app, _renderer, terminal = _painted_resize_app()
+    loop = _ResizeLoop()
+    monkeypatch.setattr(asyncio, "get_running_loop", lambda: loop)
 
     app._on_resize()
-    terminal.seek(0)
-    terminal.truncate(0)
+    app._on_resize()
     app._on_resize()
 
-    # Second signal: no repaint happened in between, so nothing to erase.
+    assert [scheduled.cancelled for scheduled in loop.scheduled] == [True, True, False]
     assert "\x1b[J" not in terminal.getvalue()
-    assert app._redraw.call_count == 2
+    app._redraw.assert_not_called()
+
+    loop.scheduled[-1].callback()
+
+    assert terminal.getvalue().count("\x1b[J") == 1
+    app._redraw.assert_called_once_with()
+
+
+def test_render_waits_while_resize_dimensions_are_unstable(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Typing during a drag must not repaint against an intermediate width."""
+    size_state = [Size(rows=30, columns=90)]
+    app, renderer, terminal = _painted_resize_app(size_state)
+    loop = _ResizeLoop()
+    monkeypatch.setattr(asyncio, "get_running_loop", lambda: loop)
+    app._redraw.side_effect = lambda: renderer.render(app, Layout(Window(height=3)))
+    initial_render_count = renderer._original_render_count
+
+    size_state[0] = Size(rows=20, columns=70)
+    app._on_resize()
+    renderer.render(app, Layout(Window(height=3)))
+
+    assert renderer._original_render_count == initial_render_count
+    assert "\x1b[J" not in terminal.getvalue()
+
+    loop.scheduled[-1].callback()
+
+    assert renderer._original_render_count == initial_render_count + 1
+    assert terminal.getvalue().count("\x1b[J") == 1
 
 
 def test_resize_erase_and_repaint_are_one_synchronized_frame() -> None:
@@ -365,7 +375,7 @@ def test_resize_restores_the_terminal_when_the_repaint_raises() -> None:
     assert terminal.getvalue().endswith("\x1b[?2026l")
 
 
-def test_shrink_resize_guard_parks_and_hides_hardware_cursor_after_render() -> None:
+def test_shrink_resize_guard_leaves_hardware_cursor_at_logical_input() -> None:
     terminal = io.StringIO()
     output = Vt100_Output(
         terminal,
@@ -411,8 +421,8 @@ def test_shrink_resize_guard_parks_and_hides_hardware_cursor_after_render() -> N
     hidden.clear()
     app.renderer.render(app, Layout(Window()))
     assert calls == ["render"]
-    assert hidden == [True]
-    assert "\x1b[?25l\x1b[?2026l" in terminal.getvalue()
+    assert hidden == []
+    assert "\x1b[A" not in terminal.getvalue()
 
 
 def test_reflow_count_ignores_the_padding_prompt_toolkit_writes() -> None:

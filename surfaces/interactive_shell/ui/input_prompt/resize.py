@@ -1,24 +1,26 @@
-"""Keep the live prompt region anchored while terminal dimensions change.
+"""Keep the live prompt compact and preserve scrollback across resize.
 
-Invariants the resize path depends on:
+Root cause
+----------
+prompt-toolkit sizes a non-fullscreen Screen as::
 
-* prompt-toolkit sizes a non-fullscreen Screen as ``max(_min_available_height,
-  last_height, preferred_height)``. After CPR ``_min_available_height`` is the
-  rows below the cursor, so it is forced to zero on every paint; left alone it
-  sizes a Screen tall enough to scroll earlier output away, and ``last_height``
-  then keeps later paints hollow.
-* VTE anchors width reflow around the hardware cursor. Leaving that cursor in
-  the composer pushes transcript rows into scrollback before SIGWINCH reaches
-  the application. Between paints the hardware cursor therefore stays parked
-  at the live region's top row; the composer renders its own cursor glyph.
-* Any prompt-toolkit paint or erase first restores the physical cursor to the
-  logical buffer position. Resize is the exception: from the parked top row it
-  can erase and repaint the entire live region without touching transcript.
-* The transcript above a turn is scrollback and must survive every erase.
+    height = max(_min_available_height, last_height, preferred_height)
+
+After CPR, ``_min_available_height`` is "rows below the cursor" (the rest of the
+terminal under the launch banner). That tall Screen scrolls the banner away,
+and ``last_height`` sticks so later paints stay hollow.
+
+Window drags emit bursts of SIGWINCH events while VTE is still reflowing. The
+hardware cursor must remain at prompt-toolkit's logical input cursor during
+that reflow; parking it at the live-region top lets VTE move that row into the
+transcript. Resize paints are therefore coalesced after dimensions settle. The
+old frame's measured physical rows then locate the live-region top for one
+bounded erase and repaint, leaving transcript rows above it untouched.
 """
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import Callable
 from typing import Any
 
@@ -33,6 +35,9 @@ from surfaces.interactive_shell.ui.input_prompt.synchronized import synchronized
 _LIVE_REGION_HEIGHT_PAD = 1
 # Absolute ceiling; never paint a live Screen taller than this.
 _LIVE_REGION_HARD_MAX = 12
+# Long enough to coalesce the allocation/SIGWINCH bursts emitted by VTE and
+# common window managers during an interactive drag.
+_RESIZE_SETTLE_SECONDS = 0.2
 
 
 def live_region_height_cap(preferred: int) -> int:
@@ -106,158 +111,102 @@ def install_shrink_resize_guard(
     *,
     rerender_banner: Callable[[], bool] | None = None,
 ) -> None:
-    """Install height and repaint guards that preserve transcript scrollback."""
+    """Install compact-height and settled-resize guards for the live prompt.
+
+    ``rerender_banner`` clears the viewport and reprints the static launch
+    banner at the new size, returning True when it did so. Once transcript is
+    present, only the measured live region is erased and repainted.
+    """
     output = app.output
     renderer = app.renderer
-    original_render = renderer.render
-    original_erase = renderer.erase
-    original_report = renderer.report_absolute_cursor_row
     original_on_resize = app._on_resize
-    painted = False
-    parked = False
-    frame_active = False
-
-    def _restore_cursor() -> None:
-        """Move from the live-region anchor to prompt-toolkit's logical cursor."""
-        nonlocal parked
-        if not parked:
-            return
-        columns = max(1, output.get_size().columns)
-        rows_above = _reflowed_rows_above_cursor(renderer, columns=columns)
-        cursor = getattr(renderer, "_cursor_pos", None)
-        if rows_above is None or cursor is None:
-            _erase_from_anchor(leave_alternate_screen=False)
-            return
-        output.cursor_down(rows_above)
-        output.cursor_forward(int(cursor.x) % columns)
-        output.flush()
-        parked = False
-
-    def _park_cursor() -> None:
-        """Move the hidden hardware cursor to the live region's stable top row."""
-        nonlocal parked
-        screen = getattr(renderer, "_last_screen", None)
-        if screen is None or bool(getattr(screen, "show_cursor", True)):
-            return
-        columns = max(1, output.get_size().columns)
-        rows_above = _reflowed_rows_above_cursor(renderer, columns=columns)
-        cursor = getattr(renderer, "_cursor_pos", None)
-        if rows_above is None or cursor is None:
-            return
-        output.cursor_backward(int(cursor.x) % columns)
-        output.cursor_up(rows_above)
-        output.hide_cursor()
-        output.flush()
-        parked = True
-
-    def _erase_from_anchor(*, leave_alternate_screen: bool = True) -> None:
-        """Erase the painted live region without moving into transcript rows."""
-        nonlocal painted, parked
-        output.erase_down()
-        output.reset_attributes()
-        output.enable_autowrap()
-        output.flush()
-        renderer.reset(leave_alternate_screen=leave_alternate_screen)
-        painted = False
-        parked = False
+    original_render = renderer.render
+    original_report = renderer.report_absolute_cursor_row
+    resize_handle: asyncio.TimerHandle | None = None
 
     def report_absolute_cursor_row(row: int) -> None:
         original_report(row)
         renderer._min_available_height = 0
 
     def _render(pt_app: Any, layout: Layout, is_done: bool = False) -> None:
-        nonlocal frame_active, painted
-        framed = not frame_active and not getattr(app, "_running_in_terminal", False)
-        if framed:
-            frame_active = True
-        try:
-            with synchronized_output(output, enabled=framed):
-                # prompt-toolkit flushes at the end of ``render``. Hold that
-                # flush until the following park movement is buffered too, so
-                # the terminal never observes a painted frame with its cursor
-                # still in the composer (and cannot anchor a concurrent reflow
-                # there).
-                real_flush = output.flush
-                output.flush = lambda: None  # type: ignore[method-assign]
-                try:
-                    size = output.get_size()
-                    size_changed = _size_changed(getattr(renderer, "_last_size", None), size)
-                    if parked and size_changed:
-                        _erase_from_anchor(leave_alternate_screen=False)
-                    else:
-                        _restore_cursor()
-                    prepare_live_region_height(
-                        renderer,
-                        layout,
-                        columns=size.columns,
-                        rows=size.rows,
-                    )
-                    original_render(pt_app, layout, is_done)
-                    painted = not is_done
-                    if painted:
-                        _park_cursor()
-                finally:
-                    output.flush = real_flush  # type: ignore[method-assign]
-                    real_flush()
-        finally:
-            if framed:
-                frame_active = False
-
-    def _erase(leave_alternate_screen: bool = True) -> None:
-        nonlocal painted, parked
-        if parked:
-            _erase_from_anchor(leave_alternate_screen=leave_alternate_screen)
+        nonlocal resize_handle
+        if is_done and resize_handle is not None:
+            resize_handle.cancel()
+            resize_handle = None
+        size = output.get_size()
+        size_changed = _size_changed(getattr(renderer, "_last_size", None), size)
+        if resize_handle is not None and size_changed and not is_done:
             return
-        original_erase(leave_alternate_screen=leave_alternate_screen)
-        painted = False
-        parked = False
-
-    def _on_resize() -> None:
-        nonlocal frame_active, painted, parked
+        if size_changed:
+            renderer._min_available_height = 0
+        prepare_live_region_height(
+            renderer,
+            layout,
+            columns=size.columns,
+            rows=size.rows,
+        )
+        original_render(pt_app, layout, is_done)
         output.disable_autowrap()
+
+    def _apply_resize() -> None:
         renderer._min_available_height = 0
+        if getattr(app, "_running_in_terminal", False):
+            app._redraw()
+            return
+        output.disable_autowrap()
         if rerender_banner is not None and rerender_banner():
+            # Full chrome reset: clear + static banner, then redraw the live
+            # region only. Do not call original erase — it leaves ghosts.
             renderer._last_screen = None
             renderer.reset(leave_alternate_screen=False)
-            painted = False
-            parked = False
             app._request_absolute_cursor_position()
             app._redraw()
             output.disable_autowrap()
             return
-        # Search/system controls still use prompt-toolkit's real cursor. Keep
-        # its stock resize path while one of those transient controls is active.
-        if painted and not parked:
+        # Keep the hardware cursor at prompt-toolkit's logical input position
+        # while VTE reflows. Once dimensions settle, measure how the old frame
+        # wraps at the new width and move to its top for one bounded erase.
+        size = output.get_size()
+        rows_above = _reflowed_rows_above_cursor(
+            renderer,
+            columns=max(1, size.columns),
+        )
+        cursor = getattr(renderer, "_cursor_pos", None)
+        if rows_above is None or cursor is None:
             original_on_resize()
-            return
-        # ``run_in_terminal`` enabled wrapping so external output can use the
-        # terminal normally. Its exit path resets and redraws the prompt, so a
-        # resize while it owns the terminal must not emit prompt-mode bytes.
+        else:
+            with synchronized_output(output):
+                output.cursor_backward(int(cursor.x) % max(1, size.columns))
+                output.cursor_up(rows_above)
+                output.erase_down()
+                output.flush()
+                renderer.reset(leave_alternate_screen=False)
+                app._redraw()
+        output.disable_autowrap()
+
+    def _apply_pending_resize() -> None:
+        nonlocal resize_handle
+        resize_handle = None
+        _apply_resize()
+
+    def _on_resize() -> None:
+        nonlocal resize_handle
+        renderer._min_available_height = 0
         if getattr(app, "_running_in_terminal", False):
-            renderer._min_available_height = 0
             app._redraw()
             return
-        # ``_redraw`` paints synchronously unless the app is running something
-        # in the terminal. That case returned above, so every resize transaction
-        # here can use one synchronized frame.
-        framed = not frame_active
-        if framed:
-            frame_active = True
+        output.disable_autowrap()
         try:
-            with synchronized_output(output, enabled=framed):
-                output.disable_autowrap()
-                renderer._min_available_height = 0
-                if painted and parked:
-                    _erase_from_anchor(leave_alternate_screen=False)
-                app._redraw()
-        finally:
-            if framed:
-                frame_active = False
-            output.disable_autowrap()
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            _apply_resize()
+            return
+        if resize_handle is not None:
+            resize_handle.cancel()
+        resize_handle = loop.call_later(_RESIZE_SETTLE_SECONDS, _apply_pending_resize)
 
     renderer.report_absolute_cursor_row = report_absolute_cursor_row  # type: ignore[method-assign]
     renderer.render = _render  # type: ignore[method-assign, assignment]
-    renderer.erase = _erase  # type: ignore[method-assign]
     app._on_resize = _on_resize  # type: ignore[method-assign]
     output.disable_autowrap()
 
