@@ -63,7 +63,7 @@ class PromptLogConfig:
         # Default on, matching HistoryPolicy.redact — prompt/response content can
         # carry the same token shapes as typed history and additionally leaves the
         # machine via the PostHog sink, so it should not be less guarded by default
-        # than command history is. See docs/interactive-shell-privacy.mdx.
+        # than command history is. See docs/platform/interactive-shell-privacy.mdx.
         redact = _coerce_bool(
             redact_env, default=_coerce_bool(file_conf.get("redact"), default=True)
         )

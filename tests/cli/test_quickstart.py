@@ -1,4 +1,4 @@
-"""Docs characterization for https://www.opensre.com/docs/quickstart.
+"""Docs characterization for https://www.opensre.com/docs/getting-started/quickstart.
 
 Pins every command and path the quickstart tells users to type, so a doc drift
 or CLI rename fails here before a new user hits it.
@@ -24,7 +24,7 @@ from surfaces.cli.lifecycle.update import _INSTALL_SCRIPT, _INSTALL_SCRIPT_PS1
 from surfaces.interactive_shell.command_registry import SLASH_COMMANDS
 from tests.cli.test_smoke import CliSandbox, _cli_env, _run_cli
 
-QUICKSTART_MDX = REPO_ROOT / "docs" / "quickstart.mdx"
+QUICKSTART_MDX = REPO_ROOT / "docs" / "getting-started" / "quickstart.mdx"
 
 
 @pytest.fixture()

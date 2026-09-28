@@ -1,0 +1,106 @@
+---
+title: "Install OpenSRE"
+description: "Install the OpenSRE CLI on your machine and start chatting with the agent."
+---
+
+## Before you begin
+
+Make sure you have:
+
+- A terminal open in a code project
+- A Git repository (recommended for the full workflow demonstration)
+
+## Step 1: Install and start opensre
+
+<Tabs>
+  <Tab title="macOS and Linux">
+    ```bash
+    curl -fsSL https://install.opensre.com | bash -s -- -dc
+    ```
+
+    Prebuilt Linux binaries need glibc 2.35 or newer (Ubuntu 22.04 or comparable); see [Linux](/install/linux-local).
+  </Tab>
+  <Tab title="Windows">
+    Open PowerShell and run:
+
+    ```powershell
+    & ([scriptblock]::Create((irm https://install.opensre.com/install.ps1))) -dc
+    ```
+
+    See [Windows](/install/windows-local).
+  </Tab>
+</Tabs>
+
+Then start OpenSRE:
+
+```bash
+opensre
+```
+
+![OpenSRE CLI welcome screen with the sign-in prompt](/images/opensre-welcome.png)
+
+For PATH troubleshooting and platform requirements, see [Install locally](/install/install-local).
+
+## Step 2: Sign in
+
+Choose **Sign in or create account** in the welcome screen. Your browser opens the OpenSRE sign-up page; sign in with email or another enabled provider. Signing in activates the hosted model, so you need no LLM key. Back in the terminal, OpenSRE confirms the session with the web app and opens the shell.
+
+## Step 3: Pick a demo, or skip it
+
+The first shell prompt asks which demo to run:
+
+```text
+Which demo would you like me to run?
+  (A) Explore a repo and analyze its CI/CD performance (recommended)
+  (B) Set up an agent that improves CI/CD reliability over time
+  (C) Run CI/CD repairs remotely
+  (D) Connect OpenSRE to Slack and hand off DevOps chores for your team
+  (E) Skip the demo and open the shell
+```
+
+<Frame>
+  ![The startup demo picker with its five options](/images/onboarding-demo-picker.png)
+</Frame>
+
+Choose **A** to see what OpenSRE does with a real repository on your machine: it
+reads the last 30 days of GitHub Actions history and reports how reliable your
+CI is and how much developer time it costs. It needs GitHub access: connect it
+first with `opensre integrations setup github` (authorize in the browser, or
+paste a token). Without it the demo stops and names that command. See
+[CI/CD analytics demo](/cicd/cicd-analytics-demo).
+
+Choose **E** to go straight to the prompt. Type `/demo` to open the menu again at
+any time, or start with `opensre --skip-onboarding` to skip it.
+
+## Step 4: Ask your first question
+
+Describe what's going on in plain English:
+
+```text
+why is checkout latency spiking?
+```
+
+Connect the tools OpenSRE should read when you need them, from the shell (`/integrations setup github`) or the terminal:
+
+```bash
+opensre integrations setup <service>
+```
+
+Full walkthrough: [Quickstart](/getting-started/quickstart).
+
+## Environment-specific guides
+
+| Platform | Guide |
+| --- | --- |
+| macOS | [macOS](/install/macos) |
+| Linux | [Linux (local)](/install/linux-local) |
+| Windows | [Windows (local)](/install/windows-local) |
+| Docker | [Docker](/install/docker) |
+
+## Stuck?
+
+- **Command not found** — open a new terminal, or add the bin directory the installer printed to your PATH
+- **The sign-in screen comes back after you signed in** — run `opensre account status`; it names what is wrong with the session
+- **Anything else** — see [Quickstart troubleshooting](/getting-started/quickstart#troubleshooting)
+
+Need deploy options beyond a laptop binary? See [Deployment](/guides/deployment).

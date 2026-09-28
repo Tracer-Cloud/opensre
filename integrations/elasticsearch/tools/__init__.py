@@ -90,7 +90,7 @@ class ElasticsearchLogsTool(BaseTool):
 
     def is_available(self, sources: dict) -> bool:
         # Shares the "opensearch" source: same client, same credentials (see
-        # docs/opensearch.mdx — configuring OpenSearch/Elasticsearch once
+        # docs/integrations/databases/opensearch.mdx — configuring OpenSearch/Elasticsearch once
         # enables both the analytics tool and this log-search tool).
         return bool(sources.get("opensearch", {}).get("connection_verified"))
 

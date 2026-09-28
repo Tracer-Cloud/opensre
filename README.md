@@ -29,9 +29,9 @@
 
 <p align="center">
   <strong>
-    <a href="https://www.opensre.com/docs/quickstart">Quickstart</a> ·
+    <a href="https://www.opensre.com/docs/getting-started/quickstart">Quickstart</a> ·
     <a href="https://www.opensre.com/docs">Docs</a> ·
-    <a href="https://opensre.com/docs/faq">FAQ</a> ·
+    <a href="https://opensre.com/docs/guides/faq">FAQ</a> ·
     <a href="https://trust.tracer.cloud/">Security</a>
   </strong>
 </p>
@@ -73,11 +73,11 @@ opensre
 
 ![OpenSRE CLI welcome screen with the sign-in prompt](docs/images/opensre-welcome.png)
 
-Windows details: [Windows](docs/environments/windows-local.mdx).
+Windows details: [Windows](docs/install/windows-local.mdx).
 
 The installer fetches the latest build from `main` without requiring sudo. If `opensre` is not found, follow the PATH instructions printed by the installer or open a new terminal.
 
-For supported platforms and troubleshooting, see [Install locally](https://www.opensre.com/docs/install-local).
+For supported platforms and troubleshooting, see [Install locally](https://www.opensre.com/docs/install/install-local).
 
 ---
 
@@ -134,7 +134,7 @@ opensre
 
 Webapp contributors can run `opensre setup --dev` to authenticate through `http://localhost:3000`.
 
-**Interactive shell** — with no subcommand, `opensre` validates your account and starts a REPL (TTY required). You can exit and stay signed out, but the shell only opens for an active account. Describe incidents in plain language, watch the agent work, and use slash commands for session control (`/help`, `/status`, `/cost`, `/sessions`, `/resume`, `/compact`, `/new`, `/exit`), integrations (`/integrations list`, `/integrations verify`), and local agent fleet monitoring (`/agents`). Ctrl+C cancels an in-flight turn without losing session state. See **[interactive shell commands](https://www.opensre.com/docs/interactive-shell-commands)** for the full reference.
+**Interactive shell** — with no subcommand, `opensre` validates your account and starts a REPL (TTY required). You can exit and stay signed out, but the shell only opens for an active account. Describe incidents in plain language, watch the agent work, and use slash commands for session control (`/help`, `/status`, `/cost`, `/sessions`, `/resume`, `/compact`, `/new`, `/exit`), integrations (`/integrations list`, `/integrations verify`), and local agent fleet monitoring (`/agents`). Ctrl+C cancels an in-flight turn without losing session state. See **[interactive shell commands](https://www.opensre.com/docs/getting-started/interactive-shell-commands)** for the full reference.
 
 **Headless CLI** — run one agent turn non-interactively from a terminal, script, or CI job:
 
@@ -142,7 +142,7 @@ Webapp contributors can run `opensre setup --dev` to authenticate through `http:
 opensre ask "why is checkout-api slow?"
 ```
 
-See **[Headless CLI](https://www.opensre.com/docs/headless-cli)** for stdin prompts, JSON output, and tool approvals.
+See **[Headless CLI](https://www.opensre.com/docs/guides/headless-cli)** for stdin prompts, JSON output, and tool approvals.
 
 **From Python** — drive the agent in-process from your own code (source checkout required):
 
@@ -155,10 +155,10 @@ if result.answered:
     print(result.primary_response_text)
 ```
 
-See **[Python API](https://www.opensre.com/docs/python-api)** for sessions, conversations, and custom output sinks.
+See **[Python API](https://www.opensre.com/docs/guides/python-api)** for sessions, conversations, and custom output sinks.
 
 **For your team's daily loop:** embed OpenSRE in the Python services and automations your teammates already use.
-Start with the in-repo [Python API guide](docs/python-api.mdx), then use it every day to make incident response repeatable.
+Start with the in-repo [Python API guide](docs/guides/python-api.mdx), then use it every day to make incident response repeatable.
 
 Other useful commands:
 

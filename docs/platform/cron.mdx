@@ -1,0 +1,376 @@
+---
+title: "Scheduled Deliveries (Cron)"
+description: "Cron-driven recurring reports to Telegram, Slack, Discord, Rocket.Chat, and the interactive shell"
+---
+
+# Scheduled Deliveries
+
+OpenSRE can deliver recurring reports to messaging providers on a cron
+schedule. Use it for recurring prompt loops, repository-scoped GitHub CI health
+reports, GitHub PR standups, PostHog metric reports, and work-item reminders —
+delivered automatically without manual CLI runs.
+
+For human task reminders and proactive work check-ins, use `opensre work add
+--remind-at ...` or `opensre work schedule-checkin ...`. Those commands create
+the right scheduler entries, support repeated `--target provider:chat_id` fan-out
+delivery, and keep task metadata in the work-item store.
+
+## Demo picker on launch
+
+Every interactive launch (`opensre`) asks which demo to run. The recommended option analyzes CI/CD performance on a real repository. Option B schedules a CI/CD reliability agent; see [CI/CD analytics demo](/cicd/cicd-analytics-demo). Escape skips onboarding; "Or type your own answer..." lets you submit a different request. Run `opensre --skip-onboarding` to open the shell without the startup picker. Type `/demo` to start it later.
+
+## Quick Start
+
+```bash
+# Add a free-form recurring ops digest to Telegram at 09:00 IST on weekdays
+opensre cron add --kind manual_loop --cron "0 9 * * mon-fri" \
+  --name "Ops digest" --prompt "Check open incidents and summarize production risk" \
+  --tz Asia/Kolkata --provider telegram --chat-id <chat_id>
+
+# Same kind to Slack via incoming webhook (omit --chat-id; webhook is channel-bound)
+opensre cron add --kind manual_loop --cron "0 9 * * mon-fri" \
+  --prompt "Check open incidents and summarize production risk" \
+  --tz Europe/London --provider slack
+
+# Slack bot token: omit --chat-id when SLACK_DEFAULT_CHAT_ID is set
+opensre cron add --kind manual_loop --cron "0 9 * * mon-fri" \
+  --prompt "Check open incidents and summarize production risk" \
+  --tz Europe/London --provider slack
+
+# GitHub PR sweep standup digest → Slack
+opensre cron add --kind github_pr_sweep --cron "0 9 * * mon-fri" \
+  --tz Europe/London --provider slack --chat-id C0123ABCD
+
+# Read-only CI health for one repository and branch → Slack
+opensre cron add --kind recurring_skill --skill reporting-github-ci-failures \
+  --cron "0 8 * * mon-fri" \
+  --tz Europe/London --provider slack --owner Tracer-Cloud --repo opensre \
+  --branch main
+
+# Morning-report skill with its previewed city → local inbox
+opensre cron add --kind recurring_skill --skill delivering-morning-briefings \
+  --cron "0 8 * * mon-fri" --tz Asia/Kolkata \
+  --provider interactive_shell --city "New Delhi"
+
+# Local interactive-shell inbox delivery, useful for debugging
+opensre cron add --kind manual_loop --cron "0 9 * * mon-fri" \
+  --name "Local ops digest" --prompt "Check open incidents and summarize production risk" \
+  --provider interactive_shell
+
+# List configured tasks
+opensre cron list
+
+# Inspect durable backlog pressure
+opensre cron status
+
+# Run a task immediately (for debugging)
+opensre cron run <task_id>
+
+# Start the scheduler daemon (or rely on `opensre gateway start`)
+opensre cron start
+```
+
+## CLI Commands
+
+### `opensre cron add`
+
+Create a new scheduled delivery task.
+
+| Option | Required | Description |
+|--------|----------|-------------|
+| `--name` | No | Human-readable loop name shown by `opensre cron list` and `/loops` |
+| `--kind` | Yes | Task kind: `manual_loop`, `recurring_skill`, `github_pr_sweep`, `posthog_metric_report`, `work_item_reminder`, `work_item_checkin` |
+| `--cron` | Yes | Cron expression (5 fields: minute hour day month day_of_week; prepend a seconds field for sub-minute polling, see [Cron Syntax](#cron-syntax)) |
+| `--tz` | No | IANA timezone (default: `UTC`). Examples: `Europe/London`, `US/Eastern`, `Asia/Kolkata` |
+| `--provider` | Yes | Messaging provider: `telegram`, `slack`, `discord`, `rocketchat`, `interactive_shell` |
+| `--chat-id` | Cond. | Required for telegram/discord/rocketchat. Optional for slack when an incoming webhook or `SLACK_DEFAULT_CHAT_ID` is configured, and not needed for `interactive_shell`. |
+| `--window` | No | Lookback window in hours (default: `24`) |
+| `--prompt` | Cond. | Instruction to execute on every run; required for `manual_loop` and rejected for other kinds |
+| `--skill` | Cond. | Required with `--kind recurring_skill`; names the revision-pinned skill to execute |
+| `--owner` | Cond. | GitHub repository owner; required for the `reporting-github-ci-failures` recurring skill |
+| `--repo` | Cond. | GitHub repository name; required for the `reporting-github-ci-failures` recurring skill |
+| `--branch` | No | Branch filter for `reporting-github-ci-failures`; cannot be combined with `--pr` |
+| `--pr` | No | Pull-request filter for `reporting-github-ci-failures`; cannot be combined with `--branch` |
+| `--city` | No | City for `delivering-morning-briefings`; omitted to use its default-location behavior |
+
+### `opensre cron list`
+
+Display all configured scheduled tasks in a table, including the loop name, enabled state, next cron fire time, and last run.
+
+### `opensre cron remove <task_id>`
+
+Remove a scheduled task by its ID. Its run history remains available through
+`opensre cron logs <task_id>`.
+
+### `opensre cron status`
+
+Show the number of durable runs waiting for execution, including expired claims
+awaiting recovery. Age starts at admission for pending runs and at lease expiry
+for interrupted runs; live claims are excluded. Waiting work remains visible
+across scheduler restarts and while a task is paused or disabled. Deleted tasks
+are excluded. Use `--json` for structured
+output suitable for monitoring and runbooks. JSON output includes `status: ok`;
+if the task store or run database cannot be read (including storage access or
+lock failures), the command exits unsuccessfully and reports `status: unknown`
+with null metrics instead of returning a misleading empty backlog. The JSON
+`error` field identifies `task_store_unreadable` or `run_store_unreadable`.
+
+### `opensre cron run <task_id>`
+
+Execute a task immediately (ad-hoc one-shot). Useful for debugging delivery
+without waiting for the next cron tick.
+
+By default this delivers to every configured destination again, even ones that
+already received the message — that is what you want to trigger a task on
+demand. To recover a partial failure instead, use `--failed-only`: it retries
+only the destinations the most recent run failed at, using the saved report
+without executing the task again. A missing saved report requires a deliberate
+full run.
+
+`--failed-only` never widens. If it cannot read per-target history for the task
+— no prior run, or one recorded before that history was tracked — it stops and
+tells you, rather than quietly delivering everywhere. Re-run without the flag
+when a full send is what you want.
+
+When the last run was a partial failure, a plain `cron run` warns which
+destinations it is about to re-deliver to before it sends.
+
+### `opensre cron logs <task_id>`
+
+Show execution history and the newest retained report. Work status and delivery
+status are separate: `blocked` work can have a successfully delivered report.
+`unknown` work status means the older run did not retain completion evidence.
+
+Use `--run <run_id>` to read one historical attempt and `--json` for structured
+results. Reports remain available after removing the schedule.
+
+For a repository repair loop, use `--kind manual_loop --mode agent` with
+`--owner <owner> --repo <repo>` and optionally `--pr <number>` or
+`--branch <branch>`. The repository target is saved with the task. CI repairs
+and security repairs that open a PR create their own matching checkouts when
+no explicit workspace is supplied.
+
+`opensre cron run <task_id>` prints the work result, delivery result, and report.
+A blocked or incomplete agent task exits unsuccessfully even if its report was
+delivered. Agent tasks need a structured completion result from their execution
+tools; report text alone is recorded as unverified work.
+
+### `opensre cron start`
+
+Start the blocking scheduler daemon. Loads all enabled tasks and fires them
+according to their cron schedules. Blocks until `SIGINT` or `SIGTERM`.
+
+To keep it running without a terminal, `/loops service install` in the shell
+registers a per-user service (launchd on macOS, systemd on Linux) that runs
+`opensre cron start --service` at login; `/loops service remove` deletes it.
+
+## Cron Syntax
+
+Standard 5-field cron expressions:
+
+```
+┌───────────── minute (0-59)
+│ ┌───────────── hour (0-23)
+│ │ ┌───────────── day of month (1-31)
+│ │ │ ┌───────────── month (1-12)
+│ │ │ │ ┌───────────── day of week (0-6, Mon–Sun)
+│ │ │ │ │
+* * * * *
+```
+
+**Weekday numbering:** OpenSRE uses APScheduler 3.x `CronTrigger`, where
+**`0` = Monday** and **`6` = Sunday** (not the Unix cron convention where
+`0` is Sunday). Prefer `mon-fri` for weekdays to avoid confusion.
+
+Older weekday loops may still contain `1-5`, which runs Tuesday–Saturday.
+Check `/loops next <loop_id>`. To correct one, record its settings, stop it with
+`/loops stop <loop_id>`, then recreate it through the original scheduling command
+with the same settings and `--cron "0 9 * * mon-fri"` for weekdays at 09:00.
+For `/loops add`, you can also use `--time 09:00 --weekdays`.
+For an old Monday-only schedule, replace the final `1` with `mon` when recreating it.
+Delete the old loop with `/loops delete <loop_id>` after verifying the replacement.
+Existing schedules are not changed automatically. For a CI reliability loop,
+delete the old loop before scheduling it again; that flow reuses existing loops.
+
+Examples:
+
+- `0 9 * * mon-fri` — weekdays at 09:00
+- `0 8 * * mon` — Mondays at 08:00
+- `*/30 * * * *` — every 30 minutes
+- `0 0 1 * *` — first day of each month at midnight
+
+A five-field expression fires at most once per minute. For polling loops that
+must react faster — the CI repair loop polls every 30 seconds — prepend a
+seconds field (`0-59`) to get a six-field expression:
+
+- `*/30 * * * * *` — every 30 seconds
+- `0 */5 * * * *` — every 5 minutes, on the minute (same as `*/5 * * * *`)
+
+A tick that fires while the previous tick of the same task is still running is
+skipped, so a slow tick never overlaps with the next one.
+
+Cron expressions are validated at `cron add` time using APScheduler's
+`CronTrigger`. Invalid expressions are rejected immediately.
+
+## Timezone Behavior
+
+- All fire times are internally converted to UTC for dedup consistency
+- The `--tz` option accepts any IANA timezone (for example `Europe/London`,
+  `US/Eastern`)
+- DST transitions are handled correctly — the UTC-normalized dedup key
+  ensures no duplicate or missed deliveries across clock changes
+
+## Dedup Semantics
+
+The scheduler uses a SQLite-backed claim store with a unique task, fire-time,
+and attempt key. Each attempt has a 30-minute lease and a random owner token:
+
+1. When a cron tick fires, `EVENT_JOB_SUBMITTED` captures
+   `scheduled_run_times[0]` and the job uses that UTC-normalized `fire_time`
+   for the claim key
+2. The executor creates an attempt with a 30-minute lease and owner token
+3. If the current attempt is still leased, another instance skips the tick
+4. If the lease expired, the old attempt is marked `abandoned` and one new
+   worker creates the next attempt
+5. Completion is accepted only from the attempt's owner token, so an old
+   worker cannot overwrite a reclaimed attempt
+
+The scheduler also runs a recovery sweep every minute, including after a
+restart. It finds expired running attempts and resubmits their original
+fire-time keys through the same claim path. Recovery preserves the destination
+restriction of a `--failed-only` retry, so it does not resend to destinations
+outside that retry's scope.
+
+Attempts created before delivery scopes were persisted cannot safely recover
+automatically. They appear as failed runs with a delivery-scope error; use
+`opensre cron run <task-id> --failed-only` when readable per-target history exists,
+or explicitly rerun the task for all destinations after checking its logs.
+
+This prevents concurrent duplicate claims and recovers ticks after worker
+crashes. A crash after an external provider accepts a message but before the
+completion is recorded can still result in a duplicate on reclaim; preventing
+that case requires provider-specific idempotency support.
+
+## Capacity and overload
+
+Each admitted cron tick is first written as a durable `pending` row in
+`scheduler.db`. It is not silently dropped because workers are busy. The
+default scheduler concurrency remains **2**; a scheduled agent turn also needs
+a permit from the shared process turn gate, so the effective agent-turn
+concurrency can be lower.
+
+The current scheduler bounds active workers, but its executor can still retain
+more submitted callbacks in memory while those workers are busy. A large burst
+therefore remains recoverable from SQLite, but is not yet a bounded in-memory
+queue. Use the baseline below to size an installation rather than raising the
+default to absorb a burst. A later scheduler change will move overflow to the
+durable pending store and reserve recovery control work from user execution.
+
+| Boundary | Owns | Does not own |
+| --- | --- | --- |
+| Task store | Task definitions and enabled state | Execution history |
+| Run store | Durable admissions, claims, leases, recovery candidates, and completion fencing | Worker scheduling |
+| Scheduler runner | Cron submission, recovery sweep, and task lookup | LLM or provider delivery |
+| Scheduler executor | The currently submitted worker callbacks | Durable recovery state |
+| Shared turn gate | Process-wide concurrent agent turns | Scheduler admission or persistence |
+
+The capacity baseline records these terms consistently:
+
+- **Durable pending count** and **oldest pending age**: `pending` rows and the
+  elapsed time since their durable admission. Read them with `opensre cron
+  status`; the benchmark reads the same stores directly.
+- **In-memory callbacks**: callbacks submitted to the current worker executor
+  that have not completed. This is the current overload signal, not a durable
+  queue limit.
+- **Throughput and drain time**: successful fake deliveries per second and the
+  elapsed time to finish admitted work.
+- **Recovery query latency and plan**: time and SQLite plan used to find
+  pending or expired work. Completed history must not expand the candidate
+  scan.
+- **SQLite lock failures** and **RSS**: lock errors plus current and peak
+  process resident memory sampled by the benchmark host.
+
+Run the deterministic baseline before changing
+`OPENSRE_SCHEDULER_MAX_CONCURRENT_RUNS`:
+
+```bash
+uv run python -m tests.benchmarks.scheduler.capacity_benchmark
+```
+
+It makes no LLM, provider, or network calls. The checked-in JSON report at
+`docs/benchmarks/scheduler-capacity-baseline.json` records the exact workload,
+host metadata, SQLite version, and observed values. Restart recovery uses the
+production shape: one recovery callback iterates its durable candidates
+serially.
+
+## Credential Resolution
+
+Credentials are resolved lazily at delivery time in this priority order:
+
+1. **Task params** — credentials stored in the task definition (not recommended)
+2. **Integration store** — `~/.opensre/integrations.json` (configured via
+   `opensre integrations`)
+3. **Environment variables** — `TELEGRAM_BOT_TOKEN`, `SLACK_BOT_TOKEN`,
+   `DISCORD_BOT_TOKEN`, `ROCKETCHAT_*`
+
+You do not need to pass credentials at `cron add` time — they are picked up
+from your existing integration configuration.
+
+## Task Kinds
+
+| Kind | Behavior |
+|------|----------|
+| `manual_loop` | Runs a stored prompt as one headless agent turn and delivers the answer. This is what `/loops` creates. |
+| `recurring_skill` | Runs a named, revision-pinned recurring skill. `delivering-morning-briefings` preserves its optional city; `reporting-github-ci-failures` requires repository scope and can be narrowed to a branch or PR. |
+| `github_pr_sweep` | Headless GitHub PR standup (mergeable / stale / conflicted). Requires GitHub configured; posts via the chosen provider. |
+| `posthog_metric_report` | Headless PostHog metric report over the configured window. Requires PostHog configured. |
+| `work_item_reminder` | Reminder for a single work item at its `--remind-at` time. Created by `opensre work add --remind-at …`. |
+| `work_item_checkin` | Recurring check-in on open work items. Created by `opensre work schedule-checkin …`. |
+
+Sentry morning digests use a separate CLI (`opensre sentry digest schedule …`),
+not `opensre cron add`. See [Sentry](/integrations/incidents/sentry#morning-digest-scheduled).
+
+## Persistence
+
+- **Task definitions** are stored in `~/.opensre/scheduler_tasks.json` (JSON + filelock)
+- **Execution history** is stored in `~/.opensre/scheduler.db` (SQLite with WAL mode)
+- **Interactive-shell loop messages** are stored in `~/.opensre/scheduler_loop_messages.jsonl`
+- **Operational breadcrumbs** are appended to `~/.opensre/operations_log.jsonl`
+  with loop lifecycle and run status metadata, not prompt or message bodies
+- Both survive process restarts — `opensre cron list` and `opensre cron logs` read from disk
+
+Set `OPENSRE_OPERATIONS_LOG_PATH` to write the operations log somewhere else, or
+`OPENSRE_OPERATIONS_LOG_DISABLED=1` to turn it off. Set
+`OPENSRE_OPERATIONS_LOG_MAX_BYTES` to change the rotation threshold.
+
+## REPL
+
+Prefer `/loops` for user-facing recurring prompt loops:
+
+```text
+/loops add --name "Morning ops" --time 08:30 --prompt "Check open incidents and summarize production risk" --run-now
+/loops next <loop_id>
+/loops stop <loop_id>
+/loops delete <loop_id>
+/loops messages
+```
+
+You can also ask naturally:
+
+```text
+Set up a manual loop called Morning ops at 08:30 UTC to check open incidents and summarize production risk, and run it once now.
+```
+
+By default, `/loops add` sends to every configured default handle it can reach: Telegram when `TELEGRAM_BOT_TOKEN` and `TELEGRAM_DEFAULT_CHAT_ID` are configured, Slack when `SLACK_WEBHOOK_URL` is configured **or** when `SLACK_BOT_TOKEN` and `SLACK_DEFAULT_CHAT_ID` are configured, and the local interactive-shell inbox.
+
+When a scheduled loop or skill finishes, the scheduler delivers the report body to those channels without you prompting — you do not need to be in the REPL or Slack chat at fire time. Loops created before Slack was in your default channel list stay inbox-only until you recreate them with Slack in `--channels` (or rely on the updated defaults for new loops).
+
+The lower-level `/cron` slash command forwards to the CLI:
+
+```
+/cron list
+/cron add --kind manual_loop --cron "0 9 * * *" --prompt "Check open incidents" --provider telegram --chat-id <id>
+/cron run <task_id>
+```
+
+Run `/loops` to see named loops with active/draft state, execution time, channels, last run, and next fire time. Use `/loops stop <loop_id>` to pause a loop without losing it, `/loops start <loop_id>` to re-enable it, and `/loops delete <loop_id>` to remove it. Onboarding seeds a few draft starter loops, such as a weekday morning report, so you have concrete examples before creating an active delivery.

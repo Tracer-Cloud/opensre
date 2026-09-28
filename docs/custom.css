@@ -1892,3 +1892,50 @@ html:not(.dark) #navigation-items .sidebar-group a:not([aria-current="page"]):no
     margin-top: 0.25rem !important;
     margin-bottom: 0.5rem !important;
 }
+
+/* Start page — action buttons under the title.
+   The class is repeated to outrank the !important article-link colour rules above. */
+.index-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin: 0.5rem 0 2.5rem;
+}
+
+a.index-action.index-action.index-action.index-action.index-action.index-action,
+a.index-action.index-action.index-action.index-action.index-action.index-action:hover {
+    display: inline-block;
+    padding: 0.6rem 1.1rem;
+    border: 1px solid #171717 !important;
+    border-radius: 0.375rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 0.8rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    text-decoration: none !important;
+    color: #171717 !important;
+    background: transparent !important;
+}
+
+a.index-action.index-action.index-action.index-action.index-action.index-action:first-child,
+a.index-action.index-action.index-action.index-action.index-action.index-action:first-child:hover {
+    background: #171717 !important;
+    color: #ffffff !important;
+}
+
+html.dark a.index-action.index-action.index-action.index-action.index-action.index-action,
+html.dark a.index-action.index-action.index-action.index-action.index-action.index-action:hover {
+    border-color: #f5f5f5 !important;
+    color: #f5f5f5 !important;
+    background: transparent !important;
+}
+
+html.dark a.index-action.index-action.index-action.index-action.index-action.index-action:first-child,
+html.dark a.index-action.index-action.index-action.index-action.index-action.index-action:first-child:hover {
+    background: #f5f5f5 !important;
+    color: #111111 !important;
+}
+
+a.index-action.index-action.index-action.index-action.index-action.index-action:hover {
+    opacity: 0.85;
+}

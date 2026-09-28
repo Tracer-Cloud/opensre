@@ -1,0 +1,889 @@
+---
+title: Environment Variables
+description: Every OpenSRE setting you can put in the environment or a .env file.
+---
+
+All configuration options for OpenSRE can be set via environment variables. This page provides a complete reference.
+
+## Secret storage
+
+Environment variables are checked first. Credentials you enter through
+`opensre onboard` for LLM setup, or through `opensre integrations setup` for
+tools, are written to `.env` and to an owner-only file at
+`~/.opensre/credentials.json` (mode `0600`). OpenSRE
+does not write secrets to the OS keychain.
+
+A value in the process environment or a local `.env` file wins over the
+credentials file. Keep `.env` out of source control.
+
+Want credentials only from the environment, never on disk? Set
+`OPENSRE_DISABLE_KEYRING=1` and export everything yourself.
+
+## LLM providers
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `LLM_PROVIDER` | `anthropic` | Which LLM backend to use — see [LLM providers](/platform/llm-providers) |
+| `LLM_MAX_TOKENS` | `4096` | Max tokens for LLM responses |
+| `OPENSRE_LLM_TRANSPORT` | `sdk` | `sdk` (native SDKs) or `litellm` |
+| `OPENSRE_LLM_NATIVE_STRUCTURED_OUTPUT` |  | Opt-in provider-native structured outputs (`1`/`true`) |
+
+<AccordionGroup>
+  <Accordion title="Anthropic">
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `ANTHROPIC_API_KEY` |  | API key for Anthropic |
+| `ANTHROPIC_REASONING_MODEL` |  | Model for reasoning tasks |
+| `ANTHROPIC_TOOLCALL_MODEL` |  | Model for tool calling |
+
+
+  </Accordion>
+
+  <Accordion title="OpenAI">
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `OPENAI_API_KEY` |  | API key for OpenAI |
+| `OPENAI_REASONING_MODEL` |  | Model for reasoning tasks |
+| `OPENAI_TOOLCALL_MODEL` |  | Model for tool calling |
+
+
+  </Accordion>
+
+  <Accordion title="OpenRouter">
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `OPENROUTER_API_KEY` |  | API key for OpenRouter |
+| `OPENROUTER_MODEL` |  | Shared model for all tasks |
+| `OPENROUTER_REASONING_MODEL` |  | Override model for reasoning |
+| `OPENROUTER_TOOLCALL_MODEL` |  | Override model for tool calling |
+
+
+  </Accordion>
+
+  <Accordion title="TrustedRouter">
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `TRUSTEDROUTER_API_KEY` |  | API key for TrustedRouter |
+| `TRUSTEDROUTER_MODEL` |  | Shared model for all tasks |
+| `TRUSTEDROUTER_REASONING_MODEL` |  | Override model for reasoning |
+| `TRUSTEDROUTER_TOOLCALL_MODEL` |  | Override model for tool calling |
+
+
+  </Accordion>
+
+  <Accordion title="DeepSeek">
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `DEEPSEEK_API_KEY` |  | API key for DeepSeek |
+| `DEEPSEEK_MODEL` |  | Shared model for all tasks |
+| `DEEPSEEK_REASONING_MODEL` |  | Override model for reasoning |
+| `DEEPSEEK_TOOLCALL_MODEL` |  | Override model for tool calling |
+
+
+  </Accordion>
+
+  <Accordion title="Google Gemini">
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `GEMINI_API_KEY` |  | API key for Google Gemini |
+| `GEMINI_MODEL` |  | Shared model for all tasks |
+| `GEMINI_REASONING_MODEL` |  | Override model for reasoning |
+| `GEMINI_TOOLCALL_MODEL` |  | Override model for tool calling |
+
+
+  </Accordion>
+
+  <Accordion title="NVIDIA">
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `NVIDIA_API_KEY` |  | API key for NVIDIA NIM |
+| `NVIDIA_MODEL` |  | Shared model for all tasks |
+| `NVIDIA_REASONING_MODEL` |  | Override model for reasoning |
+| `NVIDIA_TOOLCALL_MODEL` |  | Override model for tool calling |
+
+
+  </Accordion>
+
+  <Accordion title="MiniMax">
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `MINIMAX_API_KEY` |  | API key for MiniMax |
+| `MINIMAX_MODEL` |  | Shared model for all tasks |
+| `MINIMAX_REASONING_MODEL` |  | Override model for reasoning |
+| `MINIMAX_TOOLCALL_MODEL` |  | Override model for tool calling |
+
+
+  </Accordion>
+
+  <Accordion title="Groq">
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `GROQ_API_KEY` |  | API key for Groq |
+| `GROQ_MODEL` |  | Shared model for all tasks |
+| `GROQ_REASONING_MODEL` |  | Override model for reasoning |
+| `GROQ_TOOLCALL_MODEL` |  | Override model for tool calling |
+
+
+  </Accordion>
+
+  <Accordion title="Azure OpenAI">
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `AZURE_OPENAI_BASE_URL` |  | Azure OpenAI resource URL (`https://<resource>.openai.azure.com`) |
+| `AZURE_OPENAI_API_KEY` |  | API key for Azure OpenAI |
+| `AZURE_OPENAI_API_VERSION` | `2024-10-21` | Azure OpenAI API version |
+| `AZURE_OPENAI_MODEL` |  | Shared deployment name for all slots |
+| `AZURE_OPENAI_REASONING_MODEL` | `gpt-5.4-mini` | Deployment for reasoning tasks |
+| `AZURE_OPENAI_CLASSIFICATION_MODEL` | `gpt-5.4-mini` | Deployment for classification |
+| `AZURE_OPENAI_TOOLCALL_MODEL` | `gpt-5.4-mini` | Deployment for tool calling |
+
+
+  </Accordion>
+
+  <Accordion title="Amazon Bedrock">
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `BEDROCK_REASONING_MODEL` |  | Model for reasoning tasks |
+| `BEDROCK_TOOLCALL_MODEL` |  | Model for tool calling |
+| `BEDROCK_CLASSIFICATION_MODEL` | `us.anthropic.claude-sonnet-4-6` | Model for classification |
+
+
+  </Accordion>
+
+  <Accordion title="Google Vertex AI">
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `VERTEX_AI_PROJECT` |  | GCP project ID (required for Vertex) |
+| `VERTEX_AI_LOCATION` | `us-central1` | Vertex AI region |
+| `VERTEX_AI_REASONING_MODEL` | `gemini-2.5-pro` | Model for reasoning |
+| `VERTEX_AI_TOOLCALL_MODEL` | `gemini-2.5-flash-lite` | Model for tool calling |
+| `VERTEX_AI_CLASSIFICATION_MODEL` | `gemini-2.5-flash` | Model for classification |
+| `VERTEX_AI_MODEL` |  | Shared model override for all slots |
+
+
+  </Accordion>
+
+  <Accordion title="Ollama (Local)">
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `OLLAMA_MODEL` | `llama3.2` | Model name in Ollama |
+| `OLLAMA_HOST` | `http://localhost:11434` | Ollama server URL |
+
+
+  </Accordion>
+
+</AccordionGroup>
+
+## LLM Reasoning Effort
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `OPENSRE_REASONING_EFFORT` |  | Effort for extended-thinking models: `low`, `medium`, `high`, or `xhigh` |
+
+## CLI providers
+
+<AccordionGroup>
+  <Accordion title="Codex">
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `CODEX_BIN` |  | Path to Codex CLI binary |
+| `CODEX_MODEL` |  | Model override for Codex |
+
+
+  </Accordion>
+
+  <Accordion title="Claude Code">
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `CLAUDE_CODE_BIN` |  | Path to Claude Code CLI binary |
+| `CLAUDE_CODE_MODEL` |  | Model override for Claude Code |
+
+
+  </Accordion>
+
+  <Accordion title="Gemini CLI">
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `GEMINI_CLI_BIN` |  | Path to Gemini CLI binary |
+| `GEMINI_CLI_MODEL` |  | Model override for Gemini CLI |
+
+
+  </Accordion>
+
+  <Accordion title="Antigravity">
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `ANTIGRAVITY_CLI_BIN` |  | Path to Antigravity CLI binary |
+| `ANTIGRAVITY_CLI_MODEL` |  | Model override for Antigravity |
+| `ANTIGRAVITY_CLI_TIMEOUT_SECONDS` |  | Timeout for Antigravity CLI invocations |
+
+
+  </Accordion>
+
+  <Accordion title="OpenCode">
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `OPENCODE_BIN` |  | Path to OpenCode CLI binary |
+| `OPENCODE_MODEL` |  | Model override for OpenCode |
+
+
+  </Accordion>
+
+  <Accordion title="Cursor">
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `CURSOR_BIN` |  | Path to Cursor CLI binary |
+| `CURSOR_MODEL` |  | Model override for Cursor |
+
+
+  </Accordion>
+
+  <Accordion title="Kimi">
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `KIMI_BIN` |  | Path to Kimi CLI binary |
+| `KIMI_MODEL` |  | Model override for Kimi |
+| `KIMI_API_KEY` |  | API key for Kimi |
+
+
+  </Accordion>
+
+  <Accordion title="GitHub Copilot">
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `COPILOT_BIN` |  | Path to GitHub Copilot CLI binary |
+| `COPILOT_MODEL` |  | Model override for Copilot |
+| `COPILOT_HOME` |  | Copilot config directory override |
+| `COPILOT_GITHUB_TOKEN` |  | GitHub token for Copilot auth |
+
+
+  </Accordion>
+
+  <Accordion title="Grok / xAI">
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `GROK_CLI_BIN` |  | Path to Grok Build CLI binary |
+| `GROK_CLI_MODEL` |  | Model override for Grok Build CLI |
+| `XAI_API_KEY` |  | API-key auth for Grok Build CLI |
+| `XAI_BASE_URL` |  | Override xAI API base URL |
+| `GROK_CLI_TIMEOUT_SECONDS` | `300` | Timeout for Grok CLI invocations |
+
+
+  </Accordion>
+
+  <Accordion title="Pi">
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `PI_BIN` |  | Path to Pi CLI binary |
+| `PI_MODEL` |  | Model override for Pi CLI (`provider/model`) |
+| `PI_AGENT_DIR` |  | Pi agent config directory override |
+| `PI_CONFIG_DIR` |  | Pi config directory override |
+
+
+  </Accordion>
+
+  <Accordion title="Custom endpoints">
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `CUSTOM_OPENAI_BASE_URL` |  | Base URL for an OpenAI-compatible gateway |
+| `CUSTOM_OPENAI_API_KEY` |  | API key for `custom-openai` |
+| `CUSTOM_OPENAI_MODEL` |  | Shared model for all `custom-openai` roles |
+| `CUSTOM_OPENAI_TOOLCALL_MODEL` |  | Optional toolcall-model override |
+| `CUSTOM_ANTHROPIC_BASE_URL` |  | Base URL for an Anthropic-compatible gateway |
+| `CUSTOM_ANTHROPIC_API_KEY` |  | API key for `custom-anthropic` |
+| `CUSTOM_ANTHROPIC_MODEL` |  | Shared model for all `custom-anthropic` roles |
+
+
+  </Accordion>
+
+</AccordionGroup>
+
+## Output & Debugging
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `TRACER_VERBOSE` | `0` | Verbose OpenSRE CLI/UI output (`1`, `true`, `yes`) |
+| `TRACER_OUTPUT_FORMAT` |  | OpenSRE result output format |
+| `TRACER_API_URL` |  | Base URL for the tracer observability integration / report delivery |
+| `NO_COLOR` |  | Disable colored output (standard convention) |
+| `COLUMNS` | `80` | Terminal column width for output formatting |
+| `ENV` | `development` | Environment (`development`, `production`) |
+
+## Credentials and authentication
+
+For secrets (`*_TOKEN`, `*_KEY`, `*_PASSWORD`, `*_SECRET`, and similar), OpenSRE looks in this order:
+
+1. Your process environment
+2. The owner-only file `~/.opensre/credentials.json`
+
+`opensre onboard` saves LLM credentials there so they still work after you clear `.env`.
+
+**Not stored as secrets:** webhook-style URLs such as `SLACK_WEBHOOK_URL` and `ROCKETCHAT_WEBHOOK_URL`. Those stay in env / store only — treat them as secrets and don't log them.
+
+Want credentials only from the environment, never on disk? Set `OPENSRE_DISABLE_KEYRING=1` and export everything yourself.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `OPENSRE_DISABLE_KEYRING` | `0` | Disable local credential storage; credentials must come from the environment |
+| `OPENSRE_ACCOUNT_TOKEN` |  | Personal OpenSRE account token; with `OPENSRE_DISABLE_KEYRING=1`, also set `OPENSRE_APP_URL` |
+| `OPENSRE_APP_URL` | `https://app.opensre.com` | OpenSRE app origin; set it explicitly with an environment-only account token |
+| `OPENSRE_ACCOUNT_LLM_MODEL` | `gpt-5.6-sol` | Model-family hint for a non-interactive hosted gateway using the account LLM route; override only when the web app's hosted model changes family |
+| `OPENSRE_LLM_AUTH_METADATA_PATH` | `~/.opensre/llm-auth.json` | Non-secret LLM auth metadata path used by prompt-safe status checks |
+
+## Telemetry & Monitoring
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `OPENSRE_NO_TELEMETRY` | `0` | Disable all telemetry, including Sentry and product analytics (covers `$ai_generation` prompt/response events) |
+| `OPENSRE_ANALYTICS_DISABLED` | `0` | Disable product analytics only |
+| `OPENSRE_SENTRY_DISABLED` | `0` | Disable Sentry error reporting |
+| `OPENSRE_SENTRY_DSN` |  | Override Sentry DSN |
+| `OPENSRE_SENTRY_LOGGING_DISABLED` | `0` | Disable Sentry log integration |
+| `OPENSRE_DEPLOYMENT_METHOD` | `local` | Sentry deployment tag: railway, ec2, vercel, or local |
+| `OPENSRE_PROMPT_LOG_DISABLED` | `0` | Disable prompt logging entirely |
+| `OPENSRE_PROMPT_LOG_LOCAL_DISABLED` | `0` | Disable local prompt log file |
+| `OPENSRE_PROMPT_LOG_REDACT` | `1` | Redact known token shapes from prompts/responses before local or PostHog logging |
+| `OPENSRE_PROMPT_LOG_PATH` | `~/.opensre/prompt_log.jsonl` | Path to local prompt log file |
+| `OPENSRE_OPERATIONS_LOG_DISABLED` | `0` | Disable the local operations log |
+| `OPENSRE_OPERATIONS_LOG_PATH` | `~/.opensre/operations_log.jsonl` | Path to the local operations log |
+| `OPENSRE_OPERATIONS_LOG_MAX_BYTES` | `5242880` | Rotate the local operations log after this many bytes |
+| `DO_NOT_TRACK` | `0` | Honor global do-not-track preference |
+| `SENTRY_TRACES_SAMPLE_RATE` | `1.0` | Trace sampling rate for Sentry |
+| `SENTRY_ERROR_SAMPLE_RATE` | `1.0` | Error sampling rate for Sentry |
+
+### LLM tracing with Langfuse (optional)
+
+Every chat turn can be exported as a [Langfuse](https://langfuse.com) trace:
+one trace per turn, with the user message and the reply on the root, a
+`generation` per model call (model, prompt, response, token usage) and a
+`tool` per tool execution nested under the agent loop.
+
+Traces are grouped and attributed the way you work:
+
+- **Session**: the Langfuse `session_id` is the OpenSRE session id (the
+  `~/.opensre/sessions/<id>.jsonl` file). Everything run from a shell session
+  joins it — including the scheduled loops that shell is hosting, which are
+  tagged `scheduled` with the task id and name in metadata. Loops run by the
+  background scheduler service or the gateway group per task instead.
+- **User**: the chat-platform user for gateway turns; the signed-in OpenSRE
+  account for the shell and CLI; a stable per-install id when signed out.
+  Shell and CLI traces also carry that `installation_id` in metadata so traces
+  from before a login can be matched to the user afterwards.
+
+Tracing is off unless **both** keys are set and the extra is installed:
+
+```bash
+uv sync --extra langfuse          # or: pip install 'opensre[langfuse]'
+export LANGFUSE_PUBLIC_KEY=pk-lf-...
+export LANGFUSE_SECRET_KEY=sk-lf-...
+```
+
+Without the keys — or without the package — the agent runs exactly as before;
+nothing is buffered or exported. Credential-shaped values (API keys, bearer
+tokens, `password`/`token` fields) are masked before a span leaves the process.
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `LANGFUSE_PUBLIC_KEY` |  | Langfuse project public key (required to enable tracing) |
+| `LANGFUSE_SECRET_KEY` |  | Langfuse project secret key (required to enable tracing) |
+| `LANGFUSE_BASE_URL` | `https://cloud.langfuse.com` | Langfuse host; use `https://us.cloud.langfuse.com` for the US region or your self-hosted URL (`LANGFUSE_HOST` is accepted as a legacy alias) |
+| `LANGFUSE_SAMPLE_RATE` | `1.0` | Fraction of traces to export (read by the Langfuse SDK) |
+| `LANGFUSE_DEBUG` | `False` | Verbose Langfuse SDK logging (read by the Langfuse SDK) |
+| `OPENSRE_LANGFUSE_DISABLED` | `0` | Keep tracing off even when keys are present, e.g. on a machine that shares a `.env` with `langfuse-cli` |
+
+## Paths & Directories
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `OPENSRE_HOME` | `~/.opensre` | Host root for scheduler files, gateway state, local configuration, and sessions when no organization context root is set |
+| `OPENSRE_PROJECT_ENV_PATH` | `PROJECT_ROOT/.env` | Path to project-level `.env` file |
+| `OPENSRE_WIZARD_STORE_PATH` | `~/.opensre/opensre.json` | Path to the local wizard/provider selection store |
+| `OPENSRE_CONTEXT_ROOT` |  | Mounted organization-scoped root for context and sessions; requires `ORGANIZATION_ID` |
+| `OPENSRE_INTEGRATIONS_STORE_PATH` |  | Override integrations store path |
+
+
+## Memory
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `OPENSRE_MEMORY_DISABLED` | `0` | Disable long-term memory |
+| `OPENSRE_MEMORY_DIR` |  | Override memory storage directory |
+| `OPENSRE_MEMORY_AUTOEXTRACT_DISABLED` | `0` | Disable automatic memory extraction |
+| `OPENSRE_MEMORY_GATEWAY_ENABLED` | `0` | Opt-in memory on shared gateway hosts |
+
+## Remote sync
+
+Mirror conversation history and memory to a user-owned object store. Details: [Remote sync](/install/remote-sync).
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `OPENSRE_REMOTE_SYNC` |  | Enable remote sync (`1`/`true`) |
+| `OPENSRE_REMOTE_SYNC_PROVIDER` | `aws` | Store backend (`aws`, `gcs`, `vercel`, `azure`, or `s3compat`) |
+| `OPENSRE_REMOTE_SYNC_BUCKET` |  | Bucket / Blob store name (required when sync is on) |
+| `OPENSRE_REMOTE_SYNC_PREFIX` | `opensre` | Key prefix inside the store |
+| `OPENSRE_REMOTE_SYNC_REGION` |  | Region override |
+| `OPENSRE_REMOTE_SYNC_PROFILE` |  | Named credentials profile |
+| `OPENSRE_REMOTE_SYNC_ENDPOINT_URL` |  | Custom S3 endpoint when provider is `s3compat` |
+| `OPENSRE_REMOTE_SYNC_EXCLUDE` |  | Comma-separated globs to exclude from sync |
+| `OPENSRE_REMOTE_SYNC_EXCLUDE_OFF` |  | Ignore configured exclusions for one run |
+| `BLOB_READ_WRITE_TOKEN` |  | Vercel Blob token (when provider is `vercel`) |
+
+## Masking
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `OPENSRE_MASK_ENABLED` | `false` | Enable reversible identifier masking before external LLM calls |
+| `OPENSRE_MASK_KINDS` |  | Comma-separated mask kinds to enable |
+| `OPENSRE_MASK_EXTRA_REGEX` |  | JSON map of extra mask kinds to regex patterns |
+
+## Feature Flags
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `OSRE_HELM_INTEGRATION` |  | Enable Helm integration (1/true/yes) |
+| `HELM_PATH` | `helm` | Path to the Helm binary |
+| `HELM_KUBE_CONTEXT` |  | kubectl context for Helm |
+| `HELM_KUBECONFIG` |  | kubeconfig path for Helm |
+| `HELM_NAMESPACE` |  | Default Helm namespace |
+| `OPENSRE_RELEASES_API_URL` | GitHub releases API | Override releases API endpoint |
+
+## Gateway and scheduler runtime
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `MODE` | `web` | Container entrypoint: `web`, `gateway`, or `scheduler` |
+| `PORT` | `8000` | HTTP port for the web surface |
+| `OPENSRE_HOME` | `~/.opensre` | Host root for scheduler files, gateway state, local configuration, and sessions when `OPENSRE_CONTEXT_ROOT` is unset |
+| `DATABASE_URL` |  | Postgres connection for gateway records shared across replicas; required for Slack Events API unless the single-replica local-dedup escape hatch is enabled |
+| `OPENSRE_SIZE_PROFILE` | `SMALL` | Deployment size profile; default turn caps are `SMALL=1`, `MEDIUM=2`, `LARGE=4` |
+| `OPENSRE_MAX_CONCURRENT_TURNS` | size-profile limit | Override the process-wide concurrent-turn cap with a positive integer |
+| `OPENSRE_SCHEDULER_MAX_CONCURRENT_RUNS` | `2` | Maximum scheduled callbacks executing at once; agent turns also need a process-wide turn permit |
+| `OPENSRE_GATEWAY_HOST_SCHEDULER` | `1` | Run the scheduler inside the gateway; set `0` when a dedicated `MODE=scheduler` service owns it |
+| `OPENSRE_SESSION_FILE_LOCK` | `0` | Serialize session-file writes with an OS lock; a shared mount is still required across processes |
+
+## Integration credentials
+
+<AccordionGroup>
+  <Accordion title="Observability & Monitoring">
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `GRAFANA_INSTANCE_URL` |  | Grafana instance URL |
+| `GRAFANA_READ_TOKEN` |  | Grafana API token |
+| `GRAFANA_LOKI_DATASOURCE_UID` |  | UID of Loki datasource in Grafana |
+| `GRAFANA_TEMPO_DATASOURCE_UID` |  | UID of Tempo datasource in Grafana |
+| `GRAFANA_MIMIR_DATASOURCE_UID` |  | UID of Mimir datasource in Grafana |
+| `TEMPO_URL` |  | Grafana Tempo / Tempo API base URL |
+| `TEMPO_API_KEY` |  | Tempo API key (or use username/password) |
+| `TEMPO_USERNAME` |  | Tempo basic-auth username |
+| `TEMPO_PASSWORD` |  | Tempo basic-auth password |
+| `TEMPO_ORG_ID` |  | Tempo org ID (multi-tenant) |
+| `GRAFANA_VERIFY_SSL` | `true` | Verify Grafana SSL certificate |
+| `GRAFANA_CA_BUNDLE` |  | Path to a CA bundle for Grafana TLS verification (self-signed/internal CA) |
+| `DD_API_KEY` |  | Datadog API key |
+| `DD_APP_KEY` |  | Datadog application key |
+| `DD_SITE` | `datadoghq.com` | Datadog site (us/eu) |
+| `GROUNDCOVER_API_KEY` |  | groundcover read-only service-account token (alias: `GROUNDCOVER_MCP_TOKEN`) |
+| `GROUNDCOVER_MCP_URL` | `https://mcp.groundcover.com/api/mcp` | groundcover MCP endpoint |
+| `GROUNDCOVER_TENANT_UUID` |  | Tenant UUID (multi-workspace accounts) |
+| `GROUNDCOVER_BACKEND_ID` |  | Backend ID (multi-backend tenants) |
+| `GROUNDCOVER_TIMEZONE` | `UTC` | Timezone for returned timestamps (`X-Timezone`) |
+| `HONEYCOMB_API_KEY` |  | Honeycomb API key |
+| `HONEYCOMB_DATASET` | `__all__` | Honeycomb dataset slug |
+| `HONEYCOMB_API_URL` | `https://api.honeycomb.io` | Honeycomb API endpoint |
+| `CORALOGIX_API_KEY` |  | Coralogix API key |
+| `CORALOGIX_API_URL` | `https://api.coralogix.com` | Coralogix API endpoint |
+| `CORALOGIX_APPLICATION_NAME` |  | Application name in Coralogix |
+| `CORALOGIX_SUBSYSTEM_NAME` |  | Subsystem name in Coralogix |
+| `SIGNOZ_URL` |  | SigNoz instance URL |
+| `SIGNOZ_API_KEY` |  | SigNoz API key |
+| `ALERTMANAGER_URL` |  | Alertmanager URL |
+| `ALERTMANAGER_BEARER_TOKEN` |  | Bearer token for Alertmanager |
+| `ALERTMANAGER_USERNAME` |  | Username for Alertmanager basic auth |
+| `ALERTMANAGER_PASSWORD` |  | Password for Alertmanager basic auth |
+| `SPLUNK_URL` |  | Splunk instance URL |
+| `SPLUNK_TOKEN` |  | Splunk API token |
+| `SPLUNK_INDEX` | `main` | Splunk index |
+| `SPLUNK_VERIFY_SSL` | `true` | Verify Splunk SSL certificate |
+| `SPLUNK_CA_BUNDLE` |  | Path to a CA bundle for Splunk TLS verification |
+| `SENTRY_URL` | `https://sentry.io` | Sentry instance URL |
+| `SENTRY_ORG_SLUG` |  | Sentry organization slug |
+| `SENTRY_PROJECT_SLUG` |  | Sentry project slug |
+| `SENTRY_AUTH_TOKEN` |  | Sentry auth token |
+| `POSTHOG_PROJECT_ID` |  | PostHog project ID |
+| `POSTHOG_PERSONAL_API_KEY` |  | PostHog personal API key |
+| `POSTHOG_BASE_URL` | `https://us.i.posthog.com` | PostHog API instance base URL |
+| `POSTHOG_TIMEOUT_SECONDS` | `15.0` | Timeout in seconds for PostHog API requests |
+| `NEW_RELIC_API_KEY` |  | New Relic User key (`NRAK-...`) |
+| `NEW_RELIC_ACCOUNT_ID` |  | New Relic account ID |
+| `NEW_RELIC_API_URL` | `https://api.newrelic.com` | New Relic API URL (EU/JP endpoints supported) |
+
+
+  </Accordion>
+
+  <Accordion title="Cloud Platforms">
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `AWS_REGION` | `us-east-1` | AWS region |
+| `AWS_ROLE_ARN` |  | AWS role ARN for cross-account access |
+| `AWS_EXTERNAL_ID` |  | External ID for AWS cross-account role |
+| `AWS_ACCESS_KEY_ID` |  | AWS access key |
+| `AWS_SECRET_ACCESS_KEY` |  | AWS secret access key |
+| `AWS_SESSION_TOKEN` |  | AWS session token |
+| `CLOUD_PROVIDER` |  | Cloud provider hint for ambient region discovery |
+| `CLOUD_REGION` |  | Cloud region (falls back to `AWS_REGION`) |
+| `KUBECONFIG` |  | Path to kubeconfig file |
+| `KUBECONFIG_CONTENT` |  | Inline kubeconfig contents |
+| `KUBECONFIG_CONTEXT` |  | kubectl context |
+| `KUBECONFIG_NAMESPACE` | `default` | Default Kubernetes namespace |
+| `RDS_DB_INSTANCE_IDENTIFIER` |  | AWS RDS DB instance identifier |
+| `RDS_REGION` |  | AWS region for RDS (falls back to `AWS_REGION`) |
+| `RAILWAY_TOKEN` |  | Railway API token |
+| `RAILWAY_PROJECT` |  | Railway project |
+| `RAILWAY_SERVICE` |  | Railway service |
+| `RAILWAY_ENVIRONMENT` | `production` | Railway environment |
+| `RAILWAY_PATH` | `railway` | Path to Railway CLI |
+| `ARGOCD_BASE_URL` |  | Argo CD API base URL |
+| `ARGOCD_AUTH_TOKEN` |  | Argo CD auth token |
+| `ARGOCD_TOKEN` |  | Alias for `ARGOCD_AUTH_TOKEN` |
+| `ARGOCD_USERNAME` |  | Argo CD username (basic auth) |
+| `ARGOCD_PASSWORD` |  | Argo CD password (basic auth) |
+| `ARGOCD_PROJECT` |  | Argo CD project |
+| `ARGOCD_APP_NAMESPACE` |  | Argo CD app namespace |
+| `ARGOCD_VERIFY_SSL` | `true` | Verify Argo CD TLS |
+| `YC_FOLDER_ID` |  | Yandex Cloud folder ID |
+| `YC_CLOUD_ID` |  | Yandex Cloud cloud ID |
+| `YC_SA_KEY_FILE` |  | Path to a Yandex Cloud service-account key JSON file |
+| `YC_SA_KEY` |  | Yandex Cloud service-account key, inline |
+| `YC_TOKEN` |  | Yandex Cloud OAuth token |
+| `YC_IAM_TOKEN` |  | Yandex Cloud IAM token |
+| `YC_USE_METADATA` |  | Use the Yandex Cloud VM metadata service (`true`) |
+
+
+  </Accordion>
+
+  <Accordion title="Messaging">
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `SLACK_WEBHOOK_URL` |  | Slack incoming webhook URL |
+| `SLACK_BOT_TOKEN` |  | Slack bot token |
+| `SLACK_DEFAULT_CHAT_ID` |  | Default Slack channel for scheduled delivery (bot-token path) |
+| `SLACK_APP_TOKEN` |  | Slack app-level token (Socket Mode) |
+| `SLACK_GATEWAY_INBOUND_TRANSPORT` | `socket_mode` | How Slack delivers events: `socket_mode` or `events_api_http` |
+| `SLACK_SIGNING_SECRET` |  | Request-signature secret. Required for `events_api_http` |
+| `SLACK_GATEWAY_HTTP_PORT` | `3000` | Port the `events_api_http` listener binds |
+| `SLACK_GATEWAY_ALLOW_LOCAL_DEDUP` |  | Accept process-local event dedup when `DATABASE_URL` is unset. Single replica only |
+| `SLACK_GATEWAY_MAX_CONCURRENT` | size-profile limit | Parallel Slack turns before the process-wide cap is applied |
+| `SLACK_ALLOWED_USERS` |  | Comma-separated Slack user IDs allowed to talk to the bot |
+| `SLACK_ALLOW_OPEN_WORKSPACE` |  | Allow any workspace user (`1` for dogfood) |
+| `SLACK_ACCESS_TOKEN` |  | Slack user token |
+| `SLACK_GITHUB_ISSUES_WEBHOOK_URL` |  | Slack webhook for GitHub issues |
+| `DISCORD_BOT_TOKEN` |  | Discord bot token |
+| `DISCORD_APPLICATION_ID` |  | Discord application ID |
+| `DISCORD_PUBLIC_KEY` |  | Discord public key |
+| `DISCORD_DEFAULT_CHANNEL_ID` |  | Default Discord channel |
+| `DISCORD_ALLOWED_USERS` |  | Comma-separated Discord user IDs allowed to talk to the bot |
+| `DISCORD_ALLOW_OPEN_GUILD` |  | Allow any guild member (`1` for dogfood) |
+| `DISCORD_GATEWAY_MAX_CONCURRENT` | size-profile limit | Parallel Discord turns before the process-wide cap is applied |
+| `TELEGRAM_BOT_TOKEN` |  | Telegram bot token |
+| `TELEGRAM_DEFAULT_CHAT_ID` |  | Default Telegram chat ID |
+| `TELEGRAM_ALLOWED_USERS` |  | Comma-separated Telegram user IDs allowed to talk to the bot |
+| `TELEGRAM_GATEWAY_MAX_CONCURRENT` | size-profile limit | Parallel Telegram turns before the process-wide cap is applied |
+| `BUZZ_PRIVATE_KEY` |  | Nostr private key used by the Buzz integration and gateway |
+| `BUZZ_RELAY_URL` | `http://localhost:3000` | Buzz relay URL |
+| `BUZZ_DEFAULT_CHANNEL` |  | Default Buzz channel UUID for delivery |
+| `BUZZ_AUTH_TAG` |  | Optional NIP-OA owner-attestation JSON |
+| `BUZZ_PATH` | `buzz` | Path to the Buzz CLI |
+| `BUZZ_ALLOWED_PUBKEYS` |  | Comma-separated 64-character hex pubkeys allowed to talk to the gateway |
+| `BUZZ_GATEWAY_MAX_CONCURRENT` | `4` | Parallel Buzz turns before the process-wide cap is applied |
+| `ROCKETCHAT_SERVER_URL` |  | Rocket.Chat server base URL |
+| `ROCKETCHAT_AUTH_TOKEN` |  | Rocket.Chat personal access token |
+| `ROCKETCHAT_USER_ID` |  | Rocket.Chat user ID for the token |
+| `ROCKETCHAT_DEFAULT_CHANNEL` |  | Default Rocket.Chat channel |
+| `ROCKETCHAT_WEBHOOK_URL` |  | Rocket.Chat incoming webhook URL |
+| `TWILIO_ACCOUNT_SID` |  | Twilio account SID |
+| `TWILIO_AUTH_TOKEN` |  | Twilio auth token |
+| `TWILIO_WHATSAPP_FROM` |  | WhatsApp sender number (Twilio) |
+| `WHATSAPP_DEFAULT_TO` |  | Default WhatsApp recipient |
+| `TWILIO_SMS_FROM` |  | SMS sender number (Twilio) |
+| `TWILIO_SMS_MESSAGING_SERVICE_SID` |  | SMS messaging service SID |
+| `TWILIO_SMS_DEFAULT_TO` |  | Default SMS recipient |
+| `SMTP_HOST` |  | SMTP server hostname |
+| `SMTP_PORT` | `587` | SMTP port |
+| `SMTP_SECURITY` | `starttls` | SMTP security (`starttls`, `ssl`, or `none`) |
+| `SMTP_USERNAME` |  | SMTP username |
+| `SMTP_PASSWORD` |  | SMTP password |
+| `SMTP_FROM_ADDRESS` |  | From address for outbound mail |
+| `SMTP_DEFAULT_TO` |  | Default recipient for notifications |
+
+
+  </Accordion>
+
+  <Accordion title="Code & Collaboration">
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `GITHUB_MCP_MODE` | `streamable-http` | GitHub MCP transport mode |
+| `GITHUB_MCP_URL` |  | GitHub MCP server URL |
+| `GITHUB_MCP_COMMAND` |  | GitHub MCP command to execute |
+| `GITHUB_MCP_ARGS` |  | GitHub MCP command arguments |
+| `GITHUB_MCP_AUTH_TOKEN` |  | GitHub MCP auth token |
+| `GITHUB_MCP_TOOLSETS` | `repos,issues,pull_requests,actions,search` | Enabled GitHub MCP toolsets |
+| `OPENSRE_GITHUB_MCP_REPO_PROBE_LIMIT` | `50` | Max repos to probe (5-500) |
+| `GITLAB_BASE_URL` |  | GitLab instance URL |
+| `GITLAB_ACCESS_TOKEN` |  | GitLab personal access token |
+| `GITLAB_PROJECT_ID` |  | GitLab project ID |
+| `JIRA_BASE_URL` |  | Jira instance URL |
+| `JIRA_EMAIL` |  | Jira user email |
+| `JIRA_API_TOKEN` |  | Jira API token |
+| `JIRA_PROJECT_KEY` |  | Default Jira project key |
+| `BITBUCKET_WORKSPACE` |  | Bitbucket workspace name |
+| `BITBUCKET_USERNAME` |  | Bitbucket username |
+| `BITBUCKET_APP_PASSWORD` |  | Bitbucket app password |
+| `BITBUCKET_MAX_RESULTS` | `25` | Max results per API call |
+| `INCIDENT_IO_BASE_URL` |  | incident.io API URL |
+| `INCIDENT_IO_API_KEY` |  | incident.io API key |
+| `PAGERDUTY_API_KEY` |  | PagerDuty API key |
+| `PAGERDUTY_BASE_URL` |  | PagerDuty API base URL |
+| `SERVICENOW_INSTANCE_URL` |  | ServiceNow instance URL |
+| `SERVICENOW_USERNAME` |  | ServiceNow username |
+| `SERVICENOW_PASSWORD` |  | ServiceNow password |
+| `OPSGENIE_API_KEY` |  | Opsgenie API key |
+| `OPSGENIE_REGION` | `us` | Opsgenie region (us/eu) |
+| `VERCEL_API_TOKEN` |  | Vercel API token |
+| `VERCEL_TEAM_ID` |  | Vercel team ID |
+| `VERCEL_RUNTIME_LOGS_READ_TIMEOUT` | `600` | Seconds to wait per Vercel runtime-log read (minimum `30`) |
+| `GOOGLE_CREDENTIALS_FILE` |  | Path to Google service-account JSON for Docs export |
+| `GOOGLE_DRIVE_FOLDER_ID` |  | Google Drive folder for Docs export |
+
+
+  </Accordion>
+
+  <Accordion title="Databases">
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `MONGODB_CONNECTION_STRING` |  | MongoDB connection string |
+| `MONGODB_DATABASE` |  | MongoDB database name |
+| `MONGODB_AUTH_SOURCE` | `admin` | MongoDB auth source |
+| `MONGODB_TLS` | `true` | Enable MongoDB TLS |
+| `MONGODB_ATLAS_PUBLIC_KEY` |  | MongoDB Atlas public API key |
+| `MONGODB_ATLAS_PRIVATE_KEY` |  | MongoDB Atlas private API key |
+| `MONGODB_ATLAS_PROJECT_ID` |  | MongoDB Atlas project ID |
+| `MONGODB_ATLAS_BASE_URL` | `https://cloud.mongodb.com/api/atlas/v2` | MongoDB Atlas API base URL |
+| `REDIS_HOST` |  | Redis host |
+| `REDIS_PORT` | `6379` | Redis port |
+| `REDIS_USERNAME` |  | Redis ACL username (Redis 6+) |
+| `REDIS_PASSWORD` |  | Redis password |
+| `REDIS_DATABASE` | `0` | Redis database number |
+| `REDIS_SSL` | `false` | Connect using TLS |
+| `POSTGRESQL_HOST` |  | PostgreSQL host |
+| `POSTGRESQL_PORT` | `5432` | PostgreSQL port |
+| `POSTGRESQL_DATABASE` |  | PostgreSQL database name |
+| `POSTGRESQL_USERNAME` | `postgres` | PostgreSQL username |
+| `POSTGRESQL_PASSWORD` |  | PostgreSQL password |
+| `POSTGRESQL_SSL_MODE` | `prefer` | PostgreSQL SSL mode |
+| `MYSQL_HOST` |  | MySQL host |
+| `MYSQL_PORT` | `3306` | MySQL port |
+| `MYSQL_DATABASE` |  | MySQL database name |
+| `MYSQL_USERNAME` | `root` | MySQL username |
+| `MYSQL_PASSWORD` |  | MySQL password |
+| `MYSQL_SSL_MODE` | `preferred` | MySQL SSL mode |
+| `MARIADB_HOST` |  | MariaDB host |
+| `MARIADB_PORT` | `3306` | MariaDB port |
+| `MARIADB_DATABASE` |  | MariaDB database name |
+| `MARIADB_USERNAME` |  | MariaDB username |
+| `MARIADB_PASSWORD` |  | MariaDB password |
+| `MARIADB_SSL` | `true` | Enable MariaDB SSL |
+
+
+  </Accordion>
+
+  <Accordion title="Message Queues & Other Services">
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `RABBITMQ_HOST` |  | RabbitMQ host |
+| `RABBITMQ_MANAGEMENT_PORT` | `15672` | RabbitMQ management port |
+| `RABBITMQ_USERNAME` |  | RabbitMQ username |
+| `RABBITMQ_PASSWORD` |  | RabbitMQ password |
+| `RABBITMQ_VHOST` | `/` | RabbitMQ vhost |
+| `RABBITMQ_SSL` | `false` | Enable RabbitMQ SSL |
+| `RABBITMQ_VERIFY_SSL` | `true` | Verify RabbitMQ SSL certificate |
+| `BETTERSTACK_QUERY_ENDPOINT` |  | Better Stack query endpoint |
+| `BETTERSTACK_USERNAME` |  | Better Stack username |
+| `BETTERSTACK_PASSWORD` |  | Better Stack password |
+| `BETTERSTACK_SOURCES` |  | Better Stack sources |
+| `KAFKA_BOOTSTRAP_SERVERS` |  | Kafka broker addresses |
+| `KAFKA_SECURITY_PROTOCOL` | `PLAINTEXT` | Kafka security protocol |
+| `KAFKA_SASL_MECHANISM` |  | Kafka SASL mechanism |
+| `KAFKA_SASL_USERNAME` |  | Kafka SASL username |
+| `KAFKA_SASL_PASSWORD` |  | Kafka SASL password |
+| `DAGSTER_ENDPOINT` |  | Dagster GraphQL endpoint |
+| `DAGSTER_API_TOKEN` |  | Dagster Cloud User Token (leave empty for unauthenticated local OSS) |
+| `TEMPORAL_API_URL` |  | Temporal Cloud / server API URL |
+| `TEMPORAL_NAMESPACE` | `default` | Temporal namespace |
+| `TEMPORAL_API_KEY` |  | Temporal API key (optional for local) |
+| `JENKINS_URL` |  | Jenkins base URL |
+| `JENKINS_USER` |  | Jenkins username |
+| `JENKINS_API_TOKEN` |  | Jenkins API token |
+
+
+  </Accordion>
+
+  <Accordion title="Data & Search">
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `OPENSEARCH_URL` |  | OpenSearch instance URL |
+| `OPENSEARCH_USERNAME` |  | OpenSearch username |
+| `OPENSEARCH_PASSWORD` |  | OpenSearch password |
+| `OPENSEARCH_API_KEY` |  | OpenSearch API key (alternative to username/password) |
+| `OPENSEARCH_INDEX_PATTERN` | `*` | OpenSearch index pattern |
+| `OPENSEARCH_MAX_RESULTS` | `100` | Max OpenSearch results |
+| `OPENOBSERVE_URL` |  | OpenObserve instance URL |
+| `OPENOBSERVE_TOKEN` |  | OpenObserve API token |
+| `OPENOBSERVE_USERNAME` |  | OpenObserve username |
+| `OPENOBSERVE_PASSWORD` |  | OpenObserve password |
+| `OPENOBSERVE_ORG` | `default` | OpenObserve organization |
+| `OPENOBSERVE_STREAM` |  | OpenObserve stream |
+| `OPENOBSERVE_MAX_RESULTS` | `100` | Max OpenObserve results |
+| `VICTORIA_LOGS_URL` |  | VictoriaLogs instance URL |
+| `VICTORIA_LOGS_TENANT_ID` |  | VictoriaLogs tenant ID |
+| `CLICKHOUSE_HOST` |  | ClickHouse host |
+| `CLICKHOUSE_PORT` | `8123` | ClickHouse port |
+| `CLICKHOUSE_DATABASE` | `default` | ClickHouse database |
+| `CLICKHOUSE_USER` | `default` | ClickHouse username |
+| `CLICKHOUSE_PASSWORD` |  | ClickHouse password |
+| `CLICKHOUSE_SECURE` | `false` | Enable ClickHouse TLS |
+| `SNOWFLAKE_ACCOUNT_IDENTIFIER` |  | Snowflake account identifier |
+| `SNOWFLAKE_ACCOUNT` |  | Snowflake account (alternative) |
+| `SNOWFLAKE_TOKEN` |  | Snowflake token |
+| `SNOWFLAKE_USER` |  | Snowflake username |
+| `SNOWFLAKE_PASSWORD` |  | Snowflake password |
+| `SNOWFLAKE_WAREHOUSE` |  | Snowflake warehouse |
+| `SNOWFLAKE_ROLE` |  | Snowflake role |
+| `SNOWFLAKE_DATABASE` |  | Snowflake database |
+| `SNOWFLAKE_SCHEMA` |  | Snowflake schema |
+| `SNOWFLAKE_MAX_RESULTS` | `50` | Max Snowflake results |
+| `AZURE_SQL_SERVER` |  | Azure SQL server name |
+| `AZURE_SQL_DATABASE` |  | Azure SQL database name |
+| `AZURE_SQL_PORT` | `1433` | Azure SQL port |
+| `AZURE_SQL_USERNAME` |  | Azure SQL username |
+| `AZURE_SQL_PASSWORD` |  | Azure SQL password |
+| `AZURE_SQL_DRIVER` | `ODBC Driver 18 for SQL Server` | Azure SQL ODBC driver |
+| `AZURE_SQL_ENCRYPT` | `true` | Enable Azure SQL encryption |
+| `AZURE_LOG_ANALYTICS_WORKSPACE_ID` |  | Azure Log Analytics workspace ID |
+| `AZURE_LOG_ANALYTICS_TOKEN` |  | Azure Log Analytics token |
+| `AZURE_LOG_ANALYTICS_ENDPOINT` | `https://api.loganalytics.io` | Log Analytics Query API endpoint (sovereign clouds) |
+| `AZURE_TENANT_ID` |  | Azure tenant ID |
+| `AZURE_SUBSCRIPTION_ID` |  | Azure subscription ID |
+| `AZURE_MAX_RESULTS` | `100` | Max Azure results |
+
+
+  </Accordion>
+
+  <Accordion title="MCP Servers">
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `POSTHOG_MCP_MODE` | `streamable-http` | PostHog MCP transport mode |
+| `POSTHOG_MCP_URL` | `https://mcp.posthog.com/mcp` | PostHog MCP URL |
+| `POSTHOG_MCP_AUTH_TOKEN` |  | PostHog MCP auth token |
+| `POSTHOG_MCP_PROJECT_ID` |  | PostHog project scoped to MCP |
+| `POSTHOG_MCP_ORGANIZATION_ID` |  | PostHog organization scoped to MCP |
+| `POSTHOG_MCP_FEATURES` |  | Comma-separated PostHog MCP features |
+| `POSTHOG_MCP_READ_ONLY` | `true` | Restrict PostHog MCP to read-only |
+| `POSTHOG_MCP_COMMAND` |  | PostHog MCP stdio command |
+| `POSTHOG_MCP_ARGS` |  | PostHog MCP stdio args |
+| `SENTRY_MCP_MODE` | `streamable-http` | Sentry MCP transport mode |
+| `SENTRY_MCP_URL` | `https://mcp.sentry.dev/mcp` | Sentry MCP URL |
+| `SENTRY_MCP_AUTH_TOKEN` |  | Sentry MCP auth token |
+| `SENTRY_MCP_HOST` |  | Self-hosted Sentry MCP host |
+| `SENTRY_MCP_ORGANIZATION_SLUG` |  | Sentry org slug for MCP |
+| `SENTRY_MCP_PROJECT_SLUG` |  | Sentry project slug for MCP |
+| `SENTRY_MCP_SKILLS` |  | Enabled Sentry MCP skills |
+| `SENTRY_MCP_COMMAND` |  | Sentry MCP stdio command |
+| `SENTRY_MCP_ARGS` |  | Sentry MCP stdio args |
+| `X_MCP_MODE` | `streamable-http` | X MCP transport mode |
+| `X_MCP_URL` | `http://127.0.0.1:8000/mcp` | X MCP URL |
+| `X_MCP_AUTH_TOKEN` |  | X MCP transport auth token |
+| `X_MCP_COMMAND` |  | X MCP stdio command |
+| `X_MCP_ARGS` |  | X MCP stdio args |
+| `X_BEARER_TOKEN` |  | X API bearer token (not MCP transport auth) |
+
+
+  </Accordion>
+
+  <Accordion title="Git Integrations">
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `GITHUB_EVENT_PATH` |  | GitHub Actions event payload path |
+| `GITHUB_REPOSITORY` |  | GitHub repository (owner/repo) |
+| `GITHUB_TOKEN` |  | GitHub personal access token |
+| `GH_TOKEN` |  | Alias for `GITHUB_TOKEN` |
+
+
+  </Accordion>
+
+</AccordionGroup>
+
+## Multi-instance integrations
+
+Need more than one Datadog, Grafana, or AWS account (for example prod and staging)? Use a JSON `*_INSTANCES` variable:
+
+| Variable | What it configures |
+| --- | --- |
+| `GRAFANA_INSTANCES` | Multiple Grafana instances |
+| `DD_INSTANCES` | Multiple Datadog sites/accounts |
+| `GROUNDCOVER_INSTANCES` | Multiple groundcover instances |
+| `HONEYCOMB_INSTANCES` | Multiple Honeycomb instances |
+| `CORALOGIX_INSTANCES` | Multiple Coralogix instances |
+| `SPLUNK_INSTANCES` | Multiple Splunk instances |
+| `AWS_INSTANCES` | Multiple AWS accounts |
+| `ARGOCD_INSTANCES` | Multiple Argo CD instances |
+
+Format and examples: [Multi-instance integrations](/platform/multi-instance-integrations).
+
+## LLM classification models
+
+If you don't set these, OpenSRE falls back to the reasoning model (or the provider default):
+
+| Variable | Default | Description |
+| --- | --- | --- |
+| `ANTHROPIC_CLASSIFICATION_MODEL` | | Anthropic classification model |
+| `OPENAI_CLASSIFICATION_MODEL` | | OpenAI classification model |
+| `OPENROUTER_CLASSIFICATION_MODEL` | | OpenRouter classification model |
+| `TRUSTEDROUTER_CLASSIFICATION_MODEL` | | TrustedRouter classification model |
+| `DEEPSEEK_CLASSIFICATION_MODEL` | | DeepSeek classification model |
+| `GEMINI_CLASSIFICATION_MODEL` | | Gemini classification model |
+| `NVIDIA_CLASSIFICATION_MODEL` | | NVIDIA classification model |
+| `MINIMAX_CLASSIFICATION_MODEL` | | MiniMax classification model |
+| `GROQ_CLASSIFICATION_MODEL` | | Groq classification model |

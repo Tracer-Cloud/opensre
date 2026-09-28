@@ -1,0 +1,78 @@
+---
+title: "FAQ"
+description: "Common questions about OpenSRE."
+---
+
+<AccordionGroup>
+  <Accordion title="What is OpenSRE?">
+    OpenSRE is an open-source framework for AI SRE agents that answer questions
+    about production systems. It uses your observability stack, cloud context,
+    and runbooks, and can deliver its findings to Slack, local files, or other
+    messaging channels. See the
+    [Integrations overview](/integrations) for supported tools.
+  </Accordion>
+
+  <Accordion title="How do I get started?">
+    Install OpenSRE, sign in, then ask it something:
+
+    ```bash
+    curl -fsSL https://install.opensre.com | bash -s -- -dc
+    opensre
+    opensre ask "why did checkout latency increase today?"
+    ```
+
+    Full walkthrough: [Quickstart](/getting-started/quickstart).
+  </Accordion>
+
+  <Accordion title="Which deployment path should I use?">
+    Most users start with the local CLI (`curl` install, then
+    `opensre` to sign in, plus `opensre integrations setup` for the
+    tools you want OpenSRE to query). For an organization-managed runtime, use
+    [Enterprise setup](/install/install-enterprise) at
+    [app.opensre.com](https://app.opensre.com). Hosted organization-wide
+    connectors are still coming soon, so integrations remain local today.
+
+    Managed and self-hosted gateway options are covered in
+    [Deployment](/guides/deployment).
+  </Accordion>
+
+  <Accordion title="Can I self-host OpenSRE?">
+    Yes. Deploy the repository Docker image in `web`, `gateway`, or `scheduler`
+    mode. Set `LLM_PROVIDER` and the
+    matching provider API key (for example `ANTHROPIC_API_KEY` when
+    `LLM_PROVIDER=anthropic`). See [Deployment](/guides/deployment) and
+    [Environment variables](/install/environment-variables).
+  </Accordion>
+
+  <Accordion title="Which model providers are supported?">
+    The signed-in interactive shell uses the account-hosted model. Other hosts
+    and account-independent CLI workflows support Anthropic, OpenAI, OpenRouter,
+    TrustedRouter, DeepSeek, Gemini, Bedrock, Azure OpenAI, and CLI-backed
+    providers through `LLM_PROVIDER`. Provider matrix and troubleshooting:
+    [LLM providers](/platform/llm-providers).
+  </Accordion>
+
+  <Accordion title="Does OpenSRE work with our existing tools?">
+    In most cases, yes. OpenSRE integrates with observability platforms
+    (Datadog, Grafana, Sentry), cloud environments (AWS, Kubernetes), incident
+    tools (PagerDuty, OpsGenie), databases, and messaging (Slack, Telegram).
+    Browse the [Integrations overview](/integrations) and run
+    `opensre integrations verify` after setup.
+  </Accordion>
+
+  <Accordion title="What happens when I run opensre with no arguments?">
+    Running `opensre` signs you in (once) and starts the interactive shell. The
+    first prompt offers a demo; pick the CI/CD analysis of one of your repositories
+    or skip it with **E**. Then describe issues in plain language. Slash commands
+    such as `/help`, `/status`, `/demo`, and `/verify datadog` are documented in
+    [Shell commands](/getting-started/interactive-shell-commands).
+  </Accordion>
+
+  <Accordion title="How are security and telemetry handled?">
+    OpenSRE supports reversible [masking](/platform/masking) before external LLM calls
+    and command-history redaction via
+    [Interactive shell privacy](/platform/interactive-shell-privacy). Anonymous product
+    telemetry can be disabled with `OPENSRE_NO_TELEMETRY=1`. Report
+    vulnerabilities to `support@opensre.com`.
+  </Accordion>
+</AccordionGroup>
