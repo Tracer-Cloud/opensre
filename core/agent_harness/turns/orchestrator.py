@@ -188,6 +188,9 @@ def _run_turn(
     surface: str,
     output: OutputSink | None,
 ) -> TurnResult:
+    from core.llm.hosted_credits import prefetch_hosted_credits
+
+    prefetch_hosted_credits()
     auto_compact_if_needed(session)
     prior_messages = getattr(session, "cli_agent_messages", None) or ()
     expanded = expand_affirmative_follow_up(

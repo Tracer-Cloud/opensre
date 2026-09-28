@@ -56,6 +56,14 @@ RULES: tuple[PathRule, ...] = (
             "tests/core/agent/prompts/",
         ),
     ),
+    PathRule(
+        "core/llm/hosted_credits.py",
+        (
+            "tests/core/runtime/llm/test_hosted_credits.py",
+            "tests/core/agent/prompts/test_turn_interaction.py",
+            "tests/core/agent_harness/prompts/test_runtime_facts_block.py",
+        ),
+    ),
     PathRule("core/", ("tests/core/",)),
     PathRule("utils/", ("tests/utils/",)),
     # Specific sub-packages before their parent
@@ -581,8 +589,26 @@ RULES: tuple[PathRule, ...] = (
     PathRule("gateway/web/webapp.py", ("gateway/tests/web/test_webapp.py",)),
     PathRule("infrastructure/scheduling/", ("tests/scheduler/",)),
     PathRule("infrastructure/", ("tests/infrastructure/",)),
+    PathRule(
+        "config/account_credits.py",
+        (
+            "tests/shared/test_account_credits.py",
+            "tests/core/runtime/llm/test_hosted_credits.py",
+        ),
+    ),
     PathRule("config/", ("tests/config/",)),
     PathRule("bootstrap/", ("tests/bootstrap/",)),
+    PathRule(
+        "surfaces/shared/account_credits.py",
+        ("tests/shared/test_account_credits.py",),
+    ),
+    PathRule(
+        "surfaces/shared/account_session.py",
+        (
+            "tests/shared/test_account_session.py",
+            "tests/cli/test_account_command.py",
+        ),
+    ),
     PathRule("surfaces/", ("tests/surfaces/",)),
     # Repository tooling and broad configuration changes still run focused contracts.
     PathRule("pyproject.toml", ("tests/packaging/", "tests/config/")),

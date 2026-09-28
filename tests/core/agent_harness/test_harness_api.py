@@ -231,6 +231,7 @@ TOOLS = frozenset(
         "action_context_from_agent_context",
         "action_scope_from_agent_context",
         "capability_available_from_sources",
+        "capability_values",
         "capability_not_explicitly_disabled",
         "coerce_gathered_evidence",
         "execute_with_action_context",

@@ -24,6 +24,7 @@ permissions:
   issues: write
 
 env:
+  OPENSRE_CICD: "1"
   OPENSRE_LIVE_INSTALL: "1"
   OPENSRE_LIVE_INSTALL_TAG: ${{ github.event.client_payload.tag || inputs.tag || '' }}
 

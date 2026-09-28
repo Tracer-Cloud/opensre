@@ -8,6 +8,7 @@ organization or a gateway, so a caller can only ever reach its own.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from http import HTTPStatus
 from types import TracebackType
@@ -21,9 +22,11 @@ from config.constants.hosted_gateway import (
     HOSTED_GATEWAY_HEALTH_PATH,
     HOSTED_GATEWAY_HTTP_TIMEOUT_SECONDS,
     HOSTED_GATEWAY_LOOPBACK_HOSTS,
+    HOSTED_GATEWAY_PROMPTS_PATH,
     HOSTED_GATEWAY_START_PATH,
     HOSTED_GATEWAY_STOP_PATH,
 )
+from infrastructure.analytics.capture import capture_hosted_gateway_task_submitted
 
 ERR_NOT_SIGNED_IN = "not_signed_in"
 ERR_INSECURE_APP_URL = "insecure_app_url"
@@ -36,6 +39,17 @@ ERR_NOT_SUPPORTED = "not_supported"
 ERR_ADMIN_REQUIRED = "admin_required"
 # The organization has no gateway to start or stop.
 ERR_NOT_PROVISIONED = "not_provisioned"
+# The gateway exists but no task of it is running, so it cannot take a prompt.
+ERR_NOT_RUNNING = "not_running"
+# The prompt id names nothing the gateway still holds.
+ERR_UNKNOWN_PROMPT = "unknown_prompt"
+ERR_PROMPT_TOO_LARGE = "prompt_too_large"
+#: The prompt is not waiting for an answer, or already took one.
+ERR_NOT_WAITING = "not_waiting"
+ERR_ALREADY_ANSWERED = "already_answered"
+
+#: A prompt id as the gateway mints it; anything else never becomes part of a URL.
+_PROMPT_ID = re.compile(r"^p_[0-9a-f]{32}$")
 
 #: Failures of the account or its setup, not of the service: nothing to report as an incident.
 EXPECTED_ERRORS = frozenset(
@@ -46,6 +60,11 @@ EXPECTED_ERRORS = frozenset(
         ERR_NOT_SUPPORTED,
         ERR_ADMIN_REQUIRED,
         ERR_NOT_PROVISIONED,
+        ERR_NOT_RUNNING,
+        ERR_UNKNOWN_PROMPT,
+        ERR_PROMPT_TOO_LARGE,
+        ERR_NOT_WAITING,
+        ERR_ALREADY_ANSWERED,
     }
 )
 
@@ -78,6 +97,57 @@ class GatewayHealth:
     size_profile: str = ""
     last_error_code: str = ""
     updated_at: str = ""
+
+
+@dataclass(frozen=True)
+class PromptQuestion:
+    """One question the gateway stopped on, with the options it offered."""
+
+    title: str
+    options: tuple[str, ...]
+    multi_select: bool = False
+
+
+@dataclass(frozen=True)
+class PromptChoice:
+    """The structured question behind a ``needs_input`` record, for a real menu."""
+
+    title: str
+    questions: tuple[PromptQuestion, ...]
+    custom_answer: bool = True
+    #: What is being decided: an approval's reason and redacted arguments, for example.
+    note: str = ""
+
+
+@dataclass(frozen=True)
+class PromptProgress:
+    """One progress line the gateway reported while working on a prompt."""
+
+    index: int
+    text: str
+
+
+@dataclass(frozen=True)
+class PromptRecord:
+    """One prompt on the organization's gateway, as the app reports it."""
+
+    prompt_id: str
+    state: str
+    answer: str = ""
+    question: str = ""
+    error: str = ""
+    #: Integrations whose tools failed on the gateway during this prompt, by vendor name.
+    failed_integrations: tuple[str, ...] = ()
+    choice: PromptChoice | None = None
+    #: The newest progress lines; ``index`` grows over the prompt's life, so a poller
+    #: prints each line once.
+    progress: tuple[PromptProgress, ...] = ()
+    #: For a follow-up carrying an answer: the prompt whose question it answered.
+    parent_prompt_id: str = ""
+
+    @property
+    def settled(self) -> bool:
+        return self.state in {"done", "needs_input", "failed"}
 
 
 class HostedGatewayClient:
@@ -135,14 +205,57 @@ class HostedGatewayClient:
         """Ask the app to stop the organization's gateway; its state and credentials are kept."""
         return _gateway_health(self._request("POST", HOSTED_GATEWAY_STOP_PATH, _LIFECYCLE_REFUSALS))
 
-    def _request(self, method: str, path: str, refusals: dict[int, str]) -> dict[str, Any]:
+    def send_prompt(self, prompt: str, *, context: dict[str, str]) -> PromptRecord:
+        """Queue a prompt on the organization's running gateway; admins only."""
+        payload = self._request(
+            "POST",
+            HOSTED_GATEWAY_PROMPTS_PATH,
+            _PROMPT_REFUSALS,
+            body={"prompt": prompt, "context": context},
+        )
+        record = _prompt_record(payload)
+        capture_hosted_gateway_task_submitted(record.prompt_id)
+        return record
+
+    def answer_prompt(self, prompt_id: str, answer: str) -> PromptRecord:
+        """Answer a prompt that stopped to ask; the follow-up prompt's record comes back."""
+        if not _PROMPT_ID.fullmatch(prompt_id):
+            raise HostedGatewayError(ERR_UNKNOWN_PROMPT)
+        payload = self._request(
+            "POST",
+            f"{HOSTED_GATEWAY_PROMPTS_PATH}/{prompt_id}/answer",
+            _PROMPT_ANSWER_REFUSALS,
+            body={"answer": answer},
+            body_codes=_ANSWER_BODY_CODES,
+        )
+        return _prompt_record(payload)
+
+    def prompt_result(self, prompt_id: str) -> PromptRecord:
+        """Read one prompt's state; ``unknown_prompt`` for an id the gateway does not hold."""
+        if not _PROMPT_ID.fullmatch(prompt_id):
+            raise HostedGatewayError(ERR_UNKNOWN_PROMPT)
+        payload = self._request(
+            "GET", f"{HOSTED_GATEWAY_PROMPTS_PATH}/{prompt_id}", _PROMPT_RESULT_REFUSALS
+        )
+        return _prompt_record(payload)
+
+    def _request(
+        self,
+        method: str,
+        path: str,
+        refusals: dict[int, str],
+        *,
+        body: dict[str, Any] | None = None,
+        body_codes: frozenset[str] = frozenset(),
+    ) -> dict[str, Any]:
         try:
-            response = self._http.request(method, path)
+            response = self._http.request(method, path, json=body)
         except httpx.HTTPError as exc:
             raise HostedGatewayError(ERR_UNREACHABLE) from exc
         refusal = refusals.get(response.status_code)
         if refusal is not None:
-            raise HostedGatewayError(refusal, response.status_code)
+            code = _refusal_code(response, refusal, body_codes)
+            raise HostedGatewayError(code, response.status_code)
         if not response.is_success:
             raise HostedGatewayError(f"http_{response.status_code}", response.status_code)
         try:
@@ -166,6 +279,101 @@ _LIFECYCLE_REFUSALS: dict[int, str] = {
     HTTPStatus.FORBIDDEN: ERR_ADMIN_REQUIRED,
     HTTPStatus.CONFLICT: ERR_NOT_PROVISIONED,
 }
+
+#: A prompt needs an admin and a running task; the app answers 409 for both missing cases.
+_PROMPT_REFUSALS: dict[int, str] = {
+    **_REFUSALS,
+    HTTPStatus.FORBIDDEN: ERR_ADMIN_REQUIRED,
+    HTTPStatus.CONFLICT: ERR_NOT_RUNNING,
+    HTTPStatus.REQUEST_ENTITY_TOO_LARGE: ERR_PROMPT_TOO_LARGE,
+}
+
+#: Reading a result: 404 is the prompt, not the route, being unknown.
+_PROMPT_RESULT_REFUSALS: dict[int, str] = {
+    HTTPStatus.UNAUTHORIZED: ERR_UNAUTHORIZED,
+    HTTPStatus.FORBIDDEN: ERR_ADMIN_REQUIRED,
+    HTTPStatus.NOT_FOUND: ERR_UNKNOWN_PROMPT,
+    HTTPStatus.CONFLICT: ERR_NOT_RUNNING,
+}
+
+#: Answering: a 409 is the gateway not running, or the prompt not waiting; the body says which.
+_PROMPT_ANSWER_REFUSALS: dict[int, str] = {
+    **_PROMPT_RESULT_REFUSALS,
+    HTTPStatus.REQUEST_ENTITY_TOO_LARGE: ERR_PROMPT_TOO_LARGE,
+}
+_ANSWER_BODY_CODES = frozenset({ERR_NOT_RUNNING, ERR_NOT_WAITING, ERR_ALREADY_ANSWERED})
+
+
+def _refusal_code(response: httpx.Response, default: str, body_codes: frozenset[str]) -> str:
+    """The app's own error code when it is one the caller distinguishes, else ``default``."""
+    if not body_codes:
+        return default
+    try:
+        payload = response.json()
+    except ValueError:
+        return default
+    code = payload.get("error") if isinstance(payload, dict) else None
+    if isinstance(code, str) and code in body_codes:
+        return code
+    return default
+
+
+def _prompt_record(payload: dict[str, Any]) -> PromptRecord:
+    prompt_id, state = payload.get("prompt_id"), payload.get("state")
+    if not isinstance(prompt_id, str) or not isinstance(state, str) or not prompt_id:
+        raise HostedGatewayError(ERR_INVALID_RESPONSE)
+    return PromptRecord(
+        prompt_id=prompt_id,
+        state=state,
+        answer=_text(payload.get("answer")),
+        question=_text(payload.get("question")),
+        error=_text(payload.get("error")),
+        failed_integrations=_names(payload.get("failed_integrations")),
+        choice=_choice(payload.get("choice")),
+        progress=_progress(payload.get("progress")),
+        parent_prompt_id=_text(payload.get("parent_prompt_id")),
+    )
+
+
+def _progress(value: object) -> tuple[PromptProgress, ...]:
+    if not isinstance(value, list):
+        return ()
+    lines: list[PromptProgress] = []
+    for item in value:
+        if not isinstance(item, dict):
+            continue
+        index, text = item.get("index"), item.get("text")
+        if isinstance(index, int) and not isinstance(index, bool) and isinstance(text, str):
+            lines.append(PromptProgress(index=index, text=text))
+    return tuple(lines)
+
+
+def _choice(value: object) -> PromptChoice | None:
+    if not isinstance(value, dict):
+        return None
+    title = value.get("title")
+    raw_questions = value.get("questions")
+    if not isinstance(title, str) or not isinstance(raw_questions, list):
+        return None
+    questions: list[PromptQuestion] = []
+    for item in raw_questions:
+        if not isinstance(item, dict) or not isinstance(item.get("title"), str):
+            return None
+        options = _names(item.get("options"))
+        multi = item.get("multi_select") is True
+        questions.append(PromptQuestion(title=item["title"], options=options, multi_select=multi))
+    return PromptChoice(
+        title=title,
+        questions=tuple(questions),
+        custom_answer=value.get("custom_answer") is not False,
+        note=_text(value.get("note")),
+    )
+
+
+def _names(value: object) -> tuple[str, ...]:
+    if not isinstance(value, list):
+        return ()
+    return tuple(item for item in value if isinstance(item, str) and item)
 
 
 def _gateway_health(payload: dict[str, Any]) -> GatewayHealth:
@@ -204,12 +412,16 @@ __all__ = [
     "ERR_INSECURE_APP_URL",
     "ERR_INVALID_RESPONSE",
     "ERR_NOT_PROVISIONED",
+    "ERR_NOT_RUNNING",
     "ERR_NOT_SIGNED_IN",
     "ERR_NOT_SUPPORTED",
+    "ERR_PROMPT_TOO_LARGE",
     "ERR_UNAUTHORIZED",
+    "ERR_UNKNOWN_PROMPT",
     "ERR_UNREACHABLE",
     "EXPECTED_ERRORS",
     "GatewayHealth",
     "HostedGatewayClient",
     "HostedGatewayError",
+    "PromptRecord",
 ]

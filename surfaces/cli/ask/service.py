@@ -32,6 +32,7 @@ from core.agent_harness.spi.handoff import (
 )
 from core.agent_harness.spi.session_state import PendingUserChoice
 from core.tool import SideEffectLevel, ToolExecutionHooks
+from infrastructure.analytics.usage_context import claim_process_session_id
 from infrastructure.errors import OpenSREError
 from surfaces.cli.ask.approval import ApprovalTracker, build_approval_hooks
 from surfaces.cli.ask.file_input import AskFileInput, render_prompt_with_context
@@ -500,12 +501,12 @@ def run_ask(
     try:
         resume_id = _resolve_resume_session_id(resume_session_id) if resume_session_id else None
         fresh_session_id = None
-        if resume_id is None and not ephemeral:
+        if resume_id is None:
             # A persisted ask session is visible as soon as AgentSession.start
             # writes its header.  Allocate its ID before entering the shared
             # lease so a concurrent --resume cannot race the first turn.
-            fresh_session_id = str(uuid4())
-        with _ask_session_lock(resume_id or fresh_session_id):
+            fresh_session_id = claim_process_session_id() or str(uuid4())
+        with _ask_session_lock(resume_id or (None if ephemeral else fresh_session_id)):
             result = _run_agent_turn(
                 prompt,
                 hooks,

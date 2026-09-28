@@ -329,7 +329,7 @@ propose_scheduled_delivery_tool = RegisteredTool(
                 min_length=1,
             ),
             "cron": string_property(
-                description="5-field cron expression, e.g. '0 8 * * 1-5'.",
+                description="5-field cron expression, e.g. '0 8 * * mon-fri' for weekdays.",
                 min_length=9,
             ),
             "timezone": string_property(

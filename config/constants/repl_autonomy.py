@@ -74,6 +74,10 @@ AUTO_LEVEL_ASK_TOOL_TYPES: Final[dict[AutoLevel, frozenset[str] | None]] = {
     AutoLevel.OFF: None,  # ask every tool type
 }
 
+# Registered tools that ask at every level, High included: their effect reaches
+# the whole organization, not only this user's machine or session.
+ASK_AT_EVERY_AUTO_LEVEL_TOOL_NAMES: Final[frozenset[str]] = frozenset({"stop_hosted_gateway"})
+
 
 def parse_auto_level(raw: str) -> AutoLevel | None:
     """Parse a user-facing auto level, or ``None`` when unknown."""
@@ -98,6 +102,7 @@ def format_auto_status_bar(level: AutoLevel) -> str:
 
 
 __all__ = [
+    "ASK_AT_EVERY_AUTO_LEVEL_TOOL_NAMES",
     "AUTO_LEVEL_ASK_TOOL_TYPES",
     "AUTO_LEVEL_BAR_CAPTIONS",
     "AUTO_LEVEL_CAPTIONS",

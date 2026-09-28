@@ -204,7 +204,7 @@ def test_gate_emits_nothing_without_a_rendered_menu(monkeypatch: Any, interactiv
 def test_run_repl_stops_before_runtime_when_sign_in_is_declined(monkeypatch: Any) -> None:
     started: list[bool] = []
     monkeypatch.setattr(main_entrypoint.sys.stdin, "isatty", lambda: True)
-    monkeypatch.setattr(main_entrypoint, "pass_sign_in_gate", lambda _console: False)
+    monkeypatch.setattr(main_entrypoint, "pass_sign_in_gate", lambda _console, **_kwargs: False)
 
     async def _run_async(**_kwargs: Any) -> int:
         started.append(True)
@@ -219,10 +219,10 @@ def test_run_repl_stops_before_runtime_when_sign_in_is_declined(monkeypatch: Any
 def test_run_repl_clears_sign_in_screen_then_starts_banner(monkeypatch: Any) -> None:
     events: list[str] = []
     monkeypatch.setattr(main_entrypoint.sys.stdin, "isatty", lambda: True)
-    monkeypatch.setattr(main_entrypoint, "pass_sign_in_gate", lambda _console: True)
+    monkeypatch.setattr(main_entrypoint, "pass_sign_in_gate", lambda _console, **_kwargs: True)
     monkeypatch.setattr(main_entrypoint, "repl_clear_screen", lambda: events.append("clear"))
 
-    def _start_banner(_console: Console) -> Any:
+    def _start_banner(_console: Console, **_kwargs: Any) -> Any:
         events.append("banner")
         return lambda: events.append("finish")
 
@@ -257,7 +257,9 @@ def test_run_repl_async_is_the_already_gated_shell_body(monkeypatch: Any) -> Non
         lambda **_kwargs: SimpleNamespace(session=Session(), inbox=None),
     )
     monkeypatch.setattr(
-        main_entrypoint, "pass_sign_in_gate", lambda _console: gated.append(True) or False
+        main_entrypoint,
+        "pass_sign_in_gate",
+        lambda _console, **_kwargs: gated.append(True) or False,
     )
     monkeypatch.setattr(main_entrypoint, "offer_demo", lambda *_a, **_k: None)
     monkeypatch.setattr(main_entrypoint, "InteractiveShellController", _Controller)
@@ -316,3 +318,95 @@ def test_run_repl_async_always_offers_the_demo(monkeypatch: Any) -> None:
 
     assert asyncio.run(main_entrypoint.run_repl_async()) == 0
     assert offered == [True]
+
+
+def test_run_repl_records_shell_render_when_the_sign_in_screen_is_shown(
+    monkeypatch: Any,
+) -> None:
+    painted: list[str] = []
+    _gate_with_choices(monkeypatch, [SignInChoice.EXIT])
+    monkeypatch.setattr(main_entrypoint.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(
+        main_entrypoint,
+        "capture_interactive_shell_rendered",
+        lambda **_kwargs: painted.append("captured"),
+    )
+    monkeypatch.setattr(
+        main_entrypoint,
+        "run_repl_async",
+        lambda **_kwargs: (_ for _ in ()).throw(AssertionError("runtime must not start")),
+    )
+
+    assert main_entrypoint.run_repl(config=ReplConfig(enabled=True, layout="classic")) == 0
+    assert painted == ["captured"]
+
+
+def test_run_repl_does_not_record_shell_render_for_resume_or_onboard(
+    monkeypatch: Any,
+) -> None:
+    painted: list[str] = []
+    monkeypatch.setattr(main_entrypoint.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(main_entrypoint, "pass_sign_in_gate", lambda _console, **_kwargs: True)
+    monkeypatch.setattr(main_entrypoint, "repl_clear_screen", lambda: None)
+    monkeypatch.setattr(
+        main_entrypoint,
+        "capture_interactive_shell_rendered",
+        lambda **_kwargs: painted.append("captured"),
+    )
+
+    def _start_banner(_console: Console, *, on_painted: Any = None) -> Any:
+        if on_painted is not None:
+            on_painted()
+        return lambda: None
+
+    monkeypatch.setattr(main_entrypoint, "_start_launch_banner", _start_banner)
+
+    async def _run_async(**_kwargs: Any) -> int:
+        return 0
+
+    monkeypatch.setattr(main_entrypoint, "run_repl_async", _run_async)
+
+    assert (
+        main_entrypoint.run_repl(
+            config=ReplConfig(enabled=True, layout="classic"),
+            resume_session_id="session-a",
+        )
+        == 0
+    )
+    assert (
+        main_entrypoint.run_repl(
+            config=ReplConfig(enabled=True, layout="classic"),
+            capture_shell_rendered=False,
+        )
+        == 0
+    )
+    assert painted == []
+
+
+def test_run_repl_records_shell_render_on_banner_when_already_signed_in(
+    monkeypatch: Any,
+) -> None:
+    painted: list[str] = []
+    monkeypatch.setattr(main_entrypoint.sys.stdin, "isatty", lambda: True)
+    monkeypatch.setattr(main_entrypoint, "pass_sign_in_gate", lambda _console, **_kwargs: True)
+    monkeypatch.setattr(main_entrypoint, "repl_clear_screen", lambda: None)
+    monkeypatch.setattr(
+        main_entrypoint,
+        "capture_interactive_shell_rendered",
+        lambda **_kwargs: painted.append("captured"),
+    )
+
+    def _start_banner(_console: Console, *, on_painted: Any = None) -> Any:
+        return lambda: on_painted() if on_painted is not None else None
+
+    async def _run_async(**kwargs: Any) -> int:
+        finish = kwargs["finish_banner"]
+        assert finish is not None
+        finish()
+        return 0
+
+    monkeypatch.setattr(main_entrypoint, "_start_launch_banner", _start_banner)
+    monkeypatch.setattr(main_entrypoint, "run_repl_async", _run_async)
+
+    assert main_entrypoint.run_repl(config=ReplConfig(enabled=True, layout="classic")) == 0
+    assert painted == ["captured"]

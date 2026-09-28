@@ -35,6 +35,7 @@ def test_entrypoint_hands_the_cli_a_host_that_opens_the_shell_with_the_click_gro
     fake_run_repl.assert_called_once()
     kwargs = fake_run_repl.call_args.kwargs
     assert kwargs["resume_session_id"] == "abc123"
+    assert kwargs["capture_shell_rendered"] is False
     assert kwargs["cli_command_group"] is cli
     assert kwargs["after_banner"] is _after_banner
 

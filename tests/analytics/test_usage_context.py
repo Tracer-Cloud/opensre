@@ -42,6 +42,7 @@ def _reset_analytics(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
     provider.shutdown_analytics(flush=False)
     provider._instance = None
     usage_ctx._PROCESS_SESSION_ID = None
+    usage_ctx._CLAIMED_PROCESS_SESSION_ID = None
 
 
 def _stub_httpx_client(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object]]:
@@ -184,3 +185,16 @@ def test_process_session_id_stamps_cli_capture_without_repl(
     assert props["$groups"] == {ORGANIZATION_GROUP_TYPE: "org_cli"}
     assert props["surface"] == UsageSurface.CLI
     assert props["session_id"] == process_session
+
+
+def test_only_the_first_session_adopts_the_process_session_id() -> None:
+    from infrastructure.analytics.usage_context import (
+        claim_process_session_id,
+        ensure_process_session_id,
+    )
+
+    process_session = ensure_process_session_id()
+
+    assert claim_process_session_id() == process_session
+    assert claim_process_session_id() is None
+    assert ensure_process_session_id() == process_session

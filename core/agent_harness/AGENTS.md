@@ -86,8 +86,16 @@ with the user, not skipped: the conclusion is rejected until `ask_user_choice`
 is queued (`task_plan/conclusion.py`, gate in `turns/goal_review.py`). The
 onboarding menu's answer turn that only loaded the chosen demo skill is
 rejected once, with a nudge to write the plan and run its first step (same
-files). Change the rule in the
-owning leaf, never by prompt text alone.
+files). A work tool that failed (`ok: false`, nonzero shell exit) is not
+completion: `turns/work_outcome.py` rejects stop until a later work tool
+succeeds (`goal_review.py`). Change the rule in the
+owning leaf, never by prompt text alone. Skills cannot override these gates.
+
+**Goal kernel (host-owned prompt, `prompts/action/goal_kernel.py`):** a
+short rule block that sits after the system prompt and again after any
+loaded skill. It tells the model to finish the user's request, match the
+asked field (stars ≠ forks), and not stop on a failed tool. A SKILL.md
+rewrite cannot remove it.
 
 **Evidence kinds (open/closed):** vocabulary + per-kind policy live in
 `turns/evidence_kind.py` (`EvidenceKind` + `EvidenceKindPolicy`). Add a kind by
@@ -139,7 +147,9 @@ headless impl `InMemorySessionState`) — not `SessionStore`. Durable JSONL is
 **Host cancel:** one `threading.Event` on the output sink
 (`ensure_turn_cancel` / `host_cancel_requested` in `turns/host_cancel.py`) —
 tools (console `cancel_requested`), orchestrator, and stream guards all
-read that same Event. Do not invent a second cancel channel.
+read that same Event. Scheduled ticks write it when the stored task is
+disabled or removed (`PredicateCancelConsole`). Do not invent a second
+cancel channel.
 
 **Cloud scale-out:** more Fargate tasks (fleet), not unbound in-process
 concurrency or a new `chat` API.

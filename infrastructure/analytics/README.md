@@ -126,9 +126,25 @@ necessarily the first installation or the current invocation. Do not map
 
 ## Event inventory
 
+Installer tags `-lp`, `-dc`, and `-gh` set `install_origin` to `landing_page`,
+`documentation`, and `github`. Pass Bash arguments with `bash -s -- -lp`; native
+PowerShell accepts the same tags. Untagged commands omit origin unless the
+pipeline explicitly sets `OPENSRE_CICD=1`, which records `cicd`. This marker also
+sets `is_ci=true` and `cicd_marker=true` on runtime events, independently of vendor
+environment detection. An explicit command tag still takes precedence for origin.
+The marker is a reported classification, not verified runner identity. `install_source`
+still identifies the installer mechanism, and `install_channel` still identifies
+the requested `main`/`release` build track.
+
+The first sanitized installation event is saved in `install-events-v1` before
+delivery and retained after acknowledgement. Retries reuse that complete event;
+a later tagged reinstall cannot replace its origin, including an unknown origin.
+The existing installation marker continues to suppress capture for previously
+recorded installations.
+
 | Area | Events | Important properties / question answered |
 | --- | --- | --- |
-| Acquisition | `install_detected`, `account_authenticated`, `cli_invoked` | Install source/channel/distribution, login conversion, entrypoint, command names, and boolean flags; never raw argument values. Official installers invoke the hidden record-only path immediately after installation. |
+| Acquisition | `install_detected`, `account_authenticated`, `cli_invoked` | Install source/origin/build channel/distribution, login conversion, entrypoint, command names, and boolean flags; never raw argument values. Official installers invoke the hidden record-only path immediately after installation. |
 | Sign-in gate | `sign_in_prompted`, `sign_in_selected`, `stay_signed_out_selected` | The interactive shell's mandatory sign-in screen: one exposure per signed-out launch, then one event per menu round with `choice_label` and `method` (`menu` for a picked option, `dismissed` when the menu was closed without one — Esc, `q`, Ctrl-C, Ctrl-D, or EOF are not distinguished). `sign_in_selected` is recorded before the browser flow starts and is intent only; `account_authenticated` reports the outcome. Already signed-in, non-interactive, and test runs emit none of these. |
 | Runtime health | `user_id_load_failed`, `sentry_init_skipped` | Identity persistence and telemetry setup failures. |
 | Onboarding | `onboard_started`, `onboard_completed`, `onboard_failed` | Funnel conversion, wizard mode, target, provider, and model. |
@@ -137,7 +153,7 @@ necessarily the first installation or the current invocation. Do not map
 | Agent loop | `react_turn_completed` | Phase, iterations, cap hits, stop reason, tool-call count, latency, provider, and model. |
 | Agent tool calls | `agent_tool_call_completed` | Tool/source/role, whether execution occurred, outcome, latency, error state, and termination; never tool arguments or results. |
 | Ask User | `ask_user_prompt_rendered`, `ask_user_prompt_answered`, `ask_user_prompt_dismissed` | Linked prompt exposure, bounded credential-redacted question/option text, selected option indexes, bounded custom answers, and dismissals. Listed answers send indexes only. |
-| Shell and browser | `interactive_shell_rendered`, `browser_open_requested` | Successful shell first paint and application-requested browser-open outcome by safe target label. Terminals do not expose whether a manually rendered link was clicked. |
+| Shell and browser | `interactive_shell_rendered`, `browser_open_requested` | First interactive-shell chrome, including the sign-in screen. Not recorded for `--resume`, an auto-launch after `opensre onboard`, or CLI subcommands. `browser_open_requested` is an application-requested browser-open outcome by safe target label. Terminals do not expose whether a manually rendered link was clicked. |
 | Agent workflows | `skill_executed`, `opensre_commit_created` | Successful skill entry and commits produced by supported OpenSRE repair workflows. |
 | AI turn | `$ai_generation` | Turn/session IDs, turn kind, model/provider, latency, tokens, integration snapshot, outcome, and error category. It also contains redacted prompt and response text in `$ai_input` and `$ai_output_choices`. |
 | Gateway | `gateway_turn_started`, `gateway_turn_completed`, `gateway_turn_failed` | Surface, answer rate, final intent, latency bucket, and exception type. No message body is included. |
@@ -146,6 +162,7 @@ necessarily the first installation or the current invocation. Do not map
 | Local-agent safety | `agent_secret_detected`, `agent_killed`, `agent_kill_failed` | Rule names, count, blocked state, agent type, and result; never the detected secret. |
 | Suggested loops | `loop_suggestion_prompted`, `loop_suggestion_selected`, `loop_suggestion_skipped` | Picker exposure and selected use case. |
 | Onboarding demo | `onboarding_demo_prompted`, `onboarding_demo_selected`, `onboarding_demo_skipped` | Demo exposure, selected option, and whether it was custom. |
+| Remote CI repair | `hosted_gateway_started`, `hosted_gateway_healthy`, `remote_ci_monitoring_started`, `test_ci_failure_triggered`, `remote_ci_failure_detected`, `remote_ci_repair_succeeded` | The `delegating-github-ci-repairs` activation path. The signed-in shell records an accepted hosted-gateway start (`already_running`) and every health read that finds the gateway running (`tool_name`). A gateway whose own scheduler runs the repair loop records its registration, the pull request's first CI failure, and a repair commit that passed CI (`attempts`, `duration_ms` since scheduling); the same loop scheduled from the shell records none of them. The demo's failing pull request records `test_ci_failure_triggered` on either host, with `remote`. CI events carry `repair_run_id`, which joins a worker's events to the registration and its prompting `user_id`, plus `repository`, `demo`, and `pr_number` once known. |
 | Execution policy | `repl_execution_policy_decision` | Policy stage, outcome, reason, and planned action count. |
 
 ## Product metrics

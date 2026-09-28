@@ -18,8 +18,14 @@ def test_shell_session_gets_the_menu_with_slash_commands_as_answers() -> None:
     pending = session.pending_user_choice
     assert pending is not None
     assert pending.title == credit_wall.CREDITS_MENU_TITLE
+    assert pending.options == (
+        credit_wall.CREDITS_OPTION_TOP_UP,
+        credit_wall.CREDITS_OPTION_BALANCE,
+        credit_wall.CREDITS_OPTION_SWITCH,
+    )
     assert pending.commands == {
         credit_wall.CREDITS_OPTION_TOP_UP: "/account usage",
+        credit_wall.CREDITS_OPTION_BALANCE: "/credits",
         credit_wall.CREDITS_OPTION_SWITCH: "/model",
     }
     assert session.terminal.pending_prompt_default == "/choose"

@@ -20,14 +20,14 @@ def try_builtin_local_fix(
     ctx: SecurityAlertContext, workspace: str
 ) -> tuple[CodingResult | None, str]:
     """Try a deterministic local fix; return ``None`` when no builtin applies."""
-    if ctx.alert_type != "code_quality":
+    if ctx.alert_type not in {"code_quality", "code_scanning"}:
         return None, f"No built-in local fixer handles {ctx.alert_type} findings."
 
     codes = local_ruff_codes(rule_id=ctx.rule_id, title=ctx.summary)
     if not codes:
         return (
             None,
-            f"No built-in local fixer supports Code Quality rule {ctx.rule_id or ctx.summary}.",
+            f"No built-in local fixer supports {ctx.alert_type} rule {ctx.rule_id or ctx.summary}.",
         )
 
     target = _target_file(workspace, ctx.location_path)

@@ -56,15 +56,15 @@ Recurring check-ins:
 
 ```bash
 opensre work schedule-checkin \
-  --cron "0 9 * * 1-5" \
+  --cron "0 9 * * mon-fri" \
   --tz Europe/London \
   --target slack:C0123ABCD \
   --target telegram:-100123456 \
   --project hackathon
 ```
 
-Slack and Telegram gateway turns can default reminders and recurring check-ins
-to the current chat. Terminal commands require either `--provider` and
+Slack, Telegram, and Discord gateway turns can default reminders and recurring
+check-ins to the current chat. Terminal commands require either `--provider` and
 `--chat-id`, or one or more `--target` flags.
 Use repeated `--target provider:chat_id` flags to send the same reminder or
 check-in to more than one service. Slack webhook delivery may use `--target

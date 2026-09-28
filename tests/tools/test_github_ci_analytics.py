@@ -1539,7 +1539,54 @@ def test_tool_names_the_setup_command_when_no_token_is_available() -> None:
         result = analyze_github_ci_reliability(owner="o", repo="r")
 
     assert result["available"] is False
+    assert result["setup_command"] == "/integrations setup github"
+    assert (
+        'slash_invoke(command="/integrations", args=["setup", "github"])' in result["response_text"]
+    )
     assert "opensre integrations setup github" in result["response_text"]
+    assert "call analyze_github_ci_reliability again for o/r" in result["response_text"]
+    assert "leave the analysis blocked" in result["response_text"]
+
+
+def test_same_repository_analyzes_after_github_is_connected() -> None:
+    """A first run with no token returns setup; the next call for that repo succeeds."""
+    collected = CollectedRuns(
+        default_branch="main",
+        branch_runs=[],
+        pr_runs=[],
+        merged_prs=(),
+        coverage_notices=[],
+    )
+    with patch("integrations.github.tools.ci_analytics.tool.resolve_github_token", return_value=""):
+        blocked = analyze_github_ci_reliability(owner="acme", repo="widget", days=30)
+    assert blocked["available"] is False
+    assert "opensre integrations setup github" in blocked["response_text"]
+    assert "acme/widget" in blocked["response_text"]
+
+    with (
+        patch("integrations.github.tools.ci_analytics.tool.resolve_github_token", return_value="t"),
+        patch(
+            "integrations.github.tools.ci_analytics.analysis.collect_runs",
+            return_value=collected,
+        ),
+    ):
+        resumed = analyze_github_ci_reliability(owner="acme", repo="widget", days=30)
+
+    assert resumed["success"] is True
+    assert resumed["owner"] == "acme"
+    assert resumed["repo"] == "widget"
+    assert resumed["key_results"] is not None
+
+
+def test_tool_stays_listed_on_a_fresh_install_with_no_github_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    for name in ("GITHUB_TOKEN", "GH_TOKEN", "GITHUB_MCP_AUTH_TOKEN"):
+        monkeypatch.delenv(name, raising=False)
+
+    tool = analyze_github_ci_reliability.__opensre_registered_tool__
+
+    assert tool.is_available({}) is True
 
 
 def test_tool_failure_text_never_carries_exception_detail() -> None:

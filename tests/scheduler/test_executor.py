@@ -369,9 +369,12 @@ class TestExecutor:
         assert len(adapters[Provider.SLACK].calls) == 1
         assert not adapters[Provider.TELEGRAM].calls
         assert run_store.get_runs(task.id)[0].status is TaskStatus.SUCCESS
-        assert all(
-            run.status is TaskStatus.RUNNING for run in run_store.get_runs(blocked.id, limit=100)
-        )
+        blocked_runs = run_store.get_runs(blocked.id, limit=100)
+        if ineligible == "filtered":
+            assert all(run.status is TaskStatus.RUNNING for run in blocked_runs)
+        else:
+            assert blocked_runs
+            assert all(run.status is TaskStatus.SKIPPED for run in blocked_runs)
         stored = get_task(task.id)
         assert stored is not None and stored.last_run is not None
 
@@ -398,7 +401,7 @@ class TestExecutor:
             assert release.wait(_SYNC_TIMEOUT_SECONDS)
             return "report"
 
-        _install_fake_bundle()
+        adapters = _install_fake_bundle()
         with (
             patch(
                 "infrastructure.scheduling.scheduler.executor.build_message", build_while_editing
@@ -427,6 +430,9 @@ class TestExecutor:
                 release.set()
             future.result(timeout=_SYNC_TIMEOUT_SECONDS)
         stored = get_task(task.id)
+        assert adapters[Provider.SLACK].calls == []
+        runs = run_store.get_runs(task.id)
+        assert runs and runs[0].status is TaskStatus.SKIPPED
         if mutation == "delete":
             assert stored is None
         else:
@@ -435,7 +441,153 @@ class TestExecutor:
             assert stored.chat_id == "edited"
             assert stored.cron == "0 10 * * *"
             assert stored.params == {"loop_prompt": "new prompt"}
-            assert stored.last_run is not None
+            assert stored.last_run is None
+
+    def test_cancel_during_delivery_keeps_successful_destination_history(self) -> None:
+        from infrastructure.scheduling.scheduler.storage import get_task, update_task
+
+        task = add_task(
+            ScheduledTask(
+                kind=TaskKind.MANUAL_LOOP,
+                cron="0 9 * * *",
+                provider=Provider.SLACK,
+                chat_id="C-partial",
+            )
+        )
+
+        class _DeliverThenDisable:
+            def __init__(self) -> None:
+                self.calls: list[tuple[ScheduledTask, str]] = []
+
+            def deliver(self, scheduled: ScheduledTask, message: str) -> tuple[bool, str, str]:
+                self.calls.append((scheduled, message))
+                current = get_task(scheduled.id)
+                assert current is not None
+                current.enabled = False
+                assert update_task(current)
+                return True, "", "msg-kept"
+
+        adapter = _DeliverThenDisable()
+        delivery_bundle.ScheduledDeliveryAdapters({Provider.SLACK: adapter}).install()
+        with patch(
+            "infrastructure.scheduling.scheduler.executor.build_message",
+            return_value="report that already went out",
+        ):
+            assert (
+                scheduler_executor.execute_task(task, "2026-01-15T09:00Z", real_runners()) is False
+            )
+        runs = run_store.get_runs(task.id)
+        assert runs and runs[0].status is TaskStatus.SKIPPED
+        assert runs[0].error == "disabled"
+        assert runs[0].posted_message_id == "msg-kept"
+        assert runs[0].targets and runs[0].targets[0].ok
+        assert runs[0].targets[0].message_id == "msg-kept"
+
+    def test_execute_task_does_not_deliver_after_the_task_is_disabled(self) -> None:
+        from infrastructure.scheduling.scheduler.storage import update_task
+
+        task = add_task(
+            ScheduledTask(
+                kind=TaskKind.MANUAL_LOOP,
+                cron="0 9 * * *",
+                provider=Provider.SLACK,
+                chat_id="C-cancel-exec",
+            )
+        )
+        task.enabled = False
+        assert update_task(task)
+        adapters = _install_fake_bundle()
+        with patch(
+            "infrastructure.scheduling.scheduler.executor.build_message",
+            return_value="should not run",
+        ) as build:
+            assert (
+                scheduler_executor.execute_task(task, "2026-01-15T09:00Z", real_runners()) is False
+            )
+        build.assert_not_called()
+        assert adapters[Provider.SLACK].calls == []
+        runs = run_store.get_runs(task.id)
+        assert runs and runs[0].status is TaskStatus.SKIPPED
+        assert runs[0].error == "disabled"
+
+    def test_execute_task_does_not_deliver_after_the_task_is_removed(self) -> None:
+        from infrastructure.scheduling.scheduler.storage import remove_task
+
+        task = add_task(
+            ScheduledTask(
+                kind=TaskKind.MANUAL_LOOP,
+                cron="0 9 * * *",
+                provider=Provider.SLACK,
+                chat_id="C-delete-exec",
+            )
+        )
+        assert remove_task(task.id)
+        adapters = _install_fake_bundle()
+        with patch(
+            "infrastructure.scheduling.scheduler.executor.build_message",
+            return_value="should not run",
+        ) as build:
+            assert (
+                scheduler_executor.execute_task(task, "2026-01-15T09:00Z", real_runners()) is False
+            )
+        build.assert_not_called()
+        assert adapters[Provider.SLACK].calls == []
+        runs = run_store.get_runs(task.id)
+        assert runs and runs[0].status is TaskStatus.SKIPPED
+        assert runs[0].error == "missing_task"
+
+    def test_recovery_skips_a_queued_tick_after_the_task_is_disabled(self) -> None:
+        from infrastructure.scheduling.scheduler.storage import try_queue_run, update_task
+
+        task = add_task(
+            ScheduledTask(
+                kind=TaskKind.MANUAL_LOOP,
+                cron="0 9 * * *",
+                provider=Provider.SLACK,
+                chat_id="C-cancel",
+            )
+        )
+        assert try_queue_run(task.id, "2026-01-15T09:00Z")
+        task.enabled = False
+        assert update_task(task)
+        adapters = _install_fake_bundle()
+        with patch(
+            "infrastructure.scheduling.scheduler.executor.build_message",
+            return_value="should not run",
+        ):
+            _recover_runs(real_runners())
+        assert adapters[Provider.SLACK].calls == []
+        runs = run_store.get_runs(task.id)
+        assert runs and runs[0].status is TaskStatus.SKIPPED
+        assert runs[0].error == "disabled"
+
+    def test_reenable_does_not_run_a_tick_queued_before_disable(self) -> None:
+        from infrastructure.scheduling.scheduler.storage import try_queue_run, update_task
+
+        task = add_task(
+            ScheduledTask(
+                kind=TaskKind.MANUAL_LOOP,
+                cron="0 9 * * *",
+                provider=Provider.SLACK,
+                chat_id="C-reenable",
+            )
+        )
+        assert try_queue_run(task.id, "2026-01-15T09:00Z")
+        task.enabled = False
+        assert update_task(task)
+        task.enabled = True
+        assert update_task(task)
+        adapters = _install_fake_bundle()
+        with patch(
+            "infrastructure.scheduling.scheduler.executor.build_message",
+            return_value="should not run",
+        ) as build:
+            _recover_runs(real_runners())
+        build.assert_not_called()
+        assert adapters[Provider.SLACK].calls == []
+        runs = run_store.get_runs(task.id)
+        assert runs and runs[0].status is TaskStatus.SKIPPED
+        assert runs[0].error == "disabled"
 
     def test_failed_only_retry_retains_scope_after_crash(self, tmp_path: Path) -> None:
         from infrastructure.scheduling.scheduler.runner import run_task_now

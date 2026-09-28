@@ -91,7 +91,8 @@ def _launch_interactive_shell(ctx: click.Context | None) -> int:
     if launch_shell is None:
         return 0
     # A subcommand initialised error reporting in line: nothing is held back.
-    return launch_shell(ReplConfig.load(cli_enabled=True), None, None)
+    # Auto-opening the REPL after onboard must not count as a shell render.
+    return launch_shell(ReplConfig.load(cli_enabled=True), None, None, False)
 
 
 @click.group(name="onboard", invoke_without_command=True)

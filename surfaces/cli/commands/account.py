@@ -11,10 +11,12 @@ from config.constants.account import OPENSRE_APP_URL_DEV
 from surfaces.cli import account_auth
 from surfaces.cli.account_ui import (
     AccountLoginPresenter,
+    render_account_credits,
     render_account_logout,
     render_account_status,
 )
 from surfaces.cli.telemetry import capture_account_authenticated
+from surfaces.shared.account_credits import AccountCredits, fetch_account_credits
 from surfaces.shared.account_session import AccountSessionState, AccountStatus, account_status
 
 
@@ -34,6 +36,47 @@ def _optional_app_url(*, app_url: str | None, dev: bool) -> str | None:
     return None
 
 
+def _credits_json(credits: AccountCredits) -> str:
+    return json.dumps(
+        {
+            "authenticated": True,
+            "total": credits.total,
+            "monthly": credits.monthly,
+            "monthly_limit": credits.monthly_limit,
+            "top_up": credits.top_up,
+            "resets_at": credits.resets_at,
+            "plan_id": credits.plan_id,
+        },
+        indent=2,
+    )
+
+
+def _show_credits(ctx: click.Context, *, dev: bool) -> None:
+    ctx.ensure_object(dict)
+    status = fetch_account_credits(
+        app_url=_optional_app_url(app_url=None, dev=_dev_enabled(ctx, dev))
+    )
+    json_output = _json_enabled(ctx)
+    if status.credits is None:
+        if json_output:
+            click.echo(
+                json.dumps(
+                    {
+                        "authenticated": False,
+                        "state": status.state.value,
+                        "detail": status.detail,
+                    },
+                    indent=2,
+                )
+            )
+            ctx.exit(1)
+        raise click.ClickException(status.detail)
+    if json_output:
+        click.echo(_credits_json(status.credits))
+        return
+    render_account_credits(status)
+
+
 def _render_status(status: AccountStatus, *, json_output: bool) -> None:
     if json_output:
         click.echo(
@@ -43,6 +86,18 @@ def _render_status(status: AccountStatus, *, json_output: bool) -> None:
                     "authenticated": status.authenticated,
                     "detail": status.detail,
                     "account": asdict(status.record) if status.record else None,
+                    "credits": (
+                        {
+                            "total": status.credits.total,
+                            "monthly": status.credits.monthly,
+                            "monthly_limit": status.credits.monthly_limit,
+                            "top_up": status.credits.top_up,
+                            "resets_at": status.credits.resets_at,
+                            "plan_id": status.credits.plan_id,
+                        }
+                        if status.credits is not None
+                        else None
+                    ),
                 },
                 indent=2,
             )
@@ -153,21 +208,27 @@ def account_login(
     record = result.record
     if result.effective_token_matches_login:
         capture_account_authenticated()
+    credits = fetch_account_credits(app_url=resolved_app_url).credits
     if json_output:
-        click.echo(
-            json.dumps(
-                {
-                    "state": AccountSessionState.ACTIVE.value,
-                    "authenticated": True,
-                    "account": asdict(record),
-                    "warning": result.warning or None,
-                },
-                indent=2,
-            )
-        )
+        payload = {
+            "state": AccountSessionState.ACTIVE.value,
+            "authenticated": True,
+            "account": asdict(record),
+            "warning": result.warning or None,
+        }
+        if credits is not None:
+            payload["credits"] = {
+                "total": credits.total,
+                "monthly": credits.monthly,
+                "monthly_limit": credits.monthly_limit,
+                "top_up": credits.top_up,
+                "resets_at": credits.resets_at,
+                "plan_id": credits.plan_id,
+            }
+        click.echo(json.dumps(payload, indent=2))
         return
 
-    presenter.success(result)
+    presenter.success(result, credits=credits)
 
 
 @account_command.command(name="usage")
@@ -197,6 +258,30 @@ def account_usage(ctx: click.Context, dev: bool, browser: bool) -> None:
         return
     click.echo(f"Usage and top-up: {url}")
     click.echo("Opened in your browser." if opened else "Open it in your browser.")
+
+
+@account_command.command(name="credits")
+@click.option(
+    "--dev",
+    is_flag=True,
+    help="Use the local webapp at http://localhost:3000.",
+)
+@click.pass_context
+def account_credits(ctx: click.Context, dev: bool) -> None:
+    """Show remaining OpenSRE hosted credits for the signed-in account."""
+    _show_credits(ctx, dev=dev)
+
+
+@click.command(name="credits")
+@click.option(
+    "--dev",
+    is_flag=True,
+    help="Use the local webapp at http://localhost:3000.",
+)
+@click.pass_context
+def credits_command(ctx: click.Context, dev: bool) -> None:
+    """Show remaining OpenSRE hosted credits for the signed-in account."""
+    _show_credits(ctx, dev=dev)
 
 
 @account_command.command(name="status")
@@ -237,4 +322,4 @@ def account_logout(ctx: click.Context) -> None:
     render_account_logout(result)
 
 
-__all__ = ["account_command"]
+__all__ = ["account_command", "credits_command"]

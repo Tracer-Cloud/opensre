@@ -82,6 +82,21 @@ def capability_available_from_sources(
     return not (isinstance(capability_values, tuple) and capability_values == ())
 
 
+def capability_values(session: Any, capability_name: str) -> tuple[str, ...]:
+    """The values a host recorded for ``capability_name`` on ``session``; empty when none.
+
+    Unlike :func:`capability_not_explicitly_disabled`, absence means "not offered":
+    for a fact a host must state explicitly, such as hosting the scheduler.
+    """
+    available_capabilities = getattr(session, "available_capabilities", None)
+    if not isinstance(available_capabilities, dict):
+        return ()
+    values = available_capabilities.get(capability_name)
+    if not isinstance(values, tuple):
+        return ()
+    return tuple(str(value) for value in values)
+
+
 def capability_not_explicitly_disabled(session: Any, capability_name: str) -> bool:
     available_capabilities = getattr(session, "available_capabilities", {})
     capability_values = (

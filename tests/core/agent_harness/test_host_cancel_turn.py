@@ -137,3 +137,20 @@ def test_bindable_output_stream_stops_when_turn_cancel_set() -> None:
     text = bindable.stream(label="assistant", chunks=_chunks())
     assert text == "a"
     assert inner.seen == ["a"]
+
+
+def test_predicate_cancel_writes_the_host_event() -> None:
+    from core.agent_harness.turns.host_cancel import bind_cancel_predicate
+
+    sink = _CancelSink()
+    cancelled = False
+
+    def _is_cancelled() -> bool:
+        return cancelled
+
+    console = bind_cancel_predicate(sink, _is_cancelled)
+    assert console.cancel_requested is False
+    assert host_cancel_requested(sink) is False
+    cancelled = True
+    assert console.cancel_requested is True
+    assert host_cancel_requested(sink) is True

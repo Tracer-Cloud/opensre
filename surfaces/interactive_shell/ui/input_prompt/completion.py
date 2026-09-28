@@ -8,7 +8,6 @@ from prompt_toolkit.application.current import get_app_or_none
 from prompt_toolkit.completion import CompleteEvent, Completer, Completion
 from prompt_toolkit.document import Document
 
-from infrastructure.terminal import theme as ui_theme
 from surfaces.interactive_shell.command_registry import SLASH_COMMANDS
 from surfaces.interactive_shell.command_registry.help import QUICK_ACCESS_COMMANDS
 from surfaces.interactive_shell.command_registry.types import SlashCommand
@@ -57,7 +56,7 @@ def _resolve_completion_preview(
     return label, meta
 
 
-def completion_preview_hint_ansi() -> str:
+def completion_preview_text(*, include_label: bool = True) -> str:
     """Full description for the highlighted completion menu item."""
     app = get_app_or_none()
     if app is None:
@@ -80,10 +79,10 @@ def completion_preview_hint_ansi() -> str:
     # Leave the last column empty so this context line cannot soft-wrap on
     # shrink-resize and orphan stale prompt frames (same budget as the rule).
     line = clip_prompt_text(
-        f"{label}{_COMPLETION_PREVIEW_SEP}{description}",
+        f"{label}{_COMPLETION_PREVIEW_SEP}{description}" if include_label else description,
         prompt_line_width(cols),
     )
-    return f"{ui_theme.ANSI_DIM}{line}{ui_theme.ANSI_RESET}"
+    return line
 
 
 # Precomputed at import time so bare-`/` completions never rebuild it per keystroke.

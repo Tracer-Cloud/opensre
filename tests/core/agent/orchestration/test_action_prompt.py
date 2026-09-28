@@ -146,7 +146,7 @@ def test_morning_report_skill_closes_with_schedule_offer() -> None:
     assert "propose_scheduled_delivery" in body
     assert "recurring_skill" in body
     assert "delivering-morning-briefings" in body
-    assert 'cron="0 8 * * 1-5"' in body or "cron='0 8 * * 1-5'" in body
+    assert 'cron="0 8 * * mon-fri"' in body or "cron='0 8 * * mon-fri'" in body
     assert "do not call /cron yet" in body
     assert "do not start an investigation" in body
     # Intermediate curls must be quiet so the user does not see weather/news

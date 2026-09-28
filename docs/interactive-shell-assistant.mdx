@@ -51,12 +51,10 @@ You need an LLM and at least one integration for live tool calls.
 
 **1. LLM**
 
-```bash
-opensre onboard
-# or set LLM_PROVIDER plus the provider API key — see LLM providers
-```
-
-In the shell: `/model show`, `/auth login &lt;provider&gt;` if needed.
+Sign in when `opensre` starts; the signed-in shell uses the account-hosted model.
+For a self-hosted gateway or headless jobs on a machine that is not signed in, set
+`LLM_PROVIDER` plus the provider API key — see [LLM providers](/llm-providers).
+In the shell, `/model show` names the model in use.
 
 **2. Connect integrations**
 

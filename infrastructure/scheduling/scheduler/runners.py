@@ -24,8 +24,13 @@ from infrastructure.scheduling.scheduler.agent_runner import AgentPayload, Agent
 from infrastructure.scheduling.scheduler.types import TaskReport
 
 
-def _gated_agent(runner: AgentRunner, gate: TurnGate) -> AgentRunner:
+def _gated_agent(
+    runner: AgentRunner, gate: TurnGate, runs_model_turn: Callable[[AgentPayload], bool] | None
+) -> AgentRunner:
     def run(payload: AgentPayload) -> TaskReport:
+        if runs_model_turn is not None and not runs_model_turn(payload):
+            # A deterministic builder (a report, a supervised worker) costs no turn.
+            return runner(payload)
         with queued_turn_slot(gate):
             return runner(payload)
 
@@ -45,16 +50,24 @@ class SchedulerRunners:
 
     agent: AgentRunner
     host_session: Callable[[], str | None] | None = None
+    #: Whether a payload runs a model turn; ``None`` means every run does.
+    runs_model_turn: Callable[[AgentPayload], bool] | None = None
 
     def gated(self, gate: TurnGate) -> SchedulerRunners:
-        """Return a bundle whose runs each take one permit from ``gate``."""
+        """Return a bundle whose model-turn runs each take one permit from ``gate``."""
         return SchedulerRunners(
-            agent=_gated_agent(self.agent, gate), host_session=self.host_session
+            agent=_gated_agent(self.agent, gate, self.runs_model_turn),
+            host_session=self.host_session,
+            runs_model_turn=self.runs_model_turn,
         )
 
     def hosted_by(self, resolve_session_id: Callable[[], str | None]) -> SchedulerRunners:
         """Return a bundle whose ticks are traced under the session ``resolve_session_id`` names."""
-        return SchedulerRunners(agent=self.agent, host_session=resolve_session_id)
+        return SchedulerRunners(
+            agent=self.agent,
+            host_session=resolve_session_id,
+            runs_model_turn=self.runs_model_turn,
+        )
 
     def host_session_id(self) -> str | None:
         """The hosting session id right now, or ``None`` for a daemon."""

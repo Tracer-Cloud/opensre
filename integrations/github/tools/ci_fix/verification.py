@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+import re
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
@@ -18,8 +19,10 @@ DEFAULT_SETTLE_SECONDS = 30
 DEFAULT_HEAD_PROPAGATION_SECONDS = 30
 
 _PR_CHECK_FIELDS = "headRefOid,mergeStateStatus,statusCheckRollup"
-_WORKFLOW_RUN_FIELDS = "databaseId,status"
+_WORKFLOW_RUN_FIELDS = "databaseId,status,conclusion,workflowName"
 _WORKFLOW_RUNS_KEY = "runs"
+#: An Actions check's details link names the workflow run it belongs to.
+_RUN_ID_IN_DETAILS_URL = re.compile(r"/actions/runs/(\d+)")
 _WORKFLOW_RUN_COMPLETED = "completed"
 _FAILED_CONCLUSIONS = frozenset(
     {
@@ -79,6 +82,7 @@ def wait_for_pr_checks(
     started_at = monotonic()
     deadline = started_at + max(0, timeout_seconds)
     expected_skips = set(ctx.skipped_check_names)
+    targeted_checks = frozenset(check.name for check in ctx.failing_checks)
     actions_run_required = any(check.run_id or check.workflow_name for check in ctx.failing_checks)
     required_external_checks = {
         check.name for check in ctx.failing_checks if not check.run_id and not check.workflow_name
@@ -145,10 +149,26 @@ def wait_for_pr_checks(
                     terminal_signature = signature
                     terminal_since = now
                 if terminal_since is not None and now - terminal_since >= max(0, settle_seconds):
+                    # A skip the repair cannot explain is judged by its workflow run's
+                    # verdict; that lookup happens once, at decision time.
+                    failed_run_ids: frozenset[str] = frozenset()
+                    if _unexplained_skips(
+                        checks, expected_skips=expected_skips, targeted_checks=targeted_checks
+                    ):
+                        failed_run_ids = _failed_run_ids(
+                            repo=repo,
+                            github_token=github_token,
+                            expected_head_sha=expected_head_sha,
+                        )
                     failing = tuple(
                         _check_name(check)
                         for check in checks
-                        if check_failed(check, expected_skips=expected_skips)
+                        if check_failed(
+                            check,
+                            expected_skips=expected_skips,
+                            targeted_checks=targeted_checks,
+                            failed_run_ids=failed_run_ids,
+                        )
                     )
                     return CheckVerification(
                         state=CheckState.FAILED if failing else CheckState.PASSED,
@@ -388,6 +408,53 @@ def _workflow_runs_state(
     return complete, signature
 
 
+def _failed_run_ids(
+    *, repo: str, github_token: str | None, expected_head_sha: str
+) -> frozenset[str]:
+    """Ids of the commit's workflow runs that concluded as failures."""
+    payload = run_gh_json(
+        [
+            "run",
+            "list",
+            "--commit",
+            expected_head_sha,
+            "--limit",
+            "100",
+            "--json",
+            _WORKFLOW_RUN_FIELDS,
+            "--jq",
+            f'{{"{_WORKFLOW_RUNS_KEY}": .}}',
+        ],
+        repo=repo,
+        github_token=github_token,
+    )
+    runs = _check_rows(payload.get(_WORKFLOW_RUNS_KEY))
+    return frozenset(
+        str(run.get("databaseId") or "")
+        for run in runs
+        if str(run.get("conclusion") or "").strip().upper() in _FAILED_CONCLUSIONS
+    )
+
+
+def _run_id_of(check: dict[str, Any]) -> str:
+    """The workflow run a check belongs to, read from its details link; "" for non-Actions checks."""
+    match = _RUN_ID_IN_DETAILS_URL.search(str(check.get("detailsUrl") or ""))
+    return match.group(1) if match else ""
+
+
+def _unexplained_skips(
+    checks: list[dict[str, Any]], *, expected_skips: set[str], targeted_checks: frozenset[str]
+) -> bool:
+    """Whether any skipped check needs its workflow run's verdict to be classified."""
+    for check in checks:
+        if str(check.get("conclusion") or "").strip().upper() != _SKIPPED_CONCLUSION:
+            continue
+        name = _check_name(check)
+        if name not in expected_skips and name not in targeted_checks:
+            return True
+    return False
+
+
 def _verification_signature(
     checks: list[dict[str, Any]],
     workflow_signature: tuple[str, ...],
@@ -410,13 +477,38 @@ def _check_signature(checks: list[dict[str, Any]]) -> tuple[str, ...]:
     return tuple(sorted(signatures))
 
 
-def check_failed(check: dict[str, Any], *, expected_skips: set[str]) -> bool:
-    """Classify a GitHub check or commit status, allowing only explicitly expected skips."""
+def check_failed(
+    check: dict[str, Any],
+    *,
+    expected_skips: set[str],
+    targeted_checks: frozenset[str] = frozenset(),
+    failed_run_ids: frozenset[str] = frozenset(),
+) -> bool:
+    """Classify a GitHub check or commit status.
+
+    A skipped check fails the verification only when it was one of the checks
+    the repair set out to fix (skipped is not fixed) or when the workflow run
+    it belongs to failed (a job skipped because an earlier job failed). A skip
+    in a run that passed, or by a check outside Actions such as a deployment
+    with nothing to deploy, is not a failure.
+    """
     conclusion = str(check.get("conclusion") or "").strip().upper()
     state = str(check.get("state") or "").strip().upper()
     if conclusion == _SKIPPED_CONCLUSION:
-        return _check_name(check) not in expected_skips
+        name = _check_name(check)
+        if name in expected_skips:
+            return False
+        if name in targeted_checks:
+            return True
+        run_id = _run_id_of(check)
+        return bool(run_id) and run_id in failed_run_ids
     return conclusion in _FAILED_CONCLUSIONS or state in _FAILED_STATES
+
+
+def all_checks_settled(checks: Iterable[dict[str, Any]]) -> bool:
+    """Whether every check has concluded, skipped ones included; False for none."""
+    rows = list(checks)
+    return bool(rows) and all(_check_is_terminal(check) for check in rows)
 
 
 def _check_is_terminal(check: dict[str, Any]) -> bool:
@@ -434,6 +526,7 @@ def _check_is_terminal(check: dict[str, Any]) -> bool:
 __all__ = [
     "CheckState",
     "CheckVerification",
+    "all_checks_settled",
     "check_failed",
     "DEFAULT_CHECK_WAIT_SECONDS",
     "DEFAULT_HEAD_PROPAGATION_SECONDS",

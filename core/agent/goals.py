@@ -1,15 +1,17 @@
 """Goal checks used when the ReAct loop decides whether to stop.
 
-Require the goal to be met before concluding, except at the hard iteration
-ceiling so the loop cannot run forever.
+Require the goal to be met before concluding. The loop owns budget exhaustion
+and reports an incomplete handoff when verification still fails at its ceiling.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from core.llm.types import ToolCall
+from core.tool.execution import ToolExecutionResult
 from infrastructure.observability.trace.decisions import record_decision
 
 
@@ -22,6 +24,7 @@ class GoalObservation:
     iteration: int
     max_iterations: int
     extras: dict[str, Any] | None = None
+    tool_results: Sequence[tuple[ToolCall, ToolExecutionResult]] = ()
 
 
 @dataclass(frozen=True)
@@ -55,43 +58,31 @@ def should_accept_with_goal(
     iteration: int,
     max_iterations: int | None,
     extras: dict[str, Any] | None = None,
+    tool_results: Sequence[tuple[ToolCall, ToolExecutionResult]] = (),
 ) -> tuple[bool, str | None]:
     """Decide whether the ReAct loop may conclude.
 
     Returns ``(True, None)`` to accept, or ``(False, nudge)`` to continue.
-    When ``iteration`` has reached the last allowed lap, accept even if the
-    goal is unmet (budget ceiling). When ``max_iterations`` is unset, there is
-    no ceiling — only a met goal accepts.
+    An unmet goal stays unmet at the budget ceiling; the loop then emits an
+    incomplete handoff instead of accepting an unsupported conclusion.
     """
     if goal is None:
         record_decision(
             "conclusion", attributes={"accepted": True, "reason": "no_goal", "iteration": iteration}
         )
         return True, None
-    # iteration is 0-based inside ReactLoop; last lap is max_iterations - 1.
-    # None/non-positive budgets mean "no ceiling" (do not treat as already done).
-    at_ceiling = (
-        max_iterations is not None
-        and max_iterations > 0
-        and iteration >= max(0, max_iterations - 1)
-    )
     observation = GoalObservation(
         final_text=final_text,
         evidence_count=evidence_count,
         iteration=iteration,
         max_iterations=max_iterations if max_iterations is not None else 0,
         extras=extras,
+        tool_results=tool_results,
     )
     if goal_met(goal, observation):
         record_decision(
             "conclusion",
             attributes={"accepted": True, "reason": "goal_check_accepted", "iteration": iteration},
-        )
-        return True, None
-    if at_ceiling:
-        record_decision(
-            "conclusion",
-            attributes={"accepted": True, "reason": "iteration_ceiling", "iteration": iteration},
         )
         return True, None
     record_decision(

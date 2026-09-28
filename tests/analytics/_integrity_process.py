@@ -15,7 +15,11 @@ from unittest.mock import patch
 import httpx
 
 from config.account import AccountRecord, save_account_record, save_account_token
-from config.constants.analytics import ANALYTICS_SIGNATURE_HEADER, ANALYTICS_TIMESTAMP_HEADER
+from config.constants.analytics import (
+    ANALYTICS_CICD_ENV,
+    ANALYTICS_SIGNATURE_HEADER,
+    ANALYTICS_TIMESTAMP_HEADER,
+)
 from infrastructure.analytics.capture import capture_account_authenticated, capture_cli_invoked
 from infrastructure.analytics.provider import shutdown_analytics
 from surfaces.cli.telemetry import capture_first_run_if_needed
@@ -26,6 +30,8 @@ _SILO_TOKEN = "integrity_fixture_silo_not_a_real_secret"
 
 def main() -> None:
     scenario = sys.argv[1]
+    if scenario == "late_cicd_marker":
+        os.environ[ANALYTICS_CICD_ENV] = "1"
     captured: list[dict[str, object]] = []
 
     def receive(request: httpx.Request) -> httpx.Response:

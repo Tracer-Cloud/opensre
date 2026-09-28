@@ -40,7 +40,8 @@ def _assert_query_success_or_skip_auth(result: dict) -> None:
     detail_lower = detail.lower()
     if any(token in detail_lower for token in ("401", "403", "unauthorized", "forbidden")):
         pytest.skip(f"Grafana live query credentials were rejected: {detail}")
-    if any(token in detail_lower for token in ("timed out", "timeout", "connection reset")):
+    transient_network_tokens = ("timed out", "timeout", "connection reset", "failed: 499")
+    if any(token in detail_lower for token in transient_network_tokens):
         pytest.skip(f"Grafana live query hit a transient network failure: {detail}")
     tempo_transient_backend_tokens = (
         "too many unhealthy instances in the ring",
@@ -87,6 +88,15 @@ def test_assert_query_success_or_skip_auth_skips_timeout():
                 ),
             }
         )
+
+
+def test_assert_query_success_or_skip_auth_skips_client_closed_request():
+    # Arrange: Grafana's proxy answers 499 when Loki drops the request before replying
+    result = {"success": False, "error": "Loki query failed: 499"}
+
+    # Act / Assert
+    with pytest.raises(Skipped, match="transient network failure"):
+        _assert_query_success_or_skip_auth(result)
 
 
 def test_grafana_client_or_skip_skips_read_timeout_during_build(monkeypatch):
