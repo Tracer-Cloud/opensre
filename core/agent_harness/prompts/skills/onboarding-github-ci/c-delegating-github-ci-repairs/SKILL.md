@@ -1,100 +1,89 @@
 ---
 name: delegating-github-ci-repairs
 description: >-
-  Runs the CI repair loop for one repository on the organization's hosted OpenSRE
-  gateway instead of this machine. The gateway uses the organization's GitHub
-  credential from the web app's Integrations page. Use for the startup demo option
-  "Run CI/CD improvements with a managed service (coming soon)"; the label keeps
-  "(coming soon)" until the team has reviewed and tested this flow. Local monitoring belongs to
-  scheduling-github-ci-repairs. Multi-step; load before acting.
-getting_started: Run CI/CD improvements with a managed service (coming soon)
+  Deploys GitHub CI repair monitoring to the OpenSRE managed service so repairs
+  continue without the user's machine. Use when the user wants remote,
+  scheduled, or always-on CI/CD repair.
+getting_started: Run CI/CD repairs remotely
 demo_order: 3
 metadata:
   owner: Vincent
-  last_changed_by: Yauhen
-  last_changed_at: 2026-09-23
+  last_changed_by: Jan
+  last_changed_at: 2026-09-14
   usecases:
-    - For organization admins who want CI repairs to run remotely, with nothing on their laptop.
-    - For checking whether the hosted gateway is up and what it is running.
+    - For users asking whether OpenSRE can run CI/CD repairs for them as a managed service.
   requires:
-    - A signed-in OpenSRE account (`opensre account login`) whose user is an organization admin.
-    - A hosted gateway provisioned for the organization.
-    - The organization's GitHub token saved on the web app's Integrations page.
-  version: "2.0"
-includes:
-  - common/ask_once.md
+    - Nothing; this skill only reports that the option is not available yet.
+  version: "1.0"
 ---
 
-# Remote managed service
+# Setup Delegation to Remote managed service 
+Deploy the existing GitHub CI repair workflow to the OpenSRE managed service.
 
-Set up the bounded CI repair loop for one repository on the organization's
-hosted gateway, and show the user where it runs and how to read its result.
-Nothing runs on this machine.
+This skill helps you setup OpenSRE as a remote managed cloud service to enable the agent to do work without your machine, and ensure that OpenSRE automatically keeps your CI green.
 
-## Workflow rules
 
-- Never call `schedule_ci_repair_loop` or `fix_github_pr_ci` here: the loop
-  runs on the gateway, through `ask_hosted_gateway`.
-- The gateway answers with the organization's credentials, not this machine's.
-  When its answer names `github` among the failed integrations, stop and tell
-  the user to add the GitHub token on the web app's Integrations page (the
-  reply already carries the link).
-- `ask_hosted_gateway` reaches an external service, so the shell may ask the
-  user to allow it; a headless run (`opensre ask`) needs
-  `--allowed-tool ask_hosted_gateway`.
-- When the gateway stops to ask (`needs_input`), the question opens as a menu
-  in this shell. After the user answers, call `ask_hosted_gateway` again with
-  the same `prompt_id`; their selection is sent for you. Repeat until the state
-  is `done` or `failed`.
+## Objective 
+- Is to connect to a managed fargate container that spins up a ci-cd-repair loop: core/agent_harness/prompts/skills/repair-github-ci
+- This is seperate from skill core/agent_harness/prompts/skills/onboarding-github-ci/d-connecting-slack
 
-## Plan
+## Tools to use 
+- `check_hosted_gateway()` — check whether it exists and is running.
+- `ask_hosted_gateway(prompt, facts)` — send work to the managed gateway.
+- `ask_hosted_gateway(prompt_id=...)` — continue a request awaiting input or retrieve its result.
+- `start_hosted_gateway()` - start control the gateway lifecycle.
+- `stop_hosted_gateway()`- stop control the gateway lifecycle.
 
-Track progress with `update_plan`, not with headers or prose:
+## Pre-Requisites 
+- This skill is running in the interactive shell. 
+- The opensre back-end is responding correctly 
 
-- On entry, before the first tool call, call `update_plan` with these steps
-  verbatim, the first `in_progress`, and a one-line `explanation`:
-  `Check the hosted gateway` / `Pick the repository` / `Delegate the repair loop` /
-  `Report where it runs`. Mark `Delegate the repair loop` with `verifies: true`.
-- After a step's tool results, call `update_plan` marking it `completed` and
-  the next `in_progress`, in the same response as the next step's tool call.
 
-## Workflow
+## Skill plan 
+After reading this skill, use `update_plan` to create the live plan from the workflow headings below:
 
-### 1. Check the hosted gateway
+- [ ] Check account and hosted gateway state.
+- [ ] If needed, sign in with `/account login`.
+- [ ] Start or provision the hosted gateway.
+- [ ] Verify the gateway is healthy.
+- [ ] Verify the configured repository is monitored remotely.
+- [ ] Check if Gateway has the required permissions and GitHub access to monitor to the target repository. If not help the user to set it up correctly. 
+- [ ] Trigger a test CI failure on a demo or test repository.
+- [ ] Confirm the remote agent detects and repairs it.
+- [ ] Respond with the outcome report as Markdown.
+- [ ] After the report is shown, offer the follow-up with ask_user_choice.
 
-Call `check_hosted_gateway`.
+If validation fails, diagnose the deployment or monitoring configuration and retry verification. 
 
-- Not signed in: tell the user to run `opensre account login` and stop.
-- Not provisioned or not an admin: say so, name the web app, and stop.
-- Stopped: call `start_hosted_gateway` (it asks for approval), then call
-  `check_hosted_gateway` again until it reports healthy.
+## Success criteria
 
-### 2. Pick the repository
+The workflow succeeds only when:
 
-Use the repository the user named. Otherwise call `scan_github_ci_health` and
-ask once with `ask_user_choice` titled "Repository for the hosted repair loop":
-one option per repository with at least one failing pull request, most
-failures first, at most six. There is no disposable demo repository here: the
-loop runs where the organization's GitHub token has access.
+1. The hosted gateway is healthy.
+2. A CI failure triggered after deployment is detected remotely.
+3. The remote repair loop fixes the failure without the local shell remaining active.
 
-### 3. Delegate the repair loop
+## Configure remote gateway Github access 
+We need to give users their GitHub access token 
 
-One call to `ask_hosted_gateway` with a complete prompt and the facts:
+What needs to be verified in the remote:
+- Does remote storage work 
+- Does GitHub token work 
 
-- prompt: "Schedule the bounded CI repair loop for <owner/repo> with
-  schedule_ci_repair_loop (pull request <n> when the user named one). Report
-  the task id, the deadline and the next run. Do not create demo resources."
-- facts: `repository`, and `pr_number` when known.
+## Step #final - Ask user choice 
+After successful validation, use `ask_user_choice`:
 
-Wait for the result. The shell shows the gateway's progress lines while it
-works. Handle `failed_integrations` and `needs_input` as the rules say.
+- Configure Slack or Telegram
+- Add more scheduled tasks
+- Exit to interactive shell 
 
-### 4. Report where it runs
+## Analytics
 
-Respond as Markdown: repository and pull request, task id and deadline from the
-gateway's answer, that the loop runs on the hosted gateway and keeps running
-after this shell closes, and the `prompt_id` to read the result later with
-`ask_hosted_gateway`. Then offer one `ask_user_choice`:
-- "Check the loop's status on the gateway"
-- "Set up local monitoring instead"
-- "Exit demo"
+Record:
+
+- `hosted_gateway_started`
+- `hosted_gateway_healthy`
+- `remote_ci_monitoring_started`
+- `test_ci_failure_triggered`
+- `remote_ci_failure_detected`
+- `remote_ci_repair_succeeded`
