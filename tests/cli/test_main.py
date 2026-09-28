@@ -15,6 +15,7 @@ from config.constants.product import RELEASE_STAGE
 from config.repl_config import ReplConfig
 from infrastructure.analytics import provider
 from infrastructure.analytics.events import Event
+from infrastructure.process.runtime_flags import is_onboarding_enabled, reset_runtime_flags
 from surfaces.cli.app import cli
 from surfaces.cli.startup import sentry_entrypoint_for
 from surfaces.entrypoint import main
@@ -629,6 +630,36 @@ def test_env_disables_interactive_without_flag(monkeypatch) -> None:
         f"no flag must defer to env/config (cli_enabled=None), got {load_calls[-1]}"
     )
     assert landing_calls == [1], "landing page should render when the env var disables interactive"
+
+
+def test_skip_onboarding_flag_reaches_the_startup_demo_gate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The root Click option must suppress the picker when the shell starts."""
+    from surfaces.interactive_shell.runtime.startup import demo_picker
+
+    reset_runtime_flags()
+    monkeypatch.setattr("surfaces.cli.app.capture_first_run_if_needed", lambda: None)
+    monkeypatch.setattr("surfaces.cli.app.shutdown_analytics", lambda **_kw: None)
+    monkeypatch.setattr("surfaces.cli.app.capture_cli_invoked", lambda *_args: None)
+    monkeypatch.setattr("surfaces.cli.app.sys.stdin.isatty", lambda: True)
+    monkeypatch.setattr("surfaces.cli.app.sys.stdout.isatty", lambda: True)
+    monkeypatch.setattr(demo_picker, "is_test_run", lambda: False)
+    monkeypatch.setattr(demo_picker, "repl_tty_interactive", lambda: True)
+    monkeypatch.setattr(demo_picker, "_merge_in_progress_here", lambda: False)
+    demo_offered: list[bool] = []
+
+    def run_repl(**_kwargs: object) -> int:
+        demo_offered.append(demo_picker.should_offer_demo())
+        return 0
+
+    monkeypatch.setattr("surfaces.interactive_shell.run_repl", run_repl)
+    try:
+        assert main(["--interactive", "--skip-onboarding"]) == 0
+        assert is_onboarding_enabled() is False
+        assert demo_offered == [False]
+    finally:
+        reset_runtime_flags()
 
 
 def test_resume_flag_enters_repl_with_session_id(monkeypatch) -> None:

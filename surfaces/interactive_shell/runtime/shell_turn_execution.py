@@ -14,6 +14,7 @@ from core.agent_harness import (
     ToolCallingTurnResult,
     TurnResult,
 )
+from core.agent_harness.spi.cancel import host_cancel_requested
 from core.agent_harness.spi.session_goal import (
     SessionGoal,
     SessionGoalReason,
@@ -26,10 +27,10 @@ from core.tool import ToolExecutionHooks
 from infrastructure.turn_host.turn_output import TurnOutput
 from infrastructure.turn_host.turn_runner import TurnRunner
 from surfaces.interactive_shell.runtime.agent_harness_adapters import ShellOutputSink
+from surfaces.interactive_shell.runtime.approval_hooks import with_shell_approval
 from surfaces.interactive_shell.runtime.core.turn_accounting import ShellTurnAccounting
 from surfaces.interactive_shell.runtime.shell_agent import shell_agent_build_config
 from surfaces.interactive_shell.session import Session
-from surfaces.interactive_shell.telemetry import PromptRecorder
 from surfaces.shared.terminal.components.rendering import print_repl_text
 
 
@@ -58,7 +59,6 @@ def execute_shell_turn(
     session: Session,
     console: Console,
     *,
-    recorder: PromptRecorder | None,
     confirm_fn: Callable[[str], str] | None = None,
     is_tty: bool | None = None,
     request_exit: Callable[[], None] | None = None,
@@ -78,7 +78,9 @@ def execute_shell_turn(
     )
     # The host reads per-turn tool hooks off the output, the same way a chat
     # transport supplies them.
-    resolved_output.tool_hooks = tool_hooks  # type: ignore[attr-defined]
+    resolved_output.tool_hooks = with_shell_approval(  # type: ignore[attr-defined]
+        tool_hooks, session=session, console=console, confirm_fn=confirm_fn, is_tty=is_tty
+    )
     if handler is None:
         handler = TurnRunner(
             console=console,
@@ -94,7 +96,7 @@ def execute_shell_turn(
             print_repl_text(console, rendered, markup=False)
 
     def _accounting(message: str) -> ShellTurnAccounting:
-        return ShellTurnAccounting(session=session, text=message, recorder=recorder)
+        return ShellTurnAccounting(session=session, text=message)
 
     result = handler.run(
         text,
@@ -108,19 +110,17 @@ def execute_shell_turn(
         on_progress=_on_progress,
     )
     if result is None:
-        # No agent work ran. The shell binds no admission hook and its sink
-        # carries no ``turn_cancel``, so for this caller the capacity gate is
-        # the only reason the host returns ``None`` — and it already said so on
-        # the output. Report a turn that ran nothing rather than inventing an
-        # answer.
+        # Admission stopped before agent work, at capacity or cancellation.
+        cancelled = host_cancel_requested(resolved_output)
         return TurnResult(
-            final_intent="cli_agent_at_capacity",
+            final_intent="cli_agent_cancelled" if cancelled else "cli_agent_at_capacity",
             action_result=ToolCallingTurnResult(
                 planned_count=0,
                 executed_count=0,
                 executed_success_count=0,
                 has_unhandled_clause=False,
                 handled=False,
+                cancelled=cancelled,
             ),
         )
     return result

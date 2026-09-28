@@ -49,9 +49,12 @@ def scheduler_runners() -> SchedulerRunners:
     bundle is built here and handed to whichever host installs it.
     """
     from infrastructure.scheduling.scheduler.runners import SchedulerRunners
-    from integrations.scheduled_agent_bootstrap import run_scheduled_agent_digest
+    from integrations.scheduled_agent_bootstrap import (
+        run_scheduled_agent_digest,
+        runs_model_turn,
+    )
 
-    return SchedulerRunners(agent=run_scheduled_agent_digest)
+    return SchedulerRunners(agent=run_scheduled_agent_digest, runs_model_turn=runs_model_turn)
 
 
 def scheduled_delivery_adapters() -> ScheduledDeliveryAdapters:

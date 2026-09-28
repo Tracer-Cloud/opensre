@@ -336,6 +336,7 @@ def test_subcommand_help_still_loads_that_command(capsys: pytest.CaptureFixture[
     out = capsys.readouterr().out
     assert rc == 0
     assert "--allowed-tool" in out
+    assert "--context-file" in out
     assert "dangerously-bypass-approvals" in out
 
 

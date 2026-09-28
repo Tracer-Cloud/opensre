@@ -6,6 +6,7 @@ Shared action-tool, reasoning-client and run-record providers live in
 
 from __future__ import annotations
 
+import threading
 from collections.abc import Iterable
 from typing import TYPE_CHECKING
 
@@ -41,7 +42,7 @@ class ShellOutputSink:
     """
 
     def __init__(self, console: Console, session: Session | None = None) -> None:
-        self._console = console
+        self.bind_console(console)
         self._session = session
         self._stream_result: StreamRenderResult | None = None
         self._defer_want_me_to_closer = False
@@ -49,6 +50,8 @@ class ShellOutputSink:
     def bind_console(self, console: Console) -> None:
         """Point subsequent output at ``console`` for the current turn."""
         self._console = console
+        cancel = getattr(console, "cancel_event", None)
+        self.turn_cancel = cancel if isinstance(cancel, threading.Event) else None
 
     def _flush_pending_action_log(self) -> None:
         """Render the turn's buffered tool actions once, just before the reply.

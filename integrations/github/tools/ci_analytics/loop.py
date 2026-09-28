@@ -9,6 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
+from config.constants.scheduler import WEEKDAY_CRON_FIELD
 from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_PROMPT_PARAM,
     LOOP_REPORT_ARGS_PARAM,
@@ -196,11 +197,17 @@ def loop_card(scheduled: ScheduledLoop) -> LoopCard:
     task = scheduled.loop.task
     verb = "Already scheduled" if scheduled.reused else "Scheduled"
     when = loop_time_label(task.cron) or task.cron
-    cadence = "weekdays" if task.cron.split()[-1] == "1-5" else "every day"
+    weekday_field = task.cron.split()[-1]
+    if weekday_field in {WEEKDAY_CRON_FIELD, "0-4"}:
+        schedule = f"weekdays at {when}"
+    elif weekday_field == "*":
+        schedule = f"every day at {when}"
+    else:
+        schedule = f"on cron {task.cron}"
     return LoopCard(
         headline=f"{verb}: {task.name}",
         details=(
-            f"Runs {cadence} at {when} {task.timezone}, next {_next_run_label(scheduled)}",
+            f"Runs {schedule} {task.timezone}, next {_next_run_label(scheduled)}",
             "Reports arrive in this shell's inbox: `/loops messages`",
             f"Manage: `/loops list`, `/loops stop {task.id}`, "
             f"`/loops delete {task.id}` (delete to reschedule)",

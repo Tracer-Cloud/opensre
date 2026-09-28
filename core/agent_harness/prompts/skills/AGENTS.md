@@ -255,6 +255,16 @@ Rules:
   the skipped plan items satisfied rather than delete them.
 - Tool-usage cards describe one call, not a flow, and do not carry a plan.
 
+## Success criteria
+
+Every skill, workflow or tool-usage, has one or more verifiable success
+criteria in `config/constants/skill_success.py`. A criterion names an observable
+result — a tool field, a return value, or a fact in the reply — in backticks.
+The host appends a `## Success criteria` section when the card does not
+already contain one. Adding a skill without a criterion fails
+`test_every_skill_has_verifiable_success_criteria`. Cards may carry the same
+section themselves; the host does not append a second copy.
+
 ## Colocated workflow tests
 
 Major skills that orchestrate a multi-step workflow must keep an end-to-end
@@ -368,11 +378,9 @@ once, following these rules, and treat a rename as a breaking change.
    `demo_order` frontmatter; recurrence lives in `recurring`. The name must
    survive the skill graduating out of the demo menu.
 4. **Only implemented workflows are discoverable.** Keep roadmap placeholders
-   outside the skill catalog and selectable demo menu. The one sanctioned
-   exception is demo C, `delegating-github-ci-repairs`: its menu label says
-   "(coming soon)", its body tells the user the managed service is not
-   available yet and points at what works today, and it calls no tool. Do not
-   add a second placeholder; graduate this one when the service ships.
+   outside the skill catalog and selectable demo menu. Demo C,
+   `delegating-github-ci-repairs`, delegates through `check_hosted_gateway` and
+   `ask_hosted_gateway`. Do not add a placeholder.
 5. **Disambiguate siblings by verb, not by qualifier.** Two skills over the
    same object must differ in what they do: `reporting-github-ci-failures`
    (what is red now) vs `analyzing-github-ci-performance` (trend over a
@@ -426,7 +434,7 @@ Current collection:
 | `onboarding-github-ci` | workflow (master menu) | `skills/onboarding-github-ci/` | — |
 | `analyzing-github-ci-performance` | workflow (demo A) | `skills/onboarding-github-ci/a-…/` | — |
 | `scheduling-github-ci-repairs` | workflow (demo B) | `skills/onboarding-github-ci/b-…/` | — |
-| `delegating-github-ci-repairs` | workflow (demo C, placeholder) | `skills/onboarding-github-ci/c-…/` | — |
+| `delegating-github-ci-repairs` | workflow (demo C) | `skills/onboarding-github-ci/c-…/` | — |
 | `connecting-slack` | workflow (demo D) | `skills/onboarding-github-ci/d-…/` | — |
 | `operating-github-cli` | tool usage | `integrations/github/tools/github_cli/` | `github_cli` |
 | `operating-github-ci-fixer` | tool usage | `integrations/github/tools/ci_fix/` | `fix_github_pr_ci` |

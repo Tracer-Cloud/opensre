@@ -17,43 +17,43 @@ delivery, and keep task metadata in the work-item store.
 
 ## Demo picker on launch
 
-Every interactive launch (`opensre`) asks which demo to run. The recommended option analyzes CI/CD performance on a real repository. Option B schedules a CI/CD reliability agent; see [CI/CD analytics demo](/cicd-analytics-demo). Escape skips onboarding; "Or type your own answer..." lets you submit a different request. Type `/demo` to start again.
+Every interactive launch (`opensre`) asks which demo to run. The recommended option analyzes CI/CD performance on a real repository. Option B schedules a CI/CD reliability agent; see [CI/CD analytics demo](/cicd-analytics-demo). Escape skips onboarding; "Or type your own answer..." lets you submit a different request. Run `opensre --skip-onboarding` to open the shell without the startup picker. Type `/demo` to start it later.
 
 ## Quick Start
 
 ```bash
 # Add a free-form recurring ops digest to Telegram at 09:00 IST on weekdays
-opensre cron add --kind manual_loop --cron "0 9 * * 1-5" \
+opensre cron add --kind manual_loop --cron "0 9 * * mon-fri" \
   --name "Ops digest" --prompt "Check open incidents and summarize production risk" \
   --tz Asia/Kolkata --provider telegram --chat-id <chat_id>
 
 # Same kind to Slack via incoming webhook (omit --chat-id; webhook is channel-bound)
-opensre cron add --kind manual_loop --cron "0 9 * * 1-5" \
+opensre cron add --kind manual_loop --cron "0 9 * * mon-fri" \
   --prompt "Check open incidents and summarize production risk" \
   --tz Europe/London --provider slack
 
 # Slack bot token: omit --chat-id when SLACK_DEFAULT_CHAT_ID is set
-opensre cron add --kind manual_loop --cron "0 9 * * 1-5" \
+opensre cron add --kind manual_loop --cron "0 9 * * mon-fri" \
   --prompt "Check open incidents and summarize production risk" \
   --tz Europe/London --provider slack
 
 # GitHub PR sweep standup digest → Slack
-opensre cron add --kind github_pr_sweep --cron "0 9 * * 1-5" \
+opensre cron add --kind github_pr_sweep --cron "0 9 * * mon-fri" \
   --tz Europe/London --provider slack --chat-id C0123ABCD
 
 # Read-only CI health for one repository and branch → Slack
 opensre cron add --kind recurring_skill --skill reporting-github-ci-failures \
-  --cron "0 8 * * 1-5" \
+  --cron "0 8 * * mon-fri" \
   --tz Europe/London --provider slack --owner Tracer-Cloud --repo opensre \
   --branch main
 
 # Morning-report skill with its previewed city → local inbox
 opensre cron add --kind recurring_skill --skill delivering-morning-briefings \
-  --cron "0 8 * * 1-5" --tz Asia/Kolkata \
+  --cron "0 8 * * mon-fri" --tz Asia/Kolkata \
   --provider interactive_shell --city "New Delhi"
 
 # Local interactive-shell inbox delivery, useful for debugging
-opensre cron add --kind manual_loop --cron "0 9 * * 1-5" \
+opensre cron add --kind manual_loop --cron "0 9 * * mon-fri" \
   --name "Local ops digest" --prompt "Check open incidents and summarize production risk" \
   --provider interactive_shell
 
@@ -180,12 +180,22 @@ Standard 5-field cron expressions:
 
 **Weekday numbering:** OpenSRE uses APScheduler 3.x `CronTrigger`, where
 **`0` = Monday** and **`6` = Sunday** (not the Unix cron convention where
-`0` is Sunday). Prefer `1-5` for weekdays to avoid confusion.
+`0` is Sunday). Prefer `mon-fri` for weekdays to avoid confusion.
+
+Older weekday loops may still contain `1-5`, which runs Tuesday–Saturday.
+Check `/loops next <loop_id>`. To correct one, record its settings, stop it with
+`/loops stop <loop_id>`, then recreate it through the original scheduling command
+with the same settings and `--cron "0 9 * * mon-fri"` for weekdays at 09:00.
+For `/loops add`, you can also use `--time 09:00 --weekdays`.
+For an old Monday-only schedule, replace the final `1` with `mon` when recreating it.
+Delete the old loop with `/loops delete <loop_id>` after verifying the replacement.
+Existing schedules are not changed automatically. For a CI reliability loop,
+delete the old loop before scheduling it again; that flow reuses existing loops.
 
 Examples:
 
-- `0 9 * * 1-5` — weekdays at 09:00
-- `0 8 * * 1` — Mondays at 08:00
+- `0 9 * * mon-fri` — weekdays at 09:00
+- `0 8 * * mon` — Mondays at 08:00
 - `*/30 * * * *` — every 30 minutes
 - `0 0 1 * *` — first day of each month at midnight
 
@@ -267,8 +277,8 @@ durable pending store and reserve recovery control work from user execution.
 The capacity baseline records these terms consistently:
 
 - **Durable pending count** and **oldest pending age**: `pending` rows and the
-  elapsed time since their durable admission. The benchmark reads this directly
-  until `opensre cron status` exposes it.
+  elapsed time since their durable admission. Read them with `opensre cron
+  status`; the benchmark reads the same stores directly.
 - **In-memory callbacks**: callbacks submitted to the current worker executor
   that have not completed. This is the current overload signal, not a durable
   queue limit.

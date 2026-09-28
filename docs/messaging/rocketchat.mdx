@@ -201,7 +201,7 @@ Delivery is an external side effect but does not require a separate approval. Th
 ### Scheduled deliveries (cron)
 
 ```bash
-opensre cron add --kind github_pr_sweep --cron "0 9 * * 1-5" \
+opensre cron add --kind github_pr_sweep --cron "0 9 * * mon-fri" \
   --tz America/Sao_Paulo --provider rocketchat --chat-id "#ops"
 ```
 

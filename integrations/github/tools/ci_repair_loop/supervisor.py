@@ -32,6 +32,7 @@ def finish_run(store: RepairStore, run: RepairRun) -> str:
     if not run.terminal:
         raise ValueError("An active repair cannot be finalized.")
     run.finished_at = run.finished_at or time.time()
+    store.discard_checkout(run)
     store.save(run)
     directory = store.directory(run.id)
     directory.mkdir(parents=True, exist_ok=True)
@@ -86,9 +87,9 @@ def _supervise(store: RepairStore, run: RepairRun) -> str:
             RepairStatus.TIMED_OUT if time.time() >= cutoff else RepairStatus.FAILED
         )
         latest.reason = (
-            "Repair stopped at its original deadline; unfinished artifacts are retained."
+            "Repair stopped at its original deadline; its records are retained."
             if latest.status is RepairStatus.TIMED_OUT
-            else "The worker stopped; unfinished artifacts are retained."
+            else "The worker stopped; its records are retained."
         )
     return finish_run(store, latest)
 

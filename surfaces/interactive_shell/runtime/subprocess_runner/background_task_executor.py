@@ -13,8 +13,11 @@ from typing import Any
 from rich.console import Console
 from rich.markup import escape
 
+from infrastructure.analytics.prompt_log.recorder import PromptRecorder
 from surfaces.interactive_shell.runtime import Session, TaskKind, TaskRecord
-from surfaces.interactive_shell.telemetry import PromptRecorder
+from surfaces.interactive_shell.telemetry.integration_snapshot import (
+    build_turn_integration_snapshot,
+)
 from surfaces.interactive_shell.ui import DIM, ERROR, HIGHLIGHT
 from surfaces.shared.error_handling.exception_reporting import report_exception
 
@@ -77,6 +80,9 @@ def start_background_cli_task(
     recorder = PromptRecorder.for_background_task(
         session=session, command=display_command, task_id=task.task_id
     )
+    if recorder is not None:
+        with contextlib.suppress(Exception):
+            recorder.set_properties(build_turn_integration_snapshot(session))
     stderr_buf: tempfile.SpooledTemporaryFile[bytes] = tempfile.SpooledTemporaryFile(  # type: ignore[type-arg]
         max_size=_TASK_DIAG_CHARS * 2
     )

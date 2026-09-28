@@ -284,7 +284,6 @@ def test_long_lived_shell_agent_receives_each_turns_confirm_fn_and_tty() -> None
         "run something",
         Session(),
         console,
-        recorder=None,
         confirm_fn=_confirm,
         is_tty=True,
         agent=agent,
@@ -323,7 +322,6 @@ def test_a_stage_injected_on_one_turn_does_not_carry_into_the_next() -> None:
         "turn one",
         Session(),
         console,
-        recorder=None,
         agent=agent,
         execute_actions=_fake_execute,
     )

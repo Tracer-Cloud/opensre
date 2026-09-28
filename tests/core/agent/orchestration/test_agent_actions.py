@@ -945,7 +945,6 @@ def test_execute_cli_actions_counts_planned_and_executed(monkeypatch: object) ->
         "run `pwd`",
         session,
         console,
-        recorder=None,
     )
 
     action_result = result.action_result
@@ -1043,7 +1042,6 @@ def test_execute_cli_actions_executes_matched_clause_ignoring_unhandled(
         "check health",
         session,
         console,
-        recorder=None,
     )
 
     # The unhandled flag no longer denies the turn: the matched /health runs.

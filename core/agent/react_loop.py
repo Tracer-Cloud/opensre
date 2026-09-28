@@ -101,6 +101,10 @@ _STAGNATION_FALLBACK = (
     "preserved, but I could not complete the request. Change the inputs or tool strategy "
     "before continuing."
 )
+_GOAL_UNVERIFIED_FALLBACK = (
+    "I could not verify that the requested outcome was achieved. Partial results are "
+    "preserved, but I could not complete the request."
+)
 
 
 def _update_fingerprint(digest: Any, value: Any) -> None:
@@ -558,8 +562,10 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
             evidence_count=len(self._executed),
             iteration=iteration,
             final_text=response.content or "",
+            tool_results=self._tool_results,
         )
         if not accept:
+            self._stagnant_iterations += 1
             nudge_text = (nudge or "").strip() or (
                 "Continue working toward the goal; do not end the turn yet."
             )
@@ -571,6 +577,12 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
                     data={"accepted": False, "goal_nudge": True},
                 )
             )
+            if (
+                self._max_stagnant_iterations is not None
+                and self._stagnant_iterations >= self._max_stagnant_iterations
+            ):
+                self._stop_reason = "goal_unverified"
+                return _IterationResult(should_stop=True, outcome=self._stop_reason)
             return _IterationResult(should_stop=False, outcome="conclusion_deferred")
 
         self._host._emit_runtime(
@@ -766,6 +778,8 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
             if self._stop_reason == "stagnation_limit"
             else _ITERATION_CAP_FALLBACK
         )
+        if self._stop_reason == "goal_unverified":
+            content = _GOAL_UNVERIFIED_FALLBACK
         return AssistantRuntimeMessage(
             content=content,
             metadata={"safety_handoff": True, "stop_reason": self._stop_reason},

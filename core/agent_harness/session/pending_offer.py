@@ -16,14 +16,15 @@ import shlex
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
+from config.constants.scheduler import WEEKDAY_CRON_FIELD
 from config.constants.slash_commands import INTEGRATIONS_SETUP_PREFIX
 from core.agent_harness.session.want_me_to import offer_from_assistant_content
 
 # Common delivering-morning-briefings defaults → human cadence labels (exact cron match only).
 _CADENCE_LABELS: dict[str, str] = {
-    "0 8 * * 1-5": "every weekday at 8am",
-    "0 9 * * 1-5": "every weekday at 9am",
-    "0 7 * * 1-5": "every weekday at 7am",
+    f"0 8 * * {WEEKDAY_CRON_FIELD}": "every weekday at 8am",
+    f"0 9 * * {WEEKDAY_CRON_FIELD}": "every weekday at 9am",
+    f"0 7 * * {WEEKDAY_CRON_FIELD}": "every weekday at 7am",
 }
 
 _SCHEDULE_OFFER_MARKERS = (

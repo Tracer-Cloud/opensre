@@ -8,8 +8,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
+from config.constants.analytics import ANALYTICS_CICD_ENV
+
 _TRUTHY_VALUES: Final[frozenset[str]] = frozenset({"1", "true", "yes"})
 _CI_BOOLEAN_ENV_KEYS: Final[tuple[str, ...]] = (
+    ANALYTICS_CICD_ENV,
     "CI",
     "CONTINUOUS_INTEGRATION",
     "GITHUB_ACTIONS",
@@ -53,6 +56,12 @@ class AnalyticsRuntime:
 
 def _normalized_env(environ: Mapping[str, str], key: str) -> str:
     return environ.get(key, "").strip().lower()
+
+
+def has_cicd_marker(environ: Mapping[str, str] | None = None) -> bool:
+    """Return the explicit pipeline marker, independently of vendor detection."""
+    values = os.environ if environ is None else environ
+    return _normalized_env(values, ANALYTICS_CICD_ENV) in _TRUTHY_VALUES
 
 
 def is_ci_environment(environ: Mapping[str, str] | None = None) -> bool:

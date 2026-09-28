@@ -19,7 +19,7 @@ should be predictable, interruptible, explainable, and safe by default.
 | --- | --- | --- |
 | `main.py` | process/bootstrap boundary for starting the REPL | per-turn dispatch/runtime logic |
 | `controller.py` | top-level REPL wiring, alert listener lifecycle, prompt loop, background workers, and shutdown | feature-specific business logic or compatibility-only forwarding |
-| `runtime/core/turn_accounting.py` | shell turn accounting (`ShellTurnAccounting`) for analytics, telemetry, recorder flush, turn persistence, and intent stamps | turn-flow control (owned by `core.agent_harness`) or tool-calling turn execution |
+| `runtime/core/turn_accounting.py` | shell turn accounting (`ShellTurnAccounting`) for analytics, recorder enrichment, history, and intent stamps | turn-flow control (owned by `core.agent_harness`) or tool-calling turn execution |
 | `command_registry/` | slash-command definitions, argument validation, command dispatch | long-running implementation details better placed in services/runtime modules |
 | `runtime/` | background task workers, lifecycle/`ReplState`, runtime context assembly, semantic shell-turn execution, and core harness adapters | prompt text, reusable session persistence, or compatibility shims |
 | `tools/interactive_shell/shell/` | shell command normalization, shell execution policy, subprocess execution, and the `run_shell_command` runner (next to the `shell_run` tool in `tools/interactive_shell/actions/shell.py`) | slash-command execution |

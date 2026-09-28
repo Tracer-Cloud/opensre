@@ -480,6 +480,7 @@ def test_opensre_help_smoke(cli_sandbox: CliSandbox) -> None:
     assert "onboard" in result.stdout
     assert "integrations" in result.stdout
     assert "--interactive / --no-interactive" in result.stdout
+    assert "--skip-onboarding" in result.stdout
     assert "--layout [classic|pinned]" in result.stdout
     assert "update" in result.stdout
 

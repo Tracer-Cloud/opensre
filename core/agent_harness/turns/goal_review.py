@@ -1,7 +1,8 @@
 """ReAct goal gates for action and evidence-gather turns.
 
 Builds a :class:`~core.agent.goals.Goal` whose ``verify`` rejects stop when a
-host gate still applies (unfinished task plan, gather discovery-only). An
+host gate still applies (unfinished task plan, failed last work tool, gather
+discovery-only). An
 optional same-LLM review (``OPENSRE_REACT_GOAL_LLM_REVIEW=1``) can also reject
 when the agent concludes after tools; default is off so the acting prompt
 proposes done and these host gates accept or refuse. Two flavors share the
@@ -39,6 +40,13 @@ from core.agent_harness.turns.gather_discovery_budget import (
     is_gather_discovery_call,
     is_live_metric_query_call,
 )
+from core.agent_harness.turns.work_outcome import (
+    ExecutedToolOutcome,
+    format_outcomes_for_review,
+    last_work_classified,
+    last_work_ok,
+    last_work_tool_failed,
+)
 from core.events import RuntimeEvent, RuntimeEventCallback, ToolExecutionEndEvent
 from core.llm.types import AgentLLMClient
 from infrastructure.observability.trace.decisions import record_decision
@@ -57,7 +65,9 @@ _REVIEW_SYSTEM_PROMPT = (
     "You review whether an agent completed the user's goal this turn.\n"
     "Return JSON only. Set verdict to NOT_REACHED only when the goal clearly "
     "required actions the agent did not take — e.g. the user asked to change, "
-    "create, or remove something and the agent only looked it up.\n"
+    "create, or remove something and the agent only looked it up, or the user "
+    "asked for one field (stars, security alerts) and the agent reported a "
+    "sibling field (forks, watchers, repo metadata) from the same payload.\n"
     "An honest report of findings, an answer to a question, or a statement "
     "that there is nothing to act on all count as GOAL_REACHED. "
     "When in doubt, set verdict to GOAL_REACHED."
@@ -172,6 +182,13 @@ _SKILL_LOAD_ONLY_NUDGE = (
     "Continue it now: write its plan with update_plan and run its first step, "
     "or open the menu it prescribes. Do not end the turn on a skill load."
 )
+_FAILED_WORK_NUDGE = (
+    "The last work tool failed (non-zero exit, ok:false, or error). That is "
+    "not the answer. Diagnose from the error, retry with a different command "
+    "or the dedicated tool, and only conclude when the user's requested "
+    "result is in a tool observation — or name the real blocker and ask "
+    "the user."
+)
 # Prefix for the nudge when the deferred reply was painted for the user: the
 # model must not restate a report it can already see in its own transcript.
 _PLAN_DEFERRED_REPLY_SHOWN = (
@@ -218,6 +235,8 @@ class _LLMGoalReviewer:
     # Skill-load gate: an answer turn that only loaded a skill is rejected once.
     skill_load_only: Callable[[], bool] | None = None
     skill_load_rejections: int = 0
+    # Failed-work gate: a curl/shell that exited non-zero is not completion.
+    executed_outcomes: list[ExecutedToolOutcome] = field(default_factory=list)
     reviews_remaining: int = field(default=_MAX_GOAL_REVIEWS)
     trace_context: Callable[[], dict[str, Any]] | None = None
 
@@ -227,7 +246,14 @@ class _LLMGoalReviewer:
         # stopped-short action chain — the case this reviewer exists for.
         if observation.evidence_count == 0:
             return self._decision(observation, True, "no_tool_evidence")
-        if self.skip_on_question and final_text.endswith("?"):
+        if (
+            self.skip_on_question
+            and final_text.endswith("?")
+            and last_work_ok(self.executed_outcomes) is not True
+        ):
+            # A failed tool may ask the user to unblock. A plan-only question
+            # may hand the turn back. A successful work call followed by
+            # "anything else?" is not a blocker — keep reviewing.
             return self._decision(observation, True, "closing_question")
         names = self.executed_tool_names
         if self.executed_tool_calls:
@@ -253,6 +279,10 @@ class _LLMGoalReviewer:
         ):
             self.skill_load_rejections += 1
             return self._decision(observation, False, "skill_loaded_only")
+        if last_work_tool_failed(self.executed_outcomes) and not last_work_classified(
+            self.executed_outcomes
+        ):
+            return self._decision(observation, False, "work_tool_failed")
         if self.reject_discovery_only and _gather_ran_only_discovery(self.executed_tool_calls):
             return self._decision(observation, False, "discovery_only")
         if not react_goal_llm_review_enabled():
@@ -301,11 +331,13 @@ class _LLMGoalReviewer:
             metric_note = "\nMetric query executed: " + (
                 "yes" if _gather_ran_metric_query(self.executed_tool_calls) else "no"
             )
+        results_line = format_outcomes_for_review(self.executed_outcomes)
         return (
             f"User goal: {self.user_goal}\n"
             f"Actions executed this turn: {observation.evidence_count}\n"
             f"Tools executed: {tools_line}"
             f"{metric_note}\n"
+            f"Tool results: {results_line}\n"
             f"Agent's closing reply:\n{final_text}"
         )
 
@@ -320,6 +352,7 @@ def build_goal_reviewer(
     on_plan_deferred_reply: Callable[[str], bool] | None = None,
     blocked_needs_user: Callable[[], bool] | None = None,
     skill_load_only: Callable[[], bool] | None = None,
+    executed_outcomes: list[ExecutedToolOutcome] | None = None,
     trace_context: Callable[[], dict[str, Any]] | None = None,
 ) -> Goal:
     """Build a reviewed :class:`Goal` for one action turn over ``user_goal``.
@@ -344,7 +377,13 @@ def build_goal_reviewer(
 
     ``skill_load_only`` rejects, once per turn, a conclusion on the demo
     menu's answer turn that loaded the chosen skill and did nothing else.
+
+    ``executed_outcomes`` rejects a conclusion whose last work tool failed
+    (nonzero shell exit, ``ok: false``) so a failed curl cannot end the turn.
+    A tool that already published a finished ``work_outcome`` may stop: that
+    result is the report, not an unfinished attempt.
     """
+    outcomes = executed_outcomes if executed_outcomes is not None else []
     reviewer = _LLMGoalReviewer(
         llm=llm,
         user_goal=user_goal,
@@ -352,12 +391,15 @@ def build_goal_reviewer(
         plan_incomplete=plan_incomplete,
         blocked_needs_user=blocked_needs_user,
         skill_load_only=skill_load_only,
+        executed_outcomes=outcomes,
         trace_context=trace_context,
     )
 
     def _nudge(observation: GoalObservation) -> str:
         if skill_load_only is not None and skill_load_only():
             return _SKILL_LOAD_ONLY_NUDGE
+        if last_work_tool_failed(outcomes) and not last_work_classified(outcomes):
+            return _FAILED_WORK_NUDGE
         if (
             blocked_needs_user is not None
             and plan_worked_this_turn(executed_tool_names)

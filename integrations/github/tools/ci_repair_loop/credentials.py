@@ -14,8 +14,7 @@ def configured_token(explicit: str | None = None) -> str:
     """Prefer injected credentials, then the integration store and credential fallback."""
     if explicit:
         return explicit
-    github = resolve_effective_integrations().get("github", {})
-    token = str(github_creds(github).get("github_token") or "")
+    token = _stored_token()
     if token:
         return token
     for name in (GITHUB_MCP_AUTH_TOKEN_ENV, GITHUB_TOKEN_ENV, GH_TOKEN_ENV):
@@ -23,6 +22,16 @@ def configured_token(explicit: str | None = None) -> str:
         if token:
             return token
     raise ValueError("Configure GitHub with `opensre integrations setup github` before scheduling.")
+
+
+def _stored_token() -> str:
+    """Token of the effective GitHub integration; its entry wraps the classified config."""
+    github = resolve_effective_integrations().get("github", {})
+    config = github.get("config")
+    if not isinstance(config, dict):
+        return ""
+    creds = github_creds(config)
+    return str(creds.get("github_token") or "")
 
 
 def account_id(user: Mapping[str, object]) -> int:

@@ -91,7 +91,10 @@ def _render_credits_exhausted(console: StreamingConsole, exc: Exception) -> None
         hint.append_text(hyperlink(url, style=f"underline {HIGHLIGHT}"))
     else:
         hint.append("the OpenSRE usage page", style=str(DIM))
-    hint.append(" · /account usage opens it · /model switches provider", style=str(DIM))
+    hint.append(
+        " · /credits shows the balance · /account usage opens it · /model switches provider",
+        style=str(DIM),
+    )
     console.print(hint)
 
 

@@ -41,6 +41,11 @@ COMMAND_SPECS: tuple[CommandSpec, ...] = (
         "surfaces.cli.commands.account:account_command",
     ),
     CommandSpec(
+        "credits",
+        "Show remaining OpenSRE hosted credits for the signed-in account.",
+        "surfaces.cli.commands.account:credits_command",
+    ),
+    CommandSpec(
         "ask",
         "Run one configured OpenSRE agent request and exit.",
         "surfaces.cli.commands.ask:ask_command",

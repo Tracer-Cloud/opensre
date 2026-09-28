@@ -470,6 +470,10 @@ def test_tool_reports_missing_token_without_calling_github(monkeypatch: pytest.M
     result = scan_github_ci_health()
     assert result["available"] is False
     assert "token" in result["error"]
+    assert result["setup_command"] == "/integrations setup github"
+    assert (
+        'slash_invoke(command="/integrations", args=["setup", "github"])' in result["response_text"]
+    )
 
 
 def test_tool_turns_an_exhausted_graphql_budget_into_one_clear_error(

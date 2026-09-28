@@ -13,7 +13,6 @@ from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.ui.handoff_questions import (
     render_ask_user_qa,
 )
-from surfaces.interactive_shell.ui.input_prompt.completion import completion_preview_hint_ansi
 from surfaces.interactive_shell.ui.input_prompt.layout import (
     _short_meta,
     clip_prompt_text,
@@ -160,11 +159,10 @@ def render_submitted_prompt(console: Console, session: Session, text: str) -> No
 
 
 def resolve_prompt_prefix_ansi(*, inline_spinner: str, idle_hint: str) -> str:
-    """Choose the prompt's top context line: spinner, completion preview, or idle hint."""
+    """Keep runtime status above the composer; completion details belong in its tray."""
     if inline_spinner:
         return inline_spinner
-    preview = completion_preview_hint_ansi()
-    return preview or idle_hint
+    return idle_hint
 
 
 def resolve_idle_hint_ansi(session: Session) -> str:

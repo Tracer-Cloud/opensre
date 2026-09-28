@@ -24,6 +24,7 @@ from config.constants.git import (
     OPENSRE_COMMIT_COAUTHOR_NAME,
     OPENSRE_COMMIT_COAUTHOR_TRAILER,
 )
+from config.constants.github import GITHUB_TOKEN_CHECKLIST
 from integrations.git.errors import (
     BRANCH_FAILED,
     COMMIT_FAILED,
@@ -64,6 +65,31 @@ def _opensre_author_env(env: Mapping[str, str] | None = None) -> dict[str, str]:
         "GIT_COMMITTER_EMAIL": OPENSRE_COMMIT_COAUTHOR_EMAIL,
     }
     return {**(env if env is not None else os.environ), **identity}
+
+
+def _content_commit_env(workspace: str) -> dict[str, str] | None:
+    """The environment for a content commit: the OpenSRE Agent identity where git has none.
+
+    A person's checkout keeps that person as author, with the co-author trailer,
+    whether git knows them from its config or from ``GIT_AUTHOR_*`` and
+    ``GIT_COMMITTER_*``. A hosted container has neither, and the commit would fail.
+    """
+    configured = {
+        field: _configured_git_value(workspace, f"user.{field}") for field in ("name", "email")
+    }
+    for role in ("AUTHOR", "COMMITTER"):
+        for field in ("name", "email"):
+            given = os.environ.get(f"GIT_{role}_{field.upper()}", "").strip()
+            if not given and not configured[field]:
+                return _opensre_author_env()
+    return None
+
+
+def _configured_git_value(workspace: str, key: str) -> str:
+    result = _run_git(workspace, "config", "--get", key)
+    if result.returncode != 0:
+        return ""
+    return result.stdout.strip()
 
 
 def _run_git(
@@ -402,6 +428,7 @@ def commit_paths(
         _with_opensre_coauthor(message),
         "--",
         *paths,
+        env=_content_commit_env(workspace),
     )
     if commit.returncode != 0:
         raise GitCommandError(COMMIT_FAILED, f"git commit failed: {commit.stderr.strip()}")
@@ -441,19 +468,43 @@ def push_head_to_upstream(workspace: str, *, token: str | None = None) -> str:
     destination, remote_branch = _push_destination(workspace, branch)
     assert_not_protected(remote_branch)
     label = _push_label(destination, remote_branch)
-    env = None
-    if token:
-        base = (
-            _https_base(destination)
-            if _is_url(destination)
-            else _remote_https_base(workspace, destination)
-        )
-        if base:
-            env = _token_auth_env(token, base)
+    base = (
+        _https_base(destination)
+        if _is_url(destination)
+        else _remote_https_base(workspace, destination)
+    )
+    env = _token_auth_env(token, base) if token and base else None
     result = _run_git(workspace, "push", destination, f"HEAD:refs/heads/{remote_branch}", env=env)
     if result.returncode != 0:
-        raise GitCommandError(PUSH_FAILED, f"git push to {label} failed: {result.stderr.strip()}")
+        raise GitCommandError(PUSH_FAILED, push_failure_message(label, result.stderr, base))
     return label
+
+
+_PUSH_DENIED_MARKERS = ("error: 403", "permission to", "denied to")
+#: What a refused push means per hosting service, keyed by the remote's host.
+_PUSH_DENIED_HINTS = {
+    "github.com": (
+        "The GitHub credential is not allowed to push to this repository. " + GITHUB_TOKEN_CHECKLIST
+    ),
+}
+
+
+def push_failure_message(label: str, stderr: str, https_base: str) -> str:
+    """The push error for the user; a refusal by a known host says what the credential lacks.
+
+    ``https_base`` is the remote's ``https://host/`` or "" for other transports;
+    only a host with a known hint gets one, so advice never names the wrong service.
+    """
+    detail = stderr.strip()
+    message = f"git push to {label} failed: {detail}"
+    host = urlsplit(https_base).hostname or ""
+    hint = _PUSH_DENIED_HINTS.get(host.lower())
+    if hint is None:
+        return message
+    lowered = detail.lower()
+    if any(marker in lowered for marker in _PUSH_DENIED_MARKERS):
+        return f"{message}\n{hint}"
+    return message
 
 
 def _push_destination(workspace: str, branch: str) -> tuple[str, str]:
@@ -515,13 +566,10 @@ def push_branch(
     """
     if not allow_protected:
         assert_not_protected(branch, protected_extra=base_default)
-    env = None
-    if token:
-        base = _remote_https_base(workspace, remote)
-        if base:
-            env = _token_auth_env(token, base)
+    base = _remote_https_base(workspace, remote)
+    env = _token_auth_env(token, base) if token and base else None
     result = _run_git(workspace, "push", "--set-upstream", remote, branch, env=env)
     if result.returncode != 0:
         raise GitCommandError(
-            PUSH_FAILED, f"git push to {remote}/{branch} failed: {result.stderr.strip()}"
+            PUSH_FAILED, push_failure_message(f"{remote}/{branch}", result.stderr, base)
         )

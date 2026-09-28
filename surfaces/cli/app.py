@@ -176,6 +176,12 @@ def _run_without_subcommand(
 @click.option("--debug", is_flag=True, help="Print debug-level logs and traces.")
 @click.option("--yes", "-y", is_flag=True, help="Auto-confirm all interactive prompts.")
 @click.option(
+    "--skip-onboarding",
+    "skip_onboarding",
+    is_flag=True,
+    help="Skip the startup demo questions (run /demo to open them later).",
+)
+@click.option(
     "--interactive/--no-interactive",
     default=True,
     help="Disable the interactive shell and print the landing page instead.",
@@ -219,6 +225,7 @@ def cli(
     verbose: bool,
     debug: bool,
     yes: bool,
+    skip_onboarding: bool,
     interactive: bool,
     resume_session_id: str | None,
     sync_on_exit: bool,
@@ -232,6 +239,7 @@ def cli(
     ctx.obj["verbose"] = verbose
     ctx.obj["debug"] = debug
     ctx.obj["yes"] = yes
+    ctx.obj["skip_onboarding"] = skip_onboarding
     ctx.obj["interactive"] = interactive
     ctx.obj[_RECORD_INSTALL_ONLY] = record_install
 

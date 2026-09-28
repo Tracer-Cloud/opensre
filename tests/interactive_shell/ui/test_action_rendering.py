@@ -746,7 +746,6 @@ def test_chat_turn_records_single_cli_agent_history_entry() -> None:
         "what broke in prod?",
         session,
         console,
-        recorder=None,
         execute_actions=_no_actions,
     )
 
@@ -942,3 +941,16 @@ def test_command_tools_suppress_the_static_action_header() -> None:
         assert "Execute" not in out
         assert "opensre" not in out
         assert cmd not in out  # header suppressed; the $cmd line comes from the presenter
+
+
+def test_a_tools_progress_update_is_drawn_as_a_dim_line() -> None:
+    # Arrange
+    observer, buffer = _observer_with_buffer()
+
+    # Act
+    observer("tool_update", {"name": "ask_hosted_gateway", "update": {"progress": "Reading runs…"}})
+    observer("tool_update", {"name": "other", "update": {"partial": 3}})
+
+    # Assert: only a progress text is drawn, once
+    output = buffer.getvalue()
+    assert "↳ Reading runs…" in output and output.count("↳") == 1

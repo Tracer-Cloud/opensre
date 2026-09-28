@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 
+import pytest
 from rich.console import Console
 
 from core.agent_harness.tools.action_tools import (
@@ -211,6 +212,22 @@ def test_rocketchat_send_message_offered_when_rocketchat_is_configured() -> None
 def test_rocketchat_send_message_hidden_when_rocketchat_is_not_configured() -> None:
     names = {spec["name"] for spec in _tool_specs(Session())}
     assert "rocketchat_send_message" not in names
+
+
+def test_github_onboarding_reads_stay_listed_without_a_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A fresh install has no GitHub credential. Hiding these reads removes setup."""
+    for name in ("GITHUB_TOKEN", "GH_TOKEN", "GITHUB_MCP_AUTH_TOKEN"):
+        monkeypatch.delenv(name, raising=False)
+    session = Session()
+    session.configured_integrations = ()
+    session.configured_integrations_known = True
+
+    names = {spec["name"] for spec in _tool_specs(session, resolved_integrations={})}
+
+    assert "analyze_github_ci_reliability" in names
+    assert "scan_github_ci_health" in names
 
 
 def test_llm_set_provider_offered_by_default() -> None:

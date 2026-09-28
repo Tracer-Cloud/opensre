@@ -8,6 +8,11 @@ from typing import Any
 
 from rich.markup import escape
 
+from config.constants.github import (
+    GITHUB_INTEGRATION_SETUP_CLI,
+    GITHUB_INTEGRATION_SETUP_SLASH,
+    GITHUB_SETUP_SLASH_INVOKE,
+)
 from core.agent_harness.tools import action_context_from_agent_context
 from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
@@ -18,7 +23,6 @@ from integrations.github.client import GitHubApiError, GitHubRestClient, resolve
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
     github_creds,
-    github_source_available,
 )
 from integrations.github.tools.ci_health_scan.graphql import RateLimitTally
 from integrations.github.tools.ci_health_scan.scan import (
@@ -36,13 +40,13 @@ DEFAULT_SINCE_DAYS = 365
 _VISIBILITIES = ("all", "private", "public")
 
 
-def _available(sources: dict[str, dict]) -> bool:
-    gh = sources.get("github", {})
-    return bool(
-        github_source_available(sources)
-        or resolve_github_token(None)
-        or github_creds(gh).get("github_token")
-    )
+def _available(_sources: dict[str, dict]) -> bool:
+    """Stay listed when GitHub is not connected yet.
+
+    Onboarding asks this scan to pick a repository. Hiding it on a fresh
+    install leaves that step with no tool and no setup handoff.
+    """
+    return True
 
 
 def _extract_params(sources: dict[str, dict]) -> dict[str, Any]:
@@ -220,9 +224,16 @@ def scan_github_ci_health(
     if not token:
         message = (
             "A GitHub token is required to scan repositories. "
-            "Run `opensre integrations setup github` and try again."
+            f"Run `{GITHUB_INTEGRATION_SETUP_CLI}`. "
+            f"Open the wizard with `{GITHUB_SETUP_SLASH_INVOKE}` and end the turn. "
+            "After they finish, call this tool again."
         )
-        return tool_unavailable(_SOURCE, message, response_text=message)
+        return tool_unavailable(
+            _SOURCE,
+            message,
+            response_text=message,
+            setup_command=GITHUB_INTEGRATION_SETUP_SLASH,
+        )
     scope_visibility = visibility if visibility in _VISIBILITIES else "all"
     window = DEFAULT_SINCE_DAYS if since_days is None else max(0, int(since_days))
     workers = DEFAULT_CONCURRENCY if concurrency is None else int(concurrency)

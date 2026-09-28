@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import subprocess
+from collections.abc import Callable
 from typing import TYPE_CHECKING
 
 from config.constants import OPENSRE_PARENT_INTERACTIVE_SHELL_ENV
@@ -43,11 +44,13 @@ def account_login(*, console: Console | None = None) -> bool:
     return account_is_signed_in()
 
 
-def pass_sign_in_gate(console: Console) -> bool:
+def pass_sign_in_gate(console: Console, *, on_screen: Callable[[], None] | None = None) -> bool:
     """Run the sign-in gate; return True to proceed into the REPL.
 
     Test processes skip the prompt (same reason as the loops picker) so pytest
     on a TTY cannot hang on the Sign in/Stay signed out choice.
+    ``on_screen`` fires once when the sign-in screen is actually painted, not
+    when the user is already signed in or the gate fails closed without a menu.
     """
     if is_test_run():
         return True
@@ -73,11 +76,16 @@ def pass_sign_in_gate(console: Console) -> bool:
             method="menu" if choice is SignInChoice.EXIT else "dismissed",
         )
 
+    def _on_prompted() -> None:
+        capture_sign_in_prompted()
+        if on_screen is not None:
+            on_screen()
+
     return run_sign_in_gate(
         console,
         is_signed_in=account_is_signed_in,
         login=_login,
-        on_prompted=capture_sign_in_prompted,
+        on_prompted=_on_prompted,
         on_choice=_record_choice,
     )
 

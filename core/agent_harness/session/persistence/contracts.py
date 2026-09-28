@@ -134,8 +134,13 @@ class SessionStore(Protocol):
 class SessionRepo(Protocol):
     """Cross-session query/lifecycle surface over all stored sessions."""
 
-    def load_recent(self, n: int = 20) -> list[dict[str, Any]]:
-        raise NotImplementedError
+    def load_recent(
+        self,
+        n: int = 20,
+        *,
+        require_conversation: bool = False,
+    ) -> list[dict[str, Any]]:
+        """Return recent sessions, optionally counting only conversations toward ``n``."""
 
     def count_prefix_matches(self, prefix: str) -> int:
         raise NotImplementedError

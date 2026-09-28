@@ -15,24 +15,12 @@ from core.agent_harness.runtime import TurnPlan
 from core.agent_harness.session.persistence.memory import InMemorySessionStore
 from core.agent_harness.turns.orchestrator import run_turn
 from core.tool import ToolExecutionHooks
+from infrastructure.analytics.prompt_log import recorder as prompt_log
 from surfaces.interactive_shell.runtime.core.turn_accounting import (
     ToolCallingTurnResult,
 )
 from surfaces.interactive_shell.session import Session
-from surfaces.interactive_shell.telemetry.recorder import LlmRunInfo
 from tests.shared.harness_turn_driver import run_harness_turn
-
-
-class _Recorder:
-    def __init__(self) -> None:
-        self.responses: list[tuple[str, LlmRunInfo | None]] = []
-        self.flush_count = 0
-
-    def set_response(self, response: str, run_info: LlmRunInfo | None = None) -> None:
-        self.responses.append((response, run_info))
-
-    def flush(self) -> None:
-        self.flush_count += 1
 
 
 def _console() -> Console:
@@ -62,25 +50,26 @@ def _unhandled_turn(
     )
 
 
-def test_recorder_flushes_once_for_agent_answer() -> None:
-    recorder = _Recorder()
+def test_recorder_flushes_once_for_agent_answer(monkeypatch) -> None:
+    captured = []
+    monkeypatch.setattr(prompt_log, "capture_ai_generation", captured.append)
 
     result = run_harness_turn(
         "question",
         Session(),
         _console(),
-        recorder=recorder,  # type: ignore[arg-type]
         execute_actions=_unhandled_turn,
     )
 
     assert result.answered is True
     assert result.assistant_response_text == "answered"
-    assert recorder.responses == [("answered", None)]
-    assert recorder.flush_count == 1
+    assert len(captured) == 1
+    assert captured[0]["$ai_output_choices"][0]["content"] == "answered"
 
 
-def test_recorder_flushes_once_for_silent_handled_turn() -> None:
-    recorder = _Recorder()
+def test_recorder_flushes_once_for_silent_handled_turn(monkeypatch) -> None:
+    captured = []
+    monkeypatch.setattr(prompt_log, "capture_ai_generation", captured.append)
     session = Session()
 
     def _handled(
@@ -109,14 +98,13 @@ def test_recorder_flushes_once_for_silent_handled_turn() -> None:
         "run something",
         session,
         _console(),
-        recorder=recorder,  # type: ignore[arg-type]
         execute_actions=_handled,
     )
 
     assert result.answered is True
     assert result.final_intent == "agent_completed"
-    assert recorder.responses == [("command output", None)]
-    assert recorder.flush_count == 1
+    assert len(captured) == 1
+    assert captured[0]["$ai_output_choices"][0]["content"] == "command output"
     assert session.cli_agent_messages[-2:] == [
         ("user", "run something"),
         ("assistant", "command output"),
@@ -161,9 +149,9 @@ def test_default_turn_accounting_persists_action_only_context() -> None:
         ("assistant", "Hawaii: +28C"),
     ]
     assert [
-        (message.get("role"), message.get("content"), message.get("metadata"))
+        (message.get("role"), message.get("content"), message["metadata"]["kind"])
         for message in messages[-2:]
     ] == [
-        ("user", "weather in Hawaii", {"kind": "chat"}),
-        ("assistant", "Hawaii: +28C", {"kind": "chat"}),
+        ("user", "weather in Hawaii", "chat"),
+        ("assistant", "Hawaii: +28C", "chat"),
     ]

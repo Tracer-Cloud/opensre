@@ -354,6 +354,38 @@ def get_recoverable_runs(
         return [RecoverableRun(task_id=str(row[0]), fire_time=str(row[1])) for row in rows]
 
 
+def skip_queued_runs(
+    task_id: str,
+    *,
+    reason: str,
+    db_path: Path | None = None,
+) -> int:
+    """Mark pending or expired ticks for ``task_id`` skipped after cancel."""
+    path = db_path if db_path is not None else database.default_run_database_path()
+    if not path.exists():
+        return 0
+    skipped = 0
+    while True:
+        runs = get_recoverable_runs(eligible_task_ids={task_id}, db_path=db_path)
+        if not runs:
+            return skipped
+        progressed = 0
+        for run in runs:
+            claim = try_claim(run.task_id, run.fire_time, db_path=db_path)
+            if claim is None:
+                continue
+            complete_run(
+                claim,
+                status=TaskStatus.SKIPPED,
+                error=reason,
+                db_path=db_path,
+            )
+            progressed += 1
+            skipped += 1
+        if progressed == 0:
+            return skipped
+
+
 def complete_run(
     claim: ExecutionClaim,
     *,
@@ -642,6 +674,7 @@ __all__ = [
     "get_latest_runs",
     "record_run_report",
     "renew_claims",
+    "skip_queued_runs",
     "try_claim",
     "try_queue_run",
 ]

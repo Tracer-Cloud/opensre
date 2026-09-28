@@ -4,14 +4,10 @@ from __future__ import annotations
 
 from rich.console import Console
 
-from infrastructure.analytics.repl_context import bound_repl_turn_context
 from infrastructure.analytics.usage_context import UsageSurface, bound_usage_context
 from surfaces.interactive_shell.session import Session
-from surfaces.interactive_shell.telemetry import PromptRecorder
 from surfaces.interactive_shell.ui.input_prompt.rendering import render_submitted_prompt
 from surfaces.interactive_shell.ui.terminal_ui import render_terminal_ui
-
-_TURN_KIND = "agent"
 
 
 def run_initial_input(
@@ -36,23 +32,16 @@ def run_initial_input(
         if not stripped:
             continue
         render_submitted_prompt(console, session, stripped)
-        recorder = PromptRecorder.start(session=session, text=stripped, turn_kind=_TURN_KIND)
         with (
             bound_usage_context(
                 surface=UsageSurface.CLI,
                 session_id=session.session_id,
-            ),
-            bound_repl_turn_context(
-                session_id=session.session_id,
-                turn_kind=_TURN_KIND,
-                prompt_turn_id=recorder.turn_id if recorder is not None else None,
             ),
         ):
             execute_shell_turn(
                 stripped,
                 session,
                 console,
-                recorder=recorder,
                 confirm_fn=None,
                 is_tty=False,
             )

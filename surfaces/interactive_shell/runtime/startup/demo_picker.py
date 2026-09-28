@@ -16,6 +16,7 @@ from core.agent_harness.spi.grounding import getting_started_skills
 from core.agent_harness.tools import ActionToolScope
 from infrastructure.analytics.capture import capture_onboarding_demo_prompted
 from infrastructure.analytics.source import is_test_run
+from infrastructure.process.runtime_flags import is_onboarding_enabled
 from integrations.git import GitCommandError, merge_in_progress
 from surfaces.shared.terminal.components.choice_menu import repl_tty_interactive
 from tools.interactive_shell.actions.skill_entry import enter_skill, entry_menu_queued
@@ -46,7 +47,12 @@ def should_offer_demo() -> bool:
     A checkout with a merge in progress was opened to finish that merge; the
     demo menu would only stand in the way.
     """
-    return not is_test_run() and repl_tty_interactive() and not _merge_in_progress_here()
+    return (
+        is_onboarding_enabled()
+        and not is_test_run()
+        and repl_tty_interactive()
+        and not _merge_in_progress_here()
+    )
 
 
 def _merge_in_progress_here() -> bool:

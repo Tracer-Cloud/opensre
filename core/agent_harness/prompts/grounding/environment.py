@@ -57,9 +57,29 @@ def build_environment_block(
     runtime_fact = render_runtime_facts(runtime or {})
     if runtime_fact:
         facts.append(runtime_fact)
+    credits_fact = _hosted_credits_fact()
+    if credits_fact:
+        facts.append(credits_fact)
     if not facts:
         return ""
     return "".join(("--- Environment (current shell state) ---\n", "\n".join(facts), "\n\n"))
+
+
+def _hosted_credits_fact() -> str:
+    from core.llm.hosted_credits import hosted_credits_prompt_lines
+
+    lines = hosted_credits_prompt_lines()
+    if not lines:
+        return ""
+    remaining, *rest = lines
+    extra = ""
+    if rest:
+        admission = rest[0].rstrip(".")
+        extra = f" {admission[0].upper()}{admission[1:]}."
+    return (
+        f"{remaining} — quote that number when the user asks how many OpenSRE "
+        f"hosted credits they have left; do not invent a different balance.{extra}"
+    )
 
 
 __all__ = ["build_environment_block"]

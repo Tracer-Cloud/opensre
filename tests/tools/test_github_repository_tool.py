@@ -72,6 +72,9 @@ def test_run_happy_path() -> None:
     assert result["repository"]["forks_count"] == 7
     assert result["repository"]["license"] == "MIT"
     assert result["summary"] == "Tracer-Cloud/opensre · 42★ · main · public · Python"
+    tool = get_github_repository.__opensre_registered_tool__
+    assert "stargazers_count" in tool.description
+    assert "never forks_count" in tool.description
 
 
 def test_run_api_error() -> None:

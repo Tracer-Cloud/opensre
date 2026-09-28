@@ -31,6 +31,7 @@ INSTALL_DIR="${OPENSRE_INSTALL_DIR:-}"
 INSTALL_DIR_OVERRIDE=0
 INSTALL_CHANNEL="${OPENSRE_INSTALL_CHANNEL:-main}"
 INSTALL_CHANNEL_EXPLICIT=0
+INSTALL_ORIGIN=""
 [ -n "${OPENSRE_INSTALL_CHANNEL:-}" ] && INSTALL_CHANNEL_EXPLICIT=1
 MAIN_RELEASE_TAG="${OPENSRE_MAIN_RELEASE_TAG:-main-build}"
 BIN_NAME="opensre"
@@ -135,7 +136,7 @@ run_with_dots() {
 
 usage() {
   cat <<'EOF'
-Usage: install.sh [--main] [--release] [--version <version>] [--install-dir <path>]
+Usage: install.sh [--main] [--release] [--version <version>] [--install-dir <path>] [-lp | -gh | -dc]
 
 Installs the OpenSRE CLI.
 
@@ -144,18 +145,35 @@ Options:
   --release             Install the latest versioned release instead of main.
   --version <version>   Install a specific versioned release (for example 2026.4.29).
   --install-dir <path>  Install into a specific directory.
+  -lp                   Installation command from the landing page.
+  -gh                   Installation command from the GitHub README.
+  -dc                   Installation command from the documentation.
   -h, --help            Show this help text.
 
 Examples:
   curl -fsSL https://install.opensre.com | bash
+  curl -fsSL https://install.opensre.com | bash -s -- -lp
+  curl -fsSL https://install.opensre.com | bash -s -- -gh
+  curl -fsSL https://install.opensre.com | bash -s -- -dc
   curl -fsSL https://install.opensre.com | bash -s -- --main
   curl -fsSL https://install.opensre.com | bash -s -- --version 2026.4.29
 EOF
 }
 
 parse_args() {
+  local origin
   while [ "$#" -gt 0 ]; do
     case "$1" in
+      -lp|-gh|-dc)
+        case "$1" in
+          -lp) origin="landing_page" ;;
+          -gh) origin="github" ;;
+          -dc) origin="documentation" ;;
+        esac
+        [ -z "$INSTALL_ORIGIN" ] || [ "$INSTALL_ORIGIN" = "$origin" ] \
+          || die "Specify only one installation origin (-lp, -gh, or -dc)."
+        INSTALL_ORIGIN="$origin"
+        ;;
       --main)
         INSTALL_CHANNEL="main"
         INSTALL_CHANNEL_EXPLICIT=1
@@ -1173,6 +1191,7 @@ record_install_analytics() {
   # ``unknown`` when no pre-install snapshot was taken: never crash under
   # ``set -u`` and never fabricate ``absent`` for an unobserved marker.
   OPENSRE_INSTALL_SOURCE="posix_installer" \
+    OPENSRE_INSTALL_ORIGIN="${INSTALL_ORIGIN:-}" \
     OPENSRE_INSTALL_MARKER_STATE="${install_marker_state:-unknown}" \
     OPENSRE_INSTALL_CHANNEL="$INSTALL_CHANNEL" \
     OPENSRE_INSTALL_VERSION="$installed_version" \
