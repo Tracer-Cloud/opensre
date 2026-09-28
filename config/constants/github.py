@@ -14,6 +14,10 @@ GITHUB_TOKEN_ENV = "GITHUB_TOKEN"
 GH_TOKEN_ENV = "GH_TOKEN"
 GITHUB_CLI_REQUIRED_SCOPES = frozenset({"read:org", "repo", "security_events", "workflow"})
 GITHUB_CI_DEMO_REPOSITORY = "opensre-onboarding-ci-repair-demo"
+#: Shell command that opens the GitHub setup wizard. Always available via slash_invoke.
+GITHUB_INTEGRATION_SETUP_SLASH = "/integrations setup github"
+#: Same wizard from a terminal that is not already inside the interactive shell.
+GITHUB_INTEGRATION_SETUP_CLI = "opensre integrations setup github"
 #: What to check on a GitHub token that is refused, in the order that resolves it.
 GITHUB_TOKEN_CHECKLIST = (
     "Check the GitHub token in this order (github.com/settings/personal-access-tokens). "
@@ -37,6 +41,8 @@ __all__ = [
     "GITHUB_API_BASE_URL",
     "GITHUB_CLI_REQUIRED_SCOPES",
     "GITHUB_CI_DEMO_REPOSITORY",
+    "GITHUB_INTEGRATION_SETUP_CLI",
+    "GITHUB_INTEGRATION_SETUP_SLASH",
     "GITHUB_MCP_ARGS_ENV",
     "GITHUB_MCP_AUTH_TOKEN_ENV",
     "GITHUB_MCP_COMMAND_ENV",
