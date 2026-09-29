@@ -23,39 +23,44 @@ metadata:
 This runs one bounded repair that finishes on the gateway without the shell. It does not set up continuous repository monitoring.
 
 ## Roles
+
 **Orchestrator (local shell):**
+
 - Checks the gateway is ready, picks the target, delegates, verifies and reports.
 
 **Executor (gateway):**
+
 - Runs the repair with the skill `scheduling-github-ci-repairs` and reports back to the shell.
 
 ## Plan
+
 Use `update_plan` to create the live plan from the workflow headings below:
 
 **Inside the interactive shell:**
-- [ ] Prepare the hosted gateway with check_hosted_gateway.
-- [ ] Ask remote gateway agent to understand available GitHub account owner and if the required permissions are available 
 
-**Remote Gateway agent:**
-- [ ] Do a check to understand what GitHub integration credentials are configured and what type (OAuth, fine grained or classic token pat)
-- [ ] Confirm permissions and wether there are permissions to create a seed repository
+- [ ] Prepare the hosted gateway with check_hosted_gateway.
+- [ ] Probe GitHub access on the gateway with one ask_hosted_gateway prompt.
 
 **Inside the interactive shell:**
-- [ ] Based on information from Gateway agent ask user for permission to execute the plan based on the permissions and propose repository name and branch etc. 
+
+- [ ] Confirm the target and approval in one ask_user_choice question.
 - [ ] Delegate execution with ask_hosted_gateway and retain its prompt ID.
 
+
 **Remote Gateway agent:**
+
 - [ ] Read the following skill: `scheduling-github-ci-repairs` to understand how to seed a demo PR and inside a demo repository and how to fix it. 
 - [ ] Create the demo repository, failing branch, and PR (demo only).
 - [ ] Confirm GitHub reports the failure with list_github_actions_workflow_runs.
 - [ ] Schedule the bounded repair with schedule_ci_repair_loop and record its task id.
 - [ ] Run the first tick with `/cron run <id>` and read its report.
 - [ ] Verify the repair with one `pr view` call.
-- [ ] Save evidence, remove the demo loop and resources, verify with `/cron list`.
+- [ ] Save evidence, remove the demo loop, and verify with `/cron list`. Nothing on GitHub is deleted; the demo repository is kept.
 - [ ] Respond with the outcome report as Markdown.
 
 **Inside the interactive shell:**
-- [ ] Verify the remote repair outcome through ask_hosted_gateway.
+
+- [ ] Verify the outcome by re-reading the delegated prompt ID (verifies: true).
 - [ ] Show the remote outcome and evidence as Markdown.
 - [ ] Offer the next step or blocker resolution with ask_user_choice.
 
@@ -71,41 +76,78 @@ The workflow succeeds only when:
 ## Workflow Notes
 
 ### Prepare the hosted gateway
-These steps are for the interactive shell only: 
-- Run `check_hosted_gateway()` and use`start_hosted_gateway()` as appropriate if none is running, then check readiness again. 
-- Ensure that the gateway can receive a simple prompt, are you running correctly? And that the response is recorded back inside the interactive shell. 
 
-**Completed when:**
-- The gateway is ready. 
+**Shell only:**
 
-### Ask for missing repair-target information
-The goal for this step is to retrieve the necescarry information to execute a demo. 
-
-Communicate with the remote Gateway to ask the following questions. 
-
-- Use the user's existing PR selection or demo choice or ask once with `ask_user_choice`, title `Remote Repair Target`, offering:
-- `Use a disposable demo repository`
+- Run `check_hosted_gateway()`. If it is not running, call `start_hosted_gateway()` once and check again until it is ready.
+- Do not send a test prompt. The probe below is the first prompt, and its answer proves the gateway takes prompts.
 
 **Complete when:**
+
+- `check_hosted_gateway()` reports the gateway running.
+
+### Probe GitHub access
+
+Send one `ask_hosted_gateway` prompt:
+
+Report this gateway's GitHub access for a CI repair demo. Run only these calls and create nothing:
+
+- [1] `github_cli ["api", "user", "--include"]` for the login. An `X-OAuth-Scopes` header means a classic PAT: list its scopes, which need `repo` and `workflow` (the demo pushes a workflow file). No header means a fine-grained or app token.
+
+- [2] `github_cli ["api", "user/memberships/orgs", "--jq", "[.[] | {org: .organization.login, role, state}]"]`
+
+- [3] For each organization: `github_cli ["api", "graphql", "-f", "query=query($o: String!) { organization(login: $o) { viewerCanCreateRepositories } }", "-F", "o=<org>"]`, Answer with the login, the token type and scopes, and one line per owner (the login plus each organization) saying whether it can create repositories. Then propose one demo repository as `<owner>/<name>`.
+
+**Complete when:**
+
+- The gateway named the login, the token type, and at least one owner that can create repositories. Otherwise, a blocker is recorded.
+
+### Confirm the repair plan
+
+Ask once with `ask_user_choice`, titled `Remote Repair Plan`. Put the probe's findings (login, token type, owner) in the question so the user approves exactly what will run:
+
+- `Run the demo in <owner>/<name>; the repository is kept afterwards` (recommended)
+- `Use an existing pull request`
+
+Skip the question when the user already named a PR, or asked for the demo and named an owner. The request itself is the approval.
+
+**Complete when:**
+
+- The user picked an option. For an existing PR, the owner, repository and PR number are known.
+
+**Complete when:**
+
 - When the chosen scope is known. 
 - Keep asking until all required parameters are known. 
 
-### Blockers 
-**GitHub connection blocker**
-- If missing credentials, direct the user to https://app.opensre.com/dashboard/github and follow the tool's continuation guidance after it is corrected.
+### Delegate the repair
+
+- Send one `ask_hosted_gateway` prompt: "Use `scheduling-github-ci-repairs` for <target>. 
+- Delete nothing on GitHub." 
+- Pass the target as `facts` (`demo`, `owner`, `repo`, `pr_number`). Keep the prompt ID.
+
+**Complete when:** the gateway returned a task ID and outcome, or a blocker.
+
+### Verify the remote outcome
+
+- Call `ask_hosted_gateway(prompt_id=<the delegated prompt ID>)` once. Do not send a new prompt.
+- Check the record against the delegated report: same task ID, a fix commit, a passing run ID, and the loop removed.
+- If it says the gateway is not running, do not start it just to verify. Mark this step blocked with "gateway stopped after reporting; the delegated report is unverified" and show that report.
 
 **Complete when:**
-- The blockers are resolved or the user wants to write their own specific answer. 
-- For a pending task, offer to continue observing the same task ID or leave it running. 
-- Keep these recovery choices separate from the successful-demo options above.
 
-### Show the outcome
+- The re-read matches the report, or the step is blocked with its reason.
 
-Report the target PR, task ID, repair outcome, available CI evidence links, and retained resources. State pending, blocked, or failed outcomes plainly. 
+### Show the outcome in a report
 
-The task's gateway ownership establishes independence from the shell; claim a tested disconnect only if the shell was actually disconnected during execution.
+- Report the target PR, task ID, repair outcome, available CI evidence links, and retained resources. State pending, blocked, or failed outcomes plainly and concisely. 
+
+- The task's gateway ownership establishes independence from the shell; claim a tested disconnect only if the shell was actually disconnected during execution.
+
+- Show the report once. Do not repeat the gateway's streamed steps.
 
 **Complete when:**
+
 - When the Markdown report has been shown. Keep the gateway running so an unfinished repair can continue.
 
 ### Offer the follow-up
@@ -117,7 +159,20 @@ After a successful repair report, use `ask_user_choice`:
 - Exit to interactive shell
 
 **Complete when:**
+
 - The appropriate menu is offered. 
 - Keep this step pending until the report has been shown
 
+
+### Blockers 
+
+**GitHub connection blocker:**
+
+- If missing credentials, direct the user to https://app.opensre.com/dashboard/github and follow the tool's continuation guidance after it is corrected.
+
+**Complete when:**
+
+- The blockers are resolved or the user wants to write their own specific answer. 
+- For a pending task, offer to continue observing the same task ID or leave it running. 
+- Keep these recovery choices separate from the successful-demo options above.
 
