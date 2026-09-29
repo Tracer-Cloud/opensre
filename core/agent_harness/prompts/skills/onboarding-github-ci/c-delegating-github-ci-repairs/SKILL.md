@@ -102,23 +102,17 @@ Report this gateway's GitHub access for a CI repair demo. Run only these calls a
 
 - The gateway named the login, the token type, and at least one owner that can create repositories. Otherwise, a blocker is recorded.
 
-### Confirm the repair plan
+### Display the final repair plan
 
-Ask once with `ask_user_choice`, titled `Remote Repair Plan`. Put the probe's findings (login, token type, owner) in the question so the user approves exactly what will run:
+Show the final repair plan titled `Remote Repair Plan`. Put the probe's findings (login, token type, owner) in the overview so the user can see it once. 
 
-- `Run the demo in <owner>/<name>; the repository is kept afterwards` (recommended)
+- `Run the demo in <owner>/<name>`
 - `Use an existing pull request`
-
-Skip the question when the user already named a PR, or asked for the demo and named an owner. The request itself is the approval.
-
-**Complete when:**
-
-- The user picked an option. For an existing PR, the owner, repository and PR number are known.
 
 **Complete when:**
 
 - When the chosen scope is known. 
-- Keep asking until all required parameters are known. 
+- Keep asking with `ask_user_choice` if not all required parameters are known. 
 
 ### Delegate the repair
 

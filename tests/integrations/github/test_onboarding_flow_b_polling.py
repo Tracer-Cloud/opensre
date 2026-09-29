@@ -1,6 +1,6 @@
-"""Polling after onboarding flow B seeds the calculator demo.
+"""Polling after onboarding flow B creates the calculator demo.
 
-The seed pushes a failing branch before a pull request exists, and the workflow
+The failing branch is pushed before its pull request exists, and the workflow
 runs on both push and pull_request. These tests start with that checkout, then
 drive the check poller, the repair loop, and the epoch observer through the
 queued, split-event, and head-change sequences that follow.
@@ -8,11 +8,8 @@ queued, split-event, and head-change sequences that follow.
 
 from __future__ import annotations
 
-import importlib
-import shutil
 import subprocess
 import sys
-from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
@@ -32,10 +29,6 @@ from integrations.github.tools.ci_fix.verification import (
 from integrations.github.tools.ci_repair_loop.models import RepairRun, RepairStatus
 from integrations.github.tools.ci_repair_loop.storage import RepairStore
 
-_SCRIPTS = (
-    Path(__file__).resolve().parents[3]
-    / "core/agent_harness/prompts/skills/onboarding-github-ci/b-scheduling-github-ci-repairs/scripts"
-)
 _REPO = "tester/opensre-ci-repair-demo-poll"
 _WORKFLOW = "Demo calculator CI"
 _RUN_URL = f"https://github.com/{_REPO}/actions/runs/99"
@@ -63,61 +56,52 @@ def _git(directory: Path, *args: str) -> str:
     ).stdout.strip()
 
 
-@pytest.fixture
-def seeded_demo(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[dict[str, Any]]:
-    """Flow B step 4 against a local bare remote: green main, red demo/failing-ci."""
-    monkeypatch.syspath_prepend(str(_SCRIPTS))
-    state = importlib.import_module("_demo_state")
-    seed = importlib.import_module("seed_demo_repository")
-    monkeypatch.setattr(state, "results_directory", lambda: tmp_path / "results")
-    bare = tmp_path / "remote.git"
-    initial = tmp_path / "initial"
-    initial.mkdir()
-    _git(initial, "init", "-b", "main")
-    (initial / "README.md").write_text("Demo\n")
-    _git(initial, "add", "README.md")
+_CALCULATOR = "def add(left: int, right: int) -> int:\n    return {}\n"
+_CALCULATOR_TEST = """import unittest
+
+from calculator import add
+
+
+class CalculatorTest(unittest.TestCase):
+    def test_add(self):
+        self.assertEqual(add(2, 3), 5)
+
+
+if __name__ == "__main__":
+    unittest.main()
+"""
+
+
+def _commit_all(checkout: Path, message: str) -> str:
+    _git(checkout, "add", "-A")
     _git(
-        initial,
+        checkout,
         "-c",
-        "user.name=Test",
+        "user.name=Demo User",
         "-c",
-        "user.email=test@example.invalid",
+        "user.email=demo@example.invalid",
         "-c",
         "commit.gpgsign=false",
         "commit",
         "-m",
-        "Initial",
+        message,
     )
-    _git(tmp_path, "clone", "--bare", str(initial), str(bare))
-    real_git = seed._git
+    return _git(checkout, "rev-parse", "HEAD")
 
-    def local_git(checkout: Path, *args: str) -> str:
-        if args[0] == "clone":
-            result = real_git(checkout, "clone", str(bare), args[-1])
-            real_git(
-                Path(args[-1]), "remote", "set-url", "origin", f"https://github.com/{_REPO}.git"
-            )
-            return str(result)
-        if args[0] in {"push", "ls-remote"}:
-            args = tuple(str(bare) if arg == "origin" else arg for arg in args)
-        return str(real_git(checkout, *args))
 
-    monkeypatch.setattr(seed, "_git", local_git)
-    receipt = seed.seed_demo_repository(_REPO)
-    checkout = Path(receipt["workspace"]) / "checkout"
-    try:
-        yield {
-            "seed": seed,
-            "receipt": receipt,
-            "checkout": checkout,
-            "bare": bare,
-            "seed_sha": receipt["seed_sha"],
-            "head_sha": receipt["head_sha"],
-        }
-    finally:
-        workspace = Path(receipt["workspace"])
-        if workspace.exists():
-            shutil.rmtree(workspace)
+@pytest.fixture
+def seeded_demo(tmp_path: Path) -> dict[str, Any]:
+    """The flow B demo checkout: green main, one red commit on demo/failing-ci."""
+    checkout = tmp_path / "checkout"
+    checkout.mkdir()
+    _git(checkout, "init", "-b", "main")
+    (checkout / "calculator.py").write_text(_CALCULATOR.format("left + right"))
+    (checkout / "test_calculator.py").write_text(_CALCULATOR_TEST)
+    seed_sha = _commit_all(checkout, "Seed demo calculator CI")
+    _git(checkout, "checkout", "-b", "demo/failing-ci")
+    (checkout / "calculator.py").write_text(_CALCULATOR.format("left - right"))
+    head_sha = _commit_all(checkout, "Introduce demo calculator regression")
+    return {"checkout": checkout, "seed_sha": seed_sha, "head_sha": head_sha}
 
 
 def _demo_check(**overrides: object) -> dict[str, object]:
@@ -213,22 +197,6 @@ def _repair(*, deadline: float = 500) -> RepairRun:
         initial_sha="",
         status=RepairStatus.RUNNING,
     )
-
-
-def test_seeded_branch_fails_the_demo_workflow_and_main_passes(seeded_demo: dict[str, Any]) -> None:
-    checkout = seeded_demo["checkout"]
-    workflow = (checkout / ".github/workflows/test.yml").read_text()
-    assert "name: Demo calculator CI" in workflow
-    assert "on: [push, pull_request]" in workflow
-    assert seeded_demo["head_sha"] != seeded_demo["seed_sha"]
-    assert _git(checkout, "rev-parse", "demo/failing-ci") == seeded_demo["head_sha"]
-    assert _git(checkout, "diff", "--name-only", "main", "demo/failing-ci") == "calculator.py"
-    for branch, expected in (("main", 0), ("demo/failing-ci", 1)):
-        _git(checkout, "checkout", branch)
-        tested = subprocess.run(
-            [sys.executable, "-B", "-m", "unittest", "-v"], cwd=checkout, capture_output=True
-        )
-        assert tested.returncode == expected
 
 
 def test_seeded_check_shapes_stay_unfinished_until_a_real_failure() -> None:

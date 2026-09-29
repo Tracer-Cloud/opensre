@@ -9,7 +9,7 @@ demo_order: 2
 metadata:
   owner: Vincent
   last_changed_by: Jan
-  last_changed_at: 2026-09-14
+  last_changed_at: 2026-09-29
   usecases:
     - For configuring ongoing repair of failing pull requests in one repository.
     - For demonstrating a scheduled repair in a disposable private repository.
@@ -17,7 +17,7 @@ metadata:
     - GitHub write access to the watched repository and an authenticated coding agent
     - Git installed on the scheduler host; repair checkouts are created automatically
     - For the demo, a GitHub token that can create a private repository and an example PR
-  version: "7.3"
+  version: "0.74"
 script_tools: references/script-tools.md
 includes:
   - common/ask_once.md
@@ -116,33 +116,15 @@ The scope was authorized in Step 1; nothing to fetch.
 
 ### Step 4. Create the demo failure (Demo only)
 
-Do exactly three calls, in order. Use a simple demo, e.g. calculator.add incorrectly subtracts, with one fast CI test.
+Build a small repository whose CI fails for one obvious reason, and open a PR for it. Choose the calls yourself with `github_cli`; it carries the GitHub credentials, and plain `git` on the gateway does not.
 
-**[1] Create repo**
-First check if a demo repo already exists:
+The fixture:
+- `main` passes: `calculator.py` where `add` returns `left + right`, `test_calculator.py` asserting `add(2, 3) == 5`, and `.github/workflows/test.yml` named `Demo calculator CI` running `python -m unittest -v` on push and pull_request.
+- `demo/failing-ci` is one commit ahead and changes only `calculator.py`, so `add` subtracts.
 
-`github_cli ["repo", "list", "--limit", "100", "--json", "name,url,createdAt,isPrivate", "--jq", "[.[] | select(.name | startswith(\"opensre-ci-repair-demo-\"))]"]`
-
-If one already exists then reuse in place, if it doesn't exist yet then create a new one:
-
-`github_cli ["repo", "create", "opensre-ci-repair-demo-<random>", "--private", "--add-readme", "--description", "Temporary OpenSRE scheduled CI repair demo"]`
-
-No owner prefix, so the authenticated user keeps deletion rights.
-
-**[2] Populate failing demo into repo**
-`seed_demo_repository(repo="<owner>/<repo>")`
-
-Record workspace and `head_sha`.` If it fails, inspect stage and saved progress before retrying. Stop on unexpected local or remote changes.
-
-**[3] Create PR from the intentionally broken branch into main.**
-Create the broken CI incident that the demo agent is supposed to repair:
-
-`github_cli ["pr", "create", "--base", "main", "--head", "demo/failing-ci", "--title", "Demo: repair failing calculator CI", "--body", "<BODY_COMES_HERE>]`
-
-With the body constant (BODY_COMES_HERE) defined as "Temporary OpenSRE demo: this branch introduces a regression in `calculator.add` that breaks the `Demo calculator CI` workflow (`python -m unittest -v`). A scheduled OpenSRE repair loop is expected to detect the failing check, push a fix commit to this branch without touching `test_calculator.py`, and turn the checks green. Do not merge; the repository is disposable and can be deleted after the demo."
+Create the repository first (private, under the approved owner), then commit the files, then open the PR from `demo/failing-ci` into `main` and say in its body that it is a demo not to merge. Reuse anything that already exists instead of recreating it.
 
 **Complete this step when:**
-
 - The PR URL is returned to the user.
 
 ### Step 5. Schedule the bounded repair

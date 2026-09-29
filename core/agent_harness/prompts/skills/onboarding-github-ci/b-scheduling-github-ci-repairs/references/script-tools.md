@@ -1,19 +1,5 @@
 ---
 script_tools:
-  - name: seed_demo_repository
-    script: seed_demo_repository.py
-    description: >-
-      Seed a newly created owner/opensre-ci-repair-demo-<id> repository with
-      calculator CI and push demo/failing-ci. Returns workspace, stage,
-      and head_sha. Retries check saved local and remote progress first.
-    input_schema:
-      type: object
-      properties:
-        repo:
-          type: string
-          description: The newly created owner/opensre-ci-repair-demo-<id> repository.
-      required: [repo]
-      additionalProperties: false
   - name: write_demo_evidence
     script: write_demo_evidence.py
     description: >-
