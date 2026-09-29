@@ -164,12 +164,14 @@ def _settings(
     *,
     allow_open_workspace: bool = False,
     turn_timeout_seconds: float = 240.0,
+    open_channel_ids: list[str] | None = None,
 ) -> SlackGatewaySettings:
     return SlackGatewaySettings(
         bot_token="xoxb-test",
         app_token="xapp-test",
         allowed_user_ids=allowed_user_ids or [],
         allow_open_workspace=allow_open_workspace,
+        open_channel_ids=open_channel_ids or [],
         status_update_interval_seconds=0.01,
         turn_timeout_seconds=turn_timeout_seconds,
     )
@@ -181,14 +183,19 @@ def _inbound(
     ts: str = "100.1",
     team_id: str = "T1",
     channel_id: str = "C1",
+    user_id: str = "U1",
+    bot_id: str = "",
+    open_channel: bool = False,
 ) -> SlackInboundMessage:
     return SlackInboundMessage(
         team_id=team_id,
-        user_id="U1",
+        user_id=user_id,
         channel_id=channel_id,
         ts=ts,
         thread_ts="100.1",
         text=text,
+        open_channel=open_channel,
+        bot_id=bot_id,
     )
 
 
@@ -263,6 +270,70 @@ def test_unauthorized_user_gets_denial_reply_and_no_turn() -> None:
     assert "not authorized" in denial
     assert "U1" not in denial
     assert "SLACK_" not in denial
+
+
+def _open_settings() -> SlackGatewaySettings:
+    # U999 is the only allowed human: nobody below is on the allowlist.
+    return _settings(["U999"], open_channel_ids=["C1"])
+
+
+def _run_open(inbound: SlackInboundMessage) -> tuple[list[str], _FakeMessagingClient]:
+    messaging = _FakeMessagingClient()
+    turns: list[str] = []
+
+    def handler(text: str, _session: Any, sink: Any, _logger: logging.Logger) -> None:
+        turns.append(text)
+        sink.finalize("done")
+
+    _dispatcher(
+        settings=_open_settings(),
+        messaging=messaging,
+        resolver=_FakeSessionResolver(),
+        handler=handler,
+        bot_user_id="UOPENSRE",
+    ).dispatch(inbound)
+    return turns, messaging
+
+
+@pytest.mark.parametrize(
+    "inbound",
+    [
+        _inbound(user_id="UWF", bot_id="BWF", open_channel=True, text="investigate PD-123"),
+        _inbound(user_id="U555", open_channel=True, text="investigate PD-123"),
+    ],
+    ids=["workflow", "human"],
+)
+def test_open_channel_mention_runs_a_turn_without_the_user_allowlist(
+    inbound: SlackInboundMessage,
+) -> None:
+    turns, _messaging = _run_open(inbound)
+
+    assert len(turns) == 1
+    assert "investigate PD-123" in turns[0]
+
+
+@pytest.mark.parametrize(
+    ("inbound", "why"),
+    [
+        (_inbound(user_id="UOPENSRE", bot_id="BOS", open_channel=True), "own message"),
+        (_inbound(user_id="UWF", bot_id="BWF", open_channel=True, channel_id="C9"), "not open"),
+        (_inbound(user_id="UWF", bot_id="BWF", open_channel=True, text="/new"), "command"),
+        (_inbound(user_id="UWF", bot_id="BWF", open_channel=True, text="/pair 1"), "pairing"),
+        (_inbound(user_id="UWF", bot_id="BWF", open_channel=True, text="/stop"), "stop"),
+    ],
+)
+def test_refused_bot_mentions_stay_silent(inbound: SlackInboundMessage, why: str) -> None:
+    turns, messaging = _run_open(inbound)
+
+    assert turns == [], why
+    assert messaging.posts == [], why
+
+
+def test_human_commands_in_open_channel_still_need_the_allowlist() -> None:
+    turns, messaging = _run_open(_inbound(user_id="U555", open_channel=True, text="/new"))
+
+    assert turns == []
+    assert len(messaging.posts) == 1  # the usual unauthorized reply
 
 
 def test_out_of_credits_blocks_turn_with_short_reply(monkeypatch: pytest.MonkeyPatch) -> None:

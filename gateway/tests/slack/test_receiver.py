@@ -34,7 +34,13 @@ _MENTION = {
 }
 
 
-def _admit(payload: dict[str, object], *, dedup: object | None = None, sign: bool = True):
+def _admit(
+    payload: dict[str, object],
+    *,
+    dedup: object | None = None,
+    sign: bool = True,
+    **open_channels: object,
+):
     body = json.dumps(payload).encode()
     signature = (
         expected_signature(signing_secret=_SECRET, timestamp=_TIMESTAMP, body=body)
@@ -47,6 +53,7 @@ def _admit(payload: dict[str, object], *, dedup: object | None = None, sign: boo
         signing_secret=_SECRET,
         handled_events=dedup or InMemoryHandledSlackEventRepository(),
         now=_NOW,
+        **open_channels,  # type: ignore[arg-type]
     )
 
 
@@ -111,6 +118,22 @@ def test_non_chat_events_are_ignored_not_rejected() -> None:
 
     # Act / Assert.
     assert _admit(payload).status is SlackHttpStatus.IGNORED
+
+
+def test_bot_mention_is_ignored_unless_the_channel_is_open() -> None:
+    # Arrange.
+    event = dict(_MENTION["event"], bot_id="BWF")  # type: ignore[arg-type]
+    payload: dict[str, object] = dict(_MENTION, event=event)
+
+    # Act.
+    untrusted = _admit(payload)
+    accepted = _admit(payload, open_channel_ids={"C1"})
+
+    # Assert.
+    assert untrusted.status is SlackHttpStatus.IGNORED
+    assert accepted.status is SlackHttpStatus.ACCEPTED
+    assert accepted.message is not None
+    assert accepted.message.bot_id == "BWF"
 
 
 def _interactivity_body(payload: dict[str, object]) -> bytes:

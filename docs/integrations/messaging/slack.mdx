@@ -46,6 +46,7 @@ SLACK_ALLOWED_USERS=U0123ABCD
 | `SLACK_ACCESS_TOKEN` | User token (`xoxp-…`) with `search:read`. Required only for `slack_search_messages` — Slack rejects bot tokens there. |
 | `SLACK_ALLOWED_USERS` | Comma-separated Slack user IDs allowed to talk to the bot (required unless open workspace). |
 | `SLACK_ALLOW_OPEN_WORKSPACE` | Set to `1` to allow any workspace member (dogfood escape hatch). |
+| `SLACK_OPEN_CHANNEL_IDS` | Comma-separated channel IDs (`C…`) where any `@mention` starts a turn without `SLACK_ALLOWED_USERS`: humans, bots, and Workflow Builder steps (for example, a workflow that replies to PagerDuty posts). Other bot messages are always ignored. Bots and workflows cannot run `/` commands or stop turns. |
 | `SLACK_TEAM_TASKS_LIST_ID` | Optional Slack List id (`F…`) for `slack_read_list` without a name search. |
 
 OpenSRE reads env as a fallback when no Slack entry exists in `~/.opensre/integrations.json`. Bot / app tokens use `resolve_env_credential` (process env, then the credentials file). `SLACK_WEBHOOK_URL` is store/env only.

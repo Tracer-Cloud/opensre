@@ -126,6 +126,7 @@ def build_slack_http_app(
             body=body,
             signing_secret=settings.signing_secret,
             handled_events=handled_events,
+            open_channel_ids=settings.open_channel_ids,
         )
         if outcome.status is SlackHttpStatus.REJECTED:
             # Detail stays server-side (CWE-209): the caller is unauthenticated.

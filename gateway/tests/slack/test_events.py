@@ -81,6 +81,58 @@ def test_rejects_bot_echo_and_message_subtypes() -> None:
     assert parse_events_api_payload(_mention_payload(subtype="message_changed")) is None
 
 
+_OPEN = {"open_channel_ids": {"C222"}}
+
+
+def test_accepts_bot_mention_in_open_channel() -> None:
+    inbound = parse_events_api_payload(
+        _mention_payload(bot_id="B555", thread_ts="1699999999.000001"), **_OPEN
+    )
+
+    assert inbound is not None
+    assert inbound.open_channel is True
+    assert inbound.bot_id == "B555"
+    assert inbound.user_id == "U111"
+    assert inbound.addressed is True
+    assert inbound.text == "check the checkout service"
+    assert inbound.thread_ts == "1699999999.000001"
+
+
+def test_bot_mention_without_user_uses_bot_id_as_speaker() -> None:
+    payload = _mention_payload(bot_id="B555", subtype="bot_message")
+    del payload["event"]["user"]
+
+    inbound = parse_events_api_payload(payload, **_OPEN)
+
+    assert inbound is not None
+    assert inbound.user_id == "B555"
+
+
+@pytest.mark.parametrize(
+    "overrides",
+    [
+        {"bot_id": "B555", "channel": "C999"},  # channel not open
+        {"bot_id": "B555", "type": "message", "channel_type": "channel"},  # not a mention
+        {"bot_id": "B555", "subtype": "message_changed"},  # edit bookkeeping
+    ],
+)
+def test_rejects_bot_events_outside_open_channel_mentions(overrides: dict[str, Any]) -> None:
+    assert parse_events_api_payload(_mention_payload(**overrides), **_OPEN) is None
+
+
+def test_bot_mentions_are_ignored_without_open_channels() -> None:
+    assert parse_events_api_payload(_mention_payload(bot_id="B555")) is None
+
+
+def test_human_mention_in_open_channel_is_flagged_open() -> None:
+    inbound = parse_events_api_payload(_mention_payload(), **_OPEN)
+    elsewhere = parse_events_api_payload(_mention_payload(channel="C999"), **_OPEN)
+
+    assert inbound is not None and inbound.open_channel is True
+    assert inbound.bot_id == ""
+    assert elsewhere is not None and elsewhere.open_channel is False
+
+
 def test_accepts_file_share_and_thread_broadcast_subtypes() -> None:
     # These subtypes still carry a real user mention and must be answered,
     # not silently dropped like edit/join bookkeeping subtypes.

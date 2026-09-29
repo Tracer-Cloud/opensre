@@ -39,6 +39,7 @@ from gateway.transports.slack.processing.principal import (
 )
 from gateway.transports.slack.processing.security import (
     SlackInboundDecision,
+    authorize_open_channel_mention,
     enforce_inbound_slack_message_security,
 )
 from gateway.transports.slack.processing.thread_history import (
@@ -83,8 +84,9 @@ class SlackTurnDispatcher:
         self._resolver_lock = threading.Lock()
 
     def dispatch(self, inbound: SlackInboundMessage) -> None:
-        # /stop must not wait on the per-conversation turn lock.
-        if is_stop_command(inbound.text):
+        # /stop must not wait on the per-conversation turn lock. A bot or
+        # workflow may only start turns, never cancel one.
+        if is_stop_command(inbound.text) and not inbound.bot_id:
             if not self._active_cancels.request_stop(inbound.conversation_key):
                 self._post(inbound, NO_ACTIVE_TURN_MESSAGE)
             return
@@ -183,6 +185,9 @@ class SlackTurnDispatcher:
             # denial/help/pairing chatter in a human conversation: anything but
             # a clean authorized turn stays silent. Commands require a mention.
             return None
+        if inbound.bot_id and not decision.allowed:
+            # Refusals stay in the audit log: answering a bot invites a loop.
+            return None
 
         def _send(text: str) -> None:
             self._post(inbound, text)
@@ -200,15 +205,29 @@ class SlackTurnDispatcher:
             resolver_lock=self._resolver_lock,
         )
 
-    def _run_turn(self, inbound: SlackInboundMessage, scope: StorageScope) -> None:
-        with self._conversation_locks.hold(inbound.conversation_key):
-            decision = enforce_inbound_slack_message_security(
+    def _authorize(self, inbound: SlackInboundMessage) -> SlackInboundDecision:
+        # In an open channel any plain mention runs; a human's chat commands
+        # (/pair, /new, /help) keep the normal allowlist handling.
+        if inbound.open_channel and (inbound.bot_id or not inbound.text.startswith("/")):
+            return authorize_open_channel_mention(
                 user_id=inbound.user_id,
+                bot_id=inbound.bot_id,
                 channel_id=inbound.channel_id,
                 text=inbound.text,
-                env_allowed_user_ids=self._settings.allowed_user_ids,
-                allow_open_workspace=self._settings.allow_open_workspace,
+                open_channel_ids=self._settings.open_channel_ids,
+                own_bot_user_id=self._bot_user_id,
             )
+        return enforce_inbound_slack_message_security(
+            user_id=inbound.user_id,
+            channel_id=inbound.channel_id,
+            text=inbound.text,
+            env_allowed_user_ids=self._settings.allowed_user_ids,
+            allow_open_workspace=self._settings.allow_open_workspace,
+        )
+
+    def _run_turn(self, inbound: SlackInboundMessage, scope: StorageScope) -> None:
+        with self._conversation_locks.hold(inbound.conversation_key):
+            decision = self._authorize(inbound)
             session = self._apply_inbound_decision(inbound, decision, scope)
             if session is None:
                 return

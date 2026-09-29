@@ -42,6 +42,9 @@ class SlackGatewaySettings(StrictConfigModel):
     http_port: int = Field(default=3000, ge=1, le=65_535)
     allowed_user_ids: list[str] = Field(default_factory=list)
     allow_open_workspace: bool = False
+    # Channels (C…/G…) where any @mention — human, bot or workflow — may start
+    # a turn without the user allowlist. Empty keeps bot-authored events ignored.
+    open_channel_ids: list[str] = Field(default_factory=list)
     max_concurrent_turns: int = Field(default_factory=turn_limit_for_profile, ge=1)
     # Slack's AI-app guidance: call chat.update at most once every 3 seconds.
     status_update_interval_seconds: float = Field(default=3.0, gt=0)
@@ -70,12 +73,13 @@ class SlackGatewayEnv(BaseSettings):
     allowed_users: Annotated[list[str], NoDecode] = Field(default_factory=list)
     # Explicit escape hatch only — empty allowlist alone must not open the bot.
     allow_open_workspace: bool = False
+    open_channel_ids: Annotated[list[str], NoDecode] = Field(default_factory=list)
     gateway_max_concurrent: int = Field(default_factory=turn_limit_for_profile, ge=1)
     gateway_status_update_interval_seconds: float = Field(default=3.0, gt=0)
     gateway_turn_timeout_seconds: float = Field(default=1800.0, gt=0)
     gateway_heartbeat_path: str = ""
 
-    @field_validator("allowed_users", mode="before")
+    @field_validator("allowed_users", "open_channel_ids", mode="before")
     @classmethod
     def parse_allowed_users(cls, value: Any) -> Any:
         if isinstance(value, str):
@@ -199,15 +203,22 @@ def load_slack_gateway_settings() -> SlackGatewaySettings:
     credentials = load_slack_credentials()
     allowed_users = choose_authorized_users(env, credentials)
 
-    if not allowed_users and not env.allow_open_workspace:
+    if not allowed_users and not env.allow_open_workspace and not env.open_channel_ids:
         raise GatewayConfigurationError(
             "Slack gateway needs allowed users: run `opensre messaging allow -p slack -u <id>`, "
             "set SLACK_ALLOWED_USERS (comma-separated user IDs), "
+            "set SLACK_OPEN_CHANNEL_IDS to answer any mention in those channels, "
             "or set SLACK_ALLOW_OPEN_WORKSPACE=1 to allow any workspace member (dogfood only)."
         )
 
     if env.allow_open_workspace and not allowed_users:
         logger.warning("SLACK_ALLOW_OPEN_WORKSPACE=1: any workspace member can talk to the bot")
+
+    if env.open_channel_ids:
+        logger.warning(
+            "SLACK_OPEN_CHANNEL_IDS: any @mention in %s can talk to the bot",
+            ", ".join(env.open_channel_ids),
+        )
 
     app_token = choose_app_token(env, credentials)
     signing_secret = choose_signing_secret(env, credentials)
@@ -225,6 +236,7 @@ def load_slack_gateway_settings() -> SlackGatewaySettings:
         http_port=env.gateway_http_port,
         allowed_user_ids=allowed_users,
         allow_open_workspace=env.allow_open_workspace,
+        open_channel_ids=env.open_channel_ids,
         max_concurrent_turns=env.gateway_max_concurrent,
         status_update_interval_seconds=env.gateway_status_update_interval_seconds,
         turn_timeout_seconds=env.gateway_turn_timeout_seconds,

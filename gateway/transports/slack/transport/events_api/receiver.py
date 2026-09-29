@@ -14,7 +14,7 @@ worker the caller hands it to.
 from __future__ import annotations
 
 import json
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import Any
@@ -138,6 +138,7 @@ def admit_slack_http_request(
     signing_secret: str,
     handled_events: HandledSlackEventRepository,
     now: float | None = None,
+    open_channel_ids: Collection[str] = (),
 ) -> SlackHttpOutcome:
     """Verify one Slack HTTP delivery and return what the caller should do.
 
@@ -173,7 +174,10 @@ def admit_slack_http_request(
     if not handled_events.claim(event_id):
         return SlackHttpOutcome(SlackHttpStatus.IGNORED, reason="duplicate delivery")
 
-    message = parse_events_api_payload(payload)
+    message = parse_events_api_payload(
+        payload,
+        open_channel_ids=open_channel_ids,
+    )
     if message is None:
         return SlackHttpOutcome(SlackHttpStatus.IGNORED, reason="not a chat event")
     return SlackHttpOutcome(SlackHttpStatus.ACCEPTED, message=message, event_id=event_id)

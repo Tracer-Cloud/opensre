@@ -84,6 +84,33 @@ def test_empty_allowlist_requires_open_flag(monkeypatch: pytest.MonkeyPatch) -> 
         load_slack_gateway_settings()
 
 
+def test_open_channels_default_to_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_tokens(monkeypatch)
+    monkeypatch.setenv("SLACK_ALLOWED_USERS", "U111")
+
+    assert load_slack_gateway_settings().open_channel_ids == []
+
+
+def test_parses_open_channel_csv(monkeypatch: pytest.MonkeyPatch) -> None:
+    _set_tokens(monkeypatch)
+    monkeypatch.setenv("SLACK_ALLOWED_USERS", "U111")
+    monkeypatch.setenv("SLACK_OPEN_CHANNEL_IDS", "C111,,C222 ")
+
+    assert load_slack_gateway_settings().open_channel_ids == ["C111", "C222"]
+
+
+def test_open_channels_alone_satisfy_the_allowlist_requirement(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _set_tokens(monkeypatch)
+    monkeypatch.setenv("SLACK_OPEN_CHANNEL_IDS", "C111")
+
+    settings = load_slack_gateway_settings()
+
+    assert settings.allowed_user_ids == []
+    assert settings.allow_open_workspace is False
+
+
 def test_open_workspace_escape_hatch(monkeypatch: pytest.MonkeyPatch) -> None:
     _set_tokens(monkeypatch)
     monkeypatch.setenv("SLACK_ALLOW_OPEN_WORKSPACE", "1")

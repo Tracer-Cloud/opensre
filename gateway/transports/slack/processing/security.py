@@ -7,6 +7,7 @@ from the integration store, honor ``opensre messaging allow/pair``, and handle
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from dataclasses import dataclass
 
 from config.constants.gateway import ROTATE_SESSION
@@ -208,3 +209,31 @@ def enforce_inbound_slack_message_security(
         lower=lower,
         result=result,
     )
+
+
+def authorize_open_channel_mention(
+    *,
+    user_id: str,
+    bot_id: str,
+    channel_id: str,
+    text: str,
+    open_channel_ids: Collection[str],
+    own_bot_user_id: str,
+) -> SlackInboundDecision:
+    """Authorize an @mention in a channel listed in ``SLACK_OPEN_CHANNEL_IDS``.
+
+    Bypasses the user allowlist, so it re-checks the channel against settings
+    and refuses anything OpenSRE posted itself (reply loops). Chat commands
+    (``/pair``, ``/new``, ``/help``) are never honored from a bot or workflow.
+    """
+    if own_bot_user_id and user_id == own_bot_user_id:
+        allowed, reason = False, "open channel: refused own message"
+    elif channel_id not in open_channel_ids:
+        allowed, reason = False, "open channel: channel not open"
+    elif bot_id and text.strip().startswith("/"):
+        allowed, reason = False, "open channel: bot commands not accepted"
+    else:
+        allowed = True
+        reason = f"open channel mention by bot {bot_id}" if bot_id else "open channel mention"
+    _audit(user_id=user_id, channel_id=channel_id, text=text, authorized=allowed, reason=reason)
+    return SlackInboundDecision(allowed=allowed)

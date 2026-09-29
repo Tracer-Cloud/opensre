@@ -95,7 +95,7 @@ def build_socket_mode_listener(
             # Greeting posts a message (network call): hand it to a worker.
             _queue_once(event_id, partial(stack.greeter.handle, payload))
             return
-        inbound = parse_events_api_payload(payload)
+        inbound = parse_events_api_payload(payload, open_channel_ids=settings.open_channel_ids)
         if inbound is None:
             return
         _queue_once(event_id, partial(stack.dispatcher.dispatch, inbound))

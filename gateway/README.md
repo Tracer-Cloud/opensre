@@ -131,6 +131,7 @@ no public URL; Events API HTTP needs a reachable URL and `SLACK_SIGNING_SECRET`.
 | `SLACK_GATEWAY_ALLOW_LOCAL_DEDUP` | `1` allows process-local event dedup for Events API (single replica only) |
 | `SLACK_ALLOWED_USERS` | Comma-separated Slack user ids (required unless open workspace) |
 | `SLACK_ALLOW_OPEN_WORKSPACE` | `1` allows any workspace member (dogfood only) |
+| `SLACK_OPEN_CHANNEL_IDS` | Comma-separated channel ids (`C…`) where any `@mention` — human, bot or Slack workflow (e.g. a Workflow Builder reply on a PagerDuty post) — starts a turn without `SLACK_ALLOWED_USERS` |
 | `DISCORD_BOT_TOKEN` | Discord bot token |
 | `DISCORD_ALLOWED_USERS` | Comma-separated Discord user snowflakes |
 | `DISCORD_ALLOW_OPEN_GUILD` | `1` allows any guild member (dogfood only) |
