@@ -40,8 +40,7 @@ one real repair as fast as possible in well under five minutes.
 
 ## Plan
 
-Use `update_plan` to create the live plan from the
-numbered workflow headings below. Mark Step 8 with `verifies: true` in every `update_plan` call: it is the check that the repair happened, and the report step relies on it to close.
+Use `update_plan` to create the live plan from the workflow headings below:
 
 - [ ] Step 1. Check prerequisites: GitHub identity and scopes, then the scheduler.
 - [ ] Step 2. Select the repository, or the private demo, with ask_user_choice.
