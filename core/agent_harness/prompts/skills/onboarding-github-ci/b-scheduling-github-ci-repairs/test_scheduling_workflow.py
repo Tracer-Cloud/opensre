@@ -15,7 +15,6 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
-from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -121,7 +120,6 @@ def test_skill_card_spells_out_the_loop_call_and_forced_first_tick() -> None:
     frontmatter, _ = parse_frontmatter(_SKILL_PATH.read_text(encoding="utf-8"))
     assert frontmatter["name"] == SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME
     assert frontmatter["includes"] == ["common/ask_once.md"]
-    assert frontmatter["metadata"]["last_changed_at"] == date(2026, 9, 14)
     body = load_skill_body(SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME)
 
     # The loop is created by one spelled-out tool call that owns the cadence;

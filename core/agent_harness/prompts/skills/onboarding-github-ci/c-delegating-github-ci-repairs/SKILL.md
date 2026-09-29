@@ -96,7 +96,7 @@ Report this gateway's GitHub access for a CI repair demo. Run only these calls a
 
 - [2] `github_cli ["api", "user/memberships/orgs", "--jq", "[.[] | {org: .organization.login, role, state}]"]`
 
-- [3] For each organization: `github_cli ["api", "graphql", "-f", "query=query($o: String!) { organization(login: $o) { viewerCanCreateRepositories } }", "-F", "o=<org>"]`, Answer with the login, the token type and scopes, and one line per owner (the login plus each organization) saying whether it can create repositories. Then propose one demo repository as `<owner>/<name>`.
+- [3] For each organization: `github_cli ["api", "graphql", "-f", "query=query($o: String!) { organization(login: $o) { viewerCanCreateRepositories } }", "-F", "o=<org>"]`, Answer with the login, the token type and scopes, and one line per owner (the login plus each organization) saying whether it can create repositories. Then propose a name for a new demo repository as `<owner>/<name>`; it does not exist yet.
 
 **Complete when:**
 
@@ -106,7 +106,7 @@ Report this gateway's GitHub access for a CI repair demo. Run only these calls a
 
 Show the final repair plan titled `Remote Repair Plan`. Put the probe's findings (login, token type, owner) in the overview so the user can see it once. 
 
-- `Run the demo in <owner>/<name>`
+- `Create <owner>/<name> and run the demo there`
 - `Use an existing pull request`
 
 **Complete when:**
