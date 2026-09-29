@@ -1,4 +1,4 @@
-# Optional Windows CI when PR label `ci:windows` is present.
+# Optional Windows CI when PR label `ci:windows` is present or native shell/process paths change.
 # Separate workflow + concurrency group so Windows label runs are isolated.
 
 name: CI Labels (Windows)
@@ -22,8 +22,36 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  windows-scope:
+    name: windows scope
+    runs-on: ubuntu-latest
+    outputs:
+      required: ${{ steps.scope.outputs.required }}
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Detect Windows-sensitive changes
+        id: scope
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          WINDOWS_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'ci:windows') }}
+        run: |
+          changed_files="$(git diff --name-only --diff-filter=ACMR "$BASE_SHA"...HEAD)"
+          if [[ "$WINDOWS_LABEL" == "true" ]] || grep -Eq \
+            '^(\.github/workflows/ci-labels-windows\.yml|infrastructure/process/|tests/infrastructure/process/|tools/interactive_shell/shell/|tools/interactive_shell/subprocess\.py|tests/interactive_shell/shell/)' \
+            <<< "$changed_files"; then
+            echo "required=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "required=false" >> "$GITHUB_OUTPUT"
+          fi
+
   windows-quality:
-    if: contains(github.event.pull_request.labels.*.name, 'ci:windows')
+    needs: [windows-scope]
+    if: needs.windows-scope.outputs.required == 'true'
     name: windows quality
     runs-on: windows-latest
     timeout-minutes: 15
@@ -59,9 +87,9 @@ jobs:
         run: uv run python -m mypy ${{ env.PYTHON_SOURCE_PATHS }}
 
   windows-test:
-    if: contains(github.event.pull_request.labels.*.name, 'ci:windows')
+    if: needs.windows-scope.outputs.required == 'true'
     name: windows test
-    needs: [windows-quality]
+    needs: [windows-scope, windows-quality]
     runs-on: windows-latest
     timeout-minutes: 25
     continue-on-error: true
@@ -100,6 +128,9 @@ jobs:
 
       - name: Install dependencies
         run: uv sync --frozen --extra dev
+
+      - name: Run native shell compatibility tests
+        run: uv run python -m pytest -q tests/interactive_shell/shell/test_execution_windows.py
 
       - name: Run full tests
         run: >-
