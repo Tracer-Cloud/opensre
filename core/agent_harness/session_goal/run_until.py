@@ -48,6 +48,7 @@ log = logging.getLogger(__name__)
 ChatFn = Callable[[str], TurnResult]
 EvaluateFn = Callable[..., str]
 CancelFn = Callable[[], bool]
+PauseFn = Callable[[], bool]
 ProgressFn = Callable[[SessionGoal], None]
 
 
@@ -67,6 +68,8 @@ def _record_goal_turn(session: Any, active: SessionGoal) -> SessionGoal:
     updated = replace(active.record_turn(), bookkeeping_calls=bookkeeping)
     if completed != updated.completed:
         updated = updated.with_completed(completed)
+    if isinstance(stored, SessionGoal) and stored.status == SessionGoalStatus.PAUSED:
+        updated = updated.with_status(SessionGoalStatus.PAUSED).with_reason(stored.last_reason)
     attach_session_goal(session, updated)
     return updated
 
@@ -227,7 +230,11 @@ def pause_for_no_progress(
 
 
 def _chat_or_pause(
-    chat: ChatFn, message: str, session: Any, on_progress: ProgressFn | None
+    chat: ChatFn,
+    message: str,
+    session: Any,
+    on_progress: ProgressFn | None,
+    pause_requested: PauseFn | None = None,
 ) -> TurnResult:
     """Run one goal turn; when it raises, pause the goal before the error propagates.
 
@@ -240,8 +247,42 @@ def _chat_or_pause(
     except Exception:
         active = getattr(session, "session_goal", None)
         if isinstance(active, SessionGoal) and active.status == SessionGoalStatus.ACTIVE:
-            _pause_failed_turn(session, active, on_progress)
+            if pause_requested is not None and pause_requested():
+                _pause_by_user(session, active, on_progress)
+            else:
+                _pause_failed_turn(session, active, on_progress)
         raise
+
+
+def _pause_by_user(
+    session: Any, active: SessionGoal, on_progress: ProgressFn | None
+) -> SessionGoal:
+    """Pause ``active`` in response to the host's concurrent user control."""
+    return _end(
+        session,
+        active,
+        SessionGoalStatus.PAUSED,
+        on_progress,
+        reason=SessionGoalReason.PAUSED_BY_USER,
+    )
+
+
+def _requested_pause(
+    session: Any,
+    active: SessionGoal,
+    pause_requested: PauseFn | None,
+    on_progress: ProgressFn | None,
+) -> SessionGoal | None:
+    """Apply a pending host pause without overwriting an already-paused goal."""
+    if pause_requested is None or not pause_requested():
+        return None
+    stored = getattr(session, "session_goal", None)
+    current = stored if isinstance(stored, SessionGoal) else active
+    if current.status == SessionGoalStatus.PAUSED:
+        return current
+    if current.status != SessionGoalStatus.ACTIVE:
+        return None
+    return _pause_by_user(session, current, on_progress)
 
 
 def _pause_failed_turn(
@@ -274,8 +315,23 @@ def _finish_outer_turn(
     *,
     evaluate_fn: EvaluateFn,
     on_progress: ProgressFn | None,
+    pause_requested: PauseFn | None = None,
 ) -> tuple[SessionGoal, TurnResult, bool]:
     """Evaluate → single paint. Returns ``(goal, result, stop)``."""
+    requested_pause = _requested_pause(session, active, pause_requested, on_progress)
+    if requested_pause is not None:
+        return requested_pause, last, True
+
+    if active.status == SessionGoalStatus.PAUSED:
+        ended = _end(
+            session,
+            active,
+            SessionGoalStatus.PAUSED,
+            on_progress,
+            reason=active.last_reason,
+        )
+        return ended, last, True
+
     if last.cancelled:
         return _end(session, active, SessionGoalStatus.CANCELLED, on_progress), last, True
 
@@ -370,6 +426,7 @@ def run_until_session_goal(
     goal: SessionGoal | None = None,
     evaluate: EvaluateFn | None = None,
     cancel_requested: CancelFn | None = None,
+    pause_requested: PauseFn | None = None,
     on_progress: ProgressFn | None = None,
 ) -> SessionGoalRunResult:
     """Run ``chat`` until the session goal is terminal or the budget is hit.
@@ -384,6 +441,10 @@ def run_until_session_goal(
         attach_session_goal(session, goal)
 
     pre = getattr(session, "session_goal", None)
+    if isinstance(pre, SessionGoal) and pre.status == SessionGoalStatus.ACTIVE:
+        requested_pause = _requested_pause(session, pre, pause_requested, on_progress)
+        if requested_pause is not None:
+            pre = requested_pause
     # User ``/goal pause``: allow one free chat, never session-goal continuation.
     if goal is None and isinstance(pre, SessionGoal) and pre.status == SessionGoalStatus.PAUSED:
         last = chat(message)
@@ -402,7 +463,7 @@ def run_until_session_goal(
         first = start_goal_prompt(pre, message)
     # Also covers a goal attached by ``session_goal_set`` inside this very turn:
     # the pause applies to whatever goal is active when the turn raises.
-    last = _chat_or_pause(chat, first, session, on_progress)
+    last = _chat_or_pause(chat, first, session, on_progress, pause_requested)
     active = getattr(session, "session_goal", None)
     if not isinstance(active, SessionGoal) or not session_goal_is_active(session):
         # Paused after the first chat (e.g. slash during turn) — keep state.
@@ -424,7 +485,11 @@ def run_until_session_goal(
         if session_terminal(session) is not None:
             return SessionGoalRunResult(goal=active, last_result=last, turn_count=0)
         last = _chat_or_pause(
-            chat, start_goal_prompt(active, active.condition), session, on_progress
+            chat,
+            start_goal_prompt(active, active.condition),
+            session,
+            on_progress,
+            pause_requested,
         )
         stored = getattr(session, "session_goal", None)
         if isinstance(stored, SessionGoal):
@@ -443,11 +508,17 @@ def run_until_session_goal(
         last,
         evaluate_fn=evaluate_fn,
         on_progress=on_progress,
+        pause_requested=pause_requested,
     )
     if stop:
         return SessionGoalRunResult(goal=active, last_result=last, turn_count=active.turns_used)
 
     while active.status == SessionGoalStatus.ACTIVE:
+        requested_pause = _requested_pause(session, active, pause_requested, on_progress)
+        if requested_pause is not None:
+            active = requested_pause
+            break
+
         if cancel_requested is not None and cancel_requested():
             active = _end(session, active, SessionGoalStatus.CANCELLED, on_progress)
             break
@@ -460,7 +531,13 @@ def run_until_session_goal(
             break
 
         _announce_working(session, active, on_progress)
-        last = _chat_or_pause(chat, continuation_prompt(active), session, on_progress)
+        last = _chat_or_pause(
+            chat,
+            continuation_prompt(active),
+            session,
+            on_progress,
+            pause_requested,
+        )
         active = _record_goal_turn(session, active)
         active, last, stop = _finish_outer_turn(
             session,
@@ -468,6 +545,7 @@ def run_until_session_goal(
             last,
             evaluate_fn=evaluate_fn,
             on_progress=on_progress,
+            pause_requested=pause_requested,
         )
         if stop:
             break

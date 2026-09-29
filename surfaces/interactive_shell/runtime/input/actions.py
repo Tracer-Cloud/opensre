@@ -9,6 +9,7 @@ from core.agent_harness.spi.prompt_chrome import strip_shell_prompt_chrome
 from surfaces.interactive_shell.runtime.core.turn_detection import (
     looks_like_cancel_request,
     looks_like_confirmation_answer,
+    looks_like_goal_pause_request,
 )
 from surfaces.interactive_shell.runtime.input.events import (
     InputCancelled,
@@ -45,6 +46,11 @@ class CancelTurn:
 
 
 @dataclass(frozen=True)
+class PauseGoal:
+    submitted_text: str
+
+
+@dataclass(frozen=True)
 class DeliverConfirmation:
     text: str
 
@@ -56,7 +62,7 @@ class SubmitTurn:
     warning: str | None = None
 
 
-InputAction = IgnoreInput | CloseShell | CancelTurn | DeliverConfirmation | SubmitTurn
+InputAction = IgnoreInput | CloseShell | CancelTurn | PauseGoal | DeliverConfirmation | SubmitTurn
 
 
 def decide_input_action(
@@ -84,6 +90,9 @@ def decide_input_action(
             if snapshot.dispatch_running and looks_like_cancel_request(stripped):
                 return CancelTurn(submitted_text=stripped)
 
+            if snapshot.dispatch_running and looks_like_goal_pause_request(stripped):
+                return PauseGoal(submitted_text=stripped)
+
             if snapshot.awaiting_confirmation:
                 if looks_like_confirmation_answer(stripped):
                     return DeliverConfirmation(text=stripped)
@@ -105,6 +114,7 @@ __all__ = [
     "DeliverConfirmation",
     "IgnoreInput",
     "InputAction",
+    "PauseGoal",
     "QUEUE_DURING_CONFIRMATION_WARNING",
     "ShellInputSnapshot",
     "SubmitTurn",

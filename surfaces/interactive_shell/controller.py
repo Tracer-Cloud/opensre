@@ -12,6 +12,7 @@ from prompt_toolkit import PromptSession
 from rich.console import Console
 
 from config.repl_config import ReplConfig
+from core.agent_harness.spi.session_goal import session_goal_is_active
 from core.agent_harness.spi.task_plan import discard_task_plan
 from core.domain.alerts import inbox as _alert_inbox
 from surfaces.interactive_shell.runtime.background.workers import BackgroundTaskPool
@@ -34,6 +35,7 @@ from surfaces.interactive_shell.runtime.input.actions import (
     DeliverConfirmation,
     IgnoreInput,
     InputAction,
+    PauseGoal,
     SubmitTurn,
 )
 from surfaces.interactive_shell.runtime.loop_scheduler import (
@@ -268,6 +270,22 @@ class InteractiveShellController:
                 if text:
                     self.prompt.render_submitted_prompt(self.echo_console, text)
                 self.state.cancel_current_dispatch()
+                return True
+            case PauseGoal(submitted_text=text):
+                # Keep slash execution serialized through the normal turn
+                # queue, but signal the in-flight goal loop now so it cannot
+                # start another continuation before this command reaches it.
+                await self.prompt.suspend()
+                self.prompt.render_submitted_prompt(self.echo_console, text)
+                interrupt_goal = session_goal_is_active(self.session)
+                if interrupt_goal:
+                    self.state.request_goal_pause()
+                try:
+                    await self.state.queue.put(text)
+                    await self.state.queue.join()
+                finally:
+                    if interrupt_goal:
+                        self.state.clear_goal_pause_request()
                 return True
             case DeliverConfirmation(text=text):
                 self.state.deliver_confirmation(text)

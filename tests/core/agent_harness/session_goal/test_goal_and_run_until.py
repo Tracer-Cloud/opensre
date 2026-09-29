@@ -335,6 +335,42 @@ def test_paused_goal_outer_loop_is_single_chat_without_turn_bump() -> None:
     assert session.session_goal.status == SessionGoalStatus.PAUSED
 
 
+def test_pause_requested_during_a_goal_turn_stops_before_continuation() -> None:
+    import threading
+
+    session = SessionCore()
+    pause_requested = threading.Event()
+    turns: list[str] = []
+
+    def _chat(message: str) -> TurnResult:
+        turns.append(message)
+        pause_requested.set()
+        return TurnResult(
+            final_intent="cli_agent_handled",
+            action_result=ToolCallingTurnResult(
+                planned_count=1,
+                executed_count=1,
+                executed_success_count=1,
+                has_unhandled_clause=False,
+                handled=True,
+            ),
+            assistant_response_text="first turn finished",
+        )
+
+    outcome = run_until_session_goal(
+        _chat,
+        session,
+        "go",
+        goal=SessionGoal(condition="keep going", max_outer_turns=4),
+        evaluate=lambda *_args, **_kwargs: SessionGoalStatus.ACTIVE,
+        pause_requested=pause_requested.is_set,
+    )
+
+    assert len(turns) == 1
+    assert outcome.goal.status == SessionGoalStatus.PAUSED
+    assert outcome.goal.last_reason == SessionGoalReason.PAUSED_BY_USER
+
+
 def test_the_judge_reason_is_painted_between_turns() -> None:
     # Arrange: a two-turn goal whose judge says "not yet" with a concrete next step.
     from core.agent_harness.session_goal.evaluate import evaluate_session_goal

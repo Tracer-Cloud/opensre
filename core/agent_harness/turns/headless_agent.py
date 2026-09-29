@@ -117,6 +117,7 @@ class HeadlessAgent:
         *,
         accounting_factory: Callable[[str], TurnAccounting] | None = None,
         cancel_requested: Callable[[], bool] | None = None,
+        pause_requested: Callable[[], bool] | None = None,
         on_progress: Callable[[SessionGoal], None] | None = None,
     ) -> TurnResult:
         """Handle one inbound message and return the goal loop's last turn result.
@@ -130,6 +131,7 @@ class HeadlessAgent:
             binding,
             accounting_factory=accounting_factory,
             cancel_requested=cancel_requested,
+            pause_requested=pause_requested,
             on_progress=on_progress,
         ).last_result
 
@@ -142,6 +144,7 @@ class HeadlessAgent:
         evaluate: Callable[..., str] | None = None,
         accounting_factory: Callable[[str], TurnAccounting] | None = None,
         cancel_requested: Callable[[], bool] | None = None,
+        pause_requested: Callable[[], bool] | None = None,
         on_progress: Callable[[SessionGoal], None] | None = None,
     ) -> SessionGoalRunResult:
         """Dispatch, and continue while a session goal is attached; the one loop driver.
@@ -156,8 +159,9 @@ class HeadlessAgent:
         binding: the agent keeps its bound turn context and ``accounting_factory``
         is not used. ``goal`` attaches an explicit host-owned goal; ``evaluate``
         overrides goal completion, else the injected judge decides.
-        ``cancel_requested`` is checked between outer turns; ``on_progress``
-        receives the goal after each.
+        ``cancel_requested`` is checked between outer turns. A concurrent shell
+        ``pause_requested`` also stops the in-flight turn, but preserves the
+        goal for a later resume. ``on_progress`` receives the goal after each.
         """
 
         def _one_turn(message: str) -> TurnResult:
@@ -179,6 +183,7 @@ class HeadlessAgent:
                 goal=goal,
                 evaluate=evaluate if evaluate is not None else self._goal_evaluate,
                 cancel_requested=cancel_requested,
+                pause_requested=pause_requested,
                 on_progress=on_progress,
             )
 

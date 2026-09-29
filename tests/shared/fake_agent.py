@@ -48,6 +48,7 @@ def attach_real_handle(agent: MagicMock) -> MagicMock:
         *,
         accounting_factory: Any = None,
         cancel_requested: Any = None,
+        pause_requested: Any = None,
         on_progress: Any = None,
     ) -> Any:
         def _one_turn(message: str) -> Any:
@@ -63,6 +64,7 @@ def attach_real_handle(agent: MagicMock) -> MagicMock:
             session,
             text,
             cancel_requested=cancel_requested,
+            pause_requested=pause_requested,
             on_progress=on_progress,
         ).last_result
 

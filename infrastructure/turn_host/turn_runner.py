@@ -123,6 +123,7 @@ class TurnRunner:
         is_tty: bool | None = False,
         accounting_factory: Callable[[str], TurnAccounting] | None = None,
         on_progress: Callable[[SessionGoal], None] | None = None,
+        pause_requested: Callable[[], bool] | None = None,
         slot_wait_seconds: float | None = None,
     ) -> TurnResult | None:
         """Run one admitted turn, or return ``None`` when a gate rejects it.
@@ -182,6 +183,7 @@ class TurnRunner:
                 is_tty=is_tty,
                 accounting_factory=accounting_factory,
                 on_progress=on_progress,
+                pause_requested=pause_requested,
             )
 
     def _run_turn(
@@ -196,6 +198,7 @@ class TurnRunner:
         is_tty: bool | None,
         accounting_factory: Callable[[str], TurnAccounting] | None,
         on_progress: Callable[[SessionGoal], None] | None,
+        pause_requested: Callable[[], bool] | None,
     ) -> TurnResult:
         session_id = getattr(session, "session_id", None)
         surface = get_surface()
@@ -248,6 +251,7 @@ class TurnRunner:
                     ),
                     accounting_factory=accounting_factory,
                     cancel_requested=_cancel_requested,
+                    pause_requested=pause_requested,
                     on_progress=on_progress or _status_line_progress,
                 )
                 outbound_text = turn_result.primary_response_text

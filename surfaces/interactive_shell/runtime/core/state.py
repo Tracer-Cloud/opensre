@@ -105,6 +105,7 @@ class ReplState:
     confirm_prompt_text: str = ""
     confirm_selected: int = 0
     confirm_options: tuple[tuple[str, str], ...] = DEFAULT_CONFIRM_OPTIONS
+    goal_pause_event: threading.Event = field(default_factory=threading.Event)
     plan_expanded: bool = False
     # Checklist identity for ``plan_expanded`` — step texts, ignoring status.
     plan_step_texts: tuple[str, ...] | None = None
@@ -123,6 +124,31 @@ class ReplState:
 
     def is_cancelling(self) -> bool:
         return self.phase is TurnPhase.CANCELLING
+
+    def is_goal_pause_requested(self) -> bool:
+        return self.goal_pause_event.is_set()
+
+    def request_goal_pause(self) -> None:
+        """Ask the active goal loop to pause and softly stop its current turn.
+
+        Unlike :meth:`cancel_current_dispatch`, this leaves the asyncio task
+        alive so its worker thread can store the goal as paused before the
+        queued ``/goal pause`` command is dispatched.
+        """
+        self.goal_pause_event.set()
+        if (
+            self.current_cancel_event is not None
+            or self.confirm_event is not None
+            or self.is_dispatch_running()
+        ):
+            self.phase = TurnPhase.CANCELLING
+        if self.current_cancel_event is not None:
+            self.current_cancel_event.set()
+        if self.confirm_event is not None:
+            self.confirm_event.set()
+
+    def clear_goal_pause_request(self) -> None:
+        self.goal_pause_event.clear()
 
     def deliver_confirmation(self, answer: str) -> None:
         if self.confirm_event is None:

@@ -271,6 +271,7 @@ async def _run_agent_turn_loop(
                 is_tty=None,
                 request_exit=runtime.request_exit,
                 handler=runtime.turn_handler,
+                pause_requested=runtime.state.is_goal_pause_requested,
             )
     except asyncio.CancelledError:
         await emit(AgentEvent(type="turn_interrupted"))

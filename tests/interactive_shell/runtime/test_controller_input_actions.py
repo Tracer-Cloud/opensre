@@ -16,6 +16,7 @@ from surfaces.interactive_shell.runtime.input.actions import (
     CloseShell,
     DeliverConfirmation,
     IgnoreInput,
+    PauseGoal,
     ShellInputSnapshot,
     SubmitTurn,
     decide_input_action,
@@ -62,6 +63,16 @@ def test_decide_cancels_when_cancel_request_is_typed_during_dispatch() -> None:
     assert _decide(InputSubmitted(" /cancel "), dispatch_running=True) == CancelTurn(
         submitted_text="/cancel"
     )
+
+
+def test_decide_routes_goal_pause_as_an_inflight_control() -> None:
+    action = _decide(
+        InputSubmitted(" /goal pause "),
+        dispatch_running=True,
+        needs_exclusive_stdin=True,
+    )
+
+    assert action == PauseGoal(submitted_text="/goal pause")
 
 
 def test_decide_delivers_stripped_confirmation_answer() -> None:
@@ -208,6 +219,81 @@ async def test_cancelling_a_running_turn_keeps_its_skill_and_plan() -> None:
     finally:
         task.cancel()
         _ = await asyncio.gather(task, return_exceptions=True)
+
+
+def test_requesting_goal_pause_soft_cancels_the_running_turn() -> None:
+    import asyncio
+    import threading
+
+    from surfaces.interactive_shell.runtime.core.state import ReplState
+
+    async def _scenario() -> None:
+        state = ReplState()
+        cancel_event = threading.Event()
+
+        async def _hold() -> None:
+            await asyncio.Event().wait()
+
+        task = asyncio.create_task(_hold())
+        state.start_dispatch(task=task, cancel_event=cancel_event)
+        try:
+            state.request_goal_pause()
+
+            assert state.is_goal_pause_requested()
+            assert cancel_event.is_set()
+            assert not task.cancelled()
+        finally:
+            task.cancel()
+            _ = await asyncio.gather(task, return_exceptions=True)
+
+    asyncio.run(_scenario())
+
+
+def test_inflight_goal_pause_signals_before_its_queued_command_runs() -> None:
+    import asyncio
+    import threading
+
+    from core.agent_harness.session_goal.goal import SessionGoal, attach_session_goal
+    from surfaces.interactive_shell.runtime.turn_host import run_agent_turn_queue
+
+    async def _scenario() -> None:
+        controller = _controller()
+        attach_session_goal(
+            controller.session,
+            SessionGoal(condition="keep going", max_outer_turns=4),
+        )
+        cancel_event = threading.Event()
+        started = asyncio.Event()
+        submitted: list[str] = []
+
+        async def _run_turn(text: str) -> None:
+            submitted.append(text)
+            if text != "current goal turn":
+                return
+            controller.state.attach_cancel_event(cancel_event)
+            started.set()
+            while not cancel_event.is_set():
+                await asyncio.sleep(0)
+
+        worker = asyncio.create_task(
+            run_agent_turn_queue(state=controller.state, run_turn=_run_turn)
+        )
+        try:
+            await controller.state.queue.put("current goal turn")
+            await started.wait()
+
+            kept = await controller._handle_input_action(PauseGoal(submitted_text="/goal pause"))
+
+            assert kept is True
+            assert cancel_event.is_set()
+            assert submitted == ["current goal turn", "/goal pause"]
+            assert not controller.state.is_goal_pause_requested()
+        finally:
+            controller.state.request_exit()
+            await controller.state.queue.put("")
+            await worker
+
+    asyncio.run(_scenario())
 
 
 @pytest.mark.asyncio
