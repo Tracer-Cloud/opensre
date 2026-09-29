@@ -53,6 +53,15 @@ Use `update_plan` to create the live plan from the workflow headings below:
 - [ ] Show the remote outcome and evidence as Markdown.
 - [ ] Offer the next step or blocker resolution with ask_user_choice.
 
+## Success criteria
+
+The workflow succeeds only when:
+
+1. The hosted gateway is healthy with active GitHub permissions.
+2. A seed demo repository is configured with a failing PR 
+3. The CI failure is detected remotely.
+4. The remote repair loop fixes the failure without intervention from the local shell.
+
 ## Workflow
 
 ### Prepare the hosted gateway
@@ -68,13 +77,11 @@ The goal for this step is to retrieve the necescarry information to execute a de
 
 Communicate with the remote Gateway to ask the following questions. 
 
-
 - Use the user's existing PR selection or demo choice or ask once with
 `ask_user_choice`, title `Remote Repair Target`, offering:
 - `Use a disposable demo repository`
 - `Use an existing pull request`
 - with custom answers enabled.
-
 
 For an existing target:
 - obtain its PR URL
@@ -88,32 +95,21 @@ The bounded tool repairs a PR; a repository or branch alone is incomplete.
 - When the chosen scope is known. 
 - Keep asking until all required parameters are known. 
 
-### Verify the remote outcome
-
-Continue according to the returned request state:
-
-- `needs_input`: the tool opens the gateway's question in the shell. Wait for
-  the user's answer, then call `ask_hosted_gateway(prompt_id=...)` with no new
-  prompt. Use the latest returned prompt ID for subsequent questions.
-- `queued` or `running`: retrieve that same prompt ID; keep the original work.
-- `done`: inspect the answer for the repair `task_id` and outcome. A completed
-  prompt can describe a repair that is still running. For that case, send a
-  narrow new request naming `operating-github-ci-repairs` and the existing
-  `task_id`, asking only to inspect and wait for that repair. A settled prompt
-  ID returns its old answer, not a fresh repair status.
-- `failed`: report the failure and any returned integration guidance. Recover
-  an already-known task by its ID before considering another execution request.
-
-Retain both IDs: `prompt_id` continues the gateway exchange; `task_id` identifies
-the repair. Continue observation within the repair's original deadline; never
-restart setup or create another repair to obtain status. For a GitHub connection
-blocker, direct the user to https://app.opensre.com/dashboard/github and follow
-the tool's continuation guidance after it is corrected.
+### Blockers 
+**GitHub connection blocker**
+- If missing credentials, direct the user to https://app.opensre.com/dashboard/github and follow the tool's continuation guidance after it is corrected.
 
 Complete when the remote task has a terminal outcome, or a concrete blocker
-prevents further verification. Claim a successful demo only with the failing
+prevents further verification. 
+
+Claim a successful demo only with the failing
 run, repair commit, and passing run from that task. An accepted request, token
 permission check, or successful scheduler delivery alone proves no repair.
+
+**Complete when**
+- The blockers are resolved or the user wants to write their own specific answer. 
+- For a pending task, offer to continue observing the same task ID or leave it running. 
+- Keep these recovery choices separate from the successful-demo options above.
 
 ### Show the outcome
 
@@ -133,11 +129,6 @@ After a successful repair report, use `ask_user_choice`:
 - Add more scheduled tasks
 - Exit to interactive shell
 
-For a blocked repair, offer a choice that would address the concrete blocker
-and one to leave the work blocked. For a pending task, offer to continue
-observing the same task ID or leave it running. Keep these recovery choices
-separate from the successful-demo options above.
-
-Complete when the appropriate menu is offered. Keep this step pending until
-the report has been shown; skipping it as already completed conflicts with
-the runtime's requirement to resolve blocked work with the user.
+**Complete when:**
+- The appropriate menu is offered. 
+- Keep this step pending until the report has been shown
