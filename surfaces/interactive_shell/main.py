@@ -12,6 +12,7 @@ from rich.console import Console
 
 from config.repl_config import ReplConfig
 from core.agent_harness import SessionManager
+from core.agent_harness.spi.session_goal import pause_active_session_goal
 from infrastructure.analytics.capture import capture_interactive_shell_rendered
 from infrastructure.analytics.github_identity import identify_saved_github_username
 from infrastructure.analytics.usage_context import claim_process_session_id
@@ -20,6 +21,7 @@ from infrastructure.terminal.theme import set_active_theme
 from infrastructure.turn_host.session_lock import session_execution_lock
 from surfaces.interactive_shell.controller import InteractiveShellController
 from surfaces.interactive_shell.runtime.context import create_repl_runtime
+from surfaces.interactive_shell.runtime.core.state import ReplState
 from surfaces.interactive_shell.runtime.startup.account_gate import (
     pass_sign_in_gate,
 )
@@ -45,6 +47,17 @@ def _new_shell_session() -> Session:
     """
     session_id = claim_process_session_id()
     return Session(session_id=session_id) if session_id else Session()
+
+
+def _close_repl_session(session: Session, state: ReplState) -> None:
+    """Persist final session state, including an interrupted goal-pause boundary."""
+    pause_requested = state.is_goal_pause_requested()
+    manager = SessionManager.for_session(session)
+    with session_execution_lock(session.session_id):
+        manager.refresh_from_storage(session)
+        if pause_requested:
+            pause_active_session_goal(session)
+        manager.close(session)
 
 
 async def run_repl_async(
@@ -128,10 +141,7 @@ async def run_repl_async(
         return 0
     finally:
         # True end-of-run teardown: persist and release the session's resources.
-        manager = SessionManager.for_session(session)
-        with session_execution_lock(session.session_id):
-            manager.refresh_from_storage(session)
-            manager.close(session)
+        _close_repl_session(session, runtime_context.state)
 
 
 def _start_launch_banner(

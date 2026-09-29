@@ -231,8 +231,10 @@ class ReplState:
 
     def clear_current_task(self, task: asyncio.Task[None] | None = None) -> None:
         if task is None or self.current_task is task:
+            preserve_goal_pause = self.exit_requested and self.is_goal_pause_requested()
             self.current_task = None
-            self.current_cancel_event = None
+            if not preserve_goal_pause:
+                self.current_cancel_event = None
             self.phase = TurnPhase.IDLE
 
     def finish_dispatch(self, cancel_event: threading.Event) -> None:

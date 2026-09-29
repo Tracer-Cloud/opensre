@@ -15,6 +15,7 @@ from rich.console import Console
 
 import surfaces.interactive_shell.main as main_entrypoint
 from core.agent_harness.session.integration_resolution import IntegrationResolutionResult
+from surfaces.interactive_shell.runtime.core.state import ReplState
 from surfaces.interactive_shell.session import Session
 
 
@@ -242,7 +243,7 @@ def test_run_repl_async_failed_resume_flushes_starter_session(
     monkeypatch.setattr(
         main_entrypoint,
         "create_repl_runtime",
-        lambda **_kwargs: SimpleNamespace(session=session, inbox=None),
+        lambda **_kwargs: SimpleNamespace(session=session, state=ReplState(), inbox=None),
     )
 
     exit_code = asyncio.run(main_entrypoint.run_repl_async(resume_session_id="missing-session"))
@@ -274,7 +275,7 @@ def test_run_repl_async_runs_held_back_launch_work_once_the_banner_is_painted(
     monkeypatch.setattr(
         main_entrypoint,
         "create_repl_runtime",
-        lambda **_kwargs: SimpleNamespace(session=Session(), inbox=None),
+        lambda **_kwargs: SimpleNamespace(session=Session(), state=ReplState(), inbox=None),
     )
 
     # Act
@@ -429,7 +430,7 @@ def test_run_repl_async_routes_the_console_into_resume(monkeypatch: Any, tmp_pat
     monkeypatch.setattr(
         main_entrypoint,
         "create_repl_runtime",
-        lambda **_kwargs: SimpleNamespace(session=Session(), inbox=None),
+        lambda **_kwargs: SimpleNamespace(session=Session(), state=ReplState(), inbox=None),
     )
     captured = Console(file=StringIO(), force_terminal=False, width=80)
 

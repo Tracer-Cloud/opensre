@@ -446,6 +446,66 @@ def test_pause_validates_completed_ticks_before_stopping() -> None:
     assert outcome.goal.new_ticks == frozenset()
 
 
+def test_pause_validates_bookkeeping_only_ticks_without_charging_turn() -> None:
+    session = SessionCore()
+    cancel = HostCancelEvent()
+    validated: list[frozenset[int]] = []
+
+    def _chat(_message: str) -> TurnResult:
+        active = session.session_goal
+        assert active is not None
+        attach_session_goal(
+            session,
+            active.with_completed(frozenset({0})).with_bookkeeping_call(),
+        )
+        cancel.request(HostCancelReason.GOAL_PAUSE)
+        return TurnResult(
+            final_intent="cli_agent_cancelled",
+            action_result=ToolCallingTurnResult(
+                planned_count=1,
+                executed_count=1,
+                executed_success_count=1,
+                has_unhandled_clause=False,
+                handled=True,
+                cancelled=True,
+                evidence_success_count=0,
+            ),
+        )
+
+    def _evaluate(goal: SessionGoal, result: TurnResult, *, session: object) -> str:
+        def _reject_ticks(**kwargs: object) -> frozenset[int]:
+            newly = kwargs.get("newly")
+            assert isinstance(newly, frozenset)
+            validated.append(newly)
+            return frozenset()
+
+        return evaluate_session_goal(
+            goal,
+            result,
+            session=session,
+            validate=_reject_ticks,
+        ).status
+
+    outcome = run_until_session_goal(
+        _chat,
+        session,
+        "go",
+        goal=SessionGoal(
+            condition="check the result",
+            checklist=("verify output",),
+            max_outer_turns=4,
+        ),
+        evaluate=_evaluate,
+        cancel_reason=lambda: cancel.reason,
+    )
+
+    assert validated == [frozenset({0})]
+    assert outcome.goal.status == SessionGoalStatus.PAUSED
+    assert outcome.goal.completed == frozenset()
+    assert outcome.goal.new_ticks == frozenset()
+    assert outcome.goal.turns_used == 0
+
+
 def test_idle_pause_command_does_not_count_as_goal_work() -> None:
     session = SessionCore()
     attach_session_goal(

@@ -357,15 +357,22 @@ async def run_agent_turn_queue(
         except Exception as exc:
             _logger.debug("Queued turn task ended with exception: %s", exc)
         finally:
+            pause_cancel = None
             try:
                 current_cancel = state.current_cancel_event
-                goal_pause_requested = any(
-                    turn_cancel_reason(cancel) is HostCancelReason.GOAL_PAUSE
-                    for cancel in (turn_cancel, current_cancel)
+                pause_cancel = next(
+                    (
+                        cancel
+                        for cancel in (turn_cancel, current_cancel)
+                        if turn_cancel_reason(cancel) is HostCancelReason.GOAL_PAUSE
+                    ),
+                    None,
                 )
-                if goal_pause_requested and on_goal_pause is not None:
+                if pause_cancel is not None and on_goal_pause is not None:
                     await on_goal_pause()
             finally:
+                if state.exit_requested and pause_cancel is not None:
+                    state.attach_cancel_event(pause_cancel)
                 state.clear_current_task()
                 state.queue.task_done()
 

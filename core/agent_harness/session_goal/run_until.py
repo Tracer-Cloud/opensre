@@ -336,6 +336,27 @@ def _goal_turn_should_count(
     return turn_has_session_goal_evidence(last, bookkeeping_calls=active.bookkeeping_calls)
 
 
+def _validate_pending_ticks_before_pause(
+    session: Any,
+    active: SessionGoal,
+    last: TurnResult,
+    *,
+    evaluate_fn: EvaluateFn,
+) -> SessionGoal:
+    """Validate ephemeral checklist ticks while preserving the pending pause."""
+    if not active.new_ticks:
+        return active
+    status = active.status
+    reason = active.last_reason
+    evaluate_fn(active, last, session=session)
+    stored = getattr(session, "session_goal", None)
+    if isinstance(stored, SessionGoal):
+        active = stored
+    active = active.with_status(status).with_reason(reason)
+    attach_session_goal(session, active)
+    return active
+
+
 def _finish_outer_turn(
     session: Any,
     active: SessionGoal,
@@ -350,19 +371,16 @@ def _finish_outer_turn(
         last,
         bookkeeping_calls=active.bookkeeping_calls,
     )
+    if (pause_requested or active.status == SessionGoalStatus.PAUSED) and active.new_ticks:
+        # ``new_ticks`` is intentionally not persisted, so validate goal-tool
+        # updates now even when a concurrent pause makes the turn budget-free.
+        active = _validate_pending_ticks_before_pause(
+            session,
+            active,
+            last,
+            evaluate_fn=evaluate_fn,
+        )
     if active.status == SessionGoalStatus.PAUSED:
-        pause_reason = active.last_reason
-        if active.new_ticks:
-            # ``session_goal_complete`` may have published ticks just before
-            # the concurrent pause. Validate them against this turn while its
-            # evidence is still available; ``new_ticks`` is intentionally not
-            # persisted and cannot safely be deferred until resume.
-            evaluate_fn(active, last, session=session)
-            stored = getattr(session, "session_goal", None)
-            if isinstance(stored, SessionGoal):
-                active = stored
-            active = active.with_status(SessionGoalStatus.PAUSED).with_reason(pause_reason)
-            attach_session_goal(session, active)
         if turn_evidence:
             active = retain_tool_evidence(
                 active,
