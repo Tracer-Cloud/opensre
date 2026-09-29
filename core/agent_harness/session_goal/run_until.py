@@ -578,6 +578,7 @@ def run_until_session_goal(
         stored = getattr(session, "session_goal", None)
         if isinstance(stored, SessionGoal):
             active = stored
+        pause_after_first = _goal_pause_requested(cancel_reason)
 
     pause_after_turn = pause_after_first
     if (had_active_before or active.turns_used == 0) and _goal_turn_should_count(

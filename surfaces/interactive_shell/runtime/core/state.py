@@ -113,6 +113,7 @@ class ReplState:
     plan_expanded: bool = False
     # Checklist identity for ``plan_expanded`` — step texts, ignoring status.
     plan_step_texts: tuple[str, ...] | None = None
+    goal_pause_pending: bool = False
     phase: TurnPhase = TurnPhase.IDLE
     ctrl_c_exit_hint_until: float = 0.0
 
@@ -140,6 +141,7 @@ class ReplState:
         the event so the action may finish and the new goal can be paused at
         the next safe boundary.
         """
+        self.goal_pause_pending = True
         cancel = self.current_cancel_event
         if cancel is None and self.is_dispatch_running():
             cancel = self.ensure_current_cancel_event()
@@ -153,6 +155,12 @@ class ReplState:
             self.phase = TurnPhase.CANCELLING
         if interrupt and self.confirm_event is not None:
             self.confirm_event.set()
+
+    def consume_goal_pause_request(self) -> bool:
+        """Consume a pause for the queue owner to apply at a safe turn boundary."""
+        requested = self.goal_pause_pending
+        self.goal_pause_pending = False
+        return requested
 
     def ensure_current_cancel_event(self) -> threading.Event:
         """Return the canonical event for the current or about-to-start dispatch."""

@@ -334,6 +334,7 @@ async def run_agent_turn_queue(
     *,
     state: ReplState,
     run_turn: Callable[[str], Coroutine[Any, Any, None]],
+    after_turn: Callable[[], None] | None = None,
 ) -> None:
     """Consume queued turns and run each one until exit."""
     while not state.exit_requested:
@@ -354,8 +355,12 @@ async def run_agent_turn_queue(
         except Exception as exc:
             _logger.debug("Queued turn task ended with exception: %s", exc)
         finally:
-            state.clear_current_task()
-            state.queue.task_done()
+            try:
+                if after_turn is not None:
+                    after_turn()
+            finally:
+                state.clear_current_task()
+                state.queue.task_done()
 
 
 __all__ = [

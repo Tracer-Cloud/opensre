@@ -12,7 +12,10 @@ from prompt_toolkit import PromptSession
 from rich.console import Console
 
 from config.repl_config import ReplConfig
-from core.agent_harness.spi.session_goal import pause_active_session_goal
+from core.agent_harness.spi.session_goal import (
+    pause_active_session_goal,
+    session_goal_is_active,
+)
 from core.agent_harness.spi.task_plan import discard_task_plan
 from core.domain.alerts import inbox as _alert_inbox
 from surfaces.interactive_shell.runtime.background.workers import BackgroundTaskPool
@@ -250,6 +253,7 @@ class InteractiveShellController:
             lambda: run_agent_turn_queue(
                 state=self.state,
                 run_turn=lambda text: run_agent_turn(self.turn_runtime, text),
+                after_turn=self._apply_goal_pause_at_turn_boundary,
             )
         )
         # Fleet sampler is lazy: /fleet triggers it on first live use.
@@ -259,6 +263,11 @@ class InteractiveShellController:
         except Exception as exc:  # noqa: BLE001
             log.warning("Loop scheduler could not start: %s", exc)
         self._ci_fix_status_cleanup = bind_ci_fix_status(self.session.terminal)
+
+    def _apply_goal_pause_at_turn_boundary(self) -> None:
+        """Apply the queued pause after the worker thread releases session ownership."""
+        if self.state.consume_goal_pause_request():
+            pause_active_session_goal(self.session)
 
     async def _handle_input_action(self, action: InputAction) -> bool:
         match action:
@@ -273,12 +282,12 @@ class InteractiveShellController:
                 return True
             case PauseGoal(submitted_text=text):
                 # Keep slash execution serialized through the normal turn
-                # queue, but pause state and signal current work now so neither
-                # a continuation nor already-queued input can run the goal first.
+                # queue, but signal current work now. The queue owner applies
+                # the state transition after the worker thread returns, before
+                # any already-queued input, so goal tools remain single-owner.
                 self.prompt.render_submitted_prompt(self.echo_console, text)
-                paused = pause_active_session_goal(self.session)
                 self.state.request_goal_pause(
-                    interrupt=paused is not None,
+                    interrupt=session_goal_is_active(self.session),
                 )
                 await self.state.queue.put(text)
                 return True

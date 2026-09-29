@@ -599,6 +599,59 @@ def test_pause_reason_retained_during_turn_pauses_a_new_shell_goal() -> None:
     assert session.terminal.pending_prompt_plain_turn is False
 
 
+def test_headless_first_goal_turn_reads_pause_arriving_during_that_turn() -> None:
+    session = SessionCore()
+    cancel = HostCancelEvent()
+    turns: list[str] = []
+
+    def _chat(message: str) -> TurnResult:
+        turns.append(message)
+        if len(turns) == 1:
+            attach_session_goal(
+                session,
+                SessionGoal(
+                    condition="keep going",
+                    max_outer_turns=4,
+                    host_owned=True,
+                ),
+            )
+            return TurnResult(
+                final_intent="cli_agent_handled",
+                action_result=ToolCallingTurnResult(
+                    planned_count=1,
+                    executed_count=1,
+                    executed_success_count=1,
+                    has_unhandled_clause=False,
+                    handled=True,
+                ),
+            )
+        cancel.request(HostCancelReason.GOAL_PAUSE)
+        return TurnResult(
+            final_intent="cli_agent_cancelled",
+            action_result=ToolCallingTurnResult(
+                planned_count=0,
+                executed_count=0,
+                executed_success_count=0,
+                has_unhandled_clause=False,
+                handled=False,
+                cancelled=True,
+            ),
+        )
+
+    outcome = run_until_session_goal(
+        _chat,
+        session,
+        "/goal set keep going",
+        cancel_requested=cancel.is_set,
+        cancel_reason=lambda: cancel.reason,
+    )
+
+    assert len(turns) == 2
+    assert outcome.goal.status == SessionGoalStatus.PAUSED
+    assert outcome.goal.last_reason == SessionGoalReason.PAUSED_BY_USER
+    assert outcome.goal.turns_used == 0
+
+
 def test_the_judge_reason_is_painted_between_turns() -> None:
     # Arrange: a two-turn goal whose judge says "not yet" with a concrete next step.
     from core.agent_harness.session_goal.evaluate import evaluate_session_goal
