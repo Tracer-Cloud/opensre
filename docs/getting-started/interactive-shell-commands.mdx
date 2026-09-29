@@ -45,7 +45,8 @@ highlighted command's description appears below the list.
 
 Each `shell_run` call starts in OpenSRE's working directory with a fresh child
 shell. A `cd` affects only that call; prefix every command that needs another
-directory with `cd <path> && ...`. The exact command `pwd` works on every
+directory with `cd <path> && ...` (`cd /d <path> && ...` in native Windows when
+the path may be on another drive). The exact command `pwd` works on every
 platform and prints that call's starting directory.
 
 **TTY vs non-TTY:** Interactive menus, confirmations, and onboarding wizards need a real terminal. Piping input or running in CI is non-interactive — prefer explicit CLI commands outside the REPL for automation.

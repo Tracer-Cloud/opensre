@@ -55,18 +55,30 @@ def _write_descendant_script(path: Path) -> None:
     path.write_text(
         """from __future__ import annotations
 
+import json
+import os
 import pathlib
 import subprocess
 import sys
 import time
 
 marker = pathlib.Path(sys.argv[1])
+pending_marker = marker.with_suffix(marker.suffix + ".pending")
 child = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
-marker.write_text(str(child.pid), encoding="utf-8")
+pending_marker.write_text(
+    json.dumps({"parent": os.getpid(), "child": child.pid}),
+    encoding="utf-8",
+)
+os.replace(pending_marker, marker)
 time.sleep(60)
 """,
         encoding="utf-8",
     )
+
+
+def _read_process_ids(marker: Path) -> tuple[int, int]:
+    payload = json.loads(marker.read_text(encoding="utf-8"))
+    return int(payload["parent"]), int(payload["child"])
 
 
 def _wait_for_pid_exit(pid: int, *, timeout_seconds: float = 5.0) -> None:
@@ -217,30 +229,36 @@ def test_cmd_pwd_and_working_directory_are_isolated(tmp_path: Path) -> None:
 
 
 @pytest.mark.timeout(30)
-def test_cmd_timeout_reaps_descendant(tmp_path: Path) -> None:
+def test_cmd_timeout_reaps_process_tree(tmp_path: Path) -> None:
     script = tmp_path / "spawn_descendant.py"
     marker = tmp_path / "descendant.pid"
     _write_descendant_script(script)
-    descendant_pid: int | None = None
+    parent_pid: int | None = None
+    child_pid: int | None = None
 
     try:
         result = _execute(_python_command(script, marker), timeout_seconds=3)
-        descendant_pid = int(marker.read_text(encoding="utf-8"))
+        parent_pid, child_pid = _read_process_ids(marker)
 
         assert result.timed_out is True
         assert result.cancelled is False
-        _wait_for_pid_exit(descendant_pid)
+        _wait_for_pid_exit(parent_pid)
+        parent_pid = None
+        _wait_for_pid_exit(child_pid)
+        child_pid = None
     finally:
-        _kill_pid(descendant_pid)
+        _kill_pid(child_pid)
+        _kill_pid(parent_pid)
 
 
 @pytest.mark.timeout(30)
-def test_cmd_cancel_reaps_descendant(tmp_path: Path) -> None:
+def test_cmd_cancel_reaps_process_tree(tmp_path: Path) -> None:
     script = tmp_path / "spawn_descendant.py"
     marker = tmp_path / "descendant.pid"
     _write_descendant_script(script)
     cancel_event = threading.Event()
-    descendant_pid: int | None = None
+    parent_pid: int | None = None
+    child_pid: int | None = None
 
     def _cancel_after_descendant_starts() -> None:
         deadline = time.monotonic() + 10
@@ -256,13 +274,17 @@ def test_cmd_cancel_reaps_descendant(tmp_path: Path) -> None:
             timeout_seconds=15,
             cancel_event=cancel_event,
         )
-        descendant_pid = int(marker.read_text(encoding="utf-8"))
+        parent_pid, child_pid = _read_process_ids(marker)
 
         assert result.cancelled is True
         assert result.timed_out is False
-        _wait_for_pid_exit(descendant_pid)
+        _wait_for_pid_exit(parent_pid)
+        parent_pid = None
+        _wait_for_pid_exit(child_pid)
+        child_pid = None
     finally:
-        _kill_pid(descendant_pid)
+        _kill_pid(child_pid)
+        _kill_pid(parent_pid)
 
 
 @pytest.mark.timeout(90)
@@ -315,5 +337,8 @@ def test_opensre_ask_executes_shell_run_through_native_cmd(tmp_path: Path) -> No
     tool_result = next(
         message for message in requests[1]["messages"] if message.get("role") == "tool"
     )
-    assert "native-windows-e2e" in tool_result["content"]
-    assert "escaped&value" in tool_result["content"]
+    shell_payload = json.loads(tool_result["content"])
+    assert shell_payload["ok"] is True
+    assert shell_payload["exit_code"] == 0
+    assert "native-windows-e2e" in shell_payload["stdout"]
+    assert "escaped&value" in shell_payload["stdout"]

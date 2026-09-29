@@ -41,10 +41,10 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
           WINDOWS_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'ci:windows') }}
         run: |
-          changed_files="$(git diff --name-only --diff-filter=ACMR "$BASE_SHA"...HEAD)"
+          changed_files="$(git diff --name-only --diff-filter=ACMRD "$BASE_SHA"...HEAD)"
           echo "full_suite=$WINDOWS_LABEL" >> "$GITHUB_OUTPUT"
           if [[ "$WINDOWS_LABEL" == "true" ]] || grep -Eq \
-            '^(\.github/workflows/ci-labels-windows\.yml|infrastructure/process/|tests/infrastructure/process/|tools/interactive_shell/shell/|tools/interactive_shell/subprocess\.py|tests/interactive_shell/shell/)' \
+            '^(\.github/workflows/ci-labels-windows\.yml|infrastructure/process/|tests/infrastructure/process/|tools/interactive_shell/actions/shell\.py|tools/interactive_shell/shell/|tools/interactive_shell/subprocess\.py|tests/interactive_shell/shell/)' \
             <<< "$changed_files"; then
             echo "required=true" >> "$GITHUB_OUTPUT"
           else
@@ -124,7 +124,7 @@ jobs:
   windows-test:
     if: needs.windows-scope.outputs.full_suite == 'true'
     name: windows full test
-    needs: [windows-scope, windows-quality, windows-shell]
+    needs: [windows-scope, windows-quality]
     runs-on: windows-latest
     timeout-minutes: 25
     continue-on-error: true
