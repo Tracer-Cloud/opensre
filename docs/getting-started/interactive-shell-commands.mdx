@@ -32,6 +32,22 @@ highlighted command's description appears below the list.
 | Pasted alert JSON/text | The agent triages it in chat, calling integration tools as needed |
 | Shell one-liner (`kubectl get pods`) | Executed through shell policy when the action agent selects a shell action |
 
+### Shell command syntax
+
+`shell_run` uses the command shell of the environment where OpenSRE is running:
+
+- Native Windows uses `cmd.exe`. Use `cmd` operators (`&`, `&&`, and `|`),
+  `%NAME%` environment variables, and caret escaping (`^`). PowerShell syntax is
+  not translated; invoke `powershell -NoProfile -Command "..."` or
+  `pwsh -NoProfile -Command "..."` explicitly when you need it.
+- macOS, Linux, and OpenSRE running inside WSL use non-interactive `/bin/sh`.
+  WSL therefore expects POSIX syntax, not native Windows syntax.
+
+Each `shell_run` call starts in OpenSRE's working directory with a fresh child
+shell. A `cd` affects only that call; prefix every command that needs another
+directory with `cd <path> && ...`. The exact command `pwd` works on every
+platform and prints that call's starting directory.
+
 **TTY vs non-TTY:** Interactive menus, confirmations, and onboarding wizards need a real terminal. Piping input or running in CI is non-interactive — prefer explicit CLI commands outside the REPL for automation.
 
 **Unknown commands:** Typos suggest the closest registered command (`Did you mean /integrations?`). Run `/help` for the authoritative list — it always matches your installed OpenSRE version.

@@ -183,6 +183,10 @@ opensre ask "perform the requested maintenance" --dangerously-bypass-approvals
 Do not combine the bypass flag with `--allowed-tool`. Neither option bypasses
 the operating-system permissions or sandboxing that applies to OpenSRE.
 
+Commands authorized through `shell_run` use the host environment's shell. See
+[Shell command syntax](/getting-started/interactive-shell-commands#shell-command-syntax)
+for native Windows `cmd.exe`, PowerShell, WSL, and working-directory behavior.
+
 ## JSON output and exit codes
 
 Put the global `--json` option before `ask` for machine-readable output:
