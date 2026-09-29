@@ -397,7 +397,7 @@ def _get_or_create_anonymous_id() -> str:
 def installation_id() -> str:
     """The stable per-install id every analytics event posts as ``anonymous_id``.
 
-    Public so other telemetry (Langfuse traces) can name the same installation
+    Public so other telemetry can name the same installation
     the analytics backend already knows, and later join it to a signed-in user.
     """
     return _get_or_create_anonymous_id()

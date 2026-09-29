@@ -134,15 +134,29 @@ def test_remote_prompt_tools_survive_resume_without_enabling_controls_on_schedul
             "slash_invoke",
             "schedule_ci_repair_loop",
             "list_scheduled_loops",
-            "check_hosted_gateway",
-            "start_hosted_gateway",
-            "ask_hosted_gateway",
             "cli_exec",
             "llm_set_provider",
             "task_cancel",
         } <= names
+        assert names.isdisjoint(
+            {
+                "ask_hosted_gateway",
+                "check_hosted_gateway",
+                "start_hosted_gateway",
+                "stop_hosted_gateway",
+            }
+        )
     for names in handler.tick_tools:
-        assert names.isdisjoint({"slash_invoke", "schedule_ci_repair_loop"})
+        assert names.isdisjoint(
+            {
+                "slash_invoke",
+                "schedule_ci_repair_loop",
+                "ask_hosted_gateway",
+                "check_hosted_gateway",
+                "start_hosted_gateway",
+                "stop_hosted_gateway",
+            }
+        )
 
 
 def test_a_question_ends_the_turn_as_needs_input_with_the_question_as_text() -> None:
@@ -293,20 +307,32 @@ def test_a_tool_refusal_is_not_a_failed_integration() -> None:
     assert job.failed_integrations == ()
 
 
-def _approval_request(pr_number: int = 7, *, demo_spelled_out: bool = False) -> Any:
+class _GatedTool:
+    """A stand-in write tool. No product tool still sets ``requires_approval``."""
+
+    requires_approval = True
+    approval_reason = "Starts a worker."
+    input_schema = {
+        "type": "object",
+        "properties": {
+            "owner": {"type": "string"},
+            "repo": {"type": "string"},
+            "pr_number": {"type": "integer"},
+            "confirm": {"type": "boolean", "default": False},
+        },
+    }
+
+
+def _approval_request(pr_number: int = 7, *, default_spelled_out: bool = False) -> Any:
     from core.llm.types import ToolCall
     from core.tool import ToolExecutionRequest
-    from tools.registry import clear_tool_registry_cache, get_registered_tool_map
 
-    clear_tool_registry_cache()
-    tool = get_registered_tool_map()["schedule_ci_repair_loop"]
-    assert tool.requires_approval
     arguments: dict[str, Any] = {"owner": "o", "repo": "r", "pr_number": pr_number}
-    if demo_spelled_out:
-        arguments["demo"] = False
+    if default_spelled_out:
+        arguments["confirm"] = False
     return ToolExecutionRequest(
-        tool_call=ToolCall(id="c", name="schedule_ci_repair_loop", input={}),
-        tool=tool,
+        tool_call=ToolCall(id="c", name="gated_tool", input={}),
+        tool=_GatedTool(),
         arguments=arguments,
         source="test",
         resolved_integrations={},
@@ -327,7 +353,7 @@ class _ApprovalHandler(_Handler):
     ) -> Any:
         self.seen_text = text
         for pr_number in self.pr_numbers:
-            request = _approval_request(pr_number, demo_spelled_out=self.spell_out_demo)
+            request = _approval_request(pr_number, default_spelled_out=self.spell_out_demo)
             verdict = output.tool_hooks.before_tool_call(request)
             self.verdicts.append(verdict)
         output.finalize(self.answer)
@@ -353,13 +379,13 @@ def test_an_approval_covers_exactly_the_previewed_call_once() -> None:
     assert first.blocked is True and first.terminate is True
     assert asked.state is PromptState.NEEDS_INPUT
     assert asked.view()["choice"]["questions"][0]["options"] == ["Approve", "Deny"]
-    assert asked.question.startswith("Approve schedule_ci_repair_loop?")
+    assert asked.question.startswith("Approve gated_tool?")
     assert "pr_number" in asked.question
     assert same is None
     assert again.blocked is True and other.blocked is True and other.terminate is True
     assert follow_up.state is PromptState.NEEDS_INPUT
     assert follow_up.session_id == asked.session_id
-    assert "Approve" in handler.seen_text and "schedule_ci_repair_loop" in handler.seen_text
+    assert "Approve" in handler.seen_text and "gated_tool" in handler.seen_text
 
 
 def test_an_approval_survives_the_model_restating_the_call_without_its_defaults() -> None:

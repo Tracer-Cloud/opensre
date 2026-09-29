@@ -10,7 +10,6 @@ import pytest
 
 import config.constants.paths as paths
 from config.constants import (
-    OPENSRE_LANGFUSE_DISABLED_ENV,
     OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV,
     OPENSRE_MEMORY_DIR_ENV,
 )
@@ -24,7 +23,6 @@ def pytest_configure(config: pytest.Config) -> None:
     _ = config
     _load_env()
     _disable_sentry()
-    _disable_langfuse()
     _mark_tests_for_analytics()
 
 
@@ -37,12 +35,6 @@ def _disable_sentry() -> None:
     os.environ["OPENSRE_SENTRY_DISABLED"] = "1"
 
 
-def _disable_langfuse() -> None:
-    # A developer ``.env`` may carry real Langfuse keys; boot-path tests must
-    # not export traces. Adapter tests re-enable it explicitly.
-    os.environ[OPENSRE_LANGFUSE_DISABLED_ENV] = "1"
-
-
 def _mark_tests_for_analytics() -> None:
     os.environ["OPENSRE_NO_TELEMETRY"] = "1"
     os.environ["OPENSRE_INVESTIGATION_SOURCE"] = "test"
@@ -50,7 +42,6 @@ def _mark_tests_for_analytics() -> None:
 
 _load_env()
 _disable_sentry()
-_disable_langfuse()
 _mark_tests_for_analytics()
 
 

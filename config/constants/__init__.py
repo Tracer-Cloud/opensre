@@ -261,6 +261,9 @@ if TYPE_CHECKING:
         BUZZ_RELAY_URL_ENV as BUZZ_RELAY_URL_ENV,
     )
     from config.constants.capabilities import (
+        HOSTED_GATEWAY_CAPABILITY as HOSTED_GATEWAY_CAPABILITY,
+    )
+    from config.constants.capabilities import (
         SCHEDULER_HOST_CAPABILITY as SCHEDULER_HOST_CAPABILITY,
     )
     from config.constants.capabilities import (
@@ -657,24 +660,6 @@ if TYPE_CHECKING:
     )
     from config.constants.kubernetes import (
         KUBECONFIG_PATH_ENV as KUBECONFIG_PATH_ENV,
-    )
-    from config.constants.langfuse import (
-        LANGFUSE_BASE_URL_ENV as LANGFUSE_BASE_URL_ENV,
-    )
-    from config.constants.langfuse import (
-        LANGFUSE_DEFAULT_BASE_URL as LANGFUSE_DEFAULT_BASE_URL,
-    )
-    from config.constants.langfuse import (
-        LANGFUSE_HOST_ENV as LANGFUSE_HOST_ENV,
-    )
-    from config.constants.langfuse import (
-        LANGFUSE_PUBLIC_KEY_ENV as LANGFUSE_PUBLIC_KEY_ENV,
-    )
-    from config.constants.langfuse import (
-        LANGFUSE_SECRET_KEY_ENV as LANGFUSE_SECRET_KEY_ENV,
-    )
-    from config.constants.langfuse import (
-        OPENSRE_LANGFUSE_DISABLED_ENV as OPENSRE_LANGFUSE_DISABLED_ENV,
     )
     from config.constants.llm import (
         AZURE_OPENAI_API_KEY_ENV as AZURE_OPENAI_API_KEY_ENV,

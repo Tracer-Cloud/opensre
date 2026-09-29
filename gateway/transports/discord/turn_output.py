@@ -143,7 +143,8 @@ class DiscordTurnOutput:
 
     def _set_status(self, status: str) -> None:
         status = normalize_gateway_status(status)
-        self._edit_preview(f"*{status}*")
+        # Discord italics stay on one row; the shell is what shows the later rows.
+        self._edit_preview(f"*{' '.join(status.split())}*")
 
     def _edit_preview(self, preview: str) -> None:
         with self._lock:

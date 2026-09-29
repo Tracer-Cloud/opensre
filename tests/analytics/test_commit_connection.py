@@ -87,7 +87,6 @@ def emit(root: Path, receiver: dict[str, Any], scenario: str) -> subprocess.Comp
             "OPENSRE_APP_URL": receiver["url"],
             "OPENSRE_DISABLE_KEYRING": "0",
             "OPENSRE_SENTRY_DISABLED": "1",
-            "OPENSRE_LANGFUSE_DISABLED": "1",
         }
     )
     if scenario == "silo":

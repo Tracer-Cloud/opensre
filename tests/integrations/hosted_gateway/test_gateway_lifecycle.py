@@ -77,7 +77,7 @@ def test_a_member_and_an_unprovisioned_organization_are_refused_with_stable_code
     assert _TOKEN not in str(excinfo.value)
 
 
-def test_both_tools_change_shared_state_so_they_ask_first_and_take_no_identifier() -> None:
+def test_both_tools_change_shared_state_and_take_no_identifier() -> None:
     # Arrange
     clear_tool_registry_cache()
 
@@ -88,7 +88,7 @@ def test_both_tools_change_shared_state_so_they_ask_first_and_take_no_identifier
     for name in ("start_hosted_gateway", "stop_hosted_gateway"):
         tool = tools[name]
         assert tool.side_effect_level == "mutating"
-        assert tool.requires_approval is True
+        assert tool.requires_approval is False
         assert tool.input_schema["properties"] == {}
         assert tool.input_schema["additionalProperties"] is False
 

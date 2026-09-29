@@ -315,15 +315,6 @@ wheels = [
 ]
 
 [[package]]
-name = "backoff"
-version = "2.2.1"
-source = { registry = "https://pypi.org/simple" }
-sdist = { url = "https://files.pythonhosted.org/packages/47/d7/5bbeb12c44d7c4f2fb5b56abce497eb5ed9f34d85701de869acedd602619/backoff-2.2.1.tar.gz", hash = "sha256:03f829f5bb1923180821643f8753b0502c3b682293992485b0eef2807afa5cba", size = 17001, upload-time = "2022-10-05T19:19:32.061Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/df/73/b6e24bd22e6720ca8ee9a85a0c4a2971af8497d8f3193fa05390cbd46e09/backoff-2.2.1-py3-none-any.whl", hash = "sha256:63579f9a0628e06278f7e47b7d7d5b6ce20dc65c5e96a6f3ca99a6adca0396e8", size = 15148, upload-time = "2022-10-05T19:19:30.546Z" },
-]
-
-[[package]]
 name = "boto3"
 version = "1.43.103"
 source = { registry = "https://pypi.org/simple" }
@@ -1732,26 +1723,6 @@ wheels = [
 ]
 
 [[package]]
-name = "langfuse"
-version = "4.15.4"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "backoff" },
-    { name = "httpx" },
-    { name = "opentelemetry-api" },
-    { name = "opentelemetry-exporter-otlp-proto-http" },
-    { name = "opentelemetry-sdk" },
-    { name = "packaging" },
-    { name = "pydantic" },
-    { name = "typing-extensions" },
-    { name = "wrapt" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/b3/0c/ccb04968d47896e9eb7421b6e2e6e8cd510d8fa3e79337092dc734f25543/langfuse-4.15.4.tar.gz", hash = "sha256:b9a36194f4e968206d919313c24ea71c6ea68e21286370b01de752d20b26e7a3", size = 392296, upload-time = "2026-09-16T16:13:05.967Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/97/bd/8e0cadd69d0855646eda8d584ef4f38ca46cf271553af8ba7f93ae607626/langfuse-4.15.4-py3-none-any.whl", hash = "sha256:8e75c70b1522a722a11ab6c7d88e27534a5d0c3844a1a464ac5eb548b014e9c3", size = 706367, upload-time = "2026-09-16T16:13:07.294Z" },
-]
-
-[[package]]
 name = "librt"
 version = "0.13.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2473,7 +2444,6 @@ dev = [
     { name = "datasets" },
     { name = "huggingface-hub" },
     { name = "import-linter" },
-    { name = "langfuse" },
     { name = "mypy" },
     { name = "pre-commit" },
     { name = "pytest" },
@@ -2491,9 +2461,6 @@ dev = [
 ]
 kafka = [
     { name = "confluent-kafka" },
-]
-langfuse = [
-    { name = "langfuse" },
 ]
 opensre-hub = [
     { name = "datasets" },
@@ -2556,8 +2523,6 @@ requires-dist = [
     { name = "huggingface-hub", marker = "extra == 'opensre-hub'", specifier = ">=0.26.0" },
     { name = "import-linter", marker = "extra == 'dev'", specifier = ">=2.0" },
     { name = "kubernetes", specifier = ">=28.1.0" },
-    { name = "langfuse", marker = "extra == 'dev'", specifier = ">=4.15.2,<5" },
-    { name = "langfuse", marker = "extra == 'langfuse'", specifier = ">=4.15.2,<5" },
     { name = "litellm", specifier = ">=1.90.0,<1.101.0" },
     { name = "mcp", specifier = ">=1.28.1" },
     { name = "mypy", marker = "extra == 'dev'", specifier = ">=1.10.0" },
@@ -2607,7 +2572,7 @@ requires-dist = [
     { name = "vulture", marker = "extra == 'dev'", specifier = ">=2.14" },
     { name = "yandexcloud", marker = "extra == 'yandex-cloud-logs'", specifier = ">=0.300.0" },
 ]
-provides-extras = ["dev", "langfuse", "release-dist", "release-binary", "release", "opensre-hub", "kafka", "clickhouse", "postgresql", "azure-sql", "yandex-cloud-logs"]
+provides-extras = ["dev", "release-dist", "release-binary", "release", "opensre-hub", "kafka", "clickhouse", "postgresql", "azure-sql", "yandex-cloud-logs"]
 
 [package.metadata.requires-dev]
 dev = [

@@ -43,9 +43,10 @@ PROMPT_RESULT_RETENTION_SECONDS = 3_600.0
 PROMPT_DEFAULT_ACTOR = "remote-shell"
 #: How long a queued remote prompt waits for a free turn slot before it counts as refused.
 PROMPT_SLOT_WAIT_SECONDS = 300.0
-#: Progress lines a prompt record keeps (the newest), and the length each is cut to.
+#: Progress updates a prompt record keeps (the newest).
 PROMPT_PROGRESS_MAX_LINES = 20
-PROMPT_PROGRESS_LINE_MAX_CHARS = 200
+#: Character budget for one progress update: three terminal rows.
+PROMPT_PROGRESS_LINE_MAX_CHARS = 600
 #: The prompt worker ends after its current job; it gets this slice of the stop budget.
 PROMPT_WORKER_STOP_TIMEOUT_SECONDS = 2.0
 

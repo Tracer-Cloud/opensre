@@ -115,6 +115,36 @@ def test_tool_status_includes_first_input_hint(monkeypatch) -> None:
     assert "/integrations" in status
 
 
+def test_tool_status_keeps_a_long_argument() -> None:
+    """The hint is what gets copied out of the terminal, so it is not shortened."""
+    status = status_from_tool_start(
+        "shell_run",
+        {"command": ("cat /Users/janvincentfranciszek/.opensre/ci-repair/987221fb5e15/result.md")},
+    )
+    assert "987221fb5e15/result.md" in status
+    assert "…" not in status.split("(", 1)[-1]
+
+
+def _describe_skill(_name: str) -> tuple[str, ...]:
+    return (
+        "Load the full body of one action-agent skill by name from the "
+        "SKILLS INDEX. Call this in the same turn.",
+    )
+
+
+def test_tool_status_keeps_a_long_label_on_its_own_rows() -> None:
+    """A gateway status may use three rows; the label and argument stay whole."""
+    status = status_from_tool_start(
+        "skill_view",
+        {"name": "operating-github-ci-repairs"},
+        describe=_describe_skill,
+    )
+    label, argument = status.split("\n", 1)
+    assert "SKILLS INDEX" in label
+    assert argument == "(operating-github-ci-repairs)"
+    assert "……" not in status
+
+
 def test_tool_label_miss_does_not_scan_the_whole_registry(monkeypatch) -> None:
     """A cache miss must resolve by name, not walk every registered tool.
 

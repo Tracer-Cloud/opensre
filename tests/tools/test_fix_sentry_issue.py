@@ -40,7 +40,7 @@ def test_metadata_is_mutating_on_action_surface() -> None:
     assert t.name == "fix_sentry_issue"
     assert t.source == "sentry"
     assert t.side_effect_level == "mutating"
-    assert t.requires_approval is True
+    assert t.requires_approval is False
     assert t.surfaces == ("action",)
     assert t.input_schema["required"] == ["sentry_url"]
     assert "error_kind" in t.outputs
@@ -188,7 +188,7 @@ def test_registry_discovers_fix_sentry_issue_on_action_surface() -> None:
     assert "fix_sentry_issue" in action
     assert "fix_sentry_issue" not in chat
     rt = action["fix_sentry_issue"]
-    assert rt.requires_approval is True
+    assert rt.requires_approval is False
     assert rt.side_effect_level == "mutating"
 
 

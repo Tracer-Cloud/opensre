@@ -49,7 +49,6 @@ def run_process(
             "OPENSRE_APP_URL": app_url,
             "OPENSRE_DISABLE_KEYRING": "0",
             "OPENSRE_SENTRY_DISABLED": "1",
-            "OPENSRE_LANGFUSE_DISABLED": "1",
         }
     )
     if ci:

@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from config.constants.capabilities import SCHEDULER_HOST_CAPABILITY, SCHEDULER_HOST_IN_PROCESS
+from config.constants.capabilities import (
+    HOSTED_GATEWAY_CAPABILITY,
+    SCHEDULER_HOST_CAPABILITY,
+    SCHEDULER_HOST_IN_PROCESS,
+)
 from core.agent_harness import SessionCore
 from core.agent_harness.tools import ActionToolScope, capability_values
 from core.agent_harness.tools.tool_context import ACTION_TOOL_CONTEXT_RESOURCE_KEY
@@ -32,6 +36,8 @@ def test_a_scheduler_hosting_gateway_tells_the_repair_loop_tool_and_a_chat_gatew
     # Assert: the fact is on the session and the tool reads it from its runtime context
     assert capability_values(hosting, SCHEDULER_HOST_CAPABILITY) == (SCHEDULER_HOST_IN_PROCESS,)
     assert capability_values(chat_only, SCHEDULER_HOST_CAPABILITY) == ()
+    assert hosting.available_capabilities[HOSTED_GATEWAY_CAPABILITY] == ()
+    assert chat_only.available_capabilities[HOSTED_GATEWAY_CAPABILITY] == ()
     assert _scheduler_in_process(_context(hosting)) is True
     assert _scheduler_in_process(_context(chat_only)) is False
     assert _scheduler_in_process(None) is False

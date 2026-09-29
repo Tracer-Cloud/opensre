@@ -60,7 +60,6 @@ class BootStep(StrEnum):
 
     ENV = "env"
     SENTRY = "sentry"
-    LLM_TRACING = "llm_tracing"
     HARNESS_ADAPTERS = "harness_adapters"
     SCHEDULER_RUNNERS = "scheduler_runners"
     CAPABILITY_WARNINGS = "capability_warnings"
@@ -80,7 +79,7 @@ class ProcessProfile:
 CLI_PROFILE: Final = ProcessProfile(
     name=ProcessName.CLI,
     # CLI owns Sentry (update tolerates a missing SDK) and Rich product adapters.
-    steps=frozenset({BootStep.ENV, BootStep.LLM_TRACING}),
+    steps=frozenset({BootStep.ENV}),
 )
 GATEWAY_PROFILE: Final = ProcessProfile(
     name=ProcessName.GATEWAY,
@@ -88,7 +87,6 @@ GATEWAY_PROFILE: Final = ProcessProfile(
         {
             BootStep.ENV,
             BootStep.SENTRY,
-            BootStep.LLM_TRACING,
             BootStep.HARNESS_ADAPTERS,
             BootStep.CAPABILITY_WARNINGS,
             BootStep.PRELOAD_LLM,
@@ -98,9 +96,7 @@ GATEWAY_PROFILE: Final = ProcessProfile(
 )
 WEB_PROFILE: Final = ProcessProfile(
     name=ProcessName.WEB,
-    steps=frozenset(
-        {BootStep.ENV, BootStep.SENTRY, BootStep.LLM_TRACING, BootStep.HARNESS_ADAPTERS}
-    ),
+    steps=frozenset({BootStep.ENV, BootStep.SENTRY, BootStep.HARNESS_ADAPTERS}),
     sentry_entrypoint=SentryEntrypoint.WEBAPP,
 )
 SCHEDULER_WORKER_PROFILE: Final = ProcessProfile(
@@ -113,7 +109,6 @@ SCHEDULER_WORKER_PROFILE: Final = ProcessProfile(
         {
             BootStep.ENV,
             BootStep.SENTRY,
-            BootStep.LLM_TRACING,
             BootStep.HARNESS_ADAPTERS,
             BootStep.SCHEDULER_RUNNERS,
         }
@@ -132,8 +127,7 @@ EMBEDDED_PROFILE: Final = ProcessProfile(
     name=ProcessName.EMBEDDED,
     # Driving the agent from Python inside someone else's process: register the
     # adapters tools resolve through, and leave error reporting, LLM tracing,
-    # scheduling and client preloading to the host (an embedder that wants
-    # Langfuse calls ``init_langfuse_tracing()`` itself).
+    # scheduling and client preloading to the host.
     steps=frozenset({BootStep.ENV, BootStep.HARNESS_ADAPTERS}),
 )
 
@@ -146,13 +140,6 @@ def _run_sentry(profile: ProcessProfile, _log: logging.Logger) -> None:
     from infrastructure.observability.errors.sentry import init_sentry
 
     init_sentry(entrypoint=profile.sentry_entrypoint)
-
-
-def _run_llm_tracing(_profile: ProcessProfile, _log: logging.Logger) -> None:
-    # Opt-in via LANGFUSE_* keys; a no-op for everyone else.
-    from infrastructure.observability.langfuse import init_langfuse_tracing
-
-    init_langfuse_tracing()
 
 
 def _run_harness_adapters(_profile: ProcessProfile, _log: logging.Logger) -> None:
@@ -186,7 +173,6 @@ _STEP_ORDER: Final[
 ] = (
     (BootStep.ENV, _run_env),
     (BootStep.SENTRY, _run_sentry),
-    (BootStep.LLM_TRACING, _run_llm_tracing),
     (BootStep.HARNESS_ADAPTERS, _run_harness_adapters),
     (BootStep.SCHEDULER_RUNNERS, _run_scheduler_runners),
     (BootStep.CAPABILITY_WARNINGS, _run_capability_warnings),

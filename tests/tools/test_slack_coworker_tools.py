@@ -96,4 +96,4 @@ def test_search_tool_requires_query() -> None:
 
 
 def test_join_tool_metadata() -> None:
-    assert slack_join_channel.requires_approval is True
+    assert slack_join_channel.requires_approval is False

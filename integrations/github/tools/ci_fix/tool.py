@@ -129,11 +129,6 @@ def _action_scope(context: Any) -> Any:
     ],
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
-    requires_approval=True,
-    approval_reason=(
-        "Checks out the PR branch or creates a branch-fix worktree, edits files, "
-        "commits, pushes the repair branch, and waits for the resulting checks."
-    ),
     accepts_runtime_context=True,
     input_schema=_INPUT_SCHEMA,
     is_available=_github_ci_fix_available,

@@ -838,7 +838,7 @@ def test_registry_discovers_ci_fix_on_action_surface() -> None:
 
     tool = action["fix_github_pr_ci"]
     assert tool.surfaces == ("action",)
-    assert tool.requires_approval is True
+    assert tool.requires_approval is False
     assert tool.side_effect_level == "mutating"
     assert "fix_github_pr_ci" not in chat
 

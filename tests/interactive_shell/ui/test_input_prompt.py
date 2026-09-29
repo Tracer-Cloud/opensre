@@ -157,6 +157,18 @@ class TestPromptTurnCounter:
         tr, tg, tb = (int(text[i : i + 2], 16) for i in (0, 2, 4))
         assert f"{tr};{tg};{tb}" in raw
 
+    def test_long_user_row_keeps_the_whole_path(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """A pasted path wider than the terminal stays in the plate, uncut."""
+        monkeypatch.setattr(prompt_rendering, "terminal_columns", lambda: 40)
+        session = Session()
+        buf = io.StringIO()
+        console = Console(file=buf, force_terminal=False, highlight=False, width=40)
+        path = "https://github.com/davincios/opensre-ci-repair-demo-20260915-epoch-7c92"
+        render_submitted_prompt(console, session, f"use this repository: {path}")
+        visible = re.sub(r"\x1b\[[0-9;]*m", "", buf.getvalue())
+        assert path in visible.replace("\n", "")
+        assert "…" not in visible
+
     def test_autosubmitted_goal_condition_gets_work_turn_marker(self) -> None:
         """``/goal set`` autosubmit must not look like part of the slash turn."""
         session = Session()

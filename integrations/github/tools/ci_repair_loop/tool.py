@@ -78,8 +78,6 @@ _REFUSED_ERROR = "Could not schedule CI repair: the pull request was refused."
     ),
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
-    requires_approval=True,
-    approval_reason="Starts a background service and authorizes a bounded worker to create demo resources or edit and push the selected PR.",
     accepts_runtime_context=True,
     is_available=github_source_available,
     extract_params=_credentials,

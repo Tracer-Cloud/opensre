@@ -74,9 +74,8 @@ AUTO_LEVEL_ASK_TOOL_TYPES: Final[dict[AutoLevel, frozenset[str] | None]] = {
     AutoLevel.OFF: None,  # ask every tool type
 }
 
-# Registered tools that ask at every level, High included: their effect reaches
-# the whole organization, not only this user's machine or session.
-ASK_AT_EVERY_AUTO_LEVEL_TOOL_NAMES: Final[frozenset[str]] = frozenset({"stop_hosted_gateway"})
+# No tool asks at every auto level. The shell's approval hook reads this set.
+ASK_AT_EVERY_AUTO_LEVEL_TOOL_NAMES: Final[frozenset[str]] = frozenset()
 
 
 def parse_auto_level(raw: str) -> AutoLevel | None:

@@ -26,14 +26,7 @@ loaded in this conversation when continuing an approval or status request.
 
 ## Plan
 
-Create or revise the live plan with `update_plan`, preserving completed work.
-Mark Step 3 `verifies: true`. Pair plan updates with an action where possible;
-questions must be the only tool call in their response. On a status-only request,
-include only inspection and reporting. Include the target-question step only
-when information is missing; a supplied demo choice, PR, or task ID belongs in
-the plan explanation. Omit unnecessary work instead of creating already-completed
-steps, which the runtime resets when no tool has run for them.
-Record work that cannot run as `blocked`, with its reason in `explanation`.
+Create or revise the live plan with `update_plan`
 
 - [ ] Step 1. Ask for missing target information with ask_user_choice.
 - [ ] Step 2. Schedule the selected bounded repair with schedule_ci_repair_loop.

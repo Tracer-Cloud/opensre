@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from config.constants.capabilities import HOSTED_GATEWAY_CAPABILITY
 from core.agent_harness.tools import capability_available_from_sources
 from core.tool import report_run_error
 from integrations.hosted_gateway.client import (
@@ -22,9 +23,6 @@ from integrations.hosted_gateway.client import (
 )
 
 SOURCE = "opensre"
-
-#: Hosts may explicitly withhold the tools that use the signed-in account.
-HOSTED_GATEWAY_CAPABILITY = "hosted_gateway"
 
 
 def hosted_gateway_available(sources: dict[str, dict[str, Any]]) -> bool:

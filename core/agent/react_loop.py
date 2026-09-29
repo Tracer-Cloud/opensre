@@ -930,8 +930,8 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
             "cancelled": self._cancelled,
             "safety_handoff_attempted": self._safety_handoff_attempted,
             "tool_call_count": len(self._executed),
-            # Token totals are deliberately absent: Langfuse sums generation
-            # usage per trace, and a ``*_tokens`` key would be key-redacted.
+            # Token totals belong on generation observations, not agent metadata;
+            # a ``*_tokens`` metadata key would also be key-redacted.
         }
 
     def _mark_loop_error(self, span_attrs: dict[str, Any], exc: BaseException) -> None:

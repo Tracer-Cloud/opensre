@@ -20,16 +20,14 @@ order every time:
 1. **Load the environment** — read configuration and secrets.
 2. **Start error reporting** — so failures later in startup are still
    captured when the selected profile owns Sentry.
-3. **Initialize optional LLM tracing** — enable Langfuse only when its keys are
-   configured; otherwise this is a no-op.
-4. **Register adapters** — connect the agent to the integrations and tools it
+3. **Register adapters** — connect the agent to the integrations and tools it
    can use.
-5. **Register scheduled-delivery adapters** — bind outbound delivery for
+4. **Register scheduled-delivery adapters** — bind outbound delivery for
    scheduled work. Agent runners are constructed by the scheduler host at
    startup rather than stored globally.
-6. **Log capability warnings** — flag anything the sandbox can't do in this
+5. **Log capability warnings** — flag anything the sandbox can't do in this
    environment.
-7. **Preload the LLM client modules** — so a long-running process doesn't end
+6. **Preload the LLM client modules** — so a long-running process doesn't end
    up mixing old and new versions of those modules after a later code
    change.
 
@@ -43,10 +41,10 @@ that's already started is a harmless no-op.
 
 | Profile | What it sets up | Used by |
 | --- | --- | --- |
-| CLI | Environment and optional LLM tracing. | The `opensre` command |
-| Gateway | Environment, error reporting, optional LLM tracing, adapters, capability warnings, LLM preload. | The gateway daemon (chat channels) |
-| Web | Environment, error reporting, optional LLM tracing, adapters. | The gateway's standalone web app |
-| Scheduler worker | Environment, error reporting, optional LLM tracing, adapters, scheduled-delivery adapters. | The `opensre cron start` daemon |
+| CLI | Environment. | The `opensre` command |
+| Gateway | Environment, error reporting, adapters, capability warnings, LLM preload. | The gateway daemon (chat channels) |
+| Web | Environment, error reporting, adapters. | The gateway's standalone web app |
+| Scheduler worker | Environment, error reporting, adapters, scheduled-delivery adapters. | The `opensre cron start` daemon |
 | Scheduled command | Environment, adapters, scheduled-delivery adapters. | One-off CLI commands that create, run, or dispatch scheduled work |
 | Embedded | Environment, adapters. | Driving the agent from another Python program |
 

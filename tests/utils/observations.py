@@ -1,4 +1,4 @@
-"""In-memory ``ObservationSink`` that records nesting the way Langfuse would.
+"""In-memory ``ObservationSink`` that records observation nesting.
 
 Parentage follows a ``contextvars`` stack so tests can assert that worker
 threads inherit the caller's observation context, not only that observations

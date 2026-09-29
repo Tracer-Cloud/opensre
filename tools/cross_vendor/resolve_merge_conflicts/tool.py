@@ -175,12 +175,7 @@ class ResolveMergeConflictsTool(BaseTool):
     source = SOURCE
     side_effect_level = SideEffectLevel.MUTATING
     surfaces = (ToolSurface.ACTION,)
-    requires_approval = True
     accepts_runtime_context = True
-    approval_reason = (
-        "Runs a coding agent that edits the conflicted files in the repository, "
-        "then commits the merge and pushes the branch."
-    )
     description = (
         "Resolve the git merge conflicts in the current repository with a coding agent, "
         "show each conflict side by side, then commit the merge, push the branch to "

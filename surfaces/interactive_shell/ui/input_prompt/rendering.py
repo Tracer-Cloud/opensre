@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import textwrap
+
 from prompt_toolkit.formatted_text import ANSI, FormattedText
 from rich.console import Console
 from rich.text import Text
@@ -13,10 +15,7 @@ from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.ui.handoff_questions import (
     render_ask_user_qa,
 )
-from surfaces.interactive_shell.ui.input_prompt.layout import (
-    _short_meta,
-    clip_prompt_text,
-)
+from surfaces.interactive_shell.ui.input_prompt.layout import _short_meta
 from surfaces.shared.terminal.prompt_layout import prompt_text_width, terminal_columns
 
 DEFAULT_PLACEHOLDER_TEXT = "Ask about an alert"
@@ -42,6 +41,25 @@ def _prompt_turn_number(session: Session) -> int:
 
 def _counter_text(turn_number: int) -> str:
     return f"[{turn_number}] "
+
+
+def _fold_plate_body(text: str, width: int) -> list[str]:
+    """Fold ``text`` onto rows without dropping characters.
+
+    A token longer than ``width`` stays whole. Replacing the tail with an
+    ellipsis meant a copied path or URL stopped mid-token.
+    """
+    if width < 1 or prompt_text_width(text) <= width:
+        return [text]
+    return (
+        textwrap.wrap(
+            text,
+            width=width,
+            break_long_words=False,
+            break_on_hyphens=False,
+        )
+        or [text]
+    )
 
 
 def _prompt_counter_text(session: Session) -> str:
@@ -128,30 +146,35 @@ def render_submitted_prompt(console: Console, session: Session, text: str) -> No
     counter_ansi = ui_theme.DIM_ANSI
     surface = ui_theme.INPUT_SURFACE_BG_ANSI
     parts: list[str] = []
-    for index, line in enumerate(lines):
-        if index:
-            parts.append("\n")
-        if index == 0:
-            # ``▌ [N] `` then body — bar sits on the left edge of the plate.
-            prefix = f"{_USER_TURN_ACCENT} {counter}"
-            prefix_cols = prompt_text_width(prefix)
-            body = clip_prompt_text(line, max(1, row_width - prefix_cols))
-            pad = max(0, row_width - prefix_cols - prompt_text_width(body))
+    hang = "  " + (" " * len(counter))
+    hang_cols = prompt_text_width(hang)
+    lead_prefix = f"{_USER_TURN_ACCENT} {counter}"
+    lead_cols = prompt_text_width(lead_prefix)
+
+    def _paint(body: str, *, lead: bool) -> None:
+        cols = lead_cols if lead else hang_cols
+        pad = max(0, row_width - cols - prompt_text_width(body))
+        if lead:
             parts.append(
                 f"{surface}{accent_ansi}{_USER_TURN_ACCENT}{ui_theme.ANSI_RESET}"
                 f"{surface} {counter_ansi}{counter}{ui_theme.ANSI_RESET}"
                 f"{surface}{body_ansi}{body}{' ' * pad}{ui_theme.ANSI_RESET}"
             )
-        else:
-            # Hang under the accent + space so wrapped lines stay in the plate.
-            hang = "  " + (" " * len(counter))
-            hang_cols = prompt_text_width(hang)
-            body = clip_prompt_text(line, max(1, row_width - hang_cols))
-            pad = max(0, row_width - hang_cols - prompt_text_width(body))
-            parts.append(
-                f"{surface}{counter_ansi}{hang}{ui_theme.ANSI_RESET}"
-                f"{surface}{body_ansi}{body}{' ' * pad}{ui_theme.ANSI_RESET}"
-            )
+            return
+        parts.append(
+            f"{surface}{counter_ansi}{hang}{ui_theme.ANSI_RESET}"
+            f"{surface}{body_ansi}{body}{' ' * pad}{ui_theme.ANSI_RESET}"
+        )
+
+    for index, line in enumerate(lines):
+        if index:
+            parts.append("\n")
+        # First physical row carries ``▌ [N]``; every continuation hangs under it.
+        budget = max(1, row_width - (lead_cols if index == 0 else hang_cols))
+        for row_index, segment in enumerate(_fold_plate_body(line, budget)):
+            if row_index:
+                parts.append("\n")
+            _paint(segment, lead=index == 0 and row_index == 0)
     # Single trailing newline — the reply path owns the blank row under the
     # user plate so we do not stack two spacers (Droid: one row of margin).
     console.file.write("".join(parts) + "\n")

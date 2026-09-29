@@ -51,11 +51,6 @@ _WHOSE = (
     ],
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
-    requires_approval=True,
-    approval_reason=(
-        "Starts the organization's hosted gateway on Fargate; it runs, and is billed, until "
-        "it is stopped."
-    ),
     is_available=hosted_gateway_available,
     input_schema=_NO_INPUT,
     outputs=STATE_OUTPUTS,
@@ -114,11 +109,6 @@ def _was_running(client: HostedGatewayClient) -> bool:
     ],
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
-    requires_approval=True,
-    approval_reason=(
-        "Stops the organization's hosted gateway: the loops and chat integrations it serves "
-        "for the whole organization stop until it is started again."
-    ),
     is_available=hosted_gateway_available,
     input_schema=_NO_INPUT,
     outputs=STATE_OUTPUTS,

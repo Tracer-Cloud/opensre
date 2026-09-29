@@ -1265,7 +1265,6 @@ _TOOLS_WITHOUT_DELIBERATE_CATCH: frozenset[str] = frozenset(
         "read_yc_db_logs",
         "read_yc_logs",
         "query_yc_metrics",
-        "redeploy_railway_service",
         "replay_slack_thread_locally",
         "scan_redis_keys",
         "search_bitbucket_code",

@@ -30,7 +30,6 @@ jobs:
     env:
       OPENSRE_DISABLE_KEYRING: "1"
       OPENSRE_SENTRY_DISABLED: "1"
-      OPENSRE_LANGFUSE_DISABLED: "1"
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
@@ -73,7 +72,7 @@ jobs:
             --mount "type=bind,source=$control_home,target=/opensre-home" \
             --env OPENSRE_HOME=/opensre-home \
             --env OPENSRE_INSTALL_CHANNEL=runner-provenance-e2e \
-            --env OPENSRE_SENTRY_DISABLED=1 --env OPENSRE_LANGFUSE_DISABLED=1 \
+            --env OPENSRE_SENTRY_DISABLED=1 \
             opensre-provenance:${{ github.sha }} opensre --record-install
           test -f "$control_home/installed"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2

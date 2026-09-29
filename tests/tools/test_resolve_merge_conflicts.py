@@ -77,7 +77,7 @@ def test_metadata_is_a_mutating_action_tool_discovered_by_the_registry() -> None
     assert registered is not None
     assert tool.side_effect_level == "mutating"
     assert tool.surfaces == ("action",)
-    assert tool.requires_approval is True
+    assert tool.requires_approval is False
     assert tool.is_available({}) is True
 
 

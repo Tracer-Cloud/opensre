@@ -1,17 +1,17 @@
 ---
 title: "Railway"
-description: "Configure Railway deployment inspection and confirmed service redeploys"
+description: "Configure Railway deployment inspection"
 ---
 
 ## Overview
 
-The Railway integration inspects the latest successful deployment of any configured Railway service and can request a redeploy after explicit confirmation.
+The Railway integration inspects the latest successful deployment of any configured Railway service.
 
 ## Prerequisites
 
 - Railway CLI installed (`@railway/cli`)
 - Either an authenticated Railway CLI session (`railway login`) or a Railway token
-- Optional defaults: project, service, and environment to inspect or redeploy
+- Optional defaults: project, service, and environment to inspect
 
 ## Setup
 
@@ -46,17 +46,16 @@ RAILWAY_PATH=railway
 ## Credentials
 
 1. Install the Railway CLI and run `railway login`, **or** create a Railway token in the Railway dashboard.
-2. Optionally set default project / service / environment so inspect and redeploy calls need fewer parameters.
+2. Optionally set default project / service / environment so inspect calls need fewer parameters.
 3. Store the token in `.env` as `RAILWAY_TOKEN` or enter it during `opensre integrations setup railway`.
 
 Verify requires a token **or** a complete default project + service + environment scope.
 
 ## Tools
 
-| Tool | What it does | Confirmation |
-| --- | --- | --- |
-| `inspect_railway_deployment` | Shows the latest successful deployment and available source commit metadata for a Railway service | No |
-| `redeploy_railway_service` | Requests a Railway service redeploy | Yes (`confirm=true`) |
+| Tool | What it does |
+| --- | --- |
+| `inspect_railway_deployment` | Shows the latest successful deployment and available source commit metadata for a Railway service |
 
 ### Inspect a deployment
 
@@ -70,20 +69,7 @@ When a default scope is configured, no parameters are required. Otherwise provid
 }
 ```
 
-The result includes deployment ID, status, and source commit hash/message when Railway provides them.
-
-### Redeploy a service
-
-```json
-{
-  "project": "project-id-or-name",
-  "service": "service-id-or-name",
-  "environment": "production",
-  "confirm": true
-}
-```
-
-`confirm` must be explicitly `true`. Railway reuses the latest deployment and returns its new deployment ID. Commands always use explicit project, service, and environment flags and never write Railway link state into the workspace.
+The result includes deployment ID, status, and source commit hash/message when Railway provides them. Commands always use explicit project, service, and environment flags and never write Railway link state into the workspace.
 
 ## Verify
 
@@ -96,13 +82,11 @@ opensre integrations verify railway
 | Symptom | Fix |
 | --- | --- |
 | **deployment_unavailable** | Railway returned no successful deployment in the inspected history — confirm project/service/environment and that a successful deploy exists |
-| **confirmation_required** | Redeploy was called without `confirm=true` — pass `confirm: true` explicitly |
 | **Missing configuration / CLI / auth** | Install `@railway/cli`, run `railway login` or set `RAILWAY_TOKEN`, and set defaults or pass scope on each call |
 | **Verify fails without token** | Provide `RAILWAY_TOKEN`, or set complete `RAILWAY_PROJECT` + `RAILWAY_SERVICE` + `RAILWAY_ENVIRONMENT` with an authenticated CLI |
 
 ## Security
 
 - Railway tokens are never returned in tool output; Railway commands are non-interactive and errors are redacted.
-- Redeploy is a mutating action and requires explicit `confirm=true` (and approval when your surface enforces it).
 - Prefer a dedicated token scoped to the projects OpenSRE should touch.
 - Store tokens in `.env` or your secret manager — not in source control.

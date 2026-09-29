@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import pytest
 
+from config.constants.gateway import PROMPT_PROGRESS_LINE_MAX_CHARS
 from gateway.core.prompt_intake import (
     ALREADY_ANSWERED,
     NOT_WAITING,
@@ -145,10 +146,28 @@ def test_progress_keeps_the_newest_lines_with_growing_indices() -> None:
     queue.note(job, "  Reading the workflow run  ")
     queue.note(job, "")
     queue.note(job, "Checking out the branch")
-    queue.note(job, "x" * 500)
+    queue.note(job, "x" * (PROMPT_PROGRESS_LINE_MAX_CHARS + 80))
 
     # Assert: blank lines are dropped, long lines cut, only the newest kept, indices keep growing
     progress = job.view()["progress"]
     assert [item["index"] for item in progress] == [1, 2]
     assert progress[0]["text"] == "Checking out the branch"
-    assert len(progress[1]["text"]) == 200
+    assert len(progress[1]["text"]) == PROMPT_PROGRESS_LINE_MAX_CHARS
+
+
+def test_progress_keeps_a_three_row_status() -> None:
+    """A three-row gateway status is stored whole."""
+    queue = PromptQueue(clock=_Clock().read)
+    job = queue.submit("fix ci", context={}, actor="a")
+    assert job is not None
+    text = "\n".join(
+        [
+            "⏳ Load the full body of one action-agent skill by name from the SKILLS INDEX…",
+            "(operating-github-ci-repairs)",
+            "(rg -n -C 3 'GET /repos/davincios/opensre-onboarding-ci-repair-demo')",
+        ]
+    )
+
+    queue.note(job, f"  {text}  ")
+
+    assert job.view()["progress"][0]["text"] == text

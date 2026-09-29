@@ -1,6 +1,6 @@
 """``run_turn`` is the root observation of one trace.
 
-Langfuse derives the trace's input/output, session grouping and user from this
+Backends derive the trace's input/output, session grouping and user from this
 root, so the user text, the reply, the session id and the actor must land here
 — not on the agent loop underneath, which may run several times per turn. The
 outermost turn owns the session id: nested and scheduled turns inherit it.

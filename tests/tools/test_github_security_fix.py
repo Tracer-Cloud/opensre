@@ -844,7 +844,7 @@ def test_registry_discovers_security_fix_on_action_surface() -> None:
 
     tool = action["fix_github_security_alert"]
     assert tool.surfaces == ("action",)
-    assert tool.requires_approval is True
+    assert tool.requires_approval is False
     assert tool.side_effect_level == "mutating"
     assert "fix_github_security_alert" not in chat
 

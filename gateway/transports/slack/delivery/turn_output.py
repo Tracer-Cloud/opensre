@@ -136,10 +136,12 @@ class SlackTurnOutput:
 
     def _set_status(self, status: str) -> None:
         status = normalize_gateway_status(status)
+        # A Slack task title is one row; the shell is what shows the later rows.
+        flat = " ".join(status.split())
         with self._lock:
-            if self._turn_stream.note_task(status):
+            if self._turn_stream.note_task(flat):
                 return
-        self._edit_preview(_as_status_line(status))
+        self._edit_preview(_as_status_line(flat))
 
     def _drop_placeholder(self) -> None:
         """The streamed message replaces the placeholder — remove it."""

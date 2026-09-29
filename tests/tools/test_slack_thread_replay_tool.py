@@ -10,9 +10,6 @@ from integrations.config_models import RailwayIntegrationConfig
 from integrations.railway.tools.railway_deployment_tool.inspect_tool import (
     inspect_railway_deployment,
 )
-from integrations.railway.tools.railway_deployment_tool.redeploy_tool import (
-    redeploy_railway_service,
-)
 from integrations.slack.tools.slack_thread_replay_tool.tool import replay_slack_thread_locally
 from integrations.slack.web_client import SlackBotTarget
 
@@ -34,9 +31,8 @@ def test_runtime_tools_are_discoverable_on_declared_surfaces() -> None:
 
     assert "inspect_railway_deployment" in chat
     assert "replay_slack_thread_locally" in chat
-    assert "redeploy_railway_service" in action
+    assert "redeploy_railway_service" not in action
     assert chat["inspect_railway_deployment"].requires_approval is False
-    assert action["redeploy_railway_service"].requires_approval is True
 
 
 def test_inspect_uses_configured_scope_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -76,28 +72,6 @@ def test_inspect_searches_more_than_twenty_deployments(monkeypatch: pytest.Monke
 
     assert result["status"] == "ok"
     assert commands[0][commands[0].index("--limit") + 1] == "100"
-
-
-def test_redeploy_requires_explicit_confirmation() -> None:
-    result = redeploy_railway_service.run()
-
-    assert result["status"] == "failed"
-    assert result["error_type"] == "confirmation_required"
-
-
-def test_redeploy_returns_requested_deployment_id(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("integrations.railway.client.shutil.which", lambda command: command)
-    monkeypatch.setattr(
-        "integrations.railway.client.subprocess.run",
-        lambda *_args, **_kwargs: _completed(stdout=json.dumps({"id": "new-deployment-id"})),
-    )
-
-    result = redeploy_railway_service.run(
-        project="project-id", service="service-id", environment="production", confirm=True
-    )
-
-    assert result["status"] == "ok"
-    assert result["redeploy"]["deployment_id"] == "new-deployment-id"
 
 
 def test_replay_uses_shared_bot_token_and_replies_client(monkeypatch: pytest.MonkeyPatch) -> None:

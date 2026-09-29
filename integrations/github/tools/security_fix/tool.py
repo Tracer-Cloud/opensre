@@ -128,8 +128,6 @@ def _confirm_fn(context: Any) -> Any:
     ],
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
-    requires_approval=True,
-    approval_reason=("Edits files and can push a branch and open a GitHub PR."),
     accepts_runtime_context=True,
     input_schema=_INPUT_SCHEMA,
     is_available=_github_security_fix_available,

@@ -611,6 +611,7 @@ RULES: tuple[PathRule, ...] = (
     ),
     PathRule("surfaces/", ("tests/surfaces/",)),
     # Repository tooling and broad configuration changes still run focused contracts.
+    PathRule(".env.example", ("tests/config/",)),
     PathRule("pyproject.toml", ("tests/packaging/", "tests/config/")),
     PathRule("uv.lock", ("tests/packaging/", "tests/config/")),
     PathRule("pytest.ini", ("tests/github_ci/",)),
