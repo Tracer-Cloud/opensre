@@ -186,11 +186,11 @@ def _install_fake_popen(
     stderr: str = "",
     returncode: int = 0,
     hang: bool = False,
-) -> list[tuple[list[str], dict[str, object]]]:
+) -> list[tuple[str | list[str], dict[str, object]]]:
     """Replace ``Popen`` in the executor and return the recorded ``(argv, kwargs)`` calls."""
-    calls: list[tuple[list[str], dict[str, object]]] = []
+    calls: list[tuple[str | list[str], dict[str, object]]] = []
 
-    def _fake_popen(command: list[str], **kwargs: object) -> _FakeProcess:
+    def _fake_popen(command: str | list[str], **kwargs: object) -> _FakeProcess:
         child_env = kwargs.pop("env")
         assert isinstance(child_env, dict)
         assert not any(
@@ -216,11 +216,11 @@ def _force_watch_timeout(proc: object, **_kwargs: object) -> SubprocessWatchResu
     )
 
 
-def _expected_shell_argv(command: str) -> list[str]:
+def _expected_shell_argv(command: str) -> str | list[str]:
     if shell_execution.os.name == "nt":
         shell = shell_execution.os.environ.get("COMSPEC") or "cmd.exe"
         shell_command = "cd" if command.strip().lower() == "pwd" else command
-        return [shell, "/d", "/v:off", "/s", "/c", shell_command]
+        return f'"{shell}" /d /v:off /s /c "{shell_command}"'
     return ["/bin/sh", "-c", command]
 
 
@@ -790,7 +790,7 @@ def test_execute_cli_actions_preserves_windows_shell_syntax(monkeypatch: object)
     assert action_turn.run_action_tool_turn(f"run `{command}`", session, console).handled
     assert calls == [
         (
-            [r"C:\Windows\System32\cmd.exe", "/d", "/v:off", "/s", "/c", command],
+            r'"C:\Windows\System32\cmd.exe" /d /v:off /s /c "CD C:\Users\Alice"',
             _EXPECTED_POPEN_KWARGS,
         )
     ]
