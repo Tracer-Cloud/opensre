@@ -234,6 +234,7 @@ def install_shrink_resize_guard(
 
     def _render_deferred_input(pt_app: Any) -> None:
         """Show buffer edits on the cursor row while full chrome cannot fit."""
+        nonlocal deferred_cursor_wrap_rows
         cursor = getattr(renderer, "_cursor_pos", None)
         if cursor is None:
             return
@@ -258,6 +259,7 @@ def install_shrink_resize_guard(
             output.write_raw("\r")
             output.cursor_forward(int(cursor.x) % columns)
             output.flush()
+        deferred_cursor_wrap_rows = int(cursor.x) // columns
         output.disable_autowrap()
 
     def _render(pt_app: Any, layout: Layout, is_done: bool = False) -> None:
@@ -359,8 +361,6 @@ def install_shrink_resize_guard(
                 # compact cursor-row fallback until a later resize makes the
                 # whole region reachable again; erasing here would strand old
                 # prompt chrome inside transcript scrollback.
-                if not resize_deferred:
-                    deferred_cursor_wrap_rows = int(cursor.x) // max(1, size.columns)
                 resize_deferred = True
                 return
             if rows_above is not None and cursor is not None:
