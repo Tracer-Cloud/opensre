@@ -2,6 +2,18 @@
 
 from __future__ import annotations
 
-from core.agent_harness.turns.host_cancel import ensure_turn_cancel, host_cancel_requested
+from core.agent_harness.turns.host_cancel import (
+    HostCancelEvent,
+    HostCancelReason,
+    ensure_turn_cancel,
+    host_cancel_requested,
+    turn_cancel_reason,
+)
 
-__all__ = ["ensure_turn_cancel", "host_cancel_requested"]
+__all__ = [
+    "HostCancelEvent",
+    "HostCancelReason",
+    "ensure_turn_cancel",
+    "host_cancel_requested",
+    "turn_cancel_reason",
+]

@@ -10,6 +10,11 @@ from dataclasses import dataclass, field
 
 from prompt_toolkit.application.current import get_app_or_none
 
+from core.agent_harness.spi.cancel import (
+    HostCancelEvent,
+    HostCancelReason,
+    turn_cancel_reason,
+)
 from infrastructure.terminal import theme as ui_theme
 from infrastructure.terminal.spinner_frames import BRAILLE_SPINNER_FRAMES, spinner_frames
 from surfaces.shared.terminal.components.token_format import (
@@ -105,7 +110,6 @@ class ReplState:
     confirm_prompt_text: str = ""
     confirm_selected: int = 0
     confirm_options: tuple[tuple[str, str], ...] = DEFAULT_CONFIRM_OPTIONS
-    goal_pause_event: threading.Event = field(default_factory=threading.Event)
     plan_expanded: bool = False
     # Checklist identity for ``plan_expanded`` — step texts, ignoring status.
     plan_step_texts: tuple[str, ...] | None = None
@@ -126,36 +130,33 @@ class ReplState:
         return self.phase is TurnPhase.CANCELLING
 
     def is_goal_pause_requested(self) -> bool:
-        return self.goal_pause_event.is_set()
+        return turn_cancel_reason(self.current_cancel_event) is HostCancelReason.GOAL_PAUSE
 
-    def take_goal_pause_request(self) -> bool:
-        """Consume the pause request scoped to the current dispatch."""
-        if not self.goal_pause_event.is_set():
-            return False
-        self.goal_pause_event.clear()
-        return True
+    def request_goal_pause(self, *, interrupt: bool = True) -> None:
+        """Mark this dispatch as a goal pause and optionally stop current work.
 
-    def request_goal_pause(self) -> None:
-        """Ask the active goal loop to pause and softly stop its current turn.
-
-        Unlike :meth:`cancel_current_dispatch`, this leaves the asyncio task
-        alive so its worker thread can store the goal as paused before the
-        queued ``/goal pause`` command is dispatched.
+        The reason lives on the canonical turn-cancel event. When the current
+        action has not attached a goal yet, retain that reason without setting
+        the event so the action may finish and the new goal can be paused at
+        the next safe boundary.
         """
-        self.goal_pause_event.set()
-        if (
-            self.current_cancel_event is not None
-            or self.confirm_event is not None
-            or self.is_dispatch_running()
+        cancel = self.current_cancel_event
+        if isinstance(cancel, HostCancelEvent):
+            cancel.request(HostCancelReason.GOAL_PAUSE, interrupt=interrupt)
+        elif interrupt and cancel is not None:
+            cancel.set()
+        if interrupt and (
+            cancel is not None or self.confirm_event is not None or self.is_dispatch_running()
         ):
             self.phase = TurnPhase.CANCELLING
-        if self.current_cancel_event is not None:
-            self.current_cancel_event.set()
-        if self.confirm_event is not None:
+        if interrupt and self.confirm_event is not None:
             self.confirm_event.set()
 
-    def clear_goal_pause_request(self) -> None:
-        self.goal_pause_event.clear()
+    def ensure_current_cancel_event(self) -> threading.Event:
+        """Return the canonical event for the current or about-to-start dispatch."""
+        if self.current_cancel_event is None:
+            self.current_cancel_event = HostCancelEvent()
+        return self.current_cancel_event
 
     def deliver_confirmation(self, answer: str) -> None:
         if self.confirm_event is None:
@@ -218,6 +219,7 @@ class ReplState:
     def attach_turn_task(self, task: asyncio.Task[None]) -> None:
         """Mark a queued turn task as the active dispatch (queue worker entry)."""
         self.current_task = task
+        self.ensure_current_cancel_event()
         self.phase = TurnPhase.DISPATCHING
 
     def attach_cancel_event(self, cancel_event: threading.Event) -> None:
@@ -228,14 +230,13 @@ class ReplState:
     def clear_current_task(self, task: asyncio.Task[None] | None = None) -> None:
         if task is None or self.current_task is task:
             self.current_task = None
+            self.current_cancel_event = None
             self.phase = TurnPhase.IDLE
-            self.clear_goal_pause_request()
 
     def finish_dispatch(self, cancel_event: threading.Event) -> None:
         if self.current_cancel_event is cancel_event:
             self.current_cancel_event = None
         self.phase = TurnPhase.IDLE
-        self.clear_goal_pause_request()
 
     def cancel_current_dispatch(self) -> None:
         # Mark the cancel intent first, but only when there is something to

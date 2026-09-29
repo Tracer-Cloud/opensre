@@ -65,7 +65,6 @@ def execute_shell_turn(
     handler: TurnRunner | None = None,
     output: TurnOutput | None = None,
     tool_hooks: ToolExecutionHooks | None = None,
-    pause_requested: Callable[[], bool] | None = None,
 ) -> TurnResult:
     """Run one submitted shell turn through the shared turn host.
 
@@ -109,7 +108,6 @@ def execute_shell_turn(
         is_tty=is_tty,
         accounting_factory=_accounting,
         on_progress=_on_progress,
-        pause_requested=pause_requested,
     )
     if result is None:
         # Admission stopped before agent work, at capacity or cancellation.

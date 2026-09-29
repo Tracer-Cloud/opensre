@@ -31,7 +31,11 @@ from rich.console import Console
 from core.agent_harness import SessionCore, SessionManager, TurnResult
 from core.agent_harness.ports import ConfirmFn, SlashPortsFactory, TurnAccounting
 from core.agent_harness.runtime import AgentBuildConfig, TurnBinding
-from core.agent_harness.spi.cancel import ensure_turn_cancel, host_cancel_requested
+from core.agent_harness.spi.cancel import (
+    ensure_turn_cancel,
+    host_cancel_requested,
+    turn_cancel_reason,
+)
 from core.agent_harness.spi.session_goal import (
     SessionGoal,
     format_session_goal_progress,
@@ -123,7 +127,6 @@ class TurnRunner:
         is_tty: bool | None = False,
         accounting_factory: Callable[[str], TurnAccounting] | None = None,
         on_progress: Callable[[SessionGoal], None] | None = None,
-        pause_requested: Callable[[], bool] | None = None,
         slot_wait_seconds: float | None = None,
     ) -> TurnResult | None:
         """Run one admitted turn, or return ``None`` when a gate rejects it.
@@ -183,7 +186,6 @@ class TurnRunner:
                 is_tty=is_tty,
                 accounting_factory=accounting_factory,
                 on_progress=on_progress,
-                pause_requested=pause_requested,
             )
 
     def _run_turn(
@@ -198,7 +200,6 @@ class TurnRunner:
         is_tty: bool | None,
         accounting_factory: Callable[[str], TurnAccounting] | None,
         on_progress: Callable[[SessionGoal], None] | None,
-        pause_requested: Callable[[], bool] | None,
     ) -> TurnResult:
         session_id = getattr(session, "session_id", None)
         surface = get_surface()
@@ -251,7 +252,7 @@ class TurnRunner:
                     ),
                     accounting_factory=accounting_factory,
                     cancel_requested=_cancel_requested,
-                    pause_requested=pause_requested,
+                    cancel_reason=lambda: turn_cancel_reason(cancel),
                     on_progress=on_progress or _status_line_progress,
                 )
                 outbound_text = turn_result.primary_response_text

@@ -9,7 +9,6 @@ from core.agent_harness.spi.prompt_chrome import strip_shell_prompt_chrome
 from surfaces.interactive_shell.runtime.core.turn_detection import (
     looks_like_cancel_request,
     looks_like_confirmation_answer,
-    looks_like_goal_pause_request,
 )
 from surfaces.interactive_shell.runtime.input.events import (
     InputCancelled,
@@ -21,6 +20,11 @@ from surfaces.interactive_shell.runtime.input.events import (
 QUEUE_DURING_CONFIRMATION_WARNING = (
     "[dim](type y/N to confirm the pending action; your input has been queued for after)[/]"
 )
+
+
+def _is_goal_pause_control(text: str) -> bool:
+    """Return whether ``text`` is the exact literal ``/goal pause`` control."""
+    return text.lower().split() == ["/goal", "pause"]
 
 
 @dataclass(frozen=True)
@@ -90,7 +94,7 @@ def decide_input_action(
             if snapshot.dispatch_running and looks_like_cancel_request(stripped):
                 return CancelTurn(submitted_text=stripped)
 
-            if snapshot.dispatch_running and looks_like_goal_pause_request(stripped):
+            if snapshot.dispatch_running and _is_goal_pause_control(stripped):
                 return PauseGoal(submitted_text=stripped)
 
             if snapshot.awaiting_confirmation:

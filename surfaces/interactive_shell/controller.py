@@ -276,8 +276,9 @@ class InteractiveShellController:
                 # queue, but signal the in-flight goal loop now so it cannot
                 # start another continuation before this command reaches it.
                 self.prompt.render_submitted_prompt(self.echo_console, text)
-                if session_goal_is_active(self.session):
-                    self.state.request_goal_pause()
+                self.state.request_goal_pause(
+                    interrupt=session_goal_is_active(self.session),
+                )
                 await self.state.queue.put(text)
                 return True
             case DeliverConfirmation(text=text):

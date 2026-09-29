@@ -180,7 +180,7 @@ def _streaming_console(
 
 async def run_agent_turn(runtime: AgentTurnResources, text: str) -> None:
     """Set up shell presentation for one turn and drive its lifecycle."""
-    dispatch_cancel = threading.Event()
+    dispatch_cancel = runtime.state.ensure_current_cancel_event()
     console = _streaming_console(runtime, dispatch_cancel)
     emit = ConsoleAgentEventSink(
         session=runtime.session,
@@ -271,7 +271,6 @@ async def _run_agent_turn_loop(
                 is_tty=None,
                 request_exit=runtime.request_exit,
                 handler=runtime.turn_handler,
-                pause_requested=runtime.state.take_goal_pause_request,
             )
     except asyncio.CancelledError:
         await emit(AgentEvent(type="turn_interrupted"))

@@ -107,7 +107,15 @@ SPI_ROLE_NAMES: dict[str, frozenset[str]] = {
             "withhold_capabilities",
         }
     ),
-    "cancel": frozenset({"ensure_turn_cancel", "host_cancel_requested"}),
+    "cancel": frozenset(
+        {
+            "HostCancelEvent",
+            "HostCancelReason",
+            "ensure_turn_cancel",
+            "host_cancel_requested",
+            "turn_cancel_reason",
+        }
+    ),
     "accounting": frozenset(
         {
             "DefaultTurnAccounting",

@@ -41,6 +41,7 @@ from core.agent_harness.session_goal.goal import (
 )
 from core.agent_harness.session_goal.judge import judge_reason_is_contradiction
 from core.agent_harness.session_goal.review_input import retain_tool_evidence
+from core.agent_harness.turns.host_cancel import HostCancelReason
 from core.agent_harness.turns.turn_results import TurnResult
 
 log = logging.getLogger(__name__)
@@ -48,8 +49,12 @@ log = logging.getLogger(__name__)
 ChatFn = Callable[[str], TurnResult]
 EvaluateFn = Callable[..., str]
 CancelFn = Callable[[], bool]
-PauseFn = Callable[[], bool]
+CancelReasonFn = Callable[[], HostCancelReason | None]
 ProgressFn = Callable[[SessionGoal], None]
+
+
+def _goal_pause_requested(cancel_reason: CancelReasonFn | None) -> bool:
+    return cancel_reason is not None and cancel_reason() is HostCancelReason.GOAL_PAUSE
 
 
 def _record_goal_turn(session: Any, active: SessionGoal) -> SessionGoal:
@@ -234,7 +239,7 @@ def _chat_or_pause(
     message: str,
     session: Any,
     on_progress: ProgressFn | None,
-    pause_requested: PauseFn | None = None,
+    cancel_reason: CancelReasonFn | None = None,
 ) -> TurnResult:
     """Run one goal turn; when it raises, pause the goal before the error propagates.
 
@@ -247,7 +252,7 @@ def _chat_or_pause(
     except Exception:
         active = getattr(session, "session_goal", None)
         if isinstance(active, SessionGoal) and active.status == SessionGoalStatus.ACTIVE:
-            if pause_requested is not None and pause_requested():
+            if _goal_pause_requested(cancel_reason):
                 _pause_by_user(session, active, on_progress)
             else:
                 _pause_failed_turn(session, active, on_progress)
@@ -270,11 +275,11 @@ def _pause_by_user(
 def _requested_pause(
     session: Any,
     active: SessionGoal,
-    pause_requested: PauseFn | None,
+    cancel_reason: CancelReasonFn | None,
     on_progress: ProgressFn | None,
 ) -> SessionGoal | None:
     """Apply a pending host pause without overwriting an already-paused goal."""
-    if pause_requested is None or not pause_requested():
+    if not _goal_pause_requested(cancel_reason):
         return None
     stored = getattr(session, "session_goal", None)
     current = stored if isinstance(stored, SessionGoal) else active
@@ -446,7 +451,7 @@ def run_until_session_goal(
     goal: SessionGoal | None = None,
     evaluate: EvaluateFn | None = None,
     cancel_requested: CancelFn | None = None,
-    pause_requested: PauseFn | None = None,
+    cancel_reason: CancelReasonFn | None = None,
     on_progress: ProgressFn | None = None,
 ) -> SessionGoalRunResult:
     """Run ``chat`` until the session goal is terminal or the budget is hit.
@@ -479,7 +484,7 @@ def run_until_session_goal(
         first = start_goal_prompt(pre, message)
     # Also covers a goal attached by ``session_goal_set`` inside this very turn:
     # the pause applies to whatever goal is active when the turn raises.
-    last = _chat_or_pause(chat, first, session, on_progress, pause_requested)
+    last = _chat_or_pause(chat, first, session, on_progress, cancel_reason)
     active = getattr(session, "session_goal", None)
     if not isinstance(active, SessionGoal) or not session_goal_is_active(session):
         # Paused after the first chat (e.g. slash during turn) — keep state.
@@ -494,7 +499,7 @@ def run_until_session_goal(
         return SessionGoalRunResult(goal=synthetic, last_result=last, turn_count=1)
 
     if not had_active_before:
-        requested_pause = _requested_pause(session, active, pause_requested, on_progress)
+        requested_pause = _requested_pause(session, active, cancel_reason, on_progress)
         if requested_pause is not None:
             return SessionGoalRunResult(
                 goal=requested_pause,
@@ -511,7 +516,7 @@ def run_until_session_goal(
             requested_pause = _requested_pause(
                 session,
                 active,
-                pause_requested,
+                cancel_reason,
                 on_progress,
             )
             if requested_pause is not None:
@@ -522,13 +527,13 @@ def run_until_session_goal(
             start_goal_prompt(active, active.condition),
             session,
             on_progress,
-            pause_requested,
+            cancel_reason,
         )
         stored = getattr(session, "session_goal", None)
         if isinstance(stored, SessionGoal):
             active = stored
 
-    pause_after_turn = pause_requested is not None and pause_requested()
+    pause_after_turn = _goal_pause_requested(cancel_reason)
     if (had_active_before or active.turns_used == 0) and _goal_turn_should_count(
         active,
         last,
@@ -552,19 +557,18 @@ def run_until_session_goal(
         return SessionGoalRunResult(goal=active, last_result=last, turn_count=active.turns_used)
 
     while active.status == SessionGoalStatus.ACTIVE:
-        requested_pause = _requested_pause(session, active, pause_requested, on_progress)
+        requested_pause = _requested_pause(session, active, cancel_reason, on_progress)
         if requested_pause is not None:
             active = requested_pause
             break
 
         if cancel_requested is not None and cancel_requested():
-            # The shell publishes pause intent before setting the shared cancel
-            # event. Recheck after observing cancellation so a request arriving
-            # between these two reads remains resumable rather than CANCELLED.
+            # Read the reason from the same canonical cancel state so a goal
+            # pause remains resumable rather than becoming a terminal cancel.
             requested_pause = _requested_pause(
                 session,
                 active,
-                pause_requested,
+                cancel_reason,
                 on_progress,
             )
             active = requested_pause or _end(
@@ -588,9 +592,9 @@ def run_until_session_goal(
             continuation_prompt(active),
             session,
             on_progress,
-            pause_requested,
+            cancel_reason,
         )
-        pause_after_turn = pause_requested is not None and pause_requested()
+        pause_after_turn = _goal_pause_requested(cancel_reason)
         if _goal_turn_should_count(active, last, pause_requested=pause_after_turn):
             active = _record_goal_turn(session, active)
         active, last, stop = _finish_outer_turn(

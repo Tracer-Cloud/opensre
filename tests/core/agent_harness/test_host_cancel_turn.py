@@ -7,7 +7,11 @@ from typing import Any
 
 from core.agent_harness.session import SessionCore
 from core.agent_harness.session.persistence.memory import InMemorySessionStore
-from core.agent_harness.turns.host_cancel import host_cancel_requested
+from core.agent_harness.turns.host_cancel import (
+    HostCancelEvent,
+    HostCancelReason,
+    host_cancel_requested,
+)
 from core.agent_harness.turns.orchestrator import run_turn
 from core.agent_harness.turns.turn_results import (
     FINAL_INTENT_CANCELLED,
@@ -57,6 +61,15 @@ def test_host_cancel_requested_reads_sink_event() -> None:
     ensure_turn_cancel(sink).set()
     assert host_cancel_requested(sink) is True
     assert host_cancel_requested(None) is False
+
+
+def test_goal_pause_reason_can_be_retained_without_interrupting() -> None:
+    cancel = HostCancelEvent()
+
+    cancel.request(HostCancelReason.GOAL_PAUSE, interrupt=False)
+
+    assert cancel.reason is HostCancelReason.GOAL_PAUSE
+    assert cancel.is_set() is False
 
 
 def test_run_turn_cancelled_action_stops_turn() -> None:

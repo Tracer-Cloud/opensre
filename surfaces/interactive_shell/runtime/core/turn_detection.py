@@ -14,13 +14,7 @@ def looks_like_cancel_request(text: str | None) -> bool:
     return (text or "").strip().lower() in _CANCEL_REQUEST_TOKENS
 
 
-def looks_like_goal_pause_request(text: str | None) -> bool:
-    """Return whether ``text`` is the exact literal ``/goal pause`` control."""
-    return (text or "").strip().lower().split() == ["/goal", "pause"]
-
-
 __all__ = [
     "looks_like_cancel_request",
     "looks_like_confirmation_answer",
-    "looks_like_goal_pause_request",
 ]

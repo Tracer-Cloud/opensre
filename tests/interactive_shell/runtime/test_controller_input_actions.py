@@ -223,13 +223,13 @@ async def test_cancelling_a_running_turn_keeps_its_skill_and_plan() -> None:
 
 def test_requesting_goal_pause_soft_cancels_the_running_turn() -> None:
     import asyncio
-    import threading
 
+    from core.agent_harness.spi.cancel import HostCancelEvent
     from surfaces.interactive_shell.runtime.core.state import ReplState
 
     async def _scenario() -> None:
         state = ReplState()
-        cancel_event = threading.Event()
+        cancel_event = HostCancelEvent()
 
         async def _hold() -> None:
             await asyncio.Event().wait()
@@ -251,9 +251,9 @@ def test_requesting_goal_pause_soft_cancels_the_running_turn() -> None:
 
 def test_inflight_goal_pause_keeps_input_open_and_does_not_leak_to_queued_turns() -> None:
     import asyncio
-    import threading
 
     from core.agent_harness.session_goal.goal import SessionGoal, attach_session_goal
+    from core.agent_harness.spi.cancel import HostCancelEvent
     from surfaces.interactive_shell.runtime.turn_host import run_agent_turn_queue
 
     async def _scenario() -> None:
@@ -265,7 +265,7 @@ def test_inflight_goal_pause_keeps_input_open_and_does_not_leak_to_queued_turns(
             controller.session,
             SessionGoal(condition="keep going", max_outer_turns=4),
         )
-        cancel_event = threading.Event()
+        cancel_event = HostCancelEvent()
         started = asyncio.Event()
         submitted: list[str] = []
         pause_seen: list[bool] = []
@@ -305,6 +305,35 @@ def test_inflight_goal_pause_keeps_input_open_and_does_not_leak_to_queued_turns(
             await worker
 
     asyncio.run(_scenario())
+
+
+@pytest.mark.asyncio
+async def test_inflight_goal_pause_is_retained_until_the_turn_attaches_a_goal() -> None:
+    import asyncio
+
+    from core.agent_harness.spi.cancel import HostCancelEvent, HostCancelReason
+
+    controller = _controller()
+
+    async def _hold() -> None:
+        await asyncio.Event().wait()
+
+    task = asyncio.create_task(_hold())
+    controller.state.attach_turn_task(task)
+    cancel = controller.state.current_cancel_event
+    assert isinstance(cancel, HostCancelEvent)
+    try:
+        kept = await controller._handle_input_action(PauseGoal(submitted_text="/goal pause"))
+
+        assert kept is True
+        assert cancel.reason is HostCancelReason.GOAL_PAUSE
+        assert cancel.is_set() is False
+        assert not task.cancelled()
+        assert await controller.state.queue.get() == "/goal pause"
+        controller.state.queue.task_done()
+    finally:
+        task.cancel()
+        _ = await asyncio.gather(task, return_exceptions=True)
 
 
 @pytest.mark.asyncio
