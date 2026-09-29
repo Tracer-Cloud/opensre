@@ -9,7 +9,7 @@ from config.constants.capabilities import (
     SCHEDULER_HOST_CAPABILITY,
     SCHEDULER_HOST_IN_PROCESS,
 )
-from core.agent_harness.session.capabilities import withhold_capabilities
+from core.agent_harness.spi.session_state import withhold_capabilities
 
 
 def ensure_gateway_capability_policy(session: Any, *, hosts_scheduler: bool = False) -> None:

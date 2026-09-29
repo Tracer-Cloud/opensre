@@ -11,6 +11,7 @@ from unittest.mock import MagicMock
 import pytest
 from rich.console import Console
 
+from config.constants.capabilities import HOSTED_GATEWAY_CAPABILITY
 from core.agent_harness.runtime import AgentBuildConfig
 from core.agent_harness.session import SessionCore
 from core.agent_harness.session.persistence.memory import InMemorySessionStore
@@ -356,7 +357,7 @@ def test_turn_runner_leaves_gateway_capabilities_available(monkeypatch: Any) -> 
         logging.getLogger("test"),
     )
 
-    assert session.available_capabilities == {}
+    assert session.available_capabilities == {HOSTED_GATEWAY_CAPABILITY: ()}
 
 
 def test_turn_runner_preserves_supported_capabilities(monkeypatch: Any) -> None:
@@ -397,7 +398,10 @@ def test_turn_runner_keeps_capabilities_available_across_turns(monkeypatch: Any)
     handler("first turn", session, RecordingTurnOutput(), logger)
     handler("second turn", session, RecordingTurnOutput(), logger)
 
-    assert session.available_capabilities == {"shell_commands": ("shell",)}
+    assert session.available_capabilities == {
+        "shell_commands": ("shell",),
+        HOSTED_GATEWAY_CAPABILITY: (),
+    }
 
 
 def test_turn_runner_emits_gateway_turn_analytics(monkeypatch: Any) -> None:
