@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from typing import Final, cast
+from uuid import uuid4
 
 from infrastructure.analytics.event_properties import (
     _bounded_redacted_text,
@@ -13,7 +14,12 @@ from infrastructure.analytics.event_properties import (
     _onboard_completed_properties,
 )
 from infrastructure.analytics.events import Event, cli_command_event_name
-from infrastructure.analytics.provider import JsonValue, Properties, get_analytics
+from infrastructure.analytics.provider import (
+    JsonValue,
+    Properties,
+    analytics_opted_out,
+    get_analytics,
+)
 from infrastructure.observability.errors.sentry import capture_exception
 
 _ASK_USER_LABEL_MAX_CHARS: Final[int] = 80
@@ -483,9 +489,23 @@ def capture_interactive_shell_rendered(*, entrypoint: str) -> None:
     _capture(Event.INTERACTIVE_SHELL_RENDERED, {"entrypoint": entrypoint})
 
 
-def capture_browser_open_requested(*, target: str, opened: bool) -> None:
+def begin_cli_auth_attempt() -> str | None:
+    """Record a non-secret browser handoff even when the URL will be opened manually."""
+    if analytics_opted_out():
+        return None
+    attempt_id = str(uuid4())
+    _capture(Event.CLI_AUTH_STARTED, {"cli_auth_attempt_id": attempt_id})
+    return attempt_id
+
+
+def capture_browser_open_requested(
+    *, target: str, opened: bool, cli_auth_attempt_id: str | None = None
+) -> None:
     """Record an application-requested browser open without retaining its URL."""
-    _capture(Event.BROWSER_OPEN_REQUESTED, {"target": target, "opened": opened})
+    properties: Properties = {"target": target, "opened": opened}
+    if cli_auth_attempt_id:
+        properties["cli_auth_attempt_id"] = cli_auth_attempt_id
+    _capture(Event.BROWSER_OPEN_REQUESTED, properties)
 
 
 def capture_skill_executed(*, skill_name: str, entrypoint: str) -> None:

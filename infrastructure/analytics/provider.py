@@ -154,7 +154,8 @@ _pending_user_id_load_failures: list[Properties] = []
 _ONE_TIME_EVENTS: Final[frozenset[str]] = frozenset({Event.INSTALL_DETECTED.value})
 
 
-def _is_opted_out() -> bool:
+def analytics_opted_out() -> bool:
+    """Whether this process has explicitly disabled product telemetry."""
     return (
         os.getenv("OPENSRE_NO_TELEMETRY", "0") == "1"
         or os.getenv(ANALYTICS_DISABLED_ENV, "0") == "1"
@@ -170,7 +171,7 @@ def analytics_delivery_unavailable() -> bool:
     drops every product event this process emits. An explicit opt-out is a
     decision, not a failure, so it never counts as unavailable.
     """
-    return not _is_opted_out() and resolve_analytics_destination() is None
+    return not analytics_opted_out() and resolve_analytics_destination() is None
 
 
 def _path_exists(path: Path) -> bool:
@@ -828,7 +829,7 @@ _BASE_PROPERTIES: Final[Properties] = {
 
 class Analytics:
     def __init__(self) -> None:
-        self._disabled = _is_opted_out()
+        self._disabled = analytics_opted_out()
         self._anonymous_id = _get_or_create_anonymous_id()
         self._identity_persistence = _identity_persistence()
         self._queue: queue.Queue[_Envelope | None] = queue.Queue(maxsize=_QUEUE_SIZE)

@@ -606,3 +606,42 @@ def test_credits_signed_out_fails_closed(monkeypatch: pytest.MonkeyPatch) -> Non
     assert result.exit_code == 1
     assert "No OpenSRE account is signed in." in result.output
     assert "0" not in result.output
+
+
+@pytest.mark.parametrize("open_automatically", [False, True])
+def test_login_correlates_browser_handoff_before_authentication(
+    monkeypatch: pytest.MonkeyPatch, open_automatically: bool
+) -> None:
+    from infrastructure.analytics import capture
+
+    attempt_id = "66a768c4-e57c-490a-9cee-50e41c5a4791"
+    launches: list[dict[str, object]] = []
+    progress = _RecordingProgress()
+
+    def started() -> str:
+        assert not progress.urls
+        return attempt_id
+
+    def abandoned(*_args: object, **_kwargs: object) -> account_auth._CallbackResult:
+        raise account_auth.AccountAuthError("Sign-in timed out")
+
+    def launch(_url: str) -> bool:
+        return True
+
+    monkeypatch.setattr(capture, "begin_cli_auth_attempt", started)
+    monkeypatch.setattr(capture, "capture_browser_open_requested", lambda **kw: launches.append(kw))
+    monkeypatch.setattr(account_auth, "_wait_for_callback", abandoned)
+    with pytest.raises(account_auth.AccountAuthError, match="timed out"):
+        account_auth.login_account(
+            open_browser=open_automatically, browser_open=launch, progress=progress
+        )
+    params = parse_qs(urlsplit(progress.urls[0]).query)
+    assert params["cli_auth_attempt_id"] == [attempt_id]
+    assert params["state"] != [attempt_id]
+    assert params["code_challenge"] != [attempt_id]
+    if open_automatically:
+        assert launches == [
+            {"target": "account_login", "opened": True, "cli_auth_attempt_id": attempt_id}
+        ]
+    else:
+        assert launches == []

@@ -21,6 +21,7 @@ def cli_command_event_name(command_parts: Sequence[str]) -> str:
 class Event(StrEnum):
     # Lifecycle
     ACCOUNT_AUTHENTICATED = "account_authenticated"
+    CLI_AUTH_STARTED = "cli_auth_started"
     # Mandatory interactive-shell sign-in gate: exposure, then one explicit
     # choice per menu round. Choosing sign-in is intent only; the account link
     # is ``account_authenticated``.

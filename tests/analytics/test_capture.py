@@ -416,3 +416,28 @@ def test_install_origin_is_allowlisted_and_independent_of_build_track(
         assert properties["install_origin"] == origin
     else:
         assert "install_origin" not in properties
+
+
+def test_cli_auth_attempt_is_fresh_and_respects_telemetry_opt_out(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from uuid import UUID
+
+    stub = _StubAnalytics()
+    monkeypatch.setattr(capture, "get_analytics", lambda: stub)
+    for key in ("OPENSRE_NO_TELEMETRY", "OPENSRE_ANALYTICS_DISABLED", "DO_NOT_TRACK"):
+        monkeypatch.delenv(key, raising=False)
+    first = capture.begin_cli_auth_attempt()
+    second = capture.begin_cli_auth_attempt()
+    assert first is not None and second is not None
+    assert UUID(first).version == 4
+    assert first != second
+    assert stub.events == [
+        (Event.CLI_AUTH_STARTED, {"cli_auth_attempt_id": first}),
+        (Event.CLI_AUTH_STARTED, {"cli_auth_attempt_id": second}),
+    ]
+    for key in ("OPENSRE_NO_TELEMETRY", "OPENSRE_ANALYTICS_DISABLED", "DO_NOT_TRACK"):
+        monkeypatch.setenv(key, "1")
+        assert capture.begin_cli_auth_attempt() is None
+        monkeypatch.delenv(key)
+    assert len(stub.events) == 2
