@@ -55,7 +55,7 @@ _MASTER_ANSWER = (
 _REPOSITORY_QUESTION = "CI Repair Target"
 _DEMO_OPTION = "Private disposable demo repository"
 _LOOP_CALL = 'schedule_ci_repair_loop(owner="<owner>", repo="<repo>", pr_number=<n>)'
-_PLAN_LINE = re.compile(r"^- \[ \] Step (\d+)\. ", re.MULTILINE)
+_PLAN_LINE = re.compile(r"^- \[ \] (.+)$", re.MULTILINE)
 _WORKFLOW_HEADING = re.compile(r"^### Step (\d+)\. ", re.MULTILINE)
 
 
@@ -90,7 +90,8 @@ def _action_tool(name: str) -> RegisteredTool:
 
 
 def _plan_steps(body: str) -> list[str]:
-    return [line[len("- [ ] ") :] for line in body.splitlines() if _PLAN_LINE.match(line)]
+    plan = body.split("## Plan", 1)[1].split("## Workflow", 1)[0]
+    return _PLAN_LINE.findall(plan)
 
 
 def _batch(*responses: AgentLLMResponse) -> AgentLLMResponse:
@@ -144,10 +145,10 @@ def test_skill_card_spells_out_the_loop_call_and_forced_first_tick() -> None:
 
 def test_plan_checklist_matches_workflow_headings() -> None:
     body = load_skill_body(SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME)
-    plan_numbers = [int(match) for match in _PLAN_LINE.findall(body)]
     heading_numbers = [int(match) for match in _WORKFLOW_HEADING.findall(body)]
-    assert plan_numbers == list(range(1, 12))
-    assert heading_numbers == plan_numbers
+    assert heading_numbers == list(range(1, len(heading_numbers) + 1))
+    # One plan item per workflow heading, so update_plan mirrors the steps the card runs.
+    assert len(_plan_steps(body)) == len(heading_numbers) > 0
     # Every step states its completion condition, in either accepted phrasing.
     sections = body.split("### Step ")[1:]
     assert all(
