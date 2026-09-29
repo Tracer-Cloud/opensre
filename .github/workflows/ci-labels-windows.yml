@@ -1,5 +1,5 @@
-# Optional Windows CI when PR label `ci:windows` is present or native shell/process paths change.
-# Separate workflow + concurrency group so Windows label runs are isolated.
+# Focused Windows CI runs for native shell/process changes. The `ci:windows`
+# label remains the explicit opt-in for the advisory repository-wide suite.
 
 name: CI Labels (Windows)
 
@@ -26,6 +26,7 @@ jobs:
     name: windows scope
     runs-on: ubuntu-latest
     outputs:
+      full_suite: ${{ steps.scope.outputs.full_suite }}
       required: ${{ steps.scope.outputs.required }}
 
     steps:
@@ -41,6 +42,7 @@ jobs:
           WINDOWS_LABEL: ${{ contains(github.event.pull_request.labels.*.name, 'ci:windows') }}
         run: |
           changed_files="$(git diff --name-only --diff-filter=ACMR "$BASE_SHA"...HEAD)"
+          echo "full_suite=$WINDOWS_LABEL" >> "$GITHUB_OUTPUT"
           if [[ "$WINDOWS_LABEL" == "true" ]] || grep -Eq \
             '^(\.github/workflows/ci-labels-windows\.yml|infrastructure/process/|tests/infrastructure/process/|tools/interactive_shell/shell/|tools/interactive_shell/subprocess\.py|tests/interactive_shell/shell/)' \
             <<< "$changed_files"; then
@@ -86,10 +88,43 @@ jobs:
       - name: Typecheck
         run: uv run python -m mypy ${{ env.PYTHON_SOURCE_PATHS }}
 
-  windows-test:
+  windows-shell:
     if: needs.windows-scope.outputs.required == 'true'
-    name: windows test
+    name: windows shell
     needs: [windows-scope, windows-quality]
+    runs-on: windows-latest
+    timeout-minutes: 10
+
+    env:
+      PYTHONUTF8: "1"
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v10.0.1
+        with:
+          version: "latest-known"  # avoid live ndjson "latest" fetch flakes
+          enable-cache: true
+          cache-dependency-glob: |
+            pyproject.toml
+            uv.lock
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: uv sync --frozen --extra dev
+
+      - name: Run native shell compatibility tests
+        run: uv run python -m pytest -q tests/interactive_shell/shell/test_execution_windows.py
+
+  windows-test:
+    if: needs.windows-scope.outputs.full_suite == 'true'
+    name: windows full test
+    needs: [windows-scope, windows-quality, windows-shell]
     runs-on: windows-latest
     timeout-minutes: 25
     continue-on-error: true
@@ -128,9 +163,6 @@ jobs:
 
       - name: Install dependencies
         run: uv sync --frozen --extra dev
-
-      - name: Run native shell compatibility tests
-        run: uv run python -m pytest -q tests/interactive_shell/shell/test_execution_windows.py
 
       - name: Run full tests
         run: >-
