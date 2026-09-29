@@ -550,7 +550,21 @@ def run_until_session_goal(
             break
 
         if cancel_requested is not None and cancel_requested():
-            active = _end(session, active, SessionGoalStatus.CANCELLED, on_progress)
+            # The shell publishes pause intent before setting the shared cancel
+            # event. Recheck after observing cancellation so a request arriving
+            # between these two reads remains resumable rather than CANCELLED.
+            requested_pause = _requested_pause(
+                session,
+                active,
+                pause_requested,
+                on_progress,
+            )
+            active = requested_pause or _end(
+                session,
+                active,
+                SessionGoalStatus.CANCELLED,
+                on_progress,
+            )
             break
 
         if (

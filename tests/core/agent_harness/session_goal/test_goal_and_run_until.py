@@ -409,6 +409,46 @@ def test_pause_does_not_charge_a_cancelled_goal_turn_to_the_budget() -> None:
     assert outcome.turn_count == 0
 
 
+def test_pause_wins_when_it_arrives_with_the_cancel_signal() -> None:
+    import threading
+
+    session = SessionCore()
+    pause_requested = threading.Event()
+    turns: list[str] = []
+
+    def _chat(message: str) -> TurnResult:
+        turns.append(message)
+        return TurnResult(
+            final_intent="cli_agent_handled",
+            action_result=ToolCallingTurnResult(
+                planned_count=1,
+                executed_count=1,
+                executed_success_count=1,
+                has_unhandled_clause=False,
+                handled=True,
+            ),
+            assistant_response_text="first turn finished",
+        )
+
+    def _cancel_and_publish_pause() -> bool:
+        pause_requested.set()
+        return True
+
+    outcome = run_until_session_goal(
+        _chat,
+        session,
+        "go",
+        goal=SessionGoal(condition="keep going", max_outer_turns=4),
+        evaluate=lambda *_args, **_kwargs: SessionGoalStatus.ACTIVE,
+        cancel_requested=_cancel_and_publish_pause,
+        pause_requested=pause_requested.is_set,
+    )
+
+    assert len(turns) == 1
+    assert outcome.goal.status == SessionGoalStatus.PAUSED
+    assert outcome.goal.last_reason == SessionGoalReason.PAUSED_BY_USER
+
+
 def test_the_judge_reason_is_painted_between_turns() -> None:
     # Arrange: a two-turn goal whose judge says "not yet" with a concrete next step.
     from core.agent_harness.session_goal.evaluate import evaluate_session_goal
