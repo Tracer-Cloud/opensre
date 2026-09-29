@@ -23,6 +23,7 @@ from rich.console import Console
 if TYPE_CHECKING:
     from infrastructure.turn_host.turn_runner import TurnRunner
 
+from core.agent_harness.spi.cancel import HostCancelReason, turn_cancel_reason
 from core.llm.shared.llm_retry import OpenSRECreditsExhaustedError
 from infrastructure.analytics.usage_context import UsageSurface, bound_usage_context
 from infrastructure.observability.trace.spans import (
@@ -334,7 +335,7 @@ async def run_agent_turn_queue(
     *,
     state: ReplState,
     run_turn: Callable[[str], Coroutine[Any, Any, None]],
-    after_turn: Callable[[], None] | None = None,
+    on_goal_pause: Callable[[], Awaitable[None]] | None = None,
 ) -> None:
     """Consume queued turns and run each one until exit."""
     while not state.exit_requested:
@@ -348,6 +349,7 @@ async def run_agent_turn_queue(
 
         turn_task = asyncio.create_task(run_turn(text))
         state.attach_turn_task(turn_task)
+        turn_cancel = state.current_cancel_event
         try:
             await turn_task
         except asyncio.CancelledError:
@@ -356,8 +358,13 @@ async def run_agent_turn_queue(
             _logger.debug("Queued turn task ended with exception: %s", exc)
         finally:
             try:
-                if after_turn is not None:
-                    after_turn()
+                current_cancel = state.current_cancel_event
+                goal_pause_requested = any(
+                    turn_cancel_reason(cancel) is HostCancelReason.GOAL_PAUSE
+                    for cancel in (turn_cancel, current_cancel)
+                )
+                if goal_pause_requested and on_goal_pause is not None:
+                    await on_goal_pause()
             finally:
                 state.clear_current_task()
                 state.queue.task_done()

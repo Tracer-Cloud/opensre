@@ -53,14 +53,18 @@ class HostCancelEvent(threading.Event):
 
     @property
     def reason(self) -> HostCancelReason | None:
-        """Return the latest reason recorded for this turn."""
+        """Return the effective reason recorded for this turn."""
         with self._reason_lock:
             return self._reason
 
     def request(self, reason: HostCancelReason, *, interrupt: bool = True) -> None:
         """Record ``reason`` and optionally wake cooperative cancel readers."""
         with self._reason_lock:
-            self._reason = reason
+            # A pause controls post-turn state as well as interruption. Once
+            # requested, a later generic stop (for example during shutdown)
+            # must not erase that boundary action.
+            if self._reason is not HostCancelReason.GOAL_PAUSE:
+                self._reason = reason
             if interrupt:
                 super().set()
 

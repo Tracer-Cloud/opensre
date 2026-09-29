@@ -72,6 +72,16 @@ def test_goal_pause_reason_can_be_retained_without_interrupting() -> None:
     assert cancel.is_set() is False
 
 
+def test_goal_pause_reason_survives_a_later_generic_stop() -> None:
+    cancel = HostCancelEvent()
+
+    cancel.request(HostCancelReason.GOAL_PAUSE)
+    cancel.set()
+
+    assert cancel.reason is HostCancelReason.GOAL_PAUSE
+    assert cancel.is_set() is True
+
+
 def test_run_turn_cancelled_action_stops_turn() -> None:
     def execute_actions(_text: str, **_kwargs: object) -> ToolCallingTurnResult:
         return ToolCallingTurnResult(

@@ -18,6 +18,7 @@ from core.agent_harness.spi.session_goal import (
 )
 from core.agent_harness.spi.task_plan import discard_task_plan
 from core.domain.alerts import inbox as _alert_inbox
+from infrastructure.turn_host.session_lock import session_execution_lock
 from surfaces.interactive_shell.runtime.background.workers import BackgroundTaskPool
 from surfaces.interactive_shell.runtime.ci_fix_status import bind_ci_fix_status
 from surfaces.interactive_shell.runtime.context import (
@@ -253,7 +254,7 @@ class InteractiveShellController:
             lambda: run_agent_turn_queue(
                 state=self.state,
                 run_turn=lambda text: run_agent_turn(self.turn_runtime, text),
-                after_turn=self._apply_goal_pause_at_turn_boundary,
+                on_goal_pause=self._apply_goal_pause_at_turn_boundary,
             )
         )
         # Fleet sampler is lazy: /fleet triggers it on first live use.
@@ -264,10 +265,24 @@ class InteractiveShellController:
             log.warning("Loop scheduler could not start: %s", exc)
         self._ci_fix_status_cleanup = bind_ci_fix_status(self.session.terminal)
 
-    def _apply_goal_pause_at_turn_boundary(self) -> None:
-        """Apply the queued pause after the worker thread releases session ownership."""
-        if self.state.consume_goal_pause_request():
-            pause_active_session_goal(self.session)
+    def _pause_goal_after_worker_release(self) -> None:
+        """Pause and persist after the turn worker releases session ownership."""
+        from core.agent_harness import SessionManager
+
+        with session_execution_lock(self.session.session_id):
+            if pause_active_session_goal(self.session) is not None:
+                SessionManager.for_session(self.session).flush(self.session)
+
+    async def _apply_goal_pause_at_turn_boundary(self) -> None:
+        """Serialize the durable pause behind any still-running worker thread."""
+        pause_task = asyncio.create_task(asyncio.to_thread(self._pause_goal_after_worker_release))
+        try:
+            await asyncio.shield(pause_task)
+        except asyncio.CancelledError:
+            # Cancelling an ``asyncio.to_thread`` await does not stop its worker.
+            # Finish the state mutation before shutdown can reload persistence.
+            await pause_task
+            raise
 
     async def _handle_input_action(self, action: InputAction) -> bool:
         match action:
