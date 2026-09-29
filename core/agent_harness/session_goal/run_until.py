@@ -371,7 +371,10 @@ def _finish_outer_turn(
         last,
         bookkeeping_calls=active.bookkeeping_calls,
     )
-    if (pause_requested or active.status == SessionGoalStatus.PAUSED) and active.new_ticks:
+    pause_will_skip_evaluation = active.status == SessionGoalStatus.PAUSED or (
+        pause_requested and last.cancelled and not turn_evidence
+    )
+    if pause_will_skip_evaluation and active.new_ticks:
         # ``new_ticks`` is intentionally not persisted, so validate goal-tool
         # updates now even when a concurrent pause makes the turn budget-free.
         active = _validate_pending_ticks_before_pause(
