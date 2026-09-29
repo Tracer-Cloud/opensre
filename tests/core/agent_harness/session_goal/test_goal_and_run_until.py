@@ -377,8 +377,9 @@ def test_pause_preserves_completed_goal_work_before_stopping() -> None:
     assert outcome.goal.status == SessionGoalStatus.PAUSED
     assert outcome.goal.last_reason == SessionGoalReason.PAUSED_BY_USER
     assert outcome.goal.turns_used == 1
-    assert outcome.goal.findings == ("first turn finished",)
+    assert outcome.goal.findings == ()
     assert outcome.goal.last_answer == "first turn finished"
+    assert outcome.goal.tool_success_seen
 
 
 def test_pause_validates_completed_ticks_before_stopping() -> None:

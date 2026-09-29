@@ -371,7 +371,9 @@ def _finish_outer_turn(
             )
             reply_text = session_goal_reply_text(last)
             if reply_text:
-                active = active.with_finding(reply_text).with_last_answer(reply_text)
+                # Preserve what was said without treating an unevaluated
+                # interpretation as an established cross-turn finding.
+                active = active.with_last_answer(reply_text)
             attach_session_goal(session, active)
         ended = _end(
             session,
