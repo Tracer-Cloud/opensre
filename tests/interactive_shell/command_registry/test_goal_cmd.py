@@ -139,6 +139,52 @@ def test_goal_pause_resume_and_edit() -> None:
     assert session.terminal.pending_prompt_autosubmit is True
 
 
+def test_inflight_goal_pause_does_not_render_the_paused_state_twice() -> None:
+    from core.agent_harness.session_goal.goal import (
+        SessionGoalReason,
+        SessionGoalStatus,
+        attach_session_goal,
+    )
+    from surfaces.interactive_shell.runtime.shell_turn_execution import goal_paint_text
+    from surfaces.shared.terminal.components.rendering import print_repl_text
+
+    session = Session()
+    console, buf = _console()
+    assert _cmd_goal(session, console, ["set", "ship the fix"])
+    assert session.session_goal is not None
+    session.terminal.pending_inflight_goal_pauses = 1
+    paused = attach_session_goal(
+        session,
+        session.session_goal.with_status(SessionGoalStatus.PAUSED).with_reason(
+            SessionGoalReason.PAUSED_BY_USER
+        ),
+    )
+
+    buf.truncate(0)
+    buf.seek(0)
+    print_repl_text(console, goal_paint_text(paused, session), markup=False)
+    assert _cmd_goal(session, console, ["pause"])
+
+    out = buf.getvalue()
+    assert out.count("◎ /goal paused") == 1
+    assert "already paused" not in out
+
+
+def test_repeated_idle_goal_pause_still_reports_the_current_state() -> None:
+    session = Session()
+    console, buf = _console()
+    assert _cmd_goal(session, console, ["set", "ship the fix"])
+    assert _cmd_goal(session, console, ["pause"])
+
+    buf.truncate(0)
+    buf.seek(0)
+    assert _cmd_goal(session, console, ["pause"])
+
+    out = buf.getvalue()
+    assert out.count("◎ /goal paused") == 1
+    assert "already paused" in out
+
+
 def test_goal_edit_while_active_queues_new_condition() -> None:
     session = Session()
     console, _buf = _console()

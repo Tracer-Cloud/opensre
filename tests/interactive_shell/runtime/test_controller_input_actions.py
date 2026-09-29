@@ -317,6 +317,7 @@ def test_inflight_goal_pause_keeps_input_open_and_does_not_leak_to_queued_turns(
             kept = await controller._handle_input_action(PauseGoal(submitted_text="/goal pause"))
 
             assert kept is True
+            assert controller.session.terminal.pending_inflight_goal_pauses == 1
             assert cancel_events[0].is_set()
             assert controller.session.session_goal is not None
             assert controller.session.session_goal.status == SessionGoalStatus.ACTIVE

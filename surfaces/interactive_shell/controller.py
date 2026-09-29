@@ -307,6 +307,7 @@ class InteractiveShellController:
                 self.state.request_goal_pause(
                     interrupt=session_goal_is_active(self.session),
                 )
+                self.session.terminal.pending_inflight_goal_pauses += 1
                 await self.state.queue.put(text)
                 return True
             case DeliverConfirmation(text=text):
