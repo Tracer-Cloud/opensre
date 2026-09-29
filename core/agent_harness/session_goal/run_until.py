@@ -508,6 +508,14 @@ def run_until_session_goal(
     # condition starts here as the first real session-goal turn.
     if not had_active_before and active.host_owned and active.turns_used == 0:
         if session_terminal(session) is not None:
+            requested_pause = _requested_pause(
+                session,
+                active,
+                pause_requested,
+                on_progress,
+            )
+            if requested_pause is not None:
+                active = requested_pause
             return SessionGoalRunResult(goal=active, last_result=last, turn_count=0)
         last = _chat_or_pause(
             chat,
