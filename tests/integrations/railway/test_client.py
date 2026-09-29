@@ -78,4 +78,3 @@ def test_probe_reports_missing_cli(monkeypatch: pytest.MonkeyPatch) -> None:
     probe = client.probe_access()
 
     assert probe.status == "missing"
-

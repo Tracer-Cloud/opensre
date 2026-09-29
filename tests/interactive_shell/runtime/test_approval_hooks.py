@@ -86,4 +86,4 @@ def test_other_tools_are_not_asked_about() -> None:
 
 
 def test_no_tool_asks_at_every_auto_level() -> None:
-    assert ASK_AT_EVERY_AUTO_LEVEL_TOOL_NAMES == frozenset()
+    assert not ASK_AT_EVERY_AUTO_LEVEL_TOOL_NAMES

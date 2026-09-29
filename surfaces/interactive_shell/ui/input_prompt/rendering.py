@@ -51,15 +51,12 @@ def _fold_plate_body(text: str, width: int) -> list[str]:
     """
     if width < 1 or prompt_text_width(text) <= width:
         return [text]
-    return (
-        textwrap.wrap(
-            text,
-            width=width,
-            break_long_words=False,
-            break_on_hyphens=False,
-        )
-        or [text]
-    )
+    return textwrap.wrap(
+        text,
+        width=width,
+        break_long_words=False,
+        break_on_hyphens=False,
+    ) or [text]
 
 
 def _prompt_counter_text(session: Session) -> str:
