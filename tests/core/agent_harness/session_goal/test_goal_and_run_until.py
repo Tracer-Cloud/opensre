@@ -17,7 +17,10 @@ from core.agent_harness.session_goal.goal import (
     session_goal_is_active,
 )
 from core.agent_harness.session_goal.judge import SessionGoalJudgeVerdict
-from core.agent_harness.session_goal.run_until import run_until_session_goal
+from core.agent_harness.session_goal.run_until import (
+    pause_active_session_goal,
+    run_until_session_goal,
+)
 from core.agent_harness.turns.host_cancel import HostCancelEvent, HostCancelReason
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
 
@@ -345,6 +348,7 @@ def test_pause_preserves_completed_goal_work_before_stopping() -> None:
 
     def _chat(message: str) -> TurnResult:
         turns.append(message)
+        pause_active_session_goal(session)
         cancel.request(HostCancelReason.GOAL_PAUSE)
         return TurnResult(
             final_intent="cli_agent_handled",

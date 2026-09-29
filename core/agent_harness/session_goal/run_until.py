@@ -351,6 +351,16 @@ def _finish_outer_turn(
         bookkeeping_calls=active.bookkeeping_calls,
     )
     if active.status == SessionGoalStatus.PAUSED:
+        if turn_evidence:
+            active = retain_tool_evidence(
+                active,
+                getattr(last.action_result, "tool_evidence", ""),
+                succeeded=True,
+            )
+            reply_text = session_goal_reply_text(last)
+            if reply_text:
+                active = active.with_finding(reply_text).with_last_answer(reply_text)
+            attach_session_goal(session, active)
         ended = _end(
             session,
             active,
@@ -497,9 +507,19 @@ def run_until_session_goal(
     # the pause applies to whatever goal is active when the turn raises.
     last = _chat_or_pause(chat, first, session, on_progress, cancel_reason)
     active = getattr(session, "session_goal", None)
-    if not isinstance(active, SessionGoal) or not session_goal_is_active(session):
+    if not isinstance(active, SessionGoal):
+        synthetic = SessionGoal(
+            condition=message.strip() or "(none)",
+            max_outer_turns=1,
+            status=SessionGoalStatus.CLEARED,
+            turns_used=1,
+        )
+        return SessionGoalRunResult(goal=synthetic, last_result=last, turn_count=1)
+    if not session_goal_is_active(session) and not (
+        had_active_before and session_goal_is_paused(session)
+    ):
         # Paused after the first chat (e.g. slash during turn) — keep state.
-        if isinstance(active, SessionGoal) and session_goal_is_paused(session):
+        if session_goal_is_paused(session):
             return SessionGoalRunResult(goal=active, last_result=last, turn_count=active.turns_used)
         synthetic = SessionGoal(
             condition=message.strip() or "(none)",

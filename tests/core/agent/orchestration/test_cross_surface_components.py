@@ -15,6 +15,7 @@ from core.agent_harness.session_goal.goal import (
     SessionGoalStatus,
     attach_session_goal,
 )
+from core.agent_harness.spi.session_goal import pause_active_session_goal
 from core.agent_harness.tools.tool_provider import DefaultToolProvider
 from core.agent_harness.turns.host_cancel import HostCancelEvent, HostCancelReason
 from core.agent_harness.turns.orchestrator import run_turn
@@ -104,40 +105,27 @@ def test_gateway_turn_runner_does_not_finalize_answered_turn(
     sink.finalize.assert_not_called()
 
 
-def test_turn_runner_applies_a_prestart_goal_pause_before_cancel_short_circuit(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    agent = fake_agent(
-        dispatch_result=TurnResult(
-            final_intent="cli_agent_cancelled",
-            action_result=ToolCallingTurnResult(
-                0,
-                0,
-                0,
-                False,
-                False,
-                cancelled=True,
-            ),
-        )
-    )
-    monkeypatch.setattr(
-        "infrastructure.turn_host.session_agents.DefaultHeadlessBuild",
-        default_headless_build_stub(MagicMock(return_value=agent)),
-    )
+def test_prestart_goal_pause_does_not_consume_admission_credit() -> None:
     session = Session(store=InMemorySessionStore())
     attach_session_goal(session, SessionGoal(condition="keep going", max_outer_turns=4))
+    pause_active_session_goal(session)
     cancel = HostCancelEvent()
     cancel.request(HostCancelReason.GOAL_PAUSE)
     sink = MagicMock(turn_cancel=cancel)
+    admission = MagicMock(return_value=True)
 
-    result = TurnRunner(console=Console(force_terminal=False)).run(
+    result = TurnRunner(
+        console=Console(force_terminal=False),
+        admission_check=admission,
+    ).run(
         "queued work",
         session,
         sink,
         logging.getLogger("test.gateway.prestart-pause"),
     )
 
-    assert result is not None
+    assert result is None
+    admission.assert_not_called()
     assert session.session_goal is not None
     assert session.session_goal.status == SessionGoalStatus.PAUSED
 
