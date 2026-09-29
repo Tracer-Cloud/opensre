@@ -57,6 +57,17 @@ def test_construction_signals_activity_then_opens_the_placeholder() -> None:
     assert output._message_id == "m1"
 
 
+def test_status_preview_omits_the_argument_row() -> None:
+    output, channel = _output(reopen=True)
+
+    output.set_tool_status("⏳ Run a local shell command…\n(echo sk-secret-token)")
+
+    edited = [call for call in channel.calls if call[0] == "edit"]
+    assert edited
+    assert "sk-secret-token" not in edited[-1][2]
+    assert "Run a local shell command" in edited[-1][2]
+
+
 def test_finalize_releases_the_id_and_reopen_channel_posts_a_fresh_message() -> None:
     # Arrange
     output, channel = _output(reopen=True)

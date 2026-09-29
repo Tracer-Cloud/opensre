@@ -7,6 +7,7 @@ from core.tool.contracts import RegisteredTool
 from infrastructure.turn_host.status_messages import (
     INITIAL_STATUSES,
     _tool_label,
+    chat_status_headline,
     initial_status_message,
     normalize_gateway_status,
     status_from_response_label,
@@ -143,6 +144,20 @@ def test_tool_status_keeps_a_long_label_on_its_own_rows() -> None:
     assert "SKILLS INDEX" in label
     assert argument == "(operating-github-ci-repairs)"
     assert "……" not in status
+
+
+def test_chat_status_keeps_the_label_and_drops_the_argument() -> None:
+    """A shared chat shows the label. The argument stays on the shell."""
+    status = status_from_tool_start(
+        "shell_run",
+        {"command": "echo sk-secret-token"},
+    )
+
+    headline = chat_status_headline(status)
+
+    assert "sk-secret-token" not in headline
+    assert "\n" not in headline
+    assert headline.startswith("⏳")
 
 
 def test_tool_label_miss_does_not_scan_the_whole_registry(monkeypatch) -> None:

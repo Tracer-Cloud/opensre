@@ -40,6 +40,19 @@ def normalize_gateway_status(status: str) -> str:
     return status
 
 
+def chat_status_headline(status: str) -> str:
+    """One row for a shared chat.
+
+    Later rows are the copyable argument, and that argument stays on the
+    shell. A channel preview never receives it.
+    """
+    normalized = normalize_gateway_status(status)
+    for row in normalized.splitlines():
+        if line := " ".join(row.split()):
+            return line
+    return normalized
+
+
 _GENERIC_ERROR = "Something went wrong handling that request. Please try again."
 
 # Shown when a turn streams no status at all, so the placeholder is not left blank.
@@ -127,6 +140,7 @@ def _input_hint(tool_input: Any) -> str:
 __all__ = [
     "DescribeTool",
     "EMPTY_RESPONSE_MESSAGE",
+    "chat_status_headline",
     "initial_status_message",
     "normalize_gateway_status",
     "status_from_response_label",

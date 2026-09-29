@@ -202,6 +202,17 @@ def test_finalize_appends_feedback_buttons_after_footer() -> None:
     assert element["negative_button"]["value"] == "bad"
 
 
+def test_status_updates_omit_the_argument_row() -> None:
+    client = _FakeMessagingClient()
+    sink = _sink(client)
+
+    sink.set_tool_status("⏳ Run a local shell command…\n(echo sk-secret-token)")
+
+    status = client.updates[-1]["text"]
+    assert "sk-secret-token" not in status
+    assert "Run a local shell command" in status
+
+
 def test_status_updates_render_as_italic_meta_text() -> None:
     client = _FakeMessagingClient()
     sink = _sink(client)

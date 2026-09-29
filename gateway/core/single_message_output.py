@@ -23,8 +23,8 @@ from typing import Protocol
 
 from infrastructure.turn_host.status_messages import (
     EMPTY_RESPONSE_MESSAGE,
+    chat_status_headline,
     initial_status_message,
-    normalize_gateway_status,
     status_from_response_label,
     user_facing_error_message,
 )
@@ -139,7 +139,7 @@ class SingleMessageTurnOutput:
         return text
 
     def _set_status(self, status: str) -> None:
-        self._status_text = normalize_gateway_status(status)
+        self._status_text = chat_status_headline(status)
         self._channel.on_status()
         self._edit_preview(self._status_text)
 
