@@ -351,6 +351,18 @@ def _finish_outer_turn(
         bookkeeping_calls=active.bookkeeping_calls,
     )
     if active.status == SessionGoalStatus.PAUSED:
+        pause_reason = active.last_reason
+        if active.new_ticks:
+            # ``session_goal_complete`` may have published ticks just before
+            # the concurrent pause. Validate them against this turn while its
+            # evidence is still available; ``new_ticks`` is intentionally not
+            # persisted and cannot safely be deferred until resume.
+            evaluate_fn(active, last, session=session)
+            stored = getattr(session, "session_goal", None)
+            if isinstance(stored, SessionGoal):
+                active = stored
+            active = active.with_status(SessionGoalStatus.PAUSED).with_reason(pause_reason)
+            attach_session_goal(session, active)
         if turn_evidence:
             active = retain_tool_evidence(
                 active,
@@ -507,6 +519,7 @@ def run_until_session_goal(
     # the pause applies to whatever goal is active when the turn raises.
     last = _chat_or_pause(chat, first, session, on_progress, cancel_reason)
     active = getattr(session, "session_goal", None)
+    pause_after_first = _goal_pause_requested(cancel_reason)
     if not isinstance(active, SessionGoal):
         synthetic = SessionGoal(
             condition=message.strip() or "(none)",
@@ -516,7 +529,7 @@ def run_until_session_goal(
         )
         return SessionGoalRunResult(goal=synthetic, last_result=last, turn_count=1)
     if not session_goal_is_active(session) and not (
-        had_active_before and session_goal_is_paused(session)
+        had_active_before and session_goal_is_paused(session) and pause_after_first
     ):
         # Paused after the first chat (e.g. slash during turn) — keep state.
         if session_goal_is_paused(session):
@@ -564,7 +577,7 @@ def run_until_session_goal(
         if isinstance(stored, SessionGoal):
             active = stored
 
-    pause_after_turn = _goal_pause_requested(cancel_reason)
+    pause_after_turn = pause_after_first
     if (had_active_before or active.turns_used == 0) and _goal_turn_should_count(
         active,
         last,
