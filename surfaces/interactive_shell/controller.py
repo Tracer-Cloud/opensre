@@ -275,17 +275,10 @@ class InteractiveShellController:
                 # Keep slash execution serialized through the normal turn
                 # queue, but signal the in-flight goal loop now so it cannot
                 # start another continuation before this command reaches it.
-                await self.prompt.suspend()
                 self.prompt.render_submitted_prompt(self.echo_console, text)
-                interrupt_goal = session_goal_is_active(self.session)
-                if interrupt_goal:
+                if session_goal_is_active(self.session):
                     self.state.request_goal_pause()
-                try:
-                    await self.state.queue.put(text)
-                    await self.state.queue.join()
-                finally:
-                    if interrupt_goal:
-                        self.state.clear_goal_pause_request()
+                await self.state.queue.put(text)
                 return True
             case DeliverConfirmation(text=text):
                 self.state.deliver_confirmation(text)

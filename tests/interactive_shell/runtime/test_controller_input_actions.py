@@ -249,7 +249,7 @@ def test_requesting_goal_pause_soft_cancels_the_running_turn() -> None:
     asyncio.run(_scenario())
 
 
-def test_inflight_goal_pause_signals_before_its_queued_command_runs() -> None:
+def test_inflight_goal_pause_keeps_input_open_and_does_not_leak_to_queued_turns() -> None:
     import asyncio
     import threading
 
@@ -257,7 +257,10 @@ def test_inflight_goal_pause_signals_before_its_queued_command_runs() -> None:
     from surfaces.interactive_shell.runtime.turn_host import run_agent_turn_queue
 
     async def _scenario() -> None:
+        from unittest.mock import AsyncMock
+
         controller = _controller()
+        controller.prompt.suspend = AsyncMock()
         attach_session_goal(
             controller.session,
             SessionGoal(condition="keep going", max_outer_turns=4),
@@ -265,9 +268,13 @@ def test_inflight_goal_pause_signals_before_its_queued_command_runs() -> None:
         cancel_event = threading.Event()
         started = asyncio.Event()
         submitted: list[str] = []
+        pause_seen: list[bool] = []
 
         async def _run_turn(text: str) -> None:
             submitted.append(text)
+            if text == "earlier queued turn":
+                pause_seen.append(controller.state.is_goal_pause_requested())
+                return
             if text != "current goal turn":
                 return
             controller.state.attach_cancel_event(cancel_event)
@@ -281,13 +288,17 @@ def test_inflight_goal_pause_signals_before_its_queued_command_runs() -> None:
         try:
             await controller.state.queue.put("current goal turn")
             await started.wait()
+            await controller.state.queue.put("earlier queued turn")
 
             kept = await controller._handle_input_action(PauseGoal(submitted_text="/goal pause"))
 
             assert kept is True
             assert cancel_event.is_set()
-            assert submitted == ["current goal turn", "/goal pause"]
-            assert not controller.state.is_goal_pause_requested()
+            controller.prompt.suspend.assert_not_awaited()
+
+            await asyncio.wait_for(controller.state.queue.join(), timeout=1)
+            assert submitted == ["current goal turn", "earlier queued turn", "/goal pause"]
+            assert pause_seen == [False]
         finally:
             controller.state.request_exit()
             await controller.state.queue.put("")

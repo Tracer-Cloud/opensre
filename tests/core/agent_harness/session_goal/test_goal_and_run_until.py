@@ -335,7 +335,7 @@ def test_paused_goal_outer_loop_is_single_chat_without_turn_bump() -> None:
     assert session.session_goal.status == SessionGoalStatus.PAUSED
 
 
-def test_pause_requested_during_a_goal_turn_stops_before_continuation() -> None:
+def test_pause_preserves_completed_goal_work_before_stopping() -> None:
     import threading
 
     session = SessionCore()
@@ -353,6 +353,7 @@ def test_pause_requested_during_a_goal_turn_stops_before_continuation() -> None:
                 executed_success_count=1,
                 has_unhandled_clause=False,
                 handled=True,
+                cancelled=True,
             ),
             assistant_response_text="first turn finished",
         )
@@ -369,6 +370,43 @@ def test_pause_requested_during_a_goal_turn_stops_before_continuation() -> None:
     assert len(turns) == 1
     assert outcome.goal.status == SessionGoalStatus.PAUSED
     assert outcome.goal.last_reason == SessionGoalReason.PAUSED_BY_USER
+    assert outcome.goal.turns_used == 1
+    assert outcome.goal.findings == ("first turn finished",)
+    assert outcome.goal.last_answer == "first turn finished"
+
+
+def test_pause_does_not_charge_a_cancelled_goal_turn_to_the_budget() -> None:
+    import threading
+
+    session = SessionCore()
+    pause_requested = threading.Event()
+
+    def _chat(_message: str) -> TurnResult:
+        pause_requested.set()
+        return TurnResult(
+            final_intent="cli_agent_cancelled",
+            action_result=ToolCallingTurnResult(
+                planned_count=0,
+                executed_count=0,
+                executed_success_count=0,
+                has_unhandled_clause=False,
+                handled=False,
+                cancelled=True,
+            ),
+        )
+
+    outcome = run_until_session_goal(
+        _chat,
+        session,
+        "go",
+        goal=SessionGoal(condition="keep going", max_outer_turns=1),
+        pause_requested=pause_requested.is_set,
+    )
+
+    assert outcome.goal.status == SessionGoalStatus.PAUSED
+    assert outcome.goal.last_reason == SessionGoalReason.PAUSED_BY_USER
+    assert outcome.goal.turns_used == 0
+    assert outcome.turn_count == 0
 
 
 def test_the_judge_reason_is_painted_between_turns() -> None:

@@ -308,6 +308,18 @@ def _turn_did_not_run(result: TurnResult) -> bool:
     return getattr(result.action_result, "accounting_status", "") == "not_run"
 
 
+def _goal_turn_should_count(
+    active: SessionGoal,
+    last: TurnResult,
+    *,
+    pause_requested: bool,
+) -> bool:
+    """Count completed work, but not a pause that stopped before useful work."""
+    if not pause_requested or not last.cancelled:
+        return True
+    return turn_has_session_goal_evidence(last, bookkeeping_calls=active.bookkeeping_calls)
+
+
 def _finish_outer_turn(
     session: Any,
     active: SessionGoal,
@@ -315,13 +327,13 @@ def _finish_outer_turn(
     *,
     evaluate_fn: EvaluateFn,
     on_progress: ProgressFn | None,
-    pause_requested: PauseFn | None = None,
+    pause_requested: bool = False,
 ) -> tuple[SessionGoal, TurnResult, bool]:
     """Evaluate → single paint. Returns ``(goal, result, stop)``."""
-    requested_pause = _requested_pause(session, active, pause_requested, on_progress)
-    if requested_pause is not None:
-        return requested_pause, last, True
-
+    turn_evidence = turn_has_session_goal_evidence(
+        last,
+        bookkeeping_calls=active.bookkeeping_calls,
+    )
     if active.status == SessionGoalStatus.PAUSED:
         ended = _end(
             session,
@@ -332,18 +344,23 @@ def _finish_outer_turn(
         )
         return ended, last, True
 
-    if last.cancelled:
+    if last.cancelled and not (pause_requested and turn_evidence):
+        if pause_requested:
+            return _pause_by_user(session, active, on_progress), last, True
         return _end(session, active, SessionGoalStatus.CANCELLED, on_progress), last, True
 
     if _turn_did_not_run(last):
+        if pause_requested:
+            return _pause_by_user(session, active, on_progress), last, True
         return _pause_failed_turn(session, active, on_progress), last, True
 
     if getattr(session, "pending_user_choice", None) is not None:
+        if pause_requested:
+            return _pause_by_user(session, active, on_progress), last, True
         active = active.with_reason(SessionGoalReason.PAUSED_USER_CHOICE)
         active = _paint(session, active, on_progress, rederive=False)
         return active, last, True
 
-    turn_evidence = turn_has_session_goal_evidence(last, bookkeeping_calls=active.bookkeeping_calls)
     next_status = evaluate_fn(active, last, session=session)
     stored = getattr(session, "session_goal", None)
     if isinstance(stored, SessionGoal):
@@ -380,6 +397,9 @@ def _finish_outer_turn(
     if next_status != SessionGoalStatus.ACTIVE:
         ended = _end(session, active, next_status, on_progress, reason=active.last_reason)
         return ended, last, True
+
+    if pause_requested:
+        return _pause_by_user(session, active, on_progress), last, True
 
     if (
         session_goal_has_turn_budget(active.max_outer_turns)
@@ -441,10 +461,6 @@ def run_until_session_goal(
         attach_session_goal(session, goal)
 
     pre = getattr(session, "session_goal", None)
-    if isinstance(pre, SessionGoal) and pre.status == SessionGoalStatus.ACTIVE:
-        requested_pause = _requested_pause(session, pre, pause_requested, on_progress)
-        if requested_pause is not None:
-            pre = requested_pause
     # User ``/goal pause``: allow one free chat, never session-goal continuation.
     if goal is None and isinstance(pre, SessionGoal) and pre.status == SessionGoalStatus.PAUSED:
         last = chat(message)
@@ -477,6 +493,15 @@ def run_until_session_goal(
         )
         return SessionGoalRunResult(goal=synthetic, last_result=last, turn_count=1)
 
+    if not had_active_before:
+        requested_pause = _requested_pause(session, active, pause_requested, on_progress)
+        if requested_pause is not None:
+            return SessionGoalRunResult(
+                goal=requested_pause,
+                last_result=last,
+                turn_count=requested_pause.turns_used,
+            )
+
     # ``/goal set`` attaches a host-owned goal mid-turn. The attach turn must
     # not count against the budget or run evaluate. The shell queues the
     # condition as the next REPL submit. Headless hosts have no REPL, so the
@@ -495,7 +520,12 @@ def run_until_session_goal(
         if isinstance(stored, SessionGoal):
             active = stored
 
-    if had_active_before or active.turns_used == 0:
+    pause_after_turn = pause_requested is not None and pause_requested()
+    if (had_active_before or active.turns_used == 0) and _goal_turn_should_count(
+        active,
+        last,
+        pause_requested=pause_after_turn,
+    ):
         # This chat was a goal turn: the first one, or a resumed goal's next
         # one. Evaluate must see this-turn tool ticks as new, so re-read them
         # from the session instead of the pre-chat copy.
@@ -508,7 +538,7 @@ def run_until_session_goal(
         last,
         evaluate_fn=evaluate_fn,
         on_progress=on_progress,
-        pause_requested=pause_requested,
+        pause_requested=pause_after_turn,
     )
     if stop:
         return SessionGoalRunResult(goal=active, last_result=last, turn_count=active.turns_used)
@@ -538,14 +568,16 @@ def run_until_session_goal(
             on_progress,
             pause_requested,
         )
-        active = _record_goal_turn(session, active)
+        pause_after_turn = pause_requested is not None and pause_requested()
+        if _goal_turn_should_count(active, last, pause_requested=pause_after_turn):
+            active = _record_goal_turn(session, active)
         active, last, stop = _finish_outer_turn(
             session,
             active,
             last,
             evaluate_fn=evaluate_fn,
             on_progress=on_progress,
-            pause_requested=pause_requested,
+            pause_requested=pause_after_turn,
         )
         if stop:
             break

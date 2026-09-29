@@ -128,6 +128,13 @@ class ReplState:
     def is_goal_pause_requested(self) -> bool:
         return self.goal_pause_event.is_set()
 
+    def take_goal_pause_request(self) -> bool:
+        """Consume the pause request scoped to the current dispatch."""
+        if not self.goal_pause_event.is_set():
+            return False
+        self.goal_pause_event.clear()
+        return True
+
     def request_goal_pause(self) -> None:
         """Ask the active goal loop to pause and softly stop its current turn.
 
@@ -222,11 +229,13 @@ class ReplState:
         if task is None or self.current_task is task:
             self.current_task = None
             self.phase = TurnPhase.IDLE
+            self.clear_goal_pause_request()
 
     def finish_dispatch(self, cancel_event: threading.Event) -> None:
         if self.current_cancel_event is cancel_event:
             self.current_cancel_event = None
         self.phase = TurnPhase.IDLE
+        self.clear_goal_pause_request()
 
     def cancel_current_dispatch(self) -> None:
         # Mark the cancel intent first, but only when there is something to
