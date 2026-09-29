@@ -16,7 +16,8 @@ from typing import NoReturn
 import httpx
 import pytest
 
-from infrastructure.analytics import install, install_state, provider
+from config.account import AccountRecord, delete_account_record, save_account_record
+from infrastructure.analytics import destination, install, install_state, provider
 from infrastructure.analytics.destination import AnalyticsDestination
 from infrastructure.analytics.events import Event
 
@@ -359,6 +360,152 @@ def test_queued_events_keep_the_destination_active_when_captured(
     analytics.capture(Event.ACCOUNT_AUTHENTICATED)
 
     assert [item.destination for item in queued] == [anonymous, authenticated]
+
+
+def test_running_shell_follows_account_changes_made_by_another_process(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    account_path = tmp_path / "account.json"
+    token_path = tmp_path / "account-token"
+    monkeypatch.delenv("OPENSRE_ANALYTICS_DISABLED", raising=False)
+    monkeypatch.delenv("DO_NOT_TRACK", raising=False)
+    monkeypatch.delenv("OPENSRE_WEBAPP_URL", raising=False)
+    monkeypatch.delenv("OPENSRE_ACCOUNT_TOKEN", raising=False)
+    monkeypatch.setenv("OPENSRE_ACCOUNT_METADATA_PATH", str(account_path))
+    monkeypatch.setattr(provider, "_CONFIG_DIR", tmp_path)
+    monkeypatch.setattr(provider, "_ANONYMOUS_ID_PATH", tmp_path / "anonymous_id")
+    monkeypatch.setattr(provider.atexit, "register", lambda _func: None)
+    monkeypatch.setattr(
+        destination,
+        "resolve_account_token",
+        lambda: token_path.read_text() if token_path.exists() else "",
+    )
+
+    resolutions: list[str | None] = []
+    resolve_destination = provider.resolve_analytics_destination
+
+    def _destination() -> AnalyticsDestination | None:
+        resolved = resolve_destination()
+        resolutions.append(resolved.bearer_token if resolved is not None else None)
+        return resolved
+
+    def _replace_account(token: str) -> None:
+        token_path.write_text(token)
+        save_account_record(
+            AccountRecord(
+                user_id=f"user_{token}",
+                organization_id="org_test",
+                email="test@example.com",
+                app_url="https://app.example",
+                signed_in_at="2026-09-29T10:00:00Z",
+                token_expires_at="2026-12-29T10:00:00Z",
+            )
+        )
+
+    monkeypatch.setattr(provider, "resolve_analytics_destination", _destination)
+    analytics = provider.Analytics()
+    queued: list[provider._Envelope] = []
+    monkeypatch.setattr(analytics, "_enqueue", queued.append)
+
+    analytics.capture(Event.INTERACTIVE_SHELL_RENDERED)
+    _replace_account("account-a")  # Child process completed login.
+    analytics.capture(Event.REACT_TURN_COMPLETED)
+    analytics.capture(Event.AGENT_TOOL_CALL_COMPLETED)
+    _replace_account("account-b")  # Another account replaced the login.
+    analytics.capture(Event.REACT_TURN_COMPLETED)
+    delete_account_record()  # Child process logged out.
+    token_path.unlink()
+    analytics.capture(Event.REACT_TURN_COMPLETED)
+
+    assert [item.destination.bearer_token for item in queued] == [
+        "",
+        "account-a",
+        "account-a",
+        "account-b",
+        "",
+    ]
+    assert resolutions == ["", "account-a", "account-b", ""]
+
+
+def test_refresh_rechecks_account_when_record_changes_during_resolution(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    account_path = tmp_path / "account.json"
+    account_path.write_text("account-a")
+    monkeypatch.setattr(provider, "account_metadata_path", lambda: account_path)
+    monkeypatch.setattr(provider.atexit, "register", lambda _func: None)
+    changed_during_resolution = False
+
+    def _destination() -> AnalyticsDestination:
+        nonlocal changed_during_resolution
+        token = account_path.read_text()
+        if changed_during_resolution:
+            replacement = account_path.with_suffix(".tmp")
+            replacement.write_text("account-b")
+            replacement.replace(account_path)
+            changed_during_resolution = False
+        return AnalyticsDestination("https://app.example/api/analytics/events", bearer_token=token)
+
+    monkeypatch.setattr(provider, "resolve_analytics_destination", _destination)
+    analytics = provider.Analytics()
+    queued: list[provider._Envelope] = []
+    monkeypatch.setattr(analytics, "_enqueue", queued.append)
+
+    changed_during_resolution = True
+    analytics.refresh_destination()
+    analytics.capture(Event.REACT_TURN_COMPLETED)
+
+    assert queued[0].destination is not None
+    assert queued[0].destination.bearer_token == "account-b"
+
+
+def test_group_identify_keeps_the_parent_events_account_during_login(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    account_path = tmp_path / "account.json"
+    account_path.write_text("account-a")
+    monkeypatch.setattr(provider, "account_metadata_path", lambda: account_path)
+    monkeypatch.setattr(provider.atexit, "register", lambda _func: None)
+    monkeypatch.setattr(
+        provider,
+        "resolve_analytics_destination",
+        lambda: AnalyticsDestination(
+            "https://app.example/api/analytics/events",
+            bearer_token=account_path.read_text(),
+        ),
+    )
+    analytics = provider.Analytics()
+    queued: list[provider._Envelope] = []
+    monkeypatch.setattr(analytics, "_enqueue", queued.append)
+    original_merge = provider.merge_usage_enrichment
+    switch_during_merge = True
+
+    def _merge(*args, **kwargs) -> provider.Properties:
+        nonlocal switch_during_merge
+        properties = original_merge(*args, **kwargs)
+        if switch_during_merge:
+            replacement = account_path.with_suffix(".tmp")
+            replacement.write_text("account-b")
+            replacement.replace(account_path)
+            switch_during_merge = False
+        return properties
+
+    monkeypatch.setattr(provider, "merge_usage_enrichment", _merge)
+    analytics.capture(Event.REACT_TURN_COMPLETED, {"organization_id": "org_test"})
+    analytics.capture(Event.REACT_TURN_COMPLETED, {"organization_id": "org_test"})
+
+    assert [item.event for item in queued] == [
+        "$groupidentify",
+        Event.REACT_TURN_COMPLETED,
+        "$groupidentify",
+        Event.REACT_TURN_COMPLETED,
+    ]
+    assert [item.destination.bearer_token for item in queued if item.destination] == [
+        "account-a",
+        "account-a",
+        "account-b",
+        "account-b",
+    ]
 
 
 def test_opt_out_does_not_resolve_endpoint_or_account_credentials(monkeypatch) -> None:

@@ -24,6 +24,7 @@ from typing import Final
 
 import httpx
 
+from config.account import account_metadata_path
 from config.constants import get_store_path
 from config.constants.analytics import (
     ANALYTICS_DISABLED_ENV,
@@ -58,6 +59,19 @@ from infrastructure.analytics.usage_context import (
 _CONFIG_DIR = get_store_path().parent
 _ANONYMOUS_ID_PATH = _CONFIG_DIR / "anonymous_id"
 _FIRST_RUN_PATH = _CONFIG_DIR / "installed"
+
+
+def _account_record_revision() -> tuple[object, ...]:
+    """Track atomic account-record replacements without reading credentials per event."""
+    path = account_metadata_path()
+    try:
+        stat = path.stat()
+    except FileNotFoundError:
+        return (path, "absent")
+    except OSError:
+        return (path, "unreadable")
+    return (path, stat.st_dev, stat.st_ino, stat.st_mtime_ns, stat.st_size)
+
 
 _QUEUE_SIZE = 128
 _SEND_TIMEOUT = 2.0
@@ -844,8 +858,10 @@ class Analytics:
             self._persistent_properties["install_marker_state_before_install"] = (
                 install_marker_state
             )
-        self._identified_organization_groups: set[str] = set()
+        self._identified_organization_groups: set[tuple[str, AnalyticsDestination | None]] = set()
         self._org_group_lock = threading.Lock()
+        self._destination_lock = threading.Lock()
+        self._account_revision = _account_record_revision() if not self._disabled else None
         self._destination: AnalyticsDestination | None = None
 
         if not self._disabled:
@@ -868,6 +884,7 @@ class Analytics:
     def capture(self, event: str, properties: Properties | None = None) -> None:
         if self._disabled or self._shutdown:
             return
+        destination = self._current_destination()
         merged = merge_usage_enrichment(
             _coerce_properties(event, properties),
             defaults=_BASE_PROPERTIES | self._persistent_properties,
@@ -893,11 +910,11 @@ class Analytics:
         merged["is_test"] = is_test_run()
         if event == Event.INSTALL_DETECTED and cicd_marker and not merged.get("install_origin"):
             merged["install_origin"] = "cicd"
-        self._ensure_organization_group(merged)
+        self._ensure_organization_group(merged, destination)
         envelope = _Envelope(
             event=event,
             properties=merged,
-            destination=self._destination,
+            destination=destination,
         )
         if event == Event.INSTALL_DETECTED:
             body = self._serialize(self._payload(envelope))
@@ -925,7 +942,19 @@ class Analytics:
         """Reload endpoint credentials after account state changes in-process."""
         if self._disabled or self._shutdown:
             return
-        self._destination = resolve_analytics_destination()
+        with self._destination_lock:
+            revision = _account_record_revision()
+            destination = resolve_analytics_destination()
+            self._destination = destination
+            self._account_revision = revision
+
+    def _current_destination(self) -> AnalyticsDestination | None:
+        with self._destination_lock:
+            revision = _account_record_revision()
+            if revision != self._account_revision:
+                self._destination = resolve_analytics_destination()
+                self._account_revision = revision
+            return self._destination
 
     def identify(self, set_properties: Properties) -> None:
         """Emit a ``$identify`` control event for downstream identity handling.
@@ -939,6 +968,7 @@ class Analytics:
         coerced = _coerce_properties("$identify", set_properties)
         if not coerced:
             return
+        destination = self._current_destination()
         properties = merge_usage_enrichment(
             {
                 **_BASE_PROPERTIES,
@@ -946,12 +976,12 @@ class Analytics:
                 "$set": coerced,
             }
         )
-        self._ensure_organization_group(properties)
+        self._ensure_organization_group(properties, destination)
         self._enqueue(
             _Envelope(
                 event="$identify",
                 properties=properties,
-                destination=self._destination,
+                destination=destination,
             )
         )
 
@@ -971,23 +1001,34 @@ class Analytics:
         key = group_key.strip()
         if not group_type.strip() or not key:
             return
+        self._enqueue_group_identify(group_type, key, set_properties, self._current_destination())
+
+    def _enqueue_group_identify(
+        self,
+        group_type: str,
+        group_key: str,
+        set_properties: Properties | None,
+        destination: AnalyticsDestination | None,
+    ) -> None:
         coerced = _coerce_properties("$groupidentify", set_properties)
         properties: Properties = {
             **_BASE_PROPERTIES,
             "$group_type": group_type,
-            "$group_key": key,
+            "$group_key": group_key,
             "$group_set": coerced,
         }
         self._enqueue(
             _Envelope(
                 event="$groupidentify",
                 properties=properties,
-                destination=self._destination,
+                destination=destination,
             )
         )
 
-    def _ensure_organization_group(self, properties: Properties) -> None:
-        """Emit ``$groupidentify`` once per process for each organization id seen."""
+    def _ensure_organization_group(
+        self, properties: Properties, destination: AnalyticsDestination | None
+    ) -> None:
+        """Identify each organization for the destination of its source event."""
         org = properties.get("organization_id")
         if not isinstance(org, str):
             return
@@ -995,13 +1036,15 @@ class Analytics:
         if not org_id:
             return
         with self._org_group_lock:
-            if org_id in self._identified_organization_groups:
+            group = (org_id, destination)
+            if group in self._identified_organization_groups:
                 return
-            self._identified_organization_groups.add(org_id)
-        self.group_identify(
+            self._identified_organization_groups.add(group)
+        self._enqueue_group_identify(
             ORGANIZATION_GROUP_TYPE,
             org_id,
             {"organization_id": org_id},
+            destination,
         )
 
     def _enqueue(self, envelope: _Envelope) -> None:
