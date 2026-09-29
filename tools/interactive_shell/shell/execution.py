@@ -35,7 +35,7 @@ def _truncate_output(text: str, *, max_chars: int) -> tuple[str, bool]:
     return f"{text[:max_chars].rstrip()}\n... output truncated ...", True
 
 
-def _shell_argv(command: str) -> list[str]:
+def _shell_argv(command: str) -> str | list[str]:
     if os.name == "nt":
         windows_shell = _windows_command_shell()
         # /d suppresses registry AutoRun commands before the approved command;
@@ -43,7 +43,10 @@ def _shell_argv(command: str) -> list[str]:
         # Keep the tool contract's platform-neutral ``pwd`` diagnostic working:
         # bare ``cd`` is cmd.exe's current-directory display form.
         shell_command = "cd" if command.strip().lower() == "pwd" else command
-        return [windows_shell, "/d", "/v:off", "/s", "/c", shell_command]
+        # cmd.exe parses the raw text following /c itself. Passing a sequence
+        # makes subprocess apply C-runtime escaping first, which leaves literal
+        # backslashes around embedded quotes and breaks quoted paths/operators.
+        return f'"{windows_shell}" /d /v:off /s /c "{shell_command}"'
     # Do not use the interactive $SHELL: its startup hooks can run before the
     # command that policy classified. /bin/sh -c is non-interactive and stable.
     return ["/bin/sh", "-c", command]

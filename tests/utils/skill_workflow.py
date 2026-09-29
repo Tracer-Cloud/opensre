@@ -91,11 +91,13 @@ class SkillWorkflow:
 
         def load_skill(**kwargs: Any) -> dict[str, Any]:
             result = skill_view.run(**kwargs)
+            assert isinstance(result, dict)
             self.loaded_skills.append(result)
             return result
 
         def write_plan(**kwargs: Any) -> dict[str, Any]:
             result = update_plan.run(**kwargs)
+            assert isinstance(result, dict)
             self.plan_updates.append((kwargs["plan"], result))
             return result
 
