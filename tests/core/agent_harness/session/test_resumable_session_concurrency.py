@@ -17,6 +17,7 @@ from infrastructure.turn_host.session_lock import (
     retained_session_execution_locks,
     session_execution_lock,
 )
+from surfaces.interactive_shell.runtime.core.state import ReplState
 from surfaces.interactive_shell.session import Session
 
 
@@ -86,7 +87,7 @@ def test_repl_shutdown_refreshes_before_closing(
     monkeypatch.setattr(
         main_entrypoint,
         "create_repl_runtime",
-        lambda **_kwargs: SimpleNamespace(session=session, inbox=None),
+        lambda **_kwargs: SimpleNamespace(session=session, state=ReplState(), inbox=None),
     )
     monkeypatch.setattr(main_entrypoint, "InteractiveShellController", _Controller)
     monkeypatch.setattr(main_entrypoint.SessionManager, "for_session", lambda _session: _Manager())

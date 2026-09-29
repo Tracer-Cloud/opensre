@@ -202,7 +202,7 @@ def test_run_repl_async_identifies_saved_github_username(monkeypatch: Any) -> No
     monkeypatch.setattr(
         main_entrypoint,
         "create_repl_runtime",
-        lambda **_kwargs: SimpleNamespace(session=Session(), inbox=None),
+        lambda **_kwargs: SimpleNamespace(session=Session(), state=ReplState(), inbox=None),
     )
 
     import asyncio
@@ -573,7 +573,7 @@ def test_initial_input_replay_uses_the_supplied_console(monkeypatch: Any) -> Non
     monkeypatch.setattr(
         main_entrypoint,
         "create_repl_runtime",
-        lambda **_kwargs: SimpleNamespace(session=Session(), inbox=None),
+        lambda **_kwargs: SimpleNamespace(session=Session(), state=ReplState(), inbox=None),
     )
     captured = Console(file=StringIO(), force_terminal=False, width=80)
 

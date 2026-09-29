@@ -16,6 +16,7 @@ import surfaces.interactive_shell.runtime.startup.account_gate as account_gate
 from config.repl_config import ReplConfig
 from infrastructure.analytics import capture
 from infrastructure.analytics.events import Event
+from surfaces.interactive_shell.runtime.core.state import ReplState
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui.sign_in import SignInChoice
 
@@ -254,7 +255,7 @@ def test_run_repl_async_is_the_already_gated_shell_body(monkeypatch: Any) -> Non
     monkeypatch.setattr(
         main_entrypoint,
         "create_repl_runtime",
-        lambda **_kwargs: SimpleNamespace(session=Session(), inbox=None),
+        lambda **_kwargs: SimpleNamespace(session=Session(), state=ReplState(), inbox=None),
     )
     monkeypatch.setattr(
         main_entrypoint,
@@ -303,7 +304,7 @@ def _boot_repl_without_prompt(monkeypatch: Any) -> None:
     monkeypatch.setattr(
         main_entrypoint,
         "create_repl_runtime",
-        lambda **_kwargs: SimpleNamespace(session=Session(), inbox=None),
+        lambda **_kwargs: SimpleNamespace(session=Session(), state=ReplState(), inbox=None),
     )
     monkeypatch.setattr(main_entrypoint, "InteractiveShellController", _Controller)
     monkeypatch.setattr(main_entrypoint.SessionManager, "for_session", lambda _s: _SessionStore())
