@@ -32,6 +32,7 @@ from core.agent_harness import SessionCore, SessionManager, TurnResult
 from core.agent_harness.ports import ConfirmFn, SlashPortsFactory, TurnAccounting
 from core.agent_harness.runtime import AgentBuildConfig, TurnBinding
 from core.agent_harness.spi.cancel import (
+    HostCancelReason,
     ensure_turn_cancel,
     host_cancel_requested,
     turn_cancel_reason,
@@ -40,6 +41,7 @@ from core.agent_harness.spi.session_goal import (
     SessionGoal,
     format_session_goal_progress,
     format_session_goal_status_line,
+    session_goal_is_active,
 )
 from infrastructure.analytics.capture import (
     capture_gateway_turn_completed,
@@ -164,7 +166,11 @@ class TurnRunner:
             if not running:
                 output.finalize(self._busy_message)
                 return None
-            if host_cancel_requested(output):
+            cancel = ensure_turn_cancel(output)
+            if host_cancel_requested(output) and not (
+                turn_cancel_reason(cancel) is HostCancelReason.GOAL_PAUSE
+                and session_goal_is_active(session)
+            ):
                 return None
             # Admission runs inside the slot on purpose: a hook that meters the
             # turn must not charge for work capacity would have refused. The

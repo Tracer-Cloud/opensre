@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
+
 from core.agent_harness.session.session_core import SessionCore
 from core.agent_harness.session_goal.evaluate import evaluate_session_goal
 from core.agent_harness.session_goal.goal import (
@@ -448,7 +450,11 @@ def test_pause_wins_when_it_arrives_with_the_cancel_signal() -> None:
 
 def test_pause_reason_retained_during_turn_pauses_a_new_shell_goal() -> None:
     session = SessionCore()
-    session.terminal = object()
+    session.terminal = SimpleNamespace(
+        pending_prompt_default="keep going",
+        pending_prompt_autosubmit=True,
+        pending_prompt_plain_turn=True,
+    )
     cancel = HostCancelEvent()
 
     def _chat(_message: str) -> TurnResult:
@@ -484,6 +490,9 @@ def test_pause_reason_retained_during_turn_pauses_a_new_shell_goal() -> None:
     assert outcome.goal.status == SessionGoalStatus.PAUSED
     assert outcome.goal.last_reason == SessionGoalReason.PAUSED_BY_USER
     assert outcome.turn_count == 0
+    assert session.terminal.pending_prompt_default is None
+    assert session.terminal.pending_prompt_autosubmit is False
+    assert session.terminal.pending_prompt_plain_turn is False
 
 
 def test_the_judge_reason_is_painted_between_turns() -> None:

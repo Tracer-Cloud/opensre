@@ -12,7 +12,7 @@ from prompt_toolkit import PromptSession
 from rich.console import Console
 
 from config.repl_config import ReplConfig
-from core.agent_harness.spi.session_goal import session_goal_is_active
+from core.agent_harness.spi.session_goal import pause_active_session_goal
 from core.agent_harness.spi.task_plan import discard_task_plan
 from core.domain.alerts import inbox as _alert_inbox
 from surfaces.interactive_shell.runtime.background.workers import BackgroundTaskPool
@@ -273,11 +273,12 @@ class InteractiveShellController:
                 return True
             case PauseGoal(submitted_text=text):
                 # Keep slash execution serialized through the normal turn
-                # queue, but signal the in-flight goal loop now so it cannot
-                # start another continuation before this command reaches it.
+                # queue, but pause state and signal current work now so neither
+                # a continuation nor already-queued input can run the goal first.
                 self.prompt.render_submitted_prompt(self.echo_console, text)
+                paused = pause_active_session_goal(self.session)
                 self.state.request_goal_pause(
-                    interrupt=session_goal_is_active(self.session),
+                    interrupt=paused is not None,
                 )
                 await self.state.queue.put(text)
                 return True

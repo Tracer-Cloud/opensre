@@ -141,6 +141,8 @@ class ReplState:
         the next safe boundary.
         """
         cancel = self.current_cancel_event
+        if cancel is None and self.is_dispatch_running():
+            cancel = self.ensure_current_cancel_event()
         if isinstance(cancel, HostCancelEvent):
             cancel.request(HostCancelReason.GOAL_PAUSE, interrupt=interrupt)
         elif interrupt and cancel is not None:

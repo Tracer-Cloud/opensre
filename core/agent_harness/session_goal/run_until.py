@@ -272,6 +272,17 @@ def _pause_by_user(
     )
 
 
+def pause_active_session_goal(
+    session: Any,
+    on_progress: ProgressFn | None = None,
+) -> SessionGoal | None:
+    """Pause the currently active goal and discard any queued shell continuation."""
+    active = getattr(session, "session_goal", None)
+    if not isinstance(active, SessionGoal) or active.status != SessionGoalStatus.ACTIVE:
+        return None
+    return _pause_by_user(session, active, on_progress)
+
+
 def _requested_pause(
     session: Any,
     active: SessionGoal,
@@ -621,5 +632,6 @@ def run_until_session_goal(
 
 __all__ = [
     "SessionGoalRunResult",
+    "pause_active_session_goal",
     "run_until_session_goal",
 ]

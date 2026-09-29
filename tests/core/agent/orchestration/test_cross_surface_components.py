@@ -10,7 +10,13 @@ import pytest
 from rich.console import Console
 
 from core.agent_harness.session import InMemorySessionStore
+from core.agent_harness.session_goal.goal import (
+    SessionGoal,
+    SessionGoalStatus,
+    attach_session_goal,
+)
 from core.agent_harness.tools.tool_provider import DefaultToolProvider
+from core.agent_harness.turns.host_cancel import HostCancelEvent, HostCancelReason
 from core.agent_harness.turns.orchestrator import run_turn
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
 from infrastructure.turn_host.turn_runner import TurnRunner
@@ -96,6 +102,44 @@ def test_gateway_turn_runner_does_not_finalize_answered_turn(
     handler("why", session, sink, logging.getLogger("test.gateway.module.answer"))
 
     sink.finalize.assert_not_called()
+
+
+def test_turn_runner_applies_a_prestart_goal_pause_before_cancel_short_circuit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    agent = fake_agent(
+        dispatch_result=TurnResult(
+            final_intent="cli_agent_cancelled",
+            action_result=ToolCallingTurnResult(
+                0,
+                0,
+                0,
+                False,
+                False,
+                cancelled=True,
+            ),
+        )
+    )
+    monkeypatch.setattr(
+        "infrastructure.turn_host.session_agents.DefaultHeadlessBuild",
+        default_headless_build_stub(MagicMock(return_value=agent)),
+    )
+    session = Session(store=InMemorySessionStore())
+    attach_session_goal(session, SessionGoal(condition="keep going", max_outer_turns=4))
+    cancel = HostCancelEvent()
+    cancel.request(HostCancelReason.GOAL_PAUSE)
+    sink = MagicMock(turn_cancel=cancel)
+
+    result = TurnRunner(console=Console(force_terminal=False)).run(
+        "queued work",
+        session,
+        sink,
+        logging.getLogger("test.gateway.prestart-pause"),
+    )
+
+    assert result is not None
+    assert session.session_goal is not None
+    assert session.session_goal.status == SessionGoalStatus.PAUSED
 
 
 def test_run_turn_returns_agent_conclusion_directly() -> None:
