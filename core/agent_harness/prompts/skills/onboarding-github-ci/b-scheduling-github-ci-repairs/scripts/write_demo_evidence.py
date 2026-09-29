@@ -14,6 +14,7 @@ from _demo_state import (
     receipt_path,
     results_directory,
     run_json,
+    workspace_lost,
 )
 
 
@@ -36,7 +37,7 @@ def write_demo_evidence(
             "Successful repair evidence requires failed run, fix commit, and passing run."
         )
     state = read_receipt(repo)
-    workspace = owned_workspace(state) if state else None
+    workspace = owned_workspace(state) if state and not workspace_lost(state) else None
     evidence = results_directory() / f"ci-repair-demo-{date.today().isoformat()}-{key}.md"
     content = (
         f"# CI repair demo\n\n"

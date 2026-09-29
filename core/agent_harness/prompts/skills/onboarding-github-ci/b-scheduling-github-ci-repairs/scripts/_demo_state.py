@@ -58,6 +58,23 @@ def save_receipt(state: dict[str, Any]) -> None:
     atomic_write(receipt_path(str(state["repo"])), json.dumps(state, indent=2) + "\n")
 
 
+def create_workspace(repo: str) -> Path:
+    """Create a temp workspace whose marker lets only this demo's helpers own it."""
+    workspace = Path(tempfile.mkdtemp(prefix="opensre-ci-repair-demo-"))
+    (workspace / ".opensre-demo.json").write_text(json.dumps({"repo": repo}), encoding="utf-8")
+    return workspace
+
+
+def workspace_lost(state: dict[str, Any]) -> bool:
+    """True when the recorded workspace is gone entirely.
+
+    The receipt lives under the durable home, the workspace under the temp directory,
+    so a hosted gateway task replacement keeps the first and wipes the second.
+    """
+    workspace = Path(str(state["workspace"]))
+    return not workspace.exists() and not workspace.is_symlink()
+
+
 def owned_workspace(state: dict[str, Any]) -> Path:
     workspace = Path(str(state["workspace"]))
     if (

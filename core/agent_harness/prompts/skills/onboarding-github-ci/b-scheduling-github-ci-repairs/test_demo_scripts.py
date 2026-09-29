@@ -43,12 +43,8 @@ def _git(directory: Path, *args: str) -> str:
     ).stdout.strip()
 
 
-def test_seed_retries_partial_push_without_rewriting_remote_history(
-    demo_modules: tuple[ModuleType, ModuleType, ModuleType],
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    state, seed, _ = demo_modules
+def _bare_remote(tmp_path: Path) -> Path:
+    """A local bare repository holding only the ``main`` a new GitHub repository starts with."""
     bare = tmp_path / "remote.git"
     initial = tmp_path / "initial"
     initial.mkdir()
@@ -68,6 +64,13 @@ def test_seed_retries_partial_push_without_rewriting_remote_history(
         "Initial",
     )
     _git(tmp_path, "clone", "--bare", str(initial), str(bare))
+    return bare
+
+
+def _route_git_to(
+    seed: ModuleType, bare: Path, monkeypatch: pytest.MonkeyPatch, fail_push_to: str
+) -> None:
+    """Send the helper's clone/push/ls-remote to ``bare``; the first push to one ref fails."""
     real_git = seed._git
     fail_push = True
 
@@ -80,13 +83,23 @@ def test_seed_retries_partial_push_without_rewriting_remote_history(
             )
             return str(result)
         if args[0] in {"push", "ls-remote"}:
-            if fail_push and args[0] == "push" and args[-1].endswith("refs/heads/demo/failing-ci"):
+            if fail_push and args[0] == "push" and args[-1].endswith(fail_push_to):
                 fail_push = False
                 raise RuntimeError("simulated connection failure")
             args = tuple(str(bare) if arg == "origin" else arg for arg in args)
         return str(real_git(checkout, *args))
 
     monkeypatch.setattr(seed, "_git", local_git)
+
+
+def test_seed_retries_partial_push_without_rewriting_remote_history(
+    demo_modules: tuple[ModuleType, ModuleType, ModuleType],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    state, seed, _ = demo_modules
+    bare = _bare_remote(tmp_path)
+    _route_git_to(seed, bare, monkeypatch, "refs/heads/demo/failing-ci")
     with pytest.raises(RuntimeError, match="connection failure"):
         seed.seed_demo_repository(_REPO)
     receipt = state.read_receipt(_REPO)
@@ -104,6 +117,37 @@ def test_seed_retries_partial_push_without_rewriting_remote_history(
             [sys.executable, "-B", "-m", "unittest", "-v"], cwd=checkout, capture_output=True
         )
         assert tested.returncode == expected
+
+
+@pytest.mark.parametrize(
+    ("failed_ref", "main_kept"),
+    [("refs/heads/main", False), ("refs/heads/demo/failing-ci", True)],
+)
+def test_seed_resumes_after_a_task_replacement_wipes_its_checkout(
+    demo_modules: tuple[ModuleType, ModuleType, ModuleType],
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    failed_ref: str,
+    main_kept: bool,
+) -> None:
+    # A hosted gateway keeps the receipt on its durable home but loses the /tmp checkout,
+    # so the retry must rebuild the checkout and recreate only commits that never reached GitHub.
+    state, seed, _ = demo_modules
+    bare = _bare_remote(tmp_path)
+    _route_git_to(seed, bare, monkeypatch, failed_ref)
+    with pytest.raises(RuntimeError, match="connection failure"):
+        seed.seed_demo_repository(_REPO)
+    lost = state.read_receipt(_REPO)
+    pushed_main = _git(bare, "rev-parse", "main")
+    shutil.rmtree(lost["workspace"])
+
+    result = seed.seed_demo_repository(_REPO)
+
+    assert result["ok"] is True and result["workspace"] != lost["workspace"]
+    assert (_git(bare, "rev-parse", "main") == pushed_main) is main_kept
+    assert _git(bare, "rev-parse", "main") == result["seed_sha"]
+    assert _git(bare, "rev-parse", "demo/failing-ci") == result["head_sha"]
+    assert _git(bare, "diff", "--name-only", "main", "demo/failing-ci") == "calculator.py"
 
 
 def _owned_state(state: ModuleType) -> dict[str, Any]:
@@ -135,6 +179,18 @@ def test_evidence_failure_preserves_checkout_and_failed_demo_ids_can_be_absent(
     text = Path(result["evidence"]).read_text()
     assert "Outcome: failed" in text and "Fix commit: none" in text
     assert "Checkout cleanup: complete" in text
+
+
+def test_evidence_is_saved_when_the_checkout_is_already_gone(
+    demo_modules: tuple[ModuleType, ModuleType, ModuleType],
+) -> None:
+    state, _, evidence = demo_modules
+    receipt = _owned_state(state)
+    shutil.rmtree(receipt["workspace"])
+    result = evidence.write_demo_evidence(_REPO, 1, "loop", "failed", blocker="Task replaced")
+    assert result["ok"] is True
+    assert "Blocker: Task replaced" in Path(result["evidence"]).read_text()
+    assert not state.receipt_path(_REPO).exists()
 
 
 def test_evidence_refuses_unowned_checkout(

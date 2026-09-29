@@ -2,14 +2,21 @@
 
 from __future__ import annotations
 
-import json
 import subprocess
-import tempfile
 from pathlib import Path
 from typing import Any
 
-from _demo_state import demo_key, owned_workspace, read_receipt, run_json, save_receipt
+from _demo_state import (
+    create_workspace,
+    demo_key,
+    owned_workspace,
+    read_receipt,
+    run_json,
+    save_receipt,
+    workspace_lost,
+)
 
+_COMMIT_STAGES = ("seed_sha", "head_sha")
 _CALCULATOR = "def add(left: int, right: int) -> int:\n    return left + right\n"
 _BROKEN_CALCULATOR = "def add(left: int, right: int) -> int:\n    return left - right\n"
 _TEST = """import unittest
@@ -82,20 +89,41 @@ def _push(checkout: Path, commit: str, branch: str, expected: str | None) -> Non
     _git(checkout, "push", "origin", f"{commit}:refs/heads/{branch}")
 
 
+def _has_commit(checkout: Path, sha: str) -> bool:
+    try:
+        _git(checkout, "cat-file", "-e", f"{sha}^{{commit}}")
+    except RuntimeError:
+        return False
+    return True
+
+
+def _forget_unpushed(checkout: Path, state: dict[str, Any]) -> None:
+    """Drop recorded commits a fresh clone lacks, and every commit built on them.
+
+    A clone holds every pushed commit, so a missing one only ever existed in a lost
+    checkout; its stage runs again instead of pushing an object that is gone.
+    """
+    for index, key in enumerate(_COMMIT_STAGES):
+        if key in state and not _has_commit(checkout, str(state[key])):
+            for stale in _COMMIT_STAGES[index:]:
+                state.pop(stale, None)
+            save_receipt(state)
+            return
+
+
 def seed_demo_repository(repo: str) -> dict[str, Any]:
     """Seed only demo-named repositories and resume from verified local/remote commits."""
     demo_key(repo)
     state = read_receipt(repo)
-    if not state:
-        workspace = Path(tempfile.mkdtemp(prefix="opensre-ci-repair-demo-"))
-        (workspace / ".opensre-demo.json").write_text(json.dumps({"repo": repo}), encoding="utf-8")
-        state = {"repo": repo, "workspace": str(workspace), "stage": "clone"}
+    if not state or workspace_lost(state):
+        state = {**state, "repo": repo, "workspace": str(create_workspace(repo)), "stage": "clone"}
         save_receipt(state)
     workspace = owned_workspace(state)
     checkout = workspace / "checkout"
     remote = f"https://github.com/{repo}.git"
     if not checkout.exists():
         _git(workspace, "clone", remote, str(checkout))
+        _forget_unpushed(checkout, state)
     if _git(checkout, "remote", "get-url", "origin") != remote:
         raise ValueError("Checkout remote does not match this demo.")
     if "base_sha" not in state:
