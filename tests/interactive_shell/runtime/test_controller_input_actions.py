@@ -414,7 +414,7 @@ async def test_goal_pause_after_dispatch_finish_still_pauses_before_queued_work(
 
 
 @pytest.mark.asyncio
-async def test_cancelled_goal_pause_boundary_waits_for_worker_lease_and_flushes() -> None:
+async def test_cancelled_goal_pause_boundary_does_not_wait_for_worker_lease() -> None:
     import asyncio
     import threading
 
@@ -457,12 +457,14 @@ async def test_cancelled_goal_pause_boundary_waits_for_worker_lease_and_flushes(
         assert session.session_goal is not None
         assert session.session_goal.status == SessionGoalStatus.ACTIVE
         pause_task.cancel()
-        await asyncio.sleep(0)
-        assert not pause_task.done()
-
-        release_lease.set()
         with pytest.raises(asyncio.CancelledError):
-            await pause_task
+            await asyncio.wait_for(pause_task, timeout=0.5)
+
+        assert session.session_goal.status == SessionGoalStatus.ACTIVE
+        release_lease.set()
+        await asyncio.to_thread(worker.join, 1)
+        assert not worker.is_alive()
+        await controller._apply_goal_pause_at_turn_boundary()
 
         assert session.session_goal.status == SessionGoalStatus.PAUSED
         records = [
