@@ -25,6 +25,7 @@ from infrastructure.observability.errors.sentry import capture_exception
 _ASK_USER_LABEL_MAX_CHARS: Final[int] = 80
 _ASK_USER_TITLE_MAX_CHARS: Final[int] = 500
 _ASK_USER_OPTION_MAX_CHARS: Final[int] = 300
+_TOOL_ERROR_MESSAGE_MAX_CHARS: Final[int] = 500
 
 EVAL_AND_TERMINAL_KPI_QUERIES: Final[dict[str, str]] = {
     "terminal_action_execution_success_rate": """
@@ -347,24 +348,31 @@ def capture_agent_tool_call_completed(
     terminate: bool,
     duration_ms: int,
     work_status: str = "",
+    error_message: str = "",
 ) -> None:
-    """Record the privacy-safe outcome of one model-requested tool call."""
-    _capture(
-        Event.AGENT_TOOL_CALL_COMPLETED,
-        {
-            "tool_call_id": tool_call_id,
-            "tool_name": tool_name,
-            "source": source,
-            "role": role,
-            "outcome": outcome,
-            "executed": executed,
-            "is_error": is_error,
-            "terminate": terminate,
-            "duration_ms": duration_ms,
-            "duration_bucket": _bucket_duration_ms(duration_ms),
-            "work_status": work_status,
-        },
-    )
+    """Record the privacy-safe outcome of one model-requested tool call.
+
+    A failed call also carries ``error_message``: the tool's own description of
+    what went wrong, redacted and length-capped. Arguments and result evidence
+    stay off the event.
+    """
+    properties: Properties = {
+        "tool_call_id": tool_call_id,
+        "tool_name": tool_name,
+        "source": source,
+        "role": role,
+        "outcome": outcome,
+        "executed": executed,
+        "is_error": is_error,
+        "terminate": terminate,
+        "duration_ms": duration_ms,
+        "duration_bucket": _bucket_duration_ms(duration_ms),
+        "work_status": work_status,
+    }
+    recorded_error = _bounded_redacted_text(error_message, max_chars=_TOOL_ERROR_MESSAGE_MAX_CHARS)
+    if is_error and recorded_error:
+        properties["error_message"] = recorded_error
+    _capture(Event.AGENT_TOOL_CALL_COMPLETED, properties)
 
 
 def _ask_user_questions(

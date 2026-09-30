@@ -258,6 +258,7 @@ def execute_tool_calls(
                 is_error=True,
                 terminate=False,
                 duration_ms=0,
+                error_message=violation,
             )
         return [
             _error_result(violation, metadata={"tool_name": tc.name, "batch_rejected": True})
@@ -302,8 +303,24 @@ def execute_tool_calls(
             terminate=result.terminate,
             duration_ms=max(0, round((time.monotonic() - started) * 1000)),
             details=result.details,
+            error_message=_descriptive_tool_error(result),
         )
     return results
+
+
+def _descriptive_tool_error(result: ToolExecutionResult) -> str:
+    """The tool's own account of a failure, never its arguments or evidence."""
+    if not result.is_error:
+        return ""
+    content = result.content
+    if isinstance(content, str) and content.strip():
+        return content.strip()
+    details = result.details
+    if isinstance(details, dict):
+        error = details.get("error")
+        if isinstance(error, str) and error.strip():
+            return error.strip()
+    return ""
 
 
 def _capture_tool_call_analytics(
@@ -315,16 +332,21 @@ def _capture_tool_call_analytics(
     terminate: bool,
     duration_ms: int,
     details: Any = None,
+    error_message: str = "",
 ) -> None:
-    """Emit product analytics without retaining tool arguments or results."""
+    """Emit product analytics without tool arguments or result evidence.
+
+    A failure includes the tool's descriptive error. Evidence payloads stay off
+    the event; they can contain private data.
+    """
     from infrastructure.analytics.capture import capture_agent_tool_call_completed
 
     work = details.get("work_outcome") if isinstance(details, dict) else None
     status = work.get("status") if isinstance(work, dict) else None
-    # Only categorical status may leave the result; evidence can contain private data.
     work_status = (
         status if status in ("noop", "blocked", "failed", "incomplete", "succeeded") else ""
     )
+    recorded_error = error_message.strip()
     capture_agent_tool_call_completed(
         tool_call_id=tool_call.id,
         tool_name=tool_call.name,
@@ -336,6 +358,7 @@ def _capture_tool_call_analytics(
         terminate=terminate,
         duration_ms=duration_ms,
         work_status=work_status,
+        **({"error_message": recorded_error} if is_error and recorded_error else {}),
     )
 
 

@@ -210,6 +210,7 @@ def test_tool_call_analytics_records_execution_outcome_without_payloads(
     assert captured[0]["role"] == "action"
     assert captured[0]["outcome"] == "ok"
     assert captured[0]["executed"] is True
+    assert "error_message" not in captured[0]
     assert "secret input" not in str(captured[0])
 
 
@@ -227,6 +228,7 @@ def test_tool_call_analytics_records_batch_rejection(
 
     assert [event["outcome"] for event in captured] == ["batch_rejected", "batch_rejected"]
     assert all(event["executed"] is False for event in captured)
+    assert all(event["error_message"].startswith("Nothing ran") for event in captured)
 
 
 @pytest.mark.parametrize(
@@ -252,7 +254,9 @@ def test_tool_analytics_retains_only_categorical_work_status(
     execute_tool_calls([_call()], [_tool(execute=lambda _a, _c: payload)], {})
     assert captured[0]["work_status"] == ("" if status == "private result" else status)
     assert captured[0]["is_error"] is True
-    assert "private" not in str(captured[0])
+    assert captured[0]["error_message"] == "private error"
+    assert "private token" not in str(captured[0])
+    assert "private repository" not in str(captured[0])
 
 
 def test_after_hook_can_patch_result_and_terminate() -> None:
