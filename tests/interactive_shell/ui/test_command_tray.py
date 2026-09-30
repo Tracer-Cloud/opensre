@@ -173,6 +173,19 @@ async def test_tab_on_slash_command_opens_its_subcommand_tray() -> None:
 
 
 @pytest.mark.asyncio
+async def test_enter_submits_the_selected_subcommand_from_the_continuation_tray() -> None:
+    async with _running_prompt() as prompt:
+        _complete(prompt, "/")
+        _press(prompt, Keys.Tab)
+        _press(prompt, Keys.Down)
+
+        _press(prompt, Keys.ControlM)
+
+        assert prompt.app.future is not None
+        assert prompt.app.future.result() == "/integrations remove"
+
+
+@pytest.mark.asyncio
 async def test_rendered_cursor_tracks_character_index_after_wide_text() -> None:
     async with _running_prompt() as prompt:
         prompt.default_buffer.document = Document("你ab", 2)
