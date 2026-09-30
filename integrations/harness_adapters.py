@@ -18,10 +18,21 @@ def _setupable_services() -> tuple[str, ...]:
 
 
 def _fetch_webapp_vault() -> list[dict[str, Any]] | None:
-    """Webapp org integrations; the vault client imports on first use."""
+    """Org integrations for this process.
+
+    The hosted agent authenticates with the fleet secret. The interactive
+    shell does not have that secret; when the silo vault is not configured it
+    uses the signed-in account token instead. Both responses share one shape,
+    including Pipedream connections.
+    """
     import integrations.webapp_vault as webapp_vault
 
-    return webapp_vault.fetch_webapp_org_integrations()
+    remote = webapp_vault.fetch_webapp_org_integrations()
+    if remote is not None:
+        return remote
+    from integrations.account_vault import fetch_signed_in_org_integrations
+
+    return fetch_signed_in_org_integrations()
 
 
 def register_harness_adapters() -> None:
