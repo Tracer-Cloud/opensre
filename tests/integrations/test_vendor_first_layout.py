@@ -39,6 +39,9 @@ ALLOWED_FLAT_MODULES = frozenset(
         "mcp_streamable_http_compat.py",
         "mcp_transport.py",
         "messaging_security.py",
+        # Shared chat-delivery prompt for Slack, Telegram, Rocket.Chat, and Buzz.
+        # Routing for a connected channel lives on that vendor's tools.
+        "messaging_prompt.py",
         "models.py",
         "port.py",
         "probes.py",
