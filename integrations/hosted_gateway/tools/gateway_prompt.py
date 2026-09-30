@@ -133,8 +133,7 @@ _FAILED_INTEGRATION_NEXT_STEP = {
         "a menu in this shell; after the user answers, call this tool again with the same "
         "prompt_id and their selection is sent. Use it to run or check work there, for "
         "example whether a scheduled CI repair task is running. The OpenSRE app finds the "
-        "gateway from the signed-in account; no organization or gateway id is passed. "
-        "Organization admins only."
+        "gateway from the signed-in account; no organization or gateway id is passed."
     ),
     use_cases=[
         "Ask the hosted gateway which scheduled tasks it runs and whether the CI repair loop is active",

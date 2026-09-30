@@ -36,8 +36,6 @@ ERR_UNAUTHORIZED = "unauthorized"
 ERR_INVALID_RESPONSE = "invalid_response"
 # The app is older than this CLI and has no hosted-gateway routes yet.
 ERR_NOT_SUPPORTED = "not_supported"
-# Only an organization admin may start or stop the gateway.
-ERR_ADMIN_REQUIRED = "admin_required"
 # The organization has no gateway to start or stop.
 ERR_NOT_PROVISIONED = "not_provisioned"
 # The gateway exists but no task of it is running, so it cannot take a prompt.
@@ -62,7 +60,6 @@ EXPECTED_ERRORS = frozenset(
         ERR_INSECURE_APP_URL,
         ERR_UNAUTHORIZED,
         ERR_NOT_SUPPORTED,
-        ERR_ADMIN_REQUIRED,
         ERR_NOT_PROVISIONED,
         ERR_NOT_RUNNING,
         ERR_UNKNOWN_PROMPT,
@@ -202,7 +199,7 @@ class HostedGatewayClient:
         return _gateway_health(self._request("GET", HOSTED_GATEWAY_HEALTH_PATH, _REFUSALS))
 
     def start(self) -> GatewayHealth:
-        """Ask the app to start the organization's gateway; organization admins only."""
+        """Ask the app to start the organization's gateway."""
         return _gateway_health(
             self._request("POST", HOSTED_GATEWAY_START_PATH, _LIFECYCLE_REFUSALS)
         )
@@ -212,7 +209,7 @@ class HostedGatewayClient:
         return _gateway_health(self._request("POST", HOSTED_GATEWAY_STOP_PATH, _LIFECYCLE_REFUSALS))
 
     def send_prompt(self, prompt: str, *, context: dict[str, str]) -> PromptRecord:
-        """Queue a prompt on the organization's running gateway; admins only."""
+        """Queue a prompt on the organization's running gateway."""
         payload = self._request(
             "POST",
             HOSTED_GATEWAY_PROMPTS_PATH,
@@ -290,17 +287,15 @@ _REFUSALS: dict[int, str] = {
     HTTPStatus.NOT_FOUND: ERR_NOT_SUPPORTED,
 }
 
-#: Start and stop also refuse non-admins and organizations without a gateway.
+#: Start and stop also refuse organizations without a gateway.
 _LIFECYCLE_REFUSALS: dict[int, str] = {
     **_REFUSALS,
-    HTTPStatus.FORBIDDEN: ERR_ADMIN_REQUIRED,
     HTTPStatus.CONFLICT: ERR_NOT_PROVISIONED,
 }
 
-#: A prompt needs an admin and a running task; the app answers 409 for both missing cases.
+#: A prompt needs a running task; the app answers 409 when there is none.
 _PROMPT_REFUSALS: dict[int, str] = {
     **_REFUSALS,
-    HTTPStatus.FORBIDDEN: ERR_ADMIN_REQUIRED,
     HTTPStatus.CONFLICT: ERR_NOT_RUNNING,
     HTTPStatus.REQUEST_ENTITY_TOO_LARGE: ERR_PROMPT_TOO_LARGE,
 }
@@ -308,7 +303,6 @@ _PROMPT_REFUSALS: dict[int, str] = {
 #: Reading a result: 404 is the prompt, not the route, being unknown.
 _PROMPT_RESULT_REFUSALS: dict[int, str] = {
     HTTPStatus.UNAUTHORIZED: ERR_UNAUTHORIZED,
-    HTTPStatus.FORBIDDEN: ERR_ADMIN_REQUIRED,
     HTTPStatus.NOT_FOUND: ERR_UNKNOWN_PROMPT,
     HTTPStatus.CONFLICT: ERR_NOT_RUNNING,
 }
@@ -425,7 +419,6 @@ def _text(value: object) -> str:
 
 
 __all__ = [
-    "ERR_ADMIN_REQUIRED",
     "ERR_INSECURE_APP_URL",
     "ERR_INVALID_RESPONSE",
     "ERR_NOT_PROVISIONED",

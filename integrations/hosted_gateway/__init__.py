@@ -1,7 +1,6 @@
 """OpenSRE hosted gateway: the organization's managed Fargate gateway, reached through the app."""
 
 from integrations.hosted_gateway.client import (
-    ERR_ADMIN_REQUIRED,
     ERR_ALREADY_ANSWERED,
     ERR_INSECURE_APP_URL,
     ERR_INVALID_RESPONSE,
@@ -25,7 +24,6 @@ from integrations.hosted_gateway.client import (
 )
 
 __all__ = [
-    "ERR_ADMIN_REQUIRED",
     "ERR_ALREADY_ANSWERED",
     "ERR_INSECURE_APP_URL",
     "ERR_INVALID_RESPONSE",

@@ -30,8 +30,8 @@ STOP_TOOL_NAME = "stop_hosted_gateway"
 
 _NO_INPUT = {"type": "object", "properties": {}, "additionalProperties": False}
 _WHOSE = (
-    "The OpenSRE app finds the gateway from the account the user signed in with and allows "
-    "this to organization admins only; no organization or gateway id is passed."
+    "The OpenSRE app finds the gateway from the account the user signed in with; no "
+    "organization or gateway id is passed."
 )
 
 
@@ -58,9 +58,9 @@ _WHOSE = (
 def start_hosted_gateway() -> dict[str, Any]:
     """Ask the OpenSRE app to start the signed-in organization's gateway.
 
-    The start is always requested, so the app's admin check and its refusals
-    apply. A health read beforehand only shapes the reply: a gateway that was
-    already running is told so. That read is best effort and never blocks the start.
+    The start is always requested, so the app's refusals apply. A health read
+    beforehand only shapes the reply: a gateway that was already running is told
+    so. That read is best effort and never blocks the start.
     """
     try:
         with HostedGatewayClient.from_account() as client:

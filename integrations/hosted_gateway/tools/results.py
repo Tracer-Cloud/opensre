@@ -8,7 +8,6 @@ from config.constants.capabilities import HOSTED_GATEWAY_CAPABILITY
 from core.agent_harness.tools import capability_available_from_sources
 from core.tool import report_run_error
 from integrations.hosted_gateway.client import (
-    ERR_ADMIN_REQUIRED,
     ERR_INSECURE_APP_URL,
     ERR_NOT_PROVISIONED,
     ERR_NOT_RUNNING,
@@ -35,7 +34,6 @@ _FAILURE_TEXT = {
     ERR_NOT_SIGNED_IN: f"You are not signed in to OpenSRE. Run `{_SIGN_IN}` first.",
     ERR_UNAUTHORIZED: f"Your OpenSRE sign-in expired or was revoked. Run `{_SIGN_IN}` again.",
     ERR_NOT_SUPPORTED: "The OpenSRE app you are signed in to does not offer this yet.",
-    ERR_ADMIN_REQUIRED: "Only an organization admin can start or stop the hosted gateway.",
     ERR_NOT_PROVISIONED: "Your organization has no hosted gateway to start or stop yet.",
     ERR_NOT_RUNNING: "Your organization's hosted gateway is not running, so it cannot take a prompt.",
     ERR_UNKNOWN_PROMPT: "The hosted gateway no longer holds that prompt; send it again.",
