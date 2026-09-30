@@ -150,6 +150,29 @@ async def test_enter_submits_the_visibly_highlighted_automatic_completion() -> N
 
 
 @pytest.mark.asyncio
+async def test_tab_on_slash_command_opens_its_subcommand_tray() -> None:
+    async with _running_prompt() as prompt:
+        _complete(prompt, "/")
+
+        _press(prompt, Keys.Tab)
+
+        state = prompt.default_buffer.complete_state
+        assert prompt.default_buffer.text == "/integrations "
+        assert state is not None
+        assert [completion.text for completion in state.completions] == [
+            "setup",
+            "remove",
+            "list",
+            "ls",
+            "verify",
+            "show",
+        ]
+        lines = _screen_lines(prompt)
+        assert any("› setup" in line for line in lines)
+        assert any("Subcommands · /integrations" in line for line in lines)
+
+
+@pytest.mark.asyncio
 async def test_rendered_cursor_tracks_character_index_after_wide_text() -> None:
     async with _running_prompt() as prompt:
         prompt.default_buffer.document = Document("你ab", 2)
@@ -294,13 +317,15 @@ async def test_escape_closes_completions_before_clearing_or_cancelling(
         state = Mock()
         state.is_dispatch_running.return_value = dispatch_running
         install_session_key_bindings(prompt, build_cancel_key_bindings(state))
-        _complete(prompt, "/m")
-        prompt.default_buffer.go_to_completion(0)
+        _complete(prompt, "/mod")
+        _press(prompt, Keys.Tab)
+        assert prompt.default_buffer.text == "/model "
+        assert prompt.default_buffer.complete_state is not None
 
         _press(prompt, Keys.Escape)
 
         assert prompt.default_buffer.complete_state is None
-        assert prompt.default_buffer.text == "/m"
+        assert prompt.default_buffer.text == "/model "
         state.cancel_current_dispatch.assert_not_called()
 
         _press(prompt, Keys.Escape)

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from typing import Protocol
 
-from prompt_toolkit.buffer import Buffer
-from prompt_toolkit.completion import CompleteEvent
+from prompt_toolkit.buffer import Buffer, CompletionState
+from prompt_toolkit.completion import CompleteEvent, Completion
 from prompt_toolkit.filters import has_completions
 from prompt_toolkit.input.ansi_escape_sequences import ANSI_SEQUENCES
 from prompt_toolkit.key_binding import KeyBindings, merge_key_bindings
@@ -16,6 +16,7 @@ from infrastructure.terminal.prompt_support import (
     CTRL_C_DOUBLE_PRESS_WINDOW_S,
     repl_prompt_ctrl_c_should_exit,
 )
+from surfaces.interactive_shell.ui.input_prompt.completion import subcommand_completions
 
 
 class _DispatchCancelState(Protocol):
@@ -55,7 +56,21 @@ def _install_modified_enter_sequences() -> None:
         ANSI_SEQUENCES.setdefault(sequence, Keys.ControlM)
 
 
-def _tab_expand_or_menu(buffer: Buffer) -> None:
+def _apply_completion(
+    buffer: Buffer,
+    completion: Completion,
+    *,
+    open_subcommands: bool,
+) -> None:
+    """Apply a completion and, on Tab, continue into its first-argument choices."""
+    subcommands = subcommand_completions(completion.text) if open_subcommands else ()
+    buffer.apply_completion(completion)
+    if subcommands:
+        buffer.insert_text(" ")
+        buffer.complete_state = CompletionState(buffer.document, list(subcommands))
+
+
+def _tab_expand_or_menu(buffer: Buffer, *, open_subcommands: bool = True) -> None:
     """Apply the current completion or open the menu when several choices exist."""
     if buffer.complete_state:
         state = buffer.complete_state
@@ -63,7 +78,7 @@ def _tab_expand_or_menu(buffer: Buffer) -> None:
         if completion is None and state.completions:
             completion = state.completions[0]
         if completion is not None:
-            buffer.apply_completion(completion)
+            _apply_completion(buffer, completion, open_subcommands=open_subcommands)
         return
     if buffer.completer is None:
         return
@@ -74,7 +89,7 @@ def _tab_expand_or_menu(buffer: Buffer) -> None:
         )
     )
     if len(completions) == 1:
-        buffer.apply_completion(completions[0])
+        _apply_completion(buffer, completions[0], open_subcommands=open_subcommands)
     else:
         buffer.start_completion(select_first=True)
 
@@ -89,7 +104,7 @@ def _build_prompt_key_bindings() -> KeyBindings:
             event.current_buffer.newline(copy_margin=False)
             return
         if event.current_buffer.complete_state is not None:
-            _tab_expand_or_menu(event.current_buffer)
+            _tab_expand_or_menu(event.current_buffer, open_subcommands=False)
         event.current_buffer.validate_and_handle()
 
     @bindings.add("c-j")

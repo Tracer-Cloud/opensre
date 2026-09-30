@@ -400,14 +400,22 @@ def test_shell_completer_suggests_effort_levels() -> None:
     assert names == ["high", "low", "max", "medium", "xhigh"]
 
 
-def test_tab_applies_unique_slash_command_completion() -> None:
+def test_tab_on_unique_slash_command_opens_its_subcommands() -> None:
     buff = Buffer(completer=ShellCompleter())
     buff.insert_text("/mod")
     _tab_expand_or_menu(buff)
-    assert buff.text == "/model"
+
+    assert buff.text == "/model "
+    assert buff.complete_state is not None
+    assert [completion.text for completion in buff.complete_state.completions] == [
+        "show",
+        "set",
+        "restore",
+        "toolcall",
+    ]
 
 
-def test_tab_with_open_completion_menu_applies_current_item() -> None:
+def test_tab_with_open_completion_menu_opens_selected_command_subcommands() -> None:
     from prompt_toolkit.buffer import CompletionState
     from prompt_toolkit.completion import Completion
 
@@ -421,8 +429,14 @@ def test_tab_with_open_completion_menu_applies_current_item() -> None:
 
     _tab_expand_or_menu(buff)
 
-    assert buff.complete_state is None
-    assert buff.text == "/model"
+    assert buff.text == "/model "
+    assert buff.complete_state is not None
+    assert [completion.text for completion in buff.complete_state.completions] == [
+        "show",
+        "set",
+        "restore",
+        "toolcall",
+    ]
 
 
 def test_tab_with_menu_and_no_index_applies_first_choice() -> None:
@@ -438,8 +452,8 @@ def test_tab_with_menu_and_no_index_applies_first_choice() -> None:
 
     _tab_expand_or_menu(buff)
 
-    assert buff.complete_state is None
-    assert buff.text == "/model"
+    assert buff.text == "/model "
+    assert buff.complete_state is not None
 
 
 def test_completion_includes_tab_navigation() -> None:
