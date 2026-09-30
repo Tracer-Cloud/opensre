@@ -831,7 +831,7 @@ def test_execute_cli_actions_shell_command_times_out(monkeypatch: object) -> Non
         "type": "shell",
         "text": "true",
         "ok": False,
-        "response_text": "command timed out after 120 seconds",
+        "response_text": "command timed out after 240 seconds",
     }
     output = buf.getvalue().lower()
     assert "timed out" in output
