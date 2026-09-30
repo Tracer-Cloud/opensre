@@ -11,11 +11,10 @@ opensre
 ```
 
 Type `/` to open the command tray attached to the input. Browse with the arrow
-keys and press Enter to run the highlighted suggestion. Tab completes a command
-and, when it has subcommands, adds the separating space and opens its
-subcommand tray. Esc closes the tray without clearing your draft or stopping
-running work. On narrow terminals, the highlighted command's description
-appears below the list.
+keys and use Enter or Tab on a command with subcommands to add the separating
+space and open its subcommand tray. Enter runs a final command selection. Esc
+closes the tray without clearing your draft or stopping running work. On narrow
+terminals, the highlighted command's description appears below the list.
 
 <Info>
   Confirmation prompts come from **`/auto`** (tool-approval autonomy) and from
@@ -60,7 +59,7 @@ platform and prints that call's starting directory.
 | --- | --- |
 | **Up/Down** | Browse suggestions while the command tray is open; otherwise recall persisted command history (when enabled) |
 | **Tab** | Complete the highlighted suggestion; for commands with subcommands, open their tray |
-| **Enter** | Run the highlighted suggestion, or submit the draft when the tray is closed |
+| **Enter** | Open the highlighted command's subcommand tray, or run a final selection |
 | **Esc** | Close the command tray first; otherwise stop running work or clear the draft |
 | **Ctrl+C** once | Cancel in-flight streaming work or interrupt the current prompt |
 | **Ctrl+C** twice within 2s | Exit the REPL (prints `/resume` hint) |
