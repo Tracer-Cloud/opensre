@@ -17,6 +17,7 @@ from integrations.hosted_gateway.client import (
     ERR_PROMPT_TOO_LARGE,
     ERR_UNAUTHORIZED,
     ERR_UNKNOWN_PROMPT,
+    ERR_UNREACHABLE,
     EXPECTED_ERRORS,
     GatewayHealth,
     HostedGatewayError,
@@ -39,6 +40,10 @@ _FAILURE_TEXT = {
     ERR_NOT_RUNNING: "Your organization's hosted gateway is not running, so it cannot take a prompt.",
     ERR_UNKNOWN_PROMPT: "The hosted gateway no longer holds that prompt; send it again.",
     ERR_PROMPT_TOO_LARGE: "That prompt is too long for the hosted gateway; shorten it.",
+    ERR_UNREACHABLE: (
+        "The OpenSRE app did not answer (the connection failed or timed out). Check this "
+        "machine's network connection."
+    ),
     ERR_INSECURE_APP_URL: (
         "The OpenSRE app URL of this sign-in is not https, so the account token was not "
         f"sent. Sign in again with `{_SIGN_IN}`."

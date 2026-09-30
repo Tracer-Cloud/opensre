@@ -19,6 +19,7 @@ import httpx
 
 from config.account import load_account_record, resolve_account_token
 from config.constants.hosted_gateway import (
+    HOSTED_GATEWAY_CONNECT_TIMEOUT_SECONDS,
     HOSTED_GATEWAY_HEALTH_PATH,
     HOSTED_GATEWAY_HTTP_TIMEOUT_SECONDS,
     HOSTED_GATEWAY_LOOPBACK_HOSTS,
@@ -50,6 +51,9 @@ ERR_ALREADY_ANSWERED = "already_answered"
 
 #: A prompt id as the gateway mints it; anything else never becomes part of a URL.
 _PROMPT_ID = re.compile(r"^p_[0-9a-f]{32}$")
+
+#: Failures before a connection existed, so no byte of the request reached the app.
+_CONNECT_FAILURES = (httpx.ConnectError, httpx.ConnectTimeout)
 
 #: Failures of the account or its setup, not of the service: nothing to report as an incident.
 EXPECTED_ERRORS = frozenset(
@@ -163,7 +167,9 @@ class HostedGatewayClient:
         self._http = httpx.Client(
             base_url=self.app_url,
             headers={"Authorization": f"Bearer {token}"},
-            timeout=HOSTED_GATEWAY_HTTP_TIMEOUT_SECONDS,
+            timeout=httpx.Timeout(
+                HOSTED_GATEWAY_HTTP_TIMEOUT_SECONDS, connect=HOSTED_GATEWAY_CONNECT_TIMEOUT_SECONDS
+            ),
             follow_redirects=False,
             transport=transport,
         )
@@ -249,7 +255,7 @@ class HostedGatewayClient:
         body_codes: frozenset[str] = frozenset(),
     ) -> dict[str, Any]:
         try:
-            response = self._http.request(method, path, json=body)
+            response = self._send(method, path, body)
         except httpx.HTTPError as exc:
             raise HostedGatewayError(ERR_UNREACHABLE) from exc
         refusal = refusals.get(response.status_code)
@@ -265,6 +271,17 @@ class HostedGatewayClient:
         if not isinstance(payload, dict):
             raise HostedGatewayError(ERR_INVALID_RESPONSE, response.status_code)
         return payload
+
+    def _send(self, method: str, path: str, body: dict[str, Any] | None) -> httpx.Response:
+        """Send, with one fresh connection if the first could not be made.
+
+        Only a connect failure is retried: the request never left, so a prompt
+        cannot be queued twice. A read timeout may follow an accepted prompt.
+        """
+        try:
+            return self._http.request(method, path, json=body)
+        except _CONNECT_FAILURES:
+            return self._http.request(method, path, json=body)
 
 
 #: Status codes every hosted-gateway route uses to refuse a request, as stable client codes.

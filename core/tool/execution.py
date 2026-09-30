@@ -15,6 +15,7 @@ from core.domain.types.tools import ToolRole
 from core.llm.types import ToolCall
 from core.tool.contracts import AgentTool, AgentToolContext, RuntimeTool
 from infrastructure.observability.errors.boundary import report_exception
+from infrastructure.observability.errors.service import is_service_unreachable
 from infrastructure.observability.trace.observations import (
     ObservationLevel,
     is_observation_sink_active,
@@ -71,6 +72,10 @@ def report_run_error(
     ``BaseTool`` ClassVars). ``component`` should identify the call site —
     typically ``"<module>.<function_or_class>"`` — so Sentry groups events
     per tool implementation, not per top-level surface tag.
+
+    A failure whose cause chain ends in an unreachable service (refused, DNS,
+    timeout) is a warning without a traceback, as in ``capture_service_error``:
+    the shell prints ERROR records, and that stack is only HTTP client internals.
     """
     tags: dict[str, str] = {
         "surface": "tool",
@@ -80,13 +85,15 @@ def report_run_error(
     }
     if method:
         tags["method"] = method
+    unreachable = is_service_unreachable(exc)
     report_exception(
         exc,
         logger=logger or _TOOL_LOGGER,
         message=f"Tool {tool_name} failed: {type(exc).__name__}",
-        severity=severity,
+        severity="warning" if unreachable else severity,
         tags=tags,
         extras=extras,
+        include_traceback=not unreachable,
     )
 
 

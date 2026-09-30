@@ -200,6 +200,7 @@ EXPORTS: dict[str, str] = {
     "OPENSRE_COMMIT_COAUTHOR_NAME": "git",
     "OPENSRE_COMMIT_COAUTHOR_TRAILER": "git",
     # hosted gateway
+    "HOSTED_GATEWAY_CONNECT_TIMEOUT_SECONDS": "hosted_gateway",
     "HOSTED_GATEWAY_HEALTH_PATH": "hosted_gateway",
     "HOSTED_GATEWAY_HTTP_TIMEOUT_SECONDS": "hosted_gateway",
     "HOSTED_GATEWAY_LOOPBACK_HOSTS": "hosted_gateway",

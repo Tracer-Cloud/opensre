@@ -587,6 +587,9 @@ if TYPE_CHECKING:
         HONEYCOMB_DATASET_ENV as HONEYCOMB_DATASET_ENV,
     )
     from config.constants.hosted_gateway import (
+        HOSTED_GATEWAY_CONNECT_TIMEOUT_SECONDS as HOSTED_GATEWAY_CONNECT_TIMEOUT_SECONDS,
+    )
+    from config.constants.hosted_gateway import (
         HOSTED_GATEWAY_HEALTH_PATH as HOSTED_GATEWAY_HEALTH_PATH,
     )
     from config.constants.hosted_gateway import (

@@ -9,6 +9,7 @@ from types import SimpleNamespace
 from typing import Any
 from unittest.mock import MagicMock
 
+import httpx
 import pytest
 from pydantic import BaseModel, ValidationError, model_validator
 
@@ -124,6 +125,42 @@ def test_report_run_error_supports_warning_severity(
     assert error_records == [], "warning severity must not log at error level"
     warning_records = [r for r in caplog.records if r.levelno == logging.WARNING]
     assert warning_records, "warning severity must produce a WARNING log record"
+
+
+def _handshake_timeout_wrapped_by_a_tool_error() -> Exception:
+    """The shape a client raises: its own error from httpx's ConnectTimeout."""
+    request = httpx.Request("POST", "https://app.test/api/agent-backend/gateway/prompts")
+    try:
+        try:
+            raise httpx.ConnectTimeout("The handshake operation timed out", request=request)
+        except httpx.ConnectTimeout as timeout:
+            raise RuntimeError("unreachable") from timeout
+    except RuntimeError as wrapped:
+        return wrapped
+
+
+def test_report_run_error_for_an_unreachable_service_is_one_warning_without_a_stack(
+    captured_sentry_events: list[Any],
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """The shell prints ERROR records; a transient timeout must not dump the HTTP stack there.
+
+    Regression: one hosted-gateway handshake timeout put ~90 lines of httpx and
+    httpcore frames between the shell's progress lines.
+    """
+    with caplog.at_level(logging.DEBUG, logger="tools"):
+        report_run_error(
+            _handshake_timeout_wrapped_by_a_tool_error(),
+            tool_name="ask_hosted_gateway",
+            source="opensre",
+            component="integrations.hosted_gateway.tools.gateway_prompt.ask_hosted_gateway",
+        )
+
+    assert [(r.levelno, r.getMessage()) for r in caplog.records] == [
+        (logging.WARNING, "Tool ask_hosted_gateway failed: RuntimeError")
+    ]
+    assert "Traceback" not in caplog.text
+    assert len(captured_sentry_events) == 1, "an outage of the app must stay visible in Sentry"
 
 
 class _SecretToolConfig(BaseModel):
