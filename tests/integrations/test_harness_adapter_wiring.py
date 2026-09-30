@@ -31,11 +31,11 @@ def test_action_prompt_fragments_cover_every_registered_vendor() -> None:
     # Act
     fragments = harness_providers.action_prompt_vendor_fragments()
 
-    # Assert
-    assert "slack_read_messages" in fragments
+    # Assert: GitHub routing plus the shared chat-delivery fallback; chat vendors'
+    # own routing lives on their tool descriptions, not in every prompt.
     assert "github" in fragments.lower()
-    assert "telegram" in fragments.lower()
-    assert "rocketchat" in fragments.lower()
+    assert "MESSAGING DELIVERY" in fragments
+    assert "slack_read_messages" not in fragments
 
 
 def test_assistant_prompt_fragments_cover_every_registered_vendor() -> None:

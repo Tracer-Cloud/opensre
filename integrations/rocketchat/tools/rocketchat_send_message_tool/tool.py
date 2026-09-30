@@ -29,14 +29,14 @@ class RocketChatSendMessageTool(BaseTool):
     source = SOURCE
     description = (
         "Send a plain-text message via the configured Rocket.Chat integration. "
-        "Use this for explicit user-requested Rocket.Chat message actions and for "
-        "incident notifications. The tool resolves credentials internally and "
-        "returns structured delivery status without exposing secrets."
+        "Use it only when the user asks to send something to Rocket.Chat; do not send "
+        "alerts or turn results there on your own. The tool resolves credentials "
+        "internally and returns structured delivery status without exposing secrets."
     )
     use_cases = [
         "Sending a user-requested message to the configured Rocket.Chat default channel",
-        "Posting a concise incident notification to a Rocket.Chat channel or user",
-        "Following up after an investigation with a short status update",
+        "Posting an incident notification the user asked for to a Rocket.Chat channel or user",
+        "Sending a short status update the user asked for after an investigation",
     ]
     requires = ["rocketchat"]
     side_effect_level = SideEffectLevel.EXTERNAL

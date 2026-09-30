@@ -133,21 +133,15 @@ def _register_prompt_fragments() -> None:
         register_action_prompt_fragment,
         register_assistant_prompt_fragment,
     )
-    from integrations.buzz.action_prompt import buzz_action_prompt_fragment
     from integrations.github.action_prompt import github_action_prompt_fragment
+    from integrations.messaging_prompt import messaging_action_prompt_fragment
     from integrations.posthog.assistant_prompt import posthog_assistant_prompt_fragment
-    from integrations.rocketchat.action_prompt import rocketchat_action_prompt_fragment
     from integrations.sentry.assistant_prompt import sentry_assistant_prompt_fragment
-    from integrations.slack.action_prompt import slack_action_prompt_fragment
     from integrations.slack.assistant_prompt import slack_assistant_prompt_fragment
-    from integrations.telegram.action_prompt import telegram_action_prompt_fragment
 
     clear_action_prompt_fragments()
-    register_action_prompt_fragment(slack_action_prompt_fragment)
     register_action_prompt_fragment(github_action_prompt_fragment)
-    register_action_prompt_fragment(telegram_action_prompt_fragment)
-    register_action_prompt_fragment(rocketchat_action_prompt_fragment)
-    register_action_prompt_fragment(buzz_action_prompt_fragment)
+    register_action_prompt_fragment(messaging_action_prompt_fragment)
 
     clear_assistant_prompt_fragments()
     register_assistant_prompt_fragment(sentry_assistant_prompt_fragment)

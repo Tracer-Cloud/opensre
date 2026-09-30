@@ -67,7 +67,9 @@ def _work_items_available(_sources: dict[str, dict[str, Any]]) -> bool:
     description=(
         "Create a durable human work item, todo, reminder, or hackathon task. Use this for "
         "'add task ...', 'todo ...', 'remind me ...', and follow-ups the user wants tracked. "
-        "If remind_at is provided, also schedule a one-shot reminder to the selected channel."
+        "If remind_at is provided, also schedule a one-shot reminder to the selected channel. "
+        "In a Slack gateway turn the reminder targets the current channel automatically; "
+        "add channel_targets to also send it to other chats."
     ),
     use_cases=[
         "User asks to add a task or todo",
