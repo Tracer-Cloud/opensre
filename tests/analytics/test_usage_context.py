@@ -101,7 +101,9 @@ def test_slack_signup_stamps_member_and_workspace_without_replacing_caller_value
         slack_team_id="T123",
     ):
         props = build_usage_enrichment()
-        merged = merge_usage_enrichment({"slack_user_id": "U_CALLER", "organization_id": "org_caller"})
+        merged = merge_usage_enrichment(
+            {"slack_user_id": "U_CALLER", "organization_id": "org_caller"}
+        )
     assert props["slack_user_id"] == "U094FN4AHME"
     assert props["slack_team_id"] == "T123"
     assert props["user_id"] == "U094FN4AHME"
