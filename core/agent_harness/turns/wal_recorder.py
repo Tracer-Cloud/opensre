@@ -1,12 +1,14 @@
 """Write-ahead logging for action-turn tool execution.
 
-The ReAct loop emits ``ToolExecutionStartEvent`` *before* ``execute_tool_calls``
-runs and ``ToolExecutionEndEvent`` after, both synchronously. Recording the
+The ReAct loop emits ``ToolExecutionStartEvent`` synchronously, immediately
+before each call executes, and ``ToolExecutionEndEvent`` after. Recording the
 intent on Start (durably, fsynced) and the commit on End therefore gives the
 write-ahead property with no loop changes: a ``tool_intent`` record with no
-matching ``tool_call`` commit after the process died means the turn was
-interrupted mid-execution. Recovery re-discovers state instead of replaying —
-see ``core.agent_harness.session.persistence.wal_recovery``.
+matching ``tool_call`` commit after the process died means that call was
+interrupted mid-execution. A call that never started — skipped after an
+earlier call ended the turn, or part of a rejected batch — gets no intent
+record, only its error commit. Recovery re-discovers state instead of
+replaying — see ``core.agent_harness.session.persistence.wal_recovery``.
 """
 
 from __future__ import annotations

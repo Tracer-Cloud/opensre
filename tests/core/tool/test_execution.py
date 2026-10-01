@@ -467,10 +467,18 @@ def test_several_actions_in_one_response_run_in_provider_order() -> None:
     tools = [_tool("first", execute=record("first")), _tool("second", execute=record("second"))]
     batch_seen: list[int] = []
     hooks = ToolExecutionHooks(before_tool_batch=lambda calls: batch_seen.append(len(calls)))
+    started: list[str] = []
 
-    results = execute_tool_calls([_call("first"), _call("second")], tools, {}, hooks=hooks)
+    results = execute_tool_calls(
+        [_call("first"), _call("second")],
+        tools,
+        {},
+        hooks=hooks,
+        on_call_start=lambda tc: started.append(tc.name),
+    )
 
     assert ran == ["first", "second"]
+    assert started == ["first", "second"]
     assert batch_seen == [2]
     assert not any(result.is_error for result in results)
 
@@ -487,10 +495,18 @@ def test_terminating_result_skips_the_rest_of_the_batch() -> None:
         return {"ok": True}
 
     tools = [_tool("first", execute=terminating), _tool("second", execute=second)]
+    started: list[str] = []
 
-    results = execute_tool_calls([_call("first"), _call("second")], tools, {})
+    results = execute_tool_calls(
+        [_call("first"), _call("second")],
+        tools,
+        {},
+        on_call_start=lambda tc: started.append(tc.name),
+    )
 
     assert ran == ["first"]
+    # The skipped call never started, so no intent record is written for it.
+    assert started == ["first"]
     assert results[0].terminate and not results[0].is_error
     assert results[1].is_error and not results[1].terminate
     assert results[1].metadata.get("skipped") is True

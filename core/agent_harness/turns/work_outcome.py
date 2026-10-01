@@ -30,10 +30,14 @@ def tap_executed_tool_outcomes(
     inner: RuntimeEventCallback | None,
     outcomes: list[ExecutedToolOutcome],
 ) -> RuntimeEventCallback:
-    """Wrap ``inner`` to record each executed tool's payload into ``outcomes``."""
+    """Wrap ``inner`` to record each executed tool's payload into ``outcomes``.
+
+    A call skipped because an earlier call ended the turn never ran, so its
+    error reply is not a work outcome (it would read as a failed work tool).
+    """
 
     def _callback(event: RuntimeEvent) -> None:
-        if isinstance(event, ToolExecutionEndEvent):
+        if isinstance(event, ToolExecutionEndEvent) and not event.data.get("skipped"):
             outcomes.append(
                 ExecutedToolOutcome(
                     name=event.tool_name,

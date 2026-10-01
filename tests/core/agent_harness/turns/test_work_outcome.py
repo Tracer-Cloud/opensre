@@ -104,3 +104,22 @@ def test_tap_records_payload_from_tool_end_events() -> None:
     assert recorded[0].name == "shell_run"
     assert recorded[0].details == {"ok": False, "exit_code": 1}
     assert last_work_tool_failed(recorded) is True
+
+
+def test_tap_ignores_calls_skipped_after_the_turn_ended() -> None:
+    """A skipped call never ran; its error reply must not read as failed work."""
+    recorded: list[ExecutedToolOutcome] = []
+    callback = tap_executed_tool_outcomes(None, recorded)
+    callback(
+        ToolExecutionEndEvent(
+            tool_call_id="s-1",
+            tool_name="shell_run",
+            args={"command": "curl"},
+            result={"error": "Not run: ask_user_choice ended the turn"},
+            is_error=True,
+            iteration=0,
+            data={"skipped": True},
+        )
+    )
+    assert recorded == []
+    assert last_work_tool_failed(recorded) is False

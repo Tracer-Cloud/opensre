@@ -247,6 +247,7 @@ def execute_tool_calls(
     hooks: ToolExecutionHooks | None = None,
     tool_resources: dict[str, Any] | None = None,
     should_stop: Callable[[], bool] | None = None,
+    on_call_start: Callable[[ToolCall], None] | None = None,
 ) -> list[ToolExecutionResult]:
     """Execute provider-requested tools sequentially and return structured results.
 
@@ -256,7 +257,12 @@ def execute_tool_calls(
     nothing: every call gets the same error so the model re-issues the menu
     alone. Once a result terminates the turn, or ``should_stop`` reports a
     host cancel, the remaining calls are skipped: each still gets an error
-    result (providers require one per tool-call id) that says it did not run.
+    result (providers require one per tool-call id) that says it did not run,
+    marked ``metadata.skipped``.
+
+    ``on_call_start`` fires immediately before a call executes — never for a
+    skipped call or a rejected batch — so a host can write a durable per-call
+    intent record that only ever covers work that actually started.
     """
 
     hooks = hooks or ToolExecutionHooks()
@@ -301,6 +307,8 @@ def execute_tool_calls(
                 error_message=str(skipped.content),
             )
             continue
+        if on_call_start is not None:
+            on_call_start(tc)
         started = time.monotonic()
         with (
             observe_tool(
