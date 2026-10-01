@@ -46,6 +46,10 @@ _SURFACE: ContextVar[str | None] = ContextVar("analytics_surface", default=None)
 _SESSION_ID: ContextVar[str | None] = ContextVar("analytics_session_id", default=None)
 _USER_ID: ContextVar[str | None] = ContextVar("analytics_user_id", default=None)
 _ORGANIZATION_ID: ContextVar[str | None] = ContextVar("analytics_organization_id", default=None)
+# Dedicated Slack stamps. ``user_id`` stays the best-effort platform id; these
+# names stay unambiguous when a later client also records an account id.
+_SLACK_USER_ID: ContextVar[str | None] = ContextVar("analytics_slack_user_id", default=None)
+_SLACK_TEAM_ID: ContextVar[str | None] = ContextVar("analytics_slack_team_id", default=None)
 
 # Process-scoped fallback for one-shot CLI workloads
 # that never enter a REPL session. Bound ContextVar / REPL session_id always win.
@@ -134,6 +138,8 @@ def bound_usage_context(
     session_id: str | None = None,
     user_id: str | None = None,
     organization_id: str | None = None,
+    slack_user_id: str | None = None,
+    slack_team_id: str | None = None,
 ) -> Iterator[None]:
     """Bind usage analytics context for one CLI process scope or gateway turn."""
     tokens: list[tuple[ContextVar[str | None], Token[str | None]]] = []
@@ -145,6 +151,10 @@ def bound_usage_context(
         tokens.append((_USER_ID, bind_user_id(user_id)))
     if organization_id is not None:
         tokens.append((_ORGANIZATION_ID, bind_organization_id(organization_id)))
+    if slack_user_id is not None:
+        tokens.append((_SLACK_USER_ID, _SLACK_USER_ID.set(slack_user_id)))
+    if slack_team_id is not None:
+        tokens.append((_SLACK_TEAM_ID, _SLACK_TEAM_ID.set(slack_team_id)))
     try:
         yield
     finally:
@@ -168,6 +178,12 @@ def build_usage_enrichment() -> Properties:
     user_id = get_user_id()
     if user_id:
         props["user_id"] = user_id
+    slack_user_id = _SLACK_USER_ID.get()
+    if slack_user_id:
+        props["slack_user_id"] = slack_user_id
+    slack_team_id = _SLACK_TEAM_ID.get()
+    if slack_team_id:
+        props["slack_team_id"] = slack_team_id
     return props
 
 

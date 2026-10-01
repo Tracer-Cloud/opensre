@@ -348,6 +348,9 @@ class SlackTurnDispatcher:
                             surface=UsageSurface.SLACK,
                             session_id=session.session_id,
                             user_id=inbound.user_id or None,
+                            organization_id=scope.principal.id,
+                            slack_user_id=inbound.user_id or None,
+                            slack_team_id=inbound.team_id or None,
                         ),
                         bound_turn_metering(
                             organization_id=scope.principal.id,
