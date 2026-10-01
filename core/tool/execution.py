@@ -246,13 +246,17 @@ def execute_tool_calls(
     *,
     hooks: ToolExecutionHooks | None = None,
     tool_resources: dict[str, Any] | None = None,
+    should_stop: Callable[[], bool] | None = None,
 ) -> list[ToolExecutionResult]:
     """Execute provider-requested tools sequentially and return structured results.
 
-    A response may carry one ``ACTION`` (or one ``TURN_ENDING`` call alone), plus
-    any ``BOOKKEEPING`` calls next to the action. A response that breaks that
-    rule executes nothing: every call gets the same error so the model
-    re-issues a single action. Permitted calls run in provider order.
+    A response may carry several calls; they run one after another in provider
+    order. A ``TURN_ENDING`` call hands control to the user and must be the
+    only call in its response — a response that breaks that rule executes
+    nothing: every call gets the same error so the model re-issues the menu
+    alone. Once a result terminates the turn, or ``should_stop`` reports a
+    host cancel, the remaining calls are skipped: each still gets an error
+    result (providers require one per tool-call id) that says it did not run.
     """
 
     hooks = hooks or ToolExecutionHooks()
@@ -280,7 +284,23 @@ def execute_tool_calls(
     runtime_resources = dict(tool_resources or {})
 
     results: list[ToolExecutionResult] = []
+    stop_reason: str | None = None
     for tc in tool_calls:
+        if stop_reason is None and should_stop is not None and should_stop():
+            stop_reason = "the turn was cancelled"
+        if stop_reason is not None:
+            skipped = _skipped_result(tc.name, stop_reason)
+            results.append(skipped)
+            _capture_tool_call_analytics(
+                tc,
+                tool=tool_map.get(tc.name),
+                outcome="skipped",
+                is_error=True,
+                terminate=False,
+                duration_ms=0,
+                error_message=str(skipped.content),
+            )
+            continue
         started = time.monotonic()
         with (
             observe_tool(
@@ -315,6 +335,8 @@ def execute_tool_calls(
             details=result.details,
             error_message=_descriptive_tool_error(result),
         )
+        if result.terminate:
+            stop_reason = f"{tc.name} ended the turn"
     return results
 
 
@@ -384,7 +406,7 @@ def response_batch_violation(
     tool_calls: Sequence[ToolCall],
     tool_map: Mapping[str, RuntimeTool],
 ) -> str | None:
-    """Explain why one response's tool calls break the one-action rule, or ``None``."""
+    """Explain why one response's tool calls break the lone-menu rule, or ``None``."""
     if len(tool_calls) <= 1:
         return None
     roles = [tool_role(tool_map.get(tc.name)) for tc in tool_calls]
@@ -397,15 +419,6 @@ def response_batch_violation(
             f"Nothing ran: {turn_ending[0]} hands the turn to the user and must be the only "
             f"tool call in a response, but this response requested {len(tool_calls)} "
             f"({requested}). Re-issue {turn_ending[0]} alone, after any other work."
-        )
-    actions = [
-        tc.name for tc, role in zip(tool_calls, roles, strict=True) if role is ToolRole.ACTION
-    ]
-    if len(actions) != 1:
-        return (
-            f"Nothing ran: one action per response, but this response requested "
-            f"{len(actions)} ({', '.join(actions)}). Re-issue exactly one of them; "
-            "bookkeeping calls such as update_plan may accompany it."
         )
     return None
 
@@ -608,6 +621,15 @@ def _content_from_payload(raw: Any) -> str | list[dict[str, Any]]:
     if isinstance(raw, list) and all(isinstance(item, dict) for item in raw):
         return raw
     return json.dumps(raw, default=str)
+
+
+def _skipped_result(tool_name: str, reason: str) -> ToolExecutionResult:
+    """Error result for a call skipped because an earlier call ended the turn."""
+    return _error_result(
+        f"Not run: {reason}, so this call was skipped. "
+        "Re-issue it next turn if it is still needed.",
+        metadata={"tool_name": tool_name, "skipped": True},
+    )
 
 
 def _error_result(message: str, *, metadata: dict[str, Any] | None = None) -> ToolExecutionResult:

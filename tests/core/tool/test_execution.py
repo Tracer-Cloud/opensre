@@ -222,9 +222,9 @@ def test_tool_call_analytics_records_batch_rejection(
         "infrastructure.analytics.capture.capture_agent_tool_call_completed",
         lambda **properties: captured.append(properties),
     )
-    tools = [_tool("first"), _tool("second")]
+    tools = [_tool("first"), _tool("menu", role=ToolRole.TURN_ENDING)]
 
-    execute_tool_calls([_call("first"), _call("second")], tools, {})
+    execute_tool_calls([_call("first"), _call("menu")], tools, {})
 
     assert [event["outcome"] for event in captured] == ["batch_rejected", "batch_rejected"]
     assert all(event["executed"] is False for event in captured)
@@ -454,7 +454,7 @@ def test_bookkeeping_may_accompany_one_action_in_provider_order() -> None:
     assert not any(result.is_error for result in results)
 
 
-def test_two_actions_in_one_response_execute_nothing() -> None:
+def test_several_actions_in_one_response_run_in_provider_order() -> None:
     ran: list[str] = []
 
     def record(name: str) -> Any:
@@ -470,12 +470,57 @@ def test_two_actions_in_one_response_execute_nothing() -> None:
 
     results = execute_tool_calls([_call("first"), _call("second")], tools, {}, hooks=hooks)
 
+    assert ran == ["first", "second"]
+    assert batch_seen == [2]
+    assert not any(result.is_error for result in results)
+
+
+def test_terminating_result_skips_the_rest_of_the_batch() -> None:
+    ran: list[str] = []
+
+    def terminating(_args: dict[str, Any], _ctx: AgentToolContext) -> ToolExecutionResult:
+        ran.append("first")
+        return ToolExecutionResult(content="menu queued", terminate=True)
+
+    def second(_args: dict[str, Any], _ctx: AgentToolContext) -> dict[str, Any]:
+        ran.append("second")
+        return {"ok": True}
+
+    tools = [_tool("first", execute=terminating), _tool("second", execute=second)]
+
+    results = execute_tool_calls([_call("first"), _call("second")], tools, {})
+
+    assert ran == ["first"]
+    assert results[0].terminate and not results[0].is_error
+    assert results[1].is_error and not results[1].terminate
+    assert results[1].metadata.get("skipped") is True
+    assert "Not run" in str(results[1].content)
+
+
+def test_host_cancel_skips_remaining_calls_mid_batch() -> None:
+    cancelled = False
+
+    def flip_cancel(_args: dict[str, Any], _ctx: AgentToolContext) -> dict[str, Any]:
+        nonlocal cancelled
+        cancelled = True
+        return {"ok": True}
+
+    ran: list[str] = []
+
+    def second(_args: dict[str, Any], _ctx: AgentToolContext) -> dict[str, Any]:
+        ran.append("second")
+        return {"ok": True}
+
+    tools = [_tool("first", execute=flip_cancel), _tool("second", execute=second)]
+
+    results = execute_tool_calls(
+        [_call("first"), _call("second")], tools, {}, should_stop=lambda: cancelled
+    )
+
     assert ran == []
-    assert batch_seen == []
-    assert [result.is_error for result in results] == [True, True]
-    assert len({result.content for result in results}) == 1
-    assert "one action per response" in str(results[0].content)
-    assert "first, second" in str(results[0].content)
+    assert not results[0].is_error
+    assert results[1].is_error
+    assert results[1].metadata.get("skipped") is True
 
 
 def test_turn_ending_tool_must_be_alone_even_beside_bookkeeping() -> None:
@@ -498,7 +543,7 @@ def test_turn_ending_tool_must_be_alone_even_beside_bookkeeping() -> None:
     assert "only" in str(results[0].content)
 
 
-def test_registered_tool_role_and_unknown_tool_count_as_actions() -> None:
+def test_only_turn_ending_batches_violate_the_response_rule() -> None:
     registered = RegisteredTool(
         name="registered_plan",
         description="test registered tool",
@@ -507,11 +552,17 @@ def test_registered_tool_role_and_unknown_tool_count_as_actions() -> None:
         run=lambda value: {"value": value},
         role=ToolRole.BOOKKEEPING,
     )
-    tool_map = {"registered_plan": registered, "work": _tool("work")}
+    tool_map = {
+        "registered_plan": registered,
+        "work": _tool("work"),
+        "menu": _tool("menu", role=ToolRole.TURN_ENDING),
+    }
 
     assert response_batch_violation([_call("registered_plan"), _call("work")], tool_map) is None
     assert response_batch_violation([_call("unknown_tool")], tool_map) is None
-    assert response_batch_violation([_call("unknown_tool"), _call("work")], tool_map) is not None
+    assert response_batch_violation([_call("unknown_tool"), _call("work")], tool_map) is None
+    assert response_batch_violation([_call("menu")], tool_map) is None
+    assert response_batch_violation([_call("menu"), _call("work")], tool_map) is not None
     assert response_batch_violation([], tool_map) is None
 
 

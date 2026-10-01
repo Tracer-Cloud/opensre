@@ -66,6 +66,19 @@ def test_a_call_that_failed_beside_a_success_may_retry_while_the_success_may_not
     assert executed == ["/health", "/integrations", "/integrations"]
 
 
+def test_two_identical_guarded_calls_in_one_response_run_once() -> None:
+    """The second identical call of the same provider batch is suppressed.
+
+    Guarded tools run sequentially, so the first call's success is visible to
+    the second call's ``before`` hook within the same response.
+    """
+    # Arrange / Act: one response carries /health twice.
+    executed = _drive([[HEALTH, HEALTH]])
+
+    # Assert: it ran once.
+    assert executed == ["/health"]
+
+
 def test_a_batch_of_unguarded_tools_does_not_clear_the_snapshot() -> None:
     """Only guarded calls form a batch, so an unguarded batch must not reset the guard."""
     # Arrange / Act: an unrelated tool runs between two identical /health batches.

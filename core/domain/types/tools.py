@@ -15,9 +15,10 @@ class ToolSurface(StrEnum):
 class ToolRole(StrEnum):
     """What one tool call is to the model response that requested it.
 
-    The runtime executes at most one ``ACTION`` per response. ``BOOKKEEPING``
-    calls (plan, memory, goal ticks) may accompany that action; a
-    ``TURN_ENDING`` call hands control to the user and must be the only call.
+    ``ACTION`` and ``BOOKKEEPING`` calls (plan, memory, goal ticks) may be
+    batched in one response and run sequentially in provider order. A
+    ``TURN_ENDING`` call hands control to the user and must be the only call
+    in its response.
     """
 
     ACTION = "action"

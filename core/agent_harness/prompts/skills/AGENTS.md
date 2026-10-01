@@ -161,24 +161,30 @@ including delivering any user-facing output, before starting the next.
 Do not couple separate steps with wording such as "alongside", "at the same
 time", or "in the same response".
 
-The runtime enforces this per model response (`core.tool.execution`): a
-response may carry **one** tool call whose role is `ACTION`; a response with
-two or more executes none of them and returns the same error for each. Two
-roles relax that rule, and every tool declares its role on its contract
-(`ToolRole`, replacing the old `parallel_safe` flag):
+The runtime (`core.tool.execution`) runs a response's tool calls one after
+another, in the order the model listed them — never concurrently. A response
+may batch several independent calls; a call that depends on an earlier call's
+result belongs in the next response. Every tool declares its role on its
+contract (`ToolRole`, replacing the old `parallel_safe` flag):
 
-- `BOOKKEEPING` (`update_plan`, `memory_remember`, `session_goal_complete`)
-  may accompany the one action. Cards should say so — "mark the step
-  `in_progress` in the same response as its tool call" — rather than leave
-  the model to spend a solo turn on each plan write. A live run of
-  `scheduling-github-ci-repairs` once spent nine solo `update_plan` turns
-  (~90 s) on plan writes alone.
+- `ACTION` and `BOOKKEEPING` (`update_plan`, `memory_remember`,
+  `session_goal_complete`) calls may share a response. Cards should say so —
+  "mark the step `in_progress` in the same response as its tool call" —
+  rather than leave the model to spend a solo turn on each plan write. A
+  live run of `scheduling-github-ci-repairs` once spent nine solo
+  `update_plan` turns (~90 s) on plan writes alone.
 - `TURN_ENDING` (`ask_user_choice`) hands the turn to the user and must be
-  the **only** call in its response; not even bookkeeping rides with it.
-  Mark plan steps before the menu response, not in it.
+  the **only** call in its response; a response that batches anything with a
+  menu executes nothing and returns the same error for each call. Not even
+  bookkeeping rides with it. Mark plan steps before the menu response, not
+  in it.
+
+Once a call's result ends the turn (a queued menu, a pending approval, a
+host cancel), the calls after it in the batch are skipped with an error
+result saying they did not run.
 
 Independent read-only checks inside one step (identity plus scheduler, for
-example) are therefore separate responses, or one shell command that runs
+example) may therefore share one response, or one shell command that runs
 both.
 
 Report delivery and asking what to do next are separate actions: first

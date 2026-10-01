@@ -642,6 +642,7 @@ class ReactLoop[RuntimeToolT: RuntimeTool]:
             self._resolved,
             hooks=hooks,
             tool_resources=self._tool_resources,
+            should_stop=self._cancel_requested,
         )
         provider_results = [result.provider_content() for result in results]
         tool_result_message = self._msg_formatter.to_tool_result_runtime_message(
