@@ -69,12 +69,16 @@ def test_master_menu_matches_four_unique_children_and_preserves_specialists() ->
     assert analytics.entry_menu is None
     body = skills.load_skill_body("analyzing-github-ci-performance")
     assert "`Which repository should I analyze?`" in body
-    assert "`What would you like to do next?`" in body
-    for option in ("- Schedule local loops", "- Slack setup", "- Finish"):
+    assert "`See a failing check get fixed?`" in body
+    for option in (
+        "- Fix one here, in the next few minutes",
+        "- Fix one in the cloud, then close this terminal",
+        "- Stop at the report",
+    ):
         assert option in body
     # Each next-step branch hands off to its sibling skill instead of inlining it.
     assert 'skill_view(name="scheduling-github-ci-repairs")' in body
-    assert 'skill_view(name="connecting-slack")' in body
+    assert 'skill_view(name="delegating-github-ci-repairs")' in body
     # The comparison is the tool's job, not a flag the model can forget; the
     # report shape is the skill's, so no flag on the tool picks one either.
     assert "include_benchmarks" not in body
