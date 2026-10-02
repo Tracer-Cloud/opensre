@@ -8,14 +8,14 @@ demo_order: 3
 metadata:
   owner: Vincent
   last_changed_by: Jan
-  last_changed_at: 2026-10-01
+  last_changed_at: 2026-10-02
   usecases:
     - For interactive-shell users running a GitHub CI repair on their hosted gateway.
   requires:
     - A reachable hosted gateway with a GitHub integration and an authenticated coding agent.
     - An interactive shell and a signed-in OpenSRE account in the organization for hosted gateway access.
     - GitHub write access to the selected PR; demo mode also needs private-repository creation.
-  version: "2.5"
+  version: "2.6"
 ---
 
 # Delegate a remote CI repair
@@ -34,7 +34,7 @@ This runs one bounded repair that finishes on the gateway without the shell. It 
 
 ## Plan
 
-Use `update_plan` to create the live plan from the workflow headings below:
+Use `update_plan` to create the live plan from the workflow headings below. Mark a step `in_progress` or `completed` in the same response as that step's tool call. A response that only calls `update_plan` is not progress.
 
 **Inside the interactive shell:**
 
@@ -50,12 +50,11 @@ Use `update_plan` to create the live plan from the workflow headings below:
 **Remote Gateway agent:**
 
 - [ ] Read the following skill: `scheduling-github-ci-repairs` to understand how to seed a demo PR and inside a demo repository and how to fix it. 
-- [ ] Create the demo repository, failing branch, and PR (demo only).
-- [ ] Confirm GitHub reports the failure with list_github_actions_workflow_runs.
+- [ ] Create the demo repository, failing branch, and PR with seed_ci_repair_demo (demo only). The returned failed_run_id is the failure confirmation.
 - [ ] Schedule the bounded repair with schedule_ci_repair_loop and record its task id.
 - [ ] Wait for the scheduled tick with get_ci_repair_loop and read its report.
 - [ ] Verify the repair with one `pr view` call.
-- [ ] Save evidence, remove the demo loop, and verify with `/cron list`. Nothing on GitHub is deleted; the demo repository is kept.
+- [ ] Save evidence, remove the demo loop, and verify with one `finish_ci_repair_demo call`. Nothing on GitHub is deleted; the demo repository is kept.
 - [ ] Respond with the outcome report as Markdown.
 
 **Inside the interactive shell:**
@@ -116,7 +115,7 @@ Show the final repair plan titled `Remote Repair Plan`. Put the probe's findings
 
 ### Delegate the repair
 
-- Send one `ask_hosted_gateway` prompt: "This is a new request. Start a new plan from `scheduling-github-ci-repairs` for <target>; do not reuse plan steps, task IDs, or repositories from earlier in this conversation. Delete nothing on GitHub."
+- Send one `ask_hosted_gateway` prompt: "This is a new request. Start a new plan from `scheduling-github-ci-repairs` for <target>; do not reuse plan steps, task IDs, or repositories from earlier in this conversation. Delete nothing on GitHub. Seed only with seed_ci_repair_demo. github_cli, an organization repository listing, a code search, and list_github_actions_workflow_runs are outside the seed."
 - Pass the target as `facts` (`demo`, `owner`, `repo`, `pr_number`). Keep the prompt ID.
 
 
@@ -124,9 +123,12 @@ Show the final repair plan titled `Remote Repair Plan`. Put the probe's findings
 
 ### Verify the remote outcome
 
-- Call `ask_hosted_gateway(prompt_id=<the delegated prompt ID>)` once. Do not send a new prompt.
+### Verify the remote outcome
+
+- Call `ask_hosted_gateway(prompt_id=<the delegated prompt ID>)` once. Send no new prompt.
 - Check the record against the delegated report: same task ID, a fix commit, a passing run ID, and the loop removed.
-- If it says the gateway is not running, do not start it just to verify. Mark this step blocked with "gateway stopped after reporting; the delegated report is unverified" and show that report.
+- This re-read is the only verification. `github_cli` and `list_github_actions_workflow_runs` are outside this step. A short transcript still verifies when the record has the task ID, the fix commit, and the passing run ID.
+- If it says the gateway is not running, leave it stopped. Mark this step blocked with "gateway stopped after reporting; the delegated report is unverified" and show that report.
 
 **Complete when:**
 

@@ -9,7 +9,7 @@ demo_order: 2
 metadata:
   owner: Vincent
   last_changed_by: Jan
-  last_changed_at: 2026-10-01
+  last_changed_at: 2026-10-02
   usecases:
     - For configuring ongoing repair of failing pull requests in one repository.
     - For demonstrating a scheduled repair in a disposable private repository.
@@ -17,7 +17,7 @@ metadata:
     - GitHub write access to the watched repository and an authenticated coding agent
     - Git installed on the scheduler host; repair checkouts are created automatically
     - For the demo, a GitHub token that can create a private repository and an example PR
-  version: "0.74"
+  version: "0.75"
 script_tools: references/script-tools.md
 ---
 
@@ -36,16 +36,16 @@ one real repair as fast as possible in well under five minutes.
 
 ## Plan
 
-Use `update_plan` to create the live plan from the workflow headings below:
+Use `update_plan` to create the live plan from the workflow headings below. Mark a step `in_progress` or `completed` in the same response as that step's tool call. A response that only calls `update_plan` is not progress.
 
 - [ ] Check prerequisites: GitHub identity and scopes, then the scheduler.
 - [ ] Select the repository, or the private demo, with ask_user_choice.
 - [ ] Select the failing PR, or confirm the authorized demo scope.
-- [ ] Create the demo repository, failing branch, and PR (demo only).
+- [ ] Create the demo repository, failing branch, and PR with `seed_ci_repair_demo` (demo only).
 - [ ] Schedule the bounded repair with schedule_ci_repair_loop and record its task id.
-- [ ] Wait for the scheduled tick with `get_ci_repair_loop` and read its report.
+- [ ] Wait until the repair is terminal with one `get_ci_repair_loop` call and read its report.
 - [ ] Verify the repair with one `pr view` call.
-- [ ] Save evidence, remove the demo loop and resources, verify with `/cron list`.
+- [ ] Save evidence, remove the demo loop, and verify with one `finish_ci_repair_demo` call.
 - [ ] Respond with the outcome report as Markdown.
 - [ ] After the report is shown, offer the follow-up with `ask_user_choice`.
 
@@ -114,18 +114,15 @@ The scope was authorized in Step 1; nothing to fetch.
 
 ### Step 4. Create the demo failure (Demo only)
 
-Build a small repository whose CI fails for one obvious reason, and open a PR for it. Choose the calls yourself with `github_cli`; it carries the GitHub credentials, and plain `git` on the gateway does not.
+One call: `seed_ci_repair_demo(owner="<owner>", repo="<repo>")`.
 
-The fixture:
+The tool treats a 404 from `GET /repos/{owner}/{repo}` as absence and creates the private repository only in that case. It commits a passing `main` (`calculator.py` adding, `test_calculator.py` asserting `add(2, 3) == 5`, and `.github/workflows/test.yml` named `Demo calculator CI` running `python -m unittest -v` on push and pull_request), then one commit on `demo/failing-ci` that changes only `calculator.py` so `add` subtracts, opens that pull request into `main` with a body that says it is a demo not to merge, and returns after the pull-request Actions run has failed. Record `pr_url`, `pr_number`, `head_sha`, and `failed_run_id`. An existing demo repository and pull request are reused.
 
-- `main` passes: `calculator.py` where `add` returns `left + right`, `test_calculator.py` asserting `add(2, 3) == 5`, and `.github/workflows/test.yml` named `Demo calculator CI` running `python -m unittest -v` on push and pull_request.
-- `demo/failing-ci` is one commit ahead and changes only `calculator.py`, so `add` subtracts.
-
-Create the repository first (private, under the approved owner), then commit the files, then open the PR from `demo/failing-ci` into `main` and say in its body that it is a demo not to merge. Reuse anything that already exists instead of recreating it.
+This step uses that one tool. `github_cli`, `list_github_actions_workflow_runs`, an organization repository listing, a code search, and plain `git` are outside this step.
 
 **Complete this step when:**
 
-- The PR URL is returned to the user.
+- `pr_url` and `failed_run_id` are recorded.
 
 ### Step 5. Schedule the bounded repair
 
@@ -152,9 +149,7 @@ at most 30 seconds away, and owns the repair from there: attempts, CI
 verification, and the deadline. On the hosted gateway a slash command is
 stopped after 90 seconds, and a stopped `/cron run` takes the repair with it.
 
-Call `get_ci_repair_loop(task_id="<id>", wait_seconds=60)`, one call per
-response, until the result has `terminal: true`. Its `response_text` is the
-detection and repair evidence.
+Call `get_ci_repair_loop(task_id="<id>", wait_until_terminal=true)` once. The tool waits until `terminal` is true or the repair deadline has passed, and returns that result from this single call. Its `response_text` is the detection and repair evidence.
 
 Skip this step when Step 3 found no failing PR.
 
@@ -186,19 +181,11 @@ If a check is still running, wait 20 seconds once and repeat the same call.
 
 ### Step 8. Clean up (demo only)
 
-In this order, no verification calls in between:
+One call: `finish_ci_repair_demo(repo="<owner>/<repo>", pr_number=<n>, loop_id="<id>", outcome="<success|failed|blocked>", failed_run_id=<id>, fix_commit="<sha>", passing_run_id=<id>)`.
 
-1. `write_demo_evidence(repo, pr_number, loop_id, outcome, failed_run_id,
-   fix_commit, passing_run_id, blocker)` saves evidence under
-   `~/.opensre/demo-results/` and removes the owned temp checkout. Omit
-   unavailable IDs for failed or blocked demos. Record the returned evidence
-   path and `checkout_removed` status. If saving fails before cleanup, the
-   helper retains the checkout. Continue to loop removal after any failure.
-2. Always call `slash_invoke` `{"command": "/cron", "args": ["remove", "<id>"]}`,
-   including after an evidence-tool failure. The
-   demo repository is never deleted; report that the repository remains.
-3. `slash_invoke` `{"command": "/cron", "args": ["list"]}` as the single
-   verification.
+The tool writes evidence under `~/.opensre/demo-results/` for the approved repository name, removes that scheduled task, and checks that `/cron list` no longer shows it. Omit unavailable IDs for a failed or blocked demo. Record the returned evidence path. The demo repository is never deleted; report that the repository remains.
+
+This step uses that one tool. `write_demo_evidence`, `slash_invoke`, `github_cli`, and a shell heredoc are outside this step.
 
 For an existing repository the loop stays; only record its id.
 

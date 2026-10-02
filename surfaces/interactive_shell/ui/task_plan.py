@@ -25,6 +25,8 @@ from surfaces.interactive_shell.ui.input_prompt.layout import clip_prompt_text, 
 from surfaces.shared.terminal.components.rendering import print_repl_text
 
 _STEP_INDENT = "  "
+#: Caption that keeps a hosted-gateway checklist distinct from the local plan.
+GATEWAY_ACTIVITY_MARKER = "on the gateway"
 # Steps shown before the plan collapses; a longer plan folds to a window
 # around the current step until the user expands it.
 _COLLAPSED_MAX_STEPS = 3
@@ -139,6 +141,13 @@ def _collapsed_window(plan: TaskPlan) -> tuple[int, int]:
     return start, start + _COLLAPSED_MAX_STEPS
 
 
+def gateway_plan_overlay_ansi(plan: TaskPlan, *, expanded: bool = False) -> str:
+    """The live gateway checklist: the same glyphs, under ``on the gateway``."""
+    width = prompt_line_width()
+    header = _overlay_line(GATEWAY_ACTIVITY_MARKER, ui_theme.SECONDARY_ANSI, width)
+    return f"{header}\n{task_plan_overlay_ansi(plan, expanded=expanded)}"
+
+
 def task_plan_overlay_ansi(plan: TaskPlan, *, expanded: bool = False) -> str:
     """Render the ANSI plan overlay pinned above the prompt.
 
@@ -165,6 +174,8 @@ def task_plan_overlay_ansi(plan: TaskPlan, *, expanded: bool = False) -> str:
 
 
 __all__ = [
+    "GATEWAY_ACTIVITY_MARKER",
+    "gateway_plan_overlay_ansi",
     "render_plan_breakdown",
     "task_plan_from_tool_args",
     "task_plan_overlay_ansi",

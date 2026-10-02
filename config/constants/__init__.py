@@ -435,6 +435,21 @@ if TYPE_CHECKING:
         PROMPT_MAX_CHARS as PROMPT_MAX_CHARS,
     )
     from config.constants.gateway import (
+        PROMPT_PROGRESS_KIND_NOTE as PROMPT_PROGRESS_KIND_NOTE,
+    )
+    from config.constants.gateway import (
+        PROMPT_PROGRESS_KIND_PLAN as PROMPT_PROGRESS_KIND_PLAN,
+    )
+    from config.constants.gateway import (
+        PROMPT_PROGRESS_KIND_PLAN_DONE as PROMPT_PROGRESS_KIND_PLAN_DONE,
+    )
+    from config.constants.gateway import (
+        PROMPT_PROGRESS_KIND_TOOL as PROMPT_PROGRESS_KIND_TOOL,
+    )
+    from config.constants.gateway import (
+        PROMPT_PROGRESS_KINDS as PROMPT_PROGRESS_KINDS,
+    )
+    from config.constants.gateway import (
         PROMPT_PROGRESS_LINE_MAX_CHARS as PROMPT_PROGRESS_LINE_MAX_CHARS,
     )
     from config.constants.gateway import (

@@ -98,6 +98,46 @@ def test_prompt_region_keeps_the_checklist_above_invoking_tools() -> None:
     assert rendered.index(SpinnerState.INVOKING_TOOLS_PHASE) < rendered.index("Auto (High)")
 
 
+def test_gateway_plan_sits_above_the_local_plan() -> None:
+    session = Session()
+    session.task_plan = _sample_plan()
+    state = ReplState()
+    gateway, error = parse_task_plan(
+        {
+            "plan": [
+                {"step": "List organization memberships", "status": "completed"},
+                {"step": "Check repository creation permission", "status": "in_progress"},
+            ]
+        }
+    )
+    assert error is None and gateway is not None
+    state.gateway_plan = gateway
+
+    rendered = _strip_ansi(render_prompt_region(session, state, SpinnerState()).value)
+
+    assert rendered.index("on the gateway") < rendered.index("List organization memberships")
+    assert rendered.index("List organization memberships") < rendered.index("Plan · 2/3")
+    assert "Trace 502s to the last deploy" in rendered
+
+
+def test_gateway_only_plan_keeps_expand_until_the_checklist_changes() -> None:
+    session = Session()
+    state = ReplState()
+    state.gateway_plan = _long_plan()
+    state.plan_expanded = True
+
+    rendered = _strip_ansi(render_prompt_region(session, state, SpinnerState()).value)
+
+    assert state.plan_expanded is True
+    assert "Inspect the repo" in rendered
+    assert "Confirm green" in rendered
+
+    state.gateway_plan = _other_long_plan()
+    replaced = _strip_ansi(render_prompt_region(session, state, SpinnerState()).value)
+    assert state.plan_expanded is False
+    assert "Ctrl+P to view all" in replaced
+
+
 def test_idle_prompt_region_shows_plan_without_thinking_or_ready_hint() -> None:
     session = Session()
     session.task_plan = _sample_plan()

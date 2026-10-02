@@ -155,6 +155,23 @@ def test_progress_keeps_the_newest_lines_with_growing_indices() -> None:
     assert len(progress[1]["text"]) == PROMPT_PROGRESS_LINE_MAX_CHARS
 
 
+def test_a_repeated_plan_is_not_recorded_again_and_a_tool_keeps_its_kind() -> None:
+    queue = PromptQueue(clock=_Clock().read)
+    job = queue.submit("fix ci", context={}, actor="a")
+    assert job is not None
+    checklist = "Plan · 1/2\n  ● List orgs\n  ○ Check permission"
+
+    queue.note(job, "GitHub CLI · gh api user", kind="tool")
+    queue.note(job, checklist, kind="plan")
+    queue.note(job, checklist, kind="plan")
+    queue.note(job, "Plan complete · 2/2\n  ✓ List orgs", kind="plan_done")
+
+    progress = job.view()["progress"]
+    assert [item["kind"] for item in progress] == ["tool", "plan", "plan_done"]
+    assert progress[0]["text"] == "GitHub CLI · gh api user"
+    assert "{'step'" not in progress[1]["text"]
+
+
 def test_progress_keeps_a_three_row_status() -> None:
     """A three-row gateway status is stored whole."""
     queue = PromptQueue(clock=_Clock().read)

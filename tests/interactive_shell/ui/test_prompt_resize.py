@@ -155,6 +155,105 @@ def test_prepare_live_region_height_zeros_cpr_and_drops_tall_last_screen() -> No
     assert renderer._last_screen is None
 
 
+def test_prepare_live_region_height_keeps_a_plan_as_tall_as_its_chrome() -> None:
+    """A checklist taller than the hard max is real chrome, not a hollow CPR fill."""
+    layout = Layout(Window(height=13))
+    renderer = MagicMock()
+    renderer._min_available_height = 0
+    kept = _Screen(height=13)
+    renderer._last_screen = kept
+
+    prepare_live_region_height(renderer, layout, columns=80, rows=40)
+
+    assert renderer._last_screen is kept
+
+
+def test_prepare_live_region_height_drops_a_cpr_screen_taller_than_the_plan() -> None:
+    layout = Layout(Window(height=13))
+    renderer = MagicMock()
+    renderer._min_available_height = 40
+    renderer._last_screen = _Screen(height=40)
+
+    prepare_live_region_height(renderer, layout, columns=80, rows=40)
+
+    assert renderer._last_screen is None
+
+
+def test_repaint_after_reset_supplies_a_same_height_blank_screen() -> None:
+    """A reset must not full-repaint: that reservation scrolls the plan header away."""
+    output = Vt100_Output(
+        io.StringIO(),
+        get_size=lambda: Size(rows=40, columns=80),
+        term="xterm-256color",
+        enable_cpr=False,
+    )
+    app: Any = MagicMock()
+    app.output = output
+    renderer = MagicMock()
+    renderer._min_available_height = 0
+    renderer._last_screen = None
+    renderer._last_size = None
+    seen: list[int | None] = []
+
+    def _original_render(_app: Any, _layout: Any, is_done: bool = False) -> None:
+        del is_done
+        screen = renderer._last_screen
+        seen.append(None if screen is None else int(screen.height))
+        renderer._last_screen = _Screen(height=13)
+        renderer._last_size = Size(rows=40, columns=80)
+
+    renderer.render = _original_render
+    renderer.report_absolute_cursor_row = MagicMock()
+    app.renderer = renderer
+    app._on_resize = MagicMock()
+    app._running_in_terminal = False
+
+    install_shrink_resize_guard(app)
+    layout = Layout(Window(height=13))
+    app.renderer.render(app, layout, False)
+    renderer._last_screen = None
+    renderer._last_size = None
+    app.renderer.render(app, layout, False)
+
+    assert seen[0] is None
+    assert seen[1] == 13
+
+
+def test_erase_covers_the_border_row_under_the_input_cursor() -> None:
+    """The plan header is above the input cursor; erase has to reach it."""
+    terminal = io.StringIO()
+    output = Vt100_Output(
+        terminal,
+        get_size=lambda: Size(rows=40, columns=80),
+        term="xterm-256color",
+        enable_cpr=False,
+    )
+    app: Any = MagicMock()
+    app.output = output
+    renderer = MagicMock()
+    renderer.full_screen = False
+    renderer._min_available_height = 0
+    renderer._last_screen = SimpleNamespace(height=13, data_buffer={})
+    renderer._cursor_pos = _Cursor(x=4, y=11)
+    renderer._last_size = Size(rows=40, columns=80)
+    renderer.render = MagicMock()
+    renderer.reset = MagicMock()
+    renderer.report_absolute_cursor_row = MagicMock()
+    app.renderer = renderer
+    app._on_resize = MagicMock()
+    app._running_in_terminal = False
+
+    install_shrink_resize_guard(app)
+    terminal.seek(0)
+    terminal.truncate(0)
+    app.renderer.erase()
+
+    emitted = terminal.getvalue()
+    assert "\x1b[12A" in emitted
+    assert "\x1b[J" in emitted
+    renderer.reset.assert_called_once()
+
+
 def test_cpr_report_discards_fill_to_floor() -> None:
     terminal = io.StringIO()
     output = Vt100_Output(

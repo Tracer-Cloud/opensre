@@ -567,6 +567,37 @@ class _NoisyHandler(_Handler):
         return self.result
 
 
+class _ActivityHandler(_Handler):
+    """A turn that reports compact hosted activity the way the observer does."""
+
+    def run(
+        self, text: str, _session: SessionCore, output: Any, _logger: Any, **_kwargs: Any
+    ) -> Any:
+        self.seen_text = text
+        output.note_activity("GitHub CLI · gh api user", kind="tool")
+        checklist = "Plan · 1/2\n  ● List orgs\n  ○ Check permission"
+        output.note_activity(checklist, kind="plan")
+        output.note_activity(checklist, kind="plan")
+        output.render_plan_breakdown("Plan complete · 2/2\n  ✓ List orgs\n  ✓ Check permission")
+        output.finalize(self.answer)
+        return self.result
+
+
+def test_hosted_activity_reaches_the_job_with_its_kind() -> None:
+    handler = _ActivityHandler(answer="done")
+    worker, queue = _worker(handler)
+    job = queue.submit("fix ci", context={}, actor="u")
+    assert job is not None
+
+    worker.run_one(job)
+
+    progress = job.view()["progress"]
+    assert [item["kind"] for item in progress] == ["tool", "plan", "plan_done"]
+    assert progress[0]["text"] == "GitHub CLI · gh api user"
+    assert "✓ Check permission" in progress[2]["text"]
+    assert job.state is PromptState.DONE
+
+
 def test_tool_progress_reaches_the_job_while_it_runs() -> None:
     # Arrange
     handler = _NoisyHandler(answer="done")

@@ -7,6 +7,7 @@ import enum
 import threading
 import time
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 from prompt_toolkit.application.current import get_app_or_none
 
@@ -26,6 +27,9 @@ from surfaces.shared.terminal.prompt_layout import (
     prompt_line_width,
     prompt_text_width,
 )
+
+if TYPE_CHECKING:
+    from core.agent_harness.task_plan.plan import TaskPlan
 
 # How often prompt-toolkit refreshes prompt callbacks and confirmation polling.
 PROMPT_REFRESH_INTERVAL_S = 0.25
@@ -113,6 +117,8 @@ class ReplState:
     plan_expanded: bool = False
     # Checklist identity for ``plan_expanded`` — step texts, ignoring status.
     plan_step_texts: tuple[str, ...] | None = None
+    # Hosted-gateway checklist pinned above the local plan. Not ``task_plan``.
+    gateway_plan: TaskPlan | None = None
     phase: TurnPhase = TurnPhase.IDLE
     ctrl_c_exit_hint_until: float = 0.0
 

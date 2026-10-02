@@ -45,8 +45,6 @@ TOOL_NAME = "ask_hosted_gateway"
 _COMPONENT = "integrations.hosted_gateway.tools.gateway_prompt.ask_hosted_gateway"
 _CHOOSE_COMMAND = "/choose"
 _HOSTED_PROMPT_INTERACTION_PREFIX = "hosted_prompt:"
-#: Progress lines come from the gateway's own tools, whose labels say "this machine".
-_GATEWAY_PROGRESS_PREFIX = "on the gateway: "
 _QUEUED_NOTICE = "waiting for a free slot on the gateway (another conversation is using it)"
 _UNANSWERED_NOTICE = "the gateway is not answering right now; still waiting for it"
 #: The one vendor whose credential refusals have a known, ordered fix.
@@ -355,7 +353,7 @@ class _ProgressRelay:
             if line.index <= self._last_index:
                 continue
             self._last_index = line.index
-            self._emit({"progress": _GATEWAY_PROGRESS_PREFIX + line.text})
+            self._emit({"progress": line.text, "kind": line.kind})
 
     def note(self, text: str) -> None:
         """A line about the wait itself, not relayed from the gateway."""

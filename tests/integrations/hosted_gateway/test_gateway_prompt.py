@@ -529,11 +529,16 @@ def test_a_needs_input_record_carries_the_structured_choice() -> None:
 
 def test_progress_lines_are_relayed_to_the_shell_once_each(monkeypatch: pytest.MonkeyPatch) -> None:
     # Arrange: three polls; the second repeats a line the first already carried
-    first = PromptRecord(_ID, "running", progress=(PromptProgress(0, "Reading runs…"),))
+    first = PromptRecord(
+        _ID, "running", progress=(PromptProgress(0, "Reading runs…", kind="tool"),)
+    )
     second = PromptRecord(
         _ID,
         "running",
-        progress=(PromptProgress(0, "Reading runs…"), PromptProgress(1, "Checking out…")),
+        progress=(
+            PromptProgress(0, "Reading runs…", kind="tool"),
+            PromptProgress(1, "Checking out…", kind="tool"),
+        ),
     )
     app = _App([PromptRecord(_ID, "queued"), first, second, PromptRecord(_ID, "done", answer="ok")])
     _signed_in_with(monkeypatch, app)
@@ -546,8 +551,8 @@ def test_progress_lines_are_relayed_to_the_shell_once_each(monkeypatch: pytest.M
     # Assert
     assert out["state"] == "done"
     assert updates == [
-        {"progress": "on the gateway: Reading runs…"},
-        {"progress": "on the gateway: Checking out…"},
+        {"progress": "Reading runs…", "kind": "tool"},
+        {"progress": "Checking out…", "kind": "tool"},
     ]
 
 
@@ -657,7 +662,11 @@ def test_a_record_carries_its_progress_lines() -> None:
             json={
                 "prompt_id": _ID,
                 "state": "running",
-                "progress": [{"index": 3, "text": "Reading runs…"}, {"index": "x", "text": "bad"}],
+                "progress": [
+                    {"index": 3, "text": "Reading runs…", "kind": "plan"},
+                    {"index": "x", "text": "bad"},
+                    {"index": 4, "text": "still waiting"},
+                ],
             },
         )
 
@@ -666,7 +675,10 @@ def test_a_record_carries_its_progress_lines() -> None:
         record = client.prompt_result(_ID)
 
     # Assert: well-formed lines are kept in order, malformed ones dropped
-    assert record.progress == (PromptProgress(3, "Reading runs…"),)
+    assert record.progress == (
+        PromptProgress(3, "Reading runs…", kind="plan"),
+        PromptProgress(4, "still waiting"),
+    )
 
 
 def test_a_busy_gateway_is_explained_in_plain_words(monkeypatch: pytest.MonkeyPatch) -> None:

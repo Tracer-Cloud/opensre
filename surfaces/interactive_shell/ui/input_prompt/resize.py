@@ -27,6 +27,7 @@ from unicodedata import category
 
 from prompt_toolkit.application import Application
 from prompt_toolkit.layout.layout import Layout
+from prompt_toolkit.layout.screen import Screen
 from prompt_toolkit.output.base import Size
 from prompt_toolkit.utils import get_cwidth
 
@@ -53,13 +54,20 @@ def live_region_height_cap(preferred: int) -> int:
 def prepare_live_region_height(renderer: Any, layout: Layout, *, columns: int, rows: int) -> int:
     """Force CPR / last-screen budgets down so height tracks preferred chrome.
 
+    A cursor-position report can leave a hollow screen much taller than the
+    chrome. Drop that. A live plan is often taller than the hard max on
+    purpose; forgetting a screen that tall forces a full repaint, and the
+    repaint reserves its rows with newlines that scroll the checklist header
+    into the transcript.
+
     Returns the live-region cap applied (for tests).
     """
     preferred = layout.container.preferred_height(columns, rows).preferred
     cap = live_region_height_cap(preferred)
     renderer._min_available_height = 0
     last = getattr(renderer, "_last_screen", None)
-    if last is not None and int(getattr(last, "height", 0) or 0) > cap:
+    last_height = int(getattr(last, "height", 0) or 0)
+    if last is not None and last_height > max(cap, preferred):
         renderer._last_screen = None
     return cap
 
@@ -227,6 +235,10 @@ def install_shrink_resize_guard(
     resize_handle: asyncio.TimerHandle | None = None
     resize_deferred = False
     deferred_cursor_wrap_rows: int | None = None
+    # Set once the live region has been painted. A later reset (stdout inserted
+    # above the prompt) clears ``_last_screen``; the next paint must not treat
+    # that as the first frame and reserve its full height with newlines.
+    prompt_painted = False
 
     def report_absolute_cursor_row(row: int) -> None:
         original_report(row)
@@ -263,7 +275,7 @@ def install_shrink_resize_guard(
         output.disable_autowrap()
 
     def _render(pt_app: Any, layout: Layout, is_done: bool = False) -> None:
-        nonlocal deferred_cursor_wrap_rows, resize_deferred, resize_handle
+        nonlocal deferred_cursor_wrap_rows, resize_deferred, resize_handle, prompt_painted
         if is_done and resize_handle is not None:
             resize_handle.cancel()
             resize_handle = None
@@ -294,7 +306,26 @@ def install_shrink_resize_guard(
             columns=size.columns,
             rows=size.rows,
         )
+        # ``run_in_terminal`` resets the renderer before redrawing. With no
+        # previous screen, prompt-toolkit reserves the new height by writing
+        # newlines after the frame. At the bottom of the viewport those
+        # newlines scroll the plan header into scrollback, then the next
+        # paint draws it again. A blank screen of the chrome's own height
+        # skips that reservation; every cell is still drawn because the
+        # blank has no characters. The first paint is left alone so the
+        # terminal still scrolls once to make room for the composer.
+        if (
+            not is_done
+            and prompt_painted
+            and getattr(renderer, "_last_screen", None) is None
+            and getattr(renderer, "_last_size", None) is None
+        ):
+            preferred = layout.container.preferred_height(size.columns, size.rows).preferred
+            blank_height = min(max(preferred, 1), size.rows)
+            renderer._last_screen = Screen(initial_height=blank_height)
+            renderer._last_size = size
         original_render(pt_app, layout, is_done)
+        prompt_painted = True
         if is_done:
             output.enable_autowrap()
             output.flush()
@@ -399,8 +430,47 @@ def install_shrink_resize_guard(
             resize_handle.cancel()
         resize_handle = loop.call_later(_RESIZE_SETTLE_SECONDS, _apply_pending_resize)
 
+    original_erase = renderer.erase
+
+    def erase(leave_alternate_screen: bool = True) -> None:
+        """Clear the painted live region, including the border under the cursor.
+
+        prompt-toolkit walks up from the input cursor. That cursor sits on the
+        line inside the composer, one row above the bottom border. A terminal
+        that left the hardware cursor on the border then stops one row short
+        and the plan header stays in the viewport; the next line scrolled in
+        above the prompt commits it to scrollback.
+        """
+        screen = getattr(renderer, "_last_screen", None)
+        cursor = getattr(renderer, "_cursor_pos", None)
+        columns = max(1, output.get_size().columns)
+        rows_above = _reflowed_rows_above_cursor(renderer, columns=columns)
+        if (
+            screen is None
+            or cursor is None
+            or rows_above is None
+            or getattr(renderer, "full_screen", False)
+        ):
+            original_erase(leave_alternate_screen=leave_alternate_screen)
+            return
+        below = max(0, int(getattr(screen, "height", 0) or 0) - 1 - int(cursor.y))
+        # Cursor-down does not scroll. From the input row it lands on the
+        # border; if the hardware cursor is already there, it stays put when
+        # that border is the last terminal row, and the longer cursor-up
+        # still reaches the top of the frame.
+        if below:
+            output.cursor_down(below)
+        output.write_raw("\r")
+        output.cursor_up(rows_above + below)
+        output.erase_down()
+        output.reset_attributes()
+        output.enable_autowrap()
+        output.flush()
+        renderer.reset(leave_alternate_screen=leave_alternate_screen)
+
     renderer.report_absolute_cursor_row = report_absolute_cursor_row  # type: ignore[method-assign]
     renderer.render = _render  # type: ignore[method-assign, assignment]
+    renderer.erase = erase  # type: ignore[method-assign]
     app._on_resize = _on_resize  # type: ignore[method-assign]
     output.disable_autowrap()
 

@@ -12,7 +12,7 @@ from collections.abc import Callable
 from contextlib import ExitStack
 from typing import Any, Protocol
 
-from config.constants.gateway import PROMPT_SLOT_WAIT_SECONDS
+from config.constants.gateway import PROMPT_PROGRESS_KIND_NOTE, PROMPT_SLOT_WAIT_SECONDS
 from config.constants.organization import organization_id
 from config.principal import Actor, Principal, StorageScope
 from config.scope_context import bound_storage_scope
@@ -206,8 +206,8 @@ class PromptWorker:
     def _progress_writer(self, job: PromptJob) -> Callable[[str], None]:
         """A callback that records one status line on ``job``."""
 
-        def note(text: str) -> None:
-            self._queue.note(job, text)
+        def note(text: str, kind: str = PROMPT_PROGRESS_KIND_NOTE) -> None:
+            self._queue.note(job, text, kind=kind)
 
         return note
 

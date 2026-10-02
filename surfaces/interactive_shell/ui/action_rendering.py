@@ -15,20 +15,33 @@ from __future__ import annotations
 import ast
 import contextlib
 import re
-import shlex
 from typing import Any
 
 from rich.console import Console
 from rich.text import Text
 
+from config.constants.gateway import (
+    PROMPT_PROGRESS_KIND_PLAN,
+    PROMPT_PROGRESS_KIND_PLAN_DONE,
+    PROMPT_PROGRESS_KIND_TOOL,
+)
+from core.agent_harness.activity_display import (
+    bounded_activity_preview,
+    generic_tool_activity,
+    github_cli_activity,
+    is_sensitive_activity_key,
+)
 from core.agent_harness.spi.accounting import SELF_RECORDING_ACTION_TOOL_NAMES
 from core.agent_harness.spi.task_plan import is_plan_diagnosis_prose
+from core.agent_harness.task_plan.progress import task_plan_from_checklist
 from infrastructure.observability.trace.redaction import redact_sensitive
 from infrastructure.safety.terminal_output import strip_terminal_controls
 from infrastructure.terminal.theme import (
+    ANSI_RESET,
     BOLD_SKILL,
     DIM,
     ERROR,
+    SECONDARY_ANSI,
     TEXT,
 )
 from infrastructure.text import is_data_blob
@@ -37,14 +50,18 @@ from surfaces.interactive_shell.runtime.core.state import SpinnerState
 from surfaces.interactive_shell.session.terminal_session import ActionLogEntry
 from surfaces.interactive_shell.ui.action_log import flush_action_log
 from surfaces.interactive_shell.ui.streaming import render_note_block
+from surfaces.interactive_shell.ui.task_plan import (
+    GATEWAY_ACTIVITY_MARKER,
+    render_plan_breakdown,
+)
 from surfaces.interactive_shell.ui.transcript import (
     TranscriptRole,
     transcript_continuation,
     transcript_line,
     transcript_prefix,
 )
-from surfaces.shared.terminal.components.rendering import print_repl_renderable
-from surfaces.shared.terminal.output.console_state import get_turn_spinner
+from surfaces.shared.terminal.components.rendering import print_repl_renderable, print_repl_text
+from surfaces.shared.terminal.output.console_state import get_repl_state, get_turn_spinner
 from tools.interactive_shell.action_names import ActionToolName
 from tools.interactive_shell.shell.display import format_shell_command_for_display
 
@@ -55,19 +72,8 @@ _COMMAND_TOOL_LABELS: frozenset[str] = frozenset({"Execute", "GitHub CLI", "open
 # stripped string value of that single argument. Anything that needs to combine
 # multiple arguments (``slash_invoke``, ``synthetic_run``) keeps a custom branch
 # in :func:`tool_call_display`.
-_TOOL_PREVIEW_MAX_CHARS = 180
-_TOOL_VALUE_MAX_CHARS = 64
-_GH_VERBOSE_VALUE_FLAGS = frozenset({"--jq", "--template", "-t"})
-_GENERIC_EXECUTION_KEYS = frozenset({"runtime_metadata", "timeout"})
-_SENSITIVE_KEY_PARTS = (
-    "api_key",
-    "authorization",
-    "credential",
-    "password",
-    "secret",
-    "token",
-)
 _PYTHON_URL_RE = re.compile(r"https?://[^\s'\"`]+")
+_HOSTED_GATEWAY_TOOL = "ask_hosted_gateway"
 
 _SIMPLE_TOOL_LABELS: dict[str, tuple[str, str]] = {
     ActionToolName.LLM_SET_PROVIDER: ("LLM provider", "target"),
@@ -134,14 +140,6 @@ def _collapsed_line(value: str) -> str:
     return " ".join(value.split())
 
 
-def _bounded_preview(value: str, *, limit: int = _TOOL_PREVIEW_MAX_CHARS) -> str:
-    """Keep live progress on one useful terminal line."""
-    collapsed = _collapsed_line(value)
-    if len(collapsed) <= limit:
-        return collapsed
-    return collapsed[: limit - 1].rstrip() + "…"
-
-
 def _preview_from_result_fields(payload: dict[str, Any]) -> str:
     """Pull the one user-facing field from a tool-result dict, or empty."""
     for key in ("response_text", "summary"):
@@ -180,48 +178,6 @@ def _tool_result_preview(output: object) -> str:
     return ""
 
 
-def _is_sensitive_key(key: object) -> bool:
-    normalized = str(key).casefold().replace("-", "_")
-    return any(part in normalized for part in _SENSITIVE_KEY_PARTS)
-
-
-def _compact_gh_args(raw_args: object) -> list[str]:
-    """Retain the command shape while hiding verbose expression bodies."""
-    if not isinstance(raw_args, list):
-        return []
-    tokens = [strip_terminal_controls(str(item).strip()) for item in raw_args]
-    compact: list[str] = []
-    index = 0
-    while index < len(tokens):
-        token = tokens[index]
-        compact.append(token)
-        if token in _GH_VERBOSE_VALUE_FLAGS and index + 1 < len(tokens):
-            compact.append("…")
-            index += 2
-            continue
-        if token in {"-H", "--header"} and index + 1 < len(tokens):
-            header = tokens[index + 1]
-            compact.append("…" if _is_sensitive_key(header) else _bounded_preview(header, limit=40))
-            index += 2
-            continue
-        if index + 1 < len(tokens) and token in {"-f", "-F", "--field", "--raw-field"}:
-            compact.append(_bounded_preview(tokens[index + 1], limit=_TOOL_VALUE_MAX_CHARS))
-            index += 2
-            continue
-        index += 1
-    return compact
-
-
-def _github_cli_display(args: dict[str, Any]) -> tuple[str, str]:
-    command = ["gh"]
-    repo = strip_terminal_controls(str(args.get("repo", "")).strip())
-    if repo:
-        command.extend(["-R", repo])
-    command.extend(_compact_gh_args(args.get("args")))
-    preview = shlex.join(command).replace("'…'", "…")
-    return "GitHub CLI", preview
-
-
 def _python_execution_display(args: dict[str, Any]) -> tuple[str, str]:
     details = ["run analysis"]
     if args.get("allow_network") is True:
@@ -239,11 +195,11 @@ def _python_execution_display(args: dict[str, Any]) -> tuple[str, str]:
             {
                 str(key): value
                 for key, value in inputs.items()
-                if key != "opensre_runtime" and not _is_sensitive_key(key)
+                if key != "opensre_runtime" and not is_sensitive_activity_key(key)
             }
         )
         rendered_inputs = [
-            f"{key}={_bounded_preview(str(value), limit=40)}"
+            f"{key}={bounded_activity_preview(str(value), limit=40)}"
             for key, value in sorted(safe_inputs.items())
         ]
         if rendered_inputs:
@@ -252,7 +208,7 @@ def _python_execution_display(args: dict[str, Any]) -> tuple[str, str]:
         referenced_inputs = _python_referenced_inputs(code)
         if referenced_inputs:
             details.append(f"inputs: {', '.join(referenced_inputs)}")
-    return "Python", _bounded_preview(" · ".join(details), limit=240)
+    return "Python", bounded_activity_preview(" · ".join(details), limit=240)
 
 
 def _python_network_targets(code: str) -> list[str]:
@@ -262,7 +218,7 @@ def _python_network_targets(code: str) -> list[str]:
         if not target or any(existing.startswith(target) for existing in targets):
             continue
         targets = [existing for existing in targets if not target.startswith(existing)]
-        targets.append(_bounded_preview(target, limit=64))
+        targets.append(bounded_activity_preview(target, limit=64))
     return targets[:2]
 
 
@@ -285,7 +241,7 @@ def _python_referenced_inputs(code: str) -> list[str]:
         and node.value.id == "inputs"
         and isinstance(node.slice, ast.Constant)
         and isinstance(node.slice.value, str)
-        and not _is_sensitive_key(node.slice.value)
+        and not is_sensitive_activity_key(node.slice.value)
     }
     return sorted(names)
 
@@ -308,36 +264,9 @@ def _python_output_fields(code: str) -> list[str]:
         for key in value.keys:
             if not isinstance(key, ast.Constant) or not isinstance(key.value, str):
                 continue
-            if key.value not in fields and not _is_sensitive_key(key.value):
+            if key.value not in fields and not is_sensitive_activity_key(key.value):
                 fields.append(key.value)
     return fields[:4]
-
-
-def _generic_tool_display(tool_name: str, args: dict[str, Any]) -> tuple[str, str]:
-    safe_args = {
-        str(key): value
-        for key, value in args.items()
-        if key not in _GENERIC_EXECUTION_KEYS and not _is_sensitive_key(key)
-    }
-    redacted = redact_sensitive(safe_args)
-    content = " · ".join(
-        f"{key}: {_generic_value_preview(value)}" for key, value in sorted(redacted.items())
-    )
-    return tool_name.replace("_", " "), _bounded_preview(content)
-
-
-def _generic_value_preview(value: Any) -> str:
-    if isinstance(value, dict):
-        keys = [str(key) for key in value if not _is_sensitive_key(key)]
-        return f"fields {', '.join(keys[:4])}" + (f" +{len(keys) - 4}" if len(keys) > 4 else "")
-    if isinstance(value, (list, tuple)):
-        items = [_bounded_preview(str(item), limit=24) for item in value[:4]]
-        return ", ".join(items) + (f" +{len(value) - 4}" if len(value) > 4 else "")
-    if value is None:
-        return "none"
-    if isinstance(value, bool):
-        return "true" if value else "false"
-    return _bounded_preview(str(value), limit=_TOOL_VALUE_MAX_CHARS)
 
 
 def tool_call_display(tool_name: str, args: dict[str, Any]) -> tuple[str, str]:
@@ -347,7 +276,7 @@ def tool_call_display(tool_name: str, args: dict[str, Any]) -> tuple[str, str]:
     raw Rich line, and the tool name and args are model-supplied.
     """
     if tool_name == "github_cli":
-        label, content = _github_cli_display(args)
+        label, content = github_cli_activity(args)
     elif tool_name == "execute_python_code":
         label, content = _python_execution_display(args)
     elif tool_name == ActionToolName.SLASH_INVOKE:
@@ -368,7 +297,7 @@ def tool_call_display(tool_name: str, args: dict[str, Any]) -> tuple[str, str]:
             key_label, arg_key = simple
             label, content = key_label, str(args.get(arg_key, "")).strip()
         else:
-            label, content = _generic_tool_display(tool_name, args)
+            label, content = generic_tool_activity(tool_name, args)
     label = strip_terminal_controls(label)
     if label in _COMMAND_TOOL_LABELS:
         # A runnable command renders as a shell block: keep newlines and collapse
@@ -417,9 +346,11 @@ class ActionRenderObserver:
                     update=data.get("update"),
                     tool_call_id=str(data.get("id") or "") or None,
                 )
-            self._render_progress_update(data.get("update"))
+            self._render_progress_update(data)
             return
         if kind == "tool_end":
+            if str(data.get("name") or "") == _HOSTED_GATEWAY_TOOL:
+                self._clear_gateway_plan()
             # Discriminate by how the start registered the call: skill entries
             # sit in ``_pending_skill_calls`` (activation line); reference
             # loads registered nothing and stay silent.
@@ -516,15 +447,74 @@ class ActionRenderObserver:
         spinner = get_turn_spinner()
         return bool(spinner is not None and spinner.active_action)
 
-    def _render_progress_update(self, update: Any) -> None:
-        """Draw a tool's progress. A gateway status may use three rows and is not cut."""
+    def _render_progress_update(self, data: Any) -> None:
+        """Draw a tool's progress.
+
+        Hosted-gateway updates carry a ``kind``. A tool replaces the spinner
+        row (``on the gateway · GitHub CLI · …``) instead of appending a
+        description. A plan replaces the pinned gateway checklist. A settled
+        plan prints once, themed. Anything else is a dim note, uncut.
+        """
+        if not isinstance(data, dict):
+            return
+        update = data.get("update")
         if not isinstance(update, dict):
             return
         progress = update.get("progress")
         if not isinstance(progress, str) or not progress.strip():
             return
         text = strip_terminal_controls(progress, keep_whitespace=True).strip()
+        if not text:
+            return
+        kind = update.get("kind")
+        if kind == PROMPT_PROGRESS_KIND_TOOL:
+            self._render_gateway_tool(data, text)
+            return
+        if kind == PROMPT_PROGRESS_KIND_PLAN:
+            self._render_gateway_plan(text)
+            return
+        if kind == PROMPT_PROGRESS_KIND_PLAN_DONE:
+            self._render_gateway_plan_done(text)
+            return
         rows = [row for row in text.splitlines() if row.strip()]
+        self._print_dim_rows(rows)
+
+    def _render_gateway_tool(self, data: dict[str, Any], text: str) -> None:
+        """Show the remote tool on the spinner. A TTY does not also scroll it."""
+        line = f"{GATEWAY_ACTIVITY_MARKER} · {' '.join(text.split())}"
+        spinner = get_turn_spinner()
+        if spinner is not None and getattr(spinner, "streaming", False):
+            spinner.set_active_action(line, action_id=_tool_event_id(data) or "gateway")
+            if self.console.is_terminal:
+                return
+        self._print_dim_rows([line])
+
+    def _render_gateway_plan(self, text: str) -> None:
+        """Replace the pinned gateway checklist. Do not append another copy."""
+        plan = task_plan_from_checklist(text)
+        state = get_repl_state()
+        if plan is not None and state is not None:
+            state.gateway_plan = plan
+            return
+        self._print_dim_rows([row for row in text.splitlines() if row.strip()])
+
+    def _render_gateway_plan_done(self, text: str) -> None:
+        """Clear the live gateway plan and print one themed breakdown."""
+        self._clear_gateway_plan()
+        self.console.print()
+        print_repl_text(
+            self.console,
+            f"{SECONDARY_ANSI}{GATEWAY_ACTIVITY_MARKER}{ANSI_RESET}",
+            markup=False,
+        )
+        render_plan_breakdown(self.console, text)
+
+    def _clear_gateway_plan(self) -> None:
+        state = get_repl_state()
+        if state is not None:
+            state.gateway_plan = None
+
+    def _print_dim_rows(self, rows: list[str]) -> None:
         if not rows:
             return
         line = Text()

@@ -47,6 +47,19 @@ PROMPT_SLOT_WAIT_SECONDS = 300.0
 PROMPT_PROGRESS_MAX_LINES = 20
 #: Character budget for one progress update: three terminal rows.
 PROMPT_PROGRESS_LINE_MAX_CHARS = 600
+#: What a progress line is, so the shell can paint it instead of dumping the text.
+PROMPT_PROGRESS_KIND_TOOL = "tool"
+PROMPT_PROGRESS_KIND_PLAN = "plan"
+PROMPT_PROGRESS_KIND_PLAN_DONE = "plan_done"
+PROMPT_PROGRESS_KIND_NOTE = "note"
+PROMPT_PROGRESS_KINDS: frozenset[str] = frozenset(
+    {
+        PROMPT_PROGRESS_KIND_TOOL,
+        PROMPT_PROGRESS_KIND_PLAN,
+        PROMPT_PROGRESS_KIND_PLAN_DONE,
+        PROMPT_PROGRESS_KIND_NOTE,
+    }
+)
 #: The prompt worker ends after its current job; it gets this slice of the stop budget.
 PROMPT_WORKER_STOP_TIMEOUT_SECONDS = 2.0
 
@@ -74,6 +87,11 @@ __all__ = [
     "PROMPT_CONTEXT_VALUE_MAX_CHARS",
     "PROMPT_DEFAULT_ACTOR",
     "PROMPT_MAX_CHARS",
+    "PROMPT_PROGRESS_KIND_NOTE",
+    "PROMPT_PROGRESS_KIND_PLAN",
+    "PROMPT_PROGRESS_KIND_PLAN_DONE",
+    "PROMPT_PROGRESS_KIND_TOOL",
+    "PROMPT_PROGRESS_KINDS",
     "PROMPT_PROGRESS_LINE_MAX_CHARS",
     "PROMPT_PROGRESS_MAX_LINES",
     "PROMPT_QUEUE_MAX",

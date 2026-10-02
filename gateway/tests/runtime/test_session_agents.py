@@ -100,6 +100,73 @@ def test_pool_reuses_agent_for_same_session(monkeypatch: pytest.MonkeyPatch) -> 
     assert session.session_id in pool.cached_session_ids
 
 
+def test_hosted_prompt_records_compact_activity_and_chat_keeps_its_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The shell feed gets a checklist; a chat sink still gets the one-line status."""
+    from gateway.core.prompt_intake.output import CollectingTurnOutput
+
+    seen: dict[str, Any] = {}
+
+    def _fake_build(**kwargs: Any) -> Any:
+        seen.update(kwargs)
+        agent = MagicMock()
+        agent.bind_session = MagicMock()
+        agent.bind_turn = MagicMock()
+        return agent
+
+    monkeypatch.setattr(
+        "infrastructure.turn_host.session_agents.DefaultHeadlessBuild",
+        default_headless_build_stub(_fake_build),
+    )
+    recorded: list[tuple[str, str]] = []
+
+    def on_status(text: str, kind: str = "note") -> None:
+        recorded.append((kind, text))
+
+    pool = SessionAgentPool(console=Console(force_terminal=False))
+    session = SessionCore(store=InMemorySessionStore())
+    logger = logging.getLogger("test.pool")
+    pool.agent_for(
+        session=session,
+        output=CollectingTurnOutput(on_status=on_status),
+        logger=logger,
+    )
+    observer = seen["tools"].observer(message="probe")
+    observer(
+        "tool_start",
+        {"name": "github_cli", "input": {"args": ["api", "user", "--include"]}},
+    )
+    observer(
+        "tool_start",
+        {
+            "name": "update_plan",
+            "input": {
+                "plan": [
+                    {"step": "Inspect authenticated user", "status": "completed"},
+                    {"step": "List organization memberships", "status": "in_progress"},
+                ]
+            },
+        },
+    )
+
+    assert recorded[0] == (
+        "tool",
+        "GitHub CLI · gh api user --include",
+    )
+    assert recorded[1][0] == "plan"
+    assert "✓ Inspect authenticated user" in recorded[1][1]
+    assert "{'step'" not in recorded[1][1]
+
+    chat = MagicMock()
+    pool.agent_for(session=session, output=chat, logger=logger)
+    observer("tool_start", {"name": "shell_run", "input": {"command": "pwd"}})
+    status = chat.set_tool_status.call_args.args[0]
+    assert status.startswith("⏳")
+    assert "pwd" in status
+    assert len(recorded) == 2
+
+
 def test_pool_builds_separate_agents_per_session(monkeypatch: pytest.MonkeyPatch) -> None:
     class _FakeAgent:
         def __init__(self, **_kwargs: Any) -> None:

@@ -47,10 +47,40 @@ def format_task_plan_plain(plan: TaskPlan) -> str:
     return "\n".join(lines)
 
 
+def task_plan_from_checklist(text: str) -> TaskPlan | None:
+    """Rebuild a plan from :func:`format_task_plan_plain` text.
+
+    The header is ignored; step rows are the glyph plus the step text.
+    ``(verify)`` is restored onto :attr:`PlanStep.verifies`. Lines that are
+    not checklist rows (work notes, a truncated tail) are skipped.
+    """
+    glyph_status = {glyph: status for status, glyph in PLAN_STATUS_GLYPH.items()}
+    verify_suffix = f" {VERIFY_LABEL}"
+    steps: list[PlanStep] = []
+    for raw in text.splitlines():
+        stripped = raw.strip()
+        if not stripped or stripped.startswith("Plan"):
+            continue
+        glyph, _, rest = stripped.partition(" ")
+        status = glyph_status.get(glyph)
+        if status is None or not rest:
+            continue
+        verifies = rest.endswith(verify_suffix)
+        if verifies:
+            rest = rest[: -len(verify_suffix)].rstrip()
+        if not rest:
+            continue
+        steps.append(PlanStep(step=rest, status=status, verifies=verifies))
+    if not steps:
+        return None
+    return TaskPlan(steps=tuple(steps))
+
+
 __all__ = [
     "PLAN_STATUS_GLYPH",
     "VERIFY_LABEL",
     "format_plan_header",
     "format_task_plan_plain",
     "step_label",
+    "task_plan_from_checklist",
 ]

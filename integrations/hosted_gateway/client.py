@@ -17,6 +17,7 @@ from typing import Any
 import httpx
 
 from config.account import is_secure_account_origin, load_account_record, resolve_account_token
+from config.constants.gateway import PROMPT_PROGRESS_KIND_NOTE, PROMPT_PROGRESS_KINDS
 from config.constants.hosted_gateway import (
     HOSTED_GATEWAY_CONNECT_TIMEOUT_SECONDS,
     HOSTED_GATEWAY_HEALTH_PATH,
@@ -134,6 +135,8 @@ class PromptProgress:
 
     index: int
     text: str
+    #: ``tool``, ``plan``, ``plan_done``, or ``note``. Older records omit it.
+    kind: str = "note"
 
 
 @dataclass(frozen=True)
@@ -356,6 +359,12 @@ def _prompt_record(payload: dict[str, Any]) -> PromptRecord:
     )
 
 
+def _progress_kind(value: object) -> str:
+    if isinstance(value, str) and value in PROMPT_PROGRESS_KINDS:
+        return value
+    return PROMPT_PROGRESS_KIND_NOTE
+
+
 def _progress(value: object) -> tuple[PromptProgress, ...]:
     if not isinstance(value, list):
         return ()
@@ -365,7 +374,9 @@ def _progress(value: object) -> tuple[PromptProgress, ...]:
             continue
         index, text = item.get("index"), item.get("text")
         if isinstance(index, int) and not isinstance(index, bool) and isinstance(text, str):
-            lines.append(PromptProgress(index=index, text=text))
+            lines.append(
+                PromptProgress(index=index, text=text, kind=_progress_kind(item.get("kind")))
+            )
     return tuple(lines)
 
 
