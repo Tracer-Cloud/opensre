@@ -1,0 +1,366 @@
+"""The demo seed creates one failing PR, and cleanup keeps the approved repo name."""
+
+from __future__ import annotations
+
+import shutil
+import subprocess
+import sys
+from http import HTTPStatus
+from pathlib import Path
+from types import SimpleNamespace
+from typing import Any
+
+import pytest
+
+from integrations.github.client import GitHubApiError
+from integrations.github.tools.ci_repair_demo import cleanup
+from integrations.github.tools.ci_repair_demo.seed import (
+    FAILING_BRANCH,
+    FAILING_CALCULATOR,
+    PASSING_CALCULATOR,
+    TEST_CALCULATOR,
+    DemoRefused,
+    baseline_files,
+    seed_demo,
+)
+from integrations.github.tools.ci_repair_demo.tool import finish_ci_repair_demo, seed_ci_repair_demo
+
+_OWNER = "octocat"
+_REPO = "opensre-ci-repair-demo"
+
+
+class _Api:
+    """Just enough of the GitHub REST surface for one demo seed."""
+
+    def __init__(self, *, missing: bool = True, login: str = _OWNER) -> None:
+        self.missing = missing
+        self.login = login
+        self.calls: list[tuple[str, str]] = []
+        self.refs: dict[str, str] = {}
+        self.commits: dict[str, dict[str, str]] = {}
+        self.trees: dict[str, dict[str, str]] = {}
+        self.prs: list[dict[str, Any]] = []
+        self.runs: list[dict[str, Any]] = []
+        self.private = True
+        self.fork = False
+        self.push = True
+        self.status_code: int | None = None
+
+    def request(
+        self,
+        method: str,
+        path: str,
+        *,
+        params: dict[str, Any] | None = None,
+        body: dict[str, Any] | None = None,
+        **_kwargs: Any,
+    ) -> Any:
+        self.calls.append((method, path))
+        if self.status_code is not None and path == f"repos/{_OWNER}/{_REPO}":
+            raise GitHubApiError("private-api-detail", status_code=self.status_code, path=path)
+        if path == "user":
+            return {"login": self.login, "id": 1}
+        if path in {"user/repos", f"orgs/{_OWNER}/repos"} and method == "POST":
+            self._ensure_readme()
+            return self._repository()
+        root = f"repos/{_OWNER}/{_REPO}"
+        if path == root:
+            if self.missing:
+                raise GitHubApiError("missing", status_code=HTTPStatus.NOT_FOUND, path=path)
+            return self._repository()
+        if path == f"{root}/contents":
+            return [{"name": name.split("/", 1)[0], "type": "file"} for name in self._files("main")]
+        if path == f"{root}/contents/.opensre-demo.json":
+            return {"content": self._files("main")[".opensre-demo.json"]}
+        if "/branches/" in path:
+            branch = path.rsplit("/", 1)[-1]
+            sha = self.refs.get(branch)
+            if sha is None:
+                raise GitHubApiError("missing", status_code=HTTPStatus.NOT_FOUND, path=path)
+            return {"commit": {"sha": sha}}
+        if method == "GET" and "/git/commits/" in path:
+            sha = path.rsplit("/", 1)[-1]
+            return {"sha": sha, "tree": {"sha": sha}}
+        if method == "POST" and path.endswith("/git/trees"):
+            assert body is not None
+            merged = dict(self.commits.get(str(body["base_tree"]), {}))
+            for item in body["tree"]:
+                merged[str(item["path"])] = str(item["content"])
+            tree_sha = f"t{len(self.trees)}"
+            self.trees[tree_sha] = merged
+            return {"sha": tree_sha}
+        if method == "POST" and path.endswith("/git/commits"):
+            assert body is not None
+            sha = f"c{len(self.commits)}"
+            self.commits[sha] = dict(self.trees[str(body["tree"])])
+            return {"sha": sha}
+        if method == "PATCH" and "/git/refs/heads/" in path:
+            assert body is not None
+            branch = path.rsplit("/", 1)[-1]
+            if branch not in self.refs:
+                raise GitHubApiError("missing", status_code=HTTPStatus.NOT_FOUND, path=path)
+            assert body["force"] is False or branch == FAILING_BRANCH
+            self.refs[branch] = str(body["sha"])
+            return {}
+        if method == "POST" and path.endswith("/git/refs"):
+            assert body is not None
+            branch = str(body["ref"]).removeprefix("refs/heads/")
+            self.refs[branch] = str(body["sha"])
+            return {}
+        if path.endswith("/pulls") and method == "GET":
+            assert params is not None
+            return [
+                pull
+                for pull in self.prs
+                if pull["head_label"] == params["head"] and pull["state"] == "open"
+            ]
+        if path.endswith("/pulls") and method == "POST":
+            assert body is not None
+            pull = {
+                "number": len(self.prs) + 1,
+                "state": "open",
+                "head_label": f"{_OWNER}:{body['head']}",
+                "head": {"sha": self.refs[str(body["head"])]},
+                "title": body["title"],
+                "body": body["body"],
+            }
+            self.prs.append(pull)
+            return pull
+        if path.endswith("/actions/runs"):
+            assert params is not None
+            sha = str(params["head_sha"])
+            return {
+                "workflow_runs": [
+                    {**run, "head_sha": run.get("head_sha") or sha}
+                    for run in self.runs
+                    if run.get("head_sha") in {None, sha}
+                ]
+            }
+        raise AssertionError((method, path))
+
+    def _ensure_readme(self) -> None:
+        self.missing = False
+        if "main" not in self.refs:
+            self.commits["readme"] = {"README.md": "# demo\n"}
+            self.refs["main"] = "readme"
+
+    def _repository(self) -> dict[str, Any]:
+        return {
+            "full_name": f"{_OWNER}/{_REPO}",
+            "private": self.private,
+            "fork": self.fork,
+            "default_branch": "main",
+            "permissions": {"push": self.push},
+        }
+
+    def _files(self, branch: str) -> dict[str, str]:
+        return self.commits[self.refs[branch]]
+
+
+def test_seed_creates_a_private_repo_and_returns_the_failed_run() -> None:
+    api = _Api()
+    api.runs.append({"id": 4242, "conclusion": "failure", "event": "pull_request"})
+
+    result = seed_demo(api, _OWNER, _REPO, sleep=_forbidden_sleep, now=lambda: 0.0)
+
+    assert result["pr_number"] == 1
+    assert result["failed_run_id"] == 4242
+    assert result["pr_url"] == f"https://github.com/{_OWNER}/{_REPO}/pull/1"
+    assert result["created_repository"] is True
+    assert result["reused"] is False
+    assert api._files("main")["calculator.py"] == PASSING_CALCULATOR
+    assert "Demo calculator CI" in api._files("main")[".github/workflows/test.yml"]
+    assert api._files(FAILING_BRANCH)["calculator.py"] == FAILING_CALCULATOR
+    assert api._files(FAILING_BRANCH)["test_calculator.py"] == TEST_CALCULATOR
+    assert api.prs[0]["body"] == "This pull request is a demo. Do not merge.\n"
+    assert ("POST", "user/repos") in api.calls
+    assert all(not path.startswith("orgs/") for _method, path in api.calls)
+    assert all("search" not in path for _method, path in api.calls)
+
+
+def test_seed_reuses_an_open_demo_pull_request() -> None:
+    api = _Api(missing=False)
+    api._ensure_readme()
+    api.commits["readme"].update(baseline_files())
+    api.prs.append(
+        {
+            "number": 7,
+            "state": "open",
+            "head_label": f"{_OWNER}:{FAILING_BRANCH}",
+            "head": {"sha": "existing-head"},
+        }
+    )
+    api.runs.append(
+        {
+            "id": 55,
+            "conclusion": "failure",
+            "event": "pull_request",
+            "head_sha": "existing-head",
+        }
+    )
+
+    result = seed_demo(api, _OWNER, _REPO, sleep=_forbidden_sleep, now=lambda: 0.0)
+
+    assert result["reused"] is True
+    assert result["pr_number"] == 7
+    assert result["head_sha"] == "existing-head"
+    assert result["failed_run_id"] == 55
+    assert result["created_repository"] is False
+    assert not any(method == "POST" for method, _path in api.calls)
+
+
+def test_seed_refuses_an_unrelated_repository() -> None:
+    api = _Api(missing=False)
+    api._ensure_readme()
+    api.commits["readme"]["src/app.py"] = "print('real')\n"
+
+    with pytest.raises(DemoRefused, match="not an OpenSRE CI repair demo"):
+        seed_demo(api, _OWNER, _REPO, sleep=_forbidden_sleep, now=lambda: 0.0)
+
+    assert all(method == "GET" for method, _path in api.calls)
+
+
+def test_a_non_404_repository_error_does_not_create(monkeypatch: pytest.MonkeyPatch) -> None:
+    api = _Api()
+    api.status_code = HTTPStatus.INTERNAL_SERVER_ERROR
+    monkeypatch.setattr(
+        "integrations.github.tools.ci_repair_demo.tool.GitHubRestClient",
+        lambda _token: api,
+    )
+    monkeypatch.setattr(
+        "integrations.github.tools.ci_repair_demo.tool.configured_token",
+        lambda _token: "token",
+    )
+
+    result = seed_ci_repair_demo(_OWNER, _REPO)
+
+    assert result["ok"] is False
+    assert "private-api-detail" not in result["error"]
+    assert "GitHubApiError" in result["error"]
+    assert ("POST", "user/repos") not in api.calls
+
+
+def test_a_passing_pull_request_run_is_refused() -> None:
+    api = _Api()
+    api.runs.append({"id": 1, "conclusion": "success", "event": "pull_request"})
+
+    with pytest.raises(DemoRefused, match="did not fail CI"):
+        seed_demo(api, _OWNER, _REPO, sleep=_forbidden_sleep, now=lambda: 0.0)
+
+
+def test_seed_waits_until_the_pull_request_run_fails() -> None:
+    api = _Api()
+    clock = {"now": 0.0}
+
+    def sleep(_seconds: float) -> None:
+        api.runs.append({"id": 9, "conclusion": "failure", "event": "pull_request"})
+
+    result = seed_demo(api, _OWNER, _REPO, sleep=sleep, now=lambda: clock["now"])
+
+    assert result["failed_run_id"] == 9
+
+
+def test_seed_stops_when_the_failure_wait_ends() -> None:
+    api = _Api()
+    clock = {"now": 0.0}
+
+    def sleep(seconds: float) -> None:
+        clock["now"] += seconds + 180
+
+    with pytest.raises(DemoRefused, match="before the wait ended"):
+        seed_demo(api, _OWNER, _REPO, sleep=sleep, now=lambda: clock["now"])
+
+
+def test_the_seeded_calculator_fails_its_own_test(tmp_path: Path) -> None:
+    for name, content in baseline_files().items():
+        if name.startswith("."):
+            continue
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+    (tmp_path / "calculator.py").write_text(PASSING_CALCULATOR)
+    (tmp_path / "test_calculator.py").write_text(TEST_CALCULATOR)
+    good = subprocess.run(
+        [sys.executable, "-m", "unittest", "-v"], cwd=tmp_path, capture_output=True, check=False
+    )
+    assert good.returncode == 0
+    (tmp_path / "calculator.py").write_text(FAILING_CALCULATOR)
+    shutil.rmtree(tmp_path / "__pycache__", ignore_errors=True)
+    bad = subprocess.run(
+        [sys.executable, "-m", "unittest", "-v"], cwd=tmp_path, capture_output=True, check=False
+    )
+    assert bad.returncode != 0
+    assert b"AssertionError" in bad.stderr
+
+
+def test_finish_keeps_an_unsuffixed_repository_and_removes_the_loop(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cleanup, "results_directory", lambda: tmp_path)
+    removed: list[str] = []
+    monkeypatch.setattr(
+        "integrations.github.tools.ci_repair_demo.tool.remove_task",
+        lambda task_id: removed.append(task_id) or True,
+    )
+    monkeypatch.setattr("integrations.github.tools.ci_repair_demo.tool.list_tasks", lambda: [])
+
+    result = finish_ci_repair_demo(
+        repo="Tracer-Cloud/opensre-ci-repair-demo",
+        pr_number=4,
+        loop_id="9f4ed7a7a92f",
+        outcome="success",
+        failed_run_id=11,
+        fix_commit="abc123",
+        passing_run_id=22,
+    )
+
+    assert result["ok"] is True
+    assert result["loop_removed"] is True
+    assert result["repository_retained"] is True
+    assert "remains" in result["response_text"]
+    text = Path(result["evidence"]).read_text(encoding="utf-8")
+    assert "Tracer-Cloud/opensre-ci-repair-demo" in text
+    assert "Repository retained." in text
+    assert removed == ["9f4ed7a7a92f"]
+
+
+def test_finish_reports_a_loop_that_is_still_listed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(cleanup, "results_directory", lambda: tmp_path)
+    monkeypatch.setattr(
+        "integrations.github.tools.ci_repair_demo.tool.remove_task", lambda _task_id: False
+    )
+    monkeypatch.setattr(
+        "integrations.github.tools.ci_repair_demo.tool.list_tasks",
+        lambda: [SimpleNamespace(id="9f4ed7a7a92f")],
+    )
+
+    result = finish_ci_repair_demo(
+        repo="Tracer-Cloud/opensre-ci-repair-demo",
+        pr_number=4,
+        loop_id="9f4ed7a7a92f",
+        outcome="failed",
+    )
+
+    assert result["ok"] is False
+    assert result["loop_removed"] is False
+    assert result["repository_retained"] is True
+    assert "still listed" in result["error"]
+
+
+def test_finish_refuses_success_without_evidence() -> None:
+    result = finish_ci_repair_demo(
+        repo="Tracer-Cloud/opensre-ci-repair-demo",
+        pr_number=4,
+        loop_id="9f4ed7a7a92f",
+        outcome="success",
+    )
+
+    assert result["ok"] is False
+    assert result["error_kind"] == "refused"
+    assert "failed run" in result["error"]
+
+
+def _forbidden_sleep(_seconds: float) -> None:
+    raise AssertionError("seed waited even though the Actions run had already failed")

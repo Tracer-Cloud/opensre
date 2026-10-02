@@ -60,6 +60,15 @@ def _result(run: RepairRun, store: RepairStore) -> dict[str, Any]:
 _REFUSED_ERROR = "Could not schedule CI repair: the pull request was refused."
 
 
+def _inspection_done(run: RepairRun, *, wait_until_terminal: bool, until: float) -> bool:
+    """Whether this read should return instead of sleeping."""
+    if run.terminal:
+        return True
+    if wait_until_terminal:
+        return time.time() >= run.deadline
+    return time.monotonic() >= until
+
+
 @tool(
     name="schedule_ci_repair_loop",
     source="github",
@@ -162,8 +171,9 @@ def schedule_ci_repair_loop(
     ],
     description=(
         "Read the linked summary of a CI repair run: what it did, how it ended and why. "
-        "Omit task_id for this account's most recent run. Optionally wait up to sixty seconds "
-        "for completion; never starts another repair."
+        "Omit task_id for this account's most recent run. "
+        "wait_until_terminal waits until the run is terminal or its deadline has passed. "
+        "wait_seconds waits at most sixty seconds. Never starts another repair."
     ),
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.READ_ONLY,
@@ -185,6 +195,14 @@ def schedule_ci_repair_loop(
                 "maximum": 60,
                 "description": "Seconds to wait for a terminal result; default zero.",
             },
+            "wait_until_terminal": {
+                "type": "boolean",
+                "default": False,
+                "description": (
+                    "Wait until the run is terminal or its repair deadline has passed. "
+                    "One call. Ignores the sixty-second wait_seconds cap."
+                ),
+            },
         },
         "additionalProperties": False,
     },
@@ -192,6 +210,7 @@ def schedule_ci_repair_loop(
 def get_ci_repair_loop(
     task_id: str = "",
     wait_seconds: int = 0,
+    wait_until_terminal: bool = False,
     github_token: str | None = None,
     **_kwargs: Any,
 ) -> dict[str, Any]:
@@ -212,9 +231,12 @@ def get_ci_repair_loop(
             run = store.get(run_id)
             if not run.actor_id or run.actor_id != actor_id:
                 return {"ok": False, "error": "This repair belongs to a different GitHub account."}
-            if run.terminal or time.monotonic() >= until:
+            if _inspection_done(run, wait_until_terminal=wait_until_terminal, until=until):
                 return _result(run, store)
-            time.sleep(min(1, max(0, until - time.monotonic())))
+            remaining = (
+                run.deadline - time.time() if wait_until_terminal else until - time.monotonic()
+            )
+            time.sleep(min(1, max(0.0, remaining)))
     except (ValueError, OSError, RuntimeError, GitHubApiError) as exc:
         report_run_error(
             exc,

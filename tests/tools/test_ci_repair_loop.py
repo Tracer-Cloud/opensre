@@ -18,6 +18,9 @@ def test_repair_tools_are_discovered_without_inheriting_an_unselected_repo() -> 
     assert status.side_effect_level is SideEffectLevel.READ_ONLY
     assert schedule.input_schema["additionalProperties"] is False
     assert schedule.input_schema["required"] == ["owner"]
+    assert "wait_until_terminal" in status.input_schema["properties"]
+    assert registered["seed_ci_repair_demo"].side_effect_level is SideEffectLevel.MUTATING
+    assert registered["finish_ci_repair_demo"].side_effect_level is SideEffectLevel.MUTATING
     assert set(schedule.input_schema["properties"]) == {"demo", "owner", "repo", "pr_number"}
     assert "github_token" not in status.input_schema["properties"]
     injected = schedule.extract_params(

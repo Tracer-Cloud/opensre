@@ -1289,6 +1289,65 @@ def test_worker_exception_details_stay_in_local_logs(
     assert "private-provider-exception-detail" in caplog.text
 
 
+def test_wait_until_terminal_returns_when_the_run_finishes(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from integrations.github.tools.ci_repair_loop import tool
+
+    store = RepairStore(tmp_path)
+    run = _run(pr_number=4).model_copy(update={"demo": False})
+    store.save(run)
+    monkeypatch.setattr(tool, "RepairStore", lambda: store)
+    monkeypatch.setattr(tool, "configured_token", lambda _token: "request-token")
+
+    class Reader:
+        def request(self, *_args: Any) -> dict[str, Any]:
+            return {"login": "alice", "id": 123}
+
+    monkeypatch.setattr(tool, "GitHubRestClient", lambda _token: Reader())
+    sleeps: list[float] = []
+
+    def sleep(seconds: float) -> None:
+        sleeps.append(seconds)
+        store.save(store.get(run.id).model_copy(update={"status": RepairStatus.SUCCEEDED}))
+
+    monkeypatch.setattr(tool.time, "sleep", sleep)
+
+    result = tool.get_ci_repair_loop(run.id, wait_until_terminal=True)
+
+    assert result["ok"] is True
+    assert result["terminal"] is True
+    assert sleeps
+
+
+def test_wait_until_terminal_stops_at_the_repair_deadline(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from integrations.github.tools.ci_repair_loop import tool
+
+    store = RepairStore(tmp_path)
+    run = _run(pr_number=4).model_copy(update={"demo": False, "deadline": time.time() - 1})
+    store.save(run)
+    monkeypatch.setattr(tool, "RepairStore", lambda: store)
+    monkeypatch.setattr(tool, "configured_token", lambda _token: "request-token")
+
+    class Reader:
+        def request(self, *_args: Any) -> dict[str, Any]:
+            return {"login": "alice", "id": 123}
+
+    monkeypatch.setattr(tool, "GitHubRestClient", lambda _token: Reader())
+
+    def sleep(_seconds: float) -> None:
+        raise AssertionError("slept past the repair deadline")
+
+    monkeypatch.setattr(tool.time, "sleep", sleep)
+
+    result = tool.get_ci_repair_loop(run.id, wait_until_terminal=True)
+
+    assert result["ok"] is True
+    assert result["terminal"] is False
+
+
 def test_registration_publish_preserves_an_already_started_worker(tmp_path: Path) -> None:
     store = RepairStore(tmp_path)
     run, _ = store.reserve(_run())
