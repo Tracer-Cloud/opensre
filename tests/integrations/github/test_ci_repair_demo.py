@@ -29,22 +29,93 @@ _OWNER = "octocat"
 _REPO = "opensre-ci-repair-demo"
 
 
-class _Api:
-    """Just enough of the GitHub REST surface for one demo seed."""
+class _RepoState:
+    """Files, refs, and pulls for one repository name."""
 
-    def __init__(self, *, missing: bool = True, login: str = _OWNER) -> None:
+    def __init__(self, name: str, *, missing: bool) -> None:
+        self.name = name
         self.missing = missing
-        self.login = login
-        self.calls: list[tuple[str, str]] = []
         self.refs: dict[str, str] = {}
         self.commits: dict[str, dict[str, str]] = {}
         self.trees: dict[str, dict[str, str]] = {}
         self.prs: list[dict[str, Any]] = []
-        self.runs: list[dict[str, Any]] = []
         self.private = True
         self.fork = False
         self.push = True
+
+    def ensure_readme(self) -> None:
+        self.missing = False
+        if "main" not in self.refs:
+            self.commits["readme"] = {"README.md": "# demo\n"}
+            self.refs["main"] = "readme"
+
+    def repository(self) -> dict[str, Any]:
+        return {
+            "full_name": f"{_OWNER}/{self.name}",
+            "private": self.private,
+            "fork": self.fork,
+            "default_branch": "main",
+            "permissions": {"push": self.push},
+        }
+
+    def files(self, branch: str) -> dict[str, str]:
+        return self.commits[self.refs[branch]]
+
+
+class _Api:
+    """Just enough of the GitHub REST surface for one demo seed."""
+
+    def __init__(self, *, missing: bool = True, login: str = _OWNER) -> None:
+        self.login = login
+        self.calls: list[tuple[str, str]] = []
+        self.runs: list[dict[str, Any]] = []
         self.status_code: int | None = None
+        self._primary = _RepoState(_REPO, missing=missing)
+        self._repos = {_REPO: self._primary}
+
+    @property
+    def missing(self) -> bool:
+        return self._primary.missing
+
+    @missing.setter
+    def missing(self, value: bool) -> None:
+        self._primary.missing = value
+
+    @property
+    def refs(self) -> dict[str, str]:
+        return self._primary.refs
+
+    @property
+    def commits(self) -> dict[str, dict[str, str]]:
+        return self._primary.commits
+
+    @property
+    def prs(self) -> list[dict[str, Any]]:
+        return self._primary.prs
+
+    @property
+    def private(self) -> bool:
+        return self._primary.private
+
+    @private.setter
+    def private(self, value: bool) -> None:
+        self._primary.private = value
+
+    @property
+    def fork(self) -> bool:
+        return self._primary.fork
+
+    @fork.setter
+    def fork(self, value: bool) -> None:
+        self._primary.fork = value
+
+    @property
+    def push(self) -> bool:
+        return self._primary.push
+
+    @push.setter
+    def push(self, value: bool) -> None:
+        self._primary.push = value
 
     def request(
         self,
@@ -61,72 +132,77 @@ class _Api:
         if path == "user":
             return {"login": self.login, "id": 1}
         if path in {"user/repos", f"orgs/{_OWNER}/repos"} and method == "POST":
-            self._ensure_readme()
-            return self._repository()
-        root = f"repos/{_OWNER}/{_REPO}"
-        if path == root:
-            if self.missing:
+            assert body is not None
+            state = self._state(str(body["name"]))
+            state.ensure_readme()
+            return state.repository()
+        parsed = self._parse(path)
+        if parsed is None:
+            raise AssertionError((method, path))
+        state, tail = parsed
+        if tail == "":
+            if state.missing:
                 raise GitHubApiError("missing", status_code=HTTPStatus.NOT_FOUND, path=path)
-            return self._repository()
-        if path == f"{root}/contents":
-            return [{"name": name.split("/", 1)[0], "type": "file"} for name in self._files("main")]
-        if path == f"{root}/contents/.opensre-demo.json":
-            return {"content": self._files("main")[".opensre-demo.json"]}
-        if "/branches/" in path:
-            branch = path.split("/branches/", 1)[1]
-            sha = self.refs.get(branch)
+            return state.repository()
+        if tail == "contents":
+            return [{"name": name.split("/", 1)[0], "type": "file"} for name in state.files("main")]
+        if tail == "contents/.opensre-demo.json":
+            return {"content": state.files("main")[".opensre-demo.json"]}
+        if tail.startswith("branches/"):
+            branch = tail.split("/", 1)[1]
+            sha = state.refs.get(branch)
             if sha is None:
                 raise GitHubApiError("missing", status_code=HTTPStatus.NOT_FOUND, path=path)
             return {"commit": {"sha": sha}}
-        if method == "GET" and "/git/commits/" in path:
-            sha = path.rsplit("/", 1)[-1]
+        if method == "GET" and tail.startswith("git/commits/"):
+            sha = tail.rsplit("/", 1)[-1]
             return {"sha": sha, "tree": {"sha": sha}}
-        if method == "POST" and path.endswith("/git/trees"):
+        if method == "POST" and tail == "git/trees":
             assert body is not None
-            merged = dict(self.commits.get(str(body["base_tree"]), {}))
+            merged = dict(state.commits.get(str(body["base_tree"]), {}))
             for item in body["tree"]:
                 merged[str(item["path"])] = str(item["content"])
-            tree_sha = f"t{len(self.trees)}"
-            self.trees[tree_sha] = merged
+            tree_sha = f"t{len(state.trees)}"
+            state.trees[tree_sha] = merged
             return {"sha": tree_sha}
-        if method == "POST" and path.endswith("/git/commits"):
+        if method == "POST" and tail == "git/commits":
             assert body is not None
-            sha = f"c{len(self.commits)}"
-            self.commits[sha] = dict(self.trees[str(body["tree"])])
+            sha = f"c{len(state.commits)}"
+            state.commits[sha] = dict(state.trees[str(body["tree"])])
             return {"sha": sha}
-        if method == "PATCH" and "/git/refs/heads/" in path:
+        if method == "PATCH" and tail.startswith("git/refs/heads/"):
             assert body is not None
-            branch = path.split("/git/refs/heads/", 1)[1]
-            if branch not in self.refs:
+            branch = tail.removeprefix("git/refs/heads/")
+            if branch not in state.refs:
                 raise GitHubApiError("missing", status_code=HTTPStatus.NOT_FOUND, path=path)
             assert body["force"] is False
-            self.refs[branch] = str(body["sha"])
+            state.refs[branch] = str(body["sha"])
             return {}
-        if method == "POST" and path.endswith("/git/refs"):
+        if method == "POST" and tail == "git/refs":
             assert body is not None
             branch = str(body["ref"]).removeprefix("refs/heads/")
-            self.refs[branch] = str(body["sha"])
+            state.refs[branch] = str(body["sha"])
             return {}
-        if path.endswith("/pulls") and method == "GET":
+        if tail == "pulls" and method == "GET":
             assert params is not None
             return [
                 pull
-                for pull in self.prs
+                for pull in state.prs
                 if pull["head_label"] == params["head"] and pull["state"] == "open"
             ]
-        if path.endswith("/pulls") and method == "POST":
+        if tail == "pulls" and method == "POST":
             assert body is not None
             pull = {
-                "number": len(self.prs) + 1,
+                "number": len(state.prs) + 1,
                 "state": "open",
                 "head_label": f"{_OWNER}:{body['head']}",
-                "head": {"sha": self.refs[str(body["head"])]},
+                "head": {"sha": state.refs[str(body["head"])]},
                 "title": body["title"],
                 "body": body["body"],
             }
-            self.prs.append(pull)
+            state.prs.append(pull)
             return pull
-        if path.endswith("/actions/runs"):
+        if tail == "actions/runs":
             assert params is not None
             sha = str(params["head_sha"])
             return {
@@ -138,23 +214,31 @@ class _Api:
             }
         raise AssertionError((method, path))
 
+    def _state(self, name: str) -> _RepoState:
+        found = self._repos.get(name)
+        if found is None:
+            found = _RepoState(name, missing=True)
+            self._repos[name] = found
+        return found
+
+    def _parse(self, path: str) -> tuple[_RepoState, str] | None:
+        prefix = f"repos/{_OWNER}/"
+        if not path.startswith(prefix):
+            return None
+        rest = path[len(prefix) :]
+        name, _sep, tail = rest.partition("/")
+        if not name:
+            return None
+        return self._state(name), tail
+
     def _ensure_readme(self) -> None:
-        self.missing = False
-        if "main" not in self.refs:
-            self.commits["readme"] = {"README.md": "# demo\n"}
-            self.refs["main"] = "readme"
+        self._primary.ensure_readme()
 
     def _repository(self) -> dict[str, Any]:
-        return {
-            "full_name": f"{_OWNER}/{_REPO}",
-            "private": self.private,
-            "fork": self.fork,
-            "default_branch": "main",
-            "permissions": {"push": self.push},
-        }
+        return self._primary.repository()
 
     def _files(self, branch: str) -> dict[str, str]:
-        return self.commits[self.refs[branch]]
+        return self._primary.files(branch)
 
 
 def test_seed_creates_a_private_repo_and_returns_the_failed_run() -> None:
@@ -235,15 +319,41 @@ def test_seed_reuses_an_open_demo_pull_request() -> None:
     assert not any(method == "POST" for method, _path in api.calls)
 
 
-def test_seed_refuses_an_unrelated_repository() -> None:
+def test_seed_leaves_an_unrelated_repository_and_seeds_a_fresh_name(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     api = _Api(missing=False)
     api._ensure_readme()
     api.commits["readme"]["src/app.py"] = "print('real')\n"
+    taken = _RepoState("opensre-ci-repair-demo-aaaa", missing=False)
+    taken.ensure_readme()
+    taken.commits["readme"]["src/app.py"] = "print('also real')\n"
+    api._repos[taken.name] = taken
+    api.runs.append({"id": 77, "conclusion": "failure", "event": "pull_request"})
+    names = iter(("opensre-ci-repair-demo-aaaa", "opensre-ci-repair-demo-bbbb"))
+    monkeypatch.setattr(
+        "integrations.github.tools.ci_repair_demo.seed._fresh_demo_repo_name",
+        lambda: next(names),
+    )
 
-    with pytest.raises(DemoRefused, match="not an OpenSRE CI repair demo"):
-        seed_demo(api, _OWNER, _REPO, sleep=_forbidden_sleep, now=lambda: 0.0)
+    result = seed_demo(api, _OWNER, _REPO, sleep=_forbidden_sleep, now=lambda: 0.0)
 
-    assert all(method == "GET" for method, _path in api.calls)
+    fresh = "opensre-ci-repair-demo-bbbb"
+    assert result["owner"] == _OWNER
+    assert result["repo"] == fresh
+    assert result["requested_repo"] == _REPO
+    assert result["pr_url"] == f"https://github.com/{_OWNER}/{fresh}/pull/1"
+    assert result["failed_run_id"] == 77
+    assert result["created_repository"] is True
+    assert "Do not ask the user." in result["response_text"]
+    primary = f"repos/{_OWNER}/{_REPO}"
+    assert all(
+        method == "GET"
+        for method, path in api.calls
+        if path == primary or path.startswith(f"{primary}/")
+    )
+    assert ("POST", "user/repos") in api.calls
+    assert "src/app.py" not in api._repos[fresh].files("main")
 
 
 def test_a_non_404_repository_error_does_not_create(monkeypatch: pytest.MonkeyPatch) -> None:

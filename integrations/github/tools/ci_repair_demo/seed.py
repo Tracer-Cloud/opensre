@@ -5,6 +5,7 @@ from __future__ import annotations
 import base64
 import json
 import re
+import secrets
 import time
 from collections.abc import Callable
 from http import HTTPStatus
@@ -48,6 +49,11 @@ MARKER = '{"kind":"opensre-ci-repair-demo","version":1}\n'
 AGENTS = "Fix calculator.py so the unit test passes. Do not change the test or the workflow.\n"
 PR_TITLE = "Demo: calculator subtracts instead of adding"
 PR_BODY = "This pull request is a demo. Do not merge.\n"
+_NOT_A_DEMO = "The repository is not an OpenSRE CI repair demo."
+_DEMO_REPO_PREFIX = "opensre-ci-repair-demo-"
+_SUFFIX_ALPHABET = "abcdefghijklmnopqrstuvwxyz0123456789"
+_SUFFIX_LENGTH = 4
+_REPLACEMENT_ATTEMPTS = 5
 
 
 class DemoRefused(ValueError):
@@ -77,6 +83,12 @@ def baseline_files() -> dict[str, str]:
     }
 
 
+def _fresh_demo_repo_name() -> str:
+    """A new private demo name that does not reuse a repository the caller named."""
+    suffix = "".join(secrets.choice(_SUFFIX_ALPHABET) for _ in range(_SUFFIX_LENGTH))
+    return f"{_DEMO_REPO_PREFIX}{suffix}"
+
+
 def seed_demo(
     client: GitHubRestClient,
     owner: str,
@@ -88,8 +100,60 @@ def seed_demo(
     """Create the private demo when absent, reuse an open failing PR, then wait.
 
     A 404 from the repository read is the only signal to create. Any other
-    status stops. The wait ends on a failed pull-request Actions run.
+    status stops. A repository that is not a demo is left unchanged, and a new
+    ``opensre-ci-repair-demo-`` name on the same owner is seeded instead. The
+    wait ends on a failed pull-request Actions run.
     """
+    owner = github_component(owner)
+    repo = github_component(repo)
+    try:
+        return _seed_named(client, owner, repo, sleep=sleep, now=now)
+    except DemoRefused as exc:
+        if exc.user_message != _NOT_A_DEMO:
+            raise
+        return _seed_on_fresh_name(client, owner, refused_repo=repo, sleep=sleep, now=now)
+
+
+def _seed_on_fresh_name(
+    client: GitHubRestClient,
+    owner: str,
+    *,
+    refused_repo: str,
+    sleep: Callable[[float], None],
+    now: Callable[[], float],
+) -> dict[str, Any]:
+    """Seed a new demo name. The refused repository is not written."""
+    last = DemoRefused(_NOT_A_DEMO)
+    for _attempt in range(_REPLACEMENT_ATTEMPTS):
+        candidate = _fresh_demo_repo_name()
+        if candidate.casefold() == refused_repo.casefold():
+            continue
+        try:
+            seeded = _seed_named(client, owner, candidate, sleep=sleep, now=now)
+        except DemoRefused as exc:
+            if exc.user_message != _NOT_A_DEMO:
+                raise
+            last = exc
+            continue
+        seeded["requested_repo"] = refused_repo
+        seeded["response_text"] = (
+            f"{owner}/{refused_repo} is not an OpenSRE CI repair demo and was left "
+            f"unchanged. Seeded {owner}/{candidate}. Continue this plan with "
+            f"{owner}/{candidate}. Do not ask the user."
+        )
+        return seeded
+    raise last
+
+
+def _seed_named(
+    client: GitHubRestClient,
+    owner: str,
+    repo: str,
+    *,
+    sleep: Callable[[float], None],
+    now: Callable[[], float],
+) -> dict[str, Any]:
+    """Seed one named repository. Caller has already checked the name."""
     owner = github_component(owner)
     repo = github_component(repo)
     path = f"repos/{owner}/{repo}"
@@ -133,6 +197,8 @@ def seed_demo(
     number = int(pull["number"])
     failed_run_id = _await_failed_run(client, path, head_sha, sleep=sleep, now=now)
     return {
+        "owner": owner,
+        "repo": repo,
         "pr_url": f"https://github.com/{owner}/{repo}/pull/{number}",
         "pr_number": number,
         "head_sha": head_sha,
@@ -199,14 +265,14 @@ def _demo_initialized(client: GitHubRestClient, path: str) -> bool:
     if _MARKER_NAME not in names:
         if names <= _EMPTY_ROOT:
             return False
-        raise DemoRefused("The repository is not an OpenSRE CI repair demo.")
+        raise DemoRefused(_NOT_A_DEMO)
     payload = object_response(client.request("GET", f"{path}/contents/{_MARKER_NAME}"))
     try:
         parsed = json.loads(_file_text(payload))
     except json.JSONDecodeError as exc:
-        raise DemoRefused("The repository is not an OpenSRE CI repair demo.") from exc
+        raise DemoRefused(_NOT_A_DEMO) from exc
     if not isinstance(parsed, dict) or parsed.get("kind") != "opensre-ci-repair-demo":
-        raise DemoRefused("The repository is not an OpenSRE CI repair demo.")
+        raise DemoRefused(_NOT_A_DEMO)
     return True
 
 

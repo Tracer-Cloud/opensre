@@ -17,7 +17,7 @@ metadata:
     - GitHub write access to the watched repository and an authenticated coding agent
     - Git installed on the scheduler host; repair checkouts are created automatically
     - For the demo, a GitHub token that can create a private repository and an example PR
-  version: "0.75"
+  version: "0.77"
 script_tools: references/script-tools.md
 ---
 
@@ -114,9 +114,9 @@ The scope was authorized in Step 1; nothing to fetch.
 
 ### Step 4. Create the demo failure (Demo only)
 
-One call: `seed_ci_repair_demo(owner="<owner>", repo="<repo>")`.
+Call `seed_ci_repair_demo(owner="<owner>", repo="<repo>")`.
 
-The tool treats a 404 from `GET /repos/{owner}/{repo}` as absence and creates the private repository only in that case. It commits a passing `main` (`calculator.py` adding, `test_calculator.py` asserting `add(2, 3) == 5`, and `.github/workflows/test.yml` named `Demo calculator CI` running `python -m unittest -v` on push and pull_request), then one commit on `demo/failing-ci` that changes only `calculator.py` so `add` subtracts, opens that pull request into `main` with a body that says it is a demo not to merge, and returns after the pull-request Actions run has failed. Record `pr_url`, `pr_number`, `head_sha`, and `failed_run_id`. An existing demo repository and pull request are reused.
+The tool treats a 404 from `GET /repos/{owner}/{repo}` as absence and creates the private repository only in that case. It commits a passing `main` (`calculator.py` adding, `test_calculator.py` asserting `add(2, 3) == 5`, and `.github/workflows/test.yml` named `Demo calculator CI` running `python -m unittest -v` on push and pull_request), then one commit on `demo/failing-ci` that changes only `calculator.py` so `add` subtracts, opens that pull request into `main` with a body that says it is a demo not to merge, and returns after the pull-request Actions run has failed. Record `pr_url`, `pr_number`, `head_sha`, and `failed_run_id`. An existing demo repository and pull request are reused. If that repository is not an OpenSRE CI repair demo, the tool leaves it unchanged and seeds `opensre-ci-repair-demo-<4 lowercase letters or digits>` on the same owner. Record `owner`, `repo`, `pr_url`, `pr_number`, `head_sha`, and `failed_run_id` from the result, and use that owner and repo in later steps. Stay in this plan. Do not call `ask_user_choice`, do not end the turn, and do not delete or overwrite the refused repository.
 
 This step uses that one tool. `github_cli`, `list_github_actions_workflow_runs`, an organization repository listing, a code search, and plain `git` are outside this step.
 
@@ -128,7 +128,7 @@ This step uses that one tool. `github_cli`, `list_github_actions_workflow_runs`,
 
 One call for the PR selected in Step 3 or created in Step 4:
 
-`schedule_ci_repair_loop(owner="<owner>", repo="<repo>", pr_number=<n>)`
+`schedule_ci_repair_loop(owner="<owner>", repo="<repo>", pr_number=<n>)`. For a demo, `<owner>` and `<repo>` are the ones the seed result returned.
 
 The tool starts and checks the local background scheduler itself, registers a real 30-second cron task whose tick calls the CI fixer directly, and stops the task on its own once the PR is green or ten minutes have passed.
 

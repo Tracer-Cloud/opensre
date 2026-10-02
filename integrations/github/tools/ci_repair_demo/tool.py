@@ -55,11 +55,15 @@ def _failed(exc: Exception, *, tool_name: str, method: str, action: str) -> dict
     use_cases=["Create the private CI repair onboarding demo and its failing pull request"],
     description=(
         "Create or reuse a private CI repair demo. A 404 from GET /repos/{owner}/{repo} "
-        "creates that private repository; any other error stops. Commits a passing main "
-        "(calculator.py adding, its unit test, and Demo calculator CI) and one commit on "
-        "demo/failing-ci that makes add subtract, opens that pull request, and returns "
-        "after the pull-request Actions run has failed. An existing open demo pull request "
-        "is reused. Does not list the organization or search code."
+        "creates that private repository; any other error stops. A repository that is not "
+        "an OpenSRE CI repair demo is left unchanged, and this tool seeds a new private "
+        "repository named opensre-ci-repair-demo- plus 4 lowercase letters or digits on "
+        "the same owner. The result's owner and repo are the repository the plan continues "
+        "with. Commits a passing main (calculator.py adding, its unit test, and Demo "
+        "calculator CI) and one commit on demo/failing-ci that makes add subtract, opens "
+        "that pull request, and returns after the pull-request Actions run has failed. An "
+        "existing open demo pull request is reused. Does not list the organization or "
+        "search code."
     ),
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
