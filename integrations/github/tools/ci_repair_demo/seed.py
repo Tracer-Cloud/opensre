@@ -102,6 +102,11 @@ def seed_demo(
     pull = _open_demo_pull(client, path, owner)
     reused = pull is not None
     if pull is None:
+        if _branch_exists(client, path, FAILING_BRANCH):
+            raise DemoRefused(
+                f"{FAILING_BRANCH} already has commits and no open pull request. "
+                "This tool will not rewrite that branch."
+            )
         parent = _branch_sha(client, path, default_branch, sleep=sleep)
         head_sha = _commit_files(
             client,
@@ -110,7 +115,7 @@ def seed_demo(
             {"calculator.py": FAILING_CALCULATOR},
             "Demo: expose an addition bug with a real test",
         )
-        _advance_ref(client, path, FAILING_BRANCH, head_sha, force=True)
+        _advance_ref(client, path, FAILING_BRANCH, head_sha, force=False)
         pull = object_response(
             client.request(
                 "POST",
@@ -274,6 +279,16 @@ def _commit_files(
     return str(commit["sha"])
 
 
+def _branch_exists(client: GitHubRestClient, path: str, branch: str) -> bool:
+    try:
+        client.request("GET", f"{path}/branches/{branch}")
+    except GitHubApiError as exc:
+        if exc.status_code == HTTPStatus.NOT_FOUND:
+            return False
+        raise
+    return True
+
+
 def _advance_ref(
     client: GitHubRestClient, path: str, branch: str, sha: str, *, force: bool
 ) -> None:
@@ -337,11 +352,13 @@ def _await_failed_run(
         matched = [
             run for run in matched if not run.get("head_sha") or str(run.get("head_sha")) == sha
         ]
-        failures = [run for run in matched if run.get("conclusion") == "failure"]
-        pull_failures = [run for run in failures if run.get("event") == "pull_request"]
-        chosen = pull_failures[0] if pull_failures else (failures[0] if failures else None)
-        if chosen is not None and chosen.get("id") is not None:
-            return int(chosen["id"])
+        pull_failures = [
+            run
+            for run in matched
+            if run.get("event") == "pull_request" and run.get("conclusion") == "failure"
+        ]
+        if pull_failures and pull_failures[0].get("id") is not None:
+            return int(pull_failures[0]["id"])
         passed = any(
             run.get("conclusion") == "success" and run.get("event") == "pull_request"
             for run in matched

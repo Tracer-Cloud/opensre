@@ -492,6 +492,7 @@ class ActionRenderObserver:
     def _render_gateway_plan(self, text: str) -> None:
         """Replace the pinned gateway checklist. Do not append another copy."""
         if PROMPT_PROGRESS_PLAN_OMITTED in text:
+            self._clear_gateway_plan()
             self._print_dim_rows([row for row in text.splitlines() if row.strip()])
             return
         plan = task_plan_from_checklist(text)

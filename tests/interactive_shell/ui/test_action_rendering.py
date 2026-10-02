@@ -1050,6 +1050,17 @@ def test_a_truncated_gateway_plan_is_shown_and_not_pinned() -> None:
     try:
         observer(
             "tool_update",
+            {
+                "name": "ask_hosted_gateway",
+                "update": {
+                    "kind": "plan",
+                    "progress": "Plan · 1/2\n  ● List organization memberships\n  ○ Check permission",
+                },
+            },
+        )
+        assert state.gateway_plan is not None
+        observer(
+            "tool_update",
             {"name": "ask_hosted_gateway", "update": {"kind": "plan", "progress": progress}},
         )
         assert state.gateway_plan is None

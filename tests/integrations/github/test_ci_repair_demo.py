@@ -73,7 +73,7 @@ class _Api:
         if path == f"{root}/contents/.opensre-demo.json":
             return {"content": self._files("main")[".opensre-demo.json"]}
         if "/branches/" in path:
-            branch = path.rsplit("/", 1)[-1]
+            branch = path.split("/branches/", 1)[1]
             sha = self.refs.get(branch)
             if sha is None:
                 raise GitHubApiError("missing", status_code=HTTPStatus.NOT_FOUND, path=path)
@@ -96,10 +96,10 @@ class _Api:
             return {"sha": sha}
         if method == "PATCH" and "/git/refs/heads/" in path:
             assert body is not None
-            branch = path.rsplit("/", 1)[-1]
+            branch = path.split("/git/refs/heads/", 1)[1]
             if branch not in self.refs:
                 raise GitHubApiError("missing", status_code=HTTPStatus.NOT_FOUND, path=path)
-            assert body["force"] is False or branch == FAILING_BRANCH
+            assert body["force"] is False
             self.refs[branch] = str(body["sha"])
             return {}
         if method == "POST" and path.endswith("/git/refs"):
@@ -176,6 +176,32 @@ def test_seed_creates_a_private_repo_and_returns_the_failed_run() -> None:
     assert ("POST", "user/repos") in api.calls
     assert all(not path.startswith("orgs/") for _method, path in api.calls)
     assert all("search" not in path for _method, path in api.calls)
+
+
+def test_seed_does_not_rewrite_an_existing_demo_branch() -> None:
+    api = _Api(missing=False)
+    api._ensure_readme()
+    api.commits["readme"].update(baseline_files())
+    api.commits["kept"] = {"calculator.py": "def add(a, b):\n    return a + b + 1\n"}
+    api.refs[FAILING_BRANCH] = "kept"
+
+    with pytest.raises(DemoRefused, match="will not rewrite"):
+        seed_demo(api, _OWNER, _REPO, sleep=_forbidden_sleep, now=lambda: 0.0)
+
+    assert api.refs[FAILING_BRANCH] == "kept"
+    assert not any(method == "POST" and path.endswith("/pulls") for method, path in api.calls)
+
+
+def test_seed_waits_for_the_pull_request_run_when_push_failed_first() -> None:
+    api = _Api()
+    api.runs.append({"id": 1, "conclusion": "failure", "event": "push"})
+
+    def sleep(_seconds: float) -> None:
+        api.runs.append({"id": 2, "conclusion": "failure", "event": "pull_request"})
+
+    result = seed_demo(api, _OWNER, _REPO, sleep=sleep, now=lambda: 0.0)
+
+    assert result["failed_run_id"] == 2
 
 
 def test_seed_reuses_an_open_demo_pull_request() -> None:
@@ -293,10 +319,18 @@ def test_the_seeded_calculator_fails_its_own_test(tmp_path: Path) -> None:
     assert b"AssertionError" in bad.stderr
 
 
+def _owned_task(repo: str = "Tracer-Cloud/opensre-ci-repair-demo") -> SimpleNamespace:
+    return SimpleNamespace(id="9f4ed7a7a92f", name=f"CI repair: {repo}")
+
+
 def test_finish_keeps_an_unsuffixed_repository_and_removes_the_loop(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setattr(cleanup, "results_directory", lambda: tmp_path)
+    monkeypatch.setattr(
+        "integrations.github.tools.ci_repair_demo.tool.get_task",
+        lambda _task_id: _owned_task(),
+    )
     removed: list[str] = []
     monkeypatch.setattr(
         "integrations.github.tools.ci_repair_demo.tool.remove_task",
@@ -329,6 +363,10 @@ def test_finish_reports_a_loop_that_is_still_listed(
 ) -> None:
     monkeypatch.setattr(cleanup, "results_directory", lambda: tmp_path)
     monkeypatch.setattr(
+        "integrations.github.tools.ci_repair_demo.tool.get_task",
+        lambda _task_id: _owned_task(),
+    )
+    monkeypatch.setattr(
         "integrations.github.tools.ci_repair_demo.tool.remove_task", lambda _task_id: False
     )
     monkeypatch.setattr(
@@ -349,7 +387,81 @@ def test_finish_reports_a_loop_that_is_still_listed(
     assert "still listed" in result["error"]
 
 
-def test_finish_refuses_success_without_evidence() -> None:
+def test_finish_refuses_a_schedule_that_is_not_this_demo(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    removed: list[str] = []
+    monkeypatch.setattr(
+        "integrations.github.tools.ci_repair_demo.tool.get_task",
+        lambda _task_id: SimpleNamespace(id="other", name="Morning digest"),
+    )
+    monkeypatch.setattr(
+        "integrations.github.tools.ci_repair_demo.tool.remove_task",
+        lambda task_id: removed.append(task_id),
+    )
+
+    result = finish_ci_repair_demo(
+        repo="Tracer-Cloud/opensre-ci-repair-demo",
+        pr_number=4,
+        loop_id="other",
+        outcome="failed",
+    )
+
+    assert result["ok"] is False
+    assert result["error_kind"] == "refused"
+    assert "not the CI repair" in result["error"]
+    assert removed == []
+
+
+def test_finish_removes_the_loop_when_evidence_cannot_be_saved(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    removed: list[str] = []
+    monkeypatch.setattr(
+        "integrations.github.tools.ci_repair_demo.tool.get_task",
+        lambda _task_id: _owned_task(),
+    )
+
+    def _unwritable(**_kwargs: object) -> str:
+        raise OSError("read-only")
+
+    monkeypatch.setattr(
+        "integrations.github.tools.ci_repair_demo.tool.write_evidence",
+        _unwritable,
+    )
+    monkeypatch.setattr(
+        "integrations.github.tools.ci_repair_demo.tool.remove_task",
+        lambda task_id: removed.append(task_id) or True,
+    )
+    monkeypatch.setattr("integrations.github.tools.ci_repair_demo.tool.list_tasks", lambda: [])
+
+    result = finish_ci_repair_demo(
+        repo="Tracer-Cloud/opensre-ci-repair-demo",
+        pr_number=4,
+        loop_id="9f4ed7a7a92f",
+        outcome="failed",
+    )
+
+    assert result["ok"] is False
+    assert result["loop_removed"] is True
+    assert result["repository_retained"] is True
+    assert "OSError" in result["error"]
+    assert "read-only" not in result["error"]
+    assert removed == ["9f4ed7a7a92f"]
+
+
+def test_finish_refuses_success_without_evidence(monkeypatch: pytest.MonkeyPatch) -> None:
+    removed: list[str] = []
+    monkeypatch.setattr(
+        "integrations.github.tools.ci_repair_demo.tool.get_task",
+        lambda _task_id: _owned_task(),
+    )
+    monkeypatch.setattr(
+        "integrations.github.tools.ci_repair_demo.tool.remove_task",
+        lambda task_id: removed.append(task_id) or True,
+    )
+    monkeypatch.setattr("integrations.github.tools.ci_repair_demo.tool.list_tasks", lambda: [])
+
     result = finish_ci_repair_demo(
         repo="Tracer-Cloud/opensre-ci-repair-demo",
         pr_number=4,
@@ -360,6 +472,8 @@ def test_finish_refuses_success_without_evidence() -> None:
     assert result["ok"] is False
     assert result["error_kind"] == "refused"
     assert "failed run" in result["error"]
+    assert result["loop_removed"] is True
+    assert removed == ["9f4ed7a7a92f"]
 
 
 def _forbidden_sleep(_seconds: float) -> None:
