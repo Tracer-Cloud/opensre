@@ -38,6 +38,14 @@ AUTOMATION_MENU_OPTIONS = (
     SLACK_OPTION,
 )
 
+# Asked after a local or cloud repair leaf, before any scan or gateway probe.
+DEMO_REPO_PERMISSION_TITLE = "Create a private demo repository?"
+DEMO_REPO_DECLINE_OPTION = "Don't create a demo repository"
+REPAIR_MENU_OPTIONS = (
+    LOCAL_REPAIR_OPTION,
+    CLOUD_REPAIR_OPTION,
+)
+
 # Leaf label the model receives, in handoff order, keyed by skill name.
 ONBOARDING_LEAF_CHOICES = (
     (ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME, ANALYZE_REPO_OPTION),

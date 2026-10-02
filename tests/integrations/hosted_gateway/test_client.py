@@ -132,6 +132,74 @@ def test_refusals_and_malformed_answers_become_stable_codes_without_the_token(
     assert _TOKEN not in str(excinfo.value) and _TOKEN not in repr(excinfo.value)
 
 
+def test_an_unavailable_gateway_keeps_the_cause_the_app_named() -> None:
+    """A 502 used to drop the app's code, so every outage sounded like a restart."""
+    # Arrange
+    response = httpx.Response(HTTPStatus.BAD_GATEWAY, json={"error": "GATEWAY_UNREACHABLE"})
+    client = _client(httpx.MockTransport(lambda _request: response))
+
+    # Act
+    with pytest.raises(HostedGatewayError) as excinfo:
+        client.health()
+
+    # Assert
+    assert excinfo.value.code == ERR_GATEWAY_UNAVAILABLE
+    assert excinfo.value.cause_code == "GATEWAY_UNREACHABLE"
+    assert _TOKEN not in str(excinfo.value)
+
+
+@pytest.mark.parametrize(
+    "error",
+    [
+        "connection refused while using " + _TOKEN,
+        _TOKEN,
+        "A" * 65,
+    ],
+)
+def test_a_cause_that_is_not_a_stable_code_is_dropped(error: str) -> None:
+    # Arrange
+    response = httpx.Response(HTTPStatus.BAD_GATEWAY, json={"error": error})
+    client = _client(httpx.MockTransport(lambda _request: response))
+
+    # Act
+    with pytest.raises(HostedGatewayError) as excinfo:
+        client.health()
+
+    # Assert
+    assert excinfo.value.code == ERR_GATEWAY_UNAVAILABLE
+    assert excinfo.value.cause_code == ""
+    assert _TOKEN not in str(excinfo.value) and _TOKEN not in repr(excinfo.value)
+
+
+def test_a_capacity_refusal_keeps_the_status_and_names_the_cause() -> None:
+    """409 stays not_running for callers that branch on it; the cause says why."""
+    # Arrange
+    response = httpx.Response(HTTPStatus.CONFLICT, json={"error": "GATEWAY_CAPACITY_EXCEEDED"})
+    client = _client(httpx.MockTransport(lambda _request: response))
+
+    # Act
+    with pytest.raises(HostedGatewayError) as excinfo:
+        client.send_prompt("delegate the demo", context={})
+
+    # Assert
+    assert excinfo.value.code == "not_running"
+    assert excinfo.value.cause_code == "GATEWAY_CAPACITY_EXCEEDED"
+
+
+def test_a_cause_that_repeats_the_status_code_is_not_recorded_again() -> None:
+    # Arrange
+    response = httpx.Response(HTTPStatus.CONFLICT, json={"error": "not_running"})
+    client = _client(httpx.MockTransport(lambda _request: response))
+
+    # Act
+    with pytest.raises(HostedGatewayError) as excinfo:
+        client.send_prompt("delegate the demo", context={})
+
+    # Assert
+    assert excinfo.value.code == "not_running"
+    assert excinfo.value.cause_code == ""
+
+
 def test_a_network_failure_is_reported_as_unreachable_without_the_token() -> None:
     # Arrange
     def fail(request: httpx.Request) -> httpx.Response:

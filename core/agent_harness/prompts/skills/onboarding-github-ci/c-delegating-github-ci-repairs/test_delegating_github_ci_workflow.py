@@ -13,6 +13,14 @@ from tests.core.agent.orchestration.action_execution_test_harness import (
 from tests.utils.skill_workflow import BINDING, SkillWorkflow, batch
 
 _SKILL = "delegating-github-ci-repairs"
+
+
+def test_an_approved_demo_repository_is_the_target_without_another_question() -> None:
+    body = Path(__file__).with_name("SKILL.md").read_text(encoding="utf-8")
+    assert "Create a private demo repository?" in body
+    assert "Do not call `ask_user_choice` for it." in body
+
+
 _DEMO = "Use a disposable demo repository"
 _REPORT = "Task repair-1 succeeded remotely: failing run 1, repair commit abc, passing run 2."
 _REQUEST = {

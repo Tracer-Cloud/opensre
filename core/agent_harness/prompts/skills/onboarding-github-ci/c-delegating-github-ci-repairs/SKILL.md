@@ -15,7 +15,7 @@ metadata:
     - A reachable hosted gateway with a GitHub integration and an authenticated coding agent.
     - An interactive shell and a signed-in OpenSRE account in the organization for hosted gateway access.
     - GitHub write access to the selected PR; demo mode also needs private-repository creation.
-  version: "2.6"
+  version: "2.9"
 ---
 
 # Delegate a remote CI repair
@@ -95,13 +95,15 @@ Report this gateway's GitHub access for a CI repair demo. Run only these calls a
 
 - [2] `github_cli ["api", "user/memberships/orgs", "--jq", "[.[] | {org: .organization.login, role, state}]"]`
 
-- [3] For each organization: `github_cli ["api", "graphql", "-f", "query=query($o: String!) { organization(login: $o) { viewerCanCreateRepositories } }", "-F", "o=<org>"]`, Answer with the login, the token type and scopes, and one line per owner (the login plus each organization) saying whether it can create repositories. Then propose a name for a new demo repository as `<owner>/<name>`; it does not exist yet.
+- [3] For each organization: `github_cli ["api", "graphql", "-f", "query=query($o: String!) { organization(login: $o) { viewerCanCreateRepositories } }", "-F", "o=<org>"]`, Answer with the login, the token type and scopes, and one line per owner (the login plus each organization) saying whether it can create repositories. Then propose one new private demo repository as `<owner>/opensre-ci-repair-demo-<4 lowercase letters or digits>`.
 
 **Complete when:**
 
 - The gateway named the login, the token type, and at least one owner that can create repositories. Otherwise, a blocker is recorded.
 
 ### Display the final repair plan
+
+If the opening message already answers `Create a private demo repository?` with `Create <owner>/<repo>` or `Create <repo>`, that is the target. Do not call `ask_user_choice` for it. Pass that owner and repo as the delegate `facts`. A name without an owner uses the login from the probe. `Don't create a demo repository` keeps the existing-pull-request path below.
 
 Show the final repair plan titled `Remote Repair Plan`. Put the probe's findings (login, token type, owner) in the overview so the user can see it once. 
 
@@ -115,7 +117,7 @@ Show the final repair plan titled `Remote Repair Plan`. Put the probe's findings
 
 ### Delegate the repair
 
-- Send one `ask_hosted_gateway` prompt: "This is a new request. Start a new plan from `scheduling-github-ci-repairs` for <target>; do not reuse plan steps, task IDs, or repositories from earlier in this conversation. Delete nothing on GitHub. Seed only with seed_ci_repair_demo. github_cli, an organization repository listing, a code search, and list_github_actions_workflow_runs are outside the seed."
+- Send one `ask_hosted_gateway` prompt: "This is a new request. Start a new plan from `scheduling-github-ci-repairs` for <target>; do not reuse plan steps, task IDs, or repositories from earlier in this conversation. Delete nothing on GitHub. Seed only with seed_ci_repair_demo. If that repository is not an OpenSRE CI repair demo, the tool seeds `opensre-ci-repair-demo-<4 characters>` itself and leaves the refused repository unchanged. Continue this same plan with the owner and repo the tool returns. Do not ask the user. github_cli, an organization repository listing, a code search, and list_github_actions_workflow_runs are outside the seed."
 - Pass the target as `facts` (`demo`, `owner`, `repo`, `pr_number`). Keep the prompt ID.
 
 

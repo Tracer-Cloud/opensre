@@ -24,11 +24,11 @@ from core.agent_harness.prompts.skills.content import files
 logger = logging.getLogger(__name__)
 
 
-def validate_skill_file(skill_path: Path) -> ActionSkill:
+def validate_skill_file(skill_path: Path, *, strict: bool = False) -> ActionSkill:
     """Validate one raw card, including the local files it includes."""
     raw = skill_path.read_text(encoding="utf-8")
     frontmatter, _body = parse_frontmatter(raw)
-    card = SkillCard.model_validate(frontmatter)
+    card = SkillCard.model_validate(frontmatter, context={"strict_dates": strict})
     try:
         script_tools = load_script_tools(skill_path, card.script_tools)
     except ValueError as exc:
@@ -48,8 +48,11 @@ def validate_skill_file(skill_path: Path) -> ActionSkill:
     )
 
 
-def read_skill_catalog() -> SkillCatalog:
-    """Validate every discovered card; retain diagnostics for CI and runtime reporting."""
+def read_skill_catalog(*, strict: bool = False) -> SkillCatalog:
+    """Validate every discovered card; retain diagnostics for CI and runtime reporting.
+
+    ``strict`` is the CI check: it drops the runtime's one-day ``last_changed_at`` tolerance.
+    """
     directory = files.skills_dir()
     if not directory.is_dir():
         return SkillCatalog((), ())
@@ -57,7 +60,7 @@ def read_skill_catalog() -> SkillCatalog:
     diagnostics: list[str] = []
     for path in iter_skill_paths(directory):
         try:
-            skills.append(validate_skill_file(path))
+            skills.append(validate_skill_file(path, strict=strict))
         except (OSError, UnicodeError, SkillCardError, ValidationError) as exc:
             diagnostics.append(f"{path}: {exc}")
     names = Counter(skill.name for skill in skills)

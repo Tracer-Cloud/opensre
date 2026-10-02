@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -10,6 +11,7 @@ import pytest
 import yaml
 
 import core.agent_harness.prompts.skills as skills
+import core.agent_harness.prompts.skills.catalog.schema as schema
 from config.constants.skills import ONBOARDING_SKILL_NAME, SKIP_DEMO_OPTION
 from tests.utils.skill_cards import skill_card
 
@@ -25,7 +27,7 @@ def catalog_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[Pa
 
 
 def test_all_bundled_cards_pass_the_production_validator() -> None:
-    catalog = skills.read_skill_catalog()
+    catalog = skills.read_skill_catalog(strict=True)
     assert catalog.diagnostics == ()
     assert len(catalog.skills) == len(list(skills.skills_dir().rglob("SKILL.md")))
 
@@ -83,6 +85,35 @@ def test_metadata_is_required_and_strict(catalog_root: Path, field: str, value: 
     catalog = skills.read_skill_catalog()
     assert catalog.skills == ()
     assert any(field in diagnostic for diagnostic in catalog.diagnostics)
+
+
+class _LocalDate(date):
+    """A local calendar still on the day before a card's change date."""
+
+    @classmethod
+    def today(cls) -> date:
+        return date(2026, 10, 1)
+
+
+@pytest.mark.parametrize(
+    ("changed_at", "runtime_accepts"),
+    [(date(2026, 10, 2), True), (date(2026, 10, 3), False)],
+)
+def test_runtime_tolerates_one_day_of_clock_skew_but_ci_does_not(
+    catalog_root: Path, monkeypatch: pytest.MonkeyPatch, changed_at: date, runtime_accepts: bool
+) -> None:
+    monkeypatch.setattr(schema, "date", _LocalDate)
+    metadata = yaml.safe_load(skill_card("dated").split("---")[1])["metadata"]
+    metadata["last_changed_at"] = changed_at
+    (catalog_root / "dated.md").write_text(skill_card("dated", metadata=metadata))
+
+    runtime = skills.read_skill_catalog()
+    assert [skill.name for skill in runtime.skills] == (["dated"] if runtime_accepts else [])
+    assert runtime_accepts or "last_changed_at" in runtime.diagnostics[0]
+
+    strict = skills.read_skill_catalog(strict=True)
+    assert strict.skills == ()
+    assert "last_changed_at" in strict.diagnostics[0]
 
 
 @pytest.mark.parametrize(

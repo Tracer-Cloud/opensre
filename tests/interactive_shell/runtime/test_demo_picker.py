@@ -18,15 +18,20 @@ from config.constants.skills import (
     AUTOMATION_GROUP_OPTION,
     AUTOMATION_MENU_OPTIONS,
     AUTOMATION_MENU_TITLE,
+    CLOUD_REPAIR_OPTION,
+    DEMO_REPO_DECLINE_OPTION,
+    DEMO_REPO_PERMISSION_TITLE,
     LOCAL_REPAIR_OPTION,
     ONBOARDING_MENU_TITLE,
     ONBOARDING_SKILL_NAME,
     OUTCOME_MENU_OPTIONS,
     SKIP_DEMO_OPTION,
+    SLACK_OPTION,
 )
 from core.agent_harness.prompts.action.assemble import build_action_system_prompt_envelope
 from core.agent_harness.prompts.getting_started import GETTING_STARTED_OPTIONS
 from core.agent_harness.session.pending_choice import (
+    AskUserQuestion,
     PendingUserChoice,
     format_ask_user_answers,
 )
@@ -371,9 +376,10 @@ def test_automation_group_submits_the_follow_up_leaf_not_the_group(
     monkeypatch: pytest.MonkeyPatch,
     onboarding_outcomes: list[tuple[str, bool | None]],
 ) -> None:
-    """The automation row opens a second picker.
+    """The automation row opens a second picker, then demo-repository permission.
 
-    The transcript records both questions. The model receives only the leaf.
+    The transcript records all three questions. The model receives the leaf and
+    the permission, not the group row.
     """
     _offerable(monkeypatch)
     session = Session()
@@ -381,9 +387,13 @@ def test_automation_group_submits_the_follow_up_leaf_not_the_group(
     pending = PendingUserChoice(title=_TITLE, options=OUTCOME_MENU_OPTIONS)
     session.pending_user_choice = pending
     calls: list[dict[str, Any]] = []
+    create = "Create acme/opensre-ci-repair-demo-ab12"
+    monkeypatch.setattr(choice_prompt, "_demo_create_option", lambda: create)
 
     def pick(**kwargs: Any) -> str:
         calls.append(kwargs)
+        if kwargs["title"] == DEMO_REPO_PERMISSION_TITLE:
+            return create
         if kwargs["title"] == AUTOMATION_MENU_TITLE:
             return LOCAL_REPAIR_OPTION
         return AUTOMATION_GROUP_OPTION
@@ -394,13 +404,26 @@ def test_automation_group_submits_the_follow_up_leaf_not_the_group(
         session, Console(file=output, force_terminal=False, highlight=False, width=100), []
     )
 
-    assert [call["title"] for call in calls] == [_TITLE, AUTOMATION_MENU_TITLE]
+    assert [call["title"] for call in calls] == [
+        _TITLE,
+        AUTOMATION_MENU_TITLE,
+        DEMO_REPO_PERMISSION_TITLE,
+    ]
     assert calls[1]["choices"] == [(option, option) for option in AUTOMATION_MENU_OPTIONS]
+    assert calls[2]["choices"] == [
+        (create, create),
+        (DEMO_REPO_DECLINE_OPTION, DEMO_REPO_DECLINE_OPTION),
+    ]
+    permission = AskUserQuestion(
+        label="Demo repository", title=DEMO_REPO_PERMISSION_TITLE, options=(create,)
+    )
     answer = _take_prompt(session)
-    assert answer == format_ask_user_answers(pending.items(), (LOCAL_REPAIR_OPTION,))
+    assert answer == format_ask_user_answers(
+        (pending.items()[0], permission), (LOCAL_REPAIR_OPTION, create)
+    )
     assert AUTOMATION_GROUP_OPTION not in answer
     assert onboarding_outcomes == [("ci_agent", False)]
-    # Both menus are erased, so the card is the only record of what was asked.
+    # The menus are erased, so the card is the only record of what was asked.
     assert [line.rstrip() for line in output.getvalue().splitlines()] == [
         "",
         "Ask User",
@@ -410,6 +433,9 @@ def test_automation_group_submits_the_follow_up_leaf_not_the_group(
         "",
         f"  2.  {AUTOMATION_MENU_TITLE}",
         f"      {LOCAL_REPAIR_OPTION}",
+        "",
+        f"  3.  {DEMO_REPO_PERMISSION_TITLE}",
+        f"      {create}",
     ]
 
 
@@ -425,6 +451,83 @@ def test_automation_follow_up_escape_cancels_without_an_answer(
     def pick(**kwargs: Any) -> str | None:
         if kwargs["title"] == AUTOMATION_MENU_TITLE:
             return None
+        return AUTOMATION_GROUP_OPTION
+
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", pick)
+    choice_prompt._cmd_choose(session, Console(file=io.StringIO()), [])
+
+    assert session.active_skill is None
+    assert session.terminal.pending_prompt_default in (None, "")
+    assert onboarding_outcomes == [("skipped", None)]
+
+
+def test_cloud_repair_can_decline_the_demo_repository(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _offerable(monkeypatch)
+    session = Session()
+    session.active_skill = ONBOARDING_SKILL_NAME
+    pending = PendingUserChoice(title=_TITLE, options=OUTCOME_MENU_OPTIONS)
+    session.pending_user_choice = pending
+    monkeypatch.setattr(
+        choice_prompt, "_demo_create_option", lambda: "Create opensre-ci-repair-demo-zz99"
+    )
+
+    def pick(**kwargs: Any) -> str:
+        if kwargs["title"] == DEMO_REPO_PERMISSION_TITLE:
+            return DEMO_REPO_DECLINE_OPTION
+        if kwargs["title"] == AUTOMATION_MENU_TITLE:
+            return CLOUD_REPAIR_OPTION
+        return AUTOMATION_GROUP_OPTION
+
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", pick)
+    choice_prompt._cmd_choose(session, Console(file=io.StringIO()), [])
+
+    answer = _take_prompt(session)
+    assert CLOUD_REPAIR_OPTION in answer
+    assert DEMO_REPO_DECLINE_OPTION in answer
+    assert DEMO_REPO_PERMISSION_TITLE in answer
+
+
+def test_slack_does_not_ask_to_create_a_demo_repository(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _offerable(monkeypatch)
+    session = Session()
+    session.active_skill = ONBOARDING_SKILL_NAME
+    pending = PendingUserChoice(title=_TITLE, options=OUTCOME_MENU_OPTIONS)
+    session.pending_user_choice = pending
+    titles: list[str] = []
+
+    def pick(**kwargs: Any) -> str:
+        titles.append(kwargs["title"])
+        if kwargs["title"] == AUTOMATION_MENU_TITLE:
+            return SLACK_OPTION
+        return AUTOMATION_GROUP_OPTION
+
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", pick)
+    choice_prompt._cmd_choose(session, Console(file=io.StringIO()), [])
+
+    assert titles == [_TITLE, AUTOMATION_MENU_TITLE]
+    answer = _take_prompt(session)
+    assert answer == format_ask_user_answers(pending.items(), (SLACK_OPTION,))
+    assert DEMO_REPO_PERMISSION_TITLE not in answer
+
+
+def test_demo_repository_escape_cancels_without_an_answer(
+    monkeypatch: pytest.MonkeyPatch,
+    onboarding_outcomes: list[tuple[str, bool | None]],
+) -> None:
+    _offerable(monkeypatch)
+    session = Session()
+    session.active_skill = ONBOARDING_SKILL_NAME
+    session.pending_user_choice = PendingUserChoice(title=_TITLE, options=OUTCOME_MENU_OPTIONS)
+
+    def pick(**kwargs: Any) -> str | None:
+        if kwargs["title"] == DEMO_REPO_PERMISSION_TITLE:
+            return None
+        if kwargs["title"] == AUTOMATION_MENU_TITLE:
+            return CLOUD_REPAIR_OPTION
         return AUTOMATION_GROUP_OPTION
 
     monkeypatch.setattr(choice_prompt, "repl_choose_one", pick)
