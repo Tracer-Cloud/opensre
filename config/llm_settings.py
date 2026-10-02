@@ -9,6 +9,7 @@ them.
 """
 
 import os
+import re
 from collections.abc import Sequence
 from dataclasses import dataclass
 from difflib import get_close_matches
@@ -99,6 +100,7 @@ __all__ = (
     "get_llm_provider_api_key_env",
     "has_credentials_for_active_llm_provider",
     "llm_provider_error_context",
+    "llm_settings_error_message",
     "resolve_llm_settings",
     "resolve_llm_settings_verbose",
 )
@@ -487,3 +489,13 @@ def has_credentials_for_active_llm_provider() -> bool:
     settings = resolve_llm_settings()
     auth_status = credential_status(settings.provider)
     return auth_status.configured and not auth_status.stale
+
+
+def llm_settings_error_message(exc: ValidationError) -> str:
+    """The validator's own sentence for a single settings error, else pydantic's report."""
+    errors = exc.errors()
+    if len(errors) == 1:
+        message = re.sub(r"^[Vv]alue error,\s*", "", str(errors[0].get("msg", ""))).strip()
+        if message:
+            return message
+    return str(exc)

@@ -10,6 +10,7 @@ import pytest
 from core.agent_harness.session.pending_choice import PendingUserChoice
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnResult
 from core.domain.types.tools import ToolSurface
+from core.llm.readiness import LLMReadiness
 from core.llm.types import ToolCall
 from core.tool.contracts import RegisteredTool, SideEffectLevel
 from core.tool.execution import BeforeToolCallResult, ToolExecutionHooks, ToolExecutionRequest
@@ -22,6 +23,13 @@ from surfaces.cli.ask.file_input import AskFileInput
 from surfaces.cli.ask.service import AskExitCode, AskSignal, AskStatus
 
 _CHAT_ONLY_TOOL = "query_tempo"
+_LLM_CONFIGURED = LLMReadiness(provider="openai")
+
+
+@pytest.fixture(autouse=True)
+def _llm_route_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    """These tests fake the turn; the LLM preflight is pinned in test_ask_llm_setup.py."""
+    monkeypatch.setattr(service, "llm_ready", lambda: _LLM_CONFIGURED)
 
 
 def _turn(
