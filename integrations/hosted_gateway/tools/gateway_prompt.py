@@ -37,6 +37,7 @@ from integrations.hosted_gateway.client import (
 )
 from integrations.hosted_gateway.tools.results import (
     SOURCE,
+    cause_sentence,
     failure_output,
     hosted_gateway_available,
 )
@@ -191,6 +192,7 @@ _FAILED_INTEGRATION_NEXT_STEP = {
         "question": "What the gateway asked when the state is needs_input",
         "choice": "The question as menu data (title, note, questions with options) when needs_input",
         "failed_integrations": "Integrations whose tools failed on the gateway, e.g. github",
+        "cause_code": "The app's specific reason when a prompt was refused, empty otherwise",
         "response_text": "Plain-language result for the user",
         "instructions": "What to do next with a parked question or a failed integration; not for the user",
     },
@@ -229,6 +231,19 @@ def ask_hosted_gateway(
     return outcome
 
 
+def _waiting_notice(exc: HostedGatewayError) -> str:
+    """A mid-wait poll failure: the accepted prompt is still being awaited.
+
+    The cause names why this read failed. It follows the waiting line so a
+    sentence that says to try again is not the only thing the user sees while
+    the tool keeps polling the prompt it already sent.
+    """
+    cause = cause_sentence(exc)
+    if not cause:
+        return _UNANSWERED_NOTICE
+    return f"{_UNANSWERED_NOTICE}. {cause}"
+
+
 def _failure(exc: HostedGatewayError, in_flight: str) -> dict[str, Any]:
     """A failed call's result; once a prompt was accepted, a transient failure keeps its id.
 
@@ -238,6 +253,9 @@ def _failure(exc: HostedGatewayError, in_flight: str) -> dict[str, Any]:
     if not in_flight or exc.code not in TRANSIENT_ERRORS:
         return out
     text = _LOST_CONTACT.format(prompt_id=in_flight)
+    cause = cause_sentence(exc)
+    if cause:
+        text = f"{text} {cause}"
     return {**out, "prompt_id": in_flight, "error": text, "response_text": text}
 
 
@@ -330,7 +348,7 @@ def _wait_until_settled(
             now = time.monotonic()
             if silent_since is None:
                 silent_since = now
-                relay.note(_UNANSWERED_NOTICE)
+                relay.note(_waiting_notice(exc))
             elif now - silent_since >= HOSTED_GATEWAY_UNANSWERED_GRACE_SECONDS:
                 raise
             continue
@@ -394,6 +412,7 @@ def _outcome(
         "question": record.question,
         "choice": _choice_data(record),
         "failed_integrations": list(record.failed_integrations),
+        "cause_code": "",
         "response_text": text,
         "instructions": " ".join(instructions),
     }
@@ -470,6 +489,7 @@ def _refusal(text: str) -> dict[str, Any]:
         "prompt_id": "",
         "state": "",
         "question": "",
+        "cause_code": "",
         "error": text,
         "response_text": text,
     }

@@ -306,6 +306,84 @@ def test_the_wait_budget_hands_back_the_prompt_id(monkeypatch: pytest.MonkeyPatc
     assert _ID in out["response_text"] and "still working" in out["response_text"]
 
 
+def _app_refusing(status: HTTPStatus, error: str) -> HostedGatewayClient:
+    response = httpx.Response(status, json={"error": error})
+    return _client(httpx.MockTransport(lambda _request: response))
+
+
+def test_a_prompt_the_gateway_could_not_take_says_why(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The incident: three 502s were told as 'may still be starting', hiding GATEWAY_UNREACHABLE."""
+    # Arrange
+    monkeypatch.setattr(
+        gateway_prompt.HostedGatewayClient,
+        "from_account",
+        lambda: _app_refusing(HTTPStatus.BAD_GATEWAY, "GATEWAY_UNREACHABLE"),
+    )
+
+    # Act
+    out = ask_hosted_gateway(prompt="delegate the demo")
+
+    # Assert
+    assert out["error_kind"] == ERR_GATEWAY_UNAVAILABLE
+    assert out["cause_code"] == "GATEWAY_UNREACHABLE"
+    assert "could not connect" in out["response_text"]
+    assert "integration change" in out["response_text"]
+    assert "may still be starting" not in out["response_text"]
+    assert _TOKEN not in out["response_text"]
+
+
+def test_a_full_prompt_queue_is_not_described_as_a_restart(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    monkeypatch.setattr(
+        gateway_prompt.HostedGatewayClient,
+        "from_account",
+        lambda: _app_refusing(HTTPStatus.SERVICE_UNAVAILABLE, "too_many_prompts"),
+    )
+
+    # Act
+    out = ask_hosted_gateway(prompt="delegate the demo")
+
+    # Assert
+    assert out["cause_code"] == "too_many_prompts"
+    assert "queue is full" in out["response_text"]
+    assert "may still be starting" not in out["response_text"]
+
+
+def test_free_text_from_the_app_is_not_shown_to_the_user(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    leaked = f"connection refused for {_TOKEN}"
+    monkeypatch.setattr(
+        gateway_prompt.HostedGatewayClient,
+        "from_account",
+        lambda: _app_refusing(HTTPStatus.BAD_GATEWAY, leaked),
+    )
+
+    # Act
+    out = ask_hosted_gateway(prompt="delegate the demo")
+
+    # Assert
+    assert out["cause_code"] == ""
+    assert leaked not in out["response_text"] and _TOKEN not in out["response_text"]
+    assert "may still be starting" in out["response_text"]
+
+
+def test_an_unknown_cause_is_named_rather_than_dropped(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    monkeypatch.setattr(
+        gateway_prompt.HostedGatewayClient,
+        "from_account",
+        lambda: _app_refusing(HTTPStatus.BAD_GATEWAY, "GATEWAY_NEW_REASON"),
+    )
+
+    # Act
+    out = ask_hosted_gateway(prompt="delegate the demo")
+
+    # Assert
+    assert out["cause_code"] == "GATEWAY_NEW_REASON"
+    assert "GATEWAY_NEW_REASON" in out["response_text"]
+    assert "may still be starting" in out["response_text"]
+
+
 def test_a_gateway_that_stops_answering_briefly_is_waited_out(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -329,6 +407,51 @@ def test_a_gateway_that_stops_answering_briefly_is_waited_out(
     # Assert: the answer arrives, and the user heard once why the wait got longer
     assert out["state"] == "done" and out["response_text"] == "pong"
     assert updates == [{"progress": gateway_prompt._UNANSWERED_NOTICE}]
+
+
+def test_a_named_cause_is_what_the_wait_tells_the_user(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    unavailable = HostedGatewayError(
+        ERR_GATEWAY_UNAVAILABLE, HTTPStatus.BAD_GATEWAY, cause_code="GATEWAY_UNREACHABLE"
+    )
+    app = _App(
+        [
+            PromptRecord(_ID, "running"),
+            unavailable,
+            PromptRecord(_ID, "done", answer="pong"),
+        ]
+    )
+    _signed_in_with(monkeypatch, app)
+    updates: list[Any] = []
+    context = AgentToolContext(resolved_integrations={}, resources={}, _emit_update=updates.append)
+
+    # Act
+    out = ask_hosted_gateway(prompt="ping", context=context)
+
+    # Assert
+    assert out["response_text"] == "pong"
+    progress = updates[0]["progress"]
+    assert progress.startswith(gateway_prompt._UNANSWERED_NOTICE)
+    assert "still waiting" in progress
+    assert gateway_prompt.cause_sentence(unavailable) in progress
+    assert "could not connect" in progress
+
+
+def test_losing_contact_keeps_the_prompt_id_and_the_cause(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange
+    unavailable = HostedGatewayError(
+        ERR_GATEWAY_UNAVAILABLE, HTTPStatus.BAD_GATEWAY, cause_code="GATEWAY_UNREACHABLE"
+    )
+    app = _App([PromptRecord(_ID, "running"), unavailable, unavailable])
+    _signed_in_with(monkeypatch, app)
+    monkeypatch.setattr(gateway_prompt, "HOSTED_GATEWAY_UNANSWERED_GRACE_SECONDS", 0.0)
+
+    # Act
+    out = ask_hosted_gateway(prompt="fix ci")
+
+    # Assert
+    assert out["prompt_id"] == _ID and out["cause_code"] == "GATEWAY_UNREACHABLE"
+    assert _ID in out["response_text"] and "could not connect" in out["response_text"]
 
 
 def test_a_gateway_silent_past_the_grace_hands_back_the_prompt_id_without_a_stack(

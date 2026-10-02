@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +11,7 @@ import pytest
 import yaml
 
 import core.agent_harness.prompts.skills as skills
+import core.agent_harness.prompts.skills.catalog.schema as schema
 from config.constants.skills import ONBOARDING_SKILL_NAME, SKIP_DEMO_OPTION
 from tests.utils.skill_cards import skill_card
 
@@ -84,6 +85,35 @@ def test_metadata_is_required_and_strict(catalog_root: Path, field: str, value: 
     catalog = skills.read_skill_catalog()
     assert catalog.skills == ()
     assert any(field in diagnostic for diagnostic in catalog.diagnostics)
+
+
+class _LocalDate(date):
+    """A local calendar still on the day before a card's change date."""
+
+    @classmethod
+    def today(cls) -> date:
+        return date(2026, 10, 1)
+
+
+@pytest.mark.parametrize(
+    ("changed_at", "runtime_accepts"),
+    [(date(2026, 10, 2), True), (date(2026, 10, 3), False)],
+)
+def test_runtime_tolerates_one_day_of_clock_skew_but_ci_does_not(
+    catalog_root: Path, monkeypatch: pytest.MonkeyPatch, changed_at: date, runtime_accepts: bool
+) -> None:
+    monkeypatch.setattr(schema, "date", _LocalDate)
+    metadata = yaml.safe_load(skill_card("dated").split("---")[1])["metadata"]
+    metadata["last_changed_at"] = changed_at
+    (catalog_root / "dated.md").write_text(skill_card("dated", metadata=metadata))
+
+    runtime = skills.read_skill_catalog()
+    assert [skill.name for skill in runtime.skills] == (["dated"] if runtime_accepts else [])
+    assert runtime_accepts or "last_changed_at" in runtime.diagnostics[0]
+
+    strict = skills.read_skill_catalog(strict=True)
+    assert strict.skills == ()
+    assert "last_changed_at" in strict.diagnostics[0]
 
 
 @pytest.mark.parametrize(
@@ -180,18 +210,3 @@ def test_catalog_is_a_snapshot_until_invalidated(catalog_root: Path) -> None:
     assert skills.load_skill_body("workflow") == ""
     assert skills.list_action_skills() == ()
     assert skills.load_skills_index() == ""
-
-
-@pytest.mark.parametrize(("days_ahead", "runtime_ok"), [(1, True), (2, False)])
-def test_change_date_allows_one_day_of_clock_skew_outside_ci(
-    catalog_root: Path, days_ahead: int, runtime_ok: bool
-) -> None:
-    """A card dated "today" where it was written is still valid one time zone behind."""
-    ahead = date.today() + timedelta(days=days_ahead)
-    (catalog_root / "workflow.md").write_text(
-        skill_card("workflow").replace("2026-01-01", ahead.isoformat())
-    )
-    runtime = skills.read_skill_catalog()
-    strict = skills.read_skill_catalog(strict=True)
-    assert [skill.name for skill in runtime.skills] == (["workflow"] if runtime_ok else [])
-    assert strict.skills == ()

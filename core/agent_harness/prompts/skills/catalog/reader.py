@@ -11,7 +11,6 @@ from core.agent_harness.prompts.skills.catalog.contracts import ActionSkill, Ski
 from core.agent_harness.prompts.skills.catalog.demo_menu import populate_demo_menu
 from core.agent_harness.prompts.skills.catalog.discovery import iter_skill_paths
 from core.agent_harness.prompts.skills.catalog.schema import (
-    STRICT_CHANGE_DATE,
     SkillCard,
     SkillCardError,
     parse_frontmatter,
@@ -30,7 +29,7 @@ def validate_skill_file(
     """
     raw = skill_path.read_text(encoding="utf-8")
     frontmatter, _body = parse_frontmatter(raw)
-    card = SkillCard.model_validate(frontmatter, context={STRICT_CHANGE_DATE: strict})
+    card = SkillCard.model_validate(frontmatter, context={"strict_dates": strict})
     try:
         script_tools = load_script_tools(skill_path, card.script_tools)
     except ValueError as exc:
