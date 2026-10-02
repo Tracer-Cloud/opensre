@@ -25,15 +25,14 @@ from config.constants.gateway import (
     PROMPT_PROGRESS_KIND_PLAN_DONE,
     PROMPT_PROGRESS_KIND_TOOL,
 )
-from core.agent_harness.activity_display import (
+from core.agent_harness.spi.accounting import SELF_RECORDING_ACTION_TOOL_NAMES
+from core.agent_harness.spi.activity import (
     bounded_activity_preview,
     generic_tool_activity,
     github_cli_activity,
     is_sensitive_activity_key,
 )
-from core.agent_harness.spi.accounting import SELF_RECORDING_ACTION_TOOL_NAMES
-from core.agent_harness.spi.task_plan import is_plan_diagnosis_prose
-from core.agent_harness.task_plan.progress import task_plan_from_checklist
+from core.agent_harness.spi.task_plan import is_plan_diagnosis_prose, task_plan_from_checklist
 from infrastructure.observability.trace.redaction import redact_sensitive
 from infrastructure.safety.terminal_output import strip_terminal_controls
 from infrastructure.terminal.theme import (

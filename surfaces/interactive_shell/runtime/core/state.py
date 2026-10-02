@@ -29,7 +29,7 @@ from surfaces.shared.terminal.prompt_layout import (
 )
 
 if TYPE_CHECKING:
-    from core.agent_harness.task_plan.plan import TaskPlan
+    from core.agent_harness.spi.task_plan import TaskPlan
 
 # How often prompt-toolkit refreshes prompt callbacks and confirmation polling.
 PROMPT_REFRESH_INTERVAL_S = 0.25

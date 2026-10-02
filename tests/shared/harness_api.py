@@ -19,6 +19,7 @@ HARNESS_PACKAGE = "core.agent_harness"
 #: ``spi`` package itself is not.
 SPI_ROLES: frozenset[str] = frozenset(
     {
+        "activity",
         "session_goal",
         "session_state",
         "cancel",

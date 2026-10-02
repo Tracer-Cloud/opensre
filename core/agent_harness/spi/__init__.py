@@ -9,6 +9,7 @@ Import the role you need, not this package:
 * :mod:`.cancel` — cooperative cancellation of the running turn.
 * :mod:`.accounting` — per-turn and per-run accounting and token totals.
 * :mod:`.prompt_chrome` — the want-me-to closer and shell prompt chrome.
+* :mod:`.activity` — plain-text tool activity shared by the shell and gateway.
 * :mod:`.integrations` — resolve the session's integrations for a turn.
 * :mod:`.grounding` — grounding-cache observability and the action-skill catalog.
 * :mod:`.defaults` — the default adapters a host extends or reuses.

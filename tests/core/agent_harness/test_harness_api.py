@@ -68,6 +68,16 @@ PORTS = frozenset(
 )
 
 SPI_ROLE_NAMES: dict[str, frozenset[str]] = {
+    "activity": frozenset(
+        {
+            "HostedActivity",
+            "bounded_activity_preview",
+            "format_hosted_activity",
+            "generic_tool_activity",
+            "github_cli_activity",
+            "is_sensitive_activity_key",
+        }
+    ),
     "session_goal": frozenset(
         {
             "MAX_GOAL_CONDITION_CHARS",
@@ -208,6 +218,7 @@ SPI_ROLE_NAMES: dict[str, frozenset[str]] = {
             "record_task_plan_work",
             "step_label",
             "take_completed_plan_breakdown",
+            "task_plan_from_checklist",
             "task_plan_to_payload",
         }
     ),

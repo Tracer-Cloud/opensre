@@ -32,6 +32,7 @@ from core.agent_harness.task_plan.progress import (
     format_plan_header,
     format_task_plan_plain,
     step_label,
+    task_plan_from_checklist,
 )
 from core.agent_harness.task_plan.update_plan_policy import (
     apply_update_plan_host_policy,
@@ -67,5 +68,6 @@ __all__ = [
     "record_task_plan_work",
     "step_label",
     "take_completed_plan_breakdown",
+    "task_plan_from_checklist",
     "task_plan_to_payload",
 ]
