@@ -27,6 +27,8 @@ from integrations.github.tools.github_cli.credentials import (
 
 
 def _github_clone_available(sources: dict[str, dict]) -> bool:
+    if sources.get("github", {}).get("connection_selection_error"):
+        return False
     return bool(github_source_available(sources) or resolve_github_token(None))
 
 

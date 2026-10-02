@@ -282,6 +282,14 @@ class SessionManager:
         context = data.get(RestoreContextKey.ACCUMULATED_CONTEXT)
         if isinstance(context, dict):
             session.accumulated_context = dict(context)
+            integrations = getattr(session, "integrations", None)
+            saved_connection = context.get("_github_connection_id")
+            if (
+                integrations is not None
+                and integrations.github_connection_id is None
+                and isinstance(saved_connection, str)
+            ):
+                integrations.github_connection_id = saved_connection
         goal_state = data.get(RestoreContextKey.SESSION_GOAL_STATE)
         if isinstance(goal_state, dict):
             from core.agent_harness.session_goal.persist import (

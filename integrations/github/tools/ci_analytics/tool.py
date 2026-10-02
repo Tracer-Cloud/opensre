@@ -58,14 +58,14 @@ _MIN_WINDOW_DAYS = 1
 _MAX_WINDOW_DAYS = 90
 
 
-def _available(_sources: dict[str, dict]) -> bool:
+def _available(sources: dict[str, dict]) -> bool:
     """Stay listed when GitHub is not connected yet.
 
     A fresh onboarding session has no token. Hiding this tool removes the
     result that tells the agent to open setup, so the demo cannot finish.
     The call itself returns that setup handoff when no token resolves.
     """
-    return True
+    return not bool(sources.get("github", {}).get("connection_selection_error"))
 
 
 def _missing_token_message(repository: str) -> str:

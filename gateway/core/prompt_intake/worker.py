@@ -164,6 +164,8 @@ class PromptWorker:
             session = self._sessions.open_conversation() if org else self._sessions.open()
             job.session_id = session.session_id
             text = _render_prompt(job)
+        if "github_connection_id" in job.context:
+            session.integrations.github_connection_id = job.context["github_connection_id"]
         output = CollectingTurnOutput(on_status=self._progress_writer(job))
         failures = _IntegrationFailures()
         approvals = _Approvals(session, self._approved.get(session.session_id, set()))
@@ -339,7 +341,10 @@ class _Denial:
 
 def _turn_context(org: str, job: PromptJob, session: SessionCore, denial: _Denial) -> ExitStack:
     """Storage scope, usage attribution and metering for one remote turn."""
+    from infrastructure.harness_providers.integration_selection import bound_github_connection
+
     stack = ExitStack()
+    stack.enter_context(bound_github_connection(session.integrations.github_connection_id))
     if org:
         scope = StorageScope(principal=Principal.org(org), actor=Actor(id=job.actor))
         stack.enter_context(bound_storage_scope(scope))

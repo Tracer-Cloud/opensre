@@ -221,6 +221,14 @@ class HostedGatewayClient:
 
     def send_prompt(self, prompt: str, *, context: dict[str, str]) -> PromptRecord:
         """Queue a prompt on the organization's running gateway."""
+        from infrastructure.harness_providers.integration_selection import (
+            current_github_connection_id,
+        )
+
+        connection_id = current_github_connection_id()
+        context = dict(context)
+        if connection_id and "github_connection_id" not in context:
+            context["github_connection_id"] = connection_id
         payload = self._request(
             "POST",
             HOSTED_GATEWAY_PROMPTS_PATH,

@@ -40,13 +40,13 @@ DEFAULT_SINCE_DAYS = 365
 _VISIBILITIES = ("all", "private", "public")
 
 
-def _available(_sources: dict[str, dict]) -> bool:
+def _available(sources: dict[str, dict]) -> bool:
     """Stay listed when GitHub is not connected yet.
 
     Onboarding asks this scan to pick a repository. Hiding it on a fresh
     install leaves that step with no tool and no setup handoff.
     """
-    return True
+    return not bool(sources.get("github", {}).get("connection_selection_error"))
 
 
 def _extract_params(sources: dict[str, dict]) -> dict[str, Any]:

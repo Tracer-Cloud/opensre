@@ -52,6 +52,8 @@ _ARGS_SCHEMA: dict[str, Any] = {
 
 def _github_cli_available(sources: dict[str, dict]) -> bool:
     gh = sources.get("github", {})
+    if gh.get("connection_selection_error"):
+        return False
     return bool(
         github_source_available(sources) or resolve_github_token(None) or gh.get("github_token")
     )

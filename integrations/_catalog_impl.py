@@ -482,6 +482,9 @@ def classify_integrations(integrations: list[dict[str, Any]]) -> dict[str, Any]:
             resolved[f"_all_{service}_instances"] = instances
 
     resolved["_all"] = active
+    from integrations.github.connections import classify_github_connections
+
+    classify_github_connections(integrations, resolved)
     return resolved
 
 
@@ -1983,13 +1986,18 @@ def merge_integrations_by_service(
     *integration_groups: list[dict[str, Any]],
 ) -> list[dict[str, Any]]:
     """Merge integration records by service, letting later groups override earlier ones."""
-    merged_by_service: dict[str, dict[str, Any]] = {}
+    merged_by_service: dict[str, list[dict[str, Any]]] = {}
     for integration_group in integration_groups:
+        grouped: dict[str, dict[str, dict[str, Any]]] = {}
         for integration in integration_group:
             service = str(integration.get("service", "")).strip()
-            if service:
-                merged_by_service[service] = integration
-    return list(merged_by_service.values())
+            if service == "github":
+                grouped.setdefault(service, {})[str(integration.get("id", ""))] = integration
+            elif service:
+                grouped[service] = {service: integration}
+        for service, records in grouped.items():
+            merged_by_service[service] = list(records.values())
+    return [record for records in merged_by_service.values() for record in records]
 
 
 def _effective_entry(source: str, config: dict[str, Any]) -> dict[str, Any]:

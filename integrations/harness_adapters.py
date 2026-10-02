@@ -46,9 +46,11 @@ def register_harness_adapters() -> None:
         merge_integrations_by_service,
         merge_local_integrations,
     )
+    from integrations.github.connections import select_github_connection
     from integrations.store import load_integrations, resolve_store_path
 
     IntegrationResolutionAdapters(
+        select_github_connection=select_github_connection,
         load_integrations=load_integrations,
         integration_store_path=lambda: str(resolve_store_path()),
         load_env_integrations=load_env_integrations,
