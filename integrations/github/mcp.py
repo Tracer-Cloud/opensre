@@ -1501,7 +1501,7 @@ def classify(
                 "auth_token": credentials.get("auth_token", ""),
                 "toolsets": credentials.get("toolsets", []),
                 "integration_id": record_id,
-                "connection_id": credentials.get("connection_id", ""),
+                "connection_id": record_id,
                 "is_default": credentials.get("is_default"),
             }
         )
