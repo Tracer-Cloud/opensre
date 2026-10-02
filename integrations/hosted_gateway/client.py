@@ -51,6 +51,10 @@ ERR_ALREADY_ANSWERED = "already_answered"
 #: A prompt id as the gateway mints it; anything else never becomes part of a URL.
 _PROMPT_ID = re.compile(r"^p_[0-9a-f]{32}$")
 
+#: An upstream reason the app may name. Free text never qualifies, so a body cannot
+#: leak into what the user is told.
+_CAUSE_CODE = re.compile(r"^[A-Za-z][A-Za-z0-9_]{0,63}$")
+
 #: Failures before a connection existed, so no byte of the request reached the app.
 _CONNECT_FAILURES = (httpx.ConnectError, httpx.ConnectTimeout)
 
@@ -82,13 +86,16 @@ EXPECTED_ERRORS = frozenset(
 class HostedGatewayError(RuntimeError):
     """The OpenSRE app refused or could not serve a hosted-gateway request.
 
-    Carries a stable ``code`` only; never the account token or a response body.
+    ``code`` is the failure class (from the HTTP status). ``cause_code`` is the
+    app's more specific reason when it named one. Neither is a response body
+    or the account token.
     """
 
-    def __init__(self, code: str, status: int | None = None) -> None:
+    def __init__(self, code: str, status: int | None = None, *, cause_code: str = "") -> None:
         super().__init__(code)
         self.code = code
         self.status = status
+        self.cause_code = cause_code
 
 
 @dataclass(frozen=True)
@@ -171,6 +178,7 @@ class HostedGatewayClient:
         _require_secure_origin(app_url)
         if not token:
             raise HostedGatewayError(ERR_NOT_SIGNED_IN)
+        self._token = token
         self.app_url = app_url.rstrip("/")
         self._http = httpx.Client(
             base_url=self.app_url,
@@ -268,12 +276,11 @@ class HostedGatewayClient:
             raise HostedGatewayError(ERR_UNREACHABLE) from exc
         refusal = refusals.get(response.status_code)
         if refusal is not None:
-            code = _refusal_code(response, refusal, body_codes)
-            raise HostedGatewayError(code, response.status_code)
+            raise self._refused(_refusal_code(response, refusal, body_codes), response)
         if response.status_code in _UNAVAILABLE_STATUSES:
-            raise HostedGatewayError(ERR_GATEWAY_UNAVAILABLE, response.status_code)
+            raise self._refused(ERR_GATEWAY_UNAVAILABLE, response)
         if not response.is_success:
-            raise HostedGatewayError(f"http_{response.status_code}", response.status_code)
+            raise self._refused(f"http_{response.status_code}", response)
         try:
             payload = response.json()
         except ValueError as exc:
@@ -281,6 +288,18 @@ class HostedGatewayClient:
         if not isinstance(payload, dict):
             raise HostedGatewayError(ERR_INVALID_RESPONSE, response.status_code)
         return payload
+
+    def _refused(self, code: str, response: httpx.Response) -> HostedGatewayError:
+        """The error for a non-success response, with the app's cause when it named one."""
+        return HostedGatewayError(
+            code, response.status_code, cause_code=self._cause(response, code)
+        )
+
+    def _cause(self, response: httpx.Response, code: str) -> str:
+        cause = _cause_code(response)
+        if not cause or cause == code or self._token in cause:
+            return ""
+        return cause
 
     def _send(self, method: str, path: str, body: dict[str, Any] | None) -> httpx.Response:
         """Send, with one fresh connection if the first could not be made.
@@ -326,6 +345,18 @@ _PROMPT_ANSWER_REFUSALS: dict[int, str] = {
     HTTPStatus.REQUEST_ENTITY_TOO_LARGE: ERR_PROMPT_TOO_LARGE,
 }
 _ANSWER_BODY_CODES = frozenset({ERR_NOT_RUNNING, ERR_NOT_WAITING, ERR_ALREADY_ANSWERED})
+
+
+def _cause_code(response: httpx.Response) -> str:
+    """The body's ``error`` when it is a stable code, else ""."""
+    try:
+        payload = response.json()
+    except ValueError:
+        return ""
+    code = payload.get("error") if isinstance(payload, dict) else None
+    if isinstance(code, str) and _CAUSE_CODE.fullmatch(code):
+        return code
+    return ""
 
 
 def _refusal_code(response: httpx.Response, default: str, body_codes: frozenset[str]) -> str:
