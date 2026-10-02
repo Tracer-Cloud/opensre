@@ -205,8 +205,10 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
     assert len(picker_calls) == 1
     on_custom_answer = picker_calls[0].pop("on_custom_answer")
     on_answer = picker_calls[0].pop("on_answer")
+    on_dismiss = picker_calls[0].pop("on_dismiss")
     assert callable(on_custom_answer)
     assert callable(on_answer)
+    assert callable(on_dismiss)
     assert picker_calls[0] == {
         "title": _TITLE,
         "choices": [(option, option) for option in OUTCOME_MENU_OPTIONS],

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import sys
 from collections.abc import Callable
 
 import pytest
@@ -20,6 +21,7 @@ from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui.ask_user import CUSTOM_OPTION
 from surfaces.interactive_shell.ui.input_prompt.rendering import resolve_prompt_placeholder
 from surfaces.interactive_shell.ui.terminal_ui import render_prompt_region
+from tests.shared.terminal.pty_keyboard import TtyStringIO, pty_stdin
 
 _CHOICE = PendingUserChoice(
     title="How should I handle the uncommitted changes?",
@@ -421,3 +423,67 @@ def test_single_choice_without_custom_row_when_the_menu_disallows_it(
     # Assert
     assert seen["custom_label"] is None
     assert (CUSTOM_OPTION, CUSTOM_OPTION) not in seen["choices"]  # type: ignore[operator]
+
+
+def _record_dismissals(monkeypatch: pytest.MonkeyPatch) -> list[dict[str, object]]:
+    """Run the real picker on a terminal-like stdout; collect dismissal events."""
+    dismissed: list[dict[str, object]] = []
+    monkeypatch.setattr(sys, "stdout", TtyStringIO())
+    monkeypatch.setattr(choice_prompt, "play_notification", lambda _event: None)
+    monkeypatch.setattr(
+        choice_prompt,
+        "capture_ask_user_prompt_dismissed",
+        lambda **properties: dismissed.append(properties),
+    )
+    return dismissed
+
+
+def test_stray_terminal_input_never_cancels_the_menu(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange: a focus report, a CPR reply, a DA1 reply and Option+b arrive
+    # before the user presses (B). Each one used to close the menu as Esc.
+    session = Session()
+    session.pending_user_choice = _CHOICE
+    console, buf = _console()
+    dismissed = _record_dismissals(monkeypatch)
+
+    with pty_stdin(monkeypatch) as keyboard:
+        keyboard.queue(b"\x1b[I", b"\x1b[12;1R", b"\x1b[?62;4c", b"\x1bb", b"b")
+
+        # Act
+        assert _handler(session, console) is True
+
+    # Assert
+    assert choice_prompt._CANCELLED not in buf.getvalue()
+    assert dismissed == []
+    assert session.terminal.pending_prompt_default == format_ask_user_answers(
+        _CHOICE.items(), ("Commit the changes",)
+    )
+
+
+@pytest.mark.parametrize(
+    ("pending", "keystroke", "dismiss_key"),
+    [
+        pytest.param(_CHOICE, b"\x1b", "esc", id="single-menu-esc"),
+        pytest.param(_BATCH_CHOICE, b"\x03", "ctrl_c", id="batch-wizard-ctrl-c"),
+    ],
+)
+def test_dismissal_analytics_name_the_key_that_closed_the_menu(
+    monkeypatch: pytest.MonkeyPatch,
+    pending: PendingUserChoice,
+    keystroke: bytes,
+    dismiss_key: str,
+) -> None:
+    session = Session()
+    session.pending_user_choice = pending
+    console, buf = _console()
+    dismissed = _record_dismissals(monkeypatch)
+
+    with pty_stdin(monkeypatch) as keyboard:
+        keyboard.queue(keystroke)
+
+        assert _handler(session, console) is True
+
+    assert choice_prompt._CANCELLED in buf.getvalue()
+    assert [(event["reason"], event["dismiss_key"]) for event in dismissed] == [
+        ("cancelled", dismiss_key)
+    ]

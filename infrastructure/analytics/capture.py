@@ -476,16 +476,21 @@ def capture_ask_user_prompt_answered(
 
 
 def capture_ask_user_prompt_dismissed(
-    *, interaction_id: str, reason: str, skill_name: str | None
+    *,
+    interaction_id: str,
+    reason: str,
+    skill_name: str | None,
+    dismiss_key: str | None = None,
 ) -> None:
-    """Record a rendered Ask User prompt closed without an answer."""
-    _capture(
-        Event.ASK_USER_PROMPT_DISMISSED,
-        _with_optional_skill(
-            {"interaction_id": interaction_id, "reason": reason},
-            skill_name,
-        ),
-    )
+    """Record a rendered Ask User prompt closed without an answer.
+
+    ``dismiss_key`` names the key class that closed the picker (``esc``,
+    ``ctrl_c``, ``eof``, …) when the picker reported one.
+    """
+    properties: Properties = {"interaction_id": interaction_id, "reason": reason}
+    if dismiss_key is not None:
+        properties["dismiss_key"] = dismiss_key
+    _capture(Event.ASK_USER_PROMPT_DISMISSED, _with_optional_skill(properties, skill_name))
 
 
 def capture_interactive_shell_rendered(*, entrypoint: str) -> None:
