@@ -122,8 +122,7 @@ class SlackTurnOutput:
             # Preview may show a drifted closer; finish_streamed_response
             # publishes the canonical rewrite after gather normalize.
             return text
-        self._finalize(text or EMPTY_RESPONSE_MESSAGE)
-        return text
+        return text if self._finalize(text or EMPTY_RESPONSE_MESSAGE) else ""
 
     def set_tool_status(self, status: str) -> None:
         self._set_status(status)
@@ -160,7 +159,7 @@ class SlackTurnOutput:
             ):
                 self._last_update = time.monotonic()
 
-    def _finalize(self, answer: str) -> None:
+    def _finalize(self, answer: str) -> bool:
         with self._lock:
             if self._turn_stream.is_open:
                 if self._turn_stream.finish(answer, blocks=self._closing_blocks()):
@@ -170,7 +169,7 @@ class SlackTurnOutput:
                         self._thread_ts,
                         len(answer),
                     )
-                    return
+                    return True
                 # Stream broke mid-turn: deliver the full answer the classic way.
                 logger.warning(
                     "[slack-turn-output] stream delivery failed channel=%s thread_ts=%s; "
@@ -191,7 +190,7 @@ class SlackTurnOutput:
                         self._thread_ts,
                         len(answer),
                     )
-                    return
+                    return True
         final = truncate(markdown_to_slack_mrkdwn(answer), SLACK_MAX_MESSAGE_CHARS, suffix="…")
         blocks = self._final_blocks(answer)
         mode = "edit"
@@ -228,6 +227,7 @@ class SlackTurnOutput:
                 self._thread_ts,
                 len(final),
             )
+        return delivered
 
     def _final_blocks(self, answer: str) -> Blocks | None:
         """Compose the final reply: a ``markdown`` block + a context footer.

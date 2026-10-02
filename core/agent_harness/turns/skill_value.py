@@ -23,7 +23,7 @@ def ci_performance_insight(text: str) -> str:
         return ""
     lines = [match.group(1).strip()]
     for line in text[match.end() :].splitlines()[1:]:
-        if not line.strip():
+        if not line.strip() or not line.startswith((" ", "\t")):
             break
         if re.match(r"^\s*(?:[-*•]\s|#|```)", line):
             break

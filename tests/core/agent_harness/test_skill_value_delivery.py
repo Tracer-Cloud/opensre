@@ -21,6 +21,7 @@ def test_exact_insight_and_wrapped_bullet_stop_at_next_paragraph():
     )
     assert ci_performance_insight("What insights stand out:\n- x.x% of runs") == ""
     assert ci_performance_insight(INSIGHT) == ""
+    assert ci_performance_insight(REPORT.replace("\n\n", "\n")) == INSIGHT
 
 
 def test_successfully_displayed_report_is_captured_once():

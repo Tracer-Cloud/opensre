@@ -143,13 +143,15 @@ def _deferred_reply_presenter(
 
     def present(text: str) -> bool:
         try:
-            output.stream(label="OpenSRE", chunks=iter([text]))
+            displayed_text = output.stream(label="OpenSRE", chunks=iter([text]))
         except Exception:  # noqa: BLE001 - presentation must never break the loop
             log.debug("deferred reply render failed; not marking it shown", exc_info=True)
             return False
+        if not displayed_text:
+            return False
         deferred_replies.append(text)
         if on_displayed is not None:
-            on_displayed(text)
+            on_displayed(displayed_text)
         return True
 
     return present
@@ -963,7 +965,7 @@ def _show_response(
     handled: bool,
     final_text: str,
     display_chunks: list[str],
-) -> None:
+) -> str:
     """Show the turn's answer, or leave a blank line after silent tool work.
 
     ``final_text`` arrives empty unless the closing message reads like a real
@@ -976,13 +978,13 @@ def _show_response(
     body = final_text or ("\n".join(display_chunks) if display_chunks else "")
     if body:
         if body.strip():
-            output.stream(label="OpenSRE", chunks=iter([body]))
-            return
+            return output.stream(label="OpenSRE", chunks=iter([body]))
         if handled:
             _end_silent_tool_turn(output)
-        return
+        return ""
     if handled:
         _end_silent_tool_turn(output)
+    return ""
 
 
 def _end_silent_tool_turn(output: OutputSink) -> None:
@@ -1168,7 +1170,7 @@ def _run_action_turn(
     ):
         session.last_command_observation = response_text
     if not cancelled:
-        _show_response(
+        displayed_text = _show_response(
             args.output,
             handled=counts.handled,
             # Stream only terminal-visible chunks. ``response_text`` may also
@@ -1176,7 +1178,7 @@ def _run_action_turn(
             final_text="\n".join(display_chunks) if use_final_text else "",
             display_chunks=display_chunks,
         )
-        record_skill_value(session, "\n".join(display_chunks), built.value_insights)
+        record_skill_value(session, displayed_text, built.value_insights)
         _show_completed_plan_breakdown(args.output, session)
     record_decision(
         "response_displayed",
