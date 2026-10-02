@@ -1203,9 +1203,6 @@ if TYPE_CHECKING:
         SKILL_REPORT_SUFFIX as SKILL_REPORT_SUFFIX,
     )
     from config.constants.skills import (
-        SKILLS_HEADER as SKILLS_HEADER,
-    )
-    from config.constants.skills import (
         SKILLS_API_VERSION as SKILLS_API_VERSION,
     )
     from config.constants.skills import (
@@ -1213,6 +1210,9 @@ if TYPE_CHECKING:
     )
     from config.constants.skills import (
         SKILLS_DIR_ENV as SKILLS_DIR_ENV,
+    )
+    from config.constants.skills import (
+        SKILLS_HEADER as SKILLS_HEADER,
     )
     from config.constants.skills import (
         SKILLS_HTTP_TIMEOUT_SECONDS as SKILLS_HTTP_TIMEOUT_SECONDS,
