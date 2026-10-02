@@ -89,6 +89,15 @@ def execute_cli_onboard_on_missing_key(
     return text
 
 
+def pending_autosubmit(session: Any) -> str:
+    """The command queued to submit itself as the next turn; empty when none or headless."""
+    terminal = session_terminal(session)
+    if terminal is None or not getattr(terminal, "pending_prompt_autosubmit", False):
+        return ""
+    pending = getattr(terminal, "pending_prompt_default", None)
+    return pending.strip() if isinstance(pending, str) else ""
+
+
 def clear_pending_autosubmit(session: Any) -> None:
     """Drop queued REPL autosubmit when present (no-op on SessionCore).
 
@@ -111,6 +120,7 @@ __all__ = [
     "clear_pending_autosubmit",
     "exclusive_stdin_active",
     "execute_cli_onboard_on_missing_key",
+    "pending_autosubmit",
     "pop_turn_outcome_hint",
     "session_terminal",
     "set_auto_command",

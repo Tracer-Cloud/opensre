@@ -2,8 +2,10 @@
 
 A failed ``shell_run`` / curl still returns as a tool observation (``ok:
 false``, nonzero ``exit_code``), so the loop would otherwise accept a
-conclusion. The host rejects stop until a later work tool succeeds. Skills
-cannot override this.
+conclusion. The host rejects stop until a later work tool succeeds, unless the
+failure is already a finished answer: a classified ``work_outcome``, or a tool
+that cannot run until the user completes a named setup. Skills cannot override
+this.
 """
 
 from __future__ import annotations
@@ -14,6 +16,12 @@ from typing import Any
 
 from core.agent_harness.task_plan.evidence import is_plan_work_name, result_counts_as_work
 from core.events import RuntimeEvent, RuntimeEventCallback, ToolExecutionEndEvent
+from core.llm.types import ToolCall
+from core.tool.execution import ToolExecutionResult
+from core.tool_framework.utils.tool_availability import (
+    envelope_setup_command,
+    is_tool_unavailable_envelope,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -93,6 +101,24 @@ def last_work_classified(outcomes: Sequence[ExecutedToolOutcome]) -> bool:
     return False
 
 
+def last_work_needs_setup(tool_results: Sequence[tuple[ToolCall, ToolExecutionResult]]) -> bool:
+    """True when the last work tool returned a ``tool_unavailable`` envelope naming a setup.
+
+    Retrying cannot succeed until the user runs that ``setup_command``, so the
+    turn may stop and say so. Reads the loop's raw results: the reviewer's
+    compat payload keeps only an error's text. A call skipped after an earlier
+    call ended the turn never ran and is ignored.
+    """
+    for tool_call, result in reversed(tool_results):
+        if result.metadata.get("skipped"):
+            continue
+        if not is_plan_work_name(tool_call.name, tool_call.input):
+            continue
+        details = result.details
+        return is_tool_unavailable_envelope(details) and envelope_setup_command(details) is not None
+    return False
+
+
 _REVIEW_PAYLOAD_CHARS = 400
 
 
@@ -114,6 +140,7 @@ __all__ = [
     "ExecutedToolOutcome",
     "format_outcomes_for_review",
     "last_work_classified",
+    "last_work_needs_setup",
     "last_work_ok",
     "last_work_tool_failed",
     "tap_executed_tool_outcomes",

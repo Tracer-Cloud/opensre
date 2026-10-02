@@ -509,6 +509,7 @@ EXPORTS: dict[str, str] = {
     # slash_commands
     "INTEGRATIONS_SETUP_COMMAND": "slash_commands",
     "INTEGRATIONS_SETUP_PREFIX": "slash_commands",
+    "QUEUED_COMMAND_KEY": "slash_commands",
     # smtp
     "SMTP_DEFAULT_TO_ENV": "smtp",
     "SMTP_FROM_ADDRESS_ENV": "smtp",

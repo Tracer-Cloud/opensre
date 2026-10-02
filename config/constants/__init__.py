@@ -1277,6 +1277,9 @@ if TYPE_CHECKING:
     from config.constants.slash_commands import (
         INTEGRATIONS_SETUP_PREFIX as INTEGRATIONS_SETUP_PREFIX,
     )
+    from config.constants.slash_commands import (
+        QUEUED_COMMAND_KEY as QUEUED_COMMAND_KEY,
+    )
     from config.constants.smtp import (
         SMTP_DEFAULT_TO_ENV as SMTP_DEFAULT_TO_ENV,
     )

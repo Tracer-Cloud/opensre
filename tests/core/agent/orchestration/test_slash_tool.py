@@ -9,54 +9,17 @@ into the input line.
 from __future__ import annotations
 
 import io
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 import pytest
 from rich.console import Console
 
 import tools.interactive_shell.actions.slash as slash_tool
+from config.constants.slash_commands import QUEUED_COMMAND_KEY
 from core.agent_harness.tools.tool_context import ActionToolScope
 from surfaces.interactive_shell.session import Session
-
-
-@dataclass
-class FakeSlashPorts:
-    """Controllable slash runtime adapter used by action-tool tests."""
-
-    tty: bool = True
-    dispatch_result: bool = True
-    dispatched: list[str] = field(default_factory=list)
-
-    def command_exists(self, _name: str) -> bool:
-        return True
-
-    def command_is_mutating(self, _name: str) -> bool:
-        return True
-
-    def tty_interactive(self) -> bool:
-        return self.tty
-
-    def format_turn_outcome(self, command: str, *, ok: bool) -> str:
-        status = "succeeded" if ok else "failed"
-        return f"slash {command} ({status})"
-
-    def execution_allowed(
-        self,
-        *,
-        policy: Any,
-        **_kwargs: Any,
-    ) -> bool:
-        del policy
-        return True
-
-    def dispatch(
-        self,
-        command: str,
-        **_kwargs: Any,
-    ) -> bool:
-        self.dispatched.append(command)
-        return self.dispatch_result
+from tests.core.agent.orchestration.action_execution_test_harness import FakeSlashPorts
 
 
 def _ctx(
@@ -107,7 +70,11 @@ def test_interactive_picker_command_is_deferred_to_exclusive_stdin(
         ctx,
     )
 
-    assert handled is True
+    # The result names the queued command, which ends the action turn.
+    assert isinstance(handled, dict)
+    assert handled["ok"] is True
+    assert handled[QUEUED_COMMAND_KEY] == expected
+    assert "error" not in handled
     assert ports.dispatched == []
     assert session.terminal.pending_prompt_default == expected
     assert session.terminal.pending_prompt_autosubmit is True
@@ -115,6 +82,28 @@ def test_interactive_picker_command_is_deferred_to_exclusive_stdin(
     # Nothing is printed: the prefilled prompt line is the only announcement,
     # so the command is not shown twice before it runs.
     assert buf.getvalue() == ""
+
+
+def test_a_declined_command_reports_it_did_not_run_without_an_error() -> None:
+    """The model must hear the command never ran, and the same call must stay refusable.
+
+    A declined command used to return ``True``, which reached the model as
+    ``{"ok": true}``: it reported a change that never happened and the step
+    counted as plan evidence. No ``error`` key keeps the duplicate guard
+    refusing an identical re-ask.
+    """
+    ctx, _buf, session, ports = _ctx(ports=FakeSlashPorts(tty=True, allowed=False))
+
+    result = slash_tool.execute_slash_tool({"command": "/cron", "args": ["remove", "abc"]}, ctx)
+
+    assert isinstance(result, dict)
+    assert result["ok"] is False
+    assert result["not_run"] is True
+    assert result["command"] == "/cron remove abc"
+    assert "error" not in result
+    assert ports.dispatched == []
+    rows = [row for row in session.history if row.get("type") == "slash"]
+    assert [(row["text"], row["ok"]) for row in rows] == [("/cron remove abc", False)]
 
 
 def test_interactive_picker_runs_inline_when_exclusive_stdin_active() -> None:

@@ -19,6 +19,7 @@ from core.tool_framework.utils.schema import (
 )
 from core.tool_framework.utils.sql_wrapper import call_db_tool_with_default_db_warning
 from core.tool_framework.utils.tool_availability import (
+    envelope_setup_command,
     envelope_source_id,
     is_tool_unavailable_envelope,
     tool_unavailable,
@@ -29,6 +30,7 @@ __all__ = [
     "call_db_tool_with_default_db_warning",
     "code_host_unavailable_payload",
     "default_db_warning",
+    "envelope_setup_command",
     "envelope_source_id",
     "first_list",
     "first_string",

@@ -109,9 +109,11 @@ owning area rather than adding more logic to the caller.
     command (`/integrations remove`, `/integrations setup`, `/mcp connect`,
     `/mcp disconnect`, or a bare `/integrations` / `/mcp` menu), the loop has not
     reserved stdin, so `tools/interactive_shell/actions/slash.py` must NOT run the picker inline. It defers
-    via `session.queue_auto_command(...)`, which re-submits the command as
-    literal command text so the loop can reserve exclusive stdin before the
-    agent path runs it. New raw-stdin picker/wizard commands the action agent can emit
+    via `set_auto_command(session, ...)` (`core.agent_harness.spi.session_state`),
+    which re-submits the command as literal command text so the loop can
+    reserve exclusive stdin before the agent path runs it. The tool result
+    names the command under `QUEUED_COMMAND_KEY`, which ends the action turn
+    so the model cannot retry before the command runs. New raw-stdin picker/wizard commands the action agent can emit
     must be added to
     `_INTERACTIVE_PICKER_MENUS` / `_INTERACTIVE_PICKER_SUBCOMMANDS` in
     `tools/interactive_shell/actions/slash.py`.

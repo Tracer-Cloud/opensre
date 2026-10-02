@@ -44,11 +44,13 @@ from core.agent_harness.turns.work_outcome import (
     ExecutedToolOutcome,
     format_outcomes_for_review,
     last_work_classified,
+    last_work_needs_setup,
     last_work_ok,
     last_work_tool_failed,
 )
 from core.events import RuntimeEvent, RuntimeEventCallback, ToolExecutionEndEvent
-from core.llm.types import AgentLLMClient
+from core.llm.types import AgentLLMClient, ToolCall
+from core.tool.execution import ToolExecutionResult
 from infrastructure.observability.trace.decisions import record_decision
 
 # One rejection is enough to catch a stopped-short turn; the follow-up work is
@@ -209,6 +211,20 @@ def plan_worked_this_turn(executed_tool_names: Sequence[str]) -> bool:
     return _PLAN_TOOL_NAME in executed_tool_names
 
 
+def _failed_work_blocks_stop(
+    outcomes: Sequence[ExecutedToolOutcome],
+    tool_results: Sequence[tuple[ToolCall, ToolExecutionResult]],
+) -> bool:
+    """True when the last work tool failed and its result is not a finished answer.
+
+    A classified ``work_outcome`` is the report itself, and a tool that needs
+    the user to run a named setup cannot succeed on retry.
+    """
+    return last_work_tool_failed(outcomes) and not (
+        last_work_classified(outcomes) or last_work_needs_setup(tool_results)
+    )
+
+
 @dataclass
 class _LLMGoalReviewer:
     """``Goal.verify`` predicate: one bounded, fail-open LLM review per turn."""
@@ -260,12 +276,8 @@ class _LLMGoalReviewer:
             names = [name for name, _ in self.executed_tool_calls]
         if any(name in self.skip_tool_names for name in names):
             return self._decision(observation, True, "unreviewable_tool")
-        if (
-            self.plan_incomplete is not None
-            and plan_worked_this_turn(names)
-            and self.plan_incomplete()
-        ):
-            return self._decision(observation, False, "plan_incomplete")
+        # Host gates. ``build_goal_reviewer``'s nudge checks them in this same
+        # order, so it names the gate that rejected the stop.
         if (
             self.blocked_needs_user is not None
             and plan_worked_this_turn(names)
@@ -273,15 +285,19 @@ class _LLMGoalReviewer:
         ):
             return self._decision(observation, False, "blocked_needs_user")
         if (
+            self.plan_incomplete is not None
+            and plan_worked_this_turn(names)
+            and self.plan_incomplete()
+        ):
+            return self._decision(observation, False, "plan_incomplete")
+        if (
             self.skill_load_only is not None
             and self.skill_load_rejections == 0
             and self.skill_load_only()
         ):
             self.skill_load_rejections += 1
             return self._decision(observation, False, "skill_loaded_only")
-        if last_work_tool_failed(self.executed_outcomes) and not last_work_classified(
-            self.executed_outcomes
-        ):
+        if _failed_work_blocks_stop(self.executed_outcomes, observation.tool_results):
             return self._decision(observation, False, "work_tool_failed")
         if self.reject_discovery_only and _gather_ran_only_discovery(self.executed_tool_calls):
             return self._decision(observation, False, "discovery_only")
@@ -381,7 +397,9 @@ def build_goal_reviewer(
     ``executed_outcomes`` rejects a conclusion whose last work tool failed
     (nonzero shell exit, ``ok: false``) so a failed curl cannot end the turn.
     A tool that already published a finished ``work_outcome`` may stop: that
-    result is the report, not an unfinished attempt.
+    result is the report, not an unfinished attempt. So may a tool whose
+    ``tool_unavailable`` envelope names a ``setup_command``: no retry succeeds
+    before the user runs it.
     """
     outcomes = executed_outcomes if executed_outcomes is not None else []
     reviewer = _LLMGoalReviewer(
@@ -396,10 +414,8 @@ def build_goal_reviewer(
     )
 
     def _nudge(observation: GoalObservation) -> str:
-        if skill_load_only is not None and skill_load_only():
-            return _SKILL_LOAD_ONLY_NUDGE
-        if last_work_tool_failed(outcomes) and not last_work_classified(outcomes):
-            return _FAILED_WORK_NUDGE
+        # Same gate order as ``_LLMGoalReviewer.__call__``, so the nudge names
+        # the gate that rejected the stop.
         if (
             blocked_needs_user is not None
             and plan_worked_this_turn(executed_tool_names)
@@ -421,6 +437,10 @@ def build_goal_reviewer(
             ):
                 return _PLAN_DEFERRED_REPLY_SHOWN + _PLAN_INCOMPLETE_NUDGE
             return _PLAN_INCOMPLETE_NUDGE
+        if skill_load_only is not None and skill_load_only():
+            return _SKILL_LOAD_ONLY_NUDGE
+        if _failed_work_blocks_stop(outcomes, observation.tool_results):
+            return _FAILED_WORK_NUDGE
         return (
             f"Goal not yet met: {user_goal}. "
             f"Success criteria: {_GOAL_SUCCESS_CRITERIA}. "

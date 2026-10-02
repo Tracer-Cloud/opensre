@@ -2,14 +2,24 @@
 
 from __future__ import annotations
 
+from typing import Any
+
+from config.constants.slash_commands import QUEUED_COMMAND_KEY
 from core.agent_harness.turns.work_outcome import (
     ExecutedToolOutcome,
     last_work_classified,
+    last_work_needs_setup,
     last_work_ok,
     last_work_tool_failed,
     tap_executed_tool_outcomes,
 )
 from core.events import ToolExecutionEndEvent, ToolExecutionStartEvent
+from core.llm.types import ToolCall
+from core.tool.execution import ToolExecutionResult
+from core.tool_framework.utils import tool_unavailable
+
+_SETUP = "/integrations setup github"
+_TOKEN_REQUIRED = "A GitHub token is required to read the Actions history of acme/app."
 
 
 def _outcome(
@@ -25,6 +35,55 @@ def _outcome(
         is_error=is_error,
         details=details,
     )
+
+
+def _ran(
+    name: str,
+    details: dict[str, Any],
+    *,
+    is_error: bool = False,
+    metadata: dict[str, Any] | None = None,
+) -> tuple[ToolCall, ToolExecutionResult]:
+    """One loop result as the goal observation carries it: raw details, not the compat payload."""
+    return (
+        ToolCall(id=f"call-{name}", name=name, input={}),
+        ToolExecutionResult(
+            content=str(details.get("error") or "ok"),
+            details=details,
+            is_error=is_error,
+            metadata=dict(metadata or {}),
+        ),
+    )
+
+
+def test_the_last_work_tool_needs_setup_whatever_non_work_or_skipped_calls_follow() -> None:
+    """A wizard queued after the failure, or a call skipped by it, is not the last work."""
+    needs_setup = _ran(
+        "analyze_github_ci_reliability",
+        tool_unavailable("github", _TOKEN_REQUIRED, setup_command=_SETUP),
+        is_error=True,
+    )
+    queued_wizard = _ran("slash_invoke", {"ok": True, QUEUED_COMMAND_KEY: _SETUP})
+    skipped = _ran(
+        "shell_run",
+        {"error": "Not run: slash_invoke ended the turn"},
+        is_error=True,
+        metadata={"skipped": True},
+    )
+
+    assert last_work_needs_setup([needs_setup, queued_wizard, skipped]) is True
+    # A later work tool that ran is the last work, setup or not.
+    assert last_work_needs_setup([needs_setup, _ran("shell_run", {"ok": True})]) is False
+
+
+def test_an_unavailable_tool_without_a_named_setup_is_an_ordinary_failure() -> None:
+    unavailable = _ran(
+        "analyze_github_ci_reliability",
+        tool_unavailable("github", _TOKEN_REQUIRED, setup_command=" "),
+        is_error=True,
+    )
+
+    assert last_work_needs_setup([unavailable]) is False
 
 
 def test_failed_curl_is_not_successful_work() -> None:
