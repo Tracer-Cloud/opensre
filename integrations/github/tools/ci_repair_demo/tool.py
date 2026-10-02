@@ -62,15 +62,18 @@ def _safe_github_message(raw: str) -> str:
 
 
 def _seed_error_text(exc: GitHubApiError) -> str:
-    """Status and a short public message. The raw GitHub body stays out."""
+    """Name the GitHub call, its status, and a short public message.
+
+    The raw body stays out. Method and path are how a later failure stays
+    distinguishable from an unclassified ``GitHubApiError``.
+    """
     detail = _safe_github_message(exc.message)
-    if exc.status_code is None:
-        if detail:
-            return f"Could not seed the CI repair demo: {detail}."
+    call = " ".join(part for part in (exc.method.strip(), exc.path.strip()) if part)
+    status = f"HTTP {exc.status_code}" if exc.status_code is not None else ""
+    parts = [part for part in (call, status, detail) if part]
+    if not parts:
         return "Could not seed the CI repair demo: GitHubApiError."
-    if detail:
-        return f"Could not seed the CI repair demo: HTTP {exc.status_code}: {detail}."
-    return f"Could not seed the CI repair demo: HTTP {exc.status_code}."
+    return "Could not seed the CI repair demo: " + ": ".join(parts) + "."
 
 
 def _failed(exc: Exception, *, tool_name: str, method: str, action: str) -> dict[str, Any]:

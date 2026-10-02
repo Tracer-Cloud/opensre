@@ -360,6 +360,16 @@ def _branch_exists(client: GitHubRestClient, path: str, branch: str) -> bool:
     return True
 
 
+def _reference_is_missing(exc: GitHubApiError) -> bool:
+    """GitHub's update-a-reference call returns 422, not 404, for a new branch."""
+    if exc.status_code == HTTPStatus.NOT_FOUND:
+        return True
+    return (
+        exc.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+        and "Reference does not exist" in exc.message
+    )
+
+
 def _advance_ref(
     client: GitHubRestClient, path: str, branch: str, sha: str, *, force: bool
 ) -> None:
@@ -370,7 +380,7 @@ def _advance_ref(
             body={"sha": sha, "force": force},
         )
     except GitHubApiError as exc:
-        if exc.status_code != HTTPStatus.NOT_FOUND:
+        if not _reference_is_missing(exc):
             raise
         client.request(
             "POST",

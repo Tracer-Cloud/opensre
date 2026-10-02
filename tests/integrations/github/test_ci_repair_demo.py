@@ -70,6 +70,7 @@ class _Api:
         self.calls: list[tuple[str, str]] = []
         self.runs: list[dict[str, Any]] = []
         self.status_code: int | None = None
+        self.missing_ref_error: GitHubApiError | None = None
         self._primary = _RepoState(_REPO, missing=missing)
         self._repos = {_REPO: self._primary}
 
@@ -178,6 +179,8 @@ class _Api:
             assert body is not None
             branch = tail.removeprefix("git/refs/heads/")
             if branch not in state.refs:
+                if self.missing_ref_error is not None:
+                    raise self.missing_ref_error
                 raise GitHubApiError("missing", status_code=HTTPStatus.NOT_FOUND, path=path)
             assert body["force"] is False
             state.refs[branch] = str(body["sha"])
@@ -380,6 +383,53 @@ def test_a_non_404_repository_error_does_not_create(monkeypatch: pytest.MonkeyPa
     assert f"HTTP {HTTPStatus.INTERNAL_SERVER_ERROR.value}" in result["error"]
     assert "Repository creation failed." in result["error"]
     assert ("POST", "user/repos") not in api.calls
+
+
+def test_a_missing_branch_update_returns_422_and_the_branch_is_created() -> None:
+    api = _Api()
+    api.missing_ref_error = GitHubApiError(
+        '{"message":"Reference does not exist","status":"422"}',
+        status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
+        path=f"repos/{_OWNER}/{_REPO}/git/refs/heads/{FAILING_BRANCH}",
+        method="PATCH",
+    )
+    api.runs.append({"id": 9, "conclusion": "failure", "event": "pull_request"})
+
+    result = seed_demo(api, _OWNER, _REPO, sleep=_forbidden_sleep, now=lambda: 0.0)
+
+    assert result["pr_number"] == 1
+    assert FAILING_BRANCH in api.refs
+    assert ("POST", f"repos/{_OWNER}/{_REPO}/git/refs") in api.calls
+
+
+def test_a_rejected_branch_update_names_the_github_call(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    api = _Api()
+    ref = f"repos/{_OWNER}/{_REPO}/git/refs/heads/{FAILING_BRANCH}"
+    api.missing_ref_error = GitHubApiError(
+        '{"message":"Update is not a fast forward"}',
+        status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
+        path=ref,
+        method="PATCH",
+    )
+    monkeypatch.setattr(
+        "integrations.github.tools.ci_repair_demo.tool.GitHubRestClient",
+        lambda _token: api,
+    )
+    monkeypatch.setattr(
+        "integrations.github.tools.ci_repair_demo.tool.configured_token",
+        lambda _token: "token",
+    )
+
+    result = seed_ci_repair_demo(_OWNER, _REPO)
+
+    assert result["ok"] is False
+    assert "PATCH" in result["error"]
+    assert ref in result["error"]
+    assert f"HTTP {HTTPStatus.UNPROCESSABLE_ENTITY.value}" in result["error"]
+    assert "Update is not a fast forward" in result["error"]
+    assert ("POST", f"repos/{_OWNER}/{_REPO}/git/refs") not in api.calls
 
 
 def test_a_token_like_github_message_is_omitted() -> None:
