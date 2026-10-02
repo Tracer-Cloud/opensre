@@ -8,13 +8,17 @@ from rich.console import Group
 from rich.text import Text
 
 from infrastructure.terminal.theme import BRAND, ERROR, HIGHLIGHT, SECONDARY, WARNING
-from tools.system.workspace_git_scan.scan import RepoActivity, WorkspaceSnapshot
+from tools.system.workspace_git_scan.scan import RepoActivity, ScanStop, WorkspaceSnapshot
+from tools.system.workspace_git_scan.skips import skipped_note
 
 _TOP_REPOS = 4
 _BAR_MAX_CELLS = 40
 _BAR_CELL = "█"
 _SERIES_STYLES = (HIGHLIGHT, BRAND, SECONDARY, WARNING, ERROR)
 _OTHERS_LABEL = "all others"
+_TIME_BUDGET_NOTE = (
+    "Scan stopped at its time limit; the most recently used repositories were counted first."
+)
 
 
 def snapshot_renderable(snapshot: WorkspaceSnapshot) -> Group:
@@ -52,6 +56,11 @@ def _headline(snapshot: WorkspaceSnapshot) -> list[Text]:
     lines = [header, Text(""), columns, values]
     if snapshot.truncated:
         lines.append(Text("Scan stopped at the repository cap; counts are partial.", style="dim"))
+    if snapshot.stop_reason is ScanStop.TIME_BUDGET:
+        lines.append(Text(_TIME_BUDGET_NOTE, style="dim"))
+    skipped = skipped_note(snapshot.skipped)
+    if skipped:
+        lines.append(Text(skipped, style="dim"))
     return lines
 
 

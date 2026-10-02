@@ -5,8 +5,13 @@ from __future__ import annotations
 import os
 import re
 import subprocess
+import time
+from collections.abc import Callable, Collection
 from dataclasses import dataclass, field
+from enum import StrEnum
 from pathlib import Path
+
+from config.constants.git import GIT_OPTIONAL_LOCKS_ENV, GIT_TERMINAL_PROMPT_ENV
 
 _SKIP_DIR_NAMES = frozenset(
     {
@@ -27,10 +32,22 @@ _SKIP_DIR_NAMES = frozenset(
     }
 )
 _WORKFLOW_GLOBS = ("*.yml", "*.yaml")
-_GIT_TIMEOUT_SECONDS = 10
+_GIT_TIMEOUT_SECONDS = 5
+_SCAN_BUDGET_SECONDS = 20.0
+_CANCEL_POLL_SECONDS = 0.05
+_PROGRESS_INTERVAL_SECONDS = 3.0
+_SEARCH_PROGRESS = "Looking for git repositories: {} folders checked, {} found"
+_MEASURE_PROGRESS = "Counting recent commits: {} of {} repositories done"
 _GITHUB_REMOTE_RE = re.compile(
     r"(?:github\.com[:/])(?P<owner>[^/\s]+)/(?P<repo>[^/\s]+?)(?:\.git)?/?$", re.IGNORECASE
 )
+
+
+class ScanStop(StrEnum):
+    """Why a scan ended before measuring everything it could reach."""
+
+    CANCELLED = "cancelled"
+    TIME_BUDGET = "time_budget"
 
 
 @dataclass(frozen=True)
@@ -64,6 +81,11 @@ class WorkspaceSnapshot:
     days: int
     repos: tuple[RepoActivity, ...] = field(default_factory=tuple)
     truncated: bool = False
+    stop_reason: ScanStop | None = None
+    """Set when the scan stopped early; ``repos`` then holds what was measured before."""
+
+    skipped: tuple[str, ...] = ()
+    """Skip paths the walk reached and did not enter."""
 
     @property
     def total_commits(self) -> int:
@@ -78,25 +100,103 @@ class WorkspaceSnapshot:
         return sum(repo.own_commits for repo in self.repos)
 
 
+class _Watch:
+    """Early-stop checks and throttled progress lines for one scan."""
+
+    def __init__(
+        self,
+        *,
+        should_stop: Callable[[], bool] | None,
+        on_progress: Callable[[str], None] | None,
+        budget_seconds: float,
+        clock: Callable[[], float],
+    ) -> None:
+        self._should_stop = should_stop
+        self._on_progress = on_progress
+        self._clock = clock
+        started = clock()
+        self._deadline = started + budget_seconds
+        self._next_poll = started
+        self._next_progress = started + _PROGRESS_INTERVAL_SECONDS
+        self.stop_reason: ScanStop | None = None
+
+    def stopped(self, *, throttle: bool = False) -> bool:
+        """True once the caller cancelled or the budget ran out; stays true after that.
+
+        With *throttle*, *should_stop* is polled at most every ``_CANCEL_POLL_SECONDS``:
+        a host's cancel probe can read a file, and the walk asks before every folder.
+        """
+        if self.stop_reason is not None:
+            return True
+        now = self._clock()
+        if self._should_stop is not None and (not throttle or now >= self._next_poll):
+            self._next_poll = now + _CANCEL_POLL_SECONDS
+            if self._should_stop():
+                self.stop_reason = ScanStop.CANCELLED
+                return True
+        if now >= self._deadline:
+            self.stop_reason = ScanStop.TIME_BUDGET
+        return self.stop_reason is not None
+
+    def progress(self, template: str, *counts: int) -> None:
+        """Report *template* filled with *counts*, at most once per progress interval."""
+        if self._on_progress is None:
+            return
+        now = self._clock()
+        if now < self._next_progress:
+            return
+        self._next_progress = now + _PROGRESS_INTERVAL_SECONDS
+        self._on_progress(template.format(*counts))
+
+
 def scan_workspace(
     root: Path,
     *,
     days: int = 30,
     max_depth: int = 4,
     max_repos: int = 200,
+    skip_paths: Collection[Path] = (),
+    should_stop: Callable[[], bool] | None = None,
+    on_progress: Callable[[str], None] | None = None,
+    budget_seconds: float = _SCAN_BUDGET_SECONDS,
+    clock: Callable[[], float] = time.monotonic,
 ) -> WorkspaceSnapshot:
-    """Walk *root* for git checkouts and measure each one, most active first."""
+    """Walk *root* for git checkouts and measure each one, most active first.
+
+    *root* is always entered; folders in *skip_paths* never are. The scan stops
+    early when *should_stop* returns true or the time budget runs out, checked
+    before every repository and before every folder of the walk (*should_stop*
+    at most every 50 ms there), so one listing or one repository's git calls can
+    overrun a stop. The most recently used checkouts are measured first, so an
+    early stop or the repository cap keeps the relevant ones.
+    """
+    watch = _Watch(
+        should_stop=should_stop,
+        on_progress=on_progress,
+        budget_seconds=budget_seconds,
+        clock=clock,
+    )
+    found, skipped = _git_dirs(
+        root, max_depth=max_depth, skip_paths=frozenset(skip_paths), watch=watch
+    )
+    queue = [] if watch.stopped() else sorted(found, key=_last_used, reverse=True)[:max_repos]
+    author = _git(root, "config", "--get", "user.email") if queue else ""
     repos: list[RepoActivity] = []
-    truncated = False
-    author = _git(root, "config", "--get", "user.email")
-    for repo_dir in _git_dirs(root, max_depth=max_depth):
-        if len(repos) >= max_repos:
-            truncated = True
+    for repo_dir in queue:
+        if watch.stopped():
             break
+        watch.progress(_MEASURE_PROGRESS, len(repos), len(queue))
         repos.append(measure_repo(repo_dir, days=days, author=author))
     merged = _fold_clones(repos)
     merged.sort(key=lambda repo: (-repo.commits, repo.name.lower()))
-    return WorkspaceSnapshot(root=str(root), days=days, repos=tuple(merged), truncated=truncated)
+    return WorkspaceSnapshot(
+        root=str(root),
+        days=days,
+        repos=tuple(merged),
+        truncated=len(found) > max_repos,
+        stop_reason=watch.stop_reason,
+        skipped=tuple(str(path) for path in skipped),
+    )
 
 
 def _fold_clones(repos: list[RepoActivity]) -> list[RepoActivity]:
@@ -162,12 +262,21 @@ def parse_github_remote(url: str) -> tuple[str, str]:
     return match.group("owner"), match.group("repo")
 
 
-def _git_dirs(root: Path, *, max_depth: int) -> list[Path]:
-    """Directories containing ``.git`` up to *max_depth* below *root*, never descending into one."""
+def _git_dirs(
+    root: Path, *, max_depth: int, skip_paths: frozenset[Path], watch: _Watch
+) -> tuple[list[Path], list[Path]]:
+    """Checkouts up to *max_depth* below *root*, and the skip paths met on the way.
+
+    Never descends into a checkout or a skip path; stops when *watch* does.
+    """
     found: list[Path] = []
+    skipped: list[Path] = []
     stack: list[tuple[Path, int]] = [(root, 0)]
-    while stack:
+    checked = 0
+    while stack and not watch.stopped(throttle=True):
+        watch.progress(_SEARCH_PROGRESS, checked, len(found))
         current, depth = stack.pop()
+        checked += 1
         try:
             entries = list(os.scandir(current))
         except OSError:
@@ -182,11 +291,32 @@ def _git_dirs(root: Path, *, max_depth: int) -> list[Path]:
             if entry.name in _SKIP_DIR_NAMES or entry.name.startswith("."):
                 continue
             try:
-                if entry.is_dir(follow_symlinks=False):
-                    stack.append((Path(entry.path), depth + 1))
+                if not entry.is_dir(follow_symlinks=False):
+                    continue
             except OSError:
                 continue
-    return sorted(found)
+            path = Path(entry.path)
+            if path in skip_paths:
+                skipped.append(path)
+            else:
+                stack.append((path, depth + 1))
+    return sorted(found), sorted(skipped)
+
+
+def _last_used(repo_dir: Path) -> float:
+    """When the checkout was last worked in: the mtime of ``.git/index``, else of ``.git``.
+
+    git rewrites the index on every add, commit, checkout and merge, so it tracks
+    recent work, unlike ``HEAD``, which changes only on a branch switch. A worktree
+    or submodule keeps its index elsewhere; its ``.git`` file stands in.
+    """
+    git = repo_dir / ".git"
+    for candidate in (git / "index", git):
+        try:
+            return candidate.stat().st_mtime
+        except OSError:
+            continue
+    return 0.0
 
 
 def _has_workflows(repo_dir: Path) -> bool:
@@ -195,11 +325,19 @@ def _has_workflows(repo_dir: Path) -> bool:
 
 
 def _git(repo_dir: Path, *args: str) -> str:
+    """Output of one read-only git call, or ``""`` when it fails or times out.
+
+    git never reads the terminal, never prompts for credentials and never takes
+    the optional index lock, so ``git status`` leaves ``.git/index`` untouched.
+    """
     try:
         result = subprocess.run(
             ["git", "-C", str(repo_dir), *args],
+            stdin=subprocess.DEVNULL,
             capture_output=True,
-            text=True,
+            encoding="utf-8",
+            errors="replace",
+            env={**os.environ, GIT_TERMINAL_PROMPT_ENV: "0", GIT_OPTIONAL_LOCKS_ENV: "0"},
             timeout=_GIT_TIMEOUT_SECONDS,
             check=False,
         )
@@ -210,6 +348,7 @@ def _git(repo_dir: Path, *args: str) -> str:
 
 __all__ = [
     "RepoActivity",
+    "ScanStop",
     "WorkspaceSnapshot",
     "measure_repo",
     "parse_github_remote",
