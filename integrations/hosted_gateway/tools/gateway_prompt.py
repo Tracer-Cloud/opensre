@@ -231,6 +231,19 @@ def ask_hosted_gateway(
     return outcome
 
 
+def _waiting_notice(exc: HostedGatewayError) -> str:
+    """A mid-wait poll failure: the accepted prompt is still being awaited.
+
+    The cause names why this read failed. It follows the waiting line so a
+    sentence that says to try again is not the only thing the user sees while
+    the tool keeps polling the prompt it already sent.
+    """
+    cause = cause_sentence(exc)
+    if not cause:
+        return _UNANSWERED_NOTICE
+    return f"{_UNANSWERED_NOTICE}. {cause}"
+
+
 def _failure(exc: HostedGatewayError, in_flight: str) -> dict[str, Any]:
     """A failed call's result; once a prompt was accepted, a transient failure keeps its id.
 
@@ -335,7 +348,7 @@ def _wait_until_settled(
             now = time.monotonic()
             if silent_since is None:
                 silent_since = now
-                relay.note(cause_sentence(exc) or _UNANSWERED_NOTICE)
+                relay.note(_waiting_notice(exc))
             elif now - silent_since >= HOSTED_GATEWAY_UNANSWERED_GRACE_SECONDS:
                 raise
             continue

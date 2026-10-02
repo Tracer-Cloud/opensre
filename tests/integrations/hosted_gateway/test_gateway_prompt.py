@@ -430,8 +430,11 @@ def test_a_named_cause_is_what_the_wait_tells_the_user(monkeypatch: pytest.Monke
 
     # Assert
     assert out["response_text"] == "pong"
-    assert updates == [{"progress": gateway_prompt.cause_sentence(unavailable)}]
-    assert "could not connect" in updates[0]["progress"]
+    progress = updates[0]["progress"]
+    assert progress.startswith(gateway_prompt._UNANSWERED_NOTICE)
+    assert "still waiting" in progress
+    assert gateway_prompt.cause_sentence(unavailable) in progress
+    assert "could not connect" in progress
 
 
 def test_losing_contact_keeps_the_prompt_id_and_the_cause(monkeypatch: pytest.MonkeyPatch) -> None:
