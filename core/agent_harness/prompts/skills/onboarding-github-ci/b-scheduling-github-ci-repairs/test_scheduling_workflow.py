@@ -134,13 +134,15 @@ def test_skill_card_spells_out_the_loop_call_and_waits_for_the_scheduler() -> No
     # takes the repair with it. Verification stays a single read.
     assert '"args": ["run", "<id>"]' not in body
     assert "Do not run `/cron run <id>`." in body
-    assert 'get_ci_repair_loop(task_id="<id>", wait_seconds=60)' in body
+    assert 'get_ci_repair_loop(task_id="<id>", wait_until_terminal=true)' in body
     assert "terminal: true" in body
     assert "headRefOid,commits,statusCheckRollup" in body
     assert "Do not run the tests locally" in body
-    # The demo loop is removed after the evidence is saved; the repository is
-    # kept, so the token never needs delete_repo scope.
-    assert '"args": ["remove", "<id>"]' in body
+    # One cleanup call removes the scheduled task and keeps the repository,
+    # so the token never needs delete_repo scope and the card does not spell
+    # a separate `/cron remove`.
+    assert "finish_ci_repair_demo(" in body
+    assert '"args": ["remove", "<id>"]' not in body
     assert '["repo", "delete"' not in body
     assert "report that the repository remains" in body
     assert skill_reference_names(SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME) == ("script-tools",)

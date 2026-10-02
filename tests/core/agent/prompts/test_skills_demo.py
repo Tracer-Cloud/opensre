@@ -116,7 +116,7 @@ def test_master_menu_matches_four_unique_children_and_preserves_specialists() ->
     # The fix loop repairs red pull requests; it is not the analytics report
     # loop, so it never reaches for the analytics or report-scheduling tools.
     assert "schedule_ci_repair_loop" in fix_loop
-    assert '"/cron"' in fix_loop
+    assert "/cron list" in fix_loop
     assert "analyze_github_ci_reliability" not in fix_loop
     assert "schedule_ci_reliability_loop" not in fix_loop
     # Repository selection remains part of the child workflow.
