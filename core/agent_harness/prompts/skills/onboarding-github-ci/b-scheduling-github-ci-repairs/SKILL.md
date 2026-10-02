@@ -215,12 +215,17 @@ Complete when the report has been shown to the user as Markdown text.
 
 ### Step 10. Offer the follow-up question
 
-After the report is shown, one `ask_user_choice`:
+After the report is shown, call `ask_user_choice` with the title `Hand off the next failure?`, `allow_custom` false, and this note:
 
-- "Set up remote continious monitoring
-- "Set up local monitoring for another repository"
-- "Exit demo"
+`The local loop runs on this machine every 30 seconds while it is on. The managed-service option is one repair, then it stops.`
 
-**Complete this step when:**
+Options:
+- Run the next fix in the cloud and close your laptop
+- Auto-fix failing PRs on one of your repos from your local laptop
+- Not now
 
-- Complete when the menu has been offered.
+Complete when the `ask_user_choice` call for this menu has returned in this turn. The user's answer arrives in the next turn. Each branch except `Not now` is owned by a skill: load it with `skill_view` and follow its plan; do not reimplement its steps here.
+
+- **Run the next fix in the cloud and close your laptop:** call `skill_view(name="delegating-github-ci-repairs")` and follow that skill. That skill runs one repair on the hosted gateway. Do not describe it as a loop that keeps running.
+- **Auto-fix failing PRs on one of your repos from your local laptop:** call `skill_view(name="scheduling-github-ci-repairs")` and follow that skill again. Do not reuse the private demo. Select a repository the user already uses, so the loop stays after the report.
+- **Not now:** acknowledge in one line and conclude.

@@ -71,9 +71,9 @@ def test_master_menu_matches_four_unique_children_and_preserves_specialists() ->
     assert "`Which repository should I analyze?`" in body
     assert "`See a failing check get fixed?`" in body
     for option in (
-        "- Fix one here, in the next few minutes",
-        "- Fix one in the cloud, then close this terminal",
-        "- Stop at the report",
+        "- Watch it fix a failing PR in a demo repo (under 5 min)",
+        "- Run the same fix in OpensRE managed service and close your laptop",
+        "- Not now",
     ):
         assert option in body
     # Each next-step branch hands off to its sibling skill instead of inlining it.

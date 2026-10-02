@@ -146,17 +146,26 @@ Show the final repair plan titled `Remote Repair Plan`. Put the probe's findings
 
 ### Offer the follow-up
 
-After a successful repair report, use `ask_user_choice`:
+After a successful repair report, one `ask_user_choice` with the title
+`Hand off the next CICD fix?`, `allow_custom` false, and these options:
 
-- Configure Slack or Telegram
-- Add more scheduled tasks
-- Exit to interactive shell
+- Guard failing PRs on one of your repos
+- Fix a failing PR from Slack by tagging @OpenSRE
+- Not now
 
-**Complete when:**
+Complete when the `ask_user_choice` call for this menu has returned in
+this turn. The user's answer arrives in the next turn.
 
-- The appropriate menu is offered. 
-- Keep this step pending until the report has been shown
-
+- **Connect Slack so the agent can fix issues there:** call
+  `skill_view(name="connecting-slack")` and follow that skill. A channel
+  mention or DM hands off the next failing check. Do not post to Slack, and
+  do not offer Telegram.
+- **Schedule a repair loop on a repo you use, so the next failing PR gets fixed:**
+  call `skill_view(name="scheduling-github-ci-repairs")` and follow that skill.
+  Do not reuse the private demo. Select a repository the user already uses,
+  so the loop stays and pushes a fix for the next failing pull request.
+  The machine has to stay on.
+- **Return to the shell:** acknowledge in one line and conclude.
 
 ### Blockers 
 

@@ -145,16 +145,16 @@ Complete when the assistant reply containing the table has been shown.
 Call `ask_user_choice` with the title `See a failing check get fixed?`, `allow_custom` false, and this note: `A private demo repository, so the one in the report stays untouched. You watch one check go from red to green.`
 
 Options:
-- Fix one here, in the next few minutes
-- Fix one in the cloud, then close this terminal
-- Stop at the report
+- Watch it fix a failing PR in a demo repo (under 5 min)
+- Run the same fix in OpensRE managed service and close your laptop
+- Not now
 
 Complete when the `ask_user_choice` call for this menu has returned in this turn. The user's answer arrives in the next turn. Each branch except `Stop at the report` is owned by a sibling skill: load it with `skill_view` and follow its plan; do not reimplement its steps here.
 
-- **Fix one here, in the next few minutes:** call `skill_view(name="scheduling-github-ci-repairs")`
+- **Watch it fix a failing PR in a demo repo (under 5 min):** call `skill_view(name="scheduling-github-ci-repairs")`
   and follow that skill. The repository is already chosen and analyzed in
   this session, so its plan omits the scan and repository-pick steps and
   its analyze step reuses today's saved report.
-- **Fix one in the cloud, then close this terminal:** call `skill_view(name="delegating-github-ci-repairs")`
+- **Run the same fix in OpensRE managed service and close your laptop:** call `skill_view(name="delegating-github-ci-repairs")`
   and follow that skill.
-- **Stop at the report:** acknowledge in one line and conclude.
+- **Not now:** acknowledge in one line and conclude.
