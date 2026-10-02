@@ -128,7 +128,11 @@ class _Api:
     ) -> Any:
         self.calls.append((method, path))
         if self.status_code is not None and path == f"repos/{_OWNER}/{_REPO}":
-            raise GitHubApiError("private-api-detail", status_code=self.status_code, path=path)
+            raise GitHubApiError(
+                '{"message":"Repository creation failed.","documentation_url":"https://docs.github.com/rest","errors":[{"private-api-detail":true}]}',
+                status_code=self.status_code,
+                path=path,
+            )
         if path == "user":
             return {"login": self.login, "id": 1}
         if path in {"user/repos", f"orgs/{_OWNER}/repos"} and method == "POST":
@@ -372,8 +376,24 @@ def test_a_non_404_repository_error_does_not_create(monkeypatch: pytest.MonkeyPa
 
     assert result["ok"] is False
     assert "private-api-detail" not in result["error"]
-    assert "GitHubApiError" in result["error"]
+    assert "documentation_url" not in result["error"]
+    assert f"HTTP {HTTPStatus.INTERNAL_SERVER_ERROR.value}" in result["error"]
+    assert "Repository creation failed." in result["error"]
     assert ("POST", "user/repos") not in api.calls
+
+
+def test_a_token_like_github_message_is_omitted() -> None:
+    from integrations.github.tools.ci_repair_demo.tool import _seed_error_text
+
+    text = _seed_error_text(
+        GitHubApiError(
+            '{"message":"bad ghp_secretvalue"}',
+            status_code=HTTPStatus.FORBIDDEN,
+        )
+    )
+
+    assert "ghp_" not in text
+    assert f"HTTP {HTTPStatus.FORBIDDEN.value}" in text
 
 
 def test_a_passing_pull_request_run_is_refused() -> None:

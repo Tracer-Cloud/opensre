@@ -83,10 +83,15 @@ def baseline_files() -> dict[str, str]:
     }
 
 
-def _fresh_demo_repo_name() -> str:
-    """A new private demo name that does not reuse a repository the caller named."""
+def fresh_demo_repo_name() -> str:
+    """A new private demo name: ``opensre-ci-repair-demo-`` plus 4 letters or digits."""
     suffix = "".join(secrets.choice(_SUFFIX_ALPHABET) for _ in range(_SUFFIX_LENGTH))
     return f"{_DEMO_REPO_PREFIX}{suffix}"
+
+
+def _fresh_demo_repo_name() -> str:
+    """A new private demo name that does not reuse a repository the caller named."""
+    return fresh_demo_repo_name()
 
 
 def seed_demo(

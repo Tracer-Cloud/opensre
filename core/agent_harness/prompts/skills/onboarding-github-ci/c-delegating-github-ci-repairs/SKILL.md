@@ -15,7 +15,7 @@ metadata:
     - A reachable hosted gateway with a GitHub integration and an authenticated coding agent.
     - An interactive shell and a signed-in OpenSRE account in the organization for hosted gateway access.
     - GitHub write access to the selected PR; demo mode also needs private-repository creation.
-  version: "2.8"
+  version: "2.9"
 ---
 
 # Delegate a remote CI repair
@@ -102,6 +102,8 @@ Report this gateway's GitHub access for a CI repair demo. Run only these calls a
 - The gateway named the login, the token type, and at least one owner that can create repositories. Otherwise, a blocker is recorded.
 
 ### Display the final repair plan
+
+If the opening message already answers `Create a private demo repository?` with `Create <owner>/<repo>` or `Create <repo>`, that is the target. Do not call `ask_user_choice` for it. Pass that owner and repo as the delegate `facts`. A name without an owner uses the login from the probe. `Don't create a demo repository` keeps the existing-pull-request path below.
 
 Show the final repair plan titled `Remote Repair Plan`. Put the probe's findings (login, token type, owner) in the overview so the user can see it once. 
 

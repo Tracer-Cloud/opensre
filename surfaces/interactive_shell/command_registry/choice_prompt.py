@@ -18,10 +18,14 @@ from config.constants.skills import (
     AUTOMATION_GROUP_OPTION,
     AUTOMATION_MENU_OPTIONS,
     AUTOMATION_MENU_TITLE,
+    DEMO_REPO_DECLINE_OPTION,
+    DEMO_REPO_PERMISSION_TITLE,
     ONBOARDING_SKILL_NAME,
+    REPAIR_MENU_OPTIONS,
     SKIP_DEMO_OPTION,
 )
 from core.agent_harness.spi.handoff import (
+    AskUserQuestion,
     format_ask_user_answers,
     question_key,
 )
@@ -182,9 +186,10 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
         on_answer=remember_single_answer,
     )
     opening_answer: str | None = None
+    permission_answer: str | None = None
     if picked_one == AUTOMATION_GROUP_OPTION and skill_name == ONBOARDING_SKILL_NAME:
-        # The group row opens a follow-up. The model receives only the leaf;
-        # the transcript still records both questions the user answered.
+        # The group row opens a follow-up. The model receives the leaf, and a
+        # repair leaf also receives the demo-repository permission.
         opening_answer = picked_one
         picked_one = repl_choose_one(
             title=AUTOMATION_MENU_TITLE,
@@ -195,6 +200,22 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
             letter_keys=True,
             note="",
         )
+        if picked_one in REPAIR_MENU_OPTIONS:
+            create_option = _demo_create_option()
+            permission_answer = repl_choose_one(
+                title=DEMO_REPO_PERMISSION_TITLE,
+                choices=[
+                    (create_option, create_option),
+                    (DEMO_REPO_DECLINE_OPTION, DEMO_REPO_DECLINE_OPTION),
+                ],
+                custom_label=None,
+                multi_select=False,
+                header="Ask User",
+                letter_keys=True,
+                note="",
+            )
+            if permission_answer is None:
+                picked_one = None
     capture_onboarding_choice(session.active_skill, picked_one, custom=custom_answer)
     if picked_one is None:
         capture_ask_user_prompt_dismissed(
@@ -233,16 +254,44 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
         return True
     shown_title = AUTOMATION_MENU_TITLE if picked_one in AUTOMATION_MENU_OPTIONS else items[0].title
     _remember_answered(session, items[0].title, shown_title)
+    if permission_answer is not None:
+        _remember_answered(session, DEMO_REPO_PERMISSION_TITLE)
     pairs = [(shown_title, picked_one)]
     if opening_answer is not None and picked_one in AUTOMATION_MENU_OPTIONS:
         pairs = [(items[0].title, opening_answer), (shown_title, picked_one)]
+    if permission_answer is not None:
+        pairs.append((DEMO_REPO_PERMISSION_TITLE, permission_answer))
     render_choice_selections(console, pairs)
     # The answer travels with its question, as the batched wizard's does: a bare
     # label such as "owner/repo (757 commits, CI configured)" reads to the
     # planner like a fresh request and gets re-asked or re-routed.
-    session.terminal.set_auto_command(format_ask_user_answers(items, (picked_one,)))
+    questions = items
+    answers = (picked_one,)
+    if permission_answer is not None:
+        questions = (
+            items[0],
+            AskUserQuestion(
+                label="Demo repository",
+                title=DEMO_REPO_PERMISSION_TITLE,
+                options=(permission_answer,),
+            ),
+        )
+        answers = (picked_one, permission_answer)
+    session.terminal.set_auto_command(format_ask_user_answers(questions, answers))
     session.terminal.awaiting_handoff_answer = True
     return True
+
+
+def _demo_create_option() -> str:
+    """Permission row for one new private demo repository. No network call."""
+    from integrations.github.identity import saved_github_username
+    from integrations.github.tools.ci_repair_demo.seed import fresh_demo_repo_name
+
+    repo = fresh_demo_repo_name()
+    owner = saved_github_username()
+    if owner:
+        return f"Create {owner}/{repo}"
+    return f"Create {repo}"
 
 
 COMMANDS: list[SlashCommand] = [
