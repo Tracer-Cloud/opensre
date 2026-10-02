@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from integrations.github.client import resolve_github_token
 from integrations.github.mcp import (
     DEFAULT_GITHUB_MCP_MODE,
     GitHubMCPConfig,
@@ -47,6 +48,18 @@ def github_source_available(sources: dict[str, dict]) -> bool:
     ``github`` entry or a falsy/missing ``connection_verified`` returns False.
     """
     return bool(sources.get("github", {}).get("connection_verified"))
+
+
+def github_repository_source_available(sources: dict[str, dict]) -> bool:
+    """Require a repository and an available GitHub grant without selection fallback."""
+    gh = sources.get("github", {})
+    if gh.get("connection_selection_error"):
+        return False
+    return bool(
+        (github_source_available(sources) or resolve_github_token(None))
+        and gh.get("owner")
+        and gh.get("repo")
+    )
 
 
 def github_creds(gh: dict) -> dict[str, Any]:
