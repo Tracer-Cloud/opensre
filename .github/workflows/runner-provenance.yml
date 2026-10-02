@@ -22,7 +22,7 @@ concurrency:
 jobs:
   production-proof:
     if: github.repository == 'Tracer-Cloud/opensre'
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
     permissions:
       contents: read
@@ -79,7 +79,7 @@ jobs:
             --env OPENSRE_SENTRY_DISABLED=1 \
             opensre-provenance:${{ github.sha }} bash -c "${CONTAINER_RECORD_INSTALL}"
           test -f "$control_home/installed"
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         if: always()
         with:
           name: runner-provenance-identities
