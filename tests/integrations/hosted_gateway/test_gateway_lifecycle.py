@@ -16,6 +16,7 @@ from integrations.hosted_gateway import (
     HostedGatewayError,
 )
 from integrations.hosted_gateway.tools import gateway_lifecycle, results
+from integrations.hosted_gateway.tools.gateway_health import check_hosted_gateway
 from integrations.hosted_gateway.tools.gateway_lifecycle import (
     start_hosted_gateway,
     stop_hosted_gateway,
@@ -93,6 +94,7 @@ def test_both_tools_change_shared_state_and_take_no_identifier() -> None:
 class _Client:
     """Start and stop answer with ``outcome``; health answers with ``health_outcome`` when given."""
 
+    app_url = "https://app.test"
     health_outcome: GatewayHealth | HostedGatewayError | None = None
     calls: list[str] = []
 
@@ -327,18 +329,23 @@ def test_a_refused_start_and_a_stop_record_no_gateway_milestone(
     assert events == []
 
 
-def test_an_unprovisioned_organization_is_told_so_and_it_is_not_an_incident(
-    monkeypatch: pytest.MonkeyPatch,
+@pytest.mark.parametrize("call", [start_hosted_gateway, stop_hosted_gateway], ids=["start", "stop"])
+def test_an_unprovisioned_organization_is_sent_to_the_admin_page_and_it_is_not_an_incident(
+    monkeypatch: pytest.MonkeyPatch, call: Callable[[], dict[str, Any]]
 ) -> None:
-    # Arrange
+    """A refused start or stop names the admin page in the words check_hosted_gateway uses."""
+    # Arrange: the app refuses the lifecycle call and reads the gateway as not provisioned
     reported: list[BaseException] = []
     monkeypatch.setattr(results, "report_run_error", lambda exc, **_kw: reported.append(exc))
     _signed_in_with(monkeypatch, HostedGatewayError(ERR_NOT_PROVISIONED, HTTPStatus.CONFLICT))
+    monkeypatch.setattr(_Client, "health_outcome", GatewayHealth(False, False))
 
     # Act
-    out = stop_hosted_gateway()
+    out = call()
+    checked = check_hosted_gateway()
 
     # Assert
     assert out["success"] is False and out["error_kind"] == ERR_NOT_PROVISIONED
-    assert out["response_text"] == "Your organization has no hosted gateway to start or stop yet."
+    assert "https://app.test/settings/agent-backend" in out["response_text"]
+    assert out["response_text"] == checked["response_text"]
     assert reported == []
