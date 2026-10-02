@@ -24,6 +24,19 @@ def _fetch_webapp_vault() -> list[dict[str, Any]] | None:
     return webapp_vault.fetch_webapp_org_integrations()
 
 
+def _fetch_account_integrations() -> list[dict[str, Any]]:
+    """The signed-in account's org integrations; the client imports on first use."""
+    import integrations.account_integrations as account_integrations
+
+    return account_integrations.load_account_integrations()
+
+
+def _account_integrations_generation() -> int:
+    import integrations.account_integrations as account_integrations
+
+    return account_integrations.account_integrations_generation()
+
+
 def register_harness_adapters() -> None:
     from infrastructure.harness_providers import IntegrationResolutionAdapters
     from integrations.catalog import (
@@ -45,6 +58,8 @@ def register_harness_adapters() -> None:
         configured_services=lambda: tuple(configured_integration_services()),
         setupable_services=_setupable_services,
         fetch_webapp_vault=_fetch_webapp_vault,
+        fetch_account_integrations=_fetch_account_integrations,
+        account_integrations_generation=_account_integrations_generation,
     ).install()
 
     _register_vcs_repo_scope_providers()

@@ -17,6 +17,7 @@ from integrations.github.client import GitHubApiError, GitHubRestClient, resolve
 _LAZY_EXPORTS: dict[str, str] = {
     "setup_github": "integrations.github.cli_setup",
     "run_ci_repair_worker": "integrations.github.tools.ci_repair_loop.worker",
+    "effective_github_token": "integrations.github.tools.ci_repair_loop.credentials",
     "count_ci_fixes": "integrations.github.tools.ci_fix.ledger",
     "get_ci_fix_counter": "integrations.github.tools.ci_fix.ledger",
     "github_creds": "integrations.github.helpers",
@@ -123,6 +124,7 @@ if TYPE_CHECKING:
     )
     from integrations.github.tools.ci_analytics.render import ci_report_headline
     from integrations.github.tools.ci_fix.ledger import count_ci_fixes, get_ci_fix_counter
+    from integrations.github.tools.ci_repair_loop.credentials import effective_github_token
     from integrations.github.tools.ci_repair_loop.worker import run_ci_repair_worker
 
 
@@ -156,6 +158,7 @@ __all__ = [
     "ci_report_headline",
     "count_ci_fixes",
     "disconnect_personal_github",
+    "effective_github_token",
     "format_github_mcp_validation_cli_report",
     "get_ci_fix_counter",
     "github_creds",

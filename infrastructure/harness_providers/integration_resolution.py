@@ -27,6 +27,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from config.constants.paths import integrations_store_stamp
 from config.strict_config import StrictConfigModel
 
 logger = logging.getLogger(__name__)
@@ -46,6 +47,8 @@ MergeIntegrationsByServiceFn = Callable[
 ]
 ConfiguredIntegrationServicesFn = Callable[[], tuple[str, ...]]
 SetupableIntegrationServicesFn = Callable[[], tuple[str, ...]]
+AccountIntegrationsFetcherFn = Callable[[], list[dict[str, Any]]]
+AccountIntegrationsGenerationFn = Callable[[], int]
 
 
 def _default_fetch_remote(org_id: str, auth_token: str) -> list[dict[str, Any]]:
@@ -95,6 +98,14 @@ def _default_fetch_webapp_vault() -> list[dict[str, Any]] | None:
     return None
 
 
+def _default_fetch_account_integrations() -> list[dict[str, Any]]:
+    return []
+
+
+def _default_account_integrations_generation() -> int:
+    return 0
+
+
 def _default_integration_setup_command(service_id: str) -> str:
     return f"integrations setup {service_id}"
 
@@ -112,6 +123,10 @@ class IntegrationResolutionAdapters:
     configured_services: ConfiguredIntegrationServicesFn = _default_configured_services
     setupable_services: SetupableIntegrationServicesFn = _default_setupable_services
     fetch_webapp_vault: WebappVaultFetcherFn = _default_fetch_webapp_vault
+    fetch_account_integrations: AccountIntegrationsFetcherFn = _default_fetch_account_integrations
+    account_integrations_generation: AccountIntegrationsGenerationFn = (
+        _default_account_integrations_generation
+    )
 
     def install(self) -> None:
         """Bind these as the process-wide resolution adapters."""
@@ -161,6 +176,16 @@ def fetch_remote_integrations(*, org_id: str, auth_token: str) -> list[dict[str,
 
 def configured_integration_services() -> tuple[str, ...]:
     return _adapters().configured_services()
+
+
+def integration_sources_stamp() -> tuple[int, int]:
+    """A value that changes when any integration source behind a session changes.
+
+    Combines the local store file's stamp with the signed-in account's
+    remote-set generation, so a credential saved either locally or in the web
+    app invalidates a session's resolved cache on its next turn.
+    """
+    return (integrations_store_stamp(), _adapters().account_integrations_generation())
 
 
 def setupable_integration_services() -> tuple[str, ...]:
@@ -257,17 +282,22 @@ def resolve_integrations_with_metadata(
 
 
 def _resolve_from_webapp_vault_or_local() -> IntegrationResolutionResult:
-    """Silo path: pull org vault from opensre-webapp, else local store/env.
+    """Silo path: pull org vault from opensre-webapp, else account/local sources.
 
     Merge order is vault → store → env so ops can still override a vault
     secret with ``GITHUB_MCP_AUTH_TOKEN`` (etc.) on the task definition.
+    On a signed-in laptop (no fleet vault) the account's organization
+    integrations fill the remote role instead, and there they win over the
+    local store and env.
     """
     adapters = _adapters()
     remote = adapters.fetch_webapp_vault()
-    if remote is None:
-        return _resolve_from_local_sources()
     if not remote:
-        # Explicit empty vault — still allow local/env overlays (e.g. Slack SSM).
+        # No fleet vault (None) or an explicitly empty one: a signed-in
+        # laptop still reads its organization's integrations from the app.
+        account_records = adapters.fetch_account_integrations()
+        if account_records:
+            return _resolve_remote_with_local_fallback(account_records)
         return _resolve_from_local_sources()
 
     store_integrations = adapters.load_integrations()
@@ -383,6 +413,8 @@ def reset() -> None:
 
 
 __all__ = [
+    "AccountIntegrationsFetcherFn",
+    "AccountIntegrationsGenerationFn",
     "ClassifyIntegrationsFn",
     "ConfiguredIntegrationServicesFn",
     "IntegrationResolutionAdapters",
@@ -401,6 +433,7 @@ __all__ = [
     "configured_integration_services",
     "fetch_remote_integrations",
     "integration_setup_command",
+    "integration_sources_stamp",
     "resolve_integrations",
     "resolve_integrations_with_metadata",
     "setupable_integration_services",

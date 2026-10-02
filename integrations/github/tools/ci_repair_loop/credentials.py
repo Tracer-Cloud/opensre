@@ -11,20 +11,32 @@ from integrations.github.helpers import github_creds
 
 
 def configured_token(explicit: str | None = None) -> str:
-    """Prefer injected credentials, then the integration store and credential fallback."""
+    """Prefer injected credentials, then the effective integration and env fallback."""
+    token = effective_github_token(explicit)
+    if token:
+        return token
+    raise ValueError("Configure GitHub with `opensre integrations setup github` before scheduling.")
+
+
+def effective_github_token(explicit: str | None = None) -> str:
+    """Resolve a GitHub token from any configured source; ``""`` when absent.
+
+    Order: explicit → the effective GitHub integration (remote, store) → env
+    (``GITHUB_MCP_AUTH_TOKEN``, ``GITHUB_TOKEN``, ``GH_TOKEN``). Never raises.
+    """
     if explicit:
         return explicit
-    token = _stored_token()
+    token = stored_github_token()
     if token:
         return token
     for name in (GITHUB_MCP_AUTH_TOKEN_ENV, GITHUB_TOKEN_ENV, GH_TOKEN_ENV):
         token = resolve_env_credential(name)
         if token:
             return token
-    raise ValueError("Configure GitHub with `opensre integrations setup github` before scheduling.")
+    return ""
 
 
-def _stored_token() -> str:
+def stored_github_token() -> str:
     """Token of the effective GitHub integration; its entry wraps the classified config."""
     github = resolve_effective_integrations().get("github", {})
     config = github.get("config")

@@ -27,10 +27,10 @@ from infrastructure.terminal.markdown import ReplyMarkdown
 from infrastructure.terminal.theme import WARNING
 from integrations.github import (
     DEFAULT_LOOP_TIME,
+    effective_github_token,
     local_timezone,
     loop_card,
     report_looks_complete,
-    resolve_github_token,
     schedule_ci_reliability_loop,
 )
 from surfaces.interactive_shell.runtime.loop_scheduler import reload_loop_scheduler, run_loop_now
@@ -125,7 +125,7 @@ def start_ci_agent_demo(
     """Scan, choose a repository and time, then schedule and run the reliability loop."""
     if repository is None:
         snapshot = scan_and_show(console)
-        if not resolve_github_token(None):
+        if not effective_github_token():
             _warn(console, _LOOP_TOKEN_MISSING)
             return False
         repository = choose_repository(snapshot, title=_LOOP_REPOSITORY_TITLE)

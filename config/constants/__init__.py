@@ -24,6 +24,15 @@ if TYPE_CHECKING:
         OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS as OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS,
     )
     from config.constants.account import (
+        OPENSRE_ACCOUNT_INTEGRATIONS_PATH as OPENSRE_ACCOUNT_INTEGRATIONS_PATH,
+    )
+    from config.constants.account import (
+        OPENSRE_ACCOUNT_INTEGRATIONS_TIMEOUT_SECONDS as OPENSRE_ACCOUNT_INTEGRATIONS_TIMEOUT_SECONDS,  # noqa: E501
+    )
+    from config.constants.account import (
+        OPENSRE_ACCOUNT_INTEGRATIONS_TTL_SECONDS as OPENSRE_ACCOUNT_INTEGRATIONS_TTL_SECONDS,
+    )
+    from config.constants.account import (
         OPENSRE_ACCOUNT_LLM_BASE_PATH as OPENSRE_ACCOUNT_LLM_BASE_PATH,
     )
     from config.constants.account import (

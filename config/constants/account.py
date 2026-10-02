@@ -18,6 +18,12 @@ OPENSRE_ACCOUNT_EXCHANGE_PATH = "/api/auth/cli/exchange"
 OPENSRE_ACCOUNT_SESSION_PATH = "/api/auth/cli/session"
 OPENSRE_ACCOUNT_CREDITS_PATH = "/api/credits/balance"
 OPENSRE_ACCOUNT_USAGE_PATH = "/usage"
+#: The organization's connected integrations, served to any signed-in member.
+OPENSRE_ACCOUNT_INTEGRATIONS_PATH = "/api/auth/cli/integrations"
+#: How long one fetched remote-integration snapshot stays fresh in-process.
+OPENSRE_ACCOUNT_INTEGRATIONS_TTL_SECONDS = 60.0
+#: Short fetch timeout so an offline laptop never stalls a turn on this call.
+OPENSRE_ACCOUNT_INTEGRATIONS_TIMEOUT_SECONDS = 5.0
 OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS = 15.0
 OPENSRE_APP_URL_DEFAULT = "https://app.opensre.com"
 OPENSRE_APP_URL_DEV = "http://localhost:3000"
@@ -34,6 +40,9 @@ __all__ = [
     "OPENSRE_ACCOUNT_LOGIN_SUCCESS_PATH",
     "OPENSRE_ACCOUNT_EXCHANGE_PATH",
     "OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS",
+    "OPENSRE_ACCOUNT_INTEGRATIONS_PATH",
+    "OPENSRE_ACCOUNT_INTEGRATIONS_TIMEOUT_SECONDS",
+    "OPENSRE_ACCOUNT_INTEGRATIONS_TTL_SECONDS",
     "OPENSRE_ACCOUNT_TOKEN_ENV",
     "OPENSRE_ACCOUNT_SESSION_PATH",
     "OPENSRE_ACCOUNT_CREDITS_PATH",

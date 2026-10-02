@@ -70,6 +70,10 @@ def _missing_integration_detail(current_service: str) -> str:
                 if store_record is not None:
                     break
     if store_record is None:
+        from config.account import load_account_record, resolve_account_token
+
+        if load_account_record() is not None and resolve_account_token():
+            return "Not configured in the OpenSRE app, local store, or environment variables."
         return "Not configured in local store or environment variables."
 
     endpoint = ""

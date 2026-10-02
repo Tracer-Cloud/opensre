@@ -13,16 +13,14 @@ from dataclasses import dataclass
 from http import HTTPStatus
 from types import TracebackType
 from typing import Any
-from urllib.parse import urlsplit
 
 import httpx
 
-from config.account import load_account_record, resolve_account_token
+from config.account import is_secure_account_origin, load_account_record, resolve_account_token
 from config.constants.hosted_gateway import (
     HOSTED_GATEWAY_CONNECT_TIMEOUT_SECONDS,
     HOSTED_GATEWAY_HEALTH_PATH,
     HOSTED_GATEWAY_HTTP_TIMEOUT_SECONDS,
-    HOSTED_GATEWAY_LOOPBACK_HOSTS,
     HOSTED_GATEWAY_PROMPTS_PATH,
     HOSTED_GATEWAY_START_PATH,
     HOSTED_GATEWAY_STOP_PATH,
@@ -417,13 +415,8 @@ def _gateway_health(payload: dict[str, Any]) -> GatewayHealth:
 
 def _require_secure_origin(app_url: str) -> None:
     """The account token travels only over https, or over http to this machine."""
-    parsed = urlsplit(app_url)
-    host = (parsed.hostname or "").lower()
-    if parsed.scheme == "https" and host:
-        return
-    if parsed.scheme == "http" and host in HOSTED_GATEWAY_LOOPBACK_HOSTS:
-        return
-    raise HostedGatewayError(ERR_INSECURE_APP_URL)
+    if not is_secure_account_origin(app_url):
+        raise HostedGatewayError(ERR_INSECURE_APP_URL)
 
 
 def _text(value: object) -> str:

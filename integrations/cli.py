@@ -615,10 +615,42 @@ def cmd_setup(service: str | None) -> str:
     return service
 
 
+def _remote_integration_records() -> list[dict[str, Any]]:
+    """The signed-in account's org integrations; empty when signed out/offline."""
+    from integrations.account_integrations import load_account_integrations
+
+    return load_account_integrations()
+
+
+def _remote_integration(service: str) -> dict[str, Any] | None:
+    """The active remote record for ``service``, or ``None``."""
+    for record in _remote_integration_records():
+        if record.get("service") == service and record.get("status") == "active":
+            return record
+    return None
+
+
 def cmd_list() -> None:
     from infrastructure.process.runtime_flags import is_json_output
 
-    items = list_integrations()
+    local_items = [{**item, "source": "local"} for item in list_integrations()]
+    remote_services = {str(record.get("service") or "") for record in _remote_integration_records()}
+    # A service connected in the web app shows once, as remote — that is the
+    # record runtime resolution uses when both exist.
+    items = [item for item in local_items if item["service"] not in remote_services] + [
+        {
+            "service": record.get("service"),
+            "status": record.get("status"),
+            "id": record.get("id"),
+            "instance_names": [
+                inst.get("name", "default")
+                for inst in record.get("instances", [])
+                if isinstance(inst, dict)
+            ],
+            "source": "remote",
+        }
+        for record in _remote_integration_records()
+    ]
 
     if is_json_output():
         _json_echo(items)
@@ -639,15 +671,21 @@ def cmd_list() -> None:
     table = new_table()
     table.add_column("SERVICE", style=TEXT, no_wrap=True)
     table.add_column("STATUS", no_wrap=True)
+    table.add_column("SOURCE", style=SECONDARY, no_wrap=True)
     table.add_column("ID", style=SECONDARY)
     for i in items:
         status = i["status"]
         status_cell = (
             f"[bold {HIGHLIGHT}]{GLYPH_SUCCESS} {escape(status)}[/]"
             if status == "active"
-            else escape(status)
+            else escape(str(status))
         )
-        table.add_row(escape(i["service"]), status_cell, escape(i["id"]))
+        table.add_row(
+            escape(str(i["service"])),
+            status_cell,
+            escape(str(i["source"])),
+            escape(str(i["id"])),
+        )
 
     print(render_table(table))
 
@@ -657,11 +695,15 @@ def cmd_show(service: str | None) -> None:
         _die("Usage: show <service>")
         return
     service = resolve_management_service(service)
+    remote_record = _remote_integration(service)
+    if remote_record is not None:
+        _json_echo(_mask({**remote_record, "source": "remote"}))
+        return
     record = get_integration(service)
     if not record:
         _die(f"No active integration for '{service}'.")
         return
-    _json_echo(_mask(record))
+    _json_echo(_mask({**record, "source": "local"}))
 
 
 def cmd_remove(service: str | None) -> None:
@@ -684,6 +726,11 @@ def cmd_remove(service: str | None) -> None:
         print(f"  {GLYPH_SUCCESS} Removed '{service}'.")
     else:
         print(f"  No integration found for '{service}'.")
+    if _remote_integration(service) is not None:
+        print(
+            f"  {service} is still connected in the OpenSRE app and stays active here; "
+            "disconnect it at app.opensre.com → Integrations to remove it."
+        )
 
 
 def cmd_verify(service: str | None, *, send_slack_test: bool = False) -> int:

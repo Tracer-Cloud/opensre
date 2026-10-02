@@ -15,10 +15,10 @@ logs, check recent deploys, and deliver findings where your team already works.
 | Path | Best for | How to configure |
 | --- | --- | --- |
 | Local CLI | Self-hosted `opensre` on your laptop or server | `opensre integrations setup`, plus env vars |
-| Hosted (OpenSRE Cloud) | Org-wide connectors shared across users | Coming soon |
+| Hosted (OpenSRE Cloud) | Org-wide connectors shared across users | Connect at [app.opensre.com](https://app.opensre.com) → Integrations |
 
-Most users start with the local CLI path. You need credentials for the tools
-you want to connect and permission to create API keys.
+Either path works on its own. When you are signed in and a service is connected
+in both places, the OpenSRE app connection wins.
 
 ## Local CLI
 
@@ -61,7 +61,14 @@ configured separately under [LLM providers](/platform/llm-providers).
 
 ## Hosted (OpenSRE Cloud)
 
-<Info>
-Hosted OpenSRE Cloud is **coming soon**. Organization-wide connectors will be
-configured in the hosted web app. Until then, use the local CLI path above.
-</Info>
+Connect services once at [app.opensre.com](https://app.opensre.com) →
+Integrations and every signed-in surface uses them: the gateway, the
+interactive shell, and the `opensre` CLI on any machine where you are signed
+in. No local setup is needed on each laptop.
+
+If the same service is also configured locally, the OpenSRE app connection
+takes precedence. To use a local credential instead, disconnect the service in
+the web app. `opensre integrations list` shows where each connection comes
+from (`remote` or `local`).
+
+Signed-out or offline machines fall back to local integrations only.

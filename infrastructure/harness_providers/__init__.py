@@ -39,6 +39,8 @@ from infrastructure.harness_providers.evidence_sources import (
 )
 from infrastructure.harness_providers.evidence_sources import reset as _reset_evidence_sources
 from infrastructure.harness_providers.integration_resolution import (
+    AccountIntegrationsFetcherFn,
+    AccountIntegrationsGenerationFn,
     ClassifyIntegrationsFn,
     ConfiguredIntegrationServicesFn,
     IntegrationResolutionAdapters,
@@ -57,6 +59,7 @@ from infrastructure.harness_providers.integration_resolution import (
     configured_integration_services,
     fetch_remote_integrations,
     integration_setup_command,
+    integration_sources_stamp,
     resolve_integrations,
     resolve_integrations_with_metadata,
     setupable_integration_services,
@@ -153,6 +156,8 @@ def reset_harness_providers() -> None:
 
 
 __all__ = [
+    "AccountIntegrationsFetcherFn",
+    "AccountIntegrationsGenerationFn",
     "BuildCliClientFn",
     "CliLlmAdapters",
     "ClassifyIntegrationsFn",
@@ -198,6 +203,7 @@ __all__ = [
     "flatten_cli_messages_to_prompt",
     "gateway_persona_fragments",
     "integration_setup_command",
+    "integration_sources_stamp",
     "metric_cohort_resolved_for",
     "metric_query_draft_for",
     "preferred_evidence_sources_by_kind",

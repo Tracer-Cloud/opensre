@@ -24,6 +24,7 @@ from config.constants.account import (
     OPENSRE_GATEWAY_LLM_MODEL_DEFAULT,
 )
 from config.constants.billing import WEBAPP_URL_ENV
+from config.constants.hosted_gateway import HOSTED_GATEWAY_LOOPBACK_HOSTS
 from config.constants.llm import OPENAI_API_KEY_ENV, OPENAI_BASE_URL_ENV
 from config.constants.paths import host_home
 from config.secrets.store import (
@@ -77,6 +78,19 @@ def normalize_account_app_url(value: str | None = None) -> str:
         )
     path = parsed.path.rstrip("/")
     return urlunsplit((parsed.scheme, parsed.netloc, path, "", ""))
+
+
+def is_secure_account_origin(app_url: str) -> bool:
+    """Whether the account token may be sent to ``app_url``.
+
+    True for any https origin, and for plain http only to this machine
+    (local development against ``localhost:3000``).
+    """
+    parsed = urlsplit(app_url)
+    host = (parsed.hostname or "").lower()
+    if parsed.scheme == "https" and host:
+        return True
+    return parsed.scheme == "http" and host in HOSTED_GATEWAY_LOOPBACK_HOSTS
 
 
 def account_metadata_path() -> Path:
@@ -247,6 +261,7 @@ __all__ = [
     "delete_account_record",
     "delete_account_token",
     "hosted_openai_env",
+    "is_secure_account_origin",
     "load_account_record",
     "normalize_account_app_url",
     "resolve_account_token",
