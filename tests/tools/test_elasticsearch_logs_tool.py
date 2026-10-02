@@ -105,21 +105,16 @@ def test_run_without_a_url_asks_the_user_to_run_setup() -> None:
             },
             id="forbidden",
         ),
-        pytest.param(
-            HTTPStatus.NOT_FOUND,
-            {"error": {"type": "index_not_found_exception", "reason": "no such index [app-logs]"}},
-            id="no-such-index",
-        ),
     ],
 )
-def test_a_cluster_refusing_the_configuration_asks_the_user_to_rerun_setup(
+def test_refused_credentials_ask_the_user_to_rerun_setup(
     monkeypatch: pytest.MonkeyPatch, status: HTTPStatus, body: dict[str, Any]
 ) -> None:
     # Arrange
     _cluster_answers(monkeypatch, _answer(status, body))
 
     # Act
-    result = ElasticsearchLogsTool().run(query="error", url=_URL, index_pattern="app-logs")
+    result = ElasticsearchLogsTool().run(query="error", url=_URL)
 
     # Assert: the model keeps the cluster's detail; the user gets one line without it
     assert result["available"] is False and result["logs"] == []
@@ -127,6 +122,28 @@ def test_a_cluster_refusing_the_configuration_asks_the_user_to_rerun_setup(
     assert OPENSEARCH_INTEGRATION_SETUP_CLI in result["response_text"]
     assert body["error"]["reason"] not in result["response_text"]
     assert f"HTTP {status.value}" in result["error"]
+
+
+def test_an_index_pattern_that_names_no_index_is_retried_not_sent_to_setup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A 404 is usually an index name the model chose; a wildcard that matches nothing is a 200."""
+    # Arrange
+    _cluster_answers(
+        monkeypatch,
+        _answer(
+            HTTPStatus.NOT_FOUND,
+            {"error": {"type": "index_not_found_exception", "reason": "no such index [app-logs]"}},
+        ),
+    )
+
+    # Act
+    result = ElasticsearchLogsTool().run(query="error", url=_URL, index_pattern="app-logs")
+
+    # Assert
+    assert result["available"] is False and result["logs"] == []
+    assert "setup_command" not in result and "response_text" not in result
+    assert "without index_pattern" in result["error"] and "`logs-*`" in result["error"]
 
 
 @pytest.mark.parametrize(

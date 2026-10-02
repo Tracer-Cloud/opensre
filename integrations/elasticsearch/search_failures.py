@@ -1,10 +1,12 @@
 """What the OpenSearch/Elasticsearch search tools return when a search cannot run.
 
 Both tools share the ``opensearch`` integration and its client. A failure that only
-fixing that setup resolves (no URL, refused credentials, a 404 for the configured
-index or endpoint) carries the setup command and one line for the user, so the turn
-ends with guidance instead of a retry. Timeouts, refused connections and 5xx answers
-pass on their own and stay plain errors.
+fixing that setup resolves (no URL, refused credentials) carries the setup command
+and one line for the user, so the turn ends with guidance instead of a retry. A 404
+is an index pattern that names no index, usually one the model chose (a wildcard
+that matches nothing answers 200 with no hits), so it stays an ordinary error that
+says how to retry. Timeouts, refused connections and 5xx answers pass on their own
+and stay plain errors.
 """
 
 from __future__ import annotations
@@ -46,8 +48,9 @@ def not_configured(source: str, *, vendor: str) -> dict[str, Any]:
 def search_failed(source: str, result: Mapping[str, Any], *, vendor: str) -> dict[str, Any]:
     """The result for a failed client search: setup guidance when only setup fixes it.
 
-    Branches on the client's ``status_code``. A search that matches nothing is a
-    success and never reaches here.
+    Branches on the client's ``status_code``. A 404 tells the model how to retry with
+    another index pattern. A search that matches nothing is a success and never
+    reaches here.
     """
     detail = str(result.get("error") or f"Unknown {vendor} error.")
     status = result.get("status_code")
@@ -64,19 +67,14 @@ def search_failed(source: str, result: Mapping[str, Any], *, vendor: str) -> dic
             ),
         )
     if status == HTTPStatus.NOT_FOUND:
-        return _setup_required(
-            source,
-            error=(
-                f"{vendor} found no index or search endpoint at the configured URL ({detail}). "
-                "If you chose index_pattern yourself, call again without it to search the "
-                f"configured pattern; otherwise setup is required: {_RUN_SETUP}"
-            ),
-            response_text=(
-                f"{vendor} found no index or search endpoint at the configured URL. Check the "
-                "URL and index pattern, and re-run setup with "
-                f"`{OPENSEARCH_INTEGRATION_SETUP_CLI}`."
-            ),
+        error = (
+            f"{vendor} found no index for the requested index pattern ({detail}). Call again "
+            "without index_pattern to search the configured pattern, or with a wildcard such "
+            "as `logs-*`; a wildcard that matches no index returns no hits instead of this "
+            "error. If the configured pattern gets this answer too, the configured URL or "
+            "index pattern is wrong."
         )
+        return unavailable(source, _EMPTY_KEY, error)
     return unavailable(source, _EMPTY_KEY, detail)
 
 

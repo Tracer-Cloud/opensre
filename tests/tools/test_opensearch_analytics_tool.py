@@ -398,15 +398,9 @@ def _timeout(request: httpx.Request) -> httpx.Response:
             },
             id="forbidden",
         ),
-        # A URL that is not the cluster's REST endpoint (e.g. a dashboards URL).
-        pytest.param(
-            HTTPStatus.NOT_FOUND,
-            {"json": {"statusCode": HTTPStatus.NOT_FOUND, "error": "Not Found"}},
-            id="not-the-search-endpoint",
-        ),
     ],
 )
-def test_a_cluster_refusing_the_configuration_asks_the_user_to_rerun_setup(
+def test_refused_credentials_ask_the_user_to_rerun_setup(
     monkeypatch: pytest.MonkeyPatch, status: HTTPStatus, content: dict[str, Any]
 ) -> None:
     # Arrange
@@ -420,6 +414,30 @@ def test_a_cluster_refusing_the_configuration_asks_the_user_to_rerun_setup(
     assert result["setup_command"] == OPENSEARCH_INTEGRATION_SETUP_SLASH
     assert OPENSEARCH_INTEGRATION_SETUP_CLI in result["response_text"]
     assert f"HTTP {status.value}" in result["error"]
+
+
+def test_an_index_pattern_that_names_no_index_is_retried_not_sent_to_setup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A 404 is usually an index name the model chose; a wildcard that matches nothing is a 200."""
+    # Arrange
+    _cluster_answers(
+        monkeypatch,
+        _answer(
+            HTTPStatus.NOT_FOUND,
+            json={
+                "error": {"type": "index_not_found_exception", "reason": "no such index [app-logs]"}
+            },
+        ),
+    )
+
+    # Act
+    result = query_opensearch_analytics(url="https://os.example.invalid", index_pattern="app-logs")
+
+    # Assert
+    assert result["available"] is False and result["logs"] == []
+    assert "setup_command" not in result and "response_text" not in result
+    assert "without index_pattern" in result["error"] and "`logs-*`" in result["error"]
 
 
 @pytest.mark.parametrize(
