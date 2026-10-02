@@ -36,6 +36,7 @@ EXPECTED_VISIBLE_COMMANDS = frozenset(
         "runbooks",
         "sentry",
         "setup",
+        "skills",
         "uninstall",
         "update",
         "version",

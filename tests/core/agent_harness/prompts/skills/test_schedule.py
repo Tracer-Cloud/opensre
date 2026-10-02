@@ -48,11 +48,20 @@ def test_resolve_scheduled_skill_rejects_missing_skill() -> None:
         resolve_scheduled_skill("missing-skill-xyz", "abc123")
 
 
-def test_resolve_scheduled_skill_rejects_revision_drift() -> None:
+def test_resolve_scheduled_skill_rejects_a_major_version_change() -> None:
+    with pytest.raises(RuntimeError, match="changed since it was scheduled"):
+        resolve_scheduled_skill("delivering-morning-briefings", "v2:99:" + "0" * 64)
+
+
+@pytest.mark.parametrize("stale_pin", ["0" * 64, "v2:{major}:" + "0" * 64])
+def test_resolve_scheduled_skill_follows_edits_within_the_major_version(stale_pin: str) -> None:
     skill = find_action_skill("delivering-morning-briefings")
     assert skill is not None
-    with pytest.raises(RuntimeError, match="changed since it was scheduled"):
-        resolve_scheduled_skill("delivering-morning-briefings", "0" * 64)
+    pinned = stale_pin.format(major=skill.version.split(".")[0])
+    resolved = resolve_scheduled_skill("delivering-morning-briefings", pinned)
+    assert resolved.repinned
+    assert resolved.revision == skill_revision(skill)
+    assert resolved.body == load_skill_body("delivering-morning-briefings")
 
 
 def test_validate_skill_inputs_rejects_non_strings() -> None:

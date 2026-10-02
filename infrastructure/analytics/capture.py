@@ -516,12 +516,43 @@ def capture_browser_open_requested(
     _capture(Event.BROWSER_OPEN_REQUESTED, properties)
 
 
-def capture_skill_executed(*, skill_name: str, entrypoint: str) -> None:
-    """Record one successful entry into an OpenSRE skill workflow."""
-    _capture(
-        Event.SKILL_EXECUTED,
-        {"skill_name": skill_name, "entrypoint": entrypoint},
-    )
+def capture_skill_executed(
+    *,
+    skill_name: str,
+    entrypoint: str,
+    skills_release: str | None = None,
+    skills_source: str | None = None,
+    skill_version: str | None = None,
+    skill_digest: str | None = None,
+) -> None:
+    """Record one successful entry into an OpenSRE skill workflow and which content ran.
+
+    ``skills_release`` names the active catalog (``remote:<seq>``, ``bundled:<version>``
+    or ``override:<digest>``) so outcomes can be compared per published release.
+    """
+    properties: Properties = {"skill_name": skill_name, "entrypoint": entrypoint}
+    provenance = {
+        "skills_release": skills_release,
+        "skills_source": skills_source,
+        "skill_version": skill_version,
+        "skill_digest": skill_digest,
+    }
+    properties.update({key: value for key, value in provenance.items() if value})
+    _capture(Event.SKILL_EXECUTED, properties)
+
+
+def capture_skills_release_activated(
+    *, skills_release: str, skills_source: str, previous_release: str | None, skill_count: int
+) -> None:
+    """Record that this process switched to a different skills catalog."""
+    properties: Properties = {
+        "skills_release": skills_release,
+        "skills_source": skills_source,
+        "skill_count": skill_count,
+    }
+    if previous_release:
+        properties["previous_release"] = previous_release
+    _capture(Event.SKILLS_RELEASE_ACTIVATED, properties)
 
 
 def capture_opensre_commit_created(

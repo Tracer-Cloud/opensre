@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -25,7 +26,7 @@ def catalog_root(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[Pa
 
 
 def test_all_bundled_cards_pass_the_production_validator() -> None:
-    catalog = skills.read_skill_catalog()
+    catalog = skills.read_skill_catalog(strict=True)
     assert catalog.diagnostics == ()
     assert len(catalog.skills) == len(list(skills.skills_dir().rglob("SKILL.md")))
 
@@ -160,9 +161,7 @@ def test_missing_include_excludes_the_card(catalog_root: Path) -> None:
     assert "missing.md" in catalog.diagnostics[0]
 
 
-def test_body_revalidates_cached_cards_and_cache_reset_refreshes_the_index(
-    catalog_root: Path,
-) -> None:
+def test_catalog_is_a_snapshot_until_invalidated(catalog_root: Path) -> None:
     card = catalog_root / "workflow" / "SKILL.md"
     card.parent.mkdir()
     card.write_text(skill_card("workflow", "Original body.", description="Original summary."))
@@ -170,13 +169,29 @@ def test_body_revalidates_cached_cards_and_cache_reset_refreshes_the_index(
     assert skills.load_skill_body("workflow") == "Original body."
 
     card.write_text(skill_card("workflow", "Updated body.", description="Updated summary."))
-    assert skills.load_skill_body("workflow") == "Updated body."
+    assert skills.load_skill_body("workflow") == "Original body."
     assert "Original summary." in skills.load_skills_index()
     skills.clear_skills_caches()
+    assert skills.load_skill_body("workflow") == "Updated body."
     assert "Updated summary." in skills.load_skills_index()
 
     card.write_text(skill_card("workflow", "Invalid body.", includes=["missing.md"]))
-    assert skills.load_skill_body("workflow") == ""
     skills.clear_skills_caches()
+    assert skills.load_skill_body("workflow") == ""
     assert skills.list_action_skills() == ()
     assert skills.load_skills_index() == ""
+
+
+@pytest.mark.parametrize(("days_ahead", "runtime_ok"), [(1, True), (2, False)])
+def test_change_date_allows_one_day_of_clock_skew_outside_ci(
+    catalog_root: Path, days_ahead: int, runtime_ok: bool
+) -> None:
+    """A card dated "today" where it was written is still valid one time zone behind."""
+    ahead = date.today() + timedelta(days=days_ahead)
+    (catalog_root / "workflow.md").write_text(
+        skill_card("workflow").replace("2026-01-01", ahead.isoformat())
+    )
+    runtime = skills.read_skill_catalog()
+    strict = skills.read_skill_catalog(strict=True)
+    assert [skill.name for skill in runtime.skills] == (["workflow"] if runtime_ok else [])
+    assert strict.skills == ()

@@ -30,6 +30,7 @@ SPI_ROLES: frozenset[str] = frozenset(
         "defaults",
         "handoff",
         "task_plan",
+        "skill_releases",
     }
 )
 

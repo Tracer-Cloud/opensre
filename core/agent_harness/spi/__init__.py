@@ -12,6 +12,7 @@ Import the role you need, not this package:
 * :mod:`.activity` — plain-text tool activity shared by the shell and gateway.
 * :mod:`.integrations` — resolve the session's integrations for a turn.
 * :mod:`.grounding` — grounding-cache observability and the action-skill catalog.
+* :mod:`.skill_releases` — verify, store and activate published skills releases.
 * :mod:`.defaults` — the default adapters a host extends or reuses.
 
 What a host *implements* is :mod:`core.agent_harness.ports`; what it *embeds*

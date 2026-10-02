@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from typing import Annotated, Any, Self
 
 import yaml
@@ -11,6 +11,7 @@ from pydantic import (
     ConfigDict,
     Field,
     StringConstraints,
+    ValidationInfo,
     field_validator,
     model_validator,
 )
@@ -18,6 +19,9 @@ from pydantic import (
 from config.constants.skills import SKIP_DEMO_OPTION
 
 _Text = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1)]
+
+#: Validation-context key: reject any ``last_changed_at`` after today (CI only).
+STRICT_CHANGE_DATE = "strict_change_date"
 
 
 class SkillCardError(ValueError):
@@ -47,8 +51,14 @@ class SkillMetadata(_StrictModel):
 
     @field_validator("last_changed_at")
     @classmethod
-    def change_date(cls, value: date) -> date:
-        if value > date.today():
+    def change_date(cls, value: date, info: ValidationInfo) -> date:
+        # Cards are dated where they were written; a reader one time zone behind
+        # still sees yesterday. Runtime allows that day, CI (strict) does not.
+        context = info.context or {}
+        latest = date.today()
+        if not context.get(STRICT_CHANGE_DATE):
+            latest += timedelta(days=1)
+        if value > latest:
             raise ValueError("must not be in the future")
         return value
 
