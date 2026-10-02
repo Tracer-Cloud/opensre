@@ -3,12 +3,14 @@
 A schedule pins ``v2:<major>:<digest>``: the card's major version and a digest
 of its source files. Ticks follow edits within the same major version (they run
 read-only, and a minor bump is by contract non-breaking) and record the new pin;
-a major bump stops the schedule until the user re-adds it. Pins written before
-this format (a hash of the rendered body) are accepted once and re-pinned.
+a major bump stops the schedule until the user re-adds it. A pin written before
+this format (a hash of the rendered body) is re-pinned only while that body is
+unchanged; it carries no version, so any change needs the user to re-add it.
 """
 
 from __future__ import annotations
 
+import hashlib
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -95,7 +97,14 @@ def resolve_scheduled_skill(name: str, pinned_revision: str) -> ScheduledSkillRe
     if not wanted:
         raise RuntimeError(f"Scheduled skill {skill.name!r} is missing a revision pin.")
     current = _revision(skill, snapshot)
-    if wanted != current and not _LEGACY_PIN.match(wanted):
+    body = snapshot.body(skill.name)
+    if _LEGACY_PIN.match(wanted):
+        if wanted != hashlib.sha256(body.encode("utf-8")).hexdigest():
+            raise RuntimeError(
+                f"Scheduled skill {skill.name!r} changed since it was scheduled. "
+                "Remove and re-add the schedule to accept the new recipe."
+            )
+    elif wanted != current:
         parts = wanted.split(":")
         pinned_major = parts[1] if len(parts) == 3 and parts[0] == _PIN_VERSION else ""
         if pinned_major != _major(skill.version):
@@ -106,7 +115,7 @@ def resolve_scheduled_skill(name: str, pinned_revision: str) -> ScheduledSkillRe
             )
     return ScheduledSkillResolution(
         skill=skill,
-        body=snapshot.body(skill.name),
+        body=body,
         revision=current,
         previous_revision=wanted,
     )

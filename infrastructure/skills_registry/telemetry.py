@@ -8,8 +8,8 @@ from core.agent_harness.spi.skill_releases import (
     SkillCatalogSnapshot,
     SkillSource,
     active_skill_catalog,
-    read_state,
-    write_state,
+    read_announced,
+    write_announced,
 )
 from infrastructure.analytics.capture import capture_skills_release_activated
 
@@ -22,10 +22,9 @@ def _announce(new: SkillCatalogSnapshot, previous: SkillCatalogSnapshot | None) 
     # machine (or a switch inside a running process) is, once per release.
     if previous is None and new.source is not SkillSource.REMOTE:
         return
-    state = read_state()
-    if state.get("announced_release") == new.release:
+    if read_announced() == new.release:
         return
-    write_state({**state, "announced_release": new.release})
+    write_announced(new.release)
     capture_skills_release_activated(
         skills_release=new.release,
         skills_source=str(new.source),

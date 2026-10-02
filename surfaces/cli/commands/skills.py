@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import subprocess
 import time
+from collections.abc import Iterable
 from http import HTTPStatus
 from pathlib import Path
 
@@ -21,9 +22,12 @@ from core.agent_harness.spi.skill_releases import (
     ReleaseError,
     SkillsRelease,
     active_skill_catalog,
+    is_release_path,
     latest_stored_seq,
     read_state,
     skills_dir,
+    trusted_release_keys,
+    verify_release,
 )
 from infrastructure.skills_registry import (
     PackageStatus,
@@ -61,6 +65,9 @@ def _app_url() -> str:
 
 
 def _auth(app_url: str, runner_token_env: str) -> SkillsAuth:
+    # Either credential only ever travels over https (or plain http to this machine).
+    if not is_secure_account_origin(app_url):
+        raise click.ClickException(f"Refusing to send credentials to {app_url}.")
     if runner_token_env:
         token = os.getenv(runner_token_env, "").strip()
         if not token:
@@ -69,8 +76,6 @@ def _auth(app_url: str, runner_token_env: str) -> SkillsAuth:
     token = resolve_account_token()
     if not token:
         raise click.ClickException("Publishing skills needs `opensre account login` first.")
-    if not is_secure_account_origin(app_url):
-        raise click.ClickException(f"Refusing to send the account token to {app_url}.")
     return SkillsAuth(account_token=token)
 
 
@@ -279,9 +284,10 @@ def skills_history(limit: int) -> None:
     default=None,
     help="Skills directory to write into (default: the repo's skills tree).",
 )
-def skills_pull(names: tuple[str, ...], target: Path | None) -> None:
+@click.option("--force", is_flag=True, help="Overwrite files with uncommitted local changes.")
+def skills_pull(names: tuple[str, ...], target: Path | None, force: bool) -> None:
     """Copy the live version of skills into your checkout (to commit a fast-lane edit)."""
-    root = target or _default_source_dir()
+    root = (target or _default_source_dir()).resolve()
     try:
         live = fetch_release(_app_url()).release
     except SkillsApiError as exc:
@@ -289,12 +295,64 @@ def skills_pull(names: tuple[str, ...], target: Path | None) -> None:
     if live is None:
         raise click.ClickException("No skills release is published yet.")
     try:
+        # The same trust as activation: only a signed release reaches the checkout.
+        verify_release(live, trusted_release_keys())
         selected = select_packages(live.files, names)
-    except PushError as exc:
+    except (ReleaseError, PushError) as exc:
         raise click.ClickException(str(exc)) from exc
-    for relative, text in selected.items():
-        path = root.joinpath(*relative.split("/"))
+    targets = {relative: _contained(root, relative) for relative in selected}
+    dirty = [] if force else _uncommitted(root, targets.values())
+    if dirty:
+        listed = ", ".join(str(path.relative_to(root)) for path in dirty)
+        raise click.ClickException(
+            f"Uncommitted changes would be overwritten: {listed}. Commit them, or pass --force."
+        )
+    for relative, path in targets.items():
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(text, encoding="utf-8")
-    written = len(selected)
-    click.echo(f"{GLYPH_SUCCESS} Wrote {written} files from release #{live.seq} into {root}.")
+        path.write_text(selected[relative], encoding="utf-8")
+    click.echo(f"{GLYPH_SUCCESS} Wrote {len(targets)} files from release #{live.seq} into {root}.")
+
+
+def _contained(root: Path, relative: str) -> Path:
+    """Resolve ``relative`` under ``root``; refuse any path that would land outside it."""
+    path = root.joinpath(*relative.split("/")).resolve()
+    if not is_release_path(relative) or root not in path.parents:
+        raise click.ClickException(f"Release path {relative!r} is outside the skills directory.")
+    return path
+
+
+def _uncommitted(root: Path, paths: Iterable[Path]) -> list[Path]:
+    """Return the existing files among ``paths`` that git reports as modified or untracked."""
+    existing = [path for path in paths if path.exists()]
+    if not existing:
+        return []
+    try:
+        result = subprocess.run(
+            ["git", "-C", str(root), "status", "--porcelain", "--", *map(str, existing)],
+            capture_output=True,
+            text=True,
+            timeout=10,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return existing
+    if result.returncode != 0:
+        # Not a git checkout: nothing tells committed from local work, so be safe.
+        return existing
+    changed = {line[3:].strip() for line in result.stdout.splitlines() if len(line) > 3}
+    top = subprocess.run(
+        ["git", "-C", str(root), "rev-parse", "--show-toplevel"],
+        capture_output=True,
+        text=True,
+        timeout=10,
+        check=False,
+    ).stdout.strip()
+    base = Path(top).resolve() if top else root
+    return [path for path in existing if _repo_relative(path, base) in changed]
+
+
+def _repo_relative(path: Path, base: Path) -> str:
+    try:
+        return path.relative_to(base).as_posix()
+    except ValueError:
+        return path.as_posix()

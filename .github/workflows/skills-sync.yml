@@ -17,6 +17,9 @@ on:
 permissions:
   contents: read
 
+env:
+  OPENSRE_CICD: "1"
+
 concurrency:
   group: skills-sync
   cancel-in-progress: false
@@ -34,9 +37,10 @@ jobs:
     env:
       OPENSRE_DISABLE_KEYRING: "1"
       OPENSRE_SENTRY_DISABLED: "1"
-      OPENSRE_CICD: "1"
     steps:
       - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 2
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
         with:
           enable-cache: true
@@ -51,4 +55,13 @@ jobs:
           echo "::add-mask::${token}"
           echo "SKILLS_SYNC_TOKEN=${token}" >> "$GITHUB_ENV"
       - name: Publish newer skills
-        run: uv run opensre skills push --runner-token-env SKILLS_SYNC_TOKEN
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(--runner-token-env SKILLS_SYNC_TOKEN)
+          # Shared files carry no version; publish them only when this merge changed them,
+          # so a newer fast-lane edit to common/ is never reverted by an unrelated merge.
+          if ! git diff --quiet HEAD~1 HEAD -- core/agent_harness/prompts/skills/common; then
+            args+=(--include-shared)
+          fi
+          uv run opensre skills push "${args[@]}"

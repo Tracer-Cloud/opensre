@@ -4,7 +4,10 @@ Layout under ``host_home()/skills`` (never the org mount, which can hang):
 
 - ``releases/release-<seq>.json`` — verified release documents, written atomically.
 - ``state.json`` — the background puller's ETag and last check time.
-- ``run/<pid>/<seq>/`` — one process's materialized catalog (scripts run from it).
+- ``announced.json`` — the last release reported to analytics from this machine.
+- ``run/<process>/<seq>-<nonce>/`` — one process's materialized catalogs (helper
+  scripts run from them). The process holds ``run/<process>/owner.lock`` for its
+  lifetime, so another process can tell a dead owner's directory by taking it.
 
 Release files are immutable and named by sequence, so concurrent writers can
 only ever race to write identical bytes.
@@ -17,12 +20,13 @@ import logging
 import os
 import shutil
 import tempfile
+import threading
 import uuid
 from contextlib import suppress
 from pathlib import Path
 from typing import Any
 
-import psutil
+from filelock import FileLock, Timeout
 
 from config.constants.paths import host_home
 from config.constants.skills import SKILLS_RELEASES_KEPT
@@ -32,7 +36,9 @@ logger = logging.getLogger(__name__)
 
 _RELEASE_PREFIX = "release-"
 _RELEASE_SUFFIX = ".json"
-_RUN_ROOTS_KEPT = 2
+_OWNER_LOCK = "owner.lock"
+_process_root: tuple[Path, FileLock] | None = None
+_process_root_lock = threading.Lock()
 
 
 def store_dir() -> Path:
@@ -128,45 +134,77 @@ def write_state(state: dict[str, Any]) -> None:
     _write_atomically(store_dir() / "state.json", json.dumps(state))
 
 
+def read_announced() -> str:
+    """Return the last release reported to analytics from this machine."""
+    try:
+        value = json.loads((store_dir() / "announced.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return ""
+    return value.get("release", "") if isinstance(value, dict) else ""
+
+
+def write_announced(release: str) -> None:
+    """Record ``release`` as reported (its own file, so it never races the puller's state)."""
+    _write_atomically(store_dir() / "announced.json", json.dumps({"release": release}))
+
+
+def _owned_process_root() -> Path:
+    """This process's run directory, created once and held under its owner lock."""
+    global _process_root
+    with _process_root_lock:
+        if _process_root is None or not _process_root[0].is_dir():
+            root = store_dir() / "run" / f"{os.getpid()}-{uuid.uuid4().hex[:8]}"
+            root.mkdir(parents=True, exist_ok=True)
+            lock = FileLock(str(root / _OWNER_LOCK))
+            lock.acquire()
+            _process_root = (root, lock)
+        return _process_root[0]
+
+
 def new_run_root(seq: int) -> Path:
-    """Return a fresh, not-yet-created directory for this process to materialize ``seq``."""
-    return store_dir() / "run" / str(os.getpid()) / f"{seq}-{uuid.uuid4().hex[:8]}"
+    """Return a fresh, not-yet-created directory for this process to materialize ``seq``.
+
+    The caller removes it when the snapshot built from it is gone (no turn can
+    still run its scripts); :func:`sweep_run_roots` removes dead processes' roots.
+    """
+    return _owned_process_root() / f"{seq}-{uuid.uuid4().hex[:8]}"
 
 
-def sweep_run_roots(keep: Path | None = None) -> None:
-    """Delete run roots of dead processes and this process's older materializations."""
-    run_dir = store_dir() / "run"
+def sweep_run_roots() -> None:
+    """Delete run directories whose owning process has exited."""
+    own = _process_root[0] if _process_root is not None else None
     try:
-        process_dirs = list(run_dir.iterdir())
+        process_dirs = list((store_dir() / "run").iterdir())
     except OSError:
         return
-    own = str(os.getpid())
     for process_dir in process_dirs:
-        if process_dir.name == own:
-            _prune_own_roots(process_dir, keep)
-        elif not process_dir.name.isdigit() or not psutil.pid_exists(int(process_dir.name)):
+        if process_dir == own or not process_dir.is_dir():
+            continue
+        probe = FileLock(str(process_dir / _OWNER_LOCK), timeout=0)
+        try:
+            probe.acquire()
+        except Timeout:
+            continue  # its owner is alive
+        except OSError:
+            continue
+        try:
             shutil.rmtree(process_dir, ignore_errors=True)
-
-
-def _prune_own_roots(process_dir: Path, keep: Path | None) -> None:
-    try:
-        roots = sorted(process_dir.iterdir(), key=lambda path: path.stat().st_mtime_ns)
-    except OSError:
-        return
-    stale = [root for root in roots if root != keep][: max(0, len(roots) - _RUN_ROOTS_KEPT)]
-    for root in stale:
-        shutil.rmtree(root, ignore_errors=True)
+        finally:
+            with suppress(OSError):
+                probe.release()
 
 
 __all__ = [
     "latest_stored_seq",
     "new_run_root",
+    "read_announced",
     "read_state",
     "releases_dir",
     "store_dir",
     "store_stamp",
     "stored_releases",
     "sweep_run_roots",
+    "write_announced",
     "write_release",
     "write_state",
 ]

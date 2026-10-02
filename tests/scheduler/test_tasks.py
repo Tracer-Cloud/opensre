@@ -263,6 +263,14 @@ class TestMessageBuilders:
             tasks_mod.build_message(task, runners_with_agent(_raise))
 
 
+def _current_major() -> str:
+    from core.agent_harness.prompts.skills.scheduling import find_action_skill
+
+    skill = find_action_skill("delivering-morning-briefings")
+    assert skill is not None
+    return skill.version.split(".")[0]
+
+
 class TestRecurringSkillBuilders:
     def test_recurring_skill_uses_agent_runner(self) -> None:
         from core.agent_harness.prompts.skills.scheduling import find_action_skill, skill_revision
@@ -342,7 +350,7 @@ class TestRecurringSkillBuilders:
     def test_recurring_skill_follows_an_edit_and_stores_the_new_pin(
         self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        """A minor edit (here: a pre-v2 pin) runs and re-pins instead of stopping the schedule."""
+        """An edit within the pinned major version runs and re-pins instead of stopping."""
         from core.agent_harness.prompts.skills.scheduling import find_action_skill, skill_revision
         from infrastructure.scheduling.scheduler.storage.task_store import add_task, list_tasks
 
@@ -358,7 +366,7 @@ class TestRecurringSkillBuilders:
                 provider=Provider.SLACK,
                 chat_id="C123",
                 skill_name="delivering-morning-briefings",
-                skill_revision="0" * 64,
+                skill_revision=f"v2:{_current_major()}:" + "0" * 64,
             ),
             store_path,
         )

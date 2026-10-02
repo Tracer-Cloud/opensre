@@ -78,9 +78,16 @@ class ActiveSkillCatalog:
             self._checked_at = float("-inf")
 
     def add_listener(self, listener: ActivationListener) -> None:
-        """Call ``listener(new, previous)`` whenever a different release becomes active."""
+        """Call ``listener(new, previous)`` whenever a different release becomes active.
+
+        A catalog already active when the listener registers is replayed to it
+        once (``previous=None``), so a late registration misses nothing.
+        """
         with self._lock:
             self._listeners.append(listener)
+            active = self._snapshot
+        if active is not None:
+            _notify((listener,), active, None)
 
     def _refreshed(self, *, force: bool) -> SkillCatalogSnapshot:
         snapshot = self._snapshot
@@ -102,12 +109,20 @@ class ActiveSkillCatalog:
         if previous is None or previous.release != loaded.release:
             log_diagnostics(loaded)
             logger.info("Skills catalog %s active (%d skills)", loaded.release, len(loaded.skills))
-            for listener in listeners:
-                try:
-                    listener(loaded, previous)
-                except Exception:
-                    logger.exception("Skills activation listener failed")
+            _notify(listeners, loaded, previous)
         return loaded
+
+
+def _notify(
+    listeners: tuple[ActivationListener, ...],
+    new: SkillCatalogSnapshot,
+    previous: SkillCatalogSnapshot | None,
+) -> None:
+    for listener in listeners:
+        try:
+            listener(new, previous)
+        except Exception:
+            logger.exception("Skills activation listener failed")
 
 
 _active = ActiveSkillCatalog()

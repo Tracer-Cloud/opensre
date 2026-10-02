@@ -12,6 +12,7 @@ import logging
 import os
 import shutil
 import threading
+import weakref
 from dataclasses import replace
 from pathlib import Path
 
@@ -135,7 +136,9 @@ def _release_snapshot(
         _reject(release.seq, "; ".join(problems))
         shutil.rmtree(root, ignore_errors=True)
         return None
-    sweep_run_roots(keep=root)
+    # The directory lives exactly as long as a turn or the catalog can still use it.
+    weakref.finalize(snapshot, shutil.rmtree, root, True)
+    sweep_run_roots()
     return snapshot
 
 

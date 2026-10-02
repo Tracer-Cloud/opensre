@@ -22,8 +22,10 @@ from core.agent_harness.prompts.skills.snapshot import (
 )
 from core.agent_harness.prompts.skills.snapshot.release_store import (
     latest_stored_seq,
+    read_announced,
     read_state,
     store_dir,
+    write_announced,
     write_release,
     write_state,
 )
@@ -40,12 +42,14 @@ __all__ = [
     "is_release_path",
     "latest_stored_seq",
     "parse_frontmatter",
+    "read_announced",
     "read_skill_catalog",
     "read_state",
     "skills_dir",
     "store_dir",
     "trusted_release_keys",
     "verify_release",
+    "write_announced",
     "write_release",
     "write_state",
 ]
