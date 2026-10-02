@@ -25,6 +25,7 @@ from core.agent_harness.runtime import (
     HeadlessAgent,
     resolve_agent_ports,
 )
+from core.agent_harness.spi.activity import format_hosted_activity
 from infrastructure.turn_host.bindable_output import BindableOutput
 from infrastructure.turn_host.capability_policy import ensure_gateway_capability_policy
 from infrastructure.turn_host.session_lock import session_execution_lock
