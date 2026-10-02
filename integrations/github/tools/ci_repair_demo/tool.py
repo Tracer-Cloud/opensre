@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+import re
 from typing import Any
 
 from core.domain.types.tools import ToolSurface
@@ -37,6 +39,40 @@ def _refused(exc: DemoRefused) -> dict[str, Any]:
     }
 
 
+_GITHUB_MESSAGE_LIMIT = 160
+_SECRET_TEXT = re.compile(r"(ghp_|github_pat_|Bearer\s+\S+|\btoken\b)", re.IGNORECASE)
+
+
+def _safe_github_message(raw: str) -> str:
+    """GitHub's short ``message`` field, never the raw body or a secret."""
+    text = raw.strip()
+    if text[:1] in "{[":
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            return ""
+        if not isinstance(parsed, dict):
+            return ""
+        text = str(parsed.get("message") or "").strip()
+    if not text or len(text) > _GITHUB_MESSAGE_LIMIT or _SECRET_TEXT.search(text):
+        return ""
+    if any(ord(char) < 32 for char in text):
+        return ""
+    return text
+
+
+def _seed_error_text(exc: GitHubApiError) -> str:
+    """Status and a short public message. The raw GitHub body stays out."""
+    detail = _safe_github_message(exc.message)
+    if exc.status_code is None:
+        if detail:
+            return f"Could not seed the CI repair demo: {detail}."
+        return "Could not seed the CI repair demo: GitHubApiError."
+    if detail:
+        return f"Could not seed the CI repair demo: HTTP {exc.status_code}: {detail}."
+    return f"Could not seed the CI repair demo: HTTP {exc.status_code}."
+
+
 def _failed(exc: Exception, *, tool_name: str, method: str, action: str) -> dict[str, Any]:
     report_run_error(
         exc,
@@ -45,7 +81,11 @@ def _failed(exc: Exception, *, tool_name: str, method: str, action: str) -> dict
         component=__name__,
         method=method,
     )
-    return {"ok": False, "error": f"Could not {action}: {type(exc).__name__}."}
+    if isinstance(exc, GitHubApiError) and tool_name == "seed_ci_repair_demo":
+        error = _seed_error_text(exc)
+    else:
+        error = f"Could not {action}: {type(exc).__name__}."
+    return {"ok": False, "error": error}
 
 
 @tool(

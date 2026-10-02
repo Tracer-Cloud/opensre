@@ -7,7 +7,9 @@ user's selection, never a model argument, is what goes back as the answer.
 from __future__ import annotations
 
 import json
+import re
 import time
+from http import HTTPStatus
 from typing import Any
 
 from config.constants.github import GITHUB_TOKEN_CHECKLIST
@@ -54,6 +56,7 @@ _GITHUB_REFUSAL_LEAD = (
     "Only if GitHub refused the credential (HTTP 401 or 403; a rate limit or an unavailable "
     "repository needs no token change): "
 )
+_GITHUB_REFUSAL_CODES = (int(HTTPStatus.UNAUTHORIZED), int(HTTPStatus.FORBIDDEN))
 
 _STATE_TEXT = {
     "failed": "The hosted gateway could not run that prompt ({error}).",
@@ -399,9 +402,9 @@ def _outcome(
         hint = _FAILED_INTEGRATIONS.format(
             vendors=vendors, url=integrations_url, next_step=next_step
         )
-        if _GITHUB_VENDOR in record.failed_integrations:
-            # The gateway reports the vendor, not the error kind; only a refusal
-            # (401 or 403) calls for token changes, so the checklist says so.
+        if _GITHUB_VENDOR in record.failed_integrations and _credential_was_refused(text):
+            # The gateway reports the vendor, not the error kind. The token
+            # checklist is only for an HTTP 401 or 403 named in the answer.
             hint = f"{hint.rstrip()} {_GITHUB_REFUSAL_LEAD}{GITHUB_TOKEN_CHECKLIST}\n\n"
         text = hint + text
         instructions.insert(0, _FAILED_INTEGRATIONS_INSTRUCTIONS.format(vendors=vendors))
@@ -416,6 +419,11 @@ def _outcome(
         "response_text": text,
         "instructions": " ".join(instructions),
     }
+
+
+def _credential_was_refused(text: str) -> bool:
+    """True when the answer names an HTTP 401 or 403 credential refusal."""
+    return any(re.search(rf"\b{code}\b", text) for code in _GITHUB_REFUSAL_CODES)
 
 
 def _failure_text(error: str) -> str:
