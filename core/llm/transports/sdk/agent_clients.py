@@ -517,7 +517,7 @@ class BedrockConverseAgentClient:
 
 
 _OPENAI_O_SERIES_RE = re.compile(r"(?:^|[^A-Za-z0-9])o\d", re.IGNORECASE)
-_OPENAI_GPT5_RE = re.compile(r"(?:^|[^A-Za-z0-9])gpt-5", re.IGNORECASE)
+_OPENAI_GPT5_PLUS_RE = re.compile(r"(?:^|[^A-Za-z0-9])gpt-[56]", re.IGNORECASE)
 
 
 def _supports_openai_parallel_tool_calls_param(api_key_env: str) -> bool:
@@ -526,13 +526,13 @@ def _supports_openai_parallel_tool_calls_param(api_key_env: str) -> bool:
 
 
 def _openai_max_token_kwarg(model: str) -> str:
-    # OpenAI o-series (o1, o3, o4-mini, …) and gpt-5 series reject max_tokens.
+    # OpenAI o-series (o1, o3, o4-mini, …) and gpt-5/gpt-6 series reject max_tokens.
     # O-series: matches a bare ``o<digit>`` token at the start of the name or
     # following a non-alphanumeric separator, so vendor-prefixed routes
     # (``openai/o4-mini``, ``azure/o3``) and custom deployments are detected.
-    # gpt-5: matches ``gpt-5`` at the start or after a separator, covering
-    # gpt-5, gpt-5o, gpt-5o-mini, and future gpt-5* variants.
-    if _OPENAI_O_SERIES_RE.search(model) or _OPENAI_GPT5_RE.search(model):
+    # gpt-5/gpt-6: matches ``gpt-5``/``gpt-6`` at the start or after a separator,
+    # covering gpt-5, gpt-5o, gpt-5o-mini, gpt-6, gpt-6-luna and future variants.
+    if _OPENAI_O_SERIES_RE.search(model) or _OPENAI_GPT5_PLUS_RE.search(model):
         return "max_completion_tokens"
     return "max_tokens"
 

@@ -855,7 +855,7 @@ def test_openai_agent_client_omits_parallel_tool_calls_for_compat_provider(
 def test_openai_o_series_uses_max_completion_tokens(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """o-series and gpt-5 series models must receive max_completion_tokens, not max_tokens."""
+    """o-series and gpt-5/gpt-6 series models must receive max_completion_tokens."""
     _install_fake_openai(monkeypatch)
 
     captured: dict = {}
@@ -882,6 +882,10 @@ def test_openai_o_series_uses_max_completion_tokens(
         "gpt-5",
         "gpt-5o",
         "gpt-5o-mini",
+        "gpt-6",
+        "gpt-6-luna",
+        "gpt-6-sol",
+        "openai/gpt-6-luna",
     ):
         captured.clear()
         client._model = model

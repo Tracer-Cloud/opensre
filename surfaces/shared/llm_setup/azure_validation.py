@@ -65,7 +65,7 @@ def validate_credentials(
             "model": deployment,
             "messages": [{"role": "user", "content": "Reply with exactly: OpenSRE ready"}],
         }
-        if deployment.startswith(("o1", "o3", "o4", "gpt-5")):
+        if deployment.startswith(("o1", "o3", "o4", "gpt-5", "gpt-6")):
             request_kwargs["max_completion_tokens"] = 24
         else:
             request_kwargs["max_tokens"] = 24
