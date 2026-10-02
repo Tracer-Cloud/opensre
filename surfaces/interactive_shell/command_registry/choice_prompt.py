@@ -266,7 +266,7 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
     # label such as "owner/repo (757 commits, CI configured)" reads to the
     # planner like a fresh request and gets re-asked or re-routed.
     questions = items
-    answers = (picked_one,)
+    answers: tuple[str, ...] = (picked_one,)
     if permission_answer is not None:
         questions = (
             items[0],
@@ -284,8 +284,7 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
 
 def _demo_create_option() -> str:
     """Permission row for one new private demo repository. No network call."""
-    from integrations.github.identity import saved_github_username
-    from integrations.github.tools.ci_repair_demo.seed import fresh_demo_repo_name
+    from integrations.github import fresh_demo_repo_name, saved_github_username
 
     repo = fresh_demo_repo_name()
     owner = saved_github_username()
