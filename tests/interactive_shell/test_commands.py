@@ -14,6 +14,7 @@ import pytest
 from prompt_toolkit.history import FileHistory
 from rich.console import Console
 
+from config.account import AccountLLMRoute
 from surfaces.interactive_shell.command_registry import SLASH_COMMANDS, dispatch_slash
 from surfaces.interactive_shell.command_registry import repl_data as repl_data_module
 from surfaces.interactive_shell.command_registry.tasks_cmds import _validate_cancel_args
@@ -24,6 +25,18 @@ from surfaces.shared.terminal.tables.tool_catalog import ToolCatalogEntry
 def _capture() -> tuple[Console, io.StringIO]:
     buf = io.StringIO()
     return Console(file=buf, force_terminal=False, highlight=False), buf
+
+
+def _signed_out() -> None:
+    return None
+
+
+def _signed_in() -> AccountLLMRoute:
+    return AccountLLMRoute(base_url="https://app.opensre.test/api/llm", model="gpt-5.4-mini")
+
+
+def _menu_must_not_open(**_kwargs: object) -> str:
+    raise AssertionError("an account-managed shell must refuse before opening a menu")
 
 
 class TestDispatchSlash:
@@ -959,10 +972,65 @@ class TestModelCommand:
 
         assert os.environ.get("LLM_PROVIDER") == "gemini"
 
-    def test_set_missing_provider_prints_usage(self) -> None:
+    def test_set_without_provider_lists_valid_providers_when_not_interactive(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """Agent ``slash_invoke`` (no exclusive stdin) gets the ids to retry with."""
+        monkeypatch.setattr("config.account.account_llm_route", _signed_out)
         console, buf = _capture()
-        dispatch_slash("/model set", Session(), console)
-        assert "usage" in buf.getvalue()
+        session = Session()
+
+        dispatch_slash("/model set", session, console)
+
+        output = buf.getvalue()
+        assert "usage: /model set <provider> [model] [--toolcall-model <model>]" in output
+        assert "valid providers:" in output
+        assert "custom-openai" in output
+        assert session.history[-1]["ok"] is False
+
+    def test_set_without_provider_opens_the_provider_picker_when_typed(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        self._patch_llm(monkeypatch)
+        import surfaces.shared.llm_setup.env_sync as env_sync
+        from surfaces.interactive_shell.command_registry.model import command as model_cmd
+
+        env_path = tmp_path / ".env"
+        self._redirect_wizard_store(monkeypatch, tmp_path)
+        monkeypatch.setattr(env_sync, "PROJECT_ENV_PATH", env_path)
+        monkeypatch.setattr("config.env_file.PROJECT_ENV_PATH", env_path)
+        monkeypatch.setattr("config.account.account_llm_route", _signed_out)
+        monkeypatch.setattr(model_cmd, "repl_tty_interactive", lambda: True)
+        selections = iter([model_cmd.OTHER_PROVIDER_SELECTION, "anthropic", "__provider_default__"])
+        monkeypatch.setattr(model_cmd, "repl_choose_one", lambda **_: next(selections))
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-test")
+        console, buf = _capture()
+        session = Session()
+        session.terminal.exclusive_stdin_active = True
+
+        dispatch_slash("/model set", session, console)
+
+        assert "switched LLM provider" in buf.getvalue()
+        assert "LLM_PROVIDER=anthropic" in env_path.read_text(encoding="utf-8")
+
+    def test_set_without_provider_refuses_before_the_picker_when_account_managed(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from surfaces.interactive_shell.command_registry.model import command as model_cmd
+
+        monkeypatch.setattr("config.account.account_llm_route", _signed_in)
+        monkeypatch.setattr(model_cmd, "repl_tty_interactive", lambda: True)
+        monkeypatch.setattr(model_cmd, "repl_choose_one", _menu_must_not_open)
+        console, buf = _capture()
+        session = Session()
+        session.terminal.exclusive_stdin_active = True
+
+        dispatch_slash("/model set", session, console)
+
+        assert "LLM settings are managed by your OpenSRE account" in buf.getvalue()
+        assert session.history[-1]["ok"] is False
 
     def test_set_unknown_reasoning_model_is_rejected(
         self,
