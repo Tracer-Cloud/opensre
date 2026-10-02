@@ -1,10 +1,11 @@
-"""Response envelope shaping for GitHub MCP tool results."""
+"""Response envelope shaping for GitHub tool results."""
 
 from __future__ import annotations
 
 import json
 from typing import Any
 
+from config.constants.github import GITHUB_INTEGRATION_SETUP_CLI, GITHUB_INTEGRATION_SETUP_SLASH
 from core.tool_framework.utils import tool_unavailable
 
 
@@ -55,3 +56,23 @@ def normalize_github_tool_result(result: dict[str, Any]) -> dict[str, Any]:
         "structured_content": _structured_content_or_text_fallback(result),
         "content": result.get("content", []),
     }
+
+
+def missing_token_envelope(instruction: str, *, blocked: str) -> dict[str, Any]:
+    """The ``tool_unavailable`` envelope for a GitHub tool that found no token.
+
+    ``instruction`` tells the model how to hand the user the setup and stays in
+    ``error``. ``response_text`` is the user's line — what is ``blocked`` and
+    the command that connects GitHub, never tool calls or turn instructions — and
+    closes a turn that ends on the queued wizard. ``setup_command`` marks the
+    failure as waiting on that setup, so the turn may stop instead of retrying.
+    """
+    return tool_unavailable(
+        "github",
+        instruction,
+        response_text=(
+            f"GitHub isn't connected yet, so {blocked}. "
+            f"Set it up with `{GITHUB_INTEGRATION_SETUP_CLI}`."
+        ),
+        setup_command=GITHUB_INTEGRATION_SETUP_SLASH,
+    )

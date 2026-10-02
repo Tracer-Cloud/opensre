@@ -6,13 +6,12 @@ queued that wizard through ``slash_invoke`` and was told ``{"ok": true}``, but t
 turn went on: the goal reviewer rejected the stop because the failed analyzer
 was the last work tool, the model retried it, the duplicate guard blocked the
 identical ``slash_invoke``, and the turn ended at the iteration limit with an
-error status. This drives the real loop, hook chain, and goal reviewer.
+error status. This drives the real analyzer, loop, hook chain, and goal reviewer.
 """
 
 from __future__ import annotations
 
 import io
-from dataclasses import replace
 from typing import Any
 
 import pytest
@@ -23,10 +22,12 @@ from core.agent_harness.ports import TurnBinding
 from core.agent_harness.session import InMemorySessionStore
 from core.agent_harness.tools.action_tools import get_action_tool
 from core.agent_harness.tools.tool_provider import DefaultToolProvider
-from core.agent_harness.turns.headless_adapters import EmptyPromptContextProvider
+from core.agent_harness.turns.headless_adapters import (
+    BufferOutputSink,
+    EmptyPromptContextProvider,
+)
 from core.agent_harness.turns.headless_build import InMemoryHeadlessBuild
 from core.tool import RegisteredTool
-from core.tool_framework.utils import tool_unavailable
 from infrastructure.analytics.prompt_log import recorder as prompt_log
 from surfaces.interactive_shell.session import Session
 from tests.core.agent.orchestration.action_execution_test_harness import (
@@ -42,15 +43,9 @@ _OPEN_SETUP = {"command": "/integrations", "args": ["setup", "github"]}
 _CLOSING = "Opening the GitHub setup wizard; run the analysis again once it is connected."
 
 
-def _missing_token(**_kwargs: Any) -> dict[str, Any]:
-    """What the analyzer returns when no GitHub token resolves."""
-    message = "A GitHub token is required to read the Actions history of acme/app."
-    return tool_unavailable(
-        "github",
-        message,
-        response_text=message,
-        setup_command=GITHUB_INTEGRATION_SETUP_SLASH,
-    )
+def _no_github_token(_token: str | None = None) -> str:
+    """No token resolves: the analyzer answers with its setup envelope."""
+    return ""
 
 
 def _action_tool(name: str) -> RegisteredTool:
@@ -71,6 +66,9 @@ def test_a_setup_wizard_queued_after_a_missing_token_ends_the_turn(
         "infrastructure.analytics.capture.capture_agent_tool_call_completed",
         lambda **properties: tool_calls.append(properties),
     )
+    monkeypatch.setattr(
+        "integrations.github.tools.ci_analytics.tool.resolve_github_token", _no_github_token
+    )
     # The model as observed live: had the turn gone on, it would have retried
     # the analyzer and then repeated the identical slash_invoke.
     llm = FakeActionLLM(
@@ -87,6 +85,7 @@ def test_a_setup_wizard_queued_after_a_missing_token_ends_the_turn(
     session.resolved_integrations_cache = {}
     session.store.open_session(session)
     ports = FakeSlashPorts(tty=True)
+    output = BufferOutputSink()
     loop_ends: list[dict[str, Any]] = []
 
     def _observe(kind: str, data: dict[str, Any]) -> None:
@@ -96,14 +95,11 @@ def test_a_setup_wizard_queued_after_a_missing_token_ends_the_turn(
     provider = DefaultToolProvider(
         session,
         Console(file=io.StringIO(), force_terminal=False),
-        precomputed_action_tools=[
-            replace(_action_tool(_ANALYZER), run=_missing_token),
-            _action_tool("slash_invoke"),
-        ],
+        precomputed_action_tools=[_action_tool(_ANALYZER), _action_tool("slash_invoke")],
         slash_ports_factory=lambda: ports,
         observer_factory=lambda _message: _observe,
     )
-    agent = InMemoryHeadlessBuild(session=session).agent(
+    agent = InMemoryHeadlessBuild(session=session, output=output).agent(
         tools=provider,
         prompts=EmptyPromptContextProvider(),
         llm_factory=lambda: llm,
@@ -126,3 +122,10 @@ def test_a_setup_wizard_queued_after_a_missing_token_ends_the_turn(
     assert turn.action_result.hit_iteration_cap is False
     assert "blocked" not in [call["outcome"] for call in tool_calls]
     assert [generation["$ai_is_error"] for generation in generations] == [False]
+    # With no model closing, the tool's reply text closes the turn: it must be
+    # the user's line, not the instructions written for the model.
+    for closing in ("\n".join(output.streamed), turn.primary_response_text):
+        assert "GitHub isn't connected yet" in closing
+        assert "opensre integrations setup github" in closing
+        assert "slash_invoke" not in closing
+        assert "end the turn" not in closing
