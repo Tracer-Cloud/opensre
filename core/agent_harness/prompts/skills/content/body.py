@@ -1,51 +1,10 @@
-"""Load current validated skill instructions on demand."""
+"""Load a skill's rendered instructions from the active catalog."""
 
 from __future__ import annotations
 
-import logging
-
-from pydantic import ValidationError
-
-from config.constants.skill_prerequisites import (
-    CONNECT_INTEGRATIONS_HEADING,
-    prerequisite_section,
-)
-from config.constants.skill_success import success_section
-from config.constants.skills import ONBOARDING_SKILL_NAME
-from core.agent_harness.prompts.skills.catalog.demo_menu import demo_handoffs
-from core.agent_harness.prompts.skills.catalog.registry import (
-    find_action_skill,
-    list_action_skills,
-    validate_skill_file,
-)
-from core.agent_harness.prompts.skills.catalog.schema import SkillCardError, parse_frontmatter
-from core.agent_harness.prompts.skills.content.files import (
-    append_report_template,
-    append_skill_includes,
-)
-
-logger = logging.getLogger(__name__)
+from core.agent_harness.prompts.skills.snapshot.active_catalog import active_skill_catalog
 
 
 def load_skill_body(name: str) -> str:
-    """Return current instructions with includes and a report template, or empty if invalid."""
-    skill = find_action_skill(name)
-    if skill is None:
-        return ""
-    try:
-        current = validate_skill_file(skill.path)
-        _frontmatter, body = parse_frontmatter(skill.path.read_text(encoding="utf-8"))
-    except (OSError, UnicodeError, SkillCardError, ValidationError) as exc:
-        logger.warning("Skipping invalid skill %s: %s", skill.path, exc)
-        return ""
-    body = append_skill_includes(skill.path, body, current.includes)
-    body = append_report_template(skill.path, body)
-    section = success_section(skill.name)
-    if section and "## Success criteria" not in body:
-        body = f"{body}\n\n{section}"
-    if skill.name == ONBOARDING_SKILL_NAME:
-        body += demo_handoffs(list_action_skills())
-    prerequisite = prerequisite_section(skill.name)
-    if prerequisite and CONNECT_INTEGRATIONS_HEADING not in body:
-        body = f"{prerequisite}\n{body}"
-    return body
+    """Return instructions with includes, report template and host sections, or empty if unknown."""
+    return active_skill_catalog().current().body(name)

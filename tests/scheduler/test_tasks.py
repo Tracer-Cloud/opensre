@@ -263,6 +263,14 @@ class TestMessageBuilders:
             tasks_mod.build_message(task, runners_with_agent(_raise))
 
 
+def _current_major() -> str:
+    from core.agent_harness.prompts.skills.scheduling import find_action_skill
+
+    skill = find_action_skill("delivering-morning-briefings")
+    assert skill is not None
+    return skill.version.split(".")[0]
+
+
 class TestRecurringSkillBuilders:
     def test_recurring_skill_uses_agent_runner(self) -> None:
         from core.agent_harness.prompts.skills.scheduling import find_action_skill, skill_revision
@@ -327,14 +335,45 @@ class TestRecurringSkillBuilders:
         assert stored.skill_name == "delivering-morning-briefings"
         assert stored.skill_revision == skill_revision(current)
 
-    def test_recurring_skill_revision_mismatch_raises(self) -> None:
+    def test_recurring_skill_major_version_change_raises(self) -> None:
         task = ScheduledTask(
             kind=TaskKind.RECURRING_SKILL,
             cron="0 8 * * 1-5",
             provider=Provider.SLACK,
             chat_id="C123",
             skill_name="delivering-morning-briefings",
-            skill_revision="0" * 64,
+            skill_revision="v2:99:" + "0" * 64,
         )
         with pytest.raises(RuntimeError, match="changed since it was scheduled"):
             tasks_mod.build_message(task, runners_with_agent(lambda _p: "ignored"))
+
+    def test_recurring_skill_follows_an_edit_and_stores_the_new_pin(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """An edit within the pinned major version runs and re-pins instead of stopping."""
+        from core.agent_harness.prompts.skills.scheduling import find_action_skill, skill_revision
+        from infrastructure.scheduling.scheduler.storage.task_store import add_task, list_tasks
+
+        store_path = tmp_path / "tasks.json"
+        monkeypatch.setattr(
+            "infrastructure.scheduling.scheduler.storage.task_store.default_task_store_path",
+            lambda: store_path,
+        )
+        task = add_task(
+            ScheduledTask(
+                kind=TaskKind.RECURRING_SKILL,
+                cron="0 8 * * 1-5",
+                provider=Provider.SLACK,
+                chat_id="C123",
+                skill_name="delivering-morning-briefings",
+                skill_revision=f"v2:{_current_major()}:" + "0" * 64,
+            ),
+            store_path,
+        )
+
+        assert tasks_mod.build_message(task, runners_with_agent(lambda _p: "ran")) == "ran"
+
+        current = find_action_skill("delivering-morning-briefings")
+        assert current is not None
+        (stored,) = list_tasks(store_path)
+        assert stored.skill_revision == skill_revision(current)

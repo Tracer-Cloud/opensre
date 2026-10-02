@@ -161,6 +161,7 @@ __all__ = [
     "count_ci_fixes",
     "disconnect_personal_github",
     "effective_github_token",
+    "fresh_demo_repo_name",
     "format_github_mcp_validation_cli_report",
     "fresh_demo_repo_name",
     "get_ci_fix_counter",

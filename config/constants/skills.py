@@ -1,5 +1,8 @@
 """Bundled skill entrypoints shared by startup and prompt assembly."""
 
+from collections.abc import Mapping
+from types import MappingProxyType
+
 ONBOARDING_SKILL_NAME = "onboarding-github-ci"
 
 # Children of the onboarding tree, in demo-menu order (A-D). Product code that
@@ -58,3 +61,28 @@ ONBOARDING_LEAF_CHOICES = (
 SKILL_FILENAME = "SKILL.md"
 SKILL_REPORT_SUFFIX = "_report.md"
 SKILLS_HEADER = f"{'=' * 40} SKILLS INDEX {'=' * 40}"
+
+# Live skills: signed catalog releases published to the OpenSRE app
+# (``opensre skills push``) and pulled by every host in the background.
+#: Exclusive local catalog for authoring; re-read whenever its files change.
+SKILLS_DIR_ENV = "OPENSRE_SKILLS_DIR"
+#: ``1``/``0`` to force background pulls on or off (default: on in release binaries).
+SKILLS_AUTO_UPDATE_ENV = "OPENSRE_SKILLS_AUTO_UPDATE"
+#: JSON ``{key_id: PEM}`` of extra trusted release keys; ignored by release binaries.
+SKILLS_TRUSTED_KEYS_FILE_ENV = "OPENSRE_SKILLS_TRUSTED_KEYS_FILE"
+#: Card/catalog contract version; a release declaring a newer one is not activated.
+SKILLS_API_VERSION = 1
+SKILLS_PULL_INTERVAL_SECONDS = 300
+SKILLS_HTTP_TIMEOUT_SECONDS = 5.0
+SKILLS_RELEASE_PATH = "/api/skills/release"
+SKILLS_ROLLBACK_PATH = "/api/skills/rollback"
+SKILLS_RELEASES_PATH = "/api/skills/releases"
+#: GitHub OIDC audience the git-sync workflow requests for ``POST`` release.
+SKILLS_SYNC_AUDIENCE = "https://app.opensre.com/skills/sync"
+SKILLS_RELEASE_MAX_BYTES = 2 * 1024 * 1024
+SKILLS_RELEASE_MAX_FILES = 500
+#: Releases kept on disk; older ones are pruned after each fetch.
+SKILLS_RELEASES_KEPT = 3
+#: Release signing keys trusted by this binary (``key_id`` -> PEM public key).
+#: Two slots let a new key be trusted before the server starts using it.
+SKILLS_RELEASE_PUBLIC_KEYS: Mapping[str, str] = MappingProxyType({})

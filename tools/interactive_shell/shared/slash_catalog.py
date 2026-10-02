@@ -407,6 +407,16 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
             "User asks how runbook-guided investigations work (answer from docs)",
         ),
     ),
+    "/skills": _mcp(
+        "Show the live skills release this machine runs, pull the newest one, or "
+        "publish and roll back skills (OpenSRE staff). Subcommands: status, update, "
+        "push, rollback, history, pull.",
+        "User asks which skills version is active, to refresh skills, or to publish a skill edit",
+        anti_examples=(
+            "User asks to run or use a skill (load it with skill_view)",
+            "User asks what skills can do (answer from the skills index)",
+        ),
+    ),
     "/tasks": _mcp(
         "List recent and in-flight shell background tasks with ids and status.",
         "User asks to list running or recent tasks",

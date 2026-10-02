@@ -554,6 +554,11 @@ def _cmd_runbooks(session: Session, console: Console, args: list[str]) -> bool:
     return run_cli_command(console, ["runbooks", *args], session=session)
 
 
+def _cmd_skills(session: Session, console: Console, args: list[str]) -> bool:
+    # ``/skills update`` stores the newest release; this session runs it from its next turn.
+    return run_cli_command(console, ["skills", *(args or ["status"])], session=session)
+
+
 def _cmd_messaging(session: Session, console: Console, args: list[str]) -> bool:
     return run_cli_command(console, ["messaging", *args], session=session)
 
@@ -694,6 +699,17 @@ COMMANDS: list[SlashCommand] = [
             "/runbooks add github --name <name> --repo <owner/repo>",
             "/runbooks verify <name>",
             "/runbooks remove <name>",
+        ),
+    ),
+    SlashCommand(
+        "/skills",
+        "Publish skills and inspect the live skills release in use.",
+        _cmd_skills,
+        usage=(
+            "/skills status",
+            "/skills update",
+            "/skills push <name>",
+            "/skills rollback",
         ),
     ),
     SlashCommand(

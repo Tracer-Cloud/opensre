@@ -1203,7 +1203,49 @@ if TYPE_CHECKING:
         SKILL_REPORT_SUFFIX as SKILL_REPORT_SUFFIX,
     )
     from config.constants.skills import (
+        SKILLS_API_VERSION as SKILLS_API_VERSION,
+    )
+    from config.constants.skills import (
+        SKILLS_AUTO_UPDATE_ENV as SKILLS_AUTO_UPDATE_ENV,
+    )
+    from config.constants.skills import (
+        SKILLS_DIR_ENV as SKILLS_DIR_ENV,
+    )
+    from config.constants.skills import (
         SKILLS_HEADER as SKILLS_HEADER,
+    )
+    from config.constants.skills import (
+        SKILLS_HTTP_TIMEOUT_SECONDS as SKILLS_HTTP_TIMEOUT_SECONDS,
+    )
+    from config.constants.skills import (
+        SKILLS_PULL_INTERVAL_SECONDS as SKILLS_PULL_INTERVAL_SECONDS,
+    )
+    from config.constants.skills import (
+        SKILLS_RELEASE_MAX_BYTES as SKILLS_RELEASE_MAX_BYTES,
+    )
+    from config.constants.skills import (
+        SKILLS_RELEASE_MAX_FILES as SKILLS_RELEASE_MAX_FILES,
+    )
+    from config.constants.skills import (
+        SKILLS_RELEASE_PATH as SKILLS_RELEASE_PATH,
+    )
+    from config.constants.skills import (
+        SKILLS_RELEASE_PUBLIC_KEYS as SKILLS_RELEASE_PUBLIC_KEYS,
+    )
+    from config.constants.skills import (
+        SKILLS_RELEASES_KEPT as SKILLS_RELEASES_KEPT,
+    )
+    from config.constants.skills import (
+        SKILLS_RELEASES_PATH as SKILLS_RELEASES_PATH,
+    )
+    from config.constants.skills import (
+        SKILLS_ROLLBACK_PATH as SKILLS_ROLLBACK_PATH,
+    )
+    from config.constants.skills import (
+        SKILLS_SYNC_AUDIENCE as SKILLS_SYNC_AUDIENCE,
+    )
+    from config.constants.skills import (
+        SKILLS_TRUSTED_KEYS_FILE_ENV as SKILLS_TRUSTED_KEYS_FILE_ENV,
     )
     from config.constants.slack import (
         SLACK_ACCESS_TOKEN_ENV as SLACK_ACCESS_TOKEN_ENV,

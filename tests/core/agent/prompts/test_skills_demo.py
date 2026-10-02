@@ -23,7 +23,7 @@ from core.agent_harness.prompts.action import build_action_system_prompt
 from core.agent_harness.prompts.action.assemble import build_action_system_prompt_envelope
 from core.agent_harness.prompts.getting_started import (
     GETTING_STARTED_CUSTOM,
-    GETTING_STARTED_OPTIONS,
+    getting_started_options,
     getting_started_skills,
     load_getting_started_block,
 )
@@ -53,7 +53,7 @@ def test_master_menu_matches_four_unique_children_and_preserves_specialists() ->
         "connecting-slack",
     ]
     assert [s.demo_order for s in children] == [1, 2, 3, 4]
-    assert GETTING_STARTED_OPTIONS == (
+    assert getting_started_options() == (
         ANALYZE_REPO_OPTION,
         LOCAL_REPAIR_OPTION,
         CLOUD_REPAIR_OPTION,

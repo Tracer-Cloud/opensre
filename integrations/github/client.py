@@ -33,6 +33,7 @@ class GitHubApiError(RuntimeError):
     message: str
     status_code: int | None = None
     path: str = ""
+    method: str = ""
     rate_limit_remaining: str | None = None
     rate_limit_reset: str | None = None
 
@@ -130,13 +131,18 @@ class GitHubRestClient:
                 message,
                 status_code=exc.code,
                 path=path,
+                method=method.upper(),
                 rate_limit_remaining=exc.headers.get("X-RateLimit-Remaining")
                 if exc.headers
                 else None,
                 rate_limit_reset=exc.headers.get("X-RateLimit-Reset") if exc.headers else None,
             ) from exc
         except error.URLError as exc:
-            raise GitHubApiError(f"GitHub API request failed: {exc.reason}", path=path) from exc
+            raise GitHubApiError(
+                f"GitHub API request failed: {exc.reason}",
+                path=path,
+                method=method.upper(),
+            ) from exc
 
         return _decode_json_payload(raw, path=path)
 
@@ -188,13 +194,18 @@ class GitHubRestClient:
                     detail or exc.msg or "GitHub API request failed.",
                     status_code=exc.code,
                     path=path,
+                    method="GET",
                     rate_limit_remaining=exc.headers.get("X-RateLimit-Remaining")
                     if exc.headers
                     else None,
                     rate_limit_reset=exc.headers.get("X-RateLimit-Reset") if exc.headers else None,
                 ) from exc
             except error.URLError as exc:
-                raise GitHubApiError(f"GitHub API request failed: {exc.reason}", path=path) from exc
+                raise GitHubApiError(
+                    f"GitHub API request failed: {exc.reason}",
+                    path=path,
+                    method="GET",
+                ) from exc
 
             parsed = _decode_json_payload(raw, path=path) if raw.strip() else []
             if isinstance(parsed, list):

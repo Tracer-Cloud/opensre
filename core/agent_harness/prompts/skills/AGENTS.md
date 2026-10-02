@@ -52,8 +52,42 @@ Markdown resolution, body/reference loading, and index rendering belong in
 this package import its public facade or the `scheduling` facade.
 
 When moving a resource reader, preserve the skills root used for discovery and
-include containment. Clear both catalog and index caches through
-`clear_skills_caches()` when tests replace bundled resources.
+include containment. Clear the active catalog through `clear_skills_caches()`
+when tests replace bundled resources.
+
+`snapshot/` owns the catalog a process actually serves. A
+`SkillCatalogSnapshot` is built once from one root (validated cards, rendered
+bodies, references, index, per-skill digests) and never re-reads files.
+`active_skill_catalog()` picks the root, in this order:
+
+1. `OPENSRE_SKILLS_DIR` (exclusive; re-read when its files change).
+2. The newest stored release that verifies, declares a supported
+   `SKILLS_API_VERSION`, contains every bundled skill name and builds with
+   zero diagnostics. A release is accepted or rejected whole.
+3. The bundled tree.
+
+`run_turn` binds one snapshot per turn, so a newly pulled release or an
+authoring edit applies at the next turn, never mid-turn. Read the catalog
+once per operation (`active_skill_catalog().current()`) instead of calling
+several lookups that could straddle a swap.
+
+## Live releases
+
+Skills are published without a binary release:
+- `opensre skills push` (OpenSRE staff, or `.github/workflows/skills-sync.yml`
+  on merge) sends every skill package whose `metadata.version` is newer than
+  the live one to the OpenSRE app, which signs a new immutable release.
+- Every host pulls it in the background (`infrastructure/skills_registry/`,
+  every five minutes) into `~/.opensre/skills/`.
+- `opensre skills rollback` republishes an earlier release as the newest one.
+- Clients verify the ECDSA P-256 signature against
+  `SKILLS_RELEASE_PUBLIC_KEYS` in `config/constants/skills.py`. The signed
+  message is pinned by `test_signing_message_matches_the_server_contract` and
+  by the webapp's signer tests; change both or neither.
+
+Because the version gate decides what ships, an edit that does not bump
+`metadata.version` is not published. A release must keep every skill name
+the host code relies on; binaries reject releases that drop a bundled skill.
 
 ## Design references
 

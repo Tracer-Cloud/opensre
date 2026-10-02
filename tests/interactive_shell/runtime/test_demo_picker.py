@@ -29,7 +29,7 @@ from config.constants.skills import (
     SLACK_OPTION,
 )
 from core.agent_harness.prompts.action.assemble import build_action_system_prompt_envelope
-from core.agent_harness.prompts.getting_started import GETTING_STARTED_OPTIONS
+from core.agent_harness.prompts.getting_started import getting_started_options
 from core.agent_harness.session.pending_choice import (
     AskUserQuestion,
     PendingUserChoice,
@@ -272,7 +272,7 @@ def test_onboarding_cancel_custom_and_slash_do_not_reopen_the_menu(
     _offerable(monkeypatch)
     session = Session()
     session.active_skill = ONBOARDING_SKILL_NAME
-    session.pending_user_choice = PendingUserChoice(title=_TITLE, options=GETTING_STARTED_OPTIONS)
+    session.pending_user_choice = PendingUserChoice(title=_TITLE, options=getting_started_options())
     pending = session.pending_user_choice
     monkeypatch.setattr(choice_prompt, "repl_choose_one", lambda **_kw: answer)
     console = Console(file=io.StringIO())
@@ -304,11 +304,11 @@ def test_onboarding_outcomes_keep_stable_ids_and_exclude_child_menus(
 
     monkeypatch.setattr(choice_prompt, "repl_choose_one", pick)
     session = Session()
-    for option in GETTING_STARTED_OPTIONS:
+    for option in getting_started_options():
         answer = option
         session.active_skill = ONBOARDING_SKILL_NAME
         session.pending_user_choice = PendingUserChoice(
-            title=_TITLE, options=GETTING_STARTED_OPTIONS
+            title=_TITLE, options=getting_started_options()
         )
         choice_prompt._cmd_choose(session, console, [])
 
@@ -330,13 +330,13 @@ def test_onboarding_telemetry_failure_does_not_lose_the_answer(
     _offerable(monkeypatch)
     session = Session()
     session.active_skill = ONBOARDING_SKILL_NAME
-    pending = PendingUserChoice(title=_TITLE, options=GETTING_STARTED_OPTIONS)
+    pending = PendingUserChoice(title=_TITLE, options=getting_started_options())
     session.pending_user_choice = pending
 
     def fail_capture(**_kwargs: Any) -> None:
         raise RuntimeError("Telemetry unavailable")
 
-    answer = GETTING_STARTED_OPTIONS[0]
+    answer = getting_started_options()[0]
     monkeypatch.setattr(onboarding_telemetry, "capture_onboarding_demo_selected", fail_capture)
     monkeypatch.setattr(choice_prompt, "repl_choose_one", lambda **_kw: answer)
     choice_prompt._cmd_choose(session, Console(file=io.StringIO()), [])
@@ -353,9 +353,9 @@ def test_typed_option_label_keeps_its_custom_source_through_the_picker(
     _offerable(monkeypatch)
     session = Session()
     session.active_skill = ONBOARDING_SKILL_NAME
-    pending = PendingUserChoice(title=_TITLE, options=GETTING_STARTED_OPTIONS)
+    pending = PendingUserChoice(title=_TITLE, options=getting_started_options())
     session.pending_user_choice = pending
-    answer = GETTING_STARTED_OPTIONS[0]
+    answer = getting_started_options()[0]
 
     def pick(**_kwargs: Any) -> int | str:
         # The raw picker distinguishes a row index from text typed in the custom row.

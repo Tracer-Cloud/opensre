@@ -191,9 +191,7 @@ def test_missing_include_excludes_the_card(catalog_root: Path) -> None:
     assert "missing.md" in catalog.diagnostics[0]
 
 
-def test_body_revalidates_cached_cards_and_cache_reset_refreshes_the_index(
-    catalog_root: Path,
-) -> None:
+def test_catalog_is_a_snapshot_until_invalidated(catalog_root: Path) -> None:
     card = catalog_root / "workflow" / "SKILL.md"
     card.parent.mkdir()
     card.write_text(skill_card("workflow", "Original body.", description="Original summary."))
@@ -201,13 +199,14 @@ def test_body_revalidates_cached_cards_and_cache_reset_refreshes_the_index(
     assert skills.load_skill_body("workflow") == "Original body."
 
     card.write_text(skill_card("workflow", "Updated body.", description="Updated summary."))
-    assert skills.load_skill_body("workflow") == "Updated body."
+    assert skills.load_skill_body("workflow") == "Original body."
     assert "Original summary." in skills.load_skills_index()
     skills.clear_skills_caches()
+    assert skills.load_skill_body("workflow") == "Updated body."
     assert "Updated summary." in skills.load_skills_index()
 
     card.write_text(skill_card("workflow", "Invalid body.", includes=["missing.md"]))
-    assert skills.load_skill_body("workflow") == ""
     skills.clear_skills_caches()
+    assert skills.load_skill_body("workflow") == ""
     assert skills.list_action_skills() == ()
     assert skills.load_skills_index() == ""

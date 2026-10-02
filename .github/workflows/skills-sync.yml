@@ -1,0 +1,67 @@
+name: Skills sync
+
+# Publishes skills merged to main to the live skills registry, so every
+# OpenSRE install picks them up within minutes without a new binary. Only
+# skills whose metadata.version is newer than the live one are sent, so a
+# fast-lane `opensre skills push` that is not yet in git is never overwritten.
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - core/agent_harness/prompts/skills/**/*.md
+      - core/agent_harness/prompts/skills/**/scripts/*.py
+      - .github/workflows/skills-sync.yml
+
+permissions:
+  contents: read
+
+env:
+  OPENSRE_CICD: "1"
+
+concurrency:
+  group: skills-sync
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    # Off until the registry can sign releases: set the repository variable
+    # SKILLS_SYNC_ENABLED=true once the webapp's signing key is configured.
+    if: github.repository == 'Tracer-Cloud/opensre' && vars.SKILLS_SYNC_ENABLED == 'true'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      OPENSRE_DISABLE_KEYRING: "1"
+      OPENSRE_SENTRY_DISABLED: "1"
+    steps:
+      - uses: actions/checkout@fbc6f3992d24b796d5a048ff273f7fcc4a7b6c09 # v5
+        with:
+          fetch-depth: 2
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          enable-cache: true
+      - run: uv sync --frozen
+      - name: Request the registry's OIDC token
+        shell: bash
+        run: |
+          set -euo pipefail
+          token="$(curl -fsS -H "Authorization: bearer ${ACTIONS_ID_TOKEN_REQUEST_TOKEN}" \
+            "${ACTIONS_ID_TOKEN_REQUEST_URL}&audience=https://app.opensre.com/skills/sync" \
+            | jq -r .value)"
+          echo "::add-mask::${token}"
+          echo "SKILLS_SYNC_TOKEN=${token}" >> "$GITHUB_ENV"
+      - name: Publish newer skills
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(--runner-token-env SKILLS_SYNC_TOKEN)
+          # Shared files carry no version; publish them only when this merge changed them,
+          # so a newer fast-lane edit to common/ is never reverted by an unrelated merge.
+          if ! git diff --quiet HEAD~1 HEAD -- core/agent_harness/prompts/skills/common; then
+            args+=(--include-shared)
+          fi
+          uv run opensre skills push "${args[@]}"

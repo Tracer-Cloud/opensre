@@ -158,6 +158,31 @@ SPI_ROLE_NAMES: dict[str, frozenset[str]] = {
             "resolve_integrations",
         }
     ),
+    "skill_releases": frozenset(
+        {
+            "ReleaseError",
+            "SkillCardError",
+            "SkillCatalogSnapshot",
+            "SkillSource",
+            "SkillsRelease",
+            "active_skill_catalog",
+            "auto_update_enabled",
+            "build_snapshot",
+            "is_release_path",
+            "latest_stored_seq",
+            "parse_frontmatter",
+            "read_announced",
+            "read_skill_catalog",
+            "read_state",
+            "skills_dir",
+            "store_dir",
+            "trusted_release_keys",
+            "verify_release",
+            "write_announced",
+            "write_release",
+            "write_state",
+        }
+    ),
     "grounding": frozenset(
         {
             "ActionSkill",

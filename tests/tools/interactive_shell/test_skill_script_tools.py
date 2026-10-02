@@ -30,7 +30,6 @@ from tests.core.agent.orchestration.action_execution_test_harness import (
 from tests.utils.skill_cards import skill_card
 from tools.interactive_shell.actions.skill_view import skill_view_tool
 from tools.interactive_shell.actions.update_plan import update_plan_tool
-from tools.interactive_shell.skill_scripts.catalog import registered_skill_tools
 from tools.interactive_shell.skill_scripts.runner import run_skill_script
 
 
@@ -92,10 +91,8 @@ def helper_skill(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> Iterator[Pa
         "core.agent_harness.prompts.skills.content.files.skills_dir", lambda: tmp_path
     )
     skills.clear_skills_caches()
-    registered_skill_tools.cache_clear()
     yield helper
     skills.clear_skills_caches()
-    registered_skill_tools.cache_clear()
 
 
 def test_real_loop_refreshes_helpers_on_entry_and_switch(helper_skill: Path) -> None:
