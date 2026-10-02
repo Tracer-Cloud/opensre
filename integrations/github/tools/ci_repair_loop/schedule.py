@@ -36,6 +36,11 @@ from integrations.github.tools.ci_repair_loop.supervisor import finish_run
 logger = logging.getLogger(__name__)
 
 
+def repair_task_name(owner: str, repo: str) -> str:
+    """Cron title that binds one repair schedule to one repository."""
+    return f"CI repair: {owner}/{repo}"
+
+
 def _component(value: str) -> str:
     if not value or re.fullmatch(r"[A-Za-z0-9_.-]+", value) is None or value in {".", ".."}:
         raise RepairRefused("Use an explicit GitHub owner and repository name.")
@@ -169,7 +174,7 @@ def schedule_repair(
             if existing is None:
                 task = ScheduledTask(
                     id=run.id,
-                    name=f"CI repair: {owner}/{repo}",
+                    name=repair_task_name(owner, repo),
                     kind=TaskKind.MANUAL_LOOP,
                     cron=CI_REPAIR_CRON,
                     timezone="UTC",
