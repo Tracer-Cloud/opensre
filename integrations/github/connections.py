@@ -46,8 +46,9 @@ def classify_github_connections(records: list[dict[str, Any]], resolved: dict[st
 
 
 def _instances(record: dict[str, Any]) -> list[dict[str, Any]]:
-    if isinstance(record.get("instances"), list):
-        return record["instances"]
+    instances = record.get("instances")
+    if isinstance(instances, list):
+        return [dict(instance) for instance in instances if isinstance(instance, dict)]
     return [{"name": "default", "credentials": record.get("credentials", {})}]
 
 
