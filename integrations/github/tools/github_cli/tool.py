@@ -65,6 +65,8 @@ def _github_cli_extract_params(sources: dict[str, dict]) -> dict[str, Any]:
     if not gh:
         return params
     creds = github_creds(gh)
+    if creds.get("github_connection_id"):
+        params["github_connection_id"] = creds["github_connection_id"]
     if creds.get("github_token"):
         params["github_token"] = creds["github_token"]
     owner = str(gh.get("owner") or "").strip()

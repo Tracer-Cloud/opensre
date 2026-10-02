@@ -94,8 +94,13 @@ def resolve_and_cache_integrations(session: SessionState) -> dict[str, Any]:
     """
     stamp = integration_sources_stamp()
     state = getattr(session, "integrations", None)
-    if isinstance(state, IntegrationState) and state.github_connection_id:
-        session.accumulated_context["_github_connection_id"] = state.github_connection_id
+    context = getattr(session, "accumulated_context", None)
+    if (
+        isinstance(state, IntegrationState)
+        and state.github_connection_id
+        and isinstance(context, dict)
+    ):
+        context["_github_connection_id"] = state.github_connection_id
     cached = session.resolved_integrations_cache
     if cached and _built_from_another_store(state, stamp):
         cached = None

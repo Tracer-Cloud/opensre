@@ -28,6 +28,7 @@ from integrations.github.mcp import (
 
 # Runtime connection/secret kwargs from ``extract_params``; must win over model input.
 GITHUB_INJECTED_PARAMS: tuple[str, ...] = (
+    "github_connection_id",
     "github_url",
     "github_mode",
     "github_token",
@@ -51,6 +52,8 @@ def github_source_available(sources: dict[str, dict]) -> bool:
 def github_creds(gh: dict) -> dict[str, Any]:
     """Map classified GitHub integration fields to tool credential kwargs."""
     creds: dict[str, Any] = {}
+    if gh.get("connection_id"):
+        creds["github_connection_id"] = gh["connection_id"]
     url = gh.get("github_url") or gh.get("url")
     if url:
         creds["github_url"] = url
