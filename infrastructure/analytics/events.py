@@ -59,6 +59,7 @@ class Event(StrEnum):
     INTERACTIVE_SHELL_RENDERED = "interactive_shell_rendered"
     BROWSER_OPEN_REQUESTED = "browser_open_requested"
     SKILL_EXECUTED = "skill_executed"
+    SKILL_VALUE_DELIVERED = "skill_value_delivered"
     OPENSRE_COMMIT_CREATED = "opensre_commit_created"
     OPENSRE_CI_EPOCH_RESOLVED = "opensre_ci_epoch_resolved"
 

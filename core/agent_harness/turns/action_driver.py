@@ -72,6 +72,7 @@ from core.agent_harness.turns.goal_review import (
 )
 from core.agent_harness.turns.plan_hooks import with_task_plan_hooks
 from core.agent_harness.turns.skill_activation import prepare_active_skill
+from core.agent_harness.turns.skill_value import record_skill_value
 from core.agent_harness.turns.turn_plan import TurnPlan
 from core.agent_harness.turns.turn_results import ToolCallingTurnResult
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
@@ -125,10 +126,13 @@ class ActionTurnPlan:
     # Active skill body and the other ephemeral context sent with the user message.
     prompt_skill: str = ""
     prompt_context: str = ""
+    value_insights: set[str] = field(default_factory=set)
 
 
 def _deferred_reply_presenter(
-    output: OutputSink, deferred_replies: list[str]
+    output: OutputSink,
+    deferred_replies: list[str],
+    on_displayed: Callable[[str], None] | None = None,
 ) -> Callable[[str], bool]:
     """Paint a plan-deferred reply now (same gutter as a final reply); keep it once shown.
 
@@ -144,6 +148,8 @@ def _deferred_reply_presenter(
             log.debug("deferred reply render failed; not marking it shown", exc_info=True)
             return False
         deferred_replies.append(text)
+        if on_displayed is not None:
+            on_displayed(text)
         return True
 
     return present
@@ -571,6 +577,7 @@ def _build_action_agent(
     executed_tool_names: list[str] = []
     executed_outcomes: list[ExecutedToolOutcome] = []
     deferred_replies: list[str] = []
+    value_insights: set[str] = set()
     prompt_skill = ""
     prompt_context = ""
 
@@ -626,7 +633,11 @@ def _build_action_agent(
             plan_awaits_reply=lambda: task_plan_awaits_reply(
                 task_plan=getattr(session, "task_plan", None)
             ),
-            on_plan_deferred_reply=_deferred_reply_presenter(output, deferred_replies),
+            on_plan_deferred_reply=_deferred_reply_presenter(
+                output,
+                deferred_replies,
+                lambda text: record_skill_value(session, text, value_insights),
+            ),
             blocked_needs_user=lambda: blocked_steps_await_the_user(
                 session, user_answered=bool(parse_ask_user_answers(message))
             ),
@@ -671,6 +682,7 @@ def _build_action_agent(
         llm=llm,
         max_iterations=_MAX_TOOL_CALLING_ITERATIONS,
         deferred_replies=deferred_replies,
+        value_insights=value_insights,
         prompt_skill=prompt_skill,
         prompt_context=prompt_context,
     )
@@ -1164,6 +1176,7 @@ def _run_action_turn(
             final_text="\n".join(display_chunks) if use_final_text else "",
             display_chunks=display_chunks,
         )
+        record_skill_value(session, "\n".join(display_chunks), built.value_insights)
         _show_completed_plan_breakdown(args.output, session)
     record_decision(
         "response_displayed",

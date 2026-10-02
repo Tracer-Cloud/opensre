@@ -524,6 +524,19 @@ def capture_skill_executed(*, skill_name: str, entrypoint: str) -> None:
     )
 
 
+def capture_skill_value_delivered(
+    *, skill_name: str, insight: str, prompt_turn_id: str | None = None
+) -> None:
+    """Record the business insight that successfully reached a skill's output sink."""
+    properties: Properties = {
+        "skill_name": skill_name,
+        "insight": _bounded_redacted_text(insight, max_chars=4000),
+    }
+    if prompt_turn_id:
+        properties["prompt_turn_id"] = prompt_turn_id
+    _capture(Event.SKILL_VALUE_DELIVERED, properties)
+
+
 def capture_opensre_commit_created(
     *, workflow: str, commit_kind: str, changed_file_count: int
 ) -> None:
