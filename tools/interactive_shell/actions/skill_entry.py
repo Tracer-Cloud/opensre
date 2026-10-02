@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from config.constants.skills import ONBOARDING_SKILL_NAMES
 from core.agent_harness.spi.grounding import ActionSkill, SkillEntryMenu
 from core.agent_harness.spi.handoff import question_key
 from core.agent_harness.spi.skill_releases import SkillCatalogSnapshot, active_skill_catalog
@@ -119,6 +120,14 @@ def enter_skill(name: str, ctx: Any, *, from_model: bool = False) -> dict[str, A
     already_active = (
         from_model and session is not None and getattr(session, "active_skill", None) == skill.name
     )
+    if skill.name in ONBOARDING_SKILL_NAMES and not already_active:
+        from tools.interactive_shell.actions.github_onboarding_gate import (
+            block_onboarding_until_github_connected,
+        )
+
+        blocked = block_onboarding_until_github_connected(skill.name, ctx)
+        if blocked is not None:
+            return blocked
     # Re-entry retains the active skill and does not reopen an answered menu.
     if session is not None and not already_active:
         session.active_skill = skill.name

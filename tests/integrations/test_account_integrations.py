@@ -260,6 +260,49 @@ def test_a_revoked_token_clears_the_snapshot_and_bumps_the_generation(
     assert acct.account_integrations_generation() == generation_after_fetch + 1
 
 
+def test_a_signed_in_org_without_github_points_at_the_app_home(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _signed_in(monkeypatch)
+    _respond_with(monkeypatch, [httpx.Response(200, json={"success": True, "data": []})])
+
+    assert acct.account_github_connection() == "missing"
+    assert acct.github_onboarding_setup_url() == "https://app.test/home?org_id=org-1"
+
+
+def test_remote_github_counts_as_connected(monkeypatch: pytest.MonkeyPatch) -> None:
+    _signed_in(monkeypatch)
+    _respond_with(monkeypatch, [httpx.Response(200, json=_vault_payload())])
+
+    assert acct.account_github_connection() == "connected"
+
+
+def test_refresh_sees_github_connected_after_the_cached_miss(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _signed_in(monkeypatch)
+    _respond_with(
+        monkeypatch,
+        [
+            httpx.Response(200, json={"success": True, "data": []}),
+            httpx.Response(200, json=_vault_payload()),
+        ],
+    )
+
+    assert acct.account_github_connection() == "missing"
+    assert acct.account_github_connection() == "missing"
+    assert acct.account_github_connection(refresh=True) == "connected"
+
+
+def test_an_unreachable_app_is_not_treated_as_missing_github(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _signed_in(monkeypatch)
+    _respond_with(monkeypatch, [httpx.ConnectError("offline")])
+
+    assert acct.account_github_connection() == "unknown"
+
+
 def _expire_ttl_after_first_load(monkeypatch: pytest.MonkeyPatch) -> int:
     """Load once, then move the clock one TTL forward; return the generation."""
     acct.load_account_integrations()

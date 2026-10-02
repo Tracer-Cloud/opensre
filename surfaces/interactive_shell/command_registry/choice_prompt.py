@@ -216,6 +216,13 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
             )
             if permission_answer is None:
                 picked_one = None
+    if picked_one is not None:
+        from surfaces.interactive_shell.command_registry.github_setup_choice import (
+            handle_github_onboarding_choice,
+        )
+
+        if handle_github_onboarding_choice(session, console, pending, picked_one):
+            return True
     capture_onboarding_choice(session.active_skill, picked_one, custom=custom_answer)
     if picked_one is None:
         capture_ask_user_prompt_dismissed(

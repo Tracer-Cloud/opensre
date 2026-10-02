@@ -12,6 +12,25 @@ SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME = "scheduling-github-ci-repairs"
 DELEGATING_GITHUB_CI_REPAIRS_SKILL_NAME = "delegating-github-ci-repairs"
 CONNECTING_SLACK_SKILL_NAME = "connecting-slack"
 
+# Every onboarding skill, master and children. A signed-in shell pauses all of
+# them until GitHub is connected in the OpenSRE app.
+ONBOARDING_SKILL_NAMES = frozenset(
+    {
+        ONBOARDING_SKILL_NAME,
+        ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME,
+        SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME,
+        DELEGATING_GITHUB_CI_REPAIRS_SKILL_NAME,
+        CONNECTING_SLACK_SKILL_NAME,
+    }
+)
+
+# Host menu shown before those skills when the signed-in org has no GitHub connection.
+GITHUB_ONBOARDING_MENU_TITLE = "Connect GitHub in the OpenSRE app"
+GITHUB_ONBOARDING_OPEN_OPTION = "Open the OpenSRE app"
+GITHUB_ONBOARDING_CONTINUE_OPTION = "I've connected GitHub — continue"
+#: ``commands`` values shaped ``github-setup:<open|continue>:<skill>``. Not a slash command.
+GITHUB_ONBOARDING_ACTION_PREFIX = "github-setup:"
+
 # Master onboarding menu the host opens on skill entry. When the four onboarding
 # children are present, the rows are the outcome choices below rather than each
 # child's ``getting_started`` label. The automation row opens a follow-up; the

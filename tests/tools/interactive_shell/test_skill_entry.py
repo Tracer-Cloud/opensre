@@ -16,7 +16,14 @@ import pytest
 from rich.console import Console
 
 import core.agent_harness.prompts.skills as skills
-from config.constants.skills import ONBOARDING_MENU_TITLE, ONBOARDING_SKILL_NAME, SKIP_DEMO_OPTION
+from config.constants.skills import (
+    GITHUB_ONBOARDING_CONTINUE_OPTION,
+    GITHUB_ONBOARDING_MENU_TITLE,
+    GITHUB_ONBOARDING_OPEN_OPTION,
+    ONBOARDING_MENU_TITLE,
+    ONBOARDING_SKILL_NAME,
+    SKIP_DEMO_OPTION,
+)
 from core.agent_harness.tools import ActionToolScope
 from surfaces.interactive_shell.session import Session
 from tests.utils.skill_cards import skill_card
@@ -98,6 +105,36 @@ def test_a_child_skill_has_no_entry_menu(demo_catalog: Path) -> None:
     assert MENU_QUEUED_INSTRUCTION not in result["content"]
 
 
+def test_signed_in_onboarding_waits_for_github_in_the_web_app(
+    demo_catalog: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = Session()
+    monkeypatch.setattr(
+        "tools.interactive_shell.actions.github_onboarding_gate.account_github_connection",
+        lambda **_kwargs: "missing",
+    )
+    monkeypatch.setattr(
+        "tools.interactive_shell.actions.github_onboarding_gate.github_onboarding_setup_url",
+        lambda: "https://app.opensre.com/home?org_id=org-1",
+    )
+
+    result = enter_skill(ONBOARDING_SKILL_NAME, _scope(session))
+
+    assert result["ok"] is True
+    assert entry_menu_queued(result)
+    assert session.active_skill is None
+    pending = session.pending_user_choice
+    assert pending is not None
+    assert pending.title == GITHUB_ONBOARDING_MENU_TITLE
+    assert pending.options == (GITHUB_ONBOARDING_OPEN_OPTION, GITHUB_ONBOARDING_CONTINUE_OPTION)
+    assert pending.custom_answer is False
+    assert "https://app.opensre.com/home?org_id=org-1" in pending.note
+    assert "onboarding-github-ci" in pending.commands[GITHUB_ONBOARDING_CONTINUE_OPTION]
+    assert ONBOARDING_MENU_TITLE not in result["content"]
+    assert session.terminal.pending_prompt_default == "/choose"
+
+
 def test_unavailable_menu_leaves_the_model_to_ask_in_text(demo_catalog: Path) -> None:
     session = Session()
 
@@ -107,6 +144,23 @@ def test_unavailable_menu_leaves_the_model_to_ask_in_text(demo_catalog: Path) ->
     assert not entry_menu_queued(result)
     assert session.pending_user_choice is None
     assert MENU_QUEUED_INSTRUCTION not in result["content"]
+
+
+def test_a_non_onboarding_skill_starts_when_github_is_missing(
+    demo_catalog: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = Session()
+    monkeypatch.setattr(
+        "tools.interactive_shell.actions.github_onboarding_gate.account_github_connection",
+        lambda **_kwargs: "missing",
+    )
+
+    result = enter_skill("first", _scope(session))
+
+    assert result["ok"] is True
+    assert session.active_skill == "first"
+    assert session.pending_user_choice is None
 
 
 def test_skill_view_without_a_session_still_returns_the_body() -> None:

@@ -22,6 +22,7 @@ import time
 from dataclasses import dataclass
 from http import HTTPStatus
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 
@@ -51,19 +52,26 @@ class _CacheState:
     fetched_at: float
     #: Whether a fetch ever succeeded; a transient failure keeps this snapshot.
     populated: bool
+    #: Last ``_FetchOutcome.kind`` (``records``, ``empty``, ``unauthorized``, ``transient``).
+    kind: str = ""
 
+
+_GITHUB_SERVICES = frozenset({"github", "github_mcp"})
 
 _lock = threading.Lock()
 _state = _CacheState(records=[], fingerprint="", generation=0, fetched_at=0.0, populated=False)
 
 
-def load_account_integrations() -> list[dict[str, Any]]:
+def load_account_integrations(*, refresh: bool = False) -> list[dict[str, Any]]:
     """Return the organization's integrations as v2 store records; never raises.
 
     Empty when the machine is signed out, the app is unreachable and no earlier
     snapshot exists, the route is absent (older app), or the response is
-    invalid. A fresh-enough snapshot is served without a request.
+    invalid. A fresh-enough snapshot is served without a request. ``refresh``
+    drops that snapshot so the next read hits the app.
     """
+    if refresh:
+        reset_account_integrations_cache()
     now = time.monotonic()
     with _lock:
         if _state.populated and now - _state.fetched_at < OPENSRE_ACCOUNT_INTEGRATIONS_TTL_SECONDS:
@@ -71,6 +79,7 @@ def load_account_integrations() -> list[dict[str, Any]]:
 
     outcome = _fetch()
     with _lock:
+        _state.kind = outcome.kind
         if outcome.kind == "records":
             _state.fetched_at = now
             _state.populated = True
@@ -107,7 +116,11 @@ def reset_account_integrations_cache() -> None:
     global _state
     with _lock:
         _state = _CacheState(
-            records=[], fingerprint="", generation=0, fetched_at=0.0, populated=False
+            records=[],
+            fingerprint="",
+            generation=0,
+            fetched_at=0.0,
+            populated=False,
         )
 
 
@@ -169,13 +182,62 @@ def _fetch() -> _FetchOutcome:
     return _FetchOutcome(kind="records", records=records, fingerprint=_fingerprint(records))
 
 
+def _active_github(records: list[dict[str, Any]]) -> bool:
+    for record in records:
+        service = str(record.get("service", "")).strip().lower()
+        status = str(record.get("status", "active")).strip().lower()
+        if service in _GITHUB_SERVICES and status == "active":
+            return True
+    return False
+
+
+def account_github_connection(*, refresh: bool = False) -> str:
+    """Whether the signed-in org's web app has GitHub: ``connected``, ``missing``, ``signed_out``, or ``unknown``.
+
+    Local credentials do not count. ``unknown`` is an unreachable app or a
+    response that is not a credential list; onboarding must not treat that as
+    "GitHub is absent".
+    """
+    record = load_account_record()
+    token = resolve_account_token()
+    if record is None or not token or not record.organization_id.strip():
+        return "signed_out"
+    records = load_account_integrations(refresh=refresh)
+    with _lock:
+        kind = _state.kind
+    if _active_github(records):
+        return "connected"
+    if kind == "records":
+        return "missing"
+    if kind == "unauthorized":
+        return "signed_out"
+    return "unknown"
+
+
+def github_onboarding_setup_url() -> str | None:
+    """Home URL where this organization connects GitHub, or None when it cannot be built."""
+    record = load_account_record()
+    if record is None or not record.organization_id.strip():
+        return None
+    try:
+        origin = normalize_account_app_url(record.app_url)
+    except ValueError:
+        return None
+    if not is_secure_account_origin(origin):
+        return None
+    org = quote(record.organization_id, safe="")
+    return f"{origin}/home?org_id={org}"
+
+
 def _fingerprint(records: list[dict[str, Any]]) -> str:
     canonical = json.dumps(records, sort_keys=True, default=str)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
 
 
 __all__ = [
+    "account_github_connection",
     "account_integrations_generation",
+    "github_onboarding_setup_url",
     "load_account_integrations",
     "reset_account_integrations_cache",
 ]
