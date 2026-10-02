@@ -199,6 +199,20 @@ def delete_account_token() -> None:
     delete_secret(OPENSRE_ACCOUNT_TOKEN_ENV)
 
 
+def webapp_base_url() -> str:
+    """The OpenSRE web app this install talks to, or "" when unknown.
+
+    A signed-in laptop uses the deployment it signed in to; a hosted gateway
+    uses the web app URL the control plane injects.
+    """
+    try:
+        record = load_account_record()
+    except Exception:
+        record = None
+    base = record.app_url if record is not None else os.getenv(WEBAPP_URL_ENV, "").strip()
+    return base.rstrip("/")
+
+
 def account_llm_route() -> AccountLLMRoute | None:
     """Return the hosted OpenAI route when this process holds an OpenSRE token.
 
@@ -253,4 +267,5 @@ __all__ = [
     "save_account_record",
     "save_account_token",
     "stored_account_token",
+    "webapp_base_url",
 ]

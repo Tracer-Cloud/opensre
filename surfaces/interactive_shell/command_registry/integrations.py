@@ -285,15 +285,24 @@ def _run_integrations_setup(session: Session, console: Console, args: list[str])
         return True
 
     service = args[1]
-    cli_cmd = " ".join(["uv run opensre integrations setup", service, *args[2:]]).strip()
+    cli_cmd = " ".join(["opensre integrations setup", service, *args[2:]]).strip()
     if headless:
-        message = (
-            f"{escape(service)} setup needs interactive credentials (API keys, URLs, tokens) "
-            f"and cannot finish in Telegram.\n\n"
-            f"Run on the server:\n  {cli_cmd}\n\n"
-            "Then check status with `/integrations list` or "
-            f"`/integrations verify {escape(service)}`."
-        )
+        from integrations.setup import web_setup_url
+
+        link = web_setup_url(service)
+        if link:
+            # A hosted agent picks up a web app connection within a minute.
+            message = (
+                f"Connect {escape(service)} for this workspace in the OpenSRE web app:\n{link}\n\n"
+                "Once it is connected I can use it here within a minute, no restart needed."
+            )
+        else:
+            message = (
+                f"{escape(service)} setup needs credentials entered privately, so it cannot "
+                f"finish in chat.\n\nRun in a terminal:\n  {cli_cmd}\n\n"
+                "Then check status with `/integrations list` or "
+                f"`/integrations verify {escape(service)}`."
+            )
         repl_print(console, message)
         publish_headless_slash_response(session, message=message, ok=True)
         session.refresh_integration_state()
@@ -307,6 +316,25 @@ def _run_integrations_setup(session: Session, console: Console, args: list[str])
     )
     session.refresh_integration_state()
     return result
+
+
+def _run_workspace_sync(session: Session, console: Console) -> bool:
+    """Pull the workspace GitHub connection from the webapp and refresh the session."""
+    from integrations.github import describe_github_sync, sync_workspace_github
+
+    prepare_repl_output_line()
+    with console.status(f"[{DIM}]Syncing workspace integrations…[/]", spinner="dots"):
+        result = sync_workspace_github()
+    message = describe_github_sync(result)
+    ok = result.status not in {"signed_out", "unavailable"}
+    repl_print(console, escape(message) if ok else f"[{ERROR}]{escape(message)}[/]")
+    if result.changed:
+        session.refresh_integration_state()
+    if session_terminal(session) is None:
+        publish_headless_slash_response(session, message=message, ok=ok)
+    elif not ok:
+        session.mark_latest(ok=False, kind="slash")
+    return True
 
 
 def _cmd_integrations(session: Session, console: Console, args: list[str]) -> bool:
@@ -339,6 +367,9 @@ def _cmd_integrations(session: Session, console: Console, args: list[str]) -> bo
 
     if sub == "remove":
         return _handle_remove(session, console, args[1] if len(args) > 1 else None)
+
+    if sub == "sync":
+        return _run_workspace_sync(session, console)
 
     if sub == "show":
         if len(args) < 2:
@@ -478,6 +509,7 @@ _INTEGRATIONS_FIRST_ARGS: tuple[tuple[str, str], ...] = (
     ("ls", "alias for list"),
     ("verify", "run health checks on all integrations"),
     ("show", "show details for a single integration"),
+    ("sync", "pull the GitHub connection from your OpenSRE workspace"),
 )
 
 _MCP_FIRST_ARGS: tuple[tuple[str, str], ...] = (
@@ -506,6 +538,7 @@ COMMANDS: list[SlashCommand] = [
             "/integrations verify <service>",
             "/integrations show <service>",
             "/integrations remove <service>",
+            "/integrations sync",
         ),
         notes=("In a TTY, bare /integrations opens an interactive menu.",),
         first_arg_completions=_INTEGRATIONS_FIRST_ARGS,

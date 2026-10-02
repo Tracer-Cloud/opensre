@@ -351,8 +351,24 @@ def _grounded_output_tools_only(result: Any) -> bool:
     any skipped step) instead of ending on raw output, matching how a teammate
     would confirm the outcome.
     """
-    names = [tool_call.name for tool_call, _tool_result in getattr(result, "tool_results", [])]
-    return bool(names) and all(name in _GROUNDED_OUTPUT_TOOL_NAMES for name in names)
+    results = list(getattr(result, "tool_results", []))
+    return bool(results) and all(
+        _returned_output(tool_call, tool_result) for tool_call, tool_result in results
+    )
+
+
+def _returned_output(tool_call: ToolCall, tool_result: Any) -> bool:
+    """True when this call handed the model the command's real output.
+
+    ``cli_exec`` counts once it ran in the foreground: its result then carries
+    stdout, which is always the case on headless surfaces (Slack, Telegram).
+    There nothing was painted, so dropping the closing left the reply as the
+    bare ``cli_command … (succeeded)`` history line.
+    """
+    if tool_call.name in _GROUNDED_OUTPUT_TOOL_NAMES:
+        return True
+    details = getattr(tool_result, "details", None)
+    return tool_call.name == "cli_exec" and isinstance(details, dict) and "stdout" in details
 
 
 def _asks_the_user(final_text: str) -> bool:

@@ -121,3 +121,14 @@ def verify_integration(
     if exit_code == 0:
         capture_integration_verified(service or "all")
     raise SystemExit(exit_code)
+
+
+@integrations.command(name="sync")
+def sync_integrations() -> None:
+    """Pull the GitHub connection from your OpenSRE workspace onto this machine."""
+    from integrations.github import describe_github_sync, sync_workspace_github
+
+    result = sync_workspace_github()
+    click.echo(describe_github_sync(result))
+    if result.status in {"signed_out", "unavailable"}:
+        raise SystemExit(1)

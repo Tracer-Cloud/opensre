@@ -11,6 +11,7 @@ from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from integrations.github.client import GitHubApiError, GitHubRestClient, resolve_github_token
+from integrations.github.envelope import github_error_unavailable
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
     github_creds,
@@ -187,8 +188,8 @@ def list_github_work_items(
             f"/repos/{owner}/{repo}/issues", params=params
         )
     except GitHubApiError as exc:
-        return tool_unavailable(
-            "github", str(exc), items=[], counts=_count_work_items([]), side_effects=[]
+        return github_error_unavailable(
+            exc, items=[], counts=_count_work_items([]), side_effects=[]
         )
     items = [
         _normalize_issue(item).to_dict()
@@ -354,8 +355,8 @@ def summarize_github_pr_status(
             fully_inspected = fully_inspected and complete_checks
             prs.append(_normalize_pull_request(detail_pr, check_runs).to_dict())
     except GitHubApiError as exc:
-        return tool_unavailable(
-            "github", str(exc), pull_requests=[], counts=_count_prs([]), side_effects=[]
+        return github_error_unavailable(
+            exc, pull_requests=[], counts=_count_prs([]), side_effects=[]
         )
     output = {
         "source": "github",
@@ -818,9 +819,8 @@ def execute_github_issue_mutation(
             "comment_already_recorded": comment_already_recorded,
         }
     except GitHubApiError as exc:
-        return tool_unavailable(
-            "github",
-            str(exc),
+        return github_error_unavailable(
+            exc,
             executed=False,
             side_effect=f"{parsed.operation}_github_issue_failed",
         )

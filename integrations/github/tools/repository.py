@@ -10,6 +10,7 @@ from core.tool import SideEffectLevel, report_run_error
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from integrations.github.client import GitHubApiError, GitHubRestClient, resolve_github_token
+from integrations.github.envelope import github_error_unavailable
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
     github_creds,
@@ -128,7 +129,7 @@ def get_github_repository(
             method="GitHubRestClient.request",
             extras={"owner": owner, "repo": repo},
         )
-        return tool_unavailable("github", str(exc), owner=owner, repo=repo, repository={})
+        return github_error_unavailable(exc, owner=owner, repo=repo, repository={})
     if not isinstance(payload, dict):
         return tool_unavailable(
             "github",

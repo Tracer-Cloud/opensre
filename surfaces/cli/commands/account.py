@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict
+from typing import TYPE_CHECKING
 
 import click
 
@@ -18,6 +19,19 @@ from surfaces.cli.account_ui import (
 from surfaces.cli.telemetry import capture_account_authenticated
 from surfaces.shared.account_credits import AccountCredits, fetch_account_credits
 from surfaces.shared.account_session import AccountSessionState, AccountStatus, account_status
+
+if TYPE_CHECKING:
+    from integrations.github import GitHubWorkspaceSyncResult
+
+
+def _sync_workspace_github() -> GitHubWorkspaceSyncResult | None:
+    """Bring the workspace GitHub connection onto this machine; never fails the login."""
+    from integrations.github import sync_workspace_github
+
+    try:
+        return sync_workspace_github()
+    except Exception:
+        return None
 
 
 def _json_enabled(ctx: click.Context) -> bool:
@@ -209,12 +223,14 @@ def account_login(
     if result.effective_token_matches_login:
         capture_account_authenticated()
     credits = fetch_account_credits(app_url=resolved_app_url).credits
+    github_sync = _sync_workspace_github()
     if json_output:
         payload = {
             "state": AccountSessionState.ACTIVE.value,
             "authenticated": True,
             "account": asdict(record),
             "warning": result.warning or None,
+            "github": github_sync.status if github_sync is not None else None,
         }
         if credits is not None:
             payload["credits"] = {
@@ -229,6 +245,10 @@ def account_login(
         return
 
     presenter.success(result, credits=credits)
+    if github_sync is not None and github_sync.status != "unavailable":
+        from integrations.github import describe_github_sync
+
+        click.echo(describe_github_sync(github_sync))
 
 
 @account_command.command(name="usage")

@@ -28,13 +28,38 @@ Once GitHub is connected, the interactive-shell **action agent** uses **`github_
 
 ## Setup
 
-### Option 1: Interactive CLI (browser sign-in)
+### Option 1: Connect in the OpenSRE web app (recommended for teams)
+
+1. In the web app, open **Settings → GitHub** and click **Connect GitHub**. Approve OpenSRE on GitHub.
+2. Everyone in the workspace now shares this connection: the hosted agent in Slack and Telegram uses it, and each signed-in CLI picks it up automatically.
+3. Your CLI syncs the connection when you sign in (`opensre account login`) and each time the interactive shell starts. After you change it in the web app, run `opensre integrations sync` (or `/integrations sync` in the shell) to pick it up right away.
+
+A GitHub setup you did yourself on a machine always wins over the workspace connection. To switch that machine to the workspace connection, run `opensre integrations remove github`, then `opensre integrations sync`.
+
+### Update GitHub permissions
+
+When the agent hits a repository or organization it cannot reach, it stops and tells you exactly what to do, with a link:
+
+| What the agent says | What to do |
+| --- | --- |
+| The organization has not approved OpenSRE | Open the link, find the organization under **Organization access**, and click **Grant** (or **Request** if you are not an owner) |
+| The organization requires SAML single sign-on | Open the link and authorize OpenSRE for that organization |
+| The connection is missing a permission, or the token was revoked | Click **Reconnect** in **Settings → GitHub** (or run `/integrations setup github`) and approve the new permissions |
+| The repository is not covered | Grant OpenSRE access to the repository's owner at the link |
+
+**Settings → GitHub → Update permissions** opens the same GitHub page at any time. Then ask the agent to retry.
+
+The hosted agent picks up a new or changed GitHub connection within a minute. If it still cannot reach GitHub, click **Sync to agent** in **Settings → GitHub**.
+
+### Option 2: Interactive CLI (browser sign-in)
 
 ```bash
 opensre integrations setup github
 ```
 
 In the interactive shell, use `/integrations setup github` or ask “Can you configure GitHub for me?”
+
+If your workspace already has GitHub connected in the web app, setup offers to use that connection instead of a separate sign-in. If it does not, setup offers to share your connection with the workspace so the hosted agent in Slack and Telegram can use GitHub too.
 
 1. Choose **Sign in with GitHub**. OpenSRE opens GitHub's device authorization page and prints a one-time code. Enter the code and approve OpenSRE; no personal access token is required.
 2. OpenSRE discovers your account and checks repository access. If GitHub or your organization has not granted access yet, approve it and retry the check without restarting setup.
@@ -44,7 +69,7 @@ This uses GitHub's OAuth device flow, which has no client secret. The public OAu
 
 If you prefer, the same prompt lets you **paste a token (PAT)** instead.
 
-### Option 2: Environment variables
+### Option 3: Environment variables
 
 ```bash
 GITHUB_MCP_AUTH_TOKEN=ghp_your_personal_access_token
@@ -64,7 +89,7 @@ GITHUB_MCP_TOOLSETS=repos,issues,pull_requests,actions  # default
 | `GITHUB_MCP_ARGS` | — | Space-separated args for `stdio` mode |
 | `OPENSRE_GITHUB_OAUTH_CLIENT_ID` | _(built-in)_ | OAuth App client id for browser sign-in (device flow). Override to use your own app |
 
-### Option 3: Persistent store
+### Option 4: Persistent store
 
 ```json
 {
@@ -145,6 +170,7 @@ Inside the REPL: `/integrations verify github` or `/verify github`. Alias: `gith
 | **Required tools missing** | Ensure toolsets include `repos` — it provides `get_file_contents`, `list_commits`, etc. |
 | **`github_cli` fails / gh not found** | Install [GitHub CLI](https://cli.github.com/) so `gh` is on `PATH`; confirm token via verify |
 | **Connection refused** | Verify `GITHUB_MCP_URL` is reachable and the MCP server is running |
+| **Connected in the web app, but the CLI does not see it** | Run `opensre integrations sync`. If it says this machine keeps its own GitHub setup, remove that setup first |
 | **Browser sign-in unavailable** | Set `OPENSRE_GITHUB_OAUTH_CLIENT_ID` to a device-flow-enabled OAuth App, or fall back to pasting a PAT |
 
 ## Security

@@ -26,6 +26,7 @@ from rich.console import Console, Group
 from rich.panel import Panel
 from rich.table import Table
 
+from config.constants.github import GITHUB_INTEGRATION_SETUP_CLI
 from config.strict_config import StrictConfigModel
 from infrastructure.terminal.theme import BRAND, DIM, ERROR, HIGHLIGHT
 from integrations._validation_helpers import report_classify_failure, report_validation_failure
@@ -656,12 +657,16 @@ def _required_oauth_scopes(err: BaseException) -> tuple[str, ...]:
 
 
 def _oauth_scope_failure_detail(scopes: Sequence[str]) -> str:
+    from integrations.github.access import github_settings_url
+
     scope_list = ", ".join(scopes)
+    settings_url = github_settings_url()
+    where = f" at {settings_url}" if settings_url else ""
     return (
         "GitHub rejected this integration because it is missing required OAuth "
-        f"access: {scope_list}. Run `opensre account login` again and approve "
-        "the GitHub repository and security permissions, or replace the integration "
-        "token with one that has those scopes."
+        f"access: {scope_list}. Reconnect GitHub{where} (or run "
+        f"`{GITHUB_INTEGRATION_SETUP_CLI}`) and approve the requested permissions, "
+        "or replace the integration token with one that has those scopes."
     )
 
 

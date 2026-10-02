@@ -586,3 +586,21 @@ def test_tool_reply_text_is_shown_when_the_model_has_no_closing() -> None:
     assert display_chunks == [card]
     assert response_text == card
     assert use_final_text is False
+
+
+def test_cli_exec_with_captured_output_keeps_the_closing_on_headless_surfaces() -> None:
+    # Slack/Telegram run cli_exec in the foreground, so the model saw stdout and
+    # nothing was painted; dropping the closing left only the history line.
+    closing = "Active integrations: GitHub (@octocat) and Slack."
+    call = ToolCall(id="1", name="cli_exec", input={"payload": "integrations list"})
+    payload = {"ok": True, "stdout": "github  active\nslack  active\n", "exit_code": 0}
+    result = _Result(tool_results=[(call, _ToolResult(payload))], final_text=closing)
+    entry = {"type": "cli_command", "text": "opensre integrations list", "ok": True}
+
+    response_text, display_chunks, use_final_text = _compose_response(
+        result, _Session(), _counts(1, executed_entries=[entry])
+    )
+
+    assert use_final_text is True
+    assert closing in "\n".join(display_chunks)
+    assert closing in response_text

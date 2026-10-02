@@ -47,6 +47,12 @@ _LAZY_EXPORTS: dict[str, str] = {
     "GitHubDeviceFlowError": "integrations.github.mcp_oauth",
     "authorize_github_via_device_flow": "integrations.github.mcp_oauth",
     "disconnect_personal_github": "integrations.github.personal_account",
+    "GitHubWorkspaceSyncResult": "integrations.github.workspace_sync",
+    "sync_workspace_github": "integrations.github.workspace_sync",
+    "describe_github_sync": "integrations.github.workspace_sync",
+    "GitHubAccessIssue": "integrations.github.access",
+    "classify_github_access_failure": "integrations.github.access",
+    "github_settings_url": "integrations.github.access",
     "Analysis": "integrations.github.tools.ci_analytics.analysis",
     "analyze_repository": "integrations.github.tools.ci_analytics.analysis",
     "ci_report_headline": "integrations.github.tools.ci_analytics.render",
@@ -73,6 +79,11 @@ def __getattr__(name: str) -> object:
 
 
 if TYPE_CHECKING:
+    from integrations.github.access import (
+        GitHubAccessIssue,
+        classify_github_access_failure,
+        github_settings_url,
+    )
     from integrations.github.cli_setup import setup_github
     from integrations.github.helpers import github_creds
     from integrations.github.identity import saved_github_username
@@ -124,6 +135,11 @@ if TYPE_CHECKING:
     from integrations.github.tools.ci_analytics.render import ci_report_headline
     from integrations.github.tools.ci_fix.ledger import count_ci_fixes, get_ci_fix_counter
     from integrations.github.tools.ci_repair_loop.worker import run_ci_repair_worker
+    from integrations.github.workspace_sync import (
+        GitHubWorkspaceSyncResult,
+        describe_github_sync,
+        sync_workspace_github,
+    )
 
 
 __all__ = [
@@ -156,6 +172,12 @@ __all__ = [
     "ci_report_headline",
     "count_ci_fixes",
     "disconnect_personal_github",
+    "GitHubAccessIssue",
+    "GitHubWorkspaceSyncResult",
+    "classify_github_access_failure",
+    "github_settings_url",
+    "sync_workspace_github",
+    "describe_github_sync",
     "format_github_mcp_validation_cli_report",
     "get_ci_fix_counter",
     "github_creds",

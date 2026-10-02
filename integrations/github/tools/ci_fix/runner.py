@@ -28,6 +28,7 @@ from integrations.git import (
     head_sha,
     merge_commit_edits,
 )
+from integrations.github.access import classify_github_access_failure
 from integrations.github.ci_epochs import publish_repair_epoch
 from integrations.github.client import resolve_github_token
 from integrations.github.repair_workspace import repair_workspace
@@ -302,24 +303,39 @@ def with_push_output(
     }
 
 
+def _access_fields(message: str) -> dict[str, str]:
+    """The user's fix when GitHub refused for lack of access, so the agent can ask for it."""
+    issue = classify_github_access_failure(status_code=None, message=message)
+    return issue.as_payload() if issue is not None else {}
+
+
+def _failure_text(message: str, access: dict[str, str]) -> str:
+    text = _single_line(message)
+    return f"{text} {access['user_action']}" if access else text
+
+
 def push_error_output(output: dict[str, Any], exc: GitHubCiFixError) -> dict[str, Any]:
+    access = _access_fields(exc.message)
     return {
         **output,
         "success": False,
         "error_kind": exc.kind,
         "error": exc.message,
-        "response_text": _single_line(exc.message),
+        "response_text": _failure_text(exc.message, access),
         "branch_name": exc.branch_name,
+        **access,
     }
 
 
 def error_output(kind: str, message: str, ctx: CiFixContext | None = None) -> dict[str, Any]:
+    access = _access_fields(message)
     output = {
         **_base_output(ctx),
         "success": kind == ERR_NO_FAILING_CHECKS,
         "error_kind": kind,
         "error": message,
-        "response_text": _single_line(message),
+        "response_text": _failure_text(message, access),
+        **access,
     }
     if kind == ERR_NO_FAILING_CHECKS:
         del output["error"]

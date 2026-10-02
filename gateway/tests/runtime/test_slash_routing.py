@@ -88,14 +88,28 @@ def test_gateway_integrations_setup_returns_headless_guidance(
         _fake_run_cli_command,
     )
 
+    monkeypatch.delenv("OPENSRE_WEBAPP_URL", raising=False)
+
     sink = _run_gateway_slash("/integrations setup grafana")
     assert recorded == []
     assert sink.finalized is not None
     assert "grafana" in sink.finalized.lower()
     assert "succeeded" not in sink.finalized.lower()
     assert "timed out" not in sink.finalized.lower()
-    assert "uv run opensre integrations setup grafana" in sink.finalized
+    assert "opensre integrations setup grafana" in sink.finalized
     assert "Launching" not in (sink.finalized or "")
+
+
+def test_hosted_gateway_integrations_setup_links_to_the_web_app(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A hosted gateway sends the user to the web app page that connects the service."""
+    monkeypatch.setenv("OPENSRE_WEBAPP_URL", "https://app.example.com")
+
+    sink = _run_gateway_slash("/integrations setup github")
+    assert sink.finalized is not None
+    assert "https://app.example.com/settings/github" in sink.finalized
+    assert "opensre integrations setup" not in sink.finalized
 
 
 def test_gateway_integrations_setup_returns_headless_guidance_even_with_tty(

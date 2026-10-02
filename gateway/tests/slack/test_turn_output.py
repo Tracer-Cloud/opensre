@@ -428,3 +428,18 @@ def test_error_after_partial_stream_appends_error_copy() -> None:
     assert "Something went wrong" in markdown
     assert "db-host" not in markdown
     assert len(client.stream_stops) == 1
+
+
+def test_status_printed_after_the_answer_does_not_replace_it() -> None:
+    # Production: chat.startStream failed, the answer was edited into the
+    # placeholder, then the completed-plan checklist was printed and edited
+    # over it, so the thread showed only "Plan complete · 3/3 ✓ …".
+    client = _FakeMessagingClient()
+    sink = _sink(client)
+
+    sink.stream(label="OpenSRE", chunks=iter(["Today: 5 commits merged to main."]))
+    answer_edits = len(client.updates)
+    sink.print("Plan complete · 3/3 ✓ Identify the repository ✓ Collect commits ✓ Verify")
+
+    assert len(client.updates) == answer_edits
+    assert "5 commits" in client.updates[-1]["text"]

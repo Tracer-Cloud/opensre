@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 from urllib import error, parse, request
 
 from config.constants import (
@@ -14,6 +14,9 @@ from config.constants import (
     GITHUB_MCP_AUTH_TOKEN_ENV,
     GITHUB_TOKEN_ENV,
 )
+
+if TYPE_CHECKING:
+    from integrations.github.access import GitHubAccessIssue
 
 JsonPayload = dict[str, Any] | list[Any]
 
@@ -35,11 +38,33 @@ class GitHubApiError(RuntimeError):
     path: str = ""
     rate_limit_remaining: str | None = None
     rate_limit_reset: str | None = None
+    access: GitHubAccessIssue | None = None
 
     def __str__(self) -> str:
-        if self.status_code is None:
-            return self.message
-        return f"GitHub API error {self.status_code}: {self.message}"
+        text = (
+            self.message
+            if self.status_code is None
+            else f"GitHub API error {self.status_code}: {self.message}"
+        )
+        # Tools surface str(exc) to the agent; the fix travels with the failure.
+        return f"{text}\n{self.access.user_action}" if self.access is not None else text
+
+
+def _http_error(exc: error.HTTPError, *, detail: str, path: str, token: str) -> GitHubApiError:
+    from integrations.github.access import classify_github_access_failure
+
+    message = detail or exc.msg or "GitHub API request failed."
+    headers = exc.headers
+    return GitHubApiError(
+        message,
+        status_code=exc.code,
+        path=path,
+        rate_limit_remaining=headers.get("X-RateLimit-Remaining") if headers else None,
+        rate_limit_reset=headers.get("X-RateLimit-Reset") if headers else None,
+        access=classify_github_access_failure(
+            status_code=exc.code, message=message, headers=headers, token=token, path=path
+        ),
+    )
 
 
 def resolve_github_token(github_token: str | None = None) -> str:
@@ -125,16 +150,7 @@ class GitHubRestClient:
             detail = ""
             if exc.fp is not None:
                 detail = exc.read().decode("utf-8", errors="replace")
-            message = detail or exc.msg or "GitHub API request failed."
-            raise GitHubApiError(
-                message,
-                status_code=exc.code,
-                path=path,
-                rate_limit_remaining=exc.headers.get("X-RateLimit-Remaining")
-                if exc.headers
-                else None,
-                rate_limit_reset=exc.headers.get("X-RateLimit-Reset") if exc.headers else None,
-            ) from exc
+            raise _http_error(exc, detail=detail, path=path, token=self._token) from exc
         except error.URLError as exc:
             raise GitHubApiError(f"GitHub API request failed: {exc.reason}", path=path) from exc
 
@@ -184,15 +200,7 @@ class GitHubRestClient:
                     headers = getattr(response, "headers", {})
             except error.HTTPError as exc:
                 detail = exc.read().decode("utf-8", errors="replace") if exc.fp else ""
-                raise GitHubApiError(
-                    detail or exc.msg or "GitHub API request failed.",
-                    status_code=exc.code,
-                    path=path,
-                    rate_limit_remaining=exc.headers.get("X-RateLimit-Remaining")
-                    if exc.headers
-                    else None,
-                    rate_limit_reset=exc.headers.get("X-RateLimit-Reset") if exc.headers else None,
-                ) from exc
+                raise _http_error(exc, detail=detail, path=path, token=self._token) from exc
             except error.URLError as exc:
                 raise GitHubApiError(f"GitHub API request failed: {exc.reason}", path=path) from exc
 

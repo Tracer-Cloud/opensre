@@ -202,6 +202,88 @@ def _github_advanced_setup(credentials: dict[str, Any]) -> tuple[str, str]:
     return repo_view, repo_visibility
 
 
+def _use_workspace_github(ui: TerminalSetupUI) -> str | None:
+    """Offer the workspace's GitHub connection; return its login when the user takes it.
+
+    Returns ``None`` (fall through to sign-in) when signed out, the webapp has no
+    GitHub connection, the sync fails, or the user prefers a separate sign-in;
+    otherwise the login, which is "" when the webapp did not report one.
+    """
+    from integrations.github.workspace_sync import (
+        describe_github_sync,
+        fetch_workspace_github,
+        sync_workspace_github,
+    )
+
+    payload = fetch_workspace_github()
+    if payload is None or payload.get("connected") is not True:
+        return None
+    username = str(payload.get("username") or "").strip()
+    label = f"@{username}" if username else "your workspace account"
+    choice = _select(
+        "Your OpenSRE workspace already has GitHub connected. Use it here?",
+        choices=[
+            questionary.Choice(
+                f"Use the workspace connection ({label}) — recommended", value="use"
+            ),
+            questionary.Choice("Sign in separately on this machine", value="separate"),
+        ],
+        default="use",
+    )
+    if choice is None:
+        print("\nAborted.")
+        sys.exit(1)
+    if choice != "use":
+        return None
+    result = sync_workspace_github(replace_manual=True)
+    ui.say(describe_github_sync(result))
+    if result.status not in {"connected", "updated", "unchanged"}:
+        return None
+    return result.username or username
+
+
+def _offer_workspace_share(ui: TerminalSetupUI, auth_token: str) -> None:
+    """Offer to share a verified connection with the workspace's hosted agent.
+
+    Asked only when signed in and the workspace has no GitHub yet, so an
+    existing workspace connection is never replaced from a laptop.
+    """
+    from integrations.github.workspace_sync import (
+        fetch_workspace_github,
+        share_github_with_workspace,
+    )
+
+    if not auth_token:
+        return
+    payload = fetch_workspace_github()
+    if payload is None or payload.get("connected") is True:
+        return
+    choice = _select(
+        "Share this GitHub connection with your OpenSRE workspace? The hosted agent "
+        "(Slack, Telegram) and your teammates' CLIs will use it.",
+        choices=[
+            questionary.Choice("Yes, share it with the workspace", value="share"),
+            questionary.Choice("No, keep it on this machine only", value="local"),
+        ],
+        default="share",
+    )
+    if choice != "share":
+        return
+    result = share_github_with_workspace(auth_token)
+    if not result.ok:
+        ui.say(
+            "Could not share GitHub with the workspace. Connect it in the web app "
+            "under Settings → GitHub instead."
+        )
+    elif result.delivered_to_agent:
+        ui.say("Shared with your workspace. The hosted agent can use GitHub within a minute.")
+    else:
+        ui.say(
+            "Shared with your workspace. Your hosted agent is not set up yet; it gets "
+            "GitHub as soon as it is."
+        )
+
+
 def setup_github() -> str | None:
     """Configure + validate + save the GitHub MCP integration.
 
@@ -231,6 +313,9 @@ def setup_github() -> str | None:
     from integrations.setup_flow import apply_setup
 
     ui = TerminalSetupUI()
+    workspace_login = _use_workspace_github(ui)
+    if workspace_login is not None:
+        return workspace_login
     ui.say("I'll guide you through three steps. Press Ctrl+C at any time to cancel.")
     ui.step("one", "Sign in to GitHub")
     print("  Connect OpenSRE to your GitHub repositories.")
@@ -337,4 +422,5 @@ def setup_github() -> str | None:
         ui.say(
             "No repositories were returned. Check repository access or organization approval before requesting repository work."
         )
+    _offer_workspace_share(ui, values["auth_token"])
     return result.authenticated_user

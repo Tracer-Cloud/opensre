@@ -228,9 +228,11 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
     ),
     "/integrations": _mcp(
         "Connect an integration with setup <service>; guide the human through sign-in and verify it. "
-        "Other subcommands: list, verify, show <service>, remove.",
+        "Other subcommands: list, verify, show <service>, remove, and sync (pull the GitHub "
+        "connection from the user's OpenSRE workspace after they connect or update it in the webapp).",
         "User asks Can you configure Telegram for me? (setup telegram)",
         "User asks to connect GitHub or PostHog (setup github or setup posthog)",
+        "User says they connected or updated GitHub permissions in the webapp (sync)",
         "User asks to verify an integration by name",
         "User asks to show details for a configured integration",
         anti_examples=(

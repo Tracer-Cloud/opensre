@@ -8,8 +8,8 @@ from typing import Any
 from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel
 from core.tool_framework import tool
-from core.tool_framework.utils import tool_unavailable
 from integrations.github.client import GitHubApiError, GitHubRestClient, resolve_github_token
+from integrations.github.envelope import github_error_unavailable
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
     github_creds,
@@ -100,9 +100,8 @@ def summarize_community_followups(
                 },
             )
     except GitHubApiError as exc:
-        return tool_unavailable(
-            "github",
-            str(exc),
+        return github_error_unavailable(
+            exc,
             unanswered_questions=[],
             agenda_items=[],
             suggested_replies=[],

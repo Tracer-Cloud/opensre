@@ -14,6 +14,7 @@ from core.tool import SideEffectLevel, report_run_error
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from integrations.github.client import GitHubApiError, GitHubRestClient, resolve_github_token
+from integrations.github.envelope import github_error_unavailable
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
     github_creds,
@@ -200,9 +201,8 @@ def get_github_star_history(
             method="GitHubRestClient.request",
             extras={"owner": owner, "repo": repo, "stage": "repository"},
         )
-        return tool_unavailable(
-            "github",
-            str(exc),
+        return github_error_unavailable(
+            exc,
             owner=owner,
             repo=repo,
             repository=f"{owner}/{repo}",

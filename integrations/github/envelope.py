@@ -6,6 +6,14 @@ import json
 from typing import Any
 
 from core.tool_framework.utils import tool_unavailable
+from integrations.github.access import classify_github_access_failure
+from integrations.github.client import GitHubApiError
+
+
+def github_error_unavailable(exc: GitHubApiError, **extra: Any) -> dict[str, Any]:
+    """Unavailable payload for a REST failure, with the access fix when there is one."""
+    access = exc.access.as_payload() if exc.access is not None else {}
+    return tool_unavailable("github", str(exc), **access, **extra)
 
 
 def _structured_content_or_text_fallback(result: dict[str, Any]) -> Any:
@@ -40,11 +48,14 @@ def normalize_github_tool_result(result: dict[str, Any]) -> dict[str, Any]:
     ``structured_content`` normalized via :func:`_structured_content_or_text_fallback`.
     """
     if result.get("is_error"):
+        message = str(result.get("text") or "GitHub MCP tool call failed.")
+        issue = classify_github_access_failure(status_code=None, message=message)
         return tool_unavailable(
             "github",
-            result.get("text") or "GitHub MCP tool call failed.",
+            f"{message}\n{issue.user_action}" if issue is not None else message,
             tool=result.get("tool"),
             arguments=result.get("arguments", {}),
+            **(issue.as_payload() if issue is not None else {}),
         )
     return {
         "source": "github",

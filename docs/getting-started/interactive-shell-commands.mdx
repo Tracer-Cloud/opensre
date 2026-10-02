@@ -578,6 +578,7 @@ Shortcut for integration connectivity checks (same as `opensre integrations veri
 /integrations setup datadog
 /integrations setup telegram
 /integrations remove datadog
+/integrations sync
 ```
 
 | Subcommand | Behavior |
@@ -588,6 +589,7 @@ Shortcut for integration connectivity checks (same as `opensre integrations veri
 | `show &lt;service&gt;` | Verify one service and print key/value config (masked secrets) |
 | `setup &lt;service&gt;` | Guided setup with sign-in instructions, discovery, and verification |
 | `remove &lt;service&gt;` | Remove from local store **elevated** |
+| `sync` | Pull the GitHub connection from your OpenSRE workspace (after connecting or updating it in the web app) |
 
 You can ask “Can you configure Telegram/GitHub/PostHog for me?” to start the same guided flow. It explains each human action before requesting input, discovers IDs where possible, and lets you retry failed checks. Enter credentials only in the setup flow's hidden input.
 

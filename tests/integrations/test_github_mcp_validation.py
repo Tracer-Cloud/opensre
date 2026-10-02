@@ -874,7 +874,7 @@ def test_validate_github_mcp_config_reports_scope_challenge_as_authentication(
     assert result.ok is False
     assert result.failure_category == "authentication"
     assert "repo, security_events" in result.detail
-    assert "account login" in result.detail
+    assert "opensre integrations setup github" in result.detail
 
 
 def test_validate_github_mcp_config_reports_session_open_failure_as_connectivity(

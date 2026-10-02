@@ -210,6 +210,11 @@ class SlackTurnOutput:
                     )
                     is not None
                 )
+            if delivered:
+                # Release the message: a status printed after the answer (the
+                # completed-plan checklist) edited it and replaced the answer.
+                # Telegram and Discord release theirs the same way.
+                self._message_ts = None
         if delivered:
             logger.info(
                 "outbound channel=%s thread_ts=%s mode=%s chars=%d",

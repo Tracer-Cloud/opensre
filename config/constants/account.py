@@ -18,6 +18,10 @@ OPENSRE_ACCOUNT_EXCHANGE_PATH = "/api/auth/cli/exchange"
 OPENSRE_ACCOUNT_SESSION_PATH = "/api/auth/cli/session"
 OPENSRE_ACCOUNT_CREDITS_PATH = "/api/credits/balance"
 OPENSRE_ACCOUNT_USAGE_PATH = "/usage"
+#: Workspace GitHub connection for a signed-in CLI (token included; no-store).
+OPENSRE_ACCOUNT_GITHUB_PATH = "/api/auth/cli/integrations/github"
+#: Webapp page with the workspace's GitHub connect / update-permissions buttons.
+OPENSRE_GITHUB_SETTINGS_PATH = "/settings/github"
 OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS = 15.0
 OPENSRE_APP_URL_DEFAULT = "https://app.opensre.com"
 OPENSRE_APP_URL_DEV = "http://localhost:3000"
@@ -27,6 +31,8 @@ OPENSRE_STAFF_EMAIL_DOMAIN = "@opensre.com"
 
 __all__ = [
     "OPENSRE_ACCOUNT_FILENAME",
+    "OPENSRE_ACCOUNT_GITHUB_PATH",
+    "OPENSRE_GITHUB_SETTINGS_PATH",
     "OPENSRE_ACCOUNT_METADATA_PATH_ENV",
     "OPENSRE_ACCOUNT_LLM_BASE_PATH",
     "OPENSRE_ACCOUNT_LLM_MODEL_ENV",

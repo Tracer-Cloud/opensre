@@ -26,6 +26,7 @@ from surfaces.interactive_shell.runtime.startup.account_gate import (
     pass_sign_in_gate,
 )
 from surfaces.interactive_shell.runtime.startup.demo_picker import offer_demo
+from surfaces.interactive_shell.runtime.startup.github_sync import start_workspace_github_sync
 from surfaces.interactive_shell.runtime.startup.initial_input import run_initial_input
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui.terminal_ui import render_terminal_ui
@@ -93,12 +94,17 @@ async def run_repl_async(
     runtime_context = create_repl_runtime(session=_new_shell_session())
     session = runtime_context.session
     session.terminal.cli_command_group = cli_command_group
+    github_sync = start_workspace_github_sync(session)
 
     if initial_input:
         if after_banner is not None:
             after_banner()
         session.warm_resolved_integrations()
-        return run_initial_input(initial_input, session, out)
+        try:
+            return run_initial_input(initial_input, session, out)
+        finally:
+            if github_sync is not None:
+                github_sync.stop()
 
     # The sign-in gate runs once, in the synchronous ``run_repl`` entrypoint,
     # where it interleaves with the launch-banner paint. This coroutine is the
@@ -140,6 +146,8 @@ async def run_repl_async(
         ).start_interactive_shell()
         return 0
     finally:
+        if github_sync is not None:
+            github_sync.stop()
         # True end-of-run teardown: persist and release the session's resources.
         _close_repl_session(session, runtime_context.state)
 

@@ -21,6 +21,9 @@ if TYPE_CHECKING:
         OPENSRE_ACCOUNT_FILENAME as OPENSRE_ACCOUNT_FILENAME,
     )
     from config.constants.account import (
+        OPENSRE_ACCOUNT_GITHUB_PATH as OPENSRE_ACCOUNT_GITHUB_PATH,
+    )
+    from config.constants.account import (
         OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS as OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS,
     )
     from config.constants.account import (
@@ -52,6 +55,9 @@ if TYPE_CHECKING:
     )
     from config.constants.account import (
         OPENSRE_GATEWAY_LLM_MODEL_DEFAULT as OPENSRE_GATEWAY_LLM_MODEL_DEFAULT,
+    )
+    from config.constants.account import (
+        OPENSRE_GITHUB_SETTINGS_PATH as OPENSRE_GITHUB_SETTINGS_PATH,
     )
     from config.constants.account import (
         OPENSRE_STAFF_EMAIL_DOMAIN as OPENSRE_STAFF_EMAIL_DOMAIN,

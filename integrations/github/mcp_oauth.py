@@ -31,9 +31,16 @@ GITHUB_ACCESS_TOKEN_URL = "https://github.com/login/oauth/access_token"
 GITHUB_DEVICE_VERIFICATION_URL = "https://github.com/login/device"
 _DEVICE_GRANT_TYPE = "urn:ietf:params:oauth:grant-type:device_code"
 
-# Read-oriented repository investigation scopes. All are listed in the GitHub MCP
-# server's advertised ``scopes_supported``.
-DEFAULT_GITHUB_OAUTH_SCOPES: tuple[str, ...] = ("repo", "read:org", "read:user")
+# What the agent's GitHub tools use, and the same set the webapp's Connect button
+# requests: repository read/write and PRs, org repos, identity, workflow files
+# (CI repair pushes), and code-scanning alerts (security fixes).
+DEFAULT_GITHUB_OAUTH_SCOPES: tuple[str, ...] = (
+    "repo",
+    "read:org",
+    "read:user",
+    "workflow",
+    "security_events",
+)
 
 # Public OAuth App client id shipped with OpenSRE (device flow enabled). This is
 # NOT a secret — device flow has no client secret. Override at runtime with
