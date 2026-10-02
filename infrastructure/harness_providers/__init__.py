@@ -62,6 +62,7 @@ from infrastructure.harness_providers.integration_resolution import (
     integration_sources_stamp,
     resolve_integrations,
     resolve_integrations_with_metadata,
+    select_github_connection,
     setupable_integration_services,
 )
 from infrastructure.harness_providers.integration_resolution import (
@@ -224,6 +225,7 @@ __all__ = [
     "reset_harness_providers",
     "resolve_integrations",
     "resolve_integrations_with_metadata",
+    "select_github_connection",
     "resolve_runbook_source",
     "resolve_subprocess_presenter",
     "resolve_surface_tool_map",

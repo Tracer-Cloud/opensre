@@ -243,6 +243,11 @@ def resolve_integrations(state: Mapping[str, Any] | None = None) -> dict[str, An
     return resolve_integrations_with_metadata(state).resolved_integrations
 
 
+def select_github_connection(resolved: dict[str, Any], connection_id: str | None) -> dict[str, Any]:
+    """Apply the connection choice to an already resolved integration snapshot."""
+    return _adapters().select_github_connection(resolved, connection_id)
+
+
 def resolve_integrations_with_metadata(
     state: Mapping[str, Any] | None = None,
 ) -> IntegrationResolutionResult:
@@ -255,7 +260,7 @@ def resolve_integrations_with_metadata(
         if state and "github_connection_id" in state
         else current_github_connection_id()
     )
-    selected = _adapters().select_github_connection(result.resolved_integrations, connection_id)
+    selected = select_github_connection(result.resolved_integrations, connection_id)
     return result.model_copy(update={"resolved_integrations": selected})
 
 
@@ -461,5 +466,6 @@ __all__ = [
     "integration_sources_stamp",
     "resolve_integrations",
     "resolve_integrations_with_metadata",
+    "select_github_connection",
     "setupable_integration_services",
 ]

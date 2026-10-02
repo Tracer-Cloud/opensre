@@ -20,8 +20,12 @@ from infrastructure.harness_providers import (
     IntegrationResolutionResult,
     integration_sources_stamp,
     resolve_integrations,
+    select_github_connection,
 )
-from infrastructure.harness_providers.integration_selection import current_github_connection_id
+from infrastructure.harness_providers.integration_selection import (
+    bound_github_connection,
+    current_github_connection_id,
+)
 
 if TYPE_CHECKING:
     from core.agent_harness.ports import SessionState
@@ -108,21 +112,20 @@ def resolve_and_cache_integrations(session: SessionState) -> dict[str, Any]:
     if _has_usable_cache(cached):
         if not cached:
             return {}
-        return resolve_integrations(
-            {
-                "resolved_integrations": cached or {},
-                "github_connection_id": getattr(state, "github_connection_id", None),
-            }
-        )
+        return select_github_connection(cached or {}, getattr(state, "github_connection_id", None))
 
-    resolved = resolve_integrations(
-        {"github_connection_id": getattr(state, "github_connection_id", None)}
-    )
+    resolved = _resolve_for_connection(getattr(state, "github_connection_id", None))
     if resolved:
         session.resolved_integrations_cache = merge_resolved_integrations(cached, resolved)
         if isinstance(state, IntegrationState):
             state.store_stamp = stamp
     return dict(session.resolved_integrations_cache or {})
+
+
+def _resolve_for_connection(connection_id: str | None) -> dict[str, Any]:
+    with bound_github_connection(connection_id):
+        resolved = resolve_integrations()
+    return select_github_connection(resolved, connection_id)
 
 
 def _built_from_another_store(state: Any, stamp: tuple[int, int]) -> bool:
@@ -204,7 +207,7 @@ class IntegrationState:
         # older stamp and is re-resolved on the next turn.
         stamp = integration_sources_stamp()
         try:
-            resolved = resolve_integrations({"github_connection_id": self.github_connection_id})
+            resolved = _resolve_for_connection(self.github_connection_id)
         except Exception:
             # Best-effort warmup: leave cache unset so later turns can retry.
             return
@@ -234,11 +237,8 @@ class IntegrationState:
             if not cached:
                 return IntegrationResolutionResult(resolved_integrations={})
             return IntegrationResolutionResult(
-                resolved_integrations=resolve_integrations(
-                    {
-                        "resolved_integrations": cached or {},
-                        "github_connection_id": self.github_connection_id,
-                    }
+                resolved_integrations=select_github_connection(
+                    cached or {}, self.github_connection_id
                 )
             )
         self.warm()
