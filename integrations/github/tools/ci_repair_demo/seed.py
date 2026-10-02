@@ -184,11 +184,7 @@ def _seed_named(
             {"calculator.py": FAILING_CALCULATOR},
             "Demo: expose an addition bug with a real test",
         )
-        client.request(
-            "POST",
-            f"{path}/git/refs",
-            body={"ref": f"refs/heads/{FAILING_BRANCH}", "sha": head_sha},
-        )
+        _advance_ref(client, path, FAILING_BRANCH, head_sha, force=False)
         pull = object_response(
             client.request(
                 "POST",
