@@ -89,6 +89,7 @@ _WAIT_FOR_COMPLETION_COMMANDS: frozenset[str] = frozenset(
         "/credits",
         "/auth",
         "/login",
+        "/logout",
         # ``/goal set|resume`` queues the condition as the next prompt turn.
         # Wait for the slash turn to finish so the work prompt renders as its
         # own ``[N] ❯`` line (not buried under the set paint / ``$`` echo).

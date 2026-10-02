@@ -108,8 +108,9 @@ class TestDispatchSlash:
         assert "timed out" in buf.getvalue()
         assert session.history[-1]["ok"] is False
 
+    @pytest.mark.parametrize("command", ["/account logout", "/logout"])
     def test_account_logout_closes_shell_before_another_model_turn(
-        self, monkeypatch: pytest.MonkeyPatch
+        self, monkeypatch: pytest.MonkeyPatch, command: str
     ) -> None:
         from surfaces.interactive_shell.command_registry import cli_parity as m
 
@@ -117,8 +118,24 @@ class TestDispatchSlash:
         monkeypatch.setattr("config.account.account_llm_route", lambda: None)
         console, output = _capture()
 
-        assert dispatch_slash("/account logout", Session(), console) is False
+        assert dispatch_slash(command, Session(), console) is False
         assert "Closing the interactive shell" in output.getvalue()
+
+    def test_logout_with_a_provider_does_not_sign_out(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        from surfaces.interactive_shell.command_registry import cli_parity as m
+
+        def _unexpected_cli(*_args: object, **_kwargs: object) -> bool:
+            raise AssertionError("provider arguments must not sign out of the account")
+
+        monkeypatch.setattr(m, "run_cli_command", _unexpected_cli)
+        console, output = _capture()
+
+        assert dispatch_slash("/logout deepseek", Session(), console) is True
+        text = output.getvalue()
+        assert "/auth logout deepseek" in text
+        assert "Closing the interactive shell" not in text
 
     def test_help_lists_all_commands(self) -> None:
         session = Session()

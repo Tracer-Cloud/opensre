@@ -158,7 +158,8 @@ These commands delegate to the same Click CLI you would run outside the REPL.
 | `/credits` | Remaining hosted credits for the signed-in account (same as `opensre credits`) |
 | `/setup` | First-run setup: account sign-in, hosted model, then the shell (same as `opensre setup`) |
 | `/auth` | Log in to LLM providers, show provider auth status, or clear credentials |
-| `/login` | Shortcut for `/auth login` (`/login openai`, `/login anthropic`, `/login deepseek`) |
+| `/login` | Shortcut for `/auth login` (`/login openai`, `/login anthropic`, `/login deepseek`). Signs in an LLM provider, not the OpenSRE account |
+| `/logout` | Sign out of the OpenSRE account and close the shell (same as `/account logout`) |
 | `/onboard` | Interactive onboarding wizard |
 | `/remote` | Connect to and operate remote deployed agents |
 | `/remote-sync` | Manage remote sync to your object store. Subcommands: `status`, `sync`, `setup`. See [Sync to your own object store](/install/remote-sync). |
@@ -905,7 +906,7 @@ These spawn `opensre …` subprocesses. Output is captured into the REPL buffer 
 /account logout
 ```
 
-Sign in to a personal OpenSRE account, inspect the local login, show remaining hosted credits (`/account credits` or `/credits`, same as `opensre credits`), open the credits and top-up page (`/account usage`, opens your browser; from a chat it replies with the link), or sign out. Same as `opensre account`. The browser opens the OpenSRE sign-up page, where you can use email or any enabled sign-in provider. The shell starts only for an `active` account state. `/account logout` revokes the saved session, invalidates the hosted-model route, and closes the shell before another turn. If `OPENSRE_ACCOUNT_TOKEN` is set in the environment, it overrides the token saved by login until you unset it.
+Sign in to a personal OpenSRE account, inspect the local login, show remaining hosted credits (`/account credits` or `/credits`, same as `opensre credits`), open the credits and top-up page (`/account usage`, opens your browser; from a chat it replies with the link), or sign out. Same as `opensre account`. The browser opens the OpenSRE sign-up page, where you can use email or any enabled sign-in provider. The shell starts only for an `active` account state. `/logout` (same as `/account logout`) revokes the saved session, invalidates the hosted-model route, and closes the shell before another turn. If `OPENSRE_ACCOUNT_TOKEN` is set in the environment, it overrides the token saved by login until you unset it.
 
 </Accordion>
 
@@ -954,7 +955,17 @@ Log in to LLM providers, show local auth status, or clear stored credentials. Sa
 /login deepseek
 ```
 
-Shortcut for `/auth login`. Same provider flows as `opensre auth login`.
+Shortcut for `/auth login`. Same provider flows as `opensre auth login`. This signs in an LLM provider. Sign in to an OpenSRE account with `/account login`, and sign out of that account with `/logout`.
+
+</Accordion>
+
+<Accordion title="/logout">
+
+```text
+/logout
+```
+
+Sign out of the OpenSRE account and close the shell. Same as `/account logout`: it revokes the saved session and drops the hosted-model route before another turn. It does not clear an LLM provider credential — use `/auth logout <provider>` for that.
 
 </Accordion>
 
@@ -1364,7 +1375,7 @@ Continue chatting, then optionally:
 | `/cost` shows zero | No LLM turns yet this session; chat once and retry |
 | `/resume` not found | Run `/sessions`; use longer ID prefix |
 | `/resume` ambiguous prefix | Add more characters from Session ID column |
-| `/model set` reports an account lock | The hosted model is working as designed; `/account logout` closes the shell rather than switching it to a local provider |
+| `/model set` reports an account lock | The hosted model is working as designed; `/logout` closes the shell rather than switching it to a local provider |
 | `/integrations show` not found | Run `/integrations list` for exact service slug |
 | History pause not working | Requires redacting backend — see `/privacy` |
 | Garbage in next prompt after table | Known TTY issue — upgrade OpenSRE; report if persistent |

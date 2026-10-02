@@ -505,6 +505,22 @@ def _cmd_login(session: Session, console: Console, args: list[str]) -> bool:  # 
     return run_cli_command(console, ["auth", "login", *args], capture_output=False, session=session)
 
 
+def _validate_logout_args(args: list[str]) -> str | None:
+    """Reject provider names so ``/logout`` cannot be read as ``/auth logout``."""
+    if not args:
+        return None
+    provider = escape(args[0])
+    return (
+        f"[{ERROR}]/logout[/] signs out of the OpenSRE account and takes no arguments. "
+        f"To clear an LLM provider credential, run [bold]/auth logout {provider}[/bold]."
+    )
+
+
+def _cmd_logout(session: Session, console: Console, args: list[str]) -> bool:  # noqa: ARG001
+    """Sign out of the OpenSRE account. Same close-the-shell path as ``/account logout``."""
+    return _cmd_account(session, console, ["logout"])
+
+
 def _cmd_remote(session: Session, console: Console, args: list[str]) -> bool:  # noqa: ARG001
     # Remote-sync configuration prompts on the real TTY (click.prompt).
     return run_cli_command(console, ["remote", *args], capture_output=False, session=session)
@@ -610,6 +626,14 @@ COMMANDS: list[SlashCommand] = [
         "Shortcut for LLM provider login.",
         _cmd_login,
         usage=("/login", "/login chatgpt", "/login claude", "/login deepseek"),
+    ),
+    SlashCommand(
+        "/logout",
+        "Sign out of the OpenSRE account and close the shell.",
+        _cmd_logout,
+        usage=("/logout",),
+        notes=("Same as /account logout. To clear one LLM provider, use /auth logout <provider>.",),
+        validate_args=_validate_logout_args,
     ),
     SlashCommand(
         "/setup",

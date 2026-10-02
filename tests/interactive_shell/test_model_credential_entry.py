@@ -94,7 +94,7 @@ def test_account_login_blocks_every_model_change(monkeypatch: Any, change: Any) 
 
     assert change(console) is False
     assert any("managed by your OpenSRE account" in line for line in console.printed)
-    assert any("opensre account logout" in line for line in console.printed)
+    assert any("/logout" in line for line in console.printed)
 
 
 def test_account_model_is_the_effective_model_shown_by_the_shell(monkeypatch: Any) -> None:

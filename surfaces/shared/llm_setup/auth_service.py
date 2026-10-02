@@ -92,7 +92,7 @@ def configure_api_key_provider(
         raise AuthSetupError(
             "LLM provider authentication is managed by your OpenSRE account: "
             f"openai ({account_route.model}, hosted by OpenSRE). "
-            "Run `opensre account logout` before configuring another provider."
+            "Sign out with `/logout` or `opensre account logout` before configuring another provider."
         )
 
     provider = provider_for_profile(profile)

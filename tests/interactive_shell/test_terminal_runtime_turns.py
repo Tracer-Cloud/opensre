@@ -60,6 +60,7 @@ def test_turn_needs_exclusive_stdin_for_exit_commands(
 
     assert loop_input_policy.turn_needs_exclusive_stdin("/exit", session) is True
     assert loop_input_policy.turn_needs_exclusive_stdin("/quit", session) is True
+    assert loop_input_policy.turn_needs_exclusive_stdin("/logout", session) is True
     # Bare command words are not recognized under literal-/slash gating.
     assert loop_input_policy.turn_needs_exclusive_stdin("quit", session) is False
 

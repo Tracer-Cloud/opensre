@@ -242,7 +242,22 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         "Shortcut for /auth login. Supports subscription aliases chatgpt and claude, "
         "and API-key providers such as deepseek.",
         "User asks to log in to ChatGPT, Claude, DeepSeek, or another LLM provider",
-        anti_examples=("User asks to log in to a non-LLM integration (use /integrations or /mcp)",),
+        anti_examples=(
+            "User asks to log in to a non-LLM integration (use /integrations or /mcp)",
+            "User asks to sign in to their OpenSRE account (use /account login)",
+            "User asks to sign out of their OpenSRE account (use /logout)",
+        ),
+    ),
+    "/logout": _mcp(
+        "Sign out of the OpenSRE account and close the interactive shell. "
+        "Shortcut for /account logout. Does not clear an LLM provider credential.",
+        "User types /logout or asks to sign out of their OpenSRE account",
+        "User asks to leave the signed-in account before switching LLM providers",
+        anti_examples=(
+            "User asks to clear one LLM provider credential (use /auth logout <provider>)",
+            "User asks to leave the shell without signing out (use /exit)",
+            "User asks to log in to an LLM provider (use /login)",
+        ),
     ),
     "/loops": _mcp(
         "List, create, stop, start, delete, run once, and debug recurring prompt loops, "
