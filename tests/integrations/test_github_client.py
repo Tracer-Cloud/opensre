@@ -227,6 +227,7 @@ def test_api_error_keeps_its_identity_and_details_across_context_manager_cleanup
     assert caught.value.__cause__ is http_error
     assert caught.value.__traceback__ is not None
     assert caught.value.status_code == HTTPStatus.FORBIDDEN
+    assert caught.value.method == "GET"
     assert caught.value.path == "/repos/o/r/actions/runs"
     assert caught.value.rate_limit_remaining == "0"
     assert caught.value.rate_limit_reset == "123"

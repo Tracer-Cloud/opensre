@@ -83,10 +83,15 @@ def baseline_files() -> dict[str, str]:
     }
 
 
-def _fresh_demo_repo_name() -> str:
-    """A new private demo name that does not reuse a repository the caller named."""
+def fresh_demo_repo_name() -> str:
+    """A new private demo name: ``opensre-ci-repair-demo-`` plus 4 letters or digits."""
     suffix = "".join(secrets.choice(_SUFFIX_ALPHABET) for _ in range(_SUFFIX_LENGTH))
     return f"{_DEMO_REPO_PREFIX}{suffix}"
+
+
+def _fresh_demo_repo_name() -> str:
+    """A new private demo name that does not reuse a repository the caller named."""
+    return fresh_demo_repo_name()
 
 
 def seed_demo(
@@ -355,6 +360,16 @@ def _branch_exists(client: GitHubRestClient, path: str, branch: str) -> bool:
     return True
 
 
+def _reference_is_missing(exc: GitHubApiError) -> bool:
+    """GitHub's update-a-reference call returns 422, not 404, for a new branch."""
+    if exc.status_code == HTTPStatus.NOT_FOUND:
+        return True
+    return (
+        exc.status_code == HTTPStatus.UNPROCESSABLE_ENTITY
+        and "Reference does not exist" in exc.message
+    )
+
+
 def _advance_ref(
     client: GitHubRestClient, path: str, branch: str, sha: str, *, force: bool
 ) -> None:
@@ -365,7 +380,7 @@ def _advance_ref(
             body={"sha": sha, "force": force},
         )
     except GitHubApiError as exc:
-        if exc.status_code != HTTPStatus.NOT_FOUND:
+        if not _reference_is_missing(exc):
             raise
         client.request(
             "POST",

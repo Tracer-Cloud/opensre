@@ -22,6 +22,7 @@ _LAZY_EXPORTS: dict[str, str] = {
     "get_ci_fix_counter": "integrations.github.tools.ci_fix.ledger",
     "github_creds": "integrations.github.helpers",
     "saved_github_username": "integrations.github.identity",
+    "fresh_demo_repo_name": "integrations.github.tools.ci_repair_demo.seed",
     "GitHubLoginResult": "integrations.github.login",
     "authenticate_and_configure_github": "integrations.github.login",
     "PullRequestCheckout": "integrations.github.pull_request_checkout",
@@ -124,6 +125,7 @@ if TYPE_CHECKING:
     )
     from integrations.github.tools.ci_analytics.render import ci_report_headline
     from integrations.github.tools.ci_fix.ledger import count_ci_fixes, get_ci_fix_counter
+    from integrations.github.tools.ci_repair_demo.seed import fresh_demo_repo_name
     from integrations.github.tools.ci_repair_loop.credentials import effective_github_token
     from integrations.github.tools.ci_repair_loop.worker import run_ci_repair_worker
 
@@ -159,6 +161,7 @@ __all__ = [
     "count_ci_fixes",
     "disconnect_personal_github",
     "effective_github_token",
+    "fresh_demo_repo_name",
     "format_github_mcp_validation_cli_report",
     "get_ci_fix_counter",
     "github_creds",

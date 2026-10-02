@@ -145,6 +145,8 @@ def test_skill_card_spells_out_the_loop_call_and_waits_for_the_scheduler() -> No
     assert '"args": ["remove", "<id>"]' not in body
     assert '["repo", "delete"' not in body
     assert "report that the repository remains" in body
+    assert "Create <owner>/<repo>" in body
+    assert "Do not call `seed_ci_repair_demo` again in this plan." in body
     assert skill_reference_names(SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME) == ("script-tools",)
 
 

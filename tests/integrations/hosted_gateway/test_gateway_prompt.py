@@ -533,9 +533,32 @@ def test_a_failed_integration_on_the_gateway_points_the_user_to_the_integrations
     # A finished prompt is never re-sent whole: only the failed part may be asked again.
     assert "ask again only for what the failed integration should have done" in text
     assert "sent again" not in text
-    # GitHub refusals come with the ordered token checklist.
+    # A GitHub failure that does not name HTTP 401 or 403 does not get the token checklist.
+    assert "Check the GitHub token in this order" not in text
+
+
+def test_a_github_401_or_403_includes_the_token_checklist(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange: the gateway answer names the credential refusal
+    refused = f"GitHub returned HTTP {HTTPStatus.FORBIDDEN.value} for the repository."
+    app = _App(
+        [
+            PromptRecord(
+                _ID,
+                "done",
+                answer=refused,
+                failed_integrations=("github",),
+            )
+        ]
+    )
+    _signed_in_with(monkeypatch, app)
+
+    # Act
+    out = ask_hosted_gateway(prompt="seed the demo")
+
+    # Assert
+    text = out["response_text"]
     assert "Check the GitHub token in this order" in text
-    assert text.index("Check the GitHub token") < text.index("16 open PRs")
+    assert text.index("Check the GitHub token") < text.index(refused)
 
 
 def test_a_failed_integration_on_a_waiting_prompt_says_to_continue_it_not_resend(
