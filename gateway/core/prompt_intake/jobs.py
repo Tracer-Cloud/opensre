@@ -13,12 +13,41 @@ from typing import Any
 from config.constants.gateway import (
     PROMPT_PROGRESS_KIND_NOTE,
     PROMPT_PROGRESS_KIND_PLAN,
+    PROMPT_PROGRESS_KIND_PLAN_DONE,
     PROMPT_PROGRESS_KINDS,
     PROMPT_PROGRESS_LINE_MAX_CHARS,
     PROMPT_PROGRESS_MAX_LINES,
+    PROMPT_PROGRESS_PLAN_MAX_CHARS,
+    PROMPT_PROGRESS_PLAN_OMITTED,
     PROMPT_QUEUE_MAX,
     PROMPT_RESULT_RETENTION_SECONDS,
 )
+
+_PLAN_PROGRESS_KINDS = frozenset({PROMPT_PROGRESS_KIND_PLAN, PROMPT_PROGRESS_KIND_PLAN_DONE})
+
+
+def _bounded_progress_text(text: str, *, kind: str) -> str:
+    """Cap one progress update without cutting a checklist step in half."""
+    stripped = text.strip()
+    if kind not in _PLAN_PROGRESS_KINDS:
+        return stripped[:PROMPT_PROGRESS_LINE_MAX_CHARS]
+    if len(stripped) <= PROMPT_PROGRESS_PLAN_MAX_CHARS:
+        return stripped
+    marker = PROMPT_PROGRESS_PLAN_OMITTED
+    budget = PROMPT_PROGRESS_PLAN_MAX_CHARS - len(marker) - 1
+    kept: list[str] = []
+    used = 0
+    for raw in stripped.splitlines():
+        line = raw.rstrip()
+        extra = len(line) + (1 if kept else 0)
+        if used + extra > budget:
+            break
+        kept.append(line)
+        used += extra
+    if not kept:
+        return marker
+    kept.append(marker)
+    return "\n".join(kept)
 
 
 class AnswerRefused(Exception):
@@ -234,7 +263,7 @@ class PromptQueue:
         """
         if kind not in PROMPT_PROGRESS_KINDS:
             kind = PROMPT_PROGRESS_KIND_NOTE
-        line = text.strip()[:PROMPT_PROGRESS_LINE_MAX_CHARS]
+        line = _bounded_progress_text(text, kind=kind)
         if not line:
             return
         with job._lock:

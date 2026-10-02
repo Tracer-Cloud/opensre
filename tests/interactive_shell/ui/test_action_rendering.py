@@ -1038,6 +1038,26 @@ def test_a_gateway_plan_replaces_in_place_and_a_settled_plan_prints_once() -> No
         set_repl_state(None)
 
 
+def test_a_truncated_gateway_plan_is_shown_and_not_pinned() -> None:
+    from config.constants.gateway import PROMPT_PROGRESS_PLAN_OMITTED
+    from surfaces.interactive_shell.runtime.core.state import ReplState
+    from surfaces.shared.terminal.output.console_state import set_repl_state
+
+    state = ReplState()
+    set_repl_state(state)
+    observer, buffer = _observer_with_buffer()
+    progress = f"Plan · 1/2\n  ● List orgs\n{PROMPT_PROGRESS_PLAN_OMITTED}"
+    try:
+        observer(
+            "tool_update",
+            {"name": "ask_hosted_gateway", "update": {"kind": "plan", "progress": progress}},
+        )
+        assert state.gateway_plan is None
+        assert PROMPT_PROGRESS_PLAN_OMITTED in buffer.getvalue()
+    finally:
+        set_repl_state(None)
+
+
 def test_a_gateway_note_keeps_every_row() -> None:
     """A wait notice is still a dim line, and a long row is not cut."""
     observer, buffer = _observer_with_buffer()

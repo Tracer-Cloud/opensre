@@ -186,6 +186,8 @@ EXPORTS: dict[str, str] = {
     "PROMPT_PROGRESS_KINDS": "gateway",
     "PROMPT_PROGRESS_LINE_MAX_CHARS": "gateway",
     "PROMPT_PROGRESS_MAX_LINES": "gateway",
+    "PROMPT_PROGRESS_PLAN_MAX_CHARS": "gateway",
+    "PROMPT_PROGRESS_PLAN_OMITTED": "gateway",
     "PROMPT_RESULT_RETENTION_SECONDS": "gateway",
     "HOSTED_GATEWAY_CAPABILITY": "capabilities",
     "SCHEDULER_HOST_CAPABILITY": "capabilities",

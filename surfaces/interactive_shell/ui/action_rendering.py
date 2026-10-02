@@ -24,6 +24,7 @@ from config.constants.gateway import (
     PROMPT_PROGRESS_KIND_PLAN,
     PROMPT_PROGRESS_KIND_PLAN_DONE,
     PROMPT_PROGRESS_KIND_TOOL,
+    PROMPT_PROGRESS_PLAN_OMITTED,
 )
 from core.agent_harness.spi.accounting import SELF_RECORDING_ACTION_TOOL_NAMES
 from core.agent_harness.spi.activity import (
@@ -490,6 +491,9 @@ class ActionRenderObserver:
 
     def _render_gateway_plan(self, text: str) -> None:
         """Replace the pinned gateway checklist. Do not append another copy."""
+        if PROMPT_PROGRESS_PLAN_OMITTED in text:
+            self._print_dim_rows([row for row in text.splitlines() if row.strip()])
+            return
         plan = task_plan_from_checklist(text)
         state = get_repl_state()
         if plan is not None and state is not None:
@@ -499,6 +503,10 @@ class ActionRenderObserver:
 
     def _render_gateway_plan_done(self, text: str) -> None:
         """Clear the live gateway plan and print one themed breakdown."""
+        if PROMPT_PROGRESS_PLAN_OMITTED in text:
+            self._clear_gateway_plan()
+            self._print_dim_rows([row for row in text.splitlines() if row.strip()])
+            return
         self._clear_gateway_plan()
         self.console.print()
         print_repl_text(
