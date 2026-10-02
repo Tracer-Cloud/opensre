@@ -354,6 +354,8 @@ EXPORTS: dict[str, str] = {
     "NEW_RELIC_NRQL_TIMEOUT_SECONDS": "new_relic",
     # opensearch
     "OPENSEARCH_API_KEY_ENV": "opensearch",
+    "OPENSEARCH_INTEGRATION_SETUP_CLI": "opensearch",
+    "OPENSEARCH_INTEGRATION_SETUP_SLASH": "opensearch",
     "OPENSEARCH_PASSWORD_ENV": "opensearch",
     "OPENSEARCH_URL_ENV": "opensearch",
     "OPENSEARCH_USERNAME_ENV": "opensearch",

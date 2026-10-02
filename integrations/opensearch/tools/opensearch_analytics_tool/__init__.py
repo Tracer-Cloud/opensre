@@ -7,9 +7,9 @@ from typing import Any
 from core.domain.types.evidence import record_evidence_entry
 from core.domain.types.tools import ToolSurface
 from core.tool_framework import tool
-from core.tool_framework.utils import tool_unavailable
 from infrastructure.text.truncation import truncate
 from integrations.elasticsearch.client import ElasticsearchClient, ElasticsearchConfig
+from integrations.elasticsearch.search_failures import not_configured, search_failed
 
 _DEFAULT_MAX_RESULTS = 100
 _MAX_HARD_LIMIT = 200
@@ -112,7 +112,7 @@ def query_opensearch_analytics(
     """Fetch bounded logs from OpenSearch-compatible analytics endpoints."""
     endpoint = url.strip().rstrip("/")
     if not endpoint:
-        return tool_unavailable("opensearch", "Missing OpenSearch URL.", logs=[])
+        return not_configured("opensearch", vendor="OpenSearch")
 
     effective_limit = _bounded_limit(limit, max_results)
     client = ElasticsearchClient(
@@ -131,9 +131,7 @@ def query_opensearch_analytics(
         index_pattern=index_pattern or "*",
     )
     if not result.get("success"):
-        return tool_unavailable(
-            "opensearch", str(result.get("error", "Unknown OpenSearch error.")), logs=[]
-        )
+        return search_failed("opensearch", result, vendor="OpenSearch")
 
     logs = result.get("logs", []) if isinstance(result.get("logs"), list) else []
     logs = [log for log in logs if isinstance(log, dict)][:effective_limit]

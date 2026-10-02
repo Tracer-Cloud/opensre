@@ -839,6 +839,12 @@ if TYPE_CHECKING:
         OPENSEARCH_API_KEY_ENV as OPENSEARCH_API_KEY_ENV,
     )
     from config.constants.opensearch import (
+        OPENSEARCH_INTEGRATION_SETUP_CLI as OPENSEARCH_INTEGRATION_SETUP_CLI,
+    )
+    from config.constants.opensearch import (
+        OPENSEARCH_INTEGRATION_SETUP_SLASH as OPENSEARCH_INTEGRATION_SETUP_SLASH,
+    )
+    from config.constants.opensearch import (
         OPENSEARCH_PASSWORD_ENV as OPENSEARCH_PASSWORD_ENV,
     )
     from config.constants.opensearch import (
