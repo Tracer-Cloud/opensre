@@ -15,6 +15,7 @@ from gateway.core.prompt_intake.jobs import (
     NOT_WAITING,
     AnswerRefused,
     PromptJob,
+    PromptNotSaved,
     PromptQueue,
     PromptState,
 )
@@ -34,6 +35,7 @@ __all__ = [
     "JsonlPromptJobStore",
     "PromptJob",
     "PromptJobStore",
+    "PromptNotSaved",
     "PromptQueue",
     "PromptState",
     "PromptTurnRunner",

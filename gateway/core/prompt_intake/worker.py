@@ -12,7 +12,11 @@ from collections.abc import Callable
 from contextlib import ExitStack
 from typing import Any, Protocol
 
-from config.constants.gateway import PROMPT_PROGRESS_KIND_NOTE, PROMPT_SLOT_WAIT_SECONDS
+from config.constants.gateway import (
+    PROMPT_HEARTBEAT_SECONDS,
+    PROMPT_PROGRESS_KIND_NOTE,
+    PROMPT_SLOT_WAIT_SECONDS,
+)
 from config.constants.organization import organization_id
 from config.constants.tooling import ToolBlockedBy
 from config.principal import Actor, Principal, StorageScope
@@ -83,7 +87,12 @@ class PromptTurnRunner(Protocol):
 
 
 class PromptWorker:
-    """One thread: take a job, run the turn, settle the job, repeat until stopped."""
+    """One thread: take a job, run the turn, settle the job, repeat until stopped.
+
+    A second thread re-saves the queue's unsettled prompts every
+    ``heartbeat_seconds`` while the worker runs, independent of turn progress,
+    so a task started beside this one sees they are still alive.
+    """
 
     def __init__(
         self,
@@ -92,8 +101,10 @@ class PromptWorker:
         *,
         logger: logging.Logger,
         sessions: UnattendedSessions | None = None,
+        heartbeat_seconds: float = PROMPT_HEARTBEAT_SECONDS,
     ) -> None:
         self._queue = queue
+        self._heartbeat_seconds = heartbeat_seconds
         self._runner = runner
         self._logger = logger
         self._sessions = sessions or UnattendedSessions()
@@ -107,15 +118,22 @@ class PromptWorker:
         self._asked: dict[str, Any] = {}
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, name="opensre-prompt-worker", daemon=True)
+        self._ticker = threading.Thread(
+            target=self._beat, name="opensre-prompt-heartbeat", daemon=True
+        )
 
     def start(self) -> None:
         self._thread.start()
+        self._ticker.start()
 
     def stop(self, *, timeout_seconds: float) -> bool:
         """Ask the loop to end after its current job; return whether it did in time."""
         self._stop.set()
         self._thread.join(timeout=timeout_seconds)
         ended = not self._thread.is_alive()
+        if self._ticker.is_alive():
+            # It only waits on the stop event, so it ends at once.
+            self._ticker.join(timeout=timeout_seconds)
         for session_id in list(self._asked):
             self._forget(session_id)
         return ended
@@ -134,6 +152,13 @@ class PromptWorker:
             if job is not None:
                 self.run_one(job)
             self.retire_forgotten()
+
+    def _beat(self) -> None:
+        while not self._stop.wait(self._heartbeat_seconds):
+            try:
+                self._queue.heartbeat()
+            except Exception:
+                self._logger.exception("remote prompt heartbeat failed")
 
     def retire_forgotten(self) -> None:
         """Release a session once the queue holds none of its prompts any more.

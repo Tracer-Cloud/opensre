@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from config.constants.gateway import (
+    PROMPT_JOB_STALE_SECONDS,
     PROMPT_PROGRESS_LINE_MAX_CHARS,
     PROMPT_PROGRESS_PLAN_MAX_CHARS,
     PROMPT_PROGRESS_PLAN_OMITTED,
@@ -17,6 +18,7 @@ from gateway.core.prompt_intake import (
     NOT_WAITING,
     AnswerRefused,
     JsonlPromptJobStore,
+    PromptJob,
     PromptQueue,
     PromptState,
 )
@@ -249,8 +251,8 @@ def test_a_turn_cut_off_by_a_restart_reads_as_interrupted_and_its_question_opens
     follow_up = before.answer(asked, "main")
     assert follow_up is not None and before.take(timeout_seconds=0.01) is follow_up
 
-    # Act: a replacement task starts on the same file
-    clock.now += 5.0
+    # Act: a replacement task starts on the same file once the dead task's heartbeat is stale
+    clock.now += PROMPT_JOB_STALE_SECONDS + 1.0
     after = PromptQueue(clock=clock.read, store=JsonlPromptJobStore(path))
     cut_off = after.get(follow_up.id)
     parent = after.get(asked.id)
@@ -295,3 +297,80 @@ def test_expired_prompts_leave_the_store_while_running_and_at_restart(tmp_path: 
     assert stored_after_expiry == {late.id}
     assert restarted.get(late.id) is None
     assert store.load() == []
+
+
+def _asked_and_answered(queue: PromptQueue, *, prompt: str) -> tuple[PromptJob, PromptJob]:
+    """A prompt that stopped on a question, and the answer's follow-up now running."""
+    asked = queue.submit(prompt, context={}, actor="a")
+    assert asked is not None and queue.take(timeout_seconds=0.01) is asked
+    asked.session_id = f"s-{prompt}"
+    queue.needs_input(asked, "Which branch?", choice={"title": "Which branch?"})
+    follow_up = queue.answer(asked, "main")
+    assert follow_up is not None and queue.take(timeout_seconds=0.01) is follow_up
+    return asked, follow_up
+
+
+def test_a_task_starting_beside_a_live_one_leaves_its_running_answers_alone(
+    tmp_path: Path,
+) -> None:
+    """An overlapping replacement must not reopen a question the old task is still answering."""
+    # Arrange: the old task runs two answers; one will finish, the other's task will die
+    path = tmp_path / "prompt-jobs.jsonl"
+    clock = _Clock()
+    old = PromptQueue(clock=clock.read, store=JsonlPromptJobStore(path))
+    _, finishing = _asked_and_answered(old, prompt="finishing")
+    dying_parent, dying = _asked_and_answered(old, prompt="dying")
+
+    # Act: the new task starts while the old one is alive
+    clock.now += 5.0
+    new = PromptQueue(clock=clock.read, store=JsonlPromptJobStore(path), refresh_seconds=0.0)
+    parent_view = new.get(dying_parent.id)
+    assert parent_view is not None
+    with pytest.raises(AnswerRefused) as second_answer:
+        new.answer(parent_view, "release")
+    nothing_to_run = new.take(timeout_seconds=0.01)
+    old.finish(finishing, "pushed to main")
+    finished_view = new.get(finishing.id)
+    clock.now += PROMPT_JOB_STALE_SECONDS - 10.0
+    old.heartbeat()  # the old task is still running the dying answer
+    clock.now += PROMPT_JOB_STALE_SECONDS - 10.0
+    still_running = new.get(dying.id)
+    assert still_running is not None and still_running.state is PromptState.RUNNING
+    clock.now += 11.0  # past the window since the old task's last heartbeat
+    silent = new.get(dying.id)
+
+    # Assert: no second answer and no rerun while the owner lives; its outcome shows up here;
+    # once it falls silent the answer is interrupted and the question takes an answer again
+    assert second_answer.value.code == ALREADY_ANSWERED
+    assert nothing_to_run is None
+    assert finished_view is not None and finished_view.view()["answer"] == "pushed to main"
+    assert silent is not None and silent.view()["error"] == ERROR_INTERRUPTED
+    assert new.answer(parent_view, "release") is not None
+
+
+def test_a_question_whose_answer_is_still_running_outlives_its_retention(tmp_path: Path) -> None:
+    # Arrange: a one-minute retention; the question was asked 50 s before it was answered
+    path = tmp_path / "prompt-jobs.jsonl"
+    clock = _Clock()
+    store = JsonlPromptJobStore(path)
+    queue = PromptQueue(retention_seconds=60.0, clock=clock.read, store=store)
+    asked = queue.submit("fix ci", context={}, actor="a")
+    assert asked is not None and queue.take(timeout_seconds=0.01) is asked
+    queue.needs_input(asked, "Which branch?")
+    clock.now += 50.0
+    follow_up = queue.answer(asked, "main")
+    assert follow_up is not None and queue.take(timeout_seconds=0.01) is follow_up
+
+    # Act: the question passes its retention while the answer runs, then the task dies
+    clock.now += 20.0
+    queue.take_forgotten()
+    held_while_running = queue.get(asked.id)
+    stored_while_running = {record["id"] for record in store.load()}
+    clock.now += PROMPT_JOB_STALE_SECONDS + 1.0
+    restarted = PromptQueue(retention_seconds=60.0, clock=clock.read, store=store)
+    reopened = restarted.get(asked.id)
+
+    # Assert: kept in memory and on disk, then reopened for a new answer after the restart
+    assert held_while_running is asked
+    assert asked.id in stored_while_running
+    assert reopened is not None and restarted.answer(reopened, "release") is not None

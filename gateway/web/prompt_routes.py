@@ -23,12 +23,14 @@ from config.constants.gateway import (
     PROMPT_MAX_CHARS,
     PROMPT_ROUTE_PATH,
 )
-from gateway.core.prompt_intake.jobs import AnswerRefused, PromptJob, PromptQueue
+from gateway.core.prompt_intake.jobs import AnswerRefused, PromptJob, PromptNotSaved, PromptQueue
 from infrastructure.alert_intake import require_local_or_token
 
 router = APIRouter()
 
 _ACTOR_MAX_CHARS = 128
+#: The gateway could not save the prompt where a replacement task would find it.
+_STORE_UNAVAILABLE = "prompt_store_unavailable"
 
 
 class _Refused(Exception):
@@ -83,7 +85,10 @@ def _submitted(queue: PromptQueue, payload: dict[str, Any]) -> PromptJob:
     prompt = _prompt(payload.get("prompt"))
     context = _context(payload.get("context"))
     actor = _actor(payload.get("actor"))
-    job = queue.submit(prompt, context=context, actor=actor)
+    try:
+        job = queue.submit(prompt, context=context, actor=actor)
+    except PromptNotSaved:
+        raise _Refused(_STORE_UNAVAILABLE, HTTPStatus.SERVICE_UNAVAILABLE) from None
     if job is None:
         raise _Refused("too_many_prompts", HTTPStatus.SERVICE_UNAVAILABLE)
     return job
@@ -95,6 +100,8 @@ def _answered(queue: PromptQueue, parent: PromptJob, payload: dict[str, Any]) ->
         follow_up = queue.answer(parent, answer)
     except AnswerRefused as refused:
         raise _Refused(refused.code, HTTPStatus.CONFLICT) from None
+    except PromptNotSaved:
+        raise _Refused(_STORE_UNAVAILABLE, HTTPStatus.SERVICE_UNAVAILABLE) from None
     if follow_up is None:
         raise _Refused("too_many_prompts", HTTPStatus.SERVICE_UNAVAILABLE)
     return follow_up

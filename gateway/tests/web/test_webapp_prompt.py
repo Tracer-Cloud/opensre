@@ -2,14 +2,16 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Iterator, Mapping
 from http import HTTPStatus
+from pathlib import Path
+from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
 
 from config.constants.gateway import PROMPT_MAX_CHARS
-from gateway.core.prompt_intake import PromptQueue
+from gateway.core.prompt_intake import JsonlPromptJobStore, PromptQueue, PromptState
 from gateway.web import webapp
 
 _LOOPBACK = ("127.0.0.1", 40000)
@@ -152,3 +154,47 @@ def test_an_answer_is_queued_as_a_follow_up_only_while_the_prompt_is_asking(
     )
     assert unknown.status_code == HTTPStatus.NOT_FOUND
     assert (empty.status_code, empty.json()["error"]) == (HTTPStatus.BAD_REQUEST, "answer_required")
+
+
+class _UnwritableStore(JsonlPromptJobStore):
+    """The record file, while ``writable`` is off as on a mount that refuses writes."""
+
+    writable = True
+
+    def save(self, record: Mapping[str, Any]) -> bool:
+        return self.writable and super().save(record)
+
+
+def test_a_prompt_or_answer_the_store_refused_is_not_accepted(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A 202 promises the prompt survives a task replacement; without a record it cannot."""
+    # Arrange: a question waiting for an answer, then the mount stops taking writes
+    monkeypatch.delenv("OPENSRE_ALERT_LISTENER_TOKEN", raising=False)
+    store = _UnwritableStore(tmp_path / "prompt-jobs.jsonl")
+    queue = PromptQueue(store=store)
+    webapp.app.state.prompt_queue = queue
+    client = TestClient(webapp.app, client=_LOOPBACK)
+    asked = queue.submit("fix ci", context={}, actor="u")
+    assert asked is not None and queue.take(timeout_seconds=0.01) is asked
+    queue.needs_input(asked, "Which branch?")
+    store.writable = False
+
+    # Act
+    try:
+        submitted = client.post("/v1/prompt", json={"prompt": "which tasks run?"})
+        answered = client.post(f"/v1/prompt/{asked.id}/answer", json={"answer": "main"})
+        store.writable = True
+        retried = client.post(f"/v1/prompt/{asked.id}/answer", json={"answer": "main"})
+    finally:
+        del webapp.app.state.prompt_queue
+
+    # Assert: both refused with a code, nothing left to run, and the question still answerable
+    for refused in (submitted, answered):
+        assert refused.status_code == HTTPStatus.SERVICE_UNAVAILABLE
+        assert refused.json()["error"] == "prompt_store_unavailable"
+    assert retried.status_code == HTTPStatus.ACCEPTED
+    assert queue.take(timeout_seconds=0.01) is not None
+    assert queue.take(timeout_seconds=0.01) is None
+    assert {record["id"] for record in store.load()} == {asked.id, retried.json()["prompt_id"]}
+    assert asked.state is PromptState.NEEDS_INPUT

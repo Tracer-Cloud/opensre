@@ -38,8 +38,8 @@ class PromptJobStore(Protocol):
     def load(self) -> list[dict[str, Any]]:
         """The newest saved record of every prompt; empty when nothing can be read."""
 
-    def save(self, record: Mapping[str, Any]) -> None:
-        """Persist one prompt's record; a failure is logged, never raised."""
+    def save(self, record: Mapping[str, Any]) -> bool:
+        """Persist one prompt's record and say whether it reached the disk; never raises."""
 
     def compact(self, *, drop: Collection[str] = ()) -> None:
         """Keep only the newest record of each prompt, leaving out the prompt ids in ``drop``."""
@@ -70,13 +70,15 @@ class JsonlPromptJobStore:
             logger.warning("[gateway] prompt records unreadable: %s", type(exc).__name__)
             return []
 
-    def save(self, record: Mapping[str, Any]) -> None:
+    def save(self, record: Mapping[str, Any]) -> bool:
         try:
             data = (json.dumps(record, ensure_ascii=False, separators=(",", ":")) + "\n").encode()
             with self._locked():
                 self._append(data)
         except (OSError, Timeout, TypeError, ValueError) as exc:
             logger.warning("[gateway] prompt record write failed: %s", type(exc).__name__)
+            return False
+        return True
 
     def compact(self, *, drop: Collection[str] = ()) -> None:
         try:
