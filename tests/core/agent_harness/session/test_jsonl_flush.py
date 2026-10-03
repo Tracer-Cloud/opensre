@@ -19,6 +19,8 @@ from typing import Any
 
 import pytest
 
+from core.agent_harness.session.persistence.contracts import RestoreContextKey
+from core.agent_harness.session.persistence.jsonl_repo import JsonlSessionRepo
 from core.agent_harness.session.persistence.jsonl_store import JsonlSessionStore
 from core.agent_harness.session.persistence.paths import session_path
 
@@ -108,6 +110,137 @@ def test_flush_still_persists_context_and_messages(storage_home: Path) -> None:
     ]
     assert any(rec.get("custom_type") == "accumulated_context" for rec in records)
     assert any(rec.get("type") == "message" and rec["role"] == "user" for rec in records)
+
+
+def test_goal_control_state_flush_does_not_finalize_the_active_turn(storage_home: Path) -> None:
+    from core.agent_harness.session_goal.goal import SessionGoal
+    from core.agent_harness.session_goal.persist import SESSION_GOAL_STATE_CUSTOM_TYPE
+
+    storage = JsonlSessionStore()
+    session = _session()
+    session.session_goal = SessionGoal(condition="finish safely", max_outer_turns=3)
+    session.offered_upgrade_ctas = set()
+    session.pending_integration_setup_offer = None
+    storage.open_session(session)
+    storage.append_turn(session, "chat", "start")
+
+    storage.flush_session_goal_control_state(session)
+    session.session_goal = None
+    storage.flush_session_goal_control_state(session)
+
+    records = [
+        json.loads(line)
+        for line in session_path(session.session_id).read_text(encoding="utf-8").splitlines()
+    ]
+    goal_states = [
+        record for record in records if record.get("custom_type") == SESSION_GOAL_STATE_CUSTOM_TYPE
+    ]
+    assert goal_states[-1]["content"]["session_goal"] is None
+    assert not any(record.get("type") == "leaf" for record in records)
+
+
+def test_goal_control_snapshot_keeps_goal_and_plan_consistent_after_a_write_failure(
+    storage_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from core.agent_harness.session_goal.goal import SessionGoal
+    from core.agent_harness.task_plan.plan import PlanStep, PlanStepStatus, TaskPlan
+
+    storage = JsonlSessionStore()
+    session = _session()
+    session.session_goal = SessionGoal(condition="finish safely", max_outer_turns=3)
+    session.task_plan = TaskPlan(
+        steps=(PlanStep(step="finish safely", status=PlanStepStatus.IN_PROGRESS),)
+    )
+    session.offered_upgrade_ctas = set()
+    session.pending_integration_setup_offer = None
+    storage.open_session(session)
+    storage.append_turn(session, "chat", "start")
+    storage.flush(session)
+    session.session_goal = None
+    session.task_plan = None
+
+    def _fail_goal_state_write(*_args: object) -> bool:
+        return False
+
+    monkeypatch.setattr(storage, "_append_session_goal_state", _fail_goal_state_write)
+    with pytest.raises(OSError, match="session-goal state"):
+        storage.flush_session_goal_control_state(session)
+
+    restored = JsonlSessionRepo().load_session(session.session_id)
+
+    assert restored is not None
+    assert restored[RestoreContextKey.SESSION_GOAL_STATE]["session_goal"] is None
+    assert restored[RestoreContextKey.TASK_PLAN_STATE] == {}
+
+
+def test_goal_control_sidecar_is_durable_and_acknowledged(storage_home: Path) -> None:
+    storage = JsonlSessionStore()
+    session = _session()
+    storage.open_session(session)
+    storage.append_turn(session, "chat", "start")
+    records = [
+        json.loads(line)
+        for line in session_path(session.session_id).read_text(encoding="utf-8").splitlines()
+    ]
+    historical_entry_id = str(records[-1]["id"])
+    storage.append_turn(session, "chat", "continue")
+    records = [
+        json.loads(line)
+        for line in session_path(session.session_id).read_text(encoding="utf-8").splitlines()
+    ]
+    control_target_entry_id = str(records[-1]["id"])
+
+    control_id = storage.append_session_goal_control(session.session_id, "goal_clear")
+
+    loaded = JsonlSessionRepo().load_session(session.session_id)
+    assert loaded is not None
+    assert loaded[RestoreContextKey.SESSION_GOAL_CONTROLS] == [
+        {"control_id": control_id, "reason": "goal_clear"}
+    ]
+    historical = JsonlSessionRepo().load_session(f"{session.session_id}:{historical_entry_id[:8]}")
+    assert historical is not None
+    assert historical[RestoreContextKey.SESSION_GOAL_CONTROLS] == []
+    target_snapshot = JsonlSessionRepo().load_session(
+        f"{session.session_id}:{control_target_entry_id[:8]}"
+    )
+    assert target_snapshot is not None
+    assert target_snapshot[RestoreContextKey.SESSION_GOAL_CONTROLS] == []
+    storage.append_message(
+        session.session_id,
+        role="user",
+        content="alternate branch",
+        parent_id=historical_entry_id,
+    )
+    alternate = JsonlSessionRepo().load_session(session.session_id)
+    assert alternate is not None
+    assert alternate[RestoreContextKey.SESSION_GOAL_CONTROLS] == []
+    storage.complete_session_goal_control(session.session_id, control_id)
+    reloaded = JsonlSessionRepo().load_session(session.session_id)
+    assert reloaded is not None
+    assert reloaded[RestoreContextKey.SESSION_GOAL_CONTROLS] == []
+
+
+def test_goal_control_sidecar_does_not_reopen_a_closed_tip(storage_home: Path) -> None:
+    storage = JsonlSessionStore()
+    session = _session()
+    storage.open_session(session)
+    storage.append_turn(session, "chat", "start")
+    storage.flush(session)
+    storage.append_session_goal_control(session.session_id, "goal_clear")
+
+    storage.flush(session)
+
+    records = [
+        json.loads(line)
+        for line in session_path(session.session_id).read_text(encoding="utf-8").splitlines()
+    ]
+    assert sum(record.get("type") == "leaf" for record in records) == 1
+
+
+def test_goal_control_write_failure_is_not_suppressed(storage_home: Path) -> None:
+    with pytest.raises(OSError, match="Could not persist session-goal control"):
+        JsonlSessionStore().append_session_goal_control("missing-session", "goal_clear")
 
 
 def test_flush_parses_the_session_file_once(

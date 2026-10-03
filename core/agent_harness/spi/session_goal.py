@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from core.agent_harness.session_goal.control import apply_session_goal_control
 from core.agent_harness.session_goal.edit import edit_session_goal
 from core.agent_harness.session_goal.goal import (
     MAX_GOAL_CONDITION_CHARS,
@@ -36,6 +37,7 @@ __all__ = [
     "SessionGoal",
     "SessionGoalReason",
     "SessionGoalStatus",
+    "apply_session_goal_control",
     "attach_session_goal",
     "build_session_goal",
     "clear_session_goal",

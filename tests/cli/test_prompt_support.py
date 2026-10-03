@@ -55,7 +55,7 @@ def test_exit_farewell_keeps_theme_accent(monkeypatch: pytest.MonkeyPatch) -> No
 
     ui_theme.set_active_theme("amber")
     monkeypatch.setattr(
-        "surfaces.interactive_shell.command_registry.system._flush_analytics_on_exit",
+        "surfaces.interactive_shell.runtime.exit_control._flush_analytics_on_exit",
         lambda _console: None,
     )
     monkeypatch.setattr(
