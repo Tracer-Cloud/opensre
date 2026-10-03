@@ -661,12 +661,13 @@ def test_a_later_outcome_closing_replaces_the_earlier_report() -> None:
         messages=[AssistantRuntimeMessage(content=earlier, tool_calls=())],
     )
 
-    _response_text, display_chunks, use_final_text = _compose_response(
+    response_text, display_chunks, use_final_text = _compose_response(
         result, _Session(), _counts(0)
     )
     shown = "\n".join(display_chunks)
 
     assert "Waiting for the scheduled tick" not in shown
+    assert "Waiting for the scheduled tick" not in response_text
     assert "The repair commit passed CI" in shown
     assert shown.count("**Outcome:**") == 1
     assert use_final_text is True

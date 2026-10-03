@@ -1006,7 +1006,7 @@ def _compose_response(
         for chunk in (
             _response_text_from_history_entries(counts.executed_entries),
             *deferred_replies,
-            assistant_report,
+            "" if closing_already_has_report else assistant_report,
             final_text_chunk,
             history_generic,
             hint,
@@ -1015,7 +1015,9 @@ def _compose_response(
     ]
     # Promoting the withheld report marks the reply streamed, so a host does
     # not finalize the unfiltered tool snapshots afterwards.
-    use_final_text = bool(final_text_chunk) or bool(assistant_report)
+    use_final_text = bool(final_text_chunk) or (
+        bool(assistant_report) and not closing_already_has_report
+    )
     response_text = "\n".join(response_chunks)
     record_decision(
         "response_composition",
