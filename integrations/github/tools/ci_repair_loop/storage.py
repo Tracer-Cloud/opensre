@@ -139,9 +139,6 @@ class RepairStore:
             return
         workspace = Path(run.workspace)
         shutil.rmtree(workspace, ignore_errors=True)
-        if run.demo:
-            # A demo run already describes its own cleanup of the demo resources.
-            return
         run.cleanup = CHECKOUT_RETAINED if workspace.exists() else CHECKOUT_REMOVED
 
     def directory(self, run_id: str) -> Path:

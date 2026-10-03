@@ -18,7 +18,7 @@ from surfaces.interactive_shell.ui.handoff_questions import (
 from surfaces.interactive_shell.ui.input_prompt.layout import _short_meta
 from surfaces.shared.terminal.prompt_layout import prompt_text_width, terminal_columns
 
-DEFAULT_PLACEHOLDER_TEXT = "Ask about an alert"
+DEFAULT_PLACEHOLDER_TEXT = "Drop a repo link. Watch it find your CI waste."
 _PLAN_CONTINUE_PLACEHOLDER = "continue the plan, or type a message"
 #: Warm vertical bar — same role as Droid's orange user-turn lead-in.
 _USER_TURN_ACCENT = "▌"

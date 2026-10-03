@@ -88,7 +88,6 @@ def _install(
         return _seed_ok(owner, repo)
 
     def _schedule(
-        demo: bool = True,
         owner: str = "",
         repo: str = "",
         pr_number: int = 0,
@@ -100,7 +99,6 @@ def _install(
         del github_token, context, _kwargs
         record.schedules.append(
             {
-                "demo": demo,
                 "owner": owner,
                 "repo": repo,
                 "pr_number": pr_number,
@@ -166,7 +164,6 @@ def test_run_schedules_the_seeded_pr_once_then_waits_and_finishes(
     assert record.seeds == 1
     assert record.schedules == [
         {
-            "demo": False,
             "owner": _OWNER,
             "repo": _SEEDED_REPO,
             "pr_number": _PR_NUMBER,
@@ -226,7 +223,6 @@ def test_schedule_failure_does_not_schedule_again_or_finish(
     assert result == failure
     assert record.schedules == [
         {
-            "demo": False,
             "owner": _OWNER,
             "repo": _SEEDED_REPO,
             "pr_number": _PR_NUMBER,

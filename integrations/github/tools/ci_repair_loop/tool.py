@@ -17,9 +17,9 @@ from integrations.github.helpers import (
     github_source_available,
 )
 from integrations.github.tools.ci_repair_loop.credentials import account_id, configured_token
-from integrations.github.tools.ci_repair_loop.fixture import object_response
 from integrations.github.tools.ci_repair_loop.models import RepairRefused, RepairRun
 from integrations.github.tools.ci_repair_loop.report import render_report
+from integrations.github.tools.ci_repair_loop.responses import object_response
 from integrations.github.tools.ci_repair_loop.schedule import schedule_repair
 from integrations.github.tools.ci_repair_loop.storage import RepairStore
 
@@ -73,17 +73,13 @@ def _inspection_done(run: RepairRun, *, wait_until_terminal: bool, until: float)
     name="schedule_ci_repair_loop",
     source="github",
     display_name="Schedule bounded CI repair",
-    use_cases=[
-        "Run the scheduled CI repair onboarding demo",
-        "Repair one selected PR in the background",
-    ],
+    use_cases=["Repair one selected PR in the background"],
     description=(
-        "Schedule repair of one GitHub PR, or demo=true for a tiny CI repair demonstration "
-        "in a fixed reusable private repository. On a hosted gateway, registers with its "
-        "existing scheduler; on a laptop, starts and checks the local background scheduler. "
-        "Uses a real 30-second trigger, stops after three failed attempts or "
-        "within ten minutes, and retains a linked outcome report. Reuses the active run "
-        "without extending its deadline."
+        "Schedule repair of one open GitHub PR whose branch is in the same repository. "
+        "On a hosted gateway, registers with its existing scheduler; on a laptop, starts "
+        "and checks the local background scheduler. Uses a real 30-second trigger, stops "
+        "after three failed attempts or within ten minutes, and retains a linked outcome "
+        "report. Reuses the active run without extending its deadline."
     ),
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
@@ -94,34 +90,28 @@ def _inspection_done(run: RepairRun, *, wait_until_terminal: bool, until: float)
     input_schema={
         "type": "object",
         "properties": {
-            "demo": {
-                "type": "boolean",
-                "default": False,
-                "description": "Use the reusable private demo repository; default false.",
-            },
             "owner": {
                 "type": "string",
                 "description": "GitHub user or organization that owns the repository.",
             },
             "repo": {
                 "type": "string",
-                "description": "Repository for an existing PR; omitted in demo mode.",
+                "description": "Repository that holds the pull request.",
             },
             "pr_number": {
                 "type": "integer",
                 "minimum": 1,
-                "description": "Existing PR to repair; omitted in demo mode.",
+                "description": "Existing PR to repair.",
             },
         },
-        "required": ["owner"],
+        "required": ["owner", "repo", "pr_number"],
         "additionalProperties": False,
     },
 )
 def schedule_ci_repair_loop(
-    demo: bool = False,
-    owner: str = "",
-    repo: str = "",
-    pr_number: int = 0,
+    owner: str,
+    repo: str,
+    pr_number: int,
     github_token: str | None = None,
     context: Any = None,
     fast_checks: bool = False,
@@ -131,7 +121,6 @@ def schedule_ci_repair_loop(
     try:
         store = RepairStore()
         run, reused, next_run = schedule_repair(
-            demo=demo,
             owner=owner,
             repo=repo,
             pr_number=pr_number,

@@ -1,15 +1,13 @@
-"""Durable demo identity, fixture authorization, deadline, and retained evidence."""
+"""Durable run identity, scheduling, deadline, and retained evidence."""
 
 from __future__ import annotations
 
-import hashlib
 import json
 import subprocess
 import sys
 import time
 from collections.abc import Iterator
 from concurrent.futures import ThreadPoolExecutor
-from http import HTTPStatus
 from pathlib import Path
 from typing import Any
 
@@ -22,7 +20,6 @@ from config.constants.ci_repair import (
     CI_REPAIR_FINISH_RESERVE_SECONDS,
     CI_REPAIR_MAX_ATTEMPTS,
 )
-from config.constants.github import GITHUB_CI_DEMO_REPOSITORY
 from config.constants.turn_concurrency import OPENSRE_MAX_CONCURRENT_HEAVY_WORK_ENV
 from infrastructure.process.turn_capacity import (
     HeavyWorkGate,
@@ -37,7 +34,7 @@ from infrastructure.scheduling.scheduler.types import (
     TaskReport,
 )
 from integrations.github.client import GitHubApiError
-from integrations.github.tools.ci_repair_loop import fixture, schedule, supervisor
+from integrations.github.tools.ci_repair_loop import schedule, supervisor
 from integrations.github.tools.ci_repair_loop.models import RepairRefused, RepairRun, RepairStatus
 from integrations.github.tools.ci_repair_loop.report import render_report
 from integrations.github.tools.ci_repair_loop.storage import RepairStore
@@ -50,8 +47,7 @@ def _run(run_id: str = "a" * 12, **kwargs: Any) -> RepairRun:
         owner="alice",
         actor="alice",
         actor_id=123,
-        repo=GITHUB_CI_DEMO_REPOSITORY,
-        demo=True,
+        repo="service",
         started_at=now,
         deadline=now + 600,
         **kwargs,
@@ -116,150 +112,19 @@ def test_expired_legacy_run_releases_scope_only_after_its_supervisor_stops(tmp_p
     assert reused and resumed.id == fresh.id and resumed.deadline == fresh.deadline
 
 
-def _git_sha(content: str) -> str:
-    blob = content.encode()
-    return hashlib.sha1(f"blob {len(blob)}\0".encode() + blob, usedforsecurity=False).hexdigest()
+class _RepairApi:
+    """REST stand-in: the signed-in user, and every pull request open on a branch of its repo."""
 
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, str]] = []
 
-class _GitHub:
-    """API-shaped repository/git data with independent refs and immutable trees."""
-
-    def __init__(self, *, files: dict[str, str] | None = None) -> None:
-        self.calls: list[tuple[str, str, dict[str, Any]]] = []
-        self.repository: dict[str, Any] | None = None
-        self.trees = {"tree0": files or {"README.md": "Demo\n"}}
-        self.commits = {"commit0": "tree0"}
-        self.refs = {"main": "commit0"}
-        self.prs: list[dict[str, Any]] = []
-        if files is not None:
-            self._create()
-
-    def _create(self) -> dict[str, Any]:
-        self.repository = {
-            "id": 42,
-            "full_name": f"alice/{GITHUB_CI_DEMO_REPOSITORY}",
-            "default_branch": "main",
-            "private": True,
-            "fork": False,
-            "permissions": {"push": True},
-        }
-        return self.repository
-
-    def request(self, method: str, path: str, **kwargs: Any) -> Any:
-        self.calls.append((method, path, kwargs))
-        route = path.removeprefix(f"repos/alice/{GITHUB_CI_DEMO_REPOSITORY}")
-        body = kwargs.get("body", {})
+    def request(self, method: str, path: str, **_kwargs: Any) -> dict[str, Any]:
+        self.calls.append((method, path))
         if path == "user":
             return {"login": "alice", "id": 123}
-        if path == "user/repos":
-            assert self.repository is None
-            return self._create()
-        if route == "":
-            if self.repository is None:
-                raise GitHubApiError("Not Found", HTTPStatus.NOT_FOUND)
-            return self.repository
-        if route == "/contents":
-            return [{"name": name} for name in self.trees[self.commits[self.refs["main"]]]]
-        if route.startswith("/branches/"):
-            return {"commit": {"sha": self.refs[route.removeprefix("/branches/")]}}
-        if route.startswith("/git/commits/"):
-            return {"tree": {"sha": self.commits[route.rsplit("/", 1)[1]]}}
-        if route.startswith("/git/trees/"):
-            sha = route.rsplit("/", 1)[1]
-            return {
-                "truncated": False,
-                "tree": [
-                    {"path": name, "sha": _git_sha(content), "mode": "100644", "type": "blob"}
-                    for name, content in self.trees[self.commits[sha]].items()
-                ],
-            }
-        if route == "/git/trees":
-            files = dict(self.trees[body["base_tree"]])
-            for entry in body["tree"]:
-                files[entry["path"]] = entry["content"]
-            sha = f"tree{len(self.trees)}"
-            self.trees[sha] = files
-            return {"sha": sha}
-        if route == "/git/commits":
-            sha = f"commit{len(self.commits)}"
-            self.commits[sha] = body["tree"]
-            return {"sha": sha}
-        if route.startswith("/git/ref/heads/"):
-            branch = route.removeprefix("/git/ref/heads/")
-            if branch not in self.refs:
-                raise GitHubApiError("Not Found", HTTPStatus.NOT_FOUND)
-            return {"object": {"sha": self.refs[branch]}}
-        if route.startswith("/git/refs/heads/"):
-            branch = route.removeprefix("/git/refs/heads/")
-            if method == "DELETE":
-                del self.refs[branch]
-            else:
-                assert body["force"] is False
-                self.refs[branch] = body["sha"]
-            return {}
-        if route == "/git/refs":
-            branch = body["ref"].removeprefix("refs/heads/")
-            assert branch not in self.refs
-            self.refs[branch] = body["sha"]
-            return {}
-        if route == "/pulls":
-            if method == "GET":
-                return [
-                    pr
-                    for pr in self.prs
-                    if f"alice:{pr['head']}" == kwargs["params"]["head"] and pr["state"] == "open"
-                ]
-            pr = {**body, "number": len(self.prs) + 1, "state": "open"}
-            self.prs.append(pr)
-            return pr
-        if route.startswith("/pulls/"):
-            self.prs[int(route.rsplit("/", 1)[1]) - 1].update(body)
-            return {}
-        raise AssertionError((method, path, kwargs))
-
-
-def test_demo_creates_once_reuses_baseline_and_recovers_same_branch(tmp_path: Path) -> None:
-    api = _GitHub()
-    store = RepairStore(tmp_path)
-    first = _run()
-    fixture.prepare_demo(api, first, store)
-    baseline = api.refs["main"]
-    assert api.trees[api.commits[baseline]]["calculator.py"].endswith("a + b\n")
-    fixture.prepare_demo(api, store.get(first.id), store)
-    assert len(api.prs) == 1
-    second = _run("b" * 12)
-    fixture.prepare_demo(api, second, store)
-    assert api.refs["main"] == baseline
-    assert first.branch != second.branch and first.pr_number != second.pr_number
-    assert sum(path == "user/repos" for _, path, _ in api.calls) == 1
-    first.checks_passed = True
-    fixture.cleanup_demo(api, first)
-    assert first.branch not in api.refs and second.branch in api.refs
-    assert api.repository is not None and api.refs["main"] == baseline
-    assert api.prs[0]["state"] == "closed"
-
-
-def test_unmarked_or_modified_repository_is_never_adopted(tmp_path: Path) -> None:
-    api = _GitHub(files={"calculator.py": "unrelated work"})
-    with pytest.raises(ValueError, match="unrecognized or modified"):
-        fixture.prepare_demo(api, _run(), RepairStore(tmp_path))
-    assert all(method == "GET" for method, _, _ in api.calls)
-
-
-def test_fixture_has_a_real_failing_test_and_one_pr_workflow(tmp_path: Path) -> None:
-    for name, content in fixture.baseline_files("main").items():
-        path = tmp_path / name
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(content)
-    # ``-B``: equal-sized rewrites can share a timestamp, so a cached ``.pyc`` of
-    # the passing module would mask the broken one. Never write bytecode at all,
-    # whatever ``PYTHONDONTWRITEBYTECODE`` or ``PYTHONPYCACHEPREFIX`` say.
-    unittest_cmd = [sys.executable, "-B", "-m", "unittest", "-v"]
-    good = subprocess.run(unittest_cmd, cwd=tmp_path, capture_output=True)
-    assert good.returncode == 0
-    (tmp_path / "calculator.py").write_text("def add(a, b):\n    return a - b\n")
-    bad = subprocess.run(unittest_cmd, cwd=tmp_path, capture_output=True)
-    assert bad.returncode != 0 and b"AssertionError" in bad.stderr
+        repository, _, number = path.removeprefix("repos/").rpartition("/pulls/")
+        assert number.isdigit(), path
+        return {"state": "open", "head": {"repo": {"full_name": repository}}}
 
 
 def test_expired_restart_stops_without_launching_another_worker(
@@ -433,9 +298,8 @@ def test_schedule_reuses_active_run_instead_of_resetting_deadline(
 ) -> None:
     store = RepairStore(tmp_path)
     tasks: dict[str, ScheduledTask] = {}
-    api = _GitHub()
     monkeypatch.setattr(schedule, "configured_token", lambda _token: "test-token")
-    monkeypatch.setattr(schedule, "GitHubRestClient", lambda _token: api)
+    monkeypatch.setattr(schedule, "GitHubRestClient", lambda _token: _RepairApi())
     monkeypatch.setattr(schedule, "ensure_background_service", lambda **_kw: None)
     monkeypatch.setattr(schedule, "get_task", tasks.get)
 
@@ -444,8 +308,12 @@ def test_schedule_reuses_active_run_instead_of_resetting_deadline(
         return task
 
     monkeypatch.setattr(schedule, "add_task", add)
-    first, reused, _ = schedule.schedule_repair(demo=True, owner="alice", store=store)
-    second, reused_again, _ = schedule.schedule_repair(demo=True, owner="alice", store=store)
+    first, reused, _ = schedule.schedule_repair(
+        owner="alice", repo="service", pr_number=1, store=store
+    )
+    second, reused_again, _ = schedule.schedule_repair(
+        owner="alice", repo="service", pr_number=1, store=store
+    )
     assert not reused and reused_again
     assert first.id == second.id and first.deadline == second.deadline
     assert first.owner == "alice"
@@ -457,11 +325,11 @@ def test_schedule_refuses_when_owner_is_omitted(
 ) -> None:
     """The token login is not a substitute for the owner the model must supply."""
     monkeypatch.setattr(schedule, "configured_token", lambda _token: "test-token")
-    monkeypatch.setattr(schedule, "GitHubRestClient", lambda _token: _GitHub())
+    monkeypatch.setattr(schedule, "GitHubRestClient", lambda _token: _RepairApi())
     store = RepairStore(tmp_path)
 
     with pytest.raises(RepairRefused, match="explicit GitHub owner"):
-        schedule.schedule_repair(demo=True, store=store)
+        schedule.schedule_repair(owner="", repo="service", pr_number=1, store=store)
     assert store.newest_for(123) is None
 
 
@@ -474,26 +342,14 @@ def test_failure_retains_diagnostics_and_report_contains_evidence_links(tmp_path
             "reason": "CI remains failing.",
         }
     )
-    api = _GitHub()
-    fixture.cleanup_demo(api, run)
-    assert not api.calls
     report = render_report(run, tmp_path)
     assert all(line.startswith("- ") for line in report.splitlines())
     assert run.pr_url in report and run.failed_run_url in report
     assert "**Repair attempts:** 4" in report and "Temporary artifacts retained" in report
 
 
-def test_extra_workflow_in_marked_repo_is_refused(tmp_path: Path) -> None:
-    files = fixture.baseline_files("main")
-    files[".github/workflows/deploy.yml"] = "name: unrelated deployment"
-    api = _GitHub(files=files)
-    with pytest.raises(ValueError, match="unrecognized or modified"):
-        fixture.prepare_demo(api, _run(), RepairStore(tmp_path))
-    assert all(method == "GET" for method, _, _ in api.calls)
-
-
 @pytest.mark.parametrize("changed_head", [False, True])
-def test_worker_retries_then_cleans_only_the_verified_head(
+def test_worker_retries_then_credits_only_the_verified_head(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     changed_head: bool,
@@ -501,11 +357,10 @@ def test_worker_retries_then_cleans_only_the_verified_head(
     from integrations.github.tools.ci_repair_loop import worker
 
     store = RepairStore(tmp_path)
-    run = _run()
-    api = _GitHub()
+    run = _run(pr_number=1, fast_checks=True)
     monkeypatch.setattr(worker, "configured_token", lambda: "test-token")
     monkeypatch.setattr(worker, "verify_coding_agent", lambda: (True, "ready"))
-    monkeypatch.setattr(worker, "GitHubRestClient", lambda _token: api)
+    monkeypatch.setattr(worker, "GitHubRestClient", lambda _token: _RepairApi())
 
     def clone(_url: str, workspace: str, **_kwargs: Any) -> None:
         Path(workspace).mkdir()
@@ -519,7 +374,7 @@ def test_worker_retries_then_cleans_only_the_verified_head(
         nonlocal calls
         calls += 1
         assert kwargs["allowed_paths"] == frozenset({"calculator.py"})
-        assert kwargs["expected_source_head_sha"] == run.initial_sha
+        assert kwargs["expected_source_head_sha"] == "broken"
         assert kwargs["registration_seconds"] == 0
         assert kwargs["settle_seconds"] == 0
         assert kwargs["poll_interval_seconds"] == 2
@@ -532,11 +387,7 @@ def test_worker_retries_then_cleans_only_the_verified_head(
         return {
             "state": "OPEN",
             "headRefOid": (
-                "someone-else"
-                if finished and changed_head
-                else "fixed"
-                if finished
-                else run.initial_sha
+                "someone-else" if finished and changed_head else "fixed" if finished else "broken"
             ),
             "statusCheckRollup": [
                 {
@@ -552,11 +403,9 @@ def test_worker_retries_then_cleans_only_the_verified_head(
     assert run.attempts == CI_REPAIR_MAX_ATTEMPTS
     if changed_head:
         assert run.status is RepairStatus.FAILED and not run.checks_passed
-        assert api.prs[0]["state"] == "open" and run.branch in api.refs
     else:
         assert run.status is RepairStatus.SUCCEEDED and run.checks_passed
         assert run.fixed_sha == "fixed" and run.passed_run_url
-        assert api.prs[0]["state"] == "closed" and run.branch not in api.refs
     # A finished run keeps its records, not its checkout, whatever the outcome.
     supervisor.finish_run(store, run)
     assert not Path(run.workspace).exists()
@@ -606,7 +455,7 @@ def test_account_change_stops_before_any_remote_write(
 ) -> None:
     from integrations.github.tools.ci_repair_loop import worker
 
-    api = _GitHub()
+    api = _RepairApi()
     monkeypatch.setattr(worker, "configured_token", lambda: "test-token")
     monkeypatch.setattr(worker, "verify_coding_agent", lambda: (True, "ready"))
     monkeypatch.setattr(worker, "GitHubRestClient", lambda _token: api)
@@ -618,7 +467,7 @@ def test_account_change_stops_before_any_remote_write(
     monkeypatch.setattr(worker, "clone_repository", refuse_clone)
     with pytest.raises(ValueError, match="account changed"):
         worker.execute_repair(run, RepairStore(tmp_path))
-    assert [(method, path) for method, path, _ in api.calls] == [("GET", "user")]
+    assert api.calls == [("GET", "user")]
 
 
 def test_real_cron_tick_saves_terminal_report_before_stopping_schedule(
@@ -646,9 +495,9 @@ def test_real_cron_tick_saves_terminal_report_before_stopping_schedule(
     store = RepairStore(tmp_path / "repair")
     monkeypatch.setattr(supervisor, "RepairStore", lambda: store)
     monkeypatch.setattr(schedule, "configured_token", lambda _token: "test-token")
-    monkeypatch.setattr(schedule, "GitHubRestClient", lambda _token: _GitHub())
+    monkeypatch.setattr(schedule, "GitHubRestClient", lambda _token: _RepairApi())
     monkeypatch.setattr(schedule, "ensure_background_service", lambda **_kw: None)
-    run, _, _ = schedule.schedule_repair(demo=True, owner="alice", store=store)
+    run, _, _ = schedule.schedule_repair(owner="alice", repo="service", pr_number=1, store=store)
     run.status, run.reason = RepairStatus.TIMED_OUT, "Fixture runner reached its deadline."
     store.save(run)
     delivered = threading.Event()
@@ -691,7 +540,7 @@ def test_existing_green_pr_still_waits_for_late_checks(
     from integrations.github.tools.ci_fix.verification import CheckState, CheckVerification
     from integrations.github.tools.ci_repair_loop import worker
 
-    run = _run(pr_number=1).model_copy(update={"demo": False})
+    run = _run(pr_number=1)
     states = iter(
         [
             {
@@ -727,7 +576,7 @@ def test_a_green_pr_with_skipped_jobs_is_verified_not_waited_out(
     from integrations.github.tools.ci_repair_loop import worker
 
     # Arrange: a settled rollup of successes and skips, and a verification that passes
-    run = _run(pr_number=6054).model_copy(update={"demo": False})
+    run = _run(pr_number=6054)
     pr = {
         "state": "OPEN",
         "headRefOid": "green-head",
@@ -901,7 +750,8 @@ def test_a_green_head_pushed_by_someone_else_is_not_credited(
     """Only a head this run pushed may become the repair commit."""
     from integrations.github.tools.ci_repair_loop import worker
 
-    # Arrange: the run pushed "mine", but the PR head is now a contributor's commit that is green
+    # Arrange: the run pushed "mine", but the PR head is now a contributor's commit that the
+    # fixer finds nothing left to repair on, and that then turns green
     run = _run(pr_number=6404).model_copy(
         update={"initial_sha": "old-head", "attempts": 1, "pushed_shas": ["mine"]}
     )
@@ -914,38 +764,42 @@ def test_a_green_head_pushed_by_someone_else_is_not_credited(
                 "headRefOid": "theirs",
                 "statusCheckRollup": [{"conclusion": "FAILURE"}],
             },
+            {
+                "state": "OPEN",
+                "headRefOid": "theirs",
+                "statusCheckRollup": [{"conclusion": "SUCCESS"}],
+            },
         ]
     )
+
+    def verify(*_args: Any, **_kwargs: Any) -> None:
+        pytest.fail("A head this run did not push was verified for credit")
+
     monkeypatch.setattr(worker, "_read_pr", lambda *_args: next(reads))
     monkeypatch.setattr(
         worker, "run_ci_fix", lambda **_kw: {"success": True, "error_kind": "no_failing_checks"}
     )
+    monkeypatch.setattr(worker, "wait_for_pr_checks", verify)
     monkeypatch.setattr(worker, "record_ci_fix_outcome", lambda _output: None)
     monkeypatch.setattr(worker.time, "sleep", lambda _seconds: None)
 
     # Act
     worker._repair(run, store, "test-token")
 
-    # Assert: no credit or edit is taken once the demo head leaves the owned chain.
+    # Assert: the contributor's green head never becomes this run's repair commit
     assert run.fixed_sha == "" and run.checks_passed is False
     assert run.status is RepairStatus.FAILED
-    assert run.attempt_errors == []
-    assert "changed outside this repair run" in run.reason
+    assert run.attempt_errors == ["no_failing_checks"]
 
 
 @pytest.mark.parametrize(
-    ("demo", "fix_head_sha", "expected_calls", "expected_status"),
-    [
-        (False, "", 2, RepairStatus.QUEUED),
-        (True, "", 1, RepairStatus.FAILED),
-        (False, "pushed", 1, RepairStatus.FAILED),
-    ],
-    ids=["follows-new-head", "demo-stops", "replaced-push-stops"],
+    ("fix_head_sha", "expected_calls", "expected_status"),
+    [("", 2, RepairStatus.QUEUED), ("pushed", 1, RepairStatus.FAILED)],
+    ids=["follows-new-head", "replaced-push-stops"],
 )
 def test_a_head_that_moves_before_the_push_is_read_again(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
-    demo: bool,
     fix_head_sha: str,
     expected_calls: int,
     expected_status: RepairStatus,
@@ -955,7 +809,7 @@ def test_a_head_that_moves_before_the_push_is_read_again(
     from integrations.github.tools.ci_repair_loop import worker
 
     monkeypatch.setattr(database, "database_path", lambda: tmp_path / "repairs.db")
-    run = _run().model_copy(update={"demo": demo, "initial_sha": "source-head" if demo else ""})
+    run = _run()
     store = RepairStore(tmp_path / "runs")
     store.directory(run.id).mkdir(parents=True)
     heads = iter(["source-head", "moved-head", "fixed"])
@@ -988,152 +842,6 @@ def test_a_head_that_moves_before_the_push_is_read_again(
     assert calls == ["source-head", "moved-head"][:expected_calls]
     assert run.status is expected_status
     assert run.checks_passed is (expected_calls == 2)
-
-
-@pytest.mark.parametrize(
-    ("prepared_source", "pushed_shas", "repair_head", "checks_state", "result_head"),
-    [
-        ("source-head", [], "first-repair", "", "first-repair"),
-        ("first-repair", ["first-repair"], "second-repair", "failed", "third-repair"),
-    ],
-)
-def test_a_prepared_demo_push_is_resumed_after_the_worker_restarts(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    prepared_source: str,
-    pushed_shas: list[str],
-    repair_head: str,
-    checks_state: str,
-    result_head: str,
-) -> None:
-    """Each durable push intent owns its remote head before ``pushed_shas`` is saved."""
-    from integrations.github.tools.ci_fix.storage import database
-    from integrations.github.tools.ci_fix.storage.attempts import (
-        PreparedPush,
-        repair_key,
-        save_prepared_push,
-    )
-    from integrations.github.tools.ci_repair_loop import worker
-
-    monkeypatch.setattr(database, "database_path", lambda: tmp_path / "repairs.db")
-    run = _run(pr_number=7).model_copy(
-        update={"initial_sha": "source-head", "attempts": 1, "pushed_shas": list(pushed_shas)}
-    )
-    save_prepared_push(
-        repair_key(run.owner, run.repo, str(run.pr_number)),
-        PreparedPush(
-            prepared_source,
-            repair_head,
-            run.branch,
-            ["calculator.py"],
-            checks_state=checks_state,
-        ),
-    )
-    store = RepairStore(tmp_path / "runs")
-    store.directory(run.id).mkdir(parents=True)
-    reads = iter(
-        [
-            {
-                "state": "OPEN",
-                "headRefOid": repair_head,
-                "statusCheckRollup": [{"conclusion": "FAILURE"}],
-            },
-            {
-                "state": "OPEN",
-                "headRefOid": result_head,
-                "statusCheckRollup": [{"conclusion": "SUCCESS"}],
-            },
-        ]
-    )
-    calls: list[dict[str, Any]] = []
-
-    def resume(**kwargs: Any) -> dict[str, Any]:
-        calls.append(kwargs)
-        return {"success": True, "checks_state": "passed", "fix_head_sha": result_head}
-
-    monkeypatch.setattr(worker, "_read_pr", lambda *_args: next(reads))
-    monkeypatch.setattr(worker, "run_ci_fix", resume)
-    monkeypatch.setattr(worker, "record_ci_fix_outcome", lambda _output: None)
-
-    worker._repair(run, store, "test-token")
-
-    assert len(calls) == 1
-    assert calls[0]["expected_source_head_sha"] == repair_head
-    assert run.pushed_shas == list(dict.fromkeys((*pushed_shas, repair_head, result_head)))
-    assert run.checks_passed is True and run.fixed_sha == result_head
-
-
-@pytest.mark.parametrize(
-    ("prepared_source", "pushed_shas"),
-    [("source-head", []), ("first-repair", ["first-repair"])],
-)
-def test_a_verified_prepared_demo_push_is_credited_after_the_worker_restarts(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-    prepared_source: str,
-    pushed_shas: list[str],
-) -> None:
-    """A crash after durable verification does not lose a successful repair."""
-    from integrations.github.tools.ci_fix.storage import database
-    from integrations.github.tools.ci_fix.storage.attempts import (
-        PreparedPush,
-        repair_key,
-        save_prepared_push,
-    )
-    from integrations.github.tools.ci_fix.verification import CheckState, CheckVerification
-    from integrations.github.tools.ci_repair_loop import worker
-
-    monkeypatch.setattr(database, "database_path", lambda: tmp_path / "repairs.db")
-    run = _run(pr_number=7).model_copy(
-        update={"initial_sha": "source-head", "attempts": 1, "pushed_shas": list(pushed_shas)}
-    )
-    save_prepared_push(
-        repair_key(run.owner, run.repo, str(run.pr_number)),
-        PreparedPush(
-            prepared_source,
-            "repair-head",
-            run.branch,
-            ["calculator.py"],
-            checks_state=CheckState.PASSED.value,
-        ),
-    )
-    store = RepairStore(tmp_path / "runs")
-    store.directory(run.id).mkdir(parents=True)
-    current = {
-        "state": "OPEN",
-        "headRefOid": "repair-head",
-        "statusCheckRollup": [
-            {
-                "conclusion": "SUCCESS",
-                "detailsUrl": run.repository_url + "/actions/runs/456",
-            }
-        ],
-    }
-    recorded: list[dict[str, Any]] = []
-
-    def no_repair(**_kwargs: Any) -> dict[str, Any]:
-        pytest.fail("A verified prepared push launched another repair")
-
-    monkeypatch.setattr(worker, "_read_pr", lambda *_args: current)
-    monkeypatch.setattr(worker, "run_ci_fix", no_repair)
-    monkeypatch.setattr(
-        worker,
-        "wait_for_pr_checks",
-        lambda *_args, **_kwargs: CheckVerification(
-            state=CheckState.PASSED, check_names=("quality",)
-        ),
-    )
-    monkeypatch.setattr(worker, "record_ci_fix_outcome", recorded.append)
-
-    worker._repair(run, store, "test-token")
-
-    assert run.status is RepairStatus.SUCCEEDED
-    assert run.pushed_shas == [*pushed_shas, "repair-head"]
-    assert run.checks_passed is True and run.fixed_sha == "repair-head"
-    assert run.reason == "The repair commit passed CI."
-    assert run.passed_run_url.endswith("/actions/runs/456")
-    assert recorded[-1]["source_head_sha"] == prepared_source
-    assert store.get(run.id).checks_passed is True
 
 
 class _PullRequestApi:
@@ -1170,9 +878,7 @@ def test_scheduling_refuses_a_fork_or_closed_pull_request_up_front(
 
     # Act / Assert: refused with the reason and what to choose instead; nothing stays reserved
     with pytest.raises(ValueError, match=expected):
-        schedule.schedule_repair(
-            demo=False, owner="Tracer-Cloud", repo="opensre", pr_number=6408, store=store
-        )
+        schedule.schedule_repair(owner="Tracer-Cloud", repo="opensre", pr_number=6408, store=store)
     assert store.newest_for(123) is None
 
 
@@ -1224,7 +930,6 @@ def test_a_finished_run_drops_its_checkout_but_keeps_its_records(tmp_path: Path)
         update={
             "id": "abcdefabcdef",
             "workspace": str(checkout),
-            "demo": False,
             "status": RepairStatus.FAILED,
         }
     )
@@ -1248,7 +953,7 @@ def test_a_checkout_that_survives_removal_is_reported_as_retained(
     checkout = tmp_path / "checkout"
     checkout.mkdir()
     monkeypatch.setattr(storage.shutil, "rmtree", lambda *_a, **_kw: None)
-    run = _run(pr_number=6408).model_copy(update={"workspace": str(checkout), "demo": False})
+    run = _run(pr_number=6408).model_copy(update={"workspace": str(checkout)})
 
     # Act
     RepairStore(tmp_path).discard_checkout(run)
@@ -1291,9 +996,7 @@ def test_an_active_run_is_reused_without_the_pull_request_check(
 
     # Arrange: an active run for the target, and a GitHub that now reports the PR closed
     store = RepairStore(tmp_path)
-    active = _run(pr_number=6408).model_copy(
-        update={"owner": "Tracer-Cloud", "repo": "opensre", "demo": False}
-    )
+    active = _run(pr_number=6408).model_copy(update={"owner": "Tracer-Cloud", "repo": "opensre"})
     store.reserve(active)
     api = _PullRequestApi(state="closed", head_full_name="Tracer-Cloud/opensre")
     monkeypatch.setattr(schedule, "GitHubRestClient", lambda _token: api)
@@ -1302,7 +1005,7 @@ def test_an_active_run_is_reused_without_the_pull_request_check(
 
     # Act
     run, reused, _next_run = schedule.schedule_repair(
-        demo=False, owner="Tracer-Cloud", repo="opensre", pr_number=6408, store=store
+        owner="Tracer-Cloud", repo="opensre", pr_number=6408, store=store
     )
 
     # Assert
@@ -1331,9 +1034,7 @@ def test_a_failed_pull_request_lookup_still_returns_the_active_run(
 
     # Arrange
     store = RepairStore(tmp_path)
-    active = _run(pr_number=6408).model_copy(
-        update={"owner": "Tracer-Cloud", "repo": "opensre", "demo": False}
-    )
+    active = _run(pr_number=6408).model_copy(update={"owner": "Tracer-Cloud", "repo": "opensre"})
     store.reserve(active)
     monkeypatch.setattr(schedule, "GitHubRestClient", lambda _token: _PullRequestLookupDown())
     monkeypatch.setattr(schedule, "configured_token", lambda _token: "t", raising=False)
@@ -1341,7 +1042,7 @@ def test_a_failed_pull_request_lookup_still_returns_the_active_run(
 
     # Act
     run, reused, _next_run = schedule.schedule_repair(
-        demo=False, owner="Tracer-Cloud", repo="opensre", pr_number=6408, store=store
+        owner="Tracer-Cloud", repo="opensre", pr_number=6408, store=store
     )
 
     # Assert
@@ -1352,10 +1053,10 @@ def test_interrupted_registration_recovers_original_run(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     store = RepairStore(tmp_path)
-    original, _ = store.reserve(_run().model_copy(update={"actor": "old-alice"}))
+    original, _ = store.reserve(_run(pr_number=1).model_copy(update={"actor": "old-alice"}))
     tasks: dict[str, ScheduledTask] = {}
     monkeypatch.setattr(schedule, "configured_token", lambda _token: "test-token")
-    monkeypatch.setattr(schedule, "GitHubRestClient", lambda _token: _GitHub())
+    monkeypatch.setattr(schedule, "GitHubRestClient", lambda _token: _RepairApi())
     monkeypatch.setattr(schedule, "get_task", tasks.get)
     monkeypatch.setattr(schedule, "ensure_background_service", lambda **_kw: None)
 
@@ -1364,7 +1065,9 @@ def test_interrupted_registration_recovers_original_run(
         return task
 
     monkeypatch.setattr(schedule, "add_task", add)
-    resumed, reused, _ = schedule.schedule_repair(demo=True, owner="alice", store=store)
+    resumed, reused, _ = schedule.schedule_repair(
+        owner="alice", repo="service", pr_number=1, store=store
+    )
     assert reused and resumed.id == original.id and resumed.deadline == original.deadline
     assert resumed.status is RepairStatus.QUEUED and len(tasks) == 1
 
@@ -1390,7 +1093,7 @@ def test_hosted_scheduler_registers_without_an_os_service(
     store = RepairStore(tmp_path)
     tasks: dict[str, ScheduledTask] = {}
     monkeypatch.setattr(schedule, "configured_token", lambda _token: "test-token")
-    monkeypatch.setattr(schedule, "GitHubRestClient", lambda _token: _GitHub())
+    monkeypatch.setattr(schedule, "GitHubRestClient", lambda _token: _RepairApi())
     monkeypatch.setattr(schedule, "get_task", tasks.get)
     monkeypatch.setattr(schedule, "add_task", lambda task: tasks.setdefault(task.id, task))
 
@@ -1400,7 +1103,7 @@ def test_hosted_scheduler_registers_without_an_os_service(
     monkeypatch.setattr(schedule, "ensure_background_service", refuse)
 
     run, reused, next_run = schedule.schedule_repair(
-        demo=True, owner="alice", store=store, scheduler_in_process=True
+        owner="alice", repo="service", pr_number=1, store=store, scheduler_in_process=True
     )
 
     assert not reused
@@ -1425,7 +1128,7 @@ def test_new_repair_schedule_is_due_now(tmp_path: Path, monkeypatch: pytest.Monk
     tasks: dict[str, ScheduledTask] = {}
     monkeypatch.setattr(schedule, "datetime", _FrozenDateTime)
     monkeypatch.setattr(schedule, "configured_token", lambda _token: "test-token")
-    monkeypatch.setattr(schedule, "GitHubRestClient", lambda _token: _GitHub())
+    monkeypatch.setattr(schedule, "GitHubRestClient", lambda _token: _RepairApi())
     monkeypatch.setattr(schedule, "ensure_background_service", lambda **_kwargs: None)
     monkeypatch.setattr(schedule, "get_task", tasks.get)
 
@@ -1435,7 +1138,9 @@ def test_new_repair_schedule_is_due_now(tmp_path: Path, monkeypatch: pytest.Monk
 
     monkeypatch.setattr(schedule, "add_task", add)
 
-    run, reused, next_run = schedule.schedule_repair(demo=True, owner="alice", store=store)
+    run, reused, next_run = schedule.schedule_repair(
+        owner="alice", repo="service", pr_number=1, store=store
+    )
 
     assert not reused
     task = tasks[run.id]
@@ -1468,7 +1173,7 @@ def recorded(monkeypatch: pytest.MonkeyPatch) -> _RecordedEvents:
     return events
 
 
-_DEMO_REPOSITORY = f"alice/{GITHUB_CI_DEMO_REPOSITORY}"
+_REPOSITORY = "alice/service"
 
 
 @pytest.mark.parametrize("remote", [True, False], ids=["gateway", "shell"])
@@ -1479,64 +1184,82 @@ def test_only_a_gateway_scheduled_loop_records_that_remote_monitoring_started(
     store = RepairStore(tmp_path)
     tasks: dict[str, ScheduledTask] = {}
     monkeypatch.setattr(schedule, "configured_token", lambda _token: "test-token")
-    monkeypatch.setattr(schedule, "GitHubRestClient", lambda _token: _GitHub())
+    monkeypatch.setattr(schedule, "GitHubRestClient", lambda _token: _RepairApi())
     monkeypatch.setattr(schedule, "get_task", tasks.get)
     monkeypatch.setattr(schedule, "add_task", lambda task: tasks.setdefault(task.id, task))
     monkeypatch.setattr(schedule, "ensure_background_service", lambda **_kw: None)
 
     # Act: the second request reuses the active run, so monitoring did not start again
     run, _, _ = schedule.schedule_repair(
-        demo=True, owner="alice", store=store, scheduler_in_process=remote
+        owner="alice", repo="service", pr_number=1, store=store, scheduler_in_process=remote
     )
-    schedule.schedule_repair(demo=True, owner="alice", store=store, scheduler_in_process=remote)
+    schedule.schedule_repair(
+        owner="alice", repo="service", pr_number=1, store=store, scheduler_in_process=remote
+    )
 
     # Assert
     assert store.get(run.id).remote is remote
     started = (
         "remote_ci_monitoring_started",
-        {"repair_run_id": run.id, "repository": _DEMO_REPOSITORY, "demo": True},
+        {"repair_run_id": run.id, "repository": _REPOSITORY, "demo": False, "pr_number": 1},
     )
     assert recorded.events == ([started] if remote else [])
 
 
 @pytest.mark.parametrize("remote", [True, False], ids=["gateway", "shell"])
-def test_the_demo_records_its_failing_pull_request_once_on_either_host(
-    tmp_path: Path, recorded: _RecordedEvents, remote: bool
+def test_the_seeded_demo_records_its_failing_pull_request_once_on_either_host(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recorded: _RecordedEvents, remote: bool
 ) -> None:
     # Arrange
-    api = _GitHub()
     store = RepairStore(tmp_path)
-    run = _run(remote=remote)
+    tasks: dict[str, ScheduledTask] = {}
+    monkeypatch.setattr(schedule, "configured_token", lambda _token: "test-token")
+    monkeypatch.setattr(schedule, "GitHubRestClient", lambda _token: _RepairApi())
+    monkeypatch.setattr(schedule, "get_task", tasks.get)
+    monkeypatch.setattr(schedule, "add_task", lambda task: tasks.setdefault(task.id, task))
+    monkeypatch.setattr(schedule, "ensure_background_service", lambda **_kw: None)
+    seeded = "opensre-ci-repair-demo-g0xd"
 
-    # Act: a restarted worker recovers the same pull request
-    fixture.prepare_demo(api, run, store)
-    fixture.prepare_demo(api, store.get(run.id), store)
+    # Act: the seeded-demo tool schedules its pull request; a repeat reuses the active run
+    run, _, _ = schedule.schedule_repair(
+        owner="alice",
+        repo=seeded,
+        pr_number=1,
+        store=store,
+        scheduler_in_process=remote,
+        fast_checks=True,
+    )
+    schedule.schedule_repair(
+        owner="alice",
+        repo=seeded,
+        pr_number=1,
+        store=store,
+        scheduler_in_process=remote,
+        fast_checks=True,
+    )
 
     # Assert
-    assert recorded.events == [
-        (
-            "test_ci_failure_triggered",
-            {
-                "repair_run_id": run.id,
-                "repository": _DEMO_REPOSITORY,
-                "demo": True,
-                "pr_number": 1,
-                "remote": remote,
-            },
-        )
-    ]
+    on_pr = {
+        "repair_run_id": run.id,
+        "repository": f"alice/{seeded}",
+        "demo": True,
+        "pr_number": 1,
+    }
+    started = ("remote_ci_monitoring_started", on_pr)
+    failure = ("test_ci_failure_triggered", {**on_pr, "remote": remote})
+    assert recorded.events == ([started, failure] if remote else [failure])
 
 
-def _repair_the_demo_on_the_second_attempt(
+def _repair_on_the_second_attempt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, run: RepairRun
 ) -> None:
-    """Run the worker on the demo: the first attempt leaves CI red, the second one's commit passes."""
+    """Run the worker: the first attempt leaves CI red, the second one's commit passes."""
     from integrations.github.tools.ci_repair_loop import worker
 
     store = RepairStore(tmp_path)
     monkeypatch.setattr(worker, "configured_token", lambda: "test-token")
     monkeypatch.setattr(worker, "verify_coding_agent", lambda: (True, "ready"))
-    monkeypatch.setattr(worker, "GitHubRestClient", lambda _token: _GitHub())
+    monkeypatch.setattr(worker, "GitHubRestClient", lambda _token: _RepairApi())
     monkeypatch.setattr(
         worker, "clone_repository", lambda _url, workspace, **_kw: Path(workspace).mkdir()
     )
@@ -1556,7 +1279,7 @@ def _repair_the_demo_on_the_second_attempt(
         link = run.repository_url + "/actions/runs/1"
         return {
             "state": "OPEN",
-            "headRefOid": "fixed" if attempts == 2 else run.initial_sha,
+            "headRefOid": "fixed" if attempts == 2 else "broken",
             "statusCheckRollup": [{"conclusion": conclusion, "detailsUrl": link}],
         }
 
@@ -1570,52 +1293,30 @@ def test_a_remote_loop_records_the_failure_it_saw_and_the_repair_that_passed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recorded: _RecordedEvents
 ) -> None:
     # Arrange
-    run = _run(remote=True)
+    run = _run(pr_number=1, remote=True)
 
     # Act
-    _repair_the_demo_on_the_second_attempt(tmp_path, monkeypatch, run)
+    _repair_on_the_second_attempt(tmp_path, monkeypatch, run)
 
     # Assert: one detection for two red reads, then the passing repair
-    assert recorded.names() == [
-        "test_ci_failure_triggered",
-        "remote_ci_failure_detected",
-        "remote_ci_repair_succeeded",
-    ]
-    on_pr = {"repair_run_id": run.id, "repository": _DEMO_REPOSITORY, "demo": True, "pr_number": 1}
-    _, detected = recorded.events[1]
-    _, succeeded = recorded.events[2]
+    assert recorded.names() == ["remote_ci_failure_detected", "remote_ci_repair_succeeded"]
+    on_pr = {"repair_run_id": run.id, "repository": _REPOSITORY, "demo": False, "pr_number": 1}
+    _, detected = recorded.events[0]
+    _, succeeded = recorded.events[1]
     assert detected == on_pr
     duration_ms = succeeded.pop("duration_ms")
     assert succeeded == {**on_pr, "attempts": 2}
     assert isinstance(duration_ms, int) and duration_ms >= 0
 
 
-def test_a_remote_loop_does_not_record_success_when_demo_cleanup_fails(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recorded: _RecordedEvents
-) -> None:
-    from integrations.github.tools.ci_repair_loop import worker
-
-    def fail(_client: object, _run: RepairRun) -> None:
-        raise GitHubApiError("close failed", status_code=HTTPStatus.BAD_GATEWAY)
-
-    monkeypatch.setattr(worker, "cleanup_demo", fail)
-    run = _run(remote=True)
-
-    with pytest.raises(GitHubApiError):
-        _repair_the_demo_on_the_second_attempt(tmp_path, monkeypatch, run)
-
-    assert run.status is not RepairStatus.SUCCEEDED
-    assert "remote_ci_repair_succeeded" not in recorded.names()
-
-
-def test_a_loop_scheduled_from_the_shell_records_only_the_test_failure(
+def test_a_loop_scheduled_from_the_shell_records_no_remote_milestone(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recorded: _RecordedEvents
 ) -> None:
     # Act
-    _repair_the_demo_on_the_second_attempt(tmp_path, monkeypatch, _run())
+    _repair_on_the_second_attempt(tmp_path, monkeypatch, _run(pr_number=1))
 
     # Assert
-    assert recorded.names() == ["test_ci_failure_triggered"]
+    assert recorded.names() == []
 
 
 def test_setup_exception_details_stay_out_of_persisted_reports(
@@ -1623,14 +1324,14 @@ def test_setup_exception_details_stay_out_of_persisted_reports(
 ) -> None:
     store = RepairStore(tmp_path)
     monkeypatch.setattr(schedule, "configured_token", lambda _token: "test-token")
-    monkeypatch.setattr(schedule, "GitHubRestClient", lambda _token: _GitHub())
+    monkeypatch.setattr(schedule, "GitHubRestClient", lambda _token: _RepairApi())
     monkeypatch.setattr(schedule, "get_task", lambda _id: None)
 
     def fail_service(**_kwargs: Any) -> None:
         raise RuntimeError("secret-provider-internal-detail")
 
     monkeypatch.setattr(schedule, "ensure_background_service", fail_service)
-    run, _, _ = schedule.schedule_repair(demo=True, owner="alice", store=store)
+    run, _, _ = schedule.schedule_repair(owner="alice", repo="service", pr_number=1, store=store)
     assert run.status is RepairStatus.FAILED
     assert "secret-provider-internal-detail" not in render_report(store.get(run.id), tmp_path)
 
@@ -1658,13 +1359,43 @@ def test_worker_exception_details_stay_in_local_logs(
     assert "private-provider-exception-detail" in caplog.text
 
 
+def test_a_stored_fixed_repository_demo_run_stops_before_any_repair(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A queued run of the retired demo still loads, then fails without touching GitHub."""
+    import threading
+
+    from integrations.github.tools.ci_repair_loop import worker
+
+    # Arrange: the record as the retired demo stored it, before the seeded-demo fields
+    store = RepairStore(tmp_path)
+    legacy = _run().model_dump()
+    legacy["demo"] = True
+    legacy.pop("fast_checks")
+    store.path.write_text(json.dumps({"version": 1, "runs": {legacy["id"]: legacy}}))
+    monkeypatch.setattr(worker, "start_watchdog", lambda _deadline: threading.Event())
+
+    def no_repair(*_args: Any) -> None:
+        pytest.fail("A retired demo run reached the repair")
+
+    monkeypatch.setattr(worker, "execute_repair", no_repair)
+
+    # Act
+    worker.run_ci_repair_worker(tmp_path, str(legacy["id"]))
+
+    # Assert
+    saved = store.get(str(legacy["id"]))
+    assert saved.status is RepairStatus.FAILED and saved.finished_at is not None
+    assert "fixed-repository demo was retired" in saved.reason
+
+
 def test_wait_until_terminal_returns_when_the_run_finishes(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     from integrations.github.tools.ci_repair_loop import tool
 
     store = RepairStore(tmp_path)
-    run = _run(pr_number=4).model_copy(update={"demo": False})
+    run = _run(pr_number=4)
     store.save(run)
     monkeypatch.setattr(tool, "RepairStore", lambda: store)
     monkeypatch.setattr(tool, "configured_token", lambda _token: "request-token")
@@ -1695,7 +1426,7 @@ def test_wait_until_terminal_stops_at_the_repair_deadline(
     from integrations.github.tools.ci_repair_loop import tool
 
     store = RepairStore(tmp_path)
-    run = _run(pr_number=4).model_copy(update={"demo": False, "deadline": time.time() - 1})
+    run = _run(pr_number=4).model_copy(update={"deadline": time.time() - 1})
     store.save(run)
     monkeypatch.setattr(tool, "RepairStore", lambda: store)
     monkeypatch.setattr(tool, "configured_token", lambda _token: "request-token")
@@ -1775,43 +1506,6 @@ def _demo_check_github(head: str, rollup: list[dict[str, Any]]) -> Any:
     return github
 
 
-def test_demo_verification_passes_when_the_head_check_is_already_successful(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    from integrations.github.tools.ci_repair_loop import worker
-
-    head = "fixed-sha"
-    run = _run(pr_number=7)
-    passed = {
-        "name": "test",
-        "conclusion": "SUCCESS",
-        "status": "COMPLETED",
-        "workflowName": "Demo calculator CI",
-        "detailsUrl": "https://github.com/alice/demo/actions/runs/9",
-    }
-    pr = {"state": "OPEN", "headRefOid": head, "statusCheckRollup": [passed]}
-    clock = _Clock()
-    seen: dict[str, Any] = {}
-
-    def open_pr(_run: RepairRun, _token: str) -> dict[str, Any]:
-        return pr
-
-    monkeypatch.setattr(
-        "integrations.github.tools.ci_fix.verification.run_gh_json",
-        _demo_check_github(head, [passed]),
-    )
-    monkeypatch.setattr(worker, "wait_for_pr_checks", _clocked_wait(clock, seen))
-    monkeypatch.setattr(worker, "_read_pr", open_pr)
-
-    assert worker._verify_green(run, pr, "token") is True
-    assert run.status is RepairStatus.SUCCEEDED
-    assert seen["registration_seconds"] == 0
-    assert seen["settle_seconds"] == 0
-    assert seen["poll_interval_seconds"] == 2
-    assert clock.sleeps == []
-    assert clock.now == 0.0
-
-
 def test_seeded_demo_repository_skips_the_registration_window(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1820,7 +1514,7 @@ def test_seeded_demo_repository_skips_the_registration_window(
 
     head = "fixed-sha"
     run = _run(pr_number=1).model_copy(
-        update={"demo": False, "repo": "opensre-ci-repair-demo-g0xd", "fast_checks": True}
+        update={"repo": "opensre-ci-repair-demo-g0xd", "fast_checks": True}
     )
     passed = {
         "name": "test",
@@ -1841,17 +1535,18 @@ def test_seeded_demo_repository_skips_the_registration_window(
     monkeypatch.setattr(worker, "_read_pr", lambda _run, _token: pr)
 
     assert worker._verify_green(run, pr, "token") is True
+    assert run.status is RepairStatus.SUCCEEDED
     assert seen["registration_seconds"] == 0
     assert seen["settle_seconds"] == 0
+    assert seen["poll_interval_seconds"] == 2
     assert clock.sleeps == []
+    assert clock.now == 0.0
 
 
 def test_a_repository_named_like_the_demo_keeps_the_normal_check_wait() -> None:
     from integrations.github.tools.ci_repair_loop import worker
 
-    run = _run(pr_number=1).model_copy(
-        update={"demo": False, "repo": "opensre-ci-repair-demo-g0xd"}
-    )
+    run = _run(pr_number=1).model_copy(update={"repo": "opensre-ci-repair-demo-g0xd"})
     assert worker._check_wait(run) == {}
 
 
@@ -1865,7 +1560,7 @@ def test_seeded_demo_repair_may_change_only_calculator(
     fast_checks: bool,
     allowed_paths: frozenset[str] | None,
 ) -> None:
-    """The seeded demo runs with demo false, so fast_checks alone limits its edits.
+    """The seeded-demo flag alone limits a repair to calculator.py.
 
     A repository that is only named like the demo is repaired as an ordinary PR.
     """
@@ -1873,11 +1568,7 @@ def test_seeded_demo_repair_may_change_only_calculator(
 
     store = RepairStore(tmp_path)
     run = _run(pr_number=1).model_copy(
-        update={
-            "demo": False,
-            "repo": "opensre-ci-repair-demo-g0xd",
-            "fast_checks": fast_checks,
-        }
+        update={"repo": "opensre-ci-repair-demo-g0xd", "fast_checks": fast_checks}
     )
     store.directory(run.id).mkdir()
     seen: dict[str, Any] = {}
@@ -1910,7 +1601,7 @@ def test_demo_verification_keeps_waiting_while_checks_are_empty_or_running(
     from integrations.github.tools.ci_repair_loop import worker
 
     head = "fixed-sha"
-    run = _run(pr_number=7)
+    run = _run(pr_number=7, fast_checks=True)
     running = {
         "name": "test",
         "conclusion": "",

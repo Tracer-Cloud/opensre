@@ -188,7 +188,7 @@ def _repair(*, deadline: float = 500) -> RepairRun:
         actor="tester",
         actor_id=123,
         repo="opensre-ci-repair-demo-poll",
-        demo=True,
+        fast_checks=True,
         started_at=0,
         deadline=deadline,
         pr_number=1,
@@ -450,7 +450,7 @@ def _drive_repair(
     return run, calls
 
 
-def test_demo_loop_ignores_empty_queued_and_green_then_repairs_the_seeded_head(
+def test_demo_loop_ignores_empty_and_queued_then_repairs_the_seeded_head(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path, seeded_demo: dict[str, Any]
 ) -> None:
     failing = seeded_demo["head_sha"]
@@ -464,11 +464,6 @@ def test_demo_loop_ignores_empty_queued_and_green_then_repairs_the_seeded_head(
                 "state": "OPEN",
                 "headRefOid": failing,
                 "statusCheckRollup": [_demo_check(status="QUEUED", conclusion="")],
-            },
-            {
-                "state": "OPEN",
-                "headRefOid": failing,
-                "statusCheckRollup": [_demo_check(conclusion="SUCCESS")],
             },
             {
                 "state": "OPEN",

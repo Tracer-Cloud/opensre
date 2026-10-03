@@ -9,7 +9,6 @@ from config.package_exports import bind_package_exports
 EXPORTS: dict[str, str] = {
     "ANALYTICS_CICD_ENV": "analytics",
     "CONNECT_INTEGRATIONS_HEADING": "skill_prerequisites",
-    "GITHUB_CI_DEMO_REPOSITORY": "github",
     "GITHUB_INTEGRATION_SETUP_CLI": "github",
     "GITHUB_INTEGRATION_SETUP_SLASH": "github",
     "GITHUB_SETUP_SLASH_INVOKE": "github",

@@ -1,4 +1,4 @@
-"""Isolated scheduled worker: fixture, evidence-led repair, and outcome-specific cleanup."""
+"""Isolated scheduled worker: evidence-led repair of one pull request."""
 
 from __future__ import annotations
 
@@ -24,11 +24,6 @@ from integrations.github.tools.ci_fix.errors import (
 from integrations.github.tools.ci_fix.gh import run_gh_json
 from integrations.github.tools.ci_fix.ledger import record_ci_fix_outcome
 from integrations.github.tools.ci_fix.runner import run_ci_fix
-from integrations.github.tools.ci_fix.storage.attempts import (
-    PreparedPush,
-    load_prepared_push,
-    repair_key,
-)
 from integrations.github.tools.ci_fix.verification import (
     CheckState,
     all_checks_settled,
@@ -37,16 +32,16 @@ from integrations.github.tools.ci_fix.verification import (
 )
 from integrations.github.tools.ci_repair_loop import telemetry
 from integrations.github.tools.ci_repair_loop.credentials import account_id, configured_token
-from integrations.github.tools.ci_repair_loop.fixture import (
-    DemoRepositoryMismatch,
-    cleanup_demo,
-    object_response,
-    prepare_demo,
-)
 from integrations.github.tools.ci_repair_loop.models import RepairRun, RepairStatus
+from integrations.github.tools.ci_repair_loop.responses import object_response
 from integrations.github.tools.ci_repair_loop.storage import RepairStore
 
 logger = logging.getLogger(__name__)
+
+#: Reason recorded on a stored run of the retired fixed-repository demo.
+_RETIRED_DEMO_REASON = (
+    "The fixed-repository demo was retired, so this run was stopped. Run the CI repair demo again."
+)
 
 _DEMO_REGISTRATION_SECONDS = 0
 _DEMO_SETTLE_SECONDS = 0
@@ -62,12 +57,12 @@ class _CheckWait(TypedDict, total=False):
 
 
 def _demo_repository(run: RepairRun) -> bool:
-    """True for the fixed demo, or the seeded demo PR its tool just scheduled.
+    """True for the seeded demo PR its tool just scheduled.
 
     ``run.fast_checks`` is set only by the seeded-demo tool, never from a repository
-    name. Both demos hold one known workflow and one file the repair may change.
+    name. The demo holds one known workflow and one file the repair may change.
     """
-    return run.demo or run.fast_checks
+    return run.fast_checks
 
 
 def _check_wait(run: RepairRun) -> _CheckWait:
@@ -83,20 +78,6 @@ def _check_wait(run: RepairRun) -> _CheckWait:
         "settle_seconds": _DEMO_SETTLE_SECONDS,
         "poll_interval_seconds": _DEMO_POLL_INTERVAL_SECONDS,
     }
-
-
-def _prepared_demo_head(run: RepairRun, head: str) -> PreparedPush | None:
-    """Return the durable push proving that ``head`` belongs to this run, if any."""
-    known_heads = {run.initial_sha, *run.pushed_shas}
-    prepared = load_prepared_push(repair_key(run.owner, run.repo, str(run.pr_number)))
-    if (
-        prepared is not None
-        and prepared.source_head_sha in known_heads
-        and prepared.fix_head_sha == head
-        and prepared.branch_name == run.branch
-    ):
-        return prepared
-    return None
 
 
 def _read_pr(run: RepairRun, token: str) -> dict[str, Any]:
@@ -166,48 +147,11 @@ def _repair(run: RepairRun, store: RepairStore, token: str) -> None:
             run.status, run.reason = RepairStatus.CANCELLED, "The PR was closed."
             return
         head = str(pr.get("headRefOid") or "")
-        prepared = _prepared_demo_head(run, head) if run.demo and run.initial_sha else None
-        known_heads = {run.initial_sha, *run.pushed_shas}
-        if run.demo and run.initial_sha and head not in known_heads and prepared is None:
-            run.status, run.reason = (
-                RepairStatus.FAILED,
-                "The demo branch changed outside this repair run; no further edit was made.",
-            )
-            return
-        if prepared is not None and head not in run.pushed_shas:
-            # The push is durable before the attempt result reaches this run. Recover
-            # that ownership first so a later attempt can extend the same head chain.
-            run.pushed_shas.append(head)
-            store.save(run)
         rows = pr.get("statusCheckRollup") or []
         failed = any(check_failed(row, expected_skips=set()) for row in rows)
         if not failed:
-            # A new fixture must first be observed failing. Empty or queued checks
-            # prove nothing. A settled head pushed by this run can be judged again
-            # after a restart even when verification had already become terminal.
-            verify_owned_head = not run.demo or head in run.pushed_shas
-            if all_checks_settled(rows) and verify_owned_head and _verify_green(run, pr, token):
-                if run.demo and run.status is RepairStatus.SUCCEEDED:
-                    run.fixed_sha = head
-                    run.checks_passed = True
-                    run.reason = "The repair commit passed CI."
-                    record_ci_fix_outcome(
-                        {
-                            "success": True,
-                            "checks_state": CheckState.PASSED.value,
-                            "owner": run.owner,
-                            "repo": run.repo,
-                            "target_type": "pr",
-                            "pr_number": run.pr_number,
-                            "source_head_sha": (
-                                prepared.source_head_sha
-                                if prepared is not None
-                                else run.initial_sha
-                            ),
-                            "fix_head_sha": head,
-                        }
-                    )
-                    store.save(run)
+            # Empty or queued checks prove nothing; only a settled head is verified.
+            if all_checks_settled(rows) and _verify_green(run, pr, token):
                 return
             time.sleep(2)
             continue
@@ -257,8 +201,7 @@ def _repair(run: RepairRun, store: RepairStore, token: str) -> None:
         run.attempt_errors.append(error)
         run.reason = f"Repair attempt {run.attempts}: {_reason_for(error, run)}"
         store.save(run)
-        # A head that moved before any push left nothing to undo: read it again. A
-        # demo run then stops at the ownership check above.
+        # A head that moved before any push left nothing to undo: read it again.
         moved_before_push = error == ERR_CHECKS_SUPERSEDED and not pushed
         retryable = {"checks_failed", "execution_error", "timeout", "no_changes"}
         if error not in retryable and not moved_before_push:
@@ -269,7 +212,7 @@ def _repair(run: RepairRun, store: RepairStore, token: str) -> None:
             run.reason = f"Stopped after {CI_REPAIR_MAX_ATTEMPTS} failed repair attempts."
             return
         time.sleep(1)
-    run.status, run.reason = RepairStatus.TIMED_OUT, "The demo reached its time budget."
+    run.status, run.reason = RepairStatus.TIMED_OUT, "The repair reached its time budget."
 
 
 #: What an attempt's error kind means for the person reading the run, in plain words.
@@ -331,17 +274,14 @@ def _green_after_repair(
 
 
 def execute_repair(run: RepairRun, store: RepairStore) -> None:
-    """Keep all remote writes inside the supervised worker and its fixed repository scope."""
+    """Keep all remote writes inside the supervised worker and its pinned repository scope."""
     ready, _detail = verify_coding_agent()
     if not ready:
-        raise ValueError("Configure and authenticate a coding agent before starting the demo.")
+        raise ValueError("Configure and authenticate a coding agent before starting the repair.")
     token = configured_token()
-    client = GitHubRestClient(token)
-    user = object_response(client.request("GET", "user"))
+    user = object_response(GitHubRestClient(token).request("GET", "user"))
     if not run.actor_id or account_id(user) != run.actor_id:
         raise ValueError("The background GitHub account changed; repair stopped.")
-    if run.demo:
-        prepare_demo(client, run, store)
     directory = store.directory(run.id)
     directory.mkdir(parents=True, exist_ok=True)
     workspace = directory / "checkout"
@@ -352,7 +292,6 @@ def execute_repair(run: RepairRun, store: RepairStore) -> None:
     if not run.checks_passed:
         _repair(run, store, token)
     if run.checks_passed:
-        cleanup_demo(client, run)
         run.status = RepairStatus.SUCCEEDED
         telemetry.repair_succeeded(run)
 
@@ -367,6 +306,9 @@ def run_ci_repair_worker(store_directory: Path, run_id: str) -> None:
     try:
         if time.time() >= work_deadline:
             run.status, run.reason = RepairStatus.TIMED_OUT, "The original deadline has expired."
+        elif run.demo:
+            # Its fixture, branch guard, and cleanup are gone; touch nothing on GitHub.
+            run.status, run.reason = RepairStatus.FAILED, _RETIRED_DEMO_REASON
         else:
             run.status = RepairStatus.RUNNING
             store.save(run)
@@ -378,13 +320,7 @@ def run_ci_repair_worker(store_directory: Path, run_id: str) -> None:
                 run.reason = (
                     "GitHub authorization failed; repair stopped."
                     if exc.status_code in {HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN}
-                    else "GitHub could not complete the demo; inspect retained diagnostics."
-                )
-            except DemoRepositoryMismatch:
-                logger.exception("Demo repository ownership or baseline check failed")
-                run.status, run.reason = (
-                    RepairStatus.FAILED,
-                    "The fixed repository is unrecognized or modified; existing files were preserved.",
+                    else "GitHub could not complete the repair; inspect retained diagnostics."
                 )
             except (ValueError, GitHubCiFixError):
                 logger.exception("CI repair could not continue")

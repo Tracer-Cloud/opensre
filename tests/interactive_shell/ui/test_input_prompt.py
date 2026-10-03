@@ -250,7 +250,7 @@ class TestResolvePromptPlaceholder:
     def test_default_when_no_session_context(self) -> None:
         session = Session()
         text = _placeholder_text(session)
-        assert text == "Ask about an alert"
+        assert text == "Drop a repo link. Watch it find your CI waste."
         assert "Enter send" not in text
 
     def test_placeholder_prompts_to_continue_an_unfinished_plan(self) -> None:
