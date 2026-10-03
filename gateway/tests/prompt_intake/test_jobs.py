@@ -374,3 +374,31 @@ def test_a_question_whose_answer_is_still_running_outlives_its_retention(tmp_pat
     assert held_while_running is asked
     assert asked.id in stored_while_running
     assert reopened is not None and restarted.answer(reopened, "release") is not None
+
+
+def test_two_tasks_holding_one_question_accept_only_one_answer(tmp_path: Path) -> None:
+    """Overlapping tasks must not both run an answer on the same conversation."""
+    # Arrange: a waiting question, then two tasks that both loaded it from the shared store
+    path = tmp_path / "prompt-jobs.jsonl"
+    clock = _Clock()
+    first = PromptQueue(clock=clock.read, store=JsonlPromptJobStore(path))
+    asked = first.submit("fix ci", context={}, actor="a")
+    assert asked is not None and first.take(timeout_seconds=0.01) is asked
+    first.needs_input(asked, "Which branch?", choice={"title": "Which branch?"})
+    old_task = PromptQueue(clock=clock.read, store=JsonlPromptJobStore(path))
+    new_task = PromptQueue(clock=clock.read, store=JsonlPromptJobStore(path))
+    held_by_old = old_task.get(asked.id)
+    held_by_new = new_task.get(asked.id)
+    assert held_by_old is not None and held_by_new is not None
+
+    # Act: each task is asked to answer the question it holds, with a different answer
+    accepted = old_task.answer(held_by_old, "main")
+    with pytest.raises(AnswerRefused) as refused:
+        new_task.answer(held_by_new, "release")
+
+    # Assert: one answer runs; the other task now shows the question answered by it
+    assert accepted is not None and refused.value.code == ALREADY_ANSWERED
+    assert new_task.take(timeout_seconds=0.01) is None
+    assert held_by_new.answered_by == accepted.id
+    seen_from_new = new_task.get(accepted.id)
+    assert seen_from_new is not None and seen_from_new.view()["parent_prompt_id"] == asked.id

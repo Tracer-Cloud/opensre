@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
+from collections.abc import Iterator
 from http import HTTPStatus
 from pathlib import Path
-from typing import Any
 
 import pytest
 from fastapi.testclient import TestClient
@@ -157,12 +156,14 @@ def test_an_answer_is_queued_as_a_follow_up_only_while_the_prompt_is_asking(
 
 
 class _UnwritableStore(JsonlPromptJobStore):
-    """The record file, while ``writable`` is off as on a mount that refuses writes."""
+    """The record file on a mount that refuses writes while ``writable`` is off."""
 
     writable = True
 
-    def save(self, record: Mapping[str, Any]) -> bool:
-        return self.writable and super().save(record)
+    def _append(self, data: bytes) -> None:
+        if not self.writable:
+            raise PermissionError("read-only mount")
+        super()._append(data)
 
 
 def test_a_prompt_or_answer_the_store_refused_is_not_accepted(

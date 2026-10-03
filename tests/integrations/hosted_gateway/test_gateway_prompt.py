@@ -349,6 +349,33 @@ def test_a_full_prompt_queue_is_not_described_as_a_restart(monkeypatch: pytest.M
     assert "may still be starting" not in out["response_text"]
 
 
+@pytest.mark.parametrize(
+    ("call", "advice"),
+    [
+        ({"prompt": "delegate the demo"}, "safe to send it again"),
+        ({"prompt_id": _ID}, "ask about that id again"),
+    ],
+)
+def test_retry_advice_names_a_prompt_id_only_when_one_exists(
+    monkeypatch: pytest.MonkeyPatch, call: dict[str, str], advice: str
+) -> None:
+    """A fresh prompt the gateway refused got no id, so it cannot be asked about."""
+    # Arrange: the gateway could not save the request
+    monkeypatch.setattr(
+        gateway_prompt.HostedGatewayClient,
+        "from_account",
+        lambda: _app_refusing(HTTPStatus.SERVICE_UNAVAILABLE, "prompt_store_unavailable"),
+    )
+
+    # Act
+    out = ask_hosted_gateway(**call)
+
+    # Assert: a known prompt is named with its id; a fresh one is safe to send again
+    assert advice in out["response_text"]
+    assert ("prompt_id" in call) == (_ID in out["response_text"])
+    assert out.get("prompt_id", "") == call.get("prompt_id", "")
+
+
 def test_free_text_from_the_app_is_not_shown_to_the_user(monkeypatch: pytest.MonkeyPatch) -> None:
     # Arrange
     leaked = f"connection refused for {_TOKEN}"

@@ -287,6 +287,8 @@ class PromptQueue:
         #: Unsettled prompts another live task owns; re-read, never run here.
         self._foreign: set[str] = set()
         self._foreign_read_at: float | None = None
+        #: When each waiting question was last re-read for an answer another task took.
+        self._reread_at: dict[str, float] = {}
         #: Settled jobs dropped by retention, kept until the worker retires their sessions.
         self._forgotten: deque[PromptJob] = deque()
         self._lock = threading.Lock()
@@ -327,9 +329,11 @@ class PromptQueue:
             changed.pop(job_id, None)
             drop.append(job_id)
         store.compact(drop=drop)
+        records: list[dict[str, Any]] = []
         for job in changed.values():
             with job._lock:
-                store.save(job._bump(now))
+                records.append(job._bump(now))
+        self._save(*records)
 
     def submit(self, prompt: str, *, context: dict[str, str], actor: str) -> PromptJob | None:
         """Queue a prompt; ``None`` when the queue is full.
@@ -364,8 +368,9 @@ class PromptQueue:
         """Queue the answer as a follow-up on the parent's session; ``None`` when full.
 
         Raises :class:`AnswerRefused` when the parent is not waiting for an answer
-        or already has one, and :class:`PromptNotSaved` when the store did not
-        take the answer (the parent then takes an answer again).
+        or already has one — here or, per the store, in another task — and
+        :class:`PromptNotSaved` when the store did not take the answer (the parent
+        then takes an answer again).
         """
         self._refresh_foreign()
         now = self._clock()
@@ -387,21 +392,22 @@ class PromptQueue:
                     session_id=parent.session_id,
                     parent_id=parent.id,
                 )
-                with job._lock:
-                    follow_up_record = job._bump(now)
+                known_revision = parent.revision
+                # Holds the question against a second answer in this task while the claim runs.
                 parent.answered_by = job.id
-                parent_record = parent._bump(now)
             self._reserved += 1
-        # The follow-up first: a parent saved as answered by a prompt the store never
-        # got would refuse every later answer after a restart.
-        saved = self._save(follow_up_record) and self._save(parent_record)
+        try:
+            claimed = self._claim(parent, job, known_revision, now)
+        except AnswerRefused:
+            self._release(parent, job)
+            # Another task took the question: show its claim here from now on.
+            self._reread(parent)
+            raise
+        if not claimed:
+            self._release(parent, job)
+            raise PromptNotSaved
         with self._lock:
             self._reserved -= 1
-            if not saved:
-                with parent._lock:
-                    if parent.answered_by == job.id:
-                        parent.answered_by = ""
-                raise PromptNotSaved
             self._enqueue(job)
         return job
 
@@ -434,6 +440,7 @@ class PromptQueue:
 
     def get(self, prompt_id: str) -> PromptJob | None:
         self._refresh_foreign()
+        self._reread_waiting(prompt_id)
         with self._lock:
             self._forget_expired()
             return self._jobs.get(prompt_id)
@@ -569,6 +576,89 @@ class PromptQueue:
         self._jobs[job.id] = job
         self._available.notify()
 
+    def _claim(self, parent: PromptJob, job: PromptJob, known_revision: int, now: float) -> bool:
+        """Record the answer as the parent's in the store, unless another task got there first.
+
+        Under the store's lock the parent's newest record decides: a later change
+        that is no longer waiting refuses with ``not_waiting``, an answer this
+        task has not seen refuses with ``already_answered``; otherwise the
+        follow-up and the answered parent are written together.
+        """
+        if self._store is None:
+            return True
+
+        def decide(stored: dict[str, Any] | None) -> list[dict[str, Any]]:
+            latest = PromptJob.from_record(stored) if stored is not None else None
+            if latest is not None and latest.revision >= known_revision:
+                if latest.revision > known_revision and latest.state is not PromptState.NEEDS_INPUT:
+                    raise AnswerRefused(NOT_WAITING)
+                if latest.answered_by:
+                    raise AnswerRefused(ALREADY_ANSWERED)
+            with job._lock:
+                follow_up_record = job._bump(now)
+            with parent._lock:
+                if latest is not None:
+                    # Stay above whatever the store holds, so this record wins on reload.
+                    parent.revision = max(parent.revision, latest.revision)
+                parent_record = parent._bump(now)
+            return [follow_up_record, parent_record]
+
+        return self._store.compare_and_append(parent.id, decide)
+
+    def _release(self, parent: PromptJob, job: PromptJob) -> None:
+        """Undo an answer that was not accepted: free its slot and the parent's hold."""
+        with self._lock:
+            self._reserved -= 1
+            with parent._lock:
+                if parent.answered_by == job.id:
+                    parent.answered_by = ""
+
+    def _reread_waiting(self, prompt_id: str) -> None:
+        """Re-read a waiting question, at most once per ``refresh_seconds``.
+
+        Another task sharing the store may have accepted an answer to it.
+        """
+        if self._store is None:
+            return
+        now = self._clock()
+        with self._lock:
+            job = self._jobs.get(prompt_id)
+            if job is None or job.state is not PromptState.NEEDS_INPUT or job.answered_by:
+                return
+            last = self._reread_at.get(prompt_id)
+            if last is not None and now - last < self._refresh_seconds:
+                return
+            self._reread_at[prompt_id] = now
+        self._reread(job)
+
+    def _reread(self, job: PromptJob) -> None:
+        """Take the store's newer state of ``job``, and the other task's answer to it."""
+        if self._store is None:
+            return
+        stored = {str(record.get("id", "")): record for record in self._store.load()}
+        with self._lock:
+            if self._jobs.get(job.id) is job:
+                self._adopt_stored(stored, job)
+
+    def _adopt_stored(self, stored: Mapping[str, Mapping[str, Any]], job: PromptJob) -> None:
+        """Adopt a newer stored ``job``; track an answer to it this task does not hold.
+
+        The caller holds the lock. Such an answer belongs to another task, so it is
+        re-read like any foreign prompt and taken over if that task dies.
+        """
+        newer = PromptJob.from_record(stored.get(job.id, {}))
+        if newer is not None:
+            with job._lock:
+                job._adopt(newer)
+        follow_up_id = job.answered_by
+        if not follow_up_id or follow_up_id in self._jobs:
+            return
+        follow_up = PromptJob.from_record(stored.get(follow_up_id, {}))
+        if follow_up is not None:
+            self._jobs[follow_up_id] = follow_up
+            if not follow_up.settled:
+                self._foreign.add(follow_up_id)
+
     def _refresh_foreign(self) -> None:
         """Re-read the prompts another task owns, and take over those whose owner went silent.
 
@@ -597,12 +687,8 @@ class PromptQueue:
                     continue
                 # The owner may also have changed the parent (a reopened question).
                 for held in (job, self._jobs.get(job.parent_id)):
-                    if held is None:
-                        continue
-                    newer = PromptJob.from_record(stored.get(held.id, {}))
-                    if newer is not None:
-                        with held._lock:
-                            held._adopt(newer)
+                    if held is not None:
+                        self._adopt_stored(stored, held)
                 if job.settled:
                     self._foreign.discard(job_id)
                 elif not self._alive(job, now):
@@ -659,6 +745,7 @@ class PromptQueue:
     def _forget_expired(self) -> None:
         """Drop settled results older than the retention window; caller holds the lock."""
         for job_id in self._expired_ids(self._clock()):
+            self._reread_at.pop(job_id, None)
             self._forgotten.append(self._jobs.pop(job_id))
 
 

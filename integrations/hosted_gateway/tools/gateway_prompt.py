@@ -113,6 +113,13 @@ _LOST_CONTACT = (
     "with that id in a minute; if the gateway restarted meanwhile, the prompt reads as "
     "interrupted and has to be sent again."
 )
+#: A failed read or answer of a prompt the gateway already holds: the id is the way back.
+_ASK_AGAIN_ABOUT = (
+    "The gateway still holds prompt {prompt_id}; ask about that id again in a minute rather "
+    "than sending the prompt again."
+)
+#: A fresh prompt that got no id: the gateway never took it.
+_SAFE_TO_RESEND = "The gateway did not take the prompt, so it is safe to send it again in a minute."
 _FAILED_INTEGRATIONS = (
     "The hosted gateway's {vendors} integration failed during this request. The gateway "
     "uses the organization's {vendors} credential from {url}, not this machine's: if that "
@@ -237,7 +244,7 @@ def ask_hosted_gateway(
                 record = client.prompt_result(parent_id)
             integrations_url = f"{client.app_url}{HOSTED_GATEWAY_INTEGRATIONS_PATH}"
     except HostedGatewayError as exc:
-        return _failure(exc, in_flight)
+        return _failure(exc, in_flight, known=prompt_id.strip())
     outcome = _outcome(record, waited, integrations_url, scope)
     if not_used and record.state == "needs_input":
         outcome["response_text"] = not_used + outcome["response_text"]
@@ -257,19 +264,31 @@ def _waiting_notice(exc: HostedGatewayError) -> str:
     return f"{_UNANSWERED_NOTICE}. {cause}"
 
 
-def _failure(exc: HostedGatewayError, in_flight: str) -> dict[str, Any]:
-    """A failed call's result; once a prompt was accepted, a transient failure keeps its id.
+def _failure(exc: HostedGatewayError, in_flight: str, *, known: str) -> dict[str, Any]:
+    """A failed call's result; a transient failure says how to retry without running twice.
 
-    Without the id the caller cannot read the prompt later, and a resend would run it twice.
+    Once a prompt was accepted (``in_flight``) or the call named one (``known``),
+    the result keeps that id: without it the caller cannot read the prompt later,
+    and a resend would run it twice. A fresh prompt that got no id was never
+    taken, so sending it again is safe.
     """
     out = failure_output(exc, tool_name=TOOL_NAME, component=_COMPONENT)
-    if not in_flight or exc.code not in TRANSIENT_ERRORS:
+    if exc.code not in TRANSIENT_ERRORS:
         return out
-    text = _LOST_CONTACT.format(prompt_id=in_flight)
-    cause = cause_sentence(exc)
-    if cause:
-        text = f"{text} {cause}"
-    return {**out, "prompt_id": in_flight, "error": text, "response_text": text}
+    prompt_id = in_flight or known
+    if in_flight:
+        text = _LOST_CONTACT.format(prompt_id=in_flight)
+        cause = cause_sentence(exc)
+        if cause:
+            text = f"{text} {cause}"
+    elif prompt_id:
+        text = f"{out['response_text']} {_ASK_AGAIN_ABOUT.format(prompt_id=prompt_id)}"
+    else:
+        text = f"{out['response_text']} {_SAFE_TO_RESEND}"
+    result = {**out, "error": text, "response_text": text}
+    if prompt_id:
+        result["prompt_id"] = prompt_id
+    return result
 
 
 def _answer_not_used(record: PromptRecord) -> str:
