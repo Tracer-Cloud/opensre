@@ -61,17 +61,19 @@ jobs:
         run: |
           set -euo pipefail
           skills_dir=core/agent_harness/prompts/skills
-          # The whole pushed range, not just its last commit; a manual run or a
-          # new branch falls back to the previous commit.
+          # The whole pushed range, not just its last commit. Only a manual run or a
+          # new branch (no "before") uses the previous commit; if the range start
+          # cannot be fetched, fail rather than publish a partial set of edits.
           base=HEAD~1
-          if [[ -n "${BEFORE_SHA}" && ! "${BEFORE_SHA}" =~ ^0+$ ]] \
-            && git fetch --quiet --depth=1 origin "${BEFORE_SHA}"; then
+          if [[ -n "${BEFORE_SHA}" && ! "${BEFORE_SHA}" =~ ^0+$ ]]; then
+            git fetch --quiet --depth=1 origin "${BEFORE_SHA}"
             base="${BEFORE_SHA}"
           fi
           args=(--runner-token-env SKILLS_SYNC_TOKEN)
           # Shared files carry no version: publish exactly the ones this push changed,
           # so a newer fast-lane edit to another shared file is never reverted.
+          # --no-renames lists a rename as delete + add, so the old path is removed too.
           while IFS= read -r path; do
             [[ -n "${path}" ]] && args+=(--shared-file "${path#"${skills_dir}"/}")
-          done < <(git diff --name-only "${base}" HEAD -- "${skills_dir}/common")
+          done < <(git diff --name-only --no-renames "${base}" HEAD -- "${skills_dir}/common")
           uv run opensre skills push "${args[@]}"

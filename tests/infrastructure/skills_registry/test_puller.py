@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import os
+import subprocess
+import sys
 from http import HTTPStatus
+from pathlib import Path
 from typing import Any
 
 import httpx
@@ -115,13 +119,27 @@ def test_pull_rejects_an_unsigned_release_and_does_not_cache_its_etag(
     assert calls == ["", ""]
 
 
-def test_one_process_claims_each_release_announcement() -> None:
-    """Concurrent activations of one release report it once per machine."""
-    from concurrent.futures import ThreadPoolExecutor
+_CLAIM_SCRIPT = """
+import sys
+from core.agent_harness.prompts.skills.snapshot.release_store import claim_announcement
+sys.stdout.write(str(claim_announcement("remote:7")))
+"""
 
-    with ThreadPoolExecutor(max_workers=8) as pool:
-        claims = list(pool.map(lambda _i: release_store.claim_announcement("remote:7"), range(8)))
 
-    assert claims.count(True) == 1
-    assert release_store.claim_announcement("remote:7") is False
-    assert release_store.claim_announcement("remote:8") is True
+@pytest.mark.timeout(120)
+def test_one_process_claims_each_release_announcement(tmp_path: Path) -> None:
+    """Separate processes activating one release together report it once per machine."""
+    env = {**os.environ, "OPENSRE_HOME": str(tmp_path / "home")}
+    processes = [
+        subprocess.Popen(
+            [sys.executable, "-c", _CLAIM_SCRIPT],
+            cwd=Path(__file__).resolve().parents[3],
+            env=env,
+            stdout=subprocess.PIPE,
+            text=True,
+        )
+        for _ in range(6)
+    ]
+    claims = [process.communicate(timeout=100)[0].strip() for process in processes]
+
+    assert sorted(claims) == ["False"] * 5 + ["True"]
