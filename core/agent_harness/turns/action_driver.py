@@ -342,6 +342,26 @@ def _closing_tool_chunks(chunks: Sequence[str], *, include_outcome: bool) -> lis
     return [chunk for index, chunk in enumerate(chunks) if index not in drop]
 
 
+def _visible_closing_text(chunks: Sequence[str]) -> str:
+    """Cap bulky tool text without letting it push the outcome report off screen.
+
+    The display cap keeps the start of a combined blob. A long result before
+    the report would hide the report, so the report stays whole and only the
+    other text is capped.
+    """
+    outcome = ""
+    others: list[str] = []
+    for chunk in chunks:
+        if is_outcome_report(chunk):
+            outcome = chunk
+        else:
+            others.append(chunk)
+    capped = cap_for_display("\n".join(others)) if others else ""
+    if outcome and capped:
+        return f"{outcome}\n\n{capped}"
+    return outcome or capped
+
+
 def _painted_results_only(result: Any) -> bool:
     """True when the turn's content came from tools that painted it themselves.
 
@@ -934,7 +954,7 @@ def _compose_response(
     # Filter the formatted tool text, not only ``response_text``, so a tool
     # that reports a summary or an error stays in the closing.
     if closing_chunks != generic_chunks:
-        display_generic = cap_for_display("\n".join(closing_chunks))
+        display_generic = _visible_closing_text(closing_chunks)
     else:
         display_generic = cap_for_display(generic_text)
     # Defense: never fence a data blob into the transcript (summary/stdout leaks
@@ -964,12 +984,11 @@ def _compose_response(
         # One outcome report: a later snapshot replaces the queued one.
         # Cap it here: this path is the visible reply, and the generic-output
         # path's cap does not apply once inline results cleared that preview.
-        fallback = (
-            _preferred_tool_response_texts(result)
+        display_final = (
+            cap_for_display(_preferred_tool_response_texts(result))
             if closing_chunks == generic_chunks
-            else "\n\n".join(closing_chunks)
+            else _visible_closing_text(closing_chunks)
         )
-        display_final = cap_for_display(fallback)
     is_json = looks_like_json(generic_text)
     body, markers = split_output_truncation_markers(display_generic)
     truncated = bool(markers)

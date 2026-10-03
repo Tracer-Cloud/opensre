@@ -732,6 +732,40 @@ def test_a_short_answer_does_not_reprint_results_already_shown_inline() -> None:
     assert use_final_text is True
 
 
+def test_a_long_result_before_the_snapshot_does_not_hide_the_outcome() -> None:
+    """The display cap keeps the report when a long result is ahead of it.
+
+    Quiet mode stashes the action log, so this fallback is the only copy.
+    """
+    long_summary = "\n".join(f"log line {index}" for index in range(40))
+    result = _Result(
+        tool_results=[
+            (
+                ToolCall(id="1", name="github_cli", input={}),
+                _ToolResult({"ok": True, "stdout": long_summary}),
+            ),
+            (
+                ToolCall(id="2", name="schedule_ci_repair_loop", input={}),
+                _ToolResult(_payload(_outcome("queued. Waiting for the scheduled tick."))),
+            ),
+            (
+                ToolCall(id="3", name="get_ci_repair_loop", input={}),
+                _ToolResult(_payload(_outcome("succeeded. The repair commit passed CI."))),
+            ),
+        ]
+    )
+    session = _Session()
+    session.terminal.inline_tool_results = True  # type: ignore[attr-defined]
+
+    _response_text, display_chunks, _use_final_text = _compose_response(result, session, _counts(3))
+    shown = "\n".join(display_chunks)
+
+    assert "The repair commit passed CI" in shown
+    assert "Waiting for the scheduled tick" not in shown
+    assert "log line 39" not in shown
+    assert shown.count("**Outcome:**") == 1
+
+
 def test_a_short_answer_keeps_one_capped_outcome_when_results_were_not_inline() -> None:
     """Without an action log, the closing keeps the latest snapshot and caps the rest."""
     cleanup = "Saved demo evidence and removed the scheduled repair."
