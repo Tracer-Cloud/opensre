@@ -868,10 +868,18 @@ def test_a_busy_gateway_is_explained_in_plain_words(monkeypatch: pytest.MonkeyPa
     assert "not_admitted" not in out["response_text"]
 
 
+@pytest.mark.parametrize(
+    ("error", "lead"),
+    [
+        ("invalid_answer", "That answer did not match the question's options"),
+        ("interrupted", "The hosted gateway restarted before it used that answer"),
+    ],
+)
 def test_a_rejected_answer_reopens_the_original_question_in_the_shell(
-    monkeypatch: pytest.MonkeyPatch,
+    monkeypatch: pytest.MonkeyPatch, error: str, lead: str
 ) -> None:
-    # Arrange: the parent asks; the user's pick fits no option; the gateway reopens the parent
+    # Arrange: the parent asks; the gateway cannot use the answer (it fits no option, or the
+    # task was replaced mid-turn) and reopens the parent
     question = PromptQuestion("Which branch?", ("main", "release"))
     asked = PromptRecord(
         _ID,
@@ -879,7 +887,7 @@ def test_a_rejected_answer_reopens_the_original_question_in_the_shell(
         question="Which branch?",
         choice=PromptChoice("Which branch?", (question,)),
     )
-    rejected = PromptRecord("p_" + "d" * 32, "failed", error="invalid_answer")
+    rejected = PromptRecord("p_" + "d" * 32, "failed", error=error)
     app = _App([asked, rejected, asked])
     _signed_in_with(monkeypatch, app)
     turn = format_ask_user_answers(
@@ -894,7 +902,7 @@ def test_a_rejected_answer_reopens_the_original_question_in_the_shell(
     # Assert: the menu is parked again on the original prompt, with a one-line reason first
     assert app.answered == [(_ID, "develop")] and app.polled == [_ID, _ID]
     assert out["state"] == "needs_input" and out["prompt_id"] == _ID
-    assert out["response_text"].startswith("That answer did not match the question's options")
+    assert out["response_text"].startswith(lead)
     parked = session.pending_user_choice
     assert parked is not None and parked.options == ("main", "release")
 

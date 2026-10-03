@@ -6,9 +6,10 @@ import threading
 import time
 import uuid
 from collections import deque
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
-from typing import Any
+from typing import Any, TypeGuard
 
 from config.constants.gateway import (
     PROMPT_PROGRESS_KIND_NOTE,
@@ -22,6 +23,7 @@ from config.constants.gateway import (
     PROMPT_QUEUE_MAX,
     PROMPT_RESULT_RETENTION_SECONDS,
 )
+from gateway.core.prompt_intake.job_store import PromptJobStore
 
 _PLAN_PROGRESS_KINDS = frozenset({PROMPT_PROGRESS_KIND_PLAN, PROMPT_PROGRESS_KIND_PLAN_DONE})
 
@@ -61,6 +63,28 @@ class AnswerRefused(Exception):
 NOT_WAITING = "not_waiting"
 ALREADY_ANSWERED = "already_answered"
 
+#: Why a prompt failed, as the caller reads it in ``error``.
+ERROR_CREDITS_DENIED = "credits_denied"
+ERROR_NOT_ADMITTED = "not_admitted"
+ERROR_TURN_FAILED = "turn_failed"
+ERROR_INVALID_ANSWER = "invalid_answer"
+#: The gateway task was replaced while the prompt was queued or running; it never finished.
+ERROR_INTERRUPTED = "interrupted"
+
+#: Shape of a persisted record; a record with another version is not read back.
+_RECORD_VERSION = 1
+_RECORD_TEXT_FIELDS = (
+    "id",
+    "prompt",
+    "actor",
+    "answer",
+    "question",
+    "error_code",
+    "session_id",
+    "parent_id",
+    "answered_by",
+)
+
 
 class PromptState(StrEnum):
     QUEUED = "queued"
@@ -96,6 +120,8 @@ class PromptJob:
     parent_id: str = ""
     #: For a prompt that asked: the follow-up job carrying the answer.
     answered_by: str = ""
+    #: Advanced on every persisted change; the newest record of a prompt wins on reload.
+    revision: int = 0
     #: Newest progress lines as ``(index, text, kind)``. The index lets a poller
     #: print each once; ``kind`` tells the shell how to paint the line.
     progress: deque[tuple[int, str, str]] = field(
@@ -133,9 +159,71 @@ class PromptJob:
                 ]
             return record
 
+    def _bump(self) -> dict[str, Any]:
+        """Advance the revision and return the durable record; the caller holds ``_lock``.
+
+        Progress lines are left out: they only matter while a poller watches the turn.
+        """
+        self.revision += 1
+        return {
+            "v": _RECORD_VERSION,
+            "revision": self.revision,
+            **{name: getattr(self, name) for name in _RECORD_TEXT_FIELDS},
+            "context": dict(self.context),
+            "submitted_at": self.submitted_at,
+            "state": self.state.value,
+            "finished_at": self.finished_at,
+            "failed_integrations": list(self.failed_integrations),
+            "choice": self.choice,
+        }
+
+    @classmethod
+    def from_record(cls, record: Mapping[str, Any]) -> PromptJob | None:
+        """Rebuild a job from a persisted record; ``None`` when this version cannot read it."""
+        if record.get("v") != _RECORD_VERSION:
+            return None
+        texts = {name: record.get(name, "") for name in _RECORD_TEXT_FIELDS}
+        if not all(isinstance(value, str) for value in texts.values()) or not texts["id"]:
+            return None
+        context = record.get("context")
+        failed = record.get("failed_integrations")
+        choice = record.get("choice")
+        submitted_at = record.get("submitted_at")
+        finished_at = record.get("finished_at")
+        revision = record.get("revision")
+        if not (
+            isinstance(context, dict)
+            and all(isinstance(k, str) and isinstance(v, str) for k, v in context.items())
+            and isinstance(failed, list)
+            and all(isinstance(vendor, str) for vendor in failed)
+            and (choice is None or isinstance(choice, dict))
+            and _is_number(submitted_at)
+            and (finished_at is None or _is_number(finished_at))
+            and isinstance(revision, int)
+        ):
+            return None
+        try:
+            state = PromptState(str(record.get("state", "")))
+        except ValueError:
+            return None
+        return cls(
+            **texts,
+            context=context,
+            submitted_at=float(submitted_at),
+            state=state,
+            finished_at=None if finished_at is None else float(finished_at),
+            failed_integrations=tuple(failed),
+            choice=choice,
+            revision=revision,
+        )
+
 
 class PromptQueue:
-    """Bounded FIFO of prompts plus their results, kept for a retention window."""
+    """Bounded FIFO of prompts plus their results, kept for a retention window.
+
+    With a ``store``, every state change is saved there and the prompts an
+    earlier process left behind are taken back at construction.
+    """
 
     def __init__(
         self,
@@ -143,16 +231,60 @@ class PromptQueue:
         max_queued: int = PROMPT_QUEUE_MAX,
         retention_seconds: float = PROMPT_RESULT_RETENTION_SECONDS,
         clock: Any = time.time,
+        store: PromptJobStore | None = None,
     ) -> None:
         self._max_queued = max_queued
         self._retention_seconds = retention_seconds
         self._clock = clock
+        self._store = store
         self._pending: deque[PromptJob] = deque()
         self._jobs: dict[str, PromptJob] = {}
         #: Settled jobs dropped by retention, kept until the worker retires their sessions.
         self._forgotten: deque[PromptJob] = deque()
         self._lock = threading.Lock()
         self._available = threading.Condition(self._lock)
+        if store is not None:
+            self._restore(store)
+
+    def _restore(self, store: PromptJobStore) -> None:
+        """Take back the prompts an earlier process accepted.
+
+        Settled prompts inside the retention window return as they were, so a
+        question can still be read and answered. A prompt still queued or
+        running died with that process: it settles as ``interrupted``, and a
+        question whose answer it carried takes an answer again.
+        """
+        now = self._clock()
+        cutoff = now - self._retention_seconds
+        drop: list[str] = []
+        interrupted: set[str] = set()
+        for record in store.load():
+            job = PromptJob.from_record(record)
+            if job is None:
+                drop.append(str(record.get("id", "")))
+                continue
+            if not job.settled:
+                job.state = PromptState.FAILED
+                job.error_code = ERROR_INTERRUPTED
+                job.finished_at = now
+                interrupted.add(job.id)
+            elif job.finished_at is None or job.finished_at < cutoff:
+                drop.append(job.id)
+                continue
+            self._jobs[job.id] = job
+        reopened = [
+            job.id
+            for job in self._jobs.values()
+            if job.answered_by
+            and (job.answered_by in interrupted or job.answered_by not in self._jobs)
+        ]
+        for job_id in reopened:
+            self._jobs[job_id].answered_by = ""
+        store.compact(drop=drop)
+        for job_id in (*interrupted, *reopened):
+            job = self._jobs[job_id]
+            with job._lock:
+                store.save(job._bump())
 
     def submit(self, prompt: str, *, context: dict[str, str], actor: str) -> PromptJob | None:
         """Queue a prompt; ``None`` when the queue is full."""
@@ -167,10 +299,13 @@ class PromptQueue:
                 actor=actor,
                 submitted_at=self._clock(),
             )
+            with job._lock:
+                record = job._bump()
             self._pending.append(job)
             self._jobs[job.id] = job
             self._available.notify()
-            return job
+        self._save(record)
+        return job
 
     def answer(self, parent: PromptJob, answer: str) -> PromptJob | None:
         """Queue the answer as a follow-up on the parent's session; ``None`` when full.
@@ -196,11 +331,17 @@ class PromptQueue:
                     session_id=parent.session_id,
                     parent_id=parent.id,
                 )
+                with job._lock:
+                    follow_up_record = job._bump()
                 parent.answered_by = job.id
+                parent_record = parent._bump()
             self._pending.append(job)
             self._jobs[job.id] = job
             self._available.notify()
-            return job
+        # The follow-up first: a parent saved as answered by a prompt the store never
+        # got would refuse every later answer after a restart.
+        self._save(follow_up_record, parent_record)
+        return job
 
     def reopen(self, parent_id: str) -> None:
         """Let the parent take another answer after a follow-up could not use its answer."""
@@ -210,6 +351,8 @@ class PromptQueue:
                 return
             with parent._lock:
                 parent.answered_by = ""
+                record = parent._bump()
+        self._save(record)
 
     def take(self, *, timeout_seconds: float) -> PromptJob | None:
         """Block for the next queued job, marking it running; ``None`` on timeout."""
@@ -219,8 +362,11 @@ class PromptQueue:
             if not self._pending:
                 return None
             job = self._pending.popleft()
-            job.state = PromptState.RUNNING
-            return job
+            with job._lock:
+                job.state = PromptState.RUNNING
+                record = job._bump()
+        self._save(record)
+        return job
 
     def get(self, prompt_id: str) -> PromptJob | None:
         with self._lock:
@@ -278,12 +424,17 @@ class PromptQueue:
             job.progress_count += 1
 
     def take_forgotten(self) -> list[PromptJob]:
-        """Jobs dropped by retention since the last call, so their sessions can be retired."""
+        """Jobs dropped by retention since the last call, so their sessions can be retired.
+
+        Their records leave the store here too, off the request path.
+        """
         with self._lock:
             self._forget_expired()
             forgotten = list(self._forgotten)
             self._forgotten.clear()
-            return forgotten
+        if forgotten and self._store is not None:
+            self._store.compact(drop=[job.id for job in forgotten])
+        return forgotten
 
     def holds_session(self, session_id: str) -> bool:
         """Whether any retained job, settled or not, still belongs to ``session_id``."""
@@ -313,6 +464,15 @@ class PromptQueue:
             job.error_code = error_code
             job.failed_integrations = failed_integrations
             job.finished_at = self._clock()
+            record = job._bump()
+        self._save(record)
+
+    def _save(self, *records: dict[str, Any]) -> None:
+        """Hand changed records to the store; called without the queue lock held."""
+        if self._store is None:
+            return
+        for record in records:
+            self._store.save(record)
 
     def _forget_expired(self) -> None:
         """Drop settled results older than the retention window; caller holds the lock."""
@@ -326,8 +486,17 @@ class PromptQueue:
             self._forgotten.append(self._jobs.pop(job_id))
 
 
+def _is_number(value: object) -> TypeGuard[int | float]:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
 __all__ = [
     "ALREADY_ANSWERED",
+    "ERROR_CREDITS_DENIED",
+    "ERROR_INTERRUPTED",
+    "ERROR_INVALID_ANSWER",
+    "ERROR_NOT_ADMITTED",
+    "ERROR_TURN_FAILED",
     "NOT_WAITING",
     "AnswerRefused",
     "PromptJob",

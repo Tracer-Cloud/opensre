@@ -79,8 +79,16 @@ _FAILURE_TEXT = {
         "That answer did not match the question's options. Ask again about the original "
         "prompt id to reopen its menu, then answer from the menu."
     ),
+    "interrupted": (
+        "The hosted gateway restarted before it finished that prompt, so it did not complete. "
+        "Send it again."
+    ),
 }
-_ANSWER_REJECTED = "That answer did not match the question's options; the question opens again. "
+#: A follow-up the gateway could not use; it reopened the question on the original prompt.
+_ANSWER_NOT_USED = {
+    "invalid_answer": "That answer did not match the question's options; the question opens again. ",
+    "interrupted": "The hosted gateway restarted before it used that answer; the question opens again. ",
+}
 #: The prompt id stays in the user's line: it is all the resumed turn keeps of this result.
 _ASKING_IN_SHELL = (
     "The hosted gateway needs your decision; the menu opens now. Your selection goes back "
@@ -102,8 +110,8 @@ _STILL_RUNNING = (
 )
 _LOST_CONTACT = (
     "Lost contact with the hosted gateway while it worked on prompt {prompt_id}. Ask again "
-    "with that id in a minute; if the gateway restarted meanwhile, it no longer holds the "
-    "prompt and the prompt has to be sent again."
+    "with that id in a minute; if the gateway restarted meanwhile, the prompt reads as "
+    "interrupted and has to be sent again."
 )
 _FAILED_INTEGRATIONS = (
     "The hosted gateway's {vendors} integration failed during this request. The gateway "
@@ -222,16 +230,17 @@ def ask_hosted_gateway(
                 relay.skip_recorded(record)
             record, waited = _wait_until_settled(client, record, relay, sent_at=sent_at)
             parent_id = record.parent_prompt_id or prompt_id.strip()
-            rejected = _answer_was_rejected(record) and bool(parent_id)
-            if rejected:
+            is_follow_up = bool(parent_id) and parent_id != record.prompt_id
+            not_used = _answer_not_used(record) if is_follow_up else ""
+            if not_used:
                 # The gateway reopened the question on the original prompt; show it again.
                 record = client.prompt_result(parent_id)
             integrations_url = f"{client.app_url}{HOSTED_GATEWAY_INTEGRATIONS_PATH}"
     except HostedGatewayError as exc:
         return _failure(exc, in_flight)
     outcome = _outcome(record, waited, integrations_url, scope)
-    if rejected and record.state == "needs_input":
-        outcome["response_text"] = _ANSWER_REJECTED + outcome["response_text"]
+    if not_used and record.state == "needs_input":
+        outcome["response_text"] = not_used + outcome["response_text"]
     return outcome
 
 
@@ -263,8 +272,11 @@ def _failure(exc: HostedGatewayError, in_flight: str) -> dict[str, Any]:
     return {**out, "prompt_id": in_flight, "error": text, "response_text": text}
 
 
-def _answer_was_rejected(record: PromptRecord) -> bool:
-    return record.state == "failed" and record.error == "invalid_answer"
+def _answer_not_used(record: PromptRecord) -> str:
+    """The lead line for a failed follow-up whose question takes an answer again, else empty."""
+    if record.state != "failed":
+        return ""
+    return _ANSWER_NOT_USED.get(record.error, "")
 
 
 def _submit_or_continue(

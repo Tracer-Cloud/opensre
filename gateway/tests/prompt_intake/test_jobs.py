@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from config.constants.gateway import (
@@ -11,8 +13,10 @@ from config.constants.gateway import (
 )
 from gateway.core.prompt_intake import (
     ALREADY_ANSWERED,
+    ERROR_INTERRUPTED,
     NOT_WAITING,
     AnswerRefused,
+    JsonlPromptJobStore,
     PromptQueue,
     PromptState,
 )
@@ -228,3 +232,66 @@ def test_progress_keeps_a_three_row_status() -> None:
     queue.note(job, f"  {text}  ")
 
     assert job.view()["progress"][0]["text"] == text
+
+
+def test_a_turn_cut_off_by_a_restart_reads_as_interrupted_and_its_question_opens_again(
+    tmp_path: Path,
+) -> None:
+    # Arrange: a question was answered and the answer's turn was running when the task died
+    path = tmp_path / "prompt-jobs.jsonl"
+    clock = _Clock()
+    before = PromptQueue(clock=clock.read, store=JsonlPromptJobStore(path))
+    asked = before.submit("fix ci", context={}, actor="a")
+    assert asked is not None
+    before.take(timeout_seconds=0.01)
+    asked.session_id = "s-1"
+    before.needs_input(asked, "Which branch?", choice={"title": "Which branch?"})
+    follow_up = before.answer(asked, "main")
+    assert follow_up is not None and before.take(timeout_seconds=0.01) is follow_up
+
+    # Act: a replacement task starts on the same file
+    clock.now += 5.0
+    after = PromptQueue(clock=clock.read, store=JsonlPromptJobStore(path))
+    cut_off = after.get(follow_up.id)
+    parent = after.get(asked.id)
+    assert cut_off is not None and parent is not None
+    again = after.answer(parent, "release")
+
+    # Assert: a terminal code instead of an unknown prompt; the question takes a new answer
+    assert cut_off.view()["error"] == ERROR_INTERRUPTED
+    assert cut_off.view()["parent_prompt_id"] == asked.id
+    assert again is not None and again.session_id == "s-1"
+    # Nothing is left to run: the dead turn is not replayed by the new task.
+    assert after.take(timeout_seconds=0.01) is again
+    assert after.take(timeout_seconds=0.01) is None
+    # A third start reads the settled state, not the stale running record.
+    third = PromptQueue(clock=clock.read, store=JsonlPromptJobStore(path))
+    reread = third.get(follow_up.id)
+    assert reread is not None and reread.error_code == ERROR_INTERRUPTED
+
+
+def test_expired_prompts_leave_the_store_while_running_and_at_restart(tmp_path: Path) -> None:
+    # Arrange: two settled prompts, an hour's retention
+    path = tmp_path / "prompt-jobs.jsonl"
+    clock = _Clock()
+    store = JsonlPromptJobStore(path)
+    queue = PromptQueue(retention_seconds=60.0, clock=clock.read, store=store)
+    early = queue.submit("early", context={}, actor="a")
+    assert early is not None
+    queue.finish(early, "done early")
+    clock.now += 40.0
+    late = queue.submit("late", context={}, actor="a")
+    assert late is not None
+    queue.finish(late, "done late")
+
+    # Act: the first expires while the process runs; the second expires across a restart
+    clock.now += 30.0
+    queue.take_forgotten()
+    stored_after_expiry = {record["id"] for record in store.load()}
+    clock.now += 60.0
+    restarted = PromptQueue(retention_seconds=60.0, clock=clock.read, store=store)
+
+    # Assert
+    assert stored_after_expiry == {late.id}
+    assert restarted.get(late.id) is None
+    assert store.load() == []

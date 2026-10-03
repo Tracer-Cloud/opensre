@@ -27,7 +27,14 @@ from core.tool import (
 )
 from gateway.core.billing.turn_metering import bound_turn_metering
 from gateway.core.middleware.approvals import arguments_preview
-from gateway.core.prompt_intake.jobs import PromptJob, PromptQueue
+from gateway.core.prompt_intake.jobs import (
+    ERROR_CREDITS_DENIED,
+    ERROR_INVALID_ANSWER,
+    ERROR_NOT_ADMITTED,
+    ERROR_TURN_FAILED,
+    PromptJob,
+    PromptQueue,
+)
 from gateway.core.prompt_intake.output import CollectingTurnOutput
 from gateway.core.session.thread_history import seed_session_history
 from infrastructure.analytics.usage_context import UsageSurface, bound_usage_context
@@ -41,11 +48,6 @@ from infrastructure.turn_host.unattended_session import (
     invocation_key,
 )
 from tools.registry import integration_of_tool
-
-ERROR_CREDITS_DENIED = "credits_denied"
-ERROR_NOT_ADMITTED = "not_admitted"
-ERROR_TURN_FAILED = "turn_failed"
-ERROR_INVALID_ANSWER = "invalid_answer"
 
 _APPROVAL_BLOCKED = (
     "This tool needs the user's approval. The turn ends now and resumes with their "
@@ -96,8 +98,12 @@ class PromptWorker:
         self._logger = logger
         self._sessions = sessions or UnattendedSessions()
         #: Exact invocations the caller approved, per session; each grant is used once.
+        #: Memory only: a grant is made as the answering turn starts and spent in that
+        #: turn, and a restart in between interrupts it, so the approval is asked again.
         self._approved: dict[str, set[str]] = {}
         #: The question each session stopped on, until its answer resumes the session.
+        #: A session that stopped before this process started keeps its question in the
+        #: session store instead, and resuming it restores the question from there.
         self._asked: dict[str, Any] = {}
         self._stop = threading.Event()
         self._thread = threading.Thread(target=self._run, name="opensre-prompt-worker", daemon=True)
@@ -155,7 +161,9 @@ class PromptWorker:
     def _run_bound_job(self, job: PromptJob, org: str) -> None:
         if job.parent_id:
             session = self._sessions.resume(job.session_id)
-            session.pending_user_choice = self._asked.pop(session.session_id, None)
+            asked = self._asked.pop(session.session_id, None)
+            if asked is not None:
+                session.pending_user_choice = asked
             text = self._answer_text(job, session)
             if text is None:
                 self._sessions.close(session)
@@ -406,10 +414,6 @@ def _question_text(pending: Any) -> str:
 
 
 __all__ = [
-    "ERROR_CREDITS_DENIED",
-    "ERROR_INVALID_ANSWER",
-    "ERROR_NOT_ADMITTED",
-    "ERROR_TURN_FAILED",
     "PromptTurnRunner",
     "PromptWorker",
 ]

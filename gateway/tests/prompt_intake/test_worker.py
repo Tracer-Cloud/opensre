@@ -19,6 +19,7 @@ from gateway.core.prompt_intake import (
     ERROR_INVALID_ANSWER,
     ERROR_NOT_ADMITTED,
     ERROR_TURN_FAILED,
+    JsonlPromptJobStore,
     PromptQueue,
     PromptState,
     PromptWorker,
@@ -762,3 +763,57 @@ def test_new_hosted_requests_do_not_replace_an_awaiting_approval(
     worker.run_one(answer)
     assert handler.verdicts[-1] is None
     assert answer.state is PromptState.DONE
+
+
+class _ParkingHandler(_Handler):
+    """A turn that records itself on the session, so the store keeps it, and may ask."""
+
+    def __init__(self, *, asks: PendingUserChoice | None = None) -> None:
+        super().__init__(answer="pushed to release", asks=asks)
+        self.seen_session_ids: list[str] = []
+
+    def run(self, text: str, session: SessionCore, output: Any, _logger: Any, **kwargs: Any) -> Any:
+        self.seen_session_ids.append(session.session_id)
+        session.record("chat", text)
+        session.cli_agent_messages.append(("user", text))
+        return super().run(text, session, output, _logger, **kwargs)
+
+
+def test_a_parked_question_is_answered_on_its_session_after_the_gateway_task_is_replaced(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Arrange: an org silo whose prompt parks on a question that accepts only its options
+    monkeypatch.setattr("config.constants.paths.OPENSRE_HOME_DIR", tmp_path)
+    monkeypatch.delenv("OPENSRE_CONTEXT_ROOT", raising=False)
+    monkeypatch.setenv("ORGANIZATION_ID", "org-a")
+    monkeypatch.setattr(
+        "gateway.core.prompt_intake.worker.bound_turn_metering", lambda **_kwargs: nullcontext()
+    )
+    records = tmp_path / "prompt-jobs.jsonl"
+    branch = PendingUserChoice(
+        title="Which branch?", options=("main", "release"), custom_answer=False
+    )
+    first_task = _ParkingHandler(asks=branch)
+    queue = PromptQueue(store=JsonlPromptJobStore(records))
+    asked = queue.submit("fix ci", context={}, actor="alice")
+    assert asked is not None
+    PromptWorker(queue, first_task, logger=_LOGGER).run_one(asked)
+    assert asked.state is PromptState.NEEDS_INPUT
+
+    # Act: a new task with a fresh queue, worker and session manager over the same volume
+    second_task = _ParkingHandler()
+    restarted = PromptQueue(store=JsonlPromptJobStore(records))
+    worker = PromptWorker(restarted, second_task, logger=_LOGGER)
+    parked = restarted.get(asked.id)
+    assert parked is not None
+    follow_up = restarted.answer(parked, "2")
+    assert follow_up is not None
+    worker.run_one(follow_up)
+
+    # Assert: the poller still reads the question, and option 2 resolves against it on the
+    # same session — so the question came back from the store rather than being dropped
+    assert parked.view() == asked.view()
+    assert follow_up.state is PromptState.DONE
+    assert second_task.seen_session_ids == [asked.session_id]
+    assert second_task.seen_text.startswith("1. Which branch?")
+    assert '"release"' in second_task.seen_text
