@@ -259,6 +259,41 @@ async def test_goal_control_after_cancelled_waiter_waits_for_detached_worker(
 
 
 @pytest.mark.asyncio
+async def test_detached_goal_control_write_failure_keeps_the_shell_open(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    controller = _controller()
+    release_callbacks: list[object] = []
+
+    monkeypatch.setattr(
+        type(controller.turn_runtime),
+        "has_live_turn_worker",
+        lambda _runtime: True,
+    )
+    monkeypatch.setattr(
+        type(controller.turn_runtime),
+        "run_after_turn_worker",
+        lambda _runtime, callback: release_callbacks.append(callback),
+    )
+
+    def _fail_to_persist(_reason: object) -> str:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(controller, "_persist_goal_control_for_resume", _fail_to_persist)
+
+    kept = await controller._handle_input_action(
+        RunInflightControl(
+            control=InflightControl.PAUSE_GOAL,
+            submitted_text="/goal pause",
+        )
+    )
+
+    assert kept is True
+    assert not controller.state.exit_requested
+    assert len(release_callbacks) == 1
+
+
+@pytest.mark.asyncio
 async def test_idle_continuation_keeps_an_unfinished_plan() -> None:
     """A plan waiting between turns must survive the next typed prompt.
 

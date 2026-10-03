@@ -325,17 +325,18 @@ class InteractiveShellController:
     def _finalize_detached_goal_control(
         self,
         reason: HostCancelReason,
-        control_id: str,
+        control_id: str | None,
     ) -> None:
-        """Apply a durable control once a detached worker releases the session lease."""
+        """Apply a control once a detached worker releases the session lease."""
         try:
             with session_execution_lock(self.session.session_id):
                 apply_session_goal_control(self.session, reason)
                 self.session.store.flush_session_goal_control_state(self.session)
-                self.session.store.complete_session_goal_control(
-                    self.session.session_id,
-                    control_id,
-                )
+                if control_id is not None:
+                    self.session.store.complete_session_goal_control(
+                        self.session.session_id,
+                        control_id,
+                    )
         except Exception:
             # The requested sidecar record remains unacknowledged and restore
             # will retry it.  Do not race the worker by applying it early.
@@ -378,7 +379,15 @@ class InteractiveShellController:
                     # record the intent now and replay it after the worker
                     # releases its lease instead.
                     self.prompt.render_submitted_prompt(self.echo_console, text)
-                    control_id = self._persist_goal_control_for_resume(reason)
+                    try:
+                        control_id = self._persist_goal_control_for_resume(reason)
+                    except Exception:
+                        # Keep the shell alive and still attempt the safe-boundary
+                        # mutation after the worker exits.  The finalizer will
+                        # retry its state flush; an unavailable store must not
+                        # turn a typed goal control into an unexpected shell exit.
+                        log.warning("Could not save detached goal control", exc_info=True)
+                        control_id = None
                     self.turn_runtime.run_after_turn_worker(
                         functools.partial(
                             self._finalize_detached_goal_control,

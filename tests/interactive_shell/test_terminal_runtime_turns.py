@@ -311,7 +311,7 @@ def test_cancelled_turn_does_not_block_asyncio_runner_shutdown(
     def _run_scenario() -> None:
         try:
             asyncio.run(_scenario())
-        except BaseException as exc:
+        except Exception as exc:
             runner_errors.append(exc)
 
     runner = threading.Thread(target=_run_scenario, name="test-asyncio-run", daemon=True)
