@@ -113,3 +113,15 @@ def test_pull_rejects_an_unsigned_release_and_does_not_cache_its_etag(
     assert release_store.latest_stored_seq() is None
     # No ETag kept, so a binary that later trusts the key fetches the release again.
     assert calls == ["", ""]
+
+
+def test_one_process_claims_each_release_announcement() -> None:
+    """Concurrent activations of one release report it once per machine."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        claims = list(pool.map(lambda _i: release_store.claim_announcement("remote:7"), range(8)))
+
+    assert claims.count(True) == 1
+    assert release_store.claim_announcement("remote:7") is False
+    assert release_store.claim_announcement("remote:8") is True

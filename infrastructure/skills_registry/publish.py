@@ -183,9 +183,15 @@ def plan_push(
     names: Iterable[str] = (),
     delete: Iterable[str] = (),
     include_shared: bool = False,
+    shared_paths: Iterable[str] = (),
     force: bool = False,
 ) -> PushPlan:
-    """Compare a local catalog with the live release and decide what to publish."""
+    """Compare a local catalog with the live release and decide what to publish.
+
+    Shared files (outside any skill package) carry no version, so they ship only
+    when asked: every differing one with ``include_shared``, or exactly the
+    ``shared_paths`` a merge changed (a listed path missing locally is deleted).
+    """
     live_files: Mapping[str, str] = live.files if live is not None else {}
     local_packages = _packages(local_files)
     live_packages = _packages(live_files)
@@ -241,6 +247,14 @@ def plan_push(
     shared_live = live_packages.get("", {})
     if include_shared or live is None:
         upserts.update({p: t for p, t in shared_local.items() if shared_live.get(p) != t})
+    for path in sorted({path.strip() for path in shared_paths if path.strip()}):
+        if path in shared_local:
+            if shared_live.get(path) != shared_local[path]:
+                upserts[path] = shared_local[path]
+        elif path in shared_live:
+            deletes.add(path)
+        elif path in local_files or path in live_files:
+            raise PushError(f"{path} belongs to a skill package; push the skill instead")
 
     merged = {path: text for path, text in live_files.items() if path not in deletes}
     merged.update(upserts)
