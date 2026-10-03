@@ -220,11 +220,12 @@ contract (`ToolRole`, replacing the old `parallel_safe` flag):
   rather than leave the model to spend a solo turn on each plan write. A
   live run of `scheduling-github-ci-repairs` once spent nine solo
   `update_plan` turns (~90 s) on plan writes alone.
-- `TURN_ENDING` (`ask_user_choice`) hands the turn to the user and must be
-  the **only** call in its response; a response that batches anything with a
-  menu executes nothing and returns the same error for each call. Not even
-  bookkeeping rides with it. Mark plan steps before the menu response, not
-  in it.
+- `TURN_ENDING` (`ask_user_choice`) hands the turn to the user and is the
+  **only** action in its response. Bookkeeping may ride with it and runs
+  first, so the `update_plan` that marks the menu step belongs in the menu's
+  response rather than in a solo turn before it (the host refuses a solo
+  plan advance). A response that batches an action with a menu executes
+  nothing and returns the same error for each call.
 
 Once a call's result ends the turn (a queued menu, a pending approval, a
 host cancel), the calls after it in the batch are skipped with an error

@@ -378,7 +378,9 @@ ask_user_choice_tool = RegisteredTool(
         "and options. Precede the call with one short sentence telling the "
         "user what you are about to ask and that they can type their own "
         "answer if none fit. The menu opens after the turn ends; answers "
-        "arrive verbatim as the next user message. If the result says the "
+        "arrive verbatim as the next user message. While a plan is open, the "
+        "update_plan that marks this menu's step may share the response; no "
+        "other tool may. If the result says the "
         "menu is unavailable, follow the active skill's recovery instructions; "
         "otherwise fall back to a numbered list."
     ),

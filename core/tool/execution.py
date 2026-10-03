@@ -262,10 +262,12 @@ def execute_tool_calls(
     """Execute provider-requested tools sequentially and return structured results.
 
     A response may carry several calls; they run one after another in provider
-    order. A ``TURN_ENDING`` call hands control to the user and must be the
-    only call in its response — a response that breaks that rule executes
-    nothing: every call gets the same error so the model re-issues the menu
-    alone. Once a result terminates the turn, or ``should_stop`` reports a
+    order. A ``TURN_ENDING`` call hands control to the user; only
+    ``BOOKKEEPING`` calls may share its response, and they run before it so a
+    plan write lands before the menu ends the turn. A response that breaks
+    that rule executes nothing: every call gets the same error so the model
+    re-issues the menu. Results keep provider order. Once a result
+    terminates the turn, or ``should_stop`` reports a
     host cancel, the remaining calls are skipped: each still gets an error
     result (providers require one per tool-call id) that says it did not run,
     marked ``metadata.skipped``.
@@ -304,16 +306,17 @@ def execute_tool_calls(
     tool_sources = availability_view(resolved_integrations)
     runtime_resources = dict(tool_resources or {})
 
-    results: list[ToolExecutionResult] = []
+    results: dict[int, ToolExecutionResult] = {}
     stop_reason: str | None = None
     skipped_by: ToolSkippedBy | None = None
-    for index, tc in enumerate(tool_calls):
+    for index in _execution_order(tool_calls, tool_map):
+        tc = tool_calls[index]
         if stop_reason is None and should_stop is not None and should_stop():
             stop_reason = "the turn was cancelled"
             skipped_by = ToolSkippedBy.HOST_CANCEL
         if stop_reason is not None:
             skipped = _skipped_result(tc.name, stop_reason)
-            results.append(skipped)
+            results[index] = skipped
             _capture_tool_call_analytics(
                 tc,
                 tool=tool_map.get(tc.name),
@@ -353,7 +356,7 @@ def execute_tool_calls(
                 level=ObservationLevel.ERROR if result.is_error else None,
                 metadata={"is_error": result.is_error, "terminate": result.terminate},
             )
-            results.append(result)
+            results[index] = result
         _capture_tool_call_analytics(
             tc,
             tool=tool_map.get(tc.name),
@@ -370,7 +373,20 @@ def execute_tool_calls(
         if result.terminate:
             stop_reason = f"{tc.name} ended the turn"
             skipped_by = ToolSkippedBy.TURN_TERMINATED
-    return results
+    return [results[index] for index in range(len(tool_calls))]
+
+
+def _execution_order(
+    tool_calls: Sequence[ToolCall], tool_map: Mapping[str, RuntimeTool]
+) -> list[int]:
+    """Call indexes in run order: provider order, with a turn-ending call moved last."""
+    ending = {
+        index
+        for index, tc in enumerate(tool_calls)
+        if tool_role(tool_map.get(tc.name)) is ToolRole.TURN_ENDING
+    }
+    rest = [index for index in range(len(tool_calls)) if index not in ending]
+    return [*rest, *sorted(ending)]
 
 
 def _descriptive_tool_error(result: ToolExecutionResult) -> str:
@@ -533,7 +549,10 @@ def response_batch_violation(
     tool_calls: Sequence[ToolCall],
     tool_map: Mapping[str, RuntimeTool],
 ) -> str | None:
-    """Explain why one response's tool calls break the lone-menu rule, or ``None``."""
+    """Explain why one response's tool calls break the lone-menu rule, or ``None``.
+
+    A turn-ending call may share its response only with bookkeeping calls.
+    """
     if len(tool_calls) <= 1:
         return None
     roles = [tool_role(tool_map.get(tc.name)) for tc in tool_calls]
@@ -541,13 +560,17 @@ def response_batch_violation(
     turn_ending = [
         tc.name for tc, role in zip(tool_calls, roles, strict=True) if role is ToolRole.TURN_ENDING
     ]
-    if turn_ending:
-        return (
-            f"Nothing ran: {turn_ending[0]} hands the turn to the user and must be the only "
-            f"tool call in a response, but this response requested {len(tool_calls)} "
-            f"({requested}). Re-issue {turn_ending[0]} alone, after any other work."
-        )
-    return None
+    if not turn_ending:
+        return None
+    others = [role for role in roles if role is not ToolRole.TURN_ENDING]
+    if len(turn_ending) == 1 and all(role is ToolRole.BOOKKEEPING for role in others):
+        return None
+    return (
+        f"Nothing ran: {turn_ending[0]} hands the turn to the user and only bookkeeping "
+        f"such as update_plan may share its response, but this response requested "
+        f"{len(tool_calls)} ({requested}). Re-issue {turn_ending[0]} after any other work, "
+        "with at most the update_plan that marks its step."
+    )
 
 
 def execute_tools(

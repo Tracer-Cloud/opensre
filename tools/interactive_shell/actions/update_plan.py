@@ -91,8 +91,10 @@ update_plan_tool = RegisteredTool(
         "steps pending, in_progress, completed, or blocked. "
         "Mark a step blocked (with the blocker in explanation) when the runtime cannot "
         "perform it; never mark undone work completed. "
-        "At most one step may be in_progress. Not for durable human todos "
-        "(use work_task_*) and not for /goal keep-going."
+        "At most one step may be in_progress. Send it in the same response as "
+        "the step's tool call, ask_user_choice included; a response whose only "
+        "call is update_plan and starts or advances a step is refused. Not for "
+        "durable human todos (use work_task_*) and not for /goal keep-going."
     ),
     use_cases=[
         "A multi-step investigation, fix, and verify workload is about to start",
