@@ -866,6 +866,36 @@ def test_a_folded_report_and_log_share_one_expand_marker() -> None:
     assert "Ctrl+O to view" not in inside
 
 
+def test_several_tool_previews_stay_within_one_cap() -> None:
+    """Separate per-result previews must not stack into an uncapped wall."""
+    tool_results = [
+        (
+            ToolCall(id=str(index), name="github_cli", input={}),
+            _ToolResult(
+                {
+                    "ok": True,
+                    "stdout": "\n".join(f"block {index} line {line}" for line in range(10)),
+                }
+            ),
+        )
+        for index in range(4)
+    ]
+    tool_results.append(
+        (
+            ToolCall(id="report", name="get_ci_repair_loop", input={}),
+            _ToolResult(_payload(_outcome("succeeded. The repair commit passed CI."))),
+        )
+    )
+    _response_text, display_chunks, _use_final_text = _compose_response(
+        _Result(tool_results=tool_results), _Session(), _counts(5)
+    )
+    shown = "\n".join(display_chunks)
+
+    assert "The repair commit passed CI" in shown
+    assert "block 3 line 9" not in shown
+    assert shown.count("Ctrl+O to view") == 1
+
+
 def test_one_outcome_stays_visible_after_a_long_response() -> None:
     """A single snapshot still survives when the cap would otherwise eat the tail."""
     long_text = "\n".join(f"note {index}" for index in range(40))
