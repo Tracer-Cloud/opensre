@@ -345,9 +345,9 @@ def _closing_tool_chunks(chunks: Sequence[str], *, include_outcome: bool) -> lis
 def _visible_closing_text(chunks: Sequence[str]) -> str:
     """Cap bulky tool text without letting it push the outcome report off screen.
 
-    The display cap keeps the start of a combined blob. A long result before
-    the report would hide the report, so the report stays whole and only the
-    other text is capped.
+    The report and the other text are capped separately. A long result before
+    the report cannot hide it, and a long report still previews instead of
+    filling the terminal.
     """
     outcome = ""
     others: list[str] = []
@@ -356,10 +356,16 @@ def _visible_closing_text(chunks: Sequence[str]) -> str:
             outcome = chunk
         else:
             others.append(chunk)
-    capped = cap_for_display("\n".join(others)) if others else ""
-    if outcome and capped:
-        return f"{outcome}\n\n{capped}"
-    return outcome or capped
+    parts: list[str] = []
+    if outcome:
+        # Cap the report on its own so a long reason list previews, and so a
+        # long sibling result cannot push the report past the display cap.
+        parts.append(cap_for_display(outcome))
+    if others:
+        capped = cap_for_display("\n".join(others))
+        if capped:
+            parts.append(capped)
+    return "\n\n".join(parts)
 
 
 def _painted_results_only(result: Any) -> bool:
@@ -951,12 +957,9 @@ def _compose_response(
         generic_chunks, include_outcome=not outcome_already_delivered
     )
     # A queued repair snapshot and the later succeeded snapshot are one report.
-    # Filter the formatted tool text, not only ``response_text``, so a tool
-    # that reports a summary or an error stays in the closing.
-    if closing_chunks != generic_chunks:
-        display_generic = _visible_closing_text(closing_chunks)
-    else:
-        display_generic = cap_for_display(generic_text)
+    # The report stays ahead of the cap: a long result before it must not hide
+    # the outcome, whether or not an earlier snapshot was dropped.
+    display_generic = _visible_closing_text(closing_chunks)
     # Defense: never fence a data blob into the transcript (summary/stdout leaks
     # used to pretty-print truncated JSON behind a text fence).
     if is_data_blob(generic_text):
