@@ -138,6 +138,11 @@ def skill_loaded_without_work(session: Any) -> bool:
     return state.skill_loads > 0 and state.tool_returns == 0
 
 
+def no_tool_returned(session: Any) -> bool:
+    """True when no non-bookkeeping tool has returned on this action turn."""
+    return _evidence(session).tool_returns == 0
+
+
 def blocked_this_turn(session: Any) -> tuple[str, ...]:
     """Steps newly marked ``blocked`` by a write of this turn."""
     return _evidence(session).blocked_this_turn
@@ -177,6 +182,7 @@ __all__ = [
     "is_plan_bookkeeping_call",
     "is_plan_work_name",
     "mark_plan_written",
+    "no_tool_returned",
     "plan_evidence_available",
     "record_blocked_this_turn",
     "record_plan_evidence",

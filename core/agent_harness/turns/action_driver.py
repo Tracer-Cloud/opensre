@@ -46,6 +46,7 @@ from core.agent_harness.session.terminal_access import execute_cli_onboard_on_mi
 from core.agent_harness.session_goal.review_input import collect_tool_evidence
 from core.agent_harness.task_plan.conclusion import (
     blocked_steps_await_the_user,
+    demo_entered_from_menu,
     demo_pick_stalled_on_skill_load,
     task_plan_awaits_reply,
     task_plan_blocks_conclusion,
@@ -765,6 +766,7 @@ def _build_action_agent(
                 session,
                 user_answered=bool(parse_ask_user_answers(message)),
                 from_onboarding_menu=starting_skill == ONBOARDING_SKILL_NAME,
+                entered_from_menu=demo_entered_from_menu(starting_skill, message),
             ),
             executed_outcomes=executed_outcomes,
             trace_context=lambda: turn_trace_state(session),

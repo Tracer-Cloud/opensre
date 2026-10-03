@@ -258,11 +258,22 @@ class _LLMGoalReviewer:
     # The reason of the latest refused conclusion; kept after a later accept.
     last_rejection_reason: str = ""
 
+    def _demo_pick_stalled(self) -> bool:
+        """True, once per turn, when the onboarding pick's turn has not started its demo."""
+        if self.skill_load_only is None or self.skill_load_rejections or not self.skill_load_only():
+            return False
+        self.skill_load_rejections += 1
+        return True
+
     def __call__(self, observation: GoalObservation) -> bool:
         final_text = (observation.final_text or "").strip()
         # No tools ran: the conclusion is a direct answer (or a refusal), not a
-        # stopped-short action chain — the case this reviewer exists for.
+        # stopped-short action chain — the case this reviewer exists for. A
+        # demo the shell entered at the pick is the exception: its first reply
+        # must start the demo, and it never loads a skill that could show work.
         if observation.evidence_count == 0:
+            if self._demo_pick_stalled():
+                return self._decision(observation, False, "skill_loaded_only")
             return self._decision(observation, True, "no_tool_evidence")
         if (
             self.skip_on_question
@@ -292,12 +303,7 @@ class _LLMGoalReviewer:
             and self.plan_incomplete()
         ):
             return self._decision(observation, False, "plan_incomplete")
-        if (
-            self.skill_load_only is not None
-            and self.skill_load_rejections == 0
-            and self.skill_load_only()
-        ):
-            self.skill_load_rejections += 1
+        if self._demo_pick_stalled():
             return self._decision(observation, False, "skill_loaded_only")
         if _failed_work_blocks_stop(self.executed_outcomes, observation.tool_results):
             return self._decision(observation, False, "work_tool_failed")
