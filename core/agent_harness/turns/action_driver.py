@@ -962,17 +962,14 @@ def _compose_response(
     if not final_text and not display_generic and not display_final:
         # Tool reply text is a fallback only when the model has no closing.
         # One outcome report: a later snapshot replaces the queued one.
-        display_final = (
+        # Cap it here: this path is the visible reply, and the generic-output
+        # path's cap does not apply once inline results cleared that preview.
+        fallback = (
             _preferred_tool_response_texts(result)
             if closing_chunks == generic_chunks
             else "\n\n".join(closing_chunks)
         )
-    elif already_inline and display_final and closing_chunks != generic_chunks:
-        # Quiet mode stashes tool rows, so the kept snapshot and any
-        # confirmation still belong in the closing beside a short answer.
-        extras = "\n\n".join(chunk for chunk in closing_chunks if chunk not in display_final)
-        if extras:
-            display_final = f"{display_final}\n\n{extras}"
+        display_final = cap_for_display(fallback)
     is_json = looks_like_json(generic_text)
     body, markers = split_output_truncation_markers(display_generic)
     truncated = bool(markers)

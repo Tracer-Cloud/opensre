@@ -647,7 +647,7 @@ def test_model_outcome_report_is_not_repeated_from_tool_snapshots() -> None:
     assert shown.count("Repair Report") == 1
     assert "Waiting for the scheduled tick" not in shown
     assert "The repair commit passed CI" not in shown
-    assert "Saved demo evidence" in shown
+    assert "Saved demo evidence" not in shown
     assert use_final_text is True
 
 
@@ -702,8 +702,8 @@ def test_collapsing_repair_snapshots_keeps_another_tools_summary() -> None:
     assert "PR #1 is open." in shown
 
 
-def test_a_non_report_closing_still_shows_the_latest_outcome() -> None:
-    """A short answer is not a report, so the succeeded snapshot still appears once."""
+def test_a_short_answer_does_not_reprint_results_already_shown_inline() -> None:
+    """The action log already printed the snapshots; the closing stays the answer."""
     cleanup = "Saved demo evidence and removed the scheduled repair."
     result = _Result(
         tool_results=[
@@ -728,12 +728,49 @@ def test_a_non_report_closing_still_shows_the_latest_outcome() -> None:
     _response_text, display_chunks, use_final_text = _compose_response(result, session, _counts(3))
     shown = "\n".join(display_chunks)
 
+    assert shown == "The repository remains."
+    assert use_final_text is True
+
+
+def test_a_short_answer_keeps_one_capped_outcome_when_results_were_not_inline() -> None:
+    """Without an action log, the closing keeps the latest snapshot and caps the rest."""
+    cleanup = "Saved demo evidence and removed the scheduled repair."
+    long_summary = "\n".join(f"log line {index}" for index in range(40))
+    result = _Result(
+        tool_results=[
+            (
+                ToolCall(id="1", name="schedule_ci_repair_loop", input={}),
+                _ToolResult(_payload(_outcome("queued. Waiting for the scheduled tick."))),
+            ),
+            (
+                ToolCall(id="2", name="get_ci_repair_loop", input={}),
+                _ToolResult(_payload(_outcome("succeeded. The repair commit passed CI."))),
+            ),
+            (
+                ToolCall(id="3", name="finish_ci_repair_demo", input={}),
+                _ToolResult(_payload(cleanup)),
+            ),
+            (
+                ToolCall(id="4", name="github_cli", input={}),
+                _ToolResult({"ok": True, "stdout": long_summary}),
+            ),
+        ],
+        final_text="The repository remains.",
+    )
+
+    _response_text, display_chunks, _use_final_text = _compose_response(
+        result, _Session(), _counts(4)
+    )
+    shown = "\n".join(display_chunks)
+
     assert "The repository remains." in shown
     assert "Waiting for the scheduled tick" not in shown
     assert "The repair commit passed CI" in shown
     assert cleanup in shown
+    assert "log line 0" in shown
+    assert "log line 39" not in shown
+    assert "Ctrl+O to view" in shown
     assert shown.count("**Outcome:**") == 1
-    assert use_final_text is True
 
 
 def test_a_bullet_that_mentions_outcome_is_not_a_repair_report() -> None:
