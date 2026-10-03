@@ -46,6 +46,8 @@ WORKFLOW = (
 )
 MARKER = '{"kind":"opensre-ci-repair-demo","version":1}\n'
 AGENTS = "Fix calculator.py so the unit test passes. Do not change the test or the workflow.\n"
+#: Keeps test bytecode out of git status, which the calculator.py-only repair scope reads.
+GITIGNORE = "__pycache__/\n.pytest_cache/\n"
 PR_TITLE = "Demo: calculator subtracts instead of adding"
 PR_BODY = "This pull request is a demo. Do not merge.\n"
 _NOT_A_DEMO = "The repository is not an OpenSRE CI repair demo."
@@ -79,6 +81,7 @@ def baseline_files() -> dict[str, str]:
         ".github/workflows/test.yml": WORKFLOW,
         _MARKER_NAME: MARKER,
         "AGENTS.md": AGENTS,
+        ".gitignore": GITIGNORE,
     }
 
 

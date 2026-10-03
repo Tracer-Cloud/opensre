@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
 import sys
@@ -12,6 +13,7 @@ from typing import Any
 
 import pytest
 
+from integrations.git import changed_paths
 from integrations.github.client import GitHubApiError
 from integrations.github.tools.ci_repair_demo import cleanup
 from integrations.github.tools.ci_repair_demo.seed import (
@@ -501,6 +503,37 @@ def test_the_seeded_calculator_fails_its_own_test(tmp_path: Path) -> None:
     )
     assert bad.returncode != 0
     assert b"AssertionError" in bad.stderr
+
+
+def test_running_the_demo_test_adds_nothing_the_repair_scope_counts(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The calculator.py-only scope reads git status; the coding agent's Python writes bytecode."""
+    # Arrange: the seeded files in a fresh checkout, without this machine's git config
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", os.devnull)
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    for name, content in baseline_files().items():
+        path = tmp_path / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content)
+    subprocess.run(["git", "init", "-q"], cwd=tmp_path, check=True)
+    before = set(changed_paths(str(tmp_path)))
+    # The coding agent's environment carries neither bytecode setting.
+    unset = {"PYTHONDONTWRITEBYTECODE", "PYTHONPYCACHEPREFIX"}
+    env = {key: value for key, value in os.environ.items() if key not in unset}
+
+    # Act
+    subprocess.run(
+        [sys.executable, "-m", "unittest", "-q"],
+        cwd=tmp_path,
+        env=env,
+        capture_output=True,
+        check=True,
+    )
+
+    # Assert: the bytecode exists, and git status does not report it
+    assert (tmp_path / "__pycache__").is_dir()
+    assert set(changed_paths(str(tmp_path))) == before
 
 
 def _owned_task(repo: str = "Tracer-Cloud/opensre-ci-repair-demo") -> SimpleNamespace:
