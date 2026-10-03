@@ -12,6 +12,7 @@ from http import HTTPStatus
 from typing import Any
 
 from integrations.github.client import GitHubApiError, GitHubRestClient
+from integrations.github.tools.ci_repair_loop.credentials import account_id
 from integrations.github.tools.ci_repair_loop.responses import object_response
 from integrations.github.tools.ci_repair_loop.seeded import remember_seeded_pull
 
@@ -116,18 +117,26 @@ def seed_demo(
     status stops. A repository that is not a demo is left unchanged, and a new
     ``opensre-ci-repair-demo-`` name on the same owner is seeded instead. The
     wait ends on a failed pull-request Actions run. The returned pull request
-    is remembered as this process's seeded demo, so scheduling it repairs it
-    as the demo.
+    is remembered for this account at its head commit, so scheduling it before
+    anything else changes it repairs it as the demo.
     """
     owner = github_component(owner)
     repo = github_component(repo)
+    # The seeding account is read once, before anything is written.
+    user = object_response(client.request("GET", "user"))
+    account = account_id(user)
+    login = str(user.get("login") or "")
     try:
-        seeded = _seed_named(client, owner, repo, sleep=sleep, now=now)
+        seeded = _seed_named(client, owner, repo, login=login, sleep=sleep, now=now)
     except DemoRefused as exc:
         if exc.user_message != _NOT_A_DEMO:
             raise
-        seeded = _seed_on_fresh_name(client, owner, refused_repo=repo, sleep=sleep, now=now)
-    remember_seeded_pull(seeded["owner"], seeded["repo"], seeded["pr_number"])
+        seeded = _seed_on_fresh_name(
+            client, owner, refused_repo=repo, login=login, sleep=sleep, now=now
+        )
+    remember_seeded_pull(
+        account, seeded["owner"], seeded["repo"], seeded["pr_number"], seeded["head_sha"]
+    )
     return seeded
 
 
@@ -136,6 +145,7 @@ def _seed_on_fresh_name(
     owner: str,
     *,
     refused_repo: str,
+    login: str,
     sleep: Callable[[float], None],
     now: Callable[[], float],
 ) -> dict[str, Any]:
@@ -146,7 +156,7 @@ def _seed_on_fresh_name(
         if candidate.casefold() == refused_repo.casefold():
             continue
         try:
-            seeded = _seed_named(client, owner, candidate, sleep=sleep, now=now)
+            seeded = _seed_named(client, owner, candidate, login=login, sleep=sleep, now=now)
         except DemoRefused as exc:
             if exc.user_message != _NOT_A_DEMO:
                 raise
@@ -167,6 +177,7 @@ def _seed_named(
     owner: str,
     repo: str,
     *,
+    login: str,
     sleep: Callable[[float], None],
     now: Callable[[], float],
 ) -> dict[str, Any]:
@@ -174,7 +185,7 @@ def _seed_named(
     owner = github_component(owner)
     repo = github_component(repo)
     path = f"repos/{owner}/{repo}"
-    repository, created = _load_repository(client, owner, repo)
+    repository, created = _load_repository(client, owner, repo, login)
     default_branch = str(repository.get("default_branch") or "main")
     if not _demo_initialized(client, path):
         parent = _branch_sha(client, path, default_branch, sleep=sleep)
@@ -227,7 +238,7 @@ def _seed_named(
 
 
 def _load_repository(
-    client: GitHubRestClient, owner: str, repo: str
+    client: GitHubRestClient, owner: str, repo: str, login: str
 ) -> tuple[dict[str, Any], bool]:
     path = f"repos/{owner}/{repo}"
     try:
@@ -236,15 +247,15 @@ def _load_repository(
     except GitHubApiError as exc:
         if exc.status_code != HTTPStatus.NOT_FOUND:
             raise
-        repository = _create_repository(client, owner, repo)
+        repository = _create_repository(client, owner, repo, login)
         created = True
     _require_demo_repository(repository, owner, repo, created=created)
     return repository, created
 
 
-def _create_repository(client: GitHubRestClient, owner: str, repo: str) -> dict[str, Any]:
-    user = object_response(client.request("GET", "user"))
-    login = str(user.get("login") or "")
+def _create_repository(
+    client: GitHubRestClient, owner: str, repo: str, login: str
+) -> dict[str, Any]:
     if not login:
         raise DemoRefused("GitHub did not return the authenticated user.")
     target = "user/repos" if owner.casefold() == login.casefold() else f"orgs/{owner}/repos"

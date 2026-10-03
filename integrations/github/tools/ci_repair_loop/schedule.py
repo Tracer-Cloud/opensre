@@ -58,8 +58,14 @@ def _head_repository_name(pull: dict[str, Any]) -> str:
     return str(head_repo.get("full_name") or "")
 
 
-def _require_repairable(client: GitHubRestClient, owner: str, repo: str, pr_number: int) -> None:
-    """Refuse, in plain words, a pull request the loop could never push to.
+def _head_sha(pull: dict[str, Any]) -> str:
+    """The pull request's head commit, or empty."""
+    head = pull.get("head")
+    return str(head.get("sha") or "") if isinstance(head, dict) else ""
+
+
+def _require_repairable(client: GitHubRestClient, owner: str, repo: str, pr_number: int) -> str:
+    """Refuse, in plain words, a pull request the loop could never push to; return its head.
 
     Checked before anything is reserved or scheduled, so the user learns at once
     that a fork or a closed pull request is not a target and what to choose instead.
@@ -79,20 +85,21 @@ def _require_repairable(client: GitHubRestClient, owner: str, repo: str, pr_numb
             f"inside {owner}/{repo}. Choose a pull request opened from a branch in this "
             "repository, or ask its author to open one."
         )
+    return _head_sha(pull)
 
 
 def _refusal_for(
     client: GitHubRestClient, owner: str, repo: str, pr_number: int
-) -> Exception | None:
-    """What a fresh reservation of this pull request would raise, or ``None``.
+) -> tuple[Exception | None, str]:
+    """What a fresh reservation of this pull request would raise, or ``None``, and its head.
 
     A failed lookup counts too: it stops a new run, never the reuse of one.
     """
     try:
-        _require_repairable(client, owner, repo, pr_number)
+        head = _require_repairable(client, owner, repo, pr_number)
     except (RepairRefused, GitHubApiError, ValueError) as refusal:
-        return refusal
-    return None
+        return refusal, ""
+    return None, head
 
 
 def schedule_repair(
@@ -109,8 +116,8 @@ def schedule_repair(
 
     ``scheduler_in_process`` says the host's own scheduler picks the task up from the
     store (the hosted gateway); otherwise the OS-level background service is ensured.
-    A pull request this process seeded as the demo is repaired as the demo even when
-    the caller does not pass ``fast_checks``.
+    A pull request this account seeded in this process, still at the seeded head
+    commit, is repaired as the demo even when the caller does not pass ``fast_checks``.
     """
     started = time.time()
     token = configured_token(github_token)
@@ -122,21 +129,21 @@ def schedule_repair(
         raise RepairRefused("Select the pull request number to repair.")
     repo = _component(repo.strip())
     store = store or RepairStore()
+    # Looked up before any lock; an active run is still returned as is, even if
+    # its PR has closed meanwhile, and a refused PR is never written to the store.
+    refusal, head = _refusal_for(GitHubRestClient(token), owner, repo, pr_number)
     candidate = RepairRun(
         id=uuid.uuid4().hex[:12],
         owner=owner,
         repo=repo,
         actor=actor,
         actor_id=actor_id,
-        fast_checks=fast_checks or was_seeded_here(owner, repo, pr_number),
+        fast_checks=fast_checks or was_seeded_here(actor_id, owner, repo, pr_number, head),
         remote=scheduler_in_process,
         started_at=started,
         deadline=started + CI_REPAIR_SECONDS,
         pr_number=pr_number,
     )
-    # Looked up before any lock; an active run is still returned as is, even if
-    # its PR has closed meanwhile, and a refused PR is never written to the store.
-    refusal = _refusal_for(GitHubRestClient(token), owner, repo, pr_number)
     with FileLock(str(store.root / "schedule.lock"), timeout=30):
         run, reused = store.reserve(candidate, refusal=refusal)
         existing = get_task(run.id)

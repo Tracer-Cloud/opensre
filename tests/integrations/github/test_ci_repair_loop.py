@@ -124,7 +124,7 @@ class _RepairApi:
             return {"login": "alice", "id": 123}
         repository, _, number = path.removeprefix("repos/").rpartition("/pulls/")
         assert number.isdigit(), path
-        return {"state": "open", "head": {"repo": {"full_name": repository}}}
+        return {"state": "open", "head": {"sha": "head-sha", "repo": {"full_name": repository}}}
 
 
 def test_expired_restart_stops_without_launching_another_worker(
@@ -1250,15 +1250,18 @@ def test_the_seeded_demo_records_its_failing_pull_request_once_on_either_host(
     assert recorded.events == ([started, failure] if remote else [failure])
 
 
-def test_only_the_pull_request_this_process_seeded_is_scheduled_as_the_demo(
+def test_only_the_pull_request_this_account_seeded_here_is_scheduled_as_the_demo(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The local skill schedules its seeded PR without fast_checks; provenance marks it."""
     from integrations.github.tools.ci_repair_loop import seeded
 
-    # Arrange: this process seeded PR 1 of one demo repository, and nothing else
-    monkeypatch.setattr(seeded, "_SEEDED", set())
-    seeded.remember_seeded_pull("alice", "opensre-ci-repair-demo-g0xd", 1)
+    # Arrange: what this process seeded; the scheduling account is 123, every head "head-sha"
+    monkeypatch.setattr(seeded, "_SEEDED", {})
+    demo = "opensre-ci-repair-demo-g0xd"
+    seeded.remember_seeded_pull(123, "alice", demo, 1, "head-sha")
+    seeded.remember_seeded_pull(456, "alice", demo, 2, "head-sha")
+    seeded.remember_seeded_pull(123, "alice", demo, 3, "seeded-head")
     store = RepairStore(tmp_path)
     tasks: dict[str, ScheduledTask] = {}
     monkeypatch.setattr(schedule, "configured_token", lambda _token: "test-token")
@@ -1266,20 +1269,21 @@ def test_only_the_pull_request_this_process_seeded_is_scheduled_as_the_demo(
     monkeypatch.setattr(schedule, "get_task", tasks.get)
     monkeypatch.setattr(schedule, "add_task", lambda task: tasks.setdefault(task.id, task))
     monkeypatch.setattr(schedule, "ensure_background_service", lambda **_kw: None)
-
-    # Act: the seeded PR, another PR of that repository, and a look-alike repository
     targets = [
-        ("Alice", "opensre-ci-repair-demo-g0xd", 1),
-        ("alice", "opensre-ci-repair-demo-g0xd", 2),
-        ("alice", "opensre-ci-repair-demo-zz99", 1),
+        ("Alice", demo, 1),  # seeded by this account, head unchanged
+        ("alice", demo, 2),  # seeded by another account
+        ("alice", demo, 3),  # a commit replaced the seeded head
+        ("alice", "opensre-ci-repair-demo-zz99", 1),  # named like the demo only
     ]
+
+    # Act
     runs = [
         schedule.schedule_repair(owner=owner, repo=repo, pr_number=number, store=store)[0]
         for owner, repo, number in targets
     ]
 
     # Assert: only the exact seeded pull request gets the demo's waits and scope
-    assert [run.fast_checks for run in runs] == [True, False, False]
+    assert [run.fast_checks for run in runs] == [True, False, False, False]
 
 
 def _repair_on_the_second_attempt(

@@ -35,7 +35,7 @@ _REPO = "opensre-ci-repair-demo"
 @pytest.fixture(autouse=True)
 def _no_pull_seeded_yet(monkeypatch: pytest.MonkeyPatch) -> None:
     """Each test starts before this process has seeded any pull request."""
-    monkeypatch.setattr(seeded, "_SEEDED", set())
+    monkeypatch.setattr(seeded, "_SEEDED", {})
 
 
 class _RepoState:
@@ -374,10 +374,12 @@ def test_seed_leaves_an_unrelated_repository_and_seeds_a_fresh_name(
     )
     assert ("POST", "user/repos") in api.calls
     assert "src/app.py" not in api._repos[fresh].files("main")
-    # Only the demo it seeded is remembered; the refused real repositories never are.
-    assert seeded.was_seeded_here(_OWNER, fresh, 1)
-    assert not seeded.was_seeded_here(_OWNER, _REPO, 1)
-    assert not seeded.was_seeded_here(_OWNER, "opensre-ci-repair-demo-aaaa", 1)
+    # Only the demo it seeded is remembered, for the seeding account (the fake's id 1)
+    # at the head it returned; the refused real repositories never are.
+    head = result["head_sha"]
+    assert seeded.was_seeded_here(1, _OWNER, fresh, 1, head)
+    assert not seeded.was_seeded_here(1, _OWNER, _REPO, 1, head)
+    assert not seeded.was_seeded_here(1, _OWNER, "opensre-ci-repair-demo-aaaa", 1, head)
 
 
 def test_a_non_404_repository_error_does_not_create(monkeypatch: pytest.MonkeyPatch) -> None:
