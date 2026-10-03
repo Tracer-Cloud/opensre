@@ -214,7 +214,7 @@ def _ci_repair_case(tool_name: str) -> ToolFailureCase:
         from integrations.github.tools.ci_repair_loop import tool as mod
 
         if tool_name == "schedule_ci_repair_loop":
-            return mod.schedule_ci_repair_loop(demo=True)
+            return mod.schedule_ci_repair_loop(owner="octocat", repo="service", pr_number=1)
         return mod.get_ci_repair_loop(task_id="a" * 12)
 
     return ToolFailureCase(tool_name, patch, invoke, tool_name, "github")

@@ -186,7 +186,6 @@ def _run(
         return {"ok": False, "error": "The demo seed did not return a pull request."}
     seeded_owner, seeded_repo, pr_number = target
     scheduled = schedule_ci_repair_loop(
-        demo=False,
         owner=seeded_owner,
         repo=seeded_repo,
         pr_number=pr_number,
@@ -336,10 +335,9 @@ def _finish_scheduled(
     description=(
         "Seed one private CI repair demo, schedule repair of the pull request it returns, "
         "wait until that repair is terminal, read the pull request head and checks once, "
-        "and save evidence. Passes demo false with that owner, repo, and pr_number. "
-        "One failed seed or schedule is returned and no second loop is scheduled. "
-        "A report that is still running leaves the schedule in place. A failed read "
-        "after scheduling removes that schedule and includes the task id. "
+        "and save evidence. One failed seed or schedule is returned and no second loop is "
+        "scheduled. A report that is still running leaves the schedule in place. A failed "
+        "read after scheduling removes that schedule and includes the task id. "
         "Does not delete the GitHub repository."
     ),
     surfaces=(ToolSurface.ACTION,),

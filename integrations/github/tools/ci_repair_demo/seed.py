@@ -12,7 +12,7 @@ from http import HTTPStatus
 from typing import Any
 
 from integrations.github.client import GitHubApiError, GitHubRestClient
-from integrations.github.tools.ci_repair_loop.fixture import object_response
+from integrations.github.tools.ci_repair_loop.responses import object_response
 
 FAILING_BRANCH = "demo/failing-ci"
 _POLL_SECONDS = 2.0

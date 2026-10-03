@@ -524,7 +524,6 @@ if TYPE_CHECKING:
     from config.constants.github import (
         GITHUB_API_BASE_URL as GITHUB_API_BASE_URL,
     )
-    from config.constants.github import GITHUB_CI_DEMO_REPOSITORY as GITHUB_CI_DEMO_REPOSITORY
     from config.constants.github import (
         GITHUB_CLI_REQUIRED_SCOPES as GITHUB_CLI_REQUIRED_SCOPES,
     )

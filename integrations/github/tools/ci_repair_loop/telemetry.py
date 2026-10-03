@@ -1,7 +1,7 @@
 """Activation milestones of one repair run, recorded on whichever host reaches them.
 
 The ``remote_*`` milestones belong to runs a gateway's own scheduler owns; the same
-loop scheduled from the user's shell records only the test failure it triggered.
+loop scheduled from the user's shell records none of them.
 """
 
 from __future__ import annotations
@@ -13,7 +13,6 @@ from infrastructure.analytics.capture import (
     capture_remote_ci_failure_detected,
     capture_remote_ci_monitoring_started,
     capture_remote_ci_repair_succeeded,
-    capture_test_ci_failure_triggered,
 )
 from integrations.github.tools.ci_repair_loop.models import RepairRun
 
@@ -30,10 +29,6 @@ def _identity(run: RepairRun) -> dict[str, Any]:
 def monitoring_started(run: RepairRun) -> None:
     if run.remote:
         capture_remote_ci_monitoring_started(**_identity(run))
-
-
-def demo_failure_triggered(run: RepairRun) -> None:
-    capture_test_ci_failure_triggered(**_identity(run), remote=run.remote)
 
 
 def failure_detected(run: RepairRun) -> None:

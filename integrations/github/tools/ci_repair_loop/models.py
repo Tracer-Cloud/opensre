@@ -33,7 +33,9 @@ class RepairRun(BaseModel):
     actor: str
     # Legacy records remain readable locally but cannot authorize an account.
     actor_id: int = Field(default=0, ge=0, strict=True)
-    demo: bool
+    #: Set only on records of the retired fixed-repository demo. Such a record still
+    #: loads, but the worker refuses to run it.
+    demo: bool = False
     #: Set only for a seeded demo this process just scheduled: short check waits, and
     #: the repair may change only calculator.py. A repository name does not set this;
     #: an ordinary repair of a similarly named repo waits and edits as usual.
@@ -69,12 +71,7 @@ class RepairRun(BaseModel):
 
     @property
     def identity(self) -> tuple[int, str, str, int]:
-        return (
-            self.actor_id,
-            self.owner.casefold(),
-            self.repo.casefold(),
-            (0 if self.demo else self.pr_number),
-        )
+        return (self.actor_id, self.owner.casefold(), self.repo.casefold(), self.pr_number)
 
     @property
     def repository_url(self) -> str:
