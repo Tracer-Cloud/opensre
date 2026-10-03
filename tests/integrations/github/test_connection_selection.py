@@ -47,6 +47,26 @@ def _cli_available(selected: dict[str, Any]) -> bool:
     return bool(tool.is_available(availability_view(selected)))
 
 
+def test_an_unknown_id_on_an_unmanaged_catalog_does_not_use_the_env_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A chosen id this process does not have must not fall through to GH_TOKEN."""
+    monkeypatch.setenv(GH_TOKEN_ENV, "gho_env")
+    selected = select_github_connection(
+        _catalog(
+            _grant(_ORG, available=True, is_default=False, token="gho_acme"),
+            _grant(_OTHER, available=True, is_default=False, token="gho_other"),
+            managed=False,
+        ),
+        _LAPTOP,
+    )
+
+    github = selected["github"]
+    assert github["connection_selection_error"] == "github_connection_required"
+    assert github.get("auth_token") != "gho_env"
+    assert _cli_available(selected) is False
+
+
 def test_an_unknown_laptop_connection_keeps_the_single_org_grant() -> None:
     """The hosted probe forwards this machine's id; the gateway only has the org grant."""
     selected = select_github_connection(
