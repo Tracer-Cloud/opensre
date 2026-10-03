@@ -74,6 +74,9 @@ def resolve_provider_name(client: object) -> str | None:
     pattern-matching the client's class name for known substrings
     (``openai``, ``bedrock``, ``cli``, ``anthropic``/``llmclient``).
     Returns ``None`` if no match is found (no exceptions raised).
+
+    The result is an analytics label (``custom_openai``), not a provider id a
+    command accepts; use :func:`resolve_provider_id` to name the provider to a user.
     """
     provider_label = getattr(client, "_provider_label", None)
     if isinstance(provider_label, str) and provider_label:
@@ -88,6 +91,21 @@ def resolve_provider_name(client: object) -> str | None:
     if "anthropic" in name or "llmclient" in name:
         return "anthropic"
     return None
+
+
+def resolve_provider_id(client: object) -> str | None:
+    """Provider id (``custom-openai``) whose OpenSRE-managed API key ``client`` sends.
+
+    Read from the client's API-key env through the provider catalog, so the id is
+    one ``opensre auth login`` accepts. ``None`` when the client carries no such
+    env (Anthropic SDK, Bedrock and CLI-backed clients).
+    """
+    from config.llm_auth.provider_catalog import provider_for_api_key_env
+
+    api_key_env = getattr(client, "_api_key_env", None)
+    if not isinstance(api_key_env, str) or not api_key_env:
+        return None
+    return provider_for_api_key_env(api_key_env)
 
 
 def record_llm_turn(
@@ -285,5 +303,6 @@ __all__ = [
     "record_invoke_response",
     "record_llm_turn",
     "resolve_model_name",
+    "resolve_provider_id",
     "resolve_provider_name",
 ]

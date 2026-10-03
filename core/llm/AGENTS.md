@@ -11,6 +11,7 @@ agent loop. Subprocess-backed LLM CLIs live under `integrations/llm_cli/`.
 | `config/llm_settings.py` | Declares `LLMProvider`, `LLMSettings` validation, and env-backed resolution. |
 | `config/llm_auth/provider_catalog.py` | Canonical `ProviderSpec` metadata shared by wizard, auth, and runtime checks. |
 | `core/llm/factory.py` | Single routing entrypoint: `resolve_llm_route()`, `get_llm(role)`, `reset_llm_clients()`. |
+| `core/llm/readiness.py` | `llm_ready()` preflight: does the route (account, else configured provider) have its settings and key, without building a client. |
 | `core/llm/client_builders.py` | Construct the client for a resolved route: `build_agent_client()`, `build_reasoning_client()`. |
 | `core/llm/providers/provider_registry.py` | `FIRST_PARTY_PROVIDERS` table (models, max_tokens, LiteLLM prefix, api-key env) the builders read. |
 | `core/llm/transport_mode.py` | `OPENSRE_LLM_TRANSPORT` (`sdk` vs `litellm`) and `use_litellm_for_provider()`. |

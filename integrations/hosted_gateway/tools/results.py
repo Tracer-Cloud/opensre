@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from config.constants.capabilities import HOSTED_GATEWAY_CAPABILITY
+from config.constants.hosted_gateway import HOSTED_GATEWAY_SETTINGS_PATH
 from core.agent_harness.tools import capability_available_from_sources
 from core.tool import report_run_error
 from integrations.hosted_gateway.client import (
@@ -36,7 +37,6 @@ _FAILURE_TEXT = {
     ERR_NOT_SIGNED_IN: f"You are not signed in to OpenSRE. Run `{_SIGN_IN}` first.",
     ERR_UNAUTHORIZED: f"Your OpenSRE sign-in expired or was revoked. Run `{_SIGN_IN}` again.",
     ERR_NOT_SUPPORTED: "The OpenSRE app you are signed in to does not offer this yet.",
-    ERR_NOT_PROVISIONED: "Your organization has no hosted gateway to start or stop yet.",
     ERR_NOT_RUNNING: "Your organization's hosted gateway is not running, so it cannot take a prompt.",
     ERR_UNKNOWN_PROMPT: "The hosted gateway no longer holds that prompt; send it again.",
     ERR_PROMPT_TOO_LARGE: "That prompt is too long for the hosted gateway; shorten it.",
@@ -140,10 +140,26 @@ def state_output(health: GatewayHealth, response_text: str) -> dict[str, Any]:
     }
 
 
-def failure_output(exc: HostedGatewayError, *, tool_name: str, component: str) -> dict[str, Any]:
+def gateway_settings_url(app_url: str) -> str:
+    """The app page where an organization admin provisions and inspects the gateway."""
+    return f"{app_url}{HOSTED_GATEWAY_SETTINGS_PATH}"
+
+
+def not_provisioned_text(settings_url: str) -> str:
+    """What the user is told when the organization has no gateway yet, naming the admin page."""
+    where = f"at {settings_url}" if settings_url else "in the OpenSRE app"
+    return (
+        f"Your organization has no hosted gateway yet. An organization admin can set it up {where}."
+    )
+
+
+def failure_output(
+    exc: HostedGatewayError, *, tool_name: str, component: str, settings_url: str = ""
+) -> dict[str, Any]:
     """The tool result for a refused or failed call; only real failures are reported.
 
     A transient failure is reported as a warning without a stack: the code says it all.
+    ``settings_url`` is the admin page a not-provisioned refusal names.
     """
     if exc.code in TRANSIENT_ERRORS:
         report_run_error(
@@ -156,7 +172,7 @@ def failure_output(exc: HostedGatewayError, *, tool_name: str, component: str) -
         )
     elif exc.code not in EXPECTED_ERRORS:
         report_run_error(exc, tool_name=tool_name, source=SOURCE, component=component)
-    text = _failure_text(exc)
+    text = _failure_text(exc, settings_url)
     return {
         "success": False,
         "signed_in": exc.code != ERR_NOT_SIGNED_IN,
@@ -178,15 +194,22 @@ def cause_sentence(exc: HostedGatewayError) -> str:
     return f"The OpenSRE app reported {exc.cause_code}."
 
 
-def _failure_text(exc: HostedGatewayError) -> str:
+def _failure_text(exc: HostedGatewayError, settings_url: str) -> str:
     """The status sentence, replaced by a known cause and extended by an unknown one."""
-    base = _FAILURE_TEXT.get(exc.code, f"The OpenSRE app could not do that ({exc.code}).")
+    base = _status_text(exc, settings_url)
     cause = cause_sentence(exc)
     if not cause:
         return base
     if exc.cause_code in _CAUSE_TEXT:
         return cause
     return f"{base} {cause}"
+
+
+def _status_text(exc: HostedGatewayError, settings_url: str) -> str:
+    """The sentence for ``exc.code``; a not-provisioned refusal names the admin page."""
+    if exc.code == ERR_NOT_PROVISIONED:
+        return not_provisioned_text(settings_url)
+    return _FAILURE_TEXT.get(exc.code, f"The OpenSRE app could not do that ({exc.code}).")
 
 
 def gateway_name(health: GatewayHealth) -> str:
@@ -200,6 +223,8 @@ __all__ = [
     "cause_sentence",
     "failure_output",
     "gateway_name",
+    "gateway_settings_url",
     "hosted_gateway_available",
+    "not_provisioned_text",
     "state_output",
 ]

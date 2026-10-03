@@ -498,6 +498,12 @@ if TYPE_CHECKING:
         WEB_STOP_TIMEOUT_SECONDS as WEB_STOP_TIMEOUT_SECONDS,
     )
     from config.constants.git import (
+        GIT_OPTIONAL_LOCKS_ENV as GIT_OPTIONAL_LOCKS_ENV,
+    )
+    from config.constants.git import (
+        GIT_TERMINAL_PROMPT_ENV as GIT_TERMINAL_PROMPT_ENV,
+    )
+    from config.constants.git import (
         MERGE_RESOLUTION_TIMEOUT_SECONDS as MERGE_RESOLUTION_TIMEOUT_SECONDS,
     )
     from config.constants.git import (
@@ -837,6 +843,12 @@ if TYPE_CHECKING:
     )
     from config.constants.opensearch import (
         OPENSEARCH_API_KEY_ENV as OPENSEARCH_API_KEY_ENV,
+    )
+    from config.constants.opensearch import (
+        OPENSEARCH_INTEGRATION_SETUP_CLI as OPENSEARCH_INTEGRATION_SETUP_CLI,
+    )
+    from config.constants.opensearch import (
+        OPENSEARCH_INTEGRATION_SETUP_SLASH as OPENSEARCH_INTEGRATION_SETUP_SLASH,
     )
     from config.constants.opensearch import (
         OPENSEARCH_PASSWORD_ENV as OPENSEARCH_PASSWORD_ENV,

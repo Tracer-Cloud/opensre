@@ -31,7 +31,10 @@ from core.agent_harness.spi.handoff import (
     pending_user_choice_state_snapshot,
 )
 from core.agent_harness.spi.session_state import PendingUserChoice
+from core.llm.readiness import LLMReadiness, llm_ready
+from core.llm_invoke_errors import ACTION_AGENT_ERROR, CommandSurface, remediate_llm_setup_failure
 from core.tool import SideEffectLevel, ToolExecutionHooks
+from infrastructure.analytics.prompt_log import record_prompt_turn
 from infrastructure.analytics.usage_context import claim_process_session_id
 from infrastructure.errors import OpenSREError
 from surfaces.cli.ask.approval import ApprovalTracker, build_approval_hooks
@@ -472,6 +475,49 @@ def cancelled_outcome(signum: int) -> AskOutcome:
     )
 
 
+@dataclass(frozen=True, slots=True)
+class _UnstartedSession:
+    """The session identity a prompt record needs when no session was started."""
+
+    session_id: str | None
+
+
+def _llm_not_ready_outcome(
+    prompt: str,
+    readiness: LLMReadiness,
+    *,
+    session_id: str | None,
+) -> AskOutcome:
+    """Refuse a turn no LLM route can serve, before the session or agent starts.
+
+    The prompt is recorded as the turn the action agent could not run — the same
+    record a turn failing on its first LLM call leaves — so ``not_configured``
+    provider-failure analytics still count these invocations.
+    """
+    # The account route always passes the check, so this reader is signed out.
+    message = (
+        remediate_llm_setup_failure(
+            readiness.reason,
+            surface=CommandSurface.CLI,
+            provider=readiness.provider,
+            offer_account_login=True,
+        )
+        or readiness.reason
+    )
+    with record_prompt_turn(
+        prompt, _UnstartedSession(session_id), surface=PromptSurface.HEADLESS_CLI.value
+    ) as recorder:
+        if recorder is not None:
+            recorder.set_error(ACTION_AGENT_ERROR, readiness.reason)
+            recorder.set_response(message)
+    return AskOutcome(
+        status=AskStatus.ERROR,
+        response="",
+        error=AskError(message=message),
+        exit_code=AskExitCode.ERROR,
+    )
+
+
 def run_ask(
     prompt: str,
     *,
@@ -506,6 +552,11 @@ def run_ask(
             # writes its header.  Allocate its ID before entering the shared
             # lease so a concurrent --resume cannot race the first turn.
             fresh_session_id = claim_process_session_id() or str(uuid4())
+        readiness = llm_ready()
+        if not readiness.ready:
+            return _llm_not_ready_outcome(
+                prompt, readiness, session_id=resume_id or fresh_session_id
+            )
         with _ask_session_lock(resume_id or (None if ephemeral else fresh_session_id)):
             result = _run_agent_turn(
                 prompt,

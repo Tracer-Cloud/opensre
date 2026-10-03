@@ -323,11 +323,19 @@ API_KEY_PROVIDER_ENVS: dict[str, str] = {
 KEYLESS_PROVIDER_VALUES: frozenset[str] = frozenset(
     spec.value for spec in PROVIDER_SPECS if not spec.uses_open_sre_api_key
 )
+_PROVIDER_BY_API_KEY_ENV: dict[str, str] = {
+    api_key_env: provider for provider, api_key_env in API_KEY_PROVIDER_ENVS.items()
+}
 
 
 def provider_spec(provider: str) -> ProviderSpec | None:
     """Return the provider spec for *provider*, if supported."""
     return PROVIDER_BY_VALUE.get(provider.strip().lower())
+
+
+def provider_for_api_key_env(api_key_env: str) -> str | None:
+    """Return the provider id whose OpenSRE-managed API key lives in *api_key_env*."""
+    return _PROVIDER_BY_API_KEY_ENV.get(api_key_env.strip().upper())
 
 
 def require_provider_spec(provider: str) -> ProviderSpec:
@@ -346,6 +354,7 @@ __all__ = [
     "PROVIDER_SPECS",
     "ProviderSpec",
     "SUPPORTED_PROVIDER_VALUES",
+    "provider_for_api_key_env",
     "provider_spec",
     "require_provider_spec",
 ]

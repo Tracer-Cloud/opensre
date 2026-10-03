@@ -69,6 +69,9 @@ _EXCLUSIVE_STDIN_SUBCOMMANDS: frozenset[tuple[str, str]] = frozenset(
         ("/integrations", "remove"),
         ("/mcp", "connect"),
         ("/mcp", "disconnect"),
+        # Bare ``/model set`` opens the provider picker; with a provider it may
+        # prompt for a missing key and prints the models table.
+        ("/model", "set"),
         ("/loops", "active"),
         ("/loops", "all"),
         ("/loops", "inbox"),

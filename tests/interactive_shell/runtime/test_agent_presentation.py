@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
 from unittest.mock import MagicMock
+
+import pytest
 
 from core.llm.shared.llm_retry import (
     LLMCreditExhaustedError,
@@ -16,6 +19,7 @@ from surfaces.interactive_shell.runtime.agent_presentation import (
     ConsoleAgentEventSink,
     _render_agent_presentation_transition,
 )
+from surfaces.interactive_shell.session import Session
 
 
 class _RecordingConsole:
@@ -46,6 +50,31 @@ def test_turn_complete_chimes_only_for_a_long_turn(monkeypatch) -> None:
     assert calls == [ap.NotifyEvent.TURN_COMPLETE]
 
 
+@pytest.mark.parametrize(
+    ("prompt_running", "exclusive_stdin", "drains"),
+    [
+        pytest.param(True, False, 0, id="live-prompt"),
+        pytest.param(False, True, 1, id="exclusive-turn"),
+        pytest.param(True, True, 1, id="exclusive-turn-with-a-lingering-app"),
+    ],
+)
+def test_turn_end_drains_stdin_only_when_no_prompt_app_reads_it(
+    monkeypatch: pytest.MonkeyPatch, prompt_running: bool, exclusive_stdin: bool, drains: int
+) -> None:
+    # A drain racing the live prompt app split the escape sequences it was
+    # parsing; exclusive-stdin turns own the TTY and still drain after pickers.
+    drained: list[bool] = []
+    monkeypatch.setattr(ap, "drain_stale_cpr_bytes", lambda: drained.append(True))
+    session = Session()
+    session.terminal.prompt_app = SimpleNamespace(is_running=prompt_running)
+    session.terminal.exclusive_stdin_active = exclusive_stdin
+    sink = ConsoleAgentEventSink(session=session, spinner=MagicMock(), console=MagicMock())
+
+    asyncio.run(sink(AgentEvent(type="turn_end")))
+
+    assert len(drained) == drains
+
+
 def _render_turn_error(error: Exception) -> str:
     console = _RecordingConsole()
     asyncio.run(
@@ -55,6 +84,7 @@ def _render_turn_error(error: Exception) -> str:
             event=AgentEvent(type="turn_error", error=error),
             console=console,  # type: ignore[arg-type]
             spinner=MagicMock(),
+            drain_stdin=False,
         )
     )
     return "\n".join(console.lines)
@@ -111,6 +141,7 @@ def test_opensre_credit_exhaustion_link_is_clickable_and_not_repeated() -> None:
             ),
             console=console,  # type: ignore[arg-type]
             spinner=MagicMock(),
+            drain_stdin=False,
         )
     )
 

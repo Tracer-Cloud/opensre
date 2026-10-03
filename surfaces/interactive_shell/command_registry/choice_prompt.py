@@ -110,6 +110,21 @@ def _capture_prompt_rendered(
     )
 
 
+def _capture_prompt_dismissed(
+    pending: PendingUserChoice,
+    *,
+    skill_name: str | None,
+    dismiss_keys: list[str],
+) -> None:
+    """Record the dismissal and the key class that closed the last picker, if known."""
+    capture_ask_user_prompt_dismissed(
+        interaction_id=pending.interaction_id,
+        reason="cancelled",
+        skill_name=skill_name,
+        dismiss_key=dismiss_keys[-1] if dismiss_keys else None,
+    )
+
+
 def _remember_answered(session: Session, *titles: str) -> None:
     """Record questions the user has settled, so nothing asks them again."""
     settled = getattr(session, "questions_already_answered", None)
@@ -222,6 +237,7 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
     skill_name = session.active_skill
     selected_indices: list[tuple[int, ...]] = [() for _ in items]
     custom_answers: list[str | None] = [None for _ in items]
+    dismiss_keys: list[str] = []
 
     def remember_answer(index: int, indices: tuple[int, ...], custom: str | None) -> None:
         selected_indices[index] = indices
@@ -231,13 +247,9 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
     clear_live_prompt_paint(session)
     play_notification(NotifyEvent.INPUT_NEEDED)  # the agent is now waiting on the user
     if pending.is_batch():
-        picked = repl_ask_user(items, on_answer=remember_answer)
+        picked = repl_ask_user(items, on_answer=remember_answer, on_dismiss=dismiss_keys.append)
         if picked is None:
-            capture_ask_user_prompt_dismissed(
-                interaction_id=pending.interaction_id,
-                reason="cancelled",
-                skill_name=skill_name,
-            )
+            _capture_prompt_dismissed(pending, skill_name=skill_name, dismiss_keys=dismiss_keys)
             _leave_menu(session, console, _CANCELLED)
             return True
         capture_ask_user_prompt_answered(
@@ -276,6 +288,7 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
         note=pending.note,
         on_custom_answer=mark_custom_answer,
         on_answer=remember_single_answer,
+        on_dismiss=dismiss_keys.append,
     )
     opening_answer: str | None = None
     permission_answer: str | None = None
@@ -292,6 +305,7 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
             header="Ask User",
             letter_keys=True,
             note="",
+            on_dismiss=dismiss_keys.append,
         )
         # A demo still missing its setup (GitHub) asks for that first, before
         # the demo-repository question; the leaf answer resumes it afterwards.
@@ -323,11 +337,7 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
         )
     capture_onboarding_choice(session.active_skill, picked_one, custom=custom_answer)
     if picked_one is None:
-        capture_ask_user_prompt_dismissed(
-            interaction_id=pending.interaction_id,
-            reason="cancelled",
-            skill_name=skill_name,
-        )
+        _capture_prompt_dismissed(pending, skill_name=skill_name, dismiss_keys=dismiss_keys)
         _leave_menu(session, console, _CANCELLED)
         return True
     command = pending.commands.get(picked_one) or (picked_one if picked_one.startswith("/") else "")

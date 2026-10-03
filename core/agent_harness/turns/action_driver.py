@@ -473,8 +473,9 @@ def _stage_action_llm_failure(
     if _bang_shell_command(message) is not None or message.strip().startswith("/"):
         return
     from core.agent_harness.turns.orchestrator import stage_turn_error, stage_turn_llm_failure
+    from core.llm_invoke_errors import ACTION_AGENT_ERROR
 
-    stage_turn_error(session, "action_agent_error", error_text)
+    stage_turn_error(session, ACTION_AGENT_ERROR, error_text)
     stage_turn_llm_failure(session, client=client)
 
 
@@ -1129,9 +1130,9 @@ def _run_action_turn(
             error_text=error_text,
         )
         from config.llm_settings import get_configured_llm_provider
-        from core.agent_harness.accounting.token_accounting import resolve_provider_name
+        from core.agent_harness.accounting.token_accounting import resolve_provider_id
 
-        provider = resolve_provider_name(llm_client) if llm_client is not None else None
+        provider = resolve_provider_id(llm_client) if llm_client is not None else None
         display_text = (
             execute_cli_onboard_on_missing_key(
                 session, error_text, provider=provider or get_configured_llm_provider()

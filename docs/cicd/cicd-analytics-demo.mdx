@@ -33,6 +33,10 @@ The agent guides you through the selected demo in the shell.
 
 1. **Scan.** It scans your home directory for git checkouts and paints a bar
    chart of the last 30 days of commits, your own contributions first.
+   On macOS it leaves out Desktop, Documents and Downloads, which would open a
+   permission prompt. To include one, start `opensre` from inside that folder.
+   Outside this demo you can also ask for a folder directly, for example
+   `scan ~/Documents for git repositories`.
 2. **Pick a repository.** A menu lists your checkouts that have GitHub Actions
    workflows, then the open-source example, then a row to type your own.
 

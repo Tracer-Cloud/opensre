@@ -8,8 +8,9 @@ the response, and exits instead of opening the interactive shell. Each run is
 saved as a resumable session unless you pass `--ephemeral`.
 It uses the hosted model of the signed-in account (`opensre account login`), or
 `LLM_PROVIDER` plus the provider API key on a machine that is not signed in, and
-any tools configured with `opensre integrations setup`. Without either it stops
-with `Missing LLM credentials`.
+any tools configured with `opensre integrations setup`. Without either it exits
+with status `1` before the agent runs and prints the command that fixes the
+setup, such as `opensre auth login <provider>`.
 
 ```bash
 opensre ask "why did checkout latency increase today?"
