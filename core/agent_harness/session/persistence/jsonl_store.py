@@ -423,10 +423,10 @@ class JsonlSessionStore:
             raise FileNotFoundError(path)
         with self._locked(path):
             records = self._read_records(path)
-            if not self._append_session_goal_state(session, records):
-                raise OSError("Could not persist session-goal state")
             if not self._append_task_plan_state(session, records):
                 raise OSError("Could not persist task-plan state")
+            if not self._append_session_goal_state(session, records):
+                raise OSError("Could not persist session-goal state")
 
     def append_session_goal_control(self, session_id: str, reason: str) -> str:
         """Durably record a goal control outside the live conversation branch."""

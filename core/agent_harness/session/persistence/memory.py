@@ -272,9 +272,9 @@ class InMemorySessionStore:
         records = self._files.get(session.session_id)
         if records is None:
             raise FileNotFoundError(session.session_id)
-        self._append_session_goal_state(session, records)
-        records = self._files.get(session.session_id, records)
         self._append_task_plan_state(session, records)
+        records = self._files.get(session.session_id, records)
+        self._append_session_goal_state(session, records)
 
     def append_session_goal_control(self, session_id: str, reason: str) -> str:
         """Durably record a goal control outside the live conversation branch."""

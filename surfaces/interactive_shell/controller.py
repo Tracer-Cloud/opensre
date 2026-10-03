@@ -294,12 +294,10 @@ class InteractiveShellController:
         reason: HostCancelReason,
     ) -> bool:
         """Apply and persist a goal control after the worker releases ownership."""
-        from core.agent_harness import SessionManager
-
         try:
             with session_execution_lock(self.session.session_id, timeout=0):
                 if apply_session_goal_control(self.session, reason):
-                    SessionManager.for_session(self.session).flush(self.session)
+                    self.session.store.flush_session_goal_control_state(self.session)
         except SessionExecutionBusyError:
             return False
         return True

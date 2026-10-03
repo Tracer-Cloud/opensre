@@ -322,10 +322,10 @@ def test_pending_goal_clear_tombstones_the_restored_task_plan() -> None:
     )
 
 
-def test_pending_goal_clear_retries_the_task_plan_after_a_partial_flush(
+def test_pending_goal_clear_waits_for_the_task_plan_tombstone(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A failed plan write must be repaired even when the goal tombstone landed."""
+    """A failed plan write must leave the goal intact for a later clear replay."""
     from core.agent_harness.session.persistence.contracts import RestoreContextKey
     from core.agent_harness.session_goal.goal import clear_session_goal
     from core.agent_harness.session_goal.persist import (
@@ -367,6 +367,9 @@ def test_pending_goal_clear_retries_the_task_plan_after_a_partial_flush(
         if record.get("custom_type") == TASK_PLAN_STATE_CUSTOM_TYPE
     )
 
+    assert goal_state["session_goal"] is not None
+    assert stale_plan_state
+
     restored = SessionCore(session_id=session.session_id, store=storage)
     SessionManager(store=storage).restore_context(
         restored,
@@ -389,6 +392,19 @@ def test_pending_goal_clear_retries_the_task_plan_after_a_partial_flush(
         )
         == {}
     )
+
+
+def test_goal_clear_without_a_goal_keeps_an_unrelated_task_plan() -> None:
+    from core.agent_harness.session_goal.control import apply_session_goal_control
+    from core.agent_harness.task_plan.plan import PlanStep, PlanStepStatus, TaskPlan
+    from core.agent_harness.turns.host_cancel import HostCancelReason
+
+    session = SessionCore()
+    plan = TaskPlan(steps=(PlanStep(step="collect evidence", status=PlanStepStatus.PENDING),))
+    session.task_plan = plan
+
+    assert not apply_session_goal_control(session, HostCancelReason.GOAL_CLEAR)
+    assert session.task_plan is plan
 
 
 def test_the_last_verdict_survives_a_round_trip() -> None:
