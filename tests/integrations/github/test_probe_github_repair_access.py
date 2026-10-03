@@ -110,3 +110,14 @@ def test_probe_uses_one_organizations_query_and_reports_can_create(
     assert owners[1]["can_create_repositories"] is True
     assert owners[2]["can_create_repositories"] is False
     assert "opensre-ci-repair-demo" not in result["response_text"]
+
+
+def test_a_classic_pat_without_repo_scope_cannot_create(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _Client({"X-OAuth-Scopes": "read:org"})
+    _install(monkeypatch, client)
+
+    result = repair_access.probe_github_repair_access()
+
+    assert result["owners"][0]["can_create_repositories"] is False

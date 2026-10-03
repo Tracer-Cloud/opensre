@@ -26,11 +26,13 @@ _PR_VIEW_FIELDS = "headRefOid,commits,statusCheckRollup"
 _PR_VIEW_TIMEOUT_SECONDS = 20
 _RUN_ID_IN_DETAILS_URL = re.compile(r"/actions/runs/(\d+)")
 _SUCCESS = "SUCCESS"
+_NON_BLOCKING = frozenset({_SUCCESS, "NEUTRAL", "SKIPPED"})
 _OUTCOME_SUCCESS = "success"
 _OUTCOME_FAILED = "failed"
 _OUTCOME_BLOCKED = "blocked"
 _LOOP_FAILED = "failed"
 _LOOP_SUCCEEDED = "succeeded"
+_TERMINAL_STATUSES = frozenset({_LOOP_SUCCEEDED, _LOOP_FAILED, "timed_out", "cancelled"})
 
 
 def _credentials(sources: dict[str, dict]) -> dict[str, Any]:
@@ -77,7 +79,17 @@ def _rollup(pull: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def _checks_passed(rows: list[dict[str, Any]]) -> bool:
-    return bool(rows) and all(_conclusion(row) == _SUCCESS for row in rows)
+    """True when every check is non-blocking and one of them succeeded.
+
+    A ``NEUTRAL`` or unrelated ``SKIPPED`` check does not undo a successful
+    repair. An empty rollup, a failure, or a check that is still running does.
+    """
+    conclusions = [_conclusion(row) for row in rows]
+    return (
+        bool(conclusions)
+        and _SUCCESS in conclusions
+        and all(item in _NON_BLOCKING for item in conclusions)
+    )
 
 
 def _passing_run_id(rows: list[dict[str, Any]]) -> int:
@@ -180,19 +192,88 @@ def _run(
         pr_number=pr_number,
         github_token=github_token,
         context=context,
+        fast_checks=True,
     )
     if not scheduled.get("ok"):
         return scheduled
     task_id = _text(scheduled.get("task_id"))
     if not task_id:
         return {"ok": False, "error": "The repair schedule did not return a task id."}
+    try:
+        return _finish_scheduled(
+            seeded_owner,
+            seeded_repo,
+            pr_number,
+            task_id,
+            seeded,
+            scheduled,
+            github_token,
+        )
+    except (GitHubCiFixError, GitHubApiError, OSError, RuntimeError, ValueError) as exc:
+        _remove_schedule(seeded_owner, seeded_repo, pr_number, task_id, github_token)
+        failed = _failed(exc)
+        failed["task_id"] = task_id
+        return failed
+
+
+def _remove_schedule(
+    owner: str,
+    repo: str,
+    pr_number: int,
+    task_id: str,
+    github_token: str | None,
+) -> dict[str, Any]:
+    """Drop the schedule after a read failure so the demo does not keep ticking."""
+    try:
+        return finish_ci_repair_demo(
+            repo=f"{owner}/{repo}",
+            pr_number=pr_number,
+            loop_id=task_id,
+            outcome=_OUTCOME_BLOCKED,
+            github_token=github_token,
+        )
+    except (GitHubCiFixError, GitHubApiError, OSError, RuntimeError, ValueError):
+        return {"ok": False}
+
+
+def _still_running(
+    owner: str, repo: str, pr_number: int, task_id: str, status: str
+) -> dict[str, Any]:
+    text = f"The repair {task_id} is still {status or 'running'}. The schedule was left in place."
+    return {
+        "ok": False,
+        "owner": owner,
+        "repo": repo,
+        "pr_number": pr_number,
+        "task_id": task_id,
+        "error": text,
+        "response_text": text,
+    }
+
+
+def _finish_scheduled(
+    seeded_owner: str,
+    seeded_repo: str,
+    pr_number: int,
+    task_id: str,
+    seeded: dict[str, Any],
+    scheduled: dict[str, Any],
+    github_token: str | None,
+) -> dict[str, Any]:
     observed = get_ci_repair_loop(
         task_id=task_id,
         wait_until_terminal=True,
         github_token=github_token,
     )
     if not observed.get("ok"):
-        return observed
+        stopped = _remove_schedule(seeded_owner, seeded_repo, pr_number, task_id, github_token)
+        refused = dict(observed)
+        refused["task_id"] = task_id
+        refused["loop_removed"] = stopped.get("loop_removed") is True
+        return refused
+    status = _text(observed.get("status"))
+    if status not in _TERMINAL_STATUSES:
+        return _still_running(seeded_owner, seeded_repo, pr_number, task_id, status)
     pull = _pull(seeded_owner, seeded_repo, pr_number, github_token)
     rows = _rollup(pull)
     failed_run_id = _run_id(seeded.get("failed_run_id"))
@@ -257,6 +338,8 @@ def _run(
         "wait until that repair is terminal, read the pull request head and checks once, "
         "and save evidence. Passes demo false with that owner, repo, and pr_number. "
         "One failed seed or schedule is returned and no second loop is scheduled. "
+        "A report that is still running leaves the schedule in place. A failed read "
+        "after scheduling removes that schedule and includes the task id. "
         "Does not delete the GitHub repository."
     ),
     surfaces=(ToolSurface.ACTION,),

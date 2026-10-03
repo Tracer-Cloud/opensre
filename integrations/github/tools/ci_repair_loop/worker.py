@@ -35,7 +35,6 @@ from integrations.github.tools.ci_fix.verification import (
     check_failed,
     wait_for_pr_checks,
 )
-from integrations.github.tools.ci_repair_demo.seed import is_seeded_ci_repair_demo
 from integrations.github.tools.ci_repair_loop import telemetry
 from integrations.github.tools.ci_repair_loop.credentials import account_id, configured_token
 from integrations.github.tools.ci_repair_loop.fixture import (
@@ -65,12 +64,11 @@ class _CheckWait(TypedDict, total=False):
 def _check_wait(run: RepairRun) -> _CheckWait:
     """Check-wait limits. A demo returns as soon as the head's run is terminal.
 
-    The fixed demo schedule sets ``run.demo``. A seeded ``opensre-ci-repair-demo-``
-    repository is scheduled as an ordinary pull request, and it takes the same
-    shortcut: the 60-second registration and 30-second settle windows are for a
-    real repository's unknown checks.
+    ``run.demo`` is the fixed demo repository. ``run.fast_checks`` is set only
+    when the seeded-demo tool schedules the pull request it just created. A
+    repository whose name looks like that demo keeps the normal windows.
     """
-    if not run.demo and not is_seeded_ci_repair_demo(run.repo):
+    if not run.demo and not run.fast_checks:
         return {}
     return {
         "registration_seconds": _DEMO_REGISTRATION_SECONDS,

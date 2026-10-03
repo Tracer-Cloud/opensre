@@ -104,6 +104,7 @@ def schedule_repair(
     github_token: str | None = None,
     store: RepairStore | None = None,
     scheduler_in_process: bool = False,
+    fast_checks: bool = False,
 ) -> tuple[RepairRun, bool, str | None]:
     """Schedule once per active target; repeated requests retain the original deadline.
 
@@ -133,6 +134,7 @@ def schedule_repair(
         actor=actor,
         actor_id=actor_id,
         demo=demo,
+        fast_checks=fast_checks,
         remote=scheduler_in_process,
         started_at=started,
         deadline=started + CI_REPAIR_SECONDS,

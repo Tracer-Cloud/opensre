@@ -50,6 +50,17 @@ def _token_access(headers: Mapping[str, str]) -> tuple[str, list[str]]:
     return TOKEN_FINE_GRAINED_OR_APP, []
 
 
+def _login_can_create(token_type: str, scopes: list[str]) -> bool:
+    """Classic PATs create repositories only with ``repo`` or ``public_repo``.
+
+    A fine-grained or app token omits ``X-OAuth-Scopes``, so this header
+    cannot say whether that token can create a repository.
+    """
+    if token_type != TOKEN_CLASSIC_PAT:
+        return True
+    return "repo" in scopes or "public_repo" in scopes
+
+
 def _response_text(
     login: str,
     token_type: str,
@@ -115,7 +126,7 @@ def probe_github_repair_access(
     except (GitHubApiError, OSError, RuntimeError, ValueError) as exc:
         return _failed(exc)
     token_type, scopes = _token_access(headers)
-    owners = owner_entries(login, nodes)
+    owners = owner_entries(login, nodes, login_can_create=_login_can_create(token_type, scopes))
     return {
         "ok": True,
         "login": login,

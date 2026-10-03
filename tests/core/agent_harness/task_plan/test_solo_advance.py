@@ -149,6 +149,11 @@ def test_a_write_that_newly_blocks_a_step_is_allowed_on_its_own() -> None:
     assert _reason(started) is None
 
 
+def test_a_settled_close_is_allowed_on_its_own() -> None:
+    prior = _stored("in_progress", "pending")
+    assert _reason(_payload("completed", "completed"), prior=prior) is None
+
+
 def test_starting_or_completing_a_step_on_its_own_is_refused() -> None:
     assert _reason(_payload("in_progress", "pending")) == SOLO_PLAN_ADVANCE_REASON
     assert _reason(_payload("completed", "pending")) == SOLO_PLAN_ADVANCE_REASON

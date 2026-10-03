@@ -94,11 +94,18 @@ def _install(
         pr_number: int = 0,
         github_token: str | None = None,
         context: Any = None,
+        fast_checks: bool = False,
         **_kwargs: Any,
     ) -> dict[str, Any]:
         del github_token, context, _kwargs
         record.schedules.append(
-            {"demo": demo, "owner": owner, "repo": repo, "pr_number": pr_number}
+            {
+                "demo": demo,
+                "owner": owner,
+                "repo": repo,
+                "pr_number": pr_number,
+                "fast_checks": fast_checks,
+            }
         )
         if schedule_result is not None:
             return schedule_result
@@ -124,7 +131,12 @@ def _install(
 
     def _finish(**kwargs: Any) -> dict[str, Any]:
         record.finishes.append(kwargs)
-        return {"ok": True, "evidence": "/tmp/ci-repair-demo.md", "repository_retained": True}
+        return {
+            "ok": True,
+            "evidence": "/tmp/ci-repair-demo.md",
+            "repository_retained": True,
+            "loop_removed": True,
+        }
 
     def _pull(
         args: list[str],
@@ -153,7 +165,13 @@ def test_run_schedules_the_seeded_pr_once_then_waits_and_finishes(
 
     assert record.seeds == 1
     assert record.schedules == [
-        {"demo": False, "owner": _OWNER, "repo": _SEEDED_REPO, "pr_number": _PR_NUMBER}
+        {
+            "demo": False,
+            "owner": _OWNER,
+            "repo": _SEEDED_REPO,
+            "pr_number": _PR_NUMBER,
+            "fast_checks": True,
+        }
     ]
     assert record.waits == [(_TASK_ID, True)]
     assert record.views == [
@@ -207,7 +225,88 @@ def test_schedule_failure_does_not_schedule_again_or_finish(
 
     assert result == failure
     assert record.schedules == [
-        {"demo": False, "owner": _OWNER, "repo": _SEEDED_REPO, "pr_number": _PR_NUMBER}
+        {
+            "demo": False,
+            "owner": _OWNER,
+            "repo": _SEEDED_REPO,
+            "pr_number": _PR_NUMBER,
+            "fast_checks": True,
+        }
     ]
     assert record.waits == []
     assert record.finishes == []
+
+
+def test_a_running_report_leaves_the_schedule(monkeypatch: pytest.MonkeyPatch) -> None:
+    record = _Record()
+    _install(
+        monkeypatch,
+        record,
+        observe_result={"ok": True, "status": "running", "task_id": _TASK_ID},
+    )
+
+    result = run_tool.run_ci_repair_demo(_OWNER, _REQUESTED_REPO)
+
+    assert result["ok"] is False
+    assert result["task_id"] == _TASK_ID
+    assert "left in place" in result["error"]
+    assert record.finishes == []
+    assert record.views == []
+
+
+def test_a_failed_report_read_removes_the_schedule(monkeypatch: pytest.MonkeyPatch) -> None:
+    record = _Record()
+    _install(monkeypatch, record, observe_result={"ok": False, "error": "missing"})
+
+    result = run_tool.run_ci_repair_demo(_OWNER, _REQUESTED_REPO)
+
+    assert result["ok"] is False
+    assert result["task_id"] == _TASK_ID
+    assert result["loop_removed"] is True
+    assert record.finishes[0]["outcome"] == "blocked"
+    assert record.finishes[0]["loop_id"] == _TASK_ID
+
+
+def test_a_pull_read_failure_removes_the_schedule(monkeypatch: pytest.MonkeyPatch) -> None:
+    record = _Record()
+    _install(monkeypatch, record)
+
+    def _boom(*_args: object, **_kwargs: object) -> dict[str, Any]:
+        raise OSError("timed out")
+
+    monkeypatch.setattr(run_tool, "run_gh_json", _boom)
+
+    result = run_tool.run_ci_repair_demo(_OWNER, _REQUESTED_REPO)
+
+    assert result["ok"] is False
+    assert result["task_id"] == _TASK_ID
+    assert record.finishes[0]["loop_id"] == _TASK_ID
+
+
+def test_a_neutral_check_beside_a_success_still_counts_as_passed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    record = _Record()
+    _install(monkeypatch, record)
+
+    def _pull(*_args: object, **_kwargs: object) -> dict[str, Any]:
+        return {
+            "headRefOid": _FIX,
+            "statusCheckRollup": [
+                {
+                    "conclusion": "SUCCESS",
+                    "detailsUrl": (
+                        f"https://github.com/{_OWNER}/{_SEEDED_REPO}/actions/runs/{_PASSING_RUN}"
+                    ),
+                },
+                {"conclusion": "NEUTRAL"},
+                {"conclusion": "SKIPPED"},
+            ],
+        }
+
+    monkeypatch.setattr(run_tool, "run_gh_json", _pull)
+
+    result = run_tool.run_ci_repair_demo(_OWNER, _REQUESTED_REPO)
+
+    assert result["outcome"] == "success"
+    assert result["passing_run_id"] == _PASSING_RUN

@@ -44,9 +44,14 @@ def fetch_organization_nodes(client: GitHubRestClient) -> list[dict[str, Any]]:
     return nodes
 
 
-def owner_entries(login: str, nodes: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """The viewer, who can create repositories, then one entry per organization."""
-    owners: list[dict[str, Any]] = [{"login": login, "can_create_repositories": True}]
+def owner_entries(
+    login: str,
+    nodes: list[dict[str, Any]],
+    *,
+    login_can_create: bool,
+) -> list[dict[str, Any]]:
+    """The viewer, then one entry per organization."""
+    owners: list[dict[str, Any]] = [{"login": login, "can_create_repositories": login_can_create}]
     for node in nodes:
         org = str(node.get("login") or "").strip()
         if not org:

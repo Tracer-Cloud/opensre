@@ -34,6 +34,9 @@ class RepairRun(BaseModel):
     # Legacy records remain readable locally but cannot authorize an account.
     actor_id: int = Field(default=0, ge=0, strict=True)
     demo: bool
+    #: Short check waits for a seeded demo this process just scheduled. A repository
+    #: name does not set this; an ordinary repair of a similarly named repo waits.
+    fast_checks: bool = False
     #: Scheduled by a gateway's own scheduler (the hosted gateway), not the user's shell.
     remote: bool = False
     started_at: float

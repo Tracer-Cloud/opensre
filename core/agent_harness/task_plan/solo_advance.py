@@ -28,9 +28,8 @@ def solo_plan_advance_reason(
     """Why this response must not run, or ``None`` when the calls may.
 
     Refused only when the sole call is ``update_plan``, the write is not
-    ``plan_only``, it does not newly mark a step blocked, and it sets a step
-    ``in_progress`` or marks one ``completed`` — on a plan already stored or
-    on the plan this write would create.
+    ``plan_only``, it does not newly mark a step blocked, it does not settle
+    the plan, and it sets a step ``in_progress`` or marks one ``completed``.
     """
     if len(tool_calls) != 1 or tool_calls[0].name != _UPDATE_PLAN:
         return None
@@ -41,6 +40,10 @@ def solo_plan_advance_reason(
     if error is not None or plan is None:
         return None
     if _newly_blocked(plan, prior):
+        return None
+    # A text-only closing step has no action tool to pair with the write.
+    # The completion policy still demotes a close the stored plan did not earn.
+    if plan.is_settled:
         return None
     if _sets_in_progress(plan) or _marks_completed(plan, prior):
         return SOLO_PLAN_ADVANCE_REASON

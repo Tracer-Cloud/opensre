@@ -1696,12 +1696,12 @@ def test_demo_verification_passes_when_the_head_check_is_already_successful(
 def test_seeded_demo_repository_skips_the_registration_window(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A seeded demo is scheduled as a normal PR and still returns once its check is green."""
+    """A seeded demo marked fast_checks returns once its check is green."""
     from integrations.github.tools.ci_repair_loop import worker
 
     head = "fixed-sha"
     run = _run(pr_number=1).model_copy(
-        update={"demo": False, "repo": "opensre-ci-repair-demo-g0xd"}
+        update={"demo": False, "repo": "opensre-ci-repair-demo-g0xd", "fast_checks": True}
     )
     passed = {
         "name": "test",
@@ -1725,6 +1725,15 @@ def test_seeded_demo_repository_skips_the_registration_window(
     assert seen["registration_seconds"] == 0
     assert seen["settle_seconds"] == 0
     assert clock.sleeps == []
+
+
+def test_a_repository_named_like_the_demo_keeps_the_normal_check_wait() -> None:
+    from integrations.github.tools.ci_repair_loop import worker
+
+    run = _run(pr_number=1).model_copy(
+        update={"demo": False, "repo": "opensre-ci-repair-demo-g0xd"}
+    )
+    assert worker._check_wait(run) == {}
 
 
 def test_demo_verification_keeps_waiting_while_checks_are_empty_or_running(

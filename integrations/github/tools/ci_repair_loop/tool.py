@@ -124,6 +124,7 @@ def schedule_ci_repair_loop(
     pr_number: int = 0,
     github_token: str | None = None,
     context: Any = None,
+    fast_checks: bool = False,
     **_kwargs: Any,
 ) -> dict[str, Any]:
     """Authorize exactly one bounded repair scope and return its durable identity."""
@@ -137,6 +138,7 @@ def schedule_ci_repair_loop(
             github_token=github_token,
             store=store,
             scheduler_in_process=_scheduler_in_process(context),
+            fast_checks=fast_checks,
         )
     except RepairRefused as exc:
         return {
