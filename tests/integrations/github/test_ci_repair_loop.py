@@ -1736,6 +1736,55 @@ def test_a_repository_named_like_the_demo_keeps_the_normal_check_wait() -> None:
     assert worker._check_wait(run) == {}
 
 
+@pytest.mark.parametrize(
+    ("fast_checks", "allowed_paths"),
+    [(True, frozenset({"calculator.py"})), (False, None)],
+)
+def test_seeded_demo_repair_may_change_only_calculator(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    fast_checks: bool,
+    allowed_paths: frozenset[str] | None,
+) -> None:
+    """The seeded demo runs with demo false, so fast_checks alone limits its edits.
+
+    A repository that is only named like the demo is repaired as an ordinary PR.
+    """
+    from integrations.github.tools.ci_repair_loop import worker
+
+    store = RepairStore(tmp_path)
+    run = _run(pr_number=1).model_copy(
+        update={
+            "demo": False,
+            "repo": "opensre-ci-repair-demo-g0xd",
+            "fast_checks": fast_checks,
+        }
+    )
+    store.directory(run.id).mkdir()
+    seen: dict[str, Any] = {}
+
+    def repair(**kwargs: Any) -> dict[str, Any]:
+        seen.update(kwargs)
+        return {"success": True, "checks_state": "passed", "fix_head_sha": "fixed"}
+
+    def pr(_run: RepairRun, _token: str) -> dict[str, Any]:
+        head = "fixed" if seen else "broken"
+        conclusion = "SUCCESS" if seen else "FAILURE"
+        return {
+            "state": "OPEN",
+            "headRefOid": head,
+            "statusCheckRollup": [{"conclusion": conclusion}],
+        }
+
+    monkeypatch.setattr(worker, "run_ci_fix", repair)
+    monkeypatch.setattr(worker, "record_ci_fix_outcome", lambda _output: None)
+    monkeypatch.setattr(worker, "_read_pr", pr)
+    worker._repair(run, store, "test-token")
+
+    assert seen["allowed_paths"] == allowed_paths
+    assert run.checks_passed and run.fixed_sha == "fixed"
+
+
 def test_demo_verification_keeps_waiting_while_checks_are_empty_or_running(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

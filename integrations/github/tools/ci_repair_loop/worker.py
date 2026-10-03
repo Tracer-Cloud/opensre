@@ -61,14 +61,22 @@ class _CheckWait(TypedDict, total=False):
     poll_interval_seconds: int
 
 
+def _demo_repository(run: RepairRun) -> bool:
+    """True for the fixed demo, or the seeded demo PR its tool just scheduled.
+
+    ``run.fast_checks`` is set only by the seeded-demo tool, never from a repository
+    name. Both demos hold one known workflow and one file the repair may change.
+    """
+    return run.demo or run.fast_checks
+
+
 def _check_wait(run: RepairRun) -> _CheckWait:
     """Check-wait limits. A demo returns as soon as the head's run is terminal.
 
-    ``run.demo`` is the fixed demo repository. ``run.fast_checks`` is set only
-    when the seeded-demo tool schedules the pull request it just created. A
-    repository whose name looks like that demo keeps the normal windows.
+    The 60-second registration and 30-second settle windows are for a real
+    repository's unknown checks.
     """
-    if not run.demo and not run.fast_checks:
+    if not _demo_repository(run):
         return {}
     return {
         "registration_seconds": _DEMO_REGISTRATION_SECONDS,
@@ -216,7 +224,7 @@ def _repair(run: RepairRun, store: RepairStore, token: str) -> None:
             pr_number=run.pr_number,
             workspace=run.workspace,
             github_token=token,
-            allowed_paths=frozenset({"calculator.py"}) if run.demo else None,
+            allowed_paths=frozenset({"calculator.py"}) if _demo_repository(run) else None,
             expected_source_head_sha=head,
             **_check_wait(run),
         )
