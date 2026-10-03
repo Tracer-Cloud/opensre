@@ -16,6 +16,7 @@ from integrations.coding_agent import (
     coding_model,
     coding_timeout_seconds,
     coding_workspace,
+    reuse_coding_agent_choice,
     run_coding_task,
     verify_coding_agent,
 )
@@ -401,6 +402,8 @@ def run_ci_fix(
     }
     phases = timer or PhaseTimer()
     with ExitStack() as workspaces:
+        # The readiness check and the run of each coding step share one probe sweep.
+        workspaces.enter_context(reuse_coding_agent_choice())
         ws = workspace or coding_workspace()
         branch_name = (branch or "").strip()
         ctx: CiFixContext | None = None

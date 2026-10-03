@@ -12,7 +12,7 @@ from typing import Any, TypedDict
 from config.constants.ci_repair import CI_REPAIR_FINISH_RESERVE_SECONDS, CI_REPAIR_MAX_ATTEMPTS
 from infrastructure.analytics.provider import shutdown_analytics
 from infrastructure.process.tree import start_watchdog
-from integrations.coding_agent import select_coding_agent
+from integrations.coding_agent import reuse_coding_agent_choice, select_coding_agent
 from integrations.git import clone_repository
 from integrations.github.client import GitHubApiError, GitHubRestClient
 from integrations.github.tools.ci_fix.context import CiFixContext
@@ -325,8 +325,13 @@ def execute_repair(run: RepairRun, store: RepairStore, timer: PhaseTimer | None 
     """Keep all remote writes inside the supervised worker and its pinned repository scope.
 
     ``timer`` receives each phase's wall time; attempt records and the run hold them.
+    The coding agent is probed once here and every attempt reuses that backend.
     """
-    phases = timer or PhaseTimer()
+    with reuse_coding_agent_choice():
+        _execute_repair(run, store, timer or PhaseTimer())
+
+
+def _execute_repair(run: RepairRun, store: RepairStore, phases: PhaseTimer) -> None:
     with phases.phase("agent_probe"):
         backend, _detail = select_coding_agent()
     if backend is None:

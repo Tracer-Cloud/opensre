@@ -17,6 +17,7 @@ from integrations.coding_agent.config import (
 )
 from integrations.coding_agent.models import CodingResult, Progress
 from integrations.coding_agent.runner import (
+    reuse_coding_agent_choice,
     run_coding_task,
     select_coding_agent,
     verify_coding_agent,
@@ -29,6 +30,7 @@ __all__ = [
     "coding_model",
     "coding_timeout_seconds",
     "coding_workspace",
+    "reuse_coding_agent_choice",
     "run_coding_task",
     "select_coding_agent",
     "verify_coding_agent",

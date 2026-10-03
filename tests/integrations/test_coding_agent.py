@@ -15,6 +15,7 @@ from integrations.coding_agent import (
     codex_backend,
     coding_agent_provider,
     cursor_backend,
+    reuse_coding_agent_choice,
     run_coding_task,
     select_coding_agent,
     verify_coding_agent,
@@ -104,6 +105,26 @@ def test_auto_run_with_no_ready_backend_returns_error() -> None:
         result = run_coding_task("fix", workspace="/w", model=None, timeout_sec=60, provider="auto")
     assert result.success is False
     assert "No coding agent is ready" in (result.error or "")
+
+
+def test_a_reuse_block_sweeps_once_keeps_no_miss_and_ends_with_the_block() -> None:
+    """A repair asks for readiness several times per attempt, and each sweep runs the CLIs."""
+    table = _fake_backends(claude=(False, "claude not logged in"))
+    with patch.dict(_BACKENDS, table):
+        with reuse_coding_agent_choice():
+            assert verify_coding_agent("auto")[0] is False
+            table["claude-code"][1].return_value = (True, "claude ready")
+            assert verify_coding_agent("auto") == (True, "claude-code: claude ready")
+            run_coding_task("fix", workspace="/w", model=None, timeout_sec=60, provider="auto")
+            with reuse_coding_agent_choice():
+                assert select_coding_agent("auto") == ("claude-code", "claude ready")
+        verify_coding_agent("auto")
+
+    # Inside the block: the miss and the first hit swept; the rest reused it.
+    # After the block: a fresh sweep.
+    assert table["pi"][1].call_count == 3
+    assert table["claude-code"][1].call_count == 3
+    table["claude-code"][0].assert_called_once()
 
 
 def test_alias_claude_resolves_to_claude_code() -> None:
