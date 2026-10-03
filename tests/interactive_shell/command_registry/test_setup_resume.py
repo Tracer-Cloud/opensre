@@ -12,15 +12,22 @@ import pytest
 from rich.console import Console
 
 from config.constants import GH_TOKEN_ENV, GITHUB_MCP_AUTH_TOKEN_ENV, GITHUB_TOKEN_ENV
-from config.constants.skills import ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME
+from config.constants.skills import (
+    ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME,
+    CONNECTING_SLACK_SKILL_NAME,
+)
+from config.constants.slash_commands import QUEUED_COMMAND_KEY
 from core.agent_harness.spi.handoff import AskUserQuestion, format_ask_user_answers
 from core.agent_harness.spi.session_state import arm_setup_resume, pending_setup_resume
+from core.agent_harness.tools import ActionToolScope
 from surfaces.interactive_shell.command_registry.setup_resume import (
     ResumeOutcome,
     resume_after_setup,
 )
 from surfaces.interactive_shell.runtime.input.actions import SubmitTurn
 from surfaces.interactive_shell.session import Session
+from tests.core.agent.orchestration.action_execution_test_harness import FakeSlashPorts
+from tools.interactive_shell.actions.slash import execute_slash_tool
 
 _SKILL = ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME
 _ANSWER = format_ask_user_answers(
@@ -73,6 +80,64 @@ def test_the_parked_turn_is_replayed_once_after_the_token_resolves(
         ResumeOutcome.NOTHING_PARKED
     )
     assert terminal.pending_prompt_default is None
+
+
+def _setup_queued_mid_skill(skill: str, service: str) -> Session:
+    """The agent queues ``/integrations setup <service>`` while ``skill`` is active; it runs."""
+    session = Session()
+    session.resolved_integrations_cache = {}
+    session.active_skill = skill
+    scope = ActionToolScope(
+        session=session,
+        console=_console(),
+        slash_ports=FakeSlashPorts(tty=True),
+        turn_user_message=_ANSWER,
+    )
+    queued = execute_slash_tool({"command": "/integrations", "args": ["setup", service]}, scope)
+    assert isinstance(queued, dict) and queued[QUEUED_COMMAND_KEY]
+    session.terminal.pop_pending_prompt_default()
+    session.terminal.pop_pending_autosubmit()
+    return session
+
+
+@pytest.mark.parametrize(
+    ("skill", "service", "replayed"),
+    [
+        (CONNECTING_SLACK_SKILL_NAME, "slack", False),
+        (ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME, "github", True),
+    ],
+    ids=["slack-without-a-check", "github"],
+)
+def test_only_a_setup_a_check_can_confirm_brings_the_skill_back(
+    monkeypatch: pytest.MonkeyPatch, skill: str, service: str, replayed: bool
+) -> None:
+    """A cancelled Slack wizard replayed the Slack demo's turn, which queued the wizard again.
+
+    No registered check covers Slack, so a finished setup and a cancelled one
+    look the same: that turn is never parked. GitHub's check still confirms
+    its setup, and that turn comes back.
+    """
+    session = _setup_queued_mid_skill(skill, service)
+    monkeypatch.setenv(GH_TOKEN_ENV, "env-tok")  # GitHub's setup worked; Slack's was cancelled
+
+    outcome = resume_after_setup(session, _console(), service=service)
+
+    assert (outcome is ResumeOutcome.REPLAYED) is replayed
+    assert (session.terminal.pending_prompt_default == _ANSWER) is replayed
+    assert pending_setup_resume(session) is None
+
+
+def test_a_parked_turn_no_check_can_confirm_is_dropped_not_replayed() -> None:
+    session = Session()
+    session.resolved_integrations_cache = {}
+    assert arm_setup_resume(session, _ANSWER, skill=CONNECTING_SLACK_SKILL_NAME, service="slack")
+
+    outcome = resume_after_setup(session, _console(), service="slack")
+
+    assert outcome is ResumeOutcome.DROPPED
+    assert pending_setup_resume(session) is None
+    assert session.terminal.pending_prompt_default is None
+    assert session.pending_user_choice is None
 
 
 def test_a_queued_autosubmit_is_never_replaced(monkeypatch: pytest.MonkeyPatch) -> None:

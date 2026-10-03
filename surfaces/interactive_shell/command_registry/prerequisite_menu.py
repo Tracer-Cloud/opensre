@@ -93,7 +93,7 @@ def _continue(session: Session, console: Console, service: str) -> MenuStep:
     outcome = resume_after_setup(session, console, service=service)
     if outcome is ResumeOutcome.STILL_MISSING:
         return MenuStep.ASK_AGAIN
-    if outcome is ResumeOutcome.NOTHING_PARKED:
+    if outcome in (ResumeOutcome.NOTHING_PARKED, ResumeOutcome.DROPPED):
         label = escape(prerequisite_service_label(service))
         console.print(
             f"[{ui_theme.DIM}]Nothing is waiting on {label} setup — type a request to continue.[/]"

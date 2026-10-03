@@ -5,7 +5,9 @@ The setup wizard's exit status says nothing about the credential
 skill's registered check runs again on freshly resolved integrations. A pass
 replays the parked turn exactly once: a menu answer the way ``/choose`` submits
 one, so it keeps its skill context; anything else as an ordinary turn. A miss
-puts the setup menu back with a "still not connected" note.
+puts the setup menu back with a "still not connected" note. A turn no
+registered check can confirm is dropped, never replayed: a cancelled wizard
+must not bring the skill back.
 """
 
 from __future__ import annotations
@@ -23,7 +25,7 @@ from infrastructure.terminal import theme as ui_theme
 from surfaces.interactive_shell.runtime import Session
 from tools.interactive_shell.actions.skill_prerequisite_gate import (
     queue_prerequisite_menu,
-    unmet_prerequisite,
+    setup_verdict,
 )
 
 logger = logging.getLogger(__name__)
@@ -36,6 +38,8 @@ class ResumeOutcome(StrEnum):
     REPLAYED = "replayed"
     SLOT_BUSY = "slot_busy"
     STILL_MISSING = "still_missing"
+    DROPPED = "dropped"
+    """No registered check can confirm the setup worked, so the turn is forgotten."""
 
 
 def resume_after_setup(
@@ -44,18 +48,23 @@ def resume_after_setup(
     """Replay the parked turn when its prerequisite now holds; re-queue the setup menu when not.
 
     ``service`` is the integration that was just set up; a turn parked for
-    another one stays parked. An auto-submit already queued is never replaced:
-    the turn stays parked and nothing is queued.
+    another one stays parked. Only a registered check's positive answer
+    replays; with no check that can answer, the turn is dropped. An auto-submit
+    already queued is never replaced: the turn stays parked and nothing is queued.
     """
     record = pending_setup_resume(session)
     if record is None or (service is not None and record.service != service):
         return ResumeOutcome.NOTHING_PARKED
+    verdict = setup_verdict(record.skill, record.service, resolve_and_cache_integrations(session))
+    if verdict is None:
+        take_setup_resume(session)
+        logger.debug("Setup resume dropped: no check can confirm %s setup", record.service)
+        return ResumeOutcome.DROPPED
     terminal = session.terminal
     if terminal.pending_prompt_autosubmit and terminal.pending_prompt_default:
         logger.debug("Setup resume deferred: another autosubmit is already queued")
         return ResumeOutcome.SLOT_BUSY
-    resolved = resolve_and_cache_integrations(session)
-    if unmet_prerequisite(record.skill, resolved, service=record.service) is not None:
+    if not verdict:
         queue_prerequisite_menu(session, record.service, still_missing=True)
         return ResumeOutcome.STILL_MISSING
     take_setup_resume(session)

@@ -34,25 +34,33 @@ def registered_skill_prerequisite_checks() -> tuple[str, ...]:
     return tuple(sorted(_checks))
 
 
+def skill_prerequisite_verdict(
+    check_id: str, resolved_integrations: Mapping[str, Any]
+) -> bool | None:
+    """Run the check registered as ``check_id``: its answer, or None when no check can answer.
+
+    None covers an unregistered check and one that raises. Skill entry treats
+    None as met (:func:`skill_prerequisite_met`); resuming work parked behind
+    setup needs a True.
+    """
+    check = _checks.get(check_id)
+    if check is None:
+        logger.debug("No skill prerequisite check is registered as %r", check_id)
+        return None
+    try:
+        return bool(check(resolved_integrations))
+    except Exception:
+        logger.warning("Skill prerequisite check %r failed", check_id, exc_info=True)
+        return None
+
+
 def skill_prerequisite_met(check_id: str, resolved_integrations: Mapping[str, Any]) -> bool:
     """Run the check registered as ``check_id`` on ``resolved_integrations``.
 
     Fails open: an unregistered check, or one that raises, counts as met, so a
     wiring gap or a bug in a check never locks a user out of a skill.
     """
-    check = _checks.get(check_id)
-    if check is None:
-        logger.debug(
-            "No skill prerequisite check is registered as %r; treating it as met", check_id
-        )
-        return True
-    try:
-        return bool(check(resolved_integrations))
-    except Exception:
-        logger.warning(
-            "Skill prerequisite check %r failed; treating it as met", check_id, exc_info=True
-        )
-        return True
+    return skill_prerequisite_verdict(check_id, resolved_integrations) is not False
 
 
 def clear_skill_prerequisite_checks() -> None:
@@ -71,4 +79,5 @@ __all__ = [
     "register_skill_prerequisite_check",
     "registered_skill_prerequisite_checks",
     "skill_prerequisite_met",
+    "skill_prerequisite_verdict",
 ]

@@ -44,7 +44,12 @@ from core.agent_harness.spi.session_state import (
 )
 from core.agent_harness.tools import ActionToolScope
 from infrastructure.analytics.capture import capture_skill_prerequisite_missing
-from infrastructure.harness_providers import integration_setup_command, skill_prerequisite_met
+from infrastructure.harness_providers import (
+    integration_setup_command,
+    registered_skill_prerequisite_checks,
+    skill_prerequisite_met,
+    skill_prerequisite_verdict,
+)
 from tools.interactive_shell.actions.ask_choice import menu_available
 
 _CHOOSE_COMMAND = "/choose"
@@ -77,6 +82,38 @@ def unmet_prerequisite(
         if not skill_prerequisite_met(prerequisite.check, resolved_integrations):
             return prerequisite
     return None
+
+
+def resumable_setup(skill_name: str, service: str) -> bool:
+    """True when a registered check can confirm that setting up ``service`` unblocked ``skill_name``.
+
+    Only such a setup parks the turn for replay: a resume needs evidence, and a
+    service with no check (Slack for its own demo) would replay a turn even
+    after the user cancelled the wizard.
+    """
+    registered = set(registered_skill_prerequisite_checks())
+    return any(
+        prerequisite.service == service and prerequisite.check in registered
+        for prerequisite in SKILL_PREREQUISITES.get(skill_name, ())
+    )
+
+
+def setup_verdict(
+    skill_name: str, service: str, resolved_integrations: Mapping[str, Any]
+) -> bool | None:
+    """Whether ``service``'s setup made ``skill_name``'s prerequisites hold; None when no check can tell.
+
+    Unlike skill entry, which lets an unregistered or failing check pass, this
+    answers True only on a registered check's positive answer.
+    """
+    verdicts = [
+        skill_prerequisite_verdict(prerequisite.check, resolved_integrations)
+        for prerequisite in SKILL_PREREQUISITES.get(skill_name, ())
+        if prerequisite.service == service
+    ]
+    if not verdicts or None in verdicts:
+        return None
+    return all(verdicts)
 
 
 def gate_skill_entry(
@@ -240,6 +277,8 @@ __all__ = [
     "prerequisite_action",
     "prerequisite_menu",
     "queue_prerequisite_menu",
+    "resumable_setup",
     "setup_needed",
+    "setup_verdict",
     "unmet_prerequisite",
 ]

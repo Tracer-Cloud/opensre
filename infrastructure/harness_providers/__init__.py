@@ -108,6 +108,7 @@ from infrastructure.harness_providers.skill_prerequisites import (
     register_skill_prerequisite_check,
     registered_skill_prerequisite_checks,
     skill_prerequisite_met,
+    skill_prerequisite_verdict,
 )
 from infrastructure.harness_providers.skill_prerequisites import (
     reset as _reset_skill_prerequisites,
@@ -248,5 +249,6 @@ __all__ = [
     "resolve_skill_tools",
     "setupable_integration_services",
     "skill_prerequisite_met",
+    "skill_prerequisite_verdict",
     "strip_message_context_prefix",
 ]

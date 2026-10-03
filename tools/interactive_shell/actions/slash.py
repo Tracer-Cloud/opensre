@@ -21,6 +21,7 @@ from core.agent_harness.tools import (
 )
 from core.domain.types.tools import ToolSurface
 from core.tool import RegisteredTool, SideEffectLevel
+from tools.interactive_shell.actions.skill_prerequisite_gate import resumable_setup
 from tools.interactive_shell.shared import plan_foreground_tool
 from tools.interactive_shell.shared.slash_catalog import (
     slash_invoke_input_schema,
@@ -83,14 +84,16 @@ def _park_turn_for_setup(ctx: ActionToolScope, name: str, slash_args: list[str])
 
     The shell resubmits it once setup makes the service's prerequisite hold
     (``arm_setup_resume``), so the skill continues from the same step. Only a
-    turn inside a skill is parked; a slash-command turn never is.
+    turn inside a skill whose prerequisite check can confirm that setup is
+    parked; a slash-command turn never is.
     """
     if name != "/integrations" or len(slash_args) < 2 or slash_args[0].lower() != "setup":
         return
     skill = getattr(ctx.session, "active_skill", None)
-    if not skill:
+    service = slash_args[1].lower()
+    if not skill or not resumable_setup(skill, service):
         return
-    arm_setup_resume(ctx.session, ctx.turn_user_message, skill=skill, service=slash_args[1].lower())
+    arm_setup_resume(ctx.session, ctx.turn_user_message, skill=skill, service=service)
 
 
 # Cap the failure excerpt fed back to the model: enough for a usage/typo
