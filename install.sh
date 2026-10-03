@@ -296,10 +296,28 @@ download_to() {
 
 download_text() {
   local url="$1"
+  local github_token="${OPENSRE_INSTALL_GITHUB_TOKEN:-}"
+  local -a headers=(
+    -H "Accept: application/vnd.github+json"
+    -H "User-Agent: opensre-install-script"
+  )
+
+  # The canary supplies this dedicated token to avoid shared Actions-runner
+  # rate limits. Public installs never inherit ambient GitHub credentials.
+  if [ -n "$github_token" ]; then
+    local authenticated_response
+    if authenticated_response="$(curl "${CURL_FLAGS[@]}" \
+      "${headers[@]}" \
+      -H "Authorization: Bearer ${github_token}" \
+      "$url")"; then
+      printf '%s' "$authenticated_response"
+      return
+    fi
+    warn "Authenticated GitHub metadata lookup failed; retrying without credentials."
+  fi
 
   curl "${CURL_FLAGS[@]}" \
-    -H "Accept: application/vnd.github+json" \
-    -H "User-Agent: opensre-install-script" \
+    "${headers[@]}" \
     "$url"
 }
 

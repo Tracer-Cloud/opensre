@@ -77,6 +77,8 @@ jobs:
         # test_live_installers.py — Homebrew ships preinstalled on
         # macos-latest runners, so they aren't skipped.
         shell: bash
+        env:
+          OPENSRE_INSTALL_GITHUB_TOKEN: ${{ matrix.target != 'windows-x64' && secrets.GITHUB_TOKEN || '' }}
         run: |
           set -uo pipefail
           uv run python -m pytest ${{ matrix.test_path }} -v \

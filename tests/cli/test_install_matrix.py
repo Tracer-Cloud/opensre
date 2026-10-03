@@ -131,6 +131,7 @@ def _write_curl_shim(bin_dir: Path, assets_dir: Path, release_json_by_url: dict[
             set -euo pipefail
             out=""
             url=""
+            github_auth_seen=0
             args=("$@")
             i=0
             while [ "$i" -lt "${{#args[@]}}" ]; do
@@ -140,7 +141,16 @@ def _write_curl_shim(bin_dir: Path, assets_dir: Path, release_json_by_url: dict[
                   i=$((i + 1))
                   out="${{args[$i]}}"
                   ;;
-                -H|--header|--retry|--retry-delay) i=$((i + 1)) ;;
+                -H|--header)
+                  i=$((i + 1))
+                  if [ "${{args[$i]}}" = "Authorization: Bearer ${{OPENSRE_TEST_EXPECT_GITHUB_TOKEN:-}}" ]; then
+                    github_auth_seen=1
+                  elif printf '%s' "${{args[$i]}}" | grep -q '^Authorization: Bearer '; then
+                    echo "curl-shim: unexpected GitHub authorization header" >&2
+                    exit 1
+                  fi
+                  ;;
+                --retry|--retry-delay) i=$((i + 1)) ;;
                 --fail|--silent|--show-error|--location) ;;
                 http://*|https://*) url="$arg" ;;
               esac
@@ -150,11 +160,29 @@ def _write_curl_shim(bin_dir: Path, assets_dir: Path, release_json_by_url: dict[
             map={json.dumps(str(mapping_path))}
             assets={json.dumps(str(assets_dir))}
             if printf '%s' "$url" | grep -q 'api.github.com'; then
+              if [ -n "${{OPENSRE_TEST_EXPECT_GITHUB_TOKEN:-}}" ] \
+                && [ "${{OPENSRE_TEST_ALLOW_GITHUB_TOKEN_FALLBACK:-}}" != "1" ] \
+                && [ "$github_auth_seen" -ne 1 ]; then
+                echo "curl-shim: missing GitHub authorization header" >&2
+                exit 1
+              fi
+              if [ -n "${{OPENSRE_TEST_GITHUB_AUTH_LOG:-}}" ]; then
+                printf '%s\n' "$github_auth_seen" >> "$OPENSRE_TEST_GITHUB_AUTH_LOG"
+              fi
+              if [ "$github_auth_seen" -eq 1 ] && [ "${{OPENSRE_TEST_REJECT_GITHUB_TOKEN:-}}" = "1" ]; then
+                printf '{{"tag_name":"v0.0.0"}}'
+                echo "curl-shim: rejected GitHub authorization header" >&2
+                exit 22
+              fi
               body="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[sys.argv[2]])' "$map" "$url")"
               if [ -n "$out" ]; then printf '%s' "$body" >"$out"; else printf '%s' "$body"; fi
               exit 0
             fi
             if printf '%s' "$url" | grep -q 'releases/download/'; then
+              if [ "$github_auth_seen" -eq 1 ]; then
+                echo "curl-shim: GitHub authorization header sent to download" >&2
+                exit 1
+              fi
               name="$(basename "$url")"
               src="$assets/$name"
               [ -f "$src" ] || {{ echo "curl-shim: missing asset $src for $url" >&2; exit 1; }}
@@ -226,6 +254,8 @@ def _run_install_sh(
     _write_curl_shim(shim_bin, assets, url_map)
 
     env = os.environ.copy()
+    env.pop("GITHUB_TOKEN", None)
+    env.pop("OPENSRE_INSTALL_GITHUB_TOKEN", None)
     env.pop("OPENSRE_HOME", None)
     env.pop("OPENSRE_WIZARD_STORE_PATH", None)
     env.pop("OPENSRE_INSTALL_MARKER_STATE", None)
@@ -368,6 +398,7 @@ def test_install_sh_source_exposes_env_knobs() -> None:
         "OPENSRE_INSTALL_DIR",
         "OPENSRE_VERSION",
         "OPENSRE_MAIN_RELEASE_TAG",
+        "OPENSRE_INSTALL_GITHUB_TOKEN",
         "OPENSRE_INSTALL_VERBOSE",
         "OPENSRE_INSTALL_REPO",
         'INSTALL_CHANNEL="${OPENSRE_INSTALL_CHANNEL:-main}"',
@@ -547,6 +578,39 @@ def test_install_sh_release_latest_end_to_end(tmp_path: Path) -> None:
         check=False,
     )
     assert "2026.4.29" in version.stdout
+
+
+def test_install_sh_uses_github_token_for_release_metadata(tmp_path: Path) -> None:
+    """A caller-supplied Actions token authenticates only GitHub API lookups."""
+    token = "canary-token"
+    result = _run_install_sh(
+        tmp_path,
+        "--release",
+        env_extra={
+            "OPENSRE_INSTALL_GITHUB_TOKEN": token,
+            "OPENSRE_TEST_EXPECT_GITHUB_TOKEN": token,
+        },
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_install_sh_falls_back_when_canary_token_is_rejected(tmp_path: Path) -> None:
+    """A rejected canary token must not block the public metadata lookup."""
+    token = "rejected-canary-token"
+    auth_log = tmp_path / "github-auth.log"
+    result = _run_install_sh(
+        tmp_path,
+        "--release",
+        env_extra={
+            "OPENSRE_INSTALL_GITHUB_TOKEN": token,
+            "OPENSRE_TEST_EXPECT_GITHUB_TOKEN": token,
+            "OPENSRE_TEST_ALLOW_GITHUB_TOKEN_FALLBACK": "1",
+            "OPENSRE_TEST_REJECT_GITHUB_TOKEN": "1",
+            "OPENSRE_TEST_GITHUB_AUTH_LOG": str(auth_log),
+        },
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert auth_log.read_text(encoding="utf-8").splitlines() == ["1", "0"]
 
 
 def test_install_sh_rejects_version_with_main(tmp_path: Path) -> None:
