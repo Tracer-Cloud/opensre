@@ -85,4 +85,15 @@ SKILLS_RELEASE_MAX_FILES = 500
 SKILLS_RELEASES_KEPT = 3
 #: Release signing keys trusted by this binary (``key_id`` -> PEM public key).
 #: Two slots let a new key be trusted before the server starts using it.
-SKILLS_RELEASE_PUBLIC_KEYS: Mapping[str, str] = MappingProxyType({})
+SKILLS_RELEASE_PUBLIC_KEYS: Mapping[str, str] = MappingProxyType(
+    {
+        # AWS KMS alias/opensre-skills-release-signing (ECC_NIST_P256), used by
+        # app.opensre.com as SKILLS_SIGNING_KEY_ID=prod-1.
+        "prod-1": (
+            "-----BEGIN PUBLIC KEY-----\n"
+            "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEqIjGLpdCv+iJzvtuyb7uTF/Xc1oj\n"
+            "c7be3W+HEHNCjUYP2/oCOpthVWCrytTQCXlFegIclquxYUMO8pTg2HChDw==\n"
+            "-----END PUBLIC KEY-----\n"
+        ),
+    }
+)
