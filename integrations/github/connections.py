@@ -53,21 +53,20 @@ def _instances(record: dict[str, Any]) -> list[dict[str, Any]]:
 
 
 def select_github_connection(resolved: dict[str, Any], connection_id: str | None) -> dict[str, Any]:
-    """An invalid explicit/default choice disables GitHub without account fallback."""
+    """Select one GitHub grant, or disable GitHub when that choice is unusable.
+
+    An id that is not in this process's grants is ignored. A matched grant that
+    is not available, or several grants with no single default, disables GitHub
+    without falling back to another account.
+    """
     selected = dict(resolved)
-    instances = resolved.get("_all_github_instances", [])
+    instances = list(resolved.get("_all_github_instances", []))
+    if connection_id and not _has_connection(instances, connection_id):
+        connection_id = None
     if not connection_id and not resolved.get("_github_managed_connections"):
         return selected
-    matches = [
-        item
-        for item in instances
-        if (
-            item.get("connection_id", item.get("integration_id")) == connection_id
-            if connection_id
-            else item.get("is_default") is True
-        )
-    ]
-    if len(matches) == 1 and matches[0].get("available", bool(matches[0].get("config"))):
+    matches = _matching_grants(instances, connection_id)
+    if len(matches) == 1 and _grant_available(matches[0]):
         selected["github"] = {
             **matches[0]["config"],
             "connection_id": matches[0].get("connection_id", matches[0].get("integration_id", "")),
@@ -81,3 +80,29 @@ def select_github_connection(resolved: dict[str, Any], connection_id: str | None
             "connection_id": connection_id or "",
         }
     return selected
+
+
+def _has_connection(instances: list[dict[str, Any]], connection_id: str) -> bool:
+    return any(_connection_id(item) == connection_id for item in instances)
+
+
+def _matching_grants(
+    instances: list[dict[str, Any]], connection_id: str | None
+) -> list[dict[str, Any]]:
+    if connection_id:
+        return [item for item in instances if _connection_id(item) == connection_id]
+    defaults = [item for item in instances if item.get("is_default") is True]
+    if defaults:
+        return defaults
+    available = [item for item in instances if _grant_available(item)]
+    if len(available) == 1:
+        return available
+    return []
+
+
+def _connection_id(item: dict[str, Any]) -> str:
+    return str(item.get("connection_id", item.get("integration_id", "")))
+
+
+def _grant_available(item: dict[str, Any]) -> bool:
+    return bool(item.get("available", bool(item.get("config"))))
