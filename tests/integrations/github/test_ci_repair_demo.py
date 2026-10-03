@@ -26,9 +26,16 @@ from integrations.github.tools.ci_repair_demo.seed import (
     seed_demo,
 )
 from integrations.github.tools.ci_repair_demo.tool import finish_ci_repair_demo, seed_ci_repair_demo
+from integrations.github.tools.ci_repair_loop import seeded
 
 _OWNER = "octocat"
 _REPO = "opensre-ci-repair-demo"
+
+
+@pytest.fixture(autouse=True)
+def _no_pull_seeded_yet(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Each test starts before this process has seeded any pull request."""
+    monkeypatch.setattr(seeded, "_SEEDED", set())
 
 
 class _RepoState:
@@ -367,6 +374,10 @@ def test_seed_leaves_an_unrelated_repository_and_seeds_a_fresh_name(
     )
     assert ("POST", "user/repos") in api.calls
     assert "src/app.py" not in api._repos[fresh].files("main")
+    # Only the demo it seeded is remembered; the refused real repositories never are.
+    assert seeded.was_seeded_here(_OWNER, fresh, 1)
+    assert not seeded.was_seeded_here(_OWNER, _REPO, 1)
+    assert not seeded.was_seeded_here(_OWNER, "opensre-ci-repair-demo-aaaa", 1)
 
 
 def test_a_non_404_repository_error_does_not_create(monkeypatch: pytest.MonkeyPatch) -> None:

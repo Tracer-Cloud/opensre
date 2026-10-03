@@ -29,6 +29,7 @@ from integrations.github.tools.ci_repair_loop import telemetry
 from integrations.github.tools.ci_repair_loop.credentials import account_id, configured_token
 from integrations.github.tools.ci_repair_loop.models import RepairRefused, RepairRun, RepairStatus
 from integrations.github.tools.ci_repair_loop.responses import object_response
+from integrations.github.tools.ci_repair_loop.seeded import was_seeded_here
 from integrations.github.tools.ci_repair_loop.storage import RepairStore
 from integrations.github.tools.ci_repair_loop.supervisor import finish_run
 
@@ -108,6 +109,8 @@ def schedule_repair(
 
     ``scheduler_in_process`` says the host's own scheduler picks the task up from the
     store (the hosted gateway); otherwise the OS-level background service is ensured.
+    A pull request this process seeded as the demo is repaired as the demo even when
+    the caller does not pass ``fast_checks``.
     """
     started = time.time()
     token = configured_token(github_token)
@@ -125,7 +128,7 @@ def schedule_repair(
         repo=repo,
         actor=actor,
         actor_id=actor_id,
-        fast_checks=fast_checks,
+        fast_checks=fast_checks or was_seeded_here(owner, repo, pr_number),
         remote=scheduler_in_process,
         started_at=started,
         deadline=started + CI_REPAIR_SECONDS,

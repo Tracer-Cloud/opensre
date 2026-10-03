@@ -24,7 +24,7 @@ def _identity(run: RepairRun) -> dict[str, Any]:
         "repair_run_id": run.id,
         "repository": f"{run.owner}/{run.repo}",
         "pr_number": run.pr_number,
-        # Only the seeded-demo tool sets fast_checks, so it marks the demo run.
+        # Only a pull request this process seeded sets fast_checks, so it marks the demo.
         "demo": run.fast_checks,
     }
 

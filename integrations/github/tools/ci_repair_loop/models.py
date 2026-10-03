@@ -36,10 +36,10 @@ class RepairRun(BaseModel):
     #: Set only on records of the retired fixed-repository demo. Such a record still
     #: loads, but the worker refuses to run it.
     demo: bool = False
-    #: Set only for a seeded demo this process just scheduled: short check waits, the
-    #: repair may change only calculator.py, and analytics count the run as the demo.
-    #: A repository name does not set this; an ordinary repair of a similarly named
-    #: repo waits and edits as usual.
+    #: Set only for a pull request this process seeded as the demo: short check waits,
+    #: the repair may change only calculator.py, and analytics count the run as the
+    #: demo. A repository name does not set this; an ordinary repair of a similarly
+    #: named repo waits and edits as usual.
     fast_checks: bool = False
     #: Scheduled by a gateway's own scheduler (the hosted gateway), not the user's shell.
     remote: bool = False

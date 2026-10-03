@@ -57,10 +57,11 @@ class _CheckWait(TypedDict, total=False):
 
 
 def _demo_repository(run: RepairRun) -> bool:
-    """True for the seeded demo PR its tool just scheduled.
+    """True for a demo PR this process seeded and then scheduled.
 
-    ``run.fast_checks`` is set only by the seeded-demo tool, never from a repository
-    name. The demo holds one known workflow and one file the repair may change.
+    ``run.fast_checks`` is set only for a pull request this process seeded, never
+    from a repository name. The demo holds one known workflow and one file the
+    repair may change.
     """
     return run.fast_checks
 

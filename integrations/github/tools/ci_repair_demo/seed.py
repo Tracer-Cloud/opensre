@@ -13,6 +13,7 @@ from typing import Any
 
 from integrations.github.client import GitHubApiError, GitHubRestClient
 from integrations.github.tools.ci_repair_loop.responses import object_response
+from integrations.github.tools.ci_repair_loop.seeded import remember_seeded_pull
 
 FAILING_BRANCH = "demo/failing-ci"
 _POLL_SECONDS = 2.0
@@ -114,16 +115,20 @@ def seed_demo(
     A 404 from the repository read is the only signal to create. Any other
     status stops. A repository that is not a demo is left unchanged, and a new
     ``opensre-ci-repair-demo-`` name on the same owner is seeded instead. The
-    wait ends on a failed pull-request Actions run.
+    wait ends on a failed pull-request Actions run. The returned pull request
+    is remembered as this process's seeded demo, so scheduling it repairs it
+    as the demo.
     """
     owner = github_component(owner)
     repo = github_component(repo)
     try:
-        return _seed_named(client, owner, repo, sleep=sleep, now=now)
+        seeded = _seed_named(client, owner, repo, sleep=sleep, now=now)
     except DemoRefused as exc:
         if exc.user_message != _NOT_A_DEMO:
             raise
-        return _seed_on_fresh_name(client, owner, refused_repo=repo, sleep=sleep, now=now)
+        seeded = _seed_on_fresh_name(client, owner, refused_repo=repo, sleep=sleep, now=now)
+    remember_seeded_pull(seeded["owner"], seeded["repo"], seeded["pr_number"])
+    return seeded
 
 
 def _seed_on_fresh_name(
