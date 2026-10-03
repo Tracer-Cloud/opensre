@@ -418,11 +418,28 @@ class JsonlSessionStore:
 
     def flush_session_goal_control_state(self, session: SessionPersistenceSource) -> None:
         """Persist goal and task-plan state changed by a goal control."""
+        from core.agent_harness.session.persistence.contracts import (
+            SESSION_GOAL_CONTROL_STATE_CUSTOM_TYPE,
+        )
+        from core.agent_harness.session_goal.persist import session_goal_state_snapshot
+        from core.agent_harness.task_plan.persist import task_plan_state_snapshot
+
         path = session_path(session.session_id)
         if not path.exists():
             raise FileNotFoundError(path)
         with self._locked(path):
             records = self._read_records(path)
+            snapshot = {
+                "session_goal_state": session_goal_state_snapshot(session),
+                "task_plan_state": task_plan_state_snapshot(session) or {},
+            }
+            if not self.append_custom_message(
+                session.session_id,
+                custom_type=SESSION_GOAL_CONTROL_STATE_CUSTOM_TYPE,
+                content=snapshot,
+                display=False,
+            ):
+                raise OSError("Could not persist session-goal control state")
             if not self._append_task_plan_state(session, records):
                 raise OSError("Could not persist task-plan state")
             if not self._append_session_goal_state(session, records):

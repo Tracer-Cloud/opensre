@@ -8,7 +8,11 @@ from pathlib import Path
 from typing import Any
 
 import core.agent_harness.session.persistence.paths as storage_paths
-from core.agent_harness.session.persistence.contracts import CHAT_KINDS, RestoreContextKey
+from core.agent_harness.session.persistence.contracts import (
+    CHAT_KINDS,
+    SESSION_GOAL_CONTROL_STATE_CUSTOM_TYPE,
+    RestoreContextKey,
+)
 from core.agent_harness.session.persistence.wal_recovery import dangling_tool_intents
 from core.state.transcript_window import SESSION_SUMMARY_PREFIX
 
@@ -313,11 +317,13 @@ def _session_goal_state_for_branch(branch: list[dict[str, Any]]) -> dict[str, An
     for rec in branch:
         if rec.get("type") != "custom_message":
             continue
-        if rec.get("custom_type") != SESSION_GOAL_STATE_CUSTOM_TYPE:
-            continue
         content = rec.get("content")
-        if isinstance(content, dict):
+        if rec.get("custom_type") == SESSION_GOAL_STATE_CUSTOM_TYPE and isinstance(content, dict):
             latest = content
+        elif rec.get("custom_type") == SESSION_GOAL_CONTROL_STATE_CUSTOM_TYPE:
+            state = content.get("session_goal_state") if isinstance(content, dict) else None
+            if isinstance(state, dict):
+                latest = state
     return latest
 
 
@@ -340,11 +346,13 @@ def _task_plan_state_for_branch(branch: list[dict[str, Any]]) -> dict[str, Any] 
     for rec in branch:
         if rec.get("type") != "custom_message":
             continue
-        if rec.get("custom_type") != TASK_PLAN_STATE_CUSTOM_TYPE:
-            continue
         content = rec.get("content")
-        if isinstance(content, dict):
+        if rec.get("custom_type") == TASK_PLAN_STATE_CUSTOM_TYPE and isinstance(content, dict):
             latest = content
+        elif rec.get("custom_type") == SESSION_GOAL_CONTROL_STATE_CUSTOM_TYPE:
+            state = content.get("task_plan_state") if isinstance(content, dict) else None
+            if isinstance(state, dict):
+                latest = state
     return latest
 
 

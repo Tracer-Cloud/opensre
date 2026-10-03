@@ -40,6 +40,10 @@ class RestoreContextKey(StrEnum):
 # cover all kinds that produce conversational turns.
 CHAT_KINDS: frozenset[str] = frozenset({"chat", "cli_agent", "follow_up"})
 
+# A single JSONL entry carrying the goal and task-plan snapshots changed by a
+# durable goal control.  Restore treats it as an atomic pair.
+SESSION_GOAL_CONTROL_STATE_CUSTOM_TYPE = "session_goal_control_state"
+
 
 class SessionPersistenceSource(Protocol):
     """Fields a :class:`SessionStore` backend reads off a live session."""

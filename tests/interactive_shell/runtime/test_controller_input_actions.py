@@ -293,6 +293,36 @@ async def test_detached_goal_control_write_failure_keeps_the_shell_open(
     assert len(release_callbacks) == 1
 
 
+def test_goal_control_boundary_write_failure_does_not_stop_the_queue(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from contextlib import nullcontext
+
+    from core.agent_harness.session_goal.goal import SessionGoal, attach_session_goal
+    from core.agent_harness.spi.cancel import HostCancelReason
+
+    controller = _controller()
+    attach_session_goal(controller.session, SessionGoal(condition="finish safely"))
+
+    def _fail_to_flush(_session: object) -> None:
+        raise OSError("disk full")
+
+    def _unlocked(*_args: object, **_kwargs: object) -> object:
+        return nullcontext()
+
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.controller.session_execution_lock",
+        _unlocked,
+    )
+    monkeypatch.setattr(
+        controller.session.store,
+        "flush_session_goal_control_state",
+        _fail_to_flush,
+    )
+
+    assert controller._try_apply_goal_control_after_worker_release(HostCancelReason.GOAL_CLEAR)
+
+
 @pytest.mark.asyncio
 async def test_idle_continuation_keeps_an_unfinished_plan() -> None:
     """A plan waiting between turns must survive the next typed prompt.

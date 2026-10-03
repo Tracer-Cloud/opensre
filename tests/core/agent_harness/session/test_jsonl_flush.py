@@ -139,6 +139,41 @@ def test_goal_control_state_flush_does_not_finalize_the_active_turn(storage_home
     assert not any(record.get("type") == "leaf" for record in records)
 
 
+def test_goal_control_snapshot_keeps_goal_and_plan_consistent_after_a_write_failure(
+    storage_home: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from core.agent_harness.session_goal.goal import SessionGoal
+    from core.agent_harness.task_plan.plan import PlanStep, PlanStepStatus, TaskPlan
+
+    storage = JsonlSessionStore()
+    session = _session()
+    session.session_goal = SessionGoal(condition="finish safely", max_outer_turns=3)
+    session.task_plan = TaskPlan(
+        steps=(PlanStep(step="finish safely", status=PlanStepStatus.IN_PROGRESS),)
+    )
+    session.offered_upgrade_ctas = set()
+    session.pending_integration_setup_offer = None
+    storage.open_session(session)
+    storage.append_turn(session, "chat", "start")
+    storage.flush(session)
+    session.session_goal = None
+    session.task_plan = None
+
+    def _fail_goal_state_write(*_args: object) -> bool:
+        return False
+
+    monkeypatch.setattr(storage, "_append_session_goal_state", _fail_goal_state_write)
+    with pytest.raises(OSError, match="session-goal state"):
+        storage.flush_session_goal_control_state(session)
+
+    restored = JsonlSessionRepo().load_session(session.session_id)
+
+    assert restored is not None
+    assert restored[RestoreContextKey.SESSION_GOAL_STATE]["session_goal"] is None
+    assert restored[RestoreContextKey.TASK_PLAN_STATE] == {}
+
+
 def test_goal_control_sidecar_is_durable_and_acknowledged(storage_home: Path) -> None:
     storage = JsonlSessionStore()
     session = _session()

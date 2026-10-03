@@ -300,6 +300,8 @@ class InteractiveShellController:
                     self.session.store.flush_session_goal_control_state(self.session)
         except SessionExecutionBusyError:
             return False
+        except OSError:
+            log.warning("Could not persist goal control at the turn boundary", exc_info=True)
         return True
 
     async def _apply_goal_control_at_turn_boundary(

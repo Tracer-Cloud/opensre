@@ -269,9 +269,27 @@ class InMemorySessionStore:
 
     def flush_session_goal_control_state(self, session: SessionPersistenceSource) -> None:
         """Persist goal and task-plan state changed by a goal control."""
+        from core.agent_harness.session.persistence.contracts import (
+            SESSION_GOAL_CONTROL_STATE_CUSTOM_TYPE,
+        )
+        from core.agent_harness.session_goal.persist import session_goal_state_snapshot
+        from core.agent_harness.task_plan.persist import task_plan_state_snapshot
+
         records = self._files.get(session.session_id)
         if records is None:
             raise FileNotFoundError(session.session_id)
+        self._append(
+            session.session_id,
+            "custom_message",
+            {
+                "custom_type": SESSION_GOAL_CONTROL_STATE_CUSTOM_TYPE,
+                "content": {
+                    "session_goal_state": session_goal_state_snapshot(session),
+                    "task_plan_state": task_plan_state_snapshot(session) or {},
+                },
+                "display": False,
+            },
+        )
         self._append_task_plan_state(session, records)
         records = self._files.get(session.session_id, records)
         self._append_session_goal_state(session, records)
