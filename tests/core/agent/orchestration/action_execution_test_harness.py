@@ -59,6 +59,39 @@ class FakeActionLLM:
 
 
 @dataclass
+class FakeSlashPorts:
+    """Slash runtime of an interactive terminal: every command exists and dispatch is recorded.
+
+    ``allowed`` is the execution-policy verdict for a mutating command.
+    """
+
+    tty: bool = True
+    dispatch_result: bool = True
+    allowed: bool = True
+    dispatched: list[str] = field(default_factory=list)
+
+    def command_exists(self, _name: str) -> bool:
+        return True
+
+    def command_is_mutating(self, _name: str) -> bool:
+        return True
+
+    def tty_interactive(self) -> bool:
+        return self.tty
+
+    def format_turn_outcome(self, command: str, *, ok: bool) -> str:
+        status = "succeeded" if ok else "failed"
+        return f"slash {command} ({status})"
+
+    def execution_allowed(self, **_kwargs: Any) -> bool:
+        return self.allowed
+
+    def dispatch(self, command: str, **_kwargs: Any) -> bool:
+        self.dispatched.append(command)
+        return self.dispatch_result
+
+
+@dataclass
 class ActionExecutionHarness:
     llm: FakeActionLLM
     console_buffer: io.StringIO = field(default_factory=io.StringIO)

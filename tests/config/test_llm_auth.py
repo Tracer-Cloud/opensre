@@ -29,6 +29,12 @@ def test_resolve_auth_profile_accepts_api_key_providers() -> None:
     assert resolve_auth_profile("anthropic").provider_value == "anthropic"
 
 
+def test_resolve_auth_profile_accepts_underscore_alias() -> None:
+    # Users copy env-style names (`custom_openai`) from older guidance.
+    assert resolve_auth_profile("custom_openai").provider_value == "custom-openai"
+    assert resolve_auth_profile("Custom_OpenAI").provider_value == "custom-openai"
+
+
 def test_resolve_auth_profile_rejects_removed_subscription_aliases() -> None:
     with pytest.raises(KeyError):
         resolve_auth_profile("chatgpt")

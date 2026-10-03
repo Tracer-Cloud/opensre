@@ -98,6 +98,17 @@ def _render_credits_exhausted(console: StreamingConsole, exc: Exception) -> None
     console.print(hint)
 
 
+def _prompt_app_reads_stdin(session: Session) -> bool:
+    """True while the persistent prompt app owns stdin; exclusive-stdin turns own it themselves."""
+    terminal = session.terminal
+    app = terminal.prompt_app
+    return bool(
+        not terminal.exclusive_stdin_active
+        and app is not None
+        and getattr(app, "is_running", False)
+    )
+
+
 async def _render_agent_presentation_transition(
     *,
     previous: AgentPresentationState,
@@ -105,8 +116,13 @@ async def _render_agent_presentation_transition(
     event: AgentEvent,
     console: StreamingConsole,
     spinner: SpinnerState,
+    drain_stdin: bool,
 ) -> None:
-    """Perform the terminal side effects for one presentation transition."""
+    """Perform the terminal side effects for one presentation transition.
+
+    ``drain_stdin`` must be False while a prompt app reads stdin: the drain
+    would race it for bytes and split the escape sequences it is parsing.
+    """
     match event.type:
         case "turn_start":
             if current.show_spinner:
@@ -133,8 +149,9 @@ async def _render_agent_presentation_transition(
         case "turn_end":
             if previous.show_spinner:
                 spinner.stop()
-            await asyncio.sleep(0.05)
-            drain_stale_cpr_bytes()
+            if drain_stdin:
+                await asyncio.sleep(0.05)
+                drain_stale_cpr_bytes()
         case _:
             raise ValueError(f"Unknown agent event type: {event.type!r}")
 
@@ -175,6 +192,7 @@ class ConsoleAgentEventSink:
             event=event,
             console=self.console,
             spinner=self.spinner,
+            drain_stdin=not _prompt_app_reads_stdin(self.session),
         )
         if event.type in {"turn_end", "turn_interrupted", "turn_error"}:
             self._chime_if_long_turn()

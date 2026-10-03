@@ -47,3 +47,11 @@ def envelope_source_id(payload: dict[str, Any]) -> str | None:
     if isinstance(source, str) and source.strip():
         return source.strip()
     return None
+
+
+def envelope_setup_command(payload: dict[str, Any]) -> str | None:
+    """Return the ``setup_command`` the user must run before the tool can work, if named."""
+    command = payload.get("setup_command")
+    if isinstance(command, str) and command.strip():
+        return command.strip()
+    return None

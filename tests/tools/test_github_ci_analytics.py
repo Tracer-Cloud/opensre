@@ -1535,17 +1535,23 @@ def test_key_results_omit_the_attribution_when_one_workflow_explains_it() -> Non
 
 
 def test_tool_names_the_setup_command_when_no_token_is_available() -> None:
+    """The model's instructions stay in ``error``; the user reads only what to run.
+
+    A turn that ends on the queued setup wizard closes with ``response_text``,
+    which used to tell the user to call ``slash_invoke`` and end the turn.
+    """
     with patch("integrations.github.tools.ci_analytics.tool.resolve_github_token", return_value=""):
         result = analyze_github_ci_reliability(owner="o", repo="r")
 
     assert result["available"] is False
     assert result["setup_command"] == "/integrations setup github"
-    assert (
-        'slash_invoke(command="/integrations", args=["setup", "github"])' in result["response_text"]
+    assert 'slash_invoke(command="/integrations", args=["setup", "github"])' in result["error"]
+    assert "call analyze_github_ci_reliability again for o/r" in result["error"]
+    assert "leave the analysis blocked" in result["error"]
+    assert result["response_text"] == (
+        "GitHub isn't connected yet, so the Actions history of o/r can't be read. "
+        "Set it up with `opensre integrations setup github`."
     )
-    assert "opensre integrations setup github" in result["response_text"]
-    assert "call analyze_github_ci_reliability again for o/r" in result["response_text"]
-    assert "leave the analysis blocked" in result["response_text"]
 
 
 def test_same_repository_analyzes_after_github_is_connected() -> None:

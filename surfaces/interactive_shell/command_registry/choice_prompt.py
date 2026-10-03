@@ -21,6 +21,7 @@ from config.constants.skills import (
     DEMO_REPO_DECLINE_OPTION,
     DEMO_REPO_PERMISSION_TITLE,
     ONBOARDING_SKILL_NAME,
+    OUTCOME_MENU_OPTIONS,
     REPAIR_MENU_OPTIONS,
     SKIP_DEMO_OPTION,
 )
@@ -87,6 +88,21 @@ def _capture_prompt_rendered(
     )
 
 
+def _capture_prompt_dismissed(
+    pending: PendingUserChoice,
+    *,
+    skill_name: str | None,
+    dismiss_keys: list[str],
+) -> None:
+    """Record the dismissal and the key class that closed the last picker, if known."""
+    capture_ask_user_prompt_dismissed(
+        interaction_id=pending.interaction_id,
+        reason="cancelled",
+        skill_name=skill_name,
+        dismiss_key=dismiss_keys[-1] if dismiss_keys else None,
+    )
+
+
 def _remember_answered(session: Session, *titles: str) -> None:
     """Record questions the user has settled, so nothing asks them again."""
     settled = getattr(session, "questions_already_answered", None)
@@ -129,8 +145,11 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
 
     items = pending.items()
     skill_name = session.active_skill
+    is_onboarding = skill_name == ONBOARDING_SKILL_NAME
+    is_outcome_menu = is_onboarding and items[0].options == OUTCOME_MENU_OPTIONS
     selected_indices: list[tuple[int, ...]] = [() for _ in items]
     custom_answers: list[str | None] = [None for _ in items]
+    dismiss_keys: list[str] = []
 
     def remember_answer(index: int, indices: tuple[int, ...], custom: str | None) -> None:
         selected_indices[index] = indices
@@ -140,13 +159,9 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
     clear_live_prompt_paint(session)
     play_notification(NotifyEvent.INPUT_NEEDED)  # the agent is now waiting on the user
     if pending.is_batch():
-        picked = repl_ask_user(items, on_answer=remember_answer)
+        picked = repl_ask_user(items, on_answer=remember_answer, on_dismiss=dismiss_keys.append)
         if picked is None:
-            capture_ask_user_prompt_dismissed(
-                interaction_id=pending.interaction_id,
-                reason="cancelled",
-                skill_name=skill_name,
-            )
+            _capture_prompt_dismissed(pending, skill_name=skill_name, dismiss_keys=dismiss_keys)
             _leave_menu(session, console, _CANCELLED)
             return True
         capture_ask_user_prompt_answered(
@@ -185,10 +200,11 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
         note=pending.note,
         on_custom_answer=mark_custom_answer,
         on_answer=remember_single_answer,
+        on_dismiss=dismiss_keys.append,
     )
     opening_answer: str | None = None
     permission_answer: str | None = None
-    if picked_one == AUTOMATION_GROUP_OPTION and skill_name == ONBOARDING_SKILL_NAME:
+    if picked_one == AUTOMATION_GROUP_OPTION and is_outcome_menu:
         # The group row opens a follow-up. The model receives the leaf, and a
         # repair leaf also receives the demo-repository permission.
         opening_answer = picked_one
@@ -200,34 +216,31 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
             header="Ask User",
             letter_keys=True,
             note="",
+            on_dismiss=dismiss_keys.append,
         )
-        if picked_one in REPAIR_MENU_OPTIONS:
-            create_option = _demo_create_option()
-            permission_answer = repl_choose_one(
-                title=DEMO_REPO_PERMISSION_TITLE,
-                choices=[
-                    (create_option, create_option),
-                    (DEMO_REPO_DECLINE_OPTION, DEMO_REPO_DECLINE_OPTION),
-                ],
-                custom_label=None,
-                multi_select=False,
-                header="Ask User",
-                letter_keys=True,
-                note="",
-            )
-            if permission_answer is None:
-                picked_one = None
+    if is_onboarding and picked_one in REPAIR_MENU_OPTIONS:
+        create_option = _demo_create_option()
+        permission_answer = repl_choose_one(
+            title=DEMO_REPO_PERMISSION_TITLE,
+            choices=[
+                (create_option, create_option),
+                (DEMO_REPO_DECLINE_OPTION, DEMO_REPO_DECLINE_OPTION),
+            ],
+            custom_label=None,
+            multi_select=False,
+            header="Ask User",
+            letter_keys=True,
+            note="",
+        )
+        if permission_answer is None:
+            picked_one = None
     capture_onboarding_choice(session.active_skill, picked_one, custom=custom_answer)
     if picked_one is None:
-        capture_ask_user_prompt_dismissed(
-            interaction_id=pending.interaction_id,
-            reason="cancelled",
-            skill_name=skill_name,
-        )
+        _capture_prompt_dismissed(pending, skill_name=skill_name, dismiss_keys=dismiss_keys)
         _leave_menu(session, console, _CANCELLED)
         return True
     command = pending.commands.get(picked_one) or (picked_one if picked_one.startswith("/") else "")
-    if picked_one == SKIP_DEMO_OPTION:
+    if picked_one == SKIP_DEMO_OPTION and is_onboarding:
         disposition = "demo_skipped"
     elif command:
         disposition = "command"
@@ -240,7 +253,7 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
         disposition=disposition,
         skill_name=skill_name,
     )
-    if picked_one == SKIP_DEMO_OPTION:
+    if picked_one == SKIP_DEMO_OPTION and is_onboarding:
         # A shell decision, not an answer for the model: the demo is over.
         _leave_menu(session, console, _DEMO_SKIPPED)
         return True
@@ -253,12 +266,12 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
         session.terminal.awaiting_handoff_answer = False
         session.terminal.set_auto_command(command)
         return True
-    shown_title = AUTOMATION_MENU_TITLE if picked_one in AUTOMATION_MENU_OPTIONS else items[0].title
+    shown_title = AUTOMATION_MENU_TITLE if opening_answer is not None else items[0].title
     _remember_answered(session, items[0].title, shown_title)
     if permission_answer is not None:
         _remember_answered(session, DEMO_REPO_PERMISSION_TITLE)
     pairs = [(shown_title, picked_one)]
-    if opening_answer is not None and picked_one in AUTOMATION_MENU_OPTIONS:
+    if opening_answer is not None:
         pairs = [(items[0].title, opening_answer), (shown_title, picked_one)]
     if permission_answer is not None:
         pairs.append((DEMO_REPO_PERMISSION_TITLE, permission_answer))

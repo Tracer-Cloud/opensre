@@ -13,10 +13,19 @@ from core.agent_harness.harness import AgentSession, SessionStartupResult
 from core.agent_harness.session import SessionCore
 from core.agent_harness.session.persistence.memory import InMemorySessionStore
 from core.agent_harness.turns import action_driver
+from core.llm.readiness import LLMReadiness
 from infrastructure.analytics import provider
 from infrastructure.analytics.events import Event
 from surfaces.cli.ask import service
 from surfaces.cli.ask.signals import AskSignal
+
+_LLM_CONFIGURED = LLMReadiness(provider="openai")
+
+
+@pytest.fixture(autouse=True)
+def _llm_route_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The fake agent stands in for the LLM; the preflight is pinned in test_ask_llm_setup.py."""
+    monkeypatch.setattr(service, "llm_ready", lambda: _LLM_CONFIGURED)
 
 
 class _Analytics:

@@ -12,7 +12,6 @@ from rich.markup import escape
 
 from config.constants.github import (
     GITHUB_INTEGRATION_SETUP_CLI,
-    GITHUB_INTEGRATION_SETUP_SLASH,
     GITHUB_SETUP_SLASH_INVOKE,
 )
 from core.agent_harness.tools import action_context_from_agent_context
@@ -22,6 +21,7 @@ from core.tool import SideEffectLevel, report_run_error
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
 from integrations.github.client import GitHubApiError, resolve_github_token
+from integrations.github.envelope import missing_token_envelope
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
     github_creds,
@@ -325,12 +325,10 @@ def analyze_github_ci_reliability(
     console = _console(context)
     token = resolve_github_token(github_token)
     if not token:
-        message = _missing_token_message(f"{repo_owner}/{repo_name}")
-        return tool_unavailable(
-            _SOURCE,
-            message,
-            response_text=message,
-            setup_command=GITHUB_INTEGRATION_SETUP_SLASH,
+        repository = f"{repo_owner}/{repo_name}"
+        return missing_token_envelope(
+            _missing_token_message(repository),
+            blocked=f"the Actions history of {repository} can't be read",
         )
     if console is not None:
         # Two-column lead matches the shell's reply gutter so the tool's lines

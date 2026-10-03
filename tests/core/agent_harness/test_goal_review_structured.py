@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterable, Sequence
 from typing import Any
 
 import pytest
 
+from config.constants.github import GITHUB_INTEGRATION_SETUP_SLASH
 from config.constants.llm import OPENSRE_REACT_GOAL_LLM_REVIEW_ENV
 from core.agent.goals import GoalObservation
 from core.agent_harness.session.pending_choice import AskUserQuestion, format_ask_user_answers
@@ -19,7 +21,10 @@ from core.agent_harness.turns.goal_review import (
 )
 from core.agent_harness.turns.headless_adapters import BufferOutputSink
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
-from core.llm.types import AgentLLMResponse
+from core.agent_harness.turns.work_outcome import ExecutedToolOutcome
+from core.llm.types import AgentLLMResponse, SchemaDescribedTool, ToolCall
+from core.tool.execution import ToolExecutionResult
+from core.tool_framework.utils import tool_unavailable
 
 
 class _ScriptedLLM:
@@ -29,7 +34,7 @@ class _ScriptedLLM:
         self.content = content
         self.invokes = 0
 
-    def tool_schemas(self, tools: list[Any]) -> list[dict[str, Any]]:
+    def tool_schemas(self, tools: Sequence[SchemaDescribedTool]) -> list[dict[str, Any]]:
         _ = tools
         return []
 
@@ -45,13 +50,43 @@ class _ScriptedLLM:
         return AgentLLMResponse(content=self.content)
 
 
-def _obs(*, text: str = "done", evidence: int = 1) -> GoalObservation:
+def _obs(
+    *,
+    text: str = "done",
+    evidence: int = 1,
+    tool_results: Sequence[tuple[ToolCall, ToolExecutionResult]] = (),
+) -> GoalObservation:
     return GoalObservation(
         final_text=text,
         evidence_count=evidence,
         iteration=1,
         max_iterations=4,
+        tool_results=tool_results,
     )
+
+
+_ANALYZER = "analyze_github_ci_reliability"
+_TOKEN_REQUIRED = "A GitHub token is required to read the Actions history of acme/app."
+
+
+def _analyzer_needs_setup() -> tuple[ExecutedToolOutcome, tuple[ToolCall, ToolExecutionResult]]:
+    """The analyzer's missing-token reply as the reviewer sees it, and as the loop recorded it.
+
+    The outcome tap keeps only the error text (the compat payload); the
+    ``setup_command`` survives only in the loop's raw result.
+    """
+    envelope = tool_unavailable(
+        "github", _TOKEN_REQUIRED, setup_command=GITHUB_INTEGRATION_SETUP_SLASH
+    )
+    call = ToolCall(id="call-analyzer", name=_ANALYZER, input={"owner": "acme", "repo": "app"})
+    result = ToolExecutionResult(content=_TOKEN_REQUIRED, details=envelope, is_error=True)
+    outcome = ExecutedToolOutcome(
+        name=_ANALYZER,
+        arguments=dict(call.input),
+        is_error=True,
+        details=result.compat_payload(),
+    )
+    return outcome, (call, result)
 
 
 def test_goal_reviewer_rejects_while_task_plan_incomplete() -> None:
@@ -120,7 +155,15 @@ def test_deferred_reply_presenter_records_only_replies_that_reached_the_sink() -
     delivered: list[str] = []
 
     class _BrokenSink(BufferOutputSink):
-        def stream(self, *_args: Any, **_kwargs: Any) -> None:
+        def stream(
+            self,
+            *,
+            label: str,
+            chunks: Iterable[str],
+            suppress_if_starts_with: str | None = None,
+            defer_want_me_to_closer: bool = False,
+        ) -> str:
+            _ = (label, chunks, suppress_if_starts_with, defer_want_me_to_closer)
             raise OSError("terminal went away")
 
     working = BufferOutputSink()
@@ -285,7 +328,7 @@ def test_goal_reviewer_skips_llm_by_default() -> None:
 
 def test_gather_reviewer_rejects_discovery_only_without_llm() -> None:
     llm = _ScriptedLLM('{"verdict": "GOAL_REACHED"}')
-    calls = [("list_posthog_tools", {})]
+    calls: list[tuple[str, dict[str, Any]]] = [("list_posthog_tools", {})]
     goal = build_gather_goal_reviewer(llm, "how many Windows users?", executed_tool_calls=calls)
     assert goal.verify is not None
     assert goal.verify(_obs()) is False
@@ -453,6 +496,55 @@ def test_goal_reviewer_accepts_a_classified_blocked_repair() -> None:
     assert goal.verify is not None
     assert goal.verify(_obs()) is True
     assert llm.invokes == 0
+
+
+def test_goal_reviewer_accepts_a_stop_when_the_failed_tool_needs_the_user_to_set_it_up() -> None:
+    """No retry succeeds before the setup runs, so a host without a wizard must stop.
+
+    Rejecting it sent gateway and ``opensre ask`` turns back to retry the same
+    missing-token call until the iteration limit.
+    """
+    llm = _ScriptedLLM('{"verdict": "GOAL_REACHED"}')
+    outcome, loop_result = _analyzer_needs_setup()
+    goal = build_goal_reviewer(
+        llm,
+        "analyze CI reliability for acme/app",
+        executed_tool_names=[_ANALYZER],
+        executed_outcomes=[outcome],
+    )
+    assert goal.verify is not None
+
+    assert goal.verify(_obs(text="Connect GitHub first.", tool_results=[loop_result])) is True
+    assert llm.invokes == 0
+
+
+def test_a_plan_rejection_after_a_failed_tool_gets_the_plan_nudge() -> None:
+    """The nudge must name the gate that rejected the stop.
+
+    ``__call__`` checks the plan before failed work, but the nudge checked
+    failed work first and told the model to retry with a different command.
+    """
+    llm = _ScriptedLLM('{"verdict": "GOAL_REACHED"}')
+    failed_curl = ExecutedToolOutcome(
+        name="shell_run",
+        arguments={"command": "curl https://api.github.com/repos/acme/app"},
+        is_error=False,
+        details={"ok": False, "exit_code": 1},
+    )
+    goal = build_goal_reviewer(
+        llm,
+        "analyze CI reliability for acme/app",
+        executed_tool_names=["update_plan", "shell_run"],
+        plan_incomplete=lambda: True,
+        executed_outcomes=[failed_curl],
+    )
+    assert goal.verify is not None and goal.nudge is not None
+
+    assert goal.verify(_obs()) is False
+    nudge = goal.nudge(_obs())
+
+    assert "unfinished steps" in nudge
+    assert "retry with a different command" not in nudge
 
 
 def test_goal_reviewer_lets_the_user_be_asked_after_a_failed_tool() -> None:

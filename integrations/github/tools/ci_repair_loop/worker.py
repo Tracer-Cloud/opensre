@@ -16,10 +16,19 @@ from integrations.coding_agent import verify_coding_agent
 from integrations.git import clone_repository
 from integrations.github.client import GitHubApiError, GitHubRestClient
 from integrations.github.tools.ci_fix.context import CiFixContext
-from integrations.github.tools.ci_fix.errors import ERR_NO_FAILING_CHECKS, GitHubCiFixError
+from integrations.github.tools.ci_fix.errors import (
+    ERR_CHECKS_SUPERSEDED,
+    ERR_NO_FAILING_CHECKS,
+    GitHubCiFixError,
+)
 from integrations.github.tools.ci_fix.gh import run_gh_json
 from integrations.github.tools.ci_fix.ledger import record_ci_fix_outcome
 from integrations.github.tools.ci_fix.runner import run_ci_fix
+from integrations.github.tools.ci_fix.storage.attempts import (
+    PreparedPush,
+    load_prepared_push,
+    repair_key,
+)
 from integrations.github.tools.ci_fix.verification import (
     CheckState,
     all_checks_settled,
@@ -38,6 +47,20 @@ from integrations.github.tools.ci_repair_loop.models import RepairRun, RepairSta
 from integrations.github.tools.ci_repair_loop.storage import RepairStore
 
 logger = logging.getLogger(__name__)
+
+
+def _prepared_demo_head(run: RepairRun, head: str) -> PreparedPush | None:
+    """Return the durable push proving that ``head`` belongs to this run, if any."""
+    known_heads = {run.initial_sha, *run.pushed_shas}
+    prepared = load_prepared_push(repair_key(run.owner, run.repo, str(run.pr_number)))
+    if (
+        prepared is not None
+        and prepared.source_head_sha in known_heads
+        and prepared.fix_head_sha == head
+        and prepared.branch_name == run.branch
+    ):
+        return prepared
+    return None
 
 
 def _read_pr(run: RepairRun, token: str) -> dict[str, Any]:
@@ -106,12 +129,49 @@ def _repair(run: RepairRun, store: RepairStore, token: str) -> None:
         if pr.get("state") != "OPEN":
             run.status, run.reason = RepairStatus.CANCELLED, "The PR was closed."
             return
+        head = str(pr.get("headRefOid") or "")
+        prepared = _prepared_demo_head(run, head) if run.demo and run.initial_sha else None
+        known_heads = {run.initial_sha, *run.pushed_shas}
+        if run.demo and run.initial_sha and head not in known_heads and prepared is None:
+            run.status, run.reason = (
+                RepairStatus.FAILED,
+                "The demo branch changed outside this repair run; no further edit was made.",
+            )
+            return
+        if prepared is not None and head not in run.pushed_shas:
+            # The push is durable before the attempt result reaches this run. Recover
+            # that ownership first so a later attempt can extend the same head chain.
+            run.pushed_shas.append(head)
+            store.save(run)
         rows = pr.get("statusCheckRollup") or []
         failed = any(check_failed(row, expected_skips=set()) for row in rows)
         if not failed:
             # A new fixture must first be observed failing. Empty or queued checks
-            # prove nothing; a settled rollup with skips is a candidate for green.
-            if not run.demo and all_checks_settled(rows) and _verify_green(run, pr, token):
+            # prove nothing. A settled head pushed by this run can be judged again
+            # after a restart even when verification had already become terminal.
+            verify_owned_head = not run.demo or head in run.pushed_shas
+            if all_checks_settled(rows) and verify_owned_head and _verify_green(run, pr, token):
+                if run.demo and run.status is RepairStatus.SUCCEEDED:
+                    run.fixed_sha = head
+                    run.checks_passed = True
+                    run.reason = "The repair commit passed CI."
+                    record_ci_fix_outcome(
+                        {
+                            "success": True,
+                            "checks_state": CheckState.PASSED.value,
+                            "owner": run.owner,
+                            "repo": run.repo,
+                            "target_type": "pr",
+                            "pr_number": run.pr_number,
+                            "source_head_sha": (
+                                prepared.source_head_sha
+                                if prepared is not None
+                                else run.initial_sha
+                            ),
+                            "fix_head_sha": head,
+                        }
+                    )
+                    store.save(run)
                 return
             time.sleep(2)
             continue
@@ -129,6 +189,7 @@ def _repair(run: RepairRun, store: RepairStore, token: str) -> None:
             workspace=run.workspace,
             github_token=token,
             allowed_paths=frozenset({"calculator.py"}) if run.demo else None,
+            expected_source_head_sha=head,
         )
         diagnostic = store.directory(run.id) / f"attempt-{run.attempts}.json"
         diagnostic.write_text(json.dumps(output, indent=2), encoding="utf-8")
@@ -159,7 +220,11 @@ def _repair(run: RepairRun, store: RepairStore, token: str) -> None:
         run.attempt_errors.append(error)
         run.reason = f"Repair attempt {run.attempts}: {_reason_for(error, run)}"
         store.save(run)
-        if error not in {"checks_failed", "execution_error", "timeout", "no_changes"}:
+        # A head that moved before any push left nothing to undo: read it again. A
+        # demo run then stops at the ownership check above.
+        moved_before_push = error == ERR_CHECKS_SUPERSEDED and not pushed
+        retryable = {"checks_failed", "execution_error", "timeout", "no_changes"}
+        if error not in retryable and not moved_before_push:
             run.status = RepairStatus.FAILED
             return
         if run.attempts >= CI_REPAIR_MAX_ATTEMPTS:
@@ -181,6 +246,7 @@ _REASON_TEXT = {
     "no_changes": "The coding agent made no change to the checkout.",
     "timeout": "The coding agent ran out of time.",
     "execution_error": "The coding agent could not run.",
+    "checks_superseded": "Another commit changed the PR head during the repair.",
 }
 
 

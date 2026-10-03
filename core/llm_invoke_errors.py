@@ -96,12 +96,13 @@ def is_cli_timeout_error(exc: BaseException) -> bool:
 # "unknown" plus ``ai_error_kind``) instead of a terminal-action turn
 # (``no_conversational_agent``). Terminal-path kinds (background-task
 # "timeout"/"cli_exit_nonzero", slash outcomes) must never appear here.
+ACTION_AGENT_ERROR = "action_agent_error"  # action-selection LLM failed for conversational input
 LLM_PROVIDER_FAILURE_KINDS = frozenset(
     {
         "llm_unavailable",  # reasoning client import/creation failed
         "llm_timeout",  # conversational stream timed out
         "assistant_error",  # conversational stream failed mid-turn
-        "action_agent_error",  # action-selection LLM failed for conversational input
+        ACTION_AGENT_ERROR,
     }
 )
 
@@ -110,6 +111,7 @@ class ProviderFailureKind(StrEnum):
     """One verdict per provider failure message; every consumer derives from it."""
 
     MISSING_KEY = "missing_key"
+    MISSING_ENDPOINT = "missing_endpoint"
     REJECTED_KEY = "rejected_key"
     QUOTA = "quota"
     NOT_CONFIGURED = "not_configured"
@@ -118,7 +120,9 @@ class ProviderFailureKind(StrEnum):
 
 # First match wins, most specific first. MISSING_KEY holds absence phrasings
 # only — never a bare env-var-name match: rejected-key errors also cite
-# *_API_KEY names and must keep their real authentication message.
+# *_API_KEY names and must keep their real authentication message. A bare
+# "to be set" is not a key absence either: the settings validator also says it
+# about base URLs and AWS regions.
 _FAILURE_RULES: tuple[tuple[ProviderFailureKind, tuple[str, ...]], ...] = (
     (
         ProviderFailureKind.MISSING_KEY,
@@ -128,8 +132,12 @@ _FAILURE_RULES: tuple[tuple[ProviderFailureKind, tuple[str, ...]], ...] = (
             "missing api key",
             "no api key",
             "could not resolve authentication method",  # anthropic SDK, key/token both unset
-            "to be set",  # opensre wrapper: "requires ANTHROPIC_API_KEY to be set"
+            "api_key to be set",  # opensre wrapper: "requires ANTHROPIC_API_KEY to be set"
         ),
+    ),
+    (
+        ProviderFailureKind.MISSING_ENDPOINT,
+        ("base_url to be set",),  # settings: "requires CUSTOM_OPENAI_BASE_URL to be set"
     ),
     (
         ProviderFailureKind.REJECTED_KEY,
@@ -161,6 +169,7 @@ _FAILURE_RULES: tuple[tuple[ProviderFailureKind, tuple[str, ...]], ...] = (
             "no llm provider",
             "llm client unavailable",
             "billing is not enabled",
+            "to be set",  # any other required setting, e.g. "requires AWS_REGION ... to be set"
         ),
     ),
 )
@@ -177,26 +186,89 @@ def classify_llm_provider_failure(message: str) -> ProviderFailureKind:
     return ProviderFailureKind.PROVIDER_ERROR
 
 
-def remediate_missing_llm_credentials(message: str, *, provider: str | None = None) -> str | None:
-    """Actionable replacement text when an LLM call failed for lack of any API key.
+class CommandSurface(StrEnum):
+    """Where the reader runs OpenSRE commands, which decides how guidance spells them."""
 
-    Returns ``None`` for every other failure (rejected key, quota, timeout, …)
-    so callers fall back to their existing rendering.
+    #: Slash commands typed at the interactive shell prompt.
+    SHELL = "shell"
+    #: ``opensre`` subcommands run from a terminal, script or CI job.
+    CLI = "cli"
+
+
+_AUTH_LOGIN_COMMAND: dict[CommandSurface, str] = {
+    CommandSurface.SHELL: "/auth login",
+    CommandSurface.CLI: "opensre auth login",
+}
+_ONBOARD_COMMAND: dict[CommandSurface, str] = {
+    CommandSurface.SHELL: "/onboard",
+    CommandSurface.CLI: "opensre onboard",
+}
+_ACCOUNT_LOGIN_COMMAND: dict[CommandSurface, str] = {
+    CommandSurface.SHELL: "/account login",
+    CommandSurface.CLI: "opensre account login",
+}
+
+
+def remediate_llm_setup_failure(
+    message: str,
+    *,
+    surface: CommandSurface,
+    provider: str | None = None,
+    offer_account_login: bool = False,
+) -> str | None:
+    """Setup guidance that replaces *message* when an LLM call failed for missing setup.
+
+    A missing API key or endpoint base URL gets the commands that fix it, spelled
+    for *surface*. *provider* is named only as the catalog id those commands
+    accept. *offer_account_login* adds the OpenSRE-hosted model as an alternative
+    for a signed-out reader. Returns ``None`` for every other failure (rejected
+    key, quota, timeout, …) so callers fall back to their existing rendering.
     """
-    if classify_llm_provider_failure(message) is not ProviderFailureKind.MISSING_KEY:
+    kind = classify_llm_provider_failure(message)
+    if kind is ProviderFailureKind.MISSING_KEY:
+        guidance = _missing_key_guidance(provider, surface)
+    elif kind is ProviderFailureKind.MISSING_ENDPOINT:
+        guidance = _missing_endpoint_guidance(provider, surface)
+    else:
         return None
-    target = provider.strip() if provider else "<provider>"
-    subject = f"No API key is set for {target}" if provider else "No LLM API key is set"
+    if not offer_account_login:
+        return guidance
     return (
-        f"{subject}. Run `/auth login {target}` to add one, or `/onboard` to rerun "
-        f"setup (from a terminal: `opensre auth login {target}`)."
+        f"{guidance} To use the OpenSRE-hosted model instead, sign in with "
+        f"`{_ACCOUNT_LOGIN_COMMAND[surface]}`."
     )
+
+
+def _missing_key_guidance(provider: str | None, surface: CommandSurface) -> str:
+    from config.llm_auth.provider_catalog import provider_spec
+
+    spec = provider_spec(provider) if provider else None
+    # Only an OpenSRE-managed API-key provider has an ``auth login`` profile.
+    target = spec.value if spec is not None and spec.uses_open_sre_api_key else None
+    subject = f"No API key is set for {target}" if target else "No LLM API key is set"
+    return (
+        f"{subject}. Run `{_AUTH_LOGIN_COMMAND[surface]} {target or '<provider>'}` "
+        f"to add one, or `{_ONBOARD_COMMAND[surface]}` to rerun setup."
+    )
+
+
+def _missing_endpoint_guidance(provider: str | None, surface: CommandSurface) -> str:
+    from config.llm_auth.provider_catalog import provider_spec
+
+    spec = provider_spec(provider) if provider else None
+    subject = (
+        f"{spec.endpoint_env} is not set for {spec.value}"
+        if spec is not None and spec.endpoint_env
+        else "No LLM endpoint base URL is set"
+    )
+    return f"{subject}. Run `{_ONBOARD_COMMAND[surface]}` to configure the endpoint."
 
 
 # Analytics vocabulary predates the split of key failures into missing vs
 # rejected; dashboards filter on these four values.
 _ANALYTICS_KIND_BY_FAILURE: dict[ProviderFailureKind, str] = {
     ProviderFailureKind.MISSING_KEY: "not_configured",
+    ProviderFailureKind.MISSING_ENDPOINT: "not_configured",
     ProviderFailureKind.REJECTED_KEY: "auth",
     ProviderFailureKind.QUOTA: "quota",
     ProviderFailureKind.NOT_CONFIGURED: "not_configured",

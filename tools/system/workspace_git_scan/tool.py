@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import sys
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
@@ -10,7 +12,8 @@ from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from tools.system.workspace_git_scan.render import render_snapshot, snapshot_text
-from tools.system.workspace_git_scan.scan import WorkspaceSnapshot, scan_workspace
+from tools.system.workspace_git_scan.scan import ScanStop, WorkspaceSnapshot, scan_workspace
+from tools.system.workspace_git_scan.skips import default_skip_paths
 
 _DEFAULT_DAYS = 30
 _MAX_DAYS = 365
@@ -20,7 +23,11 @@ _INPUT_SCHEMA: dict[str, Any] = {
     "properties": {
         "root": {
             "type": "string",
-            "description": "Directory to scan. Defaults to the user's home directory.",
+            "description": (
+                "Directory to scan. Defaults to the user's home directory, where media "
+                "folders and, on macOS, Desktop, Documents and Downloads are skipped; "
+                "name one of those here to scan it."
+            ),
         },
         "days": {
             "type": "integer",
@@ -39,6 +46,28 @@ def _console(context: Any) -> Any:
     try:
         return action_context_from_agent_context(context).console
     except RuntimeError:
+        return None
+
+
+def _cancellation(console: Any) -> Callable[[], bool] | None:
+    """Report whether the user pressed ESC, so the scan stops at the next folder or repository."""
+    if console is None:
+        return None
+    return lambda: bool(getattr(console, "cancel_requested", False))
+
+
+def _progress(context: Any) -> Callable[[str], None] | None:
+    """Relay scan progress lines to the shell as tool updates."""
+    emit = getattr(context, "emit_update", None)
+    if emit is None:
+        return None
+    return lambda text: emit({"progress": text})
+
+
+def _working_directory() -> Path | None:
+    try:
+        return Path.cwd().resolve()
+    except OSError:
         return None
 
 
@@ -87,9 +116,15 @@ def scan_local_git_workspace(
     context: Any = None,
     **_kwargs: Any,
 ) -> dict[str, Any]:
-    """Scan for local git checkouts and render the activity snapshot."""
+    """Scan for local git checkouts and render the activity snapshot.
+
+    A cancelled scan returns ``cancelled: True`` and renders nothing.
+    """
     window = min(max(int(days or _DEFAULT_DAYS), 1), _MAX_DAYS)
-    scan_root = Path(root).expanduser() if root else Path.home()
+    # Skip paths match the walk's spelling of each folder, so home, the root and
+    # the working directory are all compared in their resolved form.
+    home = Path.home().resolve()
+    scan_root = Path(root).expanduser().resolve() if root else home
     if not scan_root.is_dir():
         return {
             "source": "system",
@@ -97,8 +132,23 @@ def scan_local_git_workspace(
             "error": f"{scan_root} is not a directory.",
             "response_text": f"{scan_root} is not a directory; nothing was scanned.",
         }
-    snapshot = scan_workspace(scan_root, days=window)
     console = _console(context)
+    snapshot = scan_workspace(
+        scan_root,
+        days=window,
+        skip_paths=default_skip_paths(home, cwd=_working_directory(), platform=sys.platform),
+        should_stop=_cancellation(console),
+        on_progress=_progress(context),
+    )
+    if snapshot.stop_reason is ScanStop.CANCELLED:
+        return {
+            "source": "system",
+            "success": False,
+            "cancelled": True,
+            "stop_reason": ScanStop.CANCELLED.value,
+            "root": snapshot.root,
+            "response_text": f"The scan of {snapshot.root} was cancelled; nothing was shown.",
+        }
     rendered = console is not None
     if rendered:
         render_snapshot(console, snapshot)
@@ -121,6 +171,8 @@ def scan_local_git_workspace(
         "total_uncommitted": snapshot.total_uncommitted,
         "repos_with_workflows": with_workflows,
         "truncated": snapshot.truncated,
+        "stop_reason": snapshot.stop_reason.value if snapshot.stop_reason else None,
+        "skipped": list(snapshot.skipped),
         "repos": _repo_payload(snapshot),
         "rendered_in_shell": rendered,
         "summary": summary,

@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 _RELEASE_PREFIX = "release-"
 _RELEASE_SUFFIX = ".json"
 _OWNER_LOCK = "owner.lock"
+_ANNOUNCE_LOCK_SECONDS = 2.0
 _process_root: tuple[Path, FileLock] | None = None
 _process_root_lock = threading.Lock()
 
@@ -134,18 +135,27 @@ def write_state(state: dict[str, Any]) -> None:
     _write_atomically(store_dir() / "state.json", json.dumps(state))
 
 
-def read_announced() -> str:
-    """Return the last release reported to analytics from this machine."""
+def claim_announcement(release: str) -> bool:
+    """Return True for exactly one process per machine to report ``release`` activated.
+
+    Check-and-set runs under a file lock, so processes activating the same
+    release together cannot both claim it; a busy lock skips the report.
+    """
+    store = store_dir()
+    store.mkdir(parents=True, exist_ok=True)
+    path = store / "announced.json"
     try:
-        value = json.loads((store_dir() / "announced.json").read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return ""
-    return value.get("release", "") if isinstance(value, dict) else ""
-
-
-def write_announced(release: str) -> None:
-    """Record ``release`` as reported (its own file, so it never races the puller's state)."""
-    _write_atomically(store_dir() / "announced.json", json.dumps({"release": release}))
+        with FileLock(str(store / "announced.lock"), timeout=_ANNOUNCE_LOCK_SECONDS):
+            try:
+                value = json.loads(path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                value = {}
+            if isinstance(value, dict) and value.get("release") == release:
+                return False
+            _write_atomically(path, json.dumps({"release": release}))
+            return True
+    except Timeout:
+        return False
 
 
 def _owned_process_root() -> Path:
@@ -196,15 +206,14 @@ def sweep_run_roots() -> None:
 
 __all__ = [
     "latest_stored_seq",
+    "claim_announcement",
     "new_run_root",
-    "read_announced",
     "read_state",
     "releases_dir",
     "store_dir",
     "store_stamp",
     "stored_releases",
     "sweep_run_roots",
-    "write_announced",
     "write_release",
     "write_state",
 ]

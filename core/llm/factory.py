@@ -25,7 +25,6 @@ in :mod:`core.llm.internal.client_cache`.
 
 from __future__ import annotations
 
-import re
 from enum import StrEnum
 from typing import Any, Literal, overload
 
@@ -82,18 +81,14 @@ def resolve_llm_route() -> LLMRoute:
 def _resolve_settings_or_raise(*, provider_override: str | None = None) -> Any:
     from pydantic import ValidationError
 
-    from config.llm_settings import resolve_llm_settings
+    from config.llm_settings import llm_settings_error_message, resolve_llm_settings
 
     try:
         if provider_override is not None:
             return resolve_llm_settings(provider_override=provider_override)
         return resolve_llm_settings()
     except ValidationError as exc:
-        errors = exc.errors()
-        if len(errors) == 1:
-            msg = re.sub(r"^[Vv]alue error,\s*", "", errors[0].get("msg", "")).strip()
-            raise RuntimeError(msg or str(exc)) from exc
-        raise RuntimeError(str(exc)) from exc
+        raise RuntimeError(llm_settings_error_message(exc)) from exc
 
 
 def _cli_provider_registration(provider: str) -> Any:

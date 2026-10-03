@@ -266,8 +266,11 @@ class PromptBuilder:
         if self.session.terminal.pending_theme_refresh:
             self.session.terminal.pending_theme_refresh = False
             refresh_prompt_theme(self.session)
-        await asyncio.sleep(_CPR_SETTLE_SECONDS)
-        drain_stale_cpr_bytes()
+        if self._prompt_task is None or self._prompt_task.done():
+            # Only before (re)starting the prompt: a live prompt app is reading
+            # stdin, and draining under it splits the sequences it is parsing.
+            await asyncio.sleep(_CPR_SETTLE_SECONDS)
+            drain_stale_cpr_bytes()
 
         prefilled = self.session.terminal.pop_pending_prompt_default()
         if prefilled and self.session.terminal.pop_pending_autosubmit():

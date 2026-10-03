@@ -2,22 +2,33 @@
 
 Covers contract metadata, source-availability gating, parameter extraction,
 client config normalization, bounded result limits, log filtering/normalization
-on the tool side (non-dict items dropped), and propagation of client errors.
+on the tool side (non-dict items dropped), propagation of client errors, and
+setup guidance when only re-running setup fixes the cluster's answer.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
+from http import HTTPStatus
 from typing import Any
 
+import httpx
 import pytest
 
-from integrations.elasticsearch.client import ElasticsearchConfig
+from config.constants.opensearch import (
+    OPENSEARCH_INTEGRATION_SETUP_CLI,
+    OPENSEARCH_INTEGRATION_SETUP_SLASH,
+)
+from core.tool import REGISTERED_TOOL_ATTR
+from integrations.elasticsearch.client import ElasticsearchClient, ElasticsearchConfig
 from integrations.opensearch.tools.opensearch_analytics_tool import (
     _map_query_opensearch_analytics,
     query_opensearch_analytics,
 )
 from tests.tools.conftest import BaseToolContract
+
+_CREDENTIALS_REJECTED = "rejected the configured credentials"
+_READ_NOT_ALLOWED = "isn't allowed to read this index"
 
 # ---------------------------------------------------------------------------
 # Test helpers — keep ElasticsearchClient stubbing consistent
@@ -64,11 +75,11 @@ def _ok_search(_self: Any, **_kwargs: Any) -> dict[str, Any]:
 
 class TestOpenSearchAnalyticsToolContract(BaseToolContract):
     def get_tool_under_test(self) -> Any:
-        return query_opensearch_analytics.__opensre_registered_tool__
+        return _rt()
 
 
 def _rt() -> Any:
-    return query_opensearch_analytics.__opensre_registered_tool__
+    return getattr(query_opensearch_analytics, REGISTERED_TOOL_ATTR)
 
 
 def test_is_available_true_when_url_and_verified() -> None:
@@ -144,11 +155,15 @@ def test_extract_params_uses_default_max_results_when_zero() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_returns_missing_url_when_url_blank() -> None:
+def test_a_blank_url_asks_the_user_to_run_setup() -> None:
+    # Act
     result = query_opensearch_analytics(url="   ")
-    assert result["available"] is False
-    assert result["error"] == "Missing OpenSearch URL."
-    assert result["logs"] == []
+
+    # Assert
+    assert result["available"] is False and result["logs"] == []
+    assert result["setup_command"] == OPENSEARCH_INTEGRATION_SETUP_SLASH
+    assert OPENSEARCH_INTEGRATION_SETUP_CLI in result["response_text"]
+    assert OPENSEARCH_INTEGRATION_SETUP_SLASH in result["error"]
 
 
 # ---------------------------------------------------------------------------
@@ -345,6 +360,137 @@ def test_propagates_client_failure(monkeypatch: pytest.MonkeyPatch) -> None:
     assert result["available"] is False
     assert "auth failed" in result["error"]
     assert result["logs"] == []
+
+
+def _cluster_answers(
+    monkeypatch: pytest.MonkeyPatch, answer: Callable[[httpx.Request], httpx.Response]
+) -> None:
+    """Serve the real client's requests from ``answer`` instead of a live cluster."""
+
+    def _http_client(self: ElasticsearchClient) -> httpx.Client:
+        return httpx.Client(base_url=self.config.base_url, transport=httpx.MockTransport(answer))
+
+    monkeypatch.setattr(ElasticsearchClient, "_get_client", _http_client)
+
+
+def _answer(status: HTTPStatus, **content: Any) -> Callable[[httpx.Request], httpx.Response]:
+    def answer(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(status, **content)
+
+    return answer
+
+
+def _timeout(request: httpx.Request) -> httpx.Response:
+    raise httpx.ReadTimeout("timed out", request=request)
+
+
+@pytest.mark.parametrize(
+    ("status", "content", "says", "never_says"),
+    [
+        # The OpenSearch security plugin answers a bad login with plain text.
+        pytest.param(
+            HTTPStatus.UNAUTHORIZED,
+            {"text": "Unauthorized"},
+            _CREDENTIALS_REJECTED,
+            _READ_NOT_ALLOWED,
+            id="unauthenticated",
+        ),
+        pytest.param(
+            HTTPStatus.FORBIDDEN,
+            {
+                "json": {
+                    "error": {
+                        "type": "security_exception",
+                        "reason": "no permissions for [indices:data/read/search] and User [name=opensre]",
+                    }
+                }
+            },
+            _READ_NOT_ALLOWED,
+            _CREDENTIALS_REJECTED,
+            id="forbidden",
+        ),
+    ],
+)
+def test_a_rejected_login_and_a_refused_read_each_name_their_own_fix(
+    monkeypatch: pytest.MonkeyPatch,
+    status: HTTPStatus,
+    content: dict[str, Any],
+    says: str,
+    never_says: str,
+) -> None:
+    # Arrange
+    _cluster_answers(monkeypatch, _answer(status, **content))
+
+    # Act
+    result = query_opensearch_analytics(url="https://os.example.invalid", index_pattern="logs-*")
+
+    # Assert
+    assert result["available"] is False and result["logs"] == []
+    assert result["setup_command"] == OPENSEARCH_INTEGRATION_SETUP_SLASH
+    assert says in result["response_text"] and never_says not in result["response_text"]
+    assert OPENSEARCH_INTEGRATION_SETUP_CLI in result["response_text"]
+    assert f"HTTP {status.value}" in result["error"]
+
+
+def test_an_index_pattern_that_names_no_index_is_retried_not_sent_to_setup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A 404 is usually an index name the model chose; a wildcard that matches nothing is a 200."""
+    # Arrange
+    _cluster_answers(
+        monkeypatch,
+        _answer(
+            HTTPStatus.NOT_FOUND,
+            json={
+                "error": {"type": "index_not_found_exception", "reason": "no such index [app-logs]"}
+            },
+        ),
+    )
+
+    # Act
+    result = query_opensearch_analytics(url="https://os.example.invalid", index_pattern="app-logs")
+
+    # Assert
+    assert result["available"] is False and result["logs"] == []
+    assert "setup_command" not in result and "response_text" not in result
+    assert "without index_pattern" in result["error"] and "`logs-*`" in result["error"]
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        _answer(HTTPStatus.SERVICE_UNAVAILABLE, json={"error": "cluster_block_exception"}),
+        _timeout,
+    ],
+    ids=["unavailable", "timeout"],
+)
+def test_failures_that_pass_on_their_own_stay_plain_errors(
+    monkeypatch: pytest.MonkeyPatch, answer: Callable[[httpx.Request], httpx.Response]
+) -> None:
+    # Arrange
+    _cluster_answers(monkeypatch, answer)
+
+    # Act
+    result = query_opensearch_analytics(url="https://os.example.invalid")
+
+    # Assert
+    assert result["available"] is False and result["error"]
+    assert "setup_command" not in result and "response_text" not in result
+
+
+def test_a_search_that_matches_nothing_is_a_success(monkeypatch: pytest.MonkeyPatch) -> None:
+    # Arrange: a wildcard pattern that matches no index answers 200 with no hits
+    _cluster_answers(
+        monkeypatch,
+        _answer(HTTPStatus.OK, json={"hits": {"total": {"value": 0}, "hits": []}}),
+    )
+
+    # Act
+    result = query_opensearch_analytics(url="https://os.example.invalid", index_pattern="logs-*")
+
+    # Assert
+    assert result["available"] is True and result["logs"] == []
+    assert "setup_command" not in result
 
 
 def test_propagates_unknown_client_error(monkeypatch: pytest.MonkeyPatch) -> None:

@@ -469,10 +469,12 @@ def test_tool_reports_missing_token_without_calling_github(monkeypatch: pytest.M
     monkeypatch.setattr(tool_module, "resolve_github_token", lambda _t=None: "")
     result = scan_github_ci_health()
     assert result["available"] is False
-    assert "token" in result["error"]
     assert result["setup_command"] == "/integrations setup github"
-    assert (
-        'slash_invoke(command="/integrations", args=["setup", "github"])' in result["response_text"]
+    # The model's instructions stay in ``error``; the user reads only what to run.
+    assert 'slash_invoke(command="/integrations", args=["setup", "github"])' in result["error"]
+    assert result["response_text"] == (
+        "GitHub isn't connected yet, so repositories can't be scanned. "
+        "Set it up with `opensre integrations setup github`."
     )
 
 

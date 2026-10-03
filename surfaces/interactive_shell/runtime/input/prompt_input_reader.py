@@ -61,8 +61,8 @@ class PromptInputReader:
             try:
                 text = await self.prompt.read_prompt_text()
             except EOFError:
-                if self.state.is_dispatch_running():
-                    return InputCancelled()
+                # The prompt swallows Ctrl-D while a turn runs, so EOF here is
+                # an idle Ctrl-D or a closed terminal: both end the shell.
                 self._render_session_resume_hint()
                 return InputClosed()
             except KeyboardInterrupt:

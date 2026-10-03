@@ -80,3 +80,27 @@ def test_pull_selects_one_package_without_its_nested_children() -> None:
 
     assert "onboarding-github-ci/SKILL.md" in selected
     assert not any("/a-analyzing-github-ci-performance/" in path for path in selected)
+
+
+def test_only_the_named_shared_files_are_published(release_signer: ReleaseSigner) -> None:
+    """A merge touching one shared file must not revert a newer live edit to another."""
+    live_files = {
+        **bundled_files(),
+        "common/edited-in-git.md": "old\n",
+        "common/edited-live.md": "newer fast-lane edit\n",
+        "common/removed-in-git.md": "gone\n",
+    }
+    live = release_signer.sign(live_files, seq=6)
+    local = {
+        **bundled_files(),
+        "common/edited-in-git.md": "merged change\n",
+        "common/edited-live.md": "stale checkout copy\n",
+    }
+
+    plan = plan_push(
+        local, live, shared_paths=["common/edited-in-git.md", "common/removed-in-git.md"]
+    )
+
+    assert plan.upserts == {"common/edited-in-git.md": "merged change\n"}
+    assert plan.deletes == ("common/removed-in-git.md",)
+    assert plan.merged["common/edited-live.md"] == "newer fast-lane edit\n"

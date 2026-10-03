@@ -221,6 +221,8 @@ EXPORTS: dict[str, str] = {
     "USER_STOP_MESSAGE": "gateway",
     "WEB_STOP_TIMEOUT_SECONDS": "gateway",
     # git
+    "GIT_OPTIONAL_LOCKS_ENV": "git",
+    "GIT_TERMINAL_PROMPT_ENV": "git",
     "MERGE_RESOLUTION_TIMEOUT_SECONDS": "git",
     "OPENSRE_COMMIT_COAUTHOR_EMAIL": "git",
     "OPENSRE_COMMIT_COAUTHOR_NAME": "git",
@@ -356,6 +358,8 @@ EXPORTS: dict[str, str] = {
     "NEW_RELIC_NRQL_TIMEOUT_SECONDS": "new_relic",
     # opensearch
     "OPENSEARCH_API_KEY_ENV": "opensearch",
+    "OPENSEARCH_INTEGRATION_SETUP_CLI": "opensearch",
+    "OPENSEARCH_INTEGRATION_SETUP_SLASH": "opensearch",
     "OPENSEARCH_PASSWORD_ENV": "opensearch",
     "OPENSEARCH_URL_ENV": "opensearch",
     "OPENSEARCH_USERNAME_ENV": "opensearch",
@@ -511,6 +515,7 @@ EXPORTS: dict[str, str] = {
     # slash_commands
     "INTEGRATIONS_SETUP_COMMAND": "slash_commands",
     "INTEGRATIONS_SETUP_PREFIX": "slash_commands",
+    "QUEUED_COMMAND_KEY": "slash_commands",
     # smtp
     "SMTP_DEFAULT_TO_ENV": "smtp",
     "SMTP_FROM_ADDRESS_ENV": "smtp",

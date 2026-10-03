@@ -88,8 +88,18 @@ onboarding menu's answer turn that only loaded the chosen demo skill is
 rejected once, with a nudge to write the plan and run its first step (same
 files). A work tool that failed (`ok: false`, nonzero shell exit) is not
 completion: `turns/work_outcome.py` rejects stop until a later work tool
-succeeds (`goal_review.py`). Change the rule in the
-owning leaf, never by prompt text alone. Skills cannot override these gates.
+succeeds (`goal_review.py`), unless the failure is already the answer — a
+classified `work_outcome`, or a `tool_unavailable` envelope naming a
+`setup_command` the user must run first. The nudge follows the same gate
+order as the check, so a plan rejection gets the plan nudge. A
+`slash_invoke` that queues a picker or wizard as the user's next turn
+(`QUEUED_COMMAND_KEY` in its result) ends the turn like a queued menu
+(`turns/action_menu_end.py`); a `/goal` loop stops on that pending
+auto-submit and keeps it (`session_goal/run_until.py`). A slash command the
+execution gate declined returns `not_run` with no `error`: the duplicate
+guard still refuses the same call, and it is not plan evidence. Change the
+rule in the owning leaf, never by prompt text alone. Skills cannot override
+these gates.
 
 **Goal kernel (host-owned prompt, `prompts/action/goal_kernel.py`):** a
 short rule block that sits after the system prompt and again after any

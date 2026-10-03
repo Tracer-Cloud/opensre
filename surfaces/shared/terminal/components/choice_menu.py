@@ -22,7 +22,11 @@ from rich.markup import escape
 
 import infrastructure.terminal.theme as ui_theme
 from infrastructure.safety.terminal_output import strip_terminal_controls
-from surfaces.shared.terminal.components.key_reader import read_key_unix, read_key_windows
+from surfaces.shared.terminal.components.key_reader import (
+    OnDismiss,
+    read_key_unix,
+    read_key_windows,
+)
 
 _HINT = "↑↓ Navigate • Enter/1-9 Select • Esc cancel"
 _HINT_MULTI = "↑↓ Navigate • Space/Enter/1-9 Toggle • Submit to confirm • Esc cancel"
@@ -105,18 +109,19 @@ def repl_section_break(console: Console) -> None:
 # ── raw key reader ───────────────────────────────────────────────────────────
 
 
-def _read_action(*, alpha_keys: bool = False) -> MenuAction:
+def _read_action(*, alpha_keys: bool = False, on_dismiss: OnDismiss | None = None) -> MenuAction:
     """Map a raw keypress to a menu action.
 
     Delegates terminal I/O to :mod:`key_reader` and applies
     choice_menu-specific overrides: Tab → ``"down"``,
     right-arrow → ``"enter"``, left-arrow → ``"ignore"``. With ``alpha_keys``
     an option letter (``A``/``B``/…) is returned verbatim for letter select.
+    ``on_dismiss`` is told which key produced ``"cancel"`` or ``"eof"``.
     """
     key = (
-        read_key_windows(alpha_keys=alpha_keys)
+        read_key_windows(alpha_keys=alpha_keys, on_dismiss=on_dismiss)
         if os.name == "nt"
-        else read_key_unix(alpha_keys=alpha_keys)
+        else read_key_unix(alpha_keys=alpha_keys, on_dismiss=on_dismiss)
     )
     if key == "tab":
         return "down"
@@ -454,6 +459,7 @@ def _pick(
     numbered: bool = True,
     note: str = "",
     on_answer: Callable[[tuple[int, ...], str | None], None] | None = None,
+    on_dismiss: OnDismiss | None = None,
 ) -> int | str | None:
     """Draw an inline menu; return index, custom typed string, or None on Esc.
 
@@ -463,6 +469,9 @@ def _pick(
     When ``multi_select`` is True, return a newline-joined string of checked
     **values** (``values[i]`` when provided, else ``labels[i]``). Submit commits.
     Space/Enter and the visible row keys (``1-9`` or ``A-…``) toggle checkboxes.
+
+    Unmapped keys redraw the menu; only ``"cancel"`` / ``"eof"`` return ``None``,
+    and ``on_dismiss`` hears which key class produced them.
     """
     from surfaces.shared.terminal.components.key_reader import read_menu_or_char
 
@@ -500,13 +509,13 @@ def _pick(
         first = False
         height = _menu_height(crumb, display, multi_select=multi_select, header=header, note=note)
         if on_custom:
-            action = read_menu_or_char(allow_chars=True)
+            action = read_menu_or_char(allow_chars=True, on_dismiss=on_dismiss)
         elif multi_select:
-            action = read_menu_or_char(allow_chars=False, alpha_keys=letter_keys)
-        elif letter_keys:
-            action = _read_action(alpha_keys=True)
+            action = read_menu_or_char(
+                allow_chars=False, alpha_keys=letter_keys, on_dismiss=on_dismiss
+            )
         else:
-            action = _read_action()
+            action = _read_action(alpha_keys=letter_keys, on_dismiss=on_dismiss)
         if on_custom and action == "backspace":
             draft = draft[:-1]
             if multi_select and custom_index >= 0 and not draft.strip():
@@ -624,6 +633,7 @@ def repl_choose_one(
     note: str = "",
     on_custom_answer: Callable[[], None] | None = None,
     on_answer: Callable[[tuple[int, ...], str | None], None] | None = None,
+    on_dismiss: OnDismiss | None = None,
 ) -> str | None:
     """Show an inline erasing arrow-key menu; return selected value or None on Esc.
 
@@ -643,7 +653,8 @@ def repl_choose_one(
 
     When ``multi_select`` is True, checkboxes appear and the return value is a
     newline-joined string of selected **values** (``choices[i][0]``).
-    ``on_answer`` receives listed row indexes and the separate custom text.
+    ``on_answer`` receives listed row indexes and the separate custom text;
+    ``on_dismiss`` receives the key class (Esc, Ctrl-C, …) that closed the menu.
     """
     if not choices or not repl_tty_interactive():
         return None
@@ -671,6 +682,7 @@ def repl_choose_one(
             numbered=numbered,
             note=note,
             on_answer=on_answer,
+            on_dismiss=on_dismiss,
         )
         if picked is None:
             return None

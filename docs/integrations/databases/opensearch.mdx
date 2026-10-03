@@ -184,6 +184,7 @@ CLI verify is a **configuration-coherence** check (URL + XOR auth). Onboard may 
 | **403 Forbidden on AWS ES** | Enable fine-grained access control; use internal user/password (not IAM SigV4) |
 | **No tools in plan** | Confirm verify passes and sources include opensearch |
 | **Empty results** | Check `OPENSEARCH_INDEX_PATTERN` and index permissions |
+| **Agent asks you to re-run setup** | No cluster URL is saved, or the cluster refused the saved credentials. Run `opensre integrations setup opensearch` again |
 
 ## Security
 

@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import Protocol
 
+from prompt_toolkit.application.current import get_app
 from prompt_toolkit.buffer import Buffer, CompletionState
 from prompt_toolkit.completion import CompleteEvent, Completion
-from prompt_toolkit.filters import has_completions
+from prompt_toolkit.filters import Condition, has_completions
 from prompt_toolkit.input.ansi_escape_sequences import ANSI_SEQUENCES
 from prompt_toolkit.key_binding import KeyBindings, merge_key_bindings
 from prompt_toolkit.key_binding.key_processor import KeyPressEvent
@@ -17,6 +18,12 @@ from infrastructure.terminal.prompt_support import (
     repl_prompt_ctrl_c_should_exit,
 )
 from surfaces.interactive_shell.ui.input_prompt.completion import subcommand_completions
+from surfaces.interactive_shell.ui.input_prompt.terminal_replies import (
+    discard_reply_tail,
+    escape_heads_a_sequence,
+    escape_stands_alone,
+    install_focus_report_sequences,
+)
 
 
 class _DispatchCancelState(Protocol):
@@ -112,6 +119,7 @@ def _tab_expand_or_menu(buffer: Buffer, *, open_subcommands: bool = True) -> boo
 
 def _build_prompt_key_bindings() -> KeyBindings:
     _install_modified_enter_sequences()
+    install_focus_report_sequences()
     bindings = KeyBindings()
 
     @bindings.add("c-m")
@@ -156,7 +164,7 @@ def _build_prompt_key_bindings() -> KeyBindings:
     def _previous_completion(event: KeyPressEvent) -> None:
         _move_completion(event.current_buffer, -1)
 
-    @bindings.add("escape", filter=has_completions, eager=True)
+    @bindings.add("escape", filter=has_completions, eager=escape_stands_alone)
     def _close_completions(event: KeyPressEvent) -> None:
         event.current_buffer.cancel_completion()
 
@@ -194,8 +202,16 @@ def build_cancel_key_bindings(state: _DispatchCancelState) -> KeyBindings:
         event.app.renderer.reset()
         event.app.invalidate()
 
-    @kb.add("escape", eager=True)
+    # Eager only when nothing but replies follows, so a longer binding such as
+    # Option+P (``escape p``) can still match an Escape that heads a chord.
+    @kb.add("escape", eager=escape_stands_alone)
     def _on_escape(event: KeyPressEvent) -> None:
+        if escape_heads_a_sequence(event):
+            # A terminal reply or an unbound Option chord, not the Esc key: it
+            # must not cancel the turn or clear the draft, and a reply's tail
+            # must not reach other bindings (e.g. confirmation row keys).
+            discard_reply_tail(event.key_processor)
+            return
         if event.current_buffer.complete_state is not None:
             event.current_buffer.cancel_completion()
             return
@@ -204,6 +220,16 @@ def build_cancel_key_bindings(state: _DispatchCancelState) -> KeyBindings:
             return
         if event.current_buffer.text:
             event.current_buffer.reset()
+
+    @Condition
+    def _turn_running_on_empty_prompt() -> bool:
+        return state.is_dispatch_running() and not get_app().current_buffer.text
+
+    # Overrides prompt-toolkit's Ctrl-D-on-empty-buffer EOF while a turn runs:
+    # user bindings merge last and the last match wins.
+    @kb.add("c-d", filter=_turn_running_on_empty_prompt)
+    def _swallow_ctrl_d_during_turn(_event: KeyPressEvent) -> None:
+        """Neither cancel the running turn nor close the shell."""
 
     @kb.add("c-l")
     def _on_ctrl_l(event: KeyPressEvent) -> None:
