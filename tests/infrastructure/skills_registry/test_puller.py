@@ -143,3 +143,35 @@ def test_one_process_claims_each_release_announcement(tmp_path: Path) -> None:
     claims = [process.communicate(timeout=100)[0].strip() for process in processes]
 
     assert sorted(claims) == ["False"] * 5 + ["True"]
+
+
+def test_an_explicit_update_waits_for_a_running_pull(
+    release_signer: ReleaseSigner, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """`skills update` must not report "skipped" because its own background pull holds the lock."""
+    import threading
+    import time
+
+    from filelock import FileLock
+
+    release = release_signer.sign(bundled_files(), seq=4)
+    monkeypatch.setattr(
+        puller_module,
+        "fetch_release",
+        _fake_fetch([FetchResult(FetchStatus.UPDATED, release=release, etag='"4"')], []),
+    )
+    store = release_store.store_dir()
+    store.mkdir(parents=True, exist_ok=True)
+    held = threading.Event()
+
+    def background_pull() -> None:
+        with FileLock(str(store / ".fetch.lock")):
+            held.set()
+            time.sleep(0.5)
+
+    holder = threading.Thread(target=background_pull)
+    holder.start()
+    held.wait(5)
+
+    assert pull_once(force=True, app_url=_APP).status is PullStatus.STORED
+    holder.join()
