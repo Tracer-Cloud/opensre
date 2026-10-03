@@ -931,6 +931,28 @@ def test_a_brief_cleanup_survives_earlier_short_results() -> None:
     assert "status 19" not in shown
 
 
+def test_a_long_trailing_line_is_still_capped() -> None:
+    """A one-line tail still has to honor the character cap."""
+    huge = "x" * 2000
+    result = _Result(
+        tool_results=[
+            (
+                ToolCall(id="1", name="github_cli", input={}),
+                _ToolResult(_payload(huge)),
+            )
+        ]
+    )
+    session = _Session()
+    session.terminal.inline_tool_results = True  # type: ignore[attr-defined]
+
+    _response_text, display_chunks, _use_final_text = _compose_response(result, session, _counts(1))
+    shown = "\n".join(display_chunks)
+
+    assert huge not in shown
+    assert "Ctrl+O to view" in shown
+    assert shown.count("Ctrl+O to view") == 1
+
+
 def test_one_outcome_stays_visible_after_a_long_response() -> None:
     """A single snapshot still survives when the cap would otherwise eat the tail."""
     long_text = "\n".join(f"note {index}" for index in range(40))

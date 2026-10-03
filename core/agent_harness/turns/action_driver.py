@@ -381,8 +381,12 @@ def _visible_closing_text(chunks: Sequence[str]) -> str:
     preview = cap_for_display("\n".join(ordered)) if ordered else ""
     if not tail:
         return preview
+    # A one-line result can still be thousands of characters. Cap it too, and
+    # keep a single trailing marker when either part was folded.
     body, marker = split_output_truncation_markers(preview)
-    text = "\n".join(part for part in (body, tail) if part)
+    tail_body, tail_marker = split_output_truncation_markers(cap_for_display(tail))
+    text = "\n".join(part for part in (body, tail_body) if part)
+    marker = tail_marker or marker
     if marker:
         return f"{text}\n{marker}" if text else marker
     return text
