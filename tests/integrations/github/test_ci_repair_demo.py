@@ -260,7 +260,11 @@ def test_seed_creates_a_private_repo_and_returns_the_failed_run() -> None:
     assert result["created_repository"] is True
     assert result["reused"] is False
     assert api._files("main")["calculator.py"] == PASSING_CALCULATOR
-    assert "Demo calculator CI" in api._files("main")[".github/workflows/test.yml"]
+    workflow = api._files("main")[".github/workflows/test.yml"]
+    assert workflow == baseline_files()[".github/workflows/test.yml"]
+    assert "Demo calculator CI" in workflow
+    assert "pull_request:" in workflow
+    assert "push:" not in workflow
     assert api._files(FAILING_BRANCH)["calculator.py"] == FAILING_CALCULATOR
     assert api._files(FAILING_BRANCH)["test_calculator.py"] == TEST_CALCULATOR
     assert api.prs[0]["body"] == "This pull request is a demo. Do not merge.\n"

@@ -8,6 +8,7 @@ import re
 import subprocess
 import time
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 from filelock import FileLock, Timeout
@@ -22,7 +23,6 @@ from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_REPORT_ARGS_PARAM,
     LOOP_REPORT_PARAM,
 )
-from infrastructure.scheduling.scheduler.runner import compute_next_run
 from infrastructure.scheduling.scheduler.storage import add_task, get_task
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
 from integrations.github.client import GitHubApiError, GitHubRestClient
@@ -186,7 +186,7 @@ def schedule_repair(
                         LOOP_REPORT_ARGS_PARAM: json.dumps({"run_id": run.id}),
                     },
                 )
-                task.next_run = compute_next_run(task)
+                task.next_run = datetime.now(UTC).isoformat()
                 existing = add_task(task)
                 run = store.mark_registered(run.id)
                 telemetry.monitoring_started(run)

@@ -401,6 +401,9 @@ def test_worker_retries_then_cleans_only_the_verified_head(
         calls += 1
         assert kwargs["allowed_paths"] == frozenset({"calculator.py"})
         assert kwargs["expected_source_head_sha"] == run.initial_sha
+        assert kwargs["registration_seconds"] == 0
+        assert kwargs["settle_seconds"] == 0
+        assert kwargs["poll_interval_seconds"] == 2
         if calls < CI_REPAIR_MAX_ATTEMPTS:
             return {"success": False, "error_kind": "checks_failed"}
         return {"success": True, "checks_state": "passed", "fix_head_sha": "fixed"}
@@ -585,6 +588,9 @@ def test_existing_green_pr_still_waits_for_late_checks(
 
     def verify(ctx: Any, **kwargs: Any) -> CheckVerification:
         checked.append(kwargs["expected_head_sha"])
+        assert "registration_seconds" not in kwargs
+        assert "settle_seconds" not in kwargs
+        assert "poll_interval_seconds" not in kwargs
         return CheckVerification(state=CheckState.FAILED, check_names=("late security",))
 
     monkeypatch.setattr(worker, "wait_for_pr_checks", verify, raising=False)
@@ -1283,6 +1289,44 @@ def test_hosted_scheduler_registers_without_an_os_service(
     assert store.get(run.id).registered
 
 
+def test_new_repair_schedule_is_due_now(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    from datetime import UTC, datetime
+
+    from infrastructure.scheduling.scheduler.runner import compute_next_run
+
+    due = datetime(2026, 10, 3, 15, 9, 7, tzinfo=UTC)
+
+    class _FrozenDateTime(datetime):
+        @classmethod
+        def now(cls, tz: object = None) -> datetime:
+            _ = tz
+            return due
+
+    store = RepairStore(tmp_path)
+    tasks: dict[str, ScheduledTask] = {}
+    monkeypatch.setattr(schedule, "datetime", _FrozenDateTime)
+    monkeypatch.setattr(schedule, "configured_token", lambda _token: "test-token")
+    monkeypatch.setattr(schedule, "GitHubRestClient", lambda _token: _GitHub())
+    monkeypatch.setattr(schedule, "ensure_background_service", lambda **_kwargs: None)
+    monkeypatch.setattr(schedule, "get_task", tasks.get)
+
+    def add(task: ScheduledTask) -> ScheduledTask:
+        tasks[task.id] = task
+        return task
+
+    monkeypatch.setattr(schedule, "add_task", add)
+
+    run, reused, next_run = schedule.schedule_repair(demo=True, owner="alice", store=store)
+
+    assert not reused
+    task = tasks[run.id]
+    assert task.cron == CI_REPAIR_CRON
+    assert next_run == due.isoformat()
+    assert task.next_run == due.isoformat()
+    assert compute_next_run(task, due) == "2026-10-03T15:09:30+00:00"
+    assert task.next_run != compute_next_run(task, due)
+
+
 class _RecordedEvents:
     """Stands in for the analytics client so each milestone's event and properties are seen."""
 
@@ -1565,3 +1609,170 @@ def test_registration_publish_preserves_an_already_started_worker(tmp_path: Path
         and published.pr_number == 17
         and published.status is RepairStatus.RUNNING
     )
+
+
+class _Clock:
+    """Verification clock. Sleep is the only way it moves."""
+
+    def __init__(self) -> None:
+        self.now = 0.0
+        self.sleeps: list[float] = []
+
+    def monotonic(self) -> float:
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        self.sleeps.append(seconds)
+        self.now += seconds
+
+
+def _clocked_wait(clock: _Clock, seen: dict[str, Any]) -> Any:
+    from integrations.github.tools.ci_fix.verification import CheckVerification, wait_for_pr_checks
+
+    def verify(ctx: Any, **kwargs: Any) -> CheckVerification:
+        seen.update(kwargs)
+        return wait_for_pr_checks(ctx, sleep=clock.sleep, monotonic=clock.monotonic, **kwargs)
+
+    return verify
+
+
+def _demo_check_github(head: str, rollup: list[dict[str, Any]]) -> Any:
+    def github(args: list[str], **_kwargs: Any) -> dict[str, Any]:
+        if args[:2] == ["run", "list"]:
+            return {
+                "runs": [
+                    {
+                        "databaseId": 9,
+                        "status": "completed",
+                        "conclusion": "success",
+                        "workflowName": "Demo calculator CI",
+                    }
+                ]
+            }
+        if args[:2] == ["pr", "view"]:
+            return {"headRefOid": head, "mergeStateStatus": "CLEAN", "statusCheckRollup": rollup}
+        raise AssertionError(args)
+
+    return github
+
+
+def test_demo_verification_passes_when_the_head_check_is_already_successful(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from integrations.github.tools.ci_repair_loop import worker
+
+    head = "fixed-sha"
+    run = _run(pr_number=7)
+    passed = {
+        "name": "test",
+        "conclusion": "SUCCESS",
+        "status": "COMPLETED",
+        "workflowName": "Demo calculator CI",
+        "detailsUrl": "https://github.com/alice/demo/actions/runs/9",
+    }
+    pr = {"state": "OPEN", "headRefOid": head, "statusCheckRollup": [passed]}
+    clock = _Clock()
+    seen: dict[str, Any] = {}
+
+    def open_pr(_run: RepairRun, _token: str) -> dict[str, Any]:
+        return pr
+
+    monkeypatch.setattr(
+        "integrations.github.tools.ci_fix.verification.run_gh_json",
+        _demo_check_github(head, [passed]),
+    )
+    monkeypatch.setattr(worker, "wait_for_pr_checks", _clocked_wait(clock, seen))
+    monkeypatch.setattr(worker, "_read_pr", open_pr)
+
+    assert worker._verify_green(run, pr, "token") is True
+    assert run.status is RepairStatus.SUCCEEDED
+    assert seen["registration_seconds"] == 0
+    assert seen["settle_seconds"] == 0
+    assert seen["poll_interval_seconds"] == 2
+    assert clock.sleeps == []
+    assert clock.now == 0.0
+
+
+def test_seeded_demo_repository_skips_the_registration_window(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A seeded demo is scheduled as a normal PR and still returns once its check is green."""
+    from integrations.github.tools.ci_repair_loop import worker
+
+    head = "fixed-sha"
+    run = _run(pr_number=1).model_copy(
+        update={"demo": False, "repo": "opensre-ci-repair-demo-g0xd"}
+    )
+    passed = {
+        "name": "test",
+        "conclusion": "SUCCESS",
+        "status": "COMPLETED",
+        "workflowName": "Demo calculator CI",
+        "detailsUrl": "https://github.com/alice/opensre-ci-repair-demo-g0xd/actions/runs/9",
+    }
+    pr = {"state": "OPEN", "headRefOid": head, "statusCheckRollup": [passed]}
+    clock = _Clock()
+    seen: dict[str, Any] = {}
+
+    monkeypatch.setattr(
+        "integrations.github.tools.ci_fix.verification.run_gh_json",
+        _demo_check_github(head, [passed]),
+    )
+    monkeypatch.setattr(worker, "wait_for_pr_checks", _clocked_wait(clock, seen))
+    monkeypatch.setattr(worker, "_read_pr", lambda _run, _token: pr)
+
+    assert worker._verify_green(run, pr, "token") is True
+    assert seen["registration_seconds"] == 0
+    assert seen["settle_seconds"] == 0
+    assert clock.sleeps == []
+
+
+def test_demo_verification_keeps_waiting_while_checks_are_empty_or_running(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from integrations.github.tools.ci_repair_loop import worker
+
+    head = "fixed-sha"
+    run = _run(pr_number=7)
+    running = {
+        "name": "test",
+        "conclusion": "",
+        "status": "IN_PROGRESS",
+        "workflowName": "Demo calculator CI",
+    }
+    passed = {
+        "name": "test",
+        "conclusion": "SUCCESS",
+        "status": "COMPLETED",
+        "workflowName": "Demo calculator CI",
+        "detailsUrl": "https://github.com/alice/demo/actions/runs/9",
+    }
+    pr = {"state": "OPEN", "headRefOid": head, "statusCheckRollup": [passed]}
+    clock = _Clock()
+    seen: dict[str, Any] = {}
+    polls = {"count": 0}
+
+    def github(args: list[str], **kwargs: Any) -> dict[str, Any]:
+        if args[:2] == ["pr", "view"]:
+            polls["count"] += 1
+            if polls["count"] == 1:
+                rollup: list[dict[str, Any]] = []
+            elif polls["count"] == 2:
+                rollup = [running]
+            else:
+                rollup = [passed]
+            return _demo_check_github(head, rollup)(args, **kwargs)
+        return _demo_check_github(head, [passed])(args, **kwargs)
+
+    def open_pr(_run: RepairRun, _token: str) -> dict[str, Any]:
+        return pr
+
+    monkeypatch.setattr("integrations.github.tools.ci_fix.verification.run_gh_json", github)
+    monkeypatch.setattr(worker, "wait_for_pr_checks", _clocked_wait(clock, seen))
+    monkeypatch.setattr(worker, "_read_pr", open_pr)
+
+    assert worker._verify_green(run, pr, "token") is True
+    assert run.status is RepairStatus.SUCCEEDED
+    assert polls["count"] == 3
+    assert clock.sleeps == [2, 2]
+    assert clock.now == 4

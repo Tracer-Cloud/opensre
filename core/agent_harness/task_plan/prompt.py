@@ -18,8 +18,9 @@ ASK_USER_ANSWERED_GUIDANCE = (
     "are already answered (see the Q&A above), do NOT ask again — write the "
     "plan now with your best reading of the answers. Two rounds is the hard "
     "maximum.\n"
-    "Then update_plan. Put the rationale in explanation=... — the UI renders "
-    "it under the checklist. Do not repeat it in the assistant closing reply. "
+    "Then update_plan. Put the rationale "
+    "in explanation=... — the UI renders it under the checklist. Do not repeat "
+    "it in the assistant closing reply. "
     "If this is a diagnosis, write structured sections, never one dense "
     "paragraph: Facts; What the signature tells us (what each fact RULES OUT); "
     "Hypothesis ranking with columns # | Hypothesis | Why it fits | "
@@ -34,7 +35,8 @@ ASK_USER_ANSWERED_GUIDANCE = (
     "Do not invent a plan-only pause. Set ask_user_choice(plan_only_after=true) "
     "only when the original request asked not to run yet; then after answers "
     "call update_plan(plan_only=true) and leave every step pending and STOP. "
-    "Otherwise set the first step in_progress and execute it now."
+    "Otherwise set the first step in_progress in the same response as its tool "
+    "and run that tool. A status-only update_plan is refused."
 )
 
 ASK_USER_ANSWERED_PLAN_ONLY_GUIDANCE = (
@@ -107,8 +109,9 @@ def current_task_plan_block(
     lines.append(PLAN_PRECEDENCE_RULE)
     if plan.all_pending and not plan_only:
         lines.append(
-            "Execution is authorized: set the first step to in_progress and "
-            "run its tools — do not wait for the user to say go."
+            "Execution is authorized: set the first step in_progress in the "
+            "same response as its tool and run that tool. A status-only "
+            "update_plan is refused. Do not wait for the user to say go."
         )
     in_progress = next(
         (item.step for item in plan.steps if item.status is PlanStepStatus.IN_PROGRESS),
@@ -121,11 +124,17 @@ def current_task_plan_block(
             "a step is in_progress. Keep working that step, or ask_user_choice "
             "if facts are missing. Do not start another workload."
         )
+        if not plan_only:
+            lines.append(
+                "Send the status update in the same response as the step's tool. "
+                "A status-only update_plan is refused."
+            )
     elif not plan.is_settled and not plan_only:
         lines.append(
             "When this turn continues the plan: Work remains on this plan and "
-            "no step is in_progress. Call update_plan to set the next pending "
-            "step in_progress and execute it now — do not end the turn idle."
+            "no step is in_progress. Set the next pending step in_progress in "
+            "the same response as its tool and run that tool. A status-only "
+            "update_plan is refused."
         )
     if plan.blocked_count:
         lines.append(

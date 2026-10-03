@@ -9,7 +9,7 @@ demo_order: 2
 metadata:
   owner: Vincent
   last_changed_by: Jan
-  last_changed_at: 2026-10-02
+  last_changed_at: 2026-10-03
   usecases:
     - For configuring ongoing repair of failing pull requests in one repository.
     - For demonstrating a scheduled repair in a disposable private repository.
@@ -17,7 +17,7 @@ metadata:
     - GitHub write access to the watched repository and an authenticated coding agent
     - Git installed on the scheduler host; repair checkouts are created automatically
     - For the demo, a GitHub token that can create a private repository and an example PR
-  version: "0.78"
+  version: "0.79"
 script_tools: references/script-tools.md
 ---
 
@@ -117,7 +117,7 @@ The scope was authorized in Step 1; nothing to fetch.
 
 Call `seed_ci_repair_demo(owner="<owner>", repo="<repo>")`. One failed seed is the blocker. Do not call `seed_ci_repair_demo` again in this plan. Report the tool's error text.
 
-The tool treats a 404 from `GET /repos/{owner}/{repo}` as absence and creates the private repository only in that case. It commits a passing `main` (`calculator.py` adding, `test_calculator.py` asserting `add(2, 3) == 5`, and `.github/workflows/test.yml` named `Demo calculator CI` running `python -m unittest -v` on push and pull_request), then one commit on `demo/failing-ci` that changes only `calculator.py` so `add` subtracts, opens that pull request into `main` with a body that says it is a demo not to merge, and returns after the pull-request Actions run has failed. Record `pr_url`, `pr_number`, `head_sha`, and `failed_run_id`. An existing demo repository and pull request are reused. If that repository is not an OpenSRE CI repair demo, the tool leaves it unchanged and seeds `opensre-ci-repair-demo-<4 lowercase letters or digits>` on the same owner. Record `owner`, `repo`, `pr_url`, `pr_number`, `head_sha`, and `failed_run_id` from the result, and use that owner and repo in later steps. Stay in this plan. Do not call `ask_user_choice`, do not end the turn, and do not delete or overwrite the refused repository.
+The tool treats a 404 from `GET /repos/{owner}/{repo}` as absence and creates the private repository only in that case. It commits a passing `main` (`calculator.py` adding, `test_calculator.py` asserting `add(2, 3) == 5`, and `.github/workflows/test.yml` named `Demo calculator CI` running `python -m unittest -v` on pull_request), then one commit on `demo/failing-ci` that changes only `calculator.py` so `add` subtracts, opens that pull request into `main` with a body that says it is a demo not to merge, and returns after the pull-request Actions run has failed. Record `pr_url`, `pr_number`, `head_sha`, and `failed_run_id`. An existing demo repository and pull request are reused. If that repository is not an OpenSRE CI repair demo, the tool leaves it unchanged and seeds `opensre-ci-repair-demo-<4 lowercase letters or digits>` on the same owner. Record `owner`, `repo`, `pr_url`, `pr_number`, `head_sha`, and `failed_run_id` from the result, and use that owner and repo in later steps. Stay in this plan. Do not call `ask_user_choice`, do not end the turn, and do not delete or overwrite the refused repository.
 
 This step uses that one tool. `github_cli`, `list_github_actions_workflow_runs`, an organization repository listing, a code search, and plain `git` are outside this step.
 

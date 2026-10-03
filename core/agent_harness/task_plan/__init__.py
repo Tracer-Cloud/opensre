@@ -11,6 +11,7 @@ Leaves:
 * :mod:`write_result` — model-facing ``update_plan`` instruction
 * :mod:`evidence` — work-return counters for a turn
 * :mod:`required` — second work tool needs an open plan
+* :mod:`solo_advance` — a lone ``update_plan`` must not start or advance a step
 * :mod:`conclusion` — whether the plan still blocks ending the turn
 * :mod:`update_plan_policy` — Ask User / plan-only latch
 * :mod:`persist` — flush / restore

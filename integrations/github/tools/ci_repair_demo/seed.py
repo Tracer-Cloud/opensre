@@ -33,7 +33,6 @@ TEST_CALCULATOR = (
 WORKFLOW = (
     "name: Demo calculator CI\n"
     "on:\n"
-    "  push:\n"
     "  pull_request:\n"
     "permissions:\n"
     "  contents: read\n"
@@ -81,6 +80,11 @@ def baseline_files() -> dict[str, str]:
         _MARKER_NAME: MARKER,
         "AGENTS.md": AGENTS,
     }
+
+
+def is_seeded_ci_repair_demo(repo: str) -> bool:
+    """True for a repository this seeder creates, ``opensre-ci-repair-demo-`` plus a suffix."""
+    return repo.startswith(_DEMO_REPO_PREFIX)
 
 
 def fresh_demo_repo_name() -> str:

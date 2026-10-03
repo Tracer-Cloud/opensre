@@ -213,13 +213,14 @@ def ask_hosted_gateway(
     in_flight = ""
     try:
         with HostedGatewayClient.from_account() as client:
-            record, sent_at = _submit_or_continue(
+            record, sent_at, skip_recorded = _submit_or_continue(
                 client, prompt.strip(), dict(facts or {}), prompt_id.strip(), scope
             )
             in_flight = record.prompt_id
-            record, waited = _wait_until_settled(
-                client, record, _ProgressRelay(context), sent_at=sent_at
-            )
+            relay = _ProgressRelay(context)
+            if skip_recorded:
+                relay.skip_recorded(record)
+            record, waited = _wait_until_settled(client, record, relay, sent_at=sent_at)
             parent_id = record.parent_prompt_id or prompt_id.strip()
             rejected = _answer_was_rejected(record) and bool(parent_id)
             if rejected:
@@ -272,24 +273,25 @@ def _submit_or_continue(
     facts: dict[str, str],
     prompt_id: str,
     scope: ActionToolScope | None,
-) -> tuple[PromptRecord, float]:
+) -> tuple[PromptRecord, float, bool]:
     """Send a new prompt, or read an earlier one and pass the user's answer on if they gave one.
 
-    Also returns when the request that could queue the prompt left this machine,
-    taken right before that call, so queue time excludes any reads before it.
+    The timestamp is when the request that could queue the prompt left this
+    machine, taken right before that call. The bool is true when ``record`` is
+    a read of an existing prompt, so progress already on it must not be replayed.
     """
     if not prompt_id:
         sent_at = time.monotonic()
-        return client.send_prompt(prompt, context=facts), sent_at
+        return client.send_prompt(prompt, context=facts), sent_at, False
     fetched_at = time.monotonic()
     record = client.prompt_result(prompt_id)
     if record.state != "needs_input" or record.choice is None:
-        return record, fetched_at
+        return record, fetched_at, True
     answer = _answer_from_turn(scope, record.choice)
     if answer is None:
-        return record, fetched_at
+        return record, fetched_at, True
     sent_at = time.monotonic()
-    return client.answer_prompt(prompt_id, answer), sent_at
+    return client.answer_prompt(prompt_id, answer), sent_at, False
 
 
 def _answer_from_turn(scope: ActionToolScope | None, choice: PromptChoice) -> str | None:
@@ -366,6 +368,14 @@ class _ProgressRelay:
     def __init__(self, context: Any) -> None:
         self._emit = getattr(context, "emit_update", None)
         self._last_index = -1
+
+    def skip_recorded(self, record: PromptRecord) -> None:
+        """Ignore progress lines already present on a fetched prompt."""
+        if not record.progress:
+            return
+        recorded = max(line.index for line in record.progress)
+        if recorded > self._last_index:
+            self._last_index = recorded
 
     def show(self, record: PromptRecord) -> None:
         if self._emit is None:

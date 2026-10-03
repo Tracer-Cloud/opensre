@@ -702,6 +702,34 @@ def test_progress_lines_are_relayed_to_the_shell_once_each(monkeypatch: pytest.M
     ]
 
 
+def test_rereading_a_prompt_does_not_replay_progress_already_on_the_record(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A verification read must not reprint lines the shell already showed."""
+    recorded = PromptProgress(0, "Reading runs…", kind="plan")
+    running = PromptRecord(_ID, "running", progress=(recorded,))
+    finished = PromptRecord(
+        _ID,
+        "done",
+        answer="ok",
+        progress=(recorded, PromptProgress(1, "Checking out…", kind="tool")),
+    )
+    app = _App([running, finished])
+
+    def from_account() -> _App:
+        return app
+
+    monkeypatch.setattr(gateway_prompt.HostedGatewayClient, "from_account", from_account)
+    monkeypatch.setattr(gateway_prompt, "HOSTED_GATEWAY_PROMPT_POLL_SECONDS", 0.0)
+    updates: list[Any] = []
+    context = AgentToolContext(resolved_integrations={}, resources={}, _emit_update=updates.append)
+
+    out = ask_hosted_gateway(prompt_id=_ID, context=context)
+
+    assert out["state"] == "done"
+    assert updates == [{"progress": "Checking out…", "kind": "tool"}]
+
+
 def test_a_queued_prompt_tells_the_user_they_are_waiting_for_a_slot_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

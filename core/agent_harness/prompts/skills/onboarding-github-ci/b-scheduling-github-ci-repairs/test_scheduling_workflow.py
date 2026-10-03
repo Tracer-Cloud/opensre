@@ -178,8 +178,9 @@ def test_repository_question_carries_the_plan_and_blocks_creation_until_answered
         resolved_integrations_cache={},
     )
     calls: list[tuple[str, dict[str, Any]]] = []
-    plan = [{"step": step, "status": "pending"} for step in steps]
-    plan[0]["status"] = "in_progress"
+    checklist = [{"step": step, "status": "pending"} for step in steps]
+    started = [dict(item) for item in checklist]
+    started[0]["status"] = "in_progress"
     repository_menu = tool_response(
         "ask_user_choice",
         {"title": _REPOSITORY_QUESTION, "options": [_DEMO_OPTION, "acme/widget"]},
@@ -188,13 +189,15 @@ def test_repository_question_carries_the_plan_and_blocks_creation_until_answered
         [
             # Plan write, the repository question and eager repo creation in one
             # response: the menu must stand alone, so the runtime runs none of
-            # it and the model re-issues the plan write and then the menu.
+            # it. A solo update_plan that starts a step is refused, so the
+            # re-issue records every step pending; the host then marks the
+            # first step in_progress. The menu follows on its own.
             _batch(
-                tool_response("update_plan", {"plan": plan}),
+                tool_response("update_plan", {"plan": started}),
                 repository_menu,
                 tool_response("github_cli", {"args": ["repo", "create", "demo", "--private"]}),
             ),
-            tool_response("update_plan", {"plan": plan}),
+            tool_response("update_plan", {"plan": checklist}),
             repository_menu,
         ]
     )

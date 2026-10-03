@@ -151,6 +151,59 @@ def _ci_repair_demo_case(tool_name: str) -> ToolFailureCase:
     return ToolFailureCase(tool_name, patch, invoke, tool_name, "github")
 
 
+def _probe_github_repair_access_case() -> ToolFailureCase:
+    def patch(mp: pytest.MonkeyPatch) -> None:
+        from integrations.github.tools.repair_access import tool as mod
+
+        def _token(_explicit: str | None) -> str:
+            return "token"
+
+        client = MagicMock()
+        client.request_with_headers.side_effect = RuntimeError("github down")
+
+        def _client(_token_value: str) -> MagicMock:
+            return client
+
+        mp.setattr(mod, "configured_token", _token)
+        mp.setattr(mod, "GitHubRestClient", _client)
+
+    def invoke() -> dict[str, Any]:
+        from integrations.github.tools.repair_access import tool as mod
+
+        return mod.probe_github_repair_access()
+
+    return ToolFailureCase(
+        "probe_github_repair_access",
+        patch,
+        invoke,
+        "probe_github_repair_access",
+        "github",
+    )
+
+
+def _run_ci_repair_demo_case() -> ToolFailureCase:
+    def patch(mp: pytest.MonkeyPatch) -> None:
+        from integrations.github.tools.ci_repair_run import tool as mod
+
+        def _seed(*_args: Any, **_kwargs: Any) -> dict[str, Any]:
+            raise RuntimeError("seed down")
+
+        mp.setattr(mod, "seed_ci_repair_demo", _seed)
+
+    def invoke() -> dict[str, Any]:
+        from integrations.github.tools.ci_repair_run import tool as mod
+
+        return mod.run_ci_repair_demo(owner="octocat", repo="opensre-ci-repair-demo")
+
+    return ToolFailureCase(
+        "run_ci_repair_demo",
+        patch,
+        invoke,
+        "run_ci_repair_demo",
+        "github",
+    )
+
+
 def _ci_repair_case(tool_name: str) -> ToolFailureCase:
     def patch(mp: pytest.MonkeyPatch) -> None:
         from integrations.github.tools.ci_repair_loop import tool as mod
@@ -833,6 +886,8 @@ _TOOL_FAILURE_CASES: list[ToolFailureCase] = [
     _ci_repair_case("get_ci_repair_loop"),
     _ci_repair_demo_case("seed_ci_repair_demo"),
     _ci_repair_demo_case("finish_ci_repair_demo"),
+    _probe_github_repair_access_case(),
+    _run_ci_repair_demo_case(),
     _openobserve_case(),
     _snowflake_case(),
     _cloudwatch_logs_case(),
@@ -1038,6 +1093,8 @@ _MIGRATED_TOOL_NAMES: frozenset[str] = frozenset(
         "get_ci_repair_loop",
         "seed_ci_repair_demo",
         "finish_ci_repair_demo",
+        "probe_github_repair_access",
+        "run_ci_repair_demo",
         "check_hosted_gateway",
         "start_hosted_gateway",
         "stop_hosted_gateway",

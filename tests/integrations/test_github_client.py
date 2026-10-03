@@ -253,6 +253,19 @@ def test_request_accept_header_can_be_overridden(monkeypatch: pytest.MonkeyPatch
     assert seen_accept == "application/vnd.github.star+json"
 
 
+def test_request_with_headers_returns_oauth_scopes(monkeypatch: pytest.MonkeyPatch) -> None:
+    def fake_urlopen(_req: request.Request, timeout: int = 0) -> _Response:  # noqa: ARG001
+        return _Response({"login": "octocat"}, headers={"X-OAuth-Scopes": "repo, workflow"})
+
+    monkeypatch.setattr("integrations.github.client.request.urlopen", fake_urlopen)
+    client = GitHubRestClient(github_token="tok")
+
+    payload, headers = client.request_with_headers("GET", "user")
+
+    assert payload == {"login": "octocat"}
+    assert headers["X-OAuth-Scopes"] == "repo, workflow"
+
+
 def test_invalid_json_raises_typed_error(monkeypatch: pytest.MonkeyPatch) -> None:
     def fake_urlopen(_req: request.Request, timeout: int = 0) -> _RawResponse:  # noqa: ARG001
         return _RawResponse("not-json")

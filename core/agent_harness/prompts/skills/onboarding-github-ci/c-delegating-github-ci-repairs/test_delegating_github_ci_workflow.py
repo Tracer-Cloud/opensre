@@ -6,6 +6,7 @@ from typing import Any
 import pytest
 
 from config.constants import OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV, OPENSRE_MEMORY_DIR_ENV
+from core.llm.types import AgentLLMResponse, ToolCall
 from tests.core.agent.orchestration.action_execution_test_harness import (
     no_tool_response,
     tool_response,
@@ -33,6 +34,15 @@ _OBSERVE = {
 }
 
 
+def _call(call_id: str, name: str, args: dict[str, Any]) -> AgentLLMResponse:
+    """One scripted tool call with its own id, so two plan writes can share a response."""
+    return AgentLLMResponse(
+        content="",
+        tool_calls=[ToolCall(id=call_id, name=name, input=args)],
+        raw_content=None,
+    )
+
+
 def _plan(completed: int, active: int, *, known_target: bool) -> dict[str, Any]:
     steps = ["Prepare gateway", "Select target", "Delegate", "Verify repair", "Report", "Follow-up"]
     if known_target:
@@ -53,17 +63,25 @@ def test_remote_target_preserves_handoff_and_report_order(
 ) -> None:
     monkeypatch.setenv(OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV, "1")
     monkeypatch.setenv(OPENSRE_MEMORY_DIR_ENV, str(tmp_path / "memory"))
-    responses = [
-        tool_response("skill_view", {"name": _SKILL}),
-        batch(
-            tool_response("update_plan", _plan(0, 0, known_target=known_target)),
-            tool_response("check_hosted_gateway"),
-        ),
-    ]
-    if not known_target:
+    responses: list[Any] = [tool_response("skill_view", {"name": _SKILL})]
+    if known_target:
+        responses.append(
+            batch(
+                tool_response("update_plan", _plan(0, 0, known_target=True)),
+                tool_response("check_hosted_gateway"),
+            )
+        )
+    else:
+        # Complete the gateway check beside the write that starts the repository
+        # question, so that step is in_progress before its menu. A menu cannot
+        # share a response with update_plan.
         responses.extend(
             [
-                tool_response("update_plan", _plan(1, 1, known_target=False)),
+                batch(
+                    _call("plan-start", "update_plan", _plan(0, 0, known_target=False)),
+                    tool_response("check_hosted_gateway"),
+                    _call("plan-select", "update_plan", _plan(1, 1, known_target=False)),
+                ),
                 tool_response(
                     "ask_user_choice",
                     {
@@ -82,22 +100,23 @@ def test_remote_target_preserves_handoff_and_report_order(
                 ),
                 tool_response("ask_hosted_gateway", _REQUEST),
             ),
+            # The observe call sits between the two writes: the first starts
+            # verification, the return is the evidence that completes it, and
+            # the second leaves the report step in_progress for the text reply.
             batch(
-                tool_response(
+                _call(
+                    "plan-verify",
                     "update_plan",
                     _plan(delegate_step + 1, delegate_step + 1, known_target=known_target),
                 ),
                 tool_response("ask_hosted_gateway", _OBSERVE),
-            ),
-            tool_response(
-                "update_plan",
-                _plan(delegate_step + 2, delegate_step + 2, known_target=known_target),
+                _call(
+                    "plan-report",
+                    "update_plan",
+                    _plan(delegate_step + 2, delegate_step + 2, known_target=known_target),
+                ),
             ),
             no_tool_response(_REPORT),
-            tool_response(
-                "update_plan",
-                _plan(delegate_step + 3, delegate_step + 3, known_target=known_target),
-            ),
             tool_response(
                 "ask_user_choice",
                 {
@@ -163,9 +182,6 @@ def test_missing_gateway_skill_reports_blocker_before_recovery_menu(
     blocked["explanation"] = report
     blocked["plan"][1]["status"] = "blocked"
     blocked["plan"][2]["status"] = "blocked"
-    menu: dict[str, Any] = {"explanation": report, "plan": [dict(item) for item in blocked["plan"]]}
-    menu["plan"][3]["status"] = "completed"
-    menu["plan"][4]["status"] = "in_progress"
     workflow = SkillWorkflow(
         Path(__file__).with_name("SKILL.md"),
         [
@@ -180,7 +196,6 @@ def test_missing_gateway_skill_reports_blocker_before_recovery_menu(
             ),
             tool_response("update_plan", blocked),
             no_tool_response(report),
-            tool_response("update_plan", menu),
             tool_response(
                 "ask_user_choice",
                 {

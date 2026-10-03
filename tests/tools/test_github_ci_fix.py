@@ -40,7 +40,13 @@ from integrations.github.tools.ci_fix.tool import (
     _github_ci_fix_available,
     fix_github_pr_ci,
 )
-from integrations.github.tools.ci_fix.verification import CheckState, CheckVerification
+from integrations.github.tools.ci_fix.verification import (
+    DEFAULT_POLL_INTERVAL_SECONDS,
+    DEFAULT_REGISTRATION_SECONDS,
+    DEFAULT_SETTLE_SECONDS,
+    CheckState,
+    CheckVerification,
+)
 from integrations.github.tools.ci_fix.worktree import BranchWorktree, create_branch_worktree
 from tests.tools.conftest import BaseToolContract
 from tools.registry import clear_tool_registry_cache, get_registered_tool_map, get_registered_tools
@@ -644,7 +650,48 @@ def test_run_ci_fix_success_pushes_existing_pr_branch(
         _CTX,
         github_token="tok",
         expected_head_sha="new-sha",
+        registration_seconds=DEFAULT_REGISTRATION_SECONDS,
+        settle_seconds=DEFAULT_SETTLE_SECONDS,
+        poll_interval_seconds=DEFAULT_POLL_INTERVAL_SECONDS,
     )
+
+
+def test_run_ci_fix_forwards_short_demo_check_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, Any] = {}
+    push = PushResult(
+        branch_name="demo/failing-ci", head_sha="fixed", changed_files=["calculator.py"]
+    )
+
+    def wait(_ctx: CiFixContext, **kwargs: Any) -> CheckVerification:
+        seen.update(kwargs)
+        return CheckVerification(state=CheckState.PASSED, check_names=("test",))
+
+    def resumed(*_args: object, **_kwargs: object) -> tuple[CiFixContext, PushResult]:
+        return _CTX, push
+
+    monkeypatch.setattr(runner, "gather_ci_fix_context", lambda **_kwargs: _CTX)
+    monkeypatch.setattr(runner, "repair_workspace", lambda *_args, **_kwargs: nullcontext("/ws"))
+    monkeypatch.setattr(runner, "resumed_push", resumed)
+    monkeypatch.setattr(runner, "wait_for_pr_checks", wait)
+    monkeypatch.setattr(runner, "record_verification", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(runner, "publish_repair_epoch", lambda *_args, **_kwargs: None)
+
+    result = runner.run_ci_fix(
+        owner="Tracer-Cloud",
+        repo="opensre",
+        pr_number=4597,
+        github_token="tok",
+        registration_seconds=0,
+        settle_seconds=0,
+        poll_interval_seconds=2,
+    )
+
+    assert result["checks_state"] == "passed"
+    assert result["fix_head_sha"] == "fixed"
+    assert seen["expected_head_sha"] == "fixed"
+    assert seen["registration_seconds"] == 0
+    assert seen["settle_seconds"] == 0
+    assert seen["poll_interval_seconds"] == 2
 
 
 def test_run_ci_fix_refuses_a_source_head_that_changed_before_checkout(
@@ -816,6 +863,9 @@ def test_run_ci_fix_branch_target_uses_worktree_and_branch_verification(
         replace(_BRANCH_CTX, head_branch="opensre/ci-fix-main-ea14998-12345678"),
         github_token="tok",
         expected_head_sha="new-sha",
+        registration_seconds=DEFAULT_REGISTRATION_SECONDS,
+        settle_seconds=DEFAULT_SETTLE_SECONDS,
+        poll_interval_seconds=DEFAULT_POLL_INTERVAL_SECONDS,
     )
     mock_cleanup.assert_called_once()
 
