@@ -315,14 +315,33 @@ class InteractiveShellController:
         ):
             await asyncio.sleep(_GOAL_CONTROL_LOCK_RETRY_SECONDS)
 
-    def _persist_goal_control_for_resume(self, reason: HostCancelReason) -> None:
+    def _persist_goal_control_for_resume(self, reason: HostCancelReason) -> str:
         """Preserve goal intent without mutating state owned by a detached worker."""
         from core.agent_harness import SessionManager
 
-        SessionManager.for_session(self.session).persist_session_goal_control(
+        return SessionManager.for_session(self.session).persist_session_goal_control(
             self.session,
             reason.value,
         )
+
+    def _finalize_detached_goal_control(
+        self,
+        reason: HostCancelReason,
+        control_id: str,
+    ) -> None:
+        """Apply a durable control once a detached worker releases the session lease."""
+        try:
+            with session_execution_lock(self.session.session_id):
+                apply_session_goal_control(self.session, reason)
+                self.session.store.flush_session_goal_control_state(self.session)
+                self.session.store.complete_session_goal_control(
+                    self.session.session_id,
+                    control_id,
+                )
+        except Exception:
+            # The requested sidecar record remains unacknowledged and restore
+            # will retry it.  Do not race the worker by applying it early.
+            log.warning("Could not finalize detached goal control", exc_info=True)
 
     async def _handle_input_action(self, action: InputAction) -> bool:
         match action:
@@ -351,6 +370,25 @@ class InteractiveShellController:
             case RunInflightControl(control=control, submitted_text=text) if (
                 reason := goal_control_reason(control)
             ) is not None:
+                if (
+                    self.turn_runtime.has_live_turn_worker()
+                    and not self.state.is_dispatch_running()
+                ):
+                    # Esc can cancel the asyncio waiter while the daemon turn
+                    # still owns session state.  A queued slash command could
+                    # then run concurrently (or be discarded by /exit), so
+                    # record the intent now and replay it after the worker
+                    # releases its lease instead.
+                    self.prompt.render_submitted_prompt(self.echo_console, text)
+                    control_id = self._persist_goal_control_for_resume(reason)
+                    self.turn_runtime.run_after_turn_worker(
+                        functools.partial(
+                            self._finalize_detached_goal_control,
+                            reason,
+                            control_id,
+                        )
+                    )
+                    return True
                 # Keep slash execution serialized through the normal turn
                 # queue, but signal current work now. The queue owner applies
                 # the state transition after the worker thread returns, before

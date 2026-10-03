@@ -118,10 +118,7 @@ def decide_input_action(
                 return IgnoreInput()
 
             control = _inflight_control(stripped)
-            if control is not None and (
-                snapshot.dispatch_running
-                or (snapshot.worker_running and control is InflightControl.EXIT_SHELL)
-            ):
+            if control is not None and (snapshot.dispatch_running or snapshot.worker_running):
                 return RunInflightControl(control=control, submitted_text=stripped)
 
             if snapshot.awaiting_confirmation:

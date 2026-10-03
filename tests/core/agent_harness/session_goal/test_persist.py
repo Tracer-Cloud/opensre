@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 from core.agent_harness.session import InMemorySessionStore, SessionCore, SessionManager
 from core.agent_harness.session.pending_offer import PendingIntegrationSetupOffer
 from core.agent_harness.session_goal.goal import (
@@ -314,6 +316,75 @@ def test_pending_goal_clear_tombstones_the_restored_task_plan() -> None:
         next(
             record["content"]
             for record in reversed(persisted)
+            if record.get("custom_type") == TASK_PLAN_STATE_CUSTOM_TYPE
+        )
+        == {}
+    )
+
+
+def test_pending_goal_clear_retries_the_task_plan_after_a_partial_flush(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A failed plan write must be repaired even when the goal tombstone landed."""
+    from core.agent_harness.session.persistence.contracts import RestoreContextKey
+    from core.agent_harness.session_goal.goal import clear_session_goal
+    from core.agent_harness.session_goal.persist import (
+        SESSION_GOAL_STATE_CUSTOM_TYPE,
+        pending_session_goal_controls,
+    )
+    from core.agent_harness.task_plan.persist import TASK_PLAN_STATE_CUSTOM_TYPE
+    from core.agent_harness.task_plan.plan import PlanStep, PlanStepStatus, TaskPlan
+
+    storage = InMemorySessionStore()
+    session = SessionCore(store=storage)
+    storage.open_session(session)
+    storage.append_turn(session, "chat", "start")
+    attach_session_goal(session, SessionGoal(condition="finish it", max_outer_turns=3))
+    session.task_plan = TaskPlan(
+        steps=(PlanStep(step="finish it", status=PlanStepStatus.IN_PROGRESS),)
+    )
+    storage.flush(session)
+    storage.append_session_goal_control(session.session_id, "goal_clear")
+    clear_session_goal(session)
+
+    def _fail_task_plan_write(*_args: object, **_kwargs: object) -> None:
+        raise OSError("disk full")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(storage, "_append_task_plan_state", _fail_task_plan_write)
+        with pytest.raises(OSError, match="disk full"):
+            storage.flush_session_goal_control_state(session)
+
+    records = storage.read(session.session_id)
+    goal_state = next(
+        record["content"]
+        for record in reversed(records)
+        if record.get("custom_type") == SESSION_GOAL_STATE_CUSTOM_TYPE
+    )
+    stale_plan_state = next(
+        record["content"]
+        for record in reversed(records)
+        if record.get("custom_type") == TASK_PLAN_STATE_CUSTOM_TYPE
+    )
+
+    restored = SessionCore(session_id=session.session_id, store=storage)
+    SessionManager(store=storage).restore_context(
+        restored,
+        {
+            RestoreContextKey.SESSION_GOAL_STATE: goal_state,
+            RestoreContextKey.TASK_PLAN_STATE: stale_plan_state,
+            RestoreContextKey.SESSION_GOAL_CONTROLS: pending_session_goal_controls(records),
+        },
+    )
+
+    assert restored.session_goal is None
+    assert restored.task_plan is None
+    repaired_records = storage.read(session.session_id)
+    assert pending_session_goal_controls(repaired_records) == []
+    assert (
+        next(
+            record["content"]
+            for record in reversed(repaired_records)
             if record.get("custom_type") == TASK_PLAN_STATE_CUSTOM_TYPE
         )
         == {}

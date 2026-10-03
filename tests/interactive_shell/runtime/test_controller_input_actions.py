@@ -81,10 +81,22 @@ def test_decide_routes_goal_pause_as_an_inflight_control() -> None:
     )
 
 
-def test_decide_routes_exit_around_a_live_daemon_worker() -> None:
-    assert _decide(InputSubmitted("/exit"), worker_running=True) == RunInflightControl(
-        control=InflightControl.EXIT_SHELL,
-        submitted_text="/exit",
+@pytest.mark.parametrize(
+    ("text", "control"),
+    [
+        ("/goal pause", InflightControl.PAUSE_GOAL),
+        ("/goal clear", InflightControl.CLEAR_GOAL),
+        ("/goal unset", InflightControl.CLEAR_GOAL),
+        ("/exit", InflightControl.EXIT_SHELL),
+    ],
+)
+def test_decide_routes_controls_around_a_live_daemon_worker(
+    text: str,
+    control: InflightControl,
+) -> None:
+    assert _decide(InputSubmitted(text), worker_running=True) == RunInflightControl(
+        control=control,
+        submitted_text=text,
     )
 
 
@@ -184,6 +196,66 @@ def _controller():
 
     captured = Console(file=StringIO(), force_terminal=False, width=80)
     return InteractiveShellController(Session(), console=captured)
+
+
+@pytest.mark.asyncio
+async def test_goal_control_after_cancelled_waiter_waits_for_detached_worker(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A control submitted after Esc remains durable instead of joining the turn queue."""
+    from contextlib import nullcontext
+
+    from core.agent_harness.session import InMemorySessionStore, SessionManager
+    from core.agent_harness.session_goal.goal import SessionGoal, attach_session_goal
+    from core.agent_harness.session_goal.persist import pending_session_goal_controls
+    from core.agent_harness.spi.cancel import HostCancelReason
+
+    controller = _controller()
+    store = InMemorySessionStore()
+    controller.session.store = store
+    store.open_session(controller.session)
+    store.append_turn(controller.session, "chat", "seed")
+    attach_session_goal(controller.session, SessionGoal(condition="finish safely"))
+    controller.session.task_plan = _plan("in_progress", "pending")
+    SessionManager.for_session(controller.session).flush(controller.session)
+    release_callbacks: list[object] = []
+
+    monkeypatch.setattr(
+        type(controller.turn_runtime),
+        "has_live_turn_worker",
+        lambda _runtime: True,
+    )
+    monkeypatch.setattr(
+        type(controller.turn_runtime),
+        "run_after_turn_worker",
+        lambda _runtime, callback: release_callbacks.append(callback),
+    )
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.controller.session_execution_lock",
+        lambda _session_id: nullcontext(),
+    )
+
+    kept = await controller._handle_input_action(
+        RunInflightControl(
+            control=InflightControl.CLEAR_GOAL,
+            submitted_text="/goal clear",
+        )
+    )
+
+    assert kept is True
+    assert controller.state.queue.empty()
+    assert [
+        control["reason"]
+        for control in pending_session_goal_controls(store.read(controller.session.session_id))
+    ] == [HostCancelReason.GOAL_CLEAR.value]
+    assert len(release_callbacks) == 1
+    callback = release_callbacks.pop()
+    assert callable(callback)
+    callback()
+
+    assert controller.session.session_goal is None
+    assert controller.session.task_plan is None
+    assert pending_session_goal_controls(store.read(controller.session.session_id)) == []
 
 
 @pytest.mark.asyncio
