@@ -230,3 +230,19 @@ def test_the_cap_evicts_only_events_slack_can_no_longer_retry() -> None:
     assert retried_in_window is False
     assert handled.claim("Ev1") is True
     assert handled.claim("Ev4") is False
+
+
+def test_a_burst_past_the_hard_cap_still_bounds_memory() -> None:
+    # Arrange: a cap of two, a hard cap of three, and a burst of four inside one window
+    handled = BoundedHandledSlackEventRepository(
+        max_events=2, hard_max_events=3, retry_window_seconds=600, now=_Clock()
+    )
+    for event_id in ("Ev1", "Ev2", "Ev3", "Ev4"):
+        handled.claim(event_id)
+        handled.confirm(event_id)
+
+    # Act / Assert: only the oldest went, to stay within the hard cap. (A claim that
+    # succeeds writes an entry, so the kept events are checked first.)
+    assert handled.claim("Ev2") is False
+    assert handled.claim("Ev4") is False
+    assert handled.claim("Ev1") is True

@@ -1286,6 +1286,9 @@ if TYPE_CHECKING:
         SLACK_HEARTBEAT_STOP_TIMEOUT_SECONDS as SLACK_HEARTBEAT_STOP_TIMEOUT_SECONDS,
     )
     from config.constants.slack import (
+        SLACK_SOCKET_MODE_DEDUP_HARD_MAX_EVENTS as SLACK_SOCKET_MODE_DEDUP_HARD_MAX_EVENTS,
+    )
+    from config.constants.slack import (
         SLACK_SOCKET_MODE_DEDUP_MAX_EVENTS as SLACK_SOCKET_MODE_DEDUP_MAX_EVENTS,
     )
     from config.constants.slack import (

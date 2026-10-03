@@ -7,6 +7,7 @@ process sees every redelivery of an event. Events API HTTP cannot rely on that
 
 from __future__ import annotations
 
+import logging
 import threading
 import time
 from collections import OrderedDict
@@ -14,11 +15,14 @@ from collections.abc import Callable
 from typing import NamedTuple
 
 from config.constants.slack import (
+    SLACK_SOCKET_MODE_DEDUP_HARD_MAX_EVENTS,
     SLACK_SOCKET_MODE_DEDUP_MAX_EVENTS,
     SLACK_SOCKET_MODE_DEDUP_RETRY_WINDOW_SECONDS,
     SLACK_SOCKET_MODE_DEDUP_TTL_SECONDS,
 )
 from gateway.core.storage.events.repository import ABANDONED_CLAIM_SECONDS
+
+logger = logging.getLogger(__name__)
 
 
 class _Handled(NamedTuple):
@@ -36,7 +40,8 @@ class BoundedHandledSlackEventRepository:
     Size eviction drops the oldest entry first, but never one younger than
     ``retry_window_seconds``: Slack may still redeliver that event, and its
     work may still be queued or running. A burst can then exceed the cap
-    until those entries age out of the window.
+    until those entries age out of the window, but never ``hard_max_events``:
+    past that the oldest entries go regardless, so memory stays bounded.
     """
 
     def __init__(
@@ -44,6 +49,7 @@ class BoundedHandledSlackEventRepository:
         *,
         ttl_seconds: float = SLACK_SOCKET_MODE_DEDUP_TTL_SECONDS,
         max_events: int = SLACK_SOCKET_MODE_DEDUP_MAX_EVENTS,
+        hard_max_events: int = SLACK_SOCKET_MODE_DEDUP_HARD_MAX_EVENTS,
         retry_window_seconds: float = SLACK_SOCKET_MODE_DEDUP_RETRY_WINDOW_SECONDS,
         abandoned_after_seconds: float = ABANDONED_CLAIM_SECONDS,
         now: Callable[[], float] = time.monotonic,
@@ -53,7 +59,10 @@ class BoundedHandledSlackEventRepository:
         self._entries: OrderedDict[str, _Handled] = OrderedDict()
         self._ttl = ttl_seconds
         self._max_events = max_events
+        self._hard_max_events = max(hard_max_events, max_events)
         self._retry_window = retry_window_seconds
+        #: When the hard cap last dropped an event Slack could still retry.
+        self._overflow_warned_at: float | None = None
         self._abandoned_after = abandoned_after_seconds
         self._now = now
         self._lock = threading.Lock()
@@ -86,9 +95,23 @@ class BoundedHandledSlackEventRepository:
         while len(self._entries) > self._max_events:
             _oldest_id, oldest = next(iter(self._entries.items()))
             if entry.at - oldest.at < self._retry_window:
-                # Every remaining entry is at least this young; keep them all.
-                return
+                if len(self._entries) <= self._hard_max_events:
+                    # Every remaining entry is at least this young; keep them all.
+                    return
+                self._warn_overflow(entry.at)
             self._entries.popitem(last=False)
+
+    def _warn_overflow(self, now: float) -> None:
+        """Say, at most once per retry window, that a burst outgrew even the hard cap."""
+        warned = self._overflow_warned_at
+        if warned is not None and now - warned < self._retry_window:
+            return
+        self._overflow_warned_at = now
+        logger.warning(
+            "[slack-gateway] more than %d Socket Mode events inside one retry window; "
+            "the oldest are forgotten and a retry of one could run again",
+            self._hard_max_events,
+        )
 
     def _expire(self, now: float) -> None:
         while self._entries:
