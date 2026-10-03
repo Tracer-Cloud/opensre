@@ -80,6 +80,10 @@ def _activity(repo_dir: Path) -> RepoActivity:
     )
 
 
+def _measure_instantly(repo_dir: Path, *, days: int, author: str = "") -> RepoActivity:
+    return _activity(repo_dir)
+
+
 def _without_git(monkeypatch: pytest.MonkeyPatch, measure: Callable[..., RepoActivity]) -> None:
     """Measure checkouts with *measure* and skip the author lookup: no git process runs."""
     monkeypatch.setattr(f"{_SCAN_MODULE}.measure_repo", measure)
@@ -303,11 +307,7 @@ def test_tool_skips_default_folders_unless_started_inside_or_named_as_root(
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setattr("tools.system.workspace_git_scan.tool.sys.platform", "darwin")
     monkeypatch.chdir(tmp_path)
-
-    def measure(repo_dir: Path, *, days: int, author: str = "") -> RepoActivity:
-        return _activity(repo_dir)
-
-    _without_git(monkeypatch, measure)
+    _without_git(monkeypatch, _measure_instantly)
 
     default = scan_local_git_workspace()
     named = scan_local_git_workspace(root=str(home / "Documents"))
@@ -319,6 +319,31 @@ def test_tool_skips_default_folders_unless_started_inside_or_named_as_root(
     assert "Skipped Documents (macOS privacy-protected)" in default["response_text"]
     assert [repo["name"] for repo in named["repos"]] == ["notes"]
     assert sorted(repo["name"] for repo in started_inside["repos"]) == ["app", "notes"]
+
+
+def test_tool_skips_default_folders_whichever_spelling_reaches_home(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # Skip paths are matched against the walk's own spelling of each folder, so a
+    # symlinked home or root must not let the walk into a skipped folder.
+    home = tmp_path / "home"
+    _checkout(home / "code", "app")
+    band_site = _checkout(home / "Music", "band-site")
+    link = tmp_path / "home-link"
+    link.symlink_to(home, target_is_directory=True)
+    monkeypatch.chdir(tmp_path)
+    _without_git(monkeypatch, _measure_instantly)
+
+    monkeypatch.setenv("HOME", str(home))
+    root_through_link = scan_local_git_workspace(root=str(link))
+    monkeypatch.setenv("HOME", str(link))
+    home_through_link = scan_local_git_workspace(root=str(home))
+    monkeypatch.chdir(link / "Music" / band_site.name)
+    started_inside = scan_local_git_workspace()
+
+    assert [repo["name"] for repo in root_through_link["repos"]] == ["app"]
+    assert [repo["name"] for repo in home_through_link["repos"]] == ["app"]
+    assert sorted(repo["name"] for repo in started_inside["repos"]) == ["app", "band-site"]
 
 
 def test_parse_github_remote_accepts_ssh_and_https() -> None:

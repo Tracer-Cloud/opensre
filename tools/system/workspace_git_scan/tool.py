@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import os
 import sys
 from collections.abc import Callable
 from pathlib import Path
@@ -67,7 +66,7 @@ def _progress(context: Any) -> Callable[[str], None] | None:
 
 def _working_directory() -> Path | None:
     try:
-        return Path.cwd()
+        return Path.cwd().resolve()
     except OSError:
         return None
 
@@ -122,8 +121,10 @@ def scan_local_git_workspace(
     A cancelled scan returns ``cancelled: True`` and renders nothing.
     """
     window = min(max(int(days or _DEFAULT_DAYS), 1), _MAX_DAYS)
-    home = Path.home()
-    scan_root = Path(os.path.abspath(Path(root).expanduser())) if root else home
+    # Skip paths match the walk's spelling of each folder, so home, the root and
+    # the working directory are all compared in their resolved form.
+    home = Path.home().resolve()
+    scan_root = Path(root).expanduser().resolve() if root else home
     if not scan_root.is_dir():
         return {
             "source": "system",
