@@ -293,6 +293,67 @@ async def test_detached_goal_control_write_failure_keeps_the_shell_open(
     assert len(release_callbacks) == 1
 
 
+@pytest.mark.asyncio
+async def test_detached_goal_control_write_failure_survives_an_immediate_exit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from core.agent_harness.spi.cancel import HostCancelReason
+
+    controller = _controller()
+    release_callbacks: list[object] = []
+    deferred_closes: list[tuple[object, object, object]] = []
+
+    def _capture_after_worker(_runtime: object, callback: object) -> None:
+        release_callbacks.append(callback)
+
+    def _fail_to_persist(_reason: object) -> str:
+        raise OSError("disk full")
+
+    def _capture_deferred_close(
+        session: object,
+        fallback_goal_control: object,
+        exit_command: object,
+    ) -> None:
+        deferred_closes.append((session, fallback_goal_control, exit_command))
+
+    monkeypatch.setattr(
+        type(controller.turn_runtime), "has_live_turn_worker", lambda _runtime: True
+    )
+    monkeypatch.setattr(
+        type(controller.turn_runtime), "run_after_turn_worker", _capture_after_worker
+    )
+    monkeypatch.setattr(controller, "_persist_goal_control_for_resume", _fail_to_persist)
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.controller.close_repl_session_after_detached_worker",
+        _capture_deferred_close,
+    )
+    monkeypatch.setattr(
+        "surfaces.interactive_shell.controller.finish_shell_exit",
+        lambda _session, _console: None,
+    )
+
+    assert await controller._handle_input_action(
+        RunInflightControl(
+            control=InflightControl.CLEAR_GOAL,
+            submitted_text="/goal clear",
+        )
+    )
+    assert not await controller._handle_input_action(
+        RunInflightControl(
+            control=InflightControl.EXIT_SHELL,
+            submitted_text="/exit",
+        )
+    )
+
+    await controller._shutdown_runtime()
+
+    assert len(release_callbacks) == 2
+    callback = release_callbacks[-1]
+    assert callable(callback)
+    callback()
+    assert deferred_closes == [(controller.session, HostCancelReason.GOAL_CLEAR, "/exit")]
+
+
 def test_goal_control_boundary_write_failure_does_not_stop_the_queue(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

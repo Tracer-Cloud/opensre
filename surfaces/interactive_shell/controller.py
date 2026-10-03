@@ -240,6 +240,7 @@ class InteractiveShellController:
         self._finish_exit_on_shutdown = False
         self._inflight_exit_command: str | None = None
         self._deferred_session_close_registered = False
+        self._unsaved_detached_goal_control: HostCancelReason | None = None
 
     async def start_interactive_shell(self) -> None:
         with _alert_listener(self.config, self.service_console, existing=self.inbox) as inbox:
@@ -343,6 +344,9 @@ class InteractiveShellController:
             # The requested sidecar record remains unacknowledged and restore
             # will retry it.  Do not race the worker by applying it early.
             log.warning("Could not finalize detached goal control", exc_info=True)
+        else:
+            if self._unsaved_detached_goal_control is reason:
+                self._unsaved_detached_goal_control = None
 
     async def _handle_input_action(self, action: InputAction) -> bool:
         match action:
@@ -390,6 +394,7 @@ class InteractiveShellController:
                         # turn a typed goal control into an unexpected shell exit.
                         log.warning("Could not save detached goal control", exc_info=True)
                         control_id = None
+                        self._unsaved_detached_goal_control = reason
                     self.turn_runtime.run_after_turn_worker(
                         functools.partial(
                             self._finalize_detached_goal_control,
@@ -458,7 +463,7 @@ class InteractiveShellController:
             self._ci_fix_status_cleanup()
             self._ci_fix_status_cleanup = None
         active_turn = self.state.current_task
-        detached_goal_control: HostCancelReason | None = None
+        detached_goal_control = self._unsaved_detached_goal_control
         detached_goal_control_saved = False
         detached_exit_command: str | None = None
         self.state.request_exit()
@@ -477,7 +482,7 @@ class InteractiveShellController:
             except TimeoutError:
                 log.warning("In-flight exit turn did not drain before shutdown")
                 self.state.mark_turn_worker_detached()
-                detached_goal_control = self.state.requested_goal_control()
+                detached_goal_control = self.state.requested_goal_control() or detached_goal_control
                 if detached_goal_control is not None:
                     try:
                         self._persist_goal_control_for_resume(detached_goal_control)
@@ -508,6 +513,8 @@ class InteractiveShellController:
         shutdown_loop_scheduler()
         if self.turn_runtime.has_live_turn_worker():
             self.state.mark_turn_worker_detached()
+        if detached_goal_control is None:
+            detached_goal_control = self._unsaved_detached_goal_control
         if self._finish_exit_on_shutdown:
             self._finish_exit_on_shutdown = False
             if self._inflight_exit_command is not None:
