@@ -148,6 +148,13 @@ class TerminalSession:
     Set by ``ask_user_choice`` (and the ``/choose`` pick). Cleared when the
     submitted prompt is painted so the answer uses the brand colour."""
 
+    handoff_recap_text: str | None = None
+    """The auto-submitted ``/choose`` answer whose Ask User card is already painted.
+
+    ``/choose`` prints the recap of every question it asked, so the same answer
+    must not paint a second card when it is submitted. Matched by exact text and
+    cleared when the submitted prompt is painted."""
+
     setup_resume: SetupResume | None = None
     """The user turn parked behind an integration setup, resubmitted once setup succeeds.
 

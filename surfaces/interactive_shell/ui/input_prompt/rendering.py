@@ -97,8 +97,10 @@ def render_submitted_prompt(console: Console, session: Session, text: str) -> No
     # would then paint every ordinary follow-up as a brand-coloured answer.
     is_handoff_answer = bool(session.terminal.awaiting_handoff_answer)
     session.terminal.awaiting_handoff_answer = False
+    recap_painted = session.terminal.handoff_recap_text == stripped
+    session.terminal.handoff_recap_text = None
     ask_user_pairs = parse_ask_user_answers(stripped) if is_handoff_answer else []
-    if len(ask_user_pairs) >= 2:
+    if len(ask_user_pairs) >= 2 and not recap_painted:
         # Keep the Ask User block in the transcript (Q white, A brand). Claim the
         # turn number so the next prompt still advances; do not paint a fake
         # ``[N] ❯`` — leave this as the Ask User card.

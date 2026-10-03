@@ -399,6 +399,8 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
         return _show_queued_menu(session, console)
     session.terminal.set_auto_command(answer)
     session.terminal.awaiting_handoff_answer = True
+    # ``render_choice_selections`` above already painted this answer's card.
+    session.terminal.handoff_recap_text = answer.strip()
     return True
 
 

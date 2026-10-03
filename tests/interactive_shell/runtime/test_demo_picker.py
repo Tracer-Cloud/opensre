@@ -50,6 +50,7 @@ from core.agent_harness.turns.turn_snapshot import TurnSnapshot
 from integrations.store import resolve_store_path, upsert_integration
 from surfaces.interactive_shell.runtime.action_turn import run_action_tool_turn
 from surfaces.interactive_shell.session import Session
+from surfaces.interactive_shell.ui.input_prompt.rendering import render_submitted_prompt
 from surfaces.shared.terminal.components import choice_menu, cpr_stdin
 from tests.core.agent.orchestration.action_execution_test_harness import (
     FakeActionLLM,
@@ -592,6 +593,65 @@ def test_automation_group_submits_the_follow_up_leaf_not_the_group(
         f"  3.  {DEMO_REPO_PERMISSION_TITLE}",
         f"      {create}",
     ]
+
+
+@pytest.mark.parametrize("leaf", [LOCAL_REPAIR_OPTION, CLOUD_REPAIR_OPTION])
+@pytest.mark.parametrize("create", [True, False])
+def test_a_repair_pick_with_permission_paints_one_ask_user_card(
+    monkeypatch: pytest.MonkeyPatch,
+    onboarding_outcomes: list[tuple[str, bool | None]],
+    leaf: str,
+    create: bool,
+) -> None:
+    """``/choose`` paints the recap; submitting that same answer must not paint another."""
+    del onboarding_outcomes
+    _offerable(monkeypatch)
+    monkeypatch.setenv(GITHUB_TOKEN_ENV, "ghp_ready")
+    session = Session()
+    session.active_skill = ONBOARDING_SKILL_NAME
+    session.pending_user_choice = PendingUserChoice(title=_TITLE, options=OUTCOME_MENU_OPTIONS)
+    create_option = "Create acme/opensre-ci-repair-demo-ab12"
+    monkeypatch.setattr(choice_prompt, "_demo_create_option", lambda: create_option)
+    picks = {
+        _TITLE: AUTOMATION_GROUP_OPTION,
+        AUTOMATION_MENU_TITLE: leaf,
+        DEMO_REPO_PERMISSION_TITLE: create_option if create else DEMO_REPO_DECLINE_OPTION,
+    }
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", lambda **kwargs: picks[kwargs["title"]])
+    output = io.StringIO()
+    console = Console(file=output, force_terminal=False, highlight=False, width=120)
+
+    choice_prompt._cmd_choose(session, console, [])
+    answer = _take_prompt(session)
+    # What the prompt loop does with the queued answer.
+    session.terminal.last_input_autosubmitted = True
+    render_submitted_prompt(console, session, answer)
+
+    lines = [line.strip() for line in output.getvalue().splitlines()]
+    assert lines.count("Ask User") == 1
+    assert session.terminal.handoff_recap_text is None
+
+
+def test_a_typed_ask_user_answer_still_paints_its_card(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Only the exact answer ``/choose`` already recapped skips its card."""
+    del monkeypatch
+    session = Session()
+    session.terminal.awaiting_handoff_answer = True
+    session.terminal.handoff_recap_text = "an earlier, replaced answer"
+    pending = PendingUserChoice(title=_TITLE, options=OUTCOME_MENU_OPTIONS)
+    permission = AskUserQuestion(
+        label="Demo repository", title=DEMO_REPO_PERMISSION_TITLE, options=("Create demo",)
+    )
+    answer = format_ask_user_answers(
+        (pending.items()[0], permission), (LOCAL_REPAIR_OPTION, "Create demo")
+    )
+    output = io.StringIO()
+
+    render_submitted_prompt(
+        Console(file=output, force_terminal=False, highlight=False, width=120), session, answer
+    )
+
+    assert [line.strip() for line in output.getvalue().splitlines()].count("Ask User") == 1
 
 
 def test_without_github_the_local_repair_demo_asks_for_setup_before_its_repository(
