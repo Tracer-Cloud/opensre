@@ -1284,6 +1284,7 @@ def test_only_the_pull_request_this_account_seeded_here_is_scheduled_as_the_demo
 
     # Assert: only the exact seeded pull request gets the demo's waits and scope
     assert [run.fast_checks for run in runs] == [True, False, False, False]
+    assert [run.seeded_head for run in runs] == ["head-sha", "", "", ""]
 
 
 def _repair_on_the_second_attempt(
@@ -1583,7 +1584,7 @@ def test_a_repository_named_like_the_demo_keeps_the_normal_check_wait() -> None:
     from integrations.github.tools.ci_repair_loop import worker
 
     run = _run(pr_number=1).model_copy(update={"repo": "opensre-ci-repair-demo-g0xd"})
-    assert worker._check_wait(run) == {}
+    assert worker._check_wait(run, "head") == {}
 
 
 @pytest.mark.parametrize(
@@ -1629,6 +1630,50 @@ def test_seeded_demo_repair_may_change_only_calculator(
 
     assert seen["allowed_paths"] == allowed_paths
     assert run.checks_passed and run.fixed_sha == "fixed"
+
+
+@pytest.mark.parametrize(
+    ("head", "pushed", "demo"),
+    [("seeded", [], True), ("own-push", ["own-push"], True), ("theirs", [], False)],
+    ids=["seeded-head", "commit-this-run-pushed", "someone-elses-commit"],
+)
+def test_demo_only_behavior_follows_the_seeded_head_chain(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, head: str, pushed: list[str], demo: bool
+) -> None:
+    """A commit from anyone else on the seeded PR gets the ordinary repair, not the demo scope."""
+    from integrations.github.tools.ci_repair_loop import worker
+
+    store = RepairStore(tmp_path)
+    run = _run(pr_number=1).model_copy(
+        update={
+            "repo": "opensre-ci-repair-demo-g0xd",
+            "fast_checks": True,
+            "seeded_head": "seeded",
+            "pushed_shas": list(pushed),
+        }
+    )
+    store.directory(run.id).mkdir()
+    seen: dict[str, Any] = {}
+
+    def repair(**kwargs: Any) -> dict[str, Any]:
+        seen.update(kwargs)
+        return {"success": True, "checks_state": "passed", "fix_head_sha": "fixed"}
+
+    def pr(_run: RepairRun, _token: str) -> dict[str, Any]:
+        return {
+            "state": "OPEN",
+            "headRefOid": "fixed" if seen else head,
+            "statusCheckRollup": [{"conclusion": "SUCCESS" if seen else "FAILURE"}],
+        }
+
+    monkeypatch.setattr(worker, "run_ci_fix", repair)
+    monkeypatch.setattr(worker, "record_ci_fix_outcome", lambda _output: None)
+    monkeypatch.setattr(worker, "_read_pr", pr)
+    worker._repair(run, store, "test-token")
+
+    assert seen["allowed_paths"] == (frozenset({"calculator.py"}) if demo else None)
+    assert ("registration_seconds" in seen) is demo
+    assert run.checks_passed
 
 
 def test_demo_verification_keeps_waiting_while_checks_are_empty_or_running(

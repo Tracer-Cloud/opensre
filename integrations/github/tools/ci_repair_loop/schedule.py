@@ -132,13 +132,15 @@ def schedule_repair(
     # Looked up before any lock; an active run is still returned as is, even if
     # its PR has closed meanwhile, and a refused PR is never written to the store.
     refusal, head = _refusal_for(GitHubRestClient(token), owner, repo, pr_number)
+    seeded_demo = fast_checks or was_seeded_here(actor_id, owner, repo, pr_number, head)
     candidate = RepairRun(
         id=uuid.uuid4().hex[:12],
         owner=owner,
         repo=repo,
         actor=actor,
         actor_id=actor_id,
-        fast_checks=fast_checks or was_seeded_here(actor_id, owner, repo, pr_number, head),
+        fast_checks=seeded_demo,
+        seeded_head=head if seeded_demo else "",
         remote=scheduler_in_process,
         started_at=started,
         deadline=started + CI_REPAIR_SECONDS,

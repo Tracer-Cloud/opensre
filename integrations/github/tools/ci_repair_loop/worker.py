@@ -56,23 +56,25 @@ class _CheckWait(TypedDict, total=False):
     poll_interval_seconds: int
 
 
-def _demo_repository(run: RepairRun) -> bool:
-    """True for a demo PR this process seeded and then scheduled.
+def _demo_repository(run: RepairRun, head: str) -> bool:
+    """True while a seeded demo PR's head is its seeded commit or one this run pushed.
 
     ``run.fast_checks`` is set only for a pull request this process seeded, never
     from a repository name. The demo holds one known workflow and one file the
-    repair may change.
+    repair may change; a commit from anyone else gets the ordinary repair.
     """
-    return run.fast_checks
+    if not run.fast_checks:
+        return False
+    return not run.seeded_head or head == run.seeded_head or head in run.pushed_shas
 
 
-def _check_wait(run: RepairRun) -> _CheckWait:
+def _check_wait(run: RepairRun, head: str) -> _CheckWait:
     """Check-wait limits. A demo returns as soon as the head's run is terminal.
 
     The 60-second registration and 30-second settle windows are for a real
     repository's unknown checks.
     """
-    if not _demo_repository(run):
+    if not _demo_repository(run, head):
         return {}
     return {
         "registration_seconds": _DEMO_REGISTRATION_SECONDS,
@@ -117,7 +119,9 @@ def _verify_green(run: RepairRun, pr: dict[str, Any], token: str) -> bool:
         failing_checks=(),
         task="Verify the selected PR head.",
     )
-    result = wait_for_pr_checks(ctx, github_token=token, expected_head_sha=sha, **_check_wait(run))
+    result = wait_for_pr_checks(
+        ctx, github_token=token, expected_head_sha=sha, **_check_wait(run, sha)
+    )
     if result.state is CheckState.FAILED:
         return False
     if result.state is CheckState.PASSED:
@@ -169,9 +173,9 @@ def _repair(run: RepairRun, store: RepairStore, token: str) -> None:
             pr_number=run.pr_number,
             workspace=run.workspace,
             github_token=token,
-            allowed_paths=frozenset({"calculator.py"}) if _demo_repository(run) else None,
+            allowed_paths=frozenset({"calculator.py"}) if _demo_repository(run, head) else None,
             expected_source_head_sha=head,
-            **_check_wait(run),
+            **_check_wait(run, head),
         )
         diagnostic = store.directory(run.id) / f"attempt-{run.attempts}.json"
         diagnostic.write_text(json.dumps(output, indent=2), encoding="utf-8")
