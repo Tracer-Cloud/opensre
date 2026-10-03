@@ -29,7 +29,7 @@ from infrastructure.scheduling.scheduler.sources import (
     SCHEDULED_SENTRY_MORNING_DIGEST,
     SCHEDULED_SENTRY_UPTIME_WATCH,
 )
-from infrastructure.scheduling.scheduler.storage import update_task
+from infrastructure.scheduling.scheduler.storage import record_task_skill_pin
 from infrastructure.scheduling.scheduler.types import ScheduledTask, TaskKind
 
 logger = logging.getLogger(__name__)
@@ -248,10 +248,11 @@ def _build_recurring_skill(task: ScheduledTask, runners: SchedulerRunners) -> st
 def _record_followed_revision(task: ScheduledTask, revision: str) -> None:
     """Store the pin of a skill edit the schedule followed, and report the change."""
     previous = task.skill_revision
+    saved = record_task_skill_pin(task, skill_name=task.skill_name, skill_revision=revision)
     task.skill_revision = revision
-    if not update_task(task):
+    if not saved:
         logger.warning(
-            "Recurring skill task %s is not in the task store; running with an unsaved pin.",
+            "Recurring skill task %s changed or is missing; running with an unsaved pin.",
             task.id,
         )
         return
@@ -271,11 +272,12 @@ def _migrate_renamed_skill(task: ScheduledTask) -> None:
     """
     previous = task.skill_name
     skill_name, skill_revision = pin_recurring_skill(normalize_skill_name(previous))
+    saved = record_task_skill_pin(task, skill_name=skill_name, skill_revision=skill_revision)
     task.skill_name = skill_name
     task.skill_revision = skill_revision
-    if not update_task(task):
+    if not saved:
         logger.warning(
-            "Recurring skill task %s (%s -> %s) is not in the task store; running unmigrated.",
+            "Recurring skill task %s (%s -> %s) changed or is missing; running unmigrated.",
             task.id,
             previous,
             skill_name,

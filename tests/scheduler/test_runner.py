@@ -191,7 +191,7 @@ class TestScheduledConcurrency:
         run_at = datetime.now(UTC) - timedelta(minutes=5)
         monkeypatch.setattr(runner, "list_tasks", lambda: list(tasks.values()))
         monkeypatch.setattr(runner, "get_task", tasks.get)
-        monkeypatch.setattr(runner, "update_task", lambda _task: None)
+        monkeypatch.setattr(runner, "record_task_next_run", lambda _task, _next_run: True)
         monkeypatch.setattr(runner, "record_task_success", lambda _task_id: None)
         monkeypatch.setattr(runner, "_make_trigger", lambda _task: DateTrigger(run_date=run_at))
         first_wave = threading.Barrier(limit + 1)
@@ -488,8 +488,8 @@ class TestRegisterJobs:
             _make_date_trigger,
         )
         monkeypatch.setattr(
-            "infrastructure.scheduling.scheduler.runner.update_task",
-            lambda _task: None,
+            "infrastructure.scheduling.scheduler.runner.record_task_next_run",
+            lambda _task, _next_run: True,
         )
         monkeypatch.setattr(
             "infrastructure.scheduling.scheduler.runner.execute_task",
@@ -940,7 +940,7 @@ def test_real_scheduler_recovers_pending_after_restart(
     assert try_queue_run(task.id, fire_time)
     monkeypatch.setattr(runner, "list_tasks", lambda: [task])
     monkeypatch.setattr(runner, "get_task", lambda _id: task)
-    monkeypatch.setattr(runner, "update_task", lambda _task: None)
+    monkeypatch.setattr(runner, "record_task_next_run", lambda _task, _next_run: True)
     monkeypatch.setattr(runner, "record_task_success", lambda _task_id: None)
     future = datetime.now(UTC) + timedelta(days=1)
     monkeypatch.setattr(runner, "_make_trigger", lambda _task: DateTrigger(run_date=future))

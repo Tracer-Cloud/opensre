@@ -13,6 +13,7 @@ import os
 import signal
 import threading
 from collections.abc import Callable
+from contextlib import suppress
 from datetime import UTC, datetime
 from typing import Any, cast
 
@@ -42,10 +43,10 @@ from infrastructure.scheduling.scheduler.storage import (
     get_recoverable_runs,
     get_task,
     list_tasks,
+    record_task_next_run,
     record_task_success,
     try_claim,
     try_queue_run,
-    update_task,
 )
 from infrastructure.scheduling.scheduler.types import (
     Provider,
@@ -327,56 +328,63 @@ def _register_jobs(
     task_filter: TaskFilter | None = None,
 ) -> int:
     """Register all enabled tasks on *scheduler*; invalid tasks are logged and skipped."""
+    from apscheduler.jobstores.base import JobLookupError
+
     enabled_count = 0
     now = datetime.now(UTC)
-    for task in list_tasks():
-        if not task.enabled:
-            continue
-        if task_filter is not None and not task_filter(task):
-            continue
-        try:
-            trigger = _make_trigger(task)
-        except ValueError as exc:
-            logger.error("Skipping task %s: %s", task.id, exc)
-            continue
-        immediate = _immediate_ci_repair_fire(task, now)
-        job_kwargs: dict[str, Any] = {}
-        next_run: str | None
-        if immediate is not None:
-            # Keep the stored due time. The cron trigger would replace it with the
-            # next */30 slot, and a resync would lose the first immediate fire.
-            next_run = immediate.isoformat()
-            job_kwargs["next_run_time"] = immediate
-        else:
-            next_run = _next_run_from_trigger(trigger)
-            if task.next_run != next_run:
-                task.next_run = next_run
-                update_task(task)
+    for snapshot in list_tasks():
+        task: ScheduledTask | None = snapshot
+        while task is not None:
+            if not task.enabled:
+                break
+            if task_filter is not None and not task_filter(task):
+                break
+            try:
+                trigger = _make_trigger(task)
+            except ValueError as exc:
+                logger.error("Skipping task %s: %s", task.id, exc)
+                break
+            immediate = _immediate_ci_repair_fire(task, now)
+            job_kwargs: dict[str, Any] = {}
+            next_run: str | None
+            if immediate is not None:
+                # Preserve the first immediate CI repair fire across reloads.
+                next_run = immediate.isoformat()
+                job_kwargs["next_run_time"] = immediate
+            else:
+                next_run = _next_run_from_trigger(trigger)
+            if not record_task_next_run(task, next_run):
+                with suppress(JobLookupError):
+                    scheduler.remove_job(task.id)
+                task = get_task(task.id)
+                continue
+            task.next_run = next_run
 
-        scheduler.add_job(
-            _scheduled_job,
-            trigger=trigger,
-            args=[task.id, runners],
-            id=task.id,
-            name=f"{task.kind.value}:{task.id}",
-            replace_existing=True,
-            misfire_grace_time=None,
-            max_instances=1,
-            **job_kwargs,
-        )
-        enabled_count += 1
-        record_scheduler_task_operation(
-            "scheduler_job_registered",
-            task,
-            extra={"next_run": next_run},
-        )
-        logger.info(
-            "Registered task %s (%s) with cron=%s tz=%s",
-            task.id,
-            task.kind,
-            task.cron,
-            task.timezone,
-        )
+            scheduler.add_job(
+                _scheduled_job,
+                trigger=trigger,
+                args=[task.id, runners],
+                id=task.id,
+                name=f"{task.kind.value}:{task.id}",
+                replace_existing=True,
+                misfire_grace_time=None,
+                max_instances=1,
+                **job_kwargs,
+            )
+            enabled_count += 1
+            record_scheduler_task_operation(
+                "scheduler_job_registered",
+                task,
+                extra={"next_run": next_run},
+            )
+            logger.info(
+                "Registered task %s (%s) with cron=%s tz=%s",
+                task.id,
+                task.kind,
+                task.cron,
+                task.timezone,
+            )
+            break
     return enabled_count
 
 
@@ -399,12 +407,12 @@ def resync_scheduler_jobs(
     task_filter: TaskFilter | None = None,
 ) -> int:
     """Replace registered jobs on a live scheduler with the current task store."""
-    existing_ids = {job.id for job in scheduler.get_jobs()}
     enabled_count = _register_jobs(
         scheduler,
         runners,
         task_filter=task_filter,
     )
+    existing_ids = {job.id for job in scheduler.get_jobs()}
     desired_ids = _desired_task_ids(task_filter=task_filter)
     for job_id in existing_ids - desired_ids - {_RECOVERY_JOB_ID}:
         try:

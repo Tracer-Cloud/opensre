@@ -8,7 +8,7 @@ import logging
 import os
 import tempfile
 import time
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -176,6 +176,19 @@ def _save_raw(store_path: Path, data: list[dict[str, object]]) -> None:
         raise
 
 
+def _save_migrated_tasks(path: Path, raw: list[dict[str, object]]) -> None:
+    """Persist normalized legacy rows, retaining in-memory use on write failure."""
+    try:
+        _save_raw(path, raw)
+    except OSError:
+        logger.warning(
+            "Could not persist migrated legacy scheduler tasks at %s; "
+            "using the migrated definitions for this process",
+            path,
+            exc_info=True,
+        )
+
+
 def get_task_store_snapshot(
     store_path: Path | None = None, *, lock_timeout_seconds: float | None = None
 ) -> TaskStoreSnapshot:
@@ -186,15 +199,7 @@ def get_task_store_snapshot(
     with lock:
         raw, complete, missing = _read_raw(path)
         if complete and migrate_legacy_task_entries(raw):
-            try:
-                _save_raw(path, raw)
-            except OSError:
-                logger.warning(
-                    "Could not persist migrated legacy scheduler tasks at %s; "
-                    "using the migrated definitions for this process",
-                    path,
-                    exc_info=True,
-                )
+            _save_migrated_tasks(path, raw)
     tasks: list[ScheduledTask] = []
     for entry in raw:
         try:
@@ -366,6 +371,66 @@ def _job_registration_changed(previous: dict[str, object], updated: dict[str, ob
     )
 
 
+def _record_task_fields(
+    task_id: str,
+    fields: Mapping[str, object],
+    matches: Callable[[ScheduledTask], bool],
+    store_path: Path | None,
+) -> bool:
+    path = store_path or default_task_store_path()
+    with FileLock(_lock_path(path)):
+        raw = _load_raw(path)
+        migrated = migrate_legacy_task_entries(raw)
+        for entry in raw:
+            if entry.get("id") != task_id:
+                continue
+            if not matches(ScheduledTask.model_validate(entry)):
+                return False
+            changed = any(entry.get(key) != value for key, value in fields.items())
+            entry.update(fields)
+            if migrated:
+                _save_migrated_tasks(path, raw)
+            elif changed:
+                _save_raw(path, raw)
+            return True
+    return False
+
+
+def record_task_next_run(
+    task: ScheduledTask, next_run: str | None, store_path: Path | None = None
+) -> bool:
+    """Update only ``next_run`` if the task is enabled and its trigger is unchanged."""
+    expected = task.model_dump(mode="json")
+
+    def matches(current: ScheduledTask) -> bool:
+        return current.enabled and not _job_registration_changed(
+            current.model_dump(mode="json"), expected
+        )
+
+    return _record_task_fields(task.id, {"next_run": next_run}, matches, store_path)
+
+
+def record_task_skill_pin(
+    task: ScheduledTask,
+    *,
+    skill_name: str,
+    skill_revision: str,
+    store_path: Path | None = None,
+) -> bool:
+    """Update only the skill pin if the task's kind and previous pin still match."""
+    expected = (task.kind, task.skill_name, task.skill_revision)
+
+    def matches(current: ScheduledTask) -> bool:
+        return (current.kind, current.skill_name, current.skill_revision) == expected
+
+    return _record_task_fields(
+        task.id,
+        {"skill_name": skill_name, "skill_revision": skill_revision},
+        matches,
+        store_path,
+    )
+
+
 def record_task_success(task_id: str, store_path: Path | None = None) -> bool:
     """Update completion fields on the latest task while preserving user edits."""
     path = store_path or default_task_store_path()
@@ -389,6 +454,8 @@ __all__ = [
     "get_task",
     "get_task_store_snapshot",
     "list_tasks",
+    "record_task_next_run",
+    "record_task_skill_pin",
     "record_task_success",
     "remove_task",
     "update_task",
