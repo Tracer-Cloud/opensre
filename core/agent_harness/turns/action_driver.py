@@ -345,9 +345,9 @@ def _closing_tool_chunks(chunks: Sequence[str], *, include_outcome: bool) -> lis
 def _visible_closing_text(chunks: Sequence[str]) -> str:
     """Cap bulky tool text without letting it push the outcome report off screen.
 
-    The report and the other text are capped separately. A long result before
-    the report cannot hide it, and a long report still previews instead of
-    filling the terminal.
+    The report and each other result are capped on their own. A long log cannot
+    hide the report or a later cleanup line, and a long report still previews
+    instead of filling the terminal.
     """
     outcome = ""
     others: list[str] = []
@@ -361,10 +361,16 @@ def _visible_closing_text(chunks: Sequence[str]) -> str:
         # Cap the report on its own so a long reason list previews, and so a
         # long sibling result cannot push the report past the display cap.
         parts.append(cap_for_display(outcome))
-    if others:
-        capped = cap_for_display("\n".join(others))
+    # Cap each sibling on its own. Joining them first lets a long log consume
+    # the preview and drop a later cleanup or error. One newline between
+    # siblings matches the unsplit tool preview.
+    siblings: list[str] = []
+    for chunk in others:
+        capped = cap_for_display(chunk)
         if capped:
-            parts.append(capped)
+            siblings.append(capped)
+    if siblings:
+        parts.append("\n".join(siblings))
     return "\n\n".join(parts)
 
 

@@ -766,6 +766,46 @@ def test_a_long_result_before_the_snapshot_does_not_hide_the_outcome() -> None:
     assert shown.count("**Outcome:**") == 1
 
 
+def test_cleanup_stays_visible_when_a_long_log_precedes_it() -> None:
+    """A long log must not consume the preview that the cleanup confirmation needs.
+
+    Quiet mode stashes the action log, so this fallback is the only copy.
+    """
+    long_summary = "\n".join(f"log line {index}" for index in range(40))
+    cleanup = "Saved demo evidence and removed the scheduled repair."
+    result = _Result(
+        tool_results=[
+            (
+                ToolCall(id="1", name="github_cli", input={}),
+                _ToolResult({"ok": True, "stdout": long_summary}),
+            ),
+            (
+                ToolCall(id="2", name="schedule_ci_repair_loop", input={}),
+                _ToolResult(_payload(_outcome("queued. Waiting for the scheduled tick."))),
+            ),
+            (
+                ToolCall(id="3", name="get_ci_repair_loop", input={}),
+                _ToolResult(_payload(_outcome("succeeded. The repair commit passed CI."))),
+            ),
+            (
+                ToolCall(id="4", name="finish_ci_repair_demo", input={}),
+                _ToolResult(_payload(cleanup)),
+            ),
+        ]
+    )
+    session = _Session()
+    session.terminal.inline_tool_results = True  # type: ignore[attr-defined]
+
+    _response_text, display_chunks, _use_final_text = _compose_response(result, session, _counts(4))
+    shown = "\n".join(display_chunks)
+
+    assert "The repair commit passed CI" in shown
+    assert cleanup in shown
+    assert "Waiting for the scheduled tick" not in shown
+    assert "log line 39" not in shown
+    assert shown.count("**Outcome:**") == 1
+
+
 def test_a_long_outcome_report_is_capped() -> None:
     """A long reason list previews; it does not fill the terminal."""
     lines = ["- **Outcome:** succeeded. The repair commit passed CI."]
