@@ -286,7 +286,9 @@ def test_the_skill_starts_when_its_check_passes_or_cannot_run(
     assert session.active_skill == _GATED
     assert session.pending_user_choice is None
     assert pending_setup_resume(session) is None
-    assert analytics == [("skill_executed", {"skill_name": _GATED, "entrypoint": "host"})]
+    [(event, properties)] = analytics
+    assert event == "skill_executed"
+    assert (properties["skill_name"], properties["entrypoint"]) == (_GATED, "host")
 
 
 def test_unavailable_menu_leaves_the_model_to_ask_in_text(demo_catalog: Path) -> None:

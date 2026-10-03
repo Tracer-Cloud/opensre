@@ -531,6 +531,8 @@ def test_automation_group_submits_the_follow_up_leaf_not_the_group(
     the permission, not the group row.
     """
     _offerable(monkeypatch)
+    # GitHub is ready, so the local repair demo needs no setup first.
+    monkeypatch.setenv(GITHUB_TOKEN_ENV, "ghp_ready")
     session = Session()
     session.active_skill = ONBOARDING_SKILL_NAME
     pending = PendingUserChoice(title=_TITLE, options=OUTCOME_MENU_OPTIONS)
@@ -586,6 +588,50 @@ def test_automation_group_submits_the_follow_up_leaf_not_the_group(
         f"  3.  {DEMO_REPO_PERMISSION_TITLE}",
         f"      {create}",
     ]
+
+
+def test_without_github_the_local_repair_demo_asks_for_setup_before_its_repository(
+    monkeypatch: pytest.MonkeyPatch,
+    onboarding_outcomes: list[tuple[str, bool | None]],
+) -> None:
+    """GitHub setup comes before the demo-repository question, not after it.
+
+    The question names a repository in the user's GitHub account, and the demo
+    behind it cannot start without a token; the leaf answer is parked so the
+    demo resumes once GitHub is connected.
+    """
+    _offerable(monkeypatch)
+    _no_github_token(monkeypatch)
+    session = Session()
+    session.resolved_integrations_cache = {}
+    session.active_skill = ONBOARDING_SKILL_NAME
+    pending = PendingUserChoice(title=_TITLE, options=OUTCOME_MENU_OPTIONS)
+    session.pending_user_choice = pending
+    titles: list[str] = []
+
+    def no_repository_question() -> str:
+        raise AssertionError("the demo-repository question must wait for GitHub setup")
+
+    def pick(**kwargs: Any) -> str:
+        titles.append(kwargs["title"])
+        if kwargs["title"] == "Connect GitHub to continue":
+            return "Set up GitHub on this machine"
+        if kwargs["title"] == AUTOMATION_MENU_TITLE:
+            return LOCAL_REPAIR_OPTION
+        return AUTOMATION_GROUP_OPTION
+
+    monkeypatch.setattr(choice_prompt, "_demo_create_option", no_repository_question)
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", pick)
+
+    choice_prompt._cmd_choose(session, Console(file=io.StringIO()), [])
+
+    assert titles == [_TITLE, AUTOMATION_MENU_TITLE, "Connect GitHub to continue"]
+    assert _take_prompt(session) == "/integrations setup github"
+    parked = pending_setup_resume(session)
+    assert parked is not None
+    assert parked.text == format_ask_user_answers(pending.items(), (LOCAL_REPAIR_OPTION,))
+    assert parked.skill == "scheduling-github-ci-repairs"
+    assert onboarding_outcomes == [("ci_agent", False)]
 
 
 def test_automation_follow_up_escape_cancels_without_an_answer(

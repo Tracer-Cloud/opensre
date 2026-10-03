@@ -11,6 +11,8 @@ as the next user message so the agent receives the decision verbatim.
 
 from __future__ import annotations
 
+from types import MappingProxyType
+
 from rich.console import Console
 from rich.markup import escape
 
@@ -24,6 +26,7 @@ from config.constants.skills import (
     AUTOMATION_MENU_TITLE,
     DEMO_REPO_DECLINE_OPTION,
     DEMO_REPO_PERMISSION_TITLE,
+    ONBOARDING_LEAF_CHOICES,
     ONBOARDING_SKILL_NAME,
     REPAIR_MENU_OPTIONS,
     SKIP_DEMO_OPTION,
@@ -64,12 +67,16 @@ from surfaces.shared.terminal.components.choice_menu import (
     repl_tty_interactive,
 )
 from tools.interactive_shell.actions.skill_prerequisite_gate import (
+    hold_for_setup,
     is_prerequisite_menu,
     parse_prerequisite_action,
+    setup_needed,
 )
 
 _CANCELLED = "Selection cancelled — type a reply instead."
 _CHOOSE_COMMAND = "/choose"
+# Onboarding leaf label -> the demo skill it starts.
+_DEMO_BY_LEAF = MappingProxyType({label: name for name, label in ONBOARDING_LEAF_CHOICES})
 _DEMO_SKIPPED = "Opened the shell — type a request, or /demo to come back to the menu."
 _DEMO_UNAVAILABLE = "Guided demo selection is unavailable here — request a task directly."
 
@@ -168,12 +175,25 @@ def _answer_prerequisite_menu(
         label = prerequisite_service_label(service)
         _leave_menu(session, console, PREREQUISITE_SKIPPED_NOTE.format(service=label))
     elif step is MenuStep.ASK_AGAIN:
-        # A second autosubmitted ``/choose`` starts the prompt, which blocks in
-        # a raw read, so that menu would never paint. This turn owns stdin.
-        if session.terminal.pending_prompt_default == _CHOOSE_COMMAND:
-            clear_pending_autosubmit(session)
-        return _cmd_choose(session, console, [])
+        return _show_queued_menu(session, console)
     return True
+
+
+def _show_queued_menu(session: Session, console: Console) -> bool:
+    """Show a menu queued from inside ``/choose`` in this same turn.
+
+    A second autosubmitted ``/choose`` starts the prompt, which blocks in a raw
+    read, so that menu would never paint. This turn already owns stdin.
+    """
+    if session.terminal.pending_prompt_default == _CHOOSE_COMMAND:
+        clear_pending_autosubmit(session)
+    return _cmd_choose(session, console, [])
+
+
+def _demo_needing_setup(session: Session, leaf: str | None) -> str | None:
+    """The demo skill behind onboarding ``leaf`` when its prerequisites are unmet."""
+    skill = _DEMO_BY_LEAF.get(leaf or "")
+    return skill if skill is not None and setup_needed(session, skill) else None
 
 
 def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
@@ -259,6 +279,7 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
     )
     opening_answer: str | None = None
     permission_answer: str | None = None
+    demo_needing_setup: str | None = None
     if picked_one == AUTOMATION_GROUP_OPTION and skill_name == ONBOARDING_SKILL_NAME:
         # The group row opens a follow-up. The model receives the leaf, and a
         # repair leaf also receives the demo-repository permission.
@@ -272,7 +293,10 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
             letter_keys=True,
             note="",
         )
-        if picked_one in REPAIR_MENU_OPTIONS:
+        # A demo still missing its setup (GitHub) asks for that first, before
+        # the demo-repository question; the leaf answer resumes it afterwards.
+        demo_needing_setup = _demo_needing_setup(session, picked_one)
+        if picked_one in REPAIR_MENU_OPTIONS and demo_needing_setup is None:
             create_option = _demo_create_option()
             permission_answer = repl_choose_one(
                 title=DEMO_REPO_PERMISSION_TITLE,
@@ -356,7 +380,10 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
             ),
         )
         answers = (picked_one, permission_answer)
-    session.terminal.set_auto_command(format_ask_user_answers(questions, answers))
+    answer = format_ask_user_answers(questions, answers)
+    if demo_needing_setup is not None and hold_for_setup(session, demo_needing_setup, answer):
+        return _show_queued_menu(session, console)
+    session.terminal.set_auto_command(answer)
     session.terminal.awaiting_handoff_answer = True
     return True
 

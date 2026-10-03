@@ -96,16 +96,35 @@ def gate_skill_entry(
     missing = unmet_prerequisite(skill_name, _entry_integrations(session, resolved_integrations))
     if missing is None:
         return None
-    capture_skill_prerequisite_missing(
-        skill=skill_name,
-        check=missing.check,
-        reason_code=PREREQUISITE_CREDENTIAL_MISSING,
-    )
     if session is None or not isinstance(ctx, ActionToolScope) or not menu_available(ctx):
+        _record_missing(skill_name, missing)
         return _blocked_result(skill_name, missing, menu="unavailable", template=_TEXT_INSTRUCTION)
-    arm_setup_resume(session, ctx.turn_user_message, skill=skill_name, service=missing.service)
-    queue_prerequisite_menu(session, missing.service)
+    _hold(session, skill_name, ctx.turn_user_message, missing)
     return _blocked_result(skill_name, missing, menu="queued", template=_QUEUED_INSTRUCTION)
+
+
+def setup_needed(session: Any, skill_name: str) -> bool:
+    """True when ``skill_name`` has a prerequisite the session's integrations do not meet."""
+    if not SKILL_PREREQUISITES.get(skill_name):
+        return False
+    return unmet_prerequisite(skill_name, _entry_integrations(session, None)) is not None
+
+
+def hold_for_setup(session: Any, skill_name: str, text: str) -> bool:
+    """Queue the setup menu and park ``text`` when ``skill_name`` has an unmet prerequisite.
+
+    For a shell host that asks its own questions before the model enters the
+    skill, so setup comes first; model entry goes through
+    :func:`gate_skill_entry`. False, with nothing parked or queued, when every
+    prerequisite holds.
+    """
+    if not SKILL_PREREQUISITES.get(skill_name):
+        return False
+    missing = unmet_prerequisite(skill_name, _entry_integrations(session, None))
+    if missing is None:
+        return False
+    _hold(session, skill_name, text, missing)
+    return True
 
 
 def prerequisite_menu(service: str, *, still_missing: bool = False) -> PendingUserChoice:
@@ -159,6 +178,20 @@ def is_prerequisite_menu(pending: PendingUserChoice) -> bool:
     return any(parse_prerequisite_action(command) for command in pending.commands.values())
 
 
+def _hold(session: Any, skill_name: str, text: str, missing: SkillPrerequisite) -> None:
+    _record_missing(skill_name, missing)
+    arm_setup_resume(session, text, skill=skill_name, service=missing.service)
+    queue_prerequisite_menu(session, missing.service)
+
+
+def _record_missing(skill_name: str, missing: SkillPrerequisite) -> None:
+    capture_skill_prerequisite_missing(
+        skill=skill_name,
+        check=missing.check,
+        reason_code=PREREQUISITE_CREDENTIAL_MISSING,
+    )
+
+
 def _entry_integrations(
     session: Any, resolved_integrations: Mapping[str, Any] | None
 ) -> Mapping[str, Any]:
@@ -201,10 +234,12 @@ def _blocked_result(
 
 __all__ = [
     "gate_skill_entry",
+    "hold_for_setup",
     "is_prerequisite_menu",
     "parse_prerequisite_action",
     "prerequisite_action",
     "prerequisite_menu",
     "queue_prerequisite_menu",
+    "setup_needed",
     "unmet_prerequisite",
 ]

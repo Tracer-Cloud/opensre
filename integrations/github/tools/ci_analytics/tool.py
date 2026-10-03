@@ -27,7 +27,7 @@ from integrations.github.helpers import (
     github_creds,
 )
 from integrations.github.repo_scope import detect_git_remote_repo_scope
-from integrations.github.rest_token import github_rest_token
+from integrations.github.rest_token import github_rest_token, github_selection_failed
 from integrations.github.tools.ci_analytics.analysis import analyze_repository
 from integrations.github.tools.ci_analytics.benchmarks import MEASURED_ON
 from integrations.github.tools.ci_analytics.loop import LOOP_WINDOW_DAYS
@@ -64,9 +64,10 @@ def _available(sources: dict[str, dict]) -> bool:
 
     A fresh onboarding session has no token. Hiding this tool removes the
     result that tells the agent to open setup, so the demo cannot finish.
-    The call itself returns that setup handoff when no token resolves.
+    The call itself returns that setup handoff when no token resolves. A
+    chosen connection that is missing or unusable withdraws the tool.
     """
-    return not bool(sources.get("github", {}).get("connection_selection_error"))
+    return not github_selection_failed(sources)
 
 
 def _missing_token_message(repository: str) -> str:

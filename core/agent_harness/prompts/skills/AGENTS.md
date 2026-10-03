@@ -188,7 +188,9 @@ prerequisites (`SKILL_PREREQUISITES` in
 `infrastructure/harness_providers/skill_prerequisites.py`). An unmet one
 withholds the body, queues a setup menu (`skill_prerequisite_gate.py`), and
 reports it under the `prerequisite` key; after setup the shell resubmits the
-blocked message. Every getting-started skill has a row, even an empty one.
+blocked message. A demo picked in the onboarding menu is checked before the
+menu's own follow-up (the demo-repository question), so setup comes first
+there too. Every getting-started skill has a row, even an empty one.
 
 ## Narrow purpose
 
