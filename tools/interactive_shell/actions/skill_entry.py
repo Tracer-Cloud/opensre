@@ -13,6 +13,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from typing import Any
 
+from config.constants.ask_user import AskUserReason
 from core.agent_harness.spi.grounding import ActionSkill, SkillEntryMenu
 from core.agent_harness.spi.handoff import question_key
 from core.agent_harness.spi.skill_releases import SkillCatalogSnapshot, active_skill_catalog
@@ -57,7 +58,7 @@ def _open_entry_menu(menu: SkillEntryMenu, ctx: ActionToolScope) -> dict[str, An
     validation_error = ask_user_choice_tool.validate_public_input(args)
     if validation_error is not None:
         return {"ok": False, "tool": _ENTRY_MENU_TOOL, "error": validation_error}
-    outcome = execute_ask_user_choice_tool(args, ctx)
+    outcome = execute_ask_user_choice_tool(args, ctx, reason_code=AskUserReason.ENTRY_MENU)
     payload: dict[str, Any] = dict(outcome) if isinstance(outcome, dict) else {"ok": bool(outcome)}
     payload.setdefault("ok", True)
     payload["tool"] = _ENTRY_MENU_TOOL

@@ -15,5 +15,8 @@ class AskUserReason(StrEnum):
     CHOICE = "choice"
     """The model asked the user to choose, through ``ask_user_choice``."""
 
+    ENTRY_MENU = "entry_menu"
+    """A skill's catalog entry menu, opened by the host when the skill is entered."""
+
 
 __all__ = ["AskUserReason"]

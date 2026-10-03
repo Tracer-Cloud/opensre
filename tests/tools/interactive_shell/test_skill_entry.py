@@ -8,7 +8,7 @@ interactive-shell journeys that drive it (startup, ``/demo``, a model-issued
 from __future__ import annotations
 
 import io
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -16,10 +16,14 @@ import pytest
 from rich.console import Console
 
 import core.agent_harness.prompts.skills as skills
+import surfaces.interactive_shell.command_registry.choice_prompt as choice_prompt
 from config.constants.skills import ONBOARDING_MENU_TITLE, ONBOARDING_SKILL_NAME, SKIP_DEMO_OPTION
 from core.agent_harness.tools import ActionToolScope
+from core.agent_harness.tools.tool_context import ACTION_TOOL_CONTEXT_RESOURCE_KEY
+from core.tool import AgentToolContext
 from surfaces.interactive_shell.session import Session
 from tests.utils.skill_cards import skill_card
+from tools.interactive_shell.actions.ask_choice import ask_user_choice_tool
 from tools.interactive_shell.actions.skill_entry import (
     MENU_QUEUED_INSTRUCTION,
     enter_skill,
@@ -84,6 +88,46 @@ def test_entry_activates_the_skill_and_queues_its_menu_through_the_real_tool(
     assert entry_menu_queued(result)
     assert result["content"].startswith("Follow the answer.")
     assert result["content"].endswith(MENU_QUEUED_INSTRUCTION)
+
+
+def _host_enters_the_skill(session: Session) -> None:
+    enter_skill(ONBOARDING_SKILL_NAME, _scope(session))
+
+
+def _model_asks_the_user(session: Session) -> None:
+    context = AgentToolContext(
+        resolved_integrations={},
+        resources={ACTION_TOOL_CONTEXT_RESOURCE_KEY: _scope(session)},
+    )
+    ask_user_choice_tool.run(title="Which branch?", options=["main", "release"], context=context)
+
+
+@pytest.mark.parametrize(
+    ("open_menu", "reason_code"),
+    [(_host_enters_the_skill, "entry_menu"), (_model_asks_the_user, "choice")],
+)
+def test_a_rendered_menu_records_whether_the_host_or_the_model_opened_it(
+    demo_catalog: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    open_menu: Callable[[Session], None],
+    reason_code: str,
+) -> None:
+    # Arrange: queue the menu, then render it through the real /choose command.
+    session = Session()
+    open_menu(session)
+    rendered: list[dict[str, object]] = []
+    monkeypatch.setattr(choice_prompt, "repl_tty_interactive", lambda: False)
+    monkeypatch.setattr(
+        choice_prompt,
+        "capture_ask_user_prompt_rendered",
+        lambda **properties: rendered.append(properties),
+    )
+
+    # Act
+    choice_prompt._cmd_choose(session, Console(file=io.StringIO(), force_terminal=False), [])
+
+    # Assert
+    assert [properties["reason_code"] for properties in rendered] == [reason_code]
 
 
 def test_a_child_skill_has_no_entry_menu(demo_catalog: Path) -> None:
