@@ -186,13 +186,13 @@ def format_generic_tool_payload(tool_call: ToolCall, tool_result: Any) -> str:
 def is_outcome_report(text: str) -> bool:
     """True when *text* is an outcome report that must appear only once.
 
-    Both the repair tools and the model use a bullet whose text contains
-    "Outcome". A later snapshot, or the model's own summary, is the same
-    report — the shell shows one of them.
+    The repair tools and the model mark that report with an Outcome label
+    (``- **Outcome:**``). A later snapshot of the same report replaces the
+    earlier one. A bullet that only mentions the word does not match.
     """
     for line in text.splitlines():
-        stripped = line.lstrip()
-        if stripped.startswith(("- ", "* ", "• ")) and "outcome" in stripped.casefold():
+        body = line.lstrip().lstrip("-*•").strip().casefold()
+        if body.startswith("**outcome:**") or body.startswith("outcome:"):
             return True
     return False
 

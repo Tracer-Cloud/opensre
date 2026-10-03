@@ -12,6 +12,7 @@ import json
 from typing import Any
 
 from core.agent_harness.turns.action_driver import _compose_response, _TurnCounts
+from core.agent_harness.turns.display_text import is_outcome_report
 from core.llm.types import ToolCall
 from core.messages import AssistantRuntimeMessage
 
@@ -648,6 +649,95 @@ def test_model_outcome_report_is_not_repeated_from_tool_snapshots() -> None:
     assert "The repair commit passed CI" not in shown
     assert "Saved demo evidence" in shown
     assert use_final_text is True
+
+
+def test_a_later_outcome_closing_replaces_the_earlier_report() -> None:
+    """The closing report wins when an earlier tool-step report used other words."""
+    earlier = "Repair Report\n\n- **Outcome:** queued. Waiting for the scheduled tick."
+    later = "Repair Report\n\n- **Outcome:** succeeded. The repair commit passed CI."
+    result = _Result(
+        tool_results=[],
+        final_text=later,
+        messages=[AssistantRuntimeMessage(content=earlier, tool_calls=())],
+    )
+
+    _response_text, display_chunks, use_final_text = _compose_response(
+        result, _Session(), _counts(0)
+    )
+    shown = "\n".join(display_chunks)
+
+    assert "Waiting for the scheduled tick" not in shown
+    assert "The repair commit passed CI" in shown
+    assert shown.count("**Outcome:**") == 1
+    assert use_final_text is True
+
+
+def test_collapsing_repair_snapshots_keeps_another_tools_summary() -> None:
+    """Dropping an earlier snapshot must not drop a tool that has no response text."""
+    result = _Result(
+        tool_results=[
+            (
+                ToolCall(id="1", name="schedule_ci_repair_loop", input={}),
+                _ToolResult(_payload(_outcome("queued. Waiting for the scheduled tick."))),
+            ),
+            (
+                ToolCall(id="2", name="get_ci_repair_loop", input={}),
+                _ToolResult(_payload(_outcome("succeeded. The repair commit passed CI."))),
+            ),
+            (
+                ToolCall(id="3", name="github_cli", input={}),
+                _ToolResult({"ok": True, "summary": "PR #1 is open."}),
+            ),
+        ]
+    )
+    session = _Session()
+    session.terminal.inline_tool_results = True  # type: ignore[attr-defined]
+
+    _response_text, display_chunks, _use_final_text = _compose_response(result, session, _counts(3))
+    shown = "\n".join(display_chunks)
+
+    assert "Waiting for the scheduled tick" not in shown
+    assert "The repair commit passed CI" in shown
+    assert "PR #1 is open." in shown
+
+
+def test_a_non_report_closing_still_shows_the_latest_outcome() -> None:
+    """A short answer is not a report, so the succeeded snapshot still appears once."""
+    cleanup = "Saved demo evidence and removed the scheduled repair."
+    result = _Result(
+        tool_results=[
+            (
+                ToolCall(id="1", name="schedule_ci_repair_loop", input={}),
+                _ToolResult(_payload(_outcome("queued. Waiting for the scheduled tick."))),
+            ),
+            (
+                ToolCall(id="2", name="get_ci_repair_loop", input={}),
+                _ToolResult(_payload(_outcome("succeeded. The repair commit passed CI."))),
+            ),
+            (
+                ToolCall(id="3", name="finish_ci_repair_demo", input={}),
+                _ToolResult(_payload(cleanup)),
+            ),
+        ],
+        final_text="The repository remains.",
+    )
+    session = _Session()
+    session.terminal.inline_tool_results = True  # type: ignore[attr-defined]
+
+    _response_text, display_chunks, use_final_text = _compose_response(result, session, _counts(3))
+    shown = "\n".join(display_chunks)
+
+    assert "The repository remains." in shown
+    assert "Waiting for the scheduled tick" not in shown
+    assert "The repair commit passed CI" in shown
+    assert cleanup in shown
+    assert shown.count("**Outcome:**") == 1
+    assert use_final_text is True
+
+
+def test_a_bullet_that_mentions_outcome_is_not_a_repair_report() -> None:
+    assert is_outcome_report("- The outcome of the deploy is green.") is False
+    assert is_outcome_report("- **Outcome:** succeeded.") is True
 
 
 def test_tool_reply_text_is_shown_when_the_model_has_no_closing() -> None:

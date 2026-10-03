@@ -922,19 +922,18 @@ def _compose_response(
     # github_cli / other registry tools without double-printing shell output.
     # response_text still includes history for persistence / non-TTY surfaces.
     assistant_report = _latest_unshown_outcome_report(result, final_text_chunk, deferred_replies)
-    outcome_already_delivered = (
-        bool(assistant_report)
-        or is_outcome_report(final_text_chunk)
-        or any(is_outcome_report(text) for text in deferred_replies)
+    closing_already_has_report = is_outcome_report(final_text_chunk) or any(
+        is_outcome_report(text) for text in deferred_replies
     )
-    preferred_chunks = _preferred_tool_chunks(result)
+    outcome_already_delivered = bool(assistant_report) or closing_already_has_report
+    generic_chunks = _generic_chunks(result)
     closing_chunks = _closing_tool_chunks(
-        preferred_chunks, include_outcome=not outcome_already_delivered
+        generic_chunks, include_outcome=not outcome_already_delivered
     )
     # A queued repair snapshot and the later succeeded snapshot are one report.
-    # Once the model (or a deferred reply) already delivered it, the closing
-    # keeps only a trailing confirmation such as cleanup.
-    if closing_chunks != preferred_chunks:
+    # Filter the formatted tool text, not only ``response_text``, so a tool
+    # that reports a summary or an error stays in the closing.
+    if closing_chunks != generic_chunks:
         display_generic = cap_for_display("\n".join(closing_chunks))
     else:
         display_generic = cap_for_display(generic_text)
@@ -950,9 +949,13 @@ def _compose_response(
     if already_inline and terminal is not None:
         terminal.inline_tool_results = False
         display_generic = ""
-    if assistant_report and assistant_report not in display_final:
+    if (
+        assistant_report
+        and not closing_already_has_report
+        and assistant_report not in display_final
+    ):
         # The shell withholds this prose from the working-note gutter so it
-        # is not shown twice. It is the turn's report.
+        # is not shown twice. A closing that is itself the report wins.
         display_final = (
             f"{assistant_report}\n\n{display_final}" if display_final else assistant_report
         )
@@ -961,12 +964,14 @@ def _compose_response(
         # One outcome report: a later snapshot replaces the queued one.
         display_final = (
             _preferred_tool_response_texts(result)
-            if closing_chunks == preferred_chunks
+            if closing_chunks == generic_chunks
             else "\n\n".join(closing_chunks)
         )
-    elif already_inline and display_final and closing_chunks != preferred_chunks:
-        extras = "\n\n".join(chunk for chunk in closing_chunks if not is_outcome_report(chunk))
-        if extras and extras not in display_final:
+    elif already_inline and display_final and closing_chunks != generic_chunks:
+        # Quiet mode stashes tool rows, so the kept snapshot and any
+        # confirmation still belong in the closing beside a short answer.
+        extras = "\n\n".join(chunk for chunk in closing_chunks if chunk not in display_final)
+        if extras:
             display_final = f"{display_final}\n\n{extras}"
     is_json = looks_like_json(generic_text)
     body, markers = split_output_truncation_markers(display_generic)
@@ -993,7 +998,7 @@ def _compose_response(
                 _generic_chunks(result), include_outcome=not outcome_already_delivered
             )
         )
-        if closing_chunks != preferred_chunks
+        if closing_chunks != generic_chunks
         else generic_text
     )
     response_chunks = [
