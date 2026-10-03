@@ -306,3 +306,66 @@ def test_a_neutral_check_beside_a_success_still_counts_as_passed(
 
     assert result["outcome"] == "success"
     assert result["passing_run_id"] == _PASSING_RUN
+
+
+def test_the_result_says_the_demo_loop_was_removed(monkeypatch: pytest.MonkeyPatch) -> None:
+    record = _Record()
+    _install(monkeypatch, record)
+
+    result = run_tool.run_ci_repair_demo(_OWNER, _REQUESTED_REPO)
+
+    assert result["loop_removed"] is True
+    assert result["repository_retained"] is True
+    assert "The demo loop was removed." in result["response_text"]
+    assert "The repository remains." in result["response_text"]
+
+
+def test_an_empty_owner_seeds_under_the_token_login(monkeypatch: pytest.MonkeyPatch) -> None:
+    record = _Record()
+    _install(monkeypatch, record)
+    seeded_owners: list[str] = []
+    seed = run_tool.seed_ci_repair_demo
+
+    def _seed(owner: str, repo: str, **kwargs: Any) -> dict[str, Any]:
+        seeded_owners.append(owner)
+        return seed(owner=owner, repo=repo, **kwargs)
+
+    class _Client:
+        def __init__(self, token: str) -> None:
+            assert token == "ghp_demo"
+
+        def request(self, method: str, path: str) -> dict[str, Any]:
+            assert (method, path) == ("GET", "user")
+            return {"login": _OWNER}
+
+    monkeypatch.setattr(run_tool, "seed_ci_repair_demo", _seed)
+    monkeypatch.setattr(run_tool, "GitHubRestClient", _Client)
+    monkeypatch.setattr(run_tool, "configured_token", lambda _explicit=None: "ghp_demo")
+
+    result = run_tool.run_ci_repair_demo(repo=_REQUESTED_REPO)
+
+    assert seeded_owners == [_OWNER]
+    assert result["ok"] is True
+    assert result["owner"] == _OWNER
+
+
+def test_a_token_without_a_login_does_not_seed(monkeypatch: pytest.MonkeyPatch) -> None:
+    record = _Record()
+    _install(monkeypatch, record)
+
+    class _Client:
+        def __init__(self, token: str) -> None:
+            del token
+
+        def request(self, method: str, path: str) -> dict[str, Any]:
+            del method, path
+            return {}
+
+    monkeypatch.setattr(run_tool, "GitHubRestClient", _Client)
+    monkeypatch.setattr(run_tool, "configured_token", lambda _explicit=None: "ghp_demo")
+
+    result = run_tool.run_ci_repair_demo(owner="  ", repo=_REQUESTED_REPO)
+
+    assert result["ok"] is False
+    assert "pass owner" in result["error"]
+    assert record.seeds == 0

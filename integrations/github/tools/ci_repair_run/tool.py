@@ -8,7 +8,7 @@ from typing import Any
 from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel, report_run_error
 from core.tool_framework import tool
-from integrations.github.client import GitHubApiError
+from integrations.github.client import GitHubApiError, GitHubRestClient
 from integrations.github.helpers import (
     GITHUB_INJECTED_PARAMS,
     github_creds,
@@ -17,11 +17,13 @@ from integrations.github.helpers import (
 from integrations.github.tools.ci_fix.errors import GitHubCiFixError
 from integrations.github.tools.ci_fix.gh import run_gh_json
 from integrations.github.tools.ci_repair_demo.tool import finish_ci_repair_demo, seed_ci_repair_demo
+from integrations.github.tools.ci_repair_loop.credentials import configured_token
 from integrations.github.tools.ci_repair_loop.tool import (
     get_ci_repair_loop,
     schedule_ci_repair_loop,
 )
 
+_USER_PATH = "user"
 _PR_VIEW_FIELDS = "headRefOid,commits,statusCheckRollup"
 _PR_VIEW_TIMEOUT_SECONDS = 20
 _RUN_ID_IN_DETAILS_URL = re.compile(r"/actions/runs/(\d+)")
@@ -142,12 +144,14 @@ def _response_text(
     fix_commit: str,
     passing_run_id: int,
     evidence: str,
+    loop_removed: bool,
 ) -> str:
+    loop = "The demo loop was removed." if loop_removed else "The demo loop was not removed."
     return (
         f"{owner}/{repo}#{pr_number} {outcome}: task {task_id}, "
         f"failed run {failed_run_id or 'none'}, fix {fix_commit or 'none'}, "
         f"passing run {passing_run_id or 'none'}. "
-        f"Evidence {evidence or 'none'}. The repository remains."
+        f"Evidence {evidence or 'none'}. {loop} The repository remains."
     )
 
 
@@ -172,12 +176,21 @@ def _pull(owner: str, repo: str, pr_number: int, github_token: str | None) -> di
     return payload
 
 
+def _token_login(github_token: str | None) -> str:
+    """The login of the configured token: the owner of a demo named without one."""
+    user = GitHubRestClient(configured_token(github_token)).request("GET", _USER_PATH)
+    return _text(user.get("login")) if isinstance(user, dict) else ""
+
+
 def _run(
     owner: str,
     repo: str,
     github_token: str | None,
     context: Any,
 ) -> dict[str, Any]:
+    owner = owner.strip() or _token_login(github_token)
+    if not owner:
+        return {"ok": False, "error": "GitHub did not return a login for this token; pass owner."}
     seeded = seed_ci_repair_demo(owner=owner, repo=repo, github_token=github_token)
     if not seeded.get("ok"):
         return seeded
@@ -296,6 +309,7 @@ def _finish_scheduled(
         github_token=github_token,
     )
     evidence = _text(finished.get("evidence"))
+    loop_removed = finished.get("loop_removed") is True
     pr_url = _text(seeded.get("pr_url")) or _text(scheduled.get("pr_url"))
     result = {
         "ok": finished.get("ok") is True,
@@ -309,6 +323,8 @@ def _finish_scheduled(
         "passing_run_id": passing_run_id,
         "outcome": outcome,
         "evidence": evidence,
+        "loop_removed": loop_removed,
+        "repository_retained": True,
         "response_text": _response_text(
             owner=seeded_owner,
             repo=seeded_repo,
@@ -319,6 +335,7 @@ def _finish_scheduled(
             fix_commit=fix_commit,
             passing_run_id=passing_run_id,
             evidence=evidence,
+            loop_removed=loop_removed,
         ),
     }
     if finished.get("ok") is not True and finished.get("error"):
@@ -337,8 +354,8 @@ def _finish_scheduled(
         "wait until that repair is terminal, read the pull request head and checks once, "
         "and save evidence. One failed seed or schedule is returned and no second loop is "
         "scheduled. A report that is still running leaves the schedule in place. A failed "
-        "read after scheduling removes that schedule and includes the task id. "
-        "Does not delete the GitHub repository."
+        "read after scheduling removes that schedule and includes the task id. An empty "
+        "owner uses the token's login. Does not delete the GitHub repository."
     ),
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
@@ -349,16 +366,19 @@ def _finish_scheduled(
     input_schema={
         "type": "object",
         "properties": {
-            "owner": {"type": "string", "description": "GitHub user or organization."},
+            "owner": {
+                "type": "string",
+                "description": "GitHub user or organization; empty uses the token's login.",
+            },
             "repo": {"type": "string", "description": "Approved demo repository name."},
         },
-        "required": ["owner", "repo"],
+        "required": ["repo"],
         "additionalProperties": False,
     },
 )
 def run_ci_repair_demo(
-    owner: str,
-    repo: str,
+    owner: str = "",
+    repo: str = "",
     github_token: str | None = None,
     context: Any = None,
     **_kwargs: Any,
