@@ -378,6 +378,7 @@ def run_ci_fix(
     github_token: str | None = None,
     confirm_fn: Callable[[str], str] | None = None,
     allowed_paths: frozenset[str] | None = None,
+    expected_source_head_sha: str | None = None,
     console: Any = None,
 ) -> dict[str, Any]:
     with ExitStack() as workspaces:
@@ -409,6 +410,11 @@ def run_ci_fix(
                     workspace=ws,
                     github_token=github_token,
                     allow_clean=True,
+                )
+            if expected_source_head_sha is not None and ctx.head_sha != expected_source_head_sha:
+                raise GitHubCiFixError(
+                    ERR_CHECKS_SUPERSEDED,
+                    "The remote source head changed before repair; no push was made.",
                 )
             ws = str(
                 workspaces.enter_context(

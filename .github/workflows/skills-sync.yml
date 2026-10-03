@@ -56,12 +56,24 @@ jobs:
           echo "SKILLS_SYNC_TOKEN=${token}" >> "$GITHUB_ENV"
       - name: Publish newer skills
         shell: bash
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
         run: |
           set -euo pipefail
-          args=(--runner-token-env SKILLS_SYNC_TOKEN)
-          # Shared files carry no version; publish them only when this merge changed them,
-          # so a newer fast-lane edit to common/ is never reverted by an unrelated merge.
-          if ! git diff --quiet HEAD~1 HEAD -- core/agent_harness/prompts/skills/common; then
-            args+=(--include-shared)
+          skills_dir=core/agent_harness/prompts/skills
+          # The whole pushed range, not just its last commit. Only a manual run or a
+          # new branch (no "before") uses the previous commit; if the range start
+          # cannot be fetched, fail rather than publish a partial set of edits.
+          base=HEAD~1
+          if [[ -n "${BEFORE_SHA}" && ! "${BEFORE_SHA}" =~ ^0+$ ]]; then
+            git fetch --quiet --depth=1 origin "${BEFORE_SHA}"
+            base="${BEFORE_SHA}"
           fi
+          args=(--runner-token-env SKILLS_SYNC_TOKEN)
+          # Shared files carry no version: publish exactly the ones this push changed,
+          # so a newer fast-lane edit to another shared file is never reverted.
+          # --no-renames lists a rename as delete + add, so the old path is removed too.
+          while IFS= read -r path; do
+            [[ -n "${path}" ]] && args+=(--shared-file "${path#"${skills_dir}"/}")
+          done < <(git diff --name-only --no-renames "${base}" HEAD -- "${skills_dir}/common")
           uv run opensre skills push "${args[@]}"

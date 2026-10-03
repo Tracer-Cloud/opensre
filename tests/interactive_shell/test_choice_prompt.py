@@ -10,6 +10,17 @@ import pytest
 from rich.console import Console
 
 import surfaces.interactive_shell.command_registry.choice_prompt as choice_prompt
+from config.constants.skills import (
+    AUTOMATION_GROUP_OPTION,
+    AUTOMATION_MENU_TITLE,
+    CLOUD_REPAIR_OPTION,
+    DEMO_REPO_DECLINE_OPTION,
+    DEMO_REPO_PERMISSION_TITLE,
+    LOCAL_REPAIR_OPTION,
+    ONBOARDING_SKILL_NAME,
+    SKIP_DEMO_OPTION,
+    SLACK_OPTION,
+)
 from core.agent_harness.session.pending_choice import (
     AskUserQuestion,
     PendingUserChoice,
@@ -72,6 +83,123 @@ def test_selection_is_auto_submitted_as_next_user_message(
     assert "✓" not in output
     assert _CHOICE.title in output
     assert "Commit the changes" in output
+
+
+@pytest.mark.parametrize("answer", [SKIP_DEMO_OPTION, SLACK_OPTION])
+def test_onboarding_labels_are_regular_answers_in_other_skills(
+    monkeypatch: pytest.MonkeyPatch, answer: str
+) -> None:
+    """Reserved onboarding labels must not alter an unrelated workflow."""
+    title = "What should happen next?"
+    pending = PendingUserChoice(title=title, options=(answer, "Not now"))
+    session = Session()
+    session.active_skill = "unrelated-workflow"
+    session.pending_user_choice = pending
+    plan = TaskPlan(steps=(PlanStep("Continue", PlanStepStatus.IN_PROGRESS),))
+    session.task_plan = plan
+    console, buf = _console()
+    monkeypatch.setattr(choice_prompt, "repl_tty_interactive", lambda: True)
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", lambda **_kw: answer)
+
+    assert _handler(session, console) is True
+
+    assert session.active_skill == "unrelated-workflow"
+    assert session.task_plan is plan
+    assert session.terminal.pending_prompt_default == format_ask_user_answers(
+        pending.items(), (answer,)
+    )
+    assert session.terminal.awaiting_handoff_answer is True
+    assert session.questions_already_answered == {title.casefold()}
+    assert title in buf.getvalue()
+    assert "Opened the shell" not in buf.getvalue()
+
+
+def test_direct_onboarding_leaf_keeps_the_question_that_offered_it(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Fallback onboarding menus do not pretend a direct leaf came from the submenu."""
+    title = "Choose a guided workflow"
+    pending = PendingUserChoice(title=title, options=(SLACK_OPTION,))
+    session = Session()
+    session.active_skill = ONBOARDING_SKILL_NAME
+    session.pending_user_choice = pending
+    console, buf = _console()
+    monkeypatch.setattr(choice_prompt, "repl_tty_interactive", lambda: True)
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", lambda **_kw: SLACK_OPTION)
+
+    assert _handler(session, console) is True
+
+    assert session.terminal.pending_prompt_default == format_ask_user_answers(
+        pending.items(), (SLACK_OPTION,)
+    )
+    assert title in buf.getvalue()
+    assert AUTOMATION_MENU_TITLE not in buf.getvalue()
+
+
+@pytest.mark.parametrize("leaf", [LOCAL_REPAIR_OPTION, CLOUD_REPAIR_OPTION])
+def test_direct_onboarding_repair_asks_permission_before_handoff(
+    monkeypatch: pytest.MonkeyPatch,
+    leaf: str,
+) -> None:
+    """Fallback menus retain the permission gate when repair leaves are direct."""
+    title = "Choose a guided workflow"
+    pending = PendingUserChoice(title=title, options=(leaf, SLACK_OPTION, SKIP_DEMO_OPTION))
+    session = Session()
+    session.active_skill = ONBOARDING_SKILL_NAME
+    session.pending_user_choice = pending
+    console, _buf = _console()
+    picks = iter((leaf, DEMO_REPO_DECLINE_OPTION))
+    titles: list[str] = []
+
+    def choose(**kwargs: object) -> str:
+        titles.append(str(kwargs["title"]))
+        return next(picks)
+
+    monkeypatch.setattr(choice_prompt, "repl_tty_interactive", lambda: True)
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", choose)
+
+    assert _handler(session, console) is True
+
+    permission = AskUserQuestion(
+        label="Demo repository",
+        title=DEMO_REPO_PERMISSION_TITLE,
+        options=(DEMO_REPO_DECLINE_OPTION,),
+    )
+    assert titles == [title, DEMO_REPO_PERMISSION_TITLE]
+    assert session.terminal.pending_prompt_default == format_ask_user_answers(
+        (pending.items()[0], permission),
+        (leaf, DEMO_REPO_DECLINE_OPTION),
+    )
+
+
+def test_fallback_onboarding_label_does_not_open_the_automation_submenu(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Only the shipped outcome menu treats its automation label as a group."""
+    title = "Choose a guided workflow"
+    pending = PendingUserChoice(
+        title=title,
+        options=(AUTOMATION_GROUP_OPTION, "Explore another workflow", SKIP_DEMO_OPTION),
+    )
+    session = Session()
+    session.active_skill = ONBOARDING_SKILL_NAME
+    session.pending_user_choice = pending
+    console, _buf = _console()
+    titles: list[str] = []
+
+    def choose(**kwargs: object) -> str:
+        titles.append(str(kwargs["title"]))
+        return AUTOMATION_GROUP_OPTION
+
+    monkeypatch.setattr(choice_prompt, "repl_tty_interactive", lambda: True)
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", choose)
+
+    assert _handler(session, console) is True
+
+    assert titles == [title]
+    assert session.terminal.pending_prompt_default == format_ask_user_answers(
+        pending.items(), (AUTOMATION_GROUP_OPTION,)
+    )
 
 
 def test_selection_analytics_links_rendered_prompt_to_chosen_option(

@@ -167,7 +167,13 @@ def skills_update() -> None:
     help="Skills directory to publish (default: the repo's skills tree).",
 )
 @click.option("--delete", "delete", multiple=True, help="Remove a skill from the live catalog.")
-@click.option("--include-shared", is_flag=True, help="Also publish shared files (common/).")
+@click.option("--include-shared", is_flag=True, help="Also publish every changed shared file.")
+@click.option(
+    "--shared-file",
+    "shared_files",
+    multiple=True,
+    help="Publish this shared file (path under the skills directory, e.g. common/x.md).",
+)
 @click.option("--force", is_flag=True, help="Publish even when the live version is not older.")
 @click.option("--dry-run", is_flag=True, help="Show what would be published.")
 @click.option(
@@ -180,6 +186,7 @@ def skills_push(
     source: Path | None,
     delete: tuple[str, ...],
     include_shared: bool,
+    shared_files: tuple[str, ...],
     force: bool,
     dry_run: bool,
     runner_token_env: str,
@@ -200,6 +207,7 @@ def skills_push(
             names=names,
             delete=delete,
             include_shared=include_shared,
+            shared_paths=shared_files,
             force=force,
         )
     except (SkillsApiError, PushError, OSError) as exc:

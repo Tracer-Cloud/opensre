@@ -27,6 +27,8 @@ from config.constants.skills import (
     AUTOMATION_MENU_OPTIONS,
     AUTOMATION_MENU_TITLE,
     CLOUD_REPAIR_OPTION,
+    CONNECTING_SLACK_SKILL_NAME,
+    DELEGATING_GITHUB_CI_REPAIRS_SKILL_NAME,
     DEMO_REPO_DECLINE_OPTION,
     DEMO_REPO_PERMISSION_TITLE,
     LOCAL_REPAIR_OPTION,
@@ -634,6 +636,64 @@ def test_without_github_the_local_repair_demo_asks_for_setup_before_its_reposito
     assert parked.text == format_ask_user_answers(pending.items(), (LOCAL_REPAIR_OPTION,))
     assert parked.skill == "scheduling-github-ci-repairs"
     assert onboarding_outcomes == [("ci_agent", False)]
+
+
+@pytest.mark.parametrize(
+    ("leaf", "child_skill"),
+    [
+        (CLOUD_REPAIR_OPTION, DELEGATING_GITHUB_CI_REPAIRS_SKILL_NAME),
+        (SLACK_OPTION, CONNECTING_SLACK_SKILL_NAME),
+    ],
+    ids=["cloud-repair", "slack"],
+)
+def test_automation_picker_leaf_hands_off_to_the_current_child(
+    monkeypatch: pytest.MonkeyPatch,
+    leaf: str,
+    child_skill: str,
+) -> None:
+    """The real picker submits each leaf and any demo-repository decision."""
+    _offerable(monkeypatch)
+    session = Session()
+    session.resolved_integrations_cache = {}
+    console = Console(file=io.StringIO(), highlight=False)
+    llm = FakeActionLLM([tool_response("skill_view", {"name": child_skill})])
+    picked = [AUTOMATION_GROUP_OPTION, leaf]
+    if leaf == CLOUD_REPAIR_OPTION:
+        picked.append(DEMO_REPO_DECLINE_OPTION)
+    selections = iter(picked)
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", lambda **_kw: next(selections))
+
+    assert demo_picker.offer_demo(session, console)
+    pending = session.pending_user_choice
+    assert pending is not None
+    session.terminal.exclusive_stdin_active = True
+    run_action_tool_turn(
+        _take_prompt(session), session, console, is_tty=True, llm_factory=lambda: llm
+    )
+    session.terminal.exclusive_stdin_active = False
+
+    answer = _take_prompt(session)
+    expected_questions = pending.items()
+    expected_answers: tuple[str, ...] = (leaf,)
+    if leaf == CLOUD_REPAIR_OPTION:
+        permission = AskUserQuestion(
+            label="Demo repository",
+            title=DEMO_REPO_PERMISSION_TITLE,
+            options=(DEMO_REPO_DECLINE_OPTION,),
+        )
+        expected_questions = (pending.items()[0], permission)
+        expected_answers = (leaf, DEMO_REPO_DECLINE_OPTION)
+    assert answer == format_ask_user_answers(expected_questions, expected_answers)
+    assert AUTOMATION_GROUP_OPTION not in answer
+    envelope = build_action_system_prompt_envelope(
+        TurnSnapshot.from_session(answer, session, surface="interactive_shell")
+    )
+    assert f'- "{leaf}": call `skill_view(name="{child_skill}")`.' in envelope.render_ephemeral()
+
+    run_action_tool_turn(answer, session, console, is_tty=True, llm_factory=lambda: llm)
+
+    assert session.active_skill == child_skill
+    assert not llm.responses
 
 
 def test_automation_follow_up_escape_cancels_without_an_answer(

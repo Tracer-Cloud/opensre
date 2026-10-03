@@ -28,6 +28,7 @@ from config.constants.skills import (
     DEMO_REPO_PERMISSION_TITLE,
     ONBOARDING_LEAF_CHOICES,
     ONBOARDING_SKILL_NAME,
+    OUTCOME_MENU_OPTIONS,
     REPAIR_MENU_OPTIONS,
     SKIP_DEMO_OPTION,
 )
@@ -235,6 +236,8 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
 
     items = pending.items()
     skill_name = session.active_skill
+    is_onboarding = skill_name == ONBOARDING_SKILL_NAME
+    is_outcome_menu = is_onboarding and items[0].options == OUTCOME_MENU_OPTIONS
     selected_indices: list[tuple[int, ...]] = [() for _ in items]
     custom_answers: list[str | None] = [None for _ in items]
     dismiss_keys: list[str] = []
@@ -293,7 +296,7 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
     opening_answer: str | None = None
     permission_answer: str | None = None
     demo_needing_setup: str | None = None
-    if picked_one == AUTOMATION_GROUP_OPTION and skill_name == ONBOARDING_SKILL_NAME:
+    if picked_one == AUTOMATION_GROUP_OPTION and is_outcome_menu:
         # The group row opens a follow-up. The model receives the leaf, and a
         # repair leaf also receives the demo-repository permission.
         opening_answer = picked_one
@@ -310,22 +313,22 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
         # A demo still missing its setup (GitHub) asks for that first, before
         # the demo-repository question; the leaf answer resumes it afterwards.
         demo_needing_setup = _demo_needing_setup(session, picked_one)
-        if picked_one in REPAIR_MENU_OPTIONS and demo_needing_setup is None:
-            create_option = _demo_create_option()
-            permission_answer = repl_choose_one(
-                title=DEMO_REPO_PERMISSION_TITLE,
-                choices=[
-                    (create_option, create_option),
-                    (DEMO_REPO_DECLINE_OPTION, DEMO_REPO_DECLINE_OPTION),
-                ],
-                custom_label=None,
-                multi_select=False,
-                header="Ask User",
-                letter_keys=True,
-                note="",
-            )
-            if permission_answer is None:
-                picked_one = None
+    if is_onboarding and picked_one in REPAIR_MENU_OPTIONS and demo_needing_setup is None:
+        create_option = _demo_create_option()
+        permission_answer = repl_choose_one(
+            title=DEMO_REPO_PERMISSION_TITLE,
+            choices=[
+                (create_option, create_option),
+                (DEMO_REPO_DECLINE_OPTION, DEMO_REPO_DECLINE_OPTION),
+            ],
+            custom_label=None,
+            multi_select=False,
+            header="Ask User",
+            letter_keys=True,
+            note="",
+        )
+        if permission_answer is None:
+            picked_one = None
     if is_prerequisite_menu(pending):
         return _answer_prerequisite_menu(
             session,
@@ -341,7 +344,7 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
         _leave_menu(session, console, _CANCELLED)
         return True
     command = pending.commands.get(picked_one) or (picked_one if picked_one.startswith("/") else "")
-    if picked_one == SKIP_DEMO_OPTION:
+    if picked_one == SKIP_DEMO_OPTION and is_onboarding:
         disposition = "demo_skipped"
     elif command:
         disposition = "command"
@@ -354,7 +357,7 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
         disposition=disposition,
         skill_name=skill_name,
     )
-    if picked_one == SKIP_DEMO_OPTION:
+    if picked_one == SKIP_DEMO_OPTION and is_onboarding:
         # A shell decision, not an answer for the model: the demo is over.
         _leave_menu(session, console, _DEMO_SKIPPED)
         return True
@@ -365,12 +368,12 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
         _remember_answered(session, items[0].title)
         _run_command(session, console, command)
         return True
-    shown_title = AUTOMATION_MENU_TITLE if picked_one in AUTOMATION_MENU_OPTIONS else items[0].title
+    shown_title = AUTOMATION_MENU_TITLE if opening_answer is not None else items[0].title
     _remember_answered(session, items[0].title, shown_title)
     if permission_answer is not None:
         _remember_answered(session, DEMO_REPO_PERMISSION_TITLE)
     pairs = [(shown_title, picked_one)]
-    if opening_answer is not None and picked_one in AUTOMATION_MENU_OPTIONS:
+    if opening_answer is not None:
         pairs = [(items[0].title, opening_answer), (shown_title, picked_one)]
     if permission_answer is not None:
         pairs.append((DEMO_REPO_PERMISSION_TITLE, permission_answer))

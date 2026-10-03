@@ -647,6 +647,37 @@ def test_run_ci_fix_success_pushes_existing_pr_branch(
     )
 
 
+def test_run_ci_fix_refuses_a_source_head_that_changed_before_checkout(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    changed = replace(_CTX, head_sha="another-commit")
+    checkout = MagicMock(side_effect=AssertionError("a moved head must not be checked out"))
+    coding = MagicMock(side_effect=AssertionError("a moved head must not reach the coding agent"))
+    push = MagicMock(side_effect=AssertionError("a moved head must not be pushed"))
+    monkeypatch.setattr(runner, "gather_ci_fix_context", lambda **_kwargs: changed)
+    monkeypatch.setattr(runner, "repair_workspace", checkout)
+    monkeypatch.setattr(runner, "run_fix", coding)
+    monkeypatch.setattr(runner, "push_ci_fix", push)
+
+    result = runner.run_ci_fix(
+        owner="Tracer-Cloud",
+        repo="opensre",
+        pr_number=4597,
+        github_token="tok",
+        expected_source_head_sha=_CTX.head_sha,
+    )
+
+    assert result["success"] is False
+    assert result["error_kind"] == "checks_superseded"
+    assert result["source_head_sha"] == "another-commit"
+    assert result["response_text"] == (
+        "The remote source head changed before repair; no push was made."
+    )
+    checkout.assert_not_called()
+    coding.assert_not_called()
+    push.assert_not_called()
+
+
 @patch(
     "integrations.github.tools.ci_fix.runner.push_ci_fix",
     return_value=PushResult(
