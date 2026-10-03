@@ -8,14 +8,14 @@ demo_order: 3
 metadata:
   owner: Vincent
   last_changed_by: Jan
-  last_changed_at: 2026-10-03
+  last_changed_at: 2026-10-04
   usecases:
     - For interactive-shell users running a GitHub CI repair on their hosted gateway.
   requires:
     - A reachable hosted gateway with a GitHub integration and an authenticated coding agent.
     - An interactive shell and a signed-in OpenSRE account in the organization for hosted gateway access.
     - GitHub write access to the selected PR; demo mode also needs private-repository creation.
-  version: "2.10"
+  version: "2.11"
 ---
 
 # Delegate a remote CI repair
@@ -132,6 +132,8 @@ Show the final repair plan titled `Remote Repair Plan`. Put the probe's findings
 - The task's gateway ownership establishes independence from the shell; claim a tested disconnect only if the shell was actually disconnected during execution.
 
 - Show the report once. Do not repeat the gateway's streamed steps.
+
+- Do not call `memory_recall` or `memory_remember` in this workflow.
 
 **Complete when:**
 
