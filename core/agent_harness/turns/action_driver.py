@@ -61,6 +61,7 @@ from core.agent_harness.turns.display_text import (
     cap_for_display,
     format_generic_tool_payload,
     host_rendered,
+    is_outcome_report,
     looks_like_json,
     preferred_tool_response_text,
     split_output_truncation_markers,
@@ -280,12 +281,65 @@ def _preferred_tool_response_texts(result: Any) -> str:
     the transcript; otherwise its one-line summary reappears as the closing
     under the table it summarizes.
     """
-    texts = [
-        preferred_tool_response_text(tool_result)
-        for tool_call, tool_result in _generic_tool_results(result)
-        if not already_on_screen(tool_call, tool_result)
+    return "\n\n".join(_preferred_tool_chunks(result))
+
+
+def _preferred_tool_chunks(result: Any) -> list[str]:
+    """User-facing ``response_text`` values not already painted by the tool."""
+    return [
+        text
+        for text in (
+            preferred_tool_response_text(tool_result)
+            for tool_call, tool_result in _generic_tool_results(result)
+            if not already_on_screen(tool_call, tool_result)
+        )
+        if text
     ]
-    return "\n\n".join(text for text in texts if text)
+
+
+def _message_text(message: Any) -> tuple[str, str]:
+    """Role and stripped content of one runtime message."""
+    if isinstance(message, dict):
+        return str(message.get("role", "")), str(message.get("content", "") or "").strip()
+    return str(getattr(message, "role", "")), str(getattr(message, "content", "") or "").strip()
+
+
+def _latest_unshown_outcome_report(
+    result: Any,
+    final_text: str,
+    deferred_replies: Sequence[str],
+) -> str:
+    """The model's outcome report, when it is not already the closing reply.
+
+    A report written beside a tool call is not ``final_text``. The shell used
+    to print that prose as a working note and then append every tool snapshot.
+    """
+    shown = {final_text.strip(), *(text.strip() for text in deferred_replies if text.strip())}
+    latest = ""
+    for message in getattr(result, "messages", ()) or ():
+        role, content = _message_text(message)
+        if role != "assistant" or not content or content in shown:
+            continue
+        if is_outcome_report(content):
+            latest = content
+    return latest
+
+
+def _closing_tool_chunks(chunks: Sequence[str], *, include_outcome: bool) -> list[str]:
+    """Drop outcome reports the closing must not repeat.
+
+    An earlier queued snapshot loses to a later one. When the model or a
+    deferred reply already delivered the report, every snapshot is dropped
+    and a trailing confirmation (cleanup, a short status) stays.
+    """
+    outcome_at = [index for index, chunk in enumerate(chunks) if is_outcome_report(chunk)]
+    if not include_outcome:
+        drop = set(outcome_at)
+    elif len(outcome_at) > 1:
+        drop = set(outcome_at[:-1])
+    else:
+        drop = set()
+    return [chunk for index, chunk in enumerate(chunks) if index not in drop]
 
 
 def _painted_results_only(result: Any) -> bool:
@@ -401,13 +455,18 @@ def _has_quiet_shell_run(result: Any) -> bool:
     return False
 
 
-def _response_text_from_generic_results(result: Any) -> str:
+def _generic_chunks(result: Any) -> list[str]:
+    """User-facing text for each generic tool result, in call order."""
     chunks: list[str] = []
     for tool_call, tool_result in _generic_tool_results(result):
         formatted = format_generic_tool_payload(tool_call, tool_result)
         if formatted:
             chunks.append(formatted)
-    return "\n".join(chunks)
+    return chunks
+
+
+def _response_text_from_generic_results(result: Any) -> str:
+    return "\n".join(_generic_chunks(result))
 
 
 def _generic_tool_result_counts(result: Any) -> tuple[int, int]:
@@ -862,7 +921,23 @@ def _compose_response(
     # Console display uses final_text + generic results + hints only so users see
     # github_cli / other registry tools without double-printing shell output.
     # response_text still includes history for persistence / non-TTY surfaces.
-    display_generic = cap_for_display(generic_text)
+    assistant_report = _latest_unshown_outcome_report(result, final_text_chunk, deferred_replies)
+    outcome_already_delivered = (
+        bool(assistant_report)
+        or is_outcome_report(final_text_chunk)
+        or any(is_outcome_report(text) for text in deferred_replies)
+    )
+    preferred_chunks = _preferred_tool_chunks(result)
+    closing_chunks = _closing_tool_chunks(
+        preferred_chunks, include_outcome=not outcome_already_delivered
+    )
+    # A queued repair snapshot and the later succeeded snapshot are one report.
+    # Once the model (or a deferred reply) already delivered it, the closing
+    # keeps only a trailing confirmation such as cleanup.
+    if closing_chunks != preferred_chunks:
+        display_generic = cap_for_display("\n".join(closing_chunks))
+    else:
+        display_generic = cap_for_display(generic_text)
     # Defense: never fence a data blob into the transcript (summary/stdout leaks
     # used to pretty-print truncated JSON behind a text fence).
     if is_data_blob(generic_text):
@@ -875,9 +950,24 @@ def _compose_response(
     if already_inline and terminal is not None:
         terminal.inline_tool_results = False
         display_generic = ""
-    if not final_text and not display_generic:
+    if assistant_report and assistant_report not in display_final:
+        # The shell withholds this prose from the working-note gutter so it
+        # is not shown twice. It is the turn's report.
+        display_final = (
+            f"{assistant_report}\n\n{display_final}" if display_final else assistant_report
+        )
+    if not final_text and not display_generic and not display_final:
         # Tool reply text is a fallback only when the model has no closing.
-        display_final = _preferred_tool_response_texts(result)
+        # One outcome report: a later snapshot replaces the queued one.
+        display_final = (
+            _preferred_tool_response_texts(result)
+            if closing_chunks == preferred_chunks
+            else "\n\n".join(closing_chunks)
+        )
+    elif already_inline and display_final and closing_chunks != preferred_chunks:
+        extras = "\n\n".join(chunk for chunk in closing_chunks if not is_outcome_report(chunk))
+        if extras and extras not in display_final:
+            display_final = f"{display_final}\n\n{extras}"
     is_json = looks_like_json(generic_text)
     body, markers = split_output_truncation_markers(display_generic)
     truncated = bool(markers)
@@ -897,18 +987,30 @@ def _compose_response(
             lang = "json" if is_json else "text"
             display_generic = f"\n```{lang}\n{display_generic}\n```"
     display_chunks = [chunk for chunk in (display_final, display_generic, hint) if chunk]
+    history_generic = (
+        "\n".join(
+            _closing_tool_chunks(
+                _generic_chunks(result), include_outcome=not outcome_already_delivered
+            )
+        )
+        if closing_chunks != preferred_chunks
+        else generic_text
+    )
     response_chunks = [
         chunk
         for chunk in (
             _response_text_from_history_entries(counts.executed_entries),
             *deferred_replies,
+            assistant_report,
             final_text_chunk,
-            generic_text,
+            history_generic,
             hint,
         )
         if chunk
     ]
-    use_final_text = bool(final_text_chunk)
+    # Promoting the withheld report marks the reply streamed, so a host does
+    # not finalize the unfiltered tool snapshots afterwards.
+    use_final_text = bool(final_text_chunk) or bool(assistant_report)
     response_text = "\n".join(response_chunks)
     record_decision(
         "response_composition",

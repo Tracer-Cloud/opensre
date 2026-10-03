@@ -113,6 +113,21 @@ def test_message_update_before_tool_calls_renders_live() -> None:
     assert "Running GitHub CLI checks" in output
 
 
+def test_outcome_report_beside_a_tool_call_is_not_a_working_note() -> None:
+    """The composer shows that report once; the working gutter must not preview it."""
+    observer, buffer = _observer_with_buffer()
+
+    observer(
+        "message_update",
+        {
+            "content": "Repair Report\n\n- **Outcome:** Scheduled repair succeeded.",
+            "has_tool_calls": True,
+        },
+    )
+
+    assert buffer.getvalue() == ""
+
+
 def test_message_update_final_answer_is_not_rendered() -> None:
     """The closing no-tool-call answer is streamed by the turn driver, not here."""
     observer, buffer = _observer_with_buffer()

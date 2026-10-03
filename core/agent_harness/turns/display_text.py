@@ -183,6 +183,20 @@ def format_generic_tool_payload(tool_call: ToolCall, tool_result: Any) -> str:
     return f"{tool_call.name} result: {content}"
 
 
+def is_outcome_report(text: str) -> bool:
+    """True when *text* is an outcome report that must appear only once.
+
+    Both the repair tools and the model use a bullet whose text contains
+    "Outcome". A later snapshot, or the model's own summary, is the same
+    report — the shell shows one of them.
+    """
+    for line in text.splitlines():
+        stripped = line.lstrip()
+        if stripped.startswith(("- ", "* ", "• ")) and "outcome" in stripped.casefold():
+            return True
+    return False
+
+
 def preferred_tool_response_text(tool_result: Any) -> str:
     details = getattr(tool_result, "details", None)
     if isinstance(details, dict):
@@ -211,6 +225,7 @@ __all__ = [
     "DISPLAY_OUTPUT_MAX_LINES",
     "cap_for_display",
     "format_generic_tool_payload",
+    "is_outcome_report",
     "looks_like_json",
     "preferred_tool_response_text",
     "split_output_truncation_markers",

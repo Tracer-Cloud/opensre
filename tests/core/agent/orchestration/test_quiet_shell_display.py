@@ -13,6 +13,7 @@ from typing import Any
 
 from core.agent_harness.turns.action_driver import _compose_response, _TurnCounts
 from core.llm.types import ToolCall
+from core.messages import AssistantRuntimeMessage
 
 
 class _ToolResult:
@@ -28,11 +29,13 @@ class _Result:
         *,
         tool_results: list[tuple[ToolCall, _ToolResult]],
         final_text: str = "",
+        messages: list[Any] | None = None,
     ) -> None:
         self.tool_results = tool_results
         self.executed = list(tool_results)
         self.final_text = final_text
         self.planned = [call for call, _ in tool_results]
+        self.messages = messages or []
 
 
 class _Session:
@@ -570,6 +573,81 @@ def test_plan_snapshots_are_stripped_from_the_reply() -> None:
     assert "Repository: /Users/x/opensre" in shown
     assert "Plan ·" not in shown
     assert "✓ Inspect path" not in shown
+
+
+def _outcome(status: str) -> str:
+    return f"- **Outcome:** {status}\n- **Repository:** example/demo"
+
+
+def test_repair_snapshots_collapse_to_the_latest_outcome() -> None:
+    """A queued snapshot must not be reprinted next to the terminal report."""
+    queued = _outcome("queued. Waiting for the scheduled tick.")
+    succeeded = _outcome("succeeded. The repair commit passed CI.")
+    cleanup = "Saved demo evidence and removed the scheduled repair."
+    result = _Result(
+        tool_results=[
+            (
+                ToolCall(id="1", name="schedule_ci_repair_loop", input={}),
+                _ToolResult(_payload(queued)),
+            ),
+            (
+                ToolCall(id="2", name="get_ci_repair_loop", input={}),
+                _ToolResult(_payload(succeeded)),
+            ),
+            (
+                ToolCall(id="3", name="finish_ci_repair_demo", input={}),
+                _ToolResult(_payload(cleanup)),
+            ),
+        ]
+    )
+    session = _Session()
+    session.terminal.inline_tool_results = True
+
+    _response_text, display_chunks, use_final_text = _compose_response(result, session, _counts(3))
+    shown = "\n".join(display_chunks)
+
+    assert "Waiting for the scheduled tick" not in shown
+    assert "The repair commit passed CI" in shown
+    assert cleanup in shown
+    assert shown.count("**Outcome:**") == 1
+    assert use_final_text is False
+
+
+def test_model_outcome_report_is_not_repeated_from_tool_snapshots() -> None:
+    """The model's report is the reply; schedule and inspect snapshots stay off screen."""
+    report = (
+        "Repair Report\n\n"
+        "- **Outcome:** Scheduled repair succeeded in one attempt on PR #1.\n"
+        "- **Repair:** Loop 858332343cdc pushed ce4efbc."
+    )
+    result = _Result(
+        tool_results=[
+            (
+                ToolCall(id="1", name="schedule_ci_repair_loop", input={}),
+                _ToolResult(_payload(_outcome("queued. Waiting for the scheduled tick."))),
+            ),
+            (
+                ToolCall(id="2", name="get_ci_repair_loop", input={}),
+                _ToolResult(_payload(_outcome("succeeded. The repair commit passed CI."))),
+            ),
+            (
+                ToolCall(id="3", name="finish_ci_repair_demo", input={}),
+                _ToolResult(_payload("Saved demo evidence and removed the scheduled repair.")),
+            ),
+        ],
+        messages=[AssistantRuntimeMessage(content=report, tool_calls=())],
+    )
+    session = _Session()
+    session.terminal.inline_tool_results = True
+
+    _response_text, display_chunks, use_final_text = _compose_response(result, session, _counts(3))
+    shown = "\n".join(display_chunks)
+
+    assert shown.count("Repair Report") == 1
+    assert "Waiting for the scheduled tick" not in shown
+    assert "The repair commit passed CI" not in shown
+    assert "Saved demo evidence" in shown
+    assert use_final_text is True
 
 
 def test_tool_reply_text_is_shown_when_the_model_has_no_closing() -> None:

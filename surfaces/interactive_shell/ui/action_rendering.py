@@ -34,6 +34,7 @@ from core.agent_harness.spi.activity import (
     is_sensitive_activity_key,
 )
 from core.agent_harness.spi.task_plan import is_plan_diagnosis_prose, task_plan_from_checklist
+from core.agent_harness.turns.display_text import is_outcome_report
 from infrastructure.observability.trace.redaction import redact_sensitive
 from infrastructure.safety.terminal_output import strip_terminal_controls
 from infrastructure.terminal.theme import (
@@ -548,6 +549,11 @@ class ActionRenderObserver:
         if not content:
             return
         if is_plan_diagnosis_prose(content):
+            return
+        # An outcome report beside a tool call is the turn's reply, not
+        # progress chatter. The response composer shows it once; printing it
+        # here would sit a second copy above the tool snapshots.
+        if is_outcome_report(content):
             return
         self.console.print()
         # Intermediate narration is a labeled working note, visually secondary
