@@ -155,11 +155,13 @@ def test_an_explicit_update_waits_for_a_running_pull(
     from filelock import FileLock
 
     release = release_signer.sign(bundled_files(), seq=4)
-    monkeypatch.setattr(
-        puller_module,
-        "fetch_release",
-        _fake_fetch([FetchResult(FetchStatus.UPDATED, release=release, etag='"4"')], []),
-    )
+    order: list[str] = []
+
+    def fetch(app_url: str, *, etag: str = "", client: object = None) -> FetchResult:
+        order.append("fetched")
+        return FetchResult(FetchStatus.UPDATED, release=release, etag='"4"')
+
+    monkeypatch.setattr(puller_module, "fetch_release", fetch)
     store = release_store.store_dir()
     store.mkdir(parents=True, exist_ok=True)
     held = threading.Event()
@@ -168,13 +170,13 @@ def test_an_explicit_update_waits_for_a_running_pull(
         with FileLock(str(store / ".fetch.lock")):
             held.set()
             time.sleep(0.5)
+            order.append("released")
 
     holder = threading.Thread(target=background_pull)
     holder.start()
     assert held.wait(5)
 
-    started = time.monotonic()
     assert pull_once(force=True, app_url=_APP).status is PullStatus.STORED
-    # It really waited for the holder rather than finding the lock free.
-    assert time.monotonic() - started >= 0.3
     holder.join()
+    # Ordering, not timing: the forced pull fetched only after the holder let go.
+    assert order == ["released", "fetched"]
