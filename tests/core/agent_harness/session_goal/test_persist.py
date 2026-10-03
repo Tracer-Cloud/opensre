@@ -265,6 +265,61 @@ def test_clearing_a_goal_is_persisted_so_resume_does_not_revive_it() -> None:
     assert snapshots[-1].get("session_goal") is None
 
 
+def test_pending_goal_clear_tombstones_the_restored_task_plan() -> None:
+    """A deferred clear must not let its associated plan reappear on a later resume."""
+    from core.agent_harness.session.persistence.contracts import RestoreContextKey
+    from core.agent_harness.session_goal.persist import pending_session_goal_controls
+    from core.agent_harness.task_plan.persist import TASK_PLAN_STATE_CUSTOM_TYPE
+    from core.agent_harness.task_plan.plan import PlanStep, PlanStepStatus, TaskPlan
+
+    storage = InMemorySessionStore()
+    session = SessionCore(store=storage)
+    storage.open_session(session)
+    storage.append_turn(session, "chat", "start")
+    attach_session_goal(session, SessionGoal(condition="finish it", max_outer_turns=3))
+    session.task_plan = TaskPlan(
+        steps=(PlanStep(step="finish it", status=PlanStepStatus.IN_PROGRESS),)
+    )
+    storage.flush(session)
+    records = storage.read(session.session_id)
+    goal_state = next(
+        record["content"]
+        for record in reversed(records)
+        if record.get("custom_type") == SESSION_GOAL_STATE_CUSTOM_TYPE
+    )
+    plan_state = next(
+        record["content"]
+        for record in reversed(records)
+        if record.get("custom_type") == TASK_PLAN_STATE_CUSTOM_TYPE
+    )
+    storage.append_session_goal_control(session.session_id, "goal_clear")
+
+    restored = SessionCore(session_id=session.session_id, store=storage)
+    SessionManager(store=storage).restore_context(
+        restored,
+        {
+            RestoreContextKey.SESSION_GOAL_STATE: goal_state,
+            RestoreContextKey.TASK_PLAN_STATE: plan_state,
+            RestoreContextKey.SESSION_GOAL_CONTROLS: pending_session_goal_controls(
+                storage.read(session.session_id)
+            ),
+        },
+    )
+
+    assert restored.session_goal is None
+    assert restored.task_plan is None
+    persisted = storage.read(session.session_id)
+    assert pending_session_goal_controls(persisted) == []
+    assert (
+        next(
+            record["content"]
+            for record in reversed(persisted)
+            if record.get("custom_type") == TASK_PLAN_STATE_CUSTOM_TYPE
+        )
+        == {}
+    )
+
+
 def test_the_last_verdict_survives_a_round_trip() -> None:
     from core.agent_harness.session_goal.goal import SessionGoal
     from core.agent_harness.session_goal.persist import (

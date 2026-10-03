@@ -84,6 +84,11 @@ class JsonlSessionRepo:
             messages = _messages_for_branch(branch)
             context = _accumulated_context_for_branch(branch)
             goal_state = _session_goal_state_for_branch(branch)
+            # A control targets the live branch. Explicit ``session:entry``
+            # restores are historical snapshots and must never consume it.
+            goal_controls = (
+                _pending_session_goal_controls(entries, branch) if entry_ref is None else []
+            )
             plan_state = _task_plan_state_for_branch(branch)
             choice_state = _pending_user_choice_state_for_branch(branch)
             history = _history_for_branch(branch)
@@ -97,6 +102,7 @@ class JsonlSessionRepo:
                 RestoreContextKey.CLI_AGENT_MESSAGES: messages,
                 RestoreContextKey.ACCUMULATED_CONTEXT: context,
                 RestoreContextKey.SESSION_GOAL_STATE: goal_state,
+                RestoreContextKey.SESSION_GOAL_CONTROLS: goal_controls,
                 RestoreContextKey.TASK_PLAN_STATE: plan_state,
                 RestoreContextKey.PENDING_USER_CHOICE_STATE: choice_state,
                 RestoreContextKey.HISTORY: history,
@@ -313,6 +319,17 @@ def _session_goal_state_for_branch(branch: list[dict[str, Any]]) -> dict[str, An
         if isinstance(content, dict):
             latest = content
     return latest
+
+
+def _pending_session_goal_controls(
+    entries: list[dict[str, Any]],
+    branch: list[dict[str, Any]],
+) -> list[dict[str, str]]:
+    """Return unacknowledged goal controls from off-branch sidecar records."""
+    from core.agent_harness.session_goal.persist import pending_session_goal_controls
+
+    branch_entry_ids = {str(record["id"]) for record in branch if isinstance(record.get("id"), str)}
+    return pending_session_goal_controls(entries, branch_entry_ids=branch_entry_ids)
 
 
 def _task_plan_state_for_branch(branch: list[dict[str, Any]]) -> dict[str, Any] | None:

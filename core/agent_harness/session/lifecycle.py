@@ -309,6 +309,9 @@ class SessionManager:
             )
 
             apply_pending_user_choice_state(session, choice_state)
+        goal_controls = data.get(RestoreContextKey.SESSION_GOAL_CONTROLS)
+        if isinstance(goal_controls, list):
+            self._restore_session_goal_controls(session, goal_controls)
         history = data.get(RestoreContextKey.HISTORY)
         if isinstance(history, list):
             session.history = [dict(item) for item in history if isinstance(item, dict)]
@@ -379,6 +382,40 @@ class SessionManager:
         Failures are logged, never raised.
         """
         self._flush(session)
+
+    def persist_session_goal_control(self, session: SessionCore, reason: str) -> str:
+        """Durably preserve goal intent while another owner finishes the turn."""
+        return session.store.append_session_goal_control(session.session_id, reason)
+
+    @staticmethod
+    def _restore_session_goal_controls(
+        session: SessionCore,
+        controls: list[Any],
+    ) -> None:
+        """Apply and acknowledge durable controls left by a forced host exit."""
+        from core.agent_harness.session_goal.control import apply_session_goal_control
+        from core.agent_harness.turns.host_cancel import HostCancelReason
+
+        for control in controls:
+            if not isinstance(control, dict):
+                continue
+            control_id = control.get("control_id")
+            raw_reason = control.get("reason")
+            if not isinstance(control_id, str) or not isinstance(raw_reason, str):
+                continue
+            try:
+                reason = HostCancelReason(raw_reason)
+            except ValueError:
+                logger.warning("Ignoring unknown persisted session-goal control")
+                continue
+            try:
+                apply_session_goal_control(session, reason)
+                session.store.flush_session_goal_control_state(session)
+                session.store.complete_session_goal_control(session.session_id, control_id)
+            except Exception:
+                # Leave the request unacknowledged so a later resume retries it.
+                logger.warning("Could not finalize persisted session-goal control", exc_info=True)
+                break
 
     @staticmethod
     def _flush(session: SessionCore) -> None:

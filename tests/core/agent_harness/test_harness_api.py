@@ -86,6 +86,7 @@ SPI_ROLE_NAMES: dict[str, frozenset[str]] = {
             "SessionGoalReason",
             "SessionGoalStatus",
             "GoalPaintSignature",
+            "apply_session_goal_control",
             "attach_session_goal",
             "build_session_goal",
             "clear_session_goal",
@@ -130,6 +131,7 @@ SPI_ROLE_NAMES: dict[str, frozenset[str]] = {
             "HostCancelReason",
             "ensure_turn_cancel",
             "host_cancel_requested",
+            "is_goal_control_reason",
             "turn_cancel_reason",
         }
     ),

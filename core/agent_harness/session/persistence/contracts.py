@@ -29,6 +29,7 @@ class RestoreContextKey(StrEnum):
     CLI_AGENT_MESSAGES = "cli_agent_messages"
     ACCUMULATED_CONTEXT = "accumulated_context"
     SESSION_GOAL_STATE = "session_goal_state"
+    SESSION_GOAL_CONTROLS = "session_goal_controls"
     TASK_PLAN_STATE = "task_plan_state"
     PENDING_USER_CHOICE_STATE = "pending_user_choice_state"
     HISTORY = "history"
@@ -128,6 +129,15 @@ class SessionStore(Protocol):
 
     def flush(self, session: SessionPersistenceSource) -> None:
         raise NotImplementedError
+
+    def flush_session_goal_control_state(self, session: SessionPersistenceSource) -> None:
+        """Persist every resumable state field changed by a goal control."""
+
+    def append_session_goal_control(self, session_id: str, reason: str) -> str:
+        """Durably record a goal control and return its acknowledgement id."""
+
+    def complete_session_goal_control(self, session_id: str, control_id: str) -> None:
+        """Durably mark one recorded goal control as applied."""
 
     def reopen_session(self, session_id: str) -> None:
         raise NotImplementedError
