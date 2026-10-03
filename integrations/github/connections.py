@@ -55,21 +55,16 @@ def _instances(record: dict[str, Any]) -> list[dict[str, Any]]:
 def select_github_connection(resolved: dict[str, Any], connection_id: str | None) -> dict[str, Any]:
     """Select one GitHub grant, or disable GitHub when that choice is unusable.
 
-    An id missing from a managed catalog is ignored, so a laptop id forwarded
-    to the hosted gateway keeps that task's organization grant. An unknown id
-    on any other catalog stays in force and disables GitHub, so an environment
-    token cannot stand in for it. A matched grant that is not available, or
-    several grants with no single default, disables GitHub without falling
-    back to another account.
+    An id that is not in this process's grants is ignored only when exactly one
+    grant is available. A matched grant that is not available, or several grants
+    with no single default, disables GitHub without falling back to another account.
     """
     selected = dict(resolved)
     instances = list(resolved.get("_all_github_instances", []))
-    if (
-        connection_id
-        and resolved.get("_github_managed_connections")
-        and not _has_connection(instances, connection_id)
-    ):
-        connection_id = None
+    if connection_id and not _has_connection(instances, connection_id):
+        available = [item for item in instances if _grant_available(item)]
+        if len(available) == 1:
+            connection_id = None
     if not connection_id and not resolved.get("_github_managed_connections"):
         return selected
     matches = _matching_grants(instances, connection_id)
