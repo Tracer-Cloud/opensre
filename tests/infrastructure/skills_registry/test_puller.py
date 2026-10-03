@@ -171,7 +171,10 @@ def test_an_explicit_update_waits_for_a_running_pull(
 
     holder = threading.Thread(target=background_pull)
     holder.start()
-    held.wait(5)
+    assert held.wait(5)
 
+    started = time.monotonic()
     assert pull_once(force=True, app_url=_APP).status is PullStatus.STORED
+    # It really waited for the holder rather than finding the lock free.
+    assert time.monotonic() - started >= 0.3
     holder.join()
