@@ -1,7 +1,8 @@
 """Activation milestones of one repair run, recorded on whichever host reaches them.
 
 The ``remote_*`` milestones belong to runs a gateway's own scheduler owns; the same
-loop scheduled from the user's shell records none of them.
+loop scheduled from the user's shell records none of them. The seeded demo's failing
+pull request is recorded on either host.
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ from infrastructure.analytics.capture import (
     capture_remote_ci_failure_detected,
     capture_remote_ci_monitoring_started,
     capture_remote_ci_repair_succeeded,
+    capture_test_ci_failure_triggered,
 )
 from integrations.github.tools.ci_repair_loop.models import RepairRun
 
@@ -22,13 +24,20 @@ def _identity(run: RepairRun) -> dict[str, Any]:
         "repair_run_id": run.id,
         "repository": f"{run.owner}/{run.repo}",
         "pr_number": run.pr_number,
-        "demo": run.demo,
+        # Only the seeded-demo tool sets fast_checks, so it marks the demo run.
+        "demo": run.fast_checks,
     }
 
 
 def monitoring_started(run: RepairRun) -> None:
     if run.remote:
         capture_remote_ci_monitoring_started(**_identity(run))
+
+
+def demo_failure_triggered(run: RepairRun) -> None:
+    """The seeded demo's pull request, already failing CI, now has its repair scheduled."""
+    if run.fast_checks:
+        capture_test_ci_failure_triggered(**_identity(run), remote=run.remote)
 
 
 def failure_detected(run: RepairRun) -> None:

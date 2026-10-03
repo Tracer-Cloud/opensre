@@ -183,6 +183,7 @@ def schedule_repair(
                 existing = add_task(task)
                 run = store.mark_registered(run.id)
                 telemetry.monitoring_started(run)
+                telemetry.demo_failure_triggered(run)
         except (ValueError, RuntimeError, OSError, subprocess.SubprocessError):
             logger.exception("CI repair registration failed")
             run.status, run.reason = (

@@ -1083,6 +1083,50 @@ def test_only_a_gateway_scheduled_loop_records_that_remote_monitoring_started(
     assert recorded.events == ([started] if remote else [])
 
 
+@pytest.mark.parametrize("remote", [True, False], ids=["gateway", "shell"])
+def test_the_seeded_demo_records_its_failing_pull_request_once_on_either_host(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, recorded: _RecordedEvents, remote: bool
+) -> None:
+    # Arrange
+    store = RepairStore(tmp_path)
+    tasks: dict[str, ScheduledTask] = {}
+    monkeypatch.setattr(schedule, "configured_token", lambda _token: "test-token")
+    monkeypatch.setattr(schedule, "GitHubRestClient", lambda _token: _RepairApi())
+    monkeypatch.setattr(schedule, "get_task", tasks.get)
+    monkeypatch.setattr(schedule, "add_task", lambda task: tasks.setdefault(task.id, task))
+    monkeypatch.setattr(schedule, "ensure_background_service", lambda **_kw: None)
+    seeded = "opensre-ci-repair-demo-g0xd"
+
+    # Act: the seeded-demo tool schedules its pull request; a repeat reuses the active run
+    run, _, _ = schedule.schedule_repair(
+        owner="alice",
+        repo=seeded,
+        pr_number=1,
+        store=store,
+        scheduler_in_process=remote,
+        fast_checks=True,
+    )
+    schedule.schedule_repair(
+        owner="alice",
+        repo=seeded,
+        pr_number=1,
+        store=store,
+        scheduler_in_process=remote,
+        fast_checks=True,
+    )
+
+    # Assert
+    on_pr = {
+        "repair_run_id": run.id,
+        "repository": f"alice/{seeded}",
+        "demo": True,
+        "pr_number": 1,
+    }
+    started = ("remote_ci_monitoring_started", on_pr)
+    failure = ("test_ci_failure_triggered", {**on_pr, "remote": remote})
+    assert recorded.events == ([started, failure] if remote else [failure])
+
+
 def _repair_on_the_second_attempt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, run: RepairRun
 ) -> None:
