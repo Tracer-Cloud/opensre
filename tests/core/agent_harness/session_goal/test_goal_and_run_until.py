@@ -696,6 +696,7 @@ class _ShellSession(SessionCore):
 
 _SETUP_WIZARD = "/integrations setup github"
 
+
 @pytest.mark.parametrize(
     "reason",
     [HostCancelReason.GOAL_PAUSE, HostCancelReason.GOAL_CLEAR],
