@@ -27,6 +27,9 @@ from integrations.opensearch.tools.opensearch_analytics_tool import (
 )
 from tests.tools.conftest import BaseToolContract
 
+_CREDENTIALS_REJECTED = "rejected the configured credentials"
+_READ_NOT_ALLOWED = "isn't allowed to read this index"
+
 # ---------------------------------------------------------------------------
 # Test helpers — keep ElasticsearchClient stubbing consistent
 # ---------------------------------------------------------------------------
@@ -382,10 +385,16 @@ def _timeout(request: httpx.Request) -> httpx.Response:
 
 
 @pytest.mark.parametrize(
-    ("status", "content"),
+    ("status", "content", "says", "never_says"),
     [
         # The OpenSearch security plugin answers a bad login with plain text.
-        pytest.param(HTTPStatus.UNAUTHORIZED, {"text": "Unauthorized"}, id="unauthenticated"),
+        pytest.param(
+            HTTPStatus.UNAUTHORIZED,
+            {"text": "Unauthorized"},
+            _CREDENTIALS_REJECTED,
+            _READ_NOT_ALLOWED,
+            id="unauthenticated",
+        ),
         pytest.param(
             HTTPStatus.FORBIDDEN,
             {
@@ -396,12 +405,18 @@ def _timeout(request: httpx.Request) -> httpx.Response:
                     }
                 }
             },
+            _READ_NOT_ALLOWED,
+            _CREDENTIALS_REJECTED,
             id="forbidden",
         ),
     ],
 )
-def test_refused_credentials_ask_the_user_to_rerun_setup(
-    monkeypatch: pytest.MonkeyPatch, status: HTTPStatus, content: dict[str, Any]
+def test_a_rejected_login_and_a_refused_read_each_name_their_own_fix(
+    monkeypatch: pytest.MonkeyPatch,
+    status: HTTPStatus,
+    content: dict[str, Any],
+    says: str,
+    never_says: str,
 ) -> None:
     # Arrange
     _cluster_answers(monkeypatch, _answer(status, **content))
@@ -412,6 +427,7 @@ def test_refused_credentials_ask_the_user_to_rerun_setup(
     # Assert
     assert result["available"] is False and result["logs"] == []
     assert result["setup_command"] == OPENSEARCH_INTEGRATION_SETUP_SLASH
+    assert says in result["response_text"] and never_says not in result["response_text"]
     assert OPENSEARCH_INTEGRATION_SETUP_CLI in result["response_text"]
     assert f"HTTP {status.value}" in result["error"]
 

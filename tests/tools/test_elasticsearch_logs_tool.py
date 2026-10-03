@@ -19,6 +19,8 @@ from integrations.elasticsearch.tools import ElasticsearchLogsTool
 from tests.tools.conftest import BaseToolContract, mock_agent_state
 
 _URL = "https://es.example.invalid"
+_CREDENTIALS_REJECTED = "rejected the configured credentials"
+_READ_NOT_ALLOWED = "isn't allowed to read this index"
 
 
 class TestElasticsearchLogsToolContract(BaseToolContract):
@@ -83,7 +85,7 @@ def test_run_without_a_url_asks_the_user_to_run_setup() -> None:
 
 
 @pytest.mark.parametrize(
-    ("status", "body"),
+    ("status", "body", "says", "never_says"),
     [
         pytest.param(
             HTTPStatus.UNAUTHORIZED,
@@ -93,6 +95,8 @@ def test_run_without_a_url_asks_the_user_to_run_setup() -> None:
                     "reason": "unable to authenticate user [opensre] for REST request",
                 }
             },
+            _CREDENTIALS_REJECTED,
+            _READ_NOT_ALLOWED,
             id="unauthenticated",
         ),
         pytest.param(
@@ -103,12 +107,18 @@ def test_run_without_a_url_asks_the_user_to_run_setup() -> None:
                     "reason": "action [indices:data/read/search] is unauthorized for user [opensre]",
                 }
             },
+            _READ_NOT_ALLOWED,
+            _CREDENTIALS_REJECTED,
             id="forbidden",
         ),
     ],
 )
-def test_refused_credentials_ask_the_user_to_rerun_setup(
-    monkeypatch: pytest.MonkeyPatch, status: HTTPStatus, body: dict[str, Any]
+def test_a_rejected_login_and_a_refused_read_each_name_their_own_fix(
+    monkeypatch: pytest.MonkeyPatch,
+    status: HTTPStatus,
+    body: dict[str, Any],
+    says: str,
+    never_says: str,
 ) -> None:
     # Arrange
     _cluster_answers(monkeypatch, _answer(status, body))
@@ -119,6 +129,7 @@ def test_refused_credentials_ask_the_user_to_rerun_setup(
     # Assert: the model keeps the cluster's detail; the user gets one line without it
     assert result["available"] is False and result["logs"] == []
     assert result["setup_command"] == OPENSEARCH_INTEGRATION_SETUP_SLASH
+    assert says in result["response_text"] and never_says not in result["response_text"]
     assert OPENSEARCH_INTEGRATION_SETUP_CLI in result["response_text"]
     assert body["error"]["reason"] not in result["response_text"]
     assert f"HTTP {status.value}" in result["error"]

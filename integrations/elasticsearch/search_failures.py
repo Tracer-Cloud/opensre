@@ -1,8 +1,9 @@
 """What the OpenSearch/Elasticsearch search tools return when a search cannot run.
 
 Both tools share the ``opensearch`` integration and its client. A failure that only
-fixing that setup resolves (no URL, refused credentials) carries the setup command
-and one line for the user, so the turn ends with guidance instead of a retry. A 404
+fixing that setup resolves (no URL, rejected credentials, a user without read access)
+carries the setup command and one line for the user, so the turn ends with guidance
+instead of a retry. A 404
 is an index pattern that names no index, usually one the model chose (a wildcard
 that matches nothing answers 200 with no hits), so it stays an ordinary error that
 says how to retry. Timeouts, refused connections and 5xx answers pass on their own
@@ -22,12 +23,18 @@ from config.constants.opensearch import (
 from integrations.elasticsearch._client import unavailable
 
 _EMPTY_KEY = "logs"
-_REFUSED_CREDENTIALS = frozenset({HTTPStatus.UNAUTHORIZED, HTTPStatus.FORBIDDEN})
 #: For the model only: how a setup-required result ends the turn.
 _RUN_SETUP = (
     f"tell the user to run `{OPENSEARCH_INTEGRATION_SETUP_SLASH}` "
     f"(`{OPENSEARCH_INTEGRATION_SETUP_CLI}` from a terminal) and end the turn; another "
     "call with this configuration fails the same way."
+)
+#: For the model only: a refused read needs an access grant or other credentials.
+_GRANT_OR_RUN_SETUP = (
+    "tell the user to grant the configured user read access, or to run "
+    f"`{OPENSEARCH_INTEGRATION_SETUP_SLASH}` (`{OPENSEARCH_INTEGRATION_SETUP_CLI}` from a "
+    "terminal) with credentials that have it, and end the turn; another call with this "
+    "configuration fails the same way."
 )
 
 
@@ -54,7 +61,7 @@ def search_failed(source: str, result: Mapping[str, Any], *, vendor: str) -> dic
     """
     detail = str(result.get("error") or f"Unknown {vendor} error.")
     status = result.get("status_code")
-    if status in _REFUSED_CREDENTIALS:
+    if status == HTTPStatus.UNAUTHORIZED:
         return _setup_required(
             source,
             error=(
@@ -64,6 +71,20 @@ def search_failed(source: str, result: Mapping[str, Any], *, vendor: str) -> dic
             response_text=(
                 f"{vendor} rejected the configured credentials. "
                 f"Re-run setup with `{OPENSEARCH_INTEGRATION_SETUP_CLI}`."
+            ),
+        )
+    if status == HTTPStatus.FORBIDDEN:
+        return _setup_required(
+            source,
+            error=(
+                f"{vendor} refused the search: the configured user may not read the requested "
+                f"index pattern ({detail}). If you chose index_pattern yourself, call again "
+                f"without it to search the configured pattern. Otherwise {_GRANT_OR_RUN_SETUP}"
+            ),
+            response_text=(
+                f"The configured {vendor} user isn't allowed to read this index. Grant it read "
+                "access, or re-run setup with credentials that have it "
+                f"(`{OPENSEARCH_INTEGRATION_SETUP_CLI}`)."
             ),
         )
     if status == HTTPStatus.NOT_FOUND:
