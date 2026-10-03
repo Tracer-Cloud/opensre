@@ -33,6 +33,8 @@ class RepairRun(BaseModel):
     actor: str
     # Legacy records remain readable locally but cannot authorize an account.
     actor_id: int = Field(default=0, ge=0, strict=True)
+    #: Non-secret grant identity selected when the run was scheduled.
+    github_connection_id: str | None = None
     demo: bool
     #: Scheduled by a gateway's own scheduler (the hosted gateway), not the user's shell.
     remote: bool = False

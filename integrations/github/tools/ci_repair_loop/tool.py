@@ -123,6 +123,7 @@ def schedule_ci_repair_loop(
     repo: str = "",
     pr_number: int = 0,
     github_token: str | None = None,
+    github_connection_id: str | None = None,
     context: Any = None,
     **_kwargs: Any,
 ) -> dict[str, Any]:
@@ -135,6 +136,7 @@ def schedule_ci_repair_loop(
             repo=repo,
             pr_number=pr_number,
             github_token=github_token,
+            github_connection_id=github_connection_id,
             store=store,
             scheduler_in_process=_scheduler_in_process(context),
         )

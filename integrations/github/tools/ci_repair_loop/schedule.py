@@ -102,6 +102,7 @@ def schedule_repair(
     repo: str = "",
     pr_number: int = 0,
     github_token: str | None = None,
+    github_connection_id: str | None = None,
     store: RepairStore | None = None,
     scheduler_in_process: bool = False,
 ) -> tuple[RepairRun, bool, str | None]:
@@ -111,7 +112,12 @@ def schedule_repair(
     store (the hosted gateway); otherwise the OS-level background service is ensured.
     """
     started = time.time()
-    token = configured_token(github_token)
+    connection_id = str(github_connection_id) if github_connection_id else None
+    token = (
+        configured_token(github_token, connection_id=connection_id)
+        if connection_id
+        else configured_token(github_token)
+    )
     user = object_response(GitHubRestClient(token).request("GET", "user"))
     actor_id = account_id(user)
     actor = _component(str(user.get("login") or ""))
@@ -132,6 +138,7 @@ def schedule_repair(
         repo=repo,
         actor=actor,
         actor_id=actor_id,
+        github_connection_id=connection_id,
         demo=demo,
         remote=scheduler_in_process,
         started_at=started,

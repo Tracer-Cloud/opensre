@@ -11,6 +11,7 @@ from unittest.mock import patch
 import click
 import pytest
 
+from config.constants.ci_repair import CI_REPAIR_WORKER_COMMAND
 from config.constants.product import RELEASE_STAGE
 from config.repl_config import ReplConfig
 from infrastructure.analytics import provider
@@ -99,6 +100,38 @@ def test_main_runs_health_command(monkeypatch) -> None:
 
     assert exit_code == 0
     assert captured == ["cli_command_opensre_health"]
+
+
+def test_ci_repair_worker_entrypoint_installs_integration_resolution_adapters(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The supervised child reaches product startup before resolving its saved grant."""
+    import infrastructure.harness_providers as harness_providers
+    from integrations.store import load_integrations
+    from surfaces.cli.commands import ci_repair_worker
+
+    installed: list[bool] = []
+
+    def run_worker(_store_directory: Path, _run_id: str) -> None:
+        adapters = harness_providers.integration_resolution._adapters()
+        installed.append(adapters.load_integrations is load_integrations)
+
+    harness_providers.reset_harness_providers()
+    monkeypatch.setattr(ci_repair_worker, "run_ci_repair_worker", run_worker)
+    monkeypatch.setattr(
+        "infrastructure.observability.errors.sentry.init_sentry", lambda **_kw: None
+    )
+    monkeypatch.setattr("surfaces.cli.app.capture_first_run_if_needed", lambda: None)
+    monkeypatch.setattr("surfaces.cli.app.capture_cli_invoked", lambda *_args: None)
+    monkeypatch.setattr("surfaces.cli.app.shutdown_analytics", lambda **_kw: None)
+
+    try:
+        exit_code = main([CI_REPAIR_WORKER_COMMAND, str(tmp_path), "run-1"])
+    finally:
+        harness_providers.reset_harness_providers()
+
+    assert exit_code == 0
+    assert installed == [True]
 
 
 def test_main_does_not_capture_expected_usage_errors_to_sentry(

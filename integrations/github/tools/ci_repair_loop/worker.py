@@ -298,7 +298,11 @@ def execute_repair(run: RepairRun, store: RepairStore) -> None:
     ready, _detail = verify_coding_agent()
     if not ready:
         raise ValueError("Configure and authenticate a coding agent before starting the demo.")
-    token = configured_token()
+    token = (
+        configured_token(connection_id=run.github_connection_id)
+        if run.github_connection_id
+        else configured_token()
+    )
     client = GitHubRestClient(token)
     user = object_response(client.request("GET", "user"))
     if not run.actor_id or account_id(user) != run.actor_id:
