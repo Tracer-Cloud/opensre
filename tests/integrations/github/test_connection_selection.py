@@ -61,6 +61,24 @@ def test_an_unknown_laptop_connection_keeps_the_single_org_grant() -> None:
     assert _cli_available(selected) is True
 
 
+def test_an_unknown_id_does_not_pick_among_several_grants() -> None:
+    """A choice this process does not have must not fall through to another account."""
+    selected = select_github_connection(
+        _catalog(
+            _grant(_ORG, available=True, is_default=False, token="gho_acme"),
+            _grant(_OTHER, available=True, is_default=False, token="gho_other"),
+            managed=False,
+        ),
+        _LAPTOP,
+    )
+
+    github = selected["github"]
+    assert github["connection_selection_error"] == "github_connection_required"
+    assert github["connection_id"] == _LAPTOP
+    assert github.get("auth_token") != "gho_acme"
+    assert _cli_available(selected) is False
+
+
 def test_one_available_grant_is_used_when_it_is_not_the_default() -> None:
     """A shell with no connection id still reaches the org's only live grant."""
     selected = select_github_connection(
