@@ -98,6 +98,7 @@ from infrastructure.analytics.react_turn import run_react_agent_with_telemetry
 from infrastructure.observability.trace.decisions import record_decision
 from infrastructure.observability.trace.prompts import persist_turn_system_prompt
 from infrastructure.observability.trace.spans import component_span
+from infrastructure.terminal.peek import format_view_all_marker
 from infrastructure.text import is_data_blob
 
 log = logging.getLogger(__name__)
@@ -342,12 +343,18 @@ def _closing_tool_chunks(chunks: Sequence[str], *, include_outcome: bool) -> lis
     return [chunk for index, chunk in enumerate(chunks) if index not in drop]
 
 
+def _capped_section(text: str) -> tuple[str, str]:
+    """Return ``(body, marker)`` for one capped tool section."""
+    return split_output_truncation_markers(cap_for_display(text))
+
+
 def _visible_closing_text(chunks: Sequence[str]) -> str:
     """Cap bulky tool text without letting it push the outcome report off screen.
 
     The report and each other result are capped on their own. A long log cannot
     hide the report or a later cleanup line, and a long report still previews
-    instead of filling the terminal.
+    instead of filling the terminal. Only the last section keeps an expand
+    marker, so a folded report is not fenced with a marker in the middle.
     """
     outcome = ""
     others: list[str] = []
@@ -356,22 +363,31 @@ def _visible_closing_text(chunks: Sequence[str]) -> str:
             outcome = chunk
         else:
             others.append(chunk)
-    parts: list[str] = []
-    if outcome:
-        # Cap the report on its own so a long reason list previews, and so a
-        # long sibling result cannot push the report past the display cap.
-        parts.append(cap_for_display(outcome))
-    # Cap each sibling on its own. Joining them first lets a long log consume
-    # the preview and drop a later cleanup or error. One newline between
-    # siblings matches the unsplit tool preview.
-    siblings: list[str] = []
-    for chunk in others:
-        capped = cap_for_display(chunk)
-        if capped:
-            siblings.append(capped)
+    outcome_body, outcome_marker = _capped_section(outcome) if outcome else ("", "")
+    siblings = [_capped_section(chunk) for chunk in others]
+    siblings = [(body, marker) for body, marker in siblings if body or marker]
     if siblings:
-        parts.append("\n".join(siblings))
-    return "\n\n".join(parts)
+        # The fence peels only a trailing marker. Drop markers on earlier
+        # sections; if one of those was folded, keep a single cue at the end.
+        earlier_folded = bool(outcome_marker) or any(marker for _body, marker in siblings[:-1])
+        rendered: list[str] = [body for body, _marker in siblings[:-1] if body]
+        last_body, last_marker = siblings[-1]
+        if not last_marker and earlier_folded:
+            last_marker = format_view_all_marker()
+        last = last_body
+        if last_marker:
+            last = f"{last}\n{last_marker}" if last else last_marker
+        if last:
+            rendered.append(last)
+        sibling_text = "\n".join(rendered)
+        if outcome_body and sibling_text:
+            return f"{outcome_body}\n\n{sibling_text}"
+        return outcome_body or sibling_text
+    if not outcome_body and not outcome_marker:
+        return ""
+    if outcome_marker:
+        return f"{outcome_body}\n{outcome_marker}" if outcome_body else outcome_marker
+    return outcome_body
 
 
 def _painted_results_only(result: Any) -> bool:

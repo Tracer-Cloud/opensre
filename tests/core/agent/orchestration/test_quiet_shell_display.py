@@ -833,6 +833,39 @@ def test_a_long_outcome_report_is_capped() -> None:
     assert "Ctrl+O to view" in shown
 
 
+def test_a_folded_report_and_log_share_one_expand_marker() -> None:
+    """Two folded sections leave one Ctrl+O cue, and it stays outside the fence."""
+    lines = ["- **Outcome:** succeeded. The repair commit passed CI."]
+    lines.extend(f"- **Attempt {index}:** the check failed" for index in range(20))
+    long_log = "\n".join(f"log line {index}" for index in range(40))
+    result = _Result(
+        tool_results=[
+            (
+                ToolCall(id="1", name="github_cli", input={}),
+                _ToolResult({"ok": True, "stdout": long_log}),
+            ),
+            (
+                ToolCall(id="2", name="get_ci_repair_loop", input={}),
+                _ToolResult(_payload("\n".join(lines))),
+            ),
+        ]
+    )
+
+    _response_text, display_chunks, _use_final_text = _compose_response(
+        result, _Session(), _counts(2)
+    )
+    shown = "\n".join(display_chunks)
+
+    assert "The repair commit passed CI" in shown
+    assert "Attempt 19" not in shown
+    assert "log line 39" not in shown
+    fence_end = shown.index("```", shown.index("```text") + 1)
+    after = shown[fence_end:]
+    inside = shown[:fence_end]
+    assert after.count("Ctrl+O to view") == 1
+    assert "Ctrl+O to view" not in inside
+
+
 def test_one_outcome_stays_visible_after_a_long_response() -> None:
     """A single snapshot still survives when the cap would otherwise eat the tail."""
     long_text = "\n".join(f"note {index}" for index in range(40))
