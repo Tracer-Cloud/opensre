@@ -167,13 +167,15 @@ class _Api:
             sha = state.refs.get(branch)
             if sha is None:
                 raise GitHubApiError("missing", status_code=HTTPStatus.NOT_FOUND, path=path)
-            return {"commit": {"sha": sha}}
+            # A commit's tree is named like the commit here, as in GET git/commits below.
+            return {"commit": {"sha": sha, "commit": {"tree": {"sha": sha}}}}
         if method == "GET" and tail.startswith("git/commits/"):
             sha = tail.rsplit("/", 1)[-1]
             return {"sha": sha, "tree": {"sha": sha}}
         if method == "POST" and tail == "git/trees":
             assert body is not None
-            merged = dict(state.commits.get(str(body["base_tree"]), {}))
+            base = str(body["base_tree"])
+            merged = dict(state.trees.get(base) or state.commits.get(base) or {})
             for item in body["tree"]:
                 merged[str(item["path"])] = str(item["content"])
             tree_sha = f"t{len(state.trees)}"
@@ -280,6 +282,38 @@ def test_seed_creates_a_private_repo_and_returns_the_failed_run() -> None:
     assert ("POST", "user/repos") in api.calls
     assert all(not path.startswith("orgs/") for _method, path in api.calls)
     assert all("search" not in path for _method, path in api.calls)
+
+
+def _initialized_demo() -> _Api:
+    """An existing demo repository: seeded main, no failing branch, no pull request."""
+    api = _Api(missing=False)
+    api._ensure_readme()
+    api.commits["readme"].update(baseline_files())
+    return api
+
+
+def test_a_repository_the_seed_created_is_not_read_for_what_it_cannot_hold() -> None:
+    """A new repository has no marker, pull request, or failing branch to look up."""
+    api = _Api()
+    api.runs.append({"id": 4242, "conclusion": "failure", "event": "pull_request"})
+
+    seed_demo(api, _OWNER, _REPO, sleep=_forbidden_sleep, now=lambda: 0.0)
+
+    path = f"repos/{_OWNER}/{_REPO}"
+    assert api.calls == [
+        ("GET", path),
+        ("GET", "user"),
+        ("POST", "user/repos"),
+        ("GET", f"{path}/branches/main"),
+        ("POST", f"{path}/git/trees"),
+        ("POST", f"{path}/git/commits"),
+        ("PATCH", f"{path}/git/refs/heads/main"),
+        ("POST", f"{path}/git/trees"),
+        ("POST", f"{path}/git/commits"),
+        ("POST", f"{path}/git/refs"),
+        ("POST", f"{path}/pulls"),
+        ("GET", f"{path}/actions/runs"),
+    ]
 
 
 def test_seed_does_not_rewrite_an_existing_demo_branch() -> None:
@@ -405,7 +439,7 @@ def test_a_non_404_repository_error_does_not_create(monkeypatch: pytest.MonkeyPa
 
 
 def test_a_missing_branch_update_returns_422_and_the_branch_is_created() -> None:
-    api = _Api()
+    api = _initialized_demo()
     api.missing_ref_error = GitHubApiError(
         '{"message":"Reference does not exist","status":"422"}',
         status_code=HTTPStatus.UNPROCESSABLE_ENTITY,
@@ -417,14 +451,15 @@ def test_a_missing_branch_update_returns_422_and_the_branch_is_created() -> None
     result = seed_demo(api, _OWNER, _REPO, sleep=_forbidden_sleep, now=lambda: 0.0)
 
     assert result["pr_number"] == 1
-    assert FAILING_BRANCH in api.refs
+    assert api._files(FAILING_BRANCH)["calculator.py"] == FAILING_CALCULATOR
+    assert ("PATCH", f"repos/{_OWNER}/{_REPO}/git/refs/heads/{FAILING_BRANCH}") in api.calls
     assert ("POST", f"repos/{_OWNER}/{_REPO}/git/refs") in api.calls
 
 
 def test_a_rejected_branch_update_names_the_github_call(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    api = _Api()
+    api = _initialized_demo()
     ref = f"repos/{_OWNER}/{_REPO}/git/refs/heads/{FAILING_BRANCH}"
     api.missing_ref_error = GitHubApiError(
         '{"message":"Update is not a fast forward"}',

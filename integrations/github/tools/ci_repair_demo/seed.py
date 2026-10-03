@@ -17,8 +17,13 @@ from integrations.github.tools.ci_repair_loop.responses import object_response
 from integrations.github.tools.ci_repair_loop.seeded import remember_seeded_pull
 
 FAILING_BRANCH = "demo/failing-ci"
-_POLL_SECONDS = 2.0
+#: Interval between reads of this one repository's Actions runs while the
+#: failure is awaited: at most ~180 requests, a few percent of the hourly REST limit.
+_POLL_SECONDS = 1.0
 _FAILURE_WAIT_SECONDS = 180.0
+#: Wait between reads of a just-created repository's default branch.
+_BRANCH_RETRY_SECONDS = 2.0
+_BRANCH_ATTEMPTS = 5
 _COMPONENT = re.compile(r"[A-Za-z0-9_.-]+")
 _EMPTY_ROOT = frozenset({"README.md", ".gitignore"})
 _MARKER_NAME = ".opensre-demo.json"
@@ -187,41 +192,11 @@ def _seed_named(
     path = f"repos/{owner}/{repo}"
     repository, created = _load_repository(client, owner, repo, login)
     default_branch = str(repository.get("default_branch") or "main")
-    if not _demo_initialized(client, path):
-        parent = _branch_sha(client, path, default_branch, sleep=sleep)
-        baseline = _commit_files(client, path, parent, baseline_files(), "Seed healthy CI demo")
-        _advance_ref(client, path, default_branch, baseline, force=False)
-    pull = _open_demo_pull(client, path, owner)
-    reused = pull is not None
-    if pull is None:
-        if _branch_exists(client, path, FAILING_BRANCH):
-            raise DemoRefused(
-                f"{FAILING_BRANCH} already has commits and no open pull request. "
-                "This tool will not rewrite that branch."
-            )
-        parent = _branch_sha(client, path, default_branch, sleep=sleep)
-        head_sha = _commit_files(
-            client,
-            path,
-            parent,
-            {"calculator.py": FAILING_CALCULATOR},
-            "Demo: expose an addition bug with a real test",
-        )
-        _advance_ref(client, path, FAILING_BRANCH, head_sha, force=False)
-        pull = object_response(
-            client.request(
-                "POST",
-                f"{path}/pulls",
-                body={
-                    "title": PR_TITLE,
-                    "head": FAILING_BRANCH,
-                    "base": default_branch,
-                    "body": PR_BODY,
-                },
-            )
-        )
+    if created:
+        pull, head_sha = _seed_created(client, path, default_branch, sleep=sleep)
+        reused = False
     else:
-        head_sha = _pull_head_sha(pull)
+        pull, head_sha, reused = _seed_existing(client, path, owner, default_branch, sleep=sleep)
     number = int(pull["number"])
     failed_run_id = _await_failed_run(client, path, head_sha, sleep=sleep, now=now)
     return {
@@ -235,6 +210,90 @@ def _seed_named(
         "created_repository": created,
         "reused": reused,
     }
+
+
+def _seed_created(
+    client: GitHubRestClient, path: str, default_branch: str, *, sleep: Callable[[float], None]
+) -> tuple[dict[str, Any], str]:
+    """Seed a repository this call just created; returns its pull request and failing head.
+
+    It holds only the auto-initialized default branch, so the demo marker,
+    an open pull request, and the failing branch are known absent and not read.
+    Each commit builds on the tree just written instead of reading it back.
+    """
+    parent, parent_tree = _branch_head(client, path, default_branch, sleep=sleep)
+    baseline, baseline_tree = _commit_files(
+        client, path, parent, baseline_files(), "Seed healthy CI demo", base_tree=parent_tree
+    )
+    _advance_ref(client, path, default_branch, baseline, force=False)
+    head_sha, _tree = _commit_files(
+        client,
+        path,
+        baseline,
+        {"calculator.py": FAILING_CALCULATOR},
+        "Demo: expose an addition bug with a real test",
+        base_tree=baseline_tree,
+    )
+    client.request(
+        "POST",
+        f"{path}/git/refs",
+        body={"ref": f"refs/heads/{FAILING_BRANCH}", "sha": head_sha},
+    )
+    return _open_pull(client, path, default_branch), head_sha
+
+
+def _seed_existing(
+    client: GitHubRestClient,
+    path: str,
+    owner: str,
+    default_branch: str,
+    *,
+    sleep: Callable[[float], None],
+) -> tuple[dict[str, Any], str, bool]:
+    """Initialize or reuse a demo repository that already existed.
+
+    Returns its pull request, the failing head, and whether that pull request
+    was already open.
+    """
+    if not _demo_initialized(client, path):
+        parent = _branch_sha(client, path, default_branch, sleep=sleep)
+        baseline, _tree = _commit_files(
+            client, path, parent, baseline_files(), "Seed healthy CI demo"
+        )
+        _advance_ref(client, path, default_branch, baseline, force=False)
+    pull = _open_demo_pull(client, path, owner)
+    if pull is not None:
+        return pull, _pull_head_sha(pull), True
+    if _branch_exists(client, path, FAILING_BRANCH):
+        raise DemoRefused(
+            f"{FAILING_BRANCH} already has commits and no open pull request. "
+            "This tool will not rewrite that branch."
+        )
+    parent = _branch_sha(client, path, default_branch, sleep=sleep)
+    head_sha, _tree = _commit_files(
+        client,
+        path,
+        parent,
+        {"calculator.py": FAILING_CALCULATOR},
+        "Demo: expose an addition bug with a real test",
+    )
+    _advance_ref(client, path, FAILING_BRANCH, head_sha, force=False)
+    return _open_pull(client, path, default_branch), head_sha, False
+
+
+def _open_pull(client: GitHubRestClient, path: str, default_branch: str) -> dict[str, Any]:
+    return object_response(
+        client.request(
+            "POST",
+            f"{path}/pulls",
+            body={
+                "title": PR_TITLE,
+                "head": FAILING_BRANCH,
+                "base": default_branch,
+                "body": PR_BODY,
+            },
+        )
+    )
 
 
 def _load_repository(
@@ -326,16 +385,33 @@ def _file_text(payload: dict[str, Any]) -> str:
 def _branch_sha(
     client: GitHubRestClient, path: str, branch: str, *, sleep: Callable[[float], None]
 ) -> str:
+    sha, _tree = _branch_head(client, path, branch, sleep=sleep)
+    return sha
+
+
+def _branch_head(
+    client: GitHubRestClient, path: str, branch: str, *, sleep: Callable[[float], None]
+) -> tuple[str, str]:
+    """The branch's head commit and that commit's tree (``""`` when GitHub omits it).
+
+    A just-created repository's branch can lag behind its creation, so a 404
+    is retried briefly.
+    """
     last: GitHubApiError | None = None
-    for _attempt in range(5):
+    for _attempt in range(_BRANCH_ATTEMPTS):
         try:
             ref = object_response(client.request("GET", f"{path}/branches/{branch}"))
-            return str(ref["commit"]["sha"])
         except GitHubApiError as exc:
             if exc.status_code != HTTPStatus.NOT_FOUND:
                 raise
             last = exc
-            sleep(_POLL_SECONDS)
+            sleep(_BRANCH_RETRY_SECONDS)
+            continue
+        head = ref["commit"]
+        details = head.get("commit")
+        tree = details.get("tree") if isinstance(details, dict) else None
+        tree_sha = str(tree.get("sha") or "") if isinstance(tree, dict) else ""
+        return str(head["sha"]), tree_sha
     if last is not None:
         raise last
     raise DemoRefused("The repository's default branch was not available.")
@@ -347,15 +423,24 @@ def _commit_files(
     parent: str,
     files: dict[str, str],
     message: str,
-) -> str:
+    *,
+    base_tree: str = "",
+) -> tuple[str, str]:
+    """Commit ``files`` on top of ``parent``; returns the new commit and its tree.
+
+    ``base_tree`` is ``parent``'s tree when the caller already knows it; otherwise
+    it is read from the parent commit.
+    """
     git = f"{path}/git"
-    original = object_response(client.request("GET", f"{git}/commits/{parent}"))
+    if not base_tree:
+        original = object_response(client.request("GET", f"{git}/commits/{parent}"))
+        base_tree = str(original["tree"]["sha"])
     tree = object_response(
         client.request(
             "POST",
             f"{git}/trees",
             body={
-                "base_tree": original["tree"]["sha"],
+                "base_tree": base_tree,
                 "tree": [
                     {"path": name, "mode": "100644", "type": "blob", "content": content}
                     for name, content in files.items()
@@ -370,7 +455,7 @@ def _commit_files(
             body={"message": message, "tree": tree["sha"], "parents": [parent]},
         )
     )
-    return str(commit["sha"])
+    return str(commit["sha"]), str(tree["sha"])
 
 
 def _branch_exists(client: GitHubRestClient, path: str, branch: str) -> bool:
