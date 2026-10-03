@@ -1584,7 +1584,7 @@ def test_a_repository_named_like_the_demo_keeps_the_normal_check_wait() -> None:
     from integrations.github.tools.ci_repair_loop import worker
 
     run = _run(pr_number=1).model_copy(update={"repo": "opensre-ci-repair-demo-g0xd"})
-    assert worker._check_wait(run, "head") == {}
+    assert worker._check_wait(run) == {}
 
 
 @pytest.mark.parametrize(
@@ -1638,9 +1638,14 @@ def test_seeded_demo_repair_may_change_only_calculator(
     ids=["seeded-head", "commit-this-run-pushed", "someone-elses-commit"],
 )
 def test_demo_only_behavior_follows_the_seeded_head_chain(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, head: str, pushed: list[str], demo: bool
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+    recorded: _RecordedEvents,
+    head: str,
+    pushed: list[str],
+    demo: bool,
 ) -> None:
-    """A commit from anyone else on the seeded PR gets the ordinary repair, not the demo scope."""
+    """A commit from anyone else on the seeded PR gets, and is counted as, the ordinary repair."""
     from integrations.github.tools.ci_repair_loop import worker
 
     store = RepairStore(tmp_path)
@@ -1650,6 +1655,7 @@ def test_demo_only_behavior_follows_the_seeded_head_chain(
             "fast_checks": True,
             "seeded_head": "seeded",
             "pushed_shas": list(pushed),
+            "remote": True,
         }
     )
     store.directory(run.id).mkdir()
@@ -1673,7 +1679,11 @@ def test_demo_only_behavior_follows_the_seeded_head_chain(
 
     assert seen["allowed_paths"] == (frozenset({"calculator.py"}) if demo else None)
     assert ("registration_seconds" in seen) is demo
-    assert run.checks_passed
+    assert run.checks_passed and run.fast_checks is demo
+    # The remote failure milestone counts the run as the demo only on the seeded chain.
+    assert [(name, properties["demo"]) for name, properties in recorded.events] == [
+        ("remote_ci_failure_detected", demo)
+    ]
 
 
 def test_demo_verification_keeps_waiting_while_checks_are_empty_or_running(

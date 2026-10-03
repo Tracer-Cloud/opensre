@@ -41,9 +41,9 @@ class RepairRun(BaseModel):
     #: demo. A repository name does not set this; an ordinary repair of a similarly
     #: named repo waits and edits as usual.
     fast_checks: bool = False
-    #: The seeded demo's head commit when it was scheduled. Demo-only behavior applies
-    #: while the pull request's head is this commit or one this run pushed; a commit
-    #: from anyone else gets the ordinary repair. Empty on records that predate it.
+    #: The seeded demo's head commit when it was scheduled. A head that is neither this
+    #: commit nor one this run pushed clears ``fast_checks``: the run continues, and is
+    #: counted, as an ordinary repair. Empty on records that predate it.
     seeded_head: str = ""
     #: Scheduled by a gateway's own scheduler (the hosted gateway), not the user's shell.
     remote: bool = False

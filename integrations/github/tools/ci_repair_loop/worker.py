@@ -56,25 +56,28 @@ class _CheckWait(TypedDict, total=False):
     poll_interval_seconds: int
 
 
-def _demo_repository(run: RepairRun, head: str) -> bool:
-    """True while a seeded demo PR's head is its seeded commit or one this run pushed.
+def _demo_repository(run: RepairRun) -> bool:
+    """True for a seeded demo PR that no one else has changed since it was scheduled.
 
     ``run.fast_checks`` is set only for a pull request this process seeded, never
-    from a repository name. The demo holds one known workflow and one file the
-    repair may change; a commit from anyone else gets the ordinary repair.
+    from a repository name, and is cleared once another commit replaces the seeded
+    head. The demo holds one known workflow and one file the repair may change.
     """
-    if not run.fast_checks:
-        return False
+    return run.fast_checks
+
+
+def _on_seeded_chain(run: RepairRun, head: str) -> bool:
+    """Whether ``head`` is the seeded demo's scheduled commit or one this run pushed."""
     return not run.seeded_head or head == run.seeded_head or head in run.pushed_shas
 
 
-def _check_wait(run: RepairRun, head: str) -> _CheckWait:
+def _check_wait(run: RepairRun) -> _CheckWait:
     """Check-wait limits. A demo returns as soon as the head's run is terminal.
 
     The 60-second registration and 30-second settle windows are for a real
     repository's unknown checks.
     """
-    if not _demo_repository(run, head):
+    if not _demo_repository(run):
         return {}
     return {
         "registration_seconds": _DEMO_REGISTRATION_SECONDS,
@@ -119,9 +122,7 @@ def _verify_green(run: RepairRun, pr: dict[str, Any], token: str) -> bool:
         failing_checks=(),
         task="Verify the selected PR head.",
     )
-    result = wait_for_pr_checks(
-        ctx, github_token=token, expected_head_sha=sha, **_check_wait(run, sha)
-    )
+    result = wait_for_pr_checks(ctx, github_token=token, expected_head_sha=sha, **_check_wait(run))
     if result.state is CheckState.FAILED:
         return False
     if result.state is CheckState.PASSED:
@@ -152,6 +153,10 @@ def _repair(run: RepairRun, store: RepairStore, token: str) -> None:
             run.status, run.reason = RepairStatus.CANCELLED, "The PR was closed."
             return
         head = str(pr.get("headRefOid") or "")
+        if run.fast_checks and not _on_seeded_chain(run, head):
+            # Someone else replaced the seeded fixture: repair, and count, an ordinary PR.
+            run.fast_checks = False
+            store.save(run)
         rows = pr.get("statusCheckRollup") or []
         failed = any(check_failed(row, expected_skips=set()) for row in rows)
         if not failed:
@@ -173,9 +178,9 @@ def _repair(run: RepairRun, store: RepairStore, token: str) -> None:
             pr_number=run.pr_number,
             workspace=run.workspace,
             github_token=token,
-            allowed_paths=frozenset({"calculator.py"}) if _demo_repository(run, head) else None,
+            allowed_paths=frozenset({"calculator.py"}) if _demo_repository(run) else None,
             expected_source_head_sha=head,
-            **_check_wait(run, head),
+            **_check_wait(run),
         )
         diagnostic = store.directory(run.id) / f"attempt-{run.attempts}.json"
         diagnostic.write_text(json.dumps(output, indent=2), encoding="utf-8")
