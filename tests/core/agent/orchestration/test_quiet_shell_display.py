@@ -896,6 +896,41 @@ def test_several_tool_previews_stay_within_one_cap() -> None:
     assert shown.count("Ctrl+O to view") == 1
 
 
+def test_a_brief_cleanup_survives_earlier_short_results() -> None:
+    """Quiet mode's one cap must not cut off the trailing cleanup line."""
+    cleanup = "Saved demo evidence and removed the scheduled repair."
+    tool_results: list[tuple[ToolCall, _ToolResult]] = [
+        (
+            ToolCall(id=str(index), name="github_cli", input={}),
+            _ToolResult(_payload(f"status {index}")),
+        )
+        for index in range(20)
+    ]
+    tool_results.extend(
+        [
+            (
+                ToolCall(id="done", name="finish_ci_repair_demo", input={}),
+                _ToolResult(_payload(cleanup)),
+            ),
+            (
+                ToolCall(id="report", name="get_ci_repair_loop", input={}),
+                _ToolResult(_payload(_outcome("succeeded. The repair commit passed CI."))),
+            ),
+        ]
+    )
+    session = _Session()
+    session.terminal.inline_tool_results = True  # type: ignore[attr-defined]
+
+    _response_text, display_chunks, _use_final_text = _compose_response(
+        _Result(tool_results=tool_results), session, _counts(22)
+    )
+    shown = "\n".join(display_chunks)
+
+    assert cleanup in shown
+    assert "The repair commit passed CI" in shown
+    assert "status 19" not in shown
+
+
 def test_one_outcome_stays_visible_after_a_long_response() -> None:
     """A single snapshot still survives when the cap would otherwise eat the tail."""
     long_text = "\n".join(f"note {index}" for index in range(40))

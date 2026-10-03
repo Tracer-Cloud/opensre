@@ -342,12 +342,22 @@ def _closing_tool_chunks(chunks: Sequence[str], *, include_outcome: bool) -> lis
     return [chunk for index, chunk in enumerate(chunks) if index not in drop]
 
 
-def _visible_closing_text(chunks: Sequence[str]) -> str:
-    """One capped preview: the report, then short results, then long logs.
+#: A trailing confirmation of this many lines is kept after the shared cap.
+_BRIEF_RESULT_MAX_LINES = 2
 
-    Short results such as the cleanup line sit ahead of a long log so the cap
-    cannot drop them. The joined text is capped once, so several results cannot
-    stack into a wall and there is only one Ctrl+O marker.
+
+def _is_brief_result(text: str) -> bool:
+    """True when *text* is a short confirmation rather than a log preview."""
+    return text.count("\n") + 1 <= _BRIEF_RESULT_MAX_LINES
+
+
+def _visible_closing_text(chunks: Sequence[str]) -> str:
+    """One capped preview that still keeps a short trailing confirmation.
+
+    The report leads. Other results share one cap so several logs cannot stack.
+    A one- or two-line result at the end, such as the cleanup line, is placed
+    after that cap so earlier lines cannot cut it off. One expand marker stays
+    at the end.
     """
     outcome = ""
     others: list[str] = []
@@ -356,6 +366,10 @@ def _visible_closing_text(chunks: Sequence[str]) -> str:
             outcome = chunk
         elif chunk:
             others.append(chunk)
+    tail = ""
+    if others and _is_brief_result(others[-1]):
+        tail = others[-1]
+        others = others[:-1]
     short: list[str] = []
     bulky: list[str] = []
     for chunk in others:
@@ -364,7 +378,14 @@ def _visible_closing_text(chunks: Sequence[str]) -> str:
         else:
             bulky.append(chunk)
     ordered = [part for part in (outcome, *short, *bulky) if part]
-    return cap_for_display("\n".join(ordered))
+    preview = cap_for_display("\n".join(ordered)) if ordered else ""
+    if not tail:
+        return preview
+    body, marker = split_output_truncation_markers(preview)
+    text = "\n".join(part for part in (body, tail) if part)
+    if marker:
+        return f"{text}\n{marker}" if text else marker
+    return text
 
 
 def _painted_results_only(result: Any) -> bool:
