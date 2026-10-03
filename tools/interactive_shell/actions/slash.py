@@ -9,6 +9,7 @@ from rich.markup import escape
 
 from config.constants.slash_commands import QUEUED_COMMAND_KEY
 from core.agent_harness.spi.session_state import (
+    arm_setup_resume,
     exclusive_stdin_active,
     session_terminal,
     set_auto_command,
@@ -20,6 +21,7 @@ from core.agent_harness.tools import (
 )
 from core.domain.types.tools import ToolSurface
 from core.tool import RegisteredTool, SideEffectLevel
+from tools.interactive_shell.actions.skill_prerequisite_gate import resumable_setup
 from tools.interactive_shell.shared import plan_foreground_tool
 from tools.interactive_shell.shared.slash_catalog import (
     slash_invoke_input_schema,
@@ -75,6 +77,23 @@ def _slash_drives_interactive_picker(
     return (name, slash_args[0].lower()) in _INTERACTIVE_PICKER_SUBCOMMANDS and (
         name != "/loops" or len(slash_args) == 1
     )
+
+
+def _park_turn_for_setup(ctx: ActionToolScope, name: str, slash_args: list[str]) -> None:
+    """Park this turn's message when the agent queues ``/integrations setup <service>`` mid-skill.
+
+    The shell resubmits it once setup makes the service's prerequisite hold
+    (``arm_setup_resume``), so the skill continues from the same step. Only a
+    turn inside a skill whose prerequisite check can confirm that setup is
+    parked; a slash-command turn never is.
+    """
+    if name != "/integrations" or len(slash_args) < 2 or slash_args[0].lower() != "setup":
+        return
+    skill = getattr(ctx.session, "active_skill", None)
+    service = slash_args[1].lower()
+    if not skill or not resumable_setup(skill, service):
+        return
+    arm_setup_resume(ctx.session, ctx.turn_user_message, skill=skill, service=service)
 
 
 # Cap the failure excerpt fed back to the model: enough for a usage/typo
@@ -231,6 +250,7 @@ def execute_slash_tool(args: dict[str, Any], ctx: ActionToolScope) -> bool | dic
         # The queued-command key ends the action turn (``with_menu_turn_end``):
         # the command only runs once this turn is over.
         set_auto_command(ctx.session, stripped)
+        _park_turn_for_setup(ctx, name, slash_args)
         return {
             "ok": True,
             QUEUED_COMMAND_KEY: stripped,

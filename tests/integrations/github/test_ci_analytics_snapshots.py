@@ -159,7 +159,7 @@ def test_the_comparison_needs_no_saved_peer_figures(tmp_path: Path, monkeypatch)
     from integrations.github.tools.ci_analytics.benchmarks import BENCHMARKS, MEASURED_ON
 
     monkeypatch.setattr(tool_module, "snapshot_root", lambda _root=None: tmp_path)
-    monkeypatch.setattr(tool_module, "resolve_github_token", lambda _t=None: "tok")
+    monkeypatch.setattr(tool_module, "github_rest_token", lambda **_kw: "tok")
 
     def _analyze(_owner: str, _repo: str, **_kwargs: Any) -> Any:
         return type("A", (), {"report": _report(owner="acme", repo="app"), "runs_read": 3})()
@@ -263,7 +263,7 @@ def test_a_saved_snapshot_never_answers_a_live_analysis(tmp_path: Path, monkeypa
     now = datetime.now(UTC)
     _write_report_snapshot(tmp_path, _report(), now)
     monkeypatch.setattr(tool_module, "snapshot_root", lambda _root=None: tmp_path)
-    monkeypatch.setattr(tool_module, "resolve_github_token", lambda _t=None: "tok")
+    monkeypatch.setattr(tool_module, "github_rest_token", lambda **_kw: "tok")
     reads: list[str] = []
 
     def _analyze(owner: str, repo: str, **_kwargs: Any) -> Any:
@@ -331,7 +331,7 @@ def test_a_snapshot_write_failure_does_not_discard_the_analysis(
     from integrations.github.tools.ci_analytics import tool as tool_module
 
     monkeypatch.setattr(tool_module, "snapshot_root", lambda _root=None: tmp_path)
-    monkeypatch.setattr(tool_module, "resolve_github_token", lambda _t=None: "tok")
+    monkeypatch.setattr(tool_module, "github_rest_token", lambda **_kw: "tok")
 
     def _analysis(*_a: Any, **_k: Any) -> Any:
         return type("A", (), {"report": _report(), "runs_read": 1})()

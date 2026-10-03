@@ -5,7 +5,9 @@ One entry point serves every way into a skill. The model enters through the
 with no model step and no tool-event render. A skill's entry menu is catalog
 data (``ActionSkill.entry_menu``, built by the loader), never frontmatter; it
 opens here through the real ``ask_user_choice`` executor, so a host-opened menu
-behaves exactly as if the model had called the tool.
+behaves exactly as if the model had called the tool. Before any of that, a
+skill that is not yet active passes its host-owned prerequisite gate
+(``skill_prerequisite_gate``).
 """
 
 from __future__ import annotations
@@ -23,6 +25,7 @@ from tools.interactive_shell.actions.ask_choice import (
     ask_user_choice_tool,
     execute_ask_user_choice_tool,
 )
+from tools.interactive_shell.actions.skill_prerequisite_gate import gate_skill_entry
 
 _ENTRY_MENU_TOOL = "ask_user_choice"
 
@@ -102,8 +105,18 @@ def _may_open_menu(session: Any, skill: ActionSkill, *, from_model: bool) -> boo
     return skill.name not in (getattr(session, "skills_already_prompted", None) or set())
 
 
-def enter_skill(name: str, ctx: Any, *, from_model: bool = False) -> dict[str, Any]:
-    """Activate ``name`` on the session, open its entry menu, and return the body for the model."""
+def enter_skill(
+    name: str,
+    ctx: Any,
+    *,
+    from_model: bool = False,
+    resolved_integrations: Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Activate ``name`` on the session, open its entry menu, and return the body for the model.
+
+    ``resolved_integrations`` is the turn's integration view the prerequisite
+    gate checks; a host entry passes none and the gate resolves the session's.
+    """
     # One catalog read: the card, its body and its provenance always agree.
     catalog = active_skill_catalog().current()
     skill = catalog.find(name)
@@ -120,6 +133,12 @@ def enter_skill(name: str, ctx: Any, *, from_model: bool = False) -> dict[str, A
     already_active = (
         from_model and session is not None and getattr(session, "active_skill", None) == skill.name
     )
+    if not already_active:
+        # A held skill is neither activated nor counted as executed, so the
+        # message resubmitted after setup enters it exactly as this one would.
+        blocked = gate_skill_entry(skill.name, ctx, resolved_integrations=resolved_integrations)
+        if blocked is not None:
+            return blocked
     # Re-entry retains the active skill and does not reopen an answered menu.
     if session is not None and not already_active:
         session.active_skill = skill.name

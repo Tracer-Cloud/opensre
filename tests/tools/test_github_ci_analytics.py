@@ -1540,7 +1540,7 @@ def test_tool_names_the_setup_command_when_no_token_is_available() -> None:
     A turn that ends on the queued setup wizard closes with ``response_text``,
     which used to tell the user to call ``slash_invoke`` and end the turn.
     """
-    with patch("integrations.github.tools.ci_analytics.tool.resolve_github_token", return_value=""):
+    with patch("integrations.github.tools.ci_analytics.tool.github_rest_token", return_value=""):
         result = analyze_github_ci_reliability(owner="o", repo="r")
 
     assert result["available"] is False
@@ -1563,14 +1563,14 @@ def test_same_repository_analyzes_after_github_is_connected() -> None:
         merged_prs=(),
         coverage_notices=[],
     )
-    with patch("integrations.github.tools.ci_analytics.tool.resolve_github_token", return_value=""):
+    with patch("integrations.github.tools.ci_analytics.tool.github_rest_token", return_value=""):
         blocked = analyze_github_ci_reliability(owner="acme", repo="widget", days=30)
     assert blocked["available"] is False
     assert "opensre integrations setup github" in blocked["response_text"]
     assert "acme/widget" in blocked["response_text"]
 
     with (
-        patch("integrations.github.tools.ci_analytics.tool.resolve_github_token", return_value="t"),
+        patch("integrations.github.tools.ci_analytics.tool.github_rest_token", return_value="t"),
         patch(
             "integrations.github.tools.ci_analytics.analysis.collect_runs",
             return_value=collected,
@@ -1598,7 +1598,7 @@ def test_tool_stays_listed_on_a_fresh_install_with_no_github_token(
 def test_tool_failure_text_never_carries_exception_detail() -> None:
     secret_detail = "token ghp_abc rejected by https://api.github.com/x"
     with (
-        patch("integrations.github.tools.ci_analytics.tool.resolve_github_token", return_value="t"),
+        patch("integrations.github.tools.ci_analytics.tool.github_rest_token", return_value="t"),
         patch(
             "integrations.github.tools.ci_analytics.analysis.collect_runs",
             side_effect=GitHubApiError(secret_detail, status_code=403),
@@ -1624,7 +1624,7 @@ def test_tool_renders_report_from_collected_runs() -> None:
         coverage_notices=["Coverage notice: sample"],
     )
     with (
-        patch("integrations.github.tools.ci_analytics.tool.resolve_github_token", return_value="t"),
+        patch("integrations.github.tools.ci_analytics.tool.github_rest_token", return_value="t"),
         patch(
             "integrations.github.tools.ci_analytics.analysis.collect_runs", return_value=collected
         ),
@@ -1666,7 +1666,7 @@ def test_tool_prints_progress_lines_but_never_the_report() -> None:
     )
 
     with (
-        patch("integrations.github.tools.ci_analytics.tool.resolve_github_token", return_value="t"),
+        patch("integrations.github.tools.ci_analytics.tool.github_rest_token", return_value="t"),
         patch(
             "integrations.github.tools.ci_analytics.analysis.collect_runs", return_value=collected
         ),
@@ -1709,7 +1709,7 @@ def test_tool_returns_figures_and_no_rendered_report() -> None:
     )
 
     with (
-        patch("integrations.github.tools.ci_analytics.tool.resolve_github_token", return_value="t"),
+        patch("integrations.github.tools.ci_analytics.tool.github_rest_token", return_value="t"),
         patch(
             "integrations.github.tools.ci_analytics.analysis.collect_runs", return_value=collected
         ),

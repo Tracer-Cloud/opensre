@@ -36,6 +36,17 @@ app connection takes precedence over a local one; disconnect it in the web app
 if you want a locally configured credential to apply.
 </Info>
 
+<Note>
+The onboarding demos that read GitHub (**Analyze & improve a repo** and **Run
+continuously on this machine**) need a GitHub token before they start. Any of
+these works: the OpenSRE app's GitHub connection, `opensre integrations setup
+github` on this machine, or `GITHUB_TOKEN`, `GH_TOKEN`, or
+`GITHUB_MCP_AUTH_TOKEN` in the environment. Without one, the shell opens a setup
+menu instead of the demo: connecting GitHub in the OpenSRE app is recommended,
+and setting it up on this machine works too. Once GitHub is connected, the demo
+picks up where it stopped.
+</Note>
+
 ### Option 1: Interactive CLI (browser sign-in)
 
 ```bash

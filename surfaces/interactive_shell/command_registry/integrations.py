@@ -11,6 +11,7 @@ from surfaces.interactive_shell.command_registry.cli_parity import (
     publish_headless_slash_response,
     run_cli_command,
 )
+from surfaces.interactive_shell.command_registry.setup_resume import resume_after_setup
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.ui import (
@@ -277,6 +278,7 @@ def _run_integrations_setup(session: Session, console: Console, args: list[str])
             # Interactive service picker + credential prompts on the real TTY.
             result = run_cli_command(console, ["integrations", "setup"], capture_output=False)
             session.refresh_integration_state()
+            resume_after_setup(session, console)
             return result
         repl_print(console, f"[{DIM}]usage:[/] /integrations setup <service>")
         publish_headless_slash_response(
@@ -306,6 +308,8 @@ def _run_integrations_setup(session: Session, console: Console, args: list[str])
         session=session,
     )
     session.refresh_integration_state()
+    # ``result`` is True for any interactive run; the resume re-checks the credential.
+    resume_after_setup(session, console, service=service.lower())
     return result
 
 

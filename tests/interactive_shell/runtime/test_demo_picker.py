@@ -3,16 +3,24 @@
 from __future__ import annotations
 
 import io
+from pathlib import Path
 from typing import Any
 
 import pytest
 from rich.console import Console
 
 import surfaces.interactive_shell.command_registry.choice_prompt as choice_prompt
+import surfaces.interactive_shell.command_registry.integrations as integrations_cmds
 import surfaces.interactive_shell.runtime.slash_adapter as slash_adapter
 import surfaces.interactive_shell.runtime.startup.demo_picker as demo_picker
 import surfaces.interactive_shell.runtime.startup.onboarding_telemetry as onboarding_telemetry
 import tools.system.workspace_git_scan.tool as scan_tool
+from config.constants import (
+    GH_TOKEN_ENV,
+    GITHUB_MCP_AUTH_TOKEN_ENV,
+    GITHUB_TOKEN_ENV,
+    INTEGRATIONS_STORE_PATH_ENV,
+)
 from config.constants.skills import (
     ANALYZE_REPO_OPTION,
     AUTOMATION_GROUP_OPTION,
@@ -37,7 +45,9 @@ from core.agent_harness.session.pending_choice import (
     PendingUserChoice,
     format_ask_user_answers,
 )
+from core.agent_harness.spi.session_state import pending_setup_resume
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
+from integrations.store import resolve_store_path, upsert_integration
 from surfaces.interactive_shell.runtime.action_turn import run_action_tool_turn
 from surfaces.interactive_shell.session import Session
 from surfaces.shared.terminal.components import choice_menu, cpr_stdin
@@ -86,6 +96,20 @@ def test_explicit_demo_still_opens_when_startup_onboarding_is_disabled(
 def _take_prompt(session: Session) -> str:
     assert session.terminal.pop_pending_autosubmit()
     return session.terminal.pop_pending_prompt_default()
+
+
+def _no_github_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in (GITHUB_TOKEN_ENV, GH_TOKEN_ENV, GITHUB_MCP_AUTH_TOKEN_ENV):
+        monkeypatch.delenv(name, raising=False)
+
+
+def _run_slash_turn(session: Session, console: Console, command: str) -> None:
+    """Run a literal slash command the way the controller does: with stdin reserved."""
+    session.terminal.exclusive_stdin_active = True
+    try:
+        run_action_tool_turn(command, session, console, is_tty=True)
+    finally:
+        session.terminal.exclusive_stdin_active = False
 
 
 @pytest.mark.parametrize("selection", [SKIP_DEMO_OPTION, None], ids=["skip", "escape"])
@@ -150,6 +174,8 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
 ) -> None:
     """Boot output contract: the skill's entry menu is the first paint and needs no model."""
     _offerable(monkeypatch)
+    # GitHub is ready, so the demo starts without the setup menu.
+    monkeypatch.setenv(GITHUB_TOKEN_ENV, "ghp_ready")
     session = Session()
     session.resolved_integrations_cache = {}
     buffer = io.StringIO()
@@ -265,6 +291,129 @@ def test_boot_paints_only_the_skill_menu_then_selected_child_runs_through_real_t
     assert session.pending_user_choice is not None
     assert session.pending_user_choice.title == _REPOSITORY_TITLE
     assert "deploy to production?" in session.questions_already_answered
+
+
+def test_without_github_the_demo_opens_setup_first_and_resumes_after_it(
+    monkeypatch: pytest.MonkeyPatch,
+    onboarding_outcomes: list[tuple[str, bool | None]],
+    tmp_path: Path,
+) -> None:
+    """No token: setup comes before any scan or repository question, then the demo resumes.
+
+    The demo used to scan, ask which repository to analyze, and only then fail
+    on the missing token; finishing setup never brought the user back.
+    """
+    # Arrange: no GitHub credential anywhere; the local store lives in tmp_path.
+    _offerable(monkeypatch)
+    _no_github_token(monkeypatch)
+    monkeypatch.setenv(INTEGRATIONS_STORE_PATH_ENV, str(tmp_path / "integrations.json"))
+    assert resolve_store_path().is_relative_to(tmp_path)
+    session = Session()
+    session.resolved_integrations_cache = {}
+    buffer = io.StringIO()
+    console = Console(file=buffer, highlight=False)
+    load_demo = tool_response("skill_view", {"name": "analyzing-github-ci-performance"})
+    llm = FakeActionLLM(
+        [
+            load_demo,
+            load_demo,
+            tool_response("scan_local_git_workspace"),
+            tool_response(
+                "ask_user_choice",
+                {"title": _REPOSITORY_TITLE, "options": list(_REPOSITORY_OPTIONS)},
+            ),
+        ]
+    )
+    scans: list[str] = []
+    titles: list[str] = []
+    picks = iter([ANALYZE_REPO_OPTION, "Set up GitHub on this machine"])
+
+    def scan(root: Any, **_kwargs: Any) -> WorkspaceSnapshot:
+        scans.append(str(root))
+        return WorkspaceSnapshot(root=str(root), days=30, repos=())
+
+    def pick(**kwargs: Any) -> str:
+        titles.append(kwargs["title"])
+        return next(picks)
+
+    def local_wizard(_console: Console, args: list[str], **_kwargs: Any) -> bool:
+        assert args == ["integrations", "setup", "github"]
+        upsert_integration("github", {"credentials": {"auth_token": "ghp_local"}})
+        return True
+
+    monkeypatch.setattr(scan_tool, "scan_workspace", scan)
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", pick)
+    monkeypatch.setattr(integrations_cmds, "run_cli_command", local_wizard)
+
+    # Act 1: startup, then the user picks the analysis demo.
+    assert demo_picker.offer_demo(session, console)
+    _run_slash_turn(session, console, _take_prompt(session))
+    answer = _take_prompt(session)
+    run_action_tool_turn(answer, session, console, is_tty=True, llm_factory=lambda: llm)
+
+    # Assert: the setup menu is queued before any scan or repository question.
+    assert llm.invocations == 1
+    assert scans == []
+    pending = session.pending_user_choice
+    assert pending is not None
+    assert pending.title == "Connect GitHub to continue"
+    assert _REPOSITORY_TITLE not in buffer.getvalue()
+    assert session.active_skill == ONBOARDING_SKILL_NAME
+
+    # Act 2: the user sets GitHub up on this machine; the wizard saves a token.
+    _run_slash_turn(session, console, _take_prompt(session))
+    _run_slash_turn(session, console, _take_prompt(session))
+
+    # Assert: the menu answer is resubmitted exactly as it was first sent.
+    replay = _take_prompt(session)
+    assert replay == answer
+    assert session.terminal.awaiting_handoff_answer
+    assert pending_setup_resume(session) is None
+
+    # Act 3: the resubmitted answer runs the demo from its first step.
+    run_action_tool_turn(replay, session, console, is_tty=True, llm_factory=lambda: llm)
+
+    # Assert: the demo reached the repository question.
+    assert len(scans) == 1
+    assert session.active_skill == "analyzing-github-ci-performance"
+    assert session.pending_user_choice is not None
+    assert session.pending_user_choice.title == _REPOSITORY_TITLE
+    assert llm.invocations == 4
+    assert titles == [_TITLE, "Connect GitHub to continue"]
+    assert onboarding_outcomes == [("ci_analytics", False)]
+
+
+def test_declining_github_setup_ends_the_demo_cleanly(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _offerable(monkeypatch)
+    _no_github_token(monkeypatch)
+    session = Session()
+    session.resolved_integrations_cache = {}
+    buffer = io.StringIO()
+    console = Console(file=buffer, highlight=False)
+    llm = FakeActionLLM([tool_response("skill_view", {"name": "analyzing-github-ci-performance"})])
+    picks = iter([ANALYZE_REPO_OPTION, "Not now"])
+
+    def pick(**_kwargs: Any) -> str:
+        return next(picks)
+
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", pick)
+    assert demo_picker.offer_demo(session, console)
+    _run_slash_turn(session, console, _take_prompt(session))
+    run_action_tool_turn(
+        _take_prompt(session), session, console, is_tty=True, llm_factory=lambda: llm
+    )
+
+    _run_slash_turn(session, console, _take_prompt(session))
+
+    assert "Skipped GitHub setup" in buffer.getvalue()
+    assert "error" not in buffer.getvalue().lower()
+    assert session.active_skill is None
+    assert session.pending_user_choice is None
+    assert not session.terminal.pending_prompt_default
+    assert pending_setup_resume(session) is None
+    assert llm.invocations == 1
 
 
 @pytest.mark.parametrize("answer", [None, "Inspect the deployment logs", "/help"])
@@ -386,6 +535,8 @@ def test_automation_group_submits_the_follow_up_leaf_not_the_group(
     the permission, not the group row.
     """
     _offerable(monkeypatch)
+    # GitHub is ready, so the local repair demo needs no setup first.
+    monkeypatch.setenv(GITHUB_TOKEN_ENV, "ghp_ready")
     session = Session()
     session.active_skill = ONBOARDING_SKILL_NAME
     pending = PendingUserChoice(title=_TITLE, options=OUTCOME_MENU_OPTIONS)
@@ -441,6 +592,50 @@ def test_automation_group_submits_the_follow_up_leaf_not_the_group(
         f"  3.  {DEMO_REPO_PERMISSION_TITLE}",
         f"      {create}",
     ]
+
+
+def test_without_github_the_local_repair_demo_asks_for_setup_before_its_repository(
+    monkeypatch: pytest.MonkeyPatch,
+    onboarding_outcomes: list[tuple[str, bool | None]],
+) -> None:
+    """GitHub setup comes before the demo-repository question, not after it.
+
+    The question names a repository in the user's GitHub account, and the demo
+    behind it cannot start without a token; the leaf answer is parked so the
+    demo resumes once GitHub is connected.
+    """
+    _offerable(monkeypatch)
+    _no_github_token(monkeypatch)
+    session = Session()
+    session.resolved_integrations_cache = {}
+    session.active_skill = ONBOARDING_SKILL_NAME
+    pending = PendingUserChoice(title=_TITLE, options=OUTCOME_MENU_OPTIONS)
+    session.pending_user_choice = pending
+    titles: list[str] = []
+
+    def no_repository_question() -> str:
+        raise AssertionError("the demo-repository question must wait for GitHub setup")
+
+    def pick(**kwargs: Any) -> str:
+        titles.append(kwargs["title"])
+        if kwargs["title"] == "Connect GitHub to continue":
+            return "Set up GitHub on this machine"
+        if kwargs["title"] == AUTOMATION_MENU_TITLE:
+            return LOCAL_REPAIR_OPTION
+        return AUTOMATION_GROUP_OPTION
+
+    monkeypatch.setattr(choice_prompt, "_demo_create_option", no_repository_question)
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", pick)
+
+    choice_prompt._cmd_choose(session, Console(file=io.StringIO()), [])
+
+    assert titles == [_TITLE, AUTOMATION_MENU_TITLE, "Connect GitHub to continue"]
+    assert _take_prompt(session) == "/integrations setup github"
+    parked = pending_setup_resume(session)
+    assert parked is not None
+    assert parked.text == format_ask_user_answers(pending.items(), (LOCAL_REPAIR_OPTION,))
+    assert parked.skill == "scheduling-github-ci-repairs"
+    assert onboarding_outcomes == [("ci_agent", False)]
 
 
 @pytest.mark.parametrize(

@@ -182,6 +182,16 @@ menu on skill entry
 `ask_user_choice` executor and reports `queued`, `suppressed`, or
 `unavailable` under the `entry_menu` key of the `skill_view` result.
 
+Before that, a skill that is not yet active passes its host-owned
+prerequisites (`SKILL_PREREQUISITES` in
+`config/constants/skill_prerequisites.py`, checks registered by id in
+`infrastructure/harness_providers/skill_prerequisites.py`). An unmet one
+withholds the body, queues a setup menu (`skill_prerequisite_gate.py`), and
+reports it under the `prerequisite` key; after setup the shell resubmits the
+blocked message. A demo picked in the onboarding menu is checked before the
+menu's own follow-up (the demo-repository question), so setup comes first
+there too. Every getting-started skill has a row, even an empty one.
+
 ## Narrow purpose
 
 The skill has a narrow, concrete purpose.

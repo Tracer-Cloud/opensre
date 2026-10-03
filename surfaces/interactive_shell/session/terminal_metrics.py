@@ -45,6 +45,8 @@ class TerminalMetrics:
     Ctrl-C with no agent running is intentionally not counted."""
     correction_intervention_count: int = 0
     """Incremented when a follow-up/new-alert message starts with a correction cue."""
+    autosubmit_overwrite_count: int = 0
+    """Incremented when a queued autosubmit is replaced before it ran (a lost next turn)."""
 
     def record_turn(
         self,
@@ -89,6 +91,7 @@ class TerminalMetrics:
         self.actions_success_count = 0
         self.ctrl_c_intervention_count = 0
         self.correction_intervention_count = 0
+        self.autosubmit_overwrite_count = 0
 
 
 __all__ = ["InterventionKind", "TerminalMetrics", "TerminalMetricsSnapshot"]

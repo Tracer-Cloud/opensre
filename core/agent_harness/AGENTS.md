@@ -133,6 +133,13 @@ changes; execution rechecks the active session. Settling the plan retires its
 helpers. A new user request clears active skill context, while menu answers
 and slash commands retain it. Full contract: `prompts/skills/AGENTS.md`.
 
+A turn held behind integration setup (a skill's prerequisite gate, or
+`/integrations setup <service>` deferred mid-skill) is parked as a
+`SetupResume` (`session/setup_resume.py`, via `spi.session_state`) on the
+shell's terminal facet only. The shell replays it at most once, after the
+prerequisite's registered check passes again; a typed turn, a closed menu, a
+new demo, and `/new` drop it. Never park skill-less prose or a slash command.
+
 Self-contained scheduled agent ticks set `SessionCore.skill_discovery_enabled`
 to `False` through `prepare_session`. This host-owned policy removes the skill
 index and `skill_view` while retaining execution tools; never infer it from

@@ -117,6 +117,13 @@ owning area rather than adding more logic to the caller.
     must be added to
     `_INTERACTIVE_PICKER_MENUS` / `_INTERACTIVE_PICKER_SUBCOMMANDS` in
     `tools/interactive_shell/actions/slash.py`.
+  - **Resume after setup:** a deferred `/integrations setup <service>` inside
+    a skill parks the turn's message, as does a skill's prerequisite gate.
+    `command_registry/setup_resume.py` (called when the wizard ends and by
+    the setup menu's "continue" row) re-runs the prerequisite's check —
+    `run_cli_command` reports success for every interactive run, so never
+    trust it — and replays the parked message once; it never replaces a
+    queued autosubmit.
 
 ## Action Selection And Execution
 

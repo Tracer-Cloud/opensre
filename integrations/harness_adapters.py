@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Any
 
 
@@ -35,6 +36,13 @@ def _account_integrations_generation() -> int:
     import integrations.account_integrations as account_integrations
 
     return account_integrations.account_integrations_generation()
+
+
+def _github_rest_token_resolves(resolved_integrations: Mapping[str, Any]) -> bool:
+    """The analyzer's own token predicate; the GitHub client imports on first use."""
+    from integrations.github import has_github_rest_token
+
+    return has_github_rest_token(resolved_integrations)
 
 
 def register_harness_adapters() -> None:
@@ -76,6 +84,19 @@ def register_harness_adapters() -> None:
     _register_secondary_tool_sources()
     _register_gateway_persona()
     _register_preferred_evidence_sources()
+    _register_skill_prerequisite_checks()
+
+
+def _register_skill_prerequisite_checks() -> None:
+    """Answer the skill prerequisite checks the host gate looks up by id."""
+    from config.constants.skill_prerequisites import GITHUB_REST_TOKEN_CHECK
+    from infrastructure.harness_providers import (
+        clear_skill_prerequisite_checks,
+        register_skill_prerequisite_check,
+    )
+
+    clear_skill_prerequisite_checks()
+    register_skill_prerequisite_check(GITHUB_REST_TOKEN_CHECK, _github_rest_token_resolves)
 
 
 def _register_vcs_repo_scope_providers() -> None:
