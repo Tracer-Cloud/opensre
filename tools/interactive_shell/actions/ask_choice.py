@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from config.constants.ask_user import AskUserReason
 from core.agent_harness.spi.handoff import AskUserQuestion, parse_ask_user_answers, question_key
 from core.agent_harness.spi.session_state import (
     PendingUserChoice,
@@ -278,6 +279,7 @@ def execute_ask_user_choice_tool(args: dict[str, Any], ctx: ActionToolScope) -> 
             title=header,
             options=questions[0].options,
             questions=tuple(questions),
+            reason_code=AskUserReason.CHOICE,
         )
         queued = _QUEUED_BATCH_INSTRUCTION
         summary = f"Ask User menu queued: {len(questions)} questions"
@@ -293,6 +295,7 @@ def execute_ask_user_choice_tool(args: dict[str, Any], ctx: ActionToolScope) -> 
             multi_select=multi_select,
             note=strip_terminal_controls(str(args.get("note", ""))).strip(),
             custom_answer=_parse_bool(args.get("allow_custom"), default=True),
+            reason_code=AskUserReason.CHOICE,
         )
         queued = _QUEUED_INSTRUCTION
         summary = f"selection menu queued: {title}"

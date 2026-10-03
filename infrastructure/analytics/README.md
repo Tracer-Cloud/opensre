@@ -186,13 +186,13 @@ recorded installations.
 | Onboarding | `onboard_started`, `onboard_completed`, `onboard_failed` | Funnel conversion, wizard mode, target, provider, and model. |
 | Integrations | `integration_setup_started`, `integration_setup_completed`, `integration_verified`, `integration_removed`, `integrations_listed` | Integration adoption and setup/verification conversion by service. |
 | Interactive actions | `terminal_actions_planned`, `terminal_actions_executed`, `terminal_turn_summarized` | Planned/executed/success counts, LLM fallback, and session success/fallback buckets. |
-| Agent loop | `react_turn_completed` | Phase, iterations, cap hits, stop reason, tool-call count, latency, provider, and model. |
-| Agent tool calls | `agent_tool_call_completed` | Tool/source/role, whether execution occurred, outcome, latency, error state, and termination; never tool arguments or results. |
-| Ask User | `ask_user_prompt_rendered`, `ask_user_prompt_answered`, `ask_user_prompt_dismissed` | Linked prompt exposure, bounded credential-redacted question/option text, selected option indexes, bounded custom answers, and dismissals. Listed answers send indexes only. |
+| Agent loop | `react_turn_completed` | Phase, iterations, cap hits, stop reason, tool-call count, latency, provider, and model. `stop_reason` reports every hard stop as `iteration_cap`; `loop_stop_reason` keeps the loop's own reason (`goal_unverified`, `stagnation_limit`, `iteration_cap`, `completed`, …). A run that raised adds `error_type` and a redacted, capped `error_message`. |
+| Agent tool calls | `agent_tool_call_completed` | Tool/source/role, whether execution occurred, outcome, latency, error state, and termination; never tool arguments or results. A failed call adds the tool's redacted, capped `error_message` and, when known, `blocked_by` (`duplicate_action`, `plan_required`, `menu_pending`, `approval_declined`, `approval_pending`, `hook_exception`), `skipped_by` (`turn_terminated`, `host_cancel`), `exception_type`, the tool's `error_class`, and for an unavailable integration its `error_source` and `setup_command`. `unavailable` is always set; `prompt_turn_id`, `iteration`, and `tool_call_index` place the call in its turn. |
+| Ask User | `ask_user_prompt_rendered`, `ask_user_prompt_answered`, `ask_user_prompt_dismissed` | Linked prompt exposure, bounded credential-redacted question/option text, selected option indexes, bounded custom answers, and dismissals. Listed answers send indexes only. A rendered prompt carries `reason_code` when its author declared one (`choice` for a menu the model opened); it is never inferred from the question text. |
 | Shell and browser | `interactive_shell_rendered`, `browser_open_requested` | First interactive-shell chrome, including the sign-in screen. Not recorded for `--resume`, an auto-launch after `opensre onboard`, or CLI subcommands. `browser_open_requested` is an application-requested browser-open outcome by safe target label. Terminals do not expose whether a manually rendered link was clicked. |
 | Agent workflows | `skill_executed`, `skills_release_activated`, `opensre_commit_created` | Successful skill entry with the skills release, source (bundled, remote or local override), card version and a 12-character content digest; a process switching to a different skills release; commits produced by supported OpenSRE repair workflows. |
-| AI turn | `$ai_generation` | Turn/session IDs, turn kind, model/provider, latency, tokens, integration snapshot, outcome, and error category. It also contains redacted prompt and response text in `$ai_input` and `$ai_output_choices`. |
-| Gateway | `gateway_turn_started`, `gateway_turn_completed`, `gateway_turn_failed` | Surface, answer rate, final intent, latency bucket, and exception type. No message body is included. |
+| AI turn | `$ai_generation` | Turn/session IDs, turn kind, model/provider, latency, tokens, integration snapshot, outcome, and error category. It also contains redacted prompt and response text in `$ai_input` and `$ai_output_choices`. An action turn adds the loop's `stop_reason`, the goal review's last refusal (`goal_review_reason`), `last_failed_tool` with its redacted, capped `last_tool_error`, `tool_error_count` (blocked calls included, skipped calls not), and `blocked_tool_calls`. A turn that stopped short (`error_kind=iteration_limit`) repeats those reasons in `$ai_error`. |
+| Gateway | `gateway_turn_started`, `gateway_turn_completed`, `gateway_turn_failed` | Surface, answer rate, final intent, latency bucket, and exception type; a failed turn adds a redacted, capped `error_message`. No message body is included. |
 | Scheduled work | `scheduled_task_started`, `scheduled_task_completed`, `scheduled_task_failed` | Task kind, provider, status, and task ID. Failed events can contain a capped error string. |
 | Updates | `update_started`, `update_completed`, `update_failed` | Check-only vs update, whether a version changed, and failure class. |
 | Local-agent safety | `agent_secret_detected`, `agent_killed`, `agent_kill_failed` | Rule names, count, blocked state, agent type, and result; never the detected secret. |
@@ -228,8 +228,8 @@ must be calculated from `analytics_product_events`.
 | Answer rate | Completed gateway turns with `answered=true` divided by completed gateway turns. |
 | Action success rate | Sum of `executed_success_count` divided by sum of `executed_count`. |
 | LLM fallback rate | `terminal_turn_summarized` events with `fallback_to_llm=true` divided by all summarized turns. |
-| Agent reliability | Error, cancellation, and iteration-cap `react_turn_completed` events divided by all ReAct turns. |
-| Tool-call success | Executed `agent_tool_call_completed` events with `outcome=ok` divided by all executed tool calls; report pre-execution rejection outcomes separately. |
+| Agent reliability | Error, cancellation, and iteration-cap `react_turn_completed` events divided by all ReAct turns. Slice iteration-cap turns by `loop_stop_reason`. |
+| Tool-call success | Executed `agent_tool_call_completed` events with `outcome=ok` divided by all executed tool calls; report pre-execution rejection outcomes separately, blocked calls by `blocked_by`. |
 | Ask User response rate | Picker-mode `ask_user_prompt_answered` events divided by picker-mode `ask_user_prompt_rendered` events; report dismissals and custom-answer share separately. |
 | Latency | p50/p95 of gateway duration, ReAct duration, and `$ai_latency`, sliced by surface/model/provider. |
 | Integration adoption | Distinct authenticated organizations completing or verifying setup by service. Personal events use a server-resolved organization; silo events use a bearer-authenticated runtime assertion. Current connected inventory remains a webapp database fact, not an event-derived fact. |
@@ -262,7 +262,10 @@ directional, use the server-verified linked conversion for decisions, and keep
 an upstream WAF/rate limit on the public route for network-layer DDoS defense.
 
 `$ai_generation` and `ask_user_prompt_rendered` are the product events
-intended to contain user content. `ask_user_prompt_answered` includes bounded
+intended to contain user content. Failure text elsewhere (`error_message` on
+`agent_tool_call_completed`, `react_turn_completed`, and `gateway_turn_failed`)
+is credential-redacted and capped at 500 characters, but can still quote
+incident details from a tool or provider. `ask_user_prompt_answered` includes bounded
 custom-answer text only; listed answers send option indexes. Ask User text is
 credential-redacted and bounded before delivery, but arbitrary incident
 details may remain. Treat these fields as confidential, enforce a retention

@@ -106,6 +106,7 @@ def test_iteration_cap_is_preserved_on_turn_result() -> None:
     )
 
     assert result.hit_iteration_cap is True
+    assert result.stop_reason == "stagnation_limit"
     assert result.response_streamed is True
     assert "repeated tool calls produced no new result" in result.response_text
     assert _console_text(harness).count("repeated tool calls produced no new result") == 1

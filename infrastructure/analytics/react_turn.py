@@ -7,6 +7,10 @@
 - ``error`` — ``Agent.run`` raised before returning
 - ``cancelled`` — host cancellation during ``Agent.run``
 - ``no_tools_needed`` — loop finished without executing any tools
+
+``loop_stop_reason`` keeps the loop's own reason uncollapsed, so a run that
+ended on ``goal_unverified`` or ``stagnation_limit`` is not read as having
+exhausted its iterations.
 """
 
 from __future__ import annotations
@@ -103,6 +107,9 @@ def emit_react_turn_completed(
         cancelled=cancelled,
     )
     hit_iteration_cap = stop_reason == "iteration_cap"
+    # A partial result from an aborted run carries no loop reason of its own.
+    loop_stop_reason = (result.stop_reason if result is not None else "") or stop_reason
+    raised = error if stop_reason == "error" else None
 
     cli_turn_kind = get_cli_turn_kind() or "agent"
 
@@ -134,6 +141,9 @@ def emit_react_turn_completed(
         llm_provider=resolve_provider_name(llm) or "unknown",
         llm_model=resolve_model_name(llm) or "unknown",
         prompt_turn_id=get_prompt_turn_id(),
+        loop_stop_reason=loop_stop_reason,
+        error_type=type(raised).__name__ if raised is not None else "",
+        error_message=str(raised) if raised is not None else "",
     )
 
 

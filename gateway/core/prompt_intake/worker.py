@@ -14,6 +14,7 @@ from typing import Any, Protocol
 
 from config.constants.gateway import PROMPT_PROGRESS_KIND_NOTE, PROMPT_SLOT_WAIT_SECONDS
 from config.constants.organization import organization_id
+from config.constants.tooling import ToolBlockedBy
 from config.principal import Actor, Principal, StorageScope
 from config.scope_context import bound_storage_scope
 from core.agent_harness import SessionCore, TurnResult
@@ -295,13 +296,23 @@ class _Approvals:
             self._approved.discard(key)
             return None
         if self._session.pending_user_choice is not None:
-            return BeforeToolCallResult(blocked=True, terminate=True, reason=_ALREADY_WAITING)
+            return BeforeToolCallResult(
+                blocked=True,
+                terminate=True,
+                reason=_ALREADY_WAITING,
+                metadata={ToolBlockedBy.MENU_PENDING: True},
+            )
         reason = str(getattr(tool, "approval_reason", "") or "")
         preview = arguments_preview(request.arguments)
         self._session.pending_user_choice = approval_question(
             name, request.arguments, reason, preview, schema=schema
         )
-        return BeforeToolCallResult(blocked=True, terminate=True, reason=_APPROVAL_BLOCKED)
+        return BeforeToolCallResult(
+            blocked=True,
+            terminate=True,
+            reason=_APPROVAL_BLOCKED,
+            metadata={ToolBlockedBy.APPROVAL_PENDING: True},
+        )
 
 
 class _IntegrationFailures:

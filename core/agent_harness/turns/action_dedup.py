@@ -12,6 +12,7 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Any
 
+from config.constants.tooling import ToolBlockedBy
 from core.llm.types import ToolCall
 from core.tool.execution import (
     BeforeToolCallResult,
@@ -136,7 +137,7 @@ def with_duplicate_action_call_guard(
                         f"Already ran {name} with identical arguments "
                         "this turn. Do not repeat it; finish with no further tool calls."
                     ),
-                    metadata={"suppressed_duplicate": True},
+                    metadata={ToolBlockedBy.DUPLICATE_ACTION: True},
                 )
         if base_before is not None:
             return base_before(request)

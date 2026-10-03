@@ -33,6 +33,8 @@ class ToolCallingTurnResult:
     response_streamed: bool = False
     accounting_status: ToolCallingAccountingStatus = "completed"
     hit_iteration_cap: bool = False
+    #: Why the agent loop ended (``AgentRunResult.stop_reason``); ``error`` when it raised.
+    stop_reason: str = ""
     #: Host soft-timeout / stop asked the action phase to halt (shell/gateway).
     cancelled: bool = False
     #: Provider-reported totals; None if any model call omitted that measurement.

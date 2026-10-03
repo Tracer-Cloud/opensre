@@ -12,6 +12,7 @@ from infrastructure.analytics.event_properties import (
     _bucket_percentage,
     _integration_lifecycle_properties,
     _onboard_completed_properties,
+    bounded_error_message,
 )
 from infrastructure.analytics.events import Event, cli_command_event_name
 from infrastructure.analytics.provider import (
@@ -20,12 +21,15 @@ from infrastructure.analytics.provider import (
     analytics_opted_out,
     get_analytics,
 )
+from infrastructure.analytics.repl_context import get_prompt_turn_id
 from infrastructure.observability.errors.sentry import capture_exception
 
 _ASK_USER_LABEL_MAX_CHARS: Final[int] = 80
 _ASK_USER_TITLE_MAX_CHARS: Final[int] = 500
 _ASK_USER_OPTION_MAX_CHARS: Final[int] = 300
-_TOOL_ERROR_MESSAGE_MAX_CHARS: Final[int] = 500
+# Category-like tool facts: an exception type, an error kind, a source id.
+_TOOL_FACT_MAX_CHARS: Final[int] = 80
+_TOOL_SETUP_COMMAND_MAX_CHARS: Final[int] = 200
 
 EVAL_AND_TERMINAL_KPI_QUERIES: Final[dict[str, str]] = {
     "terminal_action_execution_success_rate": """
@@ -155,11 +159,13 @@ def capture_gateway_turn_failed(
     surface: str | None,
     duration_ms: float,
     error_type: str,
+    error_message: str = "",
 ) -> None:
     """Mark a failed gateway agent turn (exception during dispatch).
 
     ``surface`` may be omitted when transport context was unbound so failures
-    still land in product analytics for regression detection.
+    still land in product analytics for regression detection. ``error_message``
+    is redacted and capped before it is recorded.
     """
     props: Properties = {
         "duration_ms": round(duration_ms),
@@ -169,6 +175,8 @@ def capture_gateway_turn_failed(
     }
     if surface:
         props["surface"] = surface
+    if recorded_error := bounded_error_message(error_message):
+        props["error_message"] = recorded_error
     _capture(Event.GATEWAY_TURN_FAILED, props)
 
 
@@ -283,7 +291,17 @@ def capture_react_turn_completed(
     llm_provider: str,
     llm_model: str,
     prompt_turn_id: str | None = None,
+    loop_stop_reason: str = "",
+    error_type: str = "",
+    error_message: str = "",
 ) -> None:
+    """Record one finished ReAct run.
+
+    ``stop_reason`` is the collapsed dashboard value; ``loop_stop_reason`` is the
+    loop's own reason, which tells ``goal_unverified`` and ``stagnation_limit``
+    apart from a real ``iteration_cap``. A run that raised also carries its
+    exception type and a redacted, capped ``error_message``.
+    """
     properties: Properties = {
         "phase": phase,
         "llm_iterations_used": llm_iterations_used,
@@ -299,6 +317,12 @@ def capture_react_turn_completed(
     }
     if prompt_turn_id:
         properties["prompt_turn_id"] = prompt_turn_id
+    if loop_stop_reason:
+        properties["loop_stop_reason"] = loop_stop_reason
+    if error_type:
+        properties["error_type"] = error_type
+    if recorded_error := bounded_error_message(error_message):
+        properties["error_message"] = recorded_error
     _capture(Event.REACT_TURN_COMPLETED, properties)
 
 
@@ -349,12 +373,23 @@ def capture_agent_tool_call_completed(
     duration_ms: int,
     work_status: str = "",
     error_message: str = "",
+    blocked_by: str = "",
+    skipped_by: str = "",
+    exception_type: str = "",
+    error_class: str = "",
+    unavailable: bool = False,
+    setup_command: str = "",
+    error_source: str = "",
+    iteration: int | None = None,
+    tool_call_index: int | None = None,
 ) -> None:
     """Record the privacy-safe outcome of one model-requested tool call.
 
     A failed call also carries ``error_message``: the tool's own description of
-    what went wrong, redacted and length-capped. Arguments and result evidence
-    stay off the event.
+    what went wrong, redacted and length-capped. It says why when known: the
+    hook that blocked it, why it was skipped, the exception type, the tool's own
+    error class, and for an unavailable integration its source and setup
+    command. Arguments and result evidence stay off the event.
     """
     properties: Properties = {
         "tool_call_id": tool_call_id,
@@ -368,10 +403,27 @@ def capture_agent_tool_call_completed(
         "duration_ms": duration_ms,
         "duration_bucket": _bucket_duration_ms(duration_ms),
         "work_status": work_status,
+        "unavailable": unavailable,
     }
-    recorded_error = _bounded_redacted_text(error_message, max_chars=_TOOL_ERROR_MESSAGE_MAX_CHARS)
-    if is_error and recorded_error:
+    if is_error and (recorded_error := bounded_error_message(error_message)):
         properties["error_message"] = recorded_error
+    facts = {
+        "blocked_by": (blocked_by, _TOOL_FACT_MAX_CHARS),
+        "skipped_by": (skipped_by, _TOOL_FACT_MAX_CHARS),
+        "exception_type": (exception_type, _TOOL_FACT_MAX_CHARS),
+        "error_class": (error_class, _TOOL_FACT_MAX_CHARS),
+        "error_source": (error_source, _TOOL_FACT_MAX_CHARS),
+        "setup_command": (setup_command, _TOOL_SETUP_COMMAND_MAX_CHARS),
+    }
+    for name, (value, max_chars) in facts.items():
+        if value and (recorded := _bounded_redacted_text(value, max_chars=max_chars)):
+            properties[name] = recorded
+    if prompt_turn_id := get_prompt_turn_id():
+        properties["prompt_turn_id"] = prompt_turn_id
+    if iteration is not None:
+        properties["iteration"] = iteration
+    if tool_call_index is not None:
+        properties["tool_call_index"] = tool_call_index
     _capture(Event.AGENT_TOOL_CALL_COMPLETED, properties)
 
 
@@ -418,24 +470,25 @@ def capture_ask_user_prompt_rendered(
     allow_custom: bool,
     has_command_options: bool,
     skill_name: str | None,
+    reason_code: str | None = None,
 ) -> None:
-    """Record a structured Ask User prompt when it becomes visible."""
+    """Record a structured Ask User prompt when it becomes visible.
+
+    ``reason_code`` names why the menu opened when its author declared one.
+    """
     sanitized = _ask_user_questions(questions)
-    _capture(
-        Event.ASK_USER_PROMPT_RENDERED,
-        _with_optional_skill(
-            {
-                "interaction_id": interaction_id,
-                "prompt_kind": "batch" if len(sanitized) > 1 else "single",
-                "question_count": len(sanitized),
-                "questions": cast(list[JsonValue], sanitized),
-                "render_mode": render_mode,
-                "allow_custom": allow_custom,
-                "has_command_options": has_command_options,
-            },
-            skill_name,
-        ),
-    )
+    properties: Properties = {
+        "interaction_id": interaction_id,
+        "prompt_kind": "batch" if len(sanitized) > 1 else "single",
+        "question_count": len(sanitized),
+        "questions": cast(list[JsonValue], sanitized),
+        "render_mode": render_mode,
+        "allow_custom": allow_custom,
+        "has_command_options": has_command_options,
+    }
+    if reason_code:
+        properties["reason_code"] = reason_code
+    _capture(Event.ASK_USER_PROMPT_RENDERED, _with_optional_skill(properties, skill_name))
 
 
 def capture_ask_user_prompt_answered(

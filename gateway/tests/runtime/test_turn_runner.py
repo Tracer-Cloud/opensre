@@ -431,6 +431,55 @@ def test_turn_runner_emits_gateway_turn_analytics(monkeypatch: Any) -> None:
     assert completed[0]["answered"] is False
 
 
+class _RecordingAnalytics:
+    """Stands in for the analytics client and keeps every captured event."""
+
+    def __init__(self) -> None:
+        self.events: list[tuple[str, dict[str, object]]] = []
+
+    def capture(self, event: str, properties: dict[str, object] | None = None) -> None:
+        self.events.append((event, dict(properties or {})))
+
+
+def test_a_failed_turn_records_a_redacted_capped_error_message(monkeypatch: Any) -> None:
+    # Arrange: dispatch raises with a credential in a long message, and the real
+    # failure capture runs against a recording analytics client.
+    from infrastructure.analytics import capture
+    from infrastructure.analytics.events import Event
+    from infrastructure.analytics.usage_context import UsageSurface, bound_usage_context
+
+    analytics = _RecordingAnalytics()
+    monkeypatch.setattr(capture, "get_analytics", lambda: analytics)
+    monkeypatch.setattr(
+        "infrastructure.turn_host.turn_runner.capture_gateway_turn_failed",
+        capture.capture_gateway_turn_failed,
+    )
+    agent_cls = _patch_headless_agent(monkeypatch, _empty_turn_result())
+    token = "xoxb-" + "1" * 12 + "-" + "2" * 12 + "-" + "a" * 24
+    agent_cls.return_value.dispatch.side_effect = RuntimeError(
+        f"slack rejected {token}: " + "z" * 2000
+    )
+    handler = TurnRunner(console=Console(force_terminal=False))
+
+    # Act
+    with (
+        bound_usage_context(surface=UsageSurface.SLACK, user_id="U1"),
+        pytest.raises(RuntimeError),
+    ):
+        handler(
+            "hi", SessionCore(store=InMemorySessionStore()), MagicMock(), logging.getLogger("t")
+        )
+
+    # Assert
+    failed = [props for event, props in analytics.events if event == Event.GATEWAY_TURN_FAILED]
+    assert len(failed) == 1
+    message = str(failed[0]["error_message"])
+    assert failed[0]["error_type"] == "RuntimeError"
+    assert token not in message
+    assert message.startswith("slack rejected [REDACTED")
+    assert len(message) == 500
+
+
 def test_turn_runner_holds_the_session_lock_for_the_whole_turn(monkeypatch: Any) -> None:
     """The handler must take the pool's lock, not the unsynchronised primitive.
 

@@ -46,8 +46,8 @@ from verified account metrics and show automation counts alongside them.
 | Gateway answer rate | `gateway_turn_completed` with `answered=true`, divided by all completed gateway turns. |
 | Terminal action success | Sum of `executed_success_count`, divided by sum of `executed_count`. |
 | LLM fallback rate | `terminal_turn_summarized` with `fallback_to_llm=true`, divided by all summarized turns. |
-| Agent reliability | Error, cancellation, and iteration-cap ReAct turns, divided by all `react_turn_completed` events. |
-| Tool-call success | Executed `agent_tool_call_completed` events with `outcome=ok`, divided by all executed tool calls. Slice pre-execution rejection outcomes separately. |
+| Agent reliability | Error, cancellation, and iteration-cap ReAct turns, divided by all `react_turn_completed` events. Slice iteration-cap turns by `loop_stop_reason` to separate an exhausted budget from `goal_unverified` and `stagnation_limit`. |
+| Tool-call success | Executed `agent_tool_call_completed` events with `outcome=ok`, divided by all executed tool calls. Slice pre-execution rejection outcomes separately, and blocked calls by `blocked_by`. |
 | Ask User response | `ask_user_prompt_answered` divided by picker-mode `ask_user_prompt_rendered`; report `ask_user_prompt_dismissed` and custom-answer share separately. |
 | Scheduled-work reliability | Completed versus failed scheduled tasks by task kind and provider. |
 | Latency | p50/p95 for gateway, ReAct, and AI-generation duration by surface, model, and provider. |

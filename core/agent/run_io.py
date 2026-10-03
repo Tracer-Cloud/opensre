@@ -33,6 +33,10 @@ class AgentRunResult:
     #: Host cooperative cancel (``console.cancel_requested``), not a tool terminate.
     cancelled: bool = False
     hit_iteration_cap: bool = False
+    #: Why the loop ended: ``completed``, ``no_tools_needed``, ``tool_terminated``,
+    #: ``cancelled``, ``goal_unverified``, ``stagnation_limit`` or ``iteration_cap``.
+    #: The last three are hard stops that also set ``hit_iteration_cap``.
+    stop_reason: str = ""
     llm_iterations_used: int = 0
     final_system_prompt: str = ""
     #: Provider-reported totals; None if any model call omitted that measurement.

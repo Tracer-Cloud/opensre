@@ -239,6 +239,8 @@ class _LLMGoalReviewer:
     executed_outcomes: list[ExecutedToolOutcome] = field(default_factory=list)
     reviews_remaining: int = field(default=_MAX_GOAL_REVIEWS)
     trace_context: Callable[[], dict[str, Any]] | None = None
+    # The reason of the latest refused conclusion; kept after a later accept.
+    last_rejection_reason: str = ""
 
     def __call__(self, observation: GoalObservation) -> bool:
         final_text = (observation.final_text or "").strip()
@@ -306,6 +308,8 @@ class _LLMGoalReviewer:
         )
 
     def _decision(self, observation: GoalObservation, accepted: bool, reason: str) -> bool:
+        if not accepted:
+            self.last_rejection_reason = reason
         record_decision(
             "goal_review",
             attributes={
@@ -436,6 +440,12 @@ def build_goal_reviewer(
     )
 
 
+def last_goal_rejection_reason(goal: Goal | None) -> str:
+    """Why ``goal``'s review last refused a conclusion; "" when it never did."""
+    reviewer = goal.verify if goal is not None else None
+    return reviewer.last_rejection_reason if isinstance(reviewer, _LLMGoalReviewer) else ""
+
+
 def build_gather_goal_reviewer(
     llm: AgentLLMClient,
     user_goal: str,
@@ -473,6 +483,7 @@ def build_gather_goal_reviewer(
 __all__ = [
     "build_gather_goal_reviewer",
     "build_goal_reviewer",
+    "last_goal_rejection_reason",
     "plan_worked_this_turn",
     "tap_executed_tool_calls",
     "tap_executed_tool_names",

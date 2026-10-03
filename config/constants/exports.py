@@ -89,6 +89,8 @@ EXPORTS: dict[str, str] = {
     "ANALYTICS_EXECUTION_CONTEXT_PATH": "analytics",
     "ANALYTICS_RUNNER_AUDIENCE": "analytics",
     "ANALYTICS_RUNNER_INGEST_URL": "analytics",
+    # ask_user
+    "AskUserReason": "ask_user",
     # alertmanager
     "ALERTMANAGER_BEARER_TOKEN_ENV": "alertmanager",
     "ALERTMANAGER_PASSWORD_ENV": "alertmanager",
@@ -537,6 +539,8 @@ EXPORTS: dict[str, str] = {
     "INTEGRATIONS_STORE_PATH_ENV": "tenancy",
     # tooling
     "DEFAULT_APPROVAL_EXPIRY_SECONDS": "tooling",
+    "ToolBlockedBy": "tooling",
+    "ToolSkippedBy": "tooling",
     # tracer
     "TRACER_BASE_URL_DEV": "tracer",
     "TRACER_BASE_URL_ENV": "tracer",

@@ -288,6 +288,7 @@ class TurnRunner:
                     surface=surface,
                     duration_ms=(time.monotonic() - started) * 1000.0,
                     error_type=type(exc).__name__,
+                    error_message=str(exc),
                 )
                 raise
 

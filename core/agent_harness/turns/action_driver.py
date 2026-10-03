@@ -21,7 +21,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from config.constants.skills import ONBOARDING_SKILL_NAME
-from core.agent import Agent
+from core.agent import Agent, AgentRunResult
 from core.agent.cancel import tool_resources_cancel_requested
 from core.agent.goals import Goal
 from core.agent_harness.accounting.self_recording_tools import SELF_RECORDING_ACTION_TOOL_NAMES
@@ -68,6 +68,7 @@ from core.agent_harness.turns.display_text import (
 )
 from core.agent_harness.turns.goal_review import (
     build_goal_reviewer,
+    last_goal_rejection_reason,
     tap_executed_tool_names,
 )
 from core.agent_harness.turns.plan_hooks import with_task_plan_hooks
@@ -84,9 +85,14 @@ from core.agent_harness.turns.work_outcome import (
 )
 from core.events import runtime_event_callback_from_observer
 from core.llm.types import AgentLLMResponse, SchemaDescribedTool, ToolCall
-from core.tool.execution import ToolExecutionHooks, public_tool_input
+from core.tool.execution import (
+    ToolExecutionHooks,
+    public_tool_input,
+    summarize_tool_failures,
+)
 from core.tool_framework.tags import SUMMARIZE_OBSERVATION_TAG
 from infrastructure.analytics.prompt_log.model_prompt import record_action_model_prompt
+from infrastructure.analytics.prompt_log.recorder import PromptRecorder
 from infrastructure.analytics.react_turn import run_react_agent_with_telemetry
 from infrastructure.observability.trace.decisions import record_decision
 from infrastructure.observability.trace.prompts import persist_turn_system_prompt
@@ -127,6 +133,8 @@ class ActionTurnPlan:
     prompt_skill: str = ""
     prompt_context: str = ""
     value_insights: set[str] = field(default_factory=set)
+    # The reviewed goal of an LLM-selected turn; it remembers why it refused stop.
+    goal: Goal | None = None
 
 
 def _deferred_reply_presenter(
@@ -687,6 +695,7 @@ def _build_action_agent(
         value_insights=value_insights,
         prompt_skill=prompt_skill,
         prompt_context=prompt_context,
+        goal=goal,
     )
 
 
@@ -1043,6 +1052,32 @@ def _count_turn(result: Any, session: SessionState, history_start: int) -> _Turn
     )
 
 
+def _record_loop_outcome(
+    recorder: PromptRecorder,
+    result: AgentRunResult,
+    *,
+    goal: Goal | None,
+    stopped_short: bool,
+) -> None:
+    """Tell the turn's ``$ai_generation`` why the loop stopped and what failed last.
+
+    A loop that stopped short records its real stop reason, the goal review's
+    last refusal, and the last failed tool with its sanitized error in the
+    recorded error, not only the generic text the user sees.
+    """
+    failures = summarize_tool_failures(result.tool_results)
+    recorder.set_loop_outcome(
+        stop_reason=result.stop_reason,
+        goal_review_reason=last_goal_rejection_reason(goal),
+        last_failed_tool=failures.last_failed_tool,
+        last_tool_error=failures.last_tool_error,
+        blocked_tool_calls=failures.blocked_tool_calls,
+        tool_error_count=failures.tool_error_count,
+    )
+    if stopped_short:
+        recorder.set_stopped_short()
+
+
 def _run_action_turn(
     message: str,
     session: SessionState,
@@ -1142,7 +1177,14 @@ def _run_action_turn(
         _persist_tool_calling_error(session, message, display_text)
         session.record("cli_agent", message, ok=False)
         return ToolCallingTurnResult(
-            0, 0, 0, True, True, response_text=display_text, accounting_status="not_run"
+            0,
+            0,
+            0,
+            True,
+            True,
+            response_text=display_text,
+            accounting_status="not_run",
+            stop_reason="error",
         )
 
     counts = _count_turn(result, session, history_start)
@@ -1195,11 +1237,14 @@ def _run_action_turn(
         counts.handled,
         cancelled,
     )
-    from infrastructure.analytics.prompt_log.recorder import PromptRecorder
-
     recorder = PromptRecorder.current()
-    if recorder is not None and result.hit_iteration_cap and not cancelled:
-        recorder.set_error("iteration_limit", "Agent stopped before producing a final answer.")
+    if recorder is not None:
+        _record_loop_outcome(
+            recorder,
+            result,
+            goal=built.goal,
+            stopped_short=bool(result.hit_iteration_cap and not cancelled),
+        )
     tool_evidence, evidence_success_count = (
         collect_tool_evidence(getattr(result, "tool_results", ()))
         if getattr(session, "session_goal", None) is not None
@@ -1214,6 +1259,7 @@ def _run_action_turn(
         response_text="" if cancelled else response_text,
         response_streamed=response_streamed,
         hit_iteration_cap=bool(result.hit_iteration_cap and not cancelled),
+        stop_reason=result.stop_reason,
         cancelled=cancelled,
         input_tokens=getattr(result, "input_tokens", None),
         output_tokens=getattr(result, "output_tokens", None),

@@ -13,6 +13,7 @@ from typing import Any, Protocol
 from config.prompt_log import PromptLogConfig
 from config.version import get_opensre_version
 from core.llm_invoke_errors import LLM_PROVIDER_FAILURE_KINDS, classify_provider_error_kind
+from infrastructure.analytics.event_properties import bounded_error_message
 from infrastructure.analytics.prompt_log.sinks.local_jsonl import (
     append_prompt_log_record,
 )
@@ -39,6 +40,13 @@ _TURN_TO_SESSION_KIND: dict[str, str] = {
     "new_alert": "alert",
     "background_task": "cli_command",
 }
+
+# Error recorded when the agent loop hit a hard stop (iteration cap, stagnation,
+# unverified goal) instead of accepting a final answer.
+_STOPPED_SHORT_KIND = "iteration_limit"
+_STOPPED_SHORT_MESSAGE = "Agent stopped before producing a final answer."
+# Loop-outcome properties the stopped-short error message repeats, in order.
+_STOP_DETAIL_KEYS = ("stop_reason", "goal_review_reason", "last_failed_tool", "last_tool_error")
 
 
 def _latest_slash_outcome(session: Any, *, start: int = 0) -> str | None:
@@ -122,6 +130,7 @@ class PromptRecorder:
         self._model_system = ""
         self._model_skill = ""
         self._model_context = ""
+        self._loop_outcome: dict[str, JsonValue] = {}
         self._start = time.monotonic()
         self._flushed = False
 
@@ -166,6 +175,51 @@ class PromptRecorder:
     def set_llm_attempted(self, attempted: bool) -> None:
         """Record whether dispatch used a provider or a deterministic tool call."""
         self._llm_attempted = attempted
+
+    def set_loop_outcome(
+        self,
+        *,
+        stop_reason: str,
+        goal_review_reason: str = "",
+        last_failed_tool: str = "",
+        last_tool_error: str = "",
+        blocked_tool_calls: int = 0,
+        tool_error_count: int = 0,
+    ) -> None:
+        """Attach why the agent loop stopped and how its tool calls failed.
+
+        The values become ``$ai_generation`` properties. ``last_tool_error`` is
+        redacted and capped like a tool event's ``error_message``.
+        """
+        outcome: dict[str, JsonValue] = {
+            "blocked_tool_calls": blocked_tool_calls,
+            "tool_error_count": tool_error_count,
+        }
+        for key, value in (
+            ("stop_reason", stop_reason),
+            ("goal_review_reason", goal_review_reason),
+            ("last_failed_tool", last_failed_tool),
+            ("last_tool_error", bounded_error_message(last_tool_error)),
+        ):
+            if text := value.strip():
+                outcome[key] = text
+        self._loop_outcome = outcome
+
+    def set_stopped_short(self) -> None:
+        """Record a turn whose loop stopped before a final answer, naming why.
+
+        Call after :meth:`set_loop_outcome`; its stop reason, goal review
+        reason, and last failure follow the generic text of the error.
+        """
+        details = "; ".join(
+            f"{key}={self._loop_outcome[key]}"
+            for key in _STOP_DETAIL_KEYS
+            if key in self._loop_outcome
+        )
+        self.set_error(
+            _STOPPED_SHORT_KIND,
+            f"{_STOPPED_SHORT_MESSAGE} {details}" if details else _STOPPED_SHORT_MESSAGE,
+        )
 
     @property
     def turn_id(self) -> str:
@@ -368,6 +422,7 @@ class PromptRecorder:
                 }
                 if self._llm_attempted is not None:
                     posthog_properties["llm_attempted"] = self._llm_attempted
+                posthog_properties.update(self._loop_outcome)
                 reported = 0
                 for key, value in (
                     ("$ai_input_tokens", self._input_tokens),

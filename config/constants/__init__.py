@@ -146,6 +146,9 @@ if TYPE_CHECKING:
     from config.constants.analytics import (
         ANALYTICS_TIMESTAMP_HEADER as ANALYTICS_TIMESTAMP_HEADER,
     )
+    from config.constants.ask_user import (
+        AskUserReason as AskUserReason,
+    )
     from config.constants.aws import (
         AWS_ACCESS_KEY_ID_ENV as AWS_ACCESS_KEY_ID_ENV,
     )
@@ -1372,6 +1375,12 @@ if TYPE_CHECKING:
     )
     from config.constants.tooling import (
         DEFAULT_APPROVAL_EXPIRY_SECONDS as DEFAULT_APPROVAL_EXPIRY_SECONDS,
+    )
+    from config.constants.tooling import (
+        ToolBlockedBy as ToolBlockedBy,
+    )
+    from config.constants.tooling import (
+        ToolSkippedBy as ToolSkippedBy,
     )
     from config.constants.tracer import (
         TRACER_BASE_URL_DEV as TRACER_BASE_URL_DEV,

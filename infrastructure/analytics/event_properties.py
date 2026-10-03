@@ -20,6 +20,7 @@ from infrastructure.analytics.repl_context import get_cli_session_id
 from infrastructure.safety.secret_redaction import redact_text
 
 _INSTALL_DIMENSION_MAX_CHARS: Final[int] = 80
+_ERROR_MESSAGE_MAX_CHARS: Final[int] = 500
 
 
 def _string_value(value: object) -> str | None:
@@ -93,6 +94,11 @@ def _bounded_redacted_text(value: object, *, max_chars: int) -> str:
     if len(text) <= max_chars:
         return text
     return f"{text[: max_chars - 1].rstrip()}…"
+
+
+def bounded_error_message(value: object) -> str:
+    """Redact credentials from failure text and cap it for an event or a local trace span."""
+    return _bounded_redacted_text(value, max_chars=_ERROR_MESSAGE_MAX_CHARS)
 
 
 def _optional_install_dimension(raw: str) -> str | None:

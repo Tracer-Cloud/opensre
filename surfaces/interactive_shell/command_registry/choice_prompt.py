@@ -83,6 +83,7 @@ def _capture_prompt_rendered(
         allow_custom=bool(pending.custom_answer),
         has_command_options=bool(pending.commands),
         skill_name=session.active_skill,
+        reason_code=pending.reason_code,
     )
 
 
