@@ -89,7 +89,10 @@ _RECORD_TEXT_FIELDS = (
     "session_id",
     "parent_id",
     "answered_by",
+    "request_id",
 )
+#: Failures after which the gateway reopens the question the follow-up answered.
+_REOPENING_ERRORS = frozenset({ERROR_INVALID_ANSWER, ERROR_INTERRUPTED})
 #: What another task's newer record may change on a job this task holds.
 _ADOPTED_FIELDS = (
     "state",
@@ -140,6 +143,8 @@ class PromptJob:
     parent_id: str = ""
     #: For a prompt that asked: the follow-up job carrying the answer.
     answered_by: str = ""
+    #: The caller's id for this submission; a repeat with the same id is the same prompt.
+    request_id: str = ""
     #: Advanced on every persisted change; the newest record of a prompt wins on reload.
     revision: int = 0
     #: When the task that owns the job last saved it; how another task tells it is alive.
@@ -168,6 +173,9 @@ class PromptJob:
                 record["question"] = self.question
                 if self.choice is not None:
                     record["choice"] = self.choice
+                if self.answered_by:
+                    # Where the answer went, for a caller whose answer response was lost.
+                    record["answered_by"] = self.answered_by
             if self.state is PromptState.FAILED:
                 record["error"] = self.error_code
             if self.finished_at is not None:
@@ -289,6 +297,10 @@ class PromptQueue:
         self._foreign_read_at: float | None = None
         #: When each waiting question was last re-read for an answer another task took.
         self._reread_at: dict[str, float] = {}
+        #: Follow-ups whose claim on their question is being written to the store.
+        self._claiming: set[str] = set()
+        #: Submissions with a request id whose record is being written, by that id.
+        self._in_flight: dict[str, PromptJob] = {}
         #: Settled jobs dropped by retention, kept until the worker retires their sessions.
         self._forgotten: deque[PromptJob] = deque()
         self._lock = threading.Lock()
@@ -335,15 +347,23 @@ class PromptQueue:
                 records.append(job._bump(now))
         self._save(*records)
 
-    def submit(self, prompt: str, *, context: dict[str, str], actor: str) -> PromptJob | None:
+    def submit(
+        self, prompt: str, *, context: dict[str, str], actor: str, request_id: str = ""
+    ) -> PromptJob | None:
         """Queue a prompt; ``None`` when the queue is full.
 
-        Raises :class:`PromptNotSaved` when the store did not take it: a prompt
-        is acknowledged only once a replacement task could still answer it.
+        A ``request_id`` the gateway already holds (here or, per the store, in
+        another task) returns that prompt instead of queueing a second one, so a
+        caller may resend a submission whose response it never got. Raises
+        :class:`PromptNotSaved` when the store did not take it: a prompt is
+        acknowledged only once a replacement task could still answer it.
         """
         now = self._clock()
         with self._lock:
             self._forget_expired()
+            known = self._request_job(request_id, parent_id="")
+            if known is not None:
+                return known
             if len(self._pending) + self._reserved >= self._max_queued:
                 return None
             job = PromptJob(
@@ -352,34 +372,52 @@ class PromptQueue:
                 context=dict(context),
                 actor=actor,
                 submitted_at=now,
+                request_id=request_id,
             )
             with job._lock:
                 record = job._bump(now)
-            self._reserved += 1
-        saved = self._save(record)
+            self._hold(job)
+        found: PromptJob | None = None
+        if request_id and self._store is not None:
+
+            def decide(newest: Mapping[str, dict[str, Any]]) -> list[dict[str, Any]]:
+                nonlocal found
+                found = _stored_request(newest, request_id, parent_id="")
+                return [] if found is not None else [record]
+
+            saved = self._store.compare_and_append(decide)
+        else:
+            saved = self._save(record)
         with self._lock:
-            self._reserved -= 1
+            self._unhold(job)
             if not saved:
                 raise PromptNotSaved
+            if found is not None:
+                return self._track(found)
             self._enqueue(job)
         return job
 
-    def answer(self, parent: PromptJob, answer: str) -> PromptJob | None:
+    def answer(self, parent: PromptJob, answer: str, *, request_id: str = "") -> PromptJob | None:
         """Queue the answer as a follow-up on the parent's session; ``None`` when full.
 
-        Raises :class:`AnswerRefused` when the parent is not waiting for an answer
-        or already has one — here or, per the store, in another task — and
-        :class:`PromptNotSaved` when the store did not take the answer (the parent
-        then takes an answer again).
+        The store decides whether the question still takes an answer, so two
+        tasks sharing it never accept two. A ``request_id`` the gateway already
+        holds for this question returns that follow-up. Raises
+        :class:`AnswerRefused` when the parent is not waiting or already has an
+        answer, and :class:`PromptNotSaved` when the store did not take the
+        answer (the parent then takes an answer again).
         """
         self._refresh_foreign()
         now = self._clock()
         with self._lock:
             self._forget_expired()
+            known = self._request_job(request_id, parent_id=parent.id)
+            if known is not None:
+                return known
             with parent._lock:
                 if parent.state is not PromptState.NEEDS_INPUT:
                     raise AnswerRefused(NOT_WAITING)
-                if parent.answered_by:
+                if parent.answered_by and not self._released(parent.answered_by):
                     raise AnswerRefused(ALREADY_ANSWERED)
                 if len(self._pending) + self._reserved >= self._max_queued:
                     return None
@@ -391,23 +429,27 @@ class PromptQueue:
                     submitted_at=now,
                     session_id=parent.session_id,
                     parent_id=parent.id,
+                    request_id=request_id,
                 )
                 known_revision = parent.revision
                 # Holds the question against a second answer in this task while the claim runs.
                 parent.answered_by = job.id
-            self._reserved += 1
+            self._hold(job)
+            self._claiming.add(job.id)
         try:
-            claimed = self._claim(parent, job, known_revision, now)
+            claimed, found = self._claim(parent, job, known_revision, now)
         except AnswerRefused:
             self._release(parent, job)
-            # Another task took the question: show its claim here from now on.
-            self._reread(parent)
             raise
-        if not claimed:
+        if not claimed or found is not None:
             self._release(parent, job)
-            raise PromptNotSaved
+            if found is None:
+                raise PromptNotSaved
+            with self._lock:
+                return self._note_answer(parent, found)
         with self._lock:
-            self._reserved -= 1
+            self._unhold(job)
+            self._claiming.discard(job.id)
             self._enqueue(job)
         return job
 
@@ -576,23 +618,38 @@ class PromptQueue:
         self._jobs[job.id] = job
         self._available.notify()
 
-    def _claim(self, parent: PromptJob, job: PromptJob, known_revision: int, now: float) -> bool:
-        """Record the answer as the parent's in the store, unless another task got there first.
+    def _claim(
+        self, parent: PromptJob, job: PromptJob, known_revision: int, now: float
+    ) -> tuple[bool, PromptJob | None]:
+        """Record the answer as the parent's in the store, unless the store says otherwise.
 
-        Under the store's lock the parent's newest record decides: a later change
-        that is no longer waiting refuses with ``not_waiting``, an answer this
-        task has not seen refuses with ``already_answered``; otherwise the
-        follow-up and the answered parent are written together.
+        Under the store's lock: a follow-up already holding this answer's
+        request id is returned instead; a later change that is no longer waiting
+        refuses with ``not_waiting``; an answer that still holds the question
+        refuses with ``already_answered`` (and becomes this task's view of the
+        question). Otherwise the follow-up and the answered parent are written
+        together. Returns whether the store was written or read, and the
+        existing follow-up when there was one.
         """
         if self._store is None:
-            return True
+            return True, None
+        found: PromptJob | None = None
+        refused_by: tuple[PromptJob, PromptJob | None] | None = None
 
-        def decide(stored: dict[str, Any] | None) -> list[dict[str, Any]]:
+        def decide(newest: Mapping[str, dict[str, Any]]) -> list[dict[str, Any]]:
+            nonlocal found, refused_by
+            found = _stored_request(newest, job.request_id, parent_id=parent.id)
+            if found is not None:
+                return []
+            stored = newest.get(parent.id)
             latest = PromptJob.from_record(stored) if stored is not None else None
             if latest is not None and latest.revision >= known_revision:
                 if latest.revision > known_revision and latest.state is not PromptState.NEEDS_INPUT:
+                    refused_by = (latest, None)
                     raise AnswerRefused(NOT_WAITING)
-                if latest.answered_by:
+                holder = PromptJob.from_record(newest.get(latest.answered_by, {}))
+                if latest.answered_by and not _answer_released(holder):
+                    refused_by = (latest, holder)
                     raise AnswerRefused(ALREADY_ANSWERED)
             with job._lock:
                 follow_up_record = job._bump(now)
@@ -603,15 +660,85 @@ class PromptQueue:
                 parent_record = parent._bump(now)
             return [follow_up_record, parent_record]
 
-        return self._store.compare_and_append(parent.id, decide)
+        try:
+            saved = self._store.compare_and_append(decide)
+        except AnswerRefused:
+            if refused_by is not None:
+                latest, holder = refused_by
+                with self._lock:
+                    with parent._lock:
+                        parent._adopt(latest)
+                    if holder is not None:
+                        self._note_answer(parent, holder)
+            raise
+        return saved, found
+
+    def _note_answer(self, parent: PromptJob, follow_up: PromptJob) -> PromptJob:
+        """Show ``follow_up``, written by another task or an earlier request, as the answer.
+
+        The caller holds the lock. Returns the follow-up as this task holds it.
+        """
+        tracked = self._track(follow_up)
+        with parent._lock:
+            parent.answered_by = tracked.id
+        return tracked
+
+    def _hold(self, job: PromptJob) -> None:
+        """Take a queue slot for ``job`` while its record is written; caller holds the lock."""
+        self._reserved += 1
+        if job.request_id and not job.parent_id:
+            self._in_flight[job.request_id] = job
+
+    def _unhold(self, job: PromptJob) -> None:
+        """Give back the slot :meth:`_hold` took; caller holds the lock."""
+        self._reserved -= 1
+        if self._in_flight.get(job.request_id) is job:
+            del self._in_flight[job.request_id]
 
     def _release(self, parent: PromptJob, job: PromptJob) -> None:
         """Undo an answer that was not accepted: free its slot and the parent's hold."""
         with self._lock:
-            self._reserved -= 1
+            self._unhold(job)
+            self._claiming.discard(job.id)
             with parent._lock:
                 if parent.answered_by == job.id:
                     parent.answered_by = ""
+
+    def _released(self, follow_up_id: str) -> bool:
+        """Whether the answer ``follow_up_id`` no longer holds its question; caller holds the lock.
+
+        A follow-up this task does not hold, or one that failed in a way that
+        reopens the question, leaves the decision to the store.
+        """
+        if follow_up_id in self._claiming:
+            return False
+        return _answer_released(self._jobs.get(follow_up_id))
+
+    def _request_job(self, request_id: str, *, parent_id: str) -> PromptJob | None:
+        """The prompt this task holds for ``request_id``; caller holds the lock."""
+        if not request_id:
+            return None
+        if not parent_id and request_id in self._in_flight:
+            return self._in_flight[request_id]
+        for job in self._jobs.values():
+            if job.request_id == request_id and job.parent_id == parent_id:
+                return job
+        return None
+
+    def _track(self, job: PromptJob) -> PromptJob:
+        """Hold a prompt another task wrote, re-reading it while it is unsettled.
+
+        The caller holds the lock. Returns the instance this task holds.
+        """
+        held = self._jobs.get(job.id)
+        if held is not None:
+            with held._lock:
+                held._adopt(job)
+            return held
+        self._jobs[job.id] = job
+        if not job.settled:
+            self._foreign.add(job.id)
+        return job
 
     def _reread_waiting(self, prompt_id: str) -> None:
         """Re-read a waiting question, at most once per ``refresh_seconds``.
@@ -623,7 +750,9 @@ class PromptQueue:
         now = self._clock()
         with self._lock:
             job = self._jobs.get(prompt_id)
-            if job is None or job.state is not PromptState.NEEDS_INPUT or job.answered_by:
+            if job is None or job.state is not PromptState.NEEDS_INPUT:
+                return
+            if job.answered_by and not self._released(job.answered_by):
                 return
             last = self._reread_at.get(prompt_id)
             if last is not None and now - last < self._refresh_seconds:
@@ -655,9 +784,7 @@ class PromptQueue:
             return
         follow_up = PromptJob.from_record(stored.get(follow_up_id, {}))
         if follow_up is not None:
-            self._jobs[follow_up_id] = follow_up
-            if not follow_up.settled:
-                self._foreign.add(follow_up_id)
+            self._track(follow_up)
 
     def _refresh_foreign(self) -> None:
         """Re-read the prompts another task owns, and take over those whose owner went silent.
@@ -747,6 +874,29 @@ class PromptQueue:
         for job_id in self._expired_ids(self._clock()):
             self._reread_at.pop(job_id, None)
             self._forgotten.append(self._jobs.pop(job_id))
+
+
+def _answer_released(follow_up: PromptJob | None) -> bool:
+    """Whether a question's recorded answer no longer holds it.
+
+    It does not when the follow-up is gone, or failed in a way after which the
+    gateway reopens the question (another task may not have saved that yet).
+    """
+    if follow_up is None:
+        return True
+    return follow_up.state is PromptState.FAILED and follow_up.error_code in _REOPENING_ERRORS
+
+
+def _stored_request(
+    newest: Mapping[str, Mapping[str, Any]], request_id: str, *, parent_id: str
+) -> PromptJob | None:
+    """The stored prompt submitted under ``request_id`` (for ``parent_id``), if any."""
+    if not request_id:
+        return None
+    for record in newest.values():
+        if record.get("request_id") == request_id and record.get("parent_id", "") == parent_id:
+            return PromptJob.from_record(record)
+    return None
 
 
 def _is_number(value: object) -> TypeGuard[int | float]:

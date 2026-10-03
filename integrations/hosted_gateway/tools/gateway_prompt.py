@@ -9,6 +9,7 @@ from __future__ import annotations
 import json
 import re
 import time
+import uuid
 from http import HTTPStatus
 from typing import Any
 
@@ -115,11 +116,18 @@ _LOST_CONTACT = (
 )
 #: A failed read or answer of a prompt the gateway already holds: the id is the way back.
 _ASK_AGAIN_ABOUT = (
-    "The gateway still holds prompt {prompt_id}; ask about that id again in a minute rather "
-    "than sending the prompt again."
+    "Ask about prompt {prompt_id} again in a minute: it shows the answer the gateway "
+    "already took, if any, so nothing runs twice."
 )
-#: A fresh prompt that got no id: the gateway never took it.
-_SAFE_TO_RESEND = "The gateway did not take the prompt, so it is safe to send it again in a minute."
+#: A fresh prompt whose response was lost: resending under the same request id is safe.
+_SAFE_TO_RESEND = (
+    "The gateway may not have taken the prompt. Sending it again is safe: it will not run twice."
+)
+#: For the model only: how to resend so the gateway recognizes the same prompt.
+_RESEND_INSTRUCTIONS = (
+    "To send it again, call ask_hosted_gateway with the same prompt and facts and "
+    "request_id={request_id}; a new request_id could run the prompt twice."
+)
 _FAILED_INTEGRATIONS = (
     "The hosted gateway's {vendors} integration failed during this request. The gateway "
     "uses the organization's {vendors} credential from {url}, not this machine's: if that "
@@ -200,6 +208,13 @@ _FAILED_INTEGRATION_NEXT_STEP = {
                     "selection is sent along."
                 ),
             },
+            "request_id": {
+                "type": "string",
+                "description": (
+                    "Only when resending a prompt whose earlier send failed: the request_id "
+                    "that failure returned, so the gateway runs the prompt at most once."
+                ),
+            },
         },
         "additionalProperties": False,
     },
@@ -219,6 +234,7 @@ def ask_hosted_gateway(
     prompt: str = "",
     facts: dict[str, str] | None = None,
     prompt_id: str = "",
+    request_id: str = "",
     context: Any = None,
 ) -> dict[str, Any]:
     """Submit the prompt or continue an earlier one, then wait for the gateway to settle."""
@@ -226,10 +242,12 @@ def ask_hosted_gateway(
         return _refusal("Give the hosted gateway a prompt, or a prompt id to read.")
     scope = _shell_scope(context)
     in_flight = ""
+    # One id per logical submission, reused by a resend, so the gateway queues it once.
+    request_id = request_id.strip() or uuid.uuid4().hex
     try:
         with HostedGatewayClient.from_account() as client:
             record, sent_at, skip_recorded = _submit_or_continue(
-                client, prompt.strip(), dict(facts or {}), prompt_id.strip(), scope
+                client, prompt.strip(), dict(facts or {}), prompt_id.strip(), scope, request_id
             )
             in_flight = record.prompt_id
             relay = _ProgressRelay(context)
@@ -244,7 +262,7 @@ def ask_hosted_gateway(
                 record = client.prompt_result(parent_id)
             integrations_url = f"{client.app_url}{HOSTED_GATEWAY_INTEGRATIONS_PATH}"
     except HostedGatewayError as exc:
-        return _failure(exc, in_flight, known=prompt_id.strip())
+        return _failure(exc, in_flight, known=prompt_id.strip(), request_id=request_id)
     outcome = _outcome(record, waited, integrations_url, scope)
     if not_used and record.state == "needs_input":
         outcome["response_text"] = not_used + outcome["response_text"]
@@ -264,13 +282,15 @@ def _waiting_notice(exc: HostedGatewayError) -> str:
     return f"{_UNANSWERED_NOTICE}. {cause}"
 
 
-def _failure(exc: HostedGatewayError, in_flight: str, *, known: str) -> dict[str, Any]:
+def _failure(
+    exc: HostedGatewayError, in_flight: str, *, known: str, request_id: str
+) -> dict[str, Any]:
     """A failed call's result; a transient failure says how to retry without running twice.
 
     Once a prompt was accepted (``in_flight``) or the call named one (``known``),
-    the result keeps that id: without it the caller cannot read the prompt later,
-    and a resend would run it twice. A fresh prompt that got no id was never
-    taken, so sending it again is safe.
+    the result keeps that id: reading it shows what the gateway already took. A
+    fresh prompt that got no id keeps its ``request_id`` instead: resent with
+    it, the gateway queues the prompt at most once.
     """
     out = failure_output(exc, tool_name=TOOL_NAME, component=_COMPONENT)
     if exc.code not in TRANSIENT_ERRORS:
@@ -288,6 +308,9 @@ def _failure(exc: HostedGatewayError, in_flight: str, *, known: str) -> dict[str
     result = {**out, "error": text, "response_text": text}
     if prompt_id:
         result["prompt_id"] = prompt_id
+    else:
+        result["request_id"] = request_id
+        result["instructions"] = _RESEND_INSTRUCTIONS.format(request_id=request_id)
     return result
 
 
@@ -304,25 +327,32 @@ def _submit_or_continue(
     facts: dict[str, str],
     prompt_id: str,
     scope: ActionToolScope | None,
+    request_id: str,
 ) -> tuple[PromptRecord, float, bool]:
     """Send a new prompt, or read an earlier one and pass the user's answer on if they gave one.
 
     The timestamp is when the request that could queue the prompt left this
     machine, taken right before that call. The bool is true when ``record`` is
     a read of an existing prompt, so progress already on it must not be replayed.
+    A question that already took an answer leads to that answer's follow-up, so
+    an answer whose response was lost is followed rather than sent again.
     """
     if not prompt_id:
         sent_at = time.monotonic()
-        return client.send_prompt(prompt, context=facts), sent_at, False
+        return client.send_prompt(prompt, context=facts, request_id=request_id), sent_at, False
     fetched_at = time.monotonic()
     record = client.prompt_result(prompt_id)
+    if record.state == "needs_input" and record.answered_by:
+        follow_up = client.prompt_result(record.answered_by)
+        if not _answer_not_used(follow_up):
+            return follow_up, fetched_at, True
     if record.state != "needs_input" or record.choice is None:
         return record, fetched_at, True
     answer = _answer_from_turn(scope, record.choice)
     if answer is None:
         return record, fetched_at, True
     sent_at = time.monotonic()
-    return client.answer_prompt(prompt_id, answer), sent_at, False
+    return client.answer_prompt(prompt_id, answer, request_id=request_id), sent_at, False
 
 
 def _answer_from_turn(scope: ActionToolScope | None, choice: PromptChoice) -> str | None:

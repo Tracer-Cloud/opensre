@@ -42,16 +42,14 @@ class PromptJobStore(Protocol):
         """Persist one prompt's record and say whether it reached the disk; never raises."""
 
     def compare_and_append(
-        self,
-        prompt_id: str,
-        decide: Callable[[dict[str, Any] | None], Sequence[Mapping[str, Any]]],
+        self, decide: Callable[[Mapping[str, dict[str, Any]]], Sequence[Mapping[str, Any]]]
     ) -> bool:
-        """Append what ``decide`` returns for the newest record of ``prompt_id``, atomically.
+        """Append what ``decide`` returns for the newest record of every prompt, atomically.
 
         No other writer, in this task or another, writes between the read and the
-        append. ``decide`` gets ``None`` when the prompt has no record and may raise
-        to write nothing; its exception propagates. False when the store could not
-        be read or written.
+        append. ``decide`` gets the records by prompt id and may raise to write
+        nothing; its exception propagates. False when the store could not be read
+        or written.
         """
 
     def compact(self, *, drop: Collection[str] = ()) -> None:
@@ -94,13 +92,11 @@ class JsonlPromptJobStore:
         return True
 
     def compare_and_append(
-        self,
-        prompt_id: str,
-        decide: Callable[[dict[str, Any] | None], Sequence[Mapping[str, Any]]],
+        self, decide: Callable[[Mapping[str, dict[str, Any]]], Sequence[Mapping[str, Any]]]
     ) -> bool:
         try:
             with self._locked():
-                data = _lines(decide(self._read().get(prompt_id)))
+                data = _lines(decide(self._read()))
                 if data:
                     # One write, so the records land together or (torn) not at all.
                     self._append(data)

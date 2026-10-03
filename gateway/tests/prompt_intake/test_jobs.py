@@ -15,6 +15,7 @@ from config.constants.gateway import (
 from gateway.core.prompt_intake import (
     ALREADY_ANSWERED,
     ERROR_INTERRUPTED,
+    ERROR_INVALID_ANSWER,
     NOT_WAITING,
     AnswerRefused,
     JsonlPromptJobStore,
@@ -402,3 +403,55 @@ def test_two_tasks_holding_one_question_accept_only_one_answer(tmp_path: Path) -
     assert held_by_new.answered_by == accepted.id
     seen_from_new = new_task.get(accepted.id)
     assert seen_from_new is not None and seen_from_new.view()["parent_prompt_id"] == asked.id
+
+
+def test_a_resent_submission_or_answer_is_the_same_prompt_on_either_task(tmp_path: Path) -> None:
+    """A caller that lost the response resends under its request id; nothing runs twice."""
+    # Arrange: two tasks sharing the store during a replacement
+    path = tmp_path / "prompt-jobs.jsonl"
+    clock = _Clock()
+    old = PromptQueue(clock=clock.read, store=JsonlPromptJobStore(path))
+    new = PromptQueue(clock=clock.read, store=JsonlPromptJobStore(path))
+
+    # Act: the submission reaches the old task, its resend the new one, then the old again
+    first = old.submit("fix ci", context={}, actor="a", request_id="req-submit-1")
+    resent_elsewhere = new.submit("fix ci", context={}, actor="a", request_id="req-submit-1")
+    resent_here = old.submit("fix ci", context={}, actor="a", request_id="req-submit-1")
+    assert first is not None and old.take(timeout_seconds=0.01) is first
+    old.needs_input(first, "Which branch?")
+    answered = old.answer(first, "main", request_id="req-answer-1")
+    answered_again = old.answer(first, "main", request_id="req-answer-1")
+
+    # Assert: one prompt and one follow-up; the new task runs nothing
+    assert resent_elsewhere is not None and resent_elsewhere.id == first.id
+    assert resent_here is first
+    assert answered is not None and answered_again is answered
+    assert new.take(timeout_seconds=0.01) is None
+    assert old.take(timeout_seconds=0.01) is answered
+    assert old.take(timeout_seconds=0.01) is None
+
+
+def test_a_question_reopened_by_another_task_takes_an_answer_before_that_task_saves_it(
+    tmp_path: Path,
+) -> None:
+    """A stale local claim must not refuse an answer the store would accept."""
+    # Arrange: the old task's answer is running when the new task starts beside it
+    path = tmp_path / "prompt-jobs.jsonl"
+    clock = _Clock()
+    old = PromptQueue(clock=clock.read, store=JsonlPromptJobStore(path))
+    asked, rejected = _asked_and_answered(old, prompt="ci")
+    new = PromptQueue(clock=clock.read, store=JsonlPromptJobStore(path), refresh_seconds=0.0)
+
+    # Act: the old task fails the answer as unusable but has not saved the reopened question
+    old.fail(rejected, ERROR_INVALID_ANSWER)
+    seen_failed = new.get(rejected.id)
+    parent = new.get(asked.id)
+    assert parent is not None and parent.answered_by == rejected.id
+    accepted = new.answer(parent, "release")
+    with pytest.raises(AnswerRefused) as late:
+        old.answer(asked, "main")
+
+    # Assert: the new task takes the answer, and the store then refuses a second one
+    assert seen_failed is not None and seen_failed.error_code == ERROR_INVALID_ANSWER
+    assert accepted is not None and accepted.parent_id == asked.id
+    assert late.value.code == ALREADY_ANSWERED

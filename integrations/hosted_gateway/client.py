@@ -163,6 +163,8 @@ class PromptRecord:
     progress: tuple[PromptProgress, ...] = ()
     #: For a follow-up carrying an answer: the prompt whose question it answered.
     parent_prompt_id: str = ""
+    #: For a question: the follow-up that took its answer, so a lost answer response is found.
+    answered_by: str = ""
 
     @property
     def settled(self) -> bool:
@@ -227,8 +229,14 @@ class HostedGatewayClient:
         """Ask the app to stop the organization's gateway; its state and credentials are kept."""
         return _gateway_health(self._request("POST", HOSTED_GATEWAY_STOP_PATH, _LIFECYCLE_REFUSALS))
 
-    def send_prompt(self, prompt: str, *, context: dict[str, str]) -> PromptRecord:
-        """Queue a prompt on the organization's running gateway."""
+    def send_prompt(
+        self, prompt: str, *, context: dict[str, str], request_id: str = ""
+    ) -> PromptRecord:
+        """Queue a prompt on the organization's running gateway.
+
+        With a ``request_id`` the gateway queues the prompt at most once, so a
+        submission whose response was lost is sent once more with the same id.
+        """
         from infrastructure.harness_providers.integration_selection import (
             current_github_connection_id,
         )
@@ -237,25 +245,28 @@ class HostedGatewayClient:
         context = dict(context)
         if connection_id and "github_connection_id" not in context:
             context["github_connection_id"] = connection_id
-        payload = self._request(
-            "POST",
-            HOSTED_GATEWAY_PROMPTS_PATH,
-            _PROMPT_REFUSALS,
-            body={"prompt": prompt, "context": context},
-        )
+        body: dict[str, Any] = {"prompt": prompt, "context": context}
+        if request_id:
+            body["request_id"] = request_id
+        payload = self._post_idempotent(HOSTED_GATEWAY_PROMPTS_PATH, _PROMPT_REFUSALS, body)
         record = _prompt_record(payload)
         capture_hosted_gateway_task_submitted(record.prompt_id)
         return record
 
-    def answer_prompt(self, prompt_id: str, answer: str) -> PromptRecord:
-        """Answer a prompt that stopped to ask; the follow-up prompt's record comes back."""
+    def answer_prompt(self, prompt_id: str, answer: str, *, request_id: str = "") -> PromptRecord:
+        """Answer a prompt that stopped to ask; the follow-up prompt's record comes back.
+
+        A ``request_id`` makes a resent answer the same follow-up, as for prompts.
+        """
         if not _PROMPT_ID.fullmatch(prompt_id):
             raise HostedGatewayError(ERR_UNKNOWN_PROMPT)
-        payload = self._request(
-            "POST",
+        body: dict[str, Any] = {"answer": answer}
+        if request_id:
+            body["request_id"] = request_id
+        payload = self._post_idempotent(
             f"{HOSTED_GATEWAY_PROMPTS_PATH}/{prompt_id}/answer",
             _PROMPT_ANSWER_REFUSALS,
-            body={"answer": answer},
+            body,
             body_codes=_ANSWER_BODY_CODES,
         )
         return _prompt_record(payload)
@@ -268,6 +279,26 @@ class HostedGatewayClient:
             "GET", f"{HOSTED_GATEWAY_PROMPTS_PATH}/{prompt_id}", _PROMPT_RESULT_REFUSALS
         )
         return _prompt_record(payload)
+
+    def _post_idempotent(
+        self,
+        path: str,
+        refusals: dict[int, str],
+        body: dict[str, Any],
+        *,
+        body_codes: frozenset[str] = frozenset(),
+    ) -> dict[str, Any]:
+        """POST, then once more after a transient failure when ``body`` names a request id.
+
+        The gateway keeps one prompt per request id, so the second send cannot
+        queue the work twice; without an id a lost response is never resent.
+        """
+        try:
+            return self._request("POST", path, refusals, body=body, body_codes=body_codes)
+        except HostedGatewayError as exc:
+            if exc.code not in TRANSIENT_ERRORS or not body.get("request_id"):
+                raise
+        return self._request("POST", path, refusals, body=body, body_codes=body_codes)
 
     def _request(
         self,
@@ -395,7 +426,13 @@ def _prompt_record(payload: dict[str, Any]) -> PromptRecord:
         choice=_choice(payload.get("choice")),
         progress=_progress(payload.get("progress")),
         parent_prompt_id=_text(payload.get("parent_prompt_id")),
+        answered_by=_prompt_id(payload.get("answered_by")),
     )
+
+
+def _prompt_id(value: object) -> str:
+    """A prompt id the gateway minted, else "": it may become part of a URL."""
+    return value if isinstance(value, str) and _PROMPT_ID.fullmatch(value) else ""
 
 
 def _progress_kind(value: object) -> str:

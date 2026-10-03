@@ -10,6 +10,7 @@ names an organization: the gateway serves exactly one.
 
 from __future__ import annotations
 
+import re
 from http import HTTPStatus
 from typing import Any
 
@@ -31,6 +32,8 @@ router = APIRouter()
 _ACTOR_MAX_CHARS = 128
 #: The gateway could not save the prompt where a replacement task would find it.
 _STORE_UNAVAILABLE = "prompt_store_unavailable"
+#: The caller's id for one submission; a resend with the same id is the same prompt.
+_REQUEST_ID = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 
 
 class _Refused(Exception):
@@ -85,8 +88,9 @@ def _submitted(queue: PromptQueue, payload: dict[str, Any]) -> PromptJob:
     prompt = _prompt(payload.get("prompt"))
     context = _context(payload.get("context"))
     actor = _actor(payload.get("actor"))
+    request_id = _request_id(payload.get("request_id"))
     try:
-        job = queue.submit(prompt, context=context, actor=actor)
+        job = queue.submit(prompt, context=context, actor=actor, request_id=request_id)
     except PromptNotSaved:
         raise _Refused(_STORE_UNAVAILABLE, HTTPStatus.SERVICE_UNAVAILABLE) from None
     if job is None:
@@ -96,8 +100,9 @@ def _submitted(queue: PromptQueue, payload: dict[str, Any]) -> PromptJob:
 
 def _answered(queue: PromptQueue, parent: PromptJob, payload: dict[str, Any]) -> PromptJob:
     answer = _answer(payload.get("answer"))
+    request_id = _request_id(payload.get("request_id"))
     try:
-        follow_up = queue.answer(parent, answer)
+        follow_up = queue.answer(parent, answer, request_id=request_id)
     except AnswerRefused as refused:
         raise _Refused(refused.code, HTTPStatus.CONFLICT) from None
     except PromptNotSaved:
@@ -170,6 +175,14 @@ def _actor(raw: Any) -> str:
     if not isinstance(raw, str) or not raw.strip() or len(raw) > _ACTOR_MAX_CHARS:
         raise _Refused("invalid_actor", HTTPStatus.BAD_REQUEST)
     return raw.strip()
+
+
+def _request_id(raw: Any) -> str:
+    if raw is None:
+        return ""
+    if not isinstance(raw, str) or not _REQUEST_ID.fullmatch(raw):
+        raise _Refused("invalid_request_id", HTTPStatus.BAD_REQUEST)
+    return raw
 
 
 def _error(code: str, status: HTTPStatus) -> JSONResponse:

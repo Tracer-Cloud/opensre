@@ -806,13 +806,15 @@ def test_a_parked_question_is_answered_on_its_session_after_the_gateway_task_is_
     worker = PromptWorker(restarted, second_task, logger=_LOGGER)
     parked = restarted.get(asked.id)
     assert parked is not None
+    read_after_restart = parked.view()
     follow_up = restarted.answer(parked, "2")
     assert follow_up is not None
     worker.run_one(follow_up)
 
     # Assert: the poller still reads the question, and option 2 resolves against it on the
     # same session — so the question came back from the store rather than being dropped
-    assert parked.view() == asked.view()
+    assert read_after_restart == asked.view()
+    assert parked.view()["answered_by"] == follow_up.id
     assert follow_up.state is PromptState.DONE
     assert second_task.seen_session_ids == [asked.session_id]
     assert second_task.seen_text.startswith("1. Which branch?")
