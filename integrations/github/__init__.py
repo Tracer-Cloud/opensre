@@ -21,6 +21,8 @@ _LAZY_EXPORTS: dict[str, str] = {
     "count_ci_fixes": "integrations.github.tools.ci_fix.ledger",
     "get_ci_fix_counter": "integrations.github.tools.ci_fix.ledger",
     "github_creds": "integrations.github.helpers",
+    "github_rest_token": "integrations.github.rest_token",
+    "has_github_rest_token": "integrations.github.rest_token",
     "saved_github_username": "integrations.github.identity",
     "fresh_demo_repo_name": "integrations.github.tools.ci_repair_demo.seed",
     "GitHubLoginResult": "integrations.github.login",
@@ -113,6 +115,7 @@ if TYPE_CHECKING:
         open_pull_request,
         resolve_repo_scope,
     )
+    from integrations.github.rest_token import github_rest_token, has_github_rest_token
     from integrations.github.tools.ci_analytics.analysis import Analysis, analyze_repository
     from integrations.github.tools.ci_analytics.loop import (
         DEFAULT_LOOP_TIME,
@@ -166,6 +169,8 @@ __all__ = [
     "get_ci_fix_counter",
     "github_creds",
     "github_integration_is_configured",
+    "github_rest_token",
+    "has_github_rest_token",
     "local_timezone",
     "loop_card",
     "open_pull_request",

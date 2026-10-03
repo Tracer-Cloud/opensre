@@ -52,11 +52,7 @@ class _CacheState:
     fetched_at: float
     #: Whether a fetch ever succeeded; a transient failure keeps this snapshot.
     populated: bool
-    #: Last ``_FetchOutcome.kind`` (``records``, ``empty``, ``unauthorized``, ``transient``).
-    kind: str = ""
 
-
-_GITHUB_SERVICES = frozenset({"github", "github_mcp"})
 
 _lock = threading.Lock()
 _state = _CacheState(records=[], fingerprint="", generation=0, fetched_at=0.0, populated=False)
@@ -68,18 +64,21 @@ def load_account_integrations(*, refresh: bool = False) -> list[dict[str, Any]]:
     Empty when the machine is signed out, the app is unreachable and no earlier
     snapshot exists, the route is absent (older app), or the response is
     invalid. A fresh-enough snapshot is served without a request. ``refresh``
-    drops that snapshot so the next read hits the app.
+    asks the app even then, as an expired snapshot would: the snapshot, its
+    generation, and the outage fallback are kept, so the generation never
+    moves backwards and an unreachable app still serves the last good set.
     """
-    if refresh:
-        reset_account_integrations_cache()
     now = time.monotonic()
     with _lock:
-        if _state.populated and now - _state.fetched_at < OPENSRE_ACCOUNT_INTEGRATIONS_TTL_SECONDS:
+        if (
+            not refresh
+            and _state.populated
+            and now - _state.fetched_at < OPENSRE_ACCOUNT_INTEGRATIONS_TTL_SECONDS
+        ):
             return [dict(record) for record in _state.records]
 
     outcome = _fetch()
     with _lock:
-        _state.kind = outcome.kind
         if outcome.kind == "records":
             _state.fetched_at = now
             _state.populated = True
@@ -116,11 +115,7 @@ def reset_account_integrations_cache() -> None:
     global _state
     with _lock:
         _state = _CacheState(
-            records=[],
-            fingerprint="",
-            generation=0,
-            fetched_at=0.0,
-            populated=False,
+            records=[], fingerprint="", generation=0, fetched_at=0.0, populated=False
         )
 
 
@@ -182,40 +177,12 @@ def _fetch() -> _FetchOutcome:
     return _FetchOutcome(kind="records", records=records, fingerprint=_fingerprint(records))
 
 
-def _active_github(records: list[dict[str, Any]]) -> bool:
-    for record in records:
-        service = str(record.get("service", "")).strip().lower()
-        status = str(record.get("status", "active")).strip().lower()
-        if service in _GITHUB_SERVICES and status == "active":
-            return True
-    return False
+def account_setup_url() -> str | None:
+    """The OpenSRE app page where the signed-in organization connects integrations.
 
-
-def account_github_connection(*, refresh: bool = False) -> str:
-    """Whether the signed-in org's web app has GitHub: ``connected``, ``missing``, ``signed_out``, or ``unknown``.
-
-    Local credentials do not count. ``unknown`` is an unreachable app or a
-    response that is not a credential list; onboarding must not treat that as
-    "GitHub is absent".
+    None when the machine is signed out or the app URL is not one the account
+    may be sent to.
     """
-    record = load_account_record()
-    token = resolve_account_token()
-    if record is None or not token or not record.organization_id.strip():
-        return "signed_out"
-    records = load_account_integrations(refresh=refresh)
-    with _lock:
-        kind = _state.kind
-    if _active_github(records):
-        return "connected"
-    if kind == "records":
-        return "missing"
-    if kind == "unauthorized":
-        return "signed_out"
-    return "unknown"
-
-
-def github_onboarding_setup_url() -> str | None:
-    """Home URL where this organization connects GitHub, or None when it cannot be built."""
     record = load_account_record()
     if record is None or not record.organization_id.strip():
         return None
@@ -235,9 +202,8 @@ def _fingerprint(records: list[dict[str, Any]]) -> str:
 
 
 __all__ = [
-    "account_github_connection",
     "account_integrations_generation",
-    "github_onboarding_setup_url",
+    "account_setup_url",
     "load_account_integrations",
     "reset_account_integrations_cache",
 ]

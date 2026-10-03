@@ -1,10 +1,11 @@
-"""Onboarding skills tell a fresh install how to open GitHub setup."""
+"""Host-owned skill prerequisites: every demo is covered, and gated skills say how to recover."""
 
 from __future__ import annotations
 
 import core.agent_harness.prompts.skills as skills
 from config.constants import CONNECT_INTEGRATIONS_HEADING
 from config.constants.github import GITHUB_SETUP_SLASH_INVOKE
+from config.constants.skill_prerequisites import SKILL_PREREQUISITES
 from config.constants.skills import (
     ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME,
     CONNECTING_SLACK_SKILL_NAME,
@@ -12,6 +13,23 @@ from config.constants.skills import (
     ONBOARDING_SKILL_NAME,
     SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME,
 )
+from infrastructure.harness_providers import registered_skill_prerequisite_checks
+
+
+def test_every_demo_has_a_prerequisite_row_whose_checks_are_registered() -> None:
+    """A new demo must decide its setup, and a table row must name a real skill and check.
+
+    An unregistered check fails open, so a typo in a check id would silently
+    remove the gate rather than break anything visible.
+    """
+    names = {skill.name for skill in skills.list_action_skills()}
+    demos = {skill.name for skill in skills.getting_started_skills()}
+
+    assert demos | {ONBOARDING_SKILL_NAME} <= set(SKILL_PREREQUISITES)
+    assert set(SKILL_PREREQUISITES) <= names
+    checks = {item.check for items in SKILL_PREREQUISITES.values() for item in items}
+    assert checks
+    assert checks <= set(registered_skill_prerequisite_checks())
 
 
 def test_local_github_onboarding_opens_setup_without_waiting_on_mcp() -> None:

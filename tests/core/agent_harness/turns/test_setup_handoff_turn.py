@@ -43,7 +43,7 @@ _OPEN_SETUP = {"command": "/integrations", "args": ["setup", "github"]}
 _CLOSING = "Opening the GitHub setup wizard; run the analysis again once it is connected."
 
 
-def _no_github_token(_token: str | None = None) -> str:
+def _no_github_token(**_kwargs: object) -> str:
     """No token resolves: the analyzer answers with its setup envelope."""
     return ""
 
@@ -67,7 +67,7 @@ def test_a_setup_wizard_queued_after_a_missing_token_ends_the_turn(
         lambda **properties: tool_calls.append(properties),
     )
     monkeypatch.setattr(
-        "integrations.github.tools.ci_analytics.tool.resolve_github_token", _no_github_token
+        "integrations.github.tools.ci_analytics.tool.github_rest_token", _no_github_token
     )
     # The model as observed live: had the turn gone on, it would have retried
     # the analyzer and then repeated the identical slash_invoke.

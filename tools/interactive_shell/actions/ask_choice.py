@@ -96,7 +96,7 @@ _QUESTION_ITEM_SCHEMA = {
 }
 
 
-def _menu_available(ctx: ActionToolScope) -> bool:
+def menu_available(ctx: ActionToolScope) -> bool:
     """True when the REPL can render the deferred ``/choose`` picker.
 
     Mirrors ``_slash_drives_interactive_picker``: gateway/headless sessions have
@@ -297,9 +297,9 @@ def execute_ask_user_choice_tool(args: dict[str, Any], ctx: ActionToolScope) -> 
         queued = _QUEUED_INSTRUCTION
         summary = f"selection menu queued: {title}"
 
-    menu_available = _menu_available(ctx)
+    menu_open = menu_available(ctx)
     deferred = _deferred_choice_available(ctx)
-    if not menu_available and not deferred:
+    if not menu_open and not deferred:
         return {"ok": True, "menu": "unavailable", "instruction": _FALLBACK_INSTRUCTION}
 
     ctx.session.pending_user_choice = pending
@@ -309,7 +309,7 @@ def execute_ask_user_choice_tool(args: dict[str, Any], ctx: ActionToolScope) -> 
         by_skill.setdefault(skill, set()).update(question_key(q.title) for q in pending.items())
     if questions:
         ctx.session.ask_user_rounds = getattr(ctx.session, "ask_user_rounds", 0) + 1
-    if deferred and not menu_available:
+    if deferred and not menu_open:
         return {
             "ok": True,
             "menu": "deferred",
@@ -453,5 +453,6 @@ ask_user_choice_tool = RegisteredTool(
 __all__ = [
     "ask_user_choice_tool",
     "execute_ask_user_choice_tool",
+    "menu_available",
     "run_ask_user_choice",
 ]

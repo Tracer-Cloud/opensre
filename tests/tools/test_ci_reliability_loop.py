@@ -221,7 +221,7 @@ def test_tool_puts_todays_snapshot_report_above_the_schedule_card(
 
     now = _write_report_snapshot(tmp_path, window_days=30)
     monkeypatch.setattr(tool_module, "snapshot_root", lambda _root=None: tmp_path)
-    monkeypatch.setattr(tool_module, "resolve_github_token", lambda _t=None: "")
+    monkeypatch.setattr(tool_module, "github_rest_token", lambda **_kw: "")
 
     def _schedule(*_a: object, **_k: object) -> ci_loop.ScheduledLoop:
         return _scheduled_stub("acme", "app")
@@ -411,7 +411,7 @@ def test_analyze_keeps_the_details_beside_the_comparison(
 
     report = _sample_report(window_days=30, now=datetime.now(UTC))
     monkeypatch.setattr(tool_module, "snapshot_root", lambda _root=None: tmp_path)
-    monkeypatch.setattr(tool_module, "resolve_github_token", lambda _t=None: "tok")
+    monkeypatch.setattr(tool_module, "github_rest_token", lambda **_kw: "tok")
 
     def _analyze(_owner: str, _repo: str, **_kwargs: Any) -> Any:
         return type("A", (), {"report": report, "runs_read": 3})()

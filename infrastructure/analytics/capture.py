@@ -568,6 +568,14 @@ def capture_skill_value_delivered(
     _capture(Event.SKILL_VALUE_DELIVERED, properties)
 
 
+def capture_skill_prerequisite_missing(*, skill: str, check: str, reason_code: str) -> None:
+    """Record a skill held at entry because one of its host-owned prerequisites is unmet."""
+    _capture(
+        Event.SKILL_PREREQUISITE_MISSING,
+        {"skill": skill, "check": check, "reason_code": reason_code},
+    )
+
+
 def capture_opensre_commit_created(
     *, workflow: str, commit_kind: str, changed_file_count: int
 ) -> None:

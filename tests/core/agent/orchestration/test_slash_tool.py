@@ -9,7 +9,7 @@ into the input line.
 from __future__ import annotations
 
 import io
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Any
 
 import pytest
@@ -17,6 +17,7 @@ from rich.console import Console
 
 import tools.interactive_shell.actions.slash as slash_tool
 from config.constants.slash_commands import QUEUED_COMMAND_KEY
+from core.agent_harness.spi.session_state import pending_setup_resume
 from core.agent_harness.tools.tool_context import ActionToolScope
 from surfaces.interactive_shell.session import Session
 from tests.core.agent.orchestration.action_execution_test_harness import FakeSlashPorts
@@ -82,6 +83,35 @@ def test_interactive_picker_command_is_deferred_to_exclusive_stdin(
     # Nothing is printed: the prefilled prompt line is the only announcement,
     # so the command is not shown twice before it runs.
     assert buf.getvalue() == ""
+
+
+@pytest.mark.parametrize(
+    ("active_skill", "turn_message", "parks"),
+    [
+        ("analyzing-github-ci-performance", '1. Which repository?\n@json:"acme/w"', True),
+        (None, "connect github for me", False),
+        ("analyzing-github-ci-performance", "/integrations setup github", False),
+    ],
+    ids=["mid-skill", "no-skill", "slash-turn"],
+)
+def test_a_setup_queued_mid_skill_parks_the_turn_for_replay(
+    active_skill: str | None, turn_message: str, parks: bool
+) -> None:
+    """Only a skill's own turn is resubmitted after setup; plain prose never is."""
+    ctx, _buf, session, _ports = _ctx(ports=FakeSlashPorts(tty=True))
+    ctx = replace(ctx, turn_user_message=turn_message)
+    session.active_skill = active_skill
+
+    slash_tool.execute_slash_tool({"command": "/integrations", "args": ["setup", "GitHub"]}, ctx)
+
+    parked = pending_setup_resume(session)
+    assert (parked is not None) is parks
+    if parked is not None:
+        assert (parked.text, parked.skill, parked.service) == (
+            turn_message,
+            active_skill,
+            "github",
+        )
 
 
 def test_a_declined_command_reports_it_did_not_run_without_an_error() -> None:

@@ -11,6 +11,7 @@ Populated cluster-by-cluster as the #3690 split lands; theme is the first cluste
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -21,6 +22,10 @@ from surfaces.interactive_shell.session.terminal_metrics import TerminalMetrics
 
 if TYPE_CHECKING:
     from prompt_toolkit.history import History
+
+    from core.agent_harness.spi.session_state import SetupResume
+
+logger = logging.getLogger(__name__)
 
 
 #: How many capped tool peeks Ctrl+O can cycle through.
@@ -47,6 +52,14 @@ class ActionLogEntry:
     kind: str
     concise: str
     detail: str = ""
+
+
+def _autosubmit_label(text: str) -> str:
+    """Name a queued autosubmit for a log line without recording what the user wrote."""
+    stripped = text.strip()
+    if stripped.startswith("/"):
+        return stripped.split(maxsplit=1)[0]
+    return f"a {len(stripped)}-character message"
 
 
 @dataclass
@@ -134,6 +147,12 @@ class TerminalSession:
 
     Set by ``ask_user_choice`` (and the ``/choose`` pick). Cleared when the
     submitted prompt is painted so the answer uses the brand colour."""
+
+    setup_resume: SetupResume | None = None
+    """The user turn parked behind an integration setup, resubmitted once setup succeeds.
+
+    Written through ``core.agent_harness.spi.session_state`` (``arm_setup_resume``);
+    dropped by a typed turn, a closed menu, a new demo, and ``/new``."""
 
     pending_choice_response: str | None = None
     goal_paint_signature: GoalPaintSignature | None = None
@@ -320,12 +339,25 @@ class TerminalSession:
         self.pending_prompt_plain_turn = False
         return value
 
+    def _note_replaced_autosubmit(self, text: str) -> None:
+        """Count and log a queued autosubmit that is about to be replaced before it ran."""
+        pending = self.pending_prompt_default
+        if not (self.pending_prompt_autosubmit and pending) or pending == text:
+            return
+        self.metrics.autosubmit_overwrite_count += 1
+        logger.debug(
+            "Replacing a queued autosubmit before it ran: %s -> %s",
+            _autosubmit_label(pending),
+            _autosubmit_label(text),
+        )
+
     def set_auto_prompt(self, text: str) -> None:
         """Queue *text* to be submitted as an ordinary turn, as if the user typed it.
 
         Unlike :meth:`set_auto_command`, the controller does not suspend the
         prompt for the turn, so the pinned-layout spinner keeps showing progress.
         """
+        self._note_replaced_autosubmit(text)
         self.pending_prompt_default = text
         self.pending_prompt_autosubmit = True
         self.pending_prompt_plain_turn = True
@@ -340,6 +372,7 @@ class TerminalSession:
         through the normal exclusive-stdin dispatch path rather than spawning it
         mid-turn, where it would fight the live prompt for stdin.
         """
+        self._note_replaced_autosubmit(command)
         self.pending_prompt_default = command
         self.pending_prompt_autosubmit = True
         self.pending_prompt_plain_turn = False
