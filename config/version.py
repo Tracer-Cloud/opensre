@@ -33,6 +33,16 @@ def _pyproject_version() -> str | None:
     return None
 
 
+def _git_head_sha() -> str:
+    """Short sha of the enclosing checkout's HEAD, or ``""`` when git is unreadable."""
+    from config.runtime_metadata.build_info import find_git_layout, read_git_head_sha
+
+    layout = find_git_layout()
+    if layout is None:
+        return ""
+    return read_git_head_sha(layout) or ""
+
+
 def _dev_build_version(base: str) -> str:
     """Expand *base* to the release shape ``base.Y.M.D+main.<sha>`` from git.
 
@@ -40,12 +50,7 @@ def _dev_build_version(base: str) -> str:
     build shape. Falls back to *base* when git metadata is unreadable (a
     stripped checkout / wheel without metadata).
     """
-    from config.runtime_metadata.build_info import find_git_layout, read_git_head_sha
-
-    layout = find_git_layout()
-    if layout is None:
-        return base
-    sha = read_git_head_sha(layout)
+    sha = _git_head_sha()
     if not sha:
         return base
     today = datetime.now(tz=UTC)
@@ -63,6 +68,21 @@ def get_opensre_version() -> str:
     if version and "+" in version:
         return version
     return _dev_build_version(version or _DEV_BASE_VERSION)
+
+
+def get_build_stamp() -> str:
+    """Identify the code this installation runs; one build keeps one stamp.
+
+    A release returns its version string. A dev checkout returns
+    ``<base>+main.<sha>``: :func:`get_opensre_version` adds the current date
+    there, which would read as a new build every day for the same commit.
+    """
+    version = _installed_version() or _pyproject_version()
+    if version and "+" in version:
+        return version
+    base = version or _DEV_BASE_VERSION
+    sha = _git_head_sha()
+    return f"{base}+{_DEV_CHANNEL}.{sha}" if sha else base
 
 
 def get_display_version() -> str:
