@@ -150,6 +150,7 @@ SPI_ROLE_NAMES: dict[str, frozenset[str]] = {
             "COHORT_IDENTITY_UNVERIFIED_MARK",
             "WANT_ME_TO_MARKER",
             "closer_tail_from",
+            "is_outcome_report",
             "normalize_three_tier_spacing",
             "reply_reports_cohort_unverified",
             "strip_shell_prompt_chrome",
