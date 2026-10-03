@@ -16,6 +16,7 @@ from integrations.coding_agent import (
     coding_agent_provider,
     cursor_backend,
     run_coding_task,
+    select_coding_agent,
     verify_coding_agent,
 )
 from integrations.coding_agent.runner import _BACKENDS
@@ -67,8 +68,11 @@ def test_auto_verify_picks_first_ready_backend() -> None:
     table = _fake_backends(claude=(True, "claude ready"), codex=(True, "codex ready"))
     with patch.dict(_BACKENDS, table):
         available, detail = verify_coding_agent("auto")
+        selected = select_coding_agent("auto")
     assert available is True
     assert detail == "claude-code: claude ready"
+    # The repair worker records which backend auto resolved to.
+    assert selected == ("claude-code", "claude ready")
     # Selection stops at the first ready backend; codex is never probed.
     table["codex"][1].assert_not_called()
     table["cursor"][1].assert_not_called()

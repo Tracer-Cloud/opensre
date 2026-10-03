@@ -12,7 +12,7 @@ from typing import Any, TypedDict
 from config.constants.ci_repair import CI_REPAIR_FINISH_RESERVE_SECONDS, CI_REPAIR_MAX_ATTEMPTS
 from infrastructure.analytics.provider import shutdown_analytics
 from infrastructure.process.tree import start_watchdog
-from integrations.coding_agent import verify_coding_agent
+from integrations.coding_agent import select_coding_agent
 from integrations.git import clone_repository
 from integrations.github.client import GitHubApiError, GitHubRestClient
 from integrations.github.tools.ci_fix.context import CiFixContext
@@ -24,6 +24,7 @@ from integrations.github.tools.ci_fix.errors import (
 from integrations.github.tools.ci_fix.gh import run_gh_json
 from integrations.github.tools.ci_fix.ledger import record_ci_fix_outcome
 from integrations.github.tools.ci_fix.runner import run_ci_fix
+from integrations.github.tools.ci_fix.timing import PhaseTimer
 from integrations.github.tools.ci_fix.verification import (
     CheckState,
     all_checks_settled,
@@ -146,9 +147,38 @@ def _verify_green(run: RepairRun, pr: dict[str, Any], token: str) -> bool:
     return True
 
 
-def _repair(run: RepairRun, store: RepairStore, token: str) -> None:
+def _add_phase_seconds(run: RepairRun, phase_seconds: dict[str, float]) -> None:
+    for name, seconds in phase_seconds.items():
+        run.phase_seconds[name] = round(run.phase_seconds.get(name, 0.0) + seconds, 3)
+
+
+def _write_attempt(
+    store: RepairStore, run: RepairRun, output: dict[str, Any], phase_seconds: dict[str, float]
+) -> None:
+    """Retain one attempt's output plus its backend and the phases timed since the last attempt.
+
+    The two keys are additions; every key of ``output`` keeps its meaning.
+    """
+    _add_phase_seconds(run, phase_seconds)
+    logger.info(
+        "CI repair %s attempt %d (%s) phase seconds: %s",
+        run.id,
+        run.attempts,
+        run.coding_agent or "unknown agent",
+        phase_seconds,
+    )
+    record = {**output, "coding_agent": run.coding_agent, "phase_seconds": phase_seconds}
+    diagnostic = store.directory(run.id) / f"attempt-{run.attempts}.json"
+    diagnostic.write_text(json.dumps(record, indent=2), encoding="utf-8")
+
+
+def _repair(
+    run: RepairRun, store: RepairStore, token: str, timer: PhaseTimer | None = None
+) -> None:
+    phases = timer or PhaseTimer()
     while time.time() < run.deadline - CI_REPAIR_FINISH_RESERVE_SECONDS:
-        pr = _read_pr(run, token)
+        with phases.phase("wait_for_failure"):
+            pr = _read_pr(run, token)
         if pr.get("state") != "OPEN":
             run.status, run.reason = RepairStatus.CANCELLED, "The PR was closed."
             return
@@ -161,9 +191,13 @@ def _repair(run: RepairRun, store: RepairStore, token: str) -> None:
         failed = any(check_failed(row, expected_skips=set()) for row in rows)
         if not failed:
             # Empty or queued checks prove nothing; only a settled head is verified.
-            if all_checks_settled(rows) and _verify_green(run, pr, token):
-                return
-            time.sleep(2)
+            if all_checks_settled(rows):
+                with phases.phase("verify"):
+                    verified = _verify_green(run, pr, token)
+                if verified:
+                    return
+            with phases.phase("wait_for_failure"):
+                time.sleep(2)
             continue
         run.failed_run_url = run.failed_run_url or _run_link(rows, failed=True)
         run.initial_sha = run.initial_sha or str(pr["headRefOid"])
@@ -180,10 +214,10 @@ def _repair(run: RepairRun, store: RepairStore, token: str) -> None:
             github_token=token,
             allowed_paths=frozenset({"calculator.py"}) if _demo_repository(run) else None,
             expected_source_head_sha=head,
+            timer=phases,
             **_check_wait(run),
         )
-        diagnostic = store.directory(run.id) / f"attempt-{run.attempts}.json"
-        diagnostic.write_text(json.dumps(output, indent=2), encoding="utf-8")
+        _write_attempt(store, run, output, phases.take())
         record_ci_fix_outcome(output)
         pushed = str(output.get("fix_head_sha") or "")
         if pushed and pushed not in run.pushed_shas:
@@ -206,8 +240,11 @@ def _repair(run: RepairRun, store: RepairStore, token: str) -> None:
         # Nothing left to fix on the current head: the earlier push may have done
         # the job while its checks were still being read as failing.
         nothing_left = error == ERR_NO_FAILING_CHECKS and bool(run.pushed_shas)
-        if nothing_left and _green_after_repair(run, store, token, output):
-            return
+        if nothing_left:
+            with phases.phase("verify"):
+                green = _green_after_repair(run, store, token, output)
+            if green:
+                return
         run.attempt_errors.append(error)
         run.reason = f"Repair attempt {run.attempts}: {_reason_for(error, run)}"
         store.save(run)
@@ -221,7 +258,8 @@ def _repair(run: RepairRun, store: RepairStore, token: str) -> None:
             run.status = RepairStatus.FAILED
             run.reason = f"Stopped after {CI_REPAIR_MAX_ATTEMPTS} failed repair attempts."
             return
-        time.sleep(1)
+        with phases.phase("wait_for_failure"):
+            time.sleep(1)
     run.status, run.reason = RepairStatus.TIMED_OUT, "The repair reached its time budget."
 
 
@@ -283,13 +321,20 @@ def _green_after_repair(
     return True
 
 
-def execute_repair(run: RepairRun, store: RepairStore) -> None:
-    """Keep all remote writes inside the supervised worker and its pinned repository scope."""
-    ready, _detail = verify_coding_agent()
-    if not ready:
+def execute_repair(run: RepairRun, store: RepairStore, timer: PhaseTimer | None = None) -> None:
+    """Keep all remote writes inside the supervised worker and its pinned repository scope.
+
+    ``timer`` receives each phase's wall time; attempt records and the run hold them.
+    """
+    phases = timer or PhaseTimer()
+    with phases.phase("agent_probe"):
+        backend, _detail = select_coding_agent()
+    if backend is None:
         raise ValueError("Configure and authenticate a coding agent before starting the repair.")
+    run.coding_agent = backend
     token = configured_token()
-    user = object_response(GitHubRestClient(token).request("GET", "user"))
+    with phases.phase("github_user"):
+        user = object_response(GitHubRestClient(token).request("GET", "user"))
     if not run.actor_id or account_id(user) != run.actor_id:
         raise ValueError("The background GitHub account changed; repair stopped.")
     directory = store.directory(run.id)
@@ -298,9 +343,10 @@ def execute_repair(run: RepairRun, store: RepairStore) -> None:
     run.workspace = str(workspace)
     store.save(run)
     if not workspace.exists():
-        clone_repository(run.repository_url + ".git", run.workspace, token=token)
+        with phases.phase("clone"):
+            clone_repository(run.repository_url + ".git", run.workspace, token=token)
     if not run.checks_passed:
-        _repair(run, store, token)
+        _repair(run, store, token, phases)
     if run.checks_passed:
         run.status = RepairStatus.SUCCEEDED
         telemetry.repair_succeeded(run)
@@ -313,6 +359,7 @@ def run_ci_repair_worker(store_directory: Path, run_id: str) -> None:
     run = store.get(run_id)
     work_deadline = run.deadline - CI_REPAIR_FINISH_RESERVE_SECONDS
     watchdog = start_watchdog(work_deadline)
+    phases = PhaseTimer()
     try:
         if time.time() >= work_deadline:
             run.status, run.reason = RepairStatus.TIMED_OUT, "The original deadline has expired."
@@ -323,7 +370,7 @@ def run_ci_repair_worker(store_directory: Path, run_id: str) -> None:
             run.status = RepairStatus.RUNNING
             store.save(run)
             try:
-                execute_repair(run, store)
+                execute_repair(run, store, phases)
             except GitHubApiError as exc:
                 logger.exception("GitHub request failed during CI repair")
                 run.status = RepairStatus.FAILED
@@ -344,6 +391,7 @@ def run_ci_repair_worker(store_directory: Path, run_id: str) -> None:
                     RepairStatus.FAILED,
                     f"Repair stopped: {type(exc).__name__}.",
                 )
+        _add_phase_seconds(run, phases.take())
         if run.terminal:
             store.discard_checkout(run)
         run.finished_at = time.time()

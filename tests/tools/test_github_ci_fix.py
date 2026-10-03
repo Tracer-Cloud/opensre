@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextlib import nullcontext
 from dataclasses import replace
+from itertools import count
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -36,6 +37,7 @@ from integrations.github.tools.ci_fix.errors import (
     GitHubCiFixError,
 )
 from integrations.github.tools.ci_fix.ship import PushResult, push_ci_fix
+from integrations.github.tools.ci_fix.timing import PhaseTimer
 from integrations.github.tools.ci_fix.tool import (
     _github_ci_fix_available,
     fix_github_pr_ci,
@@ -626,6 +628,8 @@ def test_run_ci_fix_success_pushes_existing_pr_branch(
         changed_files=["app.py"],
         diff="diff",
     )
+    ticks = count()
+    timer = PhaseTimer(clock=lambda: float(next(ticks)))
 
     result = runner.run_ci_fix(
         owner="Tracer-Cloud",
@@ -633,8 +637,18 @@ def test_run_ci_fix_success_pushes_existing_pr_branch(
         pr_number=4597,
         github_token="tok",
         confirm_fn=lambda prompt: prompts.append(prompt) or "y",
+        timer=timer,
     )
 
+    # Every phase of the repair is timed; the two checkout steps add up.
+    assert timer.take() == {
+        "context_gather": 1.0,
+        "checkout": 2.0,
+        "merge_base": 1.0,
+        "coding_agent": 1.0,
+        "push": 1.0,
+        "verify": 1.0,
+    }
     assert result["success"] is True
     assert result["source_head_sha"] == _CTX.head_sha
     assert result["branch_name"] == "feat/fix-ci"

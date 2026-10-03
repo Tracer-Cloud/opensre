@@ -69,6 +69,11 @@ class RepairRun(BaseModel):
     attempt_errors: list[str] = Field(default_factory=list)
     #: Heads this run pushed; only one of them may be credited as the repair commit.
     pushed_shas: list[str] = Field(default_factory=list)
+    #: Coding-agent backend the worker selected ("codex", "claude-code", ...); empty until then.
+    coding_agent: str = ""
+    #: Monotonic wall seconds per worker phase, summed over the run. Each
+    #: ``attempt-N.json`` holds the share timed since the previous attempt record.
+    phase_seconds: dict[str, float] = Field(default_factory=dict)
 
     @property
     def terminal(self) -> bool:

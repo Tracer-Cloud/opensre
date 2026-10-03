@@ -110,20 +110,31 @@ def _select_auto_backend() -> tuple[str, _Backend, str] | tuple[None, None, str]
     return None, None, f"No coding agent is ready (checked {supported}). {'; '.join(details)}"
 
 
-def verify_coding_agent(provider: str | None = None) -> tuple[bool, str]:
-    """Whether the configured coding agent is installed/ready (never raises)."""
+def select_coding_agent(provider: str | None = None) -> tuple[str | None, str]:
+    """The ready backend a run would use (``auto`` resolved) and its detail (never raises).
+
+    ``(None, detail)`` when it is not ready; the detail says what to install or log into.
+    """
     name = _normalize(provider)
     if name == AUTO_PROVIDER:
         selected, _backend, detail = _select_auto_backend()
-        if selected is None:
-            return False, detail
-        return True, f"{selected}: {detail}"
+        return selected, detail
     backend = _BACKENDS.get(name)
     if backend is None:
         supported = ", ".join((*sorted(_BACKENDS), AUTO_PROVIDER))
-        return False, f"Unsupported coding agent '{name}'. Set CODING_AGENT to one of: {supported}."
+        return None, f"Unsupported coding agent '{name}'. Set CODING_AGENT to one of: {supported}."
     _run, verify = backend
-    return verify()
+    ready, detail = verify()
+    return (name if ready else None), detail
+
+
+def verify_coding_agent(provider: str | None = None) -> tuple[bool, str]:
+    """Whether the configured coding agent is installed/ready (never raises)."""
+    auto = _normalize(provider) == AUTO_PROVIDER
+    selected, detail = select_coding_agent(provider)
+    if selected is None:
+        return False, detail
+    return True, f"{selected}: {detail}" if auto else detail
 
 
 def run_coding_task(
