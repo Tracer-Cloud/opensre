@@ -27,10 +27,14 @@ def llm_ready() -> LLMReadiness:
     """Report whether the configured route can serve an LLM call.
 
     The signed-in account route is always ready. Otherwise the configured
-    provider's settings must validate and, for an API-key provider, its key must
-    be configured. CLI, ambient and local providers prove their auth only at
-    request time — a prompt-safe probe cannot always tell (an unprobed CLI login
-    reads as unknown) — so only their settings are checked.
+    provider's settings must validate, and an API-key provider is refused only
+    when its key is absent: neither in the environment nor saved. A saved key
+    marked stale (a contended credentials-file read stales a key that is still
+    stored) or a status that cannot be read proceeds, because request-time
+    resolution re-reads the key and clears the flag. CLI, ambient and local
+    providers prove their auth only at request time — a prompt-safe probe cannot
+    always tell (an unprobed CLI login reads as unknown) — so only their
+    settings are checked.
     """
     from pydantic import ValidationError
 
@@ -39,25 +43,36 @@ def llm_ready() -> LLMReadiness:
     from config.llm_settings import (
         PROVIDER_OPENAI,
         get_configured_llm_provider,
-        has_credentials_for_active_llm_provider,
         llm_settings_error_message,
         resolve_llm_settings,
     )
 
     if account_llm_route() is not None:
         return LLMReadiness(provider=PROVIDER_OPENAI)
-    provider = get_configured_llm_provider()
     try:
-        if provider in KEYLESS_PROVIDER_VALUES:
-            resolve_llm_settings()
-            return LLMReadiness(provider=provider)
-        if has_credentials_for_active_llm_provider():
-            return LLMReadiness(provider=provider)
+        provider: str = resolve_llm_settings().provider
     except ValidationError as exc:
-        return LLMReadiness(provider=provider, reason=llm_settings_error_message(exc))
+        return LLMReadiness(
+            provider=get_configured_llm_provider(), reason=llm_settings_error_message(exc)
+        )
+    if provider in KEYLESS_PROVIDER_VALUES or not _api_key_absent(provider):
+        return LLMReadiness(provider=provider)
     return LLMReadiness(
         provider=provider, reason=f"Missing credentials for LLM provider '{provider}'."
     )
+
+
+def _api_key_absent(provider: str) -> bool:
+    """Whether the prompt-safe status shows no key at all, as opposed to stale or unknown."""
+    from config.llm_auth.credentials import CredentialSource
+    from config.llm_auth.credentials import status as credential_status
+
+    try:
+        auth = credential_status(provider)
+    except OSError:
+        # Contended auth metadata (lock timeout): unknown, not absent.
+        return False
+    return not auth.configured and auth.source is CredentialSource.NONE
 
 
 __all__ = ["LLMReadiness", "llm_ready"]
