@@ -9,7 +9,7 @@ demo_order: 1
 metadata:
   owner: Vincent
   last_changed_by: Jan
-  last_changed_at: 2026-09-14
+  last_changed_at: 2026-10-04
   usecases:
   - For repository maintainers analyzing CI reliability over the previous 30 days.
   - For engineering teams assessing estimated developer waiting time and failure patterns.
@@ -18,7 +18,7 @@ metadata:
   - GitHub authentication with read access to the repository's Actions history.
   - The analyze_github_ci_reliability and scan_local_git_workspace tools.
   - For local discovery, a local Git checkout; the example repository does not require one.
-  version: '1.19'
+  version: '1.20'
 ---
 
 # CI/CD analytics
@@ -35,14 +35,14 @@ below as its steps.
 
 Keep showing the table and offering the next step as separate plan items; update statuses as each step's completion condition is met.
 
-Mark step 5 with `deliverable: true` in every `update_plan` call: its work is
+Mark steps 4 and 5 with `deliverable: true` in every `update_plan` call: their work is
 the reply itself, and without that flag the host treats a text-only reply
 before the plan is settled as a premature stop and does not show it.
 
 - [ ] Step 1. Scan local repositories with scan_local_git_workspace.
 - [ ] Step 2. Select a repository using ask_user_choice.
 - [ ] Step 3. Collect and compute the 30-day metrics with analyze_github_ci_reliability.
-- [ ] Step 4. Prepare the metrics table as Markdown text from the benchmarks reference.
+- [ ] Step 4. Prepare the metrics table as Markdown text from the step 3 result.
 - [ ] Step 5. Show the metrics table as a text-only reply.
 - [ ] Step 6. Use ask_user_choice to offer scheduling, Slack setup, or finish.
 
@@ -91,12 +91,12 @@ either with `key_results` or with a named blocker.
 
 ### 4. Prepare a metrics table as Markdown text
 
-Read [Benchmarks](references/benchmarks.md) via
-`skill_view(name="analyzing-github-ci-performance", reference="benchmarks")` now for
-the comparison values and their interpretation limits. Check each table
-cell against a calculation result or this reference.
+Take the peer columns from the step 3 result's `benchmarks`, measured on
+`benchmarks_measured_on` over 30 days, and caption the table with that date
+and window: they are historical context, not a ranking. Do not call
+`skill_view` for them. Check each table cell against the step 3 result.
 
-If a cell has no source in the step 3 result or this reference, return to
+If a cell has no source in the step 3 result, return to
 step 3: reread `coverage_notices` for the named gap, and if the analysis did
 not return success, run it again once. A cell still without a source is
 `n/a` with the gap stated under the table; never estimate it.
@@ -129,8 +129,8 @@ What insights stand out:
 - CI-caused failures account for x.x% of all PR runs, roughly x.x-x.x× higher than the comparison repositories.
 ```
 
-Complete when `skill_view` has returned the benchmarks reference in this
-turn and every table cell has a source or is `n/a` with its gap stated.
+Complete when every table cell has a source in the step 3
+result or is `n/a` with its gap stated.
 
 ### 5. Show the metrics table
 
