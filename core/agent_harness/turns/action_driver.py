@@ -984,10 +984,8 @@ def _compose_response(
         # One outcome report: a later snapshot replaces the queued one.
         # Cap it here: this path is the visible reply, and the generic-output
         # path's cap does not apply once inline results cleared that preview.
-        display_final = (
-            cap_for_display(_preferred_tool_response_texts(result))
-            if closing_chunks == generic_chunks
-            else _visible_closing_text(closing_chunks)
+        display_final = _visible_closing_text(
+            _preferred_tool_chunks(result) if closing_chunks == generic_chunks else closing_chunks
         )
     is_json = looks_like_json(generic_text)
     body, markers = split_output_truncation_markers(display_generic)

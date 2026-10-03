@@ -766,6 +766,32 @@ def test_a_long_result_before_the_snapshot_does_not_hide_the_outcome() -> None:
     assert shown.count("**Outcome:**") == 1
 
 
+def test_one_outcome_stays_visible_after_a_long_response() -> None:
+    """A single snapshot still survives when the cap would otherwise eat the tail."""
+    long_text = "\n".join(f"note {index}" for index in range(40))
+    result = _Result(
+        tool_results=[
+            (
+                ToolCall(id="1", name="github_cli", input={}),
+                _ToolResult(_payload(long_text)),
+            ),
+            (
+                ToolCall(id="2", name="get_ci_repair_loop", input={}),
+                _ToolResult(_payload(_outcome("succeeded. The repair commit passed CI."))),
+            ),
+        ]
+    )
+    session = _Session()
+    session.terminal.inline_tool_results = True  # type: ignore[attr-defined]
+
+    _response_text, display_chunks, _use_final_text = _compose_response(result, session, _counts(2))
+    shown = "\n".join(display_chunks)
+
+    assert "The repair commit passed CI" in shown
+    assert "note 39" not in shown
+    assert shown.count("**Outcome:**") == 1
+
+
 def test_a_short_answer_keeps_one_capped_outcome_when_results_were_not_inline() -> None:
     """Without an action log, the closing keeps the latest snapshot and caps the rest."""
     cleanup = "Saved demo evidence and removed the scheduled repair."
