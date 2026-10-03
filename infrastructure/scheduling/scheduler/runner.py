@@ -341,6 +341,7 @@ def _register_jobs(
             continue
         immediate = _immediate_ci_repair_fire(task, now)
         job_kwargs: dict[str, Any] = {}
+        next_run: str | None
         if immediate is not None:
             # Keep the stored due time. The cron trigger would replace it with the
             # next */30 slot, and a resync would lose the first immediate fire.

@@ -7,7 +7,7 @@ import logging
 import time
 from http import HTTPStatus
 from pathlib import Path
-from typing import Any
+from typing import Any, TypedDict
 
 from config.constants.ci_repair import CI_REPAIR_FINISH_RESERVE_SECONDS, CI_REPAIR_MAX_ATTEMPTS
 from infrastructure.analytics.provider import shutdown_analytics
@@ -54,7 +54,15 @@ _DEMO_SETTLE_SECONDS = 0
 _DEMO_POLL_INTERVAL_SECONDS = 2
 
 
-def _check_wait(run: RepairRun) -> dict[str, int]:
+class _CheckWait(TypedDict, total=False):
+    """Optional check-wait overrides. Absent keys keep the real-PR defaults."""
+
+    registration_seconds: int
+    settle_seconds: int
+    poll_interval_seconds: int
+
+
+def _check_wait(run: RepairRun) -> _CheckWait:
     """Check-wait limits. A demo returns as soon as the head's run is terminal.
 
     The fixed demo schedule sets ``run.demo``. A seeded ``opensre-ci-repair-demo-``
