@@ -24,7 +24,10 @@ from config.constants.turn_concurrency import (
     OPENSRE_SCHEDULER_MAX_CONCURRENT_RUNS_ENV,
 )
 from config.constants.work_items import WORK_ITEM_REMINDER_RUN_AT_PARAM
-from infrastructure.scheduling.scheduler.cron_expression import build_cron_trigger
+from infrastructure.scheduling.scheduler.cron_expression import (
+    build_cron_trigger,
+    cap_cron_at_most_hourly,
+)
 from infrastructure.scheduling.scheduler.executor import execute_task
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_REPORT_PARAM
 from infrastructure.scheduling.scheduler.loop_report_telemetry import resend_recent_loop_reports
@@ -362,6 +365,28 @@ def _missed_fire(task: ScheduledTask, trigger: Any, now: datetime) -> datetime |
     return missed if recorded is None else None
 
 
+def _limit_prompt_loop_rate(task: ScheduledTask) -> None:
+    """Slow a prompt loop to at most one run an hour.
+
+    The CI repair poller is exempt: it has to notice a failing check within
+    half a minute, and widening that cron would leave pull requests red.
+    """
+    if task.kind is not TaskKind.MANUAL_LOOP:
+        return
+    if task.params.get(LOOP_REPORT_PARAM) == CI_REPAIR_REPORT_BUILDER:
+        return
+    capped = cap_cron_at_most_hourly(task.cron, task.timezone)
+    if capped == task.cron:
+        return
+    logger.info(
+        "Capping prompt loop %s from cron %s to %s (at most once per hour)",
+        task.id,
+        task.cron,
+        capped,
+    )
+    task.cron = capped
+
+
 def _register_jobs(
     scheduler: Any,
     runners: SchedulerRunners,
@@ -382,11 +407,18 @@ def _register_jobs(
             continue
         if task_filter is not None and not task_filter(task):
             continue
+        previous_cron = task.cron
         try:
+            _limit_prompt_loop_rate(task)
             trigger = _make_trigger(task)
         except ValueError as exc:
             logger.error("Skipping task %s: %s", task.id, exc)
             continue
+        if task.cron != previous_cron:
+            # Persist before catch-up. A 15-minute next_run must not be treated
+            # as a missed hourly slot, and a restart must keep the coarser cron.
+            task.next_run = _next_run_from_trigger(trigger)
+            update_task(task)
         immediate = _immediate_ci_repair_fire(task, now)
         missed: datetime | None = None
         if immediate is None and catch_up:
