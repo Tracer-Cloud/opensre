@@ -131,16 +131,20 @@ def _run(
     )
     task = (
         "Task:\nRun the fixing-github-merge-conflicts skill.\n\n"
-        f"Skill recipe (fixing-github-merge-conflicts):\n{_CARD}"
+        f"Skill recipe (fixing-github-merge-conflicts):\n{_card()}"
     )
     agent.handle(task, TurnBinding(is_tty=False))
     return calls, received, output, llm
 
 
-_SKILL = next(
-    skill for skill in list_action_skills() if skill.path == Path(__file__).with_name("SKILL.md")
-)
-_CARD = load_skill_body(_SKILL.name)
+def _card() -> str:
+    """The card's rendered body, looked up at test time so collection never reads the catalog."""
+    skill = next(
+        (s for s in list_action_skills() if s.path == Path(__file__).with_name("SKILL.md")),
+        None,
+    )
+    assert skill is not None, "the active skill catalog does not serve this card"
+    return load_skill_body(skill.name)
 
 
 def test_a_conflicting_pull_request_is_merged_through_the_plan_gate() -> None:
@@ -160,7 +164,7 @@ def test_a_conflicting_pull_request_is_merged_through_the_plan_gate() -> None:
         [_pull_request(7, mergeable=False), _pull_request(8, mergeable=True)], script
     )
 
-    assert any(_CARD in str(message.get("content", "")) for message in received[0])
+    assert any(_card() in str(message.get("content", "")) for message in received[0])
     assert calls == [
         ("summarize_github_pr_status", {**_REPO, "conflicts_only": True}),
         ("fix_github_pr_ci", {**_REPO, "pr_number": 7}),
