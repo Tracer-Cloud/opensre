@@ -459,17 +459,12 @@ def _rest_run_listing(
     return [_normalize_run(item) for item in raw_runs if isinstance(item, dict)]
 
 
-def _listing_is_stale(runs: list[dict[str, Any]], newest_on_github: dict[str, Any]) -> bool:
-    """True when GitHub lists a run newer than every run on the page.
-
-    The MCP page is meant to be the newest page; a newer run missing from it
-    means the page is old (or out of order past its end), so it must not be
-    presented as the most recent runs.
-    """
-    if any(str(run.get("id")) == str(newest_on_github.get("id")) for run in runs):
-        return False
-    newest_on_page = max((_run_created_key(run) for run in runs), default=None)
-    return newest_on_page is None or _run_created_key(newest_on_github) > newest_on_page
+def _missing_from_page(
+    runs: list[dict[str, Any]], newest_on_github: list[dict[str, Any]]
+) -> list[Any]:
+    """Ids of GitHub's newest runs that the MCP page lacks; any means the page is not the newest."""
+    on_page = {str(run.get("id")) for run in runs}
+    return [run.get("id") for run in newest_on_github if str(run.get("id")) not in on_page]
 
 
 def _commit_run_history_rest(
@@ -713,7 +708,8 @@ def _map_list_github_actions_workflow_runs(
         "List GitHub Actions workflow runs for a repository, each with status, "
         "conclusion and run_attempt. Without head_sha the rows are the newest "
         "per_page runs, newest first; a listing_note says the GitHub MCP page was "
-        "stale and the rows came from the REST API. With head_sha it is the run history of one "
+        "stale and the rows came from the REST API, and listing_verified false means "
+        "they could not be checked against it. With head_sha it is the run history of one "
         "commit: a run_attempt above 1 means that workflow was re-run on that "
         "commit, and its conclusion says whether the re-run passed. The result "
         "also carries workflow_verdicts, one line per workflow with "
@@ -835,24 +831,25 @@ def list_github_actions_workflow_runs(
         if payload.get("available"):
             workflow_runs = _newest_first(workflow_runs, limit=per_page)
             payload["listing_source"] = "mcp"
-            newest = _rest_run_listing(
-                owner, repo, filters=workflow_runs_filter, per_page=1, github_token=github_token
+            payload["listing_verified"] = False
+            rest_runs = _rest_run_listing(
+                owner,
+                repo,
+                filters=workflow_runs_filter,
+                per_page=per_page,
+                github_token=github_token,
             )
-            if newest and _listing_is_stale(workflow_runs, newest[0]):
-                rest_runs = _rest_run_listing(
-                    owner,
-                    repo,
-                    filters=workflow_runs_filter,
-                    per_page=per_page,
-                    github_token=github_token,
-                )
-                if rest_runs is not None:
-                    workflow_runs = _newest_first(rest_runs, limit=per_page)
+            if rest_runs is not None:
+                rest_runs = _newest_first(rest_runs, limit=per_page)
+                payload["listing_verified"] = True
+                missing = _missing_from_page(workflow_runs, rest_runs)
+                if missing:
+                    workflow_runs = rest_runs
                     payload["listing_source"] = "rest"
                     payload["listing_note"] = (
-                        "The GitHub MCP listing did not include the newest run "
-                        f"({newest[0].get('id')}, created {newest[0].get('created_at')}); "
-                        "these rows are the newest page from the GitHub REST API instead."
+                        f"The GitHub MCP page lacked {len(missing)} of GitHub's {len(rest_runs)} "
+                        f"newest runs (e.g. {missing[0]}); these rows are the newest page "
+                        "from the GitHub REST API instead."
                     )
 
     if not isinstance(payload, dict):
