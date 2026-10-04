@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import ast
 import sys
 import types
+from pathlib import Path
 
 import pytest
 
+import config.constants as constants
+from config.constants.exports import EXPORTS
 from config.package_exports import bind_package_exports
 
 
@@ -40,3 +44,20 @@ def test_resolved_export_is_cached_on_the_package() -> None:
     finally:
         del sys.modules[package_name]
         del sys.modules[leaf_name]
+
+
+def test_constants_static_reexports_resolve_at_runtime() -> None:
+    """Every name ``config.constants`` re-exports for type checkers is importable."""
+    tree = ast.parse(Path(constants.__file__).read_text(encoding="utf-8"))
+    static = {
+        alias.asname or alias.name: node.module.rsplit(".", 1)[-1]
+        for block in tree.body
+        if isinstance(block, ast.If)
+        for node in ast.walk(block)
+        if isinstance(node, ast.ImportFrom) and node.module
+        for alias in node.names
+    }
+    assert static
+    assert {name: EXPORTS.get(name) for name in static} == static
+    for name in static:
+        getattr(constants, name)

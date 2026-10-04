@@ -472,6 +472,9 @@ if TYPE_CHECKING:
         PROMPT_PROGRESS_PLAN_OMITTED as PROMPT_PROGRESS_PLAN_OMITTED,
     )
     from config.constants.gateway import (
+        PROMPT_QUEUE_FULL_RETRY_AFTER_SECONDS as PROMPT_QUEUE_FULL_RETRY_AFTER_SECONDS,
+    )
+    from config.constants.gateway import (
         PROMPT_QUEUE_MAX as PROMPT_QUEUE_MAX,
     )
     from config.constants.gateway import (

@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from config.constants.gateway import PROMPT_MAX_CHARS
+from config.constants.gateway import PROMPT_MAX_CHARS, PROMPT_QUEUE_FULL_RETRY_AFTER_SECONDS
 from gateway.core.prompt_intake import (
     ALREADY_SETTLED,
     ERROR_CANCELLED,
@@ -90,6 +90,8 @@ def test_a_full_queue_answers_too_many_prompts(queue: PromptQueue) -> None:
     # Assert
     assert response.status_code == HTTPStatus.SERVICE_UNAVAILABLE
     assert response.json()["error"] == "too_many_prompts"
+    # A retryable capacity refusal: callers wait instead of resending at once.
+    assert response.headers["Retry-After"] == str(PROMPT_QUEUE_FULL_RETRY_AFTER_SECONDS)
 
 
 @pytest.mark.usefixtures("queue")

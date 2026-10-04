@@ -21,6 +21,7 @@ from integrations.hosted_gateway import (
     ERR_ALREADY_SETTLED,
     ERR_GATEWAY_UNAVAILABLE,
     ERR_NOT_RUNNING,
+    ERR_TOO_MANY_PROMPTS,
     ERR_UNKNOWN_PROMPT,
     HostedGatewayClient,
     HostedGatewayError,
@@ -405,7 +406,7 @@ def test_a_full_prompt_queue_is_not_described_as_a_restart(monkeypatch: pytest.M
     out = ask_hosted_gateway(prompt="delegate the demo")
 
     # Assert
-    assert out["cause_code"] == "too_many_prompts"
+    assert out["error_kind"] == ERR_TOO_MANY_PROMPTS
     assert "queue is full" in out["response_text"]
     assert "may still be starting" not in out["response_text"]
 

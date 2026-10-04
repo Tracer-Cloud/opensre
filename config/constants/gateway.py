@@ -38,6 +38,9 @@ PROMPT_MAX_CHARS = 8_000
 PROMPT_CONTEXT_MAX_ITEMS = 16
 PROMPT_CONTEXT_VALUE_MAX_CHARS = 512
 PROMPT_QUEUE_MAX = 8
+#: ``Retry-After`` on a ``too_many_prompts`` refusal. A slot frees only when a turn ends,
+#: which takes tens of seconds at least, so a sooner retry is refused again.
+PROMPT_QUEUE_FULL_RETRY_AFTER_SECONDS = 10
 PROMPT_RESULT_RETENTION_SECONDS = 3_600.0
 #: Actor recorded for a remote prompt when the caller names none.
 PROMPT_DEFAULT_ACTOR = "remote-shell"
@@ -121,6 +124,7 @@ __all__ = [
     "PROMPT_PROGRESS_MAX_LINES",
     "PROMPT_PROGRESS_PLAN_MAX_CHARS",
     "PROMPT_PROGRESS_PLAN_OMITTED",
+    "PROMPT_QUEUE_FULL_RETRY_AFTER_SECONDS",
     "PROMPT_QUEUE_MAX",
     "PROMPT_RESULT_RETENTION_SECONDS",
     "PROMPT_SLOT_WAIT_SECONDS",
