@@ -174,6 +174,11 @@ def test_choose_authorized_users_falls_back_to_env() -> None:
     assert choose_authorized_users(env, {}) == ["1", "2"]
 
 
+def test_choose_authorized_users_adds_connected_private_chat() -> None:
+    env = GatewayEnv(allowed_users=["1"])
+    assert choose_authorized_users(env, {"default_chat_id": "123456789"}) == ["1", "123456789"]
+
+
 def test_choose_authorized_users_empty_warns(
     caplog: pytest.LogCaptureFixture, monkeypatch: pytest.MonkeyPatch
 ) -> None:

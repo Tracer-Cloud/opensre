@@ -125,6 +125,17 @@ def store_allowed_users(credentials: Mapping[str, Any]) -> list[str]:
     return list(policy.allowed_user_ids)
 
 
+def connected_chat_user_id(credentials: Mapping[str, Any]) -> str:
+    """Return the connection's ``default_chat_id`` when it is a private chat, else ``""``.
+
+    Connecting a private chat authorizes its user: a private chat's ID equals
+    the user's ``from.id`` and is positive, while group and channel IDs are
+    negative and never name a user.
+    """
+    chat_id = str(credentials.get("default_chat_id") or "").strip()
+    return chat_id if chat_id.isdigit() and int(chat_id) > 0 else ""
+
+
 def choose_bot_token(env: GatewayEnv, credentials: Mapping[str, Any]) -> str:
     token = env.bot_token or store_bot_token(credentials)
 
@@ -138,6 +149,9 @@ def choose_bot_token(env: GatewayEnv, credentials: Mapping[str, Any]) -> str:
 
 def choose_authorized_users(env: GatewayEnv, credentials: Mapping[str, Any]) -> list[str]:
     users = store_allowed_users(credentials) or env.allowed_users
+    connected = connected_chat_user_id(credentials)
+    if connected and connected not in users:
+        users = [*users, connected]
 
     if not users:
         logger.warning("Telegram allowed users are not configured")

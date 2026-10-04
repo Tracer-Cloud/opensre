@@ -8,6 +8,7 @@ from config.constants.gateway import ROTATE_SESSION
 from gateway.core.middleware.identity_policy import (
     load_identity_policy,
 )
+from gateway.transports.telegram.settings import connected_chat_user_id
 from integrations.messaging_security import (
     AuthorizationResult,
     MessagingIdentityPolicy,
@@ -78,11 +79,16 @@ def enforce_inbound_telegram_message_security(
             ),
         )
 
-    result: AuthorizationResult = authorize_inbound_message(
-        policy=policy,
-        user_id=user_id,
-        chat_id=chat_id,
-        message_text=text,
+    connected = connected_chat_user_id(record.get("credentials") or {}) if record else ""
+    result: AuthorizationResult = (
+        AuthorizationResult(allowed=True, reason="User is the connected chat")
+        if policy.inbound_enabled and user_id == connected
+        else authorize_inbound_message(
+            policy=policy,
+            user_id=user_id,
+            chat_id=chat_id,
+            message_text=text,
+        )
     )
 
     if text.strip().lower() == "/new":
