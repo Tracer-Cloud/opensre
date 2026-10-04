@@ -301,8 +301,8 @@ def test_a_repository_the_seed_created_is_not_read_for_what_it_cannot_hold() -> 
 
     path = f"repos/{_OWNER}/{_REPO}"
     assert api.calls == [
-        ("GET", path),
         ("GET", "user"),
+        ("GET", path),
         ("POST", "user/repos"),
         ("GET", f"{path}/branches/main"),
         ("POST", f"{path}/git/trees"),
