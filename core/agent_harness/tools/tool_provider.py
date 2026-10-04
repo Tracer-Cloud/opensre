@@ -6,6 +6,7 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
+from config.constants.memory import MEMORY_TOOL_NAMES
 from core.agent_harness.ports import (
     CancelCapableConsole,
     ConfirmFn,
@@ -154,6 +155,8 @@ class DefaultToolProvider:
             tools = get_action_tools_from_integrations_view(ctx, resolved_integrations=resolved)
         if not getattr(self._session, "skill_discovery_enabled", True):
             tools = [tool for tool in tools if tool.name != "skill_view"]
+        if not getattr(self._session, "long_term_memory_enabled", True):
+            tools = [tool for tool in tools if tool.name not in MEMORY_TOOL_NAMES]
         if self._unattended:
             tools = [tool for tool in tools if tool_allowed_for_unattended_run(tool)]
         catalog = SkillToolCatalog(self._session, tools, enabled=not self._unattended)

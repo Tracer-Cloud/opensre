@@ -240,3 +240,40 @@ def test_headless_turns_record_actions_only_inside_a_run_attempt(
         inside,
     )
     assert activity.snapshot().actions == ("slack_send_message channel_id=C9",)
+
+
+def _shell(command: str, **_kwargs: Any) -> dict[str, Any]:
+    return {"ok": "rejected" not in command}
+
+
+@pytest.mark.parametrize(
+    "name, arguments, wrote",
+    [
+        ("shell_run", {"command": "cd /tmp/r && git -C r push -u origin ci-fix/ci"}, True),
+        ("shell_run", {"command": "git push --dry-run origin HEAD"}, False),
+        ("shell_run", {"command": 'git commit -m "make git push work"'}, False),
+        ("shell_run", {"command": "git push origin rejected"}, False),
+        ("shell_run", {"command": 'gh -R o/r pr comment 12 --body "needs a decision"'}, True),
+        ("shell_run", {"command": "gh pr view 12 --json state"}, False),
+        ("shell_run", {"command": "gh api -X GET repos/o/r/issues -f state=open"}, False),
+        ("github_cli", {"args": ["api", "repos/o/r/issues/1/comments", "-f", "body=hi"]}, True),
+        ("github_cli", {"args": ["run", "view", "1", "--log-failed"]}, False),
+    ],
+)
+def test_only_a_successful_push_or_github_write_is_a_remote_write(
+    name: str, arguments: dict[str, Any], wrote: bool
+) -> None:
+    from infrastructure.scheduling.scheduler.tool_actions import is_remote_write
+
+    seen: list[bool] = []
+    tools = [
+        _tool("shell_run", _shell, SideEffectLevel.MUTATING),
+        _tool("github_cli", _github_cli, SideEffectLevel.MUTATING),
+    ]
+    hooks = ToolExecutionHooks(
+        after_tool_call=lambda request, result: seen.append(is_remote_write(request, result))
+    )
+
+    execute_tool_calls([ToolCall(id="call", name=name, input=arguments)], tools, {}, hooks=hooks)
+
+    assert seen == [wrote]

@@ -9,6 +9,7 @@ import re
 from collections.abc import Callable, Mapping
 
 from config.constants.ci_repair import CI_REPAIR_REPORT_BUILDER
+from config.constants.scheduler import STATELESS_LOOP_IDLE_REPLY
 from core.agent_harness import AgentSession, SessionCore
 from core.tool import ToolExecutionHooks
 from infrastructure.scheduling.scheduler.agent_runner import AgentPayload
@@ -18,6 +19,7 @@ from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_REPORT_ARGS_PARAM,
     LOOP_REPORT_PARAM,
     LOOP_SKILL_PARAM,
+    LOOP_STATELESS_PARAM,
 )
 from infrastructure.scheduling.scheduler.loop_prompt import loop_skill_recipe
 from infrastructure.scheduling.scheduler.previous_runs import previous_runs_block
@@ -88,12 +90,38 @@ runner returns.
 {_CARRY_NOTE_INSTRUCTION}
 """
 
+_STATELESS_AGENT_LOOP_INSTRUCTIONS = f"""Scheduled agent loop.
+
+This run is stateless: it sees no earlier runs, notes or memories, so take
+every fact from a tool result.
+Do the work the task below names, following any skill recipe it includes.
+Do not load skill_view or follow a report-only skill.
+Reply only with the result in the shape the task specifies; every figure and
+identifier must come from a tool result.
+Write the result yourself. Never paste a policy, state, ledger, queue, or any
+other file's contents as the reply.
+When nothing is eligible to act on, reply with exactly {STATELESS_LOOP_IDLE_REPLY} and
+nothing else; that reply delivers nothing.
+Do not send, post, notify, or message any channel from inside this turn; the
+scheduler will deliver your reply to the configured channels after this
+runner returns.
+"""
+
+
+def loop_is_stateless(payload: AgentPayload) -> bool:
+    """Whether an agent loop starts each tick without earlier runs, notes or memory."""
+    return (
+        str(payload.get(LOOP_MODE_PARAM) or "").strip() == LOOP_MODE_AGENT
+        and str(payload.get(LOOP_STATELESS_PARAM) or "").strip().lower() == "true"
+    )
+
 
 def build_manual_loop_prompt(payload: AgentPayload, *, previous_runs: str = "") -> str:
     """Build the headless prompt for a manual loop payload.
 
     ``previous_runs`` is the loop's PREVIOUS RUNS block; it goes right before the
-    stored task so the tick reads its history before the work.
+    stored task so the tick reads its history before the work. A stateless loop
+    never shows it.
     """
     prompt = str(
         payload.get("loop_prompt") or payload.get("prompt") or payload.get("description") or ""
@@ -102,7 +130,8 @@ def build_manual_loop_prompt(payload: AgentPayload, *, previous_runs: str = "") 
         raise RuntimeError("Manual loop prompt is empty.")
 
     name = str(payload.get("name") or payload.get("task_name") or "manual loop").strip()
-    history = f"\n\n{previous_runs}" if previous_runs else ""
+    stateless = loop_is_stateless(payload)
+    history = f"\n\n{previous_runs}" if previous_runs and not stateless else ""
     if str(payload.get(LOOP_MODE_PARAM) or "").strip() == LOOP_MODE_AGENT:
         scope = {
             key: payload[key]
@@ -111,10 +140,8 @@ def build_manual_loop_prompt(payload: AgentPayload, *, previous_runs: str = "") 
         }
         binding = f"\nStored repository target: {json.dumps(scope)}\n" if scope else ""
         recipe = _skill_recipe(payload)
-        return (
-            f"{_AGENT_LOOP_INSTRUCTIONS}\nLoop name: {name}{binding}{history}"
-            f"\n\nTask:\n{prompt}{recipe}"
-        )
+        instructions = _STATELESS_AGENT_LOOP_INSTRUCTIONS if stateless else _AGENT_LOOP_INSTRUCTIONS
+        return f"{instructions}\nLoop name: {name}{binding}{history}\n\nTask:\n{prompt}{recipe}"
     return f"{_MANUAL_LOOP_INSTRUCTIONS}\nLoop name: {name}{history}\n\nReport request:\n{prompt}"
 
 
@@ -177,6 +204,12 @@ def _prepare_agent_session(session: SessionCore) -> None:
     session.skill_discovery_enabled = False
 
 
+def _prepare_stateless_agent_session(session: SessionCore) -> None:
+    """Run the supplied task without a replacement workflow or long-term memory."""
+    _prepare_agent_session(session)
+    session.long_term_memory_enabled = False
+
+
 def _bound_to_one_target(payload: AgentPayload) -> bool:
     """Whether the loop repairs one stored PR or branch rather than sweeping a repository."""
     return any(str(payload.get(key) or "").strip() for key in _TARGET_PARAMS)
@@ -186,19 +219,28 @@ def run_manual_prompt_loop(payload: AgentPayload) -> TaskReport:
     """Run the deterministic report builder or one model turn in the stored mode.
 
     A model turn reads the loop's previous runs first; the note its reply leaves
-    for the next run is kept with this attempt instead of being delivered.
+    for the next run is kept with this attempt instead of being delivered. A
+    stateless agent loop gets neither, and no long-term memory.
     """
     builder = report_builder(payload)
     if builder is not None:
         built = builder(_report_args(payload))
         return built if isinstance(built, TaskReport) else TaskReport(built)
-    history = previous_runs_block(str(payload.get("task_id") or ""))
-    message = build_manual_loop_prompt(payload, previous_runs=history)
     agent_mode = str(payload.get(LOOP_MODE_PARAM) or "").strip() == LOOP_MODE_AGENT
-    outcomes = ScheduledOutcomes(bound_target=_bound_to_one_target(payload))
+    stateless = loop_is_stateless(payload)
+    history = "" if stateless else previous_runs_block(str(payload.get("task_id") or ""))
+    message = build_manual_loop_prompt(payload, previous_runs=history)
+    outcomes = ScheduledOutcomes(bound_target=_bound_to_one_target(payload), stateless=stateless)
+    prepare = (
+        _prepare_stateless_agent_session
+        if stateless
+        else _prepare_agent_session
+        if agent_mode
+        else None
+    )
     result = AgentSession.run_headless_turn(
         message,
-        prepare_session=_prepare_agent_session if agent_mode else None,
+        prepare_session=prepare,
         logger=logger,
         is_tty=False,
         tool_hooks=ToolExecutionHooks(after_tool_call=outcomes.observe),
@@ -207,6 +249,8 @@ def run_manual_prompt_loop(payload: AgentPayload) -> TaskReport:
     report = result.primary_response_text
     if not result.answered or not report:
         raise RuntimeError("Manual loop failed: the reasoning client did not produce a report.")
+    if stateless:
+        return outcomes.report(result, agent_mode=agent_mode, text=report)
     body, note = split_carry_note(report)
     if note:
         keep_carry_note(note)
@@ -217,6 +261,7 @@ __all__ = [
     "CARRY_NOTE_MARKER",
     "REPORT_BUILDERS",
     "build_manual_loop_prompt",
+    "loop_is_stateless",
     "report_builder",
     "run_manual_prompt_loop",
     "split_carry_note",

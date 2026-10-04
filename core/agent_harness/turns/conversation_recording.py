@@ -80,6 +80,8 @@ def _record_turn_evidence(
 
 def _schedule_turn_memory_extraction(session: SessionState) -> None:
     """Note the turn for memory extraction, which runs every few non-demo turns."""
+    if not getattr(session, "long_term_memory_enabled", True):
+        return
     try:
         from core.agent_harness.session.memory_extraction import record_turn_for_memory
 

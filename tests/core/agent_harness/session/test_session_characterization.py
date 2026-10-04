@@ -27,6 +27,7 @@ _CORE_FIELDS = (
     "pending_user_choice",
     "ask_user_rounds",
     "skill_discovery_enabled",
+    "long_term_memory_enabled",
     "active_skill",
     "questions_already_answered",
     "skill_question_keys",

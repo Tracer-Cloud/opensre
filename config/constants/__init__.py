@@ -801,6 +801,9 @@ if TYPE_CHECKING:
         MCP_TERMINAL_ENV as MCP_TERMINAL_ENV,
     )
     from config.constants.memory import (
+        MEMORY_TOOL_NAMES as MEMORY_TOOL_NAMES,
+    )
+    from config.constants.memory import (
         OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV as OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV,
     )
     from config.constants.memory import (
@@ -1187,6 +1190,9 @@ if TYPE_CHECKING:
     )
     from config.constants.scheduler import (
         SCHEDULER_MISSED_FIRE_GRACE_SECONDS as SCHEDULER_MISSED_FIRE_GRACE_SECONDS,
+    )
+    from config.constants.scheduler import (
+        STATELESS_LOOP_IDLE_REPLY as STATELESS_LOOP_IDLE_REPLY,
     )
     from config.constants.scheduler import (
         WEEKDAY_CRON_FIELD as WEEKDAY_CRON_FIELD,

@@ -32,9 +32,10 @@ from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_MODES,
     LOOP_PROMPT_PARAM,
     LOOP_SKILL_PARAM,
+    LOOP_STATELESS_PARAM,
     LOOP_TEMPLATE_PARAM,
 )
-from infrastructure.scheduling.scheduler.loop_prompt import loop_skill_recipe
+from infrastructure.scheduling.scheduler.loop_prompt import loop_skill_reference
 from infrastructure.scheduling.scheduler.types import Provider, TaskKind, TaskRun, TaskStatus
 from infrastructure.terminal.theme import GLYPH_ERROR, GLYPH_SUCCESS
 from surfaces.cli.commands.scheduling import validate_cron_and_timezone
@@ -184,7 +185,17 @@ def cron_command() -> None:
     show_default=False,
     help=(
         "Skill to run: required for --kind recurring_skill; with --kind manual_loop "
-        "--mode agent, the workflow card each tick follows (--prompt then optional)."
+        "--mode agent, the workflow card each tick follows, or the path of an installed "
+        "skill folder holding a SKILL.md (--prompt then optional)."
+    ),
+)
+@click.option(
+    "--stateless",
+    is_flag=True,
+    default=False,
+    help=(
+        "With --kind manual_loop --mode agent: start every run fresh, without earlier "
+        "runs, notes for the next run, or long-term memory."
     ),
 )
 @click.option("--owner", type=str, default="", help="GitHub repository owner.")
@@ -209,6 +220,7 @@ def cron_add(
     template: str | None,
     mode: str | None,
     skill_name: str,
+    stateless: bool,
     owner: str,
     repo: str,
     branch: str,
@@ -239,6 +251,10 @@ def cron_add(
 
     if mode is not None and task_kind != TaskKind.MANUAL_LOOP:
         raise click.ClickException("--mode is only valid with --kind manual_loop.")
+    if stateless and (task_kind != TaskKind.MANUAL_LOOP or mode != LOOP_MODE_AGENT):
+        raise click.ClickException(
+            "--stateless is only valid with --kind manual_loop --mode agent."
+        )
     normalized_prompt = prompt.strip()
     loop_skill = _loop_skill(skill_name) if mode == LOOP_MODE_AGENT else ""
     if loop_skill and not normalized_prompt:
@@ -270,6 +286,8 @@ def cron_add(
         task_params[LOOP_MODE_PARAM] = mode
     if loop_skill:
         task_params[LOOP_SKILL_PARAM] = loop_skill
+    if stateless:
+        task_params[LOOP_STATELESS_PARAM] = "true"
     if task_kind is TaskKind.MANUAL_LOOP and mode == LOOP_MODE_AGENT:
         if city.strip():
             raise click.UsageError("--city is only valid for morning briefings.")
@@ -330,7 +348,8 @@ def cron_add(
         _console.print(f"  Name: {added.name}")
     _console.print(f"  Kind: {added.kind.value}  Cron: {added.cron}  TZ: {added.timezone}")
     if added.kind is TaskKind.MANUAL_LOOP:
-        _console.print(f"  Mode: {added.params.get(LOOP_MODE_PARAM, 'report')}")
+        stateless_note = " (stateless)" if added.params.get(LOOP_STATELESS_PARAM) else ""
+        _console.print(f"  Mode: {added.params.get(LOOP_MODE_PARAM, 'report')}{stateless_note}")
     if added.params.get(LOOP_TEMPLATE_PARAM):
         _console.print(f"  Template: {added.params[LOOP_TEMPLATE_PARAM]}")
     if added.skill_name:
@@ -341,11 +360,11 @@ def cron_add(
 
 
 def _loop_skill(skill_name: str) -> str:
-    """Canonical name of the card an agent loop follows, or "" when none was given."""
+    """The card's canonical name or the installed folder an agent loop follows; "" for none."""
     if not skill_name.strip():
         return ""
     try:
-        return loop_skill_recipe(skill_name)[0]
+        return loop_skill_reference(skill_name)
     except RuntimeError as exc:
         raise click.ClickException(str(exc)) from exc
 

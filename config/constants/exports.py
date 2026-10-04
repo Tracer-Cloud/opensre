@@ -342,6 +342,7 @@ EXPORTS: dict[str, str] = {
     "OPENSRE_LLM_COMPACTION_ENV": "conversation_history",
     "OPENSRE_STRUCTURED_HISTORY_ENV": "conversation_history",
     # memory
+    "MEMORY_TOOL_NAMES": "memory",
     "OPENSRE_MEMORY_AUTOEXTRACT_DISABLED_ENV": "memory",
     "OPENSRE_MEMORY_DIR_ENV": "memory",
     "OPENSRE_MEMORY_DISABLED_ENV": "memory",
@@ -496,6 +497,7 @@ EXPORTS: dict[str, str] = {
     "OPENSRE_GATEWAY_HOST_SCHEDULER_ENV": "scheduler",
     "OPENSRE_SCHEDULER_BUILD_ENV": "scheduler",
     "SCHEDULER_MISSED_FIRE_GRACE_SECONDS": "scheduler",
+    "STATELESS_LOOP_IDLE_REPLY": "scheduler",
     "SCHEDULED_TASK_TRACE_KEY": "scheduler",
     # secrets
     "CREDENTIAL_FALLBACK_FILENAME": "secrets",

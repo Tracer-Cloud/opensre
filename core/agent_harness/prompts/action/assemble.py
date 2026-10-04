@@ -197,7 +197,7 @@ def build_action_system_prompt_envelope(turn_snapshot: TurnSnapshot) -> PromptEn
     )
     # Volatile before ephemeral so render_cached + render_ephemeral reassemble
     # into render() and the cache breakpoint can sit after memory.
-    memory_block = long_term_memory_block()
+    memory_block = _long_term_memory(turn_snapshot)
     blocks.extend(
         _optional_block(
             id=PromptBlockId.LONG_TERM_MEMORY,
@@ -446,15 +446,21 @@ def long_term_memory_block() -> str:
     )
 
 
+def _long_term_memory(turn_snapshot: TurnSnapshot) -> str:
+    """The memory index, unless the host runs this turn without long-term memory."""
+    return long_term_memory_block() if turn_snapshot.long_term_memory_enabled else ""
+
+
 def relevant_memories_block(turn_snapshot: TurnSnapshot) -> str:
     """Full text of the stored memories that match this turn's request.
 
     Ranked against the user's message, with the active repositories and the
-    connected integrations as lower-weight context.
+    connected integrations as lower-weight context. Empty when the host runs
+    this turn without long-term memory.
     """
     from core.domain.memory import memory_available_here, render_relevant_memories
 
-    if not memory_available_here():
+    if not turn_snapshot.long_term_memory_enabled or not memory_available_here():
         return ""
     rendered = render_relevant_memories(
         turn_snapshot.text,

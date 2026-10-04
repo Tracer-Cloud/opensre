@@ -40,12 +40,18 @@ NON_RETRYABLE_WORK_ERROR_KINDS: frozenset[str] = frozenset(
 # block, which must not present such a run as unfinished, agree on it.
 WORK_UNVERIFIED_ERROR_KIND = "work_unverified"
 
+# The whole reply of a stateless agent loop tick that found nothing to act on.
+# It is a no-op that delivers nothing. Shared so the runner's instructions and
+# ``integrations.scheduled_outcomes``, which scores the reply, agree on it.
+STATELESS_LOOP_IDLE_REPLY = "NO_ACTION"
+
 __all__ = [
     "NON_RETRYABLE_WORK_ERROR_KINDS",
     "OPENSRE_GATEWAY_HOST_SCHEDULER_ENV",
     "OPENSRE_SCHEDULER_BUILD_ENV",
     "SCHEDULED_TASK_TRACE_KEY",
     "SCHEDULER_MISSED_FIRE_GRACE_SECONDS",
+    "STATELESS_LOOP_IDLE_REPLY",
     "WEEKDAY_CRON_FIELD",
     "WORK_UNVERIFIED_ERROR_KIND",
 ]

@@ -86,7 +86,8 @@ Create a new scheduled delivery task.
 | `--chat-id` | Cond. | Required for telegram/discord/rocketchat. Optional for slack when an incoming webhook or `SLACK_DEFAULT_CHAT_ID` is configured, and not needed for `interactive_shell`. |
 | `--window` | No | Lookback window in hours (default: `24`) |
 | `--prompt` | Cond. | Instruction to execute on every run; required for `manual_loop` (optional with `--mode agent --skill`) and rejected for other kinds |
-| `--skill` | Cond. | Required with `--kind recurring_skill`; names the revision-pinned skill to execute. With `--kind manual_loop --mode agent`, names the skill each run follows |
+| `--skill` | Cond. | Required with `--kind recurring_skill`; names the revision-pinned skill to execute. With `--kind manual_loop --mode agent`, names the skill each run follows, or gives the path of an installed skill folder that holds a `SKILL.md` |
+| `--stateless` | No | With `--kind manual_loop --mode agent`: every run starts fresh, without earlier runs, a note for the next run, or long-term memory |
 | `--owner` | Cond. | GitHub repository owner; required for the `reporting-github-ci-failures` recurring skill |
 | `--repo` | Cond. | GitHub repository name; required for the `reporting-github-ci-failures` recurring skill |
 | `--branch` | No | Branch filter for `reporting-github-ci-failures`; cannot be combined with `--pr` |
@@ -159,6 +160,18 @@ as a no-op. A no-op run that replies with only its note delivers nothing.
 Add `--skill <name>` to run a skill instead of writing the instructions in
 `--prompt`. Each run follows the skill as currently installed, so fixes to the
 skill reach the loop without recreating it.
+
+A skill from a public registry works the same way: install it into a folder,
+then pass that folder's path. Keep the `--prompt` short and say what to pick,
+what never to do, and what to reply:
+
+```bash
+npx clawhub@latest install skills-sh:cursor/plugins/fix-ci --workdir ~ --dir skills
+opensre cron add --kind manual_loop --mode agent --stateless \
+  --skill ~/skills/fix-ci --owner Tracer-Cloud --repo opensre \
+  --cron "7 * * * *" --provider interactive_shell --name "PR CI fix" \
+  --prompt "Fix the oldest open PR whose latest checks failed. Never merge or force-push."
+```
 
 `opensre cron run <task_id>` prints the work result, delivery result, and report.
 A blocked or incomplete agent task exits unsuccessfully even if its report was
@@ -342,6 +355,13 @@ Sentry morning digests use a separate CLI (`opensre sentry digest schedule …`)
 not `opensre cron add`. See [Sentry](/integrations/incidents/sentry#morning-digest-scheduled).
 
 ## What a loop remembers between runs
+
+A loop added with `--stateless` remembers nothing: each run sees only its
+prompt, its skill and what its tools find, and long-term memory is neither shown
+nor written. A stateless run that finds nothing to act on replies `NO_ACTION`:
+it delivers nothing and counts as a no-op. A stateless run that pushes a commit,
+or creates, comments on or edits a pull request or issue, counts as done work.
+Everything below applies to loops without `--stateless`.
 
 Every run of a `manual_loop` starts a fresh session. Before it starts, the loop
 sees its three most recent finished runs: when each ran, how its work and

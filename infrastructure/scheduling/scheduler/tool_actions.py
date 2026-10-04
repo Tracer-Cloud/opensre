@@ -234,4 +234,124 @@ def bound_action_hook() -> Callable[[ToolExecutionRequest, ToolExecutionResult],
     return record
 
 
-__all__ = ["bound_action_hook", "describe_tool_action"]
+#: ``git`` or ``gh`` as its own word in a shell string, not a prefix of another word.
+_GIT_WORD = re.compile(r"(?<![-\w./])git(?![-\w])")
+_GH_WORD = re.compile(r"(?<![-\w./])gh(?![-\w])")
+_SHELL_OPERATORS = frozenset({"&&", "||", "|", ";", "&"})
+#: Global ``git`` options that take the next word as their value.
+_GIT_VALUE_OPTIONS = frozenset(
+    {"-C", "-c", "--config-env", "--exec-path", "--git-dir", "--namespace", "--work-tree"}
+)
+_GIT_DRY_RUN = frozenset({"-n", "--dry-run"})
+#: Global ``gh`` options that take the next word as their value.
+_GH_VALUE_OPTIONS = frozenset({"-R", "--repo", "--hostname"})
+#: ``gh <group> <verb>`` commands that change GitHub.
+_GH_WRITE_VERBS: dict[str, frozenset[str]] = {
+    "issue": frozenset({"close", "comment", "create", "edit", "reopen"}),
+    "pr": frozenset({"close", "comment", "create", "edit", "merge", "ready", "reopen", "review"}),
+}
+_GH_API_WRITE_METHODS = frozenset({"DELETE", "PATCH", "POST", "PUT"})
+#: ``gh api`` options that send a body, which makes the default method POST.
+_GH_API_BODY_OPTIONS = frozenset({"-f", "-F", "--field", "--raw-field", "--input"})
+
+
+def is_remote_write(request: ToolExecutionRequest, result: ToolExecutionResult) -> bool:
+    """Whether a successful ``shell_run`` or ``github_cli`` call pushed or changed GitHub.
+
+    A ``git push``, a pull-request or issue change (``gh pr create``, ``gh pr
+    comment``, ...) or a ``gh api`` call that sends a write counts; reads and
+    failed calls never do.
+    """
+    details: Mapping[str, Any] = result.details if isinstance(result.details, Mapping) else {}
+    if not _succeeded(result, details):
+        return False
+    name = request.tool_call.name
+    if name == "github_cli":
+        return _gh_writes(_command_tokens(request.arguments.get("args")))
+    if name != "shell_run":
+        return False
+    command = request.arguments.get("command")
+    if not isinstance(command, str):
+        return False
+    return any(
+        _git_pushes(_simple_command(command, match.end()))
+        for match in _GIT_WORD.finditer(command)
+        if not _quoted(command, match.start())
+    ) or any(
+        _gh_writes(_simple_command(command, match.end()))
+        for match in _GH_WORD.finditer(command)
+        if not _quoted(command, match.start())
+    )
+
+
+def _quoted(command: str, index: int) -> bool:
+    """Whether ``index`` falls inside a quoted string, such as a commit message."""
+    single = double = False
+    escaped = False
+    for char in command[:index]:
+        if escaped:
+            escaped = False
+        elif char == "\\" and not single:
+            escaped = True
+        elif char == "'" and not double:
+            single = not single
+        elif char == '"' and not single:
+            double = not double
+    return single or double
+
+
+def _simple_command(command: str, start: int) -> list[str]:
+    """The words after ``start`` up to the next shell operator."""
+    words: list[str] = []
+    for token in _command_tokens(command[start:]):
+        stripped = token.rstrip(";&|")
+        if token in _SHELL_OPERATORS:
+            break
+        if stripped:
+            words.append(stripped)
+        if stripped != token:
+            break
+    return words
+
+
+def _git_pushes(args: list[str]) -> bool:
+    """``git [global options] push`` without a dry run."""
+    index = 0
+    while index < len(args) and args[index].startswith("-"):
+        index += 2 if args[index] in _GIT_VALUE_OPTIONS else 1
+    if index >= len(args) or args[index] != "push":
+        return False
+    return not _GIT_DRY_RUN.intersection(args[index + 1 :])
+
+
+def _gh_writes(args: list[str]) -> bool:
+    """``gh`` arguments that change GitHub: a pull-request or issue write, or an API write."""
+    positionals: list[str] = []
+    method = ""
+    sends_body = False
+    index = 0
+    while index < len(args):
+        token = args[index]
+        if token in ("-X", "--method"):
+            method = args[index + 1].upper() if index + 1 < len(args) else ""
+            index += 2
+            continue
+        if token in _GH_VALUE_OPTIONS:
+            index += 2
+            continue
+        if token.startswith("--method="):
+            method = token.split("=", 1)[1].upper()
+        elif token in _GH_API_BODY_OPTIONS or token.startswith(("--field=", "--raw-field=")):
+            sends_body = True
+        elif not token.startswith("-"):
+            positionals.append(token)
+        index += 1
+    if not positionals:
+        return False
+    if positionals[0] == "api":
+        return method in _GH_API_WRITE_METHODS or (sends_body and not method)
+    verbs = _GH_WRITE_VERBS.get(positionals[0], frozenset())
+    return len(positionals) > 1 and positionals[1] in verbs
+
+
+__all__ = ["bound_action_hook", "describe_tool_action", "is_remote_write"]

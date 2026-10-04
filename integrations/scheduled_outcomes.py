@@ -5,10 +5,11 @@ from typing import Any
 
 from pydantic import ValidationError
 
-from config.constants.scheduler import WORK_UNVERIFIED_ERROR_KIND
+from config.constants.scheduler import STATELESS_LOOP_IDLE_REPLY, WORK_UNVERIFIED_ERROR_KIND
 from core.agent_harness import TurnResult
 from core.tool import ToolExecutionRequest, ToolExecutionResult
 from infrastructure.scheduling.scheduler.outcomes import WorkOutcome, WorkStatus
+from infrastructure.scheduling.scheduler.tool_actions import describe_tool_action, is_remote_write
 from infrastructure.scheduling.scheduler.types import TaskReport
 
 
@@ -17,14 +18,20 @@ class ScheduledOutcomes:
 
     A loop bound to one PR or branch pauses when that target can never be repaired.
     An unbound sweep skips such a target and keeps its schedule for the others.
+    A stateless loop is also judged by what its tools changed: a successful push
+    or GitHub write is done work, and the exact idle reply is a no-op unless a
+    tool failed without reporting an outcome.
     """
 
-    def __init__(self, *, bound_target: bool = True) -> None:
+    def __init__(self, *, bound_target: bool = True, stateless: bool = False) -> None:
         self._outcomes: dict[str, WorkOutcome] = {}
         self._lock = Lock()
         self._bound_target = bound_target
         #: A tool ran and failed without a work outcome, so nothing vouches for it.
         self._unverified_failure = False
+        self._stateless = stateless
+        #: The pushes and GitHub writes a stateless tick's tools made, as action lines.
+        self._remote_writes: list[str] = []
 
     def observe(self, request: ToolExecutionRequest, result: ToolExecutionResult) -> None:
         """Record producer-owned structured evidence without interpreting report prose."""
@@ -33,6 +40,10 @@ class ScheduledOutcomes:
             if result.is_error:
                 with self._lock:
                     self._unverified_failure = True
+            elif self._stateless and is_remote_write(request, result):
+                action = describe_tool_action(request, result) or request.tool_call.name
+                with self._lock:
+                    self._remote_writes.append(action)
             return
         try:
             outcome = WorkOutcome.model_validate(payload["work_outcome"])
@@ -52,6 +63,13 @@ class ScheduledOutcomes:
         with self._lock:
             outcomes = tuple(self._outcomes.values())
             unverified_failure = self._unverified_failure
+            remote_writes = tuple(self._remote_writes)
+        # A stateless tick that found nothing to act on replies with one word and
+        # delivers nothing; after a failed tool call that word proves nothing.
+        idle_reply = self._stateless and _is_idle_reply(text)
+        idle = idle_reply and not remote_writes and not unverified_failure
+        if idle_reply and not remote_writes:
+            text = ""
         # A sweep picks its targets each tick, so a fork or closed PR it reached
         # is one ineligible target, not a reason to stop repairing the rest.
         sweep = not self._bound_target
@@ -76,7 +94,7 @@ class ScheduledOutcomes:
             outcome = terminal_block
         elif turn.cancelled or turn.action_result.hit_iteration_cap:
             outcome = WorkOutcome(status=WorkStatus.INCOMPLETE, error_kind="turn_interrupted")
-        elif not text and not verified_noop:
+        elif not text and not (verified_noop or idle):
             outcome = WorkOutcome(status=WorkStatus.INCOMPLETE, error_kind="report_missing")
         elif not agent_mode:
             outcome = WorkOutcome(status=WorkStatus.SUCCEEDED)
@@ -96,6 +114,12 @@ class ScheduledOutcomes:
                     else WorkStatus.SUCCEEDED,
                     evidence=evidence,
                 )
+            elif remote_writes:
+                outcome = WorkOutcome(
+                    status=WorkStatus.SUCCEEDED, evidence={"actions": list(remote_writes)}
+                )
+            elif idle:
+                outcome = WorkOutcome(status=WorkStatus.NOOP)
             else:
                 outcome = WorkOutcome(
                     status=WorkStatus.INCOMPLETE, error_kind=WORK_UNVERIFIED_ERROR_KIND
@@ -103,3 +127,8 @@ class ScheduledOutcomes:
         if stop_schedule:
             text += "\n\nSchedule paused: the repair target requires attention before retrying."
         return TaskReport(text, outcome=outcome, stop_schedule=stop_schedule)
+
+
+def _is_idle_reply(text: str) -> bool:
+    """Whether a reply is only the stateless idle word, allowing Markdown emphasis or a period."""
+    return text.strip().strip("`*_.").strip().upper() == STATELESS_LOOP_IDLE_REPLY

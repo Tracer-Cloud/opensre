@@ -479,6 +479,8 @@ class SessionManager:
 
     @staticmethod
     def _schedule_memory_extraction(session: SessionCore) -> None:
+        if not session.long_term_memory_enabled:
+            return
         messages = list(getattr(session, "cli_agent_messages", []) or [])
         SessionManager._schedule_memory_extraction_from_messages(
             messages, session_id=session.session_id
