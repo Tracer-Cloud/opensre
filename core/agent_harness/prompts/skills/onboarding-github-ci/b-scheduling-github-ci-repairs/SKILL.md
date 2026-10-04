@@ -17,7 +17,7 @@ metadata:
     - GitHub write access to the watched repository and an authenticated coding agent
     - Git installed on the scheduler host; repair checkouts are created automatically
     - For the demo, a GitHub token that can create a private repository and an example PR
-  version: "0.80"
+  version: "0.81"
 script_tools: references/script-tools.md
 ---
 
@@ -41,7 +41,7 @@ Use `update_plan` to create the live plan from the workflow headings below. Mark
 - [ ] Check prerequisites: GitHub identity and scopes, then the scheduler.
 - [ ] Select the repository, or the private demo, with ask_user_choice.
 - [ ] Select the failing PR, or confirm the authorized demo scope.
-- [ ] Create the demo repository, failing branch, and PR with `seed_ci_repair_demo` (demo only).
+- [ ] Run the demo with one `run_ci_repair_demo` call (demo only).
 - [ ] Schedule the bounded repair with schedule_ci_repair_loop and record its task id.
 - [ ] Wait until the repair is terminal with one `get_ci_repair_loop` call and read its report.
 - [ ] Verify the repair with one `pr view` call.
