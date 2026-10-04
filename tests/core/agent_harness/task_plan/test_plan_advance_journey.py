@@ -48,12 +48,11 @@ _REPORT = "| Metric | acme/widget |\n|---|---:|\n| PR failure rate | 31% |"
 _STEPS = (
     "Scan local repositories",
     "Select a repository with ask_user_choice",
-    "Compute the 30-day CI metrics",
-    "Prepare the metrics table",
+    "Compute the 30-day CI metrics and prepare the table",
     "Show the metrics table",
     "Offer next steps with ask_user_choice",
 )
-_DELIVERABLE = frozenset({3, 4})
+_DELIVERABLE = frozenset({3})
 
 
 @dataclass
@@ -174,19 +173,19 @@ def test_host_advances_scan_menu_analyze_report_menu_without_plan_writes(
     # The plan belongs to the skill that wrote it.
     assert session.task_plan is not None and session.task_plan.owner == _SKILL
     # The scan ran under step 1; calling the menu completed it and started step 2.
-    assert seen[scan.name] == [_IP, _P, _P, _P, _P, _P]
-    assert _statuses(session) == [_C, _IP, _P, _P, _P, _P]
+    assert seen[scan.name] == [_IP, _P, _P, _P, _P]
+    assert _statuses(session) == [_C, _IP, _P, _P, _P]
     assert llm.invocations == 2
 
     agent.handle(_answer(session, title=_REPOSITORY_QUESTION, option="acme/widget"), binding)
 
     # The answer settled step 2, so the analysis ran under step 3.
-    assert seen[analyze.name] == [_C, _C, _IP, _P, _P, _P]
+    assert seen[analyze.name] == [_C, _C, _IP, _P, _P]
     # The report was shown once (deliverable next). The menu after it completed
-    # step 3 on its own tool and the first report step on the shown reply; the
-    # second report step needs its own reply, so it is the one in progress.
+    # step 3 on its own tool and the report step on the shown reply, so the
+    # menu's own step is the one in progress: the checklist matches the screen.
     assert output.streamed.count(_REPORT) == 1
-    assert _statuses(session) == [_C, _C, _C, _C, _IP, _P]
+    assert _statuses(session) == [_C, _C, _C, _C, _IP]
     assert session.pending_user_choice is not None
     assert session.pending_user_choice.title == _NEXT_QUESTION
     assert llm.invocations == 5
