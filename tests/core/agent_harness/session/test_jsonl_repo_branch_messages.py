@@ -85,3 +85,22 @@ def test_turn_evidence_survives_a_session_file_round_trip(tmp_path, monkeypatch)
     [evidence] = restored.turn_evidence
     assert evidence.has_tool_activity
     assert evidence.to_json() == session.turn_evidence[0].to_json()
+
+
+def test_new_records_the_carried_conversation_in_the_new_session_file() -> None:
+    from core.agent_harness.session import InMemorySessionStore, SessionCore, SessionManager
+    from core.agent_harness.turns.structured_history import build_turn_evidence
+
+    store = InMemorySessionStore()
+    session = SessionCore(store=store)
+    messages = [("user", "Is CI failing?"), ("assistant", "Run 9312 is failing.")]
+    evidence = [build_turn_evidence("Is CI failing?", "Run 9312 is failing.", ())]
+    manager = SessionManager(store=store)
+    manager.rotate_in_place(session)
+
+    manager.carry_forward(session, messages=messages, evidence=evidence)
+
+    records = store.read(session.session_id)
+    assert [(r["role"], r["content"]) for r in records if r["type"] == "message"] == messages
+    carried = [r for r in records if r.get("custom_type") == "turn_evidence"]
+    assert [r["content"] for r in carried] == [evidence[0].to_json()]

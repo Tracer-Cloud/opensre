@@ -153,8 +153,13 @@ def build_turn_evidence(
     user_text: str,
     assistant_text: str,
     tool_items: Sequence[Mapping[str, Any]] = (),
+    *,
+    typed_text: str = "",
 ) -> TurnEvidence:
-    """One turn as the transcript records it: the user's text, the tool work, the reply."""
+    """One turn as the transcript records it: the user's text, the tool work, the reply.
+
+    ``typed_text`` is the message as typed when ``user_text`` is its expansion.
+    """
     items: list[Mapping[str, Any]] = [{"kind": ITEM_USER, "text": user_text}]
     items.extend(dict(item) for item in tool_items)
     items.append(
@@ -164,7 +169,12 @@ def build_turn_evidence(
             "tool_calls": [],
         }
     )
-    return TurnEvidence(user_text=user_text, assistant_text=assistant_text, items=tuple(items))
+    return TurnEvidence(
+        user_text=user_text,
+        assistant_text=assistant_text,
+        items=tuple(items),
+        typed_text=typed_text if typed_text != user_text else "",
+    )
 
 
 def _replay_evidence(evidence: TurnEvidence) -> list[RuntimeMessage]:

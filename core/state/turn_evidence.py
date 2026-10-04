@@ -53,6 +53,10 @@ class TurnEvidence:
     user_text: str
     assistant_text: str
     items: tuple[Mapping[str, Any], ...] = ()
+    #: The message as typed, when the transcript records an expansion of it
+    #: (a bare "yes" becomes the offer it accepted). The session log keeps the
+    #: typed form, so a restored transcript matches on this instead.
+    typed_text: str = ""
 
     @property
     def has_tool_activity(self) -> bool:
@@ -72,11 +76,20 @@ class TurnEvidence:
 
     def to_json(self) -> dict[str, Any]:
         """The record persisted in the session log."""
-        return {
+        record: dict[str, Any] = {
             "user_text": self.user_text,
             "assistant_text": self.assistant_text,
             "items": [dict(item) for item in self.items],
         }
+        if self.typed_text:
+            record["typed_text"] = self.typed_text
+        return record
+
+    def answers(self, user_text: str) -> bool:
+        """Whether this record's turn began with ``user_text`` (recorded or as typed)."""
+        return user_text == self.user_text or (
+            bool(self.typed_text) and user_text == self.typed_text
+        )
 
     @classmethod
     def from_json(cls, payload: Any) -> TurnEvidence | None:
@@ -95,7 +108,13 @@ class TurnEvidence:
             for item in raw_items
             if isinstance(item, Mapping) and item.get("kind") in _ITEM_KINDS
         )
-        return cls(user_text=user_text, assistant_text=assistant_text, items=items)
+        typed_text = payload.get("typed_text")
+        return cls(
+            user_text=user_text,
+            assistant_text=assistant_text,
+            items=items,
+            typed_text=typed_text if isinstance(typed_text, str) else "",
+        )
 
 
 def match_turn_evidence(
@@ -105,11 +124,11 @@ def match_turn_evidence(
     """Map the index of each user message in ``messages`` to its turn's evidence.
 
     Walks user/assistant pairs newest first and pairs each with the newest
-    unused evidence for the same reply that is older than the evidence matched
-    to the pair after it, so order is preserved and two turns with the same
-    reply cannot cross over. The reply identifies a turn; the user text breaks
-    ties but is not required, because a restored session keeps the message as
-    typed ("yes") while the live transcript recorded its expansion. Pairs
+    unused evidence for the same exchange that is older than the evidence
+    matched to the pair after it, so order is preserved and two turns with the
+    same texts cannot cross over. Both the reply and the user message must
+    match; the user message may match as typed, because the session log keeps
+    a bare "yes" while the live transcript recorded its expansion. Pairs
     without a match are left out and replay as text.
     """
     if not messages or not evidence:
@@ -126,10 +145,13 @@ def match_turn_evidence(
         if user_role != "user" or assistant_role != "assistant":
             position -= 1
             continue
-        candidates = [index for index in by_reply.get(assistant_text, ()) if index < limit]
+        candidates = [
+            index
+            for index in by_reply.get(assistant_text, ())
+            if index < limit and evidence[index].answers(user_text)
+        ]
         if candidates:
-            exact = [index for index in candidates if evidence[index].user_text == user_text]
-            limit = (exact or candidates)[-1]
+            limit = candidates[-1]
             matched[position - 1] = evidence[limit]
         position -= 2
     return matched

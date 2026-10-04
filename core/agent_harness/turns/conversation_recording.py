@@ -19,6 +19,7 @@ def record_conversation_turn(
     assistant_text: str,
     *,
     tool_items: Sequence[Mapping[str, Any]] = (),
+    typed_text: str = "",
 ) -> None:
     """Append one user/assistant exchange and compact to the message window.
 
@@ -27,7 +28,8 @@ def record_conversation_turn(
     through ``record_turn``. With structured history on, the turn's tool
     batches (``tool_items``, from ``structured_history.tool_items_from_run``)
     are recorded beside the text and persisted, so later turns and a resumed
-    session replay what the tools returned. After each turn, schedules a
+    session replay what the tools returned; ``typed_text`` is the message as
+    typed when ``user_text`` is its expansion. After each turn, schedules a
     best-effort memory extraction so durable facts are saved without waiting
     for session exit.
     """
@@ -39,7 +41,7 @@ def record_conversation_turn(
             session.cli_agent_messages, max_messages=window
         )
     if structured_history_enabled():
-        _record_turn_evidence(session, user_text, assistant_text, tool_items)
+        _record_turn_evidence(session, user_text, assistant_text, tool_items, typed_text)
     _schedule_turn_memory_extraction(session)
 
 
@@ -48,6 +50,7 @@ def _record_turn_evidence(
     user_text: str,
     assistant_text: str,
     tool_items: Sequence[Mapping[str, Any]],
+    typed_text: str,
 ) -> None:
     """Keep the turn's evidence on the session and append it to the session log."""
     from core.agent_harness.turns.structured_history import build_turn_evidence
@@ -55,7 +58,7 @@ def _record_turn_evidence(
     records = getattr(session, "turn_evidence", None)
     if not isinstance(records, list):
         return
-    evidence = build_turn_evidence(user_text, assistant_text, tool_items)
+    evidence = build_turn_evidence(user_text, assistant_text, tool_items, typed_text=typed_text)
     records.append(evidence)
     # Bound the list the same way MutableAgentState does for its own records.
     keep = len(session.cli_agent_messages) // 2 + 4

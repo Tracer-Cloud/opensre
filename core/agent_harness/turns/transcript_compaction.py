@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from config.constants.conversation_history import (
+    HISTORY_COMPACT_AFTER_TURNS,
+    HISTORY_KEEP_MAX_TURNS,
     HISTORY_KEEP_RECENT_TOKENS,
     HISTORY_SUMMARY_MAX_CHARS,
 )
@@ -96,6 +98,8 @@ def should_compact(
     if messages is None:
         return False
     if structured_history_enabled() and threshold_chars is None:
+        if len(messages) > HISTORY_COMPACT_AFTER_TURNS * 2:
+            return True
         evidence = list(getattr(agent, "turn_evidence", None) or ())
         tokens = history_chars(list(messages), evidence) // CHARS_PER_TOKEN
         return tokens > history_token_budget()
@@ -263,13 +267,16 @@ def _keep_from(
     A turn is a user message with its reply (a lone message counts on its own),
     so no reply is separated from the message it answers. The newest turn
     always stays: it is the exchange the next message most likely refers to.
+    At most ``HISTORY_KEEP_MAX_TURNS`` stay, so a long run of short turns still
+    gets summarized.
     """
     matched = match_turn_evidence(messages, evidence)
     budget_chars = budget_tokens * CHARS_PER_TOKEN
     used = 0
+    kept_turns = 0
     start = len(messages)
     position = len(messages) - 1
-    while position >= 0:
+    while position >= 0 and kept_turns < HISTORY_KEEP_MAX_TURNS:
         paired = (
             position >= 1
             and messages[position - 1][0] == "user"
@@ -285,6 +292,7 @@ def _keep_from(
         if start < len(messages) and used + size > budget_chars:
             break
         used += size
+        kept_turns += 1
         start = first
         position = first - 1
     return start

@@ -251,3 +251,25 @@ def test_an_earlier_turns_outcome_report_is_not_shown_again() -> None:
     assert _latest_unshown_outcome_report(result, "You're welcome.", (), history_count=2) == ""
     # Without the history boundary the old report would resurface as this turn's.
     assert _latest_unshown_outcome_report(result, "You're welcome.", ()) != ""
+
+
+def test_evidence_needs_the_same_user_message_not_only_the_same_reply() -> None:
+    evidence = build_turn_evidence("deploy api", "Done.", ())
+    replaced = [("user", "restart the worker"), ("assistant", "Done.")]
+
+    replayed = history_messages(replaced, [evidence])
+
+    assert [message.content for message in replayed] == ["restart the worker", "Done."]
+
+
+def test_a_restored_bare_yes_still_finds_its_evidence() -> None:
+    items = tool_items_from_run(_recorded_turn(), history_count=1)
+    evidence = build_turn_evidence(
+        "Yes — please run the CI check.", "One run is failing.", items, typed_text="yes"
+    )
+    # The session log keeps the message as typed; the live transcript kept its expansion.
+    restored = [("user", "yes"), ("assistant", "One run is failing.")]
+
+    replayed = history_messages(restored, [evidence])
+
+    assert any(isinstance(message, ToolResultRuntimeMessage) for message in replayed)

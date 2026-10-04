@@ -169,3 +169,22 @@ def test_auto_compaction_waits_for_the_token_budget(monkeypatch: pytest.MonkeyPa
     assert not should_compact(small)
     assert should_compact(large)
     assert compact_session_branch(small) is None
+
+
+def test_many_short_turns_are_summarized_with_their_tool_output() -> None:
+    session = _session_with_evidence(61, result_chars=10)
+    prompts: list[str] = []
+
+    def summarizer(prompt: str) -> str:
+        prompts.append(prompt)
+        return "Runs 0-40 were checked."
+
+    # Well under the token budget, but past the turn trigger: the summary must
+    # come from a model that saw the old turns' tool output, before the
+    # text-only backstop would cut them.
+    assert should_compact(session)
+    assert compact_session_branch(session, summarizer=summarizer) is not None
+    assert "run-0 failed" in prompts[0]
+    kept_turns = [text for role, text in session.agent.messages if role == "user"]
+    assert len(kept_turns) <= 20
+    assert kept_turns[-1] == "check run 60"
