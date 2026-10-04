@@ -304,6 +304,8 @@ def test_exception_closes_job_before_closing_captured_streams(
                 raise RuntimeError("consumer failure")
         except RuntimeError as error:
             assert str(error) == "consumer failure"
+        else:
+            pytest.fail("expected consumer failure to propagate")
         for descendant in processes:
             descendant.wait(timeout=5)
             assert not descendant.is_running()
