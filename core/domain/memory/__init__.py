@@ -33,6 +33,7 @@ from core.domain.memory.policy import MEMORY_WRITE_POLICY
 from core.domain.memory.provenance import EvidenceCorpus, Provenance, checked_provenance
 from core.domain.memory.recall import (
     live_memories,
+    load_live_memory,
     render_prompt_index,
     render_relevant_memories,
     search_memories,
@@ -95,6 +96,7 @@ __all__ = [
     "is_valid_slug",
     "list_memories",
     "live_memories",
+    "load_live_memory",
     "load_memory",
     "memory_available_here",
     "memory_dir",

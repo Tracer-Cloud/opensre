@@ -1,6 +1,6 @@
-"""Read-side views of the store: the prompt index, relevant memories, and search.
+"""Read-side views of the store: the prompt index, relevant memories, search, and recall.
 
-All three see only *live* memories — parsed files minus the fenced demo and
+All of them see only *live* memories — parsed files minus the fenced demo and
 sample output (:mod:`core.domain.memory.fence`). Parsing, the relevance
 statistics and the rendered index are cached per memory directory and file
 signature, so a turn pays for a directory stat, not a re-parse.
@@ -26,6 +26,7 @@ from core.domain.memory.relevance import RelevanceIndex, query_terms, tokenize
 from core.domain.memory.store import (
     PARSED_STORE_CACHE_SIZE,
     ensure_memory_store,
+    load_memory,
     memory_dir_signature,
     parsed_memories,
 )
@@ -57,6 +58,12 @@ def live_memories() -> list[MemoryRecord]:
     """Memories that may reach the model, most recently updated first."""
     current = _current_store()
     return list(current[1].records) if current is not None else []
+
+
+def load_live_memory(slug: str) -> MemoryRecord | None:
+    """One memory by name as the model may see it; ``None`` when it is missing or fenced."""
+    record = load_memory(slug)
+    return None if record is None or is_fenced_record(record) else record
 
 
 def search_memories_scored(query: str, *, limit: int = 5) -> list[tuple[MemoryRecord, float]]:
@@ -162,6 +169,7 @@ def render_relevant_memories(
 
 __all__ = [
     "live_memories",
+    "load_live_memory",
     "render_prompt_index",
     "render_relevant_memories",
     "search_memories",

@@ -8,7 +8,7 @@ from typing import Any
 import pytest
 
 from config.constants import OPENSRE_MEMORY_DIR_ENV, OPENSRE_MEMORY_DISABLED_ENV
-from core.domain.memory import MEMORY_WRITE_POLICY, load_memory
+from core.domain.memory import MEMORY_WRITE_POLICY, load_memory, save_memory
 from core.domain.memory.usage import load_usage
 from core.domain.types.tools import ToolRole
 from core.tool_framework.tool_decorator import REGISTERED_TOOL_ATTR
@@ -233,6 +233,23 @@ class TestRecall:
         shown = {memory["name"] for memory in result["memories"]}
         assert 0 < len(shown) < 4
         assert set(load_usage()) == shown
+
+    def test_demo_output_awaiting_archival_is_hidden_from_exact_and_listed_recall(self) -> None:
+        """The prompt and query search hid it, but a known name or the index still showed it."""
+        demo = "repository-octocat-opensre-ci-repair-demo-ab12"
+        assert save_memory(
+            slug=demo,
+            memory_type="repository",
+            description="octocat/opensre-ci-repair-demo-ab12 is the CI-repair demo repository",
+            body="PR #1 repaired.",
+        )
+        _remember()
+
+        assert memory_recall(name=demo)["error"] == "not_found"
+        listed = memory_recall()
+        assert [memory["name"] for memory in listed["memories"]] == ["prod-cluster"]
+        assert listed["total_stored"] == 1
+        assert memory_recall(name="prod-cluster")["total_stored"] == 1
 
     def test_no_args_lists_index_without_bodies(self) -> None:
         _remember()

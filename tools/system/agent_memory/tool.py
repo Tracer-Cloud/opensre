@@ -15,8 +15,8 @@ from core.domain.memory import (
     MemorySource,
     MemoryType,
     delete_memory,
-    list_memories,
-    load_memory,
+    live_memories,
+    load_live_memory,
     record_memory_usage,
     save_memory,
     search_memories_scored,
@@ -223,11 +223,11 @@ def _counted_as_used(result: dict[str, Any]) -> dict[str, Any]:
 def memory_recall(
     name: str | None = None, query: str | None = None, limit: int = 5
 ) -> dict[str, Any]:
-    """Read one memory, search memories, or list the index."""
-    total = len(list_memories())
+    """Read one memory, search memories, or list the index; demo output is never shown."""
+    total = len(live_memories())
     if name:
         slug = normalize_name(name)
-        record = load_memory(slug) if slug else None
+        record = load_live_memory(slug) if slug else None
         if record is None:
             return {"error": "not_found", "name": name, "total_stored": total}
         return _counted_as_used(recall_result([record], total_stored=total))
@@ -242,7 +242,7 @@ def memory_recall(
                 scores={record.slug: score for record, score in scored},
             )
         )
-    return index_result(list_memories())
+    return index_result(live_memories())
 
 
 __all__ = ["memory_forget", "memory_recall", "memory_remember"]
