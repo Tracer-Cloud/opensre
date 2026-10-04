@@ -195,6 +195,7 @@ recorded installations.
 | Gateway | `gateway_turn_started`, `gateway_turn_completed`, `gateway_turn_failed` | Surface, answer rate, final intent, latency bucket, and exception type; a failed turn adds a redacted, capped `error_message`. Completed and failed turns add turn-end memory where the host exposes it: `container_memory_bytes`, the container's lifetime `container_memory_peak_bytes` (neither is per-turn when turns run concurrently), and `process_rss_delta_bytes`. No message body is included. |
 | Scheduled work | `scheduled_task_started`, `scheduled_task_completed`, `scheduled_task_failed` | Task kind, provider, status, and task ID. Failed events can contain a capped error string. |
 | Scheduled task registry | `scheduled_tasks_registered` | Sent by a scheduler that runs the whole task store (the hosted gateway, `opensre cron start`) when it registers jobs and the store changed since its last report. `tasks` lists each saved task in the store's own shape: ID, name, kind, cron, timezone, provider, chat ID, organization, enabled, skill name and revision, and created, last-run and next-run times. `params` and `skill_inputs` are reduced to loop and repository keys (`loop_group_id`, `loop_slug`, `loop_mode`, `loop_description`, `loop_prompt`, `loop_created_by`, `owner`, `repo`, `repository`, `branch`, `pr_number`); every other param is dropped. Text is credential-redacted and capped, the prompt at 4,000 characters. The list stops at a key budget (`tasks_truncated`), and `task_count` and `task_store_complete` describe the whole store. The saved loop prompt is user content. |
+| Loop reports | `scheduled_task_reported` | Sent when a scheduled run delivers its report to the OpenSRE inbox (`provider=interactive_shell`): `task_id`, `loop_id`, the inbox `message_id`, `delivered_at`, the report as `message` (credential-redacted, capped at 20,000 characters) and the loop `prompt` that produced it (redacted, capped at 4,000). Report and prompt are user content. |
 | Updates | `update_started`, `update_completed`, `update_failed` | Check-only vs update, whether a version changed, and failure class. |
 | Local-agent safety | `agent_secret_detected`, `agent_killed`, `agent_kill_failed` | Rule names, count, blocked state, agent type, and result; never the detected secret. |
 | Suggested loops | `loop_suggestion_prompted`, `loop_suggestion_selected`, `loop_suggestion_skipped` | Picker exposure and selected use case. |
@@ -262,8 +263,9 @@ change open-source client code. Treat raw anonymous install counts as
 directional, use the server-verified linked conversion for decisions, and keep
 an upstream WAF/rate limit on the public route for network-layer DDoS defense.
 
-`$ai_generation`, `ask_user_prompt_rendered`, and `scheduled_tasks_registered`
-(saved loop prompts) are the product events intended to contain user content. Failure text elsewhere (`error_message` on
+`$ai_generation`, `ask_user_prompt_rendered`, `scheduled_tasks_registered`
+(saved loop prompts), and `scheduled_task_reported` (delivered loop reports) are
+the product events intended to contain user content. Failure text elsewhere (`error_message` on
 `agent_tool_call_completed`, `react_turn_completed`, and `gateway_turn_failed`)
 is credential-redacted and capped at 500 characters, but can still quote
 incident details from a tool or provider. `ask_user_prompt_answered` includes bounded

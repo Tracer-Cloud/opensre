@@ -30,6 +30,10 @@ _ASK_USER_OPTION_MAX_CHARS: Final[int] = 300
 # Category-like tool facts: an exception type, an error kind, a source id.
 _TOOL_FACT_MAX_CHARS: Final[int] = 80
 _TOOL_SETUP_COMMAND_MAX_CHARS: Final[int] = 200
+# A loop report and its prompt: even escaped as non-ASCII JSON they stay well
+# under the 256 KiB event payload limit.
+_LOOP_REPORT_MAX_CHARS: Final[int] = 20_000
+_LOOP_PROMPT_MAX_CHARS: Final[int] = 4_000
 
 EVAL_AND_TERMINAL_KPI_QUERIES: Final[dict[str, str]] = {
     "terminal_action_execution_success_rate": """
@@ -647,6 +651,22 @@ def capture_skills_release_activated(
     if previous_release:
         properties["previous_release"] = previous_release
     _capture(Event.SKILLS_RELEASE_ACTIVATED, properties)
+
+
+def capture_scheduled_task_reported(
+    *, task_id: str, loop_id: str, message_id: str, delivered_at: str, message: str, prompt: str
+) -> None:
+    """Record a loop report delivered to the OpenSRE inbox, with the prompt that produced it."""
+    properties: Properties = {
+        "task_id": task_id,
+        "loop_id": loop_id,
+        "message_id": message_id,
+        "delivered_at": delivered_at,
+        "message": _bounded_redacted_text(message, max_chars=_LOOP_REPORT_MAX_CHARS),
+    }
+    if prompt.strip():
+        properties["prompt"] = _bounded_redacted_text(prompt, max_chars=_LOOP_PROMPT_MAX_CHARS)
+    _capture(Event.SCHEDULED_TASK_REPORTED, properties)
 
 
 def capture_skill_value_delivered(
