@@ -1413,7 +1413,16 @@ if TYPE_CHECKING:
         WINDOWS_COMMAND_SHELL_ENV as WINDOWS_COMMAND_SHELL_ENV,
     )
     from config.constants.tooling import (
+        CI_ANALYSIS_PREFETCH_MAX_AGE_SECONDS as CI_ANALYSIS_PREFETCH_MAX_AGE_SECONDS,
+    )
+    from config.constants.tooling import (
         DEFAULT_APPROVAL_EXPIRY_SECONDS as DEFAULT_APPROVAL_EXPIRY_SECONDS,
+    )
+    from config.constants.tooling import (
+        TOOL_PREFETCH_MAX_ENTRIES as TOOL_PREFETCH_MAX_ENTRIES,
+    )
+    from config.constants.tooling import (
+        WORKSPACE_SCAN_PREFETCH_MAX_AGE_SECONDS as WORKSPACE_SCAN_PREFETCH_MAX_AGE_SECONDS,
     )
     from config.constants.tooling import (
         ToolBlockedBy as ToolBlockedBy,

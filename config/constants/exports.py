@@ -551,7 +551,10 @@ EXPORTS: dict[str, str] = {
     "INTEGRATIONS_SECRET_ARN_ENV": "tenancy",
     "INTEGRATIONS_STORE_PATH_ENV": "tenancy",
     # tooling
+    "CI_ANALYSIS_PREFETCH_MAX_AGE_SECONDS": "tooling",
     "DEFAULT_APPROVAL_EXPIRY_SECONDS": "tooling",
+    "TOOL_PREFETCH_MAX_ENTRIES": "tooling",
+    "WORKSPACE_SCAN_PREFETCH_MAX_AGE_SECONDS": "tooling",
     "ToolBlockedBy": "tooling",
     "ToolSkippedBy": "tooling",
     # tracer

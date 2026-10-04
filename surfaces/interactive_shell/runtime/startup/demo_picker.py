@@ -19,6 +19,7 @@ from infrastructure.analytics.capture import capture_onboarding_demo_prompted
 from infrastructure.analytics.source import is_test_run
 from infrastructure.process.runtime_flags import is_onboarding_enabled
 from integrations.git import GitCommandError, merge_in_progress
+from surfaces.interactive_shell.runtime.startup.analysis_prefetch import prefetch_demo_scan
 from surfaces.shared.terminal.components.choice_menu import repl_tty_interactive
 from tools.interactive_shell.actions.skill_entry import enter_skill, entry_menu_queued
 
@@ -95,4 +96,6 @@ def offer_demo(session: Session, console: Console | None = None, *, force: bool 
         capture_onboarding_demo_prompted()
     except Exception:
         logger.debug("Could not capture onboarding startup.", exc_info=True)
+    # The recommended demo opens with this scan; it runs while the menu is read.
+    prefetch_demo_scan()
     return True

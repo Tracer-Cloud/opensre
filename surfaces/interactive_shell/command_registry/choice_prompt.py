@@ -57,6 +57,9 @@ from surfaces.interactive_shell.command_registry.prerequisite_menu import (
 )
 from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
+from surfaces.interactive_shell.runtime.startup.analysis_prefetch import (
+    prefetch_after_menu_answer,
+)
 from surfaces.interactive_shell.runtime.startup.onboarding_telemetry import (
     capture_onboarding_choice,
 )
@@ -414,6 +417,7 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
         return _show_queued_menu(session, console)
     if is_onboarding:
         _enter_chosen_demo(session, console, picked_one)
+    prefetch_after_menu_answer(session, picked_one)
     session.terminal.set_auto_command(answer)
     session.terminal.awaiting_handoff_answer = True
     # ``render_choice_selections`` above already painted this answer's card.

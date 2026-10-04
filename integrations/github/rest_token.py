@@ -46,9 +46,19 @@ def github_rest_token(
     return resolve_github_token(explicit or configured)
 
 
+def resolved_github_rest_token(resolved_integrations: Mapping[str, Any]) -> str:
+    """The token a GitHub REST tool run on ``resolved_integrations`` is handed; ``""`` when none."""
+    return github_rest_token(availability_view(dict(resolved_integrations)))
+
+
 def has_github_rest_token(resolved_integrations: Mapping[str, Any]) -> bool:
     """True when a GitHub REST tool run on ``resolved_integrations`` would find a token."""
-    return bool(github_rest_token(availability_view(dict(resolved_integrations))))
+    return bool(resolved_github_rest_token(resolved_integrations))
 
 
-__all__ = ["github_rest_token", "github_selection_failed", "has_github_rest_token"]
+__all__ = [
+    "github_rest_token",
+    "github_selection_failed",
+    "has_github_rest_token",
+    "resolved_github_rest_token",
+]
