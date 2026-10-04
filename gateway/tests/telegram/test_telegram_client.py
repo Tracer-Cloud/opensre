@@ -112,3 +112,19 @@ def test_send_message_redacts_bot_token_from_provider_description(
     assert error == f"Telegram rejected {safe_error}"
     assert token not in caplog.text
     assert safe_error in caplog.text
+
+
+@patch("gateway.transports.telegram.poller.client.post_json")
+def test_edit_to_identical_text_counts_as_delivered(mock_post: MagicMock) -> None:
+    # A final answer equal to the streamed preview must not be re-sent as a
+    # second message just because Telegram refuses the no-op edit.
+    mock_post.return_value = DeliveryResponse(
+        ok=True,
+        status_code=HTTPStatus.BAD_REQUEST,
+        text=(
+            '{"ok":false,"error_code":400,"description":"Bad Request: message is not '
+            "modified: specified new message content and reply markup are exactly the "
+            'same as a current content and reply markup of the message"}'
+        ),
+    )
+    assert TelegramBotClient("token").edit_message_text("123", "7", "hi") == (True, "")

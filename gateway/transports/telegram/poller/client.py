@@ -13,6 +13,8 @@ from infrastructure.delivery.notifications.redaction import redact_token
 logger = logging.getLogger(__name__)
 
 _API_BASE = "https://api.telegram.org/bot{token}/{method}"
+# Telegram's 400 for an edit whose text and markup already match the message.
+_NOT_MODIFIED = "message is not modified"
 
 
 class TelegramBotClient:
@@ -77,6 +79,9 @@ class TelegramBotClient:
         if reply_markup is not None:
             payload["reply_markup"] = dict(reply_markup)
         ok, _, error = self._call("editMessageText", payload)
+        if not ok and _NOT_MODIFIED in error:
+            # The message already shows this text, so the edit's goal is met.
+            return True, ""
         if not ok:
             logger.debug("[telegram-gateway] editMessageText failed: %s", error)
         return ok, error

@@ -182,6 +182,9 @@ def test_choose_authorized_users_does_not_cache_connected_chat() -> None:
 def test_current_connected_chat_follows_the_store() -> None:
     with patch(_STORE_PATH, return_value={"credentials": {"default_chat_id": "123456789"}}):
         assert current_connected_chat_user_ids() == ["123456789"]
+    # Hosted gateways hydrate the web-app connection under ``chat_id``.
+    with patch(_STORE_PATH, return_value={"credentials": {"chat_id": "555000111"}}):
+        assert current_connected_chat_user_ids() == ["555000111"]
     with patch(_STORE_PATH, return_value={"credentials": {}}):
         assert current_connected_chat_user_ids() == []
     with patch(_STORE_PATH, side_effect=RuntimeError("boom")):
