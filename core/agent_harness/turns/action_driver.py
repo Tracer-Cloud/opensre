@@ -52,6 +52,10 @@ from core.agent_harness.task_plan.conclusion import (
     task_plan_awaits_reply,
     task_plan_blocks_conclusion,
 )
+from core.agent_harness.task_plan.evidence import (
+    plan_advanced_this_turn,
+    record_deliverable_shown,
+)
 from core.agent_harness.turns.action_dedup import (
     coerce_fingerprint_quiet,
     with_duplicate_action_call_guard,
@@ -166,6 +170,12 @@ def _deferred_reply_presenter(
         return True
 
     return present
+
+
+def _deliverable_shown(session: SessionState, text: str, value_insights: set[str]) -> None:
+    """A plan ``deliverable`` reply reached the user: it earns that step, and may carry value."""
+    record_deliverable_shown(session)
+    record_skill_value(session, text, value_insights)
 
 
 class _StaticToolCallLLM:
@@ -776,10 +786,11 @@ def _build_action_agent(
             plan_awaits_reply=lambda: task_plan_awaits_reply(
                 task_plan=getattr(session, "task_plan", None)
             ),
+            plan_advanced=lambda: plan_advanced_this_turn(session),
             on_plan_deferred_reply=_deferred_reply_presenter(
                 output,
                 deferred_replies,
-                lambda text: record_skill_value(session, text, value_insights),
+                lambda text: _deliverable_shown(session, text, value_insights),
             ),
             blocked_needs_user=lambda: blocked_steps_await_the_user(
                 session, user_answered=bool(parse_ask_user_answers(message))
@@ -1295,7 +1306,11 @@ def _run_action_turn(
             resolved_integrations=resolved_integrations,
             llm_factory=args.llm_factory,
             tool_hooks=with_menu_turn_end(
-                with_task_plan_hooks(with_duplicate_action_call_guard(args.tool_hooks), session),
+                with_task_plan_hooks(
+                    with_duplicate_action_call_guard(args.tool_hooks),
+                    session,
+                    turn_user_message=message,
+                ),
                 session,
             ),
             tool_resources=tool_resources,

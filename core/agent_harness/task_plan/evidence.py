@@ -14,9 +14,11 @@ from typing import Any
 from core.agent_harness.session.pending_choice import parse_ask_user_answers
 from core.agent_harness.task_plan.plan import PlanStepStatus, TaskPlan
 
+#: The model's own plan write; a batch carrying it is never host-advanced.
+UPDATE_PLAN_TOOL = "update_plan"
 #: Tools that never count as work: they record or read the plan and skills.
 PLAN_BOOKKEEPING_TOOLS: frozenset[str] = frozenset(
-    {"update_plan", "skill_view", "session_goal_set", "session_goal_complete"}
+    {UPDATE_PLAN_TOOL, "skill_view", "session_goal_set", "session_goal_complete"}
 )
 _SLASH_TOOL = "slash_invoke"
 _SKILL_VIEW_TOOL = "skill_view"
@@ -79,6 +81,10 @@ class PlanEvidence:
     """Steps a write of this turn newly marked ``blocked``; the user is asked before the turn ends."""
     skill_loads: int = 0
     """Skill bodies loaded this turn; a turn that did nothing else has stalled."""
+    host_advances: int = 0
+    """Plan writes the host made this turn when the next step's tool was called."""
+    deliverable_shown: bool = False
+    """A plan-deferred ``deliverable`` reply reached the user since the last write."""
 
 
 def _evidence(session: Any) -> PlanEvidence:
@@ -149,10 +155,47 @@ def blocked_this_turn(session: Any) -> tuple[str, ...]:
 
 
 def mark_plan_written(session: Any) -> None:
-    """Record an ``update_plan`` write so later completions need fresh evidence."""
+    """Record a plan write so later completions need fresh evidence.
+
+    The write consumes everything that could have earned a completion: tool
+    returns so far, the Ask User answer, and a shown ``deliverable`` reply.
+    """
     state = _evidence(session)
     state.returns_at_last_write = state.tool_returns
     state.writes += 1
+    state.deliverable_shown = False
+
+
+def mark_plan_advanced(session: Any) -> None:
+    """Record a host advance: a plan write the model did not send."""
+    mark_plan_written(session)
+    _evidence(session).host_advances += 1
+
+
+def plan_advanced_this_turn(session: Any) -> bool:
+    """True when the host moved the plan forward on this action turn."""
+    return _evidence(session).host_advances > 0
+
+
+def plan_written_this_turn(session: Any) -> bool:
+    """True when the plan was written (by the model or the host) on this action turn."""
+    return _evidence(session).writes > 0
+
+
+def record_deliverable_shown(session: Any) -> None:
+    """Remember that a ``deliverable`` reply was shown while the plan was open."""
+    _evidence(session).deliverable_shown = True
+
+
+def deliverable_shown(session: Any) -> bool:
+    """True when a ``deliverable`` reply was shown since the last plan write."""
+    return _evidence(session).deliverable_shown
+
+
+def tool_returned_since_write(session: Any) -> bool:
+    """True when a non-bookkeeping tool returned since the last plan write of this turn."""
+    state = _evidence(session)
+    return state.tool_returns > state.returns_at_last_write
 
 
 def plan_evidence_available(
@@ -166,9 +209,9 @@ def plan_evidence_available(
     (``in_progress``): an answer settles the question that step asked, while a
     plan written fresh on an answer turn has nothing it can have finished.
     """
-    state = _evidence(session)
-    if state.tool_returns > state.returns_at_last_write:
+    if tool_returned_since_write(session):
         return True
+    state = _evidence(session)
     if state.writes or prior is None:
         return False
     waiting = any(item.status is PlanStepStatus.IN_PROGRESS for item in prior.steps)
@@ -177,17 +220,24 @@ def plan_evidence_available(
 
 __all__ = [
     "PLAN_BOOKKEEPING_TOOLS",
+    "UPDATE_PLAN_TOOL",
     "PlanEvidence",
     "blocked_this_turn",
+    "deliverable_shown",
     "is_plan_bookkeeping_call",
     "is_plan_work_name",
+    "mark_plan_advanced",
     "mark_plan_written",
     "no_tool_returned",
+    "plan_advanced_this_turn",
     "plan_evidence_available",
+    "plan_written_this_turn",
     "record_blocked_this_turn",
+    "record_deliverable_shown",
     "record_plan_evidence",
     "reset_plan_evidence",
     "skill_loaded_without_work",
     "result_counts_as_work",
+    "tool_returned_since_write",
     "work_returns_this_turn",
 ]

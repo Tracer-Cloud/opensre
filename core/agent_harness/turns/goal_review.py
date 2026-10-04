@@ -245,6 +245,9 @@ class _LLMGoalReviewer:
     # Live plan gate: when True at conclusion, reject without spending the LLM
     # review budget (the overlay still shows unfinished work).
     plan_incomplete: Callable[[], bool] | None = None
+    # The host moved the plan forward this turn: the turn worked the plan
+    # even when the model sent no ``update_plan``.
+    plan_advanced: Callable[[], bool] | None = None
     # Blocked-step gate: a step newly blocked this turn ends the turn only
     # through a question to the user.
     blocked_needs_user: Callable[[], bool] | None = None
@@ -264,6 +267,11 @@ class _LLMGoalReviewer:
             return False
         self.skill_load_rejections += 1
         return True
+
+    def _plan_worked(self, names: Sequence[str]) -> bool:
+        return plan_worked_this_turn(names) or (
+            self.plan_advanced is not None and self.plan_advanced()
+        )
 
     def __call__(self, observation: GoalObservation) -> bool:
         final_text = (observation.final_text or "").strip()
@@ -293,15 +301,11 @@ class _LLMGoalReviewer:
         # order, so it names the gate that rejected the stop.
         if (
             self.blocked_needs_user is not None
-            and plan_worked_this_turn(names)
+            and self._plan_worked(names)
             and self.blocked_needs_user()
         ):
             return self._decision(observation, False, "blocked_needs_user")
-        if (
-            self.plan_incomplete is not None
-            and plan_worked_this_turn(names)
-            and self.plan_incomplete()
-        ):
+        if self.plan_incomplete is not None and self._plan_worked(names) and self.plan_incomplete():
             return self._decision(observation, False, "plan_incomplete")
         if self._demo_pick_stalled():
             return self._decision(observation, False, "skill_loaded_only")
@@ -374,6 +378,7 @@ def build_goal_reviewer(
     executed_tool_names: list[str],
     *,
     plan_incomplete: Callable[[], bool] | None = None,
+    plan_advanced: Callable[[], bool] | None = None,
     plan_awaits_reply: Callable[[], bool] | None = None,
     on_plan_deferred_reply: Callable[[str], bool] | None = None,
     blocked_needs_user: Callable[[], bool] | None = None,
@@ -389,7 +394,8 @@ def build_goal_reviewer(
     ``plan_incomplete`` — when provided — rejects conclusions while the live
     task plan still has unfinished steps, so the shell does not go idle with
     ``Plan · n/m`` and a mid-list ``●``. It applies only to a turn that
-    worked the plan (see :func:`plan_worked_this_turn`).
+    worked the plan (see :func:`plan_worked_this_turn`), or one where
+    ``plan_advanced`` says the host moved the plan forward.
 
     ``on_plan_deferred_reply`` receives the non-empty reply text a plan
     rejection defers, but only while ``plan_awaits_reply`` says the plan's
@@ -417,6 +423,7 @@ def build_goal_reviewer(
         user_goal=user_goal,
         executed_tool_names=executed_tool_names,
         plan_incomplete=plan_incomplete,
+        plan_advanced=plan_advanced,
         blocked_needs_user=blocked_needs_user,
         skill_load_only=skill_load_only,
         executed_outcomes=outcomes,
@@ -426,17 +433,10 @@ def build_goal_reviewer(
     def _nudge(observation: GoalObservation) -> str:
         # Same gate order as ``_LLMGoalReviewer.__call__``, so the nudge names
         # the gate that rejected the stop.
-        if (
-            blocked_needs_user is not None
-            and plan_worked_this_turn(executed_tool_names)
-            and blocked_needs_user()
-        ):
+        plan_worked = reviewer._plan_worked(executed_tool_names)
+        if blocked_needs_user is not None and plan_worked and blocked_needs_user():
             return _BLOCKED_NEEDS_USER_NUDGE
-        if (
-            plan_incomplete is not None
-            and plan_worked_this_turn(executed_tool_names)
-            and plan_incomplete()
-        ):
+        if plan_incomplete is not None and plan_worked and plan_incomplete():
             deferred_reply = (observation.final_text or "").strip()
             if (
                 deferred_reply

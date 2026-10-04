@@ -8,6 +8,7 @@ Leaves:
 
 * :mod:`plan` — ``TaskPlan``, parse/validate, item JSON schema
 * :mod:`completion` — which completions this write has earned
+* :mod:`advance` — host moves the plan forward on the next step's tool
 * :mod:`write_result` — model-facing ``update_plan`` instruction
 * :mod:`evidence` — work-return counters for a turn
 * :mod:`required` — second work tool needs an open plan
