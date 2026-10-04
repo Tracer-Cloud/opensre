@@ -16,8 +16,12 @@ from rich.table import Table
 if TYPE_CHECKING:
     from infrastructure.scheduling.scheduler.loops import LoopSummary
 
-from core.agent_harness import pin_recurring_skill, validate_skill_inputs
-from core.agent_harness.prompts.loop_templates import load_loop_template, loop_template_names
+from core.agent_harness import (
+    load_loop_template,
+    loop_template_names,
+    pin_recurring_skill,
+    validate_skill_inputs,
+)
 from infrastructure.process.runtime_flags import is_json_output
 from infrastructure.scheduling.scheduler.credentials import requires_explicit_chat_id
 from infrastructure.scheduling.scheduler.cron_expression import cap_cron_at_most_hourly

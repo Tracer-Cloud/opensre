@@ -14,11 +14,11 @@ import logging
 from config.constants.scheduler import SCHEDULED_TASK_TRACE_KEY
 from core.agent_harness import (
     is_legacy_skill_name,
+    load_loop_template,
     normalize_skill_name,
     pin_recurring_skill,
     resolve_scheduled_skill,
 )
-from core.agent_harness.prompts.loop_templates import load_loop_template
 from infrastructure.observability.trace.trace_session import inherit_trace_session
 from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_PROMPT_PARAM,
