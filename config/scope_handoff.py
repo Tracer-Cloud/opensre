@@ -3,8 +3,10 @@
 The scope is a ``ContextVar`` (:mod:`config.scope_context`) and a child process
 inherits only the environment, so the parent writes the bound scope there with
 :func:`hand_off_scope` and the child reads it back with :func:`handed_off_scope`.
-A chat user controls a slash command's arguments, never its environment, so no
-command line can claim another member or organization.
+:func:`acting_scope` answers for either side: the bound turn's scope, else the
+one handed to this process. A chat user controls a slash command's arguments,
+never its environment, so no command line can claim another member or
+organization.
 
 Leaf module: depends only on :mod:`config`, so any layer can import it.
 """
@@ -47,4 +49,12 @@ def handed_off_scope() -> StorageScope | None:
     return StorageScope(principal=Principal.org(organization), actor=Actor(id=actor))
 
 
-__all__ = ["hand_off_scope", "handed_off_scope"]
+def acting_scope() -> StorageScope | None:
+    """The organization scope this work runs under: the bound turn's, else the handed-off one."""
+    scope = current_scope()
+    if scope is not None:
+        return scope if scope.principal.kind == PrincipalKind.ORG else None
+    return handed_off_scope()
+
+
+__all__ = ["acting_scope", "hand_off_scope", "handed_off_scope"]

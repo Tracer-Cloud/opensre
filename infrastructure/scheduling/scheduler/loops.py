@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 
 from config.constants.scheduler import WEEKDAY_CRON_FIELD
+from config.scope_handoff import acting_scope
 from core.agent_harness import pin_recurring_skill
 from infrastructure.scheduling.scheduler.credentials import (
     resolve_slack_credentials,
@@ -359,11 +360,13 @@ def create_manual_loop(
     params = {
         LOOP_GROUP_ID_PARAM: loop_id,
         LOOP_SOURCE_PARAM: _MANUAL_LOOP_SOURCE,
-        LOOP_CREATED_BY_PARAM: _MANUAL_LOOP_CREATED_BY,
         LOOP_PROMPT_PARAM: loop_prompt,
         LOOP_DESCRIPTION_PARAM: _description_from_prompt(loop_prompt),
         LOOP_CHANNELS_PARAM: ",".join(provider.value for provider in channel_providers),
     }
+    if acting_scope() is None:
+        # In an organization's turn the store records the member who acted instead.
+        params[LOOP_CREATED_BY_PARAM] = _MANUAL_LOOP_CREATED_BY
     time_label = loop_time_label(cron_expr)
     if time_label:
         params[LOOP_TIME_PARAM] = time_label

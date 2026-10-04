@@ -16,12 +16,10 @@ from rich.table import Table
 if TYPE_CHECKING:
     from infrastructure.scheduling.scheduler.loops import LoopSummary
 
-from config.scope_handoff import handed_off_scope
 from core.agent_harness import pin_recurring_skill, validate_skill_inputs
 from infrastructure.process.runtime_flags import is_json_output
 from infrastructure.scheduling.scheduler.credentials import requires_explicit_chat_id
 from infrastructure.scheduling.scheduler.loop_constants import (
-    LOOP_CREATED_BY_PARAM,
     LOOP_MODE_AGENT,
     LOOP_MODE_PARAM,
     LOOP_MODES,
@@ -240,11 +238,6 @@ def cron_add(
             branch=branch,
             pr_number=pr_number,
         )
-    # Inside a hosted turn this command is a child process: who created the loop
-    # arrives through the environment the gateway set, never through a flag.
-    creator = handed_off_scope()
-    if creator is not None:
-        task_params[LOOP_CREATED_BY_PARAM] = creator.actor.id
 
     task = ScheduledTask(
         name=name.strip(),
@@ -258,7 +251,6 @@ def cron_add(
         skill_revision=pinned_revision,
         skill_inputs=skill_inputs,
         params=task_params,
-        organization=creator.principal.id if creator is not None else "",
     )
 
     from infrastructure.scheduling.scheduler.operation_log import record_scheduler_task_operation
