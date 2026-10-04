@@ -2,21 +2,31 @@
 
 A call is an action when its tool declares a mutating or external side effect
 and the call succeeded, or when the tool reports a ``work_outcome`` for the
-operation it attempted. Tools that declare no level, read-only tools and
-bookkeeping tools are never recorded. A line names the tool, the arguments
-that say what it acted on (a command, gh arguments, repository, pull request,
-branch, channel) and the results that say what it produced (a summary, URL,
-commit SHA, work outcome). Message bodies, tokens and every other value stay
-out; each value is credential-redacted before it is shortened.
+operation it attempted. Tools that declare no level, read-only tools,
+bookkeeping tools and calls their tool reports as reads are never recorded. A
+line names the tool, what it acted on (a command's leading words, repository,
+pull request, branch, channel) and what it produced (a summary, URL, commit
+SHA, work outcome). A command keeps only its leading words, up to the first
+option, quoted text or shell operator, so option values such as a comment body
+never reach the record; every value is credential-redacted before it is
+shortened.
 """
 
 from __future__ import annotations
 
 import logging
+import re
+import shlex
 from collections.abc import Callable, Iterable, Mapping
 from typing import Any
 
-from core.tool import SideEffectLevel, ToolExecutionRequest, ToolExecutionResult, ToolRole
+from core.tool import (
+    CALL_SIDE_EFFECT_LEVEL_KEY,
+    SideEffectLevel,
+    ToolExecutionRequest,
+    ToolExecutionResult,
+    ToolRole,
+)
 from infrastructure.safety.secret_redaction import redact_text
 from infrastructure.scheduling.scheduler.run_activity import (
     ACTION_MAX_CHARS,
@@ -27,8 +37,17 @@ from infrastructure.scheduling.scheduler.run_activity import (
 logger = logging.getLogger(__name__)
 
 _RECORDED_LEVELS = frozenset({SideEffectLevel.MUTATING, SideEffectLevel.EXTERNAL})
+#: Levels a call may report for itself that keep it out of the record.
+_UNRECORDED_CALL_LEVELS = frozenset({SideEffectLevel.NONE.value, SideEffectLevel.READ_ONLY.value})
 #: Arguments whose value is what ran: a shell command, gh arguments, a slash command.
 _COMMAND_KEYS = ("command", "args")
+#: A word a command is shown with: a program, subcommand, number, ref, path or
+#: URL without a query. Options, quoted text, assignments and operators are not.
+_COMMAND_WORD = re.compile(r"[\w./][\w.:/#+,-]{0,99}")
+_ENV_ASSIGNMENT = re.compile(r"[A-Za-z_]\w*=")
+#: Separators after a leading ``cd <dir>``, whose command is the one worth naming.
+_CD_SEPARATORS = frozenset({"&&", ";"})
+_COMMAND_MAX_WORDS = 6
 #: Arguments that name what a call acted on, in display order.
 _TARGET_KEYS = (
     "owner",
@@ -84,6 +103,46 @@ def _text(value: Any) -> str:
     return " ".join(redact_text(str(value)).split())
 
 
+def _command_tokens(value: Any) -> list[str]:
+    """A shell string split on whitespace with quotes kept, or an argv list as given."""
+    if isinstance(value, str):
+        lexer = shlex.shlex(value, posix=False)
+        lexer.whitespace_split = True
+        try:
+            return list(lexer)
+        except ValueError:
+            return value.split()
+    if isinstance(value, list | tuple) and all(isinstance(item, str) for item in value):
+        return list(value)
+    return []
+
+
+def _command_words(value: Any) -> str:
+    """A command's leading words, ending in ``…`` when anything after them was dropped.
+
+    A leading ``cd <dir> &&`` and environment assignments are skipped; the words
+    stop at the first token that is not a plain word (an option, quoted text, an
+    operator), so payload-bearing values are never shown.
+    """
+    tokens = _command_tokens(value)
+    while tokens and tokens[0] == "cd":
+        separator = next((i for i, token in enumerate(tokens) if token in _CD_SEPARATORS), None)
+        if separator is None:
+            break
+        tokens = tokens[separator + 1 :]
+    while tokens and _ENV_ASSIGNMENT.match(tokens[0]):
+        tokens = tokens[1:]
+    words: list[str] = []
+    for token in tokens[:_COMMAND_MAX_WORDS]:
+        if not _COMMAND_WORD.fullmatch(token):
+            break
+        words.append(token)
+    if not words:
+        return ""
+    shown = _text(" ".join(words))
+    return f"{shown} …" if len(words) < len(tokens) else shown
+
+
 def _fields(source: Mapping[str, Any], keys: Iterable[str], seen: set[str]) -> list[str]:
     """``key=value`` for each listed key ``source`` holds, skipping values already shown."""
     fields = []
@@ -120,13 +179,17 @@ def describe_tool_action(request: ToolExecutionRequest, result: ToolExecutionRes
     if getattr(tool, "role", None) is ToolRole.BOOKKEEPING:
         return None
     details: Mapping[str, Any] = result.details if isinstance(result.details, Mapping) else {}
+    if details.get(CALL_SIDE_EFFECT_LEVEL_KEY) in _UNRECORDED_CALL_LEVELS:
+        return None
     outcome = details.get("work_outcome")
     if not isinstance(outcome, Mapping):
         outcome = None
         if not _succeeded(result, details):
             return None
     command = " ".join(
-        part for part in (_text(request.arguments.get(key)) for key in _COMMAND_KEYS) if part
+        part
+        for part in (_command_words(request.arguments.get(key)) for key in _COMMAND_KEYS)
+        if part
     )
     seen = {command} if command else set()
     targets = _fields(request.arguments, _TARGET_KEYS, seen)

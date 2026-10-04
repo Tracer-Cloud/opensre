@@ -112,13 +112,48 @@ def test_only_calls_that_changed_something_are_recorded_with_what_they_acted_on(
 
     snapshot = activity.snapshot()
     assert snapshot.actions == (
-        "github_cli pr comment 6555 --body Needs a decision. repo=o/r → Commented on PR #6555: "
+        "github_cli pr comment 6555 … repo=o/r → Commented on PR #6555: "
         "https://github.com/o/r/pull/6555#issuecomment-99",
         "fix_github_pr_ci owner=o repo=r pr_number=42 → ci:o/r:pr:42 blocked (pr_not_open) "
         "pr_url=https://github.com/o/r/pull/42",
         "slack_send_message channel_id=C123",
     )
     assert snapshot.action_count == 3
+
+
+def _shell_ok(command: str, **_kwargs: Any) -> dict[str, Any]:
+    if command.startswith("git status"):
+        return {"ok": True, "side_effect_level": SideEffectLevel.READ_ONLY.value}
+    return {"ok": True}
+
+
+@pytest.mark.parametrize(
+    "command, action",
+    [
+        # Option values and quoted text never reach the record: only the
+        # leading words, after a ``cd`` prefix and environment assignments.
+        ('cd "/srv/my repo" && git commit -m "rotate key s3cr3t"', "shell_run git commit …"),
+        ("GH_TOKEN=s3cr3t gh pr merge 12 --squash", "shell_run gh pr merge 12 …"),
+        ('curl -H "Authorization: Bearer s3cr3t" https://api.example.com', "shell_run curl …"),
+        ("git push origin fix/x", "shell_run git push origin fix/x"),
+        # A call its tool reports as a read is not an action.
+        ("git status --short", None),
+    ],
+)
+def test_a_command_is_recorded_by_its_leading_words_and_reads_are_left_out(
+    command: str, action: str | None
+) -> None:
+    tools = [_tool("shell_run", _shell_ok, SideEffectLevel.MUTATING)]
+
+    with collect_run_activity() as activity:
+        execute_tool_calls(
+            [ToolCall(id="1", name="shell_run", input={"command": command})],
+            tools,
+            {},
+            hooks=ToolExecutionHooks(after_tool_call=bound_action_hook()),
+        )
+
+    assert activity.snapshot().actions == ((action,) if action else ())
 
 
 def test_an_attempt_keeps_its_newest_distinct_actions_and_counts_the_rest() -> None:

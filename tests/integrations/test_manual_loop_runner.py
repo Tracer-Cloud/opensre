@@ -313,10 +313,14 @@ def test_only_a_loop_with_a_report_builder_runs_without_a_model_turn() -> None:
             "skip #6555 until head 1a2b3c4 changes",
         ),
         (
-            "Two PRs need review.\n**Note for next run:** wait for CI\non PR 12\n\nAll else is green.",
-            "Two PRs need review.\nAll else is green.",
+            "Two PRs need review.\n**Note for next run:** wait for CI\non PR 12",
+            "Two PRs need review.",
             "wait for CI on PR 12",
         ),
+        # A marker the report quotes, or one more of the report follows, is
+        # report content: nothing leaves the delivered reply.
+        ("Two PRs need review.\nNOTE FOR NEXT RUN: wait for CI\n\nAll else is green.", None, ""),
+        ("The last run said:\n> NOTE FOR NEXT RUN: wait for CI", None, ""),
         ("I will leave a note for next run: nothing new.", None, ""),
         (f"Done.\nNOTE FOR NEXT RUN: {'x' * 400}", "Done.", None),
     ],
@@ -423,7 +427,7 @@ def test_a_loop_tick_sees_what_its_previous_run_did_and_the_note_it_left(
     first = read_run_records(task.id)[-1]
     assert first["carry_note"] == "PR #6555 waits on a human; skip it until head 1a2b3c4 changes."
     assert first["actions"] == [
-        "github_cli pr comment 6555 --body Needs a decision. → Commented on PR #6555: "
+        "github_cli pr comment 6555 … → Commented on PR #6555: "
         "https://github.com/o/r/pull/6555#issuecomment-99"
     ]
     history, task_text = prompts[1].split("\n\nTask:\n")

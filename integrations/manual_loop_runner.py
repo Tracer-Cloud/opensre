@@ -41,9 +41,10 @@ _TARGET_PARAMS = ("pr_number", "branch")
 
 #: A loop's reply may end with this line to leave a note for the loop's next run.
 CARRY_NOTE_MARKER = "NOTE FOR NEXT RUN:"
-#: A line starting with the marker in any case, allowing Markdown emphasis, quote or list marks.
+#: A line starting with the marker in any case, allowing Markdown emphasis or list marks.
+#: A block quote (``>``) is quoted text, never the loop's own note.
 _CARRY_NOTE_LINE = re.compile(
-    rf"^[ \t>*_`#-]*{re.escape(CARRY_NOTE_MARKER.rstrip(':'))}[ \t*_`]*:[ \t*_`]*(?P<note>.*)$",
+    rf"^[ \t*_`#-]*{re.escape(CARRY_NOTE_MARKER.rstrip(':'))}[ \t*_`]*:[ \t*_`]*(?P<note>.*)$",
     re.IGNORECASE,
 )
 
@@ -108,27 +109,23 @@ def build_manual_loop_prompt(payload: AgentPayload, *, previous_runs: str = "") 
 def split_carry_note(reply: str) -> tuple[str, str]:
     """Split a loop's reply into the text to deliver and its note for the next run.
 
-    The note is the last line starting with ``CARRY_NOTE_MARKER`` plus the lines
-    directly below it, up to a blank line. Only that paragraph leaves the reply;
-    without a marker the reply is delivered unchanged and the note is empty.
+    The note is the marker line and every line below it, when no blank line
+    separates them from the end of the reply. A marker anywhere else (in a block
+    quote, or followed by more of the report) is report content: the reply is
+    delivered unchanged and the note is empty.
     """
-    lines = reply.splitlines()
-    start = next(
-        (index for index in reversed(range(len(lines))) if _CARRY_NOTE_LINE.match(lines[index])),
-        None,
-    )
-    if start is None:
+    lines = reply.rstrip().splitlines()
+    start = len(lines)
+    while start > 0 and lines[start - 1].strip():
+        start -= 1
+        if _CARRY_NOTE_LINE.match(lines[start]):
+            break
+    else:
         return reply, ""
-    end = start + 1
-    while end < len(lines) and lines[end].strip():
-        end += 1
     match = _CARRY_NOTE_LINE.match(lines[start])
     first = match.group("note") if match is not None else ""
-    note = compact_text(" ".join([first, *lines[start + 1 : end]]), CARRY_NOTE_MAX_CHARS)
-    # The blank line that separated the note from what follows goes with it.
-    after = lines[end + 1 :] if end < len(lines) else []
-    body = "\n".join([*lines[:start], *after]).strip()
-    return body, note.strip(" *_`")
+    note = compact_text(" ".join([first, *lines[start + 1 :]]), CARRY_NOTE_MAX_CHARS)
+    return "\n".join(lines[:start]).strip(), note.strip(" *_`")
 
 
 def report_builder(payload: AgentPayload) -> Callable[[Mapping[str, str]], str] | None:
