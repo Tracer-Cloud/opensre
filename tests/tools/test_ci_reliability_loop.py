@@ -61,15 +61,20 @@ def test_scheduling_the_same_repository_again_reuses_the_loop(store_path: Path) 
 
 
 @pytest.mark.parametrize(
-    ("day_of_week", "schedule"),
-    [("1-5", "weekdays at 08:00"), ("0-4", "on cron 0 8 * * 0-4")],
+    ("cron", "schedule"),
+    [
+        ("0 8 * * 1-5", "weekdays at 08:00"),
+        ("0 8 * * 0-4", "on cron 0 8 * * 0-4"),
+        ("30 0 8 * * 1-5", "on cron 30 0 8 * * 1-5"),
+    ],
 )
-def test_a_saved_numeric_schedule_is_labeled_by_its_crontab_days(
-    day_of_week: str, schedule: str
-) -> None:
-    """``1-5`` is Monday to Friday in crontab; ``0-4`` runs Sunday to Thursday."""
+def test_a_saved_schedule_is_labeled_by_its_crontab_days(cron: str, schedule: str) -> None:
+    """``1-5`` is Monday to Friday in crontab; ``0-4`` runs Sunday to Thursday.
+
+    A cron without a plain hour and minute, such as a six-field line, is shown as is.
+    """
     scheduled = _scheduled_stub("acme", "app")
-    scheduled.loop.task.cron = f"0 8 * * {day_of_week}"
+    scheduled.loop.task.cron = cron
 
     assert ci_loop.loop_card(scheduled).details[0].startswith(f"Runs {schedule} UTC")
 
