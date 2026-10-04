@@ -223,18 +223,18 @@ def get_task(task_id: str, store_path: Path | None = None) -> ScheduledTask | No
     return None
 
 
-#: Params a template loop copies from its template; re-adding the loop refreshes them.
-_TEMPLATE_COPIES = (LOOP_PROMPT_PARAM, LOOP_DESCRIPTION_PARAM)
+#: Text a template loop takes from its latest add instead of from its schedule identity.
+_TEMPLATE_LOOP_TEXT = (LOOP_PROMPT_PARAM, LOOP_DESCRIPTION_PARAM)
 
 
 def _refresh_template_copies(existing: dict[str, Any], task: ScheduledTask) -> bool:
-    """Take a re-added template loop's prompt and description; return whether either changed."""
+    """Take the prompt copy and any description a re-add supplies; return whether one changed."""
     params = existing.get("params") or {}
     if not params.get(LOOP_TEMPLATE_PARAM):
         return False
     changes = {
         key: task.params[key]
-        for key in _TEMPLATE_COPIES
+        for key in _TEMPLATE_LOOP_TEXT
         if key in task.params and params.get(key) != task.params[key]
     }
     existing["params"] = {**params, **changes}
@@ -256,7 +256,7 @@ def _schedule_identity(entry: Mapping[str, Any]) -> tuple[Any, ...]:
     raw_params = entry.get("params") or {}
     ignored = {LOOP_CREATED_BY_PARAM}
     if raw_params.get(LOOP_TEMPLATE_PARAM):
-        ignored.update(_TEMPLATE_COPIES)
+        ignored.update(_TEMPLATE_LOOP_TEXT)
     params = {key: value for key, value in raw_params.items() if key not in ignored}
     return (
         _owner_of(entry),

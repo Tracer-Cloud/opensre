@@ -1015,7 +1015,6 @@ def test_cron_add_template_fills_the_loop_and_stores_its_name(
 ) -> None:
     from core.agent_harness.prompts.loop_templates import load_loop_template
     from infrastructure.scheduling.scheduler.loop_constants import (
-        LOOP_DESCRIPTION_PARAM,
         LOOP_MODE_PARAM,
         LOOP_PROMPT_PARAM,
         LOOP_TEMPLATE_PARAM,
@@ -1050,11 +1049,12 @@ def test_cron_add_template_fills_the_loop_and_stores_its_name(
     assert task.params == {
         LOOP_PROMPT_PARAM: template.prompt,
         LOOP_TEMPLATE_PARAM: "pr-ci",
-        LOOP_DESCRIPTION_PARAM: template.description,
         LOOP_MODE_PARAM: "agent",
         "owner": "acme",
         "repo": "widgets",
     }
+    listed = CliRunner().invoke(cron_module.cron_command, ["list"])
+    assert f"What it does: {template.description}" in listed.output
 
 
 @pytest.mark.parametrize(

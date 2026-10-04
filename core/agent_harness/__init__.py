@@ -17,7 +17,11 @@ from __future__ import annotations
 from core.agent_harness.harness import AgentSession, SessionConfig
 from core.agent_harness.ports import OutputSink
 from core.agent_harness.prompts.kernel.surfaces import PromptSurface
-from core.agent_harness.prompts.loop_templates import load_loop_template, loop_template_names
+from core.agent_harness.prompts.loop_templates import (
+    LoopTemplate,
+    load_loop_template,
+    loop_template_names,
+)
 from core.agent_harness.prompts.skills import is_legacy_skill_name, normalize_skill_name
 from core.agent_harness.prompts.skills.scheduling import (
     is_recurring_skill,
@@ -30,6 +34,7 @@ from core.agent_harness.turns.turn_results import ToolCallingTurnResult, TurnRes
 
 __all__ = [
     "AgentSession",
+    "LoopTemplate",
     "OutputSink",
     "PromptSurface",
     "SessionConfig",

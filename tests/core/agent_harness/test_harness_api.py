@@ -26,6 +26,7 @@ from tests.shared.harness_api import API_MODULES, SPI_ROLES
 ROOT_API = frozenset(
     {
         "AgentSession",
+        "LoopTemplate",
         "OutputSink",
         "PromptSurface",
         "SessionConfig",

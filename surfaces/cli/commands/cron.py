@@ -165,7 +165,7 @@ def cron_command() -> None:
     default=None,
     help=(
         "Shipped loop template a manual_loop runs instead of --prompt; each tick runs the "
-        "template's current text. It also fills --name, --description, --cron and --mode."
+        "template's current text. It also supplies the default name, description, cron and mode."
     ),
 )
 @click.option(
@@ -224,7 +224,6 @@ def cron_add(
         loop_template = load_loop_template(template)
         prompt = loop_template.prompt
         name = name.strip() or loop_template.name
-        description = description.strip() or loop_template.description
         cron_expr = cron_expr.strip() or loop_template.cron
         mode = mode or loop_template.mode or None
     if not cron_expr.strip():
