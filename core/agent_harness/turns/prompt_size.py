@@ -14,7 +14,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Any
 
-from core.agent_harness.prompts.kernel.envelope import PromptEnvelope, PromptTier
+from core.agent_harness.prompts.kernel.envelope import PromptBlockId, PromptEnvelope, PromptTier
 from core.agent_harness.turns.structured_history import (
     CHARS_PER_TOKEN,
     history_chars,
@@ -93,6 +93,11 @@ class PromptSize:
     def tokens(self) -> int:
         return _tokens(self.chars)
 
+    @property
+    def carries_repository_instructions(self) -> bool:
+        """Whether an active repository's AGENTS.md block (or why it is absent) is in the call."""
+        return any(block.id == PromptBlockId.REPOSITORY_INSTRUCTIONS for block in self.blocks)
+
     def as_record(self) -> dict[str, JsonValue]:
         """The prompt log's ``model_blocks`` field: sizes and block ids, never prompt text."""
         record: dict[str, JsonValue] = {
@@ -165,13 +170,19 @@ def measure_next_prompt(session: SessionState, *, surface: str) -> PromptSize:
 
     The snapshot and envelope are built as a turn builds them, for an empty
     message, and the session is left as it was: a pending ``/resume`` recovery
-    note is read, not consumed. When the next turn compacts first, the history
-    is what compaction keeps; the summary it writes is not counted.
+    note is read, not consumed. Repositories are found as the turn finds them,
+    from cached integrations only; one the next message names is not known yet.
+    When the next turn compacts first, the history is what compaction keeps;
+    the summary it writes is not counted.
     """
     from core.agent_harness.prompts.action.assemble import build_action_system_prompt_envelope
+    from core.agent_harness.turns.turn_plan import preview_repositories
     from core.agent_harness.turns.turn_snapshot import TurnSnapshot
 
-    snapshot = TurnSnapshot.from_session("", session, surface=surface, consume_recovery_note=False)
+    snapshot = preview_repositories(
+        TurnSnapshot.from_session("", session, surface=surface, consume_recovery_note=False),
+        session,
+    )
     messages: Sequence[tuple[str, str]] = snapshot.conversation_messages
     evidence: Sequence[TurnEvidence] = snapshot.turn_evidence
     preview = preview_compaction(session)

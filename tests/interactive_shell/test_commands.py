@@ -1870,6 +1870,23 @@ class TestContextCommand:
         kept = HISTORY_KEEP_MAX_TURNS * 2
         assert f"folds {(HISTORY_COMPACT_AFTER_TURNS + 1) * 2 - kept} older messages" in output
 
+    def test_shows_the_repository_the_next_turn_targets(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv("OPENSRE_WORKSPACE_REPO", "Tracer-Cloud/opensre")
+        session = Session()
+        console, buf = _capture()
+        dispatch_slash("/context", session, console)
+        assert "none active yet" in buf.getvalue()
+
+        session.resolved_integrations_cache = {"github": {"connection_verified": True}}
+        console, buf = _capture()
+        dispatch_slash("/context", session, console)
+        output = buf.getvalue()
+        assert "repository-instructions" in output
+        assert "none active yet" not in output
+        assert session.active_vcs_repositories == {}
+
     def test_leaves_a_pending_recovery_note_for_the_next_turn(self) -> None:
         session = Session()
         session.pending_recovery_note = "shell_run started and never finished"

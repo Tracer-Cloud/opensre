@@ -7,7 +7,7 @@ from dataclasses import replace
 import pytest
 
 from core.agent_harness.session.pending_choice import AskUserQuestion, format_ask_user_answers
-from core.agent_harness.turns.turn_plan import TurnPlan, build_turn_plan
+from core.agent_harness.turns.turn_plan import TurnPlan, build_turn_plan, preview_repositories
 from core.agent_harness.turns.turn_snapshot import TurnSnapshot
 from surfaces.interactive_shell.session import Session
 
@@ -219,3 +219,25 @@ def test_repo_scope_uses_workspace_only_without_explicit_or_sticky_scope(
     assert plan.resolved_integrations["github"]["owner"] == "Tracer-Cloud"
     assert plan.resolved_integrations["github"]["repo"] == "opensre"
     assert session.vcs_repo_scopes["github"][:2] == ("Tracer-Cloud", "opensre")
+
+
+def test_a_preview_targets_the_turn_s_repository_and_leaves_the_session_alone(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("OPENSRE_WORKSPACE_REPO", "Tracer-Cloud/opensre")
+    session = Session()
+    before = TurnSnapshot.from_session("", session, surface="interactive_shell")
+
+    # Before the first resolve a preview cannot know (resolving could reach the network).
+    assert preview_repositories(before, session) == before
+
+    session.resolved_integrations_cache = {"github": {"connection_verified": True}}
+    preview = preview_repositories(
+        TurnSnapshot.from_session("", session, surface="interactive_shell"), session
+    )
+
+    assert preview.active_vcs_repositories == {"github": "Tracer-Cloud/opensre"}
+    assert preview.resolved_integrations["github"]["repo"] == "opensre"
+    assert session.active_vcs_repositories == {}
+    assert session.vcs_repo_scopes == {}
+    assert session.known_vcs_repo_scopes == {}

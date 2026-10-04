@@ -102,6 +102,12 @@ def render_next_model_call(
             f"{_counted(size.tool_schema_count, 'tool schema')}, sent with every call "
             "(not in the total)",
         )
+    if not size.carries_repository_instructions:
+        notes.add_row(
+            "repository",
+            "none active yet; once a message names one, or this checkout is matched to "
+            "your GitHub connection, the call also carries its context and AGENTS.md",
+        )
     notes.add_row(
         "compaction",
         _compaction_line(size, budget_tokens=history_budget_tokens, compacts_next=compacts_next),
