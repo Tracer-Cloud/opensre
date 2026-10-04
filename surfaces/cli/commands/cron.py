@@ -21,6 +21,7 @@ from infrastructure.process.runtime_flags import is_json_output
 from infrastructure.scheduling.scheduler.credentials import requires_explicit_chat_id
 from infrastructure.scheduling.scheduler.cron_expression import cap_cron_at_most_hourly
 from infrastructure.scheduling.scheduler.loop_constants import (
+    LOOP_DESCRIPTION_PARAM,
     LOOP_MODE_AGENT,
     LOOP_MODE_PARAM,
     LOOP_MODES,
@@ -86,6 +87,13 @@ def cron_command() -> None:
     default="",
     show_default=False,
     help="Human-readable loop name for list output.",
+)
+@click.option(
+    "--description",
+    type=str,
+    default="",
+    show_default=False,
+    help="One sentence on what the loop does for its readers, shown when loops are listed.",
 )
 @click.option(
     "--kind",
@@ -169,6 +177,7 @@ def cron_command() -> None:
 )
 def cron_add(
     name: str,
+    description: str,
     kind: str,
     cron_expr: str,
     timezone: str,
@@ -212,6 +221,8 @@ def cron_add(
     elif skill_name.strip():
         raise click.ClickException("--skill is only valid with --kind recurring_skill.")
     task_params = {LOOP_PROMPT_PARAM: normalized_prompt} if normalized_prompt else {}
+    if description.strip():
+        task_params[LOOP_DESCRIPTION_PARAM] = " ".join(description.split())
     if mode == LOOP_MODE_AGENT:
         task_params[LOOP_MODE_PARAM] = mode
     if task_kind is TaskKind.MANUAL_LOOP and mode == LOOP_MODE_AGENT:
@@ -342,6 +353,8 @@ def _print_cron_task(loop: LoopSummary) -> None:
     )
     _console.print(f"[bold]• {title}[/bold]")
     _console.print(f"  • ID: [cyan]{escape(loop.id[:12])}[/cyan]")
+    if loop.description:
+        _console.print(f"  • What it does: {escape(loop.description)}")
     for label, value in fields:
         _console.print(f"  • {label}: {value}")
     if loop.schedule_error:

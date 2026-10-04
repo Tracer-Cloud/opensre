@@ -2,7 +2,16 @@
 
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import Final
+
+
+class LLMCreditErrorReason(StrEnum):
+    """Recorded billing reasons, distinct from transient provider rate limits."""
+
+    OPENSRE = "opensre_credits_exhausted"
+    PROVIDER = "provider_credits_exhausted"
+
 
 ANALYTICS_DISABLED_ENV: Final[str] = "OPENSRE_ANALYTICS_DISABLED"
 ANALYTICS_ENV_ENV: Final[str] = "OPENSRE_ANALYTICS_ENV"
@@ -36,6 +45,7 @@ ANALYTICS_RUNNER_INGEST_URL: Final[str] = "https://app.opensre.com/api/analytics
 ANALYTICS_RUNNER_AUDIENCE: Final[str] = "https://app.opensre.com/analytics/runner/"
 
 __all__ = [
+    "LLMCreditErrorReason",
     "ANALYTICS_CICD_ENV",
     "ANALYTICS_DISABLED_ENV",
     "ANALYTICS_ENV_ENV",

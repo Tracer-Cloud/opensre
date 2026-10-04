@@ -409,6 +409,43 @@ def test_cron_add_rejects_prompt_for_non_manual_loop() -> None:
     assert "--prompt is only valid" in result.output
 
 
+def test_cron_add_stores_the_description_readers_see_in_loop_listings(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from infrastructure.scheduling.scheduler.loop_constants import LOOP_DESCRIPTION_PARAM
+    from infrastructure.scheduling.scheduler.storage import task_store as scheduler_store
+    from infrastructure.scheduling.scheduler.storage.task_store import list_tasks
+
+    # Arrange
+    store = tmp_path / "scheduler_tasks.json"
+    monkeypatch.setattr(scheduler_store, "default_task_store_path", lambda: store)
+
+    # Act
+    result = CliRunner().invoke(
+        cron_module.cron_command,
+        [
+            "add",
+            "--kind",
+            "manual_loop",
+            "--cron",
+            "0 * * * *",
+            "--provider",
+            "interactive_shell",
+            "--prompt",
+            "Repair failing checks on open PRs.",
+            "--description",
+            "  Keeps   open pull requests green.  ",
+        ],
+    )
+
+    listed = CliRunner().invoke(cron_module.cron_command, ["list"])
+
+    # Assert: stored normalised, and the operator can read back what they entered
+    assert result.exit_code == 0, result.output
+    assert list_tasks(store)[0].params[LOOP_DESCRIPTION_PARAM] == "Keeps open pull requests green."
+    assert "What it does: Keeps open pull requests green." in listed.output
+
+
 @pytest.mark.parametrize("mode", [None, "report", "agent"])
 def test_cron_add_persists_manual_loop_prompt(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch, mode: str | None

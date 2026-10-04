@@ -644,13 +644,27 @@ See [LLM providers](/platform/llm-providers).
 
 <Accordion title="/tools">
 
-List tools available to the chat and action surfaces in this build (name, source, surfaces).
-Run it again after `/integrations setup` to see the tools a new integration added.
+Browse registered tools available to the chat and action surfaces, including
+each tool's name, source, surfaces, and a short purpose. Run it again after
+`/integrations setup` to see the tools a new integration added. The list grows
+with your terminal height, showing up to 20 tools. A compact preview below the
+list shows the selected tool's name and description.
 
 ```text
 /tools
-/tools list
 ```
+
+In an interactive terminal, use **↑/↓** to browse and **Enter** to toggle
+chat/action surfaces, parameters, and the full description. Expanded details
+use the available height below the list. If they still overflow, **←/→** changes
+pages. **Esc** closes the browser and restores the conversation. Moving to
+another tool returns to its compact preview. Narrow terminals omit the purpose column;
+the selected tool's description remains visible below the list.
+
+The browser uses a temporary terminal screen, so browsing and resizing do not
+add tool listings to your conversation's scrollback.
+
+Piped and noninteractive output stays a readable table without keyboard input.
 
 There is no global `/list` command — use domain-specific list commands (see [Natural language actions](#natural-language-actions)).
 

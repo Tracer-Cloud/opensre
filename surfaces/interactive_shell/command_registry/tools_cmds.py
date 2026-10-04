@@ -4,41 +4,41 @@ from __future__ import annotations
 
 from rich.console import Console
 
-from surfaces.interactive_shell.command_registry.types import (
-    SlashCommand,
-    make_list_root_handler,
-)
+from config.interactive_override import interactive_override_env
+from surfaces.interactive_shell.command_registry.types import SlashCommand
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.ui import render_tools_table
+from surfaces.interactive_shell.ui.tool_browser import browse_tools
+from surfaces.shared.terminal.components.choice_menu import repl_tty_interactive
 from surfaces.shared.terminal.tables.tool_catalog import build_tool_catalog
 
 
-def _list_tools(_session: Session, console: Console, _args: list[str]) -> bool:
-    render_tools_table(console, build_tool_catalog())
+def _validate_tools_args(args: list[str]) -> str | None:
+    return "Use /tools without arguments to browse registered tools." if args else None
+
+
+def _cmd_tools(_session: Session, console: Console, _args: list[str]) -> bool:
+    entries = build_tool_catalog()
+    if (
+        entries
+        and repl_tty_interactive()
+        and console.is_terminal
+        and not interactive_override_env()
+    ):
+        browse_tools(entries)
+    else:
+        render_tools_table(console, entries)
     return True
 
-
-_cmd_tools = make_list_root_handler(
-    "/tools",
-    _list_tools,
-    list_aliases=("list", "ls", "tool", "tools"),
-)
-
-_TOOLS_FIRST_ARGS: tuple[tuple[str, str], ...] = (
-    ("list", "list registered tools (chat + action surfaces)"),
-    ("ls", "alias for list"),
-    ("tool", "alias for list"),
-    ("tools", "alias for list"),
-)
 
 COMMANDS: list[SlashCommand] = [
     SlashCommand(
         "/tools",
-        "List registered tools.",
+        "Browse registered tools and their descriptions.",
         _cmd_tools,
-        usage=("/tools", "/tools list"),
-        first_arg_completions=_TOOLS_FIRST_ARGS,
+        usage=("/tools",),
+        validate_args=_validate_tools_args,
     )
 ]
 
-__all__ = ["COMMANDS", "_TOOLS_FIRST_ARGS", "_cmd_tools"]
+__all__ = ["COMMANDS", "_cmd_tools"]

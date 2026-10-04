@@ -108,6 +108,8 @@ _ASKING_IN_SHELL = (
     "The hosted gateway needs your decision; the menu opens now. Your selection goes back "
     "to its prompt {prompt_id}."
 )
+#: Introduces what the gateway wrote before its question.
+_GATEWAY_REPORTED = "The hosted gateway reported:"
 #: For the model only: how the parked question continues once the user has answered.
 _ASKING_IN_SHELL_INSTRUCTIONS = (
     "The question is parked on the shell's menu; the user answers it there. Once they have "
@@ -543,6 +545,10 @@ def _outcome(
         text = record.answer
     elif record.state == "needs_input":
         text, parked = _ask_here(record, scope)
+        report = record.answer.strip()
+        if report:
+            # The menu line, with its prompt id, leads: the shell previews only the head.
+            text = f"{text}\n\n{_relayed_report(report)}"
         if parked:
             instructions.append(_ASKING_IN_SHELL_INSTRUCTIONS.format(prompt_id=record.prompt_id))
     elif record.state in _STATE_TEXT:
@@ -595,6 +601,18 @@ def _failure_text(error: str) -> str:
     if known is not None:
         return known
     return _STATE_TEXT["failed"].format(error=error)
+
+
+def _relayed_report(report: str) -> str:
+    """The gateway's reply before its question, shaped so the shell keeps the menu line.
+
+    The shell drops a tool text that reads as data (it opens with a bracket or carries
+    two ``":``) or as a repeated outcome report, and the menu line with the prompt id
+    would go with it. A label, a block quote, and single quotes keep the reply as prose.
+    """
+    lines = report.replace('"', "'").splitlines()
+    quoted = "\n".join(f"> {line}" if line.strip() else ">" for line in lines)
+    return f"{_GATEWAY_REPORTED}\n{quoted}"
 
 
 def _ask_here(record: PromptRecord, scope: ActionToolScope | None) -> tuple[str, bool]:

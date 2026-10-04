@@ -443,7 +443,7 @@ function Invoke-OpenSreWithRetry {
         [scriptblock]$Operation,
         [Parameter(Mandatory = $true)]
         [string]$Description,
-        [int]$MaxAttempts = 3
+        [int]$MaxAttempts = 6
     )
 
     $attempt = 1
@@ -454,7 +454,9 @@ function Invoke-OpenSreWithRetry {
         }
         catch {
             $statusCode = Get-OpenSreHttpStatusCodeFromError -ErrorRecord $_
-            if ($null -ne $statusCode -and $statusCode -ge 400 -and $statusCode -lt 500) {
+            # 403 and 429 are GitHub rate limits from shared CI addresses.
+            # Other 4xx responses are final.
+            if ($null -ne $statusCode -and $statusCode -ge 400 -and $statusCode -lt 500 -and $statusCode -ne 403 -and $statusCode -ne 429) {
                 throw "Failed to $Description. $($_.Exception.Message)"
             }
 
@@ -462,8 +464,13 @@ function Invoke-OpenSreWithRetry {
                 throw "Failed to $Description after $attempt attempts. $($_.Exception.Message)"
             }
 
+            $wait = $attempt
+            if ($statusCode -eq 403 -or $statusCode -eq 429) {
+                $wait = [Math]::Min(30, [int][Math]::Pow(2, $attempt))
+            }
+
             Write-Warning "Attempt $attempt to $Description failed: $($_.Exception.Message). Retrying..."
-            Start-Sleep -Seconds $attempt
+            Start-Sleep -Seconds $wait
             $attempt += 1
         }
     }

@@ -51,6 +51,7 @@ class Event(StrEnum):
     TERMINAL_ACTIONS_EXECUTED = "terminal_actions_executed"
     TERMINAL_TURN_SUMMARIZED = "terminal_turn_summarized"
     REACT_TURN_COMPLETED = "react_turn_completed"
+    LLM_CREDIT_LIMIT_REACHED = "llm_credit_limit_reached"
     AI_GENERATION = "$ai_generation"
     AGENT_TOOL_CALL_COMPLETED = "agent_tool_call_completed"
     HOSTED_GATEWAY_TASK_SUBMITTED = "hosted_gateway_task_submitted"

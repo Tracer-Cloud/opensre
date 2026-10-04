@@ -49,6 +49,7 @@ from gateway.core.prompt_intake.jobs import (
 from gateway.core.prompt_intake.output import CollectingTurnOutput
 from gateway.core.session.thread_history import seed_session_history
 from infrastructure.analytics.usage_context import UsageSurface, bound_usage_context
+from infrastructure.turn_host.status_messages import EMPTY_RESPONSE_MESSAGE
 from infrastructure.turn_host.unattended_session import (
     AnswerRejected,
     UnattendedSessions,
@@ -267,6 +268,7 @@ class PromptWorker:
             self._queue.needs_input(
                 job,
                 _question_text(pending),
+                answer=_reply_before_menu(output),
                 choice=choice_view(pending),
                 failed_integrations=failed,
             )
@@ -535,6 +537,18 @@ def actor_conversation(actor: str) -> str | None:
 def _render_prompt(job: PromptJob) -> str:
     """The prompt plus the facts the caller resolved up front, so nothing is left to ask."""
     return prompt_with_facts(job.prompt, job.context)
+
+
+def _reply_before_menu(output: CollectingTurnOutput) -> str:
+    """What the turn wrote before it asked, for the caller to read with the question.
+
+    Empty for a failed turn, whose text may carry exception detail, and for the
+    placeholder a turn that wrote nothing is given.
+    """
+    if output.failed:
+        return ""
+    reply = output.answer.strip()
+    return "" if reply == EMPTY_RESPONSE_MESSAGE else reply
 
 
 def _question_text(pending: Any) -> str:

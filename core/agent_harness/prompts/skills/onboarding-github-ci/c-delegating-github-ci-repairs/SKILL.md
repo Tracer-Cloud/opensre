@@ -15,7 +15,7 @@ metadata:
     - A reachable hosted gateway with a GitHub integration and an authenticated coding agent.
     - An interactive shell and a signed-in OpenSRE account in the organization for hosted gateway access.
     - GitHub write access to the selected PR; demo mode also needs private-repository creation.
-  version: "2.12"
+  version: "2.13"
 ---
 
 # Delegate a remote CI repair
@@ -49,7 +49,7 @@ Use `update_plan` to create the live plan from the workflow headings below. Mark
 
 **Remote Gateway agent:**
 
-- [ ] Call `run_ci_repair_demo` once for the approved owner and repo. Do not walk `scheduling-github-ci-repairs` step by step.
+- [ ] Call `run_ci_repair_demo` once for the approved owner and repo, without loading a skill.
 - [ ] Respond with that tool's outcome as Markdown. Nothing on GitHub is deleted; the demo repository is kept.
 
 **Inside the interactive shell:**
@@ -106,7 +106,7 @@ Show the final repair plan titled `Remote Repair Plan`. Put the probe's findings
 
 ### Delegate the repair
 
-- Send one `ask_hosted_gateway` prompt: "This is a new request. Call `run_ci_repair_demo` once with owner <owner> and repo <repo>. Do not walk `scheduling-github-ci-repairs` step by step. Do not reuse task IDs or repositories from earlier in this conversation. Delete nothing on GitHub. Do not ask the user. If the seed or schedule fails, return that failure and do not schedule another loop."
+- Send one `ask_hosted_gateway` prompt: "This is a new request. Call `run_ci_repair_demo` once with owner <owner> and repo <repo>. Do not load a skill; this prompt is the whole task. Do not reuse task IDs or repositories from earlier in this conversation. Delete nothing on GitHub. Ask the user only about a blocked step. If the seed or schedule fails, return that failure and do not schedule another loop."
 - Pass the target as `facts` (`demo`, `owner`, `repo`, `pr_number`). Keep the prompt ID.
 
 

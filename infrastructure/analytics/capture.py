@@ -6,6 +6,7 @@ from collections.abc import Mapping, Sequence
 from typing import Final, cast
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
+from config.constants.analytics import LLMCreditErrorReason
 from infrastructure.analytics.event_properties import (
     _bounded_redacted_text,
     _bucket_duration_ms,
@@ -318,6 +319,31 @@ def capture_terminal_actions_executed(
     )
 
 
+def capture_llm_credit_limit_reached(
+    *,
+    reason_code: LLMCreditErrorReason,
+    phase: str,
+    llm_provider: str,
+    llm_model: str,
+    cli_session_id: str,
+    cli_turn_kind: str,
+    prompt_turn_id: str | None,
+) -> None:
+    """Record a failed LLM run blocked by hosted or provider credit exhaustion."""
+    properties: Properties = {
+        "reason_code": reason_code,
+        "credit_source": "opensre" if reason_code == LLMCreditErrorReason.OPENSRE else "provider",
+        "phase": phase,
+        "llm_provider": llm_provider,
+        "llm_model": llm_model,
+        "cli_session_id": cli_session_id,
+        "cli_turn_kind": cli_turn_kind,
+    }
+    if prompt_turn_id:
+        properties["prompt_turn_id"] = prompt_turn_id
+    _capture(Event.LLM_CREDIT_LIMIT_REACHED, properties)
+
+
 def capture_react_turn_completed(
     *,
     phase: str,
@@ -336,6 +362,7 @@ def capture_react_turn_completed(
     error_type: str = "",
     error_message: str = "",
     scheduled_task_id: str = "",
+    ai_error_reason: str = "",
 ) -> None:
     """Record one finished ReAct run.
 
@@ -364,6 +391,8 @@ def capture_react_turn_completed(
         properties["loop_stop_reason"] = loop_stop_reason
     if error_type:
         properties["error_type"] = error_type
+    if ai_error_reason:
+        properties["ai_error_reason"] = ai_error_reason
     if recorded_error := bounded_error_message(error_message):
         properties["error_message"] = recorded_error
     if scheduled_task_id:

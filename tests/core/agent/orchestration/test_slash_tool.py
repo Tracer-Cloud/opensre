@@ -56,6 +56,7 @@ def _ctx(
         ("/integrations", [], "/integrations"),
         ("/mcp", [], "/mcp"),
         ("/loops", ["show"], "/loops show"),
+        ("/tools", [], "/tools"),
     ],
 )
 def test_interactive_picker_command_is_deferred_to_exclusive_stdin(

@@ -8,6 +8,8 @@ import re
 import time
 from collections.abc import Callable
 
+from config.constants.analytics import LLMCreditErrorReason
+
 logger = logging.getLogger(__name__)
 
 DEFAULT_MAX_ATTEMPTS = 3
@@ -76,6 +78,16 @@ class OpenSRECreditsExhaustedError(LLMCreditExhaustedError):
 # Stable substring every credit-exhausted message carries. Surfaces match on it
 # to attach their own recovery hint (e.g. the shell's ``/model`` command).
 CREDIT_EXHAUSTED_MARKER = "credit exhausted (provider billing/quota)"
+
+
+def credit_exhaustion_reason(exc: BaseException) -> LLMCreditErrorReason | None:
+    """Identify hosted or provider credit exhaustion from exception types and codes."""
+    code = _structured_error_code(exc)
+    if isinstance(exc, OpenSRECreditsExhaustedError) or code == "opensre_credits_exhausted":
+        return LLMCreditErrorReason.OPENSRE
+    if isinstance(exc, LLMCreditExhaustedError) or code in _CREDIT_EXHAUSTED_CODES:
+        return LLMCreditErrorReason.PROVIDER
+    return None
 
 
 def is_rate_limit_error(exc: BaseException) -> bool:

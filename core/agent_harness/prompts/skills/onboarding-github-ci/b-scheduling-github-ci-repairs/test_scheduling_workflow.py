@@ -153,6 +153,20 @@ def test_skill_card_spells_out_the_loop_call_and_waits_for_the_scheduler() -> No
     assert skill_reference_names(SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME) == ("script-tools",)
 
 
+def test_the_hand_off_follows_only_a_successful_repair() -> None:
+    """A blocked run asks about its blocker; the success-path hand-off never stands in for it."""
+    body = load_skill_body(SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME)
+    assert (
+        "After a successful repair report is shown, call `ask_user_choice` with the title" in body
+    )
+    assert (
+        "After a blocked or failed run, ask the blocker question instead of the menu below" in body
+    )
+    assert "naming the blocked run step and its blocker" in body
+    # The gateway never offers the shell's hand-off; the delegating shell owns follow-ups.
+    assert "On the hosted gateway, skip the menu below after a successful report" in body
+
+
 def test_plan_checklist_matches_workflow_headings() -> None:
     body = load_skill_body(SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME)
     heading_numbers = [int(match) for match in _WORKFLOW_HEADING.findall(body)]

@@ -152,6 +152,7 @@ if TYPE_CHECKING:
     from config.constants.analytics import (
         ANALYTICS_TIMESTAMP_HEADER as ANALYTICS_TIMESTAMP_HEADER,
     )
+    from config.constants.analytics import LLMCreditErrorReason as LLMCreditErrorReason
     from config.constants.ask_user import (
         AskUserReason as AskUserReason,
     )

@@ -215,6 +215,25 @@ def test_run_schedules_the_seeded_pr_once_then_waits_and_finishes(
     assert result["outcome"] == "success"
     assert result["evidence"] == "/tmp/ci-repair-demo.md"
     assert result["response_text"]
+    assert "rearmed" not in result
+
+
+def test_a_rearmed_retained_demo_is_reported_with_the_fault_it_reintroduced(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """A reused demo whose PR was repaired before got its failing commit from this call."""
+    record = _Record()
+    seeded = {**_seed_ok(_OWNER, _SEEDED_REPO), "reused": True, "rearmed": True}
+    _install(monkeypatch, record, seed_result=seeded, store=_repair_store(tmp_path))
+
+    result = run_tool.run_ci_repair_demo(_OWNER, _SEEDED_REPO)
+
+    assert result["outcome"] == "success"
+    assert result["rearmed"] is True
+    assert result["response_text"].startswith("The retained demo pull request had already")
+    cause = result["root_cause_analysis"]["cause"]
+    assert cause.startswith(f"Commit {_SEED_HEAD} changed `add()` in `calculator.py`")
+    assert record.finishes[0]["failed_run_id"] == _FAILED_RUN
 
 
 def _repair_store(tmp_path: Path) -> RepairStore:
@@ -357,6 +376,22 @@ def test_schedule_failure_does_not_schedule_again_or_finish(
         }
     ]
     assert record.waits == []
+    assert record.finishes == []
+
+
+def test_a_rearm_is_reported_when_the_run_stops_early(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The branch already changed, so even a failed schedule says the PR was re-armed."""
+    record = _Record()
+    failure = {"ok": False, "error": "Could not schedule CI repair: the pull request was refused."}
+    seeded = {**_seed_ok(_OWNER, _SEEDED_REPO), "reused": True, "rearmed": True}
+    _install(monkeypatch, record, seed_result=seeded, schedule_result=failure)
+
+    result = run_tool.run_ci_repair_demo(_OWNER, _SEEDED_REPO)
+
+    assert result["ok"] is False
+    assert result["rearmed"] is True
+    assert result["error"].startswith("The retained demo pull request had already")
+    assert result["error"].endswith(failure["error"])
     assert record.finishes == []
 
 

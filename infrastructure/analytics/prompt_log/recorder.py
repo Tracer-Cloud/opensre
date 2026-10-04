@@ -10,8 +10,10 @@ from contextvars import ContextVar
 from datetime import UTC, datetime
 from typing import Any, Protocol
 
+from config.constants.analytics import LLMCreditErrorReason
 from config.prompt_log import PromptLogConfig
 from config.version import get_opensre_version
+from core.llm.shared.llm_retry import credit_exhaustion_reason
 from core.llm_invoke_errors import LLM_PROVIDER_FAILURE_KINDS, classify_provider_error_kind
 from infrastructure.analytics.event_properties import bounded_error_message
 from infrastructure.analytics.prompt_log.sinks.local_jsonl import (
@@ -126,6 +128,7 @@ class PromptRecorder:
         self._response: str = ""
         self._error_kind: str = ""
         self._error_message: str = ""
+        self._ai_error_reason: LLMCreditErrorReason | None = None
         self._model: str | None = None
         self._provider: str | None = None
         self._latency_ms: int | None = None
@@ -305,7 +308,7 @@ class PromptRecorder:
             session=session,
         )
 
-    def set_error(self, kind: str, message: str) -> None:
+    def set_error(self, kind: str, message: str, *, error: BaseException | None = None) -> None:
         """Attach a structured turn error emitted as ``$ai_error`` properties.
 
         The human-readable response text is unaffected; these properties make
@@ -318,7 +321,9 @@ class PromptRecorder:
             return
         self._error_kind = kind or "error"
         self._error_message = _sanitize_text(message, config=self._config)
-        if self._error_kind in LLM_PROVIDER_FAILURE_KINDS:
+        if error is not None:
+            self._ai_error_reason = credit_exhaustion_reason(error)
+        if self._error_kind in LLM_PROVIDER_FAILURE_KINDS or self._ai_error_reason:
             self._llm_attempted = True
 
     def set_response(self, text: str, run: _RunInfo | None = None) -> None:
@@ -400,7 +405,10 @@ class PromptRecorder:
                 # failed, the turn is a failed LLM call — never a terminal
                 # action. Fall back to "unknown" instead of the terminal
                 # sentinel when the attempted model could not be resolved.
-                llm_provider_failed = self._error_kind in LLM_PROVIDER_FAILURE_KINDS
+                llm_provider_failed = (
+                    self._error_kind in LLM_PROVIDER_FAILURE_KINDS
+                    or self._ai_error_reason is not None
+                )
                 fallback_label = (
                     NO_CONVERSATIONAL_AGENT if self._llm_attempted is False else UNKNOWN_LLM
                 )
@@ -466,9 +474,15 @@ class PromptRecorder:
                     posthog_properties["$ai_error"] = self._error_message or self._error_kind
                     posthog_properties["error_kind"] = self._error_kind
                     if llm_provider_failed:
-                        posthog_properties["ai_error_kind"] = classify_provider_error_kind(
-                            self._error_message or self._error_kind
+                        posthog_properties["ai_error_kind"] = (
+                            "quota"
+                            if self._ai_error_reason
+                            else classify_provider_error_kind(
+                                self._error_message or self._error_kind
+                            )
                         )
+                    if self._ai_error_reason:
+                        posthog_properties["ai_error_reason"] = self._ai_error_reason
                 if self._analytics_system:
                     posthog_properties["model_system_prompt"] = self._analytics_system
                 if self._model_skill:

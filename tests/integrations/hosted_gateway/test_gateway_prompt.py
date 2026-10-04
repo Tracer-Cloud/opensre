@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import logging
 from http import HTTPStatus
-from types import TracebackType
+from types import SimpleNamespace, TracebackType
 from typing import Any
 
 import httpx
@@ -15,6 +15,11 @@ from core.agent_harness import SessionCore
 from core.agent_harness.spi.handoff import AskUserQuestion, format_ask_user_answers
 from core.agent_harness.tools import ActionToolScope
 from core.agent_harness.tools.tool_context import ACTION_TOOL_CONTEXT_RESOURCE_KEY
+from core.agent_harness.turns.display_text import (
+    cap_for_display,
+    is_outcome_report,
+    preferred_tool_response_text,
+)
 from core.tool import AgentToolContext
 from integrations.hosted_gateway import (
     ERR_ALREADY_ANSWERED,
@@ -283,6 +288,52 @@ def test_a_question_from_the_gateway_opens_this_shells_menu(
     assert parked.note == "Starts a background worker." and parked.custom_answer is False
     assert parked.interaction_id == f"hosted_prompt:{_ID}"
     assert out["choice"]["note"] == "Starts a background worker."
+
+
+@pytest.mark.parametrize(
+    "report",
+    [
+        # The incident: a blocked outcome was hidden behind the next question.
+        "**Demo Outcome**\n- Outcome: **blocked** — the rerun did not reset PR #1.",
+        # Reads as data to the shell: opens with a link, carries two '":'.
+        '[PR #1](https://github.com/o/r/pull/1) failed: {"ok": false, "error": "refused"}',
+    ],
+)
+def test_the_gateways_report_reads_above_the_menu_line_and_keeps_the_prompt_id(
+    monkeypatch: pytest.MonkeyPatch, report: str
+) -> None:
+    """The report is shown, and the line naming the prompt survives the shell's filters."""
+    # Arrange: the gateway wrote a report, then stopped on a question
+    question = PromptQuestion("Retry the repair?", ("Retry", "Stop"))
+    asked = PromptRecord(
+        _ID,
+        "needs_input",
+        answer=report,
+        question="Retry the repair?",
+        choice=PromptChoice("Retry the repair?", (question,)),
+    )
+    app = _App([asked])
+    _signed_in_with(monkeypatch, app)
+    session = SessionCore()
+
+    # Act
+    out = ask_hosted_gateway(prompt="rerun the repair", context=_tool_context(session, ""))
+
+    # Assert: the menu line with the prompt id leads, then the quoted report
+    text = out["response_text"]
+    assert text.startswith("The hosted gateway needs your decision; the menu opens now")
+    assert text.index(_ID) < text.index("The hosted gateway reported:\n> ")
+    # The shell previews only the head, so a long report cannot push the prompt id out of view.
+    assert _ID in cap_for_display(f"{text}\n" + "padding line\n" * 40)
+    assert "rerun did not reset" in text or "refused" in text
+    assert "the menu opens now" in text and _ID in text
+    # What the next turn keeps of this result is this text, so the shell must not drop it.
+    kept = preferred_tool_response_text(SimpleNamespace(details={"response_text": text}))
+    assert _ID in kept
+    assert not is_outcome_report(text)
+    assert f"prompt_id={_ID}" in out["instructions"]
+    parked = session.pending_user_choice
+    assert parked is not None and parked.interaction_id == f"hosted_prompt:{_ID}"
 
 
 def test_the_answer_comes_from_the_users_selection_never_from_the_model(

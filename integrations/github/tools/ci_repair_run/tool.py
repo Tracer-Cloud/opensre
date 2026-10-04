@@ -42,6 +42,10 @@ _OUTCOME_BLOCKED = "blocked"
 _LOOP_FAILED = "failed"
 _LOOP_SUCCEEDED = "succeeded"
 _TERMINAL_STATUSES = frozenset({_LOOP_SUCCEEDED, _LOOP_FAILED, "timed_out", "cancelled"})
+_REARMED_NOTE = (
+    "The retained demo pull request had already been repaired, so one new failing "
+    "commit re-armed it first."
+)
 
 
 def _credentials(sources: dict[str, dict]) -> dict[str, Any]:
@@ -201,6 +205,30 @@ def _run(
     seeded = seed_ci_repair_demo(owner=owner, repo=repo, github_token=github_token)
     if not seeded.get("ok"):
         return seeded
+    try:
+        result = _run_seeded(seeded, github_token, context)
+    except (GitHubCiFixError, GitHubApiError, OSError, RuntimeError, ValueError) as exc:
+        result = _failed(exc)
+    return _noted_rearm(seeded, result)
+
+
+def _noted_rearm(seeded: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    """Mark every result after a re-arming seed, since the pull request's branch has changed."""
+    if seeded.get("rearmed") is not True:
+        return result
+    noted = {**result, "rearmed": True}
+    for key in ("response_text", "error"):
+        text = _text(result.get(key))
+        if text:
+            noted[key] = f"{_REARMED_NOTE} {text}"
+    return noted
+
+
+def _run_seeded(
+    seeded: dict[str, Any],
+    github_token: str | None,
+    context: Any,
+) -> dict[str, Any]:
     target = _seed_target(seeded)
     if target is None:
         return {"ok": False, "error": "The demo seed did not return a pull request."}
@@ -324,7 +352,8 @@ def _finish_scheduled(
         outcome=outcome,
         failing_commit=seed_head,
         fix_commit=fix_commit,
-        seeded_here=seeded.get("reused") is False,
+        # A re-armed pull request got its failing commit from this call too.
+        seeded_here=seeded.get("reused") is False or seeded.get("rearmed") is True,
         evidence=repair,
     )
     analysis_text = render_analysis(links, analysis)
@@ -390,7 +419,9 @@ def _finish_scheduled(
         "verification. One failed seed or schedule is returned and no second loop is "
         "scheduled. A report that is still running leaves the schedule in place. A failed "
         "read after scheduling removes that schedule and includes the task id. An empty "
-        "owner uses the token's login. Does not delete the GitHub repository."
+        "owner uses the token's login. A retained demo whose pull request was already "
+        "repaired gets one new failing commit first (rearmed). Does not delete the GitHub "
+        "repository."
     ),
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,

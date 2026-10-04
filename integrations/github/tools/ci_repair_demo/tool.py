@@ -105,8 +105,9 @@ def _failed(exc: Exception, *, tool_name: str, method: str, action: str) -> dict
         "with. Commits a passing main (calculator.py adding, its unit test, and Demo "
         "calculator CI) and one commit on demo/failing-ci that makes add subtract, opens "
         "that pull request, and returns after the pull-request Actions run has failed. An "
-        "existing open demo pull request is reused. Does not list the organization or "
-        "search code."
+        "existing open demo pull request is reused; one whose repair already landed first "
+        "gets one new commit that makes add subtract again (rearmed). Does not list the "
+        "organization or search code."
     ),
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,

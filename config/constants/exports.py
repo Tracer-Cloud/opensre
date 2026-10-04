@@ -71,6 +71,7 @@ EXPORTS: dict[str, str] = {
     "OPENSRE_GATEWAY_LLM_MODEL_DEFAULT": "account",
     "OPENSRE_STAFF_EMAIL_DOMAIN": "account",
     # analytics
+    "LLMCreditErrorReason": "analytics",
     "ANALYTICS_DISABLED_ENV": "analytics",
     "ANALYTICS_ENV_ENV": "analytics",
     "ANALYTICS_TEST_ENV": "analytics",
