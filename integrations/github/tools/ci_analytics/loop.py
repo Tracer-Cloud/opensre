@@ -144,10 +144,12 @@ def build_report(args: Mapping[str, str], *, snapshot_dir: Path | None = None) -
 
     No model is involved, so every delivery carries the analytics header and
     the numbers can be traced back to the JSON snapshot named at the end.
-    Raises ``RuntimeError`` with a generic message when GitHub cannot be read.
+    Raises ``RuntimeError`` naming what blocked the read, never exception
+    detail, when GitHub cannot be read.
     """
     from integrations.github.client import GitHubApiError, resolve_github_token
     from integrations.github.tools.ci_analytics.analysis import analyze_repository
+    from integrations.github.tools.ci_analytics.failure import analysis_failure_line
     from integrations.github.tools.ci_analytics.payload import report_payload
     from integrations.github.tools.ci_analytics.render import headline, render_markdown
 
@@ -167,7 +169,8 @@ def build_report(args: Mapping[str, str], *, snapshot_dir: Path | None = None) -
             owner, repo, token=token, days=days, working_hours=local_working_hours(), now=now
         )
     except (GitHubApiError, ValueError) as exc:
-        raise RuntimeError(f"Could not read the GitHub Actions history of {owner}/{repo}.") from exc
+        line = analysis_failure_line(exc, repository=f"{owner}/{repo}", now=datetime.now(UTC))
+        raise RuntimeError(line) from exc
     report = analysis.report
     snapshot = write_snapshot(
         snapshot_root(snapshot_dir),

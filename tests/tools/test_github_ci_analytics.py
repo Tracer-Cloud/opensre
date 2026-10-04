@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import logging
 import re
 import threading
 from datetime import UTC, datetime, timedelta
@@ -13,7 +14,10 @@ from unittest.mock import patch
 
 import pytest
 
-from integrations.github.client import GitHubApiError
+from core.agent_harness.turns.work_outcome import last_work_classified
+from core.llm.types import ToolCall
+from core.tool.execution import ToolExecutionResult
+from integrations.github.client import GitHubApiError, GitHubFailureKind
 from integrations.github.tools.ci_analytics.collector import CollectedRuns, collect_runs, parse_run
 from integrations.github.tools.ci_analytics.metrics import (
     classify_failures,
@@ -1763,6 +1767,52 @@ def test_tool_failure_text_never_carries_exception_detail() -> None:
     assert "ghp_abc" not in result["response_text"]
     assert "api.github.com" not in result["response_text"]
     assert "rejected the token" in result["response_text"]
+
+
+def test_an_untrusted_certificate_ends_the_turn_as_a_blocker_without_a_stack(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Regression: each failed read printed a traceback into the shell, the result named only
+    ``GitHubApiError``, and the turn host had the agent retry a read that could not succeed."""
+    failure = GitHubApiError(
+        "GitHub API request failed: certificate verify failed",
+        kind=GitHubFailureKind.TLS_UNTRUSTED,
+    )
+    with (
+        patch("integrations.github.tools.ci_analytics.tool.github_rest_token", return_value="t"),
+        patch("integrations.github.tools.ci_analytics.analysis.collect_runs", side_effect=failure),
+        caplog.at_level(logging.WARNING, logger="tools"),
+    ):
+        result = analyze_github_ci_reliability(owner="o", repo="r")
+
+    assert result["error_kind"] == "tls_untrusted"
+    assert "TLS certificate" in result["response_text"]
+    assert "`opensre update`" in result["response_text"]
+    failed_call = ToolExecutionResult(content=result["error"], details=result, is_error=True)
+    assert last_work_classified([(ToolCall(id="c1", name=TOOL_NAME, input={}), failed_call)])
+    logged = [record for record in caplog.records if record.name == "tools"]
+    assert [(record.levelno, bool(record.exc_info)) for record in logged] == [
+        (logging.WARNING, False)
+    ]
+
+
+def test_a_rate_limit_says_when_it_lifts_and_not_to_run_again_before_then() -> None:
+    failure = GitHubApiError(
+        "rate limited",
+        status_code=HTTPStatus.FORBIDDEN,
+        kind=GitHubFailureKind.RATE_LIMITED,
+        retry_after_seconds=1380,
+    )
+    with (
+        patch("integrations.github.tools.ci_analytics.tool.github_rest_token", return_value="t"),
+        patch("integrations.github.tools.ci_analytics.analysis.collect_runs", side_effect=failure),
+    ):
+        result = analyze_github_ci_reliability(owner="o", repo="r")
+
+    assert re.search(r"until about \d\d:\d\d UTC \(in 23 minutes\)", result["response_text"])
+    assert "The token and the repository are fine." in result["response_text"]
+    assert result["retry_after_seconds"] == 1380
+    assert "Do not run the analysis again before the limit lifts" in result["error"]
 
 
 def test_tool_renders_report_from_collected_runs() -> None:

@@ -2,16 +2,23 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from integrations.github.client import GitHubRestClient
+from integrations.github.rate_limit import PauseNotice
 from integrations.github.tools.ci_analytics.collector import ProgressFn, collect_runs
 from integrations.github.tools.ci_analytics.metrics import compute_report
 from integrations.github.tools.ci_analytics.models import CiAnalyticsReport
 from integrations.github.tools.ci_analytics.working_hours import WorkingHours, local_working_hours
 
 DEFAULT_WINDOW_DAYS = 30
+# One analysis sends hundreds of requests, so a busy repository can trip
+# GitHub's secondary limit, whose usual pause is a minute. Waiting that out
+# with a progress line beats failing a read the user is watching; a longer
+# pause (an exhausted hourly limit) fails at once with the time it lifts.
+_RATE_LIMIT_PATIENCE_SECONDS = 90.0
 
 
 @dataclass(frozen=True)
@@ -35,11 +42,16 @@ def analyze_repository(
     """Read the window's Actions history and compute the report.
 
     Raises ``GitHubApiError`` or ``ValueError`` when GitHub cannot be read;
-    callers decide how to word that for their surface.
+    callers word that for their surface with ``analysis_failure_line``.
     """
     at = now or datetime.now(UTC)
+    client = GitHubRestClient(
+        token,
+        rate_limit_patience_seconds=_RATE_LIMIT_PATIENCE_SECONDS,
+        on_rate_limit_pause=_pause_notice(progress),
+    )
     collected = collect_runs(
-        GitHubRestClient(token),
+        client,
         owner=owner,
         repo=repo,
         window_days=days,
@@ -59,6 +71,17 @@ def analyze_repository(
         working_hours=working_hours or local_working_hours(),
     )
     return Analysis(report=report, runs_read=len(collected.branch_runs) + len(collected.pr_runs))
+
+
+def _pause_notice(progress: ProgressFn | None) -> PauseNotice | None:
+    """A progress line for each rate-limit pause, so a quiet minute reads as waiting, not hung."""
+    if progress is None:
+        return None
+
+    def notice(seconds: float) -> None:
+        progress(f"GitHub's rate limit paused the read; continuing in {math.ceil(seconds)}s…")
+
+    return notice
 
 
 __all__ = ["DEFAULT_WINDOW_DAYS", "Analysis", "analyze_repository"]

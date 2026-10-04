@@ -221,7 +221,7 @@ def _failed_work_blocks_stop(
     the user to run a named setup cannot succeed on retry.
     """
     return last_work_tool_failed(outcomes) and not (
-        last_work_classified(outcomes) or last_work_needs_setup(tool_results)
+        last_work_classified(tool_results) or last_work_needs_setup(tool_results)
     )
 
 
