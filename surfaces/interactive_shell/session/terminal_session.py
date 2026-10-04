@@ -67,12 +67,6 @@ class TerminalSession:
     """Shell-surface session state, composed onto ``Session`` for the interactive shell."""
 
     active_theme_name: str = "green"
-
-    cli_command_group: Any = field(default=None, repr=False, compare=False)
-    """The ``opensre`` Click command group the shell documents to the model.
-
-    Handed in by the process entrypoint; ``None`` when the shell runs on its
-    own, in which case grounding covers slash commands only."""
     """Interactive shell palette name for this REPL session (``/theme``, prompts)."""
 
     pending_theme_refresh: bool = False

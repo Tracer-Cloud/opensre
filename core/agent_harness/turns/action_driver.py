@@ -85,6 +85,7 @@ from core.agent_harness.turns.literal_command import (
     literal_slash_text,
 )
 from core.agent_harness.turns.plan_hooks import with_task_plan_hooks
+from core.agent_harness.turns.prompt_size import PromptSize, measure_history, measure_prompt
 from core.agent_harness.turns.skill_activation import prepare_active_skill
 from core.agent_harness.turns.skill_value import record_skill_value
 from core.agent_harness.turns.structured_history import history_messages, tool_items_from_run
@@ -106,8 +107,10 @@ from core.tool.execution import (
     public_tool_input,
     summarize_tool_failures,
 )
-from core.tool_framework.tags import SUMMARIZE_OBSERVATION_TAG
-from infrastructure.analytics.prompt_log.model_prompt import record_action_model_prompt
+from infrastructure.analytics.prompt_log.model_prompt import (
+    record_action_model_prompt,
+    record_model_blocks,
+)
 from infrastructure.analytics.prompt_log.recorder import PromptRecorder
 from infrastructure.analytics.react_turn import run_react_agent_with_telemetry
 from infrastructure.observability.trace.decisions import record_decision
@@ -151,6 +154,9 @@ class ActionTurnPlan:
     # Earlier turns replayed as typed messages ahead of ``user_message``
     # (``turns.structured_history``); empty for explicit ``!``/``/`` commands.
     history: tuple[Any, ...] = ()
+    # Size of each prompt block, the replayed history, and the tool schemas the
+    # model receives; ``None`` for explicit commands, which call no model.
+    prompt_size: PromptSize | None = None
     value_insights: set[str] = field(default_factory=set)
     # The reviewed goal of an LLM-selected turn; it remembers why it refused stop.
     goal: Goal | None = None
@@ -647,22 +653,6 @@ def _generic_tool_result_counts(result: Any) -> tuple[int, int]:
     return executed_count, success_count
 
 
-def _should_stash_observation(
-    result: Any,
-    *,
-    tools_by_name: dict[str, Any],
-) -> bool:
-    """True when a successful tool opted into observation summary via its tags."""
-    for tool_call, tool_result in _generic_tool_results(result):
-        if getattr(tool_result, "is_error", False):
-            continue
-        tool = tools_by_name.get(tool_call.name)
-        tags = getattr(tool, "tags", ()) if tool is not None else ()
-        if SUMMARIZE_OBSERVATION_TAG in tags:
-            return True
-    return False
-
-
 def _turn_resolved_integrations(
     session: SessionState,
     turn_plan: TurnPlan | None,
@@ -801,6 +791,7 @@ def _build_action_agent(
     prompt_skill = ""
     prompt_context = ""
     history: tuple[Any, ...] = ()
+    prompt_size: PromptSize | None = None
 
     if bang_command is not None:
         # Explicit `!` shell escape: dispatch the verbatim text as a shell_run call.
@@ -835,6 +826,13 @@ def _build_action_agent(
             history = tuple(
                 history_messages(snapshot.conversation_messages, snapshot.turn_evidence)
             )
+        prompt_size = measure_prompt(
+            envelope,
+            history=measure_history(
+                history, snapshot.conversation_messages, snapshot.turn_evidence
+            ),
+            tool_schema_count=len(agent_tools),
+        )
         # Cached half stays byte-identical across turns; ephemeral (plan, turn
         # facts) rides with the user message so Anthropic's system
         # cache_control breakpoint is not invalidated every turn.
@@ -909,6 +907,7 @@ def _build_action_agent(
         agent=build_agent(config),
         user_message=user_message,
         history=history,
+        prompt_size=prompt_size,
         llm=llm,
         max_iterations=_MAX_TOOL_CALLING_ITERATIONS,
         deferred_replies=deferred_replies,
@@ -1014,7 +1013,6 @@ class _TurnCounts:
     executed_entries: list[dict[str, Any]]
     executed_count: int
     executed_success_count: int
-    generic_success_count: int
     planned_count: int
     handled: bool
 
@@ -1312,7 +1310,6 @@ def _count_turn(result: Any, session: SessionState, history_start: int) -> _Turn
         executed_success_count=(
             sum(1 for item in executed_entries if item.get("ok", True)) + generic_success_count
         ),
-        generic_success_count=generic_success_count,
         planned_count=planned_count,
         handled=planned_count > 0,
     )
@@ -1405,6 +1402,10 @@ def _run_action_turn(
             observer=observer,
             output=args.output,
         )
+        # Recorded before the run so a call the provider refuses (a prompt
+        # over the context window) still shows which block grew.
+        if built.prompt_size is not None:
+            record_model_blocks(built.prompt_size.as_record())
         # ``/effort`` lives on the session; the model clients read it from context.
         with apply_reasoning_effort(
             turn_snapshot.reasoning_effort
@@ -1492,19 +1493,6 @@ def _run_action_turn(
     # finalize ``response_text`` a second time (it would repost the report).
     response_streamed = bool((use_final_text or built.deferred_replies) and not cancelled)
     # Cancelled turns stop before the host records or finalizes the response.
-    # Discovery tools that opt into ``summarize_observation`` (via tool tags)
-    # return structured JSON users should not see raw. Stash only those results.
-    if (
-        not cancelled
-        and response_text.strip()
-        and counts.generic_success_count > 0
-        and not session.last_command_observation
-        and _should_stash_observation(
-            result,
-            tools_by_name=tools_by_name,
-        )
-    ):
-        session.last_command_observation = response_text
     if not cancelled:
         displayed_text = _show_response(
             args.output,

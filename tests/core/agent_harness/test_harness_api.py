@@ -120,6 +120,7 @@ SPI_ROLE_NAMES: dict[str, frozenset[str]] = {
             "session_terminal",
             "set_auto_command",
             "set_turn_outcome_hint",
+            "should_compact",
             "take_setup_resume",
             "trust_mode_enabled",
             "withhold_capabilities",
@@ -139,9 +140,11 @@ SPI_ROLE_NAMES: dict[str, frozenset[str]] = {
         {
             "DefaultTurnAccounting",
             "LlmRunInfo",
+            "PromptSize",
             "SELF_RECORDING_ACTION_TOOL_NAMES",
             "ToolCallingAccountingStatus",
             "format_token_total",
+            "measure_next_prompt",
             "record_llm_turn",
             "resolve_model_name",
             "resolve_provider_name",
@@ -194,15 +197,12 @@ SPI_ROLE_NAMES: dict[str, frozenset[str]] = {
     "grounding": frozenset(
         {
             "ActionSkill",
-            "CacheStats",
             "GETTING_STARTED_CUSTOM",
-            "GroundingSource",
             "SkillEntryMenu",
             "getting_started_skills",
             "list_action_skills",
             "load_skill_body",
             "load_skill_reference",
-            "log_grounding_cache_diagnostics",
             "skill_reference_names",
         }
     ),

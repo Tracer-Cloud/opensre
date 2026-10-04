@@ -30,7 +30,7 @@ from core.agent_harness.session.terminal_access import (
     set_turn_outcome_hint,
     trust_mode_enabled,
 )
-from core.agent_harness.turns.transcript_compaction import compact_session_branch
+from core.agent_harness.turns.transcript_compaction import compact_session_branch, should_compact
 
 __all__ = [
     "PendingScheduleOffer",
@@ -48,6 +48,7 @@ __all__ = [
     "session_terminal",
     "set_auto_command",
     "set_turn_outcome_hint",
+    "should_compact",
     "take_setup_resume",
     "trust_mode_enabled",
     "withhold_capabilities",

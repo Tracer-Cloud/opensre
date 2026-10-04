@@ -76,7 +76,8 @@ class SessionConfig:
 
     Every field is optional so a surface only opts into the behavior it
     needs: a fresh gateway turn has nothing to resume (``session_id=None``);
-    a headless action-only turn has no grounded context (``prompts=None``).
+    a turn without its own prompt-context provider gets the default one
+    (``prompts=None``).
     """
 
     session_id: str | None = None
@@ -442,7 +443,7 @@ class AgentSession:
         return manager.create(**create_args)
 
     def _load_context(self) -> PromptContextProvider | None:
-        """Return the surface's grounding-context provider, if any."""
+        """Return the caller's prompt-context provider, if any."""
         return self._config.prompts
 
 

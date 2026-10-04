@@ -7,8 +7,8 @@ subdirectories. The repo-root `AGENTS.md` still applies.
 
 `interactive_shell/` owns the interactive OpenSRE terminal surface: the REPL
 loop, slash-command surface, local alert ingestion, shell execution, and Rich /
-prompt-toolkit UI. Reusable agent session state, prompt history, grounding, and
-prompt construction live under `core.agent_harness`.
+prompt-toolkit UI. Reusable agent session state, prompt history, and prompt
+construction live under `core.agent_harness`.
 
 Design for a terminal user who may be in the middle of an incident: behavior
 should be predictable, interruptible, explainable, and safe by default.
@@ -23,7 +23,6 @@ should be predictable, interruptible, explainable, and safe by default.
 | `command_registry/` | slash-command definitions, argument validation, command dispatch | long-running implementation details better placed in services/runtime modules |
 | `runtime/` | background task workers, lifecycle/`ReplState`, runtime context assembly, semantic shell-turn execution, and core harness adapters | prompt text, reusable session persistence, or compatibility shims |
 | `tools/interactive_shell/shell/` | shell command normalization, shell execution policy, subprocess execution, and the `run_shell_command` runner (next to the `shell_run` tool in `tools/interactive_shell/actions/shell.py`) | slash-command execution |
-| `references/` | CLI/docs/source/AGENTS reference loading and caching | generated model prose |
 | `config/` | interactive-shell config loading and tool catalog metadata | global app config unrelated to the REPL |
 | `ui/` | Rich/prompt-toolkit rendering, theme, menus, streaming output, and domain views such as `incoming_alerts.py` (receiver/queue/listener lifecycle lives in `core.domain.alerts.inbox`) | business logic or network calls |
 

@@ -23,13 +23,11 @@ def _launch_shell(
     after_banner: AfterBanner,
     capture_shell_rendered: bool = True,
 ) -> int:
-    from surfaces.cli.app import cli
     from surfaces.interactive_shell import run_repl
 
     return run_repl(
         config=config,
         resume_session_id=resume_session_id,
-        cli_command_group=cli,
         after_banner=after_banner,
         capture_shell_rendered=capture_shell_rendered and not resume_session_id,
     )

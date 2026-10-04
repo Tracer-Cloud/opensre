@@ -2,7 +2,7 @@
 
 These are the seams that keep ``agent/`` decoupled from any concrete surface.
 The interactive shell implements them as adapters over its ``Session``,
-Rich console, tool registry, and grounding caches; the headless adapters in
+Rich console, and tool registry; the headless adapters in
 :mod:`core.agent_harness.turns.headless_agent` implement minimal in-memory versions for API / test runs.
 
 Nothing here imports ``interactive_shell``.
@@ -10,7 +10,7 @@ Nothing here imports ``interactive_shell``.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass
 from typing import Any, Protocol, runtime_checkable
 
@@ -83,7 +83,6 @@ class SessionState(Protocol):
 
     # --- turn execution state ---
     history: list[dict[str, Any]]
-    last_command_observation: str | None
     session_id: str
 
     # --- gather caches ---
@@ -190,42 +189,16 @@ class ErrorReporter(Protocol):
 
 @runtime_checkable
 class PromptContextProvider(Protocol):
-    """Supplies grounding text for the conversational assistant prompt.
+    """Names the surface a session's turns run on.
 
-    The grounding corpora (CLI reference, repo map, docs, environment) are
-    surface/repo content; the shell adapter wires its grounding caches, the
-    headless adapter returns empty strings.
+    The action prompt is assembled in one place,
+    :mod:`core.agent_harness.prompts.action.assemble`, from the turn's
+    snapshot; the surface selects that assembly's
+    :class:`~core.agent_harness.prompts.kernel.surfaces.SurfaceProfile`.
     """
 
     def surface(self) -> str:
-        """Which surface this turn runs on; defaults to the interactive shell."""
-        return "interactive_shell"
-
-    def cli_reference(self) -> str:
-        raise NotImplementedError
-
-    def agents_md(self) -> str:
-        raise NotImplementedError
-
-    def docs(self, query: str) -> str:
-        raise NotImplementedError
-
-    def runtime_facts(self) -> Mapping[str, Any]:
-        """Runtime facts for this turn: session metadata plus fresh live values."""
-        raise NotImplementedError
-
-    def environment_block(self, runtime: Mapping[str, Any] | None = None) -> str:
-        """Static environment block; ``runtime`` reuses the turn's capture."""
-        raise NotImplementedError
-
-    def long_term_memory(self) -> str:
-        raise NotImplementedError
-
-    def setup_state(self) -> str:
-        """The operator's connected integrations and schedules, as a fact block."""
-
-    def log_diagnostics(self, reason: str) -> None:
-        raise NotImplementedError
+        """The surface name: ``interactive_shell``, ``headless_cli`` or ``gateway``."""
 
 
 class ExecuteActions(Protocol):

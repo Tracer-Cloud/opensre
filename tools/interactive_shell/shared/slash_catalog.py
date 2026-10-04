@@ -116,8 +116,13 @@ MCP_BY_COMMAND: dict[str, _SlashMcpFields] = {
         anti_examples=("User asks how to configure an integration (answer directly)",),
     ),
     "/context": _mcp(
-        "Display accumulated infrastructure context collected during the session.",
-        "User asks what context or infra metadata the session has accumulated",
+        "Show what the next model call will contain, without calling a model: each "
+        "prompt block with its tier, characters and estimated tokens, the replayed "
+        "conversation history, the tool schema count, the total, and how much of the "
+        "history compaction budget is used.",
+        "User asks how big the context or prompt is, or what the model sees each turn",
+        "User asks how close the conversation is to being compacted",
+        anti_examples=("User asks about token spend or cost so far (use /cost)",),
     ),
     "/cost": _mcp(
         "Show token usage and estimated session cost for LLM calls in this REPL session.",

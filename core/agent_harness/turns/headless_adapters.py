@@ -6,7 +6,7 @@ external side effects (no IO, no network, no filesystem).
 
 from __future__ import annotations
 
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -36,7 +36,6 @@ class InMemorySessionState:
     pending_schedule_offer: PendingScheduleOffer | None = None
     reasoning_effort: Any | None = None
     history: list[dict[str, Any]] = field(default_factory=list)
-    last_command_observation: str | None = None
     resolved_integrations_cache: dict[str, Any] | None = None
     vcs_repo_scopes: dict[str, tuple[str, ...]] = field(default_factory=dict)
     active_vcs_repositories: dict[str, str] = field(default_factory=dict)
@@ -106,41 +105,14 @@ class BufferOutputSink:
 
 
 class EmptyPromptContextProvider:
-    """Grounding provider that supplies no corpora (headless)."""
+    """Prompt-context provider bound to no session: the interactive-shell surface."""
 
     def bind_session(self, session: Any) -> None:
-        """No session state — session retarget is a no-op for empty grounding."""
+        """No session to retarget."""
         _ = session
 
     def surface(self) -> str:
         return "interactive_shell"
-
-    def cli_reference(self) -> str:
-        return ""
-
-    def agents_md(self) -> str:
-        return ""
-
-    def docs(self, query: str) -> str:
-        _ = query
-        return ""
-
-    def runtime_facts(self) -> Mapping[str, Any]:
-        from config.runtime_metadata import capture_runtime_facts
-
-        return capture_runtime_facts()
-
-    def environment_block(self, runtime: Mapping[str, Any] | None = None) -> str:  # noqa: ARG002 - empty grounding
-        return ""
-
-    def long_term_memory(self) -> str:
-        return ""
-
-    def setup_state(self) -> str:
-        return ""
-
-    def log_diagnostics(self, reason: str) -> None:
-        _ = reason
 
 
 class NullToolProvider:

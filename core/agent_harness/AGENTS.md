@@ -277,9 +277,9 @@ subpackage. Default port implementations live with the concern they serve, not i
   `TurnAccounting` (`turn_accounting.py`).
 - `prompts/` — the single agent's prompt assembly. Layout: `kernel/`
   (envelope + surface Strategy), `action/` (assembler), `grounding/`
-  (prompt providers), plus leaves `memory/` / `runtime_facts/` / `skills/`.
-- `grounding/` — reusable grounding cache and rendering contracts; surfaces
-  inject surface-owned command registries instead of being imported here.
+  (the provider that names a session's surface), plus leaves `memory/` /
+  `runtime_facts/` / `skills/`.
+- `grounding/` — grounding sources the action assembler reads.
 - `session/` — reusable agent session state (`SessionCore`), JSONL storage, prompt
   history, task registry, session-scoped background records, integration resolution
   (:mod:`session.integration_resolution`), and `SessionManager` (the lifecycle owner).
@@ -297,8 +297,8 @@ to it instead of re-implementing bootstrap + persistence:
 
 - **shell** — `SessionBootstrapSpec` calls `SessionManager().bootstrap(...)` for
   the core startup mutations (persistent task registry + integration
-  hydration), then layers shell-only UI concerns (theme, grounding providers,
-  prompt history) on top. Interactive REPL entry calls
+  hydration), then layers shell-only UI concerns (theme, prompt history) on
+  top. Interactive REPL entry calls
   :meth:`SessionManager.open_storage` once the run is confirmed interactive;
   ``/new`` calls :meth:`SessionManager.rotate_in_place`; ``/resume`` calls
   :meth:`SessionManager.rebind_for_resume` then :meth:`SessionManager.restore_context`.
@@ -390,6 +390,13 @@ the compaction record keeps both so resume restarts from the same state.
 CONVERSATION``) as a kill switch. Code that scans a run's ``result.messages``
 for this turn's output must skip the replayed prefix (``history_count``), or an
 earlier turn's message is mistaken for this one's.
+
+**The model's context is measured in one place.** ``turns/prompt_size.py``
+sizes each envelope block, the replayed history and the tool schemas of a model
+call; the prompt log records that per turn (``model_blocks``) and ``/context``
+shows it for the next turn without calling a model. A new block or context
+source is assembled in ``prompts/action/assemble.py`` and is measured from
+there; do not compute prompt sizes anywhere else.
 
 **Do NOT** reintroduce per-surface `Agent` subclasses that override
 `build_llm` / `build_system_prompt` / `build_tools` / `resolved_integrations`

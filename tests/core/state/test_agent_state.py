@@ -48,26 +48,12 @@ def test_evidence_is_bounded_by_the_transcript_it_describes() -> None:
     assert state.turn_evidence[-1].assistant_text == "assistant 9"
 
 
-def test_last_observation_roundtrip_and_reset() -> None:
-    state = MutableAgentState()
-    assert state.last_observation is None
-
-    state.last_observation = "db saturation"
-    assert state.last_observation == "db saturation"
-
-    state.reset_observation()
-    assert state.last_observation is None
-
-
-def test_clear_empties_transcript_and_observation() -> None:
+def test_clear_empties_transcript_and_evidence() -> None:
     state = MutableAgentState()
     state.record_turn("u", "a")
-    state.last_observation = "obs"
-
     state.turn_evidence = [TurnEvidence(user_text="u", assistant_text="a")]
 
     state.clear()
 
     assert state.messages == []
     assert state.turn_evidence == []
-    assert state.last_observation is None

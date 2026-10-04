@@ -1,4 +1,4 @@
-"""Runtime-facts section of the assistant environment block.
+"""Runtime facts rendered as quotable prompt text.
 
 Renders the ``capture_runtime_facts()`` dict into verbatim-quotable prompt
 strings plus anti-hallucination guidance. Phrased for quote-verbatim recall:
@@ -261,11 +261,6 @@ def render_live_runtime_facts(runtime: Mapping[str, Any]) -> str:
     return _render_facts(_LIVE_FACT_PRODUCERS, runtime, guidance=_LIVE_GUIDANCE)
 
 
-def render_runtime_facts(runtime: Mapping[str, Any]) -> str:
-    """Compatibility: static facts only (live facts use :func:`render_live_runtime_facts`)."""
-    return render_static_runtime_facts(runtime)
-
-
 def build_live_runtime_facts_block(runtime: Mapping[str, Any]) -> str:
     """Late prompt section carrying live facts, or ``""`` when none."""
     body = render_live_runtime_facts(runtime)
@@ -277,6 +272,5 @@ def build_live_runtime_facts_block(runtime: Mapping[str, Any]) -> str:
 __all__ = [
     "build_live_runtime_facts_block",
     "render_live_runtime_facts",
-    "render_runtime_facts",
     "render_static_runtime_facts",
 ]

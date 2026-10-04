@@ -210,7 +210,6 @@ def test_a_closing_written_over_a_painted_report_is_dropped() -> None:
         executed_entries=[],
         executed_count=1,
         executed_success_count=1,
-        generic_success_count=1,
         planned_count=1,
         handled=True,
     )
@@ -255,7 +254,6 @@ def _one_generic_success() -> Any:
         executed_entries=[],
         executed_count=1,
         executed_success_count=1,
-        generic_success_count=1,
         planned_count=1,
         handled=True,
     )
@@ -304,7 +302,6 @@ def test_a_closing_question_survives_a_painted_report() -> None:
         executed_entries=[],
         executed_count=1,
         executed_success_count=1,
-        generic_success_count=1,
         planned_count=1,
         handled=True,
     )
@@ -328,7 +325,6 @@ def test_an_interpretation_of_a_painted_report_is_kept() -> None:
         executed_entries=[],
         executed_count=1,
         executed_success_count=1,
-        generic_success_count=1,
         planned_count=1,
         handled=True,
     )
@@ -383,7 +379,6 @@ def test_a_plan_update_does_not_rescue_a_restated_closing() -> None:
         executed_entries=[],
         executed_count=2,
         executed_success_count=2,
-        generic_success_count=1,
         planned_count=2,
         handled=True,
     )
@@ -535,7 +530,6 @@ def test_a_gateway_wait_loop_closes_on_the_latest_state() -> None:
         executed_entries=[],
         executed_count=13,
         executed_success_count=11,
-        generic_success_count=11,
         planned_count=13,
         handled=True,
     )

@@ -52,7 +52,6 @@ _CORE_FIELDS = (
     "tokens",
     "task_registry",
     "agent",
-    "grounding",
     "runtime_metadata",
 )
 

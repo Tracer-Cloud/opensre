@@ -23,9 +23,9 @@ re-implementing bootstrap + persistence wiring:
   resources (cancel warm task, drop background references).
 
 Surface-specific concerns stay with the surface: the shell layers terminal UI
-state (theme, grounding providers, prompt history) on top of a manager-created
-session; the gateway injects per-chat metadata. Neither re-implements the core
-bootstrap, and neither reaches across surfaces to do it.
+state (theme, prompt history) on top of a manager-created session; the gateway
+injects per-chat metadata. Neither re-implements the core bootstrap, and
+neither reaches across surfaces to do it.
 """
 
 from __future__ import annotations

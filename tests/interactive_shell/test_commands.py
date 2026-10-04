@@ -16,6 +16,8 @@ from rich.console import Console
 
 from config.account import AccountLLMRoute
 from config.constants.conversation_history import (
+    HISTORY_COMPACT_AFTER_TURNS,
+    OPENSRE_HISTORY_TOKEN_BUDGET_ENV,
     OPENSRE_LLM_COMPACTION_ENV,
     OPENSRE_STRUCTURED_HISTORY_ENV,
 )
@@ -320,8 +322,6 @@ class TestDispatchSlash:
         assert "interactions" in output
         assert "reasoning effort" in output
         assert "trust mode" in output
-        assert "grounding cli cache" in output
-        assert "grounding docs cache" in output
 
     def test_unknown_command_does_not_exit(self) -> None:
         session = Session()
@@ -1839,19 +1839,36 @@ class TestHistoryCommand:
 
 
 class TestContextCommand:
-    def test_empty_context_says_so(self) -> None:
-        console, buf = _capture()
-        dispatch_slash("/context", Session(), console)
-        assert "no infra context" in buf.getvalue()
-
-    def test_shows_accumulated_keys(self) -> None:
+    def test_lists_each_prompt_block_the_history_and_the_budget(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setenv(OPENSRE_HISTORY_TOKEN_BUDGET_ENV, "8000")
         session = Session()
-        session.accumulated_context = {"service": "orders-api", "region": "us-east-1"}
+        session.agent.record_turn("is ci green?", "CI is green on main.")
         console, buf = _capture()
         dispatch_slash("/context", session, console)
         output = buf.getvalue()
-        assert "orders-api" in output
-        assert "us-east-1" in output
+        assert "action-agent-system-base" in output
+        assert "2 messages from 1 turn" in output
+        assert f"at 8,000 tokens or {HISTORY_COMPACT_AFTER_TURNS} turns" in output
+
+    def test_says_when_the_next_turn_compacts_first(self) -> None:
+        # Many short turns stay under the token budget; compaction's own
+        # verdict, not a token comparison, decides what the next call holds.
+        session = Session()
+        for index in range(HISTORY_COMPACT_AFTER_TURNS + 1):
+            session.agent.record_turn(f"question {index}", f"answer {index}")
+        console, buf = _capture()
+        dispatch_slash("/context", session, console)
+        assert "older turns are summarized before the next turn" in buf.getvalue()
+
+    def test_leaves_a_pending_recovery_note_for_the_next_turn(self) -> None:
+        session = Session()
+        session.pending_recovery_note = "shell_run started and never finished"
+        console, buf = _capture()
+        dispatch_slash("/context", session, console)
+        assert "interrupted-turn-recovery" in buf.getvalue()
+        assert session.pending_recovery_note == "shell_run started and never finished"
 
 
 class TestCostCommand:

@@ -7,7 +7,6 @@ import sys
 import threading
 from collections.abc import Callable
 
-import click
 from rich.console import Console
 
 from config.repl_config import ReplConfig
@@ -60,15 +59,12 @@ async def run_repl_async(
     config: ReplConfig | None = None,
     resume_session_id: str | None = None,
     console: Console | None = None,
-    cli_command_group: click.Command | None = None,
     finish_banner: Callable[[], None] | None = None,
     after_banner: Callable[[], None] | None = None,
     tools_ready: Callable[[], None] | None = None,
 ) -> int:
     """Run the shell on an existing event loop and return its exit code.
 
-    ``cli_command_group`` is the ``opensre`` Click group the shell documents to
-    the model; the process entrypoint passes it, embedders may leave it out.
     ``after_banner`` is launch work the CLI held back until the banner is on
     screen (error-reporting start); it runs once the runtime is booted.
     ``tools_ready`` waits for a tool-registry load started before the runtime
@@ -90,7 +86,6 @@ async def run_repl_async(
     # composer-hide (needs the session + REPL state, which do not exist yet).
     runtime_context = create_repl_runtime(session=_new_shell_session())
     session = runtime_context.session
-    session.terminal.cli_command_group = cli_command_group
 
     if initial_input:
         if after_banner is not None:
@@ -187,7 +182,6 @@ def run_repl(
     *,
     resume_session_id: str | None = None,
     console: Console | None = None,
-    cli_command_group: click.Command | None = None,
     after_banner: Callable[[], None] | None = None,
     capture_shell_rendered: bool = True,
 ) -> int:
@@ -239,7 +233,6 @@ def run_repl(
                 config=cfg,
                 resume_session_id=resume_session_id,
                 console=out,
-                cli_command_group=cli_command_group,
                 finish_banner=finish_banner,
                 after_banner=after_banner,
                 tools_ready=tools_ready,

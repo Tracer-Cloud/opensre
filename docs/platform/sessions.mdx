@@ -11,6 +11,7 @@ description: "Browse recent sessions, resume a conversation, compact long contex
 | `/resume <id>` | Restore a past session so you can continue asking questions |
 | `/resume <id>:<entry>` | Restore a specific branch point by entry ID prefix |
 | `/compact` | Summarize older context into a replayable compaction entry |
+| `/context` | Show what the next model call will contain and how much of the history budget is used |
 | `/new` | Start a fresh session file while keeping the current conversation context |
 
 ---
@@ -131,7 +132,7 @@ When that history grows past its token budget, OpenSRE compacts it before the ne
 /compact
 ```
 
-The compaction is saved in the session file, so `/resume` restores exactly the summary and the turns that were kept.
+The compaction is saved in the session file, so `/resume` restores exactly the summary and the turns that were kept. Run `/context` to see how much of the budget the history uses and what else the next model call carries.
 
 | Variable | Default | Effect |
 | --- | --- | --- |

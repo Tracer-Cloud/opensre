@@ -1,8 +1,8 @@
 """Core session state shared by every surface.
 
 The surface-agnostic half of the REPL session: identity, persistence, integration
-resolution, token accounting, conversational agent state, and grounding caches —
-everything ``core``, ``gateway``, and ``tools`` consumers depend on. The interactive
+resolution, token accounting, and conversational agent state — everything
+``core``, ``gateway``, and ``tools`` consumers depend on. The interactive
 shell extends this with its own UI state in
 :class:`~surfaces.interactive_shell.session.session.Session`.
 """
@@ -17,10 +17,7 @@ from typing import TYPE_CHECKING, Any
 from core.agent_harness.session.history_entry import build_history_entry
 
 if TYPE_CHECKING:
-    from core.agent_harness.grounding.context import GroundingContext
     from core.agent_harness.session.integration_resolution import IntegrationResolutionResult
-else:
-    GroundingContext = Any
 
 from config.llm_reasoning_effort import ReasoningEffortChoice
 from core.agent_harness.accounting.token_usage import TokenUsage
@@ -42,17 +39,6 @@ from infrastructure.scheduling.task_registry import TaskRegistry
 #: the conversation window so anything a prompt or a ``*_latest_*`` lookup
 #: reads is still intact, while a long session stops holding every reply.
 RESPONSE_TEXT_WINDOW = 20
-
-
-def _default_grounding() -> GroundingContext:
-    """Build a fresh per-session grounding cache bundle.
-
-    Imported lazily so the session package can expose the state model without
-    eagerly constructing grounding caches.
-    """
-    from core.agent_harness.grounding.context import GroundingContext
-
-    return GroundingContext()
 
 
 @dataclass
@@ -123,19 +109,11 @@ class SessionCore:
     a persistent registry); only the shell surface reads it today."""
 
     agent: MutableAgentState = field(default_factory=MutableAgentState)
-    """Dedicated conversational-agent state (transcript + per-turn observation).
+    """Dedicated conversational-agent state (transcript + turn evidence).
 
     Owns the assistant conversation history (alternating
-    (\"user\"|\"assistant\", text)) and the per-turn read-only discovery
-    observation, kept in one place rather than as loose session fields."""
-
-    grounding: GroundingContext = field(
-        default_factory=_default_grounding, repr=False, compare=False
-    )
-    """Per-session LLM grounding caches (CLI help, docs, AGENTS.md).
-
-    Injected so the grounding caches have a process-scoped lifetime with no
-    module-level mutable globals; tests can supply a fresh ``GroundingContext``."""
+    (\"user\"|\"assistant\", text)) and each recorded turn's tool evidence,
+    kept in one place rather than as loose session fields."""
 
     pending_schedule_offer: PendingScheduleOffer | None = None
     """Structured schedule awaiting bare yes — set by propose_scheduled_delivery."""
@@ -237,15 +215,6 @@ class SessionCore:
     @turn_evidence.setter
     def turn_evidence(self, value: list[TurnEvidence]) -> None:
         self.agent.turn_evidence = value
-
-    @property
-    def last_command_observation(self) -> str | None:
-        """Latest command/tool observation for the current turn."""
-        return self.agent.last_observation
-
-    @last_command_observation.setter
-    def last_command_observation(self, value: str | None) -> None:
-        self.agent.last_observation = value
 
     def record(
         self,

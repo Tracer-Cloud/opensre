@@ -212,7 +212,6 @@ def _run_turn(
         TurnSnapshot.from_session(text, session, surface=surface),
         session,
     )
-    session.last_command_observation = None
     action_result = execute_actions(
         text,
         confirm_fn=confirm_fn,

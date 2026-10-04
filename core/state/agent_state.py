@@ -1,10 +1,10 @@
-"""Cross-turn agent state: the conversation transcript and last observation.
+"""Cross-turn agent state: the conversation transcript and its turn evidence.
 
 ``session.agent`` is a :class:`MutableAgentState` — mutable state that
 persists *across* turns. Production reads and writes ``messages`` (transcript),
-``turn_evidence`` (what each turn's tools returned), ``last_observation``, and
-``clear()`` only. Per-turn data (tools, resolved integrations, system prompt,
-iteration cap) is on ``TurnSnapshot``.
+``turn_evidence`` (what each turn's tools returned), and ``clear()`` only.
+Per-turn data (tools, resolved integrations, system prompt, iteration cap) is on
+``TurnSnapshot``.
 """
 
 from __future__ import annotations
@@ -39,7 +39,7 @@ def history_window_messages() -> int:
 
 
 class MutableAgentState:
-    """Cross-turn agent state: the conversation transcript and last observation.
+    """Cross-turn agent state: the conversation transcript and its turn evidence.
 
     Holds only what must survive across turns. Per-turn data (tools, resolved
     integrations, system prompt, iteration cap) lives on ``TurnSnapshot``.
@@ -48,7 +48,6 @@ class MutableAgentState:
     def __init__(self, *, messages: Sequence[tuple[str, str]] = ()) -> None:
         self._messages: list[tuple[str, str]] = list(messages)
         self._turn_evidence: list[TurnEvidence] = []
-        self._last_observation: str | None = None
 
     @property
     def messages(self) -> list[tuple[str, str]]:
@@ -68,14 +67,6 @@ class MutableAgentState:
         self._turn_evidence = [record for record in value if isinstance(record, TurnEvidence)]
         self._trim_evidence()
 
-    @property
-    def last_observation(self) -> str | None:
-        return self._last_observation
-
-    @last_observation.setter
-    def last_observation(self, value: str | None) -> None:
-        self._last_observation = value
-
     def record_turn(
         self,
         user_message: str,
@@ -89,13 +80,9 @@ class MutableAgentState:
             self._turn_evidence.append(evidence)
         self._compact_messages()
 
-    def reset_observation(self) -> None:
-        self._last_observation = None
-
     def clear(self) -> None:
         self._messages.clear()
         self._turn_evidence.clear()
-        self._last_observation = None
 
     def _replace_messages(self, messages: Sequence[tuple[str, str]]) -> None:
         self._messages = list(messages)

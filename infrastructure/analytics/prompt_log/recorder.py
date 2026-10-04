@@ -136,6 +136,7 @@ class PromptRecorder:
         self._analytics_system = ""
         self._model_skill = ""
         self._model_context = ""
+        self._model_blocks: dict[str, JsonValue] = {}
         self._loop_outcome: dict[str, JsonValue] = {}
         self._start = time.monotonic()
         self._flushed = False
@@ -174,6 +175,14 @@ class PromptRecorder:
         self._model_context = _bound_model_text(
             context, config=self._config, limit=_CONTEXT_MAX_CHARS
         )
+
+    def set_model_blocks(self, blocks: dict[str, JsonValue]) -> None:
+        """Attach the size of each prompt block, the replayed history, and the tool count.
+
+        Block ids and numbers only, never prompt text, so both sinks receive it
+        whole: no redaction, no cap.
+        """
+        self._model_blocks = dict(blocks)
 
     def set_run(self, run: _RunInfo) -> None:
         """Attach the model and provider-reported usage of the agent run."""
@@ -365,6 +374,8 @@ class PromptRecorder:
             record["model_skill_prompt"] = self._model_skill
         if self._model_context:
             record["model_context"] = self._model_context
+        if self._model_blocks:
+            record["model_blocks"] = self._model_blocks
         if self._config.local_enabled:
             with contextlib.suppress(OSError):
                 append_prompt_log_record(path=self._config.log_path, record=record)
@@ -464,6 +475,8 @@ class PromptRecorder:
                     posthog_properties["model_skill_prompt"] = self._model_skill
                 if self._model_context:
                     posthog_properties["model_context"] = self._model_context
+                if self._model_blocks:
+                    posthog_properties["model_blocks"] = self._model_blocks
                 _fit_model_prompt(posthog_properties)
                 capture_ai_generation(posthog_properties)
 

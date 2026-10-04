@@ -6,8 +6,8 @@ hardcode vendor tool names.
 
 from __future__ import annotations
 
-# When set on a tool, a successful action result is stashed for the
-# summarize_observation turn route (structured discovery JSON → user prose).
+# Marks a discovery tool whose structured JSON result belongs in the reply as
+# prose, not raw. Declarative only: no harness route branches on it.
 SUMMARIZE_OBSERVATION_TAG = "summarize_observation"
 
 # Marks a tool as a deterministic last-resort action: eligible

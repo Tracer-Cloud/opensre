@@ -201,7 +201,6 @@ class TurnSnapshot:
     shell_command_context: dict[str, Any] = field(default_factory=dict)
     slash_command: str | None = None
     display_preferences: dict[str, Any] = field(default_factory=dict)
-    last_observation: str | None = None
 
     recovery_note: str | None = None
     """WAL recovery note from ``/resume`` — dangling tool intents formatted for
@@ -246,6 +245,7 @@ class TurnSnapshot:
         session: TurnSnapshotSource,
         *,
         surface: str | None,
+        consume_recovery_note: bool = True,
     ) -> TurnSnapshot:
         """Snapshot the relevant session fields for one turn.
 
@@ -259,6 +259,10 @@ class TurnSnapshot:
         caller can silently claim to be the shell: gateway passes ``"gateway"``
         to keep setup facts out of shared chats, and ``None`` says "unknown",
         which omits them.
+
+        A turn consumes a pending ``/resume`` recovery note so it rides exactly
+        one turn; a preview of the next turn (``/context``) passes
+        ``consume_recovery_note=False`` to read it and leave it pending.
         """
         valid_messages = [
             (str(role), str(content))
@@ -269,8 +273,7 @@ class TurnSnapshot:
             compact_messages_to_window(valid_messages, max_messages=history_window_messages())
         )
         runtime_input = _select_runtime_request_input(text, session)
-        last_observation = _read_last_observation(session, runtime_input)
-        recovery_note = _pop_recovery_note(session)
+        recovery_note = _read_recovery_note(session, consume=consume_recovery_note)
         return cls(
             text=text,
             conversation_messages=snapshot,
@@ -288,7 +291,6 @@ class TurnSnapshot:
             tool_resources=dict(getattr(runtime_input, "tool_resources", {}) or {}),
             max_iterations=int(getattr(runtime_input, "max_iterations", 1)),
             model=getattr(runtime_input, "model", None),
-            last_observation=last_observation,
             recovery_note=recovery_note,
             task_plan=_read_task_plan(session),
             plan_only_until_authorized=bool(getattr(session, "plan_only_until_authorized", False)),
@@ -325,17 +327,18 @@ class TurnSnapshot:
             raise ValueError("TurnSnapshot.active_tools must include at least one tool.")
 
 
-def _pop_recovery_note(session: TurnSnapshotSource) -> str | None:
-    """Consume ``session.pending_recovery_note`` (optional field, one turn only).
+def _read_recovery_note(session: TurnSnapshotSource, *, consume: bool) -> str | None:
+    """Read ``session.pending_recovery_note`` (optional field), taking it when ``consume``.
 
-    Popping here — the single per-turn snapshot point — guarantees the note is
+    Consuming here — the single per-turn snapshot point — guarantees the note is
     injected into exactly the first turn after ``/resume`` and never lingers in
     later cached prompts.
     """
     note = getattr(session, "pending_recovery_note", None)
     if not isinstance(note, str) or not note.strip():
         return None
-    setattr(session, "pending_recovery_note", None)  # noqa: B010 - protocol lacks the optional field
+    if consume:
+        setattr(session, "pending_recovery_note", None)  # noqa: B010 - protocol lacks the optional field
     return note
 
 
@@ -360,24 +363,6 @@ def _read_task_plan(session: TurnSnapshotSource) -> TaskPlan | None:
 
     plan = getattr(session, "task_plan", None)
     return plan if isinstance(plan, TaskPlan) else None
-
-
-def _read_last_observation(session: TurnSnapshotSource, runtime_input: Any | None) -> str | None:
-    """Read the last tool observation from runtime input or the live session."""
-    from_runtime = getattr(runtime_input, "last_observation", None)
-    if isinstance(from_runtime, str) and from_runtime.strip():
-        return from_runtime
-
-    agent = getattr(session, "agent", None)
-    agent_observation = getattr(agent, "last_observation", None)
-    if isinstance(agent_observation, str) and agent_observation.strip():
-        return agent_observation
-
-    session_observation = getattr(session, "last_command_observation", None)
-    if isinstance(session_observation, str) and session_observation.strip():
-        return session_observation
-
-    return None
 
 
 __all__ = [
