@@ -136,8 +136,13 @@ def test_first_turn_warmup_waits_for_the_startup_menu_to_draw(
     monkeypatch.setattr(main_entrypoint, "offer_demo", offer)
     monkeypatch.setattr(main_entrypoint, "warm_first_turn", warmed.set)
 
-    assert asyncio.run(main_entrypoint.run_repl_async()) == 0
-    assert events == ["menu queued"]
+    exit_code = asyncio.run(
+        main_entrypoint.run_repl_async(tools_ready=lambda: events.append("tools ready"))
+    )
+
+    assert exit_code == 0
+    # The startup turn cannot start before the prewarmed tool registry is ready.
+    assert events == ["tools ready", "menu queued"]
 
 
 def test_launch_without_a_startup_menu_releases_held_work_at_once(
@@ -208,3 +213,25 @@ async def test_launch_snapshots_go_to_the_deferral_instead_of_starting_with_the_
     work.release()
     assert done.wait(_WAIT_SECONDS)
     assert started == ["snapshot", "scheduler"]
+
+
+def test_tools_ready_returns_only_after_the_registry_load_finished(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The registry caches are not single-flight: the first turn must not race the prewarm."""
+    import time
+
+    import surfaces.interactive_shell.runtime.startup.tool_registry_prewarm as prewarm
+
+    loaded: list[str] = []
+
+    def slow_load() -> frozenset[str]:
+        time.sleep(0.2)
+        loaded.append("registry")
+        return frozenset()
+
+    monkeypatch.setattr(prewarm, "registered_single_turn_tool_names", slow_load)
+
+    prewarm.ToolRegistryPrewarm().start().wait()
+
+    assert loaded == ["registry"]

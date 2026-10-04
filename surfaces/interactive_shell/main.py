@@ -32,6 +32,9 @@ from surfaces.interactive_shell.runtime.startup.first_turn_warmup import (
     warm_first_turn,
 )
 from surfaces.interactive_shell.runtime.startup.initial_input import run_initial_input
+from surfaces.interactive_shell.runtime.startup.tool_registry_prewarm import (
+    start_tool_registry_prewarm,
+)
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui.terminal_ui import render_terminal_ui
 from surfaces.shared.terminal.banner import animate_launch_wordmark
@@ -73,6 +76,7 @@ async def run_repl_async(
     cli_command_group: click.Command | None = None,
     finish_banner: Callable[[], None] | None = None,
     after_banner: Callable[[], None] | None = None,
+    tools_ready: Callable[[], None] | None = None,
 ) -> int:
     """Run the shell on an existing event loop and return its exit code.
 
@@ -80,6 +84,8 @@ async def run_repl_async(
     the model; the process entrypoint passes it, embedders may leave it out.
     ``after_banner`` is launch work the CLI held back until the banner is on
     screen (error-reporting start); it runs once the runtime is booted.
+    ``tools_ready`` waits for a tool-registry load started before the runtime
+    booted; it returns before the first turn can start.
     """
     # Keep MCP schema-cache warnings / httpx chatter off the transcript —
     # progress is soft status lines, not library WARNINGs.
@@ -124,6 +130,8 @@ async def run_repl_async(
     # with it for the interpreter.
     if after_banner is not None:
         after_banner()
+    if tools_ready is not None:
+        tools_ready()
 
     try:
         if resume_session_id:
@@ -224,8 +232,12 @@ def run_repl(
         capture_interactive_shell_rendered(entrypoint="opensre_binary")
 
     finish_banner: Callable[[], None] | None = None
+    tools_ready: Callable[[], None] | None = None
     try:
         if not initial_input:
+            # The sign-in check and runtime boot mostly wait on the network;
+            # the first turn's tool registry loads in that time instead of after.
+            tools_ready = start_tool_registry_prewarm()
             if not pass_sign_in_gate(
                 out, on_screen=record_shell_rendered if record_shell else None
             ):
@@ -246,6 +258,7 @@ def run_repl(
                 cli_command_group=cli_command_group,
                 finish_banner=finish_banner,
                 after_banner=after_banner,
+                tools_ready=tools_ready,
             )
         )
     except (EOFError, KeyboardInterrupt):
