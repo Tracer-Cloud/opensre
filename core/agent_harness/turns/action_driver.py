@@ -16,7 +16,7 @@ import json
 import logging
 import re
 import shlex
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -93,6 +93,7 @@ from core.agent_harness.turns.work_outcome import (
 )
 from core.events import runtime_event_callback_from_observer
 from core.llm.types import AgentLLMResponse, SchemaDescribedTool, ToolCall
+from core.tool import SideEffectLevel
 from core.tool.execution import (
     ToolExecutionHooks,
     public_tool_input,
@@ -269,6 +270,47 @@ def _generic_tool_results(result: Any) -> list[tuple[ToolCall, Any]]:
     ]
 
 
+#: Tools whose repeat call only observes state, so a later identical call replaces the earlier one.
+_OBSERVING_LEVELS = frozenset({SideEffectLevel.NONE, SideEffectLevel.READ_ONLY})
+
+
+def _call_identity(tool_call: ToolCall) -> tuple[str, str]:
+    """The tool and its public input, so a poll or a retry compares equal."""
+    raw = tool_call.input if isinstance(tool_call.input, dict) else {}
+    return tool_call.name, json.dumps(public_tool_input(raw), sort_keys=True, default=str)
+
+
+def _tool_failed(tool_result: Any) -> bool:
+    details = getattr(tool_result, "details", None)
+    if isinstance(details, dict) and details.get("ok") is False:
+        return True
+    return bool(getattr(tool_result, "is_error", False))
+
+
+def _current_generic_results(
+    result: Any, tools_by_name: Mapping[str, Any] | None = None
+) -> list[tuple[ToolCall, Any]]:
+    """Generic results minus the ones a later identical call replaced.
+
+    A status poll (``check_hosted_gateway`` while a gateway starts) and a failed
+    call that was sent again report a state that no longer holds. The closing
+    shows the latest. A mutating call that succeeded twice did two things, so
+    both stay.
+    """
+    results = _generic_tool_results(result)
+    tools = tools_by_name or {}
+    identities = [_call_identity(tool_call) for tool_call, _tool_result in results]
+    latest = {identity: index for index, identity in enumerate(identities)}
+    current: list[tuple[ToolCall, Any]] = []
+    for index, (tool_call, tool_result) in enumerate(results):
+        if latest[identities[index]] != index:
+            level = getattr(tools.get(tool_call.name), "side_effect_level", None)
+            if level in _OBSERVING_LEVELS or _tool_failed(tool_result):
+                continue
+        current.append((tool_call, tool_result))
+    return current
+
+
 def _stash_collapsed_tool_output(session: SessionState, text: str | None) -> None:
     """Remember a capped peek so Ctrl+O can expand it; no-op without a terminal.
 
@@ -297,13 +339,15 @@ def _preferred_tool_response_texts(result: Any) -> str:
     return "\n\n".join(_preferred_tool_chunks(result))
 
 
-def _preferred_tool_chunks(result: Any) -> list[str]:
+def _preferred_tool_chunks(
+    result: Any, tools_by_name: Mapping[str, Any] | None = None
+) -> list[str]:
     """User-facing ``response_text`` values not already painted by the tool."""
     return [
         text
         for text in (
             preferred_tool_response_text(tool_result)
-            for tool_call, tool_result in _generic_tool_results(result)
+            for tool_call, tool_result in _current_generic_results(result, tools_by_name)
             if not already_on_screen(tool_call, tool_result)
         )
         if text
@@ -518,15 +562,15 @@ def _has_quiet_shell_run(result: Any) -> bool:
     return False
 
 
-def _generic_chunks(result: Any) -> list[str]:
-    """User-facing text for each generic tool result, in call order.
+def _generic_chunks(result: Any, tools_by_name: Mapping[str, Any] | None = None) -> list[str]:
+    """User-facing text for each current generic tool result, in call order.
 
     A verify step that re-reads the same record (the same ``prompt_id``) and
     gets the same text back is shown once; independent results always show.
     """
     chunks: list[str] = []
     records_shown: set[tuple[str, str, str]] = set()
-    for tool_call, tool_result in _generic_tool_results(result):
+    for tool_call, tool_result in _current_generic_results(result, tools_by_name):
         formatted = format_generic_tool_payload(tool_call, tool_result)
         if not formatted:
             continue
@@ -549,8 +593,10 @@ def _record_id(tool_result: Any) -> str:
     return value.strip() if isinstance(value, str) else ""
 
 
-def _response_text_from_generic_results(result: Any) -> str:
-    return "\n".join(_generic_chunks(result))
+def _response_text_from_generic_results(
+    result: Any, tools_by_name: Mapping[str, Any] | None = None
+) -> str:
+    return "\n".join(_generic_chunks(result, tools_by_name))
 
 
 def _generic_tool_result_counts(result: Any) -> tuple[int, int]:
@@ -950,6 +996,7 @@ def _compose_response(
     session: SessionState,
     counts: _TurnCounts,
     deferred_replies: Sequence[str] = (),
+    tools_by_name: Mapping[str, Any] | None = None,
 ) -> tuple[str, list[str], bool]:
     """Build the turn's response text and what to show on screen.
 
@@ -959,12 +1006,13 @@ def _compose_response(
     any hint. ``response_text`` keeps the history as well, because persistence
     and non-TTY surfaces have nothing else to read. ``deferred_replies`` were
     painted mid-turn by the plan gate, so they join the history, not the screen.
+    ``tools_by_name`` tells a repeated read-only poll from a repeated action.
 
     Consumes the session's pending outcome hint.
     """
     final_text = str(getattr(result, "final_text", "") or "").strip()
     waiting_for_choice = getattr(session, "pending_user_choice", None) is not None
-    generic_text = _response_text_from_generic_results(result)
+    generic_text = _response_text_from_generic_results(result, tools_by_name)
     hint = _pop_turn_outcome_hint(session)
     terminal = getattr(session, "terminal", None)
     pending_choice_response = getattr(terminal, "pending_choice_response", None)
@@ -1012,7 +1060,7 @@ def _compose_response(
         is_outcome_report(text) for text in deferred_replies
     )
     outcome_already_delivered = bool(assistant_report) or closing_already_has_report
-    generic_chunks = _generic_chunks(result)
+    generic_chunks = _generic_chunks(result, tools_by_name)
     closing_chunks = _closing_tool_chunks(
         generic_chunks, include_outcome=not outcome_already_delivered
     )
@@ -1048,7 +1096,9 @@ def _compose_response(
         # Cap it here: this path is the visible reply, and the generic-output
         # path's cap does not apply once inline results cleared that preview.
         display_final = _visible_closing_text(
-            _preferred_tool_chunks(result) if closing_chunks == generic_chunks else closing_chunks
+            _preferred_tool_chunks(result, tools_by_name)
+            if closing_chunks == generic_chunks
+            else closing_chunks
         )
     is_json = looks_like_json(generic_text)
     body, markers = split_output_truncation_markers(display_generic)
@@ -1071,9 +1121,7 @@ def _compose_response(
     display_chunks = [chunk for chunk in (display_final, display_generic, hint) if chunk]
     history_generic = (
         "\n".join(
-            _closing_tool_chunks(
-                _generic_chunks(result), include_outcome=not outcome_already_delivered
-            )
+            _closing_tool_chunks(generic_chunks, include_outcome=not outcome_already_delivered)
         )
         if closing_chunks != generic_chunks
         else generic_text
@@ -1393,8 +1441,9 @@ def _run_action_turn(
         )
 
     counts = _count_turn(result, session, history_start)
+    tools_by_name = {getattr(t, "name", ""): t for t in agent_tools}
     response_text, display_chunks, use_final_text = _compose_response(
-        result, session, counts, built.deferred_replies
+        result, session, counts, built.deferred_replies, tools_by_name
     )
     cancelled = tool_resources_cancel_requested(tool_resources) or bool(
         getattr(result, "cancelled", False)
@@ -1412,7 +1461,7 @@ def _run_action_turn(
         and not session.last_command_observation
         and _should_stash_observation(
             result,
-            tools_by_name={getattr(t, "name", ""): t for t in agent_tools},
+            tools_by_name=tools_by_name,
         )
     ):
         session.last_command_observation = response_text

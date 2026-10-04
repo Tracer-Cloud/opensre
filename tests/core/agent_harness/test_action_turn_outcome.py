@@ -439,3 +439,100 @@ def test_a_verify_reread_of_the_same_record_is_shown_once() -> None:
     assert "Login acme" in response_text
     # Two independent checks with the same output both stay.
     assert sum(chunk.strip().endswith("0") for chunk in chunks) >= 2
+
+
+def test_a_gateway_wait_loop_closes_on_the_latest_state() -> None:
+    """Polls and retried failures before the repair must not head the closing.
+
+    Live QA on 50d8fc7 (session c7273771): the gateway was starting, so the
+    turn polled ``check_hosted_gateway`` eight times and its probe failed twice
+    before it succeeded. The closing above the handoff menu printed all of it.
+    """
+    from core.agent_harness.turns.action_driver import _compose_response, _TurnCounts
+    from core.llm.types import ToolCall
+    from core.tool import SideEffectLevel
+
+    starting = "Gateway g1 is starting; check again in a minute."
+    unhealthy = "Gateway g1 is running. Last error: GATEWAY_UNREACHABLE."
+    refused = "The control plane found the gateway's task but could not connect to it."
+    running = "Gateway g1 is running."
+    probed = "Login acme; classic PAT; acme can create repositories."
+    report = "- **Outcome:** acme/demo#1 success: task t1, failed run 11, fix abc, passing run 12."
+
+    class _ToolResult:
+        def __init__(self, text: str, *, ok: bool = True, prompt_id: str = "") -> None:
+            self.details: dict[str, Any] = {"response_text": text, "ok": ok}
+            if prompt_id:
+                self.details["prompt_id"] = prompt_id
+            self.content = text
+            self.is_error = not ok
+
+    class _Tool:
+        def __init__(self, name: str, level: SideEffectLevel) -> None:
+            self.name = name
+            self.side_effect_level = level
+
+    calls = iter(range(100))
+
+    def call(name: str, tool_input: dict[str, Any]) -> ToolCall:
+        return ToolCall(id=str(next(calls)), name=name, input=tool_input)
+
+    def check() -> ToolCall:
+        return call("check_hosted_gateway", {})
+
+    def probe() -> ToolCall:
+        return call("ask_hosted_gateway", {"conversation": "new", "prompt": "probe"})
+
+    def label(text: str) -> ToolCall:
+        return call("github_cli", {"args": ["label", "create", "repair", text]})
+
+    class _Result:
+        final_text = ""
+        tool_results = [
+            *((check(), _ToolResult(starting)) for _ in range(4)),
+            (check(), _ToolResult(unhealthy)),
+            (probe(), _ToolResult(refused, ok=False)),
+            (check(), _ToolResult(unhealthy)),
+            (probe(), _ToolResult(refused, ok=False)),
+            (check(), _ToolResult(running)),
+            (probe(), _ToolResult(probed, prompt_id="p_probe")),
+            (
+                call("ask_hosted_gateway", {"conversation": "new", "prompt": "repair"}),
+                _ToolResult(report, prompt_id="p_repair"),
+            ),
+            # A mutating call that ran twice did two things; both stay.
+            (label("x"), _ToolResult("Created label repair.")),
+            (label("x"), _ToolResult("Created label repair.")),
+        ]
+        executed = tool_results
+        planned = [tool_call for tool_call, _ in tool_results]
+        messages: list[Any] = []
+
+    tools = {
+        "check_hosted_gateway": _Tool("check_hosted_gateway", SideEffectLevel.READ_ONLY),
+        "ask_hosted_gateway": _Tool("ask_hosted_gateway", SideEffectLevel.EXTERNAL),
+        "github_cli": _Tool("github_cli", SideEffectLevel.MUTATING),
+    }
+    counts = _TurnCounts(
+        executed_entries=[],
+        executed_count=13,
+        executed_success_count=11,
+        generic_success_count=11,
+        planned_count=13,
+        handled=True,
+    )
+
+    # The report was already painted mid-turn, as in the live run.
+    response_text, chunks, _use_final = _compose_response(
+        _Result(), Session(), counts, deferred_replies=(report,), tools_by_name=tools
+    )
+
+    shown = "\n".join(chunks)
+    for text in (shown, response_text):
+        assert starting not in text
+        assert unhealthy not in text
+        assert refused not in text
+        assert text.count(running) == 1
+        assert text.count(probed) == 1
+    assert shown.count("Created label repair.") == 2
+    assert shown.index(running) < shown.index(probed)
