@@ -66,10 +66,6 @@ def _tool_row(entry: ToolCatalogEntry, *, selected: bool, expanded: bool, width:
 
 def _preview_lines(entry: ToolCatalogEntry, width: int, height: int) -> list[str]:
     rows = [_styled(f"  {entry.name}", ui_theme.HIGHLIGHT_ANSI, width)]
-    if height >= 3:
-        count = len(entry.parameters)
-        metadata = " · ".join((*entry.surfaces, f"{count} parameter{'s' if count != 1 else ''}"))
-        rows.append(_styled(f"  {metadata}", ui_theme.DIM_COUNTER_ANSI, width))
     if height >= 5:
         rows.append("")
     description = strip_terminal_controls(
@@ -146,9 +142,9 @@ def _render_frame(
         rows.append(_styled("  " + "─" * (width - 2), ui_theme.DIM_COUNTER_ANSI, width))
 
     # Reserve the divider and two footer rows; toggling details keeps the preview fixed.
-    available = min(26, height - 1) - len(rows) - 3 - int(roomy)
-    preview_height = max(2, min(8, available // 2))
-    visible = min(len(entries), 7, max(1, available - preview_height))
+    available = height - 1 - len(rows) - 3 - int(roomy)
+    preview_height = max(2, min(5, available // 2))
+    visible = min(len(entries), 20, max(1, available - preview_height))
     top = max(0, min(top, len(entries) - visible, selected))
     top = max(top, selected - visible + 1)
     for index in range(top, top + visible):

@@ -89,12 +89,12 @@ def test_browse_has_compact_rows_and_a_fixed_selected_tool_preview(
 
     initial, expanded, collapsed, moved, second = map(_plain, terminal.frames)
     assert "Find matching code." in initial and "Find unhealthy services." in initial
-    assert "chat · action" in initial
+    assert "chat · action" not in initial
     initial_rows = initial.splitlines()
     assert any("search_github" in row and "Find matching code." in row for row in initial_rows)
     assert any("fleet_scan" in row and "Find unhealthy services." in row for row in initial_rows)
     assert "TOOL" in initial and "PURPOSE" in initial
-    assert "1 parameter" in initial and "query: string" not in initial
+    assert "parameter" not in initial and "query: string" not in initial
     assert "▾ search_github" in expanded and "parameters" in expanded
     assert "query: string" in expanded and "description" in expanded
     assert "query: string" not in collapsed
@@ -111,6 +111,24 @@ def test_browse_has_compact_rows_and_a_fixed_selected_tool_preview(
     assert output.getvalue() == ""
     assert terminal.events[0] == "enter"
     assert terminal.events[-2:] == ["restore", "leave"]
+
+
+@pytest.mark.parametrize(("height", "visible"), [(24, 10), (30, 16), (60, 20)])
+def test_list_grows_with_terminal_height_without_expanding_the_preview(
+    terminal: SimpleNamespace, height: int, visible: int
+) -> None:
+    terminal.lines = height
+    terminal.actions = iter(["up", "enter", "cancel"])
+    tool_browser.browse_tools([_entry(f"tool_{index}") for index in range(30)])
+
+    for frame in terminal.frames:
+        rows = [Text.from_ansi(row).plain for row in frame]
+        tool_rows = [row for row in rows if "Find matching code." in row and "tool_" in row]
+        assert len(tool_rows) == visible
+        assert len(rows) < height
+    assert "› tool_29" in _plain(terminal.frames[1])
+    assert "▾ tool_29" in _plain(terminal.frames[2])
+    assert len({len(frame) for frame in terminal.frames}) == 1
 
 
 def test_long_details_can_be_read_forward_and_backward_without_changing_tool(
