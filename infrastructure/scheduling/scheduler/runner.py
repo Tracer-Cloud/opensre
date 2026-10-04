@@ -32,6 +32,7 @@ from infrastructure.scheduling.scheduler.operation_log import (
     record_scheduler_service_operation,
     record_scheduler_task_operation,
 )
+from infrastructure.scheduling.scheduler.registry_telemetry import report_task_registry
 from infrastructure.scheduling.scheduler.reload_signal import (
     RELOAD_POLL_SECONDS,
     watch_and_reconcile,
@@ -435,6 +436,10 @@ def _register_jobs(
             task.cron,
             task.timezone,
         )
+    if task_filter is None:
+        # Only a host that runs the whole store can report it; a filtered shell
+        # scheduler registers a subset.
+        report_task_registry()
     return enabled_count
 
 
