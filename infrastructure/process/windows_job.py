@@ -87,10 +87,10 @@ def _stdin_handle(stack: ExitStack, api: WindowsAPI) -> _Handle:
     import msvcrt
 
     source = api.dll.GetStdHandle(_STD_INPUT_HANDLE)
-    with ExitStack() as fallback:
+    descriptor: int | None = None
+    try:
         if source in (None, 0, ctypes.c_void_p(-1).value):
             descriptor = os.open(os.devnull, os.O_RDONLY)
-            fallback.callback(os.close, descriptor)
             source = msvcrt.__dict__["get_osfhandle"](descriptor)
         duplicate = HANDLE()
         current = api.dll.GetCurrentProcess()
@@ -99,6 +99,9 @@ def _stdin_handle(stack: ExitStack, api: WindowsAPI) -> _Handle:
                 current, source, current, ctypes.byref(duplicate), 0, True, _DUPLICATE_SAME_ACCESS
             )
         )
+    finally:
+        if descriptor is not None:
+            os.close(descriptor)
     assert duplicate.value is not None
     return _own_handle(stack, api, duplicate.value)
 
