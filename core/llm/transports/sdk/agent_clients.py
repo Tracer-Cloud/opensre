@@ -582,7 +582,7 @@ _PREWARM_RESPONSE: dict[str, Any] = {
         "input_tokens": 0,
         "output_tokens": 0,
         "total_tokens": 0,
-        "input_tokens_details": {"cached_tokens": 0},
+        "input_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0},
         "output_tokens_details": {"reasoning_tokens": 0},
     },
 }
@@ -659,7 +659,11 @@ class OpenAIAgentClient:
             from openai.types.responses import Response
 
             _ = self._client.responses
-            Response.model_construct(**_PREWARM_RESPONSE)
+            # Validation builds the nested output and usage models a real response needs.
+            try:
+                Response.model_validate(_PREWARM_RESPONSE)
+            except ValueError:
+                Response.model_construct(**_PREWARM_RESPONSE)
         else:
             _ = self._client.chat.completions
 
