@@ -30,6 +30,7 @@ from core.domain.memory.models import (
     MemoryType,
 )
 from core.domain.memory.policy import MEMORY_WRITE_POLICY
+from core.domain.memory.provenance import EvidenceCorpus, Provenance, checked_provenance
 from core.domain.memory.recall import (
     live_memories,
     render_prompt_index,
@@ -75,13 +76,16 @@ __all__ = [
     "MEMORY_WRITE_POLICY",
     "ConsolidationInput",
     "ConsolidationResult",
+    "EvidenceCorpus",
     "MemoryRecord",
     "MemorySafetyIssue",
     "MemorySource",
     "MemoryType",
+    "Provenance",
     "SessionSummary",
     "append_session_summary",
     "auto_extract_enabled",
+    "checked_provenance",
     "consolidate_memories",
     "delete_memory",
     "ensure_memory_store",

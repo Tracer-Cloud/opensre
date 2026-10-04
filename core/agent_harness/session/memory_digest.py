@@ -31,7 +31,7 @@ from typing import Any
 
 from core.agent_harness.session.memory_turns import DemoTurns, normalize_user_text
 from core.agent_harness.session.persistence.paths import session_path
-from core.domain.memory import redact_memory_unsafe_text
+from core.domain.memory import EvidenceCorpus, redact_memory_unsafe_text
 from core.state.transcript_window import is_summary_message
 
 MAX_DIGEST_CHARS = 60_000
@@ -76,6 +76,9 @@ class SessionDigest:
     demo_turns_dropped: int
     #: When the session began, from its log; ``None`` when the log does not say.
     started_at: datetime | None = None
+    #: The user's messages and the tool lines exactly as ``text`` shows them,
+    #: which the provenance an extraction claims is checked against.
+    read: EvidenceCorpus = EvidenceCorpus()
 
     @property
     def empty(self) -> bool:
@@ -260,19 +263,31 @@ _OMITTED_NOTE = "({count} earlier tool calls omitted)"
 _OMITTED_NOTE_RESERVE = 40
 
 
-def _render(turn: _Turn, budget: int, *, clip: bool) -> str:
-    """One turn as text within ``budget``; ``""`` when it cannot fit and ``clip`` is off.
+@dataclass(frozen=True)
+class _Rendered:
+    """One turn as the model reads it, with its user message and tool lines kept apart."""
+
+    text: str
+    user: str
+    tools: tuple[str, ...]
+
+
+def _render(turn: _Turn, budget: int, *, clip: bool) -> _Rendered | None:
+    """One turn as text within ``budget``; ``None`` when it cannot fit and ``clip`` is off.
 
     Tool lines go first when space runs out, oldest first, since the last
     calls of a turn usually show what finally worked. With ``clip`` the
-    request and the reply themselves are cut to fit.
+    request and the reply themselves are cut to fit; a piece cut short is not
+    kept as evidence.
     """
-    head = f"USER: {_safe(turn.user_text, MAX_MESSAGE_CHARS)}" if turn.user_text else ""
+    user = _safe(turn.user_text, MAX_MESSAGE_CHARS)
+    head = f"USER: {user}" if user else ""
     tail = (
         f"ASSISTANT: {_safe(turn.assistant_text, MAX_MESSAGE_CHARS)}" if turn.assistant_text else ""
     )
     fixed = sum(len(line) + 1 for line in (head, tail) if line)
-    tools = turn.tools
+    tools = list(turn.tools)
+    note = ""
     if fixed + sum(len(line) + 1 for line in tools) > budget:
         kept: list[str] = []
         used = fixed + _OMITTED_NOTE_RESERVE
@@ -282,12 +297,19 @@ def _render(turn: _Turn, budget: int, *, clip: bool) -> str:
             kept.append(line)
             used += len(line) + 1
         kept.reverse()
-        omitted = len(tools) - len(kept)
-        tools = [_OMITTED_NOTE.format(count=omitted), *kept]
-    text = "\n".join(line for line in (head, *tools, tail) if line)
+        note = _OMITTED_NOTE.format(count=len(tools) - len(kept))
+        tools = kept
+    text = "\n".join(line for line in (head, note, *tools, tail) if line)
     if len(text) <= budget:
-        return text
-    return _clip(text, budget) if clip else ""
+        return _Rendered(text=text, user=user, tools=tuple(tools))
+    if not clip:
+        return None
+    text = _clip(text, budget)
+    return _Rendered(
+        text=text,
+        user=user if head and head in text else "",
+        tools=tuple(line for line in tools if line in text),
+    )
 
 
 def _assemble(turns: list[_Turn], demo: DemoTurns, max_chars: int) -> SessionDigest:
@@ -298,22 +320,30 @@ def _assemble(turns: list[_Turn], demo: DemoTurns, max_chars: int) -> SessionDig
             dropped += 1
         else:
             kept.append(turn)
-    rendered: list[str] = []
+    rendered: list[_Rendered] = []
     remaining = max_chars
     counted = 0
     for turn in reversed(kept):
         # Only the newest turn may be cut mid-message; an older turn that does
         # not fit ends the digest rather than adding a fragment.
-        text = _render(turn, remaining, clip=not rendered)
-        if not text:
+        piece = _render(turn, remaining, clip=not rendered)
+        if piece is None or not piece.text:
             break
-        rendered.append(text)
-        remaining -= len(text) + 2
+        rendered.append(piece)
+        remaining -= len(piece.text) + 2
         counted += 1 if turn.user_text and (turn.assistant_text or turn.tools) else 0
         if remaining <= 0:
             break
     rendered.reverse()
-    return SessionDigest(text="\n\n".join(rendered), turns=counted, demo_turns_dropped=dropped)
+    return SessionDigest(
+        text="\n\n".join(piece.text for piece in rendered),
+        turns=counted,
+        demo_turns_dropped=dropped,
+        read=EvidenceCorpus(
+            user_messages=tuple(piece.user for piece in rendered if piece.user),
+            tool_lines=tuple(line for piece in rendered for line in piece.tools),
+        ),
+    )
 
 
 def build_session_digest(

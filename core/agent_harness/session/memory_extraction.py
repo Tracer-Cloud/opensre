@@ -18,10 +18,13 @@ one. Each pass also takes a snapshot of the session's turn record when it is
 queued, so it covers exactly the turns recorded by then with their demo
 markers, even after a later close pass drops the record.
 
-What is kept: user statements always (subject to the safety checks), facts
-shown by a tool only with evidence and ``verified: true``, and nothing about
-infrastructure, repositories or incidents that only the assistant said.
-Demo, sample and synthetic output is never saved.
+What is kept: the provenance the model claims for each memory is checked
+against the digest it read (:func:`core.domain.memory.checked_provenance`). A
+user statement needs a quote of the user's own words, a tool-shown fact needs
+``verified: true`` and evidence the tool output contains, and nothing about
+infrastructure, repositories or incidents is kept on the assistant's word,
+including a claim the digest does not support; such a personal memory is kept
+unverified. Demo, sample and synthetic output is never saved.
 
 Never raises out: any failure (LLM unavailable, malformed output, disk errors)
 is logged and ignored. Environment gates can disable the whole feature or only
@@ -49,13 +52,13 @@ from core.agent_harness.session.memory_turns import (
     turn_is_demo,
 )
 from core.domain.memory import (
-    MEMORY_SOURCES,
     MEMORY_TYPES,
     MEMORY_WRITE_POLICY,
-    MemorySource,
+    EvidenceCorpus,
     MemoryType,
     append_session_summary,
     auto_extract_enabled,
+    checked_provenance,
     ensure_memory_store,
     find_memory_safety_issues,
     is_fenced,
@@ -77,10 +80,6 @@ EXTRACTION_LLM_ROLE = "classification"
 # durable facts are never abandoned on a slow provider.
 _CLOSE_EXTRACTION_POLL_SECONDS = 0.25
 _MAX_INDEX_CHARS_IN_PROMPT = 6_000
-#: Types that describe systems and incidents; the assistant's word alone is not enough.
-_FACT_TYPES = frozenset(
-    {MemoryType.INFRASTRUCTURE, MemoryType.REPOSITORY, MemoryType.INVESTIGATION_LEARNING}
-)
 
 _FENCED_JSON_RE = re.compile(r"```(?:json)?\s*([\[{].*?[\]}])\s*```", re.DOTALL)
 
@@ -106,12 +105,14 @@ Returning no memories is allowed and preferred when nothing durable and
 reusable happened; most sessions add zero or one. Do not restate a stored
 memory unless this session changed it, and then reuse its exact name.
 
-Every memory carries provenance:
+Every memory carries provenance, and it is checked against the digest:
 - "source": "user" when the user stated it, "tool" when a tool result shows it,
   "assistant" when only the assistant said it
-- "evidence": a short quote of the user's words, or the tool name and the
-  identifier that proves it (for example "gh run view 18822 failed on
-  windows-latest")
+- "evidence": for "user", the user's words copied exactly from a USER line;
+  for "tool", the tool and the identifiers its TOOL line shows, copied exactly
+  (for example "gh run view 18822 failed on windows-latest"). Write the memory
+  with the words or identifiers the evidence names. A memory whose evidence is
+  not in the digest counts as the assistant's word.
 - "verified": true only when a user statement or a tool result in this digest
   directly supports the fact
 
@@ -351,7 +352,7 @@ def _run_extraction(job: ExtractionJob) -> None:
     if not response:
         return
     result = parse_extraction(response)
-    saved = _save_extracted(result.items)
+    saved = _save_extracted(result.items, digest.read)
     if job.session_id and result.session_summary:
         append_session_summary(
             job.session_id,
@@ -447,26 +448,13 @@ def parse_extraction(response: str) -> ExtractionResult:
     )
 
 
-def provenance_allows(memory_type: MemoryType, source: str, evidence: str, verified: Any) -> bool:
-    """Whether an extracted memory's provenance is strong enough to keep it.
-
-    User statements are always kept; tool-shown facts need evidence and
-    ``verified: true``; the assistant's word alone never backs a fact about
-    infrastructure, repositories or incidents.
-    """
-    if source == MemorySource.USER:
-        return True
-    if source == MemorySource.TOOL:
-        return bool(evidence.strip()) and verified is True
-    return memory_type not in _FACT_TYPES
-
-
 def _text_field(item: dict[str, Any], key: str) -> str:
     value = item.get(key)
     return value if isinstance(value, str) else ""
 
 
-def _save_extracted(items: Sequence[dict[str, Any]]) -> int:
+def _save_extracted(items: Sequence[dict[str, Any]], read: EvidenceCorpus) -> int:
+    """Save the items whose checked provenance allows it; ``read`` is what the model was given."""
     saved = 0
     for item in items:
         if saved >= MAX_MEMORIES_PER_SESSION:
@@ -478,14 +466,19 @@ def _save_extracted(items: Sequence[dict[str, Any]]) -> int:
         if raw_type not in MEMORY_TYPES or not description.strip() or not content.strip():
             continue
         memory_type = MemoryType(raw_type)
-        source_value = _text_field(item, "source")
-        source = MemorySource(source_value) if source_value in MEMORY_SOURCES else None
         evidence = _text_field(item, "evidence")
-        verified = item.get("verified")
         slug = slugify(name)
         if not is_valid_slug(slug):
             continue
-        if not provenance_allows(memory_type, source or "", evidence, verified):
+        provenance = checked_provenance(
+            memory_type=memory_type,
+            source=_text_field(item, "source"),
+            evidence=evidence,
+            verified=item.get("verified"),
+            memory_text=f"{name}\n{description}\n{content}",
+            read=read,
+        )
+        if provenance is None:
             logger.debug("[memory] skipped %r: provenance does not support it", slug)
             continue
         if is_fenced(slug, memory_type, description):
@@ -505,9 +498,9 @@ def _save_extracted(items: Sequence[dict[str, Any]]) -> int:
                 memory_type=memory_type,
                 description=description,
                 body=content,
-                source=source,
+                source=provenance.source,
                 evidence=evidence,
-                verified=verified if isinstance(verified, bool) else None,
+                verified=provenance.verified,
             )
         except ValueError:
             continue
@@ -524,7 +517,6 @@ __all__ = [
     "extract_memories_from_messages",
     "extract_memories_from_session",
     "parse_extraction",
-    "provenance_allows",
     "record_turn_for_memory",
     "schedule_memory_extraction",
 ]

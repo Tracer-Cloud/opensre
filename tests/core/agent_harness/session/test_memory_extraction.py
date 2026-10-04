@@ -164,50 +164,101 @@ def test_a_session_that_began_before_a_forget_records_no_summary(
     assert recent_session_summaries() == []
 
 
+@dataclass
+class _LoggedSession:
+    session_id: str
+    cli_agent_messages: list[tuple[str, str]]
+
+
+_CI_REQUEST = "why did CI fail on run 18822?"
+#: Evidence the session's tool output supports.
+_SHOWN = "github_get_run 18822: failure on windows-latest"
+
+
+@pytest.fixture
+def ci_session() -> _LoggedSession:
+    """A logged session whose one turn ran a tool showing run 18822 failed on windows-latest."""
+    store = JsonlSessionStore()
+    store.open_session(SessionCore(session_id="s-ci"))
+    store.append_tool_call(
+        "s-ci",
+        tool="github_get_run",
+        arguments={"run_id": 18822},
+        result='{"conclusion": "failure", "job": "windows-latest"}',
+        ok=True,
+        source="wal",
+        sidecar=True,
+    )
+    reply = "Run 18822 failed on windows-latest; a retry passed."
+    store.append_turn_detail("s-ci", "chat", _CI_REQUEST, response=reply, turn_id="t1")
+    return _LoggedSession("s-ci", [("user", _CI_REQUEST), ("assistant", reply)])
+
+
+def _repository_fact(**overrides: Any) -> dict[str, Any]:
+    fields: dict[str, Any] = {
+        "memory_type": "repository",
+        "source": "tool",
+        "evidence": _SHOWN,
+        "description": "acme/payments windows-latest job is flaky",
+        "content": "Run 18822 failed on windows-latest; a retry passed.",
+    }
+    fields.update(overrides)
+    return _item("repository-acme-payments", **fields)
+
+
 class TestProvenanceGate:
-    def test_tool_verified_repository_fact_is_kept_with_provenance(
-        self, monkeypatch: pytest.MonkeyPatch
+    def test_a_tool_fact_the_tool_output_shows_is_kept_as_verified(
+        self, monkeypatch: pytest.MonkeyPatch, ci_session: _LoggedSession
     ) -> None:
-        _patch_llm(
-            monkeypatch,
-            _response(
-                _item(
-                    "repository-acme-payments",
-                    memory_type="repository",
-                    source="tool",
-                    evidence="gh run view 18822: windows-latest failed, retry passed",
-                    description="acme/payments windows-latest job is flaky",
-                    content="Retrying the windows-latest job passes without changes.",
-                )
-            ),
-        )
-        extraction.extract_memories_from_session(_FakeSession())
+        _patch_llm(monkeypatch, _response(_repository_fact()))
+        extraction.extract_memories_from_session(ci_session)
 
         record = load_memory("repository-acme-payments")
         assert record is not None
-        assert (record.source, record.verified) == ("tool", True)
-        assert record.evidence.startswith("gh run view 18822")
+        assert (record.source, record.verified, record.evidence) == ("tool", True, _SHOWN)
 
     @pytest.mark.parametrize(
-        ("source", "evidence", "verified"),
-        [("tool", "", True), ("tool", "gh run view 1", False), ("tool", "gh run view 1", None)],
+        ("memory_type", "source", "evidence", "stored"),
+        [
+            # A quote the user never wrote.
+            ("repository", "user", "our CI only fails on windows-latest", None),
+            # A run the tool output does not show.
+            ("repository", "tool", "gh run view 99999 failed on windows-latest", None),
+            # A personal memory is kept, but as the assistant's unverified word.
+            ("preference", "user", "always page me about windows-latest", ("assistant", False)),
+        ],
     )
-    def test_tool_facts_need_evidence_and_verification(
-        self, monkeypatch: pytest.MonkeyPatch, source: str, evidence: str, verified: Any
+    def test_provenance_the_digest_does_not_support_is_never_stored_as_verified(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        ci_session: _LoggedSession,
+        memory_type: str,
+        source: str,
+        evidence: str,
+        stored: tuple[str, bool] | None,
     ) -> None:
+        """The model's own labels used to be trusted, so an invented fact came back verified."""
         _patch_llm(
             monkeypatch,
-            _response(
-                _item(
-                    "repository-acme-payments",
-                    memory_type="repository",
-                    source=source,
-                    evidence=evidence,
-                    verified=verified,
-                )
-            ),
+            _response(_repository_fact(memory_type=memory_type, source=source, evidence=evidence)),
         )
-        extraction.extract_memories_from_session(_FakeSession())
+        extraction.extract_memories_from_session(ci_session)
+
+        record = load_memory("repository-acme-payments")
+        assert (None if record is None else (record.source, record.verified)) == stored
+
+    @pytest.mark.parametrize(
+        ("evidence", "verified"), [("", True), (_SHOWN, False), (_SHOWN, None)]
+    )
+    def test_tool_facts_need_evidence_and_the_models_verification(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        ci_session: _LoggedSession,
+        evidence: str,
+        verified: Any,
+    ) -> None:
+        _patch_llm(monkeypatch, _response(_repository_fact(evidence=evidence, verified=verified)))
+        extraction.extract_memories_from_session(ci_session)
         assert list_memories() == []
 
     @pytest.mark.parametrize(
