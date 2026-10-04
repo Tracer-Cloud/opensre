@@ -45,6 +45,12 @@ if TYPE_CHECKING:
         OPENSRE_ACCOUNT_SESSION_PATH as OPENSRE_ACCOUNT_SESSION_PATH,
     )
     from config.constants.account import (
+        OPENSRE_ACCOUNT_SESSION_RETRY_BUDGET_SECONDS as OPENSRE_ACCOUNT_SESSION_RETRY_BUDGET_SECONDS,  # noqa: E501
+    )
+    from config.constants.account import (
+        OPENSRE_ACCOUNT_SESSION_RETRY_DELAYS_SECONDS as OPENSRE_ACCOUNT_SESSION_RETRY_DELAYS_SECONDS,  # noqa: E501
+    )
+    from config.constants.account import (
         OPENSRE_ACCOUNT_TOKEN_ENV as OPENSRE_ACCOUNT_TOKEN_ENV,
     )
     from config.constants.account import (
@@ -308,6 +314,10 @@ if TYPE_CHECKING:
     from config.constants.clerk import (
         CLERK_JWKS_URL_ENV as CLERK_JWKS_URL_ENV,
     )
+    from config.constants.coding_agent import CODEX_HOME_ENV as CODEX_HOME_ENV
+    from config.constants.coding_agent import (
+        CODEX_ISOLATED_HOME_PREFIX as CODEX_ISOLATED_HOME_PREFIX,
+    )
     from config.constants.coding_agent import (
         CODING_AGENT_SANDBOX_AGENT as CODING_AGENT_SANDBOX_AGENT,
     )
@@ -432,6 +442,9 @@ if TYPE_CHECKING:
         PROMPT_CONTEXT_VALUE_MAX_CHARS as PROMPT_CONTEXT_VALUE_MAX_CHARS,
     )
     from config.constants.gateway import (
+        PROMPT_CONVERSATION_NEW as PROMPT_CONVERSATION_NEW,
+    )
+    from config.constants.gateway import (
         PROMPT_DEFAULT_ACTOR as PROMPT_DEFAULT_ACTOR,
     )
     from config.constants.gateway import (
@@ -463,6 +476,9 @@ if TYPE_CHECKING:
     )
     from config.constants.gateway import (
         PROMPT_PROGRESS_PLAN_OMITTED as PROMPT_PROGRESS_PLAN_OMITTED,
+    )
+    from config.constants.gateway import (
+        PROMPT_QUEUE_FULL_RETRY_AFTER_SECONDS as PROMPT_QUEUE_FULL_RETRY_AFTER_SECONDS,
     )
     from config.constants.gateway import (
         PROMPT_QUEUE_MAX as PROMPT_QUEUE_MAX,
@@ -524,7 +540,6 @@ if TYPE_CHECKING:
     from config.constants.github import (
         GITHUB_API_BASE_URL as GITHUB_API_BASE_URL,
     )
-    from config.constants.github import GITHUB_CI_DEMO_REPOSITORY as GITHUB_CI_DEMO_REPOSITORY
     from config.constants.github import (
         GITHUB_CLI_REQUIRED_SCOPES as GITHUB_CLI_REQUIRED_SCOPES,
     )
@@ -729,6 +744,12 @@ if TYPE_CHECKING:
     )
     from config.constants.llm import (
         OPENAI_BASE_URL_ENV as OPENAI_BASE_URL_ENV,
+    )
+    from config.constants.llm import (
+        OPENAI_PROMPT_CACHE_KEY_HASH_CHARS as OPENAI_PROMPT_CACHE_KEY_HASH_CHARS,
+    )
+    from config.constants.llm import (
+        OPENAI_PROMPT_CACHE_KEY_PREFIX as OPENAI_PROMPT_CACHE_KEY_PREFIX,
     )
     from config.constants.llm import (
         OPENSRE_LLM_NATIVE_STRUCTURED_OUTPUT_ENV as OPENSRE_LLM_NATIVE_STRUCTURED_OUTPUT_ENV,
@@ -984,6 +1005,9 @@ if TYPE_CHECKING:
         POSTHOG_MCP_URL_ENV as POSTHOG_MCP_URL_ENV,
     )
     from config.constants.product import (
+        OPENSRE_INTERACTIVE_ENV as OPENSRE_INTERACTIVE_ENV,
+    )
+    from config.constants.product import (
         OPENSRE_PARENT_INTERACTIVE_SHELL_ENV as OPENSRE_PARENT_INTERACTIVE_SHELL_ENV,
     )
     from config.constants.product import (
@@ -1140,6 +1164,12 @@ if TYPE_CHECKING:
         OPENSRE_GATEWAY_HOST_SCHEDULER_ENV as OPENSRE_GATEWAY_HOST_SCHEDULER_ENV,
     )
     from config.constants.scheduler import (
+        OPENSRE_SCHEDULER_BUILD_ENV as OPENSRE_SCHEDULER_BUILD_ENV,
+    )
+    from config.constants.scheduler import (
+        SCHEDULER_MISSED_FIRE_GRACE_SECONDS as SCHEDULER_MISSED_FIRE_GRACE_SECONDS,
+    )
+    from config.constants.scheduler import (
         WEEKDAY_CRON_FIELD as WEEKDAY_CRON_FIELD,
     )
     from config.constants.secrets import (
@@ -1281,6 +1311,18 @@ if TYPE_CHECKING:
         SLACK_HEARTBEAT_STOP_TIMEOUT_SECONDS as SLACK_HEARTBEAT_STOP_TIMEOUT_SECONDS,
     )
     from config.constants.slack import (
+        SLACK_SOCKET_MODE_DEDUP_HARD_MAX_EVENTS as SLACK_SOCKET_MODE_DEDUP_HARD_MAX_EVENTS,
+    )
+    from config.constants.slack import (
+        SLACK_SOCKET_MODE_DEDUP_MAX_EVENTS as SLACK_SOCKET_MODE_DEDUP_MAX_EVENTS,
+    )
+    from config.constants.slack import (
+        SLACK_SOCKET_MODE_DEDUP_RETRY_WINDOW_SECONDS as SLACK_SOCKET_MODE_DEDUP_RETRY_WINDOW_SECONDS,
+    )
+    from config.constants.slack import (
+        SLACK_SOCKET_MODE_DEDUP_TTL_SECONDS as SLACK_SOCKET_MODE_DEDUP_TTL_SECONDS,
+    )
+    from config.constants.slack import (
         SLACK_USER_TOKEN_PREFIXES as SLACK_USER_TOKEN_PREFIXES,
     )
     from config.constants.slack import (
@@ -1389,7 +1431,16 @@ if TYPE_CHECKING:
         WINDOWS_COMMAND_SHELL_ENV as WINDOWS_COMMAND_SHELL_ENV,
     )
     from config.constants.tooling import (
+        CI_ANALYSIS_PREFETCH_MAX_AGE_SECONDS as CI_ANALYSIS_PREFETCH_MAX_AGE_SECONDS,
+    )
+    from config.constants.tooling import (
         DEFAULT_APPROVAL_EXPIRY_SECONDS as DEFAULT_APPROVAL_EXPIRY_SECONDS,
+    )
+    from config.constants.tooling import (
+        TOOL_PREFETCH_MAX_ENTRIES as TOOL_PREFETCH_MAX_ENTRIES,
+    )
+    from config.constants.tooling import (
+        WORKSPACE_SCAN_PREFETCH_MAX_AGE_SECONDS as WORKSPACE_SCAN_PREFETCH_MAX_AGE_SECONDS,
     )
     from config.constants.tooling import (
         ToolBlockedBy as ToolBlockedBy,
@@ -1410,7 +1461,22 @@ if TYPE_CHECKING:
         TRACER_JWT_TOKEN_ENV as TRACER_JWT_TOKEN_ENV,
     )
     from config.constants.turn_concurrency import (
+        DEFAULT_HEAVY_WORK_CONCURRENCY as DEFAULT_HEAVY_WORK_CONCURRENCY,
+    )
+    from config.constants.turn_concurrency import (
+        DEFAULT_MAX_CACHED_SESSION_AGENTS as DEFAULT_MAX_CACHED_SESSION_AGENTS,
+    )
+    from config.constants.turn_concurrency import (
         DEFAULT_SCHEDULED_RUN_CONCURRENCY as DEFAULT_SCHEDULED_RUN_CONCURRENCY,
+    )
+    from config.constants.turn_concurrency import (
+        HEAVY_WORK_WAIT_SECONDS as HEAVY_WORK_WAIT_SECONDS,
+    )
+    from config.constants.turn_concurrency import (
+        OPENSRE_MAX_CACHED_SESSION_AGENTS_ENV as OPENSRE_MAX_CACHED_SESSION_AGENTS_ENV,
+    )
+    from config.constants.turn_concurrency import (
+        OPENSRE_MAX_CONCURRENT_HEAVY_WORK_ENV as OPENSRE_MAX_CONCURRENT_HEAVY_WORK_ENV,
     )
     from config.constants.turn_concurrency import (
         OPENSRE_MAX_CONCURRENT_TURNS_ENV as OPENSRE_MAX_CONCURRENT_TURNS_ENV,

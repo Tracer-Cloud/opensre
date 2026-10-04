@@ -38,6 +38,14 @@ OPENSRE_LLM_NATIVE_STRUCTURED_OUTPUT_ENV: Final[str] = "OPENSRE_LLM_NATIVE_STRUC
 OPENSRE_REACT_GOAL_LLM_REVIEW_ENV: Final[str] = "OPENSRE_REACT_GOAL_LLM_REVIEW"
 
 
+#: ``prompt_cache_key`` sent with OpenAI Responses requests: this prefix plus a
+#: hash of the system prompt. Without a key every install shares one routing
+#: bucket (the system prompt's first tokens are identical), so busy prefixes
+#: overflow to cold cache machines. OpenAI and the hosted proxy cap it at 128.
+OPENAI_PROMPT_CACHE_KEY_PREFIX: Final[str] = "opensre-sys-"
+OPENAI_PROMPT_CACHE_KEY_HASH_CHARS: Final[int] = 32
+
+
 def react_goal_llm_review_enabled() -> bool:
     """True when the same-LLM ReAct goal reviewer is opted back in."""
     return os.environ.get(OPENSRE_REACT_GOAL_LLM_REVIEW_ENV, "").strip() == "1"

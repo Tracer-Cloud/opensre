@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from config.constants.skills import ONBOARDING_LEAF_CHOICES, ONBOARDING_MENU_TITLE
+
+_ONBOARDING_DEMO_SKILLS = frozenset(name for name, _label in ONBOARDING_LEAF_CHOICES)
+
 
 def task_plan_blocks_conclusion(
     *,
@@ -45,24 +49,47 @@ def blocked_steps_await_the_user(session: Any, *, user_answered: bool = False) -
     return getattr(session, "pending_user_choice", None) is None
 
 
+def demo_entered_from_menu(skill: str | None, message: str) -> bool:
+    """True when ``message`` answers the onboarding menu and ``skill`` is a demo it starts.
+
+    The shell enters the chosen demo when the pick is made, so that answer
+    turn starts in the demo itself rather than in the onboarding master.
+    """
+    from core.agent_harness.session.pending_choice import parse_ask_user_answers
+
+    if skill not in _ONBOARDING_DEMO_SKILLS:
+        return False
+    return any(question == ONBOARDING_MENU_TITLE for question, _ in parse_ask_user_answers(message))
+
+
 def demo_pick_stalled_on_skill_load(
-    session: Any, *, user_answered: bool, from_onboarding_menu: bool
+    session: Any,
+    *,
+    user_answered: bool,
+    from_onboarding_menu: bool,
+    entered_from_menu: bool = False,
 ) -> bool:
     """True when the onboarding menu's answer only loaded the chosen demo skill.
 
     The answer to "What would you like to do?" is the go-ahead. A
     turn that loads the chosen skill and then stops — no plan written, no
     step run, no menu queued — has stalled; the first demo did exactly that
-    live. A hand-off between two workflow skills is not this: the next skill
-    starts on its own terms.
+    live. When the shell already entered the demo (``entered_from_menu``)
+    nothing is loaded, so a turn with no tool return has stalled. A hand-off
+    between two workflow skills is not this: the next skill starts on its
+    own terms.
     """
-    from core.agent_harness.task_plan.evidence import skill_loaded_without_work
+    from core.agent_harness.task_plan.evidence import no_tool_returned, skill_loaded_without_work
 
-    if not (user_answered and from_onboarding_menu):
+    if not user_answered:
         return False
-    if not skill_loaded_without_work(session):
+    if entered_from_menu:
+        stalled = no_tool_returned(session)
+    elif from_onboarding_menu:
+        stalled = skill_loaded_without_work(session)
+    else:
         return False
-    return getattr(session, "pending_user_choice", None) is None
+    return stalled and getattr(session, "pending_user_choice", None) is None
 
 
 def task_plan_awaits_reply(*, task_plan: Any | None) -> bool:
@@ -76,6 +103,7 @@ def task_plan_awaits_reply(*, task_plan: Any | None) -> bool:
 
 __all__ = [
     "blocked_steps_await_the_user",
+    "demo_entered_from_menu",
     "demo_pick_stalled_on_skill_load",
     "task_plan_awaits_reply",
     "task_plan_blocks_conclusion",

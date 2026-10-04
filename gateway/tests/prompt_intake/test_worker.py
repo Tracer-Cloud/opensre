@@ -3,22 +3,29 @@
 from __future__ import annotations
 
 import logging
+import threading
+import uuid
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from config.constants.gateway import PROMPT_SLOT_WAIT_SECONDS
+from config.constants.gateway import PROMPT_CONVERSATION_NEW, PROMPT_SLOT_WAIT_SECONDS
 from core.agent_harness import SessionCore, SessionManager
 from core.agent_harness.session import InMemorySessionStore
 from core.agent_harness.session.pending_choice import PendingUserChoice
 from core.agent_harness.tools.tool_provider import DefaultToolProvider
 from gateway.core.prompt_intake import (
+    ERROR_CANCELLED,
+    ERROR_CONVERSATION_WAITING,
     ERROR_CREDITS_DENIED,
     ERROR_INVALID_ANSWER,
     ERROR_NOT_ADMITTED,
     ERROR_TURN_FAILED,
+    ERROR_UNKNOWN_CONVERSATION,
+    JsonlPromptJobStore,
+    PromptJob,
     PromptQueue,
     PromptState,
     PromptWorker,
@@ -30,6 +37,8 @@ from infrastructure.turn_host.unattended_session import (
 )
 
 _LOGGER = logging.getLogger("test")
+#: Upper bound on any wait in a threaded test; reached only when the test fails.
+_WAIT = 10.0
 
 
 class _Handler:
@@ -762,3 +771,380 @@ def test_new_hosted_requests_do_not_replace_an_awaiting_approval(
     worker.run_one(answer)
     assert handler.verdicts[-1] is None
     assert answer.state is PromptState.DONE
+
+
+class _ParkingHandler(_Handler):
+    """A turn that records itself on the session, so the store keeps it, and may ask."""
+
+    def __init__(self, *, asks: PendingUserChoice | None = None) -> None:
+        super().__init__(answer="pushed to release", asks=asks)
+        self.seen_session_ids: list[str] = []
+
+    def run(self, text: str, session: SessionCore, output: Any, _logger: Any, **kwargs: Any) -> Any:
+        self.seen_session_ids.append(session.session_id)
+        session.record("chat", text)
+        session.cli_agent_messages.append(("user", text))
+        return super().run(text, session, output, _logger, **kwargs)
+
+
+def test_a_parked_question_is_answered_on_its_session_after_the_gateway_task_is_replaced(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Arrange: an org silo whose prompt parks on a question that accepts only its options
+    monkeypatch.setattr("config.constants.paths.OPENSRE_HOME_DIR", tmp_path)
+    monkeypatch.delenv("OPENSRE_CONTEXT_ROOT", raising=False)
+    monkeypatch.setenv("ORGANIZATION_ID", "org-a")
+    monkeypatch.setattr(
+        "gateway.core.prompt_intake.worker.bound_turn_metering", lambda **_kwargs: nullcontext()
+    )
+    records = tmp_path / "prompt-jobs.jsonl"
+    branch = PendingUserChoice(
+        title="Which branch?", options=("main", "release"), custom_answer=False
+    )
+    first_task = _ParkingHandler(asks=branch)
+    queue = PromptQueue(store=JsonlPromptJobStore(records))
+    asked = queue.submit("fix ci", context={}, actor="alice")
+    assert asked is not None
+    PromptWorker(queue, first_task, logger=_LOGGER).run_one(asked)
+    assert asked.state is PromptState.NEEDS_INPUT
+
+    # Act: a new task with a fresh queue, worker and session manager over the same volume
+    second_task = _ParkingHandler()
+    restarted = PromptQueue(store=JsonlPromptJobStore(records))
+    worker = PromptWorker(restarted, second_task, logger=_LOGGER)
+    parked = restarted.get(asked.id)
+    assert parked is not None
+    read_after_restart = parked.view()
+    follow_up = restarted.answer(parked, "2")
+    assert follow_up is not None
+    worker.run_one(follow_up)
+
+    # Assert: the poller still reads the question, and option 2 resolves against it on the
+    # same session — so the question came back from the store rather than being dropped
+    assert read_after_restart == asked.view()
+    assert parked.view()["answered_by"] == follow_up.id
+    assert follow_up.state is PromptState.DONE
+    assert second_task.seen_session_ids == [asked.session_id]
+    assert second_task.seen_text.startswith("1. Which branch?")
+    assert '"release"' in second_task.seen_text
+
+
+class _SignallingQueue(PromptQueue):
+    """Lets a threaded test wait for prompts to settle or defer instead of sleeping."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.settled = threading.Semaphore(0)
+        self.deferred = threading.Event()
+
+    def finish(self, job: PromptJob, answer: str, **kwargs: Any) -> None:
+        super().finish(job, answer, **kwargs)
+        self.settled.release()
+
+    def needs_input(self, job: PromptJob, question: str, **kwargs: Any) -> None:
+        super().needs_input(job, question, **kwargs)
+        self.settled.release()
+
+    def fail(self, job: PromptJob, error_code: str, **kwargs: Any) -> None:
+        super().fail(job, error_code, **kwargs)
+        self.settled.release()
+
+    def defer(self, job: PromptJob, session_id: str) -> None:
+        super().defer(job, session_id)
+        self.deferred.set()
+
+    def wait_settled(self, count: int) -> None:
+        for _ in range(count):
+            assert self.settled.acquire(timeout=_WAIT)
+
+
+class _BlockingHandler(_Handler):
+    """Holds the first ``held`` turns together until released; records the order turns start."""
+
+    def __init__(self, held: int) -> None:
+        super().__init__(answer="ok")
+        self.held = held
+        # The held turns plus the test thread, so the test knows all of them are running.
+        self.together = threading.Barrier(held + 1, timeout=_WAIT)
+        self.release = threading.Event()
+        self.started: list[str] = []
+        self._lock = threading.Lock()
+
+    def run(self, text: str, session: SessionCore, output: Any, logger: Any, **kwargs: Any) -> Any:
+        with self._lock:
+            self.started.append(text)
+            held = len(self.started) <= self.held
+        if held:
+            self.together.wait()
+            assert self.release.wait(_WAIT)
+        return super().run(text, session, output, logger, **kwargs)
+
+
+def test_workers_run_other_conversations_at_once_and_one_conversation_in_order() -> None:
+    # Arrange: alice's own conversation twice, bob's, and a separate one of alice's
+    handler = _BlockingHandler(held=3)
+    queue = _SignallingQueue()
+    sessions = UnattendedSessions(SessionManager(store=InMemorySessionStore()))
+    worker = PromptWorker(queue, handler, logger=_LOGGER, sessions=sessions, workers=3)
+    first = queue.submit("alice 1", context={}, actor="alice")
+    second = queue.submit("alice 2", context={}, actor="alice")
+    queue.submit("bob", context={}, actor="bob")
+    queue.submit("alice new", context={}, actor="alice", conversation=PROMPT_CONVERSATION_NEW)
+    assert first is not None and second is not None
+
+    # Act
+    worker.start()
+    try:
+        handler.together.wait()
+        waiting = second.state
+        handler.release.set()
+        queue.wait_settled(4)
+    finally:
+        stopped = worker.stop(timeout_seconds=_WAIT)
+
+    # Assert: three conversations ran at once; alice's second prompt ran after her first
+    assert set(handler.started[:3]) == {"alice 1", "bob", "alice new"}
+    assert waiting is PromptState.QUEUED and handler.started[3] == "alice 2"
+    assert first.state is second.state is PromptState.DONE
+    assert stopped
+
+
+class _StoppableHandler(_Handler):
+    """A turn that parks a question, then runs until its cancel event is set."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.started = threading.Event()
+
+    def run(self, text: str, session: SessionCore, output: Any, _logger: Any, **_kw: Any) -> Any:
+        session.pending_user_choice = PendingUserChoice(title="Which branch?", options=("main",))
+        session.record("chat", text)
+        self.started.set()
+        assert output.turn_cancel.wait(_WAIT)
+        return self.result
+
+
+def test_a_cancelled_running_prompt_settles_cancelled_and_leaves_no_question_behind(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Arrange
+    monkeypatch.setattr("config.constants.paths.OPENSRE_HOME_DIR", tmp_path)
+    monkeypatch.delenv("OPENSRE_CONTEXT_ROOT", raising=False)
+    handler = _StoppableHandler()
+    queue = _SignallingQueue()
+    sessions = UnattendedSessions(SessionManager())
+    worker = PromptWorker(queue, handler, logger=_LOGGER, sessions=sessions)
+    job = queue.submit("fix ci", context={}, actor="u")
+    assert job is not None
+
+    # Act
+    worker.start()
+    try:
+        assert handler.started.wait(_WAIT)
+        queue.cancel(job)
+        queue.wait_settled(1)
+    finally:
+        worker.stop(timeout_seconds=_WAIT)
+
+    # Assert: no parked question holds the conversation for an answer that never comes
+    assert (job.state, job.error_code) == (PromptState.FAILED, ERROR_CANCELLED)
+    assert sessions.resume(job.session_id).pending_user_choice is None
+    assert handler.dropped == [job.session_id]
+
+
+class _AnswerHandler(_Handler):
+    """Asks on the first turn; the answer's turn runs until cancelled unless ``let_through``."""
+
+    def __init__(self) -> None:
+        super().__init__(answer="pushed")
+        self.answering = threading.Event()
+        self.let_through = False
+
+    def run(self, text: str, session: SessionCore, output: Any, logger: Any, **kwargs: Any) -> Any:
+        session.record("chat", text)
+        if not self.seen_text:
+            self.asks = PendingUserChoice(title="Which branch?", options=("main", "release"))
+            return super().run(text, session, output, logger, **kwargs)
+        self.asks = None
+        if not self.let_through:
+            self.answering.set()
+            assert output.turn_cancel.wait(_WAIT)
+        return super().run(text, session, output, logger, **kwargs)
+
+
+def test_a_cancelled_running_answer_gives_its_question_back(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Arrange: a prompt parked on a question, and an answer that is now running
+    monkeypatch.setattr("config.constants.paths.OPENSRE_HOME_DIR", tmp_path)
+    monkeypatch.delenv("OPENSRE_CONTEXT_ROOT", raising=False)
+    handler = _AnswerHandler()
+    queue = _SignallingQueue()
+    worker = PromptWorker(queue, handler, logger=_LOGGER, sessions=UnattendedSessions())
+    asked = queue.submit("fix ci", context={}, actor="u")
+    assert asked is not None
+
+    # Act
+    worker.start()
+    try:
+        queue.wait_settled(1)
+        answer = queue.answer(asked, "main")
+        assert answer is not None and handler.answering.wait(_WAIT)
+        queue.cancel(answer)
+        queue.wait_settled(1)
+        handler.let_through = True
+        again = queue.answer(asked, "release")
+        assert again is not None
+        queue.wait_settled(1)
+    finally:
+        worker.stop(timeout_seconds=_WAIT)
+
+    # Assert: the question took a second answer, and it resolved against the question
+    assert (answer.state, answer.error_code) == (PromptState.FAILED, ERROR_CANCELLED)
+    assert again.state is PromptState.DONE and asked.answered_by == again.id
+    assert '"release"' in handler.seen_text
+
+
+def _org_silo(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("config.constants.paths.OPENSRE_HOME_DIR", tmp_path)
+    monkeypatch.delenv("OPENSRE_CONTEXT_ROOT", raising=False)
+    monkeypatch.setenv("ORGANIZATION_ID", "org-a")
+    monkeypatch.setattr(
+        "gateway.core.prompt_intake.worker.bound_turn_metering", lambda **_kwargs: nullcontext()
+    )
+
+
+def _run(
+    worker: PromptWorker, queue: PromptQueue, prompt: str, actor: str, conversation: str = ""
+) -> PromptJob:
+    job = queue.submit(prompt, context={}, actor=actor, conversation=conversation)
+    assert job is not None
+    worker.run_one(job)
+    return job
+
+
+def test_a_caller_picks_a_new_conversation_or_continues_one_of_its_own(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Arrange
+    _org_silo(tmp_path, monkeypatch)
+    handler = _TranscriptHandler()
+    queue = PromptQueue()
+    worker = PromptWorker(queue, handler, logger=_LOGGER)
+
+    # Act
+    own = _run(worker, queue, "first", "alice")
+    separate = _run(worker, queue, "separate", "alice", PROMPT_CONVERSATION_NEW)
+    own_again = _run(worker, queue, "own again", "alice")
+    continued = _run(worker, queue, "continue separate", "alice", separate.session_id)
+    foreign = _run(worker, queue, "read alice's", "bob", separate.session_id)
+    unknown = _run(worker, queue, "unknown", "alice", str(uuid.uuid4()))
+
+    # Assert: a new conversation leaves the actor's own in place; another actor's id resolves
+    # to nothing
+    assert separate.session_id != own.session_id == own_again.session_id
+    assert continued.session_id == separate.session_id
+    assert handler.transcripts[1] == []
+    assert handler.transcripts[2] == [("user", "first"), ("assistant", "recorded")]
+    assert handler.transcripts[3] == [("user", "separate"), ("assistant", "recorded")]
+    assert separate.view()["conversation_id"] == separate.session_id
+    assert foreign.error_code == unknown.error_code == ERROR_UNKNOWN_CONVERSATION
+    assert len(handler.transcripts) == 4
+
+
+def test_a_named_conversation_waiting_on_a_question_refuses_a_new_prompt(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Arrange: a separate conversation parked on a question
+    _org_silo(tmp_path, monkeypatch)
+    handler = _ParkingHandler(asks=PendingUserChoice(title="Which branch?", options=("main",)))
+    queue = PromptQueue()
+    worker = PromptWorker(queue, handler, logger=_LOGGER)
+    asked = _run(worker, queue, "fix ci", "alice", PROMPT_CONVERSATION_NEW)
+    assert asked.state is PromptState.NEEDS_INPUT
+
+    # Act
+    refused = _run(worker, queue, "something else", "alice", asked.session_id)
+    handler.asks = None
+    answer = queue.answer(asked, "main")
+    assert answer is not None
+    worker.run_one(answer)
+
+    # Assert: the question still takes its answer on that conversation
+    assert refused.error_code == ERROR_CONVERSATION_WAITING
+    assert answer.state is PromptState.DONE
+    assert handler.seen_session_ids == [asked.session_id, asked.session_id]
+
+
+class _HoldingHandler(_TranscriptHandler):
+    """Logs when each turn starts and ends, holding the turn for ``hold`` until released."""
+
+    def __init__(self, hold: str, log: list[tuple[str, str]]) -> None:
+        super().__init__()
+        self.hold = hold
+        self.log = log
+        self.holding = threading.Event()
+        self.release = threading.Event()
+
+    def run(self, text: str, session: SessionCore, output: Any, logger: Any, **kwargs: Any) -> Any:
+        self.log.append(("start", text))
+        if text == self.hold:
+            self.holding.set()
+            assert self.release.wait(_WAIT)
+        self.log.append(("end", text))
+        return super().run(text, session, output, logger, **kwargs)
+
+
+class _LoggingSessions(UnattendedSessions):
+    """Logs every read of a persisted session."""
+
+    def __init__(self, log: list[tuple[str, str]]) -> None:
+        super().__init__()
+        self.log = log
+
+    def resume(self, session_id: str) -> SessionCore:
+        self.log.append(("resume", session_id))
+        return super().resume(session_id)
+
+
+def test_a_prompt_whose_own_conversation_is_named_by_a_running_prompt_waits_for_it(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # Arrange: alice's own conversation exists from before a restart, so this task does
+    # not know it yet; one prompt names it, the next continues it by default
+    _org_silo(tmp_path, monkeypatch)
+    log: list[tuple[str, str]] = []
+    handler = _HoldingHandler(hold="named", log=log)
+    earlier_queue = PromptQueue()
+    own = _run(
+        PromptWorker(earlier_queue, handler, logger=_LOGGER), earlier_queue, "first", "alice"
+    )
+    queue = _SignallingQueue()
+    worker = PromptWorker(queue, handler, logger=_LOGGER, sessions=_LoggingSessions(log), workers=2)
+    named = queue.submit("named", context={}, actor="alice", conversation=own.session_id)
+    by_default = queue.submit("by default", context={}, actor="alice")
+    assert named is not None and by_default is not None
+    log.clear()
+
+    # Act
+    worker.start()
+    try:
+        assert handler.holding.wait(_WAIT)
+        assert queue.deferred.wait(_WAIT)
+        handler.release.set()
+        queue.wait_settled(2)
+    finally:
+        worker.stop(timeout_seconds=_WAIT)
+
+    # Assert: the waiting prompt never read the session while the named prompt ran on it,
+    # then ran on that same session
+    session_id = own.session_id
+    assert log == [
+        ("resume", session_id),
+        ("start", "named"),
+        ("end", "named"),
+        ("resume", session_id),
+        ("start", "by default"),
+        ("end", "by default"),
+    ]
+    assert by_default.session_id == session_id and by_default.state is PromptState.DONE

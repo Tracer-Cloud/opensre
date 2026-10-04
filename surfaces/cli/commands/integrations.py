@@ -67,6 +67,9 @@ def setup_integration(service: str | None) -> None:
     capture_integration_setup_started(normalized_service)
     resolved_service = cmd_setup(service)
     capture_integration_setup_completed(resolved_service)
+    from surfaces.shared.integration_telemetry import capture_github_connection_snapshot
+
+    capture_github_connection_snapshot()
 
     if resolved_service in constants.VERIFY_SERVICES:
         capture_integration_verified(resolved_service)
@@ -98,6 +101,9 @@ def remove_integration(service: str) -> None:
 
     cmd_remove(service)
     capture_integration_removed(service)
+    from surfaces.shared.integration_telemetry import capture_github_connection_snapshot
+
+    capture_github_connection_snapshot()
 
 
 @integrations.command(name="verify")
@@ -120,4 +126,7 @@ def verify_integration(
     )
     if exit_code == 0:
         capture_integration_verified(service or "all")
+    from surfaces.shared.integration_telemetry import capture_github_connection_snapshot
+
+    capture_github_connection_snapshot()
     raise SystemExit(exit_code)

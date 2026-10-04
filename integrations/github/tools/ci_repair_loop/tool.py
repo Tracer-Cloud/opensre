@@ -17,9 +17,9 @@ from integrations.github.helpers import (
     github_source_available,
 )
 from integrations.github.tools.ci_repair_loop.credentials import account_id, configured_token
-from integrations.github.tools.ci_repair_loop.fixture import object_response
 from integrations.github.tools.ci_repair_loop.models import RepairRefused, RepairRun
 from integrations.github.tools.ci_repair_loop.report import render_report
+from integrations.github.tools.ci_repair_loop.responses import object_response
 from integrations.github.tools.ci_repair_loop.schedule import schedule_repair
 from integrations.github.tools.ci_repair_loop.storage import RepairStore
 
@@ -56,8 +56,29 @@ def _result(run: RepairRun, store: RepairStore) -> dict[str, Any]:
     }
 
 
-#: The tool's error line when the target itself was refused; the reply says which to choose.
-_REFUSED_ERROR = "Could not schedule CI repair: the pull request was refused."
+#: The tool's error line when the target itself was refused; the reason says which to choose.
+_REFUSED_ERROR = "Could not schedule CI repair: the pull request was refused. {reason}"
+_SCHEDULE_ERROR = "Could not schedule CI repair: {cause}"
+_READ_ERROR = "Could not read the repair report: {cause}"
+#: The first line of a failure's own text, at most this long, names the cause.
+_CAUSE_MAX_CHARS = 300
+
+
+def _failure_cause(exc: Exception) -> str:
+    """A short reason for a failed schedule or read that the model and telemetry can use.
+
+    GitHub API errors carry status and GitHub's message, and this package's
+    ``ValueError`` texts are written for the user. A file error keeps only its
+    ``strerror`` (no local path); any other error is named by type only.
+    """
+    if isinstance(exc, GitHubApiError | ValueError):
+        text = str(exc).strip().splitlines()
+        first = text[0].strip() if text else ""
+        if first:
+            return first[:_CAUSE_MAX_CHARS]
+    elif isinstance(exc, OSError) and exc.strerror:
+        return f"{type(exc).__name__}: {exc.strerror}."
+    return f"{type(exc).__name__}."
 
 
 def _inspection_done(run: RepairRun, *, wait_until_terminal: bool, until: float) -> bool:
@@ -73,17 +94,13 @@ def _inspection_done(run: RepairRun, *, wait_until_terminal: bool, until: float)
     name="schedule_ci_repair_loop",
     source="github",
     display_name="Schedule bounded CI repair",
-    use_cases=[
-        "Run the scheduled CI repair onboarding demo",
-        "Repair one selected PR in the background",
-    ],
+    use_cases=["Repair one selected PR in the background"],
     description=(
-        "Schedule repair of one GitHub PR, or demo=true for a tiny CI repair demonstration "
-        "in a fixed reusable private repository. On a hosted gateway, registers with its "
-        "existing scheduler; on a laptop, starts and checks the local background scheduler. "
-        "Uses a real 30-second trigger, stops after three failed attempts or "
-        "within ten minutes, and retains a linked outcome report. Reuses the active run "
-        "without extending its deadline."
+        "Schedule repair of one open GitHub PR whose branch is in the same repository. "
+        "On a hosted gateway, registers with its existing scheduler; on a laptop, starts "
+        "and checks the local background scheduler. Uses a real 30-second trigger, stops "
+        "after three failed attempts or within ten minutes, and retains a linked outcome "
+        "report. Reuses the active run without extending its deadline."
     ),
     surfaces=(ToolSurface.ACTION,),
     side_effect_level=SideEffectLevel.MUTATING,
@@ -94,54 +111,49 @@ def _inspection_done(run: RepairRun, *, wait_until_terminal: bool, until: float)
     input_schema={
         "type": "object",
         "properties": {
-            "demo": {
-                "type": "boolean",
-                "default": False,
-                "description": "Use the reusable private demo repository; default false.",
-            },
             "owner": {
                 "type": "string",
                 "description": "GitHub user or organization that owns the repository.",
             },
             "repo": {
                 "type": "string",
-                "description": "Repository for an existing PR; omitted in demo mode.",
+                "description": "Repository that holds the pull request.",
             },
             "pr_number": {
                 "type": "integer",
                 "minimum": 1,
-                "description": "Existing PR to repair; omitted in demo mode.",
+                "description": "Existing PR to repair.",
             },
         },
-        "required": ["owner"],
+        "required": ["owner", "repo", "pr_number"],
         "additionalProperties": False,
     },
 )
 def schedule_ci_repair_loop(
-    demo: bool = False,
-    owner: str = "",
-    repo: str = "",
-    pr_number: int = 0,
+    owner: str,
+    repo: str,
+    pr_number: int,
     github_token: str | None = None,
     context: Any = None,
+    fast_checks: bool = False,
     **_kwargs: Any,
 ) -> dict[str, Any]:
     """Authorize exactly one bounded repair scope and return its durable identity."""
     try:
         store = RepairStore()
         run, reused, next_run = schedule_repair(
-            demo=demo,
             owner=owner,
             repo=repo,
             pr_number=pr_number,
             github_token=github_token,
             store=store,
             scheduler_in_process=_scheduler_in_process(context),
+            fast_checks=fast_checks,
         )
     except RepairRefused as exc:
         return {
             "ok": False,
-            "error": _REFUSED_ERROR,
+            "error": _REFUSED_ERROR.format(reason=exc.user_message),
             "error_kind": ERROR_KIND_REFUSED,
             "response_text": exc.user_message,
         }
@@ -155,7 +167,7 @@ def schedule_ci_repair_loop(
         )
         return {
             "ok": False,
-            "error": f"Could not schedule CI repair: {type(exc).__name__}.",
+            "error": _SCHEDULE_ERROR.format(cause=_failure_cause(exc)),
             "response_text": "Check the GitHub connection and background scheduler setup.",
         }
     return {**_result(run, store), "reused": reused, "next_run": next_run}
@@ -247,5 +259,6 @@ def get_ci_repair_loop(
         )
         return {
             "ok": False,
-            "error": "Could not read the repair report; check your GitHub connection and run id.",
+            "error": _READ_ERROR.format(cause=_failure_cause(exc)),
+            "response_text": "Check the GitHub connection and the run id.",
         }

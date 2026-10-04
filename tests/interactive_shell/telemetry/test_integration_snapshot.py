@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 from surfaces.interactive_shell.session import Session
-from surfaces.interactive_shell.telemetry.integration_snapshot import (
+from surfaces.shared.integration_telemetry import (
     build_turn_integration_snapshot,
 )
 
@@ -47,7 +47,7 @@ def test_build_turn_integration_snapshot_uses_session_configured_slugs(
     }
 
     monkeypatch.setattr(
-        "surfaces.interactive_shell.telemetry.integration_snapshot.get_registered_tools",
+        "surfaces.shared.integration_telemetry.get_registered_tools",
         lambda: [_FakeTool("datadog"), _FakeTool("github")],
     )
 
@@ -70,7 +70,7 @@ def test_build_turn_integration_snapshot_excludes_unavailable_tools(
     }
 
     monkeypatch.setattr(
-        "surfaces.interactive_shell.telemetry.integration_snapshot.get_registered_tools",
+        "surfaces.shared.integration_telemetry.get_registered_tools",
         lambda: [_FakeTool("datadog"), _FakeTool("grafana", available=False)],
     )
 
@@ -93,7 +93,7 @@ def test_build_turn_integration_snapshot_survives_tool_resolution_failure(
         raise RuntimeError("tool registry blew up")
 
     monkeypatch.setattr(
-        "surfaces.interactive_shell.telemetry.integration_snapshot.get_registered_tools",
+        "surfaces.shared.integration_telemetry.get_registered_tools",
         _boom,
     )
 
@@ -114,7 +114,7 @@ def test_build_turn_integration_snapshot_survives_family_key_failure(
     session.resolved_integrations_cache = {"datadog": {"api_key": "x", "app_key": "y"}}
 
     monkeypatch.setattr(
-        "surfaces.interactive_shell.telemetry.integration_snapshot.get_registered_tools",
+        "surfaces.shared.integration_telemetry.get_registered_tools",
         lambda: [_FakeTool("datadog")],
     )
 
@@ -122,7 +122,7 @@ def test_build_turn_integration_snapshot_survives_family_key_failure(
         raise RuntimeError("family key blew up")
 
     monkeypatch.setattr(
-        "surfaces.interactive_shell.telemetry.integration_snapshot.family_key",
+        "surfaces.shared.integration_telemetry.family_key",
         _boom,
     )
 
@@ -132,3 +132,26 @@ def test_build_turn_integration_snapshot_survives_family_key_failure(
     assert "connected_integrations" not in snapshot
     assert "connected_integrations_count" not in snapshot
     assert snapshot["integration_snapshot_status"] == "partial"
+
+
+def test_connection_snapshot_reports_existing_github_without_an_llm_turn(monkeypatch: Any) -> None:
+    from infrastructure.analytics.events import Event
+    from surfaces.shared import integration_telemetry
+
+    session = Session()
+    session.configured_integrations_known = True
+    session.configured_integrations = ("github",)
+    session.resolved_integrations_cache = {"github": {"access_token": "secret"}}
+    emitted = []
+    monkeypatch.setattr(integration_telemetry, "analytics_opted_out", lambda: False)
+    monkeypatch.setattr(
+        integration_telemetry, "get_registered_tools", lambda: [_FakeTool("github")]
+    )
+    monkeypatch.setattr(
+        integration_telemetry, "capture_connection_snapshot", lambda props: emitted.append(props)
+    )
+    integration_telemetry.capture_github_connection_snapshot(session)
+    assert Event.GITHUB_CONNECTION_SNAPSHOT == "github_connection_snapshot"
+    assert emitted[0]["connected_integrations"] == ["github"]
+    assert emitted[0]["integration_snapshot_status"] == "complete"
+    assert "secret" not in repr(emitted)

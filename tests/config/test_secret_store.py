@@ -231,3 +231,38 @@ def test_empty_value_clears_instead_of_storing() -> None:
 
     assert resolve_secret(_ENV_VAR) == ""
     assert _ENV_VAR not in _stored_contents()
+
+
+def test_unchanged_store_is_read_once_across_lookups(monkeypatch) -> None:
+    """Startup resolves credentials per tool; an unchanged file must not be re-parsed each time."""
+    # A store written moments ago is never cached; this one counts as settled.
+    monkeypatch.setattr(local_file, "_RACY_WINDOW_NS", 0)
+    save_secret(_ENV_VAR, "sk-stored")
+    local_file.clear_read_cache()
+    reads: list[Path] = []
+    real_load = local_file._load_unlocked
+
+    def _counting_load(path: Path) -> dict[str, str]:
+        reads.append(path)
+        return real_load(path)
+
+    monkeypatch.setattr(local_file, "_load_unlocked", _counting_load)
+
+    assert [resolve_secret(_ENV_VAR) for _ in range(5)] == ["sk-stored"] * 5
+    assert len(reads) == 1
+
+
+def test_a_store_replaced_by_another_process_is_read_again(monkeypatch) -> None:
+    """The read cache must never hide a credential written outside this process."""
+    monkeypatch.setattr(local_file, "_RACY_WINDOW_NS", 0)
+    save_secret(_ENV_VAR, "sk-old")
+    local_file.clear_read_cache()
+    assert resolve_secret(_ENV_VAR) == "sk-old"
+
+    # Another process publishes the same way local_file does: a new file swapped in.
+    path = local_file.store_path()
+    replacement = path.with_name("replacement.json")
+    replacement.write_text(json.dumps({"version": 1, "secrets": {_ENV_VAR: "sk-new"}}))
+    os.replace(replacement, path)
+
+    assert resolve_secret(_ENV_VAR) == "sk-new"

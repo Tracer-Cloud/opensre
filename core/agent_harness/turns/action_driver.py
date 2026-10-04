@@ -16,11 +16,12 @@ import json
 import logging
 import re
 import shlex
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
 from config.constants.skills import ONBOARDING_SKILL_NAME
+from config.llm_reasoning_effort import apply_reasoning_effort
 from core.agent import Agent, AgentRunResult
 from core.agent.cancel import tool_resources_cancel_requested
 from core.agent.goals import Goal
@@ -46,10 +47,16 @@ from core.agent_harness.session.terminal_access import execute_cli_onboard_on_mi
 from core.agent_harness.session_goal.review_input import collect_tool_evidence
 from core.agent_harness.task_plan.conclusion import (
     blocked_steps_await_the_user,
+    demo_entered_from_menu,
     demo_pick_stalled_on_skill_load,
     task_plan_awaits_reply,
     task_plan_blocks_conclusion,
 )
+from core.agent_harness.task_plan.evidence import (
+    plan_advanced_this_turn,
+    record_deliverable_shown,
+)
+from core.agent_harness.task_plan.ownership import session_answer_continues_plan
 from core.agent_harness.turns.action_dedup import (
     coerce_fingerprint_quiet,
     with_duplicate_action_call_guard,
@@ -86,6 +93,7 @@ from core.agent_harness.turns.work_outcome import (
 )
 from core.events import runtime_event_callback_from_observer
 from core.llm.types import AgentLLMResponse, SchemaDescribedTool, ToolCall
+from core.tool import SideEffectLevel
 from core.tool.execution import (
     ToolExecutionHooks,
     public_tool_input,
@@ -164,6 +172,12 @@ def _deferred_reply_presenter(
         return True
 
     return present
+
+
+def _deliverable_shown(session: SessionState, text: str, value_insights: set[str]) -> None:
+    """A plan ``deliverable`` reply reached the user: it earns that step, and may carry value."""
+    record_deliverable_shown(session)
+    record_skill_value(session, text, value_insights)
 
 
 class _StaticToolCallLLM:
@@ -256,6 +270,69 @@ def _generic_tool_results(result: Any) -> list[tuple[ToolCall, Any]]:
     ]
 
 
+#: Tools whose repeat call only observes state, so a later identical call replaces the earlier one.
+_OBSERVING_LEVELS = frozenset({SideEffectLevel.NONE, SideEffectLevel.READ_ONLY})
+
+
+def _call_identity(tool_call: ToolCall) -> tuple[str, str]:
+    """The tool and its public input, so a poll or a retry compares equal."""
+    raw = tool_call.input if isinstance(tool_call.input, dict) else {}
+    return tool_call.name, json.dumps(public_tool_input(raw), sort_keys=True, default=str)
+
+
+def _tool_failed(tool_result: Any) -> bool:
+    details = getattr(tool_result, "details", None)
+    if isinstance(details, dict) and details.get("ok") is False:
+        return True
+    return bool(getattr(tool_result, "is_error", False))
+
+
+def _reports_another_record(earlier: Any, later: Any) -> bool:
+    """True when *earlier* names a record (a ``*_id`` field) that *later* does not.
+
+    A read with no id in its input ("the most recent run") can reach a new
+    record between two calls, and a failed ``ask_hosted_gateway`` can carry
+    the ``prompt_id`` that recovers work the gateway already took. Either one
+    is its own report, so the later call does not replace it.
+    """
+    earlier_details = getattr(earlier, "details", None)
+    if not isinstance(earlier_details, dict):
+        return False
+    later_details = getattr(later, "details", None)
+    if not isinstance(later_details, dict):
+        later_details = {}
+    return any(
+        key.endswith("_id") and isinstance(value, str) and value and later_details.get(key) != value
+        for key, value in earlier_details.items()
+    )
+
+
+def _current_generic_results(
+    result: Any, tools_by_name: Mapping[str, Any] | None = None
+) -> list[tuple[ToolCall, Any]]:
+    """Generic results minus the ones a later identical call replaced.
+
+    A status poll (``check_hosted_gateway`` while a gateway starts) and a failed
+    call that was sent again report a state that no longer holds. The closing
+    shows the latest. A mutating call that succeeded twice did two things, and
+    a result that names a record the later one does not reported something
+    else, so both stay.
+    """
+    results = _generic_tool_results(result)
+    tools = tools_by_name or {}
+    identities = [_call_identity(tool_call) for tool_call, _tool_result in results]
+    latest = {identity: index for index, identity in enumerate(identities)}
+    current: list[tuple[ToolCall, Any]] = []
+    for index, (tool_call, tool_result) in enumerate(results):
+        last = latest[identities[index]]
+        if last != index and not _reports_another_record(tool_result, results[last][1]):
+            level = getattr(tools.get(tool_call.name), "side_effect_level", None)
+            if level in _OBSERVING_LEVELS or _tool_failed(tool_result):
+                continue
+        current.append((tool_call, tool_result))
+    return current
+
+
 def _stash_collapsed_tool_output(session: SessionState, text: str | None) -> None:
     """Remember a capped peek so Ctrl+O can expand it; no-op without a terminal.
 
@@ -284,13 +361,15 @@ def _preferred_tool_response_texts(result: Any) -> str:
     return "\n\n".join(_preferred_tool_chunks(result))
 
 
-def _preferred_tool_chunks(result: Any) -> list[str]:
+def _preferred_tool_chunks(
+    result: Any, tools_by_name: Mapping[str, Any] | None = None
+) -> list[str]:
     """User-facing ``response_text`` values not already painted by the tool."""
     return [
         text
         for text in (
             preferred_tool_response_text(tool_result)
-            for tool_call, tool_result in _generic_tool_results(result)
+            for tool_call, tool_result in _current_generic_results(result, tools_by_name)
             if not already_on_screen(tool_call, tool_result)
         )
         if text
@@ -505,18 +584,41 @@ def _has_quiet_shell_run(result: Any) -> bool:
     return False
 
 
-def _generic_chunks(result: Any) -> list[str]:
-    """User-facing text for each generic tool result, in call order."""
+def _generic_chunks(result: Any, tools_by_name: Mapping[str, Any] | None = None) -> list[str]:
+    """User-facing text for each current generic tool result, in call order.
+
+    A verify step that re-reads the same record (the same ``prompt_id``) and
+    gets the same text back is shown once; independent results always show.
+    """
     chunks: list[str] = []
-    for tool_call, tool_result in _generic_tool_results(result):
+    records_shown: set[tuple[str, str, str]] = set()
+    for tool_call, tool_result in _current_generic_results(result, tools_by_name):
         formatted = format_generic_tool_payload(tool_call, tool_result)
-        if formatted:
-            chunks.append(formatted)
+        if not formatted:
+            continue
+        record = _record_id(tool_result)
+        if record:
+            key = (tool_call.name, record, formatted.strip())
+            if key in records_shown:
+                continue
+            records_shown.add(key)
+        chunks.append(formatted)
     return chunks
 
 
-def _response_text_from_generic_results(result: Any) -> str:
-    return "\n".join(_generic_chunks(result))
+def _record_id(tool_result: Any) -> str:
+    """The id of the record a tool result reports on, when it names one."""
+    details = getattr(tool_result, "details", None)
+    if not isinstance(details, dict):
+        return ""
+    value = details.get("prompt_id")
+    return value.strip() if isinstance(value, str) else ""
+
+
+def _response_text_from_generic_results(
+    result: Any, tools_by_name: Mapping[str, Any] | None = None
+) -> str:
+    return "\n".join(_generic_chunks(result, tools_by_name))
 
 
 def _generic_tool_result_counts(result: Any) -> tuple[int, int]:
@@ -753,10 +855,11 @@ def _build_action_agent(
             plan_awaits_reply=lambda: task_plan_awaits_reply(
                 task_plan=getattr(session, "task_plan", None)
             ),
+            plan_advanced=lambda: plan_advanced_this_turn(session),
             on_plan_deferred_reply=_deferred_reply_presenter(
                 output,
                 deferred_replies,
-                lambda text: record_skill_value(session, text, value_insights),
+                lambda text: _deliverable_shown(session, text, value_insights),
             ),
             blocked_needs_user=lambda: blocked_steps_await_the_user(
                 session, user_answered=bool(parse_ask_user_answers(message))
@@ -765,6 +868,7 @@ def _build_action_agent(
                 session,
                 user_answered=bool(parse_ask_user_answers(message)),
                 from_onboarding_menu=starting_skill == ONBOARDING_SKILL_NAME,
+                entered_from_menu=demo_entered_from_menu(starting_skill, message),
             ),
             executed_outcomes=executed_outcomes,
             trace_context=lambda: turn_trace_state(session),
@@ -914,6 +1018,7 @@ def _compose_response(
     session: SessionState,
     counts: _TurnCounts,
     deferred_replies: Sequence[str] = (),
+    tools_by_name: Mapping[str, Any] | None = None,
 ) -> tuple[str, list[str], bool]:
     """Build the turn's response text and what to show on screen.
 
@@ -923,12 +1028,13 @@ def _compose_response(
     any hint. ``response_text`` keeps the history as well, because persistence
     and non-TTY surfaces have nothing else to read. ``deferred_replies`` were
     painted mid-turn by the plan gate, so they join the history, not the screen.
+    ``tools_by_name`` tells a repeated read-only poll from a repeated action.
 
     Consumes the session's pending outcome hint.
     """
     final_text = str(getattr(result, "final_text", "") or "").strip()
     waiting_for_choice = getattr(session, "pending_user_choice", None) is not None
-    generic_text = _response_text_from_generic_results(result)
+    generic_text = _response_text_from_generic_results(result, tools_by_name)
     hint = _pop_turn_outcome_hint(session)
     terminal = getattr(session, "terminal", None)
     pending_choice_response = getattr(terminal, "pending_choice_response", None)
@@ -976,7 +1082,7 @@ def _compose_response(
         is_outcome_report(text) for text in deferred_replies
     )
     outcome_already_delivered = bool(assistant_report) or closing_already_has_report
-    generic_chunks = _generic_chunks(result)
+    generic_chunks = _generic_chunks(result, tools_by_name)
     closing_chunks = _closing_tool_chunks(
         generic_chunks, include_outcome=not outcome_already_delivered
     )
@@ -1012,7 +1118,9 @@ def _compose_response(
         # Cap it here: this path is the visible reply, and the generic-output
         # path's cap does not apply once inline results cleared that preview.
         display_final = _visible_closing_text(
-            _preferred_tool_chunks(result) if closing_chunks == generic_chunks else closing_chunks
+            _preferred_tool_chunks(result, tools_by_name)
+            if closing_chunks == generic_chunks
+            else closing_chunks
         )
     is_json = looks_like_json(generic_text)
     body, markers = split_output_truncation_markers(display_generic)
@@ -1035,9 +1143,7 @@ def _compose_response(
     display_chunks = [chunk for chunk in (display_final, display_generic, hint) if chunk]
     history_generic = (
         "\n".join(
-            _closing_tool_chunks(
-                _generic_chunks(result), include_outcome=not outcome_already_delivered
-            )
+            _closing_tool_chunks(generic_chunks, include_outcome=not outcome_already_delivered)
         )
         if closing_chunks != generic_chunks
         else generic_text
@@ -1240,6 +1346,13 @@ def _run_action_turn(
     # AgentConfig are built from the same view (single source, no re-resolve).
     resolved_integrations = _turn_resolved_integrations(session, turn_plan)
     history_start = len(session.history)
+    # Once per turn, before any tool runs: does this answer continue the
+    # open plan's own workflow (host advances it, the prompt says so)?
+    plan_answer_continues = (
+        turn_snapshot.plan_answer_continues
+        if turn_snapshot is not None
+        else session_answer_continues_plan(session, message)
+    )
 
     prepare_active_skill(session, message)
     agent_tools = args.tools.action_tools(
@@ -1271,21 +1384,32 @@ def _run_action_turn(
             resolved_integrations=resolved_integrations,
             llm_factory=args.llm_factory,
             tool_hooks=with_menu_turn_end(
-                with_task_plan_hooks(with_duplicate_action_call_guard(args.tool_hooks), session),
+                with_task_plan_hooks(
+                    with_duplicate_action_call_guard(args.tool_hooks),
+                    session,
+                    turn_user_message=message,
+                    answer_continues=plan_answer_continues,
+                ),
                 session,
             ),
             tool_resources=tool_resources,
             observer=observer,
             output=args.output,
         )
-        result = run_react_agent_with_telemetry(
-            built.agent,
-            [{"role": "user", "content": built.user_message}],
-            phase="action",
-            iteration_cap=built.max_iterations,
-            llm=None if isinstance(built.llm, _StaticToolCallLLM) else built.llm,
-            session=session,
-        )
+        # ``/effort`` lives on the session; the model clients read it from context.
+        with apply_reasoning_effort(
+            turn_snapshot.reasoning_effort
+            if turn_snapshot is not None
+            else getattr(session, "reasoning_effort", None)
+        ):
+            result = run_react_agent_with_telemetry(
+                built.agent,
+                [{"role": "user", "content": built.user_message}],
+                phase="action",
+                iteration_cap=built.max_iterations,
+                llm=None if isinstance(built.llm, _StaticToolCallLLM) else built.llm,
+                session=session,
+            )
         persist_turn_system_prompt(
             session,
             phase="action_agent",
@@ -1339,8 +1463,9 @@ def _run_action_turn(
         )
 
     counts = _count_turn(result, session, history_start)
+    tools_by_name = {getattr(t, "name", ""): t for t in agent_tools}
     response_text, display_chunks, use_final_text = _compose_response(
-        result, session, counts, built.deferred_replies
+        result, session, counts, built.deferred_replies, tools_by_name
     )
     cancelled = tool_resources_cancel_requested(tool_resources) or bool(
         getattr(result, "cancelled", False)
@@ -1358,7 +1483,7 @@ def _run_action_turn(
         and not session.last_command_observation
         and _should_stash_observation(
             result,
-            tools_by_name={getattr(t, "name", ""): t for t in agent_tools},
+            tools_by_name=tools_by_name,
         )
     ):
         session.last_command_observation = response_text

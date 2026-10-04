@@ -150,3 +150,17 @@ def test_renewal_loop_stops_after_the_last_claim_exits() -> None:
         assert renewed.wait(_SYNC_TIMEOUT_SECONDS)
 
     assert _wait_until(lambda: renewer._thread is None)  # noqa: SLF001
+
+
+def test_in_flight_counts_each_held_execution_even_after_its_lease_lapses() -> None:
+    # A lapsed execution is still running: stopping the process would kill it.
+    lapsed = _claim("lapsed", expires_in=0)
+    live = _claim("live", expires_in=60)
+    renewer = ClaimLeaseRenewer(renew=lambda _claims: {}, renewal_interval_seconds=60)
+
+    with renewer.hold(lapsed) as lapsed_ownership:
+        with renewer.hold(live):
+            assert not lapsed_ownership.valid()
+            assert renewer.in_flight() == 2
+        assert renewer.in_flight() == 1
+    assert renewer.in_flight() == 0

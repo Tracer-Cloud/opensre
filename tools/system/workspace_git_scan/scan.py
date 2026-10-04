@@ -6,12 +6,16 @@ import os
 import re
 import subprocess
 import time
+from collections import deque
 from collections.abc import Callable, Collection
+from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
 from dataclasses import dataclass, field
 from enum import StrEnum
+from functools import partial
 from pathlib import Path
 
 from config.constants.git import GIT_OPTIONAL_LOCKS_ENV, GIT_TERMINAL_PROMPT_ENV
+from tools.system.workspace_git_scan.git_files import common_git_dir, configured_origin
 
 _SKIP_DIR_NAMES = frozenset(
     {
@@ -36,6 +40,11 @@ _GIT_TIMEOUT_SECONDS = 5
 _SCAN_BUDGET_SECONDS = 20.0
 _CANCEL_POLL_SECONDS = 0.05
 _PROGRESS_INTERVAL_SECONDS = 3.0
+# git calls run at once while measuring; more only queue for the same disk and cores.
+_MEASURE_WORKERS = 8
+# The user's own config the scan reads: the email that marks own commits, URL
+# rewrite rules, and conditional includes that can hold rules for some repositories only.
+_USER_CONFIG_KEYS = r"^(user\.email|url\..+\.insteadof|includeif\..+)$"
 _SEARCH_PROGRESS = "Looking for git repositories: {} folders checked, {} found"
 _MEASURE_PROGRESS = "Counting recent commits: {} of {} repositories done"
 _GITHUB_REMOTE_RE = re.compile(
@@ -98,6 +107,32 @@ class WorkspaceSnapshot:
     @property
     def total_own_commits(self) -> int:
         return sum(repo.own_commits for repo in self.repos)
+
+
+@dataclass(frozen=True)
+class _History:
+    """What every worktree of one repository shares: its origin and recent commits."""
+
+    origin: str
+    commits: int
+    own_commits: int
+
+
+@dataclass(frozen=True)
+class _Worktree:
+    """What one checkout holds on its own."""
+
+    uncommitted: int
+    has_workflows: bool
+
+
+@dataclass(frozen=True)
+class _UserConfig:
+    """The user's git settings the scan needs, as seen from the scan root."""
+
+    email: str
+    rewrites: tuple[str, ...] | None
+    """Prefixes ``url.<base>.insteadOf`` rules rewrite; None when they are unknowable."""
 
 
 class _Watch:
@@ -165,10 +200,12 @@ def scan_workspace(
 
     *root* is always entered; folders in *skip_paths* never are. The scan stops
     early when *should_stop* returns true or the time budget runs out, checked
-    before every repository and before every folder of the walk (*should_stop*
-    at most every 50 ms there), so one listing or one repository's git calls can
-    overrun a stop. The most recently used checkouts are measured first, so an
-    early stop or the repository cap keeps the relevant ones.
+    before every folder of the walk (*should_stop* at most every 50 ms there) and,
+    while measuring, before git calls are started and at least every 50 ms. One
+    listing can overrun a stop; git calls still running then are not awaited and
+    end within their timeout. Checkouts are measured concurrently, the most
+    recently used first, so an early stop or the repository cap keeps the relevant
+    ones.
     """
     watch = _Watch(
         should_stop=should_stop,
@@ -180,13 +217,7 @@ def scan_workspace(
         root, max_depth=max_depth, skip_paths=frozenset(skip_paths), watch=watch
     )
     queue = [] if watch.stopped() else sorted(found, key=_last_used, reverse=True)[:max_repos]
-    author = _git(root, "config", "--get", "user.email") if queue else ""
-    repos: list[RepoActivity] = []
-    for repo_dir in queue:
-        if watch.stopped():
-            break
-        watch.progress(_MEASURE_PROGRESS, len(repos), len(queue))
-        repos.append(measure_repo(repo_dir, days=days, author=author))
+    repos = _measure(queue, days=days, user=_user_config(root), watch=watch) if queue else []
     merged = _fold_clones(repos)
     merged.sort(key=lambda repo: (-repo.commits, repo.name.lower()))
     return WorkspaceSnapshot(
@@ -197,6 +228,65 @@ def scan_workspace(
         stop_reason=watch.stop_reason,
         skipped=tuple(str(path) for path in skipped),
     )
+
+
+def _measure(
+    checkouts: list[Path], *, days: int, user: _UserConfig, watch: _Watch
+) -> list[RepoActivity]:
+    """Measure *checkouts* on a thread pool, started in their order, until done or stopped.
+
+    Each repository's history is read once, from its first checkout, for all its
+    worktrees. Returns the checkouts measured in full, in their order.
+    """
+    git_dirs = {checkout: common_git_dir(checkout) for checkout in checkouts}
+    worktrees_of: dict[Path, list[Path]] = {}
+    jobs: deque[tuple[Path, Callable[[], _History | _Worktree]]] = deque()
+    for checkout, git_dir in git_dirs.items():
+        if git_dir not in worktrees_of:
+            worktrees_of[git_dir] = []
+            history = partial(
+                _history,
+                checkout,
+                git_dir=git_dir,
+                days=days,
+                author=user.email,
+                rewrites=user.rewrites,
+            )
+            jobs.append((git_dir, history))
+        worktrees_of[git_dir].append(checkout)
+        jobs.append((checkout, partial(_worktree, checkout)))
+    histories: dict[Path, _History] = {}
+    worktrees: dict[Path, _Worktree] = {}
+    measured = 0
+    in_flight: dict[Future[_History | _Worktree], Path] = {}
+    pool = ThreadPoolExecutor(max_workers=_MEASURE_WORKERS, thread_name_prefix="workspace-scan")
+    try:
+        while True:
+            for future in [future for future in in_flight if future.done()]:
+                key = in_flight.pop(future)
+                result = future.result()
+                if isinstance(result, _History):
+                    histories[key] = result
+                    measured += sum(1 for checkout in worktrees_of[key] if checkout in worktrees)
+                else:
+                    worktrees[key] = result
+                    if git_dirs[key] in histories:
+                        measured += 1
+            if not (jobs or in_flight) or watch.stopped():
+                break
+            watch.progress(_MEASURE_PROGRESS, measured, len(checkouts))
+            while jobs and len(in_flight) < _MEASURE_WORKERS:
+                key, job = jobs.popleft()
+                in_flight[pool.submit(job)] = key
+            wait(in_flight, timeout=_CANCEL_POLL_SECONDS, return_when=FIRST_COMPLETED)
+    finally:
+        # A stopped scan does not wait: running git calls end within their timeout.
+        pool.shutdown(wait=False, cancel_futures=True)
+    return [
+        _activity(checkout, histories[git_dir], worktrees[checkout])
+        for checkout, git_dir in git_dirs.items()
+        if checkout in worktrees and git_dir in histories
+    ]
 
 
 def _fold_clones(repos: list[RepoActivity]) -> list[RepoActivity]:
@@ -231,26 +321,88 @@ def _fold_clones(repos: list[RepoActivity]) -> list[RepoActivity]:
 
 
 def measure_repo(repo_dir: Path, *, days: int, author: str = "") -> RepoActivity:
-    origin = _git(repo_dir, "remote", "get-url", "origin")
-    owner, name = parse_github_remote(origin)
+    """Measure one checkout on its own, asking git for its origin."""
+    git_dir = common_git_dir(repo_dir)
+    history = _history(repo_dir, git_dir=git_dir, days=days, author=author, rewrites=None)
+    return _activity(repo_dir, history, _worktree(repo_dir))
+
+
+def _history(
+    checkout: Path, *, git_dir: Path, days: int, author: str, rewrites: Collection[str] | None
+) -> _History:
+    """Origin and recent commits of *checkout*'s repository, the same from every worktree.
+
+    One ``git log --all`` prints an author email per commit in the window, the
+    commits ``rev-list --count --all --since`` counts; own commits are those whose
+    email equals *author* ignoring case. ``--no-show-signature`` keeps a
+    ``log.showSignature`` setting from adding lines and verifying every commit.
+    """
+    origin = _origin(checkout, git_dir=git_dir, rewrites=rewrites)
     since = f"--since={days}.days"
-    commits = _git(repo_dir, "rev-list", "--count", "--all", since)
-    own = (
-        _git(repo_dir, "rev-list", "--count", "--all", since, f"--author={author}")
-        if author
-        else ""
-    )
-    status = _git(repo_dir, "status", "--porcelain", "--untracked-files=normal")
-    return RepoActivity(
-        name=repo_dir.name,
-        path=str(repo_dir),
+    log = _git(checkout, "log", "--all", since, "--format=%ae", "--no-show-signature")
+    # One line per commit, empty for an empty email, so the output is not stripped.
+    emails = log.splitlines()
+    own = author.casefold()
+    return _History(
         origin=origin,
+        commits=len(emails),
+        own_commits=sum(1 for email in emails if email.strip().casefold() == own) if own else 0,
+    )
+
+
+def _origin(checkout: Path, *, git_dir: Path, rewrites: Collection[str] | None) -> str:
+    """What ``git remote get-url origin`` prints, read from the config file when plain.
+
+    *rewrites* are the user's ``insteadOf`` prefixes; None means they are unknown
+    and git is always asked.
+    """
+    if rewrites is not None:
+        configured = configured_origin(git_dir, rewrites=rewrites)
+        if configured is not None:
+            return configured
+    return _git(checkout, "remote", "get-url", "origin").strip()
+
+
+def _user_config(root: Path) -> _UserConfig:
+    """The user's email and URL rewrite rules as seen from *root*, in one git call.
+
+    The last ``user.email`` wins, as with ``git config --get``. Rewrites are None
+    when a conditional include could hold rules for some repositories only.
+    """
+    email = ""
+    prefixes: list[str] = []
+    knowable = True
+    for entry in _git(root, "config", "-z", "--get-regexp", _USER_CONFIG_KEYS).split("\0"):
+        key, _, value = entry.partition("\n")
+        if key == "user.email":
+            email = value.strip()
+        elif key.startswith("includeif."):
+            knowable = False
+        elif key:
+            prefixes.append(value)
+    return _UserConfig(email=email, rewrites=tuple(prefixes) if knowable else None)
+
+
+def _worktree(checkout: Path) -> _Worktree:
+    status = _git(checkout, "status", "--porcelain", "--untracked-files=normal")
+    return _Worktree(
+        uncommitted=sum(1 for line in status.splitlines() if line.strip()),
+        has_workflows=_has_workflows(checkout),
+    )
+
+
+def _activity(checkout: Path, history: _History, worktree: _Worktree) -> RepoActivity:
+    owner, name = parse_github_remote(history.origin)
+    return RepoActivity(
+        name=checkout.name,
+        path=str(checkout),
+        origin=history.origin,
         github_owner=owner,
         github_repo=name,
-        commits=int(commits) if commits.isdigit() else 0,
-        own_commits=int(own) if own.isdigit() else 0,
-        uncommitted=sum(1 for line in status.splitlines() if line.strip()),
-        has_workflows=_has_workflows(repo_dir),
+        commits=history.commits,
+        own_commits=history.own_commits,
+        uncommitted=worktree.uncommitted,
+        has_workflows=worktree.has_workflows,
     )
 
 
@@ -325,7 +477,7 @@ def _has_workflows(repo_dir: Path) -> bool:
 
 
 def _git(repo_dir: Path, *args: str) -> str:
-    """Output of one read-only git call, or ``""`` when it fails or times out.
+    """Unstripped output of one read-only git call, or ``""`` when it fails or times out.
 
     git never reads the terminal, never prompts for credentials and never takes
     the optional index lock, so ``git status`` leaves ``.git/index`` untouched.
@@ -343,7 +495,7 @@ def _git(repo_dir: Path, *args: str) -> str:
         )
     except (OSError, subprocess.TimeoutExpired):
         return ""
-    return result.stdout.strip() if result.returncode == 0 else ""
+    return result.stdout if result.returncode == 0 else ""
 
 
 __all__ = [

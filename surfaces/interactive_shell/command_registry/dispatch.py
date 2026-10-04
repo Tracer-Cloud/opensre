@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-import os
 import shlex
 from collections.abc import Callable
+from contextlib import nullcontext
 from typing import Any
 
 from rich.console import Console
 
+from config.interactive_override import forced_non_interactive
 from core.agent_harness.spi.session_state import pop_turn_outcome_hint, session_terminal
 from surfaces.interactive_shell.command_registry.catalog import SLASH_COMMANDS
 from surfaces.interactive_shell.command_registry.suggestions import (
@@ -85,10 +86,6 @@ def dispatch_slash(
     Control commands (``mutating=False``, e.g. exit/quit) skip the gate entirely
     so a standing plan-only request cannot block leaving the shell.
     """
-    env_backup = os.environ.get("OPENSRE_INTERACTIVE")
-    if is_tty is False:
-        os.environ["OPENSRE_INTERACTIVE"] = "0"
-
     stripped = command_line.strip()
     slash_recorded = False
 
@@ -108,81 +105,21 @@ def dispatch_slash(
         )
         slash_recorded = True
 
-    try:
-        with capture_console_segment(console) as get_captured:
-            try:
-                if stripped == "/":
-                    from surfaces.interactive_shell.command_registry.help import _cmd_help
+    with (
+        forced_non_interactive() if is_tty is False else nullcontext(),
+        capture_console_segment(console) as get_captured,
+    ):
+        try:
+            if stripped == "/":
+                from surfaces.interactive_shell.command_registry.help import _cmd_help
 
-                    if policy_precleared:
-                        record_slash(ok=True)
-                        return _cmd_help(session, console, [])
-
-                    gate = allow_tool("slash")
-                    if not execution_allowed(
-                        gate,
-                        session=session,
-                        console=console,
-                        action_summary=stripped,
-                        confirm_fn=confirm_fn,
-                        is_tty=is_tty,
-                    ):
-                        record_slash(ok=False)
-                        return True
+                if policy_precleared:
                     record_slash(ok=True)
                     return _cmd_help(session, console, [])
 
-                # Quote-aware split: /cron add --cron '0 8 * * 1-5' must keep the
-                # five-field expression as one argument. Plain str.split fragments
-                # it and Click reports unexpected extra arguments. Fall back when
-                # shlex rejects unbalanced quotes (e.g. /goal set don't …).
-                try:
-                    parts = shlex.split(stripped, posix=True)
-                except ValueError:
-                    parts = stripped.split()
-                if not parts:
-                    return True
-                name = parts[0].lower()
-                args = parts[1:]
-                cmd = SLASH_COMMANDS.get(name)
-                if cmd is None:
-                    typo_message = format_unknown_slash_message(
-                        stripped,
-                        command_names=tuple(SLASH_COMMANDS),
-                    )
-                    record_slash(
-                        ok=False,
-                        response_text=typo_message,
-                        slash_outcome="unknown_command",
-                    )
-                    console.print()
-                    console.print(typo_message)
-                    return True
-                typo = resolve_literal_slash_typo(stripped, SLASH_COMMANDS)
-                if typo is not None:
-                    record_slash(
-                        ok=False,
-                        response_text=typo.message,
-                        slash_outcome=typo.outcome,
-                    )
-                    console.print()
-                    console.print(typo.message)
-                    return True
-                if cmd.validate_args is not None:
-                    validation_error = cmd.validate_args(args)
-                    if validation_error is not None:
-                        record_slash(ok=False)
-                        console.print(validation_error)
-                        return True
-                if policy_precleared or not cmd.mutating:
-                    if name not in _DEFER_SLASH_RECORDING:
-                        record_slash(ok=True)
-                    result = cmd.handler(session, console, args)
-                    slash_recorded |= name == "/sessions"
-                    return result
-                policy = allow_tool("slash")
+                gate = allow_tool("slash")
                 if not execution_allowed(
-                    policy,
+                    gate,
                     session=session,
                     console=console,
                     action_summary=stripped,
@@ -191,24 +128,80 @@ def dispatch_slash(
                 ):
                     record_slash(ok=False)
                     return True
+                record_slash(ok=True)
+                return _cmd_help(session, console, [])
+
+            # Quote-aware split: /cron add --cron '0 8 * * 1-5' must keep the
+            # five-field expression as one argument. Plain str.split fragments
+            # it and Click reports unexpected extra arguments. Fall back when
+            # shlex rejects unbalanced quotes (e.g. /goal set don't …).
+            try:
+                parts = shlex.split(stripped, posix=True)
+            except ValueError:
+                parts = stripped.split()
+            if not parts:
+                return True
+            name = parts[0].lower()
+            args = parts[1:]
+            cmd = SLASH_COMMANDS.get(name)
+            if cmd is None:
+                typo_message = format_unknown_slash_message(
+                    stripped,
+                    command_names=tuple(SLASH_COMMANDS),
+                )
+                record_slash(
+                    ok=False,
+                    response_text=typo_message,
+                    slash_outcome="unknown_command",
+                )
+                console.print()
+                console.print(typo_message)
+                return True
+            typo = resolve_literal_slash_typo(stripped, SLASH_COMMANDS)
+            if typo is not None:
+                record_slash(
+                    ok=False,
+                    response_text=typo.message,
+                    slash_outcome=typo.outcome,
+                )
+                console.print()
+                console.print(typo.message)
+                return True
+            if cmd.validate_args is not None:
+                validation_error = cmd.validate_args(args)
+                if validation_error is not None:
+                    record_slash(ok=False)
+                    console.print(validation_error)
+                    return True
+            if policy_precleared or not cmd.mutating:
                 if name not in _DEFER_SLASH_RECORDING:
                     record_slash(ok=True)
                 result = cmd.handler(session, console, args)
                 slash_recorded |= name == "/sessions"
                 return result
-            finally:
-                if slash_recorded:
-                    _attach_slash_analytics(
-                        session,
-                        stripped,
-                        captured_output=get_captured(),
-                    )
-    finally:
-        if is_tty is False:
-            if env_backup is None:
-                del os.environ["OPENSRE_INTERACTIVE"]
-            else:
-                os.environ["OPENSRE_INTERACTIVE"] = env_backup
+            policy = allow_tool("slash")
+            if not execution_allowed(
+                policy,
+                session=session,
+                console=console,
+                action_summary=stripped,
+                confirm_fn=confirm_fn,
+                is_tty=is_tty,
+            ):
+                record_slash(ok=False)
+                return True
+            if name not in _DEFER_SLASH_RECORDING:
+                record_slash(ok=True)
+            result = cmd.handler(session, console, args)
+            slash_recorded |= name == "/sessions"
+            return result
+        finally:
+            if slash_recorded:
+                _attach_slash_analytics(
+                    session,
+                    stripped,
+                    captured_output=get_captured(),
+                )
 
 
 __all__ = ["dispatch_slash"]

@@ -25,10 +25,12 @@ from config.constants.git import (
     OPENSRE_COMMIT_COAUTHOR_TRAILER,
 )
 from config.constants.github import GITHUB_TOKEN_CHECKLIST
+from infrastructure.process.turn_capacity import HEAVY_WORK_BUSY_MESSAGE, heavy_work_slot
 from integrations.git.errors import (
     BRANCH_FAILED,
     COMMIT_FAILED,
     GIT_UNAVAILABLE,
+    HEAVY_WORK_BUSY,
     MERGE_FAILED,
     NOT_A_GIT_REPO,
     PROTECTED_BRANCH,
@@ -180,22 +182,31 @@ def clone_repository(url: str, workspace: str, *, token: str | None = None) -> N
     """Clone an HTTPS repository into *workspace* (absent or empty) without prompting.
 
     Credentials stay confined to the child's environment; without a token the
-    clone relies on the repository being public.
+    clone relies on the repository being public. A full clone is memory-heavy, so
+    it waits for a process-wide heavy-work slot and raises ``HEAVY_WORK_BUSY``
+    when none frees in time.
     """
     parsed = urlsplit(url)
     if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
         raise GitCommandError(NOT_A_GIT_REPO, "Cloning requires an HTTPS repository URL.")
     env = _token_auth_env(token, f"https://{parsed.netloc}/") if token else dict(os.environ)
     env["GIT_TERMINAL_PROMPT"] = "0"
-    result = _run_git(
-        os.path.dirname(workspace),
-        "clone",
-        "--",
-        url,
-        workspace,
-        env=env,
-        timeout=_GIT_CLONE_TIMEOUT_SEC,
-    )
+    with heavy_work_slot() as started:
+        result = (
+            _run_git(
+                os.path.dirname(workspace),
+                "clone",
+                "--",
+                url,
+                workspace,
+                env=env,
+                timeout=_GIT_CLONE_TIMEOUT_SEC,
+            )
+            if started
+            else None
+        )
+    if result is None:
+        raise GitCommandError(HEAVY_WORK_BUSY, HEAVY_WORK_BUSY_MESSAGE)
     if result.returncode != 0:
         raise GitCommandError(NOT_A_GIT_REPO, "Could not clone the selected repository.")
 

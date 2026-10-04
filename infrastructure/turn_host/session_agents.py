@@ -9,12 +9,19 @@ once per session — not a second port-construction path.
 from __future__ import annotations
 
 import logging
+import os
 import threading
+from collections import OrderedDict
 from collections.abc import Iterator
 from contextlib import contextmanager
+from itertools import islice
 
 from rich.console import Console
 
+from config.constants.turn_concurrency import (
+    DEFAULT_MAX_CACHED_SESSION_AGENTS,
+    OPENSRE_MAX_CACHED_SESSION_AGENTS_ENV,
+)
 from core.agent_harness import SessionCore, SessionManager
 from core.agent_harness.ports import SlashPortsFactory
 from core.agent_harness.runtime import (
@@ -31,6 +38,31 @@ from infrastructure.turn_host.capability_policy import ensure_gateway_capability
 from infrastructure.turn_host.session_lock import session_execution_lock
 from infrastructure.turn_host.status_messages import status_from_tool_start
 from infrastructure.turn_host.turn_output import TurnOutput
+
+_logger = logging.getLogger(__name__)
+
+
+def configured_session_agent_cap() -> int:
+    """How many sessions may keep a cached agent: the env override, else the default.
+
+    A non-positive or unparseable value is ignored with a warning so a typo
+    cannot disable agent reuse.
+    """
+    override = os.getenv(OPENSRE_MAX_CACHED_SESSION_AGENTS_ENV)
+    if override is not None:
+        try:
+            cap = int(override)
+        except ValueError:
+            cap = 0
+        if cap >= 1:
+            return cap
+        _logger.warning(
+            "Ignoring %s=%r: not a positive integer; using %d.",
+            OPENSRE_MAX_CACHED_SESSION_AGENTS_ENV,
+            override,
+            DEFAULT_MAX_CACHED_SESSION_AGENTS,
+        )
+    return DEFAULT_MAX_CACHED_SESSION_AGENTS
 
 
 class _ToolStatusObserver:
@@ -64,7 +96,13 @@ class _ToolStatusObserver:
 
 
 class SessionAgentPool:
-    """One :class:`HeadlessAgent` (+ live output) per logical session id."""
+    """One :class:`HeadlessAgent` (+ live output) per logical session id.
+
+    At most :func:`configured_session_agent_cap` sessions stay cached; beyond
+    that the least recently handed-out *idle* session is evicted and rebuilt on
+    its next turn. A session with a turn waiting on or holding its lock is never
+    evicted, so the cache can briefly exceed the cap while every entry is busy.
+    """
 
     def __init__(
         self,
@@ -88,33 +126,101 @@ class SessionAgentPool:
         # handing out an agent for the live id drops every other cached entry
         # so rotations do not accumulate unreachable agents, outputs, and locks.
         self._retain_only_current_session = retain_only_current_session
-        self._agents: dict[str, HeadlessAgent] = {}
+        self._max_cached_sessions = configured_session_agent_cap()
+        # Least recently handed out first; the eviction order.
+        self._agents: OrderedDict[str, HeadlessAgent] = OrderedDict()
         self._outputs: dict[str, BindableOutput] = {}
         # One agent serves every turn of a session, and each turn rebinds its
         # session and live output. Turns for the same session must therefore not
         # overlap, or one turn's output goes to the other's output. Different
         # sessions are independent and stay concurrent.
         self._session_locks: dict[str, threading.Lock] = {}
+        # Turns per session from before they wait on its lock until after they
+        # release it. Eviction skips any session counted here: evicting one whose
+        # lock a turn already fetched would let the next turn create a second lock
+        # for the same session, and the two turns would no longer serialize.
+        self._session_claims: dict[str, int] = {}
+        # Guards every map above.
         self._locks_guard = threading.Lock()
 
     def drop_session(self, session_id: str) -> None:
         """Forget a session's cached agent, bindable output, and lock."""
         if not session_id:
             return
-        self._agents.pop(session_id, None)
-        self._outputs.pop(session_id, None)
         with self._locks_guard:
+            self._agents.pop(session_id, None)
+            self._outputs.pop(session_id, None)
             self._session_locks.pop(session_id, None)
 
     def _drop_sessions_except(self, keep_session_id: str) -> None:
-        for session_id in tuple(self._agents):
-            if session_id != keep_session_id:
-                self.drop_session(session_id)
-
-    def _lock_for(self, session_id: str) -> threading.Lock:
-        """The lock guarding one session's agent, created on first use."""
         with self._locks_guard:
-            return self._session_locks.setdefault(session_id, threading.Lock())
+            stale = [session_id for session_id in self._agents if session_id != keep_session_id]
+        for session_id in stale:
+            self.drop_session(session_id)
+
+    @contextmanager
+    def _lock_for(self, session_id: str) -> Iterator[None]:
+        """Hold one session's lock, created on first use; claimed against eviction throughout."""
+        with self._locks_guard:
+            lock = self._session_locks.setdefault(session_id, threading.Lock())
+            self._session_claims[session_id] = self._session_claims.get(session_id, 0) + 1
+        try:
+            with lock:
+                yield
+        finally:
+            with self._locks_guard:
+                self._release_claim(session_id)
+                self._evict_idle_sessions()
+
+    def _release_claim(self, session_id: str) -> None:
+        """Drop one claim; an unclaimed session with no cached agent keeps nothing."""
+        remaining = self._session_claims[session_id] - 1
+        if remaining:
+            self._session_claims[session_id] = remaining
+            return
+        del self._session_claims[session_id]
+        if session_id not in self._agents:
+            # The build failed, or the session was dropped or evicted mid-turn.
+            self._outputs.pop(session_id, None)
+            self._session_locks.pop(session_id, None)
+
+    def _evict_idle_sessions(self) -> None:
+        """Forget the least recently handed-out unclaimed sessions beyond the cap.
+
+        Call with ``_locks_guard`` held.
+        """
+        excess = len(self._agents) - self._max_cached_sessions
+        if excess <= 0:
+            return
+        idle = (session_id for session_id in self._agents if session_id not in self._session_claims)
+        for session_id in list(islice(idle, excess)):
+            del self._agents[session_id]
+            self._outputs.pop(session_id, None)
+            self._session_locks.pop(session_id, None)
+
+    def _cached(self, session_id: str) -> tuple[BindableOutput, HeadlessAgent | None]:
+        """This session's live output and cached agent, marking the session most recent."""
+        if not session_id:
+            return BindableOutput(), None
+        with self._locks_guard:
+            session_output = self._outputs.get(session_id)
+            if session_output is None:
+                session_output = self._outputs[session_id] = BindableOutput()
+            cached = self._agents.get(session_id)
+            if cached is not None:
+                self._agents.move_to_end(session_id)
+            return session_output, cached
+
+    def _cache(self, session_id: str, session_output: BindableOutput, agent: HeadlessAgent) -> None:
+        """Cache a newly built agent with the output it writes through."""
+        with self._locks_guard:
+            # Store the pair together: an unclaimed caller's output may have been
+            # evicted while this agent was built, and a cached agent must never
+            # sit beside a different output than the one it writes through.
+            self._outputs[session_id] = session_output
+            self._agents[session_id] = agent
+            self._agents.move_to_end(session_id)
+            self._evict_idle_sessions()
 
     @contextmanager
     def session_agent(
@@ -163,14 +269,9 @@ class SessionAgentPool:
         session_id = str(getattr(session, "session_id", "") or "")
         if self._retain_only_current_session and session_id:
             self._drop_sessions_except(session_id)
-        session_output = self._outputs.get(session_id) if session_id else None
-        if session_output is None:
-            session_output = BindableOutput()
-            if session_id:
-                self._outputs[session_id] = session_output
+        session_output, cached = self._cached(session_id)
         session_output.bind(output)
 
-        cached = self._agents.get(session_id) if session_id else None
         if cached is not None:
             # Resolve returns a new SessionCore each turn; keep the cached agent
             # but point every session-scoped port at the current object.
@@ -207,13 +308,14 @@ class SessionAgentPool:
             error_reporter=build.error_reporter,
         ).agent(tools=tools, prompts=prompts)
         if session_id:
-            self._agents[session_id] = agent
+            self._cache(session_id, session_output, agent)
         return agent
 
     @property
     def cached_session_ids(self) -> frozenset[str]:
         """Session ids that currently hold a reused agent (test/observability)."""
-        return frozenset(self._agents)
+        with self._locks_guard:
+            return frozenset(self._agents)
 
 
-__all__ = ["SessionAgentPool"]
+__all__ = ["SessionAgentPool", "configured_session_agent_cap"]

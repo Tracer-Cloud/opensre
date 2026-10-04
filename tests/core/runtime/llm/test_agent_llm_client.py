@@ -11,6 +11,7 @@ from core.llm.transports.sdk.agent_clients import (
     AnthropicAgentClient,
     BedrockAgentClient,
     OpenAIAgentClient,
+    _cli_tool_call_input,
     _try_parse_tool_call_json,
 )
 
@@ -825,6 +826,88 @@ def test_openai_gpt_5_6_agent_uses_responses_api_and_replays_reasoning(
     }
 
 
+def _responses_client(create: Any) -> OpenAIAgentClient:
+    client = OpenAIAgentClient.__new__(OpenAIAgentClient)
+    client._client = types.SimpleNamespace(responses=types.SimpleNamespace(create=create))
+    client._model = "gpt-5.6"
+    client._max_tokens = 4096
+    client._api_key_env = "OPENAI_API_KEY"
+    return client
+
+
+def test_responses_requests_key_the_prompt_cache_by_their_system_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Calls sharing a cached prefix share a routing key; other prompts never do."""
+    _install_fake_openai(monkeypatch)
+    captured: list[dict[str, Any]] = []
+    usage = types.SimpleNamespace(
+        input_tokens=29_000,
+        output_tokens=300,
+        input_tokens_details=types.SimpleNamespace(cached_tokens=26_000),
+        output_tokens_details=types.SimpleNamespace(reasoning_tokens=120),
+    )
+
+    def create(**kwargs: Any) -> object:
+        captured.append(kwargs)
+        return types.SimpleNamespace(output=[], output_text="ok", usage=usage)
+
+    client = _responses_client(create)
+    turn = [{"role": "user", "content": "hi"}]
+    first = client.invoke(turn, system="You plan actions. repo=a")
+    client.invoke([*turn, {"role": "user", "content": "more"}], system="You plan actions. repo=a")
+    client.invoke(turn, system="You plan actions. repo=b")
+    client.invoke(turn)
+
+    same_prefix, same_prefix_later, other_prefix, no_system = (
+        call.get("prompt_cache_key") for call in captured
+    )
+    assert same_prefix == same_prefix_later
+    assert other_prefix != same_prefix
+    assert same_prefix is not None and len(same_prefix) <= 128
+    assert no_system is None
+    assert (first.cache_read_tokens, first.reasoning_tokens) == (26_000, 120)
+
+
+def test_chat_completions_requests_carry_no_prompt_cache_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """OpenAI-compatible providers may reject the Responses-only field."""
+    _install_fake_openai(monkeypatch)
+    captured: dict[str, object] = {}
+
+    def capture_create(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return _make_fake_openai_response(content="ok")
+
+    client = OpenAIAgentClient.__new__(OpenAIAgentClient)
+    client._client = types.SimpleNamespace(
+        chat=types.SimpleNamespace(completions=types.SimpleNamespace(create=capture_create))
+    )
+    client._model = "deepseek-chat"
+    client._max_tokens = 4096
+    client._api_key_env = "DEEPSEEK_API_KEY"
+
+    client.invoke([{"role": "user", "content": "hi"}], system="You plan actions.")
+
+    assert "prompt_cache_key" not in captured
+
+
+def test_prewarm_loads_the_responses_path_without_sending_a_request() -> None:
+    """The warm-up runs before the user has asked anything; it must not spend credits."""
+    client = OpenAIAgentClient(
+        model="gpt-5.6",
+        max_tokens=16,
+        # Nothing listens here: any request would raise a connection error.
+        base_url="http://127.0.0.1:9/v1",
+        credential_resolver=lambda _env: "test-key",
+    )
+
+    client.prewarm()
+
+    assert "responses" in vars(client._client)
+
+
 def test_openai_agent_client_omits_parallel_tool_calls_for_compat_provider(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -1334,6 +1417,24 @@ def test_cli_backed_agent_client_tool_call_parsing() -> None:
     assert result.tool_calls[0].name == "my_tool"
     assert result.tool_calls[0].input == {"x": 1}
     assert result.content == ""
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        {"name": "shell_run", "input": {"command": "ls"}},
+        {"name": "shell_run", "input": '{"command": "ls"}'},
+        {"name": "shell_run", "arguments": '{"command": "ls"}'},
+        {"name": "shell_run", "arguments": {"command": "ls"}},
+    ],
+)
+def test_cli_tool_call_input_reads_openai_style_envelopes(call: dict[str, Any]) -> None:
+    """A JSON-string or ``arguments`` envelope must not drop the call's args to ``{}``."""
+    assert _cli_tool_call_input(call) == {"command": "ls"}
+
+
+def test_cli_tool_call_input_unparseable_arguments_stay_empty() -> None:
+    assert _cli_tool_call_input({"name": "shell_run", "input": '{"command": "ls'}) == {}
 
 
 def test_cli_backed_agent_client_build_assistant_message_includes_tool_json() -> None:

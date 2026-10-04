@@ -2,29 +2,45 @@
 
 from __future__ import annotations
 
-import threading
+import functools
+import itertools
+import math
 import time
 from collections.abc import Callable
-from concurrent.futures import Future, ThreadPoolExecutor, as_completed
+from concurrent.futures import Future
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from http import HTTPStatus
 from typing import Any
 from urllib.parse import quote
 
-from integrations.github.client import GitHubApiError, GitHubRestClient
+from integrations.github.client import (
+    GitHubApiError,
+    GitHubRestClient,
+    JsonPayload,
+    next_page_url,
+)
+from integrations.github.tools.ci_analytics.fanout import RequestFanout
 from integrations.github.tools.ci_analytics.metrics import PullRequestIdentity
 from integrations.github.tools.ci_analytics.models import MergedPullRequest, WorkflowRun
 
 _PER_PAGE = 100
 # GitHub stops paging a workflow-run listing at 1,000 rows however far you page,
-# so a window is fetched in time slices that are split until each fits.
+# so a window is fetched in time slices that each fit under it.
 _LIST_CEILING = 1000
 _MAX_RUN_PAGES_PER_SLICE = _LIST_CEILING // _PER_PAGE
+# A split aims each slice at this share of the ceiling, so ordinary unevenness
+# in activity rarely leaves one of them still over it.
+_SLICE_FILL = 0.9
 _MIN_SLICE = timedelta(hours=1)
-_SLICE_WORKERS = 6
+# Every request of one analysis shares this many connections: enough to read a
+# busy month's listings in a few round trips, few enough to stay polite to the
+# API (GitHub allows at most 100 concurrent requests per user).
+_MAX_WORKERS = 16
 _MAX_PR_PAGES = 30
-_MAX_RERUN_WORKERS = 8
+# Closed-PR pages requested ahead of the one being read. The scan stops at the
+# window's edge, so at most this many requests past it are wasted.
+_PR_PAGES_AHEAD = 3
 # Each passing re-run costs up to attempt-1 extra requests; bound the total so
 # a very flaky repository cannot turn the demo into minutes of API calls.
 _MAX_ATTEMPT_LOOKUPS = 500
@@ -49,6 +65,7 @@ class CollectedRuns:
 
 
 ProgressFn = Callable[[str], None]
+_Rows = list[dict[str, Any]]
 
 
 def collect_runs(
@@ -64,129 +81,379 @@ def collect_runs(
 
     ``progress`` receives one short line as each stage finishes, so a surface
     can show that a long read is moving instead of a silent wait.
+
+    Every request shares one bounded pool, and the pull request listings start
+    alongside the repository read because neither needs the default branch.
+    The first failure cancels the requests still queued and raises at once.
     """
-    say = progress or (lambda _line: None)
-    started = time.monotonic()
-
-    def elapsed() -> str:
-        return f"{time.monotonic() - started:.0f}s"
-
-    root = f"/repos/{_segment(owner)}/{_segment(repo)}"
-    repository = client.request("GET", root)
-    default_branch = (
-        str(repository.get("default_branch") or "").strip() if isinstance(repository, dict) else ""
+    collection = _Collection(
+        client,
+        root=f"/repos/{_segment(owner)}/{_segment(repo)}",
+        label=f"{owner}/{repo}",
+        since=now - timedelta(days=window_days),
+        until=now,
+        window_days=window_days,
+        say=progress or (lambda _line: None),
     )
-    if not default_branch:
-        raise ValueError(f"GitHub repository {owner}/{repo} has no readable default branch.")
-    since = now - timedelta(days=window_days)
-    notices: list[str] = []
-    say(
-        f"Reading {default_branch} runs, pull request runs and merged pull requests "
-        f"of the last {window_days} days in parallel…"
-    )
-    # Each scope is an independent paginated listing; fetching them together
-    # keeps the demo well under a minute on busy repositories.
-    with ThreadPoolExecutor(max_workers=len(_DEFAULT_BRANCH_EVENTS) + 2) as pool:
-        branch_futures = [
-            pool.submit(
-                _runs,
-                client,
-                root,
-                params={"branch": default_branch, "event": event},
-                scope=f"{default_branch} {event} runs",
-                since=since,
-                until=now,
-                notices=notices,
-            )
-            for event in _DEFAULT_BRANCH_EVENTS
-        ]
-        pr_future = pool.submit(
-            _runs,
-            client,
+    return collection.run()
+
+
+class _Narration:
+    """Progress lines in reading order: a stage that finishes before the opening line waits for it."""
+
+    def __init__(self, say: ProgressFn) -> None:
+        self._say = say
+        self._started = time.monotonic()
+        self._held: list[str] | None = []
+
+    def elapsed(self) -> str:
+        return f"{time.monotonic() - self._started:.0f}s"
+
+    def open(self, line: str) -> None:
+        self._say(line)
+        held, self._held = self._held or [], None
+        for waiting in held:
+            self._say(waiting)
+
+    def stage(self, line: str) -> None:
+        if self._held is None:
+            self._say(line)
+        else:
+            self._held.append(line)
+
+
+class _Collection:
+    """One repository window read through one fan-out; every handler runs on the calling thread."""
+
+    def __init__(
+        self,
+        client: GitHubRestClient,
+        *,
+        root: str,
+        label: str,
+        since: datetime,
+        until: datetime,
+        window_days: int,
+        say: ProgressFn,
+    ) -> None:
+        self._client = client
+        self._root = root
+        self._label = label
+        self._since = since
+        self._until = until
+        self._window_days = window_days
+        self._narration = _Narration(say)
+        self._fanout = RequestFanout(workers=_MAX_WORKERS, thread_name_prefix="github-ci-analytics")
+        self._notices: list[str] = []
+        self._default_branch = ""
+        self._branch_runs: dict[str, list[WorkflowRun]] = {}
+        self._listed_pr_runs: list[WorkflowRun] | None = None
+        self._merged: tuple[MergedPullRequest, ...] | None = None
+        self._pr_runs: list[WorkflowRun] = []
+        self._reruns = 0
+
+    def run(self) -> CollectedRuns:
+        root = self._root
+        self._fanout.submit(lambda: self._client.request("GET", root), self._on_repository)
+        self._list_runs({"event": _PR_EVENT}, scope="pull request runs", done=self._on_pr_runs)
+        _MergedPullScan(
+            self._fanout,
+            self._client,
             root,
-            params={"event": _PR_EVENT},
-            scope="pull request runs",
-            since=since,
-            until=now,
-            notices=notices,
+            since=self._since,
+            notices=self._notices,
+            done=self._on_merged,
+        ).start()
+        self._fanout.run()
+        if self._reruns:
+            self._narration.stage(
+                f"Attempt history checked ({self._narration.elapsed()}); computing the report."
+            )
+        return CollectedRuns(
+            default_branch=self._default_branch,
+            branch_runs=[
+                run for event in _DEFAULT_BRANCH_EVENTS for run in self._branch_runs[event]
+            ],
+            pr_runs=self._pr_runs,
+            merged_prs=self._merged or (),
+            coverage_notices=self._notices,
         )
-        merged_future = pool.submit(_merged_prs, client, root, since=since, notices=notices)
-        labels: dict[Future[Any], str] = {
-            future: f"{default_branch} {event} runs"
-            for future, event in zip(branch_futures, _DEFAULT_BRANCH_EVENTS, strict=True)
-        }
-        labels[pr_future] = "pull request runs"
-        labels[merged_future] = "merged pull requests"
-        for future in as_completed(list(labels)):
-            say(f"{labels[future]}: {len(future.result())} read ({elapsed()})")
-        branch_runs = [run for future in branch_futures for run in future.result()]
-        merged = merged_future.result()
-        listed = pr_future.result()
-        reruns = sum(1 for run in listed if run.succeeded and run.attempt > 1)
-        if reruns:
-            say(f"Checking the attempt history of {reruns} re-run pull request runs…")
-        # Only PR reruns affect failure rate and blocked time; skip extra
-        # attempt fetches on default-branch listings.
-        pr_runs = _annotate_reruns(client, root, listed, merged=merged, notices=notices)
-        if reruns:
-            say(f"Attempt history checked ({elapsed()}); computing the report.")
-    return CollectedRuns(
-        default_branch=default_branch,
-        branch_runs=branch_runs,
-        pr_runs=pr_runs,
-        merged_prs=merged,
-        coverage_notices=notices,
-    )
+
+    def _on_repository(self, future: Future[JsonPayload]) -> None:
+        repository = future.result()
+        branch = (
+            str(repository.get("default_branch") or "").strip()
+            if isinstance(repository, dict)
+            else ""
+        )
+        if not branch:
+            raise ValueError(f"GitHub repository {self._label} has no readable default branch.")
+        self._default_branch = branch
+        self._narration.open(
+            f"Reading {branch} runs, pull request runs and merged pull requests "
+            f"of the last {self._window_days} days in parallel…"
+        )
+        for event in _DEFAULT_BRANCH_EVENTS:
+            self._list_runs(
+                {"branch": branch, "event": event},
+                scope=f"{branch} {event} runs",
+                done=functools.partial(self._on_branch_runs, event),
+            )
+
+    def _on_branch_runs(self, event: str, runs: list[WorkflowRun]) -> None:
+        self._branch_runs[event] = runs
+
+    def _list_runs(
+        self,
+        params: dict[str, Any],
+        *,
+        scope: str,
+        done: Callable[[list[WorkflowRun]], None],
+    ) -> None:
+        def finish(rows: _Rows, truncated: int) -> None:
+            if truncated:
+                self._notices.append(
+                    f"Coverage notice: {scope} exceeded GitHub's listing ceiling in "
+                    f"{truncated} one-hour {'slice' if truncated == 1 else 'slices'}; "
+                    "those hours are partially counted."
+                )
+            runs = _completed_runs(rows, since=self._since)
+            self._narration.stage(f"{scope}: {len(runs)} read ({self._narration.elapsed()})")
+            done(runs)
+
+        _RunListing(
+            self._fanout,
+            self._client,
+            f"{self._root}/actions/runs",
+            params,
+            since=self._since,
+            until=self._until,
+            done=finish,
+        ).start()
+
+    def _on_pr_runs(self, runs: list[WorkflowRun]) -> None:
+        self._listed_pr_runs = runs
+        self._check_reruns()
+
+    def _on_merged(self, merged: tuple[MergedPullRequest, ...]) -> None:
+        self._merged = merged
+        self._narration.stage(
+            f"merged pull requests: {len(merged)} read ({self._narration.elapsed()})"
+        )
+        self._check_reruns()
+
+    def _check_reruns(self) -> None:
+        """Once PR runs and merged PRs are both read, prove which re-runs hid a failure.
+
+        Only PR re-runs affect failure rate and blocked time; default-branch
+        listings need no attempt fetches, so they keep reading meanwhile.
+        """
+        listed, merged = self._listed_pr_runs, self._merged
+        if listed is None or merged is None:
+            return
+        self._reruns = sum(1 for run in listed if run.succeeded and run.attempt > 1)
+        if self._reruns:
+            self._narration.stage(
+                f"Checking the attempt history of {self._reruns} re-run pull request runs…"
+            )
+        _RerunHistory(
+            self._fanout,
+            self._client,
+            self._root,
+            listed,
+            merged=merged,
+            notices=self._notices,
+            done=self._on_pr_annotated,
+        ).start()
+
+    def _on_pr_annotated(self, runs: list[WorkflowRun]) -> None:
+        self._pr_runs = runs
 
 
 @dataclass(frozen=True)
-class _Slice:
-    """One time slice of a listing and whether GitHub reported more than the ceiling."""
+class _Window:
+    """A ``created`` range of one listing; ``key`` sorts slices chronologically."""
 
+    key: tuple[int, ...]
     start: datetime
     end: datetime
-    rows: list[dict[str, Any]]
-    over_ceiling: bool
+
+    @property
+    def width(self) -> timedelta:
+        return self.end - self.start
 
 
-def _runs(
-    client: GitHubRestClient,
-    root: str,
-    *,
-    params: dict[str, Any],
-    scope: str,
-    since: datetime,
-    until: datetime,
-    notices: list[str],
-) -> list[WorkflowRun]:
-    """Completed runs created in ``[since, until]``, complete despite the listing ceiling.
+class _RunListing:
+    """Completed runs of one listing created in ``[since, until]``, despite the listing ceiling.
 
-    A slice GitHub reports as larger than the ceiling is split in half and
-    refetched; a slice at the minimum width that is still over it is kept as
-    far as it goes and reported as a coverage gap.
+    Each window is probed with a one-row page for GitHub's ``total_count``. A
+    window over the ceiling is split in one step into equal slices sized to
+    fit (a slice still over it is split again); the pages of a window that
+    fits are read concurrently. A window at the minimum width that is still
+    over the ceiling keeps what GitHub lists and counts as truncated.
+    ``done`` receives the rows newest slice first, each in page order: the
+    order one listing without the ceiling would return, however the window
+    was split.
     """
-    rows: list[dict[str, Any]] = []
-    truncated = 0
-    pending = [(since, until)]
-    with ThreadPoolExecutor(max_workers=_SLICE_WORKERS) as pool:
-        while pending:
-            fetched = list(pool.map(lambda w: _fetch_slice(client, root, params, w), pending))
-            pending = []
-            for piece in fetched:
-                if not piece.over_ceiling:
-                    rows.extend(piece.rows)
-                elif piece.end - piece.start <= _MIN_SLICE:
-                    rows.extend(piece.rows)
-                    truncated += 1
-                else:
-                    middle = piece.start + (piece.end - piece.start) / 2
-                    pending.extend([(piece.start, middle), (middle, piece.end)])
-    if truncated:
-        notices.append(
-            f"Coverage notice: {scope} exceeded GitHub's listing ceiling in "
-            f"{truncated} one-hour {'slice' if truncated == 1 else 'slices'}; "
-            "those hours are partially counted."
+
+    def __init__(
+        self,
+        fanout: RequestFanout,
+        client: GitHubRestClient,
+        path: str,
+        params: dict[str, Any],
+        *,
+        since: datetime,
+        until: datetime,
+        done: Callable[[_Rows, int], None],
+    ) -> None:
+        self._fanout = fanout
+        self._client = client
+        self._path = path
+        self._params = params
+        self._root_window = _Window((), since, until)
+        self._done = done
+        self._pages: dict[tuple[int, ...], dict[int, _Rows]] = {}
+        self._in_flight = 0
+        self._truncated = 0
+
+    def start(self) -> None:
+        self._probe(self._root_window)
+
+    def _submit(self, call: Callable[[], Any], handle: Callable[[Any], None]) -> None:
+        """Queue one request; the listing is done once a handler leaves none in flight."""
+
+        def settle(future: Future[Any]) -> None:
+            self._in_flight -= 1
+            handle(future.result())
+            if self._in_flight == 0:
+                self._done(self._rows(), self._truncated)
+
+        self._in_flight += 1
+        self._fanout.submit(call, settle)
+
+    def _query(self, window: _Window, **extra: int) -> dict[str, Any]:
+        return {
+            **self._params,
+            "status": "completed",
+            "created": f"{_iso_utc(window.start)}..{_iso_utc(window.end)}",
+            **extra,
+        }
+
+    def _probe(self, window: _Window) -> None:
+        query = self._query(window, per_page=1)
+        self._submit(
+            lambda: self._client.request("GET", self._path, params=query),
+            lambda payload: self._on_probe(window, payload),
         )
+
+    def _on_probe(self, window: _Window, payload: JsonPayload) -> None:
+        """Split, read in pages, or keep the probe row, as the window's total requires.
+
+        Exactly the ceiling is a complete listing; only a larger total is over
+        it. GitHub caps ``total_count`` on very large listings, so a slice cut
+        from a capped total can still be over and is split again.
+        """
+        total = payload.get("total_count") if isinstance(payload, dict) else None
+        rows = payload.get("workflow_runs") if isinstance(payload, dict) else None
+        if not isinstance(total, int):
+            self._read_unsized(window)
+            return
+        if total > _LIST_CEILING and window.width > _MIN_SLICE:
+            for piece in _slices(window, total):
+                self._probe(piece)
+            return
+        if total <= 1 and isinstance(rows, list):
+            self._store(window, 1, rows)
+            return
+        if total > _LIST_CEILING:
+            self._truncated += 1
+        pages = math.ceil(min(total, _LIST_CEILING) / _PER_PAGE)
+        for page in range(1, pages + 1):
+            self._read_page(window, page, last=page == pages)
+
+    def _read_page(self, window: _Window, page: int, *, last: bool) -> None:
+        query = self._query(window, per_page=_PER_PAGE, page=page)
+        self._submit(
+            lambda: self._client.request_with_headers("GET", self._path, params=query),
+            lambda response: self._on_page(window, page, response, last=last),
+        )
+
+    def _on_page(
+        self,
+        window: _Window,
+        page: int,
+        response: tuple[JsonPayload, dict[str, str]],
+        *,
+        last: bool,
+    ) -> None:
+        payload, headers = response
+        rows = payload.get("workflow_runs") if isinstance(payload, dict) else None
+        self._store(window, page, rows if isinstance(rows, list) else [])
+        # The page count came from the probe; a listing that grew since then
+        # still links one more page from its last one.
+        if last and page < _MAX_RUN_PAGES_PER_SLICE and next_page_url(headers):
+            self._read_page(window, page + 1, last=True)
+
+    def _read_unsized(self, window: _Window) -> None:
+        """Without a ``total_count``, page by links and treat a full listing as over the ceiling."""
+        query = self._query(window, per_page=_PER_PAGE)
+
+        def handle(rows: _Rows) -> None:
+            over = len(rows) >= _LIST_CEILING
+            if over and window.width > _MIN_SLICE:
+                for piece in _cut(window, 2):
+                    self._probe(piece)
+                return
+            if over:
+                self._truncated += 1
+            self._store(window, 1, rows)
+
+        self._submit(
+            lambda: self._client.paginate(
+                self._path,
+                params=query,
+                collection_key="workflow_runs",
+                max_pages=_MAX_RUN_PAGES_PER_SLICE,
+            ),
+            handle,
+        )
+
+    def _store(self, window: _Window, page: int, rows: list[Any]) -> None:
+        self._pages.setdefault(window.key, {})[page] = [
+            row for row in rows if isinstance(row, dict)
+        ]
+
+    def _rows(self) -> _Rows:
+        return [
+            row
+            for key in sorted(self._pages, reverse=True)
+            for page in sorted(self._pages[key])
+            for row in self._pages[key][page]
+        ]
+
+
+def _slices(window: _Window, total: int) -> list[_Window]:
+    """``window`` cut into equal slices sized to fit under the ceiling, in one step.
+
+    At least two, and none narrower than the minimum slice unless the window
+    is less than two of them wide, which halves it.
+    """
+    wanted = math.ceil(total / (_LIST_CEILING * _SLICE_FILL))
+    return _cut(window, max(2, min(wanted, window.width // _MIN_SLICE)))
+
+
+def _cut(window: _Window, count: int) -> list[_Window]:
+    bounds = [window.start + window.width * index / count for index in range(count)]
+    bounds.append(window.end)
+    return [
+        _Window((*window.key, index), start, end)
+        for index, (start, end) in enumerate(itertools.pairwise(bounds))
+    ]
+
+
+def _completed_runs(rows: _Rows, *, since: datetime) -> list[WorkflowRun]:
+    """Parsed runs created at or after ``since``; slices overlap at their edges, so ids dedupe."""
     seen: set[int] = set()
     parsed: list[WorkflowRun] = []
     for row in rows:
@@ -198,94 +465,107 @@ def _runs(
     return parsed
 
 
-def _fetch_slice(
-    client: GitHubRestClient,
-    root: str,
-    params: dict[str, Any],
-    window: tuple[datetime, datetime],
-) -> _Slice:
-    """Fetch one slice; a slice over the ceiling costs one request unless it is the minimum width.
-
-    The first page carries GitHub's ``total_count``. Exactly the ceiling is a
-    complete listing; only a larger total is over it. Without a total the row
-    count is the fallback signal.
-    """
-    start, end = window
-    query = {
-        **params,
-        "status": "completed",
-        "created": f"{_iso_utc(start)}..{_iso_utc(end)}",
-        "per_page": _PER_PAGE,
-    }
-    path = f"{root}/actions/runs"
-    first = client.request("GET", path, params=query)
-    total = first.get("total_count") if isinstance(first, dict) else None
-    first_rows = first.get("workflow_runs") if isinstance(first, dict) else None
-    over = total > _LIST_CEILING if isinstance(total, int) else None
-    if over and end - start > _MIN_SLICE:
-        return _Slice(start, end, [], over_ceiling=True)
-    if isinstance(total, int) and total <= _PER_PAGE and isinstance(first_rows, list):
-        return _Slice(
-            start, end, [r for r in first_rows if isinstance(r, dict)], over_ceiling=False
-        )
-    rows = client.paginate(
-        path, params=query, collection_key="workflow_runs", max_pages=_MAX_RUN_PAGES_PER_SLICE
-    )
-    if over is None:
-        over = len(rows) >= _LIST_CEILING
-    return _Slice(start, end, rows, over_ceiling=over)
-
-
-def _merged_prs(
-    client: GitHubRestClient,
-    root: str,
-    *,
-    since: datetime,
-    notices: list[str],
-) -> tuple[MergedPullRequest, ...]:
+class _MergedPullScan:
     """Merged PRs inside the window, keyed by number and head repository.
 
-    Closed PRs come newest-updated first, so paging stops as soon as a page
-    ends before the window; only a window busier than the page cap is flagged.
+    Closed PRs come newest-updated first, so the scan stops at the first page
+    that ends before the window; only a window busier than the page cap is
+    flagged. A few pages are requested ahead but read strictly in page order,
+    so a page past the stopping point changes nothing, not even by failing.
 
-    The repository itself was already read, so a 404 here is GitHub's answer
-    for a repository with pull requests disabled (mirrors, import-only trees):
-    the run-based metrics still hold and the missing PR view is reported.
+    A missing repository fails its own read, so a 404 here is GitHub's answer
+    for a repository with pull requests disabled (mirrors, import-only
+    trees): the run-based metrics still hold and the missing PR view is
+    reported.
     """
-    merged: list[MergedPullRequest] = []
-    for page in range(1, _MAX_PR_PAGES + 1):
+
+    def __init__(
+        self,
+        fanout: RequestFanout,
+        client: GitHubRestClient,
+        root: str,
+        *,
+        since: datetime,
+        notices: list[str],
+        done: Callable[[tuple[MergedPullRequest, ...]], None],
+    ) -> None:
+        self._fanout = fanout
+        self._client = client
+        self._path = f"{root}/pulls"
+        self._since = since
+        self._notices = notices
+        self._done = done
+        self._arrived: dict[int, Future[JsonPayload]] = {}
+        self._requested = 0
+        self._read_through = 0
+        self._stopped = False
+        self._merged: dict[int, MergedPullRequest] = {}
+
+    def start(self) -> None:
+        for _ in range(_PR_PAGES_AHEAD):
+            self._request_next()
+
+    def _request_next(self) -> None:
+        if self._requested >= _MAX_PR_PAGES:
+            return
+        self._requested += 1
+        page = self._requested
+        params = {
+            "state": "closed",
+            "sort": "updated",
+            "direction": "desc",
+            "per_page": _PER_PAGE,
+            "page": page,
+        }
+        self._fanout.submit(
+            lambda: self._client.request("GET", self._path, params=params),
+            lambda future: self._on_page(page, future),
+        )
+
+    def _on_page(self, page: int, future: Future[JsonPayload]) -> None:
+        if self._stopped:
+            return
+        self._arrived[page] = future
+        while not self._stopped and self._read_through + 1 in self._arrived:
+            self._read_through += 1
+            self._read(self._arrived.pop(self._read_through))
+
+    def _read(self, future: Future[JsonPayload]) -> None:
         try:
-            payload = client.request(
-                "GET",
-                f"{root}/pulls",
-                params={
-                    "state": "closed",
-                    "sort": "updated",
-                    "direction": "desc",
-                    "per_page": _PER_PAGE,
-                    "page": page,
-                },
-            )
+            payload = future.result()
         except GitHubApiError as exc:
             if exc.status_code != HTTPStatus.NOT_FOUND:
                 raise
-            notices.append(_PULLS_DISABLED_NOTICE)
-            return ()
+            self._notices.append(_PULLS_DISABLED_NOTICE)
+            self._stop(())
+            return
         rows = (
             [row for row in payload if isinstance(row, dict)] if isinstance(payload, list) else []
         )
         if not rows:
-            break
-        merged.extend(pr for pr in (_merged_pr(row, since=since) for row in rows) if pr is not None)
+            self._stop()
+            return
+        for pr in (_merged_pr(row, since=self._since) for row in rows):
+            if pr is not None:
+                # A PR updated mid-scan moves up the listing and can be read twice.
+                self._merged.setdefault(pr.number, pr)
         oldest_update = _timestamp(rows[-1].get("updated_at"))
-        if len(rows) < _PER_PAGE or (oldest_update is not None and oldest_update < since):
-            break
-    else:
-        notices.append(
-            f"Coverage notice: merged PR detection limited to the {_MAX_PR_PAGES * _PER_PAGE} "
-            "most recently updated closed PRs."
-        )
-    return tuple(merged)
+        if len(rows) < _PER_PAGE or (oldest_update is not None and oldest_update < self._since):
+            self._stop()
+            return
+        if self._read_through >= _MAX_PR_PAGES:
+            self._notices.append(
+                f"Coverage notice: merged PR detection limited to the {_MAX_PR_PAGES * _PER_PAGE} "
+                "most recently updated closed PRs."
+            )
+            self._stop()
+            return
+        self._request_next()
+
+    def _stop(self, merged: tuple[MergedPullRequest, ...] | None = None) -> None:
+        self._stopped = True
+        self._arrived.clear()
+        self._done(tuple(self._merged.values()) if merged is None else merged)
 
 
 def _merged_pr(row: dict[str, Any], *, since: datetime) -> MergedPullRequest | None:
@@ -336,109 +616,117 @@ def parse_run(row: dict[str, Any]) -> WorkflowRun | None:
     )
 
 
-class _AttemptLookups:
-    """Thread-safe budget and tally for the per-attempt history requests."""
-
-    def __init__(self, budget: int) -> None:
-        self._lock = threading.Lock()
-        self._remaining = budget
-        self.unchecked = 0
-        self.unavailable = 0
-
-    def take(self) -> bool:
-        with self._lock:
-            if self._remaining <= 0:
-                return False
-            self._remaining -= 1
-            return True
-
-    def skipped(self) -> None:
-        with self._lock:
-            self.unchecked += 1
-
-    def failed(self) -> None:
-        with self._lock:
-            self.unavailable += 1
-
-
-def _annotate_reruns(
-    client: GitHubRestClient,
-    root: str,
-    runs: list[WorkflowRun],
-    *,
-    merged: tuple[MergedPullRequest, ...],
-    notices: list[str],
-) -> list[WorkflowRun]:
+class _RerunHistory:
     """Attach earlier-failure times so a later attempt is not assumed to hide a flake.
 
     Re-runs on merged PRs are checked as a first phase, so the shared lookup
     budget is spent on them before any other re-run competes for it; they are
-    the ones that feed blocked time. A re-run whose history could not be read,
-    or fell outside the budget, stays a plain success and is reported in a
-    coverage notice rather than silently shrinking the failure counts.
+    the ones that feed blocked time. When the budget covers every lookup the
+    re-runs could need, nothing competes and all of them are checked at once.
+    A re-run whose history could not be read, or fell outside the budget,
+    stays a plain success and is reported in a coverage notice rather than
+    silently shrinking the failure counts.
     """
-    reruns = [run for run in runs if run.succeeded and run.attempt > 1]
-    if not reruns:
-        return runs
-    # Same rule as the blocked-time metric, so priority and critical path agree.
-    identity = PullRequestIdentity(merged)
-    lookups = _AttemptLookups(_MAX_ATTEMPT_LOOKUPS)
-    checked: dict[int, WorkflowRun] = {}
-    for phase in (
-        [run for run in reruns if identity.on_critical_path(run)],
-        [run for run in reruns if not identity.on_critical_path(run)],
-    ):
-        if not phase:
-            continue
-        with ThreadPoolExecutor(max_workers=min(_MAX_RERUN_WORKERS, len(phase))) as pool:
-            results = list(
-                pool.map(lambda run: _with_earlier_failure(client, root, run, lookups), phase)
-            )
-        checked.update({run.run_id: result for run, result in zip(phase, results, strict=True)})
-    annotated = [checked.get(run.run_id, run) for run in runs]
-    if lookups.unavailable:
-        notices.append(
-            f"Re-run history could not be read for {lookups.unavailable} "
-            f"re-run{'s' if lookups.unavailable != 1 else ''}; counted as passes."
+
+    def __init__(
+        self,
+        fanout: RequestFanout,
+        client: GitHubRestClient,
+        root: str,
+        runs: list[WorkflowRun],
+        *,
+        merged: tuple[MergedPullRequest, ...],
+        notices: list[str],
+        done: Callable[[list[WorkflowRun]], None],
+    ) -> None:
+        self._fanout = fanout
+        self._client = client
+        self._root = root
+        self._runs = runs
+        self._notices = notices
+        self._done = done
+        self._budget = _MAX_ATTEMPT_LOOKUPS
+        self._unchecked = 0
+        self._unavailable = 0
+        self._earlier_failure: dict[int, datetime] = {}
+        self._open = 0
+        reruns = [run for run in runs if run.succeeded and run.attempt > 1]
+        if sum(run.attempt - 1 for run in reruns) <= self._budget:
+            phases = [reruns]
+        else:
+            # Same rule as the blocked-time metric, so priority and critical path agree.
+            identity = PullRequestIdentity(merged)
+            phases = [
+                [run for run in reruns if identity.on_critical_path(run)],
+                [run for run in reruns if not identity.on_critical_path(run)],
+            ]
+        self._phases = [phase for phase in phases if phase]
+
+    def start(self) -> None:
+        self._next_phase()
+
+    def _next_phase(self) -> None:
+        if not self._phases:
+            self._finish()
+            return
+        phase = self._phases.pop(0)
+        self._open = len(phase)
+        for run in phase:
+            self._look_up(run, attempt=1)
+
+    def _look_up(self, run: WorkflowRun, *, attempt: int) -> None:
+        if self._budget <= 0:
+            self._unchecked += 1
+            self._settle()
+            return
+        self._budget -= 1
+        path = f"{self._root}/actions/runs/{run.run_id}/attempts/{attempt}"
+        self._fanout.submit(
+            lambda: self._client.request("GET", path),
+            lambda future: self._on_attempt(run, attempt, future),
         )
-    if lookups.unchecked:
-        notices.append(
-            f"Re-run history was checked for the first {_MAX_ATTEMPT_LOOKUPS} runs; "
-            f"{lookups.unchecked} later re-run{'s' if lookups.unchecked != 1 else ''} "
-            "counted as passes."
-        )
-    return annotated
 
-
-def _with_earlier_failure(
-    client: GitHubRestClient, root: str, run: WorkflowRun, lookups: _AttemptLookups
-) -> WorkflowRun:
-    if not run.succeeded or run.attempt <= 1:
-        return run
-    started = _earlier_failure_started_at(client, root, run, lookups)
-    if started is None:
-        return run
-    return replace(run, earlier_failure_started_at=started)
-
-
-def _earlier_failure_started_at(
-    client: GitHubRestClient, root: str, run: WorkflowRun, lookups: _AttemptLookups
-) -> datetime | None:
-    for attempt in range(1, run.attempt):
-        if not lookups.take():
-            lookups.skipped()
-            return None
+    def _on_attempt(self, run: WorkflowRun, attempt: int, future: Future[JsonPayload]) -> None:
         try:
-            row = client.request("GET", f"{root}/actions/runs/{run.run_id}/attempts/{attempt}")
+            row = future.result()
         except GitHubApiError:
-            lookups.failed()
-            return None
-        if not isinstance(row, dict):
-            continue
-        previous = parse_run(row)
+            self._unavailable += 1
+            self._settle()
+            return
+        previous = parse_run(row) if isinstance(row, dict) else None
         if previous is not None and previous.failed:
-            return previous.started_at
-    return None
+            self._earlier_failure[run.run_id] = previous.started_at
+        elif attempt + 1 < run.attempt:
+            self._look_up(run, attempt=attempt + 1)
+            return
+        self._settle()
+
+    def _settle(self) -> None:
+        """One re-run of the current phase is decided; the last one opens the next phase."""
+        self._open -= 1
+        if self._open == 0:
+            self._next_phase()
+
+    def _finish(self) -> None:
+        if self._unavailable:
+            self._notices.append(
+                f"Re-run history could not be read for {self._unavailable} "
+                f"re-run{'s' if self._unavailable != 1 else ''}; counted as passes."
+            )
+        if self._unchecked:
+            self._notices.append(
+                f"Re-run history was checked for the first {_MAX_ATTEMPT_LOOKUPS} runs; "
+                f"{self._unchecked} later re-run{'s' if self._unchecked != 1 else ''} "
+                "counted as passes."
+            )
+        self._done(
+            [
+                replace(run, earlier_failure_started_at=self._earlier_failure[run.run_id])
+                if run.run_id in self._earlier_failure
+                else run
+                for run in self._runs
+            ]
+        )
 
 
 def _head_repo(row: dict[str, Any]) -> str:

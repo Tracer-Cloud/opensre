@@ -2,9 +2,11 @@
 
 One best-effort LLM pass over a chat transcript. Callers schedule it via
 :func:`schedule_memory_extraction` after every recorded turn and again on
-session close / rotation. Mid-session runs coalesce onto a single daemon worker
-so rapid turns do not pile up provider calls. Process-exit close waits for
-extraction to finish (interruptible by Ctrl+C) so durable facts always persist.
+session close / rotation. Mid-session runs coalesce per session onto a single
+daemon worker: a session's newest transcript replaces only its own unprocessed
+one, so rapid turns do not pile up provider calls and concurrent sessions never
+drop each other's facts. Process-exit close waits for extraction to finish
+(interruptible by Ctrl+C) so durable facts always persist.
 Never raises out: any failure (LLM unavailable, malformed output, disk errors)
 is logged and ignored. Environment gates can disable the whole feature or only
 the extraction pass.
@@ -17,6 +19,7 @@ import json
 import logging
 import re
 import threading
+from dataclasses import dataclass
 from typing import Any, Protocol
 
 from core.domain.memory import (
@@ -132,9 +135,19 @@ Return [] when nothing qualifies. At most {max_memories} items.
 {transcript}
 """
 
+
+@dataclass(frozen=True, slots=True)
+class _PendingExtraction:
+    """One session's newest unprocessed transcript and the context it was scheduled in."""
+
+    messages: list[tuple[str, str]]
+    context: contextvars.Context
+
+
 _worker_lock = threading.Lock()
-_pending_messages: list[tuple[str, str]] | None = None
-_pending_context: contextvars.Context | None = None
+# Newest unprocessed snapshot per session id, in first-scheduled order. A newer
+# snapshot replaces only its own session's entry and keeps that entry's place.
+_pending: dict[str, _PendingExtraction] = {}
 _worker: threading.Thread | None = None
 
 
@@ -147,15 +160,18 @@ class _ChatSession(Protocol):
 def schedule_memory_extraction(
     messages: list[tuple[str, str]],
     *,
+    session_id: str,
     wait_for_completion: bool = False,
 ) -> None:
     """Snapshot ``messages`` and extract memories.
 
-    When ``wait_for_completion`` is true (session ``close`` / process exit), run
+    ``session_id`` keys coalescing, so it is required: a newer snapshot replaces
+    only the same session's unprocessed one, never another session's. When
+    ``wait_for_completion`` is true (session ``close`` / process exit), run
     synchronously so durable facts always land before the process ends. Turn and
-    rotation paths leave it false: a single daemon worker coalesces the latest
-    transcript so inbound handling is not stalled and rapid turns share one LLM
-    call.
+    rotation paths leave it false: a single daemon worker drains each session's
+    latest transcript so inbound handling is not stalled and rapid turns in one
+    session share one LLM call.
     """
     if not auto_extract_enabled():
         return
@@ -163,10 +179,9 @@ def schedule_memory_extraction(
     if len(snapshot) < MIN_CHAT_MESSAGES:
         return
     if wait_for_completion:
-        global _pending_messages, _pending_context
+        # This run supersedes only this session's queued snapshot.
         with _worker_lock:
-            _pending_messages = None
-            _pending_context = None
+            _pending.pop(session_id, None)
         # Run extraction off the main thread and wait until it finishes so
         # durable facts always land before process exit. Poll the join so
         # Ctrl+C during shutdown stays interruptible without raising through
@@ -189,23 +204,24 @@ def schedule_memory_extraction(
             )
             raise
         return
-    _schedule_coalesced(snapshot)
+    _schedule_coalesced(session_id, snapshot)
 
 
-def _schedule_coalesced(snapshot: list[tuple[str, str]]) -> None:
-    """Queue ``snapshot`` on the coalescing worker, capturing storage scope.
+def _schedule_coalesced(session_id: str, snapshot: list[tuple[str, str]]) -> None:
+    """Queue ``snapshot`` as ``session_id``'s pending extraction, capturing storage scope.
 
     Copy the current context so the per-turn storage scope (ContextVar set by
     ``bound_storage_scope``) is inherited: without it ``current_scope()`` is
     None on the worker thread and ``save_memory()`` would resolve to the org
     root instead of ``users/<actor_id>/memory/``, misfiling the user's
-    extracted facts where their in-scope turns never read them.
+    extracted facts where their in-scope turns never read them. Each entry
+    keeps its own copy, so one worker draining several actors' sessions still
+    files every snapshot under the actor that produced it.
     """
-    global _pending_messages, _pending_context, _worker
-    ctx = contextvars.copy_context()
+    global _worker
+    entry = _PendingExtraction(messages=snapshot, context=contextvars.copy_context())
     with _worker_lock:
-        _pending_messages = snapshot
-        _pending_context = ctx
+        _pending[session_id] = entry
         if _worker is not None and _worker.is_alive():
             return
         _worker = threading.Thread(
@@ -217,20 +233,19 @@ def _schedule_coalesced(snapshot: list[tuple[str, str]]) -> None:
 
 
 def _coalesced_extract_worker() -> None:
-    global _pending_messages, _pending_context, _worker
+    """Drain pending extractions one at a time, earliest-scheduled session first.
+
+    One worker bounds extraction to a single in-flight LLM call and memory-store
+    writer; the backlog is bounded by one entry per session.
+    """
+    global _worker
     while True:
         with _worker_lock:
-            snapshot = _pending_messages
-            ctx = _pending_context
-            _pending_messages = None
-            _pending_context = None
-            if snapshot is None:
+            if not _pending:
                 _worker = None
                 return
-        if ctx is not None:
-            ctx.run(_extract_memories_safe, snapshot)
-        else:
-            _extract_memories_safe(snapshot)
+            entry = _pending.pop(next(iter(_pending)))
+        entry.context.run(_extract_memories_safe, entry.messages)
 
 
 def extract_memories_from_session(session: _ChatSession) -> None:

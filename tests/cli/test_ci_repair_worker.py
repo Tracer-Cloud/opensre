@@ -28,7 +28,6 @@ def test_frozen_child_command_is_parseable_and_obeys_the_saved_deadline(
         owner="alice",
         actor="alice",
         repo="demo",
-        demo=True,
         started_at=time.time() - 601,
         deadline=time.time() - 1,
     )

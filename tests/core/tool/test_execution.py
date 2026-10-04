@@ -238,6 +238,25 @@ def test_tool_call_analytics_records_batch_rejection(
     assert all(event["error_message"].startswith("Nothing ran") for event in captured)
 
 
+def test_tool_call_analytics_names_a_failure_that_carried_no_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An error result with blank content must not reach analytics as an empty message."""
+    captured: list[dict[str, Any]] = []
+    monkeypatch.setattr(
+        "infrastructure.analytics.capture.capture_agent_tool_call_completed",
+        lambda **properties: captured.append(properties),
+    )
+
+    def blank_failure(_args: dict[str, Any], _ctx: AgentToolContext) -> ToolExecutionResult:
+        return ToolExecutionResult(content="", details=None, is_error=True)
+
+    execute_tool_calls([_call()], [_tool(execute=blank_failure)], {})
+
+    assert captured[0]["outcome"] == "tool_error"
+    assert captured[0]["error_message"] == "echo failed (tool_error) without an error message."
+
+
 @pytest.mark.parametrize(
     "status", ["blocked", "failed", "incomplete", "succeeded", "private result"]
 )
@@ -546,7 +565,32 @@ def test_host_cancel_skips_remaining_calls_mid_batch() -> None:
     assert results[1].metadata.get("skipped") is True
 
 
-def test_turn_ending_tool_must_be_alone_even_beside_bookkeeping() -> None:
+def test_bookkeeping_beside_a_turn_ending_call_runs_first() -> None:
+    """A plan write may ride with the menu; it lands before the menu ends the turn."""
+    ran: list[str] = []
+
+    def plan(_args: dict[str, Any], _ctx: AgentToolContext) -> dict[str, Any]:
+        ran.append("plan")
+        return {"wrote": "plan"}
+
+    def menu(_args: dict[str, Any], _ctx: AgentToolContext) -> dict[str, Any]:
+        ran.append("menu")
+        return {"wrote": "menu"}
+
+    tools = [
+        _tool("plan", role=ToolRole.BOOKKEEPING, execute=plan),
+        _tool("menu", role=ToolRole.TURN_ENDING, execute=menu),
+    ]
+
+    results = execute_tool_calls([_call("menu"), _call("plan")], tools, {})
+
+    assert ran == ["plan", "menu"]
+    assert not any(result.is_error for result in results)
+    # Results stay in provider order: one per tool-call id, as requested.
+    assert [result.details for result in results] == [{"wrote": "menu"}, {"wrote": "plan"}]
+
+
+def test_turn_ending_tool_beside_an_action_runs_nothing() -> None:
     ran: list[str] = []
 
     def execute(_args: dict[str, Any], _ctx: AgentToolContext) -> dict[str, Any]:
@@ -555,15 +599,16 @@ def test_turn_ending_tool_must_be_alone_even_beside_bookkeeping() -> None:
 
     tools = [
         _tool("plan", role=ToolRole.BOOKKEEPING, execute=execute),
+        _tool("work", execute=execute),
         _tool("menu", role=ToolRole.TURN_ENDING, execute=execute),
     ]
 
-    results = execute_tool_calls([_call("plan"), _call("menu")], tools, {})
+    results = execute_tool_calls([_call("plan"), _call("work"), _call("menu")], tools, {})
 
     assert ran == []
     assert all(result.is_error for result in results)
     assert "menu" in str(results[0].content)
-    assert "only" in str(results[0].content)
+    assert "update_plan" in str(results[0].content)
 
 
 def test_only_turn_ending_batches_violate_the_response_rule() -> None:
@@ -586,6 +631,8 @@ def test_only_turn_ending_batches_violate_the_response_rule() -> None:
     assert response_batch_violation([_call("unknown_tool"), _call("work")], tool_map) is None
     assert response_batch_violation([_call("menu")], tool_map) is None
     assert response_batch_violation([_call("menu"), _call("work")], tool_map) is not None
+    assert response_batch_violation([_call("registered_plan"), _call("menu")], tool_map) is None
+    assert response_batch_violation([_call("menu"), _call("menu")], tool_map) is not None
     assert response_batch_violation([], tool_map) is None
 
 

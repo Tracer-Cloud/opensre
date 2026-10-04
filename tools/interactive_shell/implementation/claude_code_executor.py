@@ -2,7 +2,9 @@
 
 Spawns the Claude Code CLI to implement a requested change in the current
 repository, applies the execution policy, tracks the launch as a background
-task, and watches the subprocess lifecycle in a daemon thread.
+task, and watches the subprocess lifecycle in a daemon thread. The child holds
+a process-wide heavy-work slot: the launching thread takes it before the spawn
+and hands it to the watcher, which frees it once the child is reaped.
 
 Lives next to the agent-facing ``tools.interactive_shell.actions.implementation``.
 ``subprocess`` and ``threading`` are referenced as module globals so tests can
@@ -16,10 +18,13 @@ from __future__ import annotations
 import os
 import subprocess
 import threading
+from collections.abc import Callable
+from contextlib import ExitStack
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol, cast
 
+from infrastructure.process.turn_capacity import HEAVY_WORK_BUSY_MESSAGE, heavy_work_slot
 from infrastructure.scheduling.task_types import TaskKind
 from integrations.llm_cli import ClaudeCodeAdapter, build_cli_subprocess_env
 from tools.interactive_shell.shared import allow_tool
@@ -185,9 +190,47 @@ def format_claude_failure_diag(stdout: str, stderr: str) -> str:
     return (stderr or stdout).strip()[:TASK_DIAG_CHARS]
 
 
+class _HeldHeavyWorkSlot:
+    """A heavy-work slot taken on one thread and freed on another; a second release is a no-op."""
+
+    def __init__(self, held: ExitStack) -> None:
+        self._held = held
+        self._lock = threading.Lock()
+        self._released = False
+
+    def release(self) -> None:
+        with self._lock:
+            if self._released:
+                return
+            self._released = True
+        self._held.close()
+
+
+def _take_heavy_work_slot(stop: Callable[[], bool] | None) -> _HeldHeavyWorkSlot | None:
+    """Wait (bounded) for a heavy-work slot that outlives this call; ``None`` if none freed."""
+    held = ExitStack()
+    if held.enter_context(heavy_work_slot(stop=stop)):
+        return _HeldHeavyWorkSlot(held)
+    held.close()
+    return None
+
+
+def _end_child_and_free_slot(proc: subprocess.Popen[str], slot: _HeldHeavyWorkSlot) -> None:
+    """Make sure the child is gone, then free the heavy-work slot it held."""
+    try:
+        if proc.poll() is None:
+            terminate_child_process(proc)
+    finally:
+        slot.release()
+
+
 def run_claude_code_implementation(
-    request: str, presenter: SubprocessPresenter
+    request: str,
+    presenter: SubprocessPresenter,
+    *,
+    stop: Callable[[], bool] | None = None,
 ) -> ImplementationLaunch:
+    """Start Claude Code as a background task; ``stop`` (the turn's cancel) ends the slot wait."""
     session = presenter.session
     policy = allow_tool("code_agent")
     if not presenter.execution_allowed(
@@ -238,9 +281,17 @@ def run_claude_code_implementation(
     task.mark_running()
     history_gen_when_started = session.terminal.history_generation
 
+    slot = _take_heavy_work_slot(stop)
+    if slot is None:
+        task.mark_failed(HEAVY_WORK_BUSY_MESSAGE)
+        presenter.print_error(HEAVY_WORK_BUSY_MESSAGE)
+        session.record("implementation", request, ok=False)
+        return ImplementationLaunch.declined(HEAVY_WORK_BUSY_MESSAGE)
+
     try:
         proc = spawn_claude_code(invocation)
     except Exception as exc:
+        slot.release()
         task.mark_failed(str(exc))
         presenter.report_exception(exc, context="surfaces.interactive_shell.claude_code.start")
         presenter.print_error(f"Claude Code failed to start: {exc}")
@@ -294,8 +345,17 @@ def run_claude_code_implementation(
             if session.terminal.history_generation == history_gen_when_started:
                 session.mark_latest(ok=False, kind="implementation")
             presenter.print_error(f"Claude Code watcher failed: {exc}")
+        finally:
+            _end_child_and_free_slot(proc, slot)
 
-    threading.Thread(target=_watch, daemon=True, name=f"claude-code-{task.task_id}").start()
+    watcher = threading.Thread(target=_watch, daemon=True, name=f"claude-code-{task.task_id}")
+    try:
+        watcher.start()
+    except Exception:
+        # No watcher will reap the child, so end it here.
+        _end_child_and_free_slot(proc, slot)
+        task.mark_failed("the Claude Code watcher did not start")
+        raise
     presenter.print(
         f"[dim]Claude Code started — task[/] [bold]{task.task_id}[/bold]. "
         "[highlight]/tasks[/] [dim]to monitor,[/] "

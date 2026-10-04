@@ -15,11 +15,11 @@ from rich.markup import escape
 
 from infrastructure.analytics.prompt_log.recorder import PromptRecorder
 from surfaces.interactive_shell.runtime import Session, TaskKind, TaskRecord
-from surfaces.interactive_shell.telemetry.integration_snapshot import (
-    build_turn_integration_snapshot,
-)
 from surfaces.interactive_shell.ui import DIM, ERROR, HIGHLIGHT
 from surfaces.shared.error_handling.exception_reporting import report_exception
+from surfaces.shared.integration_telemetry import (
+    build_turn_integration_snapshot,
+)
 
 from .task_streaming import (
     _MAX_COMMAND_OUTPUT_CHARS,

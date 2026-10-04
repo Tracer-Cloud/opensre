@@ -6,8 +6,8 @@ vendor CLIs in the inverse "hands" role — a long-lived child process that edit
 a workspace. This module holds the backend-neutral machinery for that role:
 
 - an injection-guarded task prompt (:func:`build_guarded_task_prompt`),
-- deadline-polled subprocess execution with pipe draining
-  (:func:`poll_agent_process`), and
+- deadline-polled subprocess execution with pipe draining, under a
+  process-wide heavy-work slot (:func:`poll_agent_process`), and
 - outcome classification incl. provider limit detection
   (:func:`classify_agent_outcome`).
 
@@ -28,6 +28,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import IO
 
+from infrastructure.process.turn_capacity import HEAVY_WORK_BUSY_MESSAGE, heavy_work_slot
 from infrastructure.safety.masking import MaskingPolicy, MaskingRules
 
 _MAX_OUTPUT_CHARS = 8000
@@ -222,6 +223,36 @@ def poll_agent_process(
     """Spawn the agent CLI, drain its pipes, and poll it to completion or *timeout_sec*.
 
     *on_stdout_line* sees every stdout line as it arrives, for progress display.
+
+    An agent CLI holds hundreds of megabytes, so the run waits for a process-wide
+    heavy-work slot first and holds it until the child is reaped. When none frees
+    in time nothing is spawned and ``spawn_error`` is
+    :data:`~infrastructure.process.turn_capacity.HEAVY_WORK_BUSY_MESSAGE`.
+    *timeout_sec* starts once the child is spawned.
+    """
+    with heavy_work_slot() as started:
+        if not started:
+            return AgentProcessOutcome("", "", -1, False, spawn_error=HEAVY_WORK_BUSY_MESSAGE)
+        return _run_agent_process(
+            argv,
+            cwd=cwd,
+            env=env,
+            timeout_sec=timeout_sec,
+            stdin=stdin,
+            on_stdout_line=on_stdout_line,
+        )
+
+
+def _run_agent_process(
+    argv: list[str],
+    *,
+    cwd: str,
+    env: dict[str, str],
+    timeout_sec: float,
+    stdin: str | None,
+    on_stdout_line: Callable[[str], None] | None,
+) -> AgentProcessOutcome:
+    """Run the child to completion or deadline.
 
     Polling (rather than a single blocking ``subprocess.run``) lets us enforce the
     deadline ourselves and terminate the process gracefully on timeout. stdout and

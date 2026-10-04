@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from types import MappingProxyType
+
 OPENSRE_ACCOUNT_FILENAME = "account.json"
 OPENSRE_ACCOUNT_METADATA_PATH_ENV = "OPENSRE_ACCOUNT_METADATA_PATH"
 OPENSRE_ACCOUNT_TOKEN_ENV = "OPENSRE_ACCOUNT_TOKEN"
@@ -20,11 +23,19 @@ OPENSRE_ACCOUNT_CREDITS_PATH = "/api/credits/balance"
 OPENSRE_ACCOUNT_USAGE_PATH = "/usage"
 #: The organization's connected integrations, served to any signed-in member.
 OPENSRE_ACCOUNT_INTEGRATIONS_PATH = "/api/auth/cli/integrations"
+#: The app's own service id -> the CLI integration it is. The app stores its
+#: Slack OAuth install as ``slack_bot`` (bot token only; events reach the
+#: hosted gateway over HTTP), which is the CLI's ``slack`` integration.
+OPENSRE_ACCOUNT_SERVICE_NAMES: Mapping[str, str] = MappingProxyType({"slack_bot": "slack"})
 #: How long one fetched remote-integration snapshot stays fresh in-process.
 OPENSRE_ACCOUNT_INTEGRATIONS_TTL_SECONDS = 60.0
 #: Short fetch timeout so an offline laptop never stalls a turn on this call.
 OPENSRE_ACCOUNT_INTEGRATIONS_TIMEOUT_SECONDS = 5.0
 OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS = 15.0
+#: Pauses before re-checking a login the app could not answer for (timeout, 429, 5xx).
+OPENSRE_ACCOUNT_SESSION_RETRY_DELAYS_SECONDS: tuple[float, ...] = (0.5, 2.0)
+#: Most time the session check and its retries may take before the app counts as unreachable.
+OPENSRE_ACCOUNT_SESSION_RETRY_BUDGET_SECONDS = 20.0
 OPENSRE_APP_URL_DEFAULT = "https://app.opensre.com"
 OPENSRE_APP_URL_DEV = "http://localhost:3000"
 OPENSRE_APP_URL_ENV = "OPENSRE_APP_URL"
@@ -43,8 +54,11 @@ __all__ = [
     "OPENSRE_ACCOUNT_INTEGRATIONS_PATH",
     "OPENSRE_ACCOUNT_INTEGRATIONS_TIMEOUT_SECONDS",
     "OPENSRE_ACCOUNT_INTEGRATIONS_TTL_SECONDS",
+    "OPENSRE_ACCOUNT_SERVICE_NAMES",
     "OPENSRE_ACCOUNT_TOKEN_ENV",
     "OPENSRE_ACCOUNT_SESSION_PATH",
+    "OPENSRE_ACCOUNT_SESSION_RETRY_BUDGET_SECONDS",
+    "OPENSRE_ACCOUNT_SESSION_RETRY_DELAYS_SECONDS",
     "OPENSRE_ACCOUNT_CREDITS_PATH",
     "OPENSRE_ACCOUNT_USAGE_PATH",
     "OPENSRE_APP_URL_DEFAULT",

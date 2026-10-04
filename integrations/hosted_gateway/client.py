@@ -9,6 +9,7 @@ organization or a gateway, so a caller can only ever reach its own.
 from __future__ import annotations
 
 import re
+import uuid
 from dataclasses import dataclass
 from http import HTTPStatus
 from types import TracebackType
@@ -47,6 +48,12 @@ ERR_PROMPT_TOO_LARGE = "prompt_too_large"
 #: The prompt is not waiting for an answer, or already took one.
 ERR_NOT_WAITING = "not_waiting"
 ERR_ALREADY_ANSWERED = "already_answered"
+#: The prompt already finished, so there is nothing to cancel.
+ERR_ALREADY_SETTLED = "already_settled"
+#: Another gateway task (one being replaced) runs the prompt; this one cannot stop it.
+ERR_NOT_OWNED = "not_owned"
+#: The gateway's prompt queue is full and it took nothing; send again after ``retry_after``.
+ERR_TOO_MANY_PROMPTS = "too_many_prompts"
 
 #: A prompt id as the gateway mints it; anything else never becomes part of a URL.
 _PROMPT_ID = re.compile(r"^p_[0-9a-f]{32}$")
@@ -63,7 +70,12 @@ _UNAVAILABLE_STATUSES = frozenset(
     {HTTPStatus.BAD_GATEWAY, HTTPStatus.SERVICE_UNAVAILABLE, HTTPStatus.GATEWAY_TIMEOUT}
 )
 
+#: Statuses the app may carry a capacity refusal on: 503 and 429 now, 502 from an app
+#: deployed before it kept the gateway's 503.
+_CAPACITY_STATUSES = _UNAVAILABLE_STATUSES | {HTTPStatus.TOO_MANY_REQUESTS}
+
 #: Failures that pass on their own: nobody answered, and a later request may succeed.
+#: A capacity refusal is not one of them: the gateway answered, so it is never resent at once.
 TRANSIENT_ERRORS = frozenset({ERR_UNREACHABLE, ERR_GATEWAY_UNAVAILABLE})
 
 #: Failures of the account or its setup, not of the service: nothing to report as an incident.
@@ -79,6 +91,9 @@ EXPECTED_ERRORS = frozenset(
         ERR_PROMPT_TOO_LARGE,
         ERR_NOT_WAITING,
         ERR_ALREADY_ANSWERED,
+        ERR_ALREADY_SETTLED,
+        ERR_NOT_OWNED,
+        ERR_TOO_MANY_PROMPTS,
     }
 )
 
@@ -88,14 +103,23 @@ class HostedGatewayError(RuntimeError):
 
     ``code`` is the failure class (from the HTTP status). ``cause_code`` is the
     app's more specific reason when it named one. Neither is a response body
-    or the account token.
+    or the account token. ``retry_after`` is the app's ``Retry-After`` in
+    seconds, when it sent one.
     """
 
-    def __init__(self, code: str, status: int | None = None, *, cause_code: str = "") -> None:
+    def __init__(
+        self,
+        code: str,
+        status: int | None = None,
+        *,
+        cause_code: str = "",
+        retry_after: int | None = None,
+    ) -> None:
         super().__init__(code)
         self.code = code
         self.status = status
         self.cause_code = cause_code
+        self.retry_after = retry_after
 
 
 @dataclass(frozen=True)
@@ -163,6 +187,12 @@ class PromptRecord:
     progress: tuple[PromptProgress, ...] = ()
     #: For a follow-up carrying an answer: the prompt whose question it answered.
     parent_prompt_id: str = ""
+    #: For a question: the follow-up that took its answer, so a lost answer response is found.
+    answered_by: str = ""
+    #: The conversation the prompt ran on; send it as ``conversation`` to continue that one.
+    conversation_id: str = ""
+    #: A cancel was asked for and the running turn has not stopped yet.
+    cancel_requested: bool = False
 
     @property
     def settled(self) -> bool:
@@ -227,8 +257,21 @@ class HostedGatewayClient:
         """Ask the app to stop the organization's gateway; its state and credentials are kept."""
         return _gateway_health(self._request("POST", HOSTED_GATEWAY_STOP_PATH, _LIFECYCLE_REFUSALS))
 
-    def send_prompt(self, prompt: str, *, context: dict[str, str]) -> PromptRecord:
-        """Queue a prompt on the organization's running gateway."""
+    def send_prompt(
+        self,
+        prompt: str,
+        *,
+        context: dict[str, str],
+        request_id: str = "",
+        conversation: str = "",
+    ) -> PromptRecord:
+        """Queue a prompt on the organization's running gateway.
+
+        With a ``request_id`` the gateway queues the prompt at most once, so a
+        submission whose response was lost is sent once more with the same id.
+        ``conversation`` is "" for the user's own conversation, ``new`` for a
+        separate one that runs beside it, or an earlier record's ``conversation_id``.
+        """
         from infrastructure.harness_providers.integration_selection import (
             current_github_connection_id,
         )
@@ -237,26 +280,48 @@ class HostedGatewayClient:
         context = dict(context)
         if connection_id and "github_connection_id" not in context:
             context["github_connection_id"] = connection_id
-        payload = self._request(
-            "POST",
-            HOSTED_GATEWAY_PROMPTS_PATH,
-            _PROMPT_REFUSALS,
-            body={"prompt": prompt, "context": context},
-        )
+        body: dict[str, Any] = {"prompt": prompt, "context": context}
+        if request_id:
+            body["request_id"] = request_id
+        if conversation:
+            body["conversation"] = conversation
+        payload = self._post_idempotent(HOSTED_GATEWAY_PROMPTS_PATH, _PROMPT_REFUSALS, body)
         record = _prompt_record(payload)
         capture_hosted_gateway_task_submitted(record.prompt_id)
         return record
 
-    def answer_prompt(self, prompt_id: str, answer: str) -> PromptRecord:
-        """Answer a prompt that stopped to ask; the follow-up prompt's record comes back."""
+    def answer_prompt(self, prompt_id: str, answer: str, *, request_id: str = "") -> PromptRecord:
+        """Answer a prompt that stopped to ask; the follow-up prompt's record comes back.
+
+        A ``request_id`` makes a resent answer the same follow-up, as for prompts.
+        """
+        if not _PROMPT_ID.fullmatch(prompt_id):
+            raise HostedGatewayError(ERR_UNKNOWN_PROMPT)
+        body: dict[str, Any] = {"answer": answer}
+        if request_id:
+            body["request_id"] = request_id
+        payload = self._post_idempotent(
+            f"{HOSTED_GATEWAY_PROMPTS_PATH}/{prompt_id}/answer",
+            _PROMPT_ANSWER_REFUSALS,
+            body,
+            body_codes=_ANSWER_BODY_CODES,
+        )
+        return _prompt_record(payload)
+
+    def cancel_prompt(self, prompt_id: str) -> PromptRecord:
+        """Cancel a queued or running prompt of this user's; a running one stops at its next check.
+
+        ``already_settled`` when it already finished. The app names the user to the
+        gateway, so another member's prompt reads as ``unknown_prompt``.
+        """
         if not _PROMPT_ID.fullmatch(prompt_id):
             raise HostedGatewayError(ERR_UNKNOWN_PROMPT)
         payload = self._request(
             "POST",
-            f"{HOSTED_GATEWAY_PROMPTS_PATH}/{prompt_id}/answer",
-            _PROMPT_ANSWER_REFUSALS,
-            body={"answer": answer},
-            body_codes=_ANSWER_BODY_CODES,
+            f"{HOSTED_GATEWAY_PROMPTS_PATH}/{prompt_id}/cancel",
+            _PROMPT_RESULT_REFUSALS,
+            body={},
+            body_codes=_CANCEL_BODY_CODES,
         )
         return _prompt_record(payload)
 
@@ -268,6 +333,26 @@ class HostedGatewayClient:
             "GET", f"{HOSTED_GATEWAY_PROMPTS_PATH}/{prompt_id}", _PROMPT_RESULT_REFUSALS
         )
         return _prompt_record(payload)
+
+    def _post_idempotent(
+        self,
+        path: str,
+        refusals: dict[int, str],
+        body: dict[str, Any],
+        *,
+        body_codes: frozenset[str] = frozenset(),
+    ) -> dict[str, Any]:
+        """POST, then once more after a transient failure when ``body`` names a request id.
+
+        The gateway keeps one prompt per request id, so the second send cannot
+        queue the work twice; without an id a lost response is never resent.
+        """
+        try:
+            return self._request("POST", path, refusals, body=body, body_codes=body_codes)
+        except HostedGatewayError as exc:
+            if exc.code not in TRANSIENT_ERRORS or not body.get("request_id"):
+                raise
+        return self._request("POST", path, refusals, body=body, body_codes=body_codes)
 
     def _request(
         self,
@@ -285,6 +370,12 @@ class HostedGatewayClient:
         refusal = refusals.get(response.status_code)
         if refusal is not None:
             raise self._refused(_refusal_code(response, refusal, body_codes), response)
+        if response.status_code in _CAPACITY_STATUSES and _is_capacity_refusal(response):
+            raise HostedGatewayError(
+                ERR_TOO_MANY_PROMPTS,
+                response.status_code,
+                retry_after=_retry_after_seconds(response),
+            )
         if response.status_code in _UNAVAILABLE_STATUSES:
             raise self._refused(ERR_GATEWAY_UNAVAILABLE, response)
         if not response.is_success:
@@ -353,6 +444,8 @@ _PROMPT_ANSWER_REFUSALS: dict[int, str] = {
     HTTPStatus.REQUEST_ENTITY_TOO_LARGE: ERR_PROMPT_TOO_LARGE,
 }
 _ANSWER_BODY_CODES = frozenset({ERR_NOT_RUNNING, ERR_NOT_WAITING, ERR_ALREADY_ANSWERED})
+#: Cancelling: a 409 is the gateway not running, or the prompt beyond this task's reach.
+_CANCEL_BODY_CODES = frozenset({ERR_NOT_RUNNING, ERR_ALREADY_SETTLED, ERR_NOT_OWNED})
 
 
 def _cause_code(response: httpx.Response) -> str:
@@ -365,6 +458,17 @@ def _cause_code(response: httpx.Response) -> str:
     if isinstance(code, str) and _CAUSE_CODE.fullmatch(code):
         return code
     return ""
+
+
+def _is_capacity_refusal(response: httpx.Response) -> bool:
+    """The gateway took nothing because its prompt queue is full."""
+    return _cause_code(response) == ERR_TOO_MANY_PROMPTS
+
+
+def _retry_after_seconds(response: httpx.Response) -> int | None:
+    """``Retry-After`` as whole seconds; an HTTP date or a malformed value reads as absent."""
+    raw = response.headers.get("Retry-After", "").strip()
+    return int(raw) if raw.isdigit() else None
 
 
 def _refusal_code(response: httpx.Response, default: str, body_codes: frozenset[str]) -> str:
@@ -395,7 +499,26 @@ def _prompt_record(payload: dict[str, Any]) -> PromptRecord:
         choice=_choice(payload.get("choice")),
         progress=_progress(payload.get("progress")),
         parent_prompt_id=_text(payload.get("parent_prompt_id")),
+        answered_by=_prompt_id(payload.get("answered_by")),
+        conversation_id=_conversation_id(payload.get("conversation_id")),
+        cancel_requested=payload.get("cancel_requested") is True,
     )
+
+
+def _prompt_id(value: object) -> str:
+    """A prompt id the gateway minted, else "": it may become part of a URL."""
+    return value if isinstance(value, str) and _PROMPT_ID.fullmatch(value) else ""
+
+
+def _conversation_id(value: object) -> str:
+    """A conversation id in canonical form, else "": it is sent back to name a session."""
+    if not isinstance(value, str):
+        return ""
+    try:
+        canonical = str(uuid.UUID(value))
+    except ValueError:
+        return ""
+    return value if canonical == value else ""
 
 
 def _progress_kind(value: object) -> str:
@@ -474,14 +597,17 @@ def _text(value: object) -> str:
 
 
 __all__ = [
+    "ERR_ALREADY_SETTLED",
     "ERR_GATEWAY_UNAVAILABLE",
     "ERR_INSECURE_APP_URL",
     "ERR_INVALID_RESPONSE",
     "ERR_NOT_PROVISIONED",
+    "ERR_NOT_OWNED",
     "ERR_NOT_RUNNING",
     "ERR_NOT_SIGNED_IN",
     "ERR_NOT_SUPPORTED",
     "ERR_PROMPT_TOO_LARGE",
+    "ERR_TOO_MANY_PROMPTS",
     "ERR_UNAUTHORIZED",
     "ERR_UNKNOWN_PROMPT",
     "ERR_UNREACHABLE",

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextlib import nullcontext
 from dataclasses import replace
+from itertools import count
 from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
@@ -36,11 +37,18 @@ from integrations.github.tools.ci_fix.errors import (
     GitHubCiFixError,
 )
 from integrations.github.tools.ci_fix.ship import PushResult, push_ci_fix
+from integrations.github.tools.ci_fix.timing import PhaseTimer
 from integrations.github.tools.ci_fix.tool import (
     _github_ci_fix_available,
     fix_github_pr_ci,
 )
-from integrations.github.tools.ci_fix.verification import CheckState, CheckVerification
+from integrations.github.tools.ci_fix.verification import (
+    DEFAULT_POLL_INTERVAL_SECONDS,
+    DEFAULT_REGISTRATION_SECONDS,
+    DEFAULT_SETTLE_SECONDS,
+    CheckState,
+    CheckVerification,
+)
 from integrations.github.tools.ci_fix.worktree import BranchWorktree, create_branch_worktree
 from tests.tools.conftest import BaseToolContract
 from tools.registry import clear_tool_registry_cache, get_registered_tool_map, get_registered_tools
@@ -620,6 +628,8 @@ def test_run_ci_fix_success_pushes_existing_pr_branch(
         changed_files=["app.py"],
         diff="diff",
     )
+    ticks = count()
+    timer = PhaseTimer(clock=lambda: float(next(ticks)))
 
     result = runner.run_ci_fix(
         owner="Tracer-Cloud",
@@ -627,8 +637,18 @@ def test_run_ci_fix_success_pushes_existing_pr_branch(
         pr_number=4597,
         github_token="tok",
         confirm_fn=lambda prompt: prompts.append(prompt) or "y",
+        timer=timer,
     )
 
+    # Every phase of the repair is timed; the two checkout steps add up.
+    assert timer.take() == {
+        "context_gather": 1.0,
+        "checkout": 2.0,
+        "merge_base": 1.0,
+        "coding_agent": 1.0,
+        "push": 1.0,
+        "verify": 1.0,
+    }
     assert result["success"] is True
     assert result["source_head_sha"] == _CTX.head_sha
     assert result["branch_name"] == "feat/fix-ci"
@@ -644,7 +664,97 @@ def test_run_ci_fix_success_pushes_existing_pr_branch(
         _CTX,
         github_token="tok",
         expected_head_sha="new-sha",
+        registration_seconds=DEFAULT_REGISTRATION_SECONDS,
+        settle_seconds=DEFAULT_SETTLE_SECONDS,
+        poll_interval_seconds=DEFAULT_POLL_INTERVAL_SECONDS,
     )
+
+
+@patch(
+    "integrations.github.tools.ci_fix.runner.push_ci_fix",
+    return_value=PushResult(branch_name="feat/fix-ci", head_sha="new-sha", changed_files=["a.py"]),
+)
+@patch(
+    "integrations.github.tools.ci_fix.runner.wait_for_pr_checks",
+    return_value=CheckVerification(state=CheckState.PASSED, check_names=("test",)),
+)
+@patch("integrations.github.tools.ci_fix.runner.pre_coding_changes", return_value={})
+@patch("integrations.github.tools.ci_fix.runner.checkout_target_branch")
+@patch("integrations.github.tools.ci_fix.runner.ensure_push_ready")
+@patch(
+    "integrations.github.tools.ci_fix.runner.repair_workspace",
+    side_effect=lambda *_a, **kw: nullcontext(kw.get("workspace") or "/workspace"),
+)
+@patch("integrations.github.tools.ci_fix.runner.gather_ci_fix_context", return_value=_CTX)
+def test_run_ci_fix_checks_and_runs_the_coding_agent_on_one_probe_sweep(
+    _gather: MagicMock,
+    _workspace: MagicMock,
+    _push_ready: MagicMock,
+    _checkout: MagicMock,
+    _pre: MagicMock,
+    _wait: MagicMock,
+    _push: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from integrations.coding_agent.runner import _BACKENDS
+
+    signed_out = MagicMock(return_value=(False, "not signed in"))
+    probe = MagicMock(return_value=(True, "codex ready"))
+    agent = MagicMock(
+        return_value=CodingResult(success=True, summary="fixed", changed_files=["a.py"])
+    )
+    monkeypatch.delenv("CODING_AGENT", raising=False)
+    monkeypatch.setattr(
+        "integrations.coding_agent.runner.hosted_openai_subprocess_env", lambda: None
+    )
+    monkeypatch.setitem(_BACKENDS, "pi", (MagicMock(), signed_out))
+    monkeypatch.setitem(_BACKENDS, "claude-code", (MagicMock(), signed_out))
+    monkeypatch.setitem(_BACKENDS, "codex", (agent, probe))
+
+    result = runner.run_ci_fix(owner="Tracer-Cloud", repo="opensre", pr_number=4597)
+
+    assert result["success"] is True
+    agent.assert_called_once()
+    assert signed_out.call_count == 2
+    assert probe.call_count == 1
+
+
+def test_run_ci_fix_forwards_short_demo_check_windows(monkeypatch: pytest.MonkeyPatch) -> None:
+    seen: dict[str, Any] = {}
+    push = PushResult(
+        branch_name="demo/failing-ci", head_sha="fixed", changed_files=["calculator.py"]
+    )
+
+    def wait(_ctx: CiFixContext, **kwargs: Any) -> CheckVerification:
+        seen.update(kwargs)
+        return CheckVerification(state=CheckState.PASSED, check_names=("test",))
+
+    def resumed(*_args: object, **_kwargs: object) -> tuple[CiFixContext, PushResult]:
+        return _CTX, push
+
+    monkeypatch.setattr(runner, "gather_ci_fix_context", lambda **_kwargs: _CTX)
+    monkeypatch.setattr(runner, "repair_workspace", lambda *_args, **_kwargs: nullcontext("/ws"))
+    monkeypatch.setattr(runner, "resumed_push", resumed)
+    monkeypatch.setattr(runner, "wait_for_pr_checks", wait)
+    monkeypatch.setattr(runner, "record_verification", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(runner, "publish_repair_epoch", lambda *_args, **_kwargs: None)
+
+    result = runner.run_ci_fix(
+        owner="Tracer-Cloud",
+        repo="opensre",
+        pr_number=4597,
+        github_token="tok",
+        registration_seconds=0,
+        settle_seconds=0,
+        poll_interval_seconds=2,
+    )
+
+    assert result["checks_state"] == "passed"
+    assert result["fix_head_sha"] == "fixed"
+    assert seen["expected_head_sha"] == "fixed"
+    assert seen["registration_seconds"] == 0
+    assert seen["settle_seconds"] == 0
+    assert seen["poll_interval_seconds"] == 2
 
 
 def test_run_ci_fix_refuses_a_source_head_that_changed_before_checkout(
@@ -816,6 +926,9 @@ def test_run_ci_fix_branch_target_uses_worktree_and_branch_verification(
         replace(_BRANCH_CTX, head_branch="opensre/ci-fix-main-ea14998-12345678"),
         github_token="tok",
         expected_head_sha="new-sha",
+        registration_seconds=DEFAULT_REGISTRATION_SECONDS,
+        settle_seconds=DEFAULT_SETTLE_SECONDS,
+        poll_interval_seconds=DEFAULT_POLL_INTERVAL_SECONDS,
     )
     mock_cleanup.assert_called_once()
 

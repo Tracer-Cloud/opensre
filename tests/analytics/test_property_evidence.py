@@ -10,7 +10,7 @@ from infrastructure.analytics import capture
 from infrastructure.analytics.event_properties import build_cli_invoked_properties
 from infrastructure.analytics.prompt_log import recorder as prompt_module
 from infrastructure.analytics.usage_context import bound_usage_context, merge_usage_enrichment
-from surfaces.interactive_shell.telemetry import integration_snapshot
+from surfaces.shared import integration_telemetry as integration_snapshot
 
 
 def test_cli_option_is_separate_from_terminal_measurement(monkeypatch) -> None:

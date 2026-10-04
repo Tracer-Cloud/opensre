@@ -21,13 +21,14 @@ from core.agent_harness.turns.headless_adapters import (
     InMemorySessionState,
 )
 from core.agent_harness.turns.headless_build import InMemoryHeadlessBuild
-from core.llm.types import AgentLLMResponse
+from core.llm.types import AgentLLMResponse, ToolCall
 from tests.core.agent.orchestration.action_execution_test_harness import (
     FakeActionLLM,
     no_tool_response,
     tool_response,
 )
 from tests.utils.skill_cards import skill_card
+from tests.utils.skill_workflow import batch
 from tools.interactive_shell.actions.skill_view import skill_view_tool
 from tools.interactive_shell.actions.update_plan import update_plan_tool
 from tools.interactive_shell.skill_scripts.runner import run_skill_script
@@ -159,25 +160,36 @@ def test_completed_plan_retires_helpers_in_the_running_loop(helper_skill: Path) 
     session = _Session()
     output = BufferOutputSink()
 
-    def plan(first: str, second: str) -> AgentLLMResponse:
-        return tool_response(
-            "update_plan",
-            {
-                "plan": [
-                    {"step": "Run the helper", "status": first},
-                    {"step": "Read its reference", "status": second},
-                ]
-            },
+    def plan(call_id: str, first: str, second: str) -> AgentLLMResponse:
+        return AgentLLMResponse(
+            content="",
+            tool_calls=[
+                ToolCall(
+                    id=call_id,
+                    name="update_plan",
+                    input={
+                        "plan": [
+                            {"step": "Run the helper", "status": first},
+                            {"step": "Read its reference", "status": second},
+                        ]
+                    },
+                )
+            ],
+            raw_content=None,
         )
 
     llm = _SchemaLLM(
         [
             tool_response("skill_view", {"name": "testing-helpers"}),
-            plan("in_progress", "pending"),
-            tool_response("inspect_demo"),
-            plan("completed", "in_progress"),
-            tool_response("skill_view", {"name": "testing-helpers", "reference": "script-tools"}),
-            plan("completed", "completed"),
+            batch(plan("plan-run", "in_progress", "pending"), tool_response("inspect_demo")),
+            batch(
+                plan("plan-read", "completed", "in_progress"),
+                tool_response(
+                    "skill_view",
+                    {"name": "testing-helpers", "reference": "script-tools"},
+                ),
+                plan("plan-done", "completed", "completed"),
+            ),
             no_tool_response("Finished."),
         ]
     )

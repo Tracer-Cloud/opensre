@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
 from core.agent_harness.prompts.kernel.surfaces import profile_for
 from core.agent_harness.session_goal.goal import SessionGoal
 from core.agent_harness.session_goal.progress import format_session_goal_brief
+from core.agent_harness.task_plan.ownership import session_answer_continues_plan
 from core.state import MAX_CONVERSATION_MESSAGES
 from core.state.transcript_window import compact_messages_to_window
 from infrastructure.setup_state import cached_setup_state
@@ -209,6 +210,13 @@ class TurnSnapshot:
     plan_only_until_authorized: bool = False
     """When true, the user asked for a plan without running it yet."""
 
+    plan_answer_continues: bool = False
+    """This turn answers a question the open plan's owner skill asked.
+
+    Then the host advances the plan on each next step's tool and the prompt
+    says so; otherwise the model writes its own status transitions.
+    """
+
     prompt_surface: str | None = None
     """``interactive_shell``, ``gateway``, or ``None`` when the host did not say."""
 
@@ -279,6 +287,7 @@ class TurnSnapshot:
             recovery_note=recovery_note,
             task_plan=_read_task_plan(session),
             plan_only_until_authorized=bool(getattr(session, "plan_only_until_authorized", False)),
+            plan_answer_continues=session_answer_continues_plan(session, text),
             prompt_surface=surface,
             session_goal_attached=getattr(session, "session_goal", None) is not None,
             session_goal_brief=_session_goal_brief(session),

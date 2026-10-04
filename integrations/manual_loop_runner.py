@@ -29,6 +29,9 @@ REPORT_BUILDERS: dict[str, str] = {
     CI_REPAIR_REPORT_BUILDER: "integrations.github.tools.ci_repair_loop.supervisor:build_report",
 }
 
+#: Stored params that bind a loop to one repair target (``cron add --pr`` / ``--branch``).
+_TARGET_PARAMS = ("pr_number", "branch")
+
 _MANUAL_LOOP_INSTRUCTIONS = """Scheduled report loop.
 
 Produce only the report body requested below.
@@ -97,6 +100,11 @@ def _prepare_agent_session(session: SessionCore) -> None:
     session.skill_discovery_enabled = False
 
 
+def _bound_to_one_target(payload: AgentPayload) -> bool:
+    """Whether the loop repairs one stored PR or branch rather than sweeping a repository."""
+    return any(str(payload.get(key) or "").strip() for key in _TARGET_PARAMS)
+
+
 def run_manual_prompt_loop(payload: AgentPayload) -> TaskReport:
     """Run the deterministic report builder or one model turn in the stored mode."""
     builder = report_builder(payload)
@@ -105,7 +113,7 @@ def run_manual_prompt_loop(payload: AgentPayload) -> TaskReport:
         return built if isinstance(built, TaskReport) else TaskReport(built)
     message = build_manual_loop_prompt(payload)
     agent_mode = str(payload.get(LOOP_MODE_PARAM) or "").strip() == LOOP_MODE_AGENT
-    outcomes = ScheduledOutcomes()
+    outcomes = ScheduledOutcomes(bound_target=_bound_to_one_target(payload))
     result = AgentSession.run_headless_turn(
         message,
         prepare_session=_prepare_agent_session if agent_mode else None,

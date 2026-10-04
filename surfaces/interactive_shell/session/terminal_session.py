@@ -117,6 +117,12 @@ class TerminalSession:
     stays out of base REPL startup and only runs when fleet monitoring is actually
     requested. Thread-safe: the starter marshals task creation onto the REPL event loop."""
 
+    startup_work_release: Callable[[], None] | None = field(default=None, repr=False)
+    """Launch hook that starts work held back until the shell first waits on the user.
+
+    Set by the shell entry; ``/choose`` calls it as the first menu draws so
+    warm-ups and snapshots do not compete with that paint. Idempotent."""
+
     pending_prompt_default: str | None = None
     """When set, the next interactive prompt is pre-filled with this string (then cleared)."""
 
@@ -147,6 +153,13 @@ class TerminalSession:
 
     Set by ``ask_user_choice`` (and the ``/choose`` pick). Cleared when the
     submitted prompt is painted so the answer uses the brand colour."""
+
+    handoff_recap_text: str | None = None
+    """The auto-submitted ``/choose`` answer whose Ask User card is already painted.
+
+    ``/choose`` prints the recap of every question it asked, so the same answer
+    must not paint a second card when it is submitted. Matched by exact text and
+    cleared when the submitted prompt is painted."""
 
     setup_resume: SetupResume | None = None
     """The user turn parked behind an integration setup, resubmitted once setup succeeds.
@@ -382,6 +395,11 @@ class TerminalSession:
         """Redraw the active prompt (placeholder state and pending prefill)."""
         if self.prompt_refresh_fn is not None:
             self.prompt_refresh_fn()
+
+    def release_startup_work(self) -> None:
+        """Start launch work held for the first wait on the user (no-op when unwired)."""
+        if self.startup_work_release is not None:
+            self.startup_work_release()
 
     def ensure_fleet_sampler_started(self) -> None:
         """Request that the fleet sampler start (no-op if unwired or already running)."""

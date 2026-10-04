@@ -1,18 +1,26 @@
-"""Runs queued remote prompts one at a time through the gateway's turn runner.
+"""Runs queued remote prompts through the gateway's turn runner, several at once.
 
-A turn that needs the caller (a question, or a tool that requires approval) ends as
-``needs_input``; the answer comes back as a follow-up job that resumes the session.
+Each worker thread runs one prompt; the queue hands a prompt out only while no
+other prompt of its conversation runs. A turn that needs the caller (a question,
+or a tool that requires approval) ends as ``needs_input``; the answer comes back
+as a follow-up job that resumes the session.
 """
 
 from __future__ import annotations
 
 import logging
 import threading
+import time
 from collections.abc import Callable
 from contextlib import ExitStack
 from typing import Any, Protocol
 
-from config.constants.gateway import PROMPT_PROGRESS_KIND_NOTE, PROMPT_SLOT_WAIT_SECONDS
+from config.constants.gateway import (
+    PROMPT_CONVERSATION_NEW,
+    PROMPT_HEARTBEAT_SECONDS,
+    PROMPT_PROGRESS_KIND_NOTE,
+    PROMPT_SLOT_WAIT_SECONDS,
+)
 from config.constants.organization import organization_id
 from config.constants.tooling import ToolBlockedBy
 from config.principal import Actor, Principal, StorageScope
@@ -27,7 +35,17 @@ from core.tool import (
 )
 from gateway.core.billing.turn_metering import bound_turn_metering
 from gateway.core.middleware.approvals import arguments_preview
-from gateway.core.prompt_intake.jobs import PromptJob, PromptQueue
+from gateway.core.prompt_intake.jobs import (
+    ERROR_CANCELLED,
+    ERROR_CONVERSATION_WAITING,
+    ERROR_CREDITS_DENIED,
+    ERROR_INVALID_ANSWER,
+    ERROR_NOT_ADMITTED,
+    ERROR_TURN_FAILED,
+    ERROR_UNKNOWN_CONVERSATION,
+    PromptJob,
+    PromptQueue,
+)
 from gateway.core.prompt_intake.output import CollectingTurnOutput
 from gateway.core.session.thread_history import seed_session_history
 from infrastructure.analytics.usage_context import UsageSurface, bound_usage_context
@@ -38,14 +56,10 @@ from infrastructure.turn_host.unattended_session import (
     approval_grant,
     approval_question,
     choice_view,
+    hosted_conversation_id,
     invocation_key,
 )
 from tools.registry import integration_of_tool
-
-ERROR_CREDITS_DENIED = "credits_denied"
-ERROR_NOT_ADMITTED = "not_admitted"
-ERROR_TURN_FAILED = "turn_failed"
-ERROR_INVALID_ANSWER = "invalid_answer"
 
 _APPROVAL_BLOCKED = (
     "This tool needs the user's approval. The turn ends now and resumes with their "
@@ -81,7 +95,12 @@ class PromptTurnRunner(Protocol):
 
 
 class PromptWorker:
-    """One thread: take a job, run the turn, settle the job, repeat until stopped."""
+    """``workers`` threads: each takes a job, runs the turn, settles the job, until stopped.
+
+    A further thread re-saves the queue's unsettled prompts every
+    ``heartbeat_seconds`` while the worker runs, independent of turn progress,
+    so a task started beside this one sees they are still alive.
+    """
 
     def __init__(
         self,
@@ -90,27 +109,54 @@ class PromptWorker:
         *,
         logger: logging.Logger,
         sessions: UnattendedSessions | None = None,
+        heartbeat_seconds: float = PROMPT_HEARTBEAT_SECONDS,
+        workers: int = 1,
     ) -> None:
+        if workers < 1:
+            raise ValueError("a prompt worker needs at least one thread")
         self._queue = queue
+        self._heartbeat_seconds = heartbeat_seconds
         self._runner = runner
         self._logger = logger
         self._sessions = sessions or UnattendedSessions()
         #: Exact invocations the caller approved, per session; each grant is used once.
+        #: Memory only: a grant is made as the answering turn starts and spent in that
+        #: turn, and a restart in between interrupts it, so the approval is asked again.
         self._approved: dict[str, set[str]] = {}
         #: The question each session stopped on, until its answer resumes the session.
+        #: A session that stopped before this process started keeps its question in the
+        #: session store instead, and resuming it restores the question from there.
         self._asked: dict[str, Any] = {}
+        #: Guards ``_approved`` and ``_asked``. The queue never runs two prompts of one
+        #: session at once, so this only keeps the maps themselves consistent.
+        self._state_lock = threading.Lock()
         self._stop = threading.Event()
-        self._thread = threading.Thread(target=self._run, name="opensre-prompt-worker", daemon=True)
+        self._threads = tuple(
+            threading.Thread(target=self._run, name=f"opensre-prompt-worker-{index}", daemon=True)
+            for index in range(workers)
+        )
+        self._ticker = threading.Thread(
+            target=self._beat, name="opensre-prompt-heartbeat", daemon=True
+        )
 
     def start(self) -> None:
-        self._thread.start()
+        for thread in self._threads:
+            thread.start()
+        self._ticker.start()
 
     def stop(self, *, timeout_seconds: float) -> bool:
-        """Ask the loop to end after its current job; return whether it did in time."""
+        """Ask every thread to end after its current job; return whether all did in time."""
         self._stop.set()
-        self._thread.join(timeout=timeout_seconds)
-        ended = not self._thread.is_alive()
-        for session_id in list(self._asked):
+        deadline = time.monotonic() + timeout_seconds
+        for thread in self._threads:
+            thread.join(timeout=max(0.0, deadline - time.monotonic()))
+        ended = not any(thread.is_alive() for thread in self._threads)
+        if self._ticker.is_alive():
+            # It only waits on the stop event, so it ends at once.
+            self._ticker.join(timeout=max(0.0, deadline - time.monotonic()))
+        with self._state_lock:
+            asked = list(self._asked)
+        for session_id in asked:
             self._forget(session_id)
         return ended
 
@@ -129,6 +175,13 @@ class PromptWorker:
                 self.run_one(job)
             self.retire_forgotten()
 
+    def _beat(self) -> None:
+        while not self._stop.wait(self._heartbeat_seconds):
+            try:
+                self._queue.heartbeat()
+            except Exception:
+                self._logger.exception("remote prompt heartbeat failed")
+
     def retire_forgotten(self) -> None:
         """Release a session once the queue holds none of its prompts any more.
 
@@ -137,7 +190,9 @@ class PromptWorker:
         """
         for forgotten in self._queue.take_forgotten():
             session_id = forgotten.session_id
-            if session_id in self._asked and not self._queue.holds_session(session_id):
+            with self._state_lock:
+                asking = session_id in self._asked
+            if asking and not self._queue.holds_session(session_id):
                 self._forget(session_id)
 
     def _run_job(self, job: PromptJob) -> None:
@@ -153,23 +208,35 @@ class PromptWorker:
             self._run_bound_job(job, org)
 
     def _run_bound_job(self, job: PromptJob, org: str) -> None:
+        #: The question a follow-up answers; a cancelled answer hands it back.
+        question: Any = None
         if job.parent_id:
+            # The follow-up's own conversation key already holds this session.
             session = self._sessions.resume(job.session_id)
-            session.pending_user_choice = self._asked.pop(session.session_id, None)
+            with self._state_lock:
+                asked = self._asked.pop(session.session_id, None)
+            if asked is not None:
+                session.pending_user_choice = asked
+            question = session.pending_user_choice
             text = self._answer_text(job, session)
             if text is None:
                 self._sessions.close(session)
                 return
             self._seed_exchange(job, session)
         else:
-            session = self._sessions.open_conversation() if org else self._sessions.open()
-            job.session_id = session.session_id
+            opened = self._open_session(job, org)
+            if opened is None:
+                return
+            session = opened
             text = _render_prompt(job)
         if "github_connection_id" in job.context:
             session.integrations.github_connection_id = job.context["github_connection_id"]
         output = CollectingTurnOutput(on_status=self._progress_writer(job))
+        self._queue.attach_cancel(job, output.turn_cancel)
         failures = _IntegrationFailures()
-        approvals = _Approvals(session, self._approved.get(session.session_id, set()))
+        with self._state_lock:
+            approved = self._approved.get(session.session_id, set())
+        approvals = _Approvals(session, approved)
         output.tool_hooks = ToolExecutionHooks(
             before_tool_call=approvals.before_tool_call,
             after_tool_call=failures.after_tool_call,
@@ -181,12 +248,21 @@ class PromptWorker:
                     text, session, output, self._logger, slot_wait_seconds=PROMPT_SLOT_WAIT_SECONDS
                 )
         finally:
+            if job.cancel_requested:
+                # A cancelled answer puts its question back to be answered again. A
+                # question the cancelled turn asked gets no answer, and a parked one
+                # would hold the conversation forever.
+                session.pending_user_choice = question
             self._sessions.close(session)
 
         failed = failures.vendors()
+        if job.cancel_requested:
+            self._settle_cancelled(job, session.session_id, question, failed)
+            return
         pending = getattr(session, "pending_user_choice", None)
         if pending is not None:
-            self._asked[session.session_id] = pending
+            with self._state_lock:
+                self._asked[session.session_id] = pending
             self._queue.needs_input(
                 job,
                 _question_text(pending),
@@ -206,6 +282,67 @@ class PromptWorker:
             return
         self._queue.finish(job, output.answer, failed_integrations=failed)
 
+    def _settle_cancelled(
+        self, job: PromptJob, session_id: str, question: Any, failed: tuple[str, ...]
+    ) -> None:
+        """Settle a cancelled turn; a cancelled answer reopens the question it answered."""
+        if question is None:
+            self._forget(session_id)
+        else:
+            with self._state_lock:
+                # A grant the cancelled answer made must not outlive it.
+                self._approved.pop(session_id, None)
+                self._asked[session_id] = question
+            self._queue.reopen(job.parent_id)
+        self._queue.fail(job, ERROR_CANCELLED, failed_integrations=failed)
+
+    def _open_session(self, job: PromptJob, org: str) -> SessionCore | None:
+        """Open the conversation ``job`` asked for, holding it before it is read.
+
+        ``None`` when the job was settled or deferred instead. Holding first means a
+        prompt never reads or flushes a session another prompt is running on.
+        """
+        conversation = job.conversation
+        if conversation == PROMPT_CONVERSATION_NEW or (not conversation and not org):
+            return self._hold_new(job, self._sessions.open())
+        if conversation:
+            # The job's own conversation key holds this session already.
+            named = self._sessions.resume_conversation(conversation)
+            if named is None:
+                self._queue.fail(job, ERROR_UNKNOWN_CONVERSATION)
+                return None
+            if named.pending_user_choice is not None:
+                self._sessions.close(named)
+                self._queue.fail(job, ERROR_CONVERSATION_WAITING)
+                return None
+            self._queue.bind_session(job, named.session_id)
+            return named
+        existing = self._sessions.hosted_conversation()
+        if existing is not None:
+            if not self._queue.bind_session(job, existing, hosted=True):
+                # A prompt that named the actor's conversation runs on it; wait for it.
+                self._queue.defer(job, existing)
+                return None
+            session = self._sessions.resume(existing)
+            if session.pending_user_choice is None:
+                return session
+            # Only the original prompt's answer may resume its parked choice.
+            self._sessions.close(session)
+            opened = self._sessions.open_hosted_conversation()
+            self._queue.bind_session(job, opened.session_id, hosted=True)
+            # Released only now that the actor's conversation is the new one, so the
+            # parked question's answer runs without waiting for this prompt.
+            self._queue.release_session(job, existing)
+            return opened
+        opened = self._sessions.open_hosted_conversation()
+        self._queue.bind_session(job, opened.session_id, hosted=True)
+        return opened
+
+    def _hold_new(self, job: PromptJob, session: SessionCore) -> SessionCore:
+        """Hold a session ``job`` just opened; no other prompt can know its id yet."""
+        self._queue.bind_session(job, session.session_id)
+        return session
+
     def _progress_writer(self, job: PromptJob) -> Callable[[str], None]:
         """A callback that records one status line on ``job``."""
 
@@ -221,12 +358,14 @@ class PromptWorker:
         try:
             text = answer_pending_choice(session, job.prompt)
         except AnswerRejected:
-            self._asked[session.session_id] = pending
+            with self._state_lock:
+                self._asked[session.session_id] = pending
             self._queue.reopen(job.parent_id)
             self._queue.fail(job, ERROR_INVALID_ANSWER)
             return None
         if granted is not None:
-            self._approved.setdefault(session.session_id, set()).add(granted)
+            with self._state_lock:
+                self._approved.setdefault(session.session_id, set()).add(granted)
         # The answered question must not come back from the store during the turn.
         self._sessions.flush(session)
         return text
@@ -272,8 +411,9 @@ class PromptWorker:
 
     def _forget(self, session_id: str) -> None:
         """The session is done with: release the pooled agent, the question and the grants."""
-        self._approved.pop(session_id, None)
-        self._asked.pop(session_id, None)
+        with self._state_lock:
+            self._approved.pop(session_id, None)
+            self._asked.pop(session_id, None)
         self._runner.drop_session(session_id)
 
 
@@ -378,6 +518,19 @@ def _turn_context(org: str, job: PromptJob, session: SessionCore, denial: _Denia
     return stack
 
 
+def actor_conversation(actor: str) -> str | None:
+    """The actor's own conversation id on an organization's gateway, read in their scope.
+
+    ``None`` without an organization: there each prompt opens a session of its own.
+    """
+    org = organization_id()
+    if not org:
+        return None
+    scope = StorageScope(principal=Principal.org(org), actor=Actor(id=actor))
+    with bound_storage_scope(scope):
+        return hosted_conversation_id()
+
+
 def _render_prompt(job: PromptJob) -> str:
     """The prompt plus the facts the caller resolved up front, so nothing is left to ask."""
     if not job.context:
@@ -406,10 +559,7 @@ def _question_text(pending: Any) -> str:
 
 
 __all__ = [
-    "ERROR_CREDITS_DENIED",
-    "ERROR_INVALID_ANSWER",
-    "ERROR_NOT_ADMITTED",
-    "ERROR_TURN_FAILED",
     "PromptTurnRunner",
     "PromptWorker",
+    "actor_conversation",
 ]

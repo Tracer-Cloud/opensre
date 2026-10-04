@@ -286,24 +286,26 @@ def test_exception_closes_job_before_closing_captured_streams(
         raise OSError("simulated job termination failure")
 
     try:
-        with (
-            pytest.raises(RuntimeError, match="consumer failure"),
-            windows_job.spawn_windows_job(command, environment=os.environ) as process,
-        ):
-            processes.append(psutil.Process(process.pid))
-            processes.append(psutil.Process(int(process.stdout.readline())))
+        try:
+            with windows_job.spawn_windows_job(command, environment=os.environ) as process:
+                processes.append(psutil.Process(process.pid))
+                processes.append(psutil.Process(int(process.stdout.readline())))
 
-            def _read_to_eof() -> None:
-                reader_started.set()
-                process.stdout.read()
+                def _read_to_eof() -> None:
+                    reader_started.set()
+                    process.stdout.read()
 
-            reader = threading.Thread(target=_read_to_eof, daemon=True)
-            reader.start()
-            assert reader_started.wait(timeout=2)
-            monkeypatch.setattr(
-                windows_job.WindowsJobProcess, "terminate_tree", _failed_termination
-            )
-            raise RuntimeError("consumer failure")
+                reader = threading.Thread(target=_read_to_eof, daemon=True)
+                reader.start()
+                assert reader_started.wait(timeout=2)
+                monkeypatch.setattr(
+                    windows_job.WindowsJobProcess, "terminate_tree", _failed_termination
+                )
+                raise RuntimeError("consumer failure")
+        except RuntimeError as error:
+            assert str(error) == "consumer failure"
+        else:
+            pytest.fail("expected consumer failure to propagate")
         for descendant in processes:
             descendant.wait(timeout=5)
             assert not descendant.is_running()

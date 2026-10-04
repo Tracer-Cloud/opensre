@@ -13,12 +13,14 @@ from rich.console import Console
 
 import surfaces.interactive_shell.main as main_entrypoint
 import surfaces.interactive_shell.runtime.startup.account_gate as account_gate
+from config.account import AccountRecord
 from config.repl_config import ReplConfig
 from infrastructure.analytics import capture
 from infrastructure.analytics.events import Event
 from surfaces.interactive_shell.runtime.core.state import ReplState
 from surfaces.interactive_shell.session import Session
 from surfaces.interactive_shell.ui.sign_in import SignInChoice
+from surfaces.shared.account_session import AccountSessionState, AccountStatus
 
 
 def _console() -> Console:
@@ -33,6 +35,23 @@ class _RecordingAnalytics:
         self.events.append((event, dict(properties or {})))
 
 
+ACTIVE = AccountSessionState.ACTIVE
+SIGNED_OUT = AccountSessionState.SIGNED_OUT
+
+
+def _account_state(monkeypatch: Any, state: AccountSessionState, detail: str = "") -> None:
+    record = AccountRecord(
+        user_id="user_123",
+        organization_id="org_123",
+        email=None,
+        app_url="https://app.opensre.com",
+        signed_in_at="2026-09-01T10:00:00+00:00",
+        token_expires_at="2026-12-01T10:00:00+00:00",
+    )
+    status = AccountStatus(state, None if state is SIGNED_OUT else record, detail)
+    monkeypatch.setattr(account_gate, "current_account_status", lambda: status)
+
+
 def _gate_with_choices(
     monkeypatch: Any, choices: list[SignInChoice | None], *, signed_in: bool = False
 ) -> _RecordingAnalytics:
@@ -40,7 +59,7 @@ def _gate_with_choices(
     picks = iter(choices)
     monkeypatch.setattr(capture, "get_analytics", lambda: analytics)
     monkeypatch.setattr(account_gate, "is_test_run", lambda: False)
-    monkeypatch.setattr(account_gate, "account_is_signed_in", lambda: signed_in)
+    _account_state(monkeypatch, ACTIVE if signed_in else SIGNED_OUT)
     monkeypatch.setattr("surfaces.interactive_shell.ui.sign_in.repl_tty_interactive", lambda: True)
     monkeypatch.setattr(
         "surfaces.interactive_shell.ui.sign_in.render_sign_in_screen", lambda _console: None
@@ -53,7 +72,7 @@ def _gate_with_choices(
 
 def test_account_is_signed_in_requires_active_webapp_status(monkeypatch: Any) -> None:
     status = SimpleNamespace(authenticated=True)
-    monkeypatch.setattr("surfaces.shared.account_session.account_status", lambda: status)
+    monkeypatch.setattr(account_gate, "current_account_status", lambda: status)
 
     assert account_gate.account_is_signed_in() is True
 
@@ -113,7 +132,7 @@ def test_pass_sign_in_gate_skips_prompts_during_tests(monkeypatch: Any) -> None:
 
 def test_pass_sign_in_gate_allows_only_valid_account(monkeypatch: Any) -> None:
     monkeypatch.setattr(account_gate, "is_test_run", lambda: False)
-    monkeypatch.setattr(account_gate, "account_is_signed_in", lambda: False)
+    _account_state(monkeypatch, AccountSessionState.INVALID)
     monkeypatch.setattr("surfaces.interactive_shell.ui.sign_in.repl_tty_interactive", lambda: True)
     monkeypatch.setattr(
         "surfaces.interactive_shell.ui.sign_in.render_sign_in_screen", lambda _console: None
@@ -124,6 +143,26 @@ def test_pass_sign_in_gate_allows_only_valid_account(monkeypatch: Any) -> None:
     )
 
     assert account_gate.pass_sign_in_gate(_console()) is False
+
+
+def test_an_unreachable_app_never_offers_sign_in(monkeypatch: Any) -> None:
+    """A login the app could not check is not a signed-out login.
+
+    Live QA on 50d8fc7: the session check did not answer for about 15s, the
+    shell offered "Sign in or create account", and a relaunch a minute later
+    with the same login went straight in.
+    """
+    analytics = _gate_with_choices(monkeypatch, [])
+    detail = "The OpenSRE app could not be reached to validate this login."
+    _account_state(monkeypatch, AccountSessionState.UNAVAILABLE, detail)
+    console = _console()
+
+    assert account_gate.pass_sign_in_gate(console) is False
+
+    printed = console.file.getvalue()  # type: ignore[attr-defined]
+    assert detail in printed
+    assert "saved login was kept" in printed
+    assert analytics.events == []
 
 
 def test_gate_records_exposure_and_every_explicit_choice_before_login_runs(

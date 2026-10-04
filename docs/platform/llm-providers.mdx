@@ -201,10 +201,12 @@ export ANTHROPIC_TOOLCALL_MODEL=claude-haiku-4-5-20251001
 Default provider. Uses the Anthropic Python SDK. Get an API key at
 [console.anthropic.com](https://console.anthropic.com/).
 
-Claude Fable 5 (`claude-fable-5`) is also available
-(`/model set claude-fable-5`, onboarding, or the Claude Code CLI provider). It
-costs more than Opus, so it is not the default — select it only when you want
-it.
+Claude Sonnet 5.5 (`claude-sonnet-5-5`), Claude Opus 5.5 (`claude-opus-5-5`),
+Claude Fable 5.1 (`claude-fable-5-1`), and Claude Fable 5 (`claude-fable-5`) are
+also available (`/model set <model>`, onboarding, or the Claude Code CLI provider).
+Arbitrary unlisted model IDs are not automatically supported because direct
+Anthropic validation is restricted to curated models; the default reasoning model
+remains Claude Opus 4.7.
 
 </Accordion>
 

@@ -24,7 +24,8 @@ class CollectingTurnOutput:
 
     def __init__(self, on_status: Callable[..., None] | None = None) -> None:
         self.tool_hooks: ToolExecutionHooks | None = None
-        self.turn_cancel: threading.Event | None = None
+        #: The turn's one cancel signal; the queue sets it when the caller cancels.
+        self.turn_cancel = threading.Event()
         self.answer = ""
         self.failed = False
         self.status = ""

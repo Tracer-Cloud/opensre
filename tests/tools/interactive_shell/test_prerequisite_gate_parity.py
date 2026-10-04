@@ -27,6 +27,9 @@ from config.account import AccountRecord
 from config.constants import (
     GH_TOKEN_ENV,
     GITHUB_MCP_AUTH_TOKEN_ENV,
+    GITHUB_MCP_COMMAND_ENV,
+    GITHUB_MCP_MODE_ENV,
+    GITHUB_MCP_URL_ENV,
     GITHUB_TOKEN_ENV,
     INTEGRATIONS_STORE_PATH_ENV,
     ORGANIZATION_ID_ENV,
@@ -144,11 +147,15 @@ def test_the_gate_passes_exactly_when_the_analyzer_runs_with_the_chosen_grant(
     connection_id: str | None,
     token: str | None,
 ) -> None:
-    # Arrange: no ambient credentials, then the scenario's sources.
+    # Arrange: no ambient credentials, then the scenario's sources. An MCP URL or
+    # command from the repo ``.env`` alone yields a tokenless ``github`` integration.
     for name in (
         GITHUB_TOKEN_ENV,
         GH_TOKEN_ENV,
         GITHUB_MCP_AUTH_TOKEN_ENV,
+        GITHUB_MCP_URL_ENV,
+        GITHUB_MCP_MODE_ENV,
+        GITHUB_MCP_COMMAND_ENV,
         "JWT_TOKEN",
         WEBAPP_URL_ENV,
         ORGANIZATION_ID_ENV,

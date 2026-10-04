@@ -9,13 +9,16 @@ from config.constants.hosted_gateway import HOSTED_GATEWAY_SETTINGS_PATH
 from core.agent_harness.tools import capability_available_from_sources
 from core.tool import report_run_error
 from integrations.hosted_gateway.client import (
+    ERR_ALREADY_SETTLED,
     ERR_GATEWAY_UNAVAILABLE,
     ERR_INSECURE_APP_URL,
+    ERR_NOT_OWNED,
     ERR_NOT_PROVISIONED,
     ERR_NOT_RUNNING,
     ERR_NOT_SIGNED_IN,
     ERR_NOT_SUPPORTED,
     ERR_PROMPT_TOO_LARGE,
+    ERR_TOO_MANY_PROMPTS,
     ERR_UNAUTHORIZED,
     ERR_UNKNOWN_PROMPT,
     ERR_UNREACHABLE,
@@ -40,14 +43,22 @@ _FAILURE_TEXT = {
     ERR_NOT_RUNNING: "Your organization's hosted gateway is not running, so it cannot take a prompt.",
     ERR_UNKNOWN_PROMPT: "The hosted gateway no longer holds that prompt; send it again.",
     ERR_PROMPT_TOO_LARGE: "That prompt is too long for the hosted gateway; shorten it.",
+    ERR_TOO_MANY_PROMPTS: (
+        "The hosted gateway's prompt queue is full, so it refused this prompt and queued "
+        "nothing. Send it again in a moment."
+    ),
+    ERR_ALREADY_SETTLED: "That prompt already finished, so there is nothing to cancel.",
+    ERR_NOT_OWNED: (
+        "The hosted gateway is being replaced and the outgoing task still runs that prompt; "
+        "try cancelling again in a minute."
+    ),
     ERR_UNREACHABLE: (
         "The OpenSRE app did not answer (the connection failed or timed out). Check this "
         "machine's network connection."
     ),
     ERR_GATEWAY_UNAVAILABLE: (
         "Your organization's hosted gateway is not answering right now; it may still be "
-        "starting after a restart. Try again in a minute. A restart drops the prompts the "
-        "gateway held, so a prompt sent before one has to be sent again."
+        "starting after a restart. Try again in a minute."
     ),
     ERR_INSECURE_APP_URL: (
         "The OpenSRE app URL of this sign-in is not https, so the account token was not "
@@ -64,13 +75,10 @@ _CAUSE_TEXT = {
         "including after an integration change in the OpenSRE app, which takes a few minutes. "
         "Try again once it is steady."
     ),
-    "too_many_prompts": (
-        "The hosted gateway's prompt queue is full, so it refused this prompt. Send it again "
-        "in a moment."
-    ),
     "prompt_intake_unavailable": (
         "The gateway process is running but is not accepting prompts yet. Try again in a minute."
     ),
+    "prompt_store_unavailable": "The hosted gateway could not save the request, so it did not take it.",
     "GATEWAY_CAPACITY_EXCEEDED": (
         "The gateway fleet has reached its limit of active organizations, so this request "
         "was refused."
@@ -209,6 +217,11 @@ def _status_text(exc: HostedGatewayError, settings_url: str) -> str:
     """The sentence for ``exc.code``; a not-provisioned refusal names the admin page."""
     if exc.code == ERR_NOT_PROVISIONED:
         return not_provisioned_text(settings_url)
+    if exc.code == ERR_TOO_MANY_PROMPTS and exc.retry_after:
+        return (
+            "The hosted gateway's prompt queue is full, so it refused this prompt and queued "
+            f"nothing. Send it again in about {exc.retry_after} seconds."
+        )
     return _FAILURE_TEXT.get(exc.code, f"The OpenSRE app could not do that ({exc.code}).")
 
 

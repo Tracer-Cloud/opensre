@@ -9,6 +9,7 @@ from enum import StrEnum
 from typing import Any
 
 from config.constants.repl_theme import DEFAULT_THEME_NAME, Theme
+from config.interactive_override import interactive_env_value
 
 _FALSE_VALUES = ("", "0", "false", "off", "no")
 
@@ -141,6 +142,10 @@ class ReplConfig:
             3. Config file — ``~/.opensre/config.yml`` ``interactive`` section
             4. Built-in defaults (enabled=True, layout="classic", theme="blue")
 
+        A non-TTY slash command's context-local override
+        (:func:`config.interactive_override.forced_non_interactive`) stands in
+        for ``OPENSRE_INTERACTIVE=0`` at the env tier.
+
         Resolution is pure: the returned ``theme`` is a validated palette name,
         but activating it (the live terminal side effect) is the caller's job.
         """
@@ -149,7 +154,7 @@ class ReplConfig:
         # --- enabled ---
         if cli_enabled is not None:
             enabled = cli_enabled
-        elif (env_val := os.getenv("OPENSRE_INTERACTIVE")) is not None:
+        elif (env_val := interactive_env_value()) is not None:
             enabled = cls._coerce_bool(env_val, default=True)
         else:
             enabled = cls._coerce_bool(file_conf.get("enabled"), default=True)

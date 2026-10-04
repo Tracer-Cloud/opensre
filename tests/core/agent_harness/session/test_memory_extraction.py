@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import threading
+from collections.abc import Iterator
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -16,6 +17,8 @@ from config.constants import (
     OPENSRE_MEMORY_DIR_ENV,
     OPENSRE_MEMORY_DISABLED_ENV,
 )
+from config.principal import Actor, Principal, StorageScope
+from config.scope_context import bound_storage_scope, current_scope
 from core.domain.memory import list_memories
 
 
@@ -56,6 +59,55 @@ def _valid_item(name: str = "user-profile") -> dict[str, Any]:
         "description": "Name is Vaibhav",
         "content": "The user's name is Vaibhav.",
     }
+
+
+_WAIT_SECONDS = 5.0
+
+
+def _transcript(label: str, *, turns: int = 1) -> list[tuple[str, str]]:
+    """``turns`` exchanges whose user lines carry ``label`` so a run can be identified."""
+    return [message for _ in range(turns) for message in (("user", label), ("assistant", "ok"))]
+
+
+def _schedule(session_id: str, messages: list[tuple[str, str]]) -> None:
+    extraction.schedule_memory_extraction(messages, session_id=session_id)
+
+
+class _GatedExtractor:
+    """Stand-in for ``_extract_memories_safe`` that holds the worker on its first run.
+
+    While the worker is held, later snapshots queue behind it, so which ones
+    coalesce is decided deterministically instead of racing the worker.
+    """
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[str, int, StorageScope | None]] = []
+        self.busy = threading.Event()
+        self.release = threading.Event()
+
+    def __call__(self, messages: list[tuple[str, str]]) -> None:
+        self.calls.append((messages[0][1], len(messages), current_scope()))
+        if not self.busy.is_set():
+            self.busy.set()
+            self.release.wait(_WAIT_SECONDS)
+
+
+def _join_worker() -> None:
+    """Wait for the coalescing worker to drain every pending snapshot and exit."""
+    with extraction._worker_lock:
+        worker = extraction._worker
+    if worker is not None:
+        worker.join(_WAIT_SECONDS)
+        assert not worker.is_alive(), "coalescing worker never drained"
+    assert extraction._pending == {}
+
+
+@pytest.fixture
+def idle_worker() -> Iterator[None]:
+    """Start and end with no coalescing worker running or snapshot pending."""
+    _join_worker()
+    yield
+    _join_worker()
 
 
 class TestExtraction:
@@ -290,6 +342,7 @@ class TestSchedule:
         monkeypatch.setattr(extraction, "_extract_memories_safe", _extract)
         extraction.schedule_memory_extraction(
             [("user", "hi"), ("assistant", "hello")],
+            session_id="s-1",
             wait_for_completion=True,
         )
         assert order == ["extract:2"]
@@ -310,47 +363,74 @@ class TestSchedule:
         started = time.monotonic()
         extraction.schedule_memory_extraction(
             [("user", "hi"), ("assistant", "hello")],
+            session_id="s-1",
             wait_for_completion=True,
         )
         assert done.is_set()
         assert time.monotonic() - started >= 0.35
 
-    def test_async_schedule_coalesces_to_latest_snapshot(
+    @pytest.mark.usefixtures("idle_worker")
+    def test_back_to_back_sessions_are_both_extracted_in_their_own_scope(
         self, monkeypatch: pytest.MonkeyPatch
     ) -> None:
-        import time
+        """Session B's snapshot must not replace session A's unprocessed one.
 
-        seen: list[int] = []
-        started = threading.Event()
-        release = threading.Event()
+        A process-wide pending slot let the newest snapshot from any session
+        overwrite another session's, silently losing that session's memories.
+        """
+        gated = _GatedExtractor()
+        monkeypatch.setattr(extraction, "_extract_memories_safe", gated)
+        _schedule("s-busy", _transcript("busy"))
+        assert gated.busy.wait(_WAIT_SECONDS)
 
-        def _extract(messages: list[tuple[str, str]]) -> None:
-            started.set()
-            release.wait(timeout=2.0)
-            seen.append(len(messages))
+        scope_a = StorageScope(principal=Principal.org("org_a"), actor=Actor(id="U-A"))
+        scope_b = StorageScope(principal=Principal.org("org_a"), actor=Actor(id="U-B"))
+        with bound_storage_scope(scope_a):
+            _schedule("s-a", _transcript("from-a"))
+        with bound_storage_scope(scope_b):
+            _schedule("s-b", _transcript("from-b"))
+        gated.release.set()
+        _join_worker()
 
-        monkeypatch.setattr(extraction, "_extract_memories_safe", _extract)
-        # Reset coalescing state from other tests.
-        with extraction._worker_lock:
-            extraction._pending_messages = None
-            extraction._pending_context = None
-            extraction._worker = None
+        assert gated.calls[1:] == [("from-a", 2, scope_a), ("from-b", 2, scope_b)]
 
+    @pytest.mark.usefixtures("idle_worker")
+    def test_same_session_coalesces_to_its_latest_snapshot(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        gated = _GatedExtractor()
+        monkeypatch.setattr(extraction, "_extract_memories_safe", gated)
+        _schedule("s-busy", _transcript("busy"))
+        assert gated.busy.wait(_WAIT_SECONDS)
+
+        _schedule("s-a", _transcript("from-a", turns=1))
+        _schedule("s-a", _transcript("from-a", turns=2))
+        gated.release.set()
+        _join_worker()
+
+        assert [(label, size) for label, size, _scope in gated.calls] == [
+            ("busy", 2),
+            ("from-a", 4),
+        ]
+
+    @pytest.mark.usefixtures("idle_worker")
+    def test_close_supersedes_only_its_own_sessions_pending_snapshot(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        gated = _GatedExtractor()
+        monkeypatch.setattr(extraction, "_extract_memories_safe", gated)
+        _schedule("s-busy", _transcript("busy"))
+        assert gated.busy.wait(_WAIT_SECONDS)
+
+        _schedule("s-a", _transcript("from-a"))
+        _schedule("s-b", _transcript("from-b"))
         extraction.schedule_memory_extraction(
-            [("user", "a"), ("assistant", "b")],
-            wait_for_completion=False,
+            _transcript("a-final", turns=2), session_id="s-a", wait_for_completion=True
         )
-        assert started.wait(timeout=2.0)
-        extraction.schedule_memory_extraction(
-            [("user", "a"), ("assistant", "b"), ("user", "c"), ("assistant", "d")],
-            wait_for_completion=False,
-        )
-        release.set()
-        deadline = time.monotonic() + 2.0
-        while time.monotonic() < deadline and len(seen) < 2:
-            time.sleep(0.01)
-        # First run used the initial snapshot; second run used the coalesced latest.
-        assert seen == [2, 4]
+        gated.release.set()
+        _join_worker()
+
+        assert [label for label, _size, _scope in gated.calls] == ["busy", "a-final", "from-b"]
 
     def test_transcript_is_redacted_before_llm(self, monkeypatch: pytest.MonkeyPatch) -> None:
         prompts: list[str] = []
@@ -383,11 +463,6 @@ def test_scheduled_extraction_thread_inherits_storage_scope(
     scope. Without contextvars.copy_context() the thread sees current_scope()
     is None and save_memory() misfiles the user's facts under the org root
     instead of users/<actor_id>/memory/ (regression guard)."""
-    import threading
-
-    from config.principal import Actor, Principal, StorageScope
-    from config.scope_context import bound_storage_scope, current_scope
-
     monkeypatch.setattr(extraction, "auto_extract_enabled", lambda: True)
 
     seen: dict[str, Any] = {}
@@ -403,6 +478,7 @@ def test_scheduled_extraction_thread_inherits_storage_scope(
     with bound_storage_scope(scope):
         extraction.schedule_memory_extraction(
             [("user", "hi"), ("assistant", "hello")],
+            session_id="s-1",
             wait_for_completion=False,
         )
 
@@ -424,6 +500,7 @@ def test_close_extraction_runs_off_the_main_thread(monkeypatch: pytest.MonkeyPat
 
     extraction.schedule_memory_extraction(
         [("user", "hi, I'm Vaibhav"), ("assistant", "hello!")],
+        session_id="s-1",
         wait_for_completion=True,
     )
 

@@ -43,6 +43,7 @@ class Event(StrEnum):
     INTEGRATION_SETUP_COMPLETED = "integration_setup_completed"
     INTEGRATION_REMOVED = "integration_removed"
     INTEGRATION_VERIFIED = "integration_verified"
+    GITHUB_CONNECTION_SNAPSHOT = "github_connection_snapshot"
     INTEGRATIONS_LISTED = "integrations_listed"
 
     # Interactive terminal analytics

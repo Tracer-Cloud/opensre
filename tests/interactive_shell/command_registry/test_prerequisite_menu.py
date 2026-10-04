@@ -16,7 +16,14 @@ import surfaces.interactive_shell.command_registry.choice_prompt as choice_promp
 import surfaces.interactive_shell.command_registry.prerequisite_menu as prerequisite_menu
 import tools.interactive_shell.actions.skill_prerequisite_gate as gate
 from config.account import AccountRecord
-from config.constants import GH_TOKEN_ENV, GITHUB_MCP_AUTH_TOKEN_ENV, GITHUB_TOKEN_ENV
+from config.constants import (
+    GH_TOKEN_ENV,
+    GITHUB_MCP_AUTH_TOKEN_ENV,
+    GITHUB_MCP_COMMAND_ENV,
+    GITHUB_MCP_MODE_ENV,
+    GITHUB_MCP_URL_ENV,
+    GITHUB_TOKEN_ENV,
+)
 from config.constants.skills import (
     ANALYZE_REPO_OPTION,
     ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME,
@@ -40,7 +47,20 @@ _ANSWER = format_ask_user_answers(
 
 @pytest.fixture(autouse=True)
 def _no_ambient_github_token(monkeypatch: pytest.MonkeyPatch) -> None:
-    for name in (GITHUB_TOKEN_ENV, GH_TOKEN_ENV, GITHUB_MCP_AUTH_TOKEN_ENV):
+    """No GitHub from the developer's shell or repo ``.env`` (loaded by the root conftest).
+
+    An MCP URL or command alone makes the env loader synthesize a tokenless
+    ``github`` integration; its connection selection fails, which withholds the
+    ``GH_TOKEN`` fallback the tests set.
+    """
+    for name in (
+        GITHUB_TOKEN_ENV,
+        GH_TOKEN_ENV,
+        GITHUB_MCP_AUTH_TOKEN_ENV,
+        GITHUB_MCP_URL_ENV,
+        GITHUB_MCP_MODE_ENV,
+        GITHUB_MCP_COMMAND_ENV,
+    ):
         monkeypatch.delenv(name, raising=False)
 
 

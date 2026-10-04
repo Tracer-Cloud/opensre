@@ -29,7 +29,11 @@ def _schedule_turn_memory_extraction(session: SessionState) -> None:
         from core.agent_harness.session.memory_extraction import schedule_memory_extraction
 
         messages = list(getattr(session, "cli_agent_messages", []) or [])
-        schedule_memory_extraction(messages, wait_for_completion=False)
+        schedule_memory_extraction(
+            messages,
+            session_id=session.session_id,
+            wait_for_completion=False,
+        )
     except Exception:
         # Never let memory bookkeeping break turn recording.
         return

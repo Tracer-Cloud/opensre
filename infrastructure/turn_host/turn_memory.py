@@ -1,16 +1,21 @@
-"""Resident-memory sampling, to size how many turns a task can run at once.
+"""Turn-end memory readings, to size how many turns a task can run at once.
 
-Resident memory is the physical RAM a process is actually using right now — the
-number a container's memory limit is enforced against. A turn holds its
-conversation and evidence context in RAM for its whole duration, so the ceiling
-on concurrent turns is the task's memory divided by the per-turn cost. These
-helpers let the turn host log that cost from a real run instead of guessing it.
+A Fargate task's memory limit is enforced against its container cgroup, which
+also counts child processes a turn starts (Codex CLI, git clones, sandboxes) —
+this process's own resident memory (RSS) misses them. So the container cgroup's
+current and peak usage are the sizing numbers, and the process RSS delta is a
+secondary signal for the Python side alone.
+
+The cgroup peak is the container's lifetime high-water mark, and concurrent
+turns share one process, so no reading here is attributable to a single turn.
 """
 
 from __future__ import annotations
 
 import logging
 import sys
+from dataclasses import dataclass
+from pathlib import Path
 
 try:
     import resource as _resource
@@ -18,6 +23,31 @@ except ImportError:  # Windows / non-POSIX
     _resource = None  # type: ignore[assignment]
 
 _BYTES_PER_MB = 1_048_576
+
+# Mount point of the container's own cgroup hierarchy (Linux only).
+_CGROUP_ROOT = Path("/sys/fs/cgroup")
+# Each tuple names the cgroup v2 file first, then the v1 memory-controller file.
+_CGROUP_CURRENT_FILES = ("memory.current", "memory/memory.usage_in_bytes")
+_CGROUP_PEAK_FILES = ("memory.peak", "memory/memory.max_usage_in_bytes")
+
+
+@dataclass(frozen=True, slots=True)
+class TurnMemory:
+    """Memory readings taken as a turn ends; each is ``None`` where unreadable."""
+
+    container_bytes: int | None
+    container_peak_bytes: int | None
+    process_rss_delta_bytes: int | None
+
+
+def _read_cgroup_bytes(relative_paths: tuple[str, ...]) -> int | None:
+    """The first readable byte count among ``relative_paths`` under the cgroup root."""
+    for relative_path in relative_paths:
+        try:
+            return int((_CGROUP_ROOT / relative_path).read_text(encoding="ascii").strip())
+        except (OSError, ValueError):
+            continue
+    return None
 
 
 def resident_memory_bytes() -> int | None:
@@ -49,24 +79,41 @@ def peak_resident_memory_bytes() -> int | None:
     return peak if sys.platform == "darwin" else peak * 1024
 
 
-def log_turn_memory(logger: logging.Logger, memory_before: int | None) -> None:
-    """Log one turn's resident-memory cost, given the reading taken before it.
+def _mb(value: int | None) -> str:
+    return "unknown" if value is None else f"{value / _BYTES_PER_MB:.1f}"
 
-    A no-op where resident memory is unavailable (e.g. macOS dev has no
-    ``/proc``), so the caller need not guard. The concurrency ceiling for a task
-    is roughly its memory divided by this per-turn cost.
+
+def record_turn_memory(logger: logging.Logger, rss_before: int | None) -> TurnMemory:
+    """Read and DEBUG-log turn-end memory, given the process RSS taken at turn start.
+
+    Never raises: a reading the platform cannot provide (e.g. macOS dev has no
+    cgroup or ``/proc``) is ``None``, so the caller can record the result on
+    both the success and the failure path without guarding.
     """
-    memory_after = resident_memory_bytes()
-    if memory_before is None or memory_after is None:
-        return
-    peak = peak_resident_memory_bytes()
-    logger.debug(
-        "gateway_turn_memory start_mb=%.1f end_mb=%.1f delta_mb=%.1f peak_mb=%s",
-        memory_before / _BYTES_PER_MB,
-        memory_after / _BYTES_PER_MB,
-        (memory_after - memory_before) / _BYTES_PER_MB,
-        f"{peak / _BYTES_PER_MB:.1f}" if peak is not None else "unknown",
+    rss_after = resident_memory_bytes()
+    memory = TurnMemory(
+        container_bytes=_read_cgroup_bytes(_CGROUP_CURRENT_FILES),
+        container_peak_bytes=_read_cgroup_bytes(_CGROUP_PEAK_FILES),
+        process_rss_delta_bytes=(
+            rss_after - rss_before if rss_before is not None and rss_after is not None else None
+        ),
     )
+    logger.debug(
+        "gateway_turn_memory container_mb=%s container_peak_mb=%s "
+        "rss_start_mb=%s rss_end_mb=%s rss_delta_mb=%s rss_peak_mb=%s",
+        _mb(memory.container_bytes),
+        _mb(memory.container_peak_bytes),
+        _mb(rss_before),
+        _mb(rss_after),
+        _mb(memory.process_rss_delta_bytes),
+        _mb(peak_resident_memory_bytes()),
+    )
+    return memory
 
 
-__all__ = ["log_turn_memory", "peak_resident_memory_bytes", "resident_memory_bytes"]
+__all__ = [
+    "TurnMemory",
+    "peak_resident_memory_bytes",
+    "record_turn_memory",
+    "resident_memory_bytes",
+]

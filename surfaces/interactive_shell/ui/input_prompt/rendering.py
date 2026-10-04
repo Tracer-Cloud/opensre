@@ -18,7 +18,7 @@ from surfaces.interactive_shell.ui.handoff_questions import (
 from surfaces.interactive_shell.ui.input_prompt.layout import _short_meta
 from surfaces.shared.terminal.prompt_layout import prompt_text_width, terminal_columns
 
-DEFAULT_PLACEHOLDER_TEXT = "Ask about an alert"
+DEFAULT_PLACEHOLDER_TEXT = "Drop a repo link. Watch it find your CI waste."
 _PLAN_CONTINUE_PLACEHOLDER = "continue the plan, or type a message"
 #: Warm vertical bar — same role as Droid's orange user-turn lead-in.
 _USER_TURN_ACCENT = "▌"
@@ -97,8 +97,10 @@ def render_submitted_prompt(console: Console, session: Session, text: str) -> No
     # would then paint every ordinary follow-up as a brand-coloured answer.
     is_handoff_answer = bool(session.terminal.awaiting_handoff_answer)
     session.terminal.awaiting_handoff_answer = False
+    recap_painted = session.terminal.handoff_recap_text == stripped
+    session.terminal.handoff_recap_text = None
     ask_user_pairs = parse_ask_user_answers(stripped) if is_handoff_answer else []
-    if len(ask_user_pairs) >= 2:
+    if len(ask_user_pairs) >= 2 and not recap_painted:
         # Keep the Ask User block in the transcript (Q white, A brand). Claim the
         # turn number so the next prompt still advances; do not paint a fake
         # ``[N] ❯`` — leave this as the Ask User card.

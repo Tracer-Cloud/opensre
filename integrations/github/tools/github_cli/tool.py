@@ -13,7 +13,7 @@ from integrations.github.tools.github_cli.credentials import (
     github_source_available,
     resolve_github_token,
 )
-from integrations.github.tools.github_cli.runner import run_gh
+from integrations.github.tools.github_cli.runner import MAX_GH_OUTPUT_CHARS, run_gh
 from integrations.github.tools.github_cli.summary import attach_summary
 
 _ARGS_SCHEMA: dict[str, Any] = {
@@ -25,7 +25,9 @@ _ARGS_SCHEMA: dict[str, Any] = {
             "description": (
                 "Arguments after the `gh` binary (for example: "
                 '["issue", "create", "--title", "Bug", "--body", "…"] or '
-                '["issue", "list", "--limit", "10"]). Do not include `gh` itself.'
+                '["issue", "list", "--limit", "10", "--json", "number,title"]). '
+                "Do not include `gh` itself. Each list item is one argv entry, passed "
+                "to gh verbatim without shell quoting or splitting."
             ),
         },
         "repo": {
@@ -95,7 +97,13 @@ def _normalize_args(args: list[str] | None) -> list[str]:
         "tables/headers). Not raw JSON/GraphQL dumps. For a commit's workflow "
         "run history with attempts and conclusions use "
         "list_github_actions_workflow_runs with head_sha; gh run list does not "
-        "show attempts."
+        f"show attempts. Output over {MAX_GH_OUTPUT_CHARS} characters is cut, and cut JSON is "
+        "refused: for list and JSON reads always pass a small --limit, only the "
+        "--json fields you need, and --jq to select them (for gh api, --jq too). "
+        "For gh api graphql pass the whole query as one arg, e.g. "
+        '["api", "graphql", "-f", "query=query($o: String!, $n: String!) '
+        '{ repository(owner: $o, name: $n) { name } }", "-f", "o=OWNER", '
+        '"-f", "n=NAME"], with balanced braces.'
     ),
     use_cases=[
         "Creating a GitHub issue (title/body/assignee/labels) when the user asks",

@@ -617,3 +617,38 @@ def test_a_demo_pick_stalls_only_when_the_chosen_skill_was_loaded_and_nothing_el
     assert not demo_pick_stalled_on_skill_load(
         session, user_answered=True, from_onboarding_menu=True
     )
+
+
+def test_a_demo_the_shell_entered_stalls_when_the_turn_runs_no_tool() -> None:
+    from types import SimpleNamespace
+
+    from config.constants.skills import ANALYZE_REPO_OPTION, ONBOARDING_MENU_TITLE
+    from core.agent_harness.session.pending_choice import (
+        PendingUserChoice,
+        format_ask_user_answers,
+    )
+    from core.agent_harness.task_plan.conclusion import (
+        demo_entered_from_menu,
+        demo_pick_stalled_on_skill_load,
+    )
+    from core.agent_harness.task_plan.evidence import record_plan_evidence, reset_plan_evidence
+
+    # Arrange: the onboarding pick, answered in a turn that starts in the demo.
+    menu = PendingUserChoice(title=ONBOARDING_MENU_TITLE, options=(ANALYZE_REPO_OPTION,))
+    answer = format_ask_user_answers(menu.items(), (ANALYZE_REPO_OPTION,))
+    other = PendingUserChoice(title="Which repository should I analyze?", options=("acme/one",))
+    repository_answer = format_ask_user_answers(other.items(), ("acme/one",))
+    session = SimpleNamespace(pending_user_choice=None)
+    reset_plan_evidence(session)
+
+    # Act / Assert: only an onboarding pick into an onboarding demo counts as entered.
+    assert demo_entered_from_menu("analyzing-github-ci-performance", answer)
+    assert not demo_entered_from_menu("analyzing-github-ci-performance", repository_answer)
+    assert not demo_entered_from_menu("another-skill", answer)
+    # Nothing was loaded, so a turn without any tool return is the stall.
+    stalled = {"user_answered": True, "from_onboarding_menu": False, "entered_from_menu": True}
+    assert demo_pick_stalled_on_skill_load(session, **stalled)
+    record_plan_evidence(session, "skill_view", {"name": "analyzing-github-ci-performance"})
+    assert demo_pick_stalled_on_skill_load(session, **stalled)
+    record_plan_evidence(session, "scan_local_git_workspace", {})
+    assert not demo_pick_stalled_on_skill_load(session, **stalled)

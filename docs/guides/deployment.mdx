@@ -181,10 +181,21 @@ DISCORD_GATEWAY_MAX_CONCURRENT=2
 ```
 
 Or set `OPENSRE_SIZE_PROFILE=MEDIUM` (2) or `LARGE` (4) to raise both defaults
-together.
+together. Remote prompts from the CLI and the web app need no separate setting:
+they run on as many workers as the process cap, and one conversation's prompts
+still run one at a time.
 
-Read the `gateway_turn_memory` debug lines (`delta_mb`, `peak_mb`) from a real run
-to size this against the task's memory limit before raising it.
+Clones and coding agents (Codex, Claude Code) use far more memory than a turn
+that only waits on the model. However many turns run, at most
+`OPENSRE_MAX_CONCURRENT_HEAVY_WORK` (default 2) of these run at once; the rest
+wait up to five minutes, then the tool reports that the gateway is busy. On a
+task with little memory, set it to 1.
+
+Size the task from a real run before raising either cap. Every
+`gateway_turn_completed` and `gateway_turn_failed` event carries
+`container_memory_bytes` and `container_memory_peak_bytes`. These are the whole
+task's memory, child processes included, so compare the peak against the task's
+memory limit.
 
 ### Dedicated scheduler service
 

@@ -2,6 +2,12 @@
 
 ``POST /v1/prompt/{id}/answer`` answers a prompt that stopped to ask; the answer runs
 as a follow-up prompt on the same session and comes back as its own record.
+``POST /v1/prompt/{id}/cancel`` cancels a queued or running prompt. When the body
+names an ``actor``, only that actor's prompt can be cancelled.
+
+A prompt continues the actor's own conversation unless ``conversation`` is ``new``
+(a separate conversation, which runs beside the actor's others) or the
+``conversation_id`` of an earlier prompt (that conversation).
 
 The caller is the organization's own control plane (through the OpenSRE app),
 authenticated with the same bearer token the alert intake uses. Nothing here
@@ -10,6 +16,8 @@ names an organization: the gateway serves exactly one.
 
 from __future__ import annotations
 
+import re
+import uuid
 from http import HTTPStatus
 from typing import Any
 
@@ -19,25 +27,41 @@ from fastapi.responses import JSONResponse
 from config.constants.gateway import (
     PROMPT_CONTEXT_MAX_ITEMS,
     PROMPT_CONTEXT_VALUE_MAX_CHARS,
+    PROMPT_CONVERSATION_NEW,
     PROMPT_DEFAULT_ACTOR,
     PROMPT_MAX_CHARS,
+    PROMPT_QUEUE_FULL_RETRY_AFTER_SECONDS,
     PROMPT_ROUTE_PATH,
 )
-from gateway.core.prompt_intake.jobs import AnswerRefused, PromptJob, PromptQueue
+from gateway.core.prompt_intake.jobs import (
+    AnswerRefused,
+    CancelRefused,
+    PromptJob,
+    PromptNotSaved,
+    PromptQueue,
+    PromptState,
+)
 from infrastructure.alert_intake import require_local_or_token
 
 router = APIRouter()
 
 _ACTOR_MAX_CHARS = 128
+#: The gateway could not save the prompt where a replacement task would find it.
+_STORE_UNAVAILABLE = "prompt_store_unavailable"
+#: Every slot runs or waits; the caller may send the same request again after ``Retry-After``.
+_TOO_MANY_PROMPTS = "too_many_prompts"
+#: The caller's id for one submission; a resend with the same id is the same prompt.
+_REQUEST_ID = re.compile(r"^[A-Za-z0-9_-]{8,64}$")
 
 
 class _Refused(Exception):
-    """A request the route turns away; ``code`` and ``status`` are the whole answer."""
+    """A request the route turns away; its fields are the whole answer."""
 
-    def __init__(self, code: str, status: HTTPStatus) -> None:
+    def __init__(self, code: str, status: HTTPStatus, *, retry_after: int | None = None) -> None:
         super().__init__(code)
         self.code = code
         self.status = status
+        self.retry_after = retry_after
 
 
 @router.post(PROMPT_ROUTE_PATH)
@@ -49,7 +73,7 @@ async def submit_prompt(request: Request) -> JSONResponse:
         payload = await _json_object(request)
         job = _submitted(queue, payload)
     except _Refused as refused:
-        return _error(refused.code, refused.status)
+        return _refusal(refused)
     return JSONResponse(job.view(), status_code=HTTPStatus.ACCEPTED)
 
 
@@ -61,7 +85,7 @@ def prompt_result(prompt_id: str, request: Request) -> JSONResponse:
         queue = _ready_queue(request)
         job = _known_job(queue, prompt_id)
     except _Refused as refused:
-        return _error(refused.code, refused.status)
+        return _refusal(refused)
     return JSONResponse(job.view(), status_code=HTTPStatus.OK)
 
 
@@ -75,29 +99,73 @@ async def answer_prompt(prompt_id: str, request: Request) -> JSONResponse:
         payload = await _json_object(request)
         follow_up = _answered(queue, parent, payload)
     except _Refused as refused:
-        return _error(refused.code, refused.status)
+        return _refusal(refused)
     return JSONResponse(follow_up.view(), status_code=HTTPStatus.ACCEPTED)
+
+
+@router.post(PROMPT_ROUTE_PATH + "/{prompt_id}/cancel")
+async def cancel_prompt(prompt_id: str, request: Request) -> JSONResponse:
+    if (auth_error := require_local_or_token(request)) is not None:
+        return auth_error
+    try:
+        queue = _ready_queue(request)
+        payload = await _optional_json_object(request)
+        job = _known_job(queue, prompt_id)
+        actor = payload.get("actor")
+        if actor is not None and _actor(actor) != job.actor:
+            # Another user's prompt reads as unknown, so its id confirms nothing.
+            raise _Refused("unknown_prompt", HTTPStatus.NOT_FOUND)
+        queue.cancel(job)
+    except _Refused as refused:
+        return _refusal(refused)
+    except CancelRefused as refused:
+        return _error(refused.code, HTTPStatus.CONFLICT)
+    # A running prompt stops at its next check; the caller polls until it reads ``cancelled``.
+    status = HTTPStatus.ACCEPTED if job.state is PromptState.RUNNING else HTTPStatus.OK
+    return JSONResponse(job.view(), status_code=status)
 
 
 def _submitted(queue: PromptQueue, payload: dict[str, Any]) -> PromptJob:
     prompt = _prompt(payload.get("prompt"))
     context = _context(payload.get("context"))
     actor = _actor(payload.get("actor"))
-    job = queue.submit(prompt, context=context, actor=actor)
+    request_id = _request_id(payload.get("request_id"))
+    conversation = _conversation(payload.get("conversation"))
+    try:
+        job = queue.submit(
+            prompt,
+            context=context,
+            actor=actor,
+            request_id=request_id,
+            conversation=conversation,
+        )
+    except PromptNotSaved:
+        raise _Refused(_STORE_UNAVAILABLE, HTTPStatus.SERVICE_UNAVAILABLE) from None
     if job is None:
-        raise _Refused("too_many_prompts", HTTPStatus.SERVICE_UNAVAILABLE)
+        raise _queue_full()
     return job
 
 
 def _answered(queue: PromptQueue, parent: PromptJob, payload: dict[str, Any]) -> PromptJob:
     answer = _answer(payload.get("answer"))
+    request_id = _request_id(payload.get("request_id"))
     try:
-        follow_up = queue.answer(parent, answer)
+        follow_up = queue.answer(parent, answer, request_id=request_id)
     except AnswerRefused as refused:
         raise _Refused(refused.code, HTTPStatus.CONFLICT) from None
+    except PromptNotSaved:
+        raise _Refused(_STORE_UNAVAILABLE, HTTPStatus.SERVICE_UNAVAILABLE) from None
     if follow_up is None:
-        raise _Refused("too_many_prompts", HTTPStatus.SERVICE_UNAVAILABLE)
+        raise _queue_full()
     return follow_up
+
+
+def _queue_full() -> _Refused:
+    return _Refused(
+        _TOO_MANY_PROMPTS,
+        HTTPStatus.SERVICE_UNAVAILABLE,
+        retry_after=PROMPT_QUEUE_FULL_RETRY_AFTER_SECONDS,
+    )
 
 
 def _ready_queue(request: Request) -> PromptQueue:
@@ -113,6 +181,13 @@ def _known_job(queue: PromptQueue, prompt_id: str) -> PromptJob:
     if job is None:
         raise _Refused("unknown_prompt", HTTPStatus.NOT_FOUND)
     return job
+
+
+async def _optional_json_object(request: Request) -> dict[str, Any]:
+    """The JSON object body, or an empty one when the request has no body."""
+    if not (await request.body()).strip():
+        return {}
+    return await _json_object(request)
 
 
 async def _json_object(request: Request) -> dict[str, Any]:
@@ -163,6 +238,40 @@ def _actor(raw: Any) -> str:
     if not isinstance(raw, str) or not raw.strip() or len(raw) > _ACTOR_MAX_CHARS:
         raise _Refused("invalid_actor", HTTPStatus.BAD_REQUEST)
     return raw.strip()
+
+
+def _request_id(raw: Any) -> str:
+    if raw is None:
+        return ""
+    if not isinstance(raw, str) or not _REQUEST_ID.fullmatch(raw):
+        raise _Refused("invalid_request_id", HTTPStatus.BAD_REQUEST)
+    return raw
+
+
+def _conversation(raw: Any) -> str:
+    """Empty for the actor's own conversation, ``new``, or a conversation id in canonical form.
+
+    An id names a session file, so only the canonical UUID spelling is accepted.
+    """
+    if raw is None or raw == "":
+        return ""
+    if raw == PROMPT_CONVERSATION_NEW:
+        return PROMPT_CONVERSATION_NEW
+    if isinstance(raw, str):
+        try:
+            canonical = str(uuid.UUID(raw))
+        except ValueError:
+            canonical = ""
+        if canonical == raw:
+            return canonical
+    raise _Refused("invalid_conversation", HTTPStatus.BAD_REQUEST)
+
+
+def _refusal(refused: _Refused) -> JSONResponse:
+    response = _error(refused.code, refused.status)
+    if refused.retry_after is not None:
+        response.headers["Retry-After"] = str(refused.retry_after)
+    return response
 
 
 def _error(code: str, status: HTTPStatus) -> JSONResponse:

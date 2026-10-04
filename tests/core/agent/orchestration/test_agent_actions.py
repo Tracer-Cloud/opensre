@@ -595,7 +595,9 @@ def test_execute_cli_actions_sets_bare_model_for_active_provider(
 def test_execute_cli_actions_runs_implementation_action(monkeypatch: object) -> None:
     calls: list[str] = []
 
-    def _fake_run_implementation(request: str, presenter: object) -> ImplementationLaunch:
+    def _fake_run_implementation(
+        request: str, presenter: object, **_kwargs: object
+    ) -> ImplementationLaunch:
         calls.append(request)
         presenter.session.record("implementation", request, ok=True)  # type: ignore[attr-defined]
         presenter.console.print(f"implemented {request}")  # type: ignore[attr-defined]

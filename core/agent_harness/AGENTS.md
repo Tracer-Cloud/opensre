@@ -81,8 +81,28 @@ complete a step that had no tool return while it was `in_progress`
 (`task_plan/completion.py`, fed by `turns/plan_hooks.py`); a step marked
 `verifies` is never exempt, and a text-only closing step is exempt only once
 such a step completed. The second work tool of a turn with no open plan is
-refused (`task_plan/required.py`). A step newly marked `blocked` is resolved
-with the user, not skipped: the conclusion is rejected until `ask_user_choice`
+refused (`task_plan/required.py`). A response whose only tool call is
+`update_plan` runs: the prompt asks for the write in the same response as the
+step's tool, but refusing it cost the same model call it meant to save and
+sent the model into retries and off-plan tools. The host advances the plan
+so the model need not write it to move on (`task_plan/advance.py`, armed per
+batch in `turns/plan_hooks.py`): before the first work call of a batch with
+no `update_plan` (`ask_user_choice` counts; bookkeeping and `slash_invoke` do
+not), the earned `in_progress` step completes and the first pending step
+after it starts (never one behind it). Earned is the completion rule above (a
+tool return, or the Ask User answer for the step that asked); a shown
+`deliverable` reply earns exactly one deliverable step; a `verifies` step
+needs its own tool return. A plan records the skill that wrote it
+(`TaskPlan.owner`). Only a plan written this turn moves, or one whose owner is
+still the active skill on a turn answering that skill's own question
+(`task_plan/ownership.py`, decided once at turn start as
+`TurnSnapshot.plan_answer_continues`); the CURRENT PLAN, ACTIVE SKILL and
+answered-guidance blocks say the host advances only on such a turn and keep
+asking for paired status writes otherwise. The host never settles a plan or
+touches `blocked` steps, and a host advance counts as the turn working the
+plan for the stop gates (`goal_review.py`). A step newly marked
+`blocked` is resolved with the user, not skipped: the conclusion is rejected
+until `ask_user_choice`
 is queued (`task_plan/conclusion.py`, gate in `turns/goal_review.py`). The
 onboarding menu's answer turn that only loaded the chosen demo skill is
 rejected once, with a nudge to write the plan and run its first step (same
@@ -168,8 +188,12 @@ read that same Event. Scheduled ticks write it when the stored task is
 disabled or removed (`PredicateCancelConsole`). Do not invent a second
 cancel channel.
 
-**Cloud scale-out:** more Fargate tasks (fleet), not unbound in-process
-concurrency or a new `chat` API.
+**Cloud scale-out:** one gateway task per organization running a bounded
+in-process pool (the process gate, per-conversation ordering, a separate cap on
+heavy subprocess work). An organization that outgrows one task moves agent
+execution into separate worker containers. That means no unbounded in-process
+concurrency, no fleet of gateway tasks sharing one session store, and no new
+`chat` API.
 
 ## Hard boundary
 
@@ -413,8 +437,8 @@ There are two ways into an agent turn:
 
 **Scaling** is separate from the host API: local concurrency
 (`TurnConcurrencyGate` / transport pools / `OPENSRE_SIZE_PROFILE`) and cloud
-Fargate scale-out (spin more tasks; same API per task) sit *around*
-`chat`. Construct-once-per-session is the reuse story;
+scale-out (separate worker containers once one task is not enough; same API
+per worker) sit *around* `chat`. Construct-once-per-session is the reuse story;
 process/task scale-out is deploy. Do not redesign the host API to “enable
 scaling.”
 

@@ -12,11 +12,16 @@ from infrastructure.scheduling.scheduler.types import TaskReport
 
 
 class ScheduledOutcomes:
-    """Keep the latest verified outcome for each operation, including recovered failures."""
+    """Keep the latest verified outcome for each operation, including recovered failures.
 
-    def __init__(self) -> None:
+    A loop bound to one PR or branch pauses when that target can never be repaired.
+    An unbound sweep skips such a target and keeps its schedule for the others.
+    """
+
+    def __init__(self, *, bound_target: bool = True) -> None:
         self._outcomes: dict[str, WorkOutcome] = {}
         self._lock = Lock()
+        self._bound_target = bound_target
 
     def observe(self, request: ToolExecutionRequest, result: ToolExecutionResult) -> None:
         """Record producer-owned structured evidence without interpreting report prose."""
@@ -36,11 +41,16 @@ class ScheduledOutcomes:
         text = turn.primary_response_text
         with self._lock:
             outcomes = tuple(self._outcomes.values())
+        # A sweep picks its targets each tick, so a fork or closed PR it reached
+        # is one ineligible target, not a reason to stop repairing the rest.
+        sweep = not self._bound_target
+        skipped = tuple(item for item in outcomes if sweep and item.terminal_block)
+        work = tuple(item for item in outcomes if not (sweep and item.terminal_block))
         # A block no retry can clear is a verified fact about the target, so it
         # outranks how the turn ended: a cancel or iteration cap after the tool
         # reported ``pr_not_open`` must still pause the schedule, or the next
         # tick fires at a target already known to be stuck.
-        terminal_block = next((item for item in outcomes if item.terminal_block), None)
+        terminal_block = next((item for item in work if item.terminal_block), None)
         stop_schedule = terminal_block is not None
         if terminal_block is not None:
             outcome = terminal_block
@@ -51,15 +61,20 @@ class ScheduledOutcomes:
         elif not agent_mode:
             outcome = WorkOutcome(status=WorkStatus.SUCCEEDED)
         else:
-            unresolved = next((item for item in outcomes if not item.completed), None)
+            unresolved = next((item for item in work if not item.completed), None)
             if unresolved is not None:
                 outcome = unresolved
             elif outcomes:
+                evidence: dict[str, Any] = {
+                    "operations": [item.model_dump(mode="json") for item in work]
+                }
+                if skipped:
+                    evidence["skipped"] = [item.model_dump(mode="json") for item in skipped]
                 outcome = WorkOutcome(
                     status=WorkStatus.NOOP
-                    if all(item.status is WorkStatus.NOOP for item in outcomes)
+                    if all(item.status is WorkStatus.NOOP for item in work)
                     else WorkStatus.SUCCEEDED,
-                    evidence={"operations": [item.model_dump(mode="json") for item in outcomes]},
+                    evidence=evidence,
                 )
             else:
                 outcome = WorkOutcome(status=WorkStatus.INCOMPLETE, error_kind="work_unverified")

@@ -9,7 +9,6 @@ from config.package_exports import bind_package_exports
 EXPORTS: dict[str, str] = {
     "ANALYTICS_CICD_ENV": "analytics",
     "CONNECT_INTEGRATIONS_HEADING": "skill_prerequisites",
-    "GITHUB_CI_DEMO_REPOSITORY": "github",
     "GITHUB_INTEGRATION_SETUP_CLI": "github",
     "GITHUB_INTEGRATION_SETUP_SLASH": "github",
     "GITHUB_SETUP_SLASH_INVOKE": "github",
@@ -23,6 +22,8 @@ EXPORTS: dict[str, str] = {
     "CI_REPAIR_REPORT_BUILDER": "ci_repair",
     "CI_REPAIR_CRON": "ci_repair",
     # coding agent
+    "CODEX_HOME_ENV": "coding_agent",
+    "CODEX_ISOLATED_HOME_PREFIX": "coding_agent",
     "CODING_AGENT_SANDBOX_ENV": "coding_agent",
     "CODING_AGENT_SANDBOX_AGENT": "coding_agent",
     "CODING_AGENT_SANDBOX_HOST": "coding_agent",
@@ -59,6 +60,8 @@ EXPORTS: dict[str, str] = {
     "OPENSRE_ACCOUNT_LLM_MODEL_ENV": "account",
     "OPENSRE_ACCOUNT_METADATA_PATH_ENV": "account",
     "OPENSRE_ACCOUNT_SESSION_PATH": "account",
+    "OPENSRE_ACCOUNT_SESSION_RETRY_BUDGET_SECONDS": "account",
+    "OPENSRE_ACCOUNT_SESSION_RETRY_DELAYS_SECONDS": "account",
     "OPENSRE_ACCOUNT_TOKEN_ENV": "account",
     "OPENSRE_ACCOUNT_USAGE_PATH": "account",
     "OPENSRE_APP_URL_DEFAULT": "account",
@@ -193,7 +196,9 @@ EXPORTS: dict[str, str] = {
     "PROMPT_CONTEXT_MAX_ITEMS": "gateway",
     "PROMPT_CONTEXT_VALUE_MAX_CHARS": "gateway",
     "PROMPT_DEFAULT_ACTOR": "gateway",
+    "PROMPT_CONVERSATION_NEW": "gateway",
     "PROMPT_MAX_CHARS": "gateway",
+    "PROMPT_QUEUE_FULL_RETRY_AFTER_SECONDS": "gateway",
     "PROMPT_QUEUE_MAX": "gateway",
     "PROMPT_PROGRESS_KIND_NOTE": "gateway",
     "PROMPT_PROGRESS_KIND_PLAN": "gateway",
@@ -240,6 +245,8 @@ EXPORTS: dict[str, str] = {
     "HOSTED_GATEWAY_PROMPT_POLL_SECONDS": "hosted_gateway",
     "HOSTED_GATEWAY_PROMPT_WAIT_SECONDS": "hosted_gateway",
     "HOSTED_GATEWAY_QUEUE_NOTICE_SECONDS": "hosted_gateway",
+    "HOSTED_GATEWAY_SUBMIT_RETRY_BUDGET_SECONDS": "hosted_gateway",
+    "HOSTED_GATEWAY_SUBMIT_RETRY_DELAYS_SECONDS": "hosted_gateway",
     "HOSTED_GATEWAY_UNANSWERED_GRACE_SECONDS": "hosted_gateway",
     # github
     "GH_TOKEN_ENV": "github",
@@ -313,6 +320,8 @@ EXPORTS: dict[str, str] = {
     "LLM_PROVIDER_ENV": "llm",
     "OPENSRE_LLM_NATIVE_STRUCTURED_OUTPUT_ENV": "llm",
     "OPENSRE_REACT_GOAL_LLM_REVIEW_ENV": "llm",
+    "OPENAI_PROMPT_CACHE_KEY_HASH_CHARS": "llm",
+    "OPENAI_PROMPT_CACHE_KEY_PREFIX": "llm",
     # mariadb
     "MARIADB_DATABASE_ENV": "mariadb",
     "MARIADB_HOST_ENV": "mariadb",
@@ -354,6 +363,7 @@ EXPORTS: dict[str, str] = {
     "NEW_RELIC_DEFAULT_INCIDENT_LIMIT": "new_relic",
     "NEW_RELIC_DEFAULT_WINDOW_MINUTES": "new_relic",
     "NEW_RELIC_INSTANCES_ENV": "new_relic",
+    "NEW_RELIC_TIMESERIES_MAX_BUCKETS": "new_relic",
     "NEW_RELIC_NRQL_LIMIT_MAX": "new_relic",
     "NEW_RELIC_NRQL_TIMEOUT_SECONDS": "new_relic",
     # opensearch
@@ -412,6 +422,7 @@ EXPORTS: dict[str, str] = {
     "POSTHOG_MCP_PROJECT_ID_ENV": "posthog_mcp",
     "POSTHOG_MCP_URL_ENV": "posthog_mcp",
     # product
+    "OPENSRE_INTERACTIVE_ENV": "product",
     "OPENSRE_PARENT_INTERACTIVE_SHELL_ENV": "product",
     "PRODUCT_DISPLAY_NAME": "product",
     "PRODUCT_NAME": "product",
@@ -475,6 +486,8 @@ EXPORTS: dict[str, str] = {
     "WEEKDAY_CRON_FIELD": "scheduler",
     "NON_RETRYABLE_WORK_ERROR_KINDS": "scheduler",
     "OPENSRE_GATEWAY_HOST_SCHEDULER_ENV": "scheduler",
+    "OPENSRE_SCHEDULER_BUILD_ENV": "scheduler",
+    "SCHEDULER_MISSED_FIRE_GRACE_SECONDS": "scheduler",
     # secrets
     "CREDENTIAL_FALLBACK_FILENAME": "secrets",
     "OPENSRE_DISABLE_KEYRING_ENV": "secrets",
@@ -510,6 +523,10 @@ EXPORTS: dict[str, str] = {
     "SLACK_DEFAULT_CHAT_ID_ENV": "slack",
     "SLACK_FILE_HOST_SUFFIXES": "slack",
     "SLACK_HEARTBEAT_STOP_TIMEOUT_SECONDS": "slack",
+    "SLACK_SOCKET_MODE_DEDUP_HARD_MAX_EVENTS": "slack",
+    "SLACK_SOCKET_MODE_DEDUP_MAX_EVENTS": "slack",
+    "SLACK_SOCKET_MODE_DEDUP_RETRY_WINDOW_SECONDS": "slack",
+    "SLACK_SOCKET_MODE_DEDUP_TTL_SECONDS": "slack",
     "SLACK_USER_TOKEN_PREFIXES": "slack",
     "SLACK_WEBHOOK_URL_ENV": "slack",
     # slash_commands
@@ -543,7 +560,10 @@ EXPORTS: dict[str, str] = {
     "INTEGRATIONS_SECRET_ARN_ENV": "tenancy",
     "INTEGRATIONS_STORE_PATH_ENV": "tenancy",
     # tooling
+    "CI_ANALYSIS_PREFETCH_MAX_AGE_SECONDS": "tooling",
     "DEFAULT_APPROVAL_EXPIRY_SECONDS": "tooling",
+    "TOOL_PREFETCH_MAX_ENTRIES": "tooling",
+    "WORKSPACE_SCAN_PREFETCH_MAX_AGE_SECONDS": "tooling",
     "ToolBlockedBy": "tooling",
     "ToolSkippedBy": "tooling",
     # tracer
@@ -552,7 +572,12 @@ EXPORTS: dict[str, str] = {
     "TRACER_BASE_URL_PROD": "tracer",
     "TRACER_JWT_TOKEN_ENV": "tracer",
     # turn_concurrency
+    "DEFAULT_MAX_CACHED_SESSION_AGENTS": "turn_concurrency",
+    "DEFAULT_HEAVY_WORK_CONCURRENCY": "turn_concurrency",
     "DEFAULT_SCHEDULED_RUN_CONCURRENCY": "turn_concurrency",
+    "HEAVY_WORK_WAIT_SECONDS": "turn_concurrency",
+    "OPENSRE_MAX_CONCURRENT_HEAVY_WORK_ENV": "turn_concurrency",
+    "OPENSRE_MAX_CACHED_SESSION_AGENTS_ENV": "turn_concurrency",
     "OPENSRE_MAX_CONCURRENT_TURNS_ENV": "turn_concurrency",
     "OPENSRE_SCHEDULER_MAX_CONCURRENT_RUNS_ENV": "turn_concurrency",
     "OPENSRE_SIZE_PROFILE_ENV": "turn_concurrency",

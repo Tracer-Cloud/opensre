@@ -109,6 +109,11 @@ def capture_account_authenticated() -> None:
         capture_exception(exc)
 
 
+def capture_connection_snapshot(properties: Properties) -> None:
+    """Record verified/unknown local GitHub state without credentials."""
+    _capture(Event.GITHUB_CONNECTION_SNAPSHOT, properties)
+
+
 def capture_sign_in_prompted() -> None:
     """Exposure event: the mandatory sign-in screen was rendered to a signed-out user."""
     _capture(Event.SIGN_IN_PROMPTED, {"entrypoint": "sign_in_gate"})
@@ -135,14 +140,35 @@ def capture_gateway_turn_started(*, surface: str) -> None:
     _capture(Event.GATEWAY_TURN_STARTED, {"surface": surface})
 
 
+def _turn_memory_properties(
+    container_memory_bytes: int | None,
+    container_memory_peak_bytes: int | None,
+    process_rss_delta_bytes: int | None,
+) -> Properties:
+    """Turn-end memory readings as event properties, omitting unknown ones."""
+    readings: dict[str, int | None] = {
+        "container_memory_bytes": container_memory_bytes,
+        "container_memory_peak_bytes": container_memory_peak_bytes,
+        "process_rss_delta_bytes": process_rss_delta_bytes,
+    }
+    return {key: value for key, value in readings.items() if value is not None}
+
+
 def capture_gateway_turn_completed(
     *,
     surface: str,
     duration_ms: float,
     answered: bool,
     final_intent: str | None = None,
+    container_memory_bytes: int | None = None,
+    container_memory_peak_bytes: int | None = None,
+    process_rss_delta_bytes: int | None = None,
 ) -> None:
-    """Mark successful completion of one gateway agent turn."""
+    """Mark successful completion of one gateway agent turn.
+
+    The memory readings are taken at turn end; the container peak is
+    lifetime-wide, so none of them is attributable to this turn alone.
+    """
     props: Properties = {
         "surface": surface,
         "duration_ms": round(duration_ms),
@@ -151,6 +177,9 @@ def capture_gateway_turn_completed(
     }
     if final_intent:
         props["final_intent"] = final_intent
+    props |= _turn_memory_properties(
+        container_memory_bytes, container_memory_peak_bytes, process_rss_delta_bytes
+    )
     _capture(Event.GATEWAY_TURN_COMPLETED, props)
 
 
@@ -160,12 +189,16 @@ def capture_gateway_turn_failed(
     duration_ms: float,
     error_type: str,
     error_message: str = "",
+    container_memory_bytes: int | None = None,
+    container_memory_peak_bytes: int | None = None,
+    process_rss_delta_bytes: int | None = None,
 ) -> None:
     """Mark a failed gateway agent turn (exception during dispatch).
 
     ``surface`` may be omitted when transport context was unbound so failures
     still land in product analytics for regression detection. ``error_message``
-    is redacted and capped before it is recorded.
+    is redacted and capped before it is recorded. Memory readings are as for
+    :func:`capture_gateway_turn_completed`.
     """
     props: Properties = {
         "duration_ms": round(duration_ms),
@@ -177,6 +210,9 @@ def capture_gateway_turn_failed(
         props["surface"] = surface
     if recorded_error := bounded_error_message(error_message):
         props["error_message"] = recorded_error
+    props |= _turn_memory_properties(
+        container_memory_bytes, container_memory_peak_bytes, process_rss_delta_bytes
+    )
     _capture(Event.GATEWAY_TURN_FAILED, props)
 
 

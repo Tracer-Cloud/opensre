@@ -63,6 +63,7 @@ from surfaces.interactive_shell.runtime.loop_scheduler import (
 from surfaces.interactive_shell.runtime.session_shutdown import (
     close_repl_session_after_detached_worker,
 )
+from surfaces.interactive_shell.runtime.startup.deferred_work import DeferredStartupWork
 from surfaces.interactive_shell.runtime.turn_host import (
     AgentTurnResources,
     run_agent_turn,
@@ -178,6 +179,7 @@ class InteractiveShellController:
         pt_session: PromptSession[str] | None = None,
         inbox: _alert_inbox.AlertInbox | None = None,
         console: Console | None = None,
+        startup_work: DeferredStartupWork | None = None,
     ) -> None:
         self.runtime_context = _resolve_runtime_context(
             session,
@@ -234,6 +236,11 @@ class InteractiveShellController:
             self.session,
             self.echo_console,
         )
+        if startup_work is None:
+            # No launch to protect (embedded shell): background work starts at once.
+            startup_work = DeferredStartupWork()
+            startup_work.release()
+        self.startup_work = startup_work
         self.background: BackgroundTaskPool | None = None
         self.tasks: list[tuple[str, asyncio.Task[None]]] = []
         self._ci_fix_status_cleanup: Callable[[], None] | None = None
@@ -274,11 +281,12 @@ class InteractiveShellController:
             self.spinner,
             self.inbox,
             self.prompt.invalidate_prompt,
+            defer_thread_job=self.startup_work.defer,
         )
         self.tasks = self.background.start_all(
             lambda: run_agent_turn_queue(
                 state=self.state,
-                run_turn=lambda text: run_agent_turn(self.turn_runtime, text),
+                run_turn=self._run_turn,
                 on_goal_control=self._apply_goal_control_at_turn_boundary,
             )
         )
@@ -289,6 +297,18 @@ class InteractiveShellController:
         except Exception as exc:  # noqa: BLE001
             log.warning("Loop scheduler could not start: %s", exc)
         self._ci_fix_status_cleanup = bind_ci_fix_status(self.session.terminal)
+        if self.session.pending_user_choice is None:
+            # No startup menu will draw: the prompt is the first thing the user
+            # waits on. Released only now, so every job above is already held.
+            self.startup_work.release()
+
+    async def _run_turn(self, text: str) -> None:
+        try:
+            await run_agent_turn(self.turn_runtime, text)
+        finally:
+            # Normally the startup menu's draw released held work already; a
+            # first turn that ended without drawing one must not keep it held.
+            self.startup_work.release()
 
     def _try_apply_goal_control_after_worker_release(
         self,
@@ -510,6 +530,7 @@ class InteractiveShellController:
         for (label, _task), result in zip(self.tasks, shutdown_results, strict=True):
             if isinstance(result, Exception) and not isinstance(result, asyncio.CancelledError):
                 log.debug("%s task shutdown raised exception: %s", label, result)
+        self.startup_work.close()
         shutdown_loop_scheduler()
         if self.turn_runtime.has_live_turn_worker():
             self.state.mark_turn_worker_detached()

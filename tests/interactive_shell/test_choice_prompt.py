@@ -618,3 +618,24 @@ def test_dismissal_analytics_name_the_key_that_closed_the_menu(
     assert [(event["reason"], event["dismiss_key"]) for event in dismissed] == [
         ("cancelled", dismiss_key)
     ]
+
+
+def test_menu_draw_releases_launch_work_held_for_the_first_wait(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Warm-ups held during launch start as the menu draws, not after the user answers."""
+    session = Session()
+    session.pending_user_choice = _CHOICE
+    released: list[str] = []
+    session.terminal.startup_work_release = lambda: released.append("released")
+    console, _buf = _console()
+
+    def _pick(**_kwargs: object) -> str:
+        assert released == ["released"]
+        return "Commit the changes"
+
+    monkeypatch.setattr(choice_prompt, "repl_tty_interactive", lambda: True)
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", _pick)
+
+    assert _handler(session, console) is True
+    assert released == ["released"]

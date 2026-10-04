@@ -207,6 +207,7 @@ def build_action_system_prompt_envelope(turn_snapshot: TurnSnapshot) -> PromptEn
                 else ask_user_answered_block(
                     turn_snapshot.text,
                     plan_only=turn_snapshot.plan_only_until_authorized,
+                    continues_plan=turn_snapshot.plan_answer_continues,
                 )
             ),
             provenance="core.agent_harness.task_plan.prompt",
@@ -218,7 +219,11 @@ def build_action_system_prompt_envelope(turn_snapshot: TurnSnapshot) -> PromptEn
             id=PromptBlockId.ACTIVE_SKILL,
             kind=PromptBlockKind.RULE,
             tier=PromptTier.EPHEMERAL,
-            content=active_skill_block(turn_snapshot.active_skill, turn_snapshot.text),
+            content=active_skill_block(
+                turn_snapshot.active_skill,
+                turn_snapshot.text,
+                host_advances=turn_snapshot.plan_answer_continues,
+            ),
             provenance="core.agent_harness.prompts.action.active_skill",
         )
     )
@@ -275,6 +280,7 @@ def build_action_system_prompt_envelope(turn_snapshot: TurnSnapshot) -> PromptEn
     plan_block = current_task_plan_block(
         turn_snapshot.task_plan,
         plan_only=turn_snapshot.plan_only_until_authorized,
+        host_advances=turn_snapshot.plan_answer_continues,
     )
     blocks.extend(
         _optional_block(

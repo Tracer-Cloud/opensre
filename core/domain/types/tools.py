@@ -17,8 +17,8 @@ class ToolRole(StrEnum):
 
     ``ACTION`` and ``BOOKKEEPING`` calls (plan, memory, goal ticks) may be
     batched in one response and run sequentially in provider order. A
-    ``TURN_ENDING`` call hands control to the user and must be the only call
-    in its response.
+    ``TURN_ENDING`` call hands control to the user; only ``BOOKKEEPING``
+    calls may share its response, and they run first.
     """
 
     ACTION = "action"

@@ -38,7 +38,11 @@ UV_RUN_RECURSION_DEPTH_ENV: Final[str] = "UV_RUN_RECURSION_DEPTH"
 #: Prevent a CLI wizard opened inside the REPL from launching a nested shell.
 OPENSRE_PARENT_INTERACTIVE_SHELL_ENV: Final[str] = "OPENSRE_PARENT_INTERACTIVE_SHELL"
 
+#: Turns the interactive shell on or off for a bare ``opensre`` run.
+OPENSRE_INTERACTIVE_ENV: Final[str] = "OPENSRE_INTERACTIVE"
+
 __all__ = [
+    "OPENSRE_INTERACTIVE_ENV",
     "OPENSRE_PARENT_INTERACTIVE_SHELL_ENV",
     "PRODUCT_DISPLAY_NAME",
     "PRODUCT_NAME",

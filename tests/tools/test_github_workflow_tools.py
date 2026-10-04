@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from http import HTTPStatus
 from typing import Any
 from unittest.mock import patch
 
@@ -87,6 +88,44 @@ def test_pr_discovery_accepts_explicit_repo_without_configured_default() -> None
     assert paginate.call_args.args[0] == "/repos/o/r/pulls"
 
 
+@pytest.mark.parametrize(
+    ("owner", "repo"),
+    [
+        ("Tracer-Cloud", "Tracer-Cloud/opensre"),
+        ("", "https://github.com/Tracer-Cloud/opensre"),
+        ("Tracer-Cloud", "opensre"),
+    ],
+)
+def test_pr_status_reads_one_repository_however_the_model_names_it(owner: str, repo: str) -> None:
+    """A full name in ``repo`` was appended to ``owner``, and GitHub answered 404."""
+    with patch.object(GitHubRestClient, "paginate", return_value=[]) as paginate:
+        result = summarize_github_pr_status(owner=owner, repo=repo, github_token="tok")
+
+    assert result["available"] is True
+    assert paginate.call_args.args[0] == "/repos/Tracer-Cloud/opensre/pulls"
+
+
+def test_pr_status_refuses_a_missing_owner_without_calling_github() -> None:
+    with patch.object(GitHubRestClient, "paginate") as paginate:
+        result = summarize_github_pr_status(owner=None, repo="opensre", github_token="tok")  # type: ignore[arg-type]
+
+    assert result["available"] is False and "owner" in result["error"]
+    paginate.assert_not_called()
+
+
+def test_pr_status_404_says_the_repository_is_missing_or_not_visible_to_the_token() -> None:
+    not_found = GitHubApiError(
+        "Not Found (https://docs.github.com/rest/pulls/pulls#list-pull-requests)",
+        status_code=HTTPStatus.NOT_FOUND,
+        path="/repos/acme/private/pulls",
+    )
+    with patch.object(GitHubRestClient, "paginate", side_effect=not_found):
+        result = summarize_github_pr_status(owner="acme", repo="private", github_token="tok")
+
+    assert result["available"] is False
+    assert "acme/private does not exist or the GitHub token cannot see it" in result["error"]
+
+
 def test_list_github_work_items_classifies_taken_and_up_for_grabs() -> None:
     issues = [
         {
@@ -126,10 +165,12 @@ def test_summarize_github_pr_status_uses_detail_mergeability_not_list_nulls(
     list_pr = {
         "number": 10,
         "title": "Ready PR",
+        "state": "open",
         "draft": False,
         "html_url": "https://github.com/o/r/pull/10",
         "user": {"login": "alice"},
-        "head": {"sha": "abc", "ref": "feature"},
+        "head": {"sha": "abc", "ref": "feature", "repo": {"full_name": "o/r"}},
+        "base": {"repo": {"full_name": "o/r"}},
         "mergeable": None,
         "mergeable_state": "unknown",
         "updated_at": "2026-06-28T10:00:00Z",
@@ -154,8 +195,73 @@ def test_summarize_github_pr_status_uses_detail_mergeability_not_list_nulls(
 
     assert result["counts"]["mergeable"] == 1
     assert result["pull_requests"][0]["mergeability"] == "mergeable"
+    assert result["pull_requests"][0]["repairable"] is True
     if total_checks == 1:
         assert result["work_outcome"]["status"] == "noop"
+    else:
+        assert "work_outcome" not in result
+
+
+_SAME_REPO = {"full_name": "o/r"}
+
+
+@pytest.mark.parametrize(
+    "head_repo, draft, mergeable, mergeable_state, conclusion, noop",
+    [
+        # OpenSRE can never push to these, so they must not hold the scan open.
+        ({"full_name": "fork/r"}, False, False, "dirty", "success", True),
+        (None, False, True, "unstable", "failure", True),
+        (_SAME_REPO, True, True, "unstable", "failure", True),
+        # A repairable PR with failing checks or a conflict still needs the repair.
+        (_SAME_REPO, False, True, "unstable", "failure", False),
+        (_SAME_REPO, False, False, "dirty", "success", False),
+        # Waiting on review or on running checks is not a repair the sweep can make.
+        (_SAME_REPO, False, True, "blocked", "success", True),
+        (_SAME_REPO, False, True, "clean", None, True),
+    ],
+)
+def test_pr_scan_noop_ignores_prs_opensre_cannot_repair(
+    head_repo: dict[str, str] | None,
+    draft: bool,
+    mergeable: bool,
+    mergeable_state: str,
+    conclusion: str | None,
+    noop: bool,
+) -> None:
+    pr = {
+        "number": 12,
+        "title": "Some PR",
+        "state": "open",
+        "draft": draft,
+        "html_url": "https://github.com/o/r/pull/12",
+        "user": {"login": "carol"},
+        "head": {"sha": "fed", "ref": "topic", "repo": head_repo},
+        "base": {"repo": _SAME_REPO},
+        "mergeable": mergeable,
+        "mergeable_state": mergeable_state,
+        "updated_at": "2026-10-04T01:00:00Z",
+    }
+    check = {"name": "test", "conclusion": conclusion, "status": "completed"}
+    if conclusion is None:
+        check["status"] = "in_progress"
+
+    def fake_request(self: GitHubRestClient, method: str, path: str, **_kwargs: Any) -> Any:
+        if path == "/repos/o/r/pulls/12":
+            return pr
+        if path == "/repos/o/r/commits/fed/check-runs":
+            return {"total_count": 1, "check_runs": [check]}
+        raise AssertionError((method, path))
+
+    with (
+        patch.object(GitHubRestClient, "paginate", return_value=[pr]),
+        patch.object(GitHubRestClient, "request", fake_request),
+    ):
+        result = summarize_github_pr_status(owner="o", repo="r", github_token="tok")
+
+    if noop:
+        assert result["work_outcome"]["status"] == "noop"
+        repairable = result["pull_requests"][0]["repairable"]
+        assert result["work_outcome"]["evidence"]["skipped_prs"] == ([] if repairable else [12])
     else:
         assert "work_outcome" not in result
 

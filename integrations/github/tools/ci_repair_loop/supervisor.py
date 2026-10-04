@@ -15,6 +15,7 @@ from config.constants.ci_repair import (
 )
 from infrastructure.process.entrypoint import opensre_command
 from infrastructure.process.tree import stop_worker
+from infrastructure.process.turn_capacity import heavy_work_slot
 from infrastructure.scheduling.scheduler.storage import get_task
 from infrastructure.scheduling.scheduler.types import TaskReport
 from integrations.github.tools.ci_repair_loop.models import RepairRun, RepairStatus
@@ -43,25 +44,20 @@ def finish_run(store: RepairStore, run: RepairRun) -> str:
     )
 
 
-def _supervise(store: RepairStore, run: RepairRun) -> str:
-    if run.terminal:
-        return finish_run(store, run)
-    cutoff = run.deadline - CI_REPAIR_FINISH_RESERVE_SECONDS
-    if time.time() >= cutoff:
-        run.status, run.reason = (
-            RepairStatus.TIMED_OUT,
-            "The original ten-minute deadline has expired.",
-        )
-        return finish_run(store, run)
-    if run.status is RepairStatus.RUNNING and not run.checks_passed:
-        run.status, run.reason = (
-            RepairStatus.FAILED,
-            "The scheduler was interrupted; inspect retained artifacts before retrying.",
-        )
-        return finish_run(store, run)
+def _never_started(store: RepairStore, run: RepairRun) -> str:
+    """Finish a run that got no heavy-work slot: it was stopped, or none freed in time."""
     if _cancelled(run):
         run.status, run.reason = RepairStatus.CANCELLED, "The repair loop was stopped."
-        return finish_run(store, run)
+    else:
+        run.status, run.reason = (
+            RepairStatus.TIMED_OUT,
+            "Too many heavy operations were running to start the repair before its deadline.",
+        )
+    return finish_run(store, run)
+
+
+def _run_worker(store: RepairStore, run: RepairRun, cutoff: float) -> RepairStatus | None:
+    """Run the worker to its end; the status it was stopped with, or ``None`` if it exited."""
     directory = store.directory(run.id)
     directory.mkdir(parents=True, exist_ok=True)
     command = opensre_command(CI_REPAIR_WORKER_COMMAND, str(store.root), run.id)
@@ -81,6 +77,37 @@ def _supervise(store: RepairStore, run: RepairRun) -> str:
             if process.poll() is None:
                 stop_worker(process.pid)
             process.wait(timeout=5)
+    return stopped
+
+
+def _supervise(store: RepairStore, run: RepairRun) -> str:
+    if run.terminal:
+        return finish_run(store, run)
+    cutoff = run.deadline - CI_REPAIR_FINISH_RESERVE_SECONDS
+    if time.time() >= cutoff:
+        run.status, run.reason = (
+            RepairStatus.TIMED_OUT,
+            "The original ten-minute deadline has expired.",
+        )
+        return finish_run(store, run)
+    if run.status is RepairStatus.RUNNING and not run.checks_passed:
+        run.status, run.reason = (
+            RepairStatus.FAILED,
+            "The scheduler was interrupted; inspect retained artifacts before retrying.",
+        )
+        return finish_run(store, run)
+    if _cancelled(run):
+        run.status, run.reason = RepairStatus.CANCELLED, "The repair loop was stopped."
+        return finish_run(store, run)
+    # The worker clones the repository and runs a coding agent in a process of its
+    # own. A gate inside it would bound nothing here, so this process holds one
+    # heavy-work slot for as long as it supervises the worker, until the tree is killed.
+    with heavy_work_slot(
+        timeout_seconds=max(cutoff - time.time(), 0.0), stop=lambda: _cancelled(run)
+    ) as started:
+        stopped = _run_worker(store, run, cutoff) if started else None
+    if not started:
+        return _never_started(store, run)
     latest = store.get(run.id)
     if stopped is not None or not latest.terminal:
         latest.status = stopped or (

@@ -133,7 +133,7 @@ def test_architecture_clone_repo_no_token_clones_unauthenticated(
 def test_architecture_cleanup_refuses_outside_path(tmp_path: Path) -> None:
     result = architecture_cleanup_repo(workspace_root=str(tmp_path))
     assert result["ok"] is False
-    assert "outside" in result["error"]
+    assert "not an audit directory" in result["error"]
 
 
 def test_sanitize_repo_name() -> None:
@@ -222,3 +222,69 @@ def test_architecture_save_observations_tool_reads_session_from_context(
     assert result["ok"] is True
     assert result["session_id"] == "ctx-session-id"
     assert Path(result["path"]).exists()
+
+
+class _CancelledTurnConsole:
+    """A console whose turn was cancelled; counts how often the tool asked."""
+
+    def __init__(self) -> None:
+        self.reads = 0
+
+    @property
+    def cancel_requested(self) -> bool:
+        self.reads += 1
+        return True
+
+
+def test_architecture_clone_waiting_on_a_full_heavy_work_gate_ends_with_the_turn(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A cancelled turn must not sit out the slot wait; the tool still answers with an error."""
+    from config.constants.turn_concurrency import OPENSRE_MAX_CONCURRENT_HEAVY_WORK_ENV
+    from core.agent_harness.tools.tool_context import (
+        ACTION_TOOL_CONTEXT_RESOURCE_KEY,
+        ActionToolScope,
+    )
+    from core.tool.contracts import AgentToolContext
+    from infrastructure.process.turn_capacity import (
+        HEAVY_WORK_BUSY_MESSAGE,
+        process_heavy_work_gate,
+        reset_process_heavy_work_gate_for_tests,
+    )
+    from infrastructure.process.turn_capacity import heavy_work as heavy_work_module
+    from integrations.github.tools.architecture_issue_tool import repo_workspace
+
+    # Arrange: both slots held, a long wait, and a turn that has been cancelled.
+    monkeypatch.setenv(OPENSRE_MAX_CONCURRENT_HEAVY_WORK_ENV, "2")
+    monkeypatch.setattr(heavy_work_module, "HEAVY_WORK_WAIT_SECONDS", 30.0)
+    workspace = tmp_path / "workspace"
+    monkeypatch.setattr(repo_workspace, "architecture_workspace_dir", lambda: workspace)
+
+    def _no_clone(**_kwargs: object) -> None:
+        pytest.fail("cloned without a heavy-work slot")
+
+    monkeypatch.setattr(repo_workspace, "_shallow_clone", _no_clone)
+    console = _CancelledTurnConsole()
+    context = AgentToolContext(
+        resolved_integrations={},
+        resources={
+            ACTION_TOOL_CONTEXT_RESOURCE_KEY: ActionToolScope(
+                session=SimpleNamespace(), console=console
+            )
+        },
+    )
+    reset_process_heavy_work_gate_for_tests()
+    gate = process_heavy_work_gate()
+    assert gate.try_acquire() and gate.try_acquire()
+
+    try:
+        # Act
+        result = architecture_clone_repo(owner="org", repo="repo", ref="main", context=context)
+    finally:
+        reset_process_heavy_work_gate_for_tests()
+
+    # Assert: the tool's error result, the cancel flag was consulted, and no audit dir is left.
+    assert result["ok"] is False
+    assert result["error"] == HEAVY_WORK_BUSY_MESSAGE
+    assert console.reads > 0
+    assert list(workspace.iterdir()) == []

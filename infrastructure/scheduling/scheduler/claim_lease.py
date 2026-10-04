@@ -99,6 +99,11 @@ class ClaimLeaseRenewer:
                 self._active.pop(claim, None)
                 self._condition.notify_all()
 
+    def in_flight(self) -> int:
+        """Executions in this process inside :meth:`hold`; one whose lease lapsed still runs."""
+        with self._condition:
+            return len(self._active)
+
     def _deadline_for(self, lease_expires_at: datetime) -> float:
         # Sample monotonic first so a pause between clocks cannot extend ownership.
         monotonic_now = self._monotonic()

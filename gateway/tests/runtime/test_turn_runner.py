@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 import threading
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 from typing import Any
 from unittest.mock import MagicMock
 
@@ -480,6 +480,49 @@ def test_a_failed_turn_records_a_redacted_capped_error_message(monkeypatch: Any)
     assert len(message) == 500
 
 
+@pytest.mark.parametrize("fails", [False, True], ids=["completed", "failed"])
+def test_turn_events_carry_container_memory_on_both_outcomes(
+    monkeypatch: Any, tmp_path: Any, fails: bool
+) -> None:
+    # Arrange: a fake cgroup v2 container and RSS readings 100 -> 150 bytes.
+    # Memory was once logged on the success path only, so failed turns could
+    # not be sized; the failed event must carry it like the completed one.
+    from infrastructure.analytics import capture
+    from infrastructure.analytics.events import Event
+    from infrastructure.analytics.usage_context import UsageSurface, bound_usage_context
+    from infrastructure.turn_host import turn_memory
+
+    (tmp_path / "memory.current").write_text("1000\n", encoding="ascii")
+    (tmp_path / "memory.peak").write_text("2000\n", encoding="ascii")
+    monkeypatch.setattr(turn_memory, "_CGROUP_ROOT", tmp_path)
+    monkeypatch.setattr("infrastructure.turn_host.turn_runner.resident_memory_bytes", lambda: 100)
+    monkeypatch.setattr(turn_memory, "resident_memory_bytes", lambda: 150)
+    analytics = _RecordingAnalytics()
+    monkeypatch.setattr(capture, "get_analytics", lambda: analytics)
+    for name in ("capture_gateway_turn_completed", "capture_gateway_turn_failed"):
+        monkeypatch.setattr(f"infrastructure.turn_host.turn_runner.{name}", getattr(capture, name))
+    agent_cls = _patch_headless_agent(monkeypatch, _empty_turn_result())
+    if fails:
+        agent_cls.return_value.dispatch.side_effect = RuntimeError("boom")
+    handler = TurnRunner(console=Console(force_terminal=False))
+
+    # Act
+    with (
+        bound_usage_context(surface=UsageSurface.SLACK, user_id="U1"),
+        pytest.raises(RuntimeError) if fails else nullcontext(),
+    ):
+        handler(
+            "hi", SessionCore(store=InMemorySessionStore()), MagicMock(), logging.getLogger("t")
+        )
+
+    # Assert
+    expected = Event.GATEWAY_TURN_FAILED if fails else Event.GATEWAY_TURN_COMPLETED
+    [props] = [props for event, props in analytics.events if event == expected]
+    assert props["container_memory_bytes"] == 1000
+    assert props["container_memory_peak_bytes"] == 2000
+    assert props["process_rss_delta_bytes"] == 50
+
+
 def test_turn_runner_holds_the_session_lock_for_the_whole_turn(monkeypatch: Any) -> None:
     """The handler must take the pool's lock, not the unsynchronised primitive.
 
@@ -640,6 +683,44 @@ def test_run_waits_for_a_slot_when_told_to_instead_of_refusing(monkeypatch: Any)
     assert returned is not None
     assert sink.finalized != AT_CAPACITY_MESSAGE
     factory.assert_called_once()
+
+
+def test_a_turn_cancelled_while_it_waits_for_a_slot_stops_waiting(monkeypatch: Any) -> None:
+    """A cancelled remote prompt must not hold its worker for the whole slot wait."""
+    # Arrange: the only slot stays taken; the turn may wait a minute for it
+    from infrastructure.turn_host.concurrency import AT_CAPACITY_MESSAGE, TurnConcurrencyGate
+
+    factory = _patch_headless_agent(monkeypatch, _empty_turn_result())
+    gate = TurnConcurrencyGate(1)
+    assert gate.try_acquire() is True
+    handler = TurnRunner(console=Console(force_terminal=False), gate=gate)
+    sink = RecordingTurnOutput()
+    sink.turn_cancel = threading.Event()
+    returned: list[Any] = []
+
+    def run() -> None:
+        returned.append(
+            handler.run(
+                "hello",
+                SessionCore(store=InMemorySessionStore()),
+                sink,
+                logging.getLogger("t"),
+                slot_wait_seconds=60.0,
+            )
+        )
+
+    waiting = threading.Thread(target=run)
+    waiting.start()
+
+    # Act
+    sink.turn_cancel.set()
+    waiting.join(timeout=10.0)
+
+    # Assert: it gave up without running or claiming the gateway was busy
+    assert not waiting.is_alive()
+    assert returned == [None]
+    assert sink.finalized != AT_CAPACITY_MESSAGE
+    factory.assert_not_called()
 
 
 def test_run_returns_none_and_says_at_capacity_when_the_gate_refuses(monkeypatch: Any) -> None:

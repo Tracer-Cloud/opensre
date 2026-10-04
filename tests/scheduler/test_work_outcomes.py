@@ -14,8 +14,9 @@ from infrastructure.scheduling.scheduler.storage import add_task, get_runs, get_
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind, TaskReport
 
 
+@pytest.mark.parametrize("bound_target", [True, False])
 @pytest.mark.parametrize(
-    "kind, should_pause",
+    "kind, unrepairable",
     [
         ("unsupported_pr_branch", True),
         ("pr_not_open", True),
@@ -24,12 +25,14 @@ from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, T
         ("no_failing_checks", False),
     ],
 )
-def test_repair_schedule_pauses_only_for_an_unrepairable_target(
+def test_repair_schedule_pauses_only_for_an_unrepairable_bound_target(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     kind: str,
-    should_pause: bool,
+    unrepairable: bool,
+    bound_target: bool,
 ) -> None:
+    """A sweep skips a fork or closed PR and keeps its schedule; a bound loop pauses."""
     from types import SimpleNamespace
 
     from core.llm.types import ToolCall
@@ -55,7 +58,7 @@ def test_repair_schedule_pauses_only_for_an_unrepairable_target(
             return True, "", "test-message"
 
     def repair(_payload: dict) -> TaskReport:
-        outcomes = ScheduledOutcomes()
+        outcomes = ScheduledOutcomes(bound_target=bound_target)
         output = attach_repair_outcome({"error_kind": kind}, operation="ci:o/r:42")
         execute_tool_calls(
             [ToolCall(id="repair", name="fix_github_pr_ci", input={})],
@@ -83,11 +86,60 @@ def test_repair_schedule_pauses_only_for_an_unrepairable_target(
     ScheduledDeliveryAdapters({Provider.INTERACTIVE_SHELL: Delivery()}).install()
     execute_task(task, "2026-09-16T12:48Z", SchedulerRunners(agent=repair))
     saved = get_task(task.id)
+    should_pause = unrepairable and bound_target
+    skipped = unrepairable and not bound_target
     assert saved is not None
     assert saved.enabled is not should_pause
     assert len(delivered) == 1
     assert ("paused" in delivered[0].lower()) is should_pause
-    assert get_runs(task.id)[0].work_error_kind == ("" if kind == "no_failing_checks" else kind)
+    run = get_runs(task.id)[0]
+    assert run.work_error_kind == ("" if kind == "no_failing_checks" or skipped else kind)
+    if skipped:
+        assert run.work_status == "noop"
+        assert run.work_outcome.evidence["skipped"][0]["error_kind"] == kind
+
+
+def test_a_skipped_sweep_target_never_hides_unfinished_work() -> None:
+    from types import SimpleNamespace
+
+    from core.llm.types import ToolCall
+    from core.tool.contracts import RegisteredTool
+    from core.tool.execution import ToolExecutionHooks, execute_tool_calls
+    from integrations.github.repair_outcomes import attach_repair_outcome
+    from integrations.scheduled_outcomes import ScheduledOutcomes
+
+    outcomes = ScheduledOutcomes(bound_target=False)
+    results = {
+        "fork": attach_repair_outcome(
+            {"error_kind": "unsupported_pr_branch"}, operation="ci:o/r:41"
+        ),
+        "own": attach_repair_outcome({"error_kind": "checks_failed"}, operation="ci:o/r:42"),
+    }
+    execute_tool_calls(
+        [ToolCall(id=name, name=name, input={}) for name in results],
+        [
+            RegisteredTool(
+                name=name,
+                description="Repair",
+                input_schema={"type": "object", "properties": {}},
+                source="github",
+                run=lambda output=output: output,
+            )
+            for name, output in results.items()
+        ],
+        {},
+        hooks=ToolExecutionHooks(after_tool_call=outcomes.observe),
+    )
+    report = outcomes.report(
+        SimpleNamespace(
+            primary_response_text="Repair result",
+            cancelled=False,
+            action_result=SimpleNamespace(hit_iteration_cap=False),
+        ),
+        agent_mode=True,
+    )
+    assert not report.stop_schedule
+    assert report.outcome.error_kind == "checks_failed"
 
 
 def test_retained_terminal_block_still_pauses_schedule_on_delivery_replay(

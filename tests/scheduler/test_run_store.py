@@ -24,6 +24,7 @@ from infrastructure.scheduling.scheduler.storage.run_store import (
     get_latest_targeted_run,
     get_recoverable_runs,
     get_runs,
+    has_live_claim,
     renew_claims,
     try_claim,
     try_queue_run,
@@ -1140,3 +1141,20 @@ def test_recovery_index_migration_retries_a_lock_longer_than_busy_timeout(db_pat
 
     with sqlite3.connect(db_path) as conn:
         assert _recovery_index_names(conn) >= migrations._RECOVERY_INDEX_NAMES
+
+
+def test_only_an_unexpired_running_claim_counts_as_live(db_path: Path) -> None:
+    """A service restart is deferred on this answer, so dead and finished claims must not count."""
+    # No database yet: nothing runs, and the read does not create one.
+    assert has_live_claim(db_path) is False
+    assert not db_path.exists()
+
+    finished = _claimed(db_path, "task1", "2026-01-01T09:00")
+    assert has_live_claim(db_path) is True
+    complete_run(finished, status=TaskStatus.SUCCESS, db_path=db_path)
+    assert has_live_claim(db_path) is False
+
+    # A claimant that died stops counting once its lease lapses.
+    _claimed(db_path, "task2", "2026-01-01T09:00")
+    _expire_claim(db_path, "task2", "2026-01-01T09:00")
+    assert has_live_claim(db_path) is False

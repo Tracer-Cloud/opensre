@@ -13,8 +13,9 @@ from core.agent_harness import AgentSession, SessionCore
 from core.agent_harness.harness import SessionStartupResult
 from core.agent_harness.tools.action_tools import get_action_tool
 from core.agent_harness.turns.headless_adapters import EmptyPromptContextProvider
-from core.llm.types import AgentLLMResponse
-from core.tool import RegisteredTool, SideEffectLevel
+from core.llm.types import AgentLLMResponse, ToolCall
+from core.tool import RegisteredTool, SideEffectLevel, ToolExecutionHooks
+from core.tool.execution import execute_tool_calls
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_MODE_AGENT, LOOP_MODE_PARAM
 from integrations import manual_loop_runner
 from integrations.github.repair_outcomes import attach_repair_outcome
@@ -216,6 +217,55 @@ def test_unknown_builder_name_falls_back_to_the_model_turn(monkeypatch: pytest.M
     )
 
     assert report == "fallback"
+
+
+@pytest.mark.parametrize(
+    "binding, paused",
+    [({}, False), ({"pr_number": "42"}, True), ({"branch": "main"}, True)],
+)
+def test_only_a_loop_bound_to_one_target_pauses_on_an_unrepairable_target(
+    monkeypatch: pytest.MonkeyPatch, binding: dict[str, str], paused: bool
+) -> None:
+    class _Result:
+        answered = True
+        cancelled = False
+        action_result = type("Action", (), {"hit_iteration_cap": False})()
+        primary_response_text = "PR #42 comes from a fork"
+
+    output = attach_repair_outcome({"error_kind": "unsupported_pr_branch"}, operation="ci:o/r:42")
+
+    def fake_turn(_message: str, *, tool_hooks: ToolExecutionHooks, **_kwargs: object) -> _Result:
+        execute_tool_calls(
+            [ToolCall(id="repair", name="fix_github_pr_ci", input={})],
+            [
+                RegisteredTool(
+                    name="fix_github_pr_ci",
+                    description="Repair",
+                    input_schema={"type": "object", "properties": {}},
+                    source="github",
+                    run=lambda: output,
+                )
+            ],
+            {},
+            hooks=tool_hooks,
+        )
+        return _Result()
+
+    monkeypatch.setattr(manual_loop_runner.AgentSession, "run_headless_turn", fake_turn)
+
+    report = manual_loop_runner.run_manual_prompt_loop(
+        {
+            "loop_prompt": "Repair failing PRs",
+            "name": "PR doctor",
+            LOOP_MODE_PARAM: LOOP_MODE_AGENT,
+            "owner": "o",
+            "repo": "r",
+            **binding,
+        }
+    )
+
+    assert report.stop_schedule is paused
+    assert report.outcome.status == ("blocked" if paused else "noop")
 
 
 def test_only_a_loop_with_a_report_builder_runs_without_a_model_turn() -> None:

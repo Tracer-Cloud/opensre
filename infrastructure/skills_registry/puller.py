@@ -37,6 +37,7 @@ logger = logging.getLogger(__name__)
 
 #: Skip a scheduled pull when any local process checked more recently than this.
 _SHARED_FRESHNESS_SECONDS = 60.0
+_FORCED_LOCK_WAIT_SECONDS = 20.0
 _JITTER = 0.1
 
 
@@ -66,7 +67,9 @@ def pull_once(*, force: bool = False, app_url: str | None = None) -> PullOutcome
     """Fetch and store the latest release unless another process just did."""
     store = store_dir()
     store.mkdir(parents=True, exist_ok=True)
-    lock = FileLock(str(store / ".fetch.lock"), timeout=0)
+    # A scheduled pull skips when another one runs; an explicit one (``skills
+    # update``) waits for it, since its own process's background pull may hold it.
+    lock = FileLock(str(store / ".fetch.lock"), timeout=_FORCED_LOCK_WAIT_SECONDS if force else 0)
     try:
         lock.acquire()
     except Timeout:

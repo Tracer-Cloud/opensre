@@ -40,17 +40,25 @@ GITHUB_REST_TOKEN_CHECK = "github_rest_token"
 
 _GITHUB_REST_TOKEN = SkillPrerequisite(check=GITHUB_REST_TOKEN_CHECK, service="github")
 
+#: Slack resolves for the turn's integrations with a bot token or a webhook:
+#: the workspace connected in the OpenSRE app, the local integration, or
+#: ``SLACK_BOT_TOKEN`` / ``SLACK_WEBHOOK_URL``.
+SLACK_CONNECTED_CHECK = "slack_connected"
+
+_SLACK_CONNECTED = SkillPrerequisite(check=SLACK_CONNECTED_CHECK, service="slack")
+
 #: Skill name -> the prerequisites checked on entry. Every getting-started skill
 #: and the onboarding master are listed, even with no prerequisite, so adding a
 #: demo is a decision about its setup. The delegate demo checks the hosted
-#: gateway in its own first step.
+#: gateway in its own first step. The Slack demo's setup menu leads with the
+#: OpenSRE app, where a workspace is connected through Slack's own OAuth.
 SKILL_PREREQUISITES: Mapping[str, tuple[SkillPrerequisite, ...]] = MappingProxyType(
     {
         ONBOARDING_SKILL_NAME: (),
         ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME: (_GITHUB_REST_TOKEN,),
         SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME: (_GITHUB_REST_TOKEN,),
         DELEGATING_GITHUB_CI_REPAIRS_SKILL_NAME: (),
-        CONNECTING_SLACK_SKILL_NAME: (),
+        CONNECTING_SLACK_SKILL_NAME: (_SLACK_CONNECTED,),
     }
 )
 
@@ -58,7 +66,9 @@ SKILL_PREREQUISITES: Mapping[str, tuple[SkillPrerequisite, ...]] = MappingProxyT
 PREREQUISITE_CREDENTIAL_MISSING = "credential_missing"
 
 #: Display name per service; a service not listed shows its id.
-PREREQUISITE_SERVICE_LABELS: Mapping[str, str] = MappingProxyType({"github": "GitHub"})
+PREREQUISITE_SERVICE_LABELS: Mapping[str, str] = MappingProxyType(
+    {"github": "GitHub", "slack": "Slack"}
+)
 
 # Setup menu. ``{service}`` is the display name.
 PREREQUISITE_MENU_TITLE = "Connect {service} to continue"
@@ -98,6 +108,15 @@ _SECTION_BY_CHECK: Mapping[str, str] = MappingProxyType(
             "setup. Once GitHub is connected, the shell resubmits the message you "
             "were answering; continue the same step from it. Do not wait for MCP "
             "verification to pass first.\n"
+        ),
+        SLACK_CONNECTED_CHECK: (
+            "The host checks for a Slack connection before this skill starts, so it "
+            "normally begins with Slack connected. A workspace connected in the "
+            "OpenSRE app verifies with source `remote` and a bot token alone; it "
+            "needs no app token, webhook, or local setup, and its events reach the "
+            "hosted OpenSRE gateway. Before mentioning OpenSRE in a channel, the team "
+            "adds the bot to that channel with Slack's `/invite`; a DM needs no "
+            "invite.\n"
         ),
     }
 )
@@ -143,6 +162,7 @@ __all__ = [
     "PREREQUISITE_SKIP_OPTION",
     "PREREQUISITE_STILL_MISSING_NOTE",
     "SKILL_PREREQUISITES",
+    "SLACK_CONNECTED_CHECK",
     "SkillPrerequisite",
     "prerequisite_section",
     "prerequisite_service_label",
