@@ -196,6 +196,7 @@ EXPORTS: dict[str, str] = {
     "PROMPT_DEFAULT_ACTOR": "gateway",
     "PROMPT_CONVERSATION_NEW": "gateway",
     "PROMPT_MAX_CHARS": "gateway",
+    "PROMPT_QUEUE_FULL_RETRY_AFTER_SECONDS": "gateway",
     "PROMPT_QUEUE_MAX": "gateway",
     "PROMPT_PROGRESS_KIND_NOTE": "gateway",
     "PROMPT_PROGRESS_KIND_PLAN": "gateway",
