@@ -30,7 +30,9 @@ _SCANS: PrefetchRegistry[ScanRequest, WorkspaceSnapshot] = PrefetchRegistry(
 )
 
 
-def start_scan_prefetch(request: ScanRequest, work: Callable[[], WorkspaceSnapshot]) -> bool:
+def start_scan_prefetch(
+    request: ScanRequest, work: Callable[[Callable[[], bool]], WorkspaceSnapshot]
+) -> bool:
     """Run ``work`` in the background for ``request``; False when one is already kept."""
     return _SCANS.start(request, work)
 

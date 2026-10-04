@@ -53,7 +53,7 @@ def start_analysis_prefetch(
     request: AnalysisRequest, work: Callable[[], PrefetchedAnalysis]
 ) -> bool:
     """Run ``work`` in the background for ``request``; False when one is already kept."""
-    return _ANALYSES.start(request, work)
+    return _ANALYSES.start(request, lambda _should_stop: work())
 
 
 def claim_analysis_prefetch(request: AnalysisRequest) -> PrefetchedAnalysis | None:

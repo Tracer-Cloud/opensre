@@ -105,6 +105,10 @@ def _scan(
     )
 
 
+def _prefetch_scan(request: ScanRequest, should_stop: Callable[[], bool]) -> WorkspaceSnapshot:
+    return _scan(request, should_stop=should_stop)
+
+
 def prefetch_workspace_scan(root: str | None = None, days: int | None = None) -> bool:
     """Start the scan a ``scan_local_git_workspace(root, days)`` call would run, in the background.
 
@@ -114,7 +118,7 @@ def prefetch_workspace_scan(root: str | None = None, days: int | None = None) ->
     request = _scan_request(root, days)
     if not request.root.is_dir():
         return False
-    return start_scan_prefetch(request, partial(_scan, request))
+    return start_scan_prefetch(request, partial(_prefetch_scan, request))
 
 
 def _repo_payload(snapshot: WorkspaceSnapshot) -> list[dict[str, Any]]:

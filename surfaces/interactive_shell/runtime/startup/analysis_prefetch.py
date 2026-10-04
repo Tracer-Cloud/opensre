@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import re
+import threading
 from typing import TYPE_CHECKING
 
 from config.constants.skills import ANALYZE_REPO_OPTION, ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME
@@ -51,11 +52,19 @@ def prefetch_after_menu_answer(session: Session, picked: str) -> None:
     match = _REPOSITORY_RE.fullmatch(picked.strip())
     if match is None:
         return
+    # Resolving integrations may fetch remotely; keep it off the menu answer's path.
+    threading.Thread(
+        target=_prefetch_analysis,
+        args=(session, match["owner"], match["repo"]),
+        name="ci-analysis-prefetch-start",
+        daemon=True,
+    ).start()
+
+
+def _prefetch_analysis(session: Session, owner: str, repo: str) -> None:
     try:
         prefetch_ci_analysis(
-            match["owner"],
-            match["repo"],
-            resolved_integrations=resolve_and_cache_integrations(session),
+            owner, repo, resolved_integrations=resolve_and_cache_integrations(session)
         )
     except Exception:
         logger.debug("Could not start the CI analysis prefetch", exc_info=True)
