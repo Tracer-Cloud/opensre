@@ -268,6 +268,8 @@ def _cmd_choose(session: Session, console: Console, args: list[str]) -> bool:
     _capture_prompt_rendered(session, pending, render_mode="picker")
     clear_live_prompt_paint(session)
     play_notification(NotifyEvent.INPUT_NEEDED)  # the agent is now waiting on the user
+    # Launch work held for the first wait starts now, settling behind this draw.
+    session.terminal.release_startup_work()
     if pending.is_batch():
         picked = repl_ask_user(items, on_answer=remember_answer, on_dismiss=dismiss_keys.append)
         if picked is None:

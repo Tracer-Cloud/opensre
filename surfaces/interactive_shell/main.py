@@ -25,6 +25,7 @@ from surfaces.interactive_shell.runtime.core.state import ReplState
 from surfaces.interactive_shell.runtime.startup.account_gate import (
     pass_sign_in_gate,
 )
+from surfaces.interactive_shell.runtime.startup.deferred_work import DeferredStartupWork
 from surfaces.interactive_shell.runtime.startup.demo_picker import offer_demo
 from surfaces.interactive_shell.runtime.startup.first_turn_warmup import (
     join_first_turn_warmup,
@@ -108,6 +109,11 @@ async def run_repl_async(
     # where it interleaves with the launch-banner paint. This coroutine is the
     # shell body only; embedders driving it directly manage their own auth.
 
+    # Warm-ups and snapshots wait until the first menu draws (``/choose``
+    # releases them) so they do not compete with the launch for the interpreter.
+    startup_work = DeferredStartupWork()
+    session.terminal.startup_work_release = startup_work.release
+
     # Open the session file now that we know this is an interactive REPL run.
     SessionManager.for_session(session).open_store(session)
     # The runtime is booted; nothing has printed yet. Stop the launch spin and
@@ -133,18 +139,22 @@ async def run_repl_async(
                 slash_command=slash_command,
             ):
                 return 1
-        else:
+        elif offer_demo(session, out):
             # Entering the master skill queues its menu; the first model turn is the answer.
-            if offer_demo(session, out):
-                warm_first_turn()
+            startup_work.defer("first-turn warm-up", warm_first_turn)
+        if session.pending_user_choice is None:
+            # No startup menu will draw: the prompt is the first thing the user waits on.
+            startup_work.release()
 
         await InteractiveShellController(
             runtime_context,
             config=cfg,
             console=out,
+            startup_work=startup_work,
         ).start_interactive_shell()
         return 0
     finally:
+        startup_work.close()
         join_first_turn_warmup()
         # True end-of-run teardown: persist and release the session's resources.
         _close_repl_session(session, runtime_context.state)
