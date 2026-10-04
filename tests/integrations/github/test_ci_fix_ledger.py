@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import multiprocessing
+import time
 from concurrent.futures import ThreadPoolExecutor
 from multiprocessing.synchronize import Barrier as ProcessBarrier
 from pathlib import Path
@@ -184,6 +185,12 @@ def test_lock_contention_keeps_live_count_and_can_retry(tmp_path: Path) -> None:
     assert ledger.CiFixCounter(path).count() == 1
 
 
+def _hold_fix_ledger_lock(path: str, barrier: ProcessBarrier) -> None:
+    with FileLock(path + ".lock"):
+        barrier.wait(timeout=30)
+        time.sleep(1.2)
+
+
 def _append_on_worker(path: str, identity: str, barrier: ProcessBarrier) -> None:
     counter = ledger.CiFixCounter(Path(path))
     barrier.wait(timeout=30)
@@ -193,19 +200,27 @@ def _append_on_worker(path: str, identity: str, barrier: ProcessBarrier) -> None
 def test_concurrent_processes_keep_both_repairs(tmp_path: Path) -> None:
     path = tmp_path / "ci_fixes.json"
     context = multiprocessing.get_context("spawn")
-    barrier = context.Barrier(2)
+    barrier = context.Barrier(3)
+    holder = context.Process(target=_hold_fix_ledger_lock, args=(str(path), barrier))
     workers = [
         context.Process(target=_append_on_worker, args=(str(path), key * 64, barrier))
         for key in ("a", "b")
     ]
     try:
+        holder.start()
         for worker in workers:
             worker.start()
         for worker in workers:
             worker.join(timeout=45)
             assert worker.exitcode == 0
+        holder.join(timeout=45)
+        assert holder.exitcode == 0
         assert ledger_store.read_fix_ids(path) == {"a" * 64, "b" * 64}
     finally:
+        if holder.is_alive():
+            holder.terminate()
+        holder.join(timeout=5)
+        holder.close()
         for worker in workers:
             if worker.is_alive():
                 worker.terminate()
