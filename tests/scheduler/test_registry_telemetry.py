@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Any
 
@@ -63,6 +64,7 @@ def test_entry_keeps_display_fields_and_never_carries_secrets() -> None:
         loop_prompt=f"Use {_TOKEN} to open the PR",
     )
     task.skill_inputs = {"repository": "Tracer-Cloud/opensre", "api_key": "secret-value"}
+    task.chat_id = f"{_TOKEN} " + "c" * 5000
 
     entry = registry_entry(task)
 
@@ -71,6 +73,7 @@ def test_entry_keeps_display_fields_and_never_carries_secrets() -> None:
     assert "github_token" not in entry["params"]
     assert entry["skill_inputs"] == {"repository": "Tracer-Cloud/opensre"}
     assert _TOKEN not in str(entry)
+    assert len(entry["chat_id"]) <= 200
     assert entry["organization"] == "org_1"
 
 
@@ -101,6 +104,17 @@ def test_snapshot_stays_inside_the_ingest_key_limit() -> None:
     assert all(len(entry["params"]["loop_prompt"]) <= 4000 for entry in properties["tasks"])
 
 
+def test_snapshot_stays_inside_the_payload_byte_limit() -> None:
+    # Escaped non-ASCII text is six bytes a character: few tasks fit the key budget's byte share.
+    tasks = tuple(_loop(f"loop_{index}", loop_prompt="漢" * 10_000) for index in range(40))
+
+    properties = build_registry_properties(tasks, complete=True)
+
+    assert properties["tasks_truncated"] is True
+    assert 0 < len(properties["tasks"]) < 40
+    assert len(json.dumps(properties)) <= registry_telemetry._TASK_BYTE_BUDGET + 200
+
+
 def test_reports_each_store_change_once(recorder: _Recorder) -> None:
     add_task(_loop())
     report_task_registry()
@@ -111,6 +125,22 @@ def test_reports_each_store_change_once(recorder: _Recorder) -> None:
     assert [event for event, _ in recorder.events] == [Event.SCHEDULED_TASKS_REGISTERED] * 2
     assert [entry["id"] for entry in recorder.events[0][1]["tasks"]] == ["loop_1"]
     assert recorder.events[1][1]["tasks"] == []
+
+
+def test_an_unchanged_store_is_reported_again_once_the_last_report_is_stale(
+    recorder: _Recorder, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # A capture can be dropped after it returns; a later pass must be able to resend.
+    clock = [1000.0]
+    monkeypatch.setattr(registry_telemetry.time, "monotonic", lambda: clock[0])
+    add_task(_loop())
+    report_task_registry()
+    clock[0] += registry_telemetry._REPORT_REFRESH_SECONDS - 1
+    report_task_registry()
+    clock[0] += 1
+    report_task_registry()
+
+    assert len(recorder.events) == 2
 
 
 def test_only_a_whole_store_scheduler_reports(recorder: _Recorder) -> None:
