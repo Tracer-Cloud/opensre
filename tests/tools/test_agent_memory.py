@@ -223,6 +223,17 @@ class TestRecall:
         assert load_usage()["payments-flake"].use_count == 1
         assert "grafana-folders" not in load_usage()
 
+    def test_only_memories_in_the_result_count_as_used(self) -> None:
+        """The output cap drops ranked matches; the model never saw those."""
+        for index in range(4):
+            _remember(name=f"runbook-{index}", content="needle " + "x" * RECALL_BODY_CHAR_CAP)
+
+        result = memory_recall(query="needle")
+
+        shown = {memory["name"] for memory in result["memories"]}
+        assert 0 < len(shown) < 4
+        assert set(load_usage()) == shown
+
     def test_no_args_lists_index_without_bodies(self) -> None:
         _remember()
         result = memory_recall()

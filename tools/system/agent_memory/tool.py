@@ -183,6 +183,12 @@ def memory_forget(name: str) -> dict[str, Any]:
     return deleted_result(slug, deleted=delete_memory(slug))
 
 
+def _counted_as_used(result: dict[str, Any]) -> dict[str, Any]:
+    """Count a use of each memory in ``result``; the size caps may leave ranked matches out."""
+    record_memory_usage(memory["name"] for memory in result["memories"])
+    return result
+
+
 @tool(
     name="memory_recall",
     display_name="Recall",
@@ -224,18 +230,17 @@ def memory_recall(
         record = load_memory(slug) if slug else None
         if record is None:
             return {"error": "not_found", "name": name, "total_stored": total}
-        record_memory_usage([record.slug])
-        return recall_result([record], total_stored=total)
+        return _counted_as_used(recall_result([record], total_stored=total))
     if query:
         if not isinstance(query, str):
             return {"error": "invalid_query", "detail": "query must be a string"}
         scored = search_memories_scored(query, limit=normalize_recall_limit(limit))
-        records = [record for record, _score in scored]
-        record_memory_usage(record.slug for record in records)
-        return recall_result(
-            records,
-            total_stored=total,
-            scores={record.slug: score for record, score in scored},
+        return _counted_as_used(
+            recall_result(
+                [record for record, _score in scored],
+                total_stored=total,
+                scores={record.slug: score for record, score in scored},
+            )
         )
     return index_result(list_memories())
 

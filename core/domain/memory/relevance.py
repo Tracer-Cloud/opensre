@@ -19,6 +19,7 @@ from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 
 from core.domain.memory.models import PERSONAL_MEMORY_TYPES, MemoryRecord
+from core.domain.memory.repository_ids import repository_ids
 
 _TOKEN_SPLIT_RE = re.compile(r"[^a-z0-9]+")
 _MIN_TOKEN_CHARS = 3
@@ -115,16 +116,23 @@ def _fold_plural(token: str) -> str:
 
 
 def tokenize(text: str) -> list[str]:
-    """Lowercase words with short tokens and stopwords dropped.
+    """Lowercase words with short tokens and stopwords dropped, plus repository identifiers.
 
     Splitting on every non-alphanumeric character breaks slugs, dotted names
-    and ``owner/repo`` identifiers into their parts.
+    and ``owner/repo`` identifiers into their parts and drops the short ones,
+    so each ``owner/repo`` is also kept whole, along with an owner or name
+    shorter than a word token: otherwise ``a/b`` could never be matched.
     """
-    return [
+    lowered = text.lower()
+    tokens = [
         _fold_plural(token)
-        for token in _TOKEN_SPLIT_RE.split(text.lower())
+        for token in _TOKEN_SPLIT_RE.split(lowered)
         if len(token) >= _MIN_TOKEN_CHARS and token not in _STOPWORDS
     ]
+    for owner, name in repository_ids(lowered):
+        tokens.append(f"{owner}/{name}")
+        tokens.extend(part for part in (owner, name) if len(part) < _MIN_TOKEN_CHARS)
+    return tokens
 
 
 def query_terms(text: str, *, context: Iterable[str] = ()) -> dict[str, float]:

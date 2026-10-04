@@ -230,6 +230,18 @@ def test_search_matches_any_query_word_and_ranks_by_score() -> None:
     assert scored[0][1] > scored[1][1] > 0
 
 
+@pytest.mark.usefixtures("clock")
+def test_a_repository_with_a_short_name_is_found_by_its_identifier() -> None:
+    """Words under three characters are dropped, so ``a/b`` used to leave no search term."""
+    _save("repository-a-b", "repository", "a/b deploys from the release branch", "Owner: SRE")
+    _save("repository-acme-api", "repository", "acme/api is the public API", "b team")
+
+    assert [record.slug for record, _ in search_memories_scored("a/b")] == ["repository-a-b"]
+    assert [record.slug for record in select_relevant_memories("how does a/b deploy?")] == [
+        "repository-a-b"
+    ]
+
+
 def test_an_empty_store_renders_nothing() -> None:
     assert render_prompt_index() == ""
     assert render_relevant_memories("anything at all") == ""

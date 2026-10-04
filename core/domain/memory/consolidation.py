@@ -24,7 +24,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import re
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
@@ -46,6 +45,7 @@ from core.domain.memory.models import (
     MemoryRecord,
     MemoryType,
 )
+from core.domain.memory.repository_ids import repository_ids
 from core.domain.memory.safety import find_memory_safety_issues, redact_memory_unsafe_text
 from core.domain.memory.store import (
     build_record,
@@ -68,10 +68,6 @@ STALE_AFTER = timedelta(days=120)
 #: Session summaries handed to the summarizer, newest first.
 RECENT_SESSION_SUMMARIES = 10
 
-# ``owner/repo`` as written in a description or heading; not part of a path or URL.
-_REPOSITORY_ID_RE = re.compile(
-    r"(?<![\w./:@-])([A-Za-z0-9][A-Za-z0-9-]{0,38})/([A-Za-z0-9._-]{1,100})(?![\w/-])"
-)
 _NOT_REPOSITORIES = frozenset({"and/or", "client/server", "input/output", "read/write"})
 _SUBJECT_BODY_LINES = 3
 _SECTION_GAP = "\n\n"
@@ -129,10 +125,10 @@ def repository_subject(record: MemoryRecord) -> str | None:
         return None
     opening = [line for line in record.body.splitlines() if line.strip()][:_SUBJECT_BODY_LINES]
     for text in (record.description, *opening):
-        for owner, name in _REPOSITORY_ID_RE.findall(text):
+        for owner, name in repository_ids(text):
             if owner.isupper() and name.isupper():
                 continue  # CI/CD, I/O and other acronyms
-            candidate = f"{owner}/{name.rstrip('.')}".lower()
+            candidate = f"{owner}/{name}".lower()
             if candidate not in _NOT_REPOSITORIES:
                 return candidate
     return None
