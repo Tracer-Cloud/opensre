@@ -248,11 +248,9 @@ def test_local_analysis_waits_for_choices_before_analyzing_and_handing_off(
             no_tool_response(_REPORT),
             # A menu beside an action runs nothing.
             _batch(next_menu, handoff_call),
-            # The plan write that marks the menu step rides with the menu.
-            _batch(
-                tool_response(update_plan.name, {"plan": _plan(completed=3, in_progress=5)}),
-                next_menu,
-            ),
+            # The menu alone: the host completes the analysis and report steps
+            # and starts the menu's step, so no plan write is needed.
+            next_menu,
             handoff_call,
             no_tool_response("Following the scheduling skill."),
         ]
@@ -303,8 +301,9 @@ def test_local_analysis_waits_for_choices_before_analyzing_and_handing_off(
     assert nudge.startswith("Your last reply has been shown")
     # The plan write beside the menu was stored before the menu ended the turn.
     assert session.task_plan is not None
-    active = [item.step for item in session.task_plan.steps if item.status.value == "in_progress"]
-    assert active == [_PLAN_STEPS[4]]
+    # The checklist matches the screen: the report step is done, the menu's is active.
+    statuses = [item.status.value for item in session.task_plan.steps]
+    assert statuses == ["completed"] * 4 + ["in_progress"]
     next_answer = _answer(session, title=_NEXT_QUESTION, option=_SCHEDULE_LOOPS)
 
     result = agent.handle(next_answer, binding)
