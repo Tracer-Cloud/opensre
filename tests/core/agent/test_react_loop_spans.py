@@ -178,6 +178,54 @@ def test_agent_run_emits_llm_span_when_sink_active(
     assert iteration_span["attributes"]["should_stop"] is True
 
 
+class _UsageReportingLLM(_NoToolLLM):
+    def invoke(
+        self,
+        _messages: list[dict[str, Any]],
+        *,
+        system: str | None = None,
+        tools: list[dict[str, Any]] | None = None,
+    ) -> AgentLLMResponse:
+        _ = (system, tools)
+        return AgentLLMResponse(
+            content="done",
+            input_tokens=29_000,
+            cache_read_tokens=26_000,
+            output_tokens=300,
+            reasoning_tokens=120,
+        )
+
+
+def test_llm_span_records_the_calls_usage_and_omits_unreported_fields(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    session_id = "sess-llm-usage"
+    path = _activate_trace(tmp_path, monkeypatch, session_id=session_id)
+
+    for llm in (_UsageReportingLLM(), _NoToolLLM()):
+        agent = Agent(
+            llm=llm,
+            system="sys",
+            tools=[],
+            resolved_integrations={},
+            max_iterations=1,
+        )
+        with bind_session_trace(session_id):
+            agent.run([{"role": "user", "content": "hello"}])
+
+    reported, unreported = [
+        s["attributes"] for s in _trace_spans(path) if s.get("span_kind") == "llm"
+    ]
+    assert {key: reported[key] for key in reported if key.endswith("_tokens")} == {
+        "input_tokens": 29_000,
+        "cache_read_tokens": 26_000,
+        "output_tokens": 300,
+        "reasoning_tokens": 120,
+    }
+    # A provider that reported nothing must not read as a measured 0% cache hit.
+    assert not [key for key in unreported if key.endswith("_tokens")]
+
+
 def test_agent_run_skips_llm_span_when_noop() -> None:
     agent = Agent(
         llm=_NoToolLLM(),

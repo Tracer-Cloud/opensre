@@ -33,11 +33,16 @@ from core.llm.shared.openai_responses import (
     response_raw_message,
     response_tool_calls,
     responses_input,
+    responses_prompt_cache_key,
     responses_tool_specs,
     uses_responses_api,
 )
 from core.llm.shared.tool_schema_normalize import build_openai_tool_specs
-from core.llm.shared.usage import emit_provider_usage, extract_cache_tokens
+from core.llm.shared.usage import (
+    emit_provider_usage,
+    extract_cache_tokens,
+    extract_reasoning_tokens,
+)
 from core.llm.transports.sdk.anthropic_cache import (
     cached_system as _anthropic_cached_system,
 )
@@ -671,6 +676,8 @@ class OpenAIAgentClient:
                 "max_output_tokens": self._max_tokens,
                 "input": responses_input(msgs),
             }
+            if system:
+                kwargs["prompt_cache_key"] = responses_prompt_cache_key(system)
             if tools:
                 kwargs["tools"] = responses_tool_specs(tools)
                 kwargs["tool_choice"] = "auto"
@@ -750,7 +757,8 @@ class OpenAIAgentClient:
                 output_key="output_tokens",
             )
             responses_tool_calls = response_tool_calls(response)
-            cache_read, cache_write = extract_cache_tokens(getattr(response, "usage", None))
+            usage = getattr(response, "usage", None)
+            cache_read, cache_write = extract_cache_tokens(usage)
             return AgentLLMResponse(
                 content=str(getattr(response, "output_text", "") or ""),
                 tool_calls=responses_tool_calls,
@@ -760,6 +768,7 @@ class OpenAIAgentClient:
                 cache_creation_tokens=cache_write,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
+                reasoning_tokens=extract_reasoning_tokens(usage),
             )
 
         if not hasattr(response, "choices") or not response.choices:
@@ -773,7 +782,8 @@ class OpenAIAgentClient:
             input_key="prompt_tokens",
             output_key="completion_tokens",
         )
-        cache_read, cache_write = extract_cache_tokens(getattr(response, "usage", None))
+        usage = getattr(response, "usage", None)
+        cache_read, cache_write = extract_cache_tokens(usage)
         choice = response.choices[0]
         msg = choice.message
         content = msg.content or ""
@@ -800,6 +810,7 @@ class OpenAIAgentClient:
             cache_creation_tokens=cache_write,
             input_tokens=input_tokens,
             output_tokens=output_tokens,
+            reasoning_tokens=extract_reasoning_tokens(usage),
         )
 
     @staticmethod

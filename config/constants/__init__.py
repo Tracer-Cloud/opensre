@@ -737,6 +737,12 @@ if TYPE_CHECKING:
         OPENAI_BASE_URL_ENV as OPENAI_BASE_URL_ENV,
     )
     from config.constants.llm import (
+        OPENAI_PROMPT_CACHE_KEY_HASH_CHARS as OPENAI_PROMPT_CACHE_KEY_HASH_CHARS,
+    )
+    from config.constants.llm import (
+        OPENAI_PROMPT_CACHE_KEY_PREFIX as OPENAI_PROMPT_CACHE_KEY_PREFIX,
+    )
+    from config.constants.llm import (
         OPENSRE_LLM_NATIVE_STRUCTURED_OUTPUT_ENV as OPENSRE_LLM_NATIVE_STRUCTURED_OUTPUT_ENV,
     )
     from config.constants.llm import (

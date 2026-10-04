@@ -825,6 +825,73 @@ def test_openai_gpt_5_6_agent_uses_responses_api_and_replays_reasoning(
     }
 
 
+def _responses_client(create: Any) -> OpenAIAgentClient:
+    client = OpenAIAgentClient.__new__(OpenAIAgentClient)
+    client._client = types.SimpleNamespace(responses=types.SimpleNamespace(create=create))
+    client._model = "gpt-5.6"
+    client._max_tokens = 4096
+    client._api_key_env = "OPENAI_API_KEY"
+    return client
+
+
+def test_responses_requests_key_the_prompt_cache_by_their_system_prompt(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Calls sharing a cached prefix share a routing key; other prompts never do."""
+    _install_fake_openai(monkeypatch)
+    captured: list[dict[str, Any]] = []
+    usage = types.SimpleNamespace(
+        input_tokens=29_000,
+        output_tokens=300,
+        input_tokens_details=types.SimpleNamespace(cached_tokens=26_000),
+        output_tokens_details=types.SimpleNamespace(reasoning_tokens=120),
+    )
+
+    def create(**kwargs: Any) -> object:
+        captured.append(kwargs)
+        return types.SimpleNamespace(output=[], output_text="ok", usage=usage)
+
+    client = _responses_client(create)
+    turn = [{"role": "user", "content": "hi"}]
+    first = client.invoke(turn, system="You plan actions. repo=a")
+    client.invoke([*turn, {"role": "user", "content": "more"}], system="You plan actions. repo=a")
+    client.invoke(turn, system="You plan actions. repo=b")
+    client.invoke(turn)
+
+    same_prefix, same_prefix_later, other_prefix, no_system = (
+        call.get("prompt_cache_key") for call in captured
+    )
+    assert same_prefix == same_prefix_later
+    assert other_prefix != same_prefix
+    assert same_prefix is not None and len(same_prefix) <= 128
+    assert no_system is None
+    assert (first.cache_read_tokens, first.reasoning_tokens) == (26_000, 120)
+
+
+def test_chat_completions_requests_carry_no_prompt_cache_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """OpenAI-compatible providers may reject the Responses-only field."""
+    _install_fake_openai(monkeypatch)
+    captured: dict[str, object] = {}
+
+    def capture_create(**kwargs: object) -> object:
+        captured.update(kwargs)
+        return _make_fake_openai_response(content="ok")
+
+    client = OpenAIAgentClient.__new__(OpenAIAgentClient)
+    client._client = types.SimpleNamespace(
+        chat=types.SimpleNamespace(completions=types.SimpleNamespace(create=capture_create))
+    )
+    client._model = "deepseek-chat"
+    client._max_tokens = 4096
+    client._api_key_env = "DEEPSEEK_API_KEY"
+
+    client.invoke([{"role": "user", "content": "hi"}], system="You plan actions.")
+
+    assert "prompt_cache_key" not in captured
+
+
 def test_openai_agent_client_omits_parallel_tool_calls_for_compat_provider(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
