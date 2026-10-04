@@ -62,7 +62,23 @@ class LocalInsightsReason(StrEnum):
 #: What the GitHub CI report adds, named in the local report as what connecting GitHub unlocks.
 GITHUB_ONLY_METRICS: tuple[str, ...] = ("CI waiting time", "PR failure rate", "Red time on main")
 
+#: The ``error_kind`` values the GitHub CI analysis reports (``GitHubFailureKind``). Analytics
+#: records one of these or ``other``, never the text a caller passed.
+GITHUB_ERROR_KINDS: frozenset[str] = frozenset(
+    {
+        "rate_limited",
+        "unauthorized",
+        "not_found",
+        "tls_untrusted",
+        "unreachable",
+        "server_error",
+        "invalid_response",
+        "other",
+    }
+)
+
 __all__ = [
+    "GITHUB_ERROR_KINDS",
     "GITHUB_ONLY_METRICS",
     "LOCAL_INSIGHT_LABELS",
     "LocalInsightKind",

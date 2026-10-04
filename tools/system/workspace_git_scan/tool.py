@@ -24,6 +24,9 @@ from tools.system.workspace_git_scan.skips import MACOS_PRIVACY_PROTECTED, defau
 
 _DEFAULT_DAYS = 30
 _MAX_DAYS = 365
+# What asked for a recorded scan.
+_VIA_TOOL = "scan_tool"
+_VIA_LOCAL_INSIGHTS = "local_insights"
 
 _INPUT_SCHEMA: dict[str, Any] = {
     "type": "object",
@@ -137,12 +140,22 @@ def workspace_snapshot(
     if not request.root.is_dir():
         return None
     snapshot = claim_scan_prefetch(request, should_stop=should_stop)
+    prefetched = snapshot is not None
     if snapshot is None:
         snapshot = _scan(request, should_stop=should_stop, on_progress=on_progress)
+    if snapshot.stop_reason is not ScanStop.CANCELLED:
+        _record_scan(
+            snapshot,
+            with_workflows=sum(1 for repo in snapshot.repos if repo.has_workflows),
+            prefetched=prefetched,
+            via=_VIA_LOCAL_INSIGHTS,
+        )
     return snapshot
 
 
-def _record_scan(snapshot: WorkspaceSnapshot, *, with_workflows: int, prefetched: bool) -> None:
+def _record_scan(
+    snapshot: WorkspaceSnapshot, *, with_workflows: int, prefetched: bool, via: str
+) -> None:
     """Record the scan as counts, so onboarding can tell how many users have no GitHub Actions."""
     capture_workspace_scanned(
         repositories=len(snapshot.repos),
@@ -158,6 +171,7 @@ def _record_scan(snapshot: WorkspaceSnapshot, *, with_workflows: int, prefetched
             1 for path in snapshot.skipped if Path(path).name in MACOS_PRIVACY_PROTECTED
         ),
         prefetched=prefetched,
+        via=via,
     )
 
 
@@ -242,7 +256,7 @@ def scan_local_git_workspace(
     if rendered:
         render_snapshot(console, snapshot)
     with_workflows = sum(1 for repo in snapshot.repos if repo.has_workflows)
-    _record_scan(snapshot, with_workflows=with_workflows, prefetched=prefetched)
+    _record_scan(snapshot, with_workflows=with_workflows, prefetched=prefetched, via=_VIA_TOOL)
     summary = (
         f"Found {len(snapshot.repos)} git repositories under {snapshot.root}: "
         f"{snapshot.total_commits} commits in the last {window} days "

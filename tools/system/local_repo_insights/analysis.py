@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 import time
 from collections.abc import Callable, Sequence
 from concurrent.futures import FIRST_COMPLETED, Future, ThreadPoolExecutor, wait
@@ -12,6 +13,7 @@ from pathlib import Path
 
 from core.tool import report_run_error
 from tools.system.local_repo_insights.collect import RepoFacts, collect_repo
+from tools.system.local_repo_insights.git_read import ReadStopped
 from tools.system.local_repo_insights.insights import Insight, rank_insights
 from tools.system.local_repo_insights.metrics import RepoMetrics, repo_metrics
 from tools.system.workspace_git_scan import (
@@ -200,11 +202,18 @@ def _collect(
     unreadable = 0
     stop: AnalysisStop | None = None
     next_progress = clock() + _PROGRESS_INTERVAL_SECONDS
+    # Set when this read ends; a checkout still being read starts no further git call.
+    ended = threading.Event()
     pool = ThreadPoolExecutor(max_workers=_WORKERS, thread_name_prefix="local-insights")
     try:
         futures: dict[Future[RepoFacts], int] = {
             pool.submit(
-                collect_repo, checkout, days=days, now=now, timeout=_GIT_TIMEOUT_SECONDS
+                collect_repo,
+                checkout,
+                days=days,
+                now=now,
+                timeout=_GIT_TIMEOUT_SECONDS,
+                stopped=ended.is_set,
             ): index
             for index, checkout in enumerate(checkouts)
         }
@@ -220,6 +229,8 @@ def _collect(
             for future in done:
                 try:
                     results[futures[future]] = future.result()
+                except ReadStopped:
+                    continue
                 except Exception as exc:  # one unreadable checkout must not end the analysis
                     unreadable += 1
                     report_run_error(
@@ -234,7 +245,8 @@ def _collect(
                 next_progress = clock() + _PROGRESS_INTERVAL_SECONDS
                 on_progress(_PROGRESS.format(len(results), len(checkouts)))
     finally:
-        # Running git calls end within their own timeout; nothing waits for them.
+        # A git call already running ends within its own timeout; nothing waits for it.
+        ended.set()
         pool.shutdown(wait=False, cancel_futures=True)
     return [results[index] for index in sorted(results)], stop, unreadable
 

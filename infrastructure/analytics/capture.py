@@ -731,8 +731,12 @@ def capture_workspace_scanned(
     truncated: bool,
     skipped_protected: int,
     prefetched: bool,
+    via: str,
 ) -> None:
-    """Record what one local workspace scan found, as counts: no repository names or paths."""
+    """Record what one local workspace scan found, as counts: no repository names or paths.
+
+    ``via`` names what asked for the scan: the scan tool, or the local insights analysis.
+    """
     _capture(
         Event.WORKSPACE_SCANNED,
         {
@@ -747,6 +751,7 @@ def capture_workspace_scanned(
             "truncated": truncated,
             "skipped_protected": skipped_protected,
             "prefetched": prefetched,
+            "via": via,
         },
     )
 

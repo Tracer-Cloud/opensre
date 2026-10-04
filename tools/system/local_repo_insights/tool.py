@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-import re
 import time
 from collections import Counter
 from collections.abc import Callable
 from typing import Any
 
-from config.constants.local_insights import GITHUB_ONLY_METRICS, LocalInsightsReason
+from config.constants.local_insights import (
+    GITHUB_ERROR_KINDS,
+    GITHUB_ONLY_METRICS,
+    LocalInsightsReason,
+)
 from core.agent_harness.tools import action_context_from_agent_context
 from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel
@@ -24,7 +27,6 @@ from tools.system.local_repo_insights.analysis import (
 
 _DEFAULT_DAYS = 30
 _MAX_DAYS = 365
-_ERROR_KIND = re.compile(r"[^a-z0-9_]+")
 _REASONS = tuple(reason.value for reason in LocalInsightsReason)
 
 _INPUT_SCHEMA: dict[str, Any] = {
@@ -99,6 +101,14 @@ def _progress(context: Any) -> Callable[[str], None] | None:
     return lambda text: emit({"progress": text})
 
 
+def _github_error(raw: str) -> str:
+    """A known GitHub ``error_kind``, ``other`` for anything else, empty when none was given."""
+    kind = raw.strip().casefold()
+    if not kind:
+        return ""
+    return kind if kind in GITHUB_ERROR_KINDS else "other"
+
+
 def _reason(raw: str | None) -> str:
     value = (raw or "").strip()
     return value if value in _REASONS else LocalInsightsReason.REQUESTED.value
@@ -146,15 +156,19 @@ def _result(analysis: LocalAnalysis, reason: str) -> dict[str, Any]:
     }
 
 
-def _leave_value_notes(scope: Any, analysis: LocalAnalysis) -> None:
-    """Hand the value recorder each insight's name-free summary, keyed by its report label."""
+def _leave_value_notes(scope: Any, analysis: LocalAnalysis | None) -> None:
+    """Hand the value recorder each insight's name-free summary, keyed by its report label.
+
+    None clears what an earlier analysis left, so a failed run leaves nothing to record.
+    """
     notes = getattr(getattr(scope, "session", None), "skill_value_notes", None)
     if not isinstance(notes, dict):
         return
     notes.clear()
-    notes.update(
-        {insight.label: (insight.kind.value, insight.summary) for insight in analysis.insights}
-    )
+    if analysis is not None:
+        notes.update(
+            {insight.label: (insight.kind.value, insight.summary) for insight in analysis.insights}
+        )
 
 
 def _record(analysis: LocalAnalysis, *, reason: str, github_error: str, duration_ms: int) -> None:
@@ -165,7 +179,7 @@ def _record(analysis: LocalAnalysis, *, reason: str, github_error: str, duration
         outcome = "unreadable" if analysis.unreadable else "no_repositories"
     capture_local_repositories_analyzed(
         reason=reason,
-        github_error=_ERROR_KIND.sub("_", github_error.strip().casefold()).strip("_"),
+        github_error=_github_error(github_error),
         outcome=outcome,
         repositories=len(analysis.repos),
         commits=analysis.commits,
@@ -224,6 +238,7 @@ def analyze_local_repositories(
     and insight kinds, never names, paths or commit text.
     """
     scope = _scope(context)
+    _leave_value_notes(scope, None)
     window = min(max(int(days or _DEFAULT_DAYS), 1), _MAX_DAYS)
     why = _reason(reason)
     started = time.monotonic()

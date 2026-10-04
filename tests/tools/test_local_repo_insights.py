@@ -11,18 +11,22 @@ from typing import Any
 
 import pytest
 
-from config.constants.local_insights import LocalInsightKind
+from config.constants.local_insights import GITHUB_ERROR_KINDS, LocalInsightKind
 from core.agent_harness.tools.tool_context import (
     ACTION_TOOL_CONTEXT_RESOURCE_KEY,
     ActionToolScope,
 )
 from core.tool.contracts import REGISTERED_TOOL_ATTR, AgentToolContext
+from integrations.github.client import GitHubFailureKind
 from surfaces.interactive_shell.session import Session
 from tests.tools.conftest import BaseToolContract
 from tools.system.local_repo_insights import tool as tool_module
 from tools.system.local_repo_insights.analysis import analyze_repositories
+from tools.system.local_repo_insights.collect import collect_repo
+from tools.system.local_repo_insights.git_read import ReadStopped
 from tools.system.local_repo_insights.metrics import CiRun
 from tools.system.local_repo_insights.tool import analyze_local_repositories
+from tools.system.workspace_git_scan import tool as scan_tool_module
 
 _ME = "me@example.com"
 _WORKFLOW = """\
@@ -236,7 +240,7 @@ def test_the_tool_result_telemetry_and_value_notes_carry_no_commit_text_or_names
     )
 
     result = analyze_local_repositories(
-        reason="github_failed", github_error="TLS Untrusted!", paths=[str(repo)], context=context
+        reason="github_failed", github_error="TLS_UNTRUSTED", paths=[str(repo)], context=context
     )
 
     assert result["success"] is True
@@ -264,14 +268,28 @@ def test_the_tool_result_telemetry_and_value_notes_carry_no_commit_text_or_names
 
 
 def test_without_paths_the_workspace_is_scanned_and_a_missing_repository_is_named(
-    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     repo, _start = _payments_repo(tmp_path)
     empty = tmp_path / "scratch"
     empty.mkdir()
     _git(empty, "init", "-q", "-b", "main")
+    scans: list[dict[str, Any]] = []
+
+    def capture(**properties: Any) -> None:
+        scans.append(properties)
+
+    monkeypatch.setattr(scan_tool_module, "capture_workspace_scanned", capture)
 
     analysis = analyze_repositories(days=30, root=str(tmp_path), repository="acme/billing")
+
+    # The fallback's own scan counts too, so users who never saw the scan tool are counted.
+    [scan] = scans
+    assert (scan["via"], scan["repositories"], scan["repos_with_workflows"]) == (
+        "local_insights",
+        2,
+        1,
+    )
 
     # The repository without commits in the window is not read; the active one is.
     assert [metrics.name for metrics in analysis.repos] == [repo.name]
@@ -279,6 +297,72 @@ def test_without_paths_the_workspace_is_scanned_and_a_missing_repository_is_name
         "No local checkout of acme/billing was found, so these insights cover your other "
         "repositories.",
     )
+
+
+def test_work_on_a_detached_head_counts_and_a_repository_without_commits_reads_empty(
+    tmp_path: Path,
+) -> None:
+    detached = tmp_path / "detached"
+    detached.mkdir()
+    _git(detached, "init", "-q", "-b", "main")
+    _git(detached, "config", "user.email", _ME)
+    start = datetime.now(UTC) - timedelta(days=2)
+    _commit(detached, "Base", at=start, files=("a.txt",))
+    _git(detached, "checkout", "-q", "--detach")
+    _commit(detached, "Detached work", at=start + timedelta(hours=1), files=("b.txt",))
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    _git(empty, "init", "-q", "-b", "main")
+
+    analysis = analyze_repositories(days=30, paths=[str(detached), str(empty)])
+
+    assert [(repo.name, repo.own_commits) for repo in analysis.repos] == [
+        ("detached", 2),
+        ("empty", 0),
+    ]
+    assert analysis.unreadable == 0
+
+
+def test_a_stopped_analysis_starts_no_further_git_call(tmp_path: Path) -> None:
+    repo, _start = _payments_repo(tmp_path)
+
+    with pytest.raises(ReadStopped):
+        collect_repo(repo, days=30, now=0.0, timeout=5.0, stopped=lambda: True)
+
+
+def test_only_known_github_error_kinds_reach_analytics(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Free text a caller passes, such as a path or repository name, is recorded as ``other``."""
+    assert {kind.value for kind in GitHubFailureKind} == GITHUB_ERROR_KINDS
+    recorded: list[str] = []
+
+    def capture(**properties: Any) -> None:
+        recorded.append(properties["github_error"])
+
+    monkeypatch.setattr(tool_module, "capture_local_repositories_analyzed", capture)
+    for error in ("tls_untrusted", "/Users/ada/acme-secret could not be read", ""):
+        analyze_local_repositories(
+            reason="github_failed", github_error=error, paths=[str(tmp_path)]
+        )
+
+    assert recorded == ["tls_untrusted", "other", ""]
+
+
+def test_a_new_run_clears_the_value_notes_an_earlier_one_left(tmp_path: Path) -> None:
+    session = Session()
+    session.skill_value_notes["Follow-up fixes"] = ("follow_up_fixes", "stale summary")
+    context = AgentToolContext(
+        resolved_integrations={},
+        resources={
+            ACTION_TOOL_CONTEXT_RESOURCE_KEY: ActionToolScope(session=session, console=None)
+        },
+    )
+
+    # A folder with no checkout: nothing is read, so nothing may be recorded as delivered.
+    analyze_local_repositories(paths=[str(tmp_path)], context=context)
+
+    assert session.skill_value_notes == {}
 
 
 class TestAnalyzeLocalRepositoriesContract(BaseToolContract):

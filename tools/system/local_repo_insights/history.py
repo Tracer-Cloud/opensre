@@ -8,10 +8,11 @@ which AI agents co-authored it. Commit messages and diffs are never kept.
 from __future__ import annotations
 
 import re
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
-from tools.system.local_repo_insights.git_read import git_output
+from tools.system.local_repo_insights.git_read import git_output, never_stopped
 
 _RECORD = "\x1e"
 _FIELD = "\x1f"
@@ -105,16 +106,26 @@ class Commit:
     """Lines added plus deleted, lockfiles and binary files not counted."""
 
 
-def read_commits(checkout: Path, *, days: int, timeout: float) -> list[Commit] | None:
-    """Non-merge commits of the last ``days`` days on local and remote-tracking branches.
+def read_commits(
+    checkout: Path,
+    *,
+    days: int,
+    timeout: float,
+    include_head: bool = True,
+    stopped: Callable[[], bool] = never_stopped,
+) -> list[Commit] | None:
+    """Non-merge commits of the last ``days`` days on HEAD, local and remote-tracking branches.
 
+    ``include_head`` adds work on a detached HEAD; pass False when HEAD does not
+    resolve yet (a repository with no commits), or git refuses the whole call.
     None when git failed or ran out of time. A commit reachable from several
-    branches is listed once; copies a rebase left behind (same author, time and
+    refs is listed once; copies a rebase left behind (same author, time and
     subject) are listed once too.
     """
     output = git_output(
         checkout,
         "log",
+        *(("HEAD",) if include_head else ()),
         "--branches",
         "--remotes",
         "--no-merges",
@@ -124,6 +135,7 @@ def read_commits(checkout: Path, *, days: int, timeout: float) -> list[Commit] |
         f"--format={_FORMAT}",
         "--numstat",
         timeout=timeout,
+        stopped=stopped,
     )
     if output is None:
         return None

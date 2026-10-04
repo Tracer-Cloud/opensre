@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from tools.system.local_repo_insights.git_read import git_output
+from tools.system.local_repo_insights.git_read import ReadStopped, git_output, never_stopped
 from tools.system.local_repo_insights.history import Commit, read_commits
 from tools.system.local_repo_insights.hygiene import Hygiene, read_hygiene
 from tools.system.local_repo_insights.workflows import (
@@ -55,9 +56,13 @@ class RepoFacts:
     hygiene: Hygiene
 
 
-def repo_identity(checkout: Path, *, timeout: float) -> tuple[str, str, str]:
+def repo_identity(
+    checkout: Path, *, timeout: float, stopped: Callable[[], bool] = never_stopped
+) -> tuple[str, str, str]:
     """``(name, identity, origin)`` of ``checkout``, so clones can be folded before measuring."""
-    origin = (git_output(checkout, "remote", "get-url", "origin", timeout=timeout) or "").strip()
+    origin = (
+        git_output(checkout, "remote", "get-url", "origin", timeout=timeout, stopped=stopped) or ""
+    ).strip()
     owner, repo = parse_github_remote(origin)
     if owner and repo:
         name = f"{owner}/{repo}"
@@ -65,11 +70,31 @@ def repo_identity(checkout: Path, *, timeout: float) -> tuple[str, str, str]:
     return checkout.name, str(common_git_dir(checkout)), origin
 
 
-def collect_repo(checkout: Path, *, days: int, now: float, timeout: float) -> RepoFacts:
-    """Read ``checkout``: identity, the user's email, ``days`` of history, CI files and local state."""
-    name, identity, origin = repo_identity(checkout, timeout=timeout)
-    email = git_output(checkout, "config", "--get", "user.email", timeout=timeout) or ""
-    commits = read_commits(checkout, days=days, timeout=timeout)
+def collect_repo(
+    checkout: Path,
+    *,
+    days: int,
+    now: float,
+    timeout: float,
+    stopped: Callable[[], bool] = never_stopped,
+) -> RepoFacts:
+    """Read ``checkout``: identity, the user's email, ``days`` of history, CI files and local state.
+
+    Raises ``ReadStopped`` at the next git call once ``stopped`` is true.
+    """
+    name, identity, origin = repo_identity(checkout, timeout=timeout, stopped=stopped)
+    email = (
+        git_output(checkout, "config", "--get", "user.email", timeout=timeout, stopped=stopped)
+        or ""
+    )
+    head = git_output(
+        checkout, "rev-parse", "--verify", "--quiet", "HEAD", timeout=timeout, stopped=stopped
+    )
+    commits = read_commits(
+        checkout, days=days, timeout=timeout, include_head=head is not None, stopped=stopped
+    )
+    if stopped():
+        raise ReadStopped
     providers = ci_providers(checkout)
     return RepoFacts(
         name=name,
@@ -80,7 +105,9 @@ def collect_repo(checkout: Path, *, days: int, now: float, timeout: float) -> Re
         commits=tuple(commits) if commits is not None else None,
         providers=providers,
         workflows=audit_workflows(checkout) if GITHUB_ACTIONS in providers else None,
-        hygiene=read_hygiene(checkout, common_git_dir(checkout), now=now, timeout=timeout),
+        hygiene=read_hygiene(
+            checkout, common_git_dir(checkout), now=now, timeout=timeout, stopped=stopped
+        ),
     )
 
 

@@ -32,6 +32,7 @@ from config.constants.skills import (
     ONBOARDING_SKILL_NAME,
     SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME,
 )
+from core.agent_harness.session.pending_choice import PendingUserChoice
 from core.agent_harness.spi.handoff import AskUserQuestion, format_ask_user_answers
 from core.agent_harness.spi.session_state import arm_setup_resume, pending_setup_resume
 from surfaces.interactive_shell.session import Session
@@ -269,6 +270,34 @@ def test_going_on_without_github_starts_the_local_analysis_with_this_pick(
     assert session.terminal.awaiting_handoff_answer is True
     assert "Going on without GitHub" in buffer.getvalue()
     assert onboarding_choices == []
+
+
+def test_a_fallback_skill_that_opens_its_own_menu_is_shown_that_menu(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A skill's own first question wins over an answer to the setup menu."""
+    monkeypatch.setattr(
+        gate, "active_skill_catalog", lambda: _catalog_with(ANALYZING_LOCAL_REPOSITORIES_SKILL_NAME)
+    )
+
+    def enter_skill(name: str, ctx: Any) -> dict[str, Any]:
+        ctx.session.pending_user_choice = PendingUserChoice(
+            title="Pick a scope", options=("A", "B")
+        )
+        ctx.session.terminal.set_auto_command("/choose")
+        return {"ok": True, "name": name, "entry_menu": {"ok": True, "menu": "queued"}}
+
+    monkeypatch.setattr(prerequisite_menu, "enter_skill", enter_skill)
+    session = _held_demo()
+    shown = _pick(monkeypatch, _LOCAL_REPOS, "B")
+    console, _buffer = _console()
+
+    choice_prompt._cmd_choose(session, console, [])
+
+    assert [menu["title"] for menu in shown] == ["Connect GitHub to continue", "Pick a scope"]
+    assert session.terminal.pending_prompt_default == format_ask_user_answers(
+        (AskUserQuestion(label="", title="Pick a scope", options=()),), ("B",)
+    )
 
 
 def test_the_fallback_row_waits_for_its_skill_to_be_in_the_catalog(

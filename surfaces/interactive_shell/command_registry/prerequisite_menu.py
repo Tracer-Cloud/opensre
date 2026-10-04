@@ -35,7 +35,7 @@ from surfaces.interactive_shell.command_registry.setup_resume import (
     resume_after_setup,
 )
 from surfaces.interactive_shell.runtime import Session
-from tools.interactive_shell.actions.skill_entry import enter_skill
+from tools.interactive_shell.actions.skill_entry import enter_skill, entry_menu_queued
 from tools.interactive_shell.actions.skill_prerequisite_gate import (
     prerequisite_fallback,
     queue_prerequisite_menu,
@@ -111,6 +111,9 @@ def _start_fallback(session: Session, console: Console, service: str) -> MenuSte
     )
     if not entered.get("ok"):
         return MenuStep.LEAVE
+    if entry_menu_queued(entered):
+        # The skill opened its own first question; show that, not an answer to this menu.
+        return MenuStep.ASK_AGAIN
     label = prerequisite_service_label(service)
     question = AskUserQuestion(
         label=label,

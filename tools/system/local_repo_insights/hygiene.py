@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
 
-from tools.system.local_repo_insights.git_read import git_output
+from tools.system.local_repo_insights.git_read import git_output, never_stopped
 
 STALE_BRANCH_DAYS = 30
 _SECONDS_PER_DAY = 86_400
@@ -36,7 +37,14 @@ class Hygiene:
     shallow: bool
 
 
-def read_hygiene(checkout: Path, git_dir: Path, *, now: float, timeout: float) -> Hygiene:
+def read_hygiene(
+    checkout: Path,
+    git_dir: Path,
+    *,
+    now: float,
+    timeout: float,
+    stopped: Callable[[], bool] = never_stopped,
+) -> Hygiene:
     """Read ``checkout``'s local state; a git call that fails counts as nothing found."""
     framework = _hook_framework(checkout)
     branch_times = [
@@ -48,21 +56,35 @@ def read_hygiene(checkout: Path, git_dir: Path, *, now: float, timeout: float) -
                 "refs/heads",
                 "--format=%(committerdate:unix)",
                 timeout=timeout,
+                stopped=stopped,
             )
             or ""
         ).split()
         if value.isdigit()
     ]
     cutoff = now - STALE_BRANCH_DAYS * _SECONDS_PER_DAY
-    stashes = git_output(checkout, "stash", "list", timeout=timeout) or ""
+    stashes = git_output(checkout, "stash", "list", timeout=timeout, stopped=stopped) or ""
     status = (
-        git_output(checkout, "status", "--porcelain", "--untracked-files=normal", timeout=timeout)
+        git_output(
+            checkout,
+            "status",
+            "--porcelain",
+            "--untracked-files=normal",
+            timeout=timeout,
+            stopped=stopped,
+        )
         or ""
     )
-    shallow = git_output(checkout, "rev-parse", "--is-shallow-repository", timeout=timeout) or ""
+    shallow = (
+        git_output(
+            checkout, "rev-parse", "--is-shallow-repository", timeout=timeout, stopped=stopped
+        )
+        or ""
+    )
     return Hygiene(
         hook_framework=framework,
-        hook_installed=bool(framework) and _hook_installed(checkout, git_dir, timeout=timeout),
+        hook_installed=bool(framework)
+        and _hook_installed(checkout, git_dir, timeout=timeout, stopped=stopped),
         local_branches=len(branch_times),
         stale_branches=sum(1 for at in branch_times if at < cutoff),
         stashes=sum(1 for line in stashes.splitlines() if line.strip()),
@@ -78,10 +100,13 @@ def _hook_framework(checkout: Path) -> str:
     return ""
 
 
-def _hook_installed(checkout: Path, git_dir: Path, *, timeout: float) -> bool:
+def _hook_installed(
+    checkout: Path, git_dir: Path, *, timeout: float, stopped: Callable[[], bool]
+) -> bool:
     """Whether git would run a commit hook here: a ``core.hooksPath`` folder or ``hooks/pre-commit``."""
     hooks_path = (
-        git_output(checkout, "config", "--get", "core.hooksPath", timeout=timeout) or ""
+        git_output(checkout, "config", "--get", "core.hooksPath", timeout=timeout, stopped=stopped)
+        or ""
     ).strip()
     if hooks_path:
         folder = Path(hooks_path).expanduser()
