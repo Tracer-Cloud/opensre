@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from config.constants.skills import ONBOARDING_SKILL_NAME
+from config.llm_reasoning_effort import apply_reasoning_effort
 from core.agent import Agent, AgentRunResult
 from core.agent.cancel import tool_resources_cancel_requested
 from core.agent.goals import Goal
@@ -1280,14 +1281,20 @@ def _run_action_turn(
             observer=observer,
             output=args.output,
         )
-        result = run_react_agent_with_telemetry(
-            built.agent,
-            [{"role": "user", "content": built.user_message}],
-            phase="action",
-            iteration_cap=built.max_iterations,
-            llm=None if isinstance(built.llm, _StaticToolCallLLM) else built.llm,
-            session=session,
-        )
+        # ``/effort`` lives on the session; the model clients read it from context.
+        with apply_reasoning_effort(
+            turn_snapshot.reasoning_effort
+            if turn_snapshot is not None
+            else getattr(session, "reasoning_effort", None)
+        ):
+            result = run_react_agent_with_telemetry(
+                built.agent,
+                [{"role": "user", "content": built.user_message}],
+                phase="action",
+                iteration_cap=built.max_iterations,
+                llm=None if isinstance(built.llm, _StaticToolCallLLM) else built.llm,
+                session=session,
+            )
         persist_turn_system_prompt(
             session,
             phase="action_agent",
