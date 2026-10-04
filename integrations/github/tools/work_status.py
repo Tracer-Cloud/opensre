@@ -254,6 +254,15 @@ def _normalize_pull_request(
             reasons.append("mergeable=false")
     else:
         status = "mergeable"
+    head_repo = _repository_name(pr.get("head"))
+    base_repo = _repository_name(pr.get("base"))
+    # Matches what fix_github_pr_ci refuses: a fork head, or a deleted fork with no head repo.
+    repairable = (
+        str(pr.get("state") or "").lower() == "open"
+        and not pr.get("draft")
+        and bool(head_repo)
+        and head_repo.casefold() == base_repo.casefold()
+    )
     return PullRequestStatus(
         number=pr.get("number") if isinstance(pr.get("number"), int) else None,
         title=str(pr.get("title", "")),
@@ -269,7 +278,15 @@ def _normalize_pull_request(
         mergeability=status,
         blocking_reasons=reasons,
         updated_at=str(pr.get("updated_at", "")),
+        head_repo=head_repo,
+        repairable=repairable,
     )
+
+
+def _repository_name(ref: Any) -> str:
+    """``owner/name`` of a PR head or base, or "" when GitHub reports no repository."""
+    repository = ref.get("repo") if isinstance(ref, dict) else None
+    return str(repository.get("full_name") or "") if isinstance(repository, dict) else ""
 
 
 def _count_prs(prs: list[dict[str, Any]]) -> dict[str, int]:

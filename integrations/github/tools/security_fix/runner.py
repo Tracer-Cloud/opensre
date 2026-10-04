@@ -26,6 +26,7 @@ from integrations.github.tools.security_fix.errors import (
     ERR_CONFIRMATION_DENIED,
     ERR_EXECUTION,
     ERR_GITHUB_TOKEN,
+    ERR_NO_ELIGIBLE_ALERT,
     ERR_TIMEOUT,
     GitHubSecurityFixError,
 )
@@ -181,12 +182,16 @@ def ship_error_output(output: dict[str, Any], exc: GitHubSecurityFixError) -> di
 def error_output(
     kind: str, message: str, ctx: SecurityAlertContext | None = None
 ) -> dict[str, Any]:
-    return {
+    output = {
         **_base_output(ctx),
+        "success": kind == ERR_NO_ELIGIBLE_ALERT,
         "error_kind": kind,
         "error": message,
         "response_text": _single_line(message),
     }
+    if kind == ERR_NO_ELIGIBLE_ALERT:
+        del output["error"]
+    return output
 
 
 def _result_response_text(ctx: SecurityAlertContext, result: CodingResult) -> str:
@@ -219,6 +224,7 @@ def run_security_fix(
     workspace: str | None = None,
     model: str | None = None,
     open_pr: bool = False,
+    quality_only: bool = False,
     github_token: str | None = None,
     confirm_fn: Callable[[str], str] | None = None,
 ) -> dict[str, Any]:
@@ -236,6 +242,7 @@ def run_security_fix(
                 workspace=ws,
                 github_token=github_token,
                 prefer_builtin_local_fix=not coding_available,
+                quality_only=quality_only,
             )
             ws = str(
                 workspaces.enter_context(
