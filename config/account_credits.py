@@ -29,6 +29,9 @@ from config.constants.account import (
 )
 
 _CACHE_TTL_SEC = 5.0
+# A balance with credits left is reused for longer: every hosted LLM call checks
+# admission first, and the proxy still refuses an exhausted ledger with 402.
+_FUNDED_CACHE_TTL_SEC = 60.0
 _FALLBACK_TO_SESSION_STATUSES: frozenset[int] = frozenset(
     {
         HTTPStatus.FORBIDDEN,
@@ -251,7 +254,8 @@ def fetch_hosted_credits(*, app_url: str | None = None, fresh: bool = False) -> 
     """Read hosted credits without treating errors as a zero balance.
 
     A short in-process cache lets prompt assembly and LLM admission share one
-    HTTP read on the same turn.
+    HTTP read on the same turn; a read with credits left is kept for a minute,
+    so the model calls of one turn do not each wait on a fresh read.
     """
     record = load_account_record()
     token = resolve_account_token()
@@ -262,7 +266,7 @@ def fetch_hosted_credits(*, app_url: str | None = None, fresh: bool = False) -> 
         not fresh
         and cached.read is not None
         and cached.key == key
-        and now - cached.at < _CACHE_TTL_SEC
+        and now - cached.at < _cache_ttl(cached.read)
     ):
         return cached.read
     read = _read(app_url=app_url)
@@ -270,6 +274,13 @@ def fetch_hosted_credits(*, app_url: str | None = None, fresh: bool = False) -> 
     cached.read = read
     cached.at = now
     return read
+
+
+def _cache_ttl(read: HostedCreditsRead) -> float:
+    """How long ``read`` may answer: longer while credits remain, short otherwise."""
+    if read.credits is not None and read.credits.total > 0:
+        return _FUNDED_CACHE_TTL_SEC
+    return _CACHE_TTL_SEC
 
 
 def cached_hosted_credits() -> HostedCreditsRead | None:
