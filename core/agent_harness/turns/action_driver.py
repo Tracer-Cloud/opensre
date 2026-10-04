@@ -510,17 +510,32 @@ def _has_quiet_shell_run(result: Any) -> bool:
 def _generic_chunks(result: Any) -> list[str]:
     """User-facing text for each generic tool result, in call order.
 
-    A result whose text repeats an earlier one exactly (a verify step that
-    re-reads the same record) is shown once.
+    A verify step that re-reads the same record (the same ``prompt_id``) and
+    gets the same text back is shown once; independent results always show.
     """
     chunks: list[str] = []
-    seen: set[str] = set()
+    records_shown: set[tuple[str, str, str]] = set()
     for tool_call, tool_result in _generic_tool_results(result):
         formatted = format_generic_tool_payload(tool_call, tool_result)
-        if formatted and formatted.strip() not in seen:
-            seen.add(formatted.strip())
-            chunks.append(formatted)
+        if not formatted:
+            continue
+        record = _record_id(tool_result)
+        if record:
+            key = (tool_call.name, record, formatted.strip())
+            if key in records_shown:
+                continue
+            records_shown.add(key)
+        chunks.append(formatted)
     return chunks
+
+
+def _record_id(tool_result: Any) -> str:
+    """The id of the record a tool result reports on, when it names one."""
+    details = getattr(tool_result, "details", None)
+    if not isinstance(details, dict):
+        return ""
+    value = details.get("prompt_id")
+    return value.strip() if isinstance(value, str) else ""
 
 
 def _response_text_from_generic_results(result: Any) -> str:
