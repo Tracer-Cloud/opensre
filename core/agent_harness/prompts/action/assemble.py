@@ -22,6 +22,7 @@ from core.agent_harness.prompts.kernel.envelope import (
     PromptEnvelope,
     PromptTier,
 )
+from core.agent_harness.prompts.kernel.surfaces import profile_for
 from core.agent_harness.prompts.memory.conversation import (
     format_prior_action_facts,
     format_recent_conversation,
@@ -46,19 +47,24 @@ logger = logging.getLogger(__name__)
 _USER_TEMPLATE = "USER MESSAGE (literal): <<<{text}>>>"
 
 
-def _runtime_facts_blocks() -> tuple[str, str]:
-    """The ``(host, live)`` runtime facts, each ``""`` when they cannot be read.
+def _runtime_facts_blocks(surface: str | None) -> tuple[str, str]:
+    """The ``(static, live)`` runtime facts, each ``""`` when they cannot be read.
 
-    One capture feeds both: host facts hold for the session and sit in the
-    cached half, live facts (time, uptime, disk, memory) change every turn.
-    Never raises — a turn without facts is worse than one with them, but far
-    better than a turn that does not run.
+    One capture feeds both: static facts hold for the session and sit in the
+    cached half, live facts change every turn. The live block always carries
+    the clock; this host's uptime, disk and memory join it only on a surface
+    whose profile allows them. Never raises — a turn without facts is worse
+    than one with them, but far better than a turn that does not run.
     """
     from config.runtime_metadata import capture_runtime_facts
 
+    # As with setup state, an unknown surface gets no host readings:
+    # profile_for fails open, the wrong direction for one installation's facts.
+    host_measurements = surface is not None and profile_for(surface).host_measurements
     try:
         runtime = capture_runtime_facts()
-        return render_static_runtime_facts(runtime), build_live_runtime_facts_block(runtime)
+        live = build_live_runtime_facts_block(runtime, host_measurements=host_measurements)
+        return render_static_runtime_facts(runtime), live
     except Exception:  # noqa: BLE001 - prompt assembly must not fail a turn
         logger.debug("Runtime facts unavailable for the action prompt", exc_info=True)
         return "", ""
@@ -126,13 +132,13 @@ def build_action_system_prompt_envelope(turn_snapshot: TurnSnapshot) -> PromptEn
             suffix="\n\n",
         )
     )
-    host_facts, live_facts = _runtime_facts_blocks()
+    static_facts, live_facts = _runtime_facts_blocks(turn_snapshot.prompt_surface)
     blocks.extend(
         _optional_block(
             id=PromptBlockId.ACTION_RUNTIME_FACTS,
             kind=PromptBlockKind.CONTEXT,
             tier=PromptTier.STABLE,
-            content=host_facts,
+            content=static_facts,
             provenance="config.runtime_metadata",
             suffix="\n\n",
         )

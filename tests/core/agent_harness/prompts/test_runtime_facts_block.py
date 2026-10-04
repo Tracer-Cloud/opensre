@@ -38,7 +38,7 @@ def test_static_facts_renders_timezone_but_not_live_clock() -> None:
     assert "local timezone is Europe/Berlin" in block
     assert "current time is" not in block
 
-    live = render_live_runtime_facts(runtime)
+    live = render_live_runtime_facts(runtime, host_measurements=True)
     assert "current time is 2026-07-11T14:30:12+02:00" in live
     assert "do NOT guess a date/time" in live.replace("Do NOT", "do NOT")
 
@@ -71,7 +71,9 @@ def test_static_facts_renders_python_process_and_tools_facts() -> None:
     assert "`kubectl version`" in block
     assert "`which`" in block
     assert "`ps`" in block
-    assert "process uptime is 42.5 seconds" in render_live_runtime_facts(runtime)
+    assert "process uptime is 42.5 seconds" in render_live_runtime_facts(
+        runtime, host_measurements=True
+    )
 
 
 def test_static_facts_renders_hostname_disk_memory_and_scratchpad() -> None:
@@ -95,7 +97,7 @@ def test_static_facts_renders_hostname_disk_memory_and_scratchpad() -> None:
     assert "`hostname`" in block
     assert "`ls`" in block
     assert "iterdir" in block  # pathlib guidance for directory listings
-    live = render_live_runtime_facts(runtime)
+    live = render_live_runtime_facts(runtime, host_measurements=True)
     assert "root disk is 63.2% used with 120.5 GB free" in live
     assert "memory is 41.0% used with 9.4 GB available" in live
 
@@ -243,13 +245,37 @@ def test_static_facts_stay_empty_without_runtime_facts() -> None:
     assert _static_facts({}) == ""
 
 
-def _capture_at(now_iso: str) -> Callable[..., dict[str, Any]]:
-    """The real runtime capture, with its clock reading ``now_iso``."""
+_CAPTURE = "config.runtime_metadata.capture_runtime_facts"
+
+#: Fixed readings, so the assertions do not depend on this machine.
+_HOST_READINGS = {
+    "uptime_seconds": 42.5,
+    "disk_used_percent": 63.2,
+    "disk_free_gb": 120.5,
+    "memory_used_percent": 41.0,
+    "memory_available_gb": 9.4,
+}
+
+
+def _capture_at(now_iso: str, captures: list[str]) -> Callable[..., dict[str, Any]]:
+    """The real runtime capture at ``now_iso`` with fixed readings; each call logs to ``captures``."""
 
     def capture(**kwargs: Any) -> dict[str, Any]:
-        return {**capture_runtime_facts(**kwargs), "now_iso": now_iso}
+        captures.append(now_iso)
+        return {**capture_runtime_facts(**kwargs), **_HOST_READINGS, "now_iso": now_iso}
 
     return capture
+
+
+def _turn(surface: str | None = None) -> TurnSnapshot:
+    return TurnSnapshot(
+        text="what failed in the last hour?",
+        conversation_messages=(),
+        configured_integrations=(),
+        configured_integrations_known=True,
+        reasoning_effort=None,
+        prompt_surface=surface,
+    )
 
 
 def test_each_turn_reads_the_current_time_and_the_cached_half_never_does(
@@ -260,24 +286,43 @@ def test_each_turn_reads_the_current_time_and_the_cached_half_never_does(
     Without it the model answered "what failed in the last hour?" by guessing
     today's date from its training data, or spent a tool call reading the clock.
     """
-    snapshot = TurnSnapshot(
-        text="what failed in the last hour?",
-        conversation_messages=(),
-        configured_integrations=(),
-        configured_integrations_known=True,
-        reasoning_effort=None,
-    )
+    captures: list[str] = []
 
-    monkeypatch.setattr(
-        "config.runtime_metadata.capture_runtime_facts", _capture_at("2026-10-04T23:59:30+02:00")
-    )
-    first_cached, first_turn = build_action_system_prompt_envelope(snapshot).render_split()
-    monkeypatch.setattr(
-        "config.runtime_metadata.capture_runtime_facts", _capture_at("2026-10-05T00:00:30+02:00")
-    )
-    second_cached, second_turn = build_action_system_prompt_envelope(snapshot).render_split()
+    monkeypatch.setattr(_CAPTURE, _capture_at("2026-10-04T23:59:30+02:00", captures))
+    first_cached, first_turn = build_action_system_prompt_envelope(_turn()).render_split()
+    monkeypatch.setattr(_CAPTURE, _capture_at("2026-10-05T00:00:30+02:00", captures))
+    second_cached, second_turn = build_action_system_prompt_envelope(_turn()).render_split()
 
-    assert "current time is 2026-10-04T23:59:30+02:00 (Sunday)" in first_turn
-    assert "current time is 2026-10-05T00:00:30+02:00 (Monday)" in second_turn
+    started = "read when this turn started"
+    assert f"current time is 2026-10-04T23:59:30+02:00 (Sunday), {started}" in first_turn
+    assert f"current time is 2026-10-05T00:00:30+02:00 (Monday), {started}" in second_turn
     assert "current time is" not in first_cached
     assert first_cached == second_cached
+    # One reading per turn feeds both halves.
+    assert captures == ["2026-10-04T23:59:30+02:00", "2026-10-05T00:00:30+02:00"]
+
+
+@pytest.mark.parametrize(
+    ("surface", "measured"),
+    [("interactive_shell", True), ("gateway", False), (None, False)],
+)
+def test_only_a_local_surface_reads_this_hosts_uptime_disk_and_memory(
+    monkeypatch: pytest.MonkeyPatch, surface: str | None, measured: bool
+) -> None:
+    """A shared chat gets the clock, never readings of the machine OpenSRE runs on.
+
+    An unknown surface gets none either: ``profile_for`` fails open, the wrong
+    direction for facts about one installation.
+    """
+    monkeypatch.setattr(_CAPTURE, _capture_at("2026-10-04T23:59:30+02:00", []))
+
+    turn = build_action_system_prompt_envelope(_turn(surface)).render_ephemeral()
+
+    assert "current time is 2026-10-04T23:59:30+02:00 (Sunday)" in turn
+    readings = (
+        "process uptime is 42.5 seconds",
+        "root disk is 63.2% used with 120.5 GB free",
+        "memory is 41.0% used with 9.4 GB available",
+        "uptime, disk or memory usage",
+    )
+    assert [reading in turn for reading in readings] == [measured] * len(readings)

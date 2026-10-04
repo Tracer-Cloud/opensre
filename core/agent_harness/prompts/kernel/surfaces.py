@@ -32,6 +32,10 @@ class SurfaceProfile:
     #: The operator's connected integrations and schedules. Scoped to one
     #: installation, so a shared chat surface does not report it to every member.
     setup_state: bool
+    #: This host's uptime, disk and memory beside the per-turn clock. They
+    #: describe the machine this process runs on, so a shared chat surface does
+    #: not report them to every member; it gets the clock alone.
+    host_measurements: bool
 
 
 _PROFILES: dict[PromptSurface, SurfaceProfile] = {
@@ -40,18 +44,21 @@ _PROFILES: dict[PromptSurface, SurfaceProfile] = {
         cli_rules=True,
         vendor_persona=False,
         setup_state=True,
+        host_measurements=True,
     ),
     PromptSurface.HEADLESS_CLI: SurfaceProfile(
         surface=PromptSurface.HEADLESS_CLI,
         cli_rules=True,
         vendor_persona=False,
         setup_state=True,
+        host_measurements=True,
     ),
     PromptSurface.GATEWAY: SurfaceProfile(
         surface=PromptSurface.GATEWAY,
         cli_rules=False,
         vendor_persona=True,
         setup_state=False,
+        host_measurements=False,
     ),
 }
 
