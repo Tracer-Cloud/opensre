@@ -45,6 +45,16 @@ def _github_rest_token_resolves(resolved_integrations: Mapping[str, Any]) -> boo
     return has_github_rest_token(resolved_integrations)
 
 
+def _slack_connection_resolves(resolved_integrations: Mapping[str, Any]) -> bool:
+    """Slack resolves with a bot token or a webhook, as the Slack tools read it."""
+    from core.tool import availability_view
+
+    slack = availability_view(dict(resolved_integrations)).get("slack")
+    if not isinstance(slack, Mapping):
+        return False
+    return any(str(slack.get(field) or "").strip() for field in ("bot_token", "webhook_url"))
+
+
 def register_harness_adapters() -> None:
     from infrastructure.harness_providers import IntegrationResolutionAdapters
     from integrations.catalog import (
@@ -89,7 +99,10 @@ def register_harness_adapters() -> None:
 
 def _register_skill_prerequisite_checks() -> None:
     """Answer the skill prerequisite checks the host gate looks up by id."""
-    from config.constants.skill_prerequisites import GITHUB_REST_TOKEN_CHECK
+    from config.constants.skill_prerequisites import (
+        GITHUB_REST_TOKEN_CHECK,
+        SLACK_CONNECTED_CHECK,
+    )
     from infrastructure.harness_providers import (
         clear_skill_prerequisite_checks,
         register_skill_prerequisite_check,
@@ -97,6 +110,7 @@ def _register_skill_prerequisite_checks() -> None:
 
     clear_skill_prerequisite_checks()
     register_skill_prerequisite_check(GITHUB_REST_TOKEN_CHECK, _github_rest_token_resolves)
+    register_skill_prerequisite_check(SLACK_CONNECTED_CHECK, _slack_connection_resolves)
 
 
 def _register_vcs_repo_scope_providers() -> None:

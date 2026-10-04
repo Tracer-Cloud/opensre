@@ -15,6 +15,12 @@ from config.constants import GH_TOKEN_ENV, GITHUB_MCP_AUTH_TOKEN_ENV, GITHUB_TOK
 from config.constants.skills import (
     ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME,
     CONNECTING_SLACK_SKILL_NAME,
+    DELEGATING_GITHUB_CI_REPAIRS_SKILL_NAME,
+)
+from config.constants.slack import (
+    SLACK_APP_TOKEN_ENV,
+    SLACK_BOT_TOKEN_ENV,
+    SLACK_WEBHOOK_URL_ENV,
 )
 from config.constants.slash_commands import QUEUED_COMMAND_KEY
 from core.agent_harness.spi.handoff import AskUserQuestion, format_ask_user_answers
@@ -37,8 +43,15 @@ _ANSWER = format_ask_user_answers(
 
 
 @pytest.fixture(autouse=True)
-def _no_ambient_github_token(monkeypatch: pytest.MonkeyPatch) -> None:
-    for name in (GITHUB_TOKEN_ENV, GH_TOKEN_ENV, GITHUB_MCP_AUTH_TOKEN_ENV):
+def _no_ambient_tokens(monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in (
+        GITHUB_TOKEN_ENV,
+        GH_TOKEN_ENV,
+        GITHUB_MCP_AUTH_TOKEN_ENV,
+        SLACK_BOT_TOKEN_ENV,
+        SLACK_APP_TOKEN_ENV,
+        SLACK_WEBHOOK_URL_ENV,
+    ):
         monkeypatch.delenv(name, raising=False)
 
 
@@ -101,38 +114,54 @@ def _setup_queued_mid_skill(skill: str, service: str) -> Session:
 
 
 @pytest.mark.parametrize(
-    ("skill", "service", "replayed"),
+    ("skill", "service", "env", "outcome"),
     [
-        (CONNECTING_SLACK_SKILL_NAME, "slack", False),
-        (ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME, "github", True),
+        (CONNECTING_SLACK_SKILL_NAME, "slack", None, ResumeOutcome.STILL_MISSING),
+        (CONNECTING_SLACK_SKILL_NAME, "slack", SLACK_BOT_TOKEN_ENV, ResumeOutcome.REPLAYED),
+        (
+            ANALYZING_GITHUB_CI_PERFORMANCE_SKILL_NAME,
+            "github",
+            GH_TOKEN_ENV,
+            ResumeOutcome.REPLAYED,
+        ),
     ],
-    ids=["slack-without-a-check", "github"],
+    ids=["slack-cancelled", "slack-connected", "github"],
 )
 def test_only_a_setup_a_check_can_confirm_brings_the_skill_back(
-    monkeypatch: pytest.MonkeyPatch, skill: str, service: str, replayed: bool
+    monkeypatch: pytest.MonkeyPatch,
+    skill: str,
+    service: str,
+    env: str | None,
+    outcome: ResumeOutcome,
 ) -> None:
     """A cancelled Slack wizard replayed the Slack demo's turn, which queued the wizard again.
 
-    No registered check covers Slack, so a finished setup and a cancelled one
-    look the same: that turn is never parked. GitHub's check still confirms
-    its setup, and that turn comes back.
+    The Slack check now tells a finished setup from a cancelled one: a
+    cancelled wizard puts the setup menu back, with "Not now" to leave, and
+    only a resolving token brings the turn back.
     """
     session = _setup_queued_mid_skill(skill, service)
-    monkeypatch.setenv(GH_TOKEN_ENV, "env-tok")  # GitHub's setup worked; Slack's was cancelled
+    if env is not None:
+        monkeypatch.setenv(env, "xoxb-env-tok" if env == SLACK_BOT_TOKEN_ENV else "env-tok")
+    session.refresh_integration_state()  # as the wizard's slash command does
 
-    outcome = resume_after_setup(session, _console(), service=service)
+    assert resume_after_setup(session, _console(), service=service) is outcome
 
-    assert (outcome is ResumeOutcome.REPLAYED) is replayed
+    replayed = outcome is ResumeOutcome.REPLAYED
     assert (session.terminal.pending_prompt_default == _ANSWER) is replayed
-    assert pending_setup_resume(session) is None
+    assert (pending_setup_resume(session) is None) is replayed
+    assert (session.pending_user_choice is not None) is not replayed
 
 
 def test_a_parked_turn_no_check_can_confirm_is_dropped_not_replayed() -> None:
+    """The delegate demo checks its gateway itself, so no host check covers its GitHub setup."""
     session = Session()
     session.resolved_integrations_cache = {}
-    assert arm_setup_resume(session, _ANSWER, skill=CONNECTING_SLACK_SKILL_NAME, service="slack")
+    assert arm_setup_resume(
+        session, _ANSWER, skill=DELEGATING_GITHUB_CI_REPAIRS_SKILL_NAME, service="github"
+    )
 
-    outcome = resume_after_setup(session, _console(), service="slack")
+    outcome = resume_after_setup(session, _console(), service="github")
 
     assert outcome is ResumeOutcome.DROPPED
     assert pending_setup_resume(session) is None

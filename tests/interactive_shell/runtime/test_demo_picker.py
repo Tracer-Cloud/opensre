@@ -4,17 +4,23 @@ from __future__ import annotations
 
 import io
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
+import httpx
 import pytest
 from rich.console import Console
 
+import integrations.account_integrations as account_integrations
 import surfaces.interactive_shell.command_registry.choice_prompt as choice_prompt
 import surfaces.interactive_shell.command_registry.integrations as integrations_cmds
+import surfaces.interactive_shell.command_registry.prerequisite_menu as prerequisite_menu
 import surfaces.interactive_shell.runtime.slash_adapter as slash_adapter
 import surfaces.interactive_shell.runtime.startup.demo_picker as demo_picker
 import surfaces.interactive_shell.runtime.startup.onboarding_telemetry as onboarding_telemetry
+import tools.interactive_shell.actions.skill_prerequisite_gate as gate
 import tools.system.workspace_git_scan.tool as scan_tool
+from config.account import AccountRecord
 from config.constants import (
     GH_TOKEN_ENV,
     GITHUB_MCP_AUTH_TOKEN_ENV,
@@ -37,6 +43,11 @@ from config.constants.skills import (
     OUTCOME_MENU_OPTIONS,
     SKIP_DEMO_OPTION,
     SLACK_OPTION,
+)
+from config.constants.slack import (
+    SLACK_APP_TOKEN_ENV,
+    SLACK_BOT_TOKEN_ENV,
+    SLACK_WEBHOOK_URL_ENV,
 )
 from core.agent_harness.prompts.action.assemble import build_action_system_prompt_envelope
 from core.agent_harness.prompts.getting_started import getting_started_options
@@ -62,6 +73,11 @@ _REPOSITORY_TITLE = "Which repository should I analyze?"
 _REPOSITORY = "acme/one"
 _REPOSITORY_OPTIONS = (_REPOSITORY, "Tracer-Cloud/opensre")
 _NOTE = ""
+#: Turn integrations with a Slack workspace already connected.
+_SLACK_CONNECTED = {"slack": {"bot_token": "xoxb-connected"}}
+_SLACK_SETUP_TITLE = "Connect Slack to continue"
+_SLACK_OPEN_APP = "Connect Slack in the OpenSRE app (recommended)"
+_SLACK_CONTINUE = "I've connected Slack — continue"
 
 
 def _offerable(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -654,7 +670,7 @@ def test_automation_picker_leaf_hands_off_to_the_current_child(
     """The real picker submits each leaf and any demo-repository decision."""
     _offerable(monkeypatch)
     session = Session()
-    session.resolved_integrations_cache = {}
+    session.resolved_integrations_cache = dict(_SLACK_CONNECTED)
     console = Console(file=io.StringIO(), highlight=False)
     llm = FakeActionLLM([tool_response("skill_view", {"name": child_skill})])
     picked = [AUTOMATION_GROUP_OPTION, leaf]
@@ -751,6 +767,7 @@ def test_slack_does_not_ask_to_create_a_demo_repository(
 ) -> None:
     _offerable(monkeypatch)
     session = Session()
+    session.resolved_integrations_cache = dict(_SLACK_CONNECTED)
     session.active_skill = ONBOARDING_SKILL_NAME
     pending = PendingUserChoice(title=_TITLE, options=OUTCOME_MENU_OPTIONS)
     session.pending_user_choice = pending
@@ -769,6 +786,100 @@ def test_slack_does_not_ask_to_create_a_demo_repository(
     answer = _take_prompt(session)
     assert answer == format_ask_user_answers(pending.items(), (SLACK_OPTION,))
     assert DEMO_REPO_PERMISSION_TITLE not in answer
+
+
+def test_without_slack_the_slack_demo_connects_it_in_the_app_then_resumes(
+    monkeypatch: pytest.MonkeyPatch,
+    onboarding_outcomes: list[tuple[str, bool | None]],
+) -> None:
+    """Connect Slack opens the organization's app home, then picks up the parked answer.
+
+    The app stores its Slack install as ``slack_bot`` with a bot token alone;
+    once that record reaches this machine the Slack check passes and the leaf
+    answer is resubmitted exactly as it was first sent.
+    """
+    _offerable(monkeypatch)
+    for name in (SLACK_BOT_TOKEN_ENV, SLACK_APP_TOKEN_ENV, SLACK_WEBHOOK_URL_ENV):
+        monkeypatch.delenv(name, raising=False)
+    app_records: list[dict[str, Any]] = []
+    account = AccountRecord(
+        user_id="user-1",
+        organization_id="org_3K6",
+        email=None,
+        app_url="https://app.test",
+        signed_in_at="2026-01-01T00:00:00Z",
+        token_expires_at="2027-01-01T00:00:00Z",
+    )
+    for module in (account_integrations, gate):
+        monkeypatch.setattr(module, "load_account_record", lambda: account)
+        monkeypatch.setattr(module, "resolve_account_token", lambda: "osre_pat_test")
+
+    def app_get(url: str, *, headers: dict[str, str], timeout: float) -> httpx.Response:
+        _ = (url, headers, timeout)
+        return httpx.Response(200, json={"success": True, "data": app_records})
+
+    monkeypatch.setattr(
+        account_integrations, "httpx", SimpleNamespace(get=app_get, HTTPError=httpx.HTTPError)
+    )
+    account_integrations.reset_account_integrations_cache()
+    opened: list[str] = []
+
+    def browser_open(url: str) -> bool:
+        opened.append(url)
+        return True
+
+    monkeypatch.setattr(prerequisite_menu.webbrowser, "open", browser_open)
+    session = Session()
+    session.active_skill = ONBOARDING_SKILL_NAME
+    pending = PendingUserChoice(title=_TITLE, options=OUTCOME_MENU_OPTIONS)
+    session.pending_user_choice = pending
+    titles: list[str] = []
+    setup_rows: list[list[str]] = []
+
+    def pick(**kwargs: Any) -> str:
+        titles.append(kwargs["title"])
+        if kwargs["title"] == _SLACK_SETUP_TITLE:
+            setup_rows.append([label for label, *_rest in kwargs["choices"]])
+            if not opened:
+                return _SLACK_OPEN_APP
+            if len(setup_rows) > 2:
+                return "Not now"  # Slack never resolved: stop instead of looping
+            # Connected in the browser while the menu was open.
+            app_records.append(
+                {
+                    "id": "slack-org",
+                    "service": "slack_bot",
+                    "status": "active",
+                    "name": "default",
+                    "credentials": {"bot_token": "xoxe.xoxb-app-install"},
+                }
+            )
+            return _SLACK_CONTINUE
+        if kwargs["title"] == AUTOMATION_MENU_TITLE:
+            return SLACK_OPTION
+        return AUTOMATION_GROUP_OPTION
+
+    monkeypatch.setattr(choice_prompt, "repl_choose_one", pick)
+    buffer = io.StringIO()
+
+    choice_prompt._cmd_choose(session, Console(file=buffer, width=200), [])
+
+    assert titles == [
+        _TITLE,
+        AUTOMATION_MENU_TITLE,
+        _SLACK_SETUP_TITLE,
+        _SLACK_SETUP_TITLE,
+    ]
+    assert setup_rows[0][0] == _SLACK_OPEN_APP
+    assert opened == ["https://app.test/home?org_id=org_3K6"]
+    assert "https://app.test/home?org_id=org_3K6" in buffer.getvalue()
+    assert _take_prompt(session) == format_ask_user_answers(pending.items(), (SLACK_OPTION,))
+    assert session.terminal.awaiting_handoff_answer
+    assert pending_setup_resume(session) is None
+    slack = session.resolved_integrations_cache["slack"]
+    assert slack["bot_token"] == "xoxe.xoxb-app-install"
+    assert onboarding_outcomes == [("slack", False)]
+    account_integrations.reset_account_integrations_cache()
 
 
 def test_demo_repository_escape_cancels_without_an_answer(

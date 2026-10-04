@@ -88,8 +88,8 @@ def resumable_setup(skill_name: str, service: str) -> bool:
     """True when a registered check can confirm that setting up ``service`` unblocked ``skill_name``.
 
     Only such a setup parks the turn for replay: a resume needs evidence, and a
-    service with no check (Slack for its own demo) would replay a turn even
-    after the user cancelled the wizard.
+    service with no check would replay a turn even after the user cancelled
+    the wizard.
     """
     registered = set(registered_skill_prerequisite_checks())
     return any(

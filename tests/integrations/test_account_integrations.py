@@ -314,3 +314,33 @@ def _expire_ttl_after_first_load(monkeypatch: pytest.MonkeyPatch) -> int:
 
     monkeypatch.setattr(acct, "time", SimpleNamespace(monotonic=later))
     return generation
+
+
+def test_the_apps_slack_install_is_the_cli_slack_integration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The app names its Slack OAuth install ``slack_bot``; the CLI knows it as ``slack``."""
+    _signed_in(monkeypatch)
+    payload = {
+        "success": True,
+        "data": [
+            {
+                "id": "slack-org-1",
+                "service": "slack_bot",
+                "status": "active",
+                "name": "default",
+                "credentials": {"bot_token": "xoxb-app"},
+            }
+        ],
+    }
+    _respond_with(monkeypatch, [httpx.Response(200, json=payload)])
+
+    records = acct.load_account_integrations()
+    effective = resolve_effective_integrations(
+        store_integrations=[], env_integrations=[], remote_integrations=records
+    )
+
+    assert [record["service"] for record in records] == ["slack"]
+    assert effective["slack"]["source"] == "remote"
+    assert effective["slack"]["config"]["bot_token"] == "xoxb-app"
+    assert "slack_bot" not in effective

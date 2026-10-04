@@ -36,6 +36,7 @@ from config.constants.account import (
     OPENSRE_ACCOUNT_INTEGRATIONS_PATH,
     OPENSRE_ACCOUNT_INTEGRATIONS_TIMEOUT_SECONDS,
     OPENSRE_ACCOUNT_INTEGRATIONS_TTL_SECONDS,
+    OPENSRE_ACCOUNT_SERVICE_NAMES,
 )
 from integrations.credentials_api import CredentialsApiError, validate_integration_store_v2
 
@@ -173,8 +174,15 @@ def _fetch() -> _FetchOutcome:
         return _EMPTY
 
     data: Any = store.as_store_data()["integrations"]
-    records = [item for item in data if isinstance(item, dict)]
+    records = [_with_cli_service_name(item) for item in data if isinstance(item, dict)]
     return _FetchOutcome(kind="records", records=records, fingerprint=_fingerprint(records))
+
+
+def _with_cli_service_name(record: dict[str, Any]) -> dict[str, Any]:
+    """``record`` under the CLI's service name; merge and classify key on it."""
+    service = str(record.get("service") or "").strip().lower()
+    renamed = OPENSRE_ACCOUNT_SERVICE_NAMES.get(service)
+    return {**record, "service": renamed} if renamed else record
 
 
 def account_setup_url() -> str | None:
