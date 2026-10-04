@@ -19,7 +19,11 @@ from gateway.transports.telegram.runtime import (
     ShutdownTelegramPollingRuntime,
     TelegramPollingRuntime,
 )
-from gateway.transports.telegram.settings import GatewaySettings, TelegramInboundMessage
+from gateway.transports.telegram.settings import (
+    GatewaySettings,
+    TelegramInboundMessage,
+    current_connected_chat_user_ids,
+)
 from infrastructure.turn_host.turn_callback import TurnCallback
 
 
@@ -91,7 +95,10 @@ async def _poll_telegram_until_stopped(
                     callback,
                     broker=resources.approvals,
                     client=resources.client,
-                    allowed_user_ids=settings.allowed_user_ids,
+                    allowed_user_ids=[
+                        *settings.allowed_user_ids,
+                        *current_connected_chat_user_ids(),
+                    ],
                 )
 
             for event in batch.messages:
