@@ -124,6 +124,38 @@ def test_the_block_stays_within_its_caps_and_never_shows_a_credential() -> None:
     assert "earlier) " in block and "step 19" in block
 
 
+@pytest.mark.parametrize(
+    "dump",
+    [
+        "=== approved-policy.txt ===\nApproved operational repair policy — stay on schedule.",
+        "--- /workspace/home/.opensre/operational_loops/targets.json ---\n{}",
+        '{"targets": {"abc": {"status": "verified_resolved"}}}',
+    ],
+)
+def test_a_report_that_is_a_pasted_file_dump_is_not_quoted(dump: str) -> None:
+    """A dumped policy or ledger must not become the next tick's report template.
+
+    The live merge-conflicts loop pasted approved-policy.txt as its reply; the
+    next ticks saw that paste quoted under PREVIOUS RUNS and repeated it instead
+    of repairing the conflicting pull request.
+    """
+    _save(
+        12,
+        work_status="incomplete",
+        report=dump,
+        actions=["shell_run python - <<PY read coordination state PY"],
+        action_count=1,
+    )
+
+    block = previous_runs_block(_TASK)
+
+    assert "report:" not in block
+    assert "approved-policy" not in block and "verified_resolved" not in block
+    # The attempt itself stays visible: how it ended and what it ran.
+    assert "outcome: incomplete" in block
+    assert "actions: shell_run python" in block
+
+
 def test_a_loop_without_finished_history_gets_no_block() -> None:
     assert previous_runs_block(_TASK) == ""
     _save(13, status="running")

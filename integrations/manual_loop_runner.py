@@ -74,6 +74,12 @@ Do the work the task below names, using the tools it names.
 Do not load skill_view or follow a report-only skill; the task text below is the complete instruction.
 Reply only with the result in the shape the task specifies; every figure and
 identifier must come from a tool result.
+Write the result yourself. Never paste a policy, state, ledger, queue, or any
+other file's contents as the reply, even when the task tells you to read such
+a file first: read it with tools and report only what this tick did and
+verified.
+A tick that finds nothing eligible to act on delivers nothing: reply with only
+the note line described below, or one short sentence when there is no note.
 Do not send, post, notify, or message any channel from inside this turn; the
 scheduler will deliver your reply to the configured channels after this
 runner returns.

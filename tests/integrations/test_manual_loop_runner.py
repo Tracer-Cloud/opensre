@@ -109,6 +109,26 @@ def test_agent_mode_drops_the_report_only_and_read_only_framing() -> None:
     assert "the task text below is the complete instruction" in message
 
 
+def test_agent_mode_forbids_pasted_files_and_makes_quiet_ticks_deliver_nothing() -> None:
+    """The wrapper rules out the reply shape a live loop fell into.
+
+    The merge-conflicts loop was told to read its approved-policy file before
+    acting and delivered that file's contents as the result, tick after tick,
+    while an eligible conflicting PR went unrepaired.
+    """
+    message = manual_loop_runner.build_manual_loop_prompt(
+        {
+            "loop_prompt": "Repair merge conflicts on open PRs",
+            "name": "Merge conflicts",
+            LOOP_MODE_PARAM: LOOP_MODE_AGENT,
+        }
+    )
+
+    assert "Never paste a policy, state, ledger, queue, or any" in message
+    assert "even when the task tells you to read such" in message
+    assert "nothing eligible to act on delivers nothing" in message
+
+
 @pytest.mark.parametrize("mode, recover", [("report", False), ("agent", False), ("agent", True)])
 def test_loop_mode_reaches_system_prompt_and_tool_catalog(
     monkeypatch: pytest.MonkeyPatch, mode: str, recover: bool

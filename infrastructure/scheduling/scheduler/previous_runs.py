@@ -11,14 +11,16 @@ loop only ever sees its own history.
 The header labels the entries as data, never instructions: a report excerpt or
 note can quote text from a pull request or issue, and the block must not carry
 that text into the next tick as something to obey. Older records without
-actions or a note render without those lines. Text is credential-redacted
-again before it is shortened, and the block never exceeds
-``PREVIOUS_RUNS_MAX_CHARS``.
+actions or a note render without those lines, and a report that is a pasted
+file dump is left out so the dump does not become the next tick's template.
+Text is credential-redacted again before it is shortened, and the block never
+exceeds ``PREVIOUS_RUNS_MAX_CHARS``.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
@@ -75,6 +77,22 @@ def previous_run_records(task_id: str, *, limit: int = PREVIOUS_RUNS_KEPT) -> li
         if str(record.get("status") or "") not in _UNFINISHED
     ]
     return finished[:limit]
+
+
+#: A reply that opens by printing a file is a dump, not a result: a
+#: ``=== name ===`` or ``--- path ---`` banner, or raw JSON.
+_FILE_DUMP_START = re.compile(r"^(?:===\s.*\s===|---\s.*\s---|[{[])")
+
+
+def _is_file_dump(report: Any) -> bool:
+    """Whether a run's report is pasted file contents rather than a written result.
+
+    A tick that dumped a policy or state file produced no result worth quoting,
+    and quoting it teaches the next tick that the dump is the expected shape.
+    """
+    if not isinstance(report, str):
+        return False
+    return bool(_FILE_DUMP_START.match(report.lstrip()))
 
 
 def _plural(count: int, noun: str) -> str:
@@ -170,10 +188,15 @@ def _entry(record: Mapping[str, Any], max_chars: int) -> str:
     its report, which absorbs any shortfall.
     """
     entry = compact_text(_summary_line(record), min(_SUMMARY_LINE_CHARS, max_chars))
+    report = record.get("report")
     details = (
         ("note", CARRY_NOTE_MAX_CHARS, lambda room: _clean(record.get("carry_note"), room)),
         ("actions", PREVIOUS_RUN_ACTIONS_CHARS, lambda room: _actions(record, room)),
-        ("report", PREVIOUS_RUN_REPORT_CHARS, lambda room: _clean(record.get("report"), room)),
+        (
+            "report",
+            PREVIOUS_RUN_REPORT_CHARS,
+            lambda room: "" if _is_file_dump(report) else _clean(report, room),
+        ),
     )
     for label, cap, render in details:
         prefix = f"\n  {label}: "
