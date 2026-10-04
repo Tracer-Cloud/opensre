@@ -125,19 +125,6 @@ def store_allowed_users(credentials: Mapping[str, Any]) -> list[str]:
     return list(policy.allowed_user_ids)
 
 
-def store_owner_user(credentials: Mapping[str, Any]) -> list[str]:
-    """Return the web-app connection's private chat as the bot owner.
-
-    Connecting Telegram in the web app saves the operator's DM chat as
-    ``default_chat_id`` but no identity policy, and a hosted operator cannot
-    run ``opensre messaging pair`` on the gateway. A private chat's ID is the
-    user's own ``from.id`` (positive), while groups and channels are negative,
-    so only a positive numeric chat is trusted as an allowed user.
-    """
-    chat_id = str(credentials.get("default_chat_id") or "").strip()
-    return [chat_id] if chat_id.isdigit() and int(chat_id) > 0 else []
-
-
 def choose_bot_token(env: GatewayEnv, credentials: Mapping[str, Any]) -> str:
     token = env.bot_token or store_bot_token(credentials)
 
@@ -150,7 +137,7 @@ def choose_bot_token(env: GatewayEnv, credentials: Mapping[str, Any]) -> str:
 
 
 def choose_authorized_users(env: GatewayEnv, credentials: Mapping[str, Any]) -> list[str]:
-    users = store_allowed_users(credentials) or env.allowed_users or store_owner_user(credentials)
+    users = store_allowed_users(credentials) or env.allowed_users
 
     if not users:
         logger.warning("Telegram allowed users are not configured")

@@ -108,6 +108,10 @@ class MessagingIdentityPolicy(StrictConfigModel):
         default=0,
         description="Number of failed pairing attempts (for brute-force protection)",
     )
+    owner_seeded: bool = Field(
+        default=False,
+        description="Whether the connection's private chat was added once as the owner; never re-added after",
+    )
     rejection_behavior: RejectionBehavior = Field(
         default=RejectionBehavior.REPLY,
         description="How to handle messages from non-paired users: 'reply' or 'drop'",

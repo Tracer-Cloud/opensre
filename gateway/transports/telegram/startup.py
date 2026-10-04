@@ -12,11 +12,13 @@ import logging
 
 from gateway.core.process.polling_thread import PollingBackground
 from gateway.transports.telegram.background import start_telegram_gateway_background
+from gateway.transports.telegram.owner_seed import seed_owner_from_private_chat
 from gateway.transports.telegram.runtime import (
     initialize_telegram_polling_runtime,
     shutdown_telegram_polling_runtime,
 )
 from gateway.transports.telegram.settings import (
+    GatewayEnv,
     GatewaySettings,
     load_gateway_settings,
 )
@@ -35,6 +37,7 @@ def start_telegram_worker(
     Raises :class:`GatewayConfigurationError` when Telegram is not configured —
     the composition root decides whether that is fatal.
     """
+    seed_owner_from_private_chat(env_allowed_user_ids=GatewayEnv().allowed_users)
     settings = load_gateway_settings()
     worker = start_telegram_gateway_background(
         settings=settings,
