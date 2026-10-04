@@ -1,14 +1,18 @@
 """Record what each scheduled run attempt ran and how it ended.
 
 A record holds the task as saved when the attempt was claimed, the exact
-messages its turns submitted, the report it built, and every delivery outcome,
-so a later edit to the loop never changes an earlier record. It is written to
-the run-record file when an attempt starts and replaced when it ends, from the
-run row the attempt owns, so a stale worker only ever writes its own attempt.
-When an attempt ends, the record is also sent as ``scheduled_task_run_recorded``,
-because dashboards read analytics events and never gateway files.
+messages its turns submitted, the report it built, every delivery outcome, the
+tool calls that changed something and the note its reply left for the next
+run, so a later edit to the loop never changes an earlier record. It is written
+to the run-record file when an attempt starts and replaced when it ends, from
+the run row the attempt owns, so a stale worker only ever writes its own
+attempt. When an attempt ends, the record is also sent as
+``scheduled_task_run_recorded``, because dashboards read analytics events and
+never gateway files.
 
-Text is credential-redacted and capped. Recording never fails a run.
+Version 2 added ``actions``, ``action_count`` and ``carry_note``; a version 1
+record has no actions or note because none were tracked. Text is
+credential-redacted and capped. Recording never fails a run.
 """
 
 from __future__ import annotations
@@ -26,13 +30,14 @@ from infrastructure.scheduling.scheduler.loop_constants import (
     LOOP_REPORT_PARAM,
 )
 from infrastructure.scheduling.scheduler.registry_telemetry import registry_entry
+from infrastructure.scheduling.scheduler.run_activity import RunActivity
 from infrastructure.scheduling.scheduler.storage.run_record_store import save_run_record
 from infrastructure.scheduling.scheduler.storage.run_store import ExecutionClaim, get_claim_run
 from infrastructure.scheduling.scheduler.types import ScheduledTask, TaskRun, TaskStatus
 
 logger = logging.getLogger(__name__)
 
-RUN_RECORD_VERSION = 1
+RUN_RECORD_VERSION = 2
 #: Text caps are UTF-8 bytes: the analytics sender limits a payload to 256 KiB.
 _PROMPT_MAX_BYTES = 16_000
 _PROMPTS_KEPT = 3
@@ -42,6 +47,9 @@ _ERROR_MAX_BYTES = 600
 _BUILDER_ARGS_MAX_BYTES = 1_000
 _FIELD_MAX_BYTES = 400
 _DELIVERY_KEPT = 40
+#: An action is at most 200 characters and a note 300; these bound their bytes.
+_ACTION_MAX_BYTES = 800
+_CARRY_NOTE_MAX_BYTES = 1_200
 #: The serialized record must fit one event with room for base properties.
 _EVENT_MAX_BYTES = 192 * 1024
 
@@ -125,6 +133,18 @@ def _outcome_fields(run: TaskRun) -> dict[str, Any]:
     return fields
 
 
+def _activity_fields(activity: RunActivity) -> dict[str, Any]:
+    """The calls that changed something, newest kept, and the note for the next run."""
+    snapshot = activity.snapshot()
+    fields: dict[str, Any] = {
+        "actions": [_bounded(action, _ACTION_MAX_BYTES)[0] for action in snapshot.actions],
+        "action_count": snapshot.action_count,
+    }
+    if snapshot.carry_note:
+        fields["carry_note"] = _bounded(snapshot.carry_note, _CARRY_NOTE_MAX_BYTES)[0]
+    return fields
+
+
 def _serialized_bytes(record: dict[str, Any]) -> int:
     # The analytics sender serializes the same way.
     return len(json.dumps(record, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
@@ -152,6 +172,7 @@ def build_run_record(
     *,
     run: TaskRun | None,
     submitted: SubmittedMessages | None,
+    activity: RunActivity | None = None,
 ) -> dict[str, Any]:
     """Project one attempt to its record: identity, saved task, messages sent, outcome."""
     record: dict[str, Any] = {
@@ -177,6 +198,8 @@ def build_run_record(
         record.update(_submitted_fields(submitted))
     if run is not None and run.status is not TaskStatus.RUNNING:
         record.update(_outcome_fields(run))
+    if activity is not None:
+        record.update(_activity_fields(activity))
     _fit_one_event(record)
     return record
 
@@ -190,11 +213,16 @@ def record_run_started(task: ScheduledTask, claim: ExecutionClaim) -> None:
 
 
 def record_run_finished(
-    task: ScheduledTask, claim: ExecutionClaim, submitted: SubmittedMessages | None
+    task: ScheduledTask,
+    claim: ExecutionClaim,
+    submitted: SubmittedMessages | None,
+    activity: RunActivity | None = None,
 ) -> None:
     """Save the attempt's final state from the run row it owns, then report it."""
     try:
-        record = build_run_record(task, claim, run=get_claim_run(claim), submitted=submitted)
+        record = build_run_record(
+            task, claim, run=get_claim_run(claim), submitted=submitted, activity=activity
+        )
     except Exception:
         logger.warning("Failed to build the run record of task %s", task.id, exc_info=True)
         return

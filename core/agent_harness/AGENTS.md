@@ -302,6 +302,13 @@ to it instead of re-implementing bootstrap + persistence:
   :meth:`AgentSession.run_headless_turn` (or ``start`` + ``chat``).
   That is the same ``run_turn`` engine as the shell; do not reassemble
   ``BufferOutputSink`` + ``DefaultHeadlessBuild`` in integrations.
+  Inside a scheduler run attempt, ``run_headless_turn`` records the message
+  it submits and adds an ``after_tool_call`` hook that records each call of a
+  tool declaring a mutating or external ``side_effect_level``
+  (``infrastructure/scheduling/scheduler/tool_actions.py``). The attempt's run
+  record keeps them, and the loop's next tick reads them back as its PREVIOUS
+  RUNS block: a loop's continuity across ticks comes from those records, not
+  from a long-lived agent.
   Ephemeral in-memory sessions (``headless_adapters.InMemorySessionState``)
   bypass ``SessionManager`` by design when tests need no JSONL.
 
