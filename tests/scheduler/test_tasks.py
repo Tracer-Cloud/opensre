@@ -3,18 +3,70 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import pytest
 
 import infrastructure.scheduling.scheduler.tasks as tasks_mod
+from config.prompt_log import PromptLogConfig
+from core.agent.run_io import AgentRunResult
+from core.agent_harness.harness import AgentSession, SessionStartupResult
+from core.agent_harness.session import SessionCore
+from core.agent_harness.session.persistence.memory import InMemorySessionStore
+from core.agent_harness.turns import action_driver
+from infrastructure.analytics import provider as analytics_provider
+from infrastructure.analytics.events import Event
 from infrastructure.observability.trace.trace_session import (
     TraceSession,
     current_trace_session,
     inherit_trace_session,
 )
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_MODE_PARAM, LOOP_PROMPT_PARAM
+from infrastructure.scheduling.scheduler.storage import task_store
 from infrastructure.scheduling.scheduler.types import Provider, ScheduledTask, TaskKind
-from tests.scheduler._bundle import runners_with_agent
+from tests.scheduler._bundle import real_runners, runners_with_agent
+
+
+class _RecordingAnalytics:
+    """Keeps every captured analytics event."""
+
+    def __init__(self) -> None:
+        self.events: list[tuple[str, dict[str, Any]]] = []
+
+    def capture(self, event: str, properties: dict[str, Any] | None = None) -> None:
+        self.events.append((str(event), dict(properties or {})))
+
+    def turn_events(self) -> dict[str, dict[str, Any]]:
+        """The run and prompt events of the one turn captured, keyed by event name."""
+        turn_names = {Event.REACT_TURN_COMPLETED.value, Event.AI_GENERATION.value}
+        return {event: props for event, props in self.events if event in turn_names}
+
+
+class _AnsweringAgent:
+    _react_iterations_used = 1
+    _react_hit_iteration_cap = False
+
+    def __init__(self) -> None:
+        self._react_executed: list[Any] = []
+
+    def run(self, _messages: Any) -> AgentRunResult:
+        return AgentRunResult(
+            messages=[], final_text="Loop report", executed=[], llm_iterations_used=1
+        )
+
+
+class _LLM:
+    _model = "tick-test-model"
+    _provider_label = "OpenAI"
+
+
+def _answering_plan(**kwargs: Any) -> action_driver.ActionTurnPlan:
+    return action_driver.ActionTurnPlan(
+        agent=_AnsweringAgent(),  # type: ignore[arg-type]
+        user_message=kwargs["message"],
+        llm=_LLM(),
+        max_iterations=8,
+    )
 
 
 class TestTickTraceSession:
@@ -70,6 +122,34 @@ class TestTickTraceSession:
         assert nested is not None and nested.session_id == "outer-turn"
         assert nested.tags == (tasks_mod.SCHEDULED_TRACE_TAG,)
         assert nested.metadata["task_id"] == "cf9d8a4169ac"
+
+    def test_turn_analytics_name_the_task_only_inside_its_tick(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        analytics = _RecordingAnalytics()
+        monkeypatch.setattr(analytics_provider, "_instance", analytics)
+        config = PromptLogConfig(log_path=tmp_path / "prompts.jsonl")
+        monkeypatch.setattr(PromptLogConfig, "load", lambda: config)
+        monkeypatch.setattr(action_driver, "_build_action_agent", _answering_plan)
+        session = SessionCore(store=InMemorySessionStore())
+        session.resolved_integrations_cache = {}
+        monkeypatch.setattr(
+            AgentSession,
+            "startup",
+            lambda _self: SessionStartupResult(session=session, prompts=None),
+        )
+        # No store file: the tick's cancel probe reads the task as still scheduled.
+        monkeypatch.setattr(task_store, "default_task_store_path", lambda: tmp_path / "tasks.json")
+
+        AgentSession.run_headless_turn("Check incidents.", is_tty=False)
+        outside = analytics.turn_events()
+        analytics.events.clear()
+        tasks_mod.build_message(self._task(), real_runners())
+        inside = analytics.turn_events()
+
+        assert set(outside) == set(inside) == {"react_turn_completed", "$ai_generation"}
+        assert all("scheduled_task_id" not in props for props in outside.values())
+        assert {props["scheduled_task_id"] for props in inside.values()} == {"cf9d8a4169ac"}
 
 
 class TestMessageBuilders:

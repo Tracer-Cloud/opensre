@@ -1167,6 +1167,9 @@ if TYPE_CHECKING:
         OPENSRE_SCHEDULER_BUILD_ENV as OPENSRE_SCHEDULER_BUILD_ENV,
     )
     from config.constants.scheduler import (
+        SCHEDULED_TASK_TRACE_KEY as SCHEDULED_TASK_TRACE_KEY,
+    )
+    from config.constants.scheduler import (
         SCHEDULER_MISSED_FIRE_GRACE_SECONDS as SCHEDULER_MISSED_FIRE_GRACE_SECONDS,
     )
     from config.constants.scheduler import (
