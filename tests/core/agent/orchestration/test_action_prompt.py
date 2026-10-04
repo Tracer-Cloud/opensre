@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from pathlib import Path
 
 import pytest
@@ -15,6 +16,7 @@ from core.agent_harness.prompts import (
     recent_conversation_block,
     repository_context_block,
 )
+from core.agent_harness.prompts.action.assemble import build_action_system_prompt_envelope
 from core.agent_harness.prompts.memory.conversation import NO_HISTORY_PLACEHOLDER
 from core.agent_harness.prompts.skills import (
     SKILLS_HEADER,
@@ -174,6 +176,30 @@ def test_repository_context_renders_one_active_and_multiple_remembered_repos() -
     assert "remembered=Tracer-Cloud/opensre, vercel/next.js" in block
     assert "without deleting the others" in block
     assert repository_context_block(_ctx()) == ""
+
+
+def test_repository_agents_md_files_never_reach_the_model(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """AGENTS.md is for local coding agents: the agent's prompt never carries it."""
+    root = tmp_path / "payments"
+    service = root / "svc"
+    service.mkdir(parents=True)
+    (root / ".git").mkdir()
+    (root / "AGENTS.md").write_text("ROOT-RULE-ZEBRA-7731\n")
+    (service / "AGENTS.override.md").write_text("OVERRIDE-RULE-QUOKKA-1942\n")
+    monkeypatch.chdir(service)
+    snapshot = replace(
+        _ctx(active_repositories={"github": "acme/payments"}),
+        working_directory=str(service),
+    )
+
+    prompt = build_action_system_prompt_envelope(snapshot).render()
+
+    assert "acme/payments" in prompt  # the repository itself is still named
+    assert "ROOT-RULE-ZEBRA-7731" not in prompt
+    assert "OVERRIDE-RULE-QUOKKA-1942" not in prompt
+    assert "REPOSITORY INSTRUCTIONS" not in prompt
 
 
 def test_skill_body_appends_sibling_report_template_but_index_stays_thin(
