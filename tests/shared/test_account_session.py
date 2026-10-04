@@ -2,15 +2,26 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from dataclasses import replace
 from http import HTTPStatus
 
 import httpx
 import pytest
 
+from config import account_credits
 from config.account import AccountRecord
+from config.constants.account import OPENSRE_ACCOUNT_SESSION_PATH
 from surfaces.shared import account_session
 from surfaces.shared.account_session import AccountSessionState
+
+
+@pytest.fixture(autouse=True)
+def _isolated_credit_cache() -> Iterator[None]:
+    """An active status seeds the process credit cache; keep it out of other tests."""
+    account_credits.reset_hosted_credits_cache()
+    yield
+    account_credits.reset_hosted_credits_cache()
 
 
 def _record() -> AccountRecord:
@@ -189,3 +200,34 @@ def test_revoked_or_unreachable_session_fails_closed(
     status = account_session.account_status()
     assert status.state is AccountSessionState.UNAVAILABLE
     assert status.authenticated is False
+
+
+@pytest.mark.parametrize(("total", "ledger_reads"), [(100_000, 0), (0, 1)])
+def test_sign_in_check_credits_answer_the_first_turn_only_when_funded(
+    monkeypatch: pytest.MonkeyPatch, total: int, ledger_reads: int
+) -> None:
+    """The shell's sign-in read already carries the balance; the first turn must not re-fetch it.
+
+    An empty balance is not reused: admission fails closed on it, so it keeps
+    its own ledger read.
+    """
+    payload = _session_payload()
+    payload["credits"] = {"total": total}
+    for module in (account_session, account_credits):
+        monkeypatch.setattr(module, "load_account_record", _record)
+        monkeypatch.setattr(module, "resolve_account_token", lambda: "token")
+    ledger_urls: list[str] = []
+
+    def _get(url: str, **_kwargs: object) -> httpx.Response:
+        if url.endswith(OPENSRE_ACCOUNT_SESSION_PATH):
+            return httpx.Response(HTTPStatus.OK, json=payload)
+        ledger_urls.append(url)
+        return httpx.Response(HTTPStatus.OK, json={"total": total})
+
+    monkeypatch.setattr(httpx, "get", _get)
+
+    assert account_session.account_status().authenticated is True
+    read = account_credits.fetch_hosted_credits()
+
+    assert read.credits is not None and read.credits.total == total
+    assert len(ledger_urls) == ledger_reads
