@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from datetime import UTC, datetime
 from typing import Any
 
 import pytest
@@ -10,6 +11,7 @@ import pytest
 from config.constants.scheduler import WORK_UNVERIFIED_ERROR_KIND
 from config.principal import Actor, Principal, StorageScope
 from config.scope_context import bound_storage_scope
+from infrastructure.scheduling.scheduler.cron_expression import build_cron_trigger
 from infrastructure.scheduling.scheduler.loops import LoopSummary
 from infrastructure.scheduling.scheduler.outcomes import WorkOutcome, WorkStatus
 from infrastructure.scheduling.scheduler.storage import TaskStoreSnapshot
@@ -142,11 +144,60 @@ def test_an_unreadable_store_is_reported_not_shown_as_empty(
         ("8 * * * *", "every hour"),
         ("59 3,15 * * *", "daily at 03:59 and 15:59 Europe/Warsaw"),
         ("0 8 * * mon-fri", "weekdays at 08:00 Europe/Warsaw"),
+        ("0 8 * * 1-5", "on a custom schedule"),
         ("0 0 1 * *", "on a custom schedule"),
     ],
 )
 def test_cadence_reads_as_words_not_cron(cron: str, cadence: str) -> None:
     assert loops_tool._cadence(cron, "Europe/Warsaw") == cadence
+
+
+@pytest.mark.parametrize("day", [str(number) for number in range(7)])
+def test_a_numeric_weekday_is_named_for_the_day_the_scheduler_fires(day: str) -> None:
+    """The trigger numbers weekdays from 0 = Monday; the label must name the day it really runs."""
+    # Arrange
+    sunday = datetime(2026, 10, 4, 12, 0, tzinfo=UTC)
+
+    # Act
+    label = loops_tool._cadence(f"0 10 * * {day}", "UTC")
+    fires = build_cron_trigger(f"0 10 * * {day}", "UTC").get_next_fire_time(None, sunday)
+
+    # Assert
+    assert label == f"{fires:%A}s at 10:00 UTC"
+
+
+def test_a_disabled_legacy_task_shows_why_it_cannot_run() -> None:
+    """A migrated legacy task is disabled with a recreate notice; it needs a person, not 'paused'."""
+    # Arrange
+    notice = "Legacy task kind 'x' was disabled. Recreate it with 'opensre cron add'."
+    legacy = replace(
+        _loop("old1", "Old digest", enabled=False),
+        last_run="2026-09-01T07:00:00+00:00",
+        schedule_error=notice,
+    )
+
+    # Act
+    row = loops_tool._loop_row(legacy, None)
+
+    # Assert
+    assert row["health"] == f"not running: {notice}"
+    assert row["needs_attention"] is True
+
+
+def test_a_loop_without_description_or_prompt_says_what_its_kind_does() -> None:
+    # Arrange: a Sentry uptime watch carries no prompt, and was created without a description
+    watch = replace(
+        _loop("up1", "Sentry uptime watch", enabled=True),
+        kind=TaskKind.SENTRY_UPTIME_WATCH,
+        prompt="",
+    )
+
+    # Act
+    row = loops_tool._loop_row(watch, None)
+
+    # Assert: every kind has a fallback, so no row prints an empty purpose
+    assert set(loops_tool._KIND_PURPOSES) == set(TaskKind)
+    assert row["purpose"] == loops_tool._KIND_PURPOSES[TaskKind.SENTRY_UPTIME_WATCH]
 
 
 def test_a_described_loop_leads_with_its_description_not_its_prompt() -> None:

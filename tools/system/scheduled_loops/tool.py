@@ -15,7 +15,7 @@ from core.tool_framework.utils import tool_unavailable
 from infrastructure.scheduling.scheduler.loop_results import latest_loop_runs
 from infrastructure.scheduling.scheduler.loops import LoopSummary, summarize_loops
 from infrastructure.scheduling.scheduler.storage import get_task_store_snapshot
-from infrastructure.scheduling.scheduler.types import ScheduledTask, TaskRun, TaskStatus
+from infrastructure.scheduling.scheduler.types import ScheduledTask, TaskKind, TaskRun, TaskStatus
 
 TOOL_NAME = "list_scheduled_loops"
 _SOURCE = "system"
@@ -53,24 +53,25 @@ def _visible_to_this_turn(task: ScheduledTask) -> bool:
 
 _PURPOSE_CHARS = 160
 _REASON_CHARS = 140
-_WEEKDAY_NAMES = {
-    "0": "Sundays",
-    "1": "Mondays",
-    "2": "Tuesdays",
-    "3": "Wednesdays",
-    "4": "Thursdays",
-    "5": "Fridays",
-    "6": "Saturdays",
-    "7": "Sundays",
-    "sun": "Sundays",
-    "mon": "Mondays",
-    "tue": "Tuesdays",
-    "wed": "Wednesdays",
-    "thu": "Thursdays",
-    "fri": "Fridays",
-    "sat": "Saturdays",
+# The scheduler's CronTrigger numbers weekdays from 0 = Monday, unlike crontab's
+# 0 = Sunday, so "1" fires on Tuesdays. Labels follow the trigger, not crontab.
+_DAY_NAMES = ("Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays", "Sundays")
+_DAY_LABELS = {
+    **{str(index): name for index, name in enumerate(_DAY_NAMES)},
+    **{name[:3].lower(): name for name in _DAY_NAMES},
 }
-_WEEKDAYS = {"1-5", "mon-fri"}
+_WEEKDAY_RANGES = frozenset({"mon-fri", "0-4"})
+# What each kind's runner does, for a loop with neither a description nor a prompt.
+_KIND_PURPOSES: dict[TaskKind, str] = {
+    TaskKind.MANUAL_LOOP: "Runs a recurring instruction.",
+    TaskKind.SENTRY_MORNING_DIGEST: "Summarizes recent unresolved Sentry issues.",
+    TaskKind.SENTRY_UPTIME_WATCH: "Tells you when a Sentry uptime monitor goes down or comes back up.",
+    TaskKind.GITHUB_PR_SWEEP: "Sends a digest of stale, blocked or ready pull requests.",
+    TaskKind.POSTHOG_METRIC_REPORT: "Reports how a PostHog metric is trending.",
+    TaskKind.WORK_ITEM_REMINDER: "Reminds you about a work item.",
+    TaskKind.WORK_ITEM_CHECKIN: "Checks in on your open work items to keep priorities current.",
+    TaskKind.RECURRING_SKILL: "Runs a recurring skill.",
+}
 
 
 def _clip(text: str, limit: int) -> str:
@@ -82,11 +83,13 @@ def _clip(text: str, limit: int) -> str:
 
 
 def _purpose(loop: LoopSummary) -> str:
-    """What the loop does for the reader: its description, else its prompt's opening sentence."""
+    """What the loop does for the reader: its description, its prompt's opening sentence, or its kind's."""
     if loop.description:
         return _clip(loop.description, _PURPOSE_CHARS)
     first_sentence = " ".join(loop.prompt.split()).split(". ", 1)[0]
-    return _clip(first_sentence, _PURPOSE_CHARS)
+    if first_sentence:
+        return _clip(first_sentence, _PURPOSE_CHARS)
+    return _KIND_PURPOSES.get(loop.kind, "Runs on a schedule.")
 
 
 def _cadence(cron: str, timezone: str) -> str:
@@ -115,9 +118,9 @@ def _cadence(cron: str, timezone: str) -> str:
     zone = f" {timezone}" if timezone else ""
     if every_day:
         return f"daily at {times}{zone}"
-    if day_of_week.lower() in _WEEKDAYS:
+    if day_of_week.lower() in _WEEKDAY_RANGES:
         return f"weekdays at {times}{zone}"
-    days = _WEEKDAY_NAMES.get(day_of_week.lower())
+    days = _DAY_LABELS.get(day_of_week.lower())
     if days:
         return f"{days} at {times}{zone}"
     return "on a custom schedule"
@@ -125,10 +128,11 @@ def _cadence(cron: str, timezone: str) -> str:
 
 def _health(loop: LoopSummary, run: TaskRun | None) -> tuple[str, bool]:
     """Whether the loop is doing its job, with the reason when it is not, and if it needs a person."""
+    if loop.schedule_error:
+        # Checked before the paused state: a disabled legacy task carries its recreate notice here.
+        return f"not running: {_clip(loop.schedule_error, _REASON_CHARS)}", True
     if not loop.enabled:
         return ("paused" if loop.last_run else "not switched on yet"), False
-    if loop.schedule_error:
-        return f"not running: {_clip(loop.schedule_error, _REASON_CHARS)}", True
     if run is None:
         return "has not run yet", False
     if run.status == TaskStatus.SUCCESS:

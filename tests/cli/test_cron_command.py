@@ -438,9 +438,12 @@ def test_cron_add_stores_the_description_readers_see_in_loop_listings(
         ],
     )
 
-    # Assert
+    listed = CliRunner().invoke(cron_module.cron_command, ["list"])
+
+    # Assert: stored normalised, and the operator can read back what they entered
     assert result.exit_code == 0, result.output
     assert list_tasks(store)[0].params[LOOP_DESCRIPTION_PARAM] == "Keeps open pull requests green."
+    assert "What it does: Keeps open pull requests green." in listed.output
 
 
 @pytest.mark.parametrize("mode", [None, "report", "agent"])

@@ -353,6 +353,8 @@ def _print_cron_task(loop: LoopSummary) -> None:
     )
     _console.print(f"[bold]• {title}[/bold]")
     _console.print(f"  • ID: [cyan]{escape(loop.id[:12])}[/cyan]")
+    if loop.description:
+        _console.print(f"  • What it does: {escape(loop.description)}")
     for label, value in fields:
         _console.print(f"  • {label}: {value}")
     if loop.schedule_error:
