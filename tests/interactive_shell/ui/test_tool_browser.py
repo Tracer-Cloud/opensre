@@ -151,6 +151,37 @@ def test_long_details_can_be_read_forward_and_backward_without_changing_tool(
     assert "query: string" not in frames[-1]
 
 
+def test_expanded_details_use_spare_height_and_only_page_when_they_overflow(
+    terminal: SimpleNamespace,
+) -> None:
+    def _shrink() -> str:
+        terminal.lines = 24
+        return "ignore"
+
+    def _grow() -> str:
+        terminal.lines = 60
+        return "ignore"
+
+    terminal.lines = 60
+    terminal.actions = iter(["enter", _shrink, "right", _grow, "cancel"])
+    description = "\n".join(f"Description line {i}" for i in range(12))
+    entries = [_entry(f"tool_{i}", description) for i in range(30)]
+
+    tool_browser.browse_tools(entries)
+
+    initial, expanded, small, paged, grown = map(_plain, terminal.frames)
+    assert "Description line 11" not in initial
+    for frame in (expanded, grown):
+        assert "Description line 11" in frame
+        assert "query: string (required)" in frame
+        assert "←→" not in frame
+    assert "←→ 1/" in small and "←→ 2/" in paged
+    assert "page · Details" not in small
+    assert len(terminal.frames[1]) > len(terminal.frames[0])
+    for frame, height in zip(terminal.frames, (60, 60, 24, 24, 60), strict=True):
+        assert len(frame) < height
+
+
 @pytest.mark.parametrize(("columns", "lines"), [(80, 24), (40, 12), (26, 8), (12, 5)])
 def test_frames_fit_the_terminal_even_when_expanded(
     terminal: SimpleNamespace, columns: int, lines: int
@@ -188,7 +219,7 @@ def test_scrolling_and_resize_keep_selection_visible_and_pages_valid(
     for frame in terminal.frames[2:]:
         assert "▾ tool_29" in _plain(frame)
     assert len(terminal.frames[-2]) < 10
-    assert "Details" in _plain(terminal.frames[-1])
+    assert "←→" in _plain(terminal.frames[-1])
 
 
 def test_untrusted_metadata_is_literal_and_wide_text_remains_readable(

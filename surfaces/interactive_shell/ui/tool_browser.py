@@ -141,11 +141,13 @@ def _render_frame(
         )
         rows.append(_styled("  " + "─" * (width - 2), ui_theme.DIM_COUNTER_ANSI, width))
 
-    # Reserve the divider, footer, and spacing; toggling details keeps the preview fixed.
+    # Reserve the divider, footer, and spacing; details stay anchored below the list.
     spaced_footer = height >= 10
     available = height - 1 - len(rows) - 3 - int(roomy) - int(spaced_footer)
     preview_height = max(2, min(5, available // 2))
     visible = min(len(entries), 20, max(1, available - preview_height))
+    if details:
+        preview_height = max(preview_height, min(len(details) + 1, available - visible))
     top = max(0, min(top, len(entries) - visible, selected))
     top = max(top, selected - visible + 1)
     for index in range(top, top + visible):
@@ -176,7 +178,7 @@ def _render_frame(
 
     position = f"{selected + 1}/{len(entries)}"
     if width >= 60:
-        status = f"  ←→ page · Details {page + 1}/{pages}" if pages > 1 else ""
+        status = f"  ←→ {page + 1}/{pages}" if pages > 1 else ""
         action = "collapse" if details else "details"
         controls = f"  ↑↓ browse   Enter {action}   Esc close"
         hint = controls + " " * max(1, width - prompt_text_width(controls + position)) + position
@@ -184,7 +186,7 @@ def _render_frame(
         status = "↑↓ browse · Enter toggle" if details else "↑↓ browse · Enter details"
         hint = f"Esc close · {position}"
         if pages > 1:
-            hint = f"Esc · ←→ page {page + 1}/{pages} · {position}"
+            hint = f"Esc · ←→ {page + 1}/{pages} · {position}"
     rows.extend(_styled(text, ui_theme.DIM_COUNTER_ANSI, width) for text in (status, hint))
     return _Frame(tuple(rows), top, page, pages)
 
