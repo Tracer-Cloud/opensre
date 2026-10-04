@@ -266,3 +266,28 @@ def test_a_funded_balance_is_reused_longer_than_an_empty_one(
 
     # 30 s apart: credits left are read once; an empty ledger is read again.
     assert len(calls) == reads
+
+
+def test_a_proxy_refusal_drops_the_cached_funded_balance(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    from core.llm.shared.llm_retry import OpenSRECreditsExhaustedError, maybe_raise_credit_exhausted
+
+    class _Refused(Exception):
+        code = "opensre_credits_exhausted"
+        body: dict[str, object] = {}
+
+    monkeypatch.setattr(ledger, "load_account_record", _record)
+    monkeypatch.setattr(ledger, "resolve_account_token", lambda: "osre_pat_secret")
+    monkeypatch.setattr(
+        ledger.httpx,
+        "get",
+        lambda *_args, **_kwargs: httpx.Response(HTTPStatus.OK, json=_balance_payload()),
+    )
+    ledger.fetch_hosted_credits()
+    assert ledger.cached_hosted_credits() is not None
+
+    with pytest.raises(OpenSRECreditsExhaustedError):
+        maybe_raise_credit_exhausted("OpenSRE", _Refused())
+
+    assert ledger.cached_hosted_credits() is None

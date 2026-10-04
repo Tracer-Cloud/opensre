@@ -27,3 +27,27 @@ def test_warmup_builds_the_client_and_reads_credits_even_after_a_failure(
     assert not thread.is_alive()
     assert thread.daemon
     assert ran == ["client", "credits"]
+
+
+def test_shutdown_waits_a_bounded_time_for_a_stuck_warmup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import threading
+    import time
+
+    from surfaces.interactive_shell.runtime.startup.first_turn_warmup import (
+        join_first_turn_warmup,
+    )
+
+    release = threading.Event()
+    monkeypatch.setattr(harness_runtime, "default_llm_factory", lambda: release.wait(5))
+    monkeypatch.setattr(hosted_credits, "prefetch_hosted_credits", lambda: None)
+    thread = warm_first_turn()
+
+    started = time.monotonic()
+    join_first_turn_warmup(timeout=0.2)
+
+    assert time.monotonic() - started < 1.0
+    assert thread.is_alive()
+    release.set()
+    thread.join(timeout=5)

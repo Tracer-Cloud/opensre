@@ -148,6 +148,10 @@ def maybe_raise_credit_exhausted(provider_name: str, err: BaseException) -> None
         return
 
     if _structured_error_code(err) == "opensre_credits_exhausted":
+        # The proxy is the authority: a cached funded balance is now wrong.
+        from config.account_credits import reset_hosted_credits_cache
+
+        reset_hosted_credits_cache()
         body = getattr(err, "body", None)
         error_obj = body.get("error") if isinstance(body, dict) else None
         details = error_obj if isinstance(error_obj, dict) else body

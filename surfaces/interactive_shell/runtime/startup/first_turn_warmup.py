@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import logging
 import threading
+import time
 
 logger = logging.getLogger(__name__)
 
 _THREAD_NAME = "opensre-first-turn-warmup"
+_SHUTDOWN_JOIN_SECONDS = 2.0
+_threads: list[threading.Thread] = []
 
 
 def warm_first_turn() -> threading.Thread:
@@ -18,8 +21,20 @@ def warm_first_turn() -> threading.Thread:
     to report, so nothing here is surfaced.
     """
     thread = threading.Thread(target=_warm, name=_THREAD_NAME, daemon=True)
+    _threads.append(thread)
     thread.start()
     return thread
+
+
+def join_first_turn_warmup(timeout: float = _SHUTDOWN_JOIN_SECONDS) -> None:
+    """Wait, at most ``timeout`` seconds in all, for warm-ups still running at exit.
+
+    The thread is a daemon, so a client build or credit read still blocked on
+    the network after that bound cannot hold the process open.
+    """
+    deadline = time.monotonic() + timeout
+    while _threads:
+        _threads.pop().join(max(0.0, deadline - time.monotonic()))
 
 
 def _warm() -> None:
@@ -33,4 +48,4 @@ def _warm() -> None:
             logger.debug("First-turn warm-up step %s failed", step.__name__, exc_info=True)
 
 
-__all__ = ["warm_first_turn"]
+__all__ = ["join_first_turn_warmup", "warm_first_turn"]
