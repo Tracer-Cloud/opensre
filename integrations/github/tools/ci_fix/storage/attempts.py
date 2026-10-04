@@ -40,11 +40,11 @@ def record_unsettled_merge(key: str, revision: str) -> int:
     """Count one more unsettled merge of *revision*; any other revision starts again at one."""
     with database.transaction() as conn:
         row = conn.execute(
-            "SELECT revision, attempts FROM unsettled_merges WHERE target = ?", (key,)
+            "SELECT revision, attempts FROM unsettled_merge_revisions WHERE target = ?", (key,)
         ).fetchone()
         attempts = row[1] + 1 if row is not None and row[0] == revision else 1
         conn.execute(
-            "INSERT INTO unsettled_merges (target, revision, attempts) VALUES (?, ?, ?) "
+            "INSERT INTO unsettled_merge_revisions (target, revision, attempts) VALUES (?, ?, ?) "
             "ON CONFLICT(target) DO UPDATE SET revision = excluded.revision, "
             "attempts = excluded.attempts",
             (key, revision, attempts),
