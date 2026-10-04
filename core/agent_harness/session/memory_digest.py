@@ -357,9 +357,9 @@ def build_session_digest(
 
     ``transcript`` is the in-memory transcript when the pass was queued; its
     last exchange is the newest recorded turn, which ``demo`` names. The log
-    wins when it holds at least one user
-    message, even if every one of them was a demo turn; otherwise the
-    transcript is used. Never raises on a malformed or missing log.
+    wins when it holds at least one user message, even if every one of them
+    was a demo turn; otherwise the transcript is used. Never raises on a
+    malformed or missing log.
     """
     if session_id:
         records: list[dict[str, Any]] = []

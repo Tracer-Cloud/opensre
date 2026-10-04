@@ -20,11 +20,12 @@ markers, even after a later close pass drops the record.
 
 What is kept: the provenance the model claims for each memory is checked
 against the digest it read (:func:`core.domain.memory.checked_provenance`). A
-user statement needs a quote of the user's own words, a tool-shown fact needs
-``verified: true`` and evidence the tool output contains, and nothing about
-infrastructure, repositories or incidents is kept on the assistant's word,
-including a claim the digest does not support; such a personal memory is kept
-unverified. Demo, sample and synthetic output is never saved.
+user statement needs a quote of the user's own words and a tool-shown fact
+needs ``verified: true`` and evidence the tool output contains; a claim the
+digest does not support counts as the assistant's word. Nothing about
+infrastructure, repositories or incidents is kept on the assistant's word, and
+a personal memory resting on it is kept unverified. Demo, sample and synthetic
+output is never saved.
 
 Never raises out: any failure (LLM unavailable, malformed output, disk errors)
 is logged and ignored. Environment gates can disable the whole feature or only
