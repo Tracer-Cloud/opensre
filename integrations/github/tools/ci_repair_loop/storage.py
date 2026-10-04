@@ -112,6 +112,21 @@ class RepairStore:
             raise ValueError("Unknown CI repair run.")
         return run
 
+    def active_for(self, owner: str, repo: str, pr_number: int) -> RepairRun | None:
+        """The unfinished repair of this pull request, by any account, within its deadline."""
+        scope = (owner.casefold(), repo.casefold(), pr_number)
+        now = time.time()
+        with self.lock:
+            runs = list(self._read().values())
+        return next(
+            (
+                run
+                for run in runs
+                if run.identity[1:] == scope and not run.terminal and run.deadline > now
+            ),
+            None,
+        )
+
     def newest_for(self, actor_id: int) -> RepairRun | None:
         """The most recently started run of one GitHub account, or ``None`` when it has none."""
         with self.lock:

@@ -15,6 +15,7 @@ from integrations.github.client import GitHubApiError, GitHubRestClient
 from integrations.github.tools.ci_repair_loop.credentials import account_id
 from integrations.github.tools.ci_repair_loop.responses import object_response
 from integrations.github.tools.ci_repair_loop.seeded import remember_seeded_pull
+from integrations.github.tools.ci_repair_loop.storage import RepairStore
 
 FAILING_BRANCH = "demo/failing-ci"
 #: Interval between reads of this one repository's Actions runs while the
@@ -120,6 +121,7 @@ def seed_demo(
     *,
     sleep: Callable[[float], None] = time.sleep,
     now: Callable[[], float] = time.monotonic,
+    store: RepairStore | None = None,
 ) -> dict[str, Any]:
     """Create the private demo when absent, or reuse its open PR, then wait.
 
@@ -127,7 +129,8 @@ def seed_demo(
     status stops. A repository that is not a demo is left unchanged, and a new
     ``opensre-ci-repair-demo-`` name on the same owner is seeded instead. An
     open demo PR whose repair already landed first gets one new failing
-    commit (``rearmed``). The wait ends on a failed pull-request Actions run.
+    commit (``rearmed``), unless a repair of it is still running in ``store``.
+    The wait ends on a failed pull-request Actions run.
     The returned pull request is remembered for this account at its head
     commit, so scheduling it before anything else changes it repairs it as
     the demo.
@@ -139,7 +142,7 @@ def seed_demo(
     account = account_id(user)
     login = str(user.get("login") or "")
     try:
-        seeded = _seed_named(client, owner, repo, login=login, sleep=sleep, now=now)
+        seeded = _seed_named(client, owner, repo, login=login, sleep=sleep, now=now, store=store)
     except DemoRefused as exc:
         if exc.user_message != _NOT_A_DEMO:
             raise
@@ -192,6 +195,7 @@ def _seed_named(
     login: str,
     sleep: Callable[[float], None],
     now: Callable[[], float],
+    store: RepairStore | None = None,
 ) -> dict[str, Any]:
     """Seed one named repository. Caller has already checked the name."""
     owner = github_component(owner)
@@ -204,7 +208,7 @@ def _seed_named(
         reused = rearmed = False
     else:
         pull, head_sha, reused, rearmed = _seed_existing(
-            client, path, owner, default_branch, sleep=sleep
+            client, path, owner, default_branch, sleep=sleep, store=store
         )
     number = int(pull["number"])
     failed_run_id = _await_failed_run(client, path, head_sha, sleep=sleep, now=now)
@@ -259,6 +263,7 @@ def _seed_existing(
     default_branch: str,
     *,
     sleep: Callable[[float], None],
+    store: RepairStore | None = None,
 ) -> tuple[dict[str, Any], str, bool, bool]:
     """Initialize or reuse a demo repository that already existed.
 
@@ -273,7 +278,7 @@ def _seed_existing(
         _advance_ref(client, path, default_branch, baseline, force=False)
     pull = _open_demo_pull(client, path, owner)
     if pull is not None:
-        head_sha, rearmed = _failing_head(client, path, _pull_head_sha(pull))
+        head_sha, rearmed = _failing_head(client, path, pull, store=store)
         return pull, head_sha, True, rearmed
     if _branch_exists(client, path, FAILING_BRANCH):
         raise DemoRefused(
@@ -292,15 +297,26 @@ def _seed_existing(
     return _open_pull(client, path, default_branch), head_sha, False, False
 
 
-def _failing_head(client: GitHubRestClient, path: str, head: str) -> tuple[str, bool]:
+def _failing_head(
+    client: GitHubRestClient, path: str, pull: dict[str, Any], *, store: RepairStore | None
+) -> tuple[str, bool]:
     """The open demo pull request's failing head, and whether it was just re-armed.
 
     A head whose ``calculator.py`` is no longer the failing fixture had its repair
     land. One commit restoring the fixture goes on top of it, and the branch moves
-    forward without force, so nothing on the branch is rewritten.
+    forward without force, so nothing on the branch is rewritten. A repair of the
+    pull request that is still running is never re-armed underneath.
     """
+    head = _pull_head_sha(pull)
     if _file_at(client, path, "calculator.py", head) == FAILING_CALCULATOR:
         return head, False
+    owner, repo = path.removeprefix("repos/").split("/", 1)
+    active = (store or RepairStore()).active_for(owner, repo, int(pull["number"]))
+    if active is not None:
+        raise DemoRefused(
+            f"A repair of this demo pull request is still running (task {active.id}). "
+            "Read it with get_ci_repair_loop and run the demo again once it has finished."
+        )
     rearmed, _tree = _commit_files(
         client,
         path,

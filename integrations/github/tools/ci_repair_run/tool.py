@@ -205,6 +205,30 @@ def _run(
     seeded = seed_ci_repair_demo(owner=owner, repo=repo, github_token=github_token)
     if not seeded.get("ok"):
         return seeded
+    try:
+        result = _run_seeded(seeded, github_token, context)
+    except (GitHubCiFixError, GitHubApiError, OSError, RuntimeError, ValueError) as exc:
+        result = _failed(exc)
+    return _noted_rearm(seeded, result)
+
+
+def _noted_rearm(seeded: dict[str, Any], result: dict[str, Any]) -> dict[str, Any]:
+    """Mark every result after a re-arming seed, since the pull request's branch has changed."""
+    if seeded.get("rearmed") is not True:
+        return result
+    noted = {**result, "rearmed": True}
+    for key in ("response_text", "error"):
+        text = _text(result.get(key))
+        if text:
+            noted[key] = f"{_REARMED_NOTE} {text}"
+    return noted
+
+
+def _run_seeded(
+    seeded: dict[str, Any],
+    github_token: str | None,
+    context: Any,
+) -> dict[str, Any]:
     target = _seed_target(seeded)
     if target is None:
         return {"ok": False, "error": "The demo seed did not return a pull request."}
@@ -376,9 +400,6 @@ def _finish_scheduled(
         "root_cause_analysis": analysis,
         "response_text": f"{summary}\n\n{analysis_text}",
     }
-    if seeded.get("rearmed") is True:
-        result["rearmed"] = True
-        result["response_text"] = f"{_REARMED_NOTE} {result['response_text']}"
     if finished.get("ok") is not True and finished.get("error"):
         result["ok"] = False
         result["error"] = finished["error"]

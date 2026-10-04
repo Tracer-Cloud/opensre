@@ -7,6 +7,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from http import HTTPStatus
 from pathlib import Path
 from types import SimpleNamespace
@@ -28,6 +29,8 @@ from integrations.github.tools.ci_repair_demo.seed import (
 )
 from integrations.github.tools.ci_repair_demo.tool import finish_ci_repair_demo, seed_ci_repair_demo
 from integrations.github.tools.ci_repair_loop import seeded
+from integrations.github.tools.ci_repair_loop.models import RepairRun, RepairStatus
+from integrations.github.tools.ci_repair_loop.storage import RepairStore
 
 _OWNER = "octocat"
 _REPO = "opensre-ci-repair-demo"
@@ -390,8 +393,8 @@ def test_seed_reuses_an_open_demo_pull_request() -> None:
     assert not any(method in {"POST", "PATCH"} for method, _path in api.calls)
 
 
-def test_a_repaired_demo_pull_request_is_rearmed_on_top_of_its_fix() -> None:
-    """A reused demo whose repair landed gets one failing commit; the fix is not rewritten."""
+def _repaired_demo() -> _Api:
+    """A retained demo whose open PR #1 already carries the repair."""
     api = _initialized_demo()
     api.commits["fix-head"] = dict(baseline_files())
     api.refs[FAILING_BRANCH] = "fix-head"
@@ -403,6 +406,12 @@ def test_a_repaired_demo_pull_request_is_rearmed_on_top_of_its_fix() -> None:
             "head": {"sha": "fix-head"},
         }
     )
+    return api
+
+
+def test_a_repaired_demo_pull_request_is_rearmed_on_top_of_its_fix(tmp_path: Path) -> None:
+    """A reused demo whose repair landed gets one failing commit; the fix is not rewritten."""
+    api = _repaired_demo()
     rearm = f"c{len(api.commits)}"
     # The repaired head's run passed; only the new commit's run fails.
     api.runs.append(
@@ -410,7 +419,9 @@ def test_a_repaired_demo_pull_request_is_rearmed_on_top_of_its_fix() -> None:
     )
     api.runs.append({"id": 12, "conclusion": "failure", "event": "pull_request", "head_sha": rearm})
 
-    result = seed_demo(api, _OWNER, _REPO, sleep=_forbidden_sleep, now=lambda: 0.0)
+    result = seed_demo(
+        api, _OWNER, _REPO, sleep=_forbidden_sleep, now=lambda: 0.0, store=RepairStore(tmp_path)
+    )
 
     assert result["reused"] is True
     assert result["rearmed"] is True
@@ -427,6 +438,34 @@ def test_a_repaired_demo_pull_request_is_rearmed_on_top_of_its_fix() -> None:
     assert ("POST", f"{path}/pulls") not in api.calls
     assert seeded.was_seeded_here(1, _OWNER, _REPO, 1, rearm)
     assert not seeded.was_seeded_here(1, _OWNER, _REPO, 1, "fix-head")
+
+
+def test_a_repair_still_running_is_not_rearmed_underneath(tmp_path: Path) -> None:
+    """A second demo request must not push a failing commit under a repair in flight."""
+    api = _repaired_demo()
+    store = RepairStore(tmp_path)
+    now = time.time()
+    store.save(
+        RepairRun(
+            id="running-1",
+            owner=_OWNER,
+            repo=_REPO,
+            actor=_OWNER,
+            actor_id=1,
+            started_at=now,
+            deadline=now + 600,
+            pr_number=1,
+            fast_checks=True,
+            initial_sha="seed-head",
+            status=RepairStatus.RUNNING,
+        )
+    )
+
+    with pytest.raises(DemoRefused, match="still running \\(task running-1\\)"):
+        seed_demo(api, _OWNER, _REPO, sleep=_forbidden_sleep, now=lambda: 0.0, store=store)
+
+    assert api.refs[FAILING_BRANCH] == "fix-head"
+    assert not any(method in {"POST", "PATCH"} for method, _path in api.calls)
 
 
 def test_seed_leaves_an_unrelated_repository_and_seeds_a_fresh_name(

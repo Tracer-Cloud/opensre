@@ -379,6 +379,22 @@ def test_schedule_failure_does_not_schedule_again_or_finish(
     assert record.finishes == []
 
 
+def test_a_rearm_is_reported_when_the_run_stops_early(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The branch already changed, so even a failed schedule says the PR was re-armed."""
+    record = _Record()
+    failure = {"ok": False, "error": "Could not schedule CI repair: the pull request was refused."}
+    seeded = {**_seed_ok(_OWNER, _SEEDED_REPO), "reused": True, "rearmed": True}
+    _install(monkeypatch, record, seed_result=seeded, schedule_result=failure)
+
+    result = run_tool.run_ci_repair_demo(_OWNER, _SEEDED_REPO)
+
+    assert result["ok"] is False
+    assert result["rearmed"] is True
+    assert result["error"].startswith("The retained demo pull request had already")
+    assert result["error"].endswith(failure["error"])
+    assert record.finishes == []
+
+
 def test_a_running_report_leaves_the_schedule(monkeypatch: pytest.MonkeyPatch) -> None:
     record = _Record()
     _install(
