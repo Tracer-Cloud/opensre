@@ -547,7 +547,8 @@ def _outcome(
         text, parked = _ask_here(record, scope)
         report = record.answer.strip()
         if report:
-            text = f"{_relayed_report(report)}\n\n{text}"
+            # The menu line, with its prompt id, leads: the shell previews only the head.
+            text = f"{text}\n\n{_relayed_report(report)}"
         if parked:
             instructions.append(_ASKING_IN_SHELL_INSTRUCTIONS.format(prompt_id=record.prompt_id))
     elif record.state in _STATE_TEXT:

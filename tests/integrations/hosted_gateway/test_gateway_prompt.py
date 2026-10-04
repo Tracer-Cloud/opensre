@@ -15,7 +15,11 @@ from core.agent_harness import SessionCore
 from core.agent_harness.spi.handoff import AskUserQuestion, format_ask_user_answers
 from core.agent_harness.tools import ActionToolScope
 from core.agent_harness.tools.tool_context import ACTION_TOOL_CONTEXT_RESOURCE_KEY
-from core.agent_harness.turns.display_text import is_outcome_report, preferred_tool_response_text
+from core.agent_harness.turns.display_text import (
+    cap_for_display,
+    is_outcome_report,
+    preferred_tool_response_text,
+)
 from core.tool import AgentToolContext
 from integrations.hosted_gateway import (
     ERR_ALREADY_ANSWERED,
@@ -315,9 +319,12 @@ def test_the_gateways_report_reads_above_the_menu_line_and_keeps_the_prompt_id(
     # Act
     out = ask_hosted_gateway(prompt="rerun the repair", context=_tool_context(session, ""))
 
-    # Assert: the report leads, quoted; the menu line with the prompt id follows
+    # Assert: the menu line with the prompt id leads, then the quoted report
     text = out["response_text"]
-    assert text.startswith("The hosted gateway reported:\n> ")
+    assert text.startswith("The hosted gateway needs your decision; the menu opens now")
+    assert text.index(_ID) < text.index("The hosted gateway reported:\n> ")
+    # The shell previews only the head, so a long report cannot push the prompt id out of view.
+    assert _ID in cap_for_display(f"{text}\n" + "padding line\n" * 40)
     assert "rerun did not reset" in text or "refused" in text
     assert "the menu opens now" in text and _ID in text
     # What the next turn keeps of this result is this text, so the shell must not drop it.
