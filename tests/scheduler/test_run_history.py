@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import sqlite3
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -15,12 +17,14 @@ from infrastructure.analytics import provider
 from infrastructure.analytics.events import Event
 from infrastructure.observability.trace.submitted_messages import (
     SubmittedMessage,
+    SubmittedMessages,
     collect_submitted_messages,
     note_submitted_message,
 )
 from infrastructure.observability.trace.trace_session import inherit_trace_session
 from infrastructure.scheduling.scheduler.executor import execute_task
 from infrastructure.scheduling.scheduler.run_history import (
+    build_run_record,
     record_run_finished,
     record_run_started,
 )
@@ -31,12 +35,15 @@ from infrastructure.scheduling.scheduler.storage.run_record_store import (
     run_records_path,
     save_run_record,
 )
-from infrastructure.scheduling.scheduler.storage.run_store import try_claim
+from infrastructure.scheduling.scheduler.storage.run_store import ExecutionClaim, try_claim
 from infrastructure.scheduling.scheduler.types import (
+    DeliveryOutcome,
     Provider,
     ScheduledTask,
     TaskKind,
     TaskReport,
+    TaskRun,
+    TaskStatus,
 )
 from tests.scheduler._bundle import AgentPayload, runners_with_agent
 
@@ -46,9 +53,11 @@ _TOKEN = "ghp_" + "a1B2c3D4e5F6g7H8i9J0k1L2m3N4o5P6q7R8"
 class _Recorder:
     def __init__(self) -> None:
         self.events: list[tuple[str, dict[str, Any]]] = []
+        self.meta: list[dict[str, Any]] = []
 
-    def capture(self, event: str, properties: dict[str, Any] | None = None) -> None:
+    def capture(self, event: str, properties: dict[str, Any] | None = None, **meta: Any) -> None:
         self.events.append((event, dict(properties or {})))
+        self.meta.append(meta)
 
 
 class _SlackAdapter:
@@ -210,3 +219,71 @@ def test_headless_turns_report_their_message_to_a_bound_collector(
 
     assert collected.messages == [SubmittedMessage("Summarise CI", "sess-1")]
     assert collected.count == 1
+
+
+def test_the_event_names_the_task_organization_and_one_id_per_attempt(recorder: _Recorder) -> None:
+    task = _loop().model_copy(update={"organization": "org_task"})
+    assert execute_task(task, "2026-10-04T13:29:00Z", runners_with_agent(_agent_reporting("Done.")))
+
+    index = next(
+        i
+        for i, (event, _) in enumerate(recorder.events)
+        if event == Event.SCHEDULED_TASK_RUN_RECORDED
+    )
+    assert recorder.events[index][1]["organization_id"] == "org_task"
+    meta = recorder.meta[index]
+    assert meta["event_id"] and meta["occurred_at"] == recorder.events[index][1]["finished_at"]
+
+
+def test_a_task_id_unsafe_as_a_file_name_still_keeps_records(recorder: _Recorder) -> None:
+    save_run_record({"task_id": "../loop:1", "fire_time": "2026-10-04T13:29:00Z", "attempt": 1})
+
+    path = run_records_path("../loop:1")
+    assert path.parent.name == "scheduler_runs" and path.name.startswith("sha256-")
+    assert read_run_records("../loop:1")[0]["task_id"] == "../loop:1"
+
+
+def _claim(attempt: int = 1) -> ExecutionClaim:
+    return ExecutionClaim("pr_doctor", "2026-10-04T13:29:00Z", attempt, "owner", datetime.now(UTC))
+
+
+def test_a_record_always_fits_one_analytics_event() -> None:
+    wide = "\U0001f600" * 60_000  # four UTF-8 bytes each
+    run = TaskRun(
+        task_id="pr_doctor",
+        fire_time="2026-10-04T13:29:00Z",
+        status=TaskStatus.SUCCESS,
+        report=wide,
+        finished_at="2026-10-04T13:30:00+00:00",
+    )
+
+    submitted = SubmittedMessages([SubmittedMessage(wide)] * 3, count=3)
+    record = build_run_record(_loop(), _claim(), run=run, submitted=submitted)
+
+    size = len(json.dumps(record, ensure_ascii=False, separators=(",", ":")).encode())
+    assert size <= 192 * 1024
+    assert record["report_truncated"] and all(prompt["truncated"] for prompt in record["prompts"])
+
+
+def test_failed_deliveries_survive_the_destination_cap_and_targets_are_redacted() -> None:
+    targets = [
+        DeliveryOutcome(provider=Provider.SLACK, chat_id=f"C{i}", ok=True) for i in range(45)
+    ]
+    targets.append(
+        DeliveryOutcome(
+            provider=Provider.SLACK, chat_id=f"C-{_TOKEN}", ok=False, error="channel_not_found"
+        )
+    )
+    run = TaskRun(
+        task_id="pr_doctor",
+        fire_time="2026-10-04T13:29:00Z",
+        status=TaskStatus.SUCCESS,
+        targets=tuple(targets),
+        report="Done.",
+    )
+
+    record = build_run_record(_loop(), _claim(), run=run, submitted=None)
+
+    assert record["delivery_count"] == 46 and len(record["delivery"]) == 40
+    assert [outcome["ok"] for outcome in record["delivery"]].count(False) == 1
+    assert _TOKEN not in json.dumps(record)

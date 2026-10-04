@@ -10,6 +10,7 @@ copy, so an unreadable file is replaced rather than repaired.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 import logging
 import os
@@ -30,11 +31,14 @@ RUNS_PER_TASK = 20
 _TASK_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
 
 
-def run_records_path(task_id: str) -> Path | None:
-    """The record file for ``task_id``, or ``None`` when the ID is unsafe as a file name."""
-    if not _TASK_ID.match(task_id):
-        return None
-    return task_store.default_task_store_path().parent / RUN_RECORDS_DIRNAME / f"{task_id}.json"
+def run_records_path(task_id: str) -> Path:
+    """The record file for ``task_id``; an ID unsafe as a file name is stored under its hash."""
+    name = (
+        task_id
+        if _TASK_ID.match(task_id)
+        else f"sha256-{hashlib.sha256(task_id.encode()).hexdigest()}"
+    )
+    return task_store.default_task_store_path().parent / RUN_RECORDS_DIRNAME / f"{name}.json"
 
 
 def _read(path: Path) -> list[dict[str, Any]]:
@@ -74,8 +78,6 @@ def save_run_record(record: dict[str, Any]) -> None:
     """Insert or replace one attempt's record, keeping the task's newest ``RUNS_PER_TASK``."""
     task_id = str(record.get("task_id", ""))
     path = run_records_path(task_id)
-    if path is None:
-        return
     path.parent.mkdir(parents=True, exist_ok=True)
     key = _attempt_key(record)
     with FileLock(path.with_suffix(".lock")):
@@ -90,8 +92,7 @@ def save_run_record(record: dict[str, Any]) -> None:
 
 def read_run_records(task_id: str) -> list[dict[str, Any]]:
     """Saved records for ``task_id``, newest first."""
-    path = run_records_path(task_id)
-    return _read(path) if path is not None else []
+    return _read(run_records_path(task_id))
 
 
 __all__ = [

@@ -13,8 +13,10 @@ Text is credential-redacted and capped. Recording never fails a run.
 
 from __future__ import annotations
 
+import json
 import logging
 from typing import Any
+from uuid import NAMESPACE_URL, uuid5
 
 from infrastructure.observability.trace.submitted_messages import SubmittedMessages
 from infrastructure.safety.secret_redaction import redact_text
@@ -31,22 +33,32 @@ from infrastructure.scheduling.scheduler.types import ScheduledTask, TaskRun, Ta
 logger = logging.getLogger(__name__)
 
 RUN_RECORD_VERSION = 1
-#: Caps keep one event far below the 256 KiB analytics payload limit.
-_PROMPT_MAX_CHARS = 16_000
+#: Text caps are UTF-8 bytes: the analytics sender limits a payload to 256 KiB.
+_PROMPT_MAX_BYTES = 16_000
 _PROMPTS_KEPT = 3
-_REPORT_MAX_CHARS = 20_000
-_SUMMARY_MAX_CHARS = 500
-_ERROR_MAX_CHARS = 300
-_BUILDER_ARGS_MAX_CHARS = 500
-_DELIVERY_KEPT = 10
-_FIELD_MAX_CHARS = 200
+_REPORT_MAX_BYTES = 32_000
+_SUMMARY_MAX_BYTES = 1_000
+_ERROR_MAX_BYTES = 600
+_BUILDER_ARGS_MAX_BYTES = 1_000
+_FIELD_MAX_BYTES = 400
+_DELIVERY_KEPT = 40
+#: The serialized record must fit one event with room for base properties.
+_EVENT_MAX_BYTES = 192 * 1024
 
 
-def _bounded(value: str, max_chars: int) -> tuple[str, bool]:
+def _cut(text: str, max_bytes: int) -> str:
+    encoded = text.encode("utf-8")
+    if len(encoded) <= max_bytes:
+        return text
+    # Leave room for the ellipsis; a split multi-byte character is dropped.
+    return encoded[: max_bytes - 3].decode("utf-8", errors="ignore").rstrip() + "…"
+
+
+def _bounded(value: str, max_bytes: int) -> tuple[str, bool]:
+    """Redact credentials, then cap at ``max_bytes`` UTF-8 bytes."""
     text = redact_text(value)
-    if len(text) <= max_chars:
-        return text, False
-    return text[: max_chars - 1].rstrip() + "…", True
+    cut = _cut(text, max_bytes)
+    return cut, cut != text
 
 
 def _trigger(fire_time: str) -> str:
@@ -59,46 +71,79 @@ def _report_builder(task: ScheduledTask) -> dict[str, str] | None:
     name = task.params.get(LOOP_REPORT_PARAM, "").strip()
     if not name:
         return None
-    args = _bounded(task.params.get(LOOP_REPORT_ARGS_PARAM, "").strip(), _BUILDER_ARGS_MAX_CHARS)[0]
-    return {"name": name[:_FIELD_MAX_CHARS], "args": args}
+    args = _bounded(task.params.get(LOOP_REPORT_ARGS_PARAM, "").strip(), _BUILDER_ARGS_MAX_BYTES)[0]
+    return {"name": _bounded(name, _FIELD_MAX_BYTES)[0], "args": args}
 
 
 def _submitted_fields(submitted: SubmittedMessages) -> dict[str, Any]:
     prompts = []
     for message in submitted.messages[:_PROMPTS_KEPT]:
-        text, truncated = _bounded(message.text, _PROMPT_MAX_CHARS)
+        text, truncated = _bounded(message.text, _PROMPT_MAX_BYTES)
         prompts.append({"text": text, "chars": len(message.text), "truncated": truncated})
     fields: dict[str, Any] = {"prompts": prompts, "prompt_count": submitted.count}
     session_id = next((m.trace_session_id for m in submitted.messages if m.trace_session_id), "")
     if session_id:
-        fields["trace_session_id"] = session_id[:_FIELD_MAX_CHARS]
+        fields["trace_session_id"] = _bounded(session_id, _FIELD_MAX_BYTES)[0]
     return fields
+
+
+def _delivery_fields(run: TaskRun) -> dict[str, Any]:
+    """Per-destination outcomes in plan order; past the cap, failures are kept first."""
+    targets = list(run.targets)
+    if len(targets) > _DELIVERY_KEPT:
+        kept = {id(outcome) for outcome in sorted(targets, key=lambda o: o.ok)[:_DELIVERY_KEPT]}
+        targets = [outcome for outcome in targets if id(outcome) in kept]
+    return {
+        "delivery_count": len(run.targets),
+        "delivery": [
+            {
+                "provider": outcome.provider.value,
+                "chat_id": _bounded(outcome.chat_id, _FIELD_MAX_BYTES)[0],
+                "ok": outcome.ok,
+                "attempts": outcome.attempts,
+                "error": _bounded(outcome.error, _FIELD_MAX_BYTES)[0],
+            }
+            for outcome in targets
+        ],
+    }
 
 
 def _outcome_fields(run: TaskRun) -> dict[str, Any]:
     fields: dict[str, Any] = {
-        "error": _bounded(run.error, _ERROR_MAX_CHARS)[0],
+        "error": _bounded(run.error, _ERROR_MAX_BYTES)[0],
         "work_status": run.work_outcome.status.value,
-        "delivery": [
-            {
-                "provider": outcome.provider.value,
-                "chat_id": outcome.chat_id[:_FIELD_MAX_CHARS],
-                "ok": outcome.ok,
-                "attempts": outcome.attempts,
-                "error": _bounded(outcome.error, _FIELD_MAX_CHARS)[0],
-            }
-            for outcome in run.targets[:_DELIVERY_KEPT]
-        ],
+        **_delivery_fields(run),
     }
     if run.work_outcome.error_kind:
-        fields["work_error_kind"] = run.work_outcome.error_kind[:_FIELD_MAX_CHARS]
+        fields["work_error_kind"] = _bounded(run.work_outcome.error_kind, _FIELD_MAX_BYTES)[0]
     # None means no report was retained; an empty string is a known quiet run.
     if run.report is not None:
-        report, truncated = _bounded(run.report, _REPORT_MAX_CHARS)
+        report, truncated = _bounded(run.report, _REPORT_MAX_BYTES)
         fields.update(report=report, report_chars=len(run.report), report_truncated=truncated)
         if run.report_summary:
-            fields["report_summary"] = _bounded(run.report_summary, _SUMMARY_MAX_CHARS)[0]
+            fields["report_summary"] = _bounded(run.report_summary, _SUMMARY_MAX_BYTES)[0]
     return fields
+
+
+def _serialized_bytes(record: dict[str, Any]) -> int:
+    # The analytics sender serializes the same way.
+    return len(json.dumps(record, ensure_ascii=False, separators=(",", ":")).encode("utf-8"))
+
+
+def _fit_one_event(record: dict[str, Any]) -> None:
+    """Halve the report and prompts until the record fits one analytics event.
+
+    Byte caps alone can be exceeded by JSON escaping (quotes, control characters).
+    """
+    for _ in range(10):
+        if _serialized_bytes(record) <= _EVENT_MAX_BYTES:
+            return
+        if report := record.get("report"):
+            record["report"] = _cut(report, len(report.encode("utf-8")) // 2)
+            record["report_truncated"] = True
+        for prompt in record.get("prompts", []):
+            prompt["text"] = _cut(prompt["text"], len(prompt["text"].encode("utf-8")) // 2)
+            prompt["truncated"] = True
 
 
 def build_run_record(
@@ -123,12 +168,16 @@ def build_run_record(
         "replayed_report": claim.report is not None,
         "task": registry_entry(task),
     }
+    # A task's own organization attributes the event, as for loop reports.
+    if task.organization.strip():
+        record["organization_id"] = task.organization.strip()
     if builder := _report_builder(task):
         record["report_builder"] = builder
     if submitted is not None:
         record.update(_submitted_fields(submitted))
     if run is not None and run.status is not TaskStatus.RUNNING:
         record.update(_outcome_fields(run))
+    _fit_one_event(record)
     return record
 
 
@@ -168,7 +217,14 @@ def _report_run_record(record: dict[str, Any]) -> None:
 
         if analytics_opted_out():
             return
-        get_analytics().capture(Event.SCHEDULED_TASK_RUN_RECORDED, record)
+        # One event per attempt: a resend replaces the stored row instead of adding one.
+        key = f"opensre:{Event.SCHEDULED_TASK_RUN_RECORDED}:{record['task_id']}:{record['fire_time']}:{record['attempt']}"
+        get_analytics().capture(
+            Event.SCHEDULED_TASK_RUN_RECORDED,
+            record,
+            event_id=str(uuid5(NAMESPACE_URL, key)),
+            occurred_at=record.get("finished_at") or None,
+        )
     except Exception:
         logger.debug(
             "Failed to report a run record for task %s", record.get("task_id"), exc_info=True
