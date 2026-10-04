@@ -83,24 +83,32 @@ def test_prose_reply_keeps_the_inline_label() -> None:
 
 
 _PR_URL = "https://github.com/o/r/pull/1"
+_ENCODED_PR_URL = "https://github.com/o/r/pull%2F1"
 
 
 @pytest.mark.parametrize(
-    ("reply", "visible", "link_text"),
+    ("reply", "visible", "href"),
     [
         pytest.param(
             f"Opened [o/r PR #1]({_PR_URL}).",
             f"Opened o/r PR #1 ({_PR_URL}).",
-            "o/r PR #1",
+            _PR_URL,
             id="text-differs-from-url",
         ),
         pytest.param(f"Opened <{_PR_URL}>.", f"Opened {_PR_URL}.", _PR_URL, id="autolink"),
         pytest.param(
             f"Opened [{_PR_URL}]({_PR_URL}).", f"Opened {_PR_URL}.", _PR_URL, id="text-is-the-url"
         ),
+        # ``%2F`` and ``/`` can reach different resources, so the real target still shows.
+        pytest.param(
+            f"Opened [{_PR_URL}]({_ENCODED_PR_URL}).",
+            f"Opened {_PR_URL} ({_ENCODED_PR_URL}).",
+            _ENCODED_PR_URL,
+            id="text-decodes-the-url",
+        ),
     ],
 )
-def test_reply_link_shows_its_url_once(reply: str, visible: str, link_text: str) -> None:
+def test_reply_link_shows_its_destination_once(reply: str, visible: str, href: str) -> None:
     # Arrange: a terminal console, where Rich would put the URL only in an OSC 8
     # escape that Terminal.app cannot open and copying drops.
     buf = io.StringIO()
@@ -109,12 +117,12 @@ def test_reply_link_shows_its_url_once(reply: str, visible: str, link_text: str)
     # Act
     publish_full_response(console, reply)
 
-    # Assert: the URL is visible exactly once, and the link text stays clickable.
+    # Assert: the sentence shows the destination once (a repeat would break the
+    # match), and the link text still carries the OSC 8 hyperlink.
     rendered = Text.from_ansi(buf.getvalue())
     assert visible in rendered.plain
-    assert rendered.plain.count(_PR_URL) == 1
-    link_style = rendered.get_style_at_offset(console, rendered.plain.index(link_text))
-    assert link_style.link == _PR_URL
+    link_text_at = rendered.plain.index(visible) + len("Opened ")
+    assert rendered.get_style_at_offset(console, link_text_at).link == href
 
 
 def _tty_console() -> tuple[Console, io.StringIO]:

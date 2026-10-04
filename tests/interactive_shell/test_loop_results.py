@@ -189,6 +189,21 @@ def test_commands_show_latest_failure_and_allow_opening_the_earlier_full_report(
 
 
 @pytest.mark.usefixtures("loop_stores")
+def test_full_report_shows_link_urls() -> None:
+    # Arrange: a stored report that links its pull request.
+    url = "https://github.com/o/r/pull/1"
+    _stored_loop("linked-task", "Linked loop", f"Opened [PR #1]({url}).")
+    output = io.StringIO()
+    console = Console(file=output, width=100, color_system=None)
+
+    # Act
+    loops_cmds._cmd_loops(Session(), console, ["show", "Linked", "loop"])
+
+    # Assert: the report shows the URL, not only the link text.
+    assert f"Opened PR #1 ({url})." in output.getvalue()
+
+
+@pytest.mark.usefixtures("loop_stores")
 def test_picker_disambiguates_duplicate_names_and_noninteractive_show_gives_a_command(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
