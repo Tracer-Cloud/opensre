@@ -14,11 +14,12 @@ _threads: list[threading.Thread] = []
 
 
 def warm_first_turn() -> threading.Thread:
-    """Build the agent LLM client and read hosted credits in the background.
+    """Build and prewarm the agent LLM client and read hosted credits in the background.
 
     The menu answer's turn otherwise pays for both before its first model call
-    (1-5 s for the client and its SDK import). Failures are left for that turn
-    to report, so nothing here is surfaced.
+    (1-5 s for the client and its SDK import, then about 0.5-2 s more for the
+    SDK's lazily loaded request and response path). Failures are left for that
+    turn to report, so nothing here is surfaced.
     """
     thread = threading.Thread(target=_warm, name=_THREAD_NAME, daemon=True)
     _threads.append(thread)
@@ -37,11 +38,19 @@ def join_first_turn_warmup(timeout: float = _SHUTDOWN_JOIN_SECONDS) -> None:
         _threads.pop().join(max(0.0, deadline - time.monotonic()))
 
 
-def _warm() -> None:
+def _prepare_llm_client() -> None:
+    """Build the agent client and load its SDK request path (no request is sent)."""
     from core.agent_harness.runtime import default_llm_factory
+
+    prewarm = getattr(default_llm_factory(), "prewarm", None)
+    if callable(prewarm):
+        prewarm()
+
+
+def _warm() -> None:
     from core.llm.hosted_credits import prefetch_hosted_credits
 
-    for step in (default_llm_factory, prefetch_hosted_credits):
+    for step in (_prepare_llm_client, prefetch_hosted_credits):
         try:
             step()
         except Exception:

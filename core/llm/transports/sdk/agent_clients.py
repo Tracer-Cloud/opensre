@@ -549,6 +549,45 @@ _PROVIDER_LABEL_OVERRIDES = {
 }
 
 
+# A minimal Responses payload with each output item type the agent reads, so
+# ``prewarm`` builds the same model classes the first real response needs.
+_PREWARM_RESPONSE: dict[str, Any] = {
+    "id": "resp_prewarm",
+    "object": "response",
+    "created_at": 0,
+    "model": "prewarm",
+    "status": "completed",
+    "parallel_tool_calls": True,
+    "tool_choice": "auto",
+    "tools": [],
+    "output": [
+        {"type": "reasoning", "id": "rs_prewarm", "summary": []},
+        {
+            "type": "message",
+            "id": "msg_prewarm",
+            "role": "assistant",
+            "status": "completed",
+            "content": [{"type": "output_text", "text": "", "annotations": []}],
+        },
+        {
+            "type": "function_call",
+            "id": "fc_prewarm",
+            "call_id": "call_prewarm",
+            "name": "prewarm",
+            "arguments": "{}",
+            "status": "completed",
+        },
+    ],
+    "usage": {
+        "input_tokens": 0,
+        "output_tokens": 0,
+        "total_tokens": 0,
+        "input_tokens_details": {"cached_tokens": 0},
+        "output_tokens_details": {"reasoning_tokens": 0},
+    },
+}
+
+
 class OpenAIAgentClient:
     """OpenAI-compatible client with tool-calling for the agent loop."""
 
@@ -606,6 +645,23 @@ class OpenAIAgentClient:
         if override:
             return override
         return api_key_env.removesuffix("_API_KEY").replace("_", " ").title()
+
+    def prewarm(self) -> None:
+        """Load what the first request would otherwise load inline, without a request.
+
+        The SDK imports its endpoint resource and builds its response models
+        lazily, on the first call. Hosts run this in the background while the
+        user is still choosing, so the first model call does not pay for it.
+        """
+        self._ensure_client()
+        api_key_env = str(getattr(self, "_api_key_env", "OPENAI_API_KEY"))
+        if uses_responses_api(self._model, api_key_env):
+            from openai.types.responses import Response
+
+            _ = self._client.responses
+            Response.model_construct(**_PREWARM_RESPONSE)
+        else:
+            _ = self._client.chat.completions
 
     def tool_schemas(self, tools: Sequence[SchemaDescribedTool]) -> list[dict[str, Any]]:
         return build_openai_tool_specs(tools)

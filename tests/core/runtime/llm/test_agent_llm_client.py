@@ -892,6 +892,21 @@ def test_chat_completions_requests_carry_no_prompt_cache_key(
     assert "prompt_cache_key" not in captured
 
 
+def test_prewarm_loads_the_responses_path_without_sending_a_request() -> None:
+    """The warm-up runs before the user has asked anything; it must not spend credits."""
+    client = OpenAIAgentClient(
+        model="gpt-5.6",
+        max_tokens=16,
+        # Nothing listens here: any request would raise a connection error.
+        base_url="http://127.0.0.1:9/v1",
+        credential_resolver=lambda _env: "test-key",
+    )
+
+    client.prewarm()
+
+    assert "responses" in vars(client._client)
+
+
 def test_openai_agent_client_omits_parallel_tool_calls_for_compat_provider(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
