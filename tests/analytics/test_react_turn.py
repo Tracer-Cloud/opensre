@@ -118,6 +118,7 @@ def test_emit_react_turn_completed_sets_hit_iteration_cap_from_stop_reason(
             "error_type": "",
             "error_message": "",
             "scheduled_task_id": "",
+            "ai_error_reason": "",
         }
     ]
 
