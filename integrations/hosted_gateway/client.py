@@ -52,6 +52,8 @@ ERR_ALREADY_ANSWERED = "already_answered"
 ERR_ALREADY_SETTLED = "already_settled"
 #: Another gateway task (one being replaced) runs the prompt; this one cannot stop it.
 ERR_NOT_OWNED = "not_owned"
+#: The gateway's prompt queue is full and it took nothing; send again after ``retry_after``.
+ERR_TOO_MANY_PROMPTS = "too_many_prompts"
 
 #: A prompt id as the gateway mints it; anything else never becomes part of a URL.
 _PROMPT_ID = re.compile(r"^p_[0-9a-f]{32}$")
@@ -68,7 +70,12 @@ _UNAVAILABLE_STATUSES = frozenset(
     {HTTPStatus.BAD_GATEWAY, HTTPStatus.SERVICE_UNAVAILABLE, HTTPStatus.GATEWAY_TIMEOUT}
 )
 
+#: Statuses the app may carry a capacity refusal on: 503 and 429 now, 502 from an app
+#: deployed before it kept the gateway's 503.
+_CAPACITY_STATUSES = _UNAVAILABLE_STATUSES | {HTTPStatus.TOO_MANY_REQUESTS}
+
 #: Failures that pass on their own: nobody answered, and a later request may succeed.
+#: A capacity refusal is not one of them: the gateway answered, so it is never resent at once.
 TRANSIENT_ERRORS = frozenset({ERR_UNREACHABLE, ERR_GATEWAY_UNAVAILABLE})
 
 #: Failures of the account or its setup, not of the service: nothing to report as an incident.
@@ -86,6 +93,7 @@ EXPECTED_ERRORS = frozenset(
         ERR_ALREADY_ANSWERED,
         ERR_ALREADY_SETTLED,
         ERR_NOT_OWNED,
+        ERR_TOO_MANY_PROMPTS,
     }
 )
 
@@ -95,14 +103,23 @@ class HostedGatewayError(RuntimeError):
 
     ``code`` is the failure class (from the HTTP status). ``cause_code`` is the
     app's more specific reason when it named one. Neither is a response body
-    or the account token.
+    or the account token. ``retry_after`` is the app's ``Retry-After`` in
+    seconds, when it sent one.
     """
 
-    def __init__(self, code: str, status: int | None = None, *, cause_code: str = "") -> None:
+    def __init__(
+        self,
+        code: str,
+        status: int | None = None,
+        *,
+        cause_code: str = "",
+        retry_after: int | None = None,
+    ) -> None:
         super().__init__(code)
         self.code = code
         self.status = status
         self.cause_code = cause_code
+        self.retry_after = retry_after
 
 
 @dataclass(frozen=True)
@@ -353,6 +370,12 @@ class HostedGatewayClient:
         refusal = refusals.get(response.status_code)
         if refusal is not None:
             raise self._refused(_refusal_code(response, refusal, body_codes), response)
+        if response.status_code in _CAPACITY_STATUSES and _is_capacity_refusal(response):
+            raise HostedGatewayError(
+                ERR_TOO_MANY_PROMPTS,
+                response.status_code,
+                retry_after=_retry_after_seconds(response),
+            )
         if response.status_code in _UNAVAILABLE_STATUSES:
             raise self._refused(ERR_GATEWAY_UNAVAILABLE, response)
         if not response.is_success:
@@ -435,6 +458,17 @@ def _cause_code(response: httpx.Response) -> str:
     if isinstance(code, str) and _CAUSE_CODE.fullmatch(code):
         return code
     return ""
+
+
+def _is_capacity_refusal(response: httpx.Response) -> bool:
+    """The gateway took nothing because its prompt queue is full."""
+    return _cause_code(response) == ERR_TOO_MANY_PROMPTS
+
+
+def _retry_after_seconds(response: httpx.Response) -> int | None:
+    """``Retry-After`` as whole seconds; an HTTP date or a malformed value reads as absent."""
+    raw = response.headers.get("Retry-After", "").strip()
+    return int(raw) if raw.isdigit() else None
 
 
 def _refusal_code(response: httpx.Response, default: str, body_codes: frozenset[str]) -> str:
@@ -573,6 +607,7 @@ __all__ = [
     "ERR_NOT_SIGNED_IN",
     "ERR_NOT_SUPPORTED",
     "ERR_PROMPT_TOO_LARGE",
+    "ERR_TOO_MANY_PROMPTS",
     "ERR_UNAUTHORIZED",
     "ERR_UNKNOWN_PROMPT",
     "ERR_UNREACHABLE",
