@@ -293,9 +293,8 @@ def test_each_turn_reads_the_current_time_and_the_cached_half_never_does(
     monkeypatch.setattr(_CAPTURE, _capture_at("2026-10-05T00:00:30+02:00", captures))
     second_cached, second_turn = build_action_system_prompt_envelope(_turn()).render_split()
 
-    started = "read when this turn started"
-    assert f"current time is 2026-10-04T23:59:30+02:00 (Sunday), {started}" in first_turn
-    assert f"current time is 2026-10-05T00:00:30+02:00 (Monday), {started}" in second_turn
+    assert "current time is 2026-10-04T23:59:30+02:00 (Sunday), as of this request" in first_turn
+    assert "current time is 2026-10-05T00:00:30+02:00 (Monday), as of this request" in second_turn
     assert "current time is" not in first_cached
     assert first_cached == second_cached
     # One reading per turn feeds both halves.

@@ -48,7 +48,7 @@ _STATIC_GUIDANCE = (
 _LIVE_ANSWER_RULES = (
     ", answer from the strings above — do NOT guess a date/time from your "
     "training data. Resolve relative ranges in the request, such as 'the last "
-    "hour', 'today' or 'since yesterday', from the turn's start time above. "
+    "hour', 'today' or 'since yesterday', from the current time above. "
     f"Never run {_BLOCKED_COMMANDS}. Do NOT invent field names, values, or "
     "numbers not present above."
 )
@@ -105,7 +105,7 @@ def _version_line(runtime: Mapping[str, Any]) -> str | None:
 
 
 def _now_line(runtime: Mapping[str, Any]) -> str | None:
-    """The turn's start time with its UTC offset and weekday; models misjudge the day from a date."""
+    """The time as of this request, with its UTC offset and weekday; models misjudge the day."""
     now = _clean_str(runtime, "now_iso")
     if not now:
         return None
@@ -113,7 +113,7 @@ def _now_line(runtime: Mapping[str, Any]) -> str | None:
         stamp = f"{now} ({_WEEKDAYS[_dt.datetime.fromisoformat(now).weekday()]})"
     except ValueError:
         stamp = now
-    return f"current time is {stamp}, read when this turn started"
+    return f"current time is {stamp}, as of this request"
 
 
 def _uptime_line(runtime: Mapping[str, Any]) -> str | None:
