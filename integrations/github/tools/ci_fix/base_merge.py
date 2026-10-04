@@ -34,6 +34,7 @@ from integrations.github.tools.ci_fix.context import CiFixContext
 from integrations.github.tools.ci_fix.errors import (
     ERR_MERGE_CONFLICT,
     ERR_MERGE_DECISION,
+    ERR_MERGE_UNSETTLED,
     GitHubCiFixError,
 )
 
@@ -116,9 +117,12 @@ def merge_base_into_head(
             return _merge_finished_by_agent(workspace, ctx, merging, conflicts)
         blocked = unresolved_conflicts(workspace, conflicts)
         if not result.success or blocked:
-            decided = result.success and _left_for_a_person(workspace, conflicts, blocked)
+            kind = ERR_MERGE_CONFLICT
+            if result.success:
+                decided = _left_for_a_person(workspace, conflicts, blocked)
+                kind = ERR_MERGE_DECISION if decided else ERR_MERGE_UNSETTLED
             abort_merge(workspace)
-            raise _blocked_error(ctx, blocked or list(conflicts.paths), result, decided=decided)
+            raise _blocked_error(ctx, blocked or list(conflicts.paths), result, kind=kind)
         if console is not None:
             render_review(
                 console,
@@ -180,8 +184,8 @@ def _left_for_a_person(
     """True when the agent edited a blocked file yet kept conflict markers in it.
 
     That is how its task tells it to flag a choice for a person. A file it never
-    touched still holds git's own markers, so those are not counted: the agent
-    may simply have run out of time, and a later attempt can still resolve it.
+    touched still holds git's own markers, which prove nothing on their own; the
+    runner retries such a merge and asks a person only when it stays unsettled.
     """
     marked = paths_with_conflict_markers(workspace, [conflict.path for conflict in blocked])
     current = file_fingerprints(workspace, marked)
@@ -193,13 +197,13 @@ def _blocked_error(
     blocked: list[ConflictedPath],
     result: CodingResult,
     *,
-    decided: bool = False,
+    kind: str = ERR_MERGE_CONFLICT,
 ) -> GitHubCiFixError:
     decisions = "; ".join(f"{c.path} ({c.description})" for c in blocked)
     note = " ".join((result.error or result.summary or "").split()).rstrip(".")
     detail = f" Coding agent: {note}." if note else ""
     return GitHubCiFixError(
-        ERR_MERGE_DECISION if decided else ERR_MERGE_CONFLICT,
+        kind,
         (
             f"Merging {ctx.base_branch} into {ctx.head_branch} is blocked on "
             f"{len(blocked)} file(s) a person must decide: {decisions}.{detail} "

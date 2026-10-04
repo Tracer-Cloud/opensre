@@ -1477,6 +1477,56 @@ def test_run_ci_fix_asks_on_the_pr_for_a_merge_only_a_person_can_decide(
     assert (outcome["status"], outcome["retryable"]) == (status, retryable)
 
 
+@patch("integrations.github.tools.ci_fix.runner.merge_base_into_head")
+@patch("integrations.github.tools.ci_fix.runner.pre_coding_changes", return_value={})
+@patch("integrations.github.tools.ci_fix.runner.checkout_target_branch")
+@patch("integrations.github.tools.ci_fix.runner.ensure_push_ready")
+@patch(
+    "integrations.github.tools.ci_fix.runner.repair_workspace",
+    side_effect=lambda *_a, **kw: nullcontext(kw.get("workspace") or "/workspace"),
+)
+@patch(
+    "integrations.github.tools.ci_fix.runner.gather_ci_fix_context",
+    return_value=replace(_CTX, merge_state="DIRTY", head_sha="head-1"),
+)
+@patch("integrations.github.tools.ci_fix.runner.base_has_new_commits", return_value=True)
+def test_a_merge_left_unsettled_twice_at_one_head_goes_to_a_person(
+    _behind: MagicMock,
+    _gather: MagicMock,
+    _workspace: MagicMock,
+    _push_ready: MagicMock,
+    _checkout: MagicMock,
+    _pre: MagicMock,
+    mock_merge: MagicMock,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    # Arrange: the agent finishes each time but never touches the conflicted file.
+    from integrations.github.tools.ci_fix.errors import ERR_MERGE_UNSETTLED
+
+    asked: list[str] = []
+
+    def report(ctx: CiFixContext, _message: str, **_kw: object) -> bool:
+        asked.append(ctx.head_sha)
+        return True
+
+    monkeypatch.setattr(runner, "report_decision", report)
+    mock_merge.side_effect = GitHubCiFixError(
+        ERR_MERGE_UNSETTLED,
+        "Merging main into feat/fix-ci is blocked on 1 file(s) a person must decide: "
+        "auth.py (changed on both feat/fix-ci and main). No push was made.",
+        branch_name="feat/fix-ci",
+    )
+
+    # Act
+    first = runner.run_ci_fix(owner="Tracer-Cloud", repo="opensre", pr_number=4597)
+    second = runner.run_ci_fix(owner="Tracer-Cloud", repo="opensre", pr_number=4597)
+
+    # Assert: one retry, then a visible request instead of an hourly coding-agent run
+    assert first["error_kind"] == "merge_conflict"
+    assert second["error_kind"] == "merge_decision_required"
+    assert asked == ["head-1"]
+
+
 @patch("integrations.github.tools.ci_fix.runner.repair_workspace")
 @patch(
     "integrations.github.tools.ci_fix.runner.gather_ci_fix_context",

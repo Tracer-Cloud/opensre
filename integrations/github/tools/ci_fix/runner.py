@@ -10,6 +10,7 @@ from typing import Any, Final
 
 from rich.markup import escape
 
+from config.constants.ci_fixes import CI_FIX_UNSETTLED_MERGE_ATTEMPTS
 from integrations.coding_agent import (
     CodingResult,
     Progress,
@@ -55,13 +56,18 @@ from integrations.github.tools.ci_fix.errors import (
     ERR_INVALID_INPUT,
     ERR_MERGE_CONFLICT,
     ERR_MERGE_DECISION,
+    ERR_MERGE_UNSETTLED,
     ERR_NO_FAILING_CHECKS,
     ERR_TIMEOUT,
     GitHubCiFixError,
 )
 from integrations.github.tools.ci_fix.resume import resumed_push
 from integrations.github.tools.ci_fix.ship import PushResult, checkout_target_branch, push_ci_fix
-from integrations.github.tools.ci_fix.storage.attempts import record_verification, repair_key
+from integrations.github.tools.ci_fix.storage.attempts import (
+    record_unsettled_merge,
+    record_verification,
+    repair_key,
+)
 from integrations.github.tools.ci_fix.timing import PhaseTimer
 from integrations.github.tools.ci_fix.verification import (
     DEFAULT_CHECK_WAIT_SECONDS,
@@ -333,6 +339,21 @@ def error_output(kind: str, message: str, ctx: CiFixContext | None = None) -> di
     return output
 
 
+def _escalated(ctx: CiFixContext, exc: GitHubCiFixError) -> GitHubCiFixError:
+    """Retry a merge the agent left unsettled; at the same head again, ask a person.
+
+    One unsettled run may be a slip worth another attempt; a repeat at one head
+    means the agent will not settle it, and retrying every tick would hide that.
+    """
+    if exc.kind != ERR_MERGE_UNSETTLED:
+        return exc
+    attempts = record_unsettled_merge(
+        repair_key(ctx.owner, ctx.repo, str(ctx.number)), ctx.head_sha
+    )
+    kind = ERR_MERGE_DECISION if attempts >= CI_FIX_UNSETTLED_MERGE_ATTEMPTS else ERR_MERGE_CONFLICT
+    return GitHubCiFixError(kind, exc.message, branch_name=exc.branch_name)
+
+
 def _reported(
     ctx: CiFixContext, exc: GitHubCiFixError, github_token: str | None
 ) -> GitHubCiFixError:
@@ -341,6 +362,7 @@ def _reported(
     The decision blocks this head only once a person can see it, so a failed
     comment keeps it a plain conflict that the next call attempts again.
     """
+    exc = _escalated(ctx, exc)
     if exc.kind != ERR_MERGE_DECISION or report_decision(
         ctx, exc.message, github_token=github_token
     ):

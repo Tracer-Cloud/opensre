@@ -15,6 +15,7 @@ from integrations.github.tools.ci_fix.context import MERGE_STATE_DIRTY, CiFixCon
 from integrations.github.tools.ci_fix.errors import (
     ERR_MERGE_CONFLICT,
     ERR_MERGE_DECISION,
+    ERR_MERGE_UNSETTLED,
     GitHubCiFixError,
 )
 
@@ -138,8 +139,8 @@ def test_conflicts_resolved_by_agent_are_committed_and_reported(tmp_path: Path) 
     [
         # Edited, yet markers kept: the agent's way to flag a choice for a person.
         (True, ERR_MERGE_DECISION),
-        # Never touched: git's own markers prove nothing, so a later run may resolve it.
-        (False, ERR_MERGE_CONFLICT),
+        # Never touched: git's own markers prove nothing; the runner retries, then asks.
+        (False, ERR_MERGE_UNSETTLED),
     ],
 )
 def test_conflicts_the_agent_left_abort_the_merge_and_name_the_blocked_files(
