@@ -488,6 +488,7 @@ EXPORTS: dict[str, str] = {
     "OPENSRE_GATEWAY_HOST_SCHEDULER_ENV": "scheduler",
     "OPENSRE_SCHEDULER_BUILD_ENV": "scheduler",
     "SCHEDULER_MISSED_FIRE_GRACE_SECONDS": "scheduler",
+    "SCHEDULED_TASK_TRACE_KEY": "scheduler",
     # secrets
     "CREDENTIAL_FALLBACK_FILENAME": "secrets",
     "OPENSRE_DISABLE_KEYRING_ENV": "secrets",
@@ -562,6 +563,8 @@ EXPORTS: dict[str, str] = {
     # tls
     "SSL_CERT_DIR_ENV": "tls",
     "SSL_CERT_FILE_ENV": "tls",
+    "TURN_ACTOR_ID_ENV": "tenancy",
+    "TURN_ORGANIZATION_ID_ENV": "tenancy",
     # tooling
     "CI_ANALYSIS_PREFETCH_MAX_AGE_SECONDS": "tooling",
     "DEFAULT_APPROVAL_EXPIRY_SECONDS": "tooling",

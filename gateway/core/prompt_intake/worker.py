@@ -58,6 +58,7 @@ from infrastructure.turn_host.unattended_session import (
     choice_view,
     hosted_conversation_id,
     invocation_key,
+    prompt_with_facts,
 )
 from tools.registry import integration_of_tool
 
@@ -533,10 +534,7 @@ def actor_conversation(actor: str) -> str | None:
 
 def _render_prompt(job: PromptJob) -> str:
     """The prompt plus the facts the caller resolved up front, so nothing is left to ask."""
-    if not job.context:
-        return job.prompt
-    facts = "\n".join(f"- {key}: {value}" for key, value in sorted(job.context.items()))
-    return f"{job.prompt}\n\nKnown context:\n{facts}"
+    return prompt_with_facts(job.prompt, job.context)
 
 
 def _question_text(pending: Any) -> str:

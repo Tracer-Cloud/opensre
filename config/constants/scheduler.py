@@ -10,6 +10,10 @@ WEEKDAY_CRON_FIELD = "mon-fri"
 # service (MODE=scheduler / `opensre cron start`) so tasks are not fired twice.
 OPENSRE_GATEWAY_HOST_SCHEDULER_ENV = "OPENSRE_GATEWAY_HOST_SCHEDULER"
 
+# Trace-session metadata key a scheduled tick binds to its task id, so analytics
+# emitted by the turns the tick runs can name the loop they ran for.
+SCHEDULED_TASK_TRACE_KEY = "task_id"
+
 # Build stamp recorded in the per-user background scheduler service definition
 # (launchd plist / systemd unit). A stamp that differs from the running code's
 # means the service still runs an older build and is restarted.
@@ -31,6 +35,7 @@ __all__ = [
     "NON_RETRYABLE_WORK_ERROR_KINDS",
     "OPENSRE_GATEWAY_HOST_SCHEDULER_ENV",
     "OPENSRE_SCHEDULER_BUILD_ENV",
+    "SCHEDULED_TASK_TRACE_KEY",
     "SCHEDULER_MISSED_FIRE_GRACE_SECONDS",
     "WEEKDAY_CRON_FIELD",
 ]

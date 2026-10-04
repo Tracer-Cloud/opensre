@@ -79,6 +79,11 @@ from core.agent_harness.turns.goal_review import (
     last_goal_rejection_reason,
     tap_executed_tool_names,
 )
+from core.agent_harness.turns.literal_command import (
+    bang_shell_command,
+    is_literal_command,
+    literal_slash_text,
+)
 from core.agent_harness.turns.plan_hooks import with_task_plan_hooks
 from core.agent_harness.turns.skill_activation import prepare_active_skill
 from core.agent_harness.turns.skill_value import record_skill_value
@@ -689,27 +694,13 @@ def _stage_action_llm_failure(
     route, so the turn must be reported as a failed LLM call — not a terminal
     turn tagged ``no_conversational_agent``.
     """
-    if _bang_shell_command(message) is not None or message.strip().startswith("/"):
+    if is_literal_command(message):
         return
     from core.agent_harness.turns.orchestrator import stage_turn_error, stage_turn_llm_failure
     from core.llm_invoke_errors import ACTION_AGENT_ERROR
 
     stage_turn_error(session, ACTION_AGENT_ERROR, error_text)
     stage_turn_llm_failure(session, client=client)
-
-
-def _bang_shell_command(message: str) -> str | None:
-    # Explicit `!cmd` shell escape: a deterministic bypass for input the user
-    # typed verbatim as a shell command. This is NOT natural-language intent
-    # inference — do NOT copy this pattern for bare aliases, regex/keyword
-    # matches, or "obvious" natural-language intents. Those must go through the
-    # action-agent LLM selecting first-class AgentTools. Engineers have been
-    # fired before for reintroducing regex/keyword intent shortcuts here.
-    stripped = message.strip()
-    if not stripped.startswith("!") or len(stripped) <= 1:
-        return None
-    cmd = " ".join(stripped[1:].split())
-    return f"!{cmd}" if cmd else None
 
 
 def _slash_tokens(stripped: str) -> tuple[str, list[str]]:
@@ -748,11 +739,8 @@ def _literal_slash_tool_call(message: str, agent_tools: list[Any]) -> ToolCall |
     Returns ``None`` (so the normal LLM path runs) when the input is not literal
     slash text or when ``slash_invoke`` is not an available tool this turn.
     """
-    from infrastructure.harness_providers import strip_message_context_prefix
-
-    _, remainder = strip_message_context_prefix(message)
-    stripped = remainder.strip()
-    if not stripped.startswith("/"):
+    stripped = literal_slash_text(message)
+    if stripped is None:
         return None
     if not any(getattr(tool, "name", None) == "slash_invoke" for tool in agent_tools):
         return None
@@ -788,7 +776,7 @@ def _build_action_agent(
     factory), system prompt, and user-message envelope. The caller only has to
     invoke ``.run()`` and shape the result.
     """
-    bang_command = _bang_shell_command(message)
+    bang_command = bang_shell_command(message)
     slash_call = (
         None if bang_command is not None else _literal_slash_tool_call(message, agent_tools)
     )

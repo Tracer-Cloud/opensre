@@ -22,6 +22,13 @@ def test_an_approved_demo_repository_is_the_target_without_another_question() ->
     assert "Do not call `ask_user_choice` for it." in body
 
 
+def test_the_report_writes_urls_in_full_and_explains_the_root_cause() -> None:
+    # The terminal shows Markdown link text without its URL, so a link must be written out.
+    body = Path(__file__).with_name("SKILL.md").read_text(encoding="utf-8")
+    assert "not as Markdown link text" in body
+    assert "Add a `Root cause analysis` section from the delegated record" in body
+
+
 _DEMO = "Use a disposable demo repository"
 _REPORT = "Task repair-1 succeeded remotely: failing run 1, repair commit abc, passing run 2."
 _REQUEST = {

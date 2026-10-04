@@ -13,6 +13,7 @@ from typing import Any
 from rich.console import Console
 from rich.markup import escape
 
+from config.scope_handoff import hand_off_scope
 from infrastructure.analytics.prompt_log.recorder import PromptRecorder
 from surfaces.interactive_shell.runtime import Session, TaskKind, TaskRecord
 from surfaces.interactive_shell.ui import DIM, ERROR, HIGHLIGHT
@@ -98,6 +99,7 @@ def start_background_cli_task(
             max_size=_MAX_COMMAND_OUTPUT_CHARS
         )
     subprocess_env = _subprocess_env_with_aligned_width(console)
+    hand_off_scope(subprocess_env)
     proc: subprocess.Popen[Any]
     try:
         if pty_fds is None:

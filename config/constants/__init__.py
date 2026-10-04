@@ -1167,6 +1167,9 @@ if TYPE_CHECKING:
         OPENSRE_SCHEDULER_BUILD_ENV as OPENSRE_SCHEDULER_BUILD_ENV,
     )
     from config.constants.scheduler import (
+        SCHEDULED_TASK_TRACE_KEY as SCHEDULED_TASK_TRACE_KEY,
+    )
+    from config.constants.scheduler import (
         SCHEDULER_MISSED_FIRE_GRACE_SECONDS as SCHEDULER_MISSED_FIRE_GRACE_SECONDS,
     )
     from config.constants.scheduler import (
@@ -1399,6 +1402,12 @@ if TYPE_CHECKING:
     )
     from config.constants.tenancy import (
         INTEGRATIONS_STORE_PATH_ENV as INTEGRATIONS_STORE_PATH_ENV,
+    )
+    from config.constants.tenancy import (
+        TURN_ACTOR_ID_ENV as TURN_ACTOR_ID_ENV,
+    )
+    from config.constants.tenancy import (
+        TURN_ORGANIZATION_ID_ENV as TURN_ORGANIZATION_ID_ENV,
     )
     from config.constants.terminal_host import (
         APPLE_TERMINAL_PROGRAM as APPLE_TERMINAL_PROGRAM,

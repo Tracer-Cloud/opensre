@@ -335,13 +335,15 @@ def capture_react_turn_completed(
     loop_stop_reason: str = "",
     error_type: str = "",
     error_message: str = "",
+    scheduled_task_id: str = "",
 ) -> None:
     """Record one finished ReAct run.
 
     ``stop_reason`` is the collapsed dashboard value; ``loop_stop_reason`` is the
     loop's own reason, which tells ``goal_unverified`` and ``stagnation_limit``
     apart from a real ``iteration_cap``. A run that raised also carries its
-    exception type and a redacted, capped ``error_message``.
+    exception type and a redacted, capped ``error_message``. A run inside a
+    scheduled tick names the task as ``scheduled_task_id``.
     """
     properties: Properties = {
         "phase": phase,
@@ -364,6 +366,8 @@ def capture_react_turn_completed(
         properties["error_type"] = error_type
     if recorded_error := bounded_error_message(error_message):
         properties["error_message"] = recorded_error
+    if scheduled_task_id:
+        properties["scheduled_task_id"] = scheduled_task_id
     _capture(Event.REACT_TURN_COMPLETED, properties)
 
 

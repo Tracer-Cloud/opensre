@@ -34,9 +34,13 @@ def write_evidence(
     failed_run_id: int = 0,
     fix_commit: str = "",
     passing_run_id: int = 0,
+    analysis: str = "",
     directory: Path | None = None,
 ) -> Path:
-    """Save the observed outcome. The GitHub repository is not deleted."""
+    """Save the observed outcome. The GitHub repository is not deleted.
+
+    ``analysis`` is the Markdown links and root cause section, appended as given.
+    """
     owner, name = split_repo(repo)
     if outcome not in _OUTCOMES:
         raise DemoRefused("outcome must be success, failed, or blocked.")
@@ -62,6 +66,8 @@ def write_evidence(
         f"- Passing run: {passing_run_id or 'none'}\n"
         "- Repository retained.\n"
     )
+    if analysis.strip():
+        content += f"\n{analysis.strip()}\n"
     _atomic_write(path, content)
     return path
 

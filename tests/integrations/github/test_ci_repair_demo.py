@@ -603,6 +603,8 @@ def test_finish_keeps_an_unsuffixed_repository_and_removes_the_loop(
     )
     monkeypatch.setattr("integrations.github.tools.ci_repair_demo.tool.list_tasks", lambda: [])
 
+    analysis = "**Root cause analysis**\n- What failed: Check `test` failed on commit abc0000."
+
     result = finish_ci_repair_demo(
         repo="Tracer-Cloud/opensre-ci-repair-demo",
         pr_number=4,
@@ -611,6 +613,7 @@ def test_finish_keeps_an_unsuffixed_repository_and_removes_the_loop(
         failed_run_id=11,
         fix_commit="abc123",
         passing_run_id=22,
+        analysis=analysis,
     )
 
     assert result["ok"] is True
@@ -620,6 +623,7 @@ def test_finish_keeps_an_unsuffixed_repository_and_removes_the_loop(
     text = Path(result["evidence"]).read_text(encoding="utf-8")
     assert "Tracer-Cloud/opensre-ci-repair-demo" in text
     assert "Repository retained." in text
+    assert text.endswith(f"{analysis}\n")
     assert removed == ["9f4ed7a7a92f"]
 
 

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import logging
 
+from config.constants.scheduler import SCHEDULED_TASK_TRACE_KEY
 from core.agent_harness import (
     is_legacy_skill_name,
     normalize_skill_name,
@@ -54,7 +55,11 @@ def build_message(task: ScheduledTask, runners: SchedulerRunners) -> str:
     with inherit_trace_session(
         runners.host_session_id() or task.id,
         tags=(SCHEDULED_TRACE_TAG,),
-        metadata={"task_id": task.id, "task_name": task.name, "task_kind": task.kind.value},
+        metadata={
+            SCHEDULED_TASK_TRACE_KEY: task.id,
+            "task_name": task.name,
+            "task_kind": task.kind.value,
+        },
     ):
         return _build_message(task, runners)
 

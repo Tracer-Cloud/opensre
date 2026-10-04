@@ -23,6 +23,7 @@ import infrastructure.scheduling.scheduler.delivery_bundle as delivery_bundle
 import infrastructure.scheduling.scheduler.executor as scheduler_executor
 import infrastructure.scheduling.scheduler.storage.run_store as run_store
 from config.constants import OPENSRE_OPERATIONS_LOG_PATH_ENV
+from infrastructure.analytics.events import Event
 from infrastructure.observability.operations_log import read_operations
 from infrastructure.scheduling.scheduler.local_delivery import get_loop_messages
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_CHANNELS_PARAM
@@ -91,6 +92,16 @@ class _SlowFailingAdapter:
         self.calls += 1
         threading.Event().wait(_AFTER_ORIGINAL_LEASE_SECONDS)
         return False, "temporary delivery failure", ""
+
+
+class _RecordingAnalytics:
+    """Keeps every analytics event the executor captures."""
+
+    def __init__(self) -> None:
+        self.events: list[tuple[str, dict[str, Any]]] = []
+
+    def capture(self, event: str, properties: dict[str, Any] | None = None) -> None:
+        self.events.append((event, dict(properties or {})))
 
 
 def _install_fake_bundle() -> dict[Provider, _FakeAdapter]:
@@ -702,6 +713,99 @@ class TestExecutor:
         assert runs[0].attempt == 2
         assert [run.report for run in runs] == ["Scheduled report", "Scheduled report"]
         assert adapter.calls == 2
+
+    def test_run_events_tell_an_interrupted_attempt_from_its_reclaim(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """A process killed mid-tick leaves a start that only a later attempt supersedes."""
+        analytics = _RecordingAnalytics()
+        monkeypatch.setattr("infrastructure.analytics.provider.get_analytics", lambda: analytics)
+        _install_bundle({Provider.SLACK: _CrashOnceAdapter()})
+        task = ScheduledTask(
+            id="test_run_identity",
+            kind=TaskKind.MANUAL_LOOP,
+            cron="0 9 * * *",
+            provider=Provider.SLACK,
+            chat_id="C123",
+        )
+        fire_time = "2026-01-01T09:00:00Z"
+
+        with patch(
+            "infrastructure.scheduling.scheduler.executor.build_message",
+            return_value="Scheduled report",
+        ):
+            with pytest.raises(KeyboardInterrupt):
+                scheduler_executor.execute_task(task, fire_time, real_runners())
+            _expire_claim(tmp_path / "scheduler.db", task.id, fire_time)
+            assert scheduler_executor.execute_task(task, fire_time, real_runners()) is True
+
+        assert [
+            (event, props["task_id"], props["fire_time"], props["attempt"])
+            for event, props in analytics.events
+        ] == [
+            (Event.SCHEDULED_TASK_STARTED, task.id, fire_time, 1),
+            (Event.SCHEDULED_TASK_STARTED, task.id, fire_time, 2),
+            (Event.SCHEDULED_TASK_COMPLETED, task.id, fire_time, 2),
+        ]
+
+    @pytest.mark.parametrize(
+        "delivered_first", [False, True], ids=["before-delivery", "mid-delivery"]
+    )
+    def test_a_run_the_user_stops_mid_tick_ends_as_cancelled(
+        self, monkeypatch: pytest.MonkeyPatch, delivered_first: bool
+    ) -> None:
+        """Disabling a loop while its tick runs closes that attempt instead of leaving it open."""
+        from infrastructure.scheduling.scheduler.storage import get_task, update_task
+
+        analytics = _RecordingAnalytics()
+        monkeypatch.setattr("infrastructure.analytics.provider.get_analytics", lambda: analytics)
+        task = add_task(
+            ScheduledTask(
+                kind=TaskKind.MANUAL_LOOP,
+                cron="0 9 * * *",
+                provider=Provider.SLACK,
+                chat_id="C-stop",
+            )
+        )
+        fire_time = "2026-01-15T09:00:00Z"
+
+        def disable() -> None:
+            current = get_task(task.id)
+            assert current is not None
+            current.enabled = False
+            assert update_task(current)
+
+        def build_then_disable(*_args: object) -> str:
+            disable()
+            return "Scheduled report"
+
+        class _DeliverThenDisable:
+            def deliver(self, _task: ScheduledTask, _message: str) -> tuple[bool, str, str]:
+                disable()
+                return True, "", "msg-kept"
+
+        if delivered_first:
+            _install_bundle({Provider.SLACK: _DeliverThenDisable()})
+            build = patch(
+                "infrastructure.scheduling.scheduler.executor.build_message",
+                return_value="Scheduled report",
+            )
+        else:
+            _install_fake_bundle()
+            build = patch(
+                "infrastructure.scheduling.scheduler.executor.build_message",
+                side_effect=build_then_disable,
+            )
+        with build:
+            assert scheduler_executor.execute_task(task, fire_time, real_runners()) is False
+
+        assert [
+            (event, props["fire_time"], props["attempt"], props.get("error"))
+            for event, props in analytics.events
+        ] == [
+            (Event.SCHEDULED_TASK_STARTED, fire_time, 1, None),
+            (Event.SCHEDULED_TASK_CANCELLED, fire_time, 1, "disabled"),
+        ]
 
     def test_scheduler_recovery_sweep_resubmits_the_original_fire_time(
         self, tmp_path: Path

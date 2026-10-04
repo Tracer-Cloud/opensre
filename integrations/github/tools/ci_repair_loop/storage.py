@@ -9,6 +9,7 @@ import shutil
 import tempfile
 import time
 from pathlib import Path
+from typing import Any
 
 from filelock import FileLock, Timeout
 
@@ -145,3 +146,15 @@ class RepairStore:
         if re.fullmatch(r"[0-9a-f]{12}", run_id) is None:
             raise ValueError("Invalid CI repair run id.")
         return self.root / run_id
+
+    def attempt_path(self, run_id: str, number: int) -> Path:
+        """Where attempt ``number`` of a run keeps its repair output."""
+        return self.directory(run_id) / f"attempt-{number}.json"
+
+    def read_attempt(self, run_id: str, number: int) -> dict[str, Any]:
+        """One attempt's repair output, or ``{}`` when it is missing or unreadable."""
+        try:
+            record = json.loads(self.attempt_path(run_id, number).read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            return {}
+        return record if isinstance(record, dict) else {}
