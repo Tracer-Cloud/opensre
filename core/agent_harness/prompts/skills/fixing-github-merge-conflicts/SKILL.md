@@ -16,7 +16,7 @@ metadata:
   - GitHub authentication with write access to the pull request branches.
   - An installed and authenticated coding agent for conflicts git cannot merge on its own.
   - The summarize_github_pr_status and fix_github_pr_ci tools.
-  version: "1.0"
+  version: "1.1"
 ---
 
 # Fixing GitHub merge conflicts
