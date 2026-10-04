@@ -184,6 +184,13 @@ class SessionCore:
     again.
     """
 
+    skill_value_notes: dict[str, tuple[str, str]] = field(default_factory=dict)
+    """``label -> (kind, summary)`` a tool left for the skill-value recorder.
+
+    A report bullet names its insight by label; the recorder records the summary
+    stored under that label, which names no repository, instead of the reply text.
+    """
+
     task_plan: TaskPlan | None = None
     """Live execution checklist for the current workload, rendered above the
     prompt and persisted so it survives transcript compaction."""
@@ -438,6 +445,7 @@ class SessionCore:
         self.questions_already_answered.clear()
         self.skill_question_keys.clear()
         self.skills_already_prompted.clear()
+        self.skill_value_notes.clear()
         if rotate_identity:
             # Rotate session identity so the new post-reset session gets its own ID and file.
             self.session_id = str(uuid.uuid4())

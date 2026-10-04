@@ -448,6 +448,32 @@ def _github_ci_health_scan_case() -> ToolFailureCase:
     )
 
 
+def _local_repo_insights_case() -> ToolFailureCase:
+    def patch(mp: pytest.MonkeyPatch) -> None:
+        from pathlib import Path
+
+        from tools.system.local_repo_insights import analysis as mod
+
+        def one_checkout(*_args: Any, **_kwargs: Any) -> Any:
+            return mod._Candidates(checkouts=(Path("checkout"),))
+
+        mp.setattr(mod, "_candidates", one_checkout)
+        mp.setattr(mod, "collect_repo", MagicMock(side_effect=RuntimeError("git")))
+
+    def invoke() -> dict[str, Any]:
+        from tools.system.local_repo_insights.tool import analyze_local_repositories
+
+        return analyze_local_repositories(reason="requested")
+
+    return ToolFailureCase(
+        "local_repo_insights",
+        patch,
+        invoke,
+        "analyze_local_repositories",
+        "system",
+    )
+
+
 def _eks_list_clusters_case() -> ToolFailureCase:
     def patch(mp: pytest.MonkeyPatch) -> None:
         from integrations.eks.tools import eks_list_clusters_tool as mod
@@ -918,6 +944,7 @@ _TOOL_FAILURE_CASES: list[ToolFailureCase] = [
     _x_mcp_list_case(),
     _x_mcp_call_tool_case(),
     _runbook_guidance_case(),
+    _local_repo_insights_case(),
 ]
 
 
@@ -1092,6 +1119,9 @@ _MIGRATED_TOOL_NAMES: frozenset[str] = frozenset(
         "get_github_repository",
         "get_github_star_history",
         "analyze_github_ci_reliability",
+        # analyze_local_repositories reports a checkout it could not read as a
+        # warning and goes on with the others.
+        "analyze_local_repositories",
         "scan_github_ci_health",
         "schedule_ci_repair_loop",
         "get_ci_repair_loop",

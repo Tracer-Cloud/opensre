@@ -63,6 +63,8 @@ class Event(StrEnum):
     SKILL_VALUE_DELIVERED = "skill_value_delivered"
     SKILLS_RELEASE_ACTIVATED = "skills_release_activated"
     SKILL_PREREQUISITE_MISSING = "skill_prerequisite_missing"
+    WORKSPACE_SCANNED = "workspace_scanned"
+    LOCAL_REPOSITORIES_ANALYZED = "local_repositories_analyzed"
     OPENSRE_COMMIT_CREATED = "opensre_commit_created"
     OPENSRE_CI_EPOCH_RESOLVED = "opensre_ci_epoch_resolved"
 

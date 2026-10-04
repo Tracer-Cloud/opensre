@@ -35,6 +35,7 @@ EXPORTS: dict[str, str] = {
     "SCHEDULING_GITHUB_CI_REPAIRS_SKILL_NAME": "skills",
     "DELEGATING_GITHUB_CI_REPAIRS_SKILL_NAME": "skills",
     "CONNECTING_SLACK_SKILL_NAME": "skills",
+    "ANALYZING_LOCAL_REPOSITORIES_SKILL_NAME": "skills",
     "SKILLS_API_VERSION": "skills",
     "SKILLS_AUTO_UPDATE_ENV": "skills",
     "SKILLS_DIR_ENV": "skills",
