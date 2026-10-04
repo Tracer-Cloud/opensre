@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 WEEKDAY_CRON_FIELD = "mon-fri"
-"""Named weekdays avoid APScheduler/Unix cron numbering differences."""
+"""Monday to Friday in day names, the spelling a crontab ``1-5`` is translated to."""
 
 # Whether the gateway process co-hosts the scheduler loop in-process. On by
 # default (single-process deployment). Set false to run the scheduler as its own

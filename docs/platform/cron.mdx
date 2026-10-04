@@ -178,24 +178,23 @@ Standard 5-field cron expressions:
 │ ┌───────────── hour (0-23)
 │ │ ┌───────────── day of month (1-31)
 │ │ │ ┌───────────── month (1-12)
-│ │ │ │ ┌───────────── day of week (0-6, Mon–Sun)
+│ │ │ │ ┌───────────── day of week (0-7, Sunday is 0 or 7; or mon–sun)
 │ │ │ │ │
 * * * * *
 ```
 
-**Weekday numbering:** OpenSRE uses APScheduler 3.x `CronTrigger`, where
-**`0` = Monday** and **`6` = Sunday** (not the Unix cron convention where
-`0` is Sunday). Prefer `mon-fri` for weekdays to avoid confusion.
+**Weekday numbering** is the Unix cron convention: `0` and `7` are Sunday,
+`1` is Monday and `6` is Saturday, so `1-5` runs Monday to Friday. Day names
+such as `mon-fri` work too.
 
-Older weekday loops may still contain `1-5`, which runs Tuesday–Saturday.
-Check `/loops next <loop_id>`. To correct one, record its settings, stop it with
-`/loops stop <loop_id>`, then recreate it through the original scheduling command
-with the same settings and `--cron "0 9 * * mon-fri"` for weekdays at 09:00.
-For `/loops add`, you can also use `--time 09:00 --weekdays`.
-For an old Monday-only schedule, replace the final `1` with `mon` when recreating it.
-Delete the old loop with `/loops delete <loop_id>` after verifying the replacement.
-Existing schedules are not changed automatically. For a CI reliability loop,
-delete the old loop before scheduling it again; that flow reuses existing loops.
+Earlier versions counted weekdays from `0` = Monday, so a loop saved with a
+numeric weekday now runs one day earlier than before: `1-5` moves from
+Tuesday–Saturday to Monday–Friday. If you wrote numbers for the old counting on
+purpose, for example `0` for Monday, check the loop with `/loops next <loop_id>`.
+To keep its old days, record its settings, stop it with `/loops stop <loop_id>`,
+recreate it through the original scheduling command with day names, such as
+`--cron "0 9 * * mon"`, and delete the old loop with `/loops delete <loop_id>`
+once the replacement is verified.
 
 Examples:
 

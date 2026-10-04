@@ -144,7 +144,8 @@ def test_an_unreadable_store_is_reported_not_shown_as_empty(
         ("8 * * * *", "every hour"),
         ("59 3,15 * * *", "daily at 03:59 and 15:59 Europe/Warsaw"),
         ("0 8 * * mon-fri", "weekdays at 08:00 Europe/Warsaw"),
-        ("0 8 * * 1-5", "on a custom schedule"),
+        ("0 8 * * 1-5", "weekdays at 08:00 Europe/Warsaw"),
+        ("0 8 * * 0-4", "on a custom schedule"),
         ("0 0 1 * *", "on a custom schedule"),
     ],
 )
@@ -152,9 +153,9 @@ def test_cadence_reads_as_words_not_cron(cron: str, cadence: str) -> None:
     assert loops_tool._cadence(cron, "Europe/Warsaw") == cadence
 
 
-@pytest.mark.parametrize("day", [str(number) for number in range(7)])
+@pytest.mark.parametrize("day", [str(number) for number in range(8)])
 def test_a_numeric_weekday_is_named_for_the_day_the_scheduler_fires(day: str) -> None:
-    """The trigger numbers weekdays from 0 = Monday; the label must name the day it really runs."""
+    """Weekday numbers are crontab's, 0 and 7 both Sunday; the label must name the day it really runs."""
     # Arrange
     sunday = datetime(2026, 10, 4, 12, 0, tzinfo=UTC)
 

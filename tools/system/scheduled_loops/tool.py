@@ -5,13 +5,14 @@ from __future__ import annotations
 from typing import Any
 
 from config.constants.organization import organization_id
-from config.constants.scheduler import WORK_UNVERIFIED_ERROR_KIND
+from config.constants.scheduler import WEEKDAY_CRON_FIELD, WORK_UNVERIFIED_ERROR_KIND
 from config.principal import PrincipalKind
 from config.scope_context import current_scope
 from core.domain.types.tools import ToolSurface
 from core.tool import SideEffectLevel
 from core.tool_framework import tool
 from core.tool_framework.utils import tool_unavailable
+from infrastructure.scheduling.scheduler.cron_expression import day_of_week_names
 from infrastructure.scheduling.scheduler.loop_results import latest_loop_runs
 from infrastructure.scheduling.scheduler.loops import LoopSummary, summarize_loops
 from infrastructure.scheduling.scheduler.storage import get_task_store_snapshot
@@ -53,14 +54,9 @@ def _visible_to_this_turn(task: ScheduledTask) -> bool:
 
 _PURPOSE_CHARS = 160
 _REASON_CHARS = 140
-# The scheduler's CronTrigger numbers weekdays from 0 = Monday, unlike crontab's
-# 0 = Sunday, so "1" fires on Tuesdays. Labels follow the trigger, not crontab.
 _DAY_NAMES = ("Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays", "Sundays")
-_DAY_LABELS = {
-    **{str(index): name for index, name in enumerate(_DAY_NAMES)},
-    **{name[:3].lower(): name for name in _DAY_NAMES},
-}
-_WEEKDAY_RANGES = frozenset({"mon-fri", "0-4"})
+# Keyed by the day names the trigger is built from, so a label names the day it fires.
+_DAY_LABELS = {name[:3].lower(): name for name in _DAY_NAMES}
 # What each kind's runner does, for a loop with neither a description nor a prompt.
 _KIND_PURPOSES: dict[TaskKind, str] = {
     TaskKind.MANUAL_LOOP: "Runs a recurring instruction.",
@@ -100,7 +96,11 @@ def _cadence(cron: str, timezone: str) -> str:
     minute, hour, day_of_month, month, day_of_week = parts
     if (day_of_month, month) != ("*", "*"):
         return "on a custom schedule"
-    every_day = day_of_week == "*"
+    try:
+        days = day_of_week_names(day_of_week)
+    except ValueError:
+        return "on a custom schedule"
+    every_day = days == "*"
     if minute.startswith("*/") and hour == "*" and every_day:
         return f"every {minute[2:]} minutes"
     if minute == "*" and hour == "*" and every_day:
@@ -118,11 +118,11 @@ def _cadence(cron: str, timezone: str) -> str:
     zone = f" {timezone}" if timezone else ""
     if every_day:
         return f"daily at {times}{zone}"
-    if day_of_week.lower() in _WEEKDAY_RANGES:
+    if days == WEEKDAY_CRON_FIELD:
         return f"weekdays at {times}{zone}"
-    days = _DAY_LABELS.get(day_of_week.lower())
-    if days:
-        return f"{days} at {times}{zone}"
+    day_label = _DAY_LABELS.get(days)
+    if day_label:
+        return f"{day_label} at {times}{zone}"
     return "on a custom schedule"
 
 

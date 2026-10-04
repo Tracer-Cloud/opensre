@@ -291,6 +291,29 @@ def test_work_task_add_rejects_invalid_reminder_before_persistence(
     assert list_tasks(scheduler_file) == []
 
 
+def test_schedule_checkin_accepts_7_as_crontab_sunday(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Crontab writes Sunday as 0 or 7; APScheduler's own crontab parser rejects 7."""
+    # Arrange
+    scheduler_file = tmp_path / "scheduler_tasks.json"
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.storage.task_store.default_task_store_path",
+        lambda: scheduler_file,
+    )
+    monkeypatch.setattr(
+        "infrastructure.scheduling.scheduler.reload_signal.request_scheduler_reload",
+        lambda: None,
+    )
+
+    # Act
+    response = work_task_schedule_checkin(cron="0 9 * * 7", provider="slack", chat_id="C12345")
+
+    # Assert
+    assert "error" not in response
+    assert [task.cron for task in list_tasks(scheduler_file)] == ["0 9 * * 7"]
+
+
 def test_work_task_tools_lifecycle(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     work_items_file = tmp_path / "work_items.json"
     scheduler_file = tmp_path / "scheduler_tasks.json"
