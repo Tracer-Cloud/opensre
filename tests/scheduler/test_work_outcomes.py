@@ -100,19 +100,26 @@ def test_repair_schedule_pauses_only_for_an_unrepairable_bound_target(
         assert run.work_outcome.evidence["skipped"][0]["error_kind"] == kind
 
 
+def _github_cli_fails() -> dict[str, str]:
+    raise RuntimeError("gh: HTTP 502")
+
+
 @pytest.mark.parametrize(
-    "tool_kind, delivered_count, status, work_error_kind",
+    "tool_kind, other_tool_fails, delivered_count, status, work_error_kind",
     [
         # The tool verified there is nothing to do: the note-only reply is the report.
-        ("no_failing_checks", 0, "success", ""),
+        ("no_failing_checks", False, 0, "success", ""),
         # No tool verified anything: an empty reply is still a missing report.
-        (None, 0, "failed", "report_missing"),
+        (None, False, 0, "failed", "report_missing"),
+        # Another tool failed without an outcome: staying quiet would hide it.
+        ("no_failing_checks", True, 0, "failed", "report_missing"),
     ],
 )
 def test_a_quiet_sweep_tick_delivers_nothing_only_when_tools_verified_it(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     tool_kind: str | None,
+    other_tool_fails: bool,
     delivered_count: int,
     status: str,
     work_error_kind: str,
@@ -155,6 +162,21 @@ def test_a_quiet_sweep_tick_delivers_nothing_only_when_tools_verified_it(
                         input_schema={"type": "object", "properties": {}},
                         source="github",
                         run=lambda: output,
+                    )
+                ],
+                {},
+                hooks=ToolExecutionHooks(after_tool_call=outcomes.observe),
+            )
+        if other_tool_fails:
+            execute_tool_calls(
+                [ToolCall(id="comment", name="github_cli", input={})],
+                [
+                    RegisteredTool(
+                        name="github_cli",
+                        description="gh",
+                        input_schema={"type": "object", "properties": {}},
+                        source="github",
+                        run=_github_cli_fails,
                     )
                 ],
                 {},

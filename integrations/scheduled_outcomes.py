@@ -23,11 +23,16 @@ class ScheduledOutcomes:
         self._outcomes: dict[str, WorkOutcome] = {}
         self._lock = Lock()
         self._bound_target = bound_target
+        #: A tool ran and failed without a work outcome, so nothing vouches for it.
+        self._unverified_failure = False
 
     def observe(self, request: ToolExecutionRequest, result: ToolExecutionResult) -> None:
         """Record producer-owned structured evidence without interpreting report prose."""
         payload: Any = result.details
         if not isinstance(payload, dict) or "work_outcome" not in payload:
+            if result.is_error:
+                with self._lock:
+                    self._unverified_failure = True
             return
         try:
             outcome = WorkOutcome.model_validate(payload["work_outcome"])
@@ -46,6 +51,7 @@ class ScheduledOutcomes:
         text = turn.primary_response_text if text is None else text
         with self._lock:
             outcomes = tuple(self._outcomes.values())
+            unverified_failure = self._unverified_failure
         # A sweep picks its targets each tick, so a fork or closed PR it reached
         # is one ineligible target, not a reason to stop repairing the rest.
         sweep = not self._bound_target
@@ -58,9 +64,13 @@ class ScheduledOutcomes:
         terminal_block = next((item for item in work if item.terminal_block), None)
         stop_schedule = terminal_block is not None
         # A quiet agent tick replies with only its note: an empty body is the
-        # expected report once its tools verified there was nothing to do.
+        # expected report once its tools verified there was nothing to do, and no
+        # other tool failed where nobody would see it.
         verified_noop = (
-            agent_mode and bool(outcomes) and all(item.status is WorkStatus.NOOP for item in work)
+            agent_mode
+            and not unverified_failure
+            and bool(outcomes)
+            and all(item.status is WorkStatus.NOOP for item in work)
         )
         if terminal_block is not None:
             outcome = terminal_block
