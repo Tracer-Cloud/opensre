@@ -26,8 +26,12 @@ from pathlib import Path
 from typing import Any
 
 from config.constants.repository_instructions import (
+    REPOSITORY_INSTRUCTIONS_CLOSE_TAG,
+    REPOSITORY_INSTRUCTIONS_FILE_PREFIX,
     REPOSITORY_INSTRUCTIONS_FILENAME,
+    REPOSITORY_INSTRUCTIONS_HEADER_PREFIX,
     REPOSITORY_INSTRUCTIONS_MAX_BYTES,
+    REPOSITORY_INSTRUCTIONS_OPEN_TAG,
     REPOSITORY_INSTRUCTIONS_OVERRIDE_FILENAME,
     REPOSITORY_INSTRUCTIONS_READ_BYTES,
 )
@@ -62,9 +66,7 @@ class _Candidate:
 @dataclass(frozen=True)
 class _InstructionFile:
     scope: str
-    filename: str
     text: str
-    truncated: bool
 
 
 def repository_instructions_text(
@@ -170,23 +172,28 @@ def _loaded_section(
 ) -> tuple[str, int]:
     """Render ``candidates`` within ``remaining`` bytes; the file that crosses it ends the budget."""
     files: list[_InstructionFile] = []
-    omitted: list[str] = []
+    over_budget: list[str] = []
     used = 0
     for candidate in candidates:
+        name = f"{candidate.filename} in {candidate.scope}"
         if used >= remaining:
-            omitted.append(f"{candidate.filename} in {candidate.scope}")
+            over_budget.append(f"{name} (left out)")
             continue
         text, size, truncated = _prompt_text(candidate.content, remaining - used)
         if text.strip():
-            files.append(_InstructionFile(candidate.scope, candidate.filename, text, truncated))
+            files.append(_InstructionFile(candidate.scope, text))
             used += size
+            if truncated:
+                over_budget.append(f"{name} (cut)")
         elif truncated:
-            omitted.append(f"{candidate.filename} in {candidate.scope}")
+            over_budget.append(f"{name} (left out)")
         if truncated:
             used = remaining
-    if not files and not omitted:
+    if not files and not over_budget:
         return _missing_line(repository), 0
-    return _render_loaded(repository, _label(origin), files, omitted), used
+    if not files:
+        return _over_budget_line(repository, over_budget), used
+    return _render_loaded(repository, _label(origin), files, over_budget), used
 
 
 def _prompt_text(content: bytes, limit: int) -> tuple[str, int, bool]:
@@ -208,32 +215,43 @@ def _prompt_text(content: bytes, limit: int) -> tuple[str, int, bool]:
 
 
 def _render_loaded(
-    repository: str, origin: str, files: Sequence[_InstructionFile], omitted: Sequence[str]
+    repository: str, origin: str, files: Sequence[_InstructionFile], over_budget: Sequence[str]
 ) -> str:
-    header = (
-        f"REPOSITORY INSTRUCTIONS (AGENTS.md for {repository}, loaded by OpenSRE from {origin}):"
-    )
-    parts: list[str] = []
-    for item in files:
-        parts.append(
-            f"# AGENTS.md instructions for {item.scope}\n\n"
-            f"<INSTRUCTIONS>\n{item.text.rstrip()}\n</INSTRUCTIONS>"
-        )
-        if item.truncated:
-            parts.append(
-                f"[OpenSRE cut this file at its {_BUDGET} AGENTS.md budget. Read the rest "
-                f"of {item.filename} in {item.scope} before changing files it covers.]"
-            )
-    if omitted:
-        parts.append(
-            f"[Left out by OpenSRE's {_BUDGET} AGENTS.md budget: {', '.join(omitted)}. "
+    """The header line, the budget note if any, then one wrapper per file.
+
+    The section ends at its last closing wrapper, which is how analytics exports
+    find the text to leave out (``infrastructure.safety``); keep any note above
+    the wrappers.
+    """
+    lines = [
+        f"{REPOSITORY_INSTRUCTIONS_HEADER_PREFIX}{repository}, loaded by OpenSRE from {origin}):"
+    ]
+    if over_budget:
+        lines.append(
+            f"[Over OpenSRE's {_BUDGET} AGENTS.md budget: {', '.join(over_budget)}. "
             "Read them before changing files they cover.]"
         )
-    return "\n".join((header, "\n\n".join(parts)))
+    lines.append(
+        "\n\n".join(
+            f"{REPOSITORY_INSTRUCTIONS_FILE_PREFIX}{item.scope}\n\n"
+            f"{REPOSITORY_INSTRUCTIONS_OPEN_TAG}\n{item.text.rstrip()}\n"
+            f"{REPOSITORY_INSTRUCTIONS_CLOSE_TAG}"
+            for item in files
+        )
+    )
+    return "\n".join(lines)
 
 
 def _missing_line(repository: str) -> str:
     return f"REPOSITORY INSTRUCTIONS: no AGENTS.md found for {repository}."
+
+
+def _over_budget_line(repository: str, over_budget: Sequence[str]) -> str:
+    return (
+        f"REPOSITORY INSTRUCTIONS: AGENTS.md for {repository} did not fit OpenSRE's "
+        f"{_BUDGET} budget ({', '.join(over_budget)}). Read the repository's AGENTS.md "
+        "before changing its files."
+    )
 
 
 def _unchecked_line(repository: str, reason: str) -> str:

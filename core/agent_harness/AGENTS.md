@@ -173,7 +173,12 @@ before `AGENTS.md`), else the default branch's root file read through
 `infrastructure.harness_providers.repository_instructions` (vendor sources
 register from `integrations/harness_adapters.py`). One 32 KiB budget; text is
 redacted. The system prompt's AGENTS.md sentence relies on this block, so never
-gate it by surface or skill discovery. Tests keep the sources unregistered
+gate it by surface or skill discovery. Analytics and trace exports of the
+system prompt replace each section's body with a placeholder
+(`infrastructure/safety/repository_instructions_redaction.py`), found by the
+header line and the last closing wrapper: keep the layout constants in
+`config/constants/repository_instructions.py` shared and any note above the
+wrappers. Tests keep the sources unregistered
 (`tests/harness_providers_plugin.py`) and register fakes.
 
 Do **not** duplicate the default port stack outside `DefaultHeadlessBuild`.

@@ -146,10 +146,15 @@ def test_one_budget_cuts_the_crossing_file_and_names_the_files_left_out(tmp_path
     text = _load(root / "svc" / "api")
 
     # Assert: Codex's rule — fill the budget in order, cut the file that crosses it.
+    # The note sits under the header, so the section still ends at a closing wrapper.
     bodies = _BODY.findall(text)
     assert bodies == ["a" * 20_000, "b" * (REPOSITORY_INSTRUCTIONS_MAX_BYTES - 20_000)]
-    assert f"Read the rest of AGENTS.md in {root / 'svc'} before changing" in text
-    assert f"budget: AGENTS.md in {root / 'svc' / 'api'}. Read them" in text
+    assert text.splitlines()[1] == (
+        f"[Over OpenSRE's 32 KiB AGENTS.md budget: AGENTS.md in {root / 'svc'} (cut), "
+        f"AGENTS.md in {root / 'svc' / 'api'} (left out). Read them before changing files "
+        "they cover.]"
+    )
+    assert text.endswith("</INSTRUCTIONS>\n\n")
     assert "c" * 10 not in text
 
 

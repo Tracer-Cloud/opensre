@@ -488,9 +488,13 @@ EXPORTS: dict[str, str] = {
     # repository_instructions
     "REPOSITORY_INSTRUCTIONS_CACHE_TTL_SECONDS": "repository_instructions",
     "REPOSITORY_INSTRUCTIONS_CHECKOUT_TTL_SECONDS": "repository_instructions",
+    "REPOSITORY_INSTRUCTIONS_CLOSE_TAG": "repository_instructions",
     "REPOSITORY_INSTRUCTIONS_FETCH_TIMEOUT_SECONDS": "repository_instructions",
     "REPOSITORY_INSTRUCTIONS_FILENAME": "repository_instructions",
+    "REPOSITORY_INSTRUCTIONS_FILE_PREFIX": "repository_instructions",
+    "REPOSITORY_INSTRUCTIONS_HEADER_PREFIX": "repository_instructions",
     "REPOSITORY_INSTRUCTIONS_MAX_BYTES": "repository_instructions",
+    "REPOSITORY_INSTRUCTIONS_OPEN_TAG": "repository_instructions",
     "REPOSITORY_INSTRUCTIONS_OVERRIDE_FILENAME": "repository_instructions",
     "REPOSITORY_INSTRUCTIONS_READ_BYTES": "repository_instructions",
     "REPOSITORY_INSTRUCTIONS_RETRY_SECONDS": "repository_instructions",
