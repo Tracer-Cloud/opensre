@@ -102,5 +102,7 @@ def test_new_records_the_carried_conversation_in_the_new_session_file() -> None:
 
     records = store.read(session.session_id)
     assert [(r["role"], r["content"]) for r in records if r["type"] == "message"] == messages
+    # Flagged as carried: the turns belong to the session /new rotated out of.
+    assert all(r["metadata"]["carried"] is True for r in records if r["type"] == "message")
     carried = [r for r in records if r.get("custom_type") == "turn_evidence"]
     assert [r["content"] for r in carried] == [evidence[0].to_json()]

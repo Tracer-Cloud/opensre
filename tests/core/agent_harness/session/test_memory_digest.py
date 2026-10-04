@@ -17,6 +17,7 @@ from core.agent_harness.session.memory_digest import (
     build_session_digest,
 )
 from core.agent_harness.session.memory_turns import DemoTurns
+from core.agent_harness.session.persistence.contracts import CARRIED_MESSAGE_METADATA_KEY
 from core.agent_harness.session.persistence.jsonl_store import JsonlSessionStore
 from core.agent_harness.session.session_core import SessionCore
 from core.state.transcript_window import SESSION_SUMMARY_PREFIX
@@ -248,3 +249,35 @@ def test_sessions_without_a_log_use_the_transcript_minus_demo_turns() -> None:
     assert "eks-prod-1" in digest.text
     assert "red 30%" not in digest.text
     assert "opensre-ci-repair-demo" not in digest.text
+
+
+def test_turns_new_carried_in_stay_with_the_session_they_came_from(
+    log: tuple[JsonlSessionStore, str],
+) -> None:
+    """``/new`` copies the conversation; its demo turns were fenced by the old session only."""
+    store, session_id = log
+    carried = [("user", "yes"), ("assistant", "Seeded octocat/opensre-ci-repair-demo-ab12.")]
+    for role, content in carried:
+        store.append_message(
+            session_id,
+            role=role,
+            content=content,
+            metadata={"kind": "chat", CARRIED_MESSAGE_METADATA_KEY: True},
+        )
+
+    # Closed right after /new: the transcript still ends with the carried exchange.
+    right_after = build_session_digest(session_id, demo=_NO_DEMO, transcript=carried)
+    _turn(log, "check the payments deploy", "The deploy is healthy.", "t-real")
+    later = build_session_digest(
+        session_id,
+        demo=_NO_DEMO,
+        transcript=[
+            *carried,
+            ("user", "check the payments deploy"),
+            ("assistant", "The deploy is healthy."),
+        ],
+    )
+
+    assert right_after.turns == 0
+    assert "opensre-ci-repair-demo" not in right_after.text
+    assert later.text == "USER: check the payments deploy\nASSISTANT: The deploy is healthy."

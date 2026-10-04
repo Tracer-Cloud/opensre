@@ -39,6 +39,10 @@ class RestoreContextKey(StrEnum):
 #: ``custom_message`` type of the per-turn evidence record (tool calls and
 #: bounded results) that structured history replays on resume.
 TURN_EVIDENCE_CUSTOM_TYPE = "turn_evidence"
+#: Message ``metadata`` flag on a message ``/new`` copied in from the session it
+#: rotated out of. That session already owns the turn, so memory extraction,
+#: whose demo fence knows only this session's turns, skips it.
+CARRIED_MESSAGE_METADATA_KEY = "carried"
 
 # Turn kinds that represent user-initiated chat messages. Session.record()
 # is called with the turn kind, not a normalized "chat" label, so this set must

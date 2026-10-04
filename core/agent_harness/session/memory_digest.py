@@ -15,6 +15,8 @@ transcript text.
 Demo turns are dropped, and so are summaries of earlier turns (compaction
 records and session-summary messages): a summary blends many turns, so the
 demo fence cannot vouch for it, and the log keeps the turns it summarizes.
+Turns ``/new`` carried in from the previous session are dropped too: that
+session's own passes, with its demo fence, already covered them.
 Every piece is passed through the memory redactor, each tool result is
 capped, and when the whole digest is over budget the newest turns are kept.
 """
@@ -30,6 +32,7 @@ from pathlib import Path
 from typing import Any
 
 from core.agent_harness.session.memory_turns import DemoTurns, normalize_user_text
+from core.agent_harness.session.persistence.contracts import CARRIED_MESSAGE_METADATA_KEY
 from core.agent_harness.session.persistence.paths import session_path
 from core.domain.memory import EvidenceCorpus, redact_memory_unsafe_text
 from core.state.transcript_window import is_summary_message
@@ -64,6 +67,8 @@ class _Turn:
     turn_id: str | None = None
     assistant_text: str = ""
     tools: list[str] = field(default_factory=list)
+    #: Copied in by ``/new`` from the session it rotated out of.
+    carried: bool = False
 
 
 @dataclass(frozen=True)
@@ -165,6 +170,9 @@ def _turns_from_log(records: Sequence[dict[str, Any]]) -> list[_Turn]:
             content = str(record.get("content") or "")
             metadata = record.get("metadata")
             turn_id = metadata.get("turn_id") if isinstance(metadata, dict) else None
+            carried = (
+                isinstance(metadata, dict) and metadata.get(CARRIED_MESSAGE_METADATA_KEY) is True
+            )
             if is_summary_message((str(role), content)):
                 continue
             if role == "user":
@@ -174,11 +182,12 @@ def _turns_from_log(records: Sequence[dict[str, Any]]) -> list[_Turn]:
                     user_text=content,
                     turn_id=turn_id if isinstance(turn_id, str) else None,
                     tools=pending_tools,
+                    carried=carried,
                 )
                 pending_tools = []
             elif role == "assistant":
                 if open_turn is None:
-                    open_turn = _Turn(tools=pending_tools)
+                    open_turn = _Turn(tools=pending_tools, carried=carried)
                     pending_tools = []
                 open_turn.assistant_text = content
                 turns.append(open_turn)
@@ -368,7 +377,10 @@ def build_session_digest(
         logged = _turns_from_log(records)
         if any(turn.user_text for turn in logged):
             newest = _newest_turn(transcript, demo)
-            digest = _assemble(_through_newest(logged, newest), demo, max_chars)
+            # Matched against carried turns too, so a transcript that still ends
+            # with a carried exchange never brings it back as this session's turn.
+            own = [turn for turn in _through_newest(logged, newest) if not turn.carried]
+            digest = _assemble(own, demo, max_chars)
             return replace(digest, started_at=_session_started(records))
     return _assemble(_turns_from_transcript(transcript), demo, max_chars)
 
