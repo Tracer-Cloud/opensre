@@ -393,3 +393,35 @@ def test_a_plan_update_does_not_rescue_a_restated_closing() -> None:
 
     # Assert
     assert chunks == []
+
+
+def test_a_verify_reread_of_the_same_record_is_shown_once() -> None:
+    """A re-read that returns the delegated report again must not print it twice."""
+    from core.agent_harness.turns.action_driver import _generic_chunks
+    from core.llm.types import ToolCall
+
+    report = "acme/demo#1 success: task t1, failed run 11, fix abc, passing run 12."
+
+    class _ToolResult:
+        def __init__(self, text: str) -> None:
+            self.details = {"response_text": text}
+            self.content = text
+            self.is_error = False
+
+    probe = ToolCall(id="1", name="ask_hosted_gateway", input={"prompt": "probe"})
+    repair = ToolCall(id="2", name="ask_hosted_gateway", input={"prompt": "repair"})
+    reread = ToolCall(id="3", name="ask_hosted_gateway", input={"prompt_id": "p1"})
+
+    class _Result:
+        tool_results = [
+            (probe, _ToolResult("Login acme; classic PAT.")),
+            (repair, _ToolResult(report)),
+            (reread, _ToolResult(report)),
+        ]
+        executed = tool_results
+        planned = [probe, repair, reread]
+
+    chunks = _generic_chunks(_Result())
+
+    assert sum(report in chunk for chunk in chunks) == 1
+    assert any("Login acme" in chunk for chunk in chunks)

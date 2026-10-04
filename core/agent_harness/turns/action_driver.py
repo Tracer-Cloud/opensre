@@ -508,11 +508,17 @@ def _has_quiet_shell_run(result: Any) -> bool:
 
 
 def _generic_chunks(result: Any) -> list[str]:
-    """User-facing text for each generic tool result, in call order."""
+    """User-facing text for each generic tool result, in call order.
+
+    A result whose text repeats an earlier one exactly (a verify step that
+    re-reads the same record) is shown once.
+    """
     chunks: list[str] = []
+    seen: set[str] = set()
     for tool_call, tool_result in _generic_tool_results(result):
         formatted = format_generic_tool_payload(tool_call, tool_result)
-        if formatted:
+        if formatted and formatted.strip() not in seen:
+            seen.add(formatted.strip())
             chunks.append(formatted)
     return chunks
 
