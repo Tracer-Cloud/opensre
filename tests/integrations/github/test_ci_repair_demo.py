@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import os
 import shutil
 import subprocess
@@ -47,6 +48,7 @@ class _RepoState:
         self.refs: dict[str, str] = {}
         self.commits: dict[str, dict[str, str]] = {}
         self.trees: dict[str, dict[str, str]] = {}
+        self.parents: dict[str, list[str]] = {}
         self.prs: list[dict[str, Any]] = []
         self.private = True
         self.fork = False
@@ -102,6 +104,10 @@ class _Api:
     @property
     def prs(self) -> list[dict[str, Any]]:
         return self._primary.prs
+
+    @property
+    def parents(self) -> dict[str, list[str]]:
+        return self._primary.parents
 
     @property
     def private(self) -> bool:
@@ -162,6 +168,13 @@ class _Api:
             return [{"name": name.split("/", 1)[0], "type": "file"} for name in state.files("main")]
         if tail == "contents/.opensre-demo.json":
             return {"content": state.files("main")[".opensre-demo.json"]}
+        if tail == "contents/calculator.py":
+            assert params is not None
+            text = state.commits.get(str(params["ref"]), {}).get("calculator.py")
+            if text is None:
+                raise GitHubApiError("missing", status_code=HTTPStatus.NOT_FOUND, path=path)
+            # GitHub wraps the base64 at 60 columns, as encodebytes does.
+            return {"encoding": "base64", "content": base64.encodebytes(text.encode()).decode()}
         if tail.startswith("branches/"):
             branch = tail.split("/", 1)[1]
             sha = state.refs.get(branch)
@@ -185,6 +198,7 @@ class _Api:
             assert body is not None
             sha = f"c{len(state.commits)}"
             state.commits[sha] = dict(state.trees[str(body["tree"])])
+            state.parents[sha] = [str(parent) for parent in body["parents"]]
             return {"sha": sha}
         if method == "PATCH" and tail.startswith("git/refs/heads/"):
             assert body is not None
@@ -346,6 +360,8 @@ def test_seed_reuses_an_open_demo_pull_request() -> None:
     api = _Api(missing=False)
     api._ensure_readme()
     api.commits["readme"].update(baseline_files())
+    api.commits["existing-head"] = {**baseline_files(), "calculator.py": FAILING_CALCULATOR}
+    api.refs[FAILING_BRANCH] = "existing-head"
     api.prs.append(
         {
             "number": 7,
@@ -366,11 +382,51 @@ def test_seed_reuses_an_open_demo_pull_request() -> None:
     result = seed_demo(api, _OWNER, _REPO, sleep=_forbidden_sleep, now=lambda: 0.0)
 
     assert result["reused"] is True
+    assert result["rearmed"] is False
     assert result["pr_number"] == 7
     assert result["head_sha"] == "existing-head"
     assert result["failed_run_id"] == 55
     assert result["created_repository"] is False
-    assert not any(method == "POST" for method, _path in api.calls)
+    assert not any(method in {"POST", "PATCH"} for method, _path in api.calls)
+
+
+def test_a_repaired_demo_pull_request_is_rearmed_on_top_of_its_fix() -> None:
+    """A reused demo whose repair landed gets one failing commit; the fix is not rewritten."""
+    api = _initialized_demo()
+    api.commits["fix-head"] = dict(baseline_files())
+    api.refs[FAILING_BRANCH] = "fix-head"
+    api.prs.append(
+        {
+            "number": 1,
+            "state": "open",
+            "head_label": f"{_OWNER}:{FAILING_BRANCH}",
+            "head": {"sha": "fix-head"},
+        }
+    )
+    rearm = f"c{len(api.commits)}"
+    # The repaired head's run passed; only the new commit's run fails.
+    api.runs.append(
+        {"id": 11, "conclusion": "success", "event": "pull_request", "head_sha": "fix-head"}
+    )
+    api.runs.append({"id": 12, "conclusion": "failure", "event": "pull_request", "head_sha": rearm})
+
+    result = seed_demo(api, _OWNER, _REPO, sleep=_forbidden_sleep, now=lambda: 0.0)
+
+    assert result["reused"] is True
+    assert result["rearmed"] is True
+    assert result["pr_number"] == 1
+    assert result["head_sha"] == rearm
+    assert result["failed_run_id"] == 12
+    assert api.parents[rearm] == ["fix-head"]
+    assert api.refs[FAILING_BRANCH] == rearm
+    assert api._files(FAILING_BRANCH)["calculator.py"] == FAILING_CALCULATOR
+    assert api._files(FAILING_BRANCH)["test_calculator.py"] == TEST_CALCULATOR
+    path = f"repos/{_OWNER}/{_REPO}"
+    assert ("PATCH", f"{path}/git/refs/heads/{FAILING_BRANCH}") in api.calls
+    assert ("POST", f"{path}/git/refs") not in api.calls
+    assert ("POST", f"{path}/pulls") not in api.calls
+    assert seeded.was_seeded_here(1, _OWNER, _REPO, 1, rearm)
+    assert not seeded.was_seeded_here(1, _OWNER, _REPO, 1, "fix-head")
 
 
 def test_seed_leaves_an_unrelated_repository_and_seeds_a_fresh_name(
