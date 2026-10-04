@@ -113,8 +113,9 @@ store in the background:
 - **Archives** demo, sample, and synthetic memories, and memories neither
   updated nor used for 120 days. Your profile and preferences never expire.
 - **Merges duplicates** — two repository memories about the same `owner/repo`
-  become one: the most recently updated is kept, gains a one-line pointer to
-  the other, and the other is archived.
+  become one: the most recently updated is kept, the other's notes are added
+  to it under a "Merged from" heading (lines it already has are not repeated),
+  and the other's file is archived.
 - **Writes `memory_summary.md`** — a short summary of who you are, your
   preferences, your repositories, and recurring failures and fixes, shown to
   the agent above the index. It is skipped when no LLM is configured.

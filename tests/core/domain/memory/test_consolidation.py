@@ -27,6 +27,7 @@ from core.domain.memory import (
 )
 from core.domain.memory.consolidation_state import read_consolidation_state
 from core.domain.memory.files import ARCHIVE_DIRNAME, INDEX_FILENAME, SUMMARY_FILENAME
+from core.domain.memory.models import MAX_BODY_CHARS, TRUNCATION_MARKER
 
 NOW = datetime(2026, 10, 4, 12, 0, tzinfo=UTC)
 
@@ -99,16 +100,20 @@ def test_recent_use_keeps_an_old_memory_alive(monkeypatch: pytest.MonkeyPatch) -
     assert load_memory("old-vpn-host") is not None
 
 
-def test_duplicate_repository_memories_merge_into_the_newest(
+def test_duplicate_repository_memories_merge_into_the_newest_without_losing_notes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """The kept memory is the newest, but the older one's notes must survive in it."""
     _save_at(
         monkeypatch,
         NOW - timedelta(days=21),
         slug="repository-opensre",
         memory_type="repository",
         description="Tracer-Cloud/opensre has a two-minute local CI-repair loop for PR #6148.",
-        body="### Tracer-Cloud/opensre\n- Default branch: `main`",
+        body=(
+            "### Tracer-Cloud/opensre\n- Default branch: `main`\n\n\n"
+            "- CI runs on GitHub Actions\n- Windows test jobs are flaky"
+        ),
     )
     _save_at(
         monkeypatch,
@@ -116,7 +121,7 @@ def test_duplicate_repository_memories_merge_into_the_newest(
         slug="repository-tracer-cloud-opensre",
         memory_type="repository",
         description="Tracer-Cloud/opensre is a repository the user selected for analysis.",
-        body="# Tracer-Cloud/opensre",
+        body="# Tracer-Cloud/opensre\n- CI runs on GitHub Actions",
     )
     _save_at(
         monkeypatch,
@@ -132,10 +137,50 @@ def test_duplicate_repository_memories_merge_into_the_newest(
     assert _archived() == {"repository-opensre"}
     kept = load_memory("repository-tracer-cloud-opensre")
     assert kept is not None
-    pointer = kept.body.splitlines()[-1]
-    assert "`repository-opensre`" in pointer
-    assert "two-minute local CI-repair loop" in pointer
+    assert kept.body == (
+        "# Tracer-Cloud/opensre\n"
+        "- CI runs on GitHub Actions\n"
+        "\n"
+        "## Merged from repository-opensre (2026-09-13)\n"
+        "### Tracer-Cloud/opensre\n"
+        "- Default branch: `main`\n"
+        "\n"
+        "- Windows test jobs are flaky"
+    )
     assert load_memory("repository-opensre-webapp") is not None
+
+
+def test_a_merge_keeps_the_kept_body_whole_and_cuts_only_the_merged_part(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    own_body = "# acme/payments\n" + "\n".join(f"- note {index:04d}" for index in range(700))
+    _save_at(
+        monkeypatch,
+        NOW - timedelta(days=9),
+        slug="repo-acme-payments-old",
+        memory_type="repository",
+        description="acme/payments deploys from release",
+        body="\n".join(f"- older note {index:04d}" for index in range(300)),
+    )
+    _save_at(
+        monkeypatch,
+        NOW - timedelta(days=1),
+        slug="repository-acme-payments",
+        memory_type="repository",
+        description="acme/payments owns the checkout API",
+        body=own_body,
+    )
+
+    consolidate_memories(now=NOW)
+
+    kept = load_memory("repository-acme-payments")
+    assert kept is not None
+    assert len(kept.body) <= MAX_BODY_CHARS
+    assert kept.body.startswith(own_body)
+    assert "## Merged from repo-acme-payments-old" in kept.body
+    assert kept.body.endswith(TRUNCATION_MARKER)
+    archived = (memory_dir() / ARCHIVE_DIRNAME / "repo-acme-payments-old.md").read_text()
+    assert "- older note 0299" in archived
 
 
 def test_runs_once_per_cooldown_and_is_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -156,7 +201,7 @@ def test_runs_once_per_cooldown_and_is_idempotent(monkeypatch: pytest.MonkeyPatc
     assert (again.archived, again.merged) == ((), ())
     kept = load_memory("repository-tracer-cloud-opensre")
     assert kept is not None
-    assert kept.body.count("Merged duplicate") == 1
+    assert kept.body.count("## Merged from") == 1
 
 
 def test_archived_and_derived_files_are_never_read_as_live_memories(

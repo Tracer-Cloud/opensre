@@ -5,8 +5,9 @@ Two steps:
 1. **Deterministic**, under the memory lock: archive fenced demo/sample
    memories and memories neither updated nor used for 120 days (``user`` and
    ``preference`` memories never age out), and merge repository memories
-   about the same ``owner/repo`` — the most recently updated one is kept, gains
-   a one-line pointer to the other, and the other is archived.
+   about the same ``owner/repo`` — the most recently updated one is kept, the
+   others' bodies are appended to it under ``## Merged from`` headings, and the
+   others are archived.
 2. **Summary**, optional: an injected summarizer (an LLM on the harness side)
    turns the live memories and recent session summaries into
    ``memory_summary.md``. The lock is not held while it runs, and it is skipped
@@ -20,7 +21,7 @@ from __future__ import annotations
 import hashlib
 import logging
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -35,7 +36,13 @@ from core.domain.memory.consolidation_state import (
 )
 from core.domain.memory.fence import is_fenced_record
 from core.domain.memory.files import memory_dir, memory_lock
-from core.domain.memory.models import PERSONAL_MEMORY_TYPES, MemoryRecord, MemoryType
+from core.domain.memory.models import (
+    MAX_BODY_CHARS,
+    PERSONAL_MEMORY_TYPES,
+    TRUNCATION_MARKER,
+    MemoryRecord,
+    MemoryType,
+)
 from core.domain.memory.safety import find_memory_safety_issues, redact_memory_unsafe_text
 from core.domain.memory.store import (
     build_record,
@@ -64,6 +71,7 @@ _REPOSITORY_ID_RE = re.compile(
 )
 _NOT_REPOSITORIES = frozenset({"and/or", "client/server", "input/output", "read/write"})
 _SUBJECT_BODY_LINES = 3
+_SECTION_GAP = "\n\n"
 
 
 @dataclass(frozen=True)
@@ -127,15 +135,52 @@ def repository_subject(record: MemoryRecord) -> str | None:
     return None
 
 
-def _pointer_line(duplicate: MemoryRecord) -> str:
-    return (
-        f"- Merged duplicate `{duplicate.slug}` (updated {duplicate.updated_at[:10]}, "
-        f"archived in .archive/): {duplicate.description}"
-    )
+def _without_blank_runs(lines: list[str]) -> list[str]:
+    """``lines`` without leading or trailing blank lines and with blank runs collapsed."""
+    tidy: list[str] = []
+    for line in lines:
+        if not line.strip() and (not tidy or not tidy[-1].strip()):
+            continue
+        tidy.append(line)
+    while tidy and not tidy[-1].strip():
+        tidy.pop()
+    return tidy
+
+
+def merged_body(kept: MemoryRecord, duplicates: Sequence[MemoryRecord]) -> str:
+    """``kept``'s body, then each duplicate's body under a ``## Merged from`` heading.
+
+    The heading names the duplicate and the day it was last updated. A line
+    already present anywhere above (ignoring surrounding whitespace) is not
+    repeated. The kept body always survives whole: when the result would pass
+    :data:`MAX_BODY_CHARS`, only the merged-in part is cut, ending in the
+    truncation marker; the archived files keep everything.
+    """
+    base = kept.body.strip()
+    seen = {line.strip() for line in base.splitlines() if line.strip()}
+    sections: list[str] = []
+    for duplicate in duplicates:
+        fresh: list[str] = []
+        for line in duplicate.body.strip().splitlines():
+            key = line.strip()
+            if key in seen:
+                continue
+            if key:
+                seen.add(key)
+            fresh.append(line.rstrip())
+        heading = f"## Merged from {duplicate.slug} ({duplicate.updated_at[:10]})"
+        sections.append("\n".join((heading, *_without_blank_runs(fresh))))
+    addition = "\n\n".join(sections)
+    room = MAX_BODY_CHARS - len(base) - len(_SECTION_GAP)
+    if len(addition) > room:
+        if room <= len(TRUNCATION_MARKER):
+            return base
+        addition = addition[: room - len(TRUNCATION_MARKER)].rstrip() + TRUNCATION_MARKER
+    return f"{base}{_SECTION_GAP}{addition}" if addition else base
 
 
 def _merge_duplicates_unlocked(records: list[MemoryRecord], now: datetime) -> list[tuple[str, str]]:
-    """Keep the newest memory per repository subject and archive the others."""
+    """Keep the newest memory per repository subject, fold the others into it, archive them."""
     groups: dict[str, list[MemoryRecord]] = {}
     for record in records:
         subject = repository_subject(record)
@@ -147,13 +192,12 @@ def _merge_duplicates_unlocked(records: list[MemoryRecord], now: datetime) -> li
             continue
         group.sort(key=lambda record: (record.updated_at, record.slug), reverse=True)
         kept, duplicates = group[0], group[1:]
-        pointers = "\n".join(_pointer_line(duplicate) for duplicate in duplicates)
         try:
             combined = build_record(
                 slug=kept.slug,
                 memory_type=kept.memory_type,
                 description=kept.description,
-                body=f"{kept.body.rstrip()}\n\n{pointers}",
+                body=merged_body(kept, duplicates),
                 created_at=kept.created_at,
                 updated_at=now.isoformat(timespec="seconds"),
                 source=kept.source,
@@ -280,5 +324,6 @@ __all__ = [
     "ConsolidationResult",
     "Summarizer",
     "consolidate_memories",
+    "merged_body",
     "repository_subject",
 ]
