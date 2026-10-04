@@ -14,3 +14,12 @@ def test_agent_selected_sessions_picker_is_deferred_to_exclusive_stdin_turn() ->
     assert _slash_drives_interactive_picker(
         "/sessions", [], session=session, is_tty=True, ports=ports
     )
+
+
+def test_agent_selected_tools_picker_is_deferred_to_exclusive_stdin_turn() -> None:
+    session = SimpleNamespace(terminal=object())
+    ports = SimpleNamespace(tty_interactive=lambda: True)
+
+    assert _slash_drives_interactive_picker(
+        "/tools", ["list"], session=session, is_tty=True, ports=ports
+    )

@@ -44,6 +44,8 @@ def test_turn_needs_exclusive_stdin_for_bare_integration_menu(
     assert loop_input_policy.turn_needs_exclusive_stdin("/loops messages", session) is True
     assert loop_input_policy.turn_needs_exclusive_stdin("/loops show", session) is True
     assert loop_input_policy.turn_needs_exclusive_stdin("/loops show abc123", session) is True
+    assert loop_input_policy.turn_needs_exclusive_stdin("/tools list", session) is True
+    assert loop_input_policy.turn_needs_exclusive_stdin("/tools ls", session) is True
     assert loop_input_policy.turn_needs_exclusive_stdin("/theme blue", session) is True
     assert loop_input_policy.turn_needs_exclusive_stdin("/verify", session) is True
     assert loop_input_policy.turn_needs_exclusive_stdin("/verify datadog", session) is False

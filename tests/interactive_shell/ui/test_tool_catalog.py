@@ -288,6 +288,29 @@ class TestListToolsSlashCommand:
         assert "action" in out
         assert "chat" in out
 
+    def test_interactive_list_opens_browser(self) -> None:
+        console, buf = self._capture()
+        entries = [
+            ToolCatalogEntry("first", ("chat",), "First description", "", "query: string"),
+            ToolCatalogEntry(
+                "second", ("chat", "action"), "Second [bold]description[/bold]", "", "id: integer"
+            ),
+        ]
+        with (
+            patch(
+                "surfaces.interactive_shell.command_registry.tools_cmds.build_tool_catalog",
+                return_value=entries,
+            ),
+            patch(
+                "surfaces.interactive_shell.command_registry.tools_cmds.repl_tty_interactive",
+                return_value=True,
+            ),
+            patch("surfaces.interactive_shell.command_registry.tools_cmds.browse_tools") as browser,
+        ):
+            assert _cmd_tools(Session(), console, ["list"]) is True
+        browser.assert_called_once_with(entries)
+        assert buf.getvalue() == ""
+
     def test_live_catalog_includes_telegram_send_message(self) -> None:
         names = {entry.name for entry in build_tool_catalog()}
         assert "telegram_send_message" in names

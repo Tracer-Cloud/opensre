@@ -10,11 +10,17 @@ from surfaces.interactive_shell.command_registry.types import (
 )
 from surfaces.interactive_shell.runtime import Session
 from surfaces.interactive_shell.ui import render_tools_table
+from surfaces.interactive_shell.ui.tool_picker import browse_tools
+from surfaces.shared.terminal.components.choice_menu import repl_tty_interactive
 from surfaces.shared.terminal.tables.tool_catalog import build_tool_catalog
 
 
 def _list_tools(_session: Session, console: Console, _args: list[str]) -> bool:
-    render_tools_table(console, build_tool_catalog())
+    entries = build_tool_catalog()
+    if not entries or not repl_tty_interactive():
+        render_tools_table(console, entries)
+        return True
+    browse_tools(entries)
     return True
 
 
