@@ -17,11 +17,7 @@ from config.account import (
     resolve_account_token,
     save_account_record,
 )
-from config.account_credits import (
-    AccountCredits,
-    parse_credit_balance_payload,
-    remember_session_credits,
-)
+from config.account_credits import AccountCredits, parse_credit_balance_payload
 from config.constants.account import (
     OPENSRE_ACCOUNT_HTTP_TIMEOUT_SECONDS,
     OPENSRE_ACCOUNT_SESSION_PATH,
@@ -170,15 +166,11 @@ def account_status(*, app_url: str | None = None) -> AccountStatus:
                 "OpenSRE could not save the current hosted-model state.",
             )
     provider = f"{refreshed_record.llm_provider} ({refreshed_record.llm_model})"
-    credits = parse_credit_balance_payload(payload)
-    if credits is not None and app_url is None:
-        # Keyed like ``fetch_hosted_credits()`` so the first turn reuses this read.
-        remember_session_credits(credits, token=token, app_url=record.app_url)
     return AccountStatus(
         AccountSessionState.ACTIVE,
         refreshed_record,
         f"Authenticated with OpenSRE; LLM provider: {provider}.",
-        credits,
+        parse_credit_balance_payload(payload),
     )
 
 

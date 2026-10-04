@@ -145,13 +145,16 @@ def test_first_turn_warmup_waits_for_the_startup_menu_to_draw(
     assert events == ["tools ready", "menu queued"]
 
 
-def test_launch_without_a_startup_menu_releases_held_work_at_once(
+def test_launch_without_a_startup_menu_leaves_the_release_to_the_controller(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """The controller releases once its jobs are held, so they all get the settle delay."""
     ran = threading.Event()
 
     def shell_started(work: DeferredStartupWork) -> None:
         work.defer("snapshot", ran.set)
+        assert not ran.wait(0.3)
+        work.release()
         assert ran.wait(_WAIT_SECONDS)
 
     _boot(monkeypatch, Session(), shell_started)
@@ -212,7 +215,8 @@ async def test_launch_snapshots_go_to_the_deferral_instead_of_starting_with_the_
     work.defer("marker", done.set)
     work.release()
     assert done.wait(_WAIT_SECONDS)
-    assert started == ["snapshot", "scheduler"]
+    # The scheduler check runs first: an exit during the snapshot must not skip it.
+    assert started == ["scheduler", "snapshot"]
 
 
 def test_tools_ready_returns_only_after_the_registry_load_finished(

@@ -276,27 +276,6 @@ def fetch_hosted_credits(*, app_url: str | None = None, fresh: bool = False) -> 
     return read
 
 
-def remember_session_credits(credits: AccountCredits, *, token: str, app_url: str) -> None:
-    """Cache a funded balance an account-session read just returned.
-
-    The session endpoint is the ledger's PAT-authenticated fallback in
-    :func:`_read`, so its balance is the answer a credit read would cache; the
-    shell's sign-in check already made that request, and the first turn need
-    not repeat it. Only a funded balance is kept, so an empty or unknown one
-    still gets its own ledger read before admission fails closed.
-    """
-    if credits.total <= 0:
-        return
-    _HostedCreditsCache.key = (token, app_url)
-    _HostedCreditsCache.read = HostedCreditsRead(
-        HostedCreditsKindValue.OK,
-        credits,
-        "OpenSRE hosted credits.",
-        usage_page_url(app_url=app_url),
-    )
-    _HostedCreditsCache.at = time.monotonic()
-
-
 def _cache_ttl(read: HostedCreditsRead) -> float:
     """How long ``read`` may answer: longer while credits remain, short otherwise."""
     if read.credits is not None and read.credits.total > 0:
@@ -323,7 +302,6 @@ __all__ = [
     "cached_hosted_credits",
     "fetch_hosted_credits",
     "parse_credit_balance_payload",
-    "remember_session_credits",
     "reset_hosted_credits_cache",
     "usage_page_url",
 ]
