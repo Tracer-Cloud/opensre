@@ -69,3 +69,29 @@ def test_package_smoke_reports_baked_index_on_frozen_bundle(
         assert payload["registered_tools"] >= 250
     finally:
         clear_descriptor_index_cache()
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Windows loads its system store whatever OpenSSL's paths say"
+)
+def test_package_smoke_fails_when_a_frozen_bundle_trusts_no_ca(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Release smoke must not pass an artifact whose OpenSSL finds no CA certificates: every
+    ``urllib`` HTTPS call from it fails verification."""
+    from tools.registry_index import clear_descriptor_index_cache, dump_descriptor_index
+
+    dump_descriptor_index(tmp_path / BAKED_INDEX_RELATIVE_PATH)
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(sys, "_MEIPASS", str(tmp_path), raising=False)
+    # What the bundled libcrypto sees on a user's machine: CA locations that do not exist.
+    monkeypatch.setenv("SSL_CERT_FILE", str(tmp_path / "missing" / "cert.pem"))
+    monkeypatch.setenv("SSL_CERT_DIR", str(tmp_path / "missing" / "certs"))
+    clear_descriptor_index_cache()
+    try:
+        result = CliRunner().invoke(cli, ["_package-smoke"])
+    finally:
+        clear_descriptor_index_cache()
+
+    assert result.exit_code != 0, result.output
+    assert "missing_ca_certificates" in result.output

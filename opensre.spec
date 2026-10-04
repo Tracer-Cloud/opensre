@@ -68,7 +68,9 @@ a = Analysis(
     hiddenimports=hiddenimports,
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    # Before any application import: point the bundled OpenSSL at certifi's CA
+    # file, since its compiled-in CA directory does not exist on users' machines.
+    runtime_hooks=[str(ROOT / "infrastructure/deployment/packaging/pyi_rth_ca_bundle.py")],
     excludes=[],
     noarchive=False,
     optimize=0,

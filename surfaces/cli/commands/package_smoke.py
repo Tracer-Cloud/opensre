@@ -63,6 +63,19 @@ def _load_required_tools() -> tuple[dict[str, RegisteredTool], int]:
     return tools_by_name, len(index)
 
 
+def _ca_certificates_found() -> bool:
+    """Whether the default TLS context trusts any CA: loaded from a file, or a directory to read.
+
+    A frozen build that bundles a foreign OpenSSL finds neither, and every
+    ``urllib`` HTTPS call then fails certificate verification.
+    """
+    import ssl
+
+    if ssl.create_default_context().cert_store_stats().get("x509_ca"):
+        return True
+    return ssl.get_default_verify_paths().capath is not None
+
+
 @click.command(name="_package-smoke", hidden=True)
 def package_smoke_command() -> None:
     """Fail unless essential dynamically bundled code and data are available."""
@@ -103,6 +116,9 @@ def package_smoke_command() -> None:
         if name not in tool_map or not tool_map[name].skill_guidance
     )
     failures = {
+        "missing_ca_certificates": ["default TLS context"]
+        if frozen and not _ca_certificates_found()
+        else [],
         "missing_tools": missing_tools,
         "missing_action_skills": missing_action_skills,
         "missing_action_skill_data": missing_action_skill_data,
