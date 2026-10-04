@@ -16,6 +16,7 @@ from integrations.new_relic.client import NewRelicClient
 from integrations.new_relic.config import NewRelicIntegrationConfig
 from integrations.new_relic.tools.new_relic_metrics_tool.validation import (
     apply_default_window_and_limit,
+    clamp_timeseries_buckets,
     extract_limit,
     validate_nrql,
 )
@@ -82,7 +83,8 @@ class NewRelicMetricsTool(BaseTool):
         "normalized metric rows. Accepts the nrqlQuery field returned by "
         "query_new_relic_alerts as-is — re-running an alert's own query is the main "
         "bridge between the two tools. A default SINCE/LIMIT is injected when the "
-        "query omits them."
+        "query omits them, and a TIMESERIES bucket too fine for the window (NRQL "
+        "allows at most 366 buckets) is widened."
     )
     use_cases = _USE_CASES
     anti_examples = _ANTI_EXAMPLES
@@ -97,7 +99,11 @@ class NewRelicMetricsTool(BaseTool):
                 "type": "string",
                 "description": (
                     "NRQL SELECT query, e.g. the nrqlQuery field returned by "
-                    "query_new_relic_alerts."
+                    "query_new_relic_alerts. NRQL syntax notes: use count(*) "
+                    "(never count()); backtick-quote dotted attribute names "
+                    "(`error.class`, `http.statusCode`) wherever they appear; keep "
+                    "parentheses balanced; prefer TIMESERIES AUTO or a bucket "
+                    "giving at most 366 buckets over the SINCE window."
                 ),
             },
             "api_key": {"type": "string"},
@@ -156,10 +162,12 @@ class NewRelicMetricsTool(BaseTool):
                 nrql=nrql,
             )
 
-        effective_nrql = apply_default_window_and_limit(
-            nrql,
-            since_minutes=NEW_RELIC_DEFAULT_WINDOW_MINUTES,
-            limit=NEW_RELIC_DEFAULT_INCIDENT_LIMIT,
+        effective_nrql = clamp_timeseries_buckets(
+            apply_default_window_and_limit(
+                nrql,
+                since_minutes=NEW_RELIC_DEFAULT_WINDOW_MINUTES,
+                limit=NEW_RELIC_DEFAULT_INCIDENT_LIMIT,
+            )
         )
         result = client.query_metrics(nrql=effective_nrql)
         if not result.get("success"):

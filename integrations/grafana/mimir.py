@@ -2,10 +2,46 @@
 
 from __future__ import annotations
 
+import json
+import re
+from http import HTTPStatus
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from integrations.grafana.base import GrafanaClientBase
+
+_ERROR_DETAIL_MAX_CHARS = 300
+#: A bare Prometheus metric name — the only shape a ``{service_name=...}``
+#: selector can be appended to without producing invalid PromQL.
+_BARE_METRIC_NAME = re.compile(r"[a-zA-Z_:][a-zA-Z0-9_:]*")
+
+
+def _error_detail(body: str) -> str:
+    """Bounded error text from a Prometheus/Mimir error body (JSON or plain)."""
+    text = body.strip()
+    try:
+        payload = json.loads(text)
+    except ValueError:
+        payload = None
+    if isinstance(payload, dict) and payload.get("error"):
+        error_type = payload.get("errorType")
+        text = f"{error_type}: {payload['error']}" if error_type else str(payload["error"])
+    return text[:_ERROR_DETAIL_MAX_CHARS]
+
+
+def _describe_failure(status: int, body: str) -> str:
+    """Error message for a failed Mimir response, carrying the vendor's reason."""
+    message = f"Mimir query failed: {status}"
+    detail = _error_detail(body)
+    if detail:
+        message = f"{message}: {detail}"
+    if status == HTTPStatus.NOT_FOUND:
+        message += (
+            " (the Grafana datasource proxy path was not found: the configured Mimir "
+            "datasource UID likely does not exist or is not a Prometheus-compatible "
+            "datasource)"
+        )
+    return message
 
 
 class MimirMixin:
@@ -38,7 +74,7 @@ class MimirMixin:
         )
 
         query = metric_name
-        if service_name:
+        if service_name and _BARE_METRIC_NAME.fullmatch(metric_name):
             query = f'{metric_name}{{service_name="{service_name}"}}'
 
         params = {"query": query}
@@ -67,8 +103,8 @@ class MimirMixin:
             error_msg = str(e)
             response_text = ""
             if hasattr(e, "response") and e.response is not None:
-                response_text = e.response.text[:300]
-                error_msg = f"Mimir query failed: {e.response.status_code}"
+                response_text = e.response.text[:_ERROR_DETAIL_MAX_CHARS]
+                error_msg = _describe_failure(e.response.status_code, e.response.text)
 
             return {
                 "success": False,

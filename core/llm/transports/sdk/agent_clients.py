@@ -961,13 +961,11 @@ class CLIBackedAgentClient:
                     name = tc.get("name")
                     if not isinstance(name, str) or not name.strip():
                         continue
-                    raw_input = tc.get("input")
-                    input_payload = raw_input if isinstance(raw_input, dict) else {}
                     tool_calls.append(
                         ToolCall(
                             id=str(tc.get("id") or f"call_{i}"),
                             name=name.strip(),
-                            input=input_payload,
+                            input=_cli_tool_call_input(tc),
                         )
                     )
             content = "" if tool_calls else text
@@ -1003,6 +1001,26 @@ class CLIBackedAgentClient:
                 return {"role": "assistant", "content": f"{content.strip()}\n\n{tool_json}"}
             return {"role": "assistant", "content": tool_json}
         return {"role": "assistant", "content": content}
+
+
+def _cli_tool_call_input(call: dict[str, Any]) -> dict[str, Any]:
+    """The argument object of one CLI-emitted tool call.
+
+    The instruction asks for ``input`` as an object, but CLI models trained on
+    OpenAI function calling often write ``arguments`` and/or a JSON-encoded
+    string. Both are envelope fields, never tool arguments, so reading them is
+    unambiguous; anything else stays ``{}`` and fails validation as before.
+    """
+    for key in ("input", "arguments"):
+        raw = call.get(key)
+        if isinstance(raw, str):
+            try:
+                raw = json.loads(raw) if raw.strip() else None
+            except json.JSONDecodeError:
+                raw = None
+        if isinstance(raw, dict):
+            return raw
+    return {}
 
 
 def _try_parse_tool_call_json(text: str) -> dict[str, Any] | None:

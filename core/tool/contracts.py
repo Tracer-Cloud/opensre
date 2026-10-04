@@ -160,6 +160,92 @@ def _value_matches_schema(value: Any, schema: dict[str, Any]) -> bool:
     return True
 
 
+# Validation messages go back to the model and onto analytics; they name schema
+# facts and argument *names* only, never a value the model sent.
+_MAX_LISTED_NAMES = 12
+
+
+def _listed(names: Sequence[Any]) -> str:
+    shown = ", ".join(str(name) for name in names[:_MAX_LISTED_NAMES])
+    return f"{shown}, …" if len(names) > _MAX_LISTED_NAMES else shown
+
+
+def _json_type_name(value: Any) -> str:
+    if value is None:
+        return "null"
+    for schema_type in ("boolean", "integer", "number", "string", "array", "object"):
+        if _json_type_matches(value, schema_type):
+            return schema_type
+    return type(value).__name__
+
+
+def _invalid_value_hint(value: Any, schema: dict[str, Any]) -> str:
+    """Say what a rejected argument should have been, from the schema alone."""
+    enum = schema.get("enum")
+    if isinstance(enum, list) and enum and isinstance(value, str) and value not in enum:
+        words = value.split(maxsplit=1)
+        if len(words) == 2 and words[0] in enum:
+            return (
+                f"expected exactly one allowed value; {words[0]!r} is allowed, "
+                "so pass the words after it as separate arguments"
+            )
+        return f"expected one of: {_listed(enum)}"
+    expected = schema.get("type")
+    if not isinstance(expected, str) or _json_type_matches(value, expected):
+        return ""
+    hint = f"expected {expected}, got {_json_type_name(value)}"
+    if expected in {"array", "object"} and isinstance(value, str):
+        hint += f" (send a JSON {expected}, not a string)"
+    return hint
+
+
+def _public_input_error(name: str, schema: dict[str, Any], payload: Any) -> str | None:
+    """Return why ``payload`` does not fit tool ``name``'s public ``schema``, or ``None``."""
+    if schema.get("type") != "object":
+        return f"{name} exposes a non-object input schema."
+    if not isinstance(payload, dict):
+        return f"{name} expected object input."
+
+    properties = schema.get("properties")
+    if not isinstance(properties, dict):
+        properties = {}
+    required = schema.get("required")
+    if not isinstance(required, list):
+        required = []
+    known = list(properties)
+    unexpected = sorted(key for key in payload if key not in properties)
+
+    missing = [arg for arg in required if arg not in payload]
+    if missing:
+        message = f"{name} missing required args: {', '.join(sorted(missing))}."
+        if not payload:
+            return (
+                f"{message} The call carried no arguments (empty, or not a valid JSON "
+                "object); resend it with every required arg."
+            )
+        if unexpected:
+            return (
+                f"{message} Unknown args received: {_listed(unexpected)}; "
+                f"this tool's args are: {_listed(known)}."
+            )
+        return message
+
+    if schema.get("additionalProperties") is False and unexpected:
+        return (
+            f"{name} got unexpected args: {_listed(unexpected)}. "
+            f"This tool's args are: {_listed(known)}."
+        )
+
+    for key, value in payload.items():
+        prop_schema = properties.get(key)
+        if not isinstance(prop_schema, dict):
+            continue
+        if not _value_matches_schema(value, prop_schema):
+            hint = _invalid_value_hint(value, prop_schema)
+            return f"{name}.{key} has invalid type/value" + (f": {hint}." if hint else ".")
+    return None
+
+
 _TOOL_LOGGER = logging.getLogger("tools")
 
 
@@ -516,35 +602,7 @@ class RegisteredTool:
 
     def validate_public_input(self, payload: dict[str, Any]) -> str | None:
         """Validate model-provided input against this tool's public schema."""
-        schema = self.public_input_schema
-        if schema.get("type") != "object":
-            return f"{self.name} exposes a non-object input schema."
-        if not isinstance(payload, dict):
-            return f"{self.name} expected object input."
-
-        properties = schema.get("properties")
-        if not isinstance(properties, dict):
-            properties = {}
-        required = schema.get("required")
-        if not isinstance(required, list):
-            required = []
-
-        missing = [name for name in required if name not in payload]
-        if missing:
-            return f"{self.name} missing required args: {', '.join(sorted(missing))}."
-
-        if schema.get("additionalProperties") is False:
-            extra = sorted(name for name in payload if name not in properties)
-            if extra:
-                return f"{self.name} got unexpected args: {', '.join(extra)}."
-
-        for key, value in payload.items():
-            prop_schema = properties.get(key)
-            if not isinstance(prop_schema, dict):
-                continue
-            if not _value_matches_schema(value, prop_schema):
-                return f"{self.name}.{key} has invalid type/value."
-        return None
+        return _public_input_error(self.name, self.public_input_schema, payload)
 
     def __call__(self, **kwargs: Any) -> Any:
         return _invoke_tool(self.run, name=self.name, source=str(self.source), kwargs=kwargs)
@@ -753,35 +811,7 @@ class AgentTool:
         return self.input_schema
 
     def validate_public_input(self, payload: dict[str, Any]) -> str | None:
-        schema = self.public_input_schema
-        if schema.get("type") != "object":
-            return f"{self.name} exposes a non-object input schema."
-        if not isinstance(payload, dict):
-            return f"{self.name} expected object input."
-
-        properties = schema.get("properties")
-        if not isinstance(properties, dict):
-            properties = {}
-        required = schema.get("required")
-        if not isinstance(required, list):
-            required = []
-
-        missing = [name for name in required if name not in payload]
-        if missing:
-            return f"{self.name} missing required args: {', '.join(sorted(missing))}."
-
-        if schema.get("additionalProperties") is False:
-            extra = sorted(name for name in payload if name not in properties)
-            if extra:
-                return f"{self.name} got unexpected args: {', '.join(extra)}."
-
-        for key, value in payload.items():
-            prop_schema = properties.get(key)
-            if not isinstance(prop_schema, dict):
-                continue
-            if not _value_matches_schema(value, prop_schema):
-                return f"{self.name}.{key} has invalid type/value."
-        return None
+        return _public_input_error(self.name, self.public_input_schema, payload)
 
 
 # Keep this as an assignment-style alias for the same CodeQL export check.

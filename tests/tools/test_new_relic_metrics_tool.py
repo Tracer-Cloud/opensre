@@ -14,6 +14,7 @@ from integrations.new_relic.tools.new_relic_metrics_tool.tool import (
 )
 from integrations.new_relic.tools.new_relic_metrics_tool.validation import (
     apply_default_window_and_limit,
+    clamp_timeseries_buckets,
     extract_limit,
     validate_nrql,
 )
@@ -114,6 +115,24 @@ def test_apply_default_window_and_limit_inserts_since_before_an_existing_limit()
     result = apply_default_window_and_limit(nrql, since_minutes=60, limit=100)
     assert result.index("SINCE") < result.index("LIMIT")
     assert "LIMIT 50" in result
+
+
+def test_clamp_timeseries_buckets_widens_a_bucket_over_the_nrql_cap() -> None:
+    # Production: "TIMESERIES supports a maximum of 366 buckets. Query has 1008."
+    nrql = (
+        "SELECT count(*) FROM Transaction SINCE 7 days ago TIMESERIES 10 minutes "
+        "WHERE name = 'TIMESERIES 1 minute' LIMIT 100"
+    )
+    result = clamp_timeseries_buckets(nrql)
+    assert result == (
+        "SELECT count(*) FROM Transaction SINCE 7 days ago TIMESERIES 28 minutes "
+        "WHERE name = 'TIMESERIES 1 minute' LIMIT 100"
+    )
+    # A bucket that already fits, or an absolute window, is left untouched.
+    fits = "SELECT count(*) FROM Transaction SINCE 1 day ago TIMESERIES 5 minutes"
+    assert clamp_timeseries_buckets(fits) == fits
+    absolute = "SELECT count(*) FROM Transaction SINCE 1700000000000 TIMESERIES 1 minute"
+    assert clamp_timeseries_buckets(absolute) == absolute
 
 
 def test_extract_limit_reads_the_effective_clause() -> None:

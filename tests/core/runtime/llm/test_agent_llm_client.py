@@ -11,6 +11,7 @@ from core.llm.transports.sdk.agent_clients import (
     AnthropicAgentClient,
     BedrockAgentClient,
     OpenAIAgentClient,
+    _cli_tool_call_input,
     _try_parse_tool_call_json,
 )
 
@@ -1416,6 +1417,24 @@ def test_cli_backed_agent_client_tool_call_parsing() -> None:
     assert result.tool_calls[0].name == "my_tool"
     assert result.tool_calls[0].input == {"x": 1}
     assert result.content == ""
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        {"name": "shell_run", "input": {"command": "ls"}},
+        {"name": "shell_run", "input": '{"command": "ls"}'},
+        {"name": "shell_run", "arguments": '{"command": "ls"}'},
+        {"name": "shell_run", "arguments": {"command": "ls"}},
+    ],
+)
+def test_cli_tool_call_input_reads_openai_style_envelopes(call: dict[str, Any]) -> None:
+    """A JSON-string or ``arguments`` envelope must not drop the call's args to ``{}``."""
+    assert _cli_tool_call_input(call) == {"command": "ls"}
+
+
+def test_cli_tool_call_input_unparseable_arguments_stay_empty() -> None:
+    assert _cli_tool_call_input({"name": "shell_run", "input": '{"command": "ls'}) == {}
 
 
 def test_cli_backed_agent_client_build_assistant_message_includes_tool_json() -> None:

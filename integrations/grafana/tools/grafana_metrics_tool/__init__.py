@@ -26,7 +26,10 @@ class QueryGrafanaMetricsInput(BaseModel):
     )
     service_name: str | None = Field(
         default=None,
-        description="Optional service filter applied by Grafana helper query wrappers.",
+        description=(
+            "Optional service_name label filter; applied only when metric_name is a bare "
+            "metric name. For a PromQL expression, put the label matcher in the expression."
+        ),
     )
 
 

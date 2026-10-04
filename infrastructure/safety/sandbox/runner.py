@@ -240,8 +240,13 @@ def run_python_sandbox(
     try:
         python_executable = _python_executable()
         ensure_opensre_tmp_dir()
+        # Explicit UTF-8 for the script file and ``-X utf8`` for the child's
+        # stdio/open(): the platform default (cp1252 on Windows) cannot encode
+        # characters like "→". ``-I`` ignores PYTHONIOENCODING/PYTHONUTF8, so
+        # the interpreter flag is the only switch that reaches the child.
         with tempfile.NamedTemporaryFile(
             mode="w",
+            encoding="utf-8",
             suffix=".py",
             delete=False,
             dir=OPENSRE_TMP_DIR,
@@ -250,7 +255,7 @@ def run_python_sandbox(
             tmp_path = tmp.name
 
         result = subprocess.run(
-            [python_executable, "-I", tmp_path],
+            [python_executable, "-I", "-X", "utf8", tmp_path],
             capture_output=True,
             text=True,
             encoding="utf-8",

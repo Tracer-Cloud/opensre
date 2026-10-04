@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import math
+import re
+from http import HTTPStatus
 from typing import Any, Literal, cast
 
 from core.domain.types.evidence import record_evidence_entry
@@ -17,6 +19,7 @@ from integrations.github.helpers import (
     github_source_available,
 )
 from integrations.github.repair_outcomes import attach_ci_scan_outcome
+from integrations.github.repo_scope import parse_github_repository_reference
 from integrations.github.tools.workflow import (
     GitHubIssueMutationProposal,
     PullRequestStatus,
@@ -272,6 +275,40 @@ def _normalize_pull_request(
     )
 
 
+#: One owner or repository name as GitHub allows it; anything else would 404 or change the path.
+_REPO_COMPONENT_RE = re.compile(r"[A-Za-z0-9_.-]+")
+
+
+def _repository_scope(owner: Any, repo: Any) -> tuple[str, str] | None:
+    """``(owner, repo)`` from the arguments, or ``None`` when they cannot name one repository.
+
+    A full name or URL in ``repo`` (``owner/name``, ``https://github.com/owner/name``)
+    is split rather than appended to ``owner``, which would request a path GitHub 404s.
+    """
+    owner_text = str(owner or "").strip()
+    repo_text = str(repo or "").strip()
+    if "/" in repo_text:
+        reference = parse_github_repository_reference(repo_text)
+        if reference is None:
+            return None
+        owner_text, repo_text = reference
+    for part in (owner_text, repo_text):
+        if not _REPO_COMPONENT_RE.fullmatch(part) or part in {".", ".."}:
+            return None
+    return owner_text, repo_text
+
+
+def _pull_request_listing_error(exc: GitHubApiError, owner: str, repo: str) -> str:
+    """GitHub's error, and for a 404 what it means here: no such repository, or no access."""
+    if exc.status_code != HTTPStatus.NOT_FOUND:
+        return str(exc)
+    return (
+        f"{exc}. GitHub answers 404 when {owner}/{repo} does not exist or the GitHub "
+        "token cannot see it (a private repository needs a token or app installation "
+        "with access to it). Check the owner and repository name, or the token's access."
+    )
+
+
 def _count_prs(prs: list[dict[str, Any]]) -> dict[str, int]:
     return {
         "total": len(prs),
@@ -320,6 +357,18 @@ def summarize_github_pr_status(
     github_token: str | None = None,
     **_kwargs: Any,
 ) -> dict[str, Any]:
+    scope = _repository_scope(owner, repo)
+    if scope is None:
+        return tool_unavailable(
+            "github",
+            f"owner={owner!r} and repo={repo!r} do not name one GitHub repository. Pass the "
+            "owner (user or organization) and the repository name separately, for example "
+            "owner='octocat', repo='hello-world'.",
+            pull_requests=[],
+            counts=_count_prs([]),
+            side_effects=[],
+        )
+    owner, repo = scope
     client = GitHubRestClient(github_token)
     fully_inspected = state == "open" and include_checks
     try:
@@ -327,6 +376,15 @@ def summarize_github_pr_status(
             f"/repos/{owner}/{repo}/pulls",
             params={"state": state, "per_page": max(1, min(per_page, 100))},
         )
+    except GitHubApiError as exc:
+        return tool_unavailable(
+            "github",
+            _pull_request_listing_error(exc, owner, repo),
+            pull_requests=[],
+            counts=_count_prs([]),
+            side_effects=[],
+        )
+    try:
         prs: list[dict[str, Any]] = []
         for list_pr in raw_prs:
             number = list_pr.get("number")

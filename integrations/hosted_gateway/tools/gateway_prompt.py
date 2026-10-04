@@ -20,6 +20,7 @@ from config.constants.hosted_gateway import (
     HOSTED_GATEWAY_PROMPT_POLL_SECONDS,
     HOSTED_GATEWAY_PROMPT_WAIT_SECONDS,
     HOSTED_GATEWAY_QUEUE_NOTICE_SECONDS,
+    HOSTED_GATEWAY_SUBMIT_RETRY_DELAYS_SECONDS,
     HOSTED_GATEWAY_UNANSWERED_GRACE_SECONDS,
 )
 from core.agent_harness.spi.handoff import AskUserQuestion, parse_ask_user_answers, question_key
@@ -275,8 +276,10 @@ def ask_hosted_gateway(
     request_id = request_id.strip() or uuid.uuid4().hex
     try:
         with HostedGatewayClient.from_account() as client:
-            record, sent_at, skip_recorded = _submit_or_continue(
+            relay = _ProgressRelay(context)
+            record, sent_at, skip_recorded = _submit_riding_out_restarts(
                 client,
+                relay,
                 prompt.strip(),
                 dict(facts or {}),
                 prompt_id.strip(),
@@ -285,7 +288,6 @@ def ask_hosted_gateway(
                 conversation,
             )
             in_flight = record.prompt_id
-            relay = _ProgressRelay(context)
             if skip_recorded:
                 relay.skip_recorded(record)
             record, waited = _wait_until_settled(client, record, relay, sent_at=sent_at)
@@ -354,6 +356,38 @@ def _answer_not_used(record: PromptRecord) -> str:
     if record.state != "failed":
         return ""
     return _ANSWER_NOT_USED.get(record.error, "")
+
+
+def _submit_riding_out_restarts(
+    client: HostedGatewayClient,
+    relay: _ProgressRelay,
+    prompt: str,
+    facts: dict[str, str],
+    prompt_id: str,
+    scope: ActionToolScope | None,
+    request_id: str,
+    conversation: str,
+) -> tuple[PromptRecord, float, bool]:
+    """``_submit_or_continue``, retried with a bounded backoff while the gateway is not answering.
+
+    Safe to repeat: every attempt carries the same ``request_id``, so the gateway
+    queues a prompt or takes an answer at most once, and a read changes nothing.
+    Only transient failures are retried; the last one is raised as is.
+    """
+    noticed = False
+    for delay in HOSTED_GATEWAY_SUBMIT_RETRY_DELAYS_SECONDS:
+        try:
+            return _submit_or_continue(
+                client, prompt, facts, prompt_id, scope, request_id, conversation
+            )
+        except HostedGatewayError as exc:
+            if exc.code not in TRANSIENT_ERRORS:
+                raise
+            if not noticed:
+                relay.note(_waiting_notice(exc))
+                noticed = True
+        time.sleep(delay)
+    return _submit_or_continue(client, prompt, facts, prompt_id, scope, request_id, conversation)
 
 
 def _submit_or_continue(
