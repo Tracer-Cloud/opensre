@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 import subprocess
+import threading
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -20,7 +22,6 @@ from core.tool.contracts import REGISTERED_TOOL_ATTR, AgentToolContext
 from tests.tools.conftest import BaseToolContract
 from tools.system.workspace_git_scan.render import render_snapshot, snapshot_text
 from tools.system.workspace_git_scan.scan import (
-    RepoActivity,
     ScanStop,
     measure_repo,
     parse_github_remote,
@@ -66,28 +67,56 @@ def _checkout(root: Path, name: str, *, used_at: float = 1_000.0) -> Path:
     return path
 
 
-def _activity(repo_dir: Path) -> RepoActivity:
-    return RepoActivity(
-        name=repo_dir.name,
-        path=str(repo_dir),
-        origin="",
-        github_owner="",
-        github_repo="",
-        commits=1,
-        own_commits=0,
-        uncommitted=0,
-        has_workflows=False,
+def _commit(repo: Path, *, email: str, days_ago: int) -> None:
+    """An empty commit authored by *email*, authored and committed *days_ago* days ago."""
+    when = f"{int(time.time()) - days_ago * 86_400} +0000"
+    env = {
+        **os.environ,
+        "GIT_AUTHOR_EMAIL": email,
+        "GIT_AUTHOR_DATE": when,
+        "GIT_COMMITTER_DATE": when,
+    }
+    subprocess.run(
+        ["git", "commit", "-q", "--allow-empty", "-m", f"by {email or 'nobody'}"],
+        cwd=repo,
+        env=env,
+        check=True,
+        capture_output=True,
     )
 
 
-def _measure_instantly(repo_dir: Path, *, days: int, author: str = "") -> RepoActivity:
-    return _activity(repo_dir)
+def _ignore(_checkout: Path) -> None:
+    return None
 
 
-def _without_git(monkeypatch: pytest.MonkeyPatch, measure: Callable[..., RepoActivity]) -> None:
-    """Measure checkouts with *measure* and skip the author lookup: no git process runs."""
-    monkeypatch.setattr(f"{_SCAN_MODULE}.measure_repo", measure)
-    monkeypatch.setattr(f"{_SCAN_MODULE}._git", lambda *_args: "")
+def _without_git(
+    monkeypatch: pytest.MonkeyPatch, on_status: Callable[[Path], None] = _ignore
+) -> None:
+    """Answer every git call with no output; *on_status* sees each checkout's ``git status``."""
+
+    def git(repo_dir: Path, *args: str) -> str:
+        if args[0] == "status":
+            on_status(repo_dir)
+        return ""
+
+    monkeypatch.setattr(f"{_SCAN_MODULE}._git", git)
+
+
+def _git_calls_at_once(monkeypatch: pytest.MonkeyPatch, count: int) -> None:
+    monkeypatch.setattr(f"{_SCAN_MODULE}._MEASURE_WORKERS", count)
+
+
+def _record_git(monkeypatch: pytest.MonkeyPatch) -> list[tuple[str, str]]:
+    """Let git run and record ``(folder name, subcommand)`` for every call."""
+    calls: list[tuple[str, str]] = []
+    real_run = subprocess.run
+
+    def run(args: list[str], **kwargs: Any) -> subprocess.CompletedProcess[str]:
+        calls.append((Path(args[2]).name, args[3]))
+        return real_run(args, **kwargs)
+
+    monkeypatch.setattr(subprocess, "run", run)
+    return calls
 
 
 class _Clock:
@@ -142,6 +171,82 @@ def test_scan_folds_clones_and_skips_nested_and_ignored_dirs(tmp_path: Path) -> 
     assert snapshot.stop_reason is None
 
 
+def test_worktrees_share_one_history_read_and_keep_their_own_uncommitted_files(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # A repository often has many worktrees (a branch or agent session each): their
+    # history is one, so git log runs once, while every worktree has its own status.
+    main = _repo(tmp_path, "app", origin="", commits=3, workflows=False)
+    feature, fix = tmp_path / "app-feature", tmp_path / "app-fix"
+    _git(main, "worktree", "add", "-q", "-b", "feature", str(feature))
+    _git(main, "worktree", "add", "-q", "-b", "fix", str(fix))
+    # A relative pointer, as submodules and worktree.useRelativePaths write it.
+    own_git_dir = Path((fix / ".git").read_text().removeprefix("gitdir:").strip())
+    relative = os.path.relpath(own_git_dir.resolve(), fix.resolve())
+    (fix / ".git").write_text(f"gitdir: {relative}\n")
+    (main / "notes.txt").write_text("todo")
+    (main / "draft.txt").write_text("draft")
+    (fix / "wip.txt").write_text("wip")
+    calls = _record_git(monkeypatch)
+
+    snapshot = scan_workspace(tmp_path, days=30)
+
+    rows = {repo.name: (repo.commits, repo.uncommitted) for repo in snapshot.repos}
+    assert rows == {"app": (3, 2), "app-feature": (3, 0), "app-fix": (3, 1)}
+    assert [command for _, command in calls].count("log") == 1
+
+
+def test_one_log_counts_what_rev_list_counted_and_own_commits_ignore_email_case(
+    tmp_path: Path,
+) -> None:
+    # The two rev-list --count calls became one git log; the counts must not move.
+    repo = _repo(tmp_path, "app", origin="", commits=0, workflows=False)
+    _commit(repo, email="me@example.com", days_ago=90)  # outside the window
+    _commit(repo, email="other@example.com", days_ago=3)
+    _commit(repo, email="Me@Example.com", days_ago=2)
+    _git(repo, "checkout", "-q", "-b", "side")
+    _commit(repo, email="ME@example.com", days_ago=1)  # only on a branch not checked out
+    _git(repo, "checkout", "-q", "main")
+    _commit(repo, email="", days_ago=0)  # newest, so an empty first line of the log
+
+    activity = measure_repo(repo, days=30, author="me@example.com")
+
+    rev_list = subprocess.run(
+        ["git", "rev-list", "--count", "--all", "--since=30.days"],
+        cwd=repo,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    assert activity.commits == int(rev_list.stdout) == 4
+    assert activity.own_commits == 2
+
+
+def test_origin_comes_from_the_config_file_unless_a_url_rewrite_applies(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    # git remote get-url applies url.<base>.insteadOf rules, so a rewritable origin
+    # is left to git; a plain one is read from the config file without a git call.
+    user_config = tmp_path / "gitconfig"
+    user_config.write_text('[url "https://github.com/"]\n\tinsteadOf = gh:\n')
+    monkeypatch.setenv("GIT_CONFIG_GLOBAL", str(user_config))
+    monkeypatch.setenv("GIT_CONFIG_NOSYSTEM", "1")
+    workspace = tmp_path / "work"
+    _repo(workspace, "app", origin="git@github.com:acme/app.git", commits=1, workflows=False)
+    _repo(workspace, "tool", origin="gh:acme/tool", commits=1, workflows=False)
+    calls = _record_git(monkeypatch)
+
+    snapshot = scan_workspace(workspace, days=30)
+
+    origins = {repo.name: (repo.origin, repo.github_full_name) for repo in snapshot.repos}
+    assert origins == {
+        "app": ("git@github.com:acme/app.git", "acme/app"),
+        "tool": ("https://github.com/acme/tool", "acme/tool"),
+    }
+    assert ("tool", "remote") in calls
+    assert ("app", "remote") not in calls
+
+
 def test_git_never_reads_the_terminal_or_takes_the_index_lock(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -153,12 +258,14 @@ def test_git_never_reads_the_terminal_or_takes_the_index_lock(
         calls.append({"args": args, **kwargs})
         return subprocess.CompletedProcess(args, 0, stdout="", stderr="")
 
+    _checkout(tmp_path, "app")
     monkeypatch.setattr(subprocess, "run", run)
     monkeypatch.setenv("SCAN_TEST_INHERITED", "kept")
 
-    measure_repo(tmp_path, days=30, author="t@example.com")
+    scan_workspace(tmp_path, days=30)
 
-    assert [call["args"][3] for call in calls] == ["remote", "rev-list", "rev-list", "status"]
+    # The user's config, then the origin (no config file here), history and status.
+    assert sorted(call["args"][3] for call in calls) == ["config", "log", "remote", "status"]
     for call in calls:
         assert call["stdin"] == subprocess.DEVNULL
         assert call["timeout"] == 5
@@ -175,12 +282,12 @@ def test_cancel_between_repositories_stops_the_scan_and_renders_nothing(
     console = _TurnConsole()
     measured: list[str] = []
 
-    def measure(repo_dir: Path, *, days: int, author: str = "") -> RepoActivity:
-        measured.append(repo_dir.name)
+    def read_status(checkout: Path) -> None:
+        measured.append(checkout.name)
         console.cancel_requested = True  # ESC while the first repository is read
-        return _activity(repo_dir)
 
-    _without_git(monkeypatch, measure)
+    _without_git(monkeypatch, read_status)
+    _git_calls_at_once(monkeypatch, 1)
     scope = ActionToolScope(session=None, console=console)
     context = AgentToolContext(
         resolved_integrations={}, resources={ACTION_TOOL_CONTEXT_RESOURCE_KEY: scope}
@@ -240,22 +347,43 @@ def test_walk_polls_the_cancel_probe_at_most_every_50_ms(tmp_path: Path) -> None
 def test_time_budget_keeps_the_most_recently_used_repositories(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    used = {"old": 1_000.0, "newest": 4_000.0, "stale": 2_000.0, "recent": 3_000.0}
+    # Two git calls run at once. "stale" and "older" hang in git status and use up
+    # the budget, so the pool is full and "oldest" never starts; the scan returns
+    # the two most recently used checkouts without waiting for the hung calls.
+    used = {
+        "oldest": 1_000.0,
+        "newest": 5_000.0,
+        "stale": 3_000.0,
+        "recent": 4_000.0,
+        "older": 2_000.0,
+    }
     for name, used_at in used.items():
         _checkout(tmp_path, name, used_at=used_at)
     clock = _Clock()
-    measured: list[str] = []
+    release = threading.Event()
+    started: list[str] = []
+    finished: list[str] = []
 
-    def measure(repo_dir: Path, *, days: int, author: str = "") -> RepoActivity:
-        measured.append(repo_dir.name)
-        clock.now += 8.0  # each repository takes 8 s of the 20 s budget
-        return _activity(repo_dir)
+    def read_status(checkout: Path) -> None:
+        started.append(checkout.name)
+        if checkout.name == "older":
+            clock.now = 30.0  # past the 20 s budget, once both slots hang
+        if checkout.name in ("stale", "older"):
+            release.wait(timeout=10.0)
+        finished.append(checkout.name)
 
-    _without_git(monkeypatch, measure)
+    _without_git(monkeypatch, read_status)
+    _git_calls_at_once(monkeypatch, 2)
 
-    snapshot = scan_workspace(tmp_path, clock=clock)
+    try:
+        snapshot = scan_workspace(tmp_path, clock=clock)
+        hung_at_return = {"stale", "older"} - set(finished)
+    finally:
+        release.set()
 
-    assert measured == ["newest", "recent", "stale"]
+    assert sorted(repo.name for repo in snapshot.repos) == ["newest", "recent"]
+    assert sorted(started) == ["newest", "older", "recent", "stale"]
+    assert hung_at_return == {"stale", "older"}
     assert snapshot.stop_reason is ScanStop.TIME_BUDGET
     assert "time limit" in snapshot_text(snapshot)
 
@@ -267,11 +395,11 @@ def test_progress_lines_are_throttled_to_one_every_three_seconds(
         _checkout(tmp_path, f"r{index}", used_at=1_000.0 + index)
     clock = _Clock()
 
-    def measure(repo_dir: Path, *, days: int, author: str = "") -> RepoActivity:
+    def read_status(_checkout: Path) -> None:
         clock.now += 1.0
-        return _activity(repo_dir)
 
-    _without_git(monkeypatch, measure)
+    _without_git(monkeypatch, read_status)
+    _git_calls_at_once(monkeypatch, 1)
     lines: list[str] = []
 
     scan_workspace(tmp_path, on_progress=lines.append, clock=clock)
@@ -307,7 +435,7 @@ def test_tool_skips_default_folders_unless_started_inside_or_named_as_root(
     monkeypatch.setenv("HOME", str(home))
     monkeypatch.setattr("tools.system.workspace_git_scan.tool.sys.platform", "darwin")
     monkeypatch.chdir(tmp_path)
-    _without_git(monkeypatch, _measure_instantly)
+    _without_git(monkeypatch)
 
     default = scan_local_git_workspace()
     named = scan_local_git_workspace(root=str(home / "Documents"))
@@ -332,7 +460,7 @@ def test_tool_skips_default_folders_whichever_spelling_reaches_home(
     link = tmp_path / "home-link"
     link.symlink_to(home, target_is_directory=True)
     monkeypatch.chdir(tmp_path)
-    _without_git(monkeypatch, _measure_instantly)
+    _without_git(monkeypatch)
 
     monkeypatch.setenv("HOME", str(home))
     root_through_link = scan_local_git_workspace(root=str(link))
