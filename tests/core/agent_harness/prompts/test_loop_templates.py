@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import pytest
 
 from core.agent_harness.prompts.loop_templates import (
@@ -12,6 +14,10 @@ from core.agent_harness.prompts.loop_templates import (
 )
 from infrastructure.scheduling.scheduler.cron_expression import cap_cron_at_most_hourly
 from infrastructure.scheduling.scheduler.loop_constants import LOOP_MODES
+from tools.registry import get_tool_descriptors
+
+#: A tool named in a template step, e.g. ``call fix_github_pr_ci``.
+_CALLED_TOOL = re.compile(r"\bcall (\w+)", re.IGNORECASE)
 
 
 @pytest.mark.parametrize("template", loop_template_names())
@@ -35,3 +41,11 @@ def test_agent_templates_end_by_forbidding_a_merge(template: str) -> None:
 
 def test_sentence_count_reads_numbered_steps() -> None:
     assert count_sentences("Do it.\n\n1. List PRs.\n2. Fix one; push it.\n3. Reply?") == 4
+
+
+@pytest.mark.parametrize("template", loop_template_names())
+def test_template_calls_only_registered_tools(template: str) -> None:
+    called = set(_CALLED_TOOL.findall(load_loop_template(template).prompt))
+    registered = {descriptor.name for descriptor in get_tool_descriptors()}
+
+    assert called <= registered

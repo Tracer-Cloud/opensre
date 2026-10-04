@@ -7,8 +7,7 @@ mode: agent
 
 Fix failing CI checks on open pull requests.
 
-1. List open non-draft pull requests from branches in this repository whose latest commit has a failed check.
-2. Skip pull requests with merge conflicts or a push in the last 10 minutes.
-3. Pick one, read the failed check's logs, and find the root cause.
-4. Fix it on the pull request's branch, run the relevant tests locally, and push a normal commit.
-5. Never force-push or merge, and reply with the pull request link and what you changed.
+1. Call summarize_github_pr_status for this repository to find open pull requests whose latest commit has a failed check.
+2. Skip drafts, forks, pull requests with merge conflicts, and pull requests pushed to in the last 10 minutes.
+3. Pick one and call fix_github_pr_ci with its pr_number to fix it on its own branch.
+4. Never force-push or merge, and reply with the pull request link and what changed.

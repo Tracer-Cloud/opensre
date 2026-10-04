@@ -1,15 +1,12 @@
 ---
 name: Code scanning
-description: Fixes open code scanning alerts on the default branch.
+description: Fixes open code scanning quality alerts, never security ones.
 cron: "58 * * * *"
 mode: agent
 ---
 
-Fix open code scanning alerts.
+Fix open code scanning quality alerts.
 
-1. List open code scanning alerts on the default branch.
-2. Skip alerts that an open pull request already fixes.
-3. Pick one alert, or a few with the same rule in the same file, and read the flagged code.
-4. Fix the underlying problem without suppressing the alert or weakening a test.
-5. Run the relevant tests locally and open a pull request that names the alerts it fixes.
-6. Never merge, and reply with the pull request link.
+1. Call fix_github_security_alert with alert_type code_scanning, quality_only true and open_pr true.
+2. It picks one open alert that no open pull request already fixes, and reports nothing to fix when none is left.
+3. Never merge, and reply with the pull request link and the alert it fixes.
