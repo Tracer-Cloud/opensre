@@ -27,6 +27,10 @@ SUCCESS_CRITERIA: dict[str, tuple[str, ...]] = {
     "delivering-morning-briefings": (
         "`slack_send_message` or `propose_scheduled_delivery` returns `response_text` with the briefing.",
     ),
+    "fixing-github-merge-conflicts": (
+        "`fix_github_pr_ci` returned for every conflicting pull request the scan found, or "
+        "`summarize_github_pr_status` returned a `conflict-scan` no-op.",
+    ),
     "fixing-github-security-alerts": (
         "`fix_github_security_alert` returns a pushed fix, or `error` names why it stopped.",
     ),

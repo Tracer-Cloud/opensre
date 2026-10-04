@@ -481,6 +481,7 @@ Current collection:
 | Name | Kind | Where | `tools:` |
 |------|------|-------|----------|
 | `delivering-morning-briefings` | workflow | `skills/` | — |
+| `fixing-github-merge-conflicts` | workflow | `skills/` | — |
 | `fixing-github-security-alerts` | workflow | `skills/` | — |
 | `investigating-incidents-with-runbooks` | workflow | `skills/` | — |
 | `repair-github-ci` | workflow | `skills/` | — |
