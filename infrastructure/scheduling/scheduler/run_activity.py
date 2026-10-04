@@ -53,18 +53,24 @@ class RunActivity:
     def __init__(self) -> None:
         self._lock = Lock()
         self._actions: list[str] = []
-        self._seen: set[str] = set()
+        #: How often each distinct action happened, kept or not.
+        self._times: dict[str, int] = {}
         self._note = ""
 
     def add_action(self, action: str) -> None:
-        """Keep ``action`` once; past ``ACTIONS_KEPT`` the oldest kept action is dropped."""
+        """Keep ``action`` once and count repeats; past ``ACTIONS_KEPT`` the oldest is dropped.
+
+        Two calls can read the same once their payloads are left out (two
+        ``git commit …``), so a repeat is counted rather than ignored.
+        """
         text = compact_text(redact_text(action), ACTION_MAX_CHARS)
         if not text:
             return
         with self._lock:
-            if text in self._seen:
+            times = self._times.get(text, 0)
+            self._times[text] = times + 1
+            if times:
                 return
-            self._seen.add(text)
             self._actions.append(text)
             del self._actions[:-ACTIONS_KEPT]
 
@@ -75,9 +81,20 @@ class RunActivity:
             self._note = text
 
     def snapshot(self) -> ActivitySnapshot:
-        """The kept actions in the order they happened, every action counted, and the note."""
+        """The kept actions in the order they happened, every action counted, and the note.
+
+        An action that happened more than once ends in ``(×N)``.
+        """
         with self._lock:
-            return ActivitySnapshot(tuple(self._actions), len(self._seen), self._note)
+            actions = tuple(_with_times(text, self._times[text]) for text in self._actions)
+            return ActivitySnapshot(actions, len(self._times), self._note)
+
+
+def _with_times(text: str, times: int) -> str:
+    if times < 2:
+        return text
+    suffix = f" (×{times})"
+    return compact_text(text, ACTION_MAX_CHARS - len(suffix)) + suffix
 
 
 _CURRENT: ContextVar[RunActivity | None] = ContextVar("opensre_run_activity", default=None)

@@ -1,9 +1,11 @@
 """Recognise shell commands that only read, so a ``shell_run`` call can say so.
 
 Conservative on purpose: a command is a read only when every part of it runs a
-listed read-only program or a read-only ``git`` subcommand, and nothing writes a
-file through redirection or runs a substituted command. Anything else keeps the
-tool's declared mutating level.
+listed read-only program or a read-only ``git`` subcommand without an option
+that writes a file or runs another program, nothing writes a file through
+redirection or runs a substituted command, and no environment assignment
+changes how a program behaves. Anything else keeps the tool's declared mutating
+level.
 """
 
 from __future__ import annotations
@@ -17,15 +19,12 @@ _READ_PROGRAMS = frozenset(
         "basename",
         "cat",
         "cd",
-        "date",
         "df",
         "dirname",
         "du",
         "echo",
-        "file",
         "grep",
         "head",
-        "hostname",
         "id",
         "jq",
         "ls",
@@ -36,7 +35,6 @@ _READ_PROGRAMS = frozenset(
         "rg",
         "stat",
         "tail",
-        "tree",
         "uname",
         "wc",
         "which",
@@ -66,22 +64,32 @@ _GIT_READ_SUBCOMMANDS = frozenset(
         "status",
     }
 )
-_GIT_OPTIONS_WITH_VALUE = frozenset({"-C", "-c", "--git-dir", "--work-tree", "--namespace"})
+#: Options that make an otherwise read-only program write a file or run another program.
+_WRITING_OPTIONS: dict[str, tuple[str, ...]] = {
+    "git": ("--output", "-O", "--open-files-in-pager"),
+    "rg": ("--pre",),
+}
+#: ``git`` options allowed before the subcommand; any other (``-c``, ``--exec-path``)
+#: can make git run a configured program.
+_GIT_GLOBAL_FLAGS = frozenset({"--no-pager", "-P"})
 _SEPARATORS = re.compile(r"&&|\|\||[|;&\n]")
-#: Redirections that write no file: into another stream or into /dev/null.
-_HARMLESS_REDIRECT = re.compile(r"\d?>&\d|\d?>\s*/dev/null\b")
+#: Redirections that write no file: into another stream or into /dev/null itself.
+_HARMLESS_REDIRECT = re.compile(r"\d?>&\d|\d?>\s*/dev/null(?![^\s;&|])")
 _WRITE_OR_SUBSTITUTE = (">", "`", "$(", "<(")
 _ENV_ASSIGNMENT = re.compile(r"[A-Za-z_]\w*=")
 
 
 def _git_subcommand(args: list[str]) -> str:
+    """The subcommand after ``git``'s own options; "" when an option could run a program."""
     index = 0
     while index < len(args):
         token = args[index]
-        if token in _GIT_OPTIONS_WITH_VALUE:
+        if token == "-C":
             index += 2
-        elif token.startswith("-"):
+        elif token in _GIT_GLOBAL_FLAGS:
             index += 1
+        elif token.startswith("-"):
+            return ""
         else:
             return token
     return ""
@@ -92,11 +100,12 @@ def _segment_only_reads(segment: str) -> bool:
         tokens = shlex.split(segment)
     except ValueError:
         return False
-    while tokens and _ENV_ASSIGNMENT.match(tokens[0]):
-        tokens = tokens[1:]
-    if not tokens:
+    if not tokens or _ENV_ASSIGNMENT.match(tokens[0]):
         return False
     program = tokens[0].rsplit("/", 1)[-1]
+    writing = _WRITING_OPTIONS.get(program, ())
+    if any(token.startswith(writing) for token in tokens[1:]):
+        return False
     if program == "git":
         return _git_subcommand(tokens[1:]) in _GIT_READ_SUBCOMMANDS
     return program in _READ_PROGRAMS

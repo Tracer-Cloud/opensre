@@ -156,6 +156,23 @@ def test_a_command_is_recorded_by_its_leading_words_and_reads_are_left_out(
     assert activity.snapshot().actions == ((action,) if action else ())
 
 
+def test_two_calls_that_read_the_same_are_both_counted() -> None:
+    tools = [_tool("shell_run", _shell_ok, SideEffectLevel.MUTATING)]
+    calls = [
+        ToolCall(id=str(index), name="shell_run", input={"command": f'git commit -m "fix {name}"'})
+        for index, name in enumerate(("A", "B"))
+    ]
+
+    with collect_run_activity() as activity:
+        execute_tool_calls(
+            calls, tools, {}, hooks=ToolExecutionHooks(after_tool_call=bound_action_hook())
+        )
+
+    snapshot = activity.snapshot()
+    assert snapshot.actions == ("shell_run git commit … (×2)",)
+    assert snapshot.action_count == 1
+
+
 def test_an_attempt_keeps_its_newest_distinct_actions_and_counts_the_rest() -> None:
     activity = RunActivity()
 
