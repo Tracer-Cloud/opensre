@@ -82,7 +82,7 @@ class ConsolidationInput:
     current_summary: str
 
 
-type Summarizer = Callable[[ConsolidationInput], str]
+Summarizer = Callable[[ConsolidationInput], str]
 
 
 @dataclass(frozen=True)
