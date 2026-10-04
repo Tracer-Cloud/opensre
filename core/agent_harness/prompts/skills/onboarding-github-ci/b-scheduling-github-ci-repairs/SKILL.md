@@ -8,7 +8,7 @@ getting_started: Run continuously on this machine (recommended)
 demo_order: 2
 metadata:
   owner: Vincent
-  last_changed_by: Jan
+  last_changed_by: Vincent
   last_changed_at: 2026-10-04
   usecases:
     - For configuring ongoing repair of failing pull requests in one repository.
@@ -17,7 +17,7 @@ metadata:
     - GitHub write access to the watched repository and an authenticated coding agent
     - Git installed on the scheduler host; repair checkouts are created automatically
     - For the demo, a GitHub token that can create a private repository and an example PR
-  version: "0.81"
+  version: "0.82"
 script_tools: references/script-tools.md
 ---
 
@@ -36,7 +36,7 @@ one real repair as fast as possible in well under five minutes.
 
 ## Plan
 
-Use `update_plan` to create the live plan from the workflow headings below. Mark a step `in_progress` or `completed` in the same response as that step's tool call. A response that only calls `update_plan` is not progress. For the private demo, plan three steps instead: run the demo with one `run_ci_repair_demo` call (`verifies: true`), respond with the outcome report (`deliverable: true`), then offer the follow-up with `ask_user_choice`.
+Use `update_plan` to create the live plan from the workflow headings below. Mark a step `in_progress` or `completed` in the same response as that step's tool call. A response that only calls `update_plan` is not progress. For the private demo, plan three steps instead: run the demo with one `run_ci_repair_demo` call (`verifies: true`), respond with the outcome report (`deliverable: true`), then, after a successful repair, offer the follow-up with `ask_user_choice`.
 
 - [ ] Check prerequisites: GitHub identity and scopes, then the scheduler.
 - [ ] Select the repository, or the private demo, with ask_user_choice.
@@ -47,7 +47,7 @@ Use `update_plan` to create the live plan from the workflow headings below. Mark
 - [ ] Verify the repair with one `pr view` call.
 - [ ] Save evidence, remove the demo loop, and verify with one `finish_ci_repair_demo` call.
 - [ ] Respond with the outcome report as Markdown.
-- [ ] After the report is shown, offer the follow-up with `ask_user_choice`.
+- [ ] After a successful repair report, offer the follow-up with `ask_user_choice`.
 
 ## Workflow
 
@@ -117,7 +117,7 @@ The scope was authorized in Step 1; nothing to fetch.
 
 Call `run_ci_repair_demo(owner="<owner>", repo="<repo>")` once. It seeds the demo below, schedules the bounded repair with the demo's fast checks, waits until it is terminal, reads the PR once, saves evidence, and removes the loop, so Steps 5–8 are done when it returns. Record its ids, evidence, and `loop_removed`, then go to Step 9. One failed run is the blocker. Do not call it again in this plan. Report the tool's error text.
 
-The tool treats a 404 from `GET /repos/{owner}/{repo}` as absence and creates the private repository only in that case. It commits a passing `main` (`calculator.py` adding, `test_calculator.py` asserting `add(2, 3) == 5`, and `.github/workflows/test.yml` named `Demo calculator CI` running `python -m unittest -v` on pull_request), then one commit on `demo/failing-ci` that changes only `calculator.py` so `add` subtracts, opens that pull request into `main` with a body that says it is a demo not to merge, and returns after the pull-request Actions run has failed. Record `pr_url`, `pr_number`, `head_sha`, and `failed_run_id`. An existing demo repository and pull request are reused. If that repository is not an OpenSRE CI repair demo, the tool leaves it unchanged and seeds `opensre-ci-repair-demo-<4 lowercase letters or digits>` on the same owner. Record `owner`, `repo`, `pr_url`, `pr_number`, `head_sha`, and `failed_run_id` from the result, and use that owner and repo in later steps. Stay in this plan. Do not call `ask_user_choice`, do not end the turn, and do not delete or overwrite the refused repository.
+The tool treats a 404 from `GET /repos/{owner}/{repo}` as absence and creates the private repository only in that case. It commits a passing `main` (`calculator.py` adding, `test_calculator.py` asserting `add(2, 3) == 5`, and `.github/workflows/test.yml` named `Demo calculator CI` running `python -m unittest -v` on pull_request), then one commit on `demo/failing-ci` that changes only `calculator.py` so `add` subtracts, opens that pull request into `main` with a body that says it is a demo not to merge, and returns after the pull-request Actions run has failed. Record `pr_url`, `pr_number`, `head_sha`, and `failed_run_id`. An existing demo repository and pull request are reused; a pull request whose repair already landed first gets one new failing commit (`rearmed`). If that repository is not an OpenSRE CI repair demo, the tool leaves it unchanged and seeds `opensre-ci-repair-demo-<4 lowercase letters or digits>` on the same owner. Record `owner`, `repo`, `pr_url`, `pr_number`, `head_sha`, and `failed_run_id` from the result, and use that owner and repo in later steps. Stay in this plan. Do not call `ask_user_choice`, do not end the turn, and do not delete or overwrite the refused repository.
 
 This step uses that one tool. `github_cli`, `list_github_actions_workflow_runs`, an organization repository listing, a code search, and plain `git` are outside this step.
 
@@ -205,7 +205,9 @@ Complete when the report has been shown to the user as Markdown text.
 
 ### Step 10. Offer the follow-up question
 
-After the report is shown, call `ask_user_choice` with the title `Hand off the next failure?`, `allow_custom` false, and this note:
+Skip this step when the repair was blocked or failed: the question about that blocked step is the follow-up, so mark this item blocked too. Skip it on the hosted gateway as well, where the shell that delegated the work owns follow-ups; mark it completed after the report.
+
+After a successful repair report is shown, call `ask_user_choice` with the title `Hand off the next failure?`, `allow_custom` false, and this note:
 
 `The local loop runs on this machine every 30 seconds while it is on. The managed-service option is one repair, then it stops.`
 
