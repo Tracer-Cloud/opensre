@@ -141,8 +141,9 @@ def _render_frame(
         )
         rows.append(_styled("  " + "─" * (width - 2), ui_theme.DIM_COUNTER_ANSI, width))
 
-    # Reserve the divider and two footer rows; toggling details keeps the preview fixed.
-    available = height - 1 - len(rows) - 3 - int(roomy)
+    # Reserve the divider, footer, and spacing; toggling details keeps the preview fixed.
+    spaced_footer = height >= 10
+    available = height - 1 - len(rows) - 3 - int(roomy) - int(spaced_footer)
     preview_height = max(2, min(5, available // 2))
     visible = min(len(entries), 20, max(1, available - preview_height))
     top = max(0, min(top, len(entries) - visible, selected))
@@ -170,6 +171,8 @@ def _render_frame(
         preview = _preview_lines(entries[selected], width, preview_height)
     rows.extend(preview)
     rows.extend([""] * (preview_height - len(preview)))
+    if spaced_footer:
+        rows.append("")
 
     position = f"{selected + 1}/{len(entries)}"
     if width >= 60:

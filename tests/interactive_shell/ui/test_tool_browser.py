@@ -113,7 +113,7 @@ def test_browse_has_compact_rows_and_a_fixed_selected_tool_preview(
     assert terminal.events[-2:] == ["restore", "leave"]
 
 
-@pytest.mark.parametrize(("height", "visible"), [(24, 10), (30, 16), (60, 20)])
+@pytest.mark.parametrize(("height", "visible"), [(24, 9), (30, 15), (60, 20)])
 def test_list_grows_with_terminal_height_without_expanding_the_preview(
     terminal: SimpleNamespace, height: int, visible: int
 ) -> None:
@@ -126,6 +126,7 @@ def test_list_grows_with_terminal_height_without_expanding_the_preview(
         tool_rows = [row for row in rows if "Find matching code." in row and "tool_" in row]
         assert len(tool_rows) == visible
         assert len(rows) < height
+        assert rows[-3] == ""
     assert "› tool_29" in _plain(terminal.frames[1])
     assert "▾ tool_29" in _plain(terminal.frames[2])
     assert len({len(frame) for frame in terminal.frames}) == 1
@@ -140,6 +141,7 @@ def test_long_details_can_be_read_forward_and_backward_without_changing_tool(
     tool_browser.browse_tools([_entry("long_tool", description), _entry("next_tool")])
 
     frames = list(map(_plain, terminal.frames))
+    assert terminal.frames[1][-3] == ""
     displayed = "\n".join(frames)
     for index in range(45):
         assert f"Detail line {index}\n" in displayed
