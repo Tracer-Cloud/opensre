@@ -25,7 +25,6 @@ def active_skill_block(name: str | None, message: str) -> str:
         "whether it owns the live plan. Its instructions are below, so do not "
         "load it again with skill_view; when this answer chose it from the "
         "onboarding menu, start its first step now. Send each update_plan in the "
-        "same response as the tool call of the step it starts; a step without a "
-        "tool, such as a deliverable reply, sends it with that reply.\n\n"
+        "same response as the tool call of the step it starts.\n\n"
         f"{body[:_MAX_SKILL_CHARS]}"
     )
